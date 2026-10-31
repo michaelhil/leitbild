@@ -9,11 +9,13 @@ import {
 } from './model.ts'
 
 // A Plant whose runtime is pending is drawn grey, as an object the Pack does not know is.
+// A known Plant keeps one colour whatever its tone: its status is a word and its
+// alarms are alerts, never a hue (plan v3.1 §2.7, D9).
 const colorByTone: Readonly<Record<ProcessPlantUnitProjection['statusTone'], string>> = {
-  error: '#c7352b',
-  working: '#c77d13',
-  ready: '#22845d',
-  idle: '#667085',
+  error: '#0f915f',
+  working: '#0f915f',
+  ready: '#0f915f',
+  idle: '#6e788c',
 }
 
 const parseUnitData = (object: OperationalObject): ProcessPlantUnitPackData | null => {
@@ -21,9 +23,9 @@ const parseUnitData = (object: OperationalObject): ProcessPlantUnitPackData | nu
   return parsed.success ? parsed.data : null
 }
 
-// What the Plant's card leads with: its status and the operating mode it is
-// in, then the energy its sources put in and its sinks take out. A Plant whose
-// runtime is pending has no energy to state yet.
+// What the Plant's hover card leads with: its status and the operating mode
+// it is in, then the energy its sources put in and its sinks take out. A Plant
+// whose runtime is pending has no energy to state yet.
 const glanceOf = (projection: ProcessPlantUnitProjection): ReadonlyArray<string> => projection.statusTone === 'idle'
   ? [projection.statusLabel]
   : [projection.modeLabel === undefined ? projection.statusLabel : `${projection.statusLabel} · ${projection.modeLabel}`, projection.summary]

@@ -152,6 +152,9 @@ const messageSchema = z.object({
   inReplyTo: z.array(z.string()).optional(),
   cause: messageCauseSchema.optional(),
   progress: z.literal(true).optional(),
+  progressEvidence: z.object({
+    turnId: z.string().min(1), callId: z.string().min(1), callIds: z.array(z.string().min(1)).min(1), operationKey: z.string().min(1).optional(),
+  }).strict().optional(),
   generationMs: z.number().finite().optional(),
   generationTraceId: z.string().optional(),
   promptTokens: z.number().finite().optional(),
@@ -167,7 +170,7 @@ const messageSchema = z.object({
   errorCode: z.enum([
     'no_api_key', 'model_unavailable', 'rate_limited', 'network',
     'provider_down', 'tool_loop_exceeded', 'empty_response',
-    'tools_unavailable', 'request_dropped', 'unknown',
+    'tools_unavailable', 'request_dropped', 'response_validation_failed', 'unknown',
   ]).optional(),
   errorProvider: z.string().optional(),
   agentName: z.string().optional(),

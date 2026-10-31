@@ -47,7 +47,8 @@ export const createFakeMapStyle = (options: {
     off: (type: string, listener: (event: unknown) => void) => {
       listeners.get(type)?.delete(listener)
     },
-    getStyle: () => ({ version: 8, metadata, layers: layers.map(layer => ({ ...layer.spec, id: layer.id, type: layer.type })) }),
+    getStyle: () => ({ version: 8, metadata, layers: layers.filter(layer => layer.type !== 'custom').map(layer => ({ ...layer.spec, id: layer.id, type: layer.type })) }),
+    getLayersOrder: () => layers.map(layer => layer.id),
     getLayer: (id: string) => layers.find(layer => layer.id === id),
     getSource: (id: string) => sources.get(id),
     addSource: (id: string, spec: Record<string, unknown>) => {

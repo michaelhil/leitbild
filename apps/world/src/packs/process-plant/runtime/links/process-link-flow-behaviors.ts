@@ -5,12 +5,14 @@ import {
   componentValveCapacityForInboundLink,
   componentValveFactorForInboundLink,
   hasProcessLinkVariable,
+  pumpAvailableFlowKgPerS,
 } from './link-flow-helpers.ts'
 import { processLinkFlowSourceFor } from './link-flow-source-strategy.ts'
 import { pressureDrivenLeakFlowKgPerS } from '../physics.ts'
 import { physicalFlowCapacityKgPerS, physicalNumber } from './process-link-physical.ts'
 import { primarySystemReactorVessel } from '../system-topology.ts'
 import { primaryBreakFlow } from './primary-break-flow.ts'
+import { directedFluidDeliveryFlow } from '../directed-fluid-delivery.ts'
 
 export const processLinkFlowBehaviorDefinitions: ReadonlyArray<ProcessLinkBehaviorDefinition> = [
   {
@@ -20,6 +22,11 @@ export const processLinkFlowBehaviorDefinitions: ReadonlyArray<ProcessLinkBehavi
     writes: ['flowKgPerS'],
     appliesTo: (link): boolean => link.kind === 'fluidFlow' && hasProcessLinkVariable(link, 'flowKgPerS'),
     update: ({ system, link, context }): void => {
+      const directed = directedFluidDeliveryFlow(system, link, context)
+      if (directed !== null) {
+        context.write(processLinkVariablePath(link, 'flowKgPerS'), directed)
+        return
+      }
       const fromComponent = system.graph.components[link.fromComponentIndex]
       const toComponent = system.graph.components[link.toComponentIndex]
       if (!fromComponent || !toComponent) throw new Error(`process link ${link.id} references missing component`)
@@ -28,7 +35,7 @@ export const processLinkFlowBehaviorDefinitions: ReadonlyArray<ProcessLinkBehavi
       const source = processLinkFlowSourceFor({ system, link, context })
       let flowSource = source.flowKgPerS
       if (!source.bypassTargetPumpLimit && toComponent.kind === 'centrifugalPump') {
-        flowSource = Math.min(flowSource, context.readNumber(componentVariablePath(toComponent, 'flowKgPerS')))
+        flowSource = Math.min(flowSource, pumpAvailableFlowKgPerS(system, toComponent, context, link.service))
       }
       // A reactor coolant loop's legs carry what the loops' hydraulics solve,
       // above their rated flow as well when three pumps drive four loops.

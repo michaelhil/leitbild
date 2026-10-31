@@ -1,0 +1,403 @@
+{
+  "passed": true,
+  "results": [
+    {
+      "name": "every-visible-subset-0",
+      "differentPixels": 0,
+      "maximum": 0,
+      "painted": 0,
+      "state": [],
+      "error": 0,
+      "passed": true
+    },
+    {
+      "name": "every-visible-subset-1",
+      "differentPixels": 0,
+      "maximum": 0,
+      "painted": 6154,
+      "state": [],
+      "error": 0,
+      "passed": true
+    },
+    {
+      "name": "every-visible-subset-2",
+      "differentPixels": 0,
+      "maximum": 0,
+      "painted": 6154,
+      "state": [],
+      "error": 0,
+      "passed": true
+    },
+    {
+      "name": "every-visible-subset-3",
+      "differentPixels": 0,
+      "maximum": 0,
+      "painted": 10582,
+      "state": [],
+      "error": 0,
+      "passed": true
+    },
+    {
+      "name": "every-visible-subset-4",
+      "differentPixels": 0,
+      "maximum": 0,
+      "painted": 6260,
+      "state": [],
+      "error": 0,
+      "passed": true
+    },
+    {
+      "name": "every-visible-subset-5",
+      "differentPixels": 0,
+      "maximum": 0,
+      "painted": 12414,
+      "state": [],
+      "error": 0,
+      "passed": true
+    },
+    {
+      "name": "every-visible-subset-6",
+      "differentPixels": 0,
+      "maximum": 0,
+      "painted": 10581,
+      "state": [],
+      "error": 0,
+      "passed": true
+    },
+    {
+      "name": "every-visible-subset-7",
+      "differentPixels": 0,
+      "maximum": 0,
+      "painted": 15009,
+      "state": [],
+      "error": 0,
+      "passed": true
+    },
+    {
+      "name": "contiguous-instances-different-masks",
+      "differentPixels": 0,
+      "maximum": 0,
+      "painted": 4930,
+      "state": [],
+      "error": 0,
+      "passed": true
+    },
+    {
+      "name": "contiguous-instances-same-union-reversed-masks",
+      "differentPixels": 0,
+      "maximum": 0,
+      "painted": 4465,
+      "state": [],
+      "error": 0,
+      "passed": true
+    },
+    {
+      "name": "A1-foreign-B-A2-native-coplanar-order",
+      "differentPixels": 0,
+      "maximum": 0,
+      "painted": 15009,
+      "state": [],
+      "error": 0,
+      "passed": true
+    },
+    {
+      "name": "A2-foreign-B-A1-native-coplanar-order",
+      "differentPixels": 0,
+      "maximum": 0,
+      "painted": 15009,
+      "state": [],
+      "error": 0,
+      "passed": true
+    },
+    {
+      "name": "offscreen-and-clipped-native-lines",
+      "differentPixels": 0,
+      "maximum": 0,
+      "painted": 12498,
+      "state": [],
+      "error": 0,
+      "passed": true
+    },
+    {
+      "name": "warm-current-metadata",
+      "differentPixels": 0,
+      "maximum": 0,
+      "painted": 15009,
+      "state": [],
+      "error": 0,
+      "passed": true
+    },
+    {
+      "name": "camera-only-stable-metadata",
+      "differentPixels": 0,
+      "maximum": 0,
+      "painted": 12444,
+      "state": [],
+      "error": 0,
+      "passed": true
+    },
+    {
+      "name": "camera-does-not-upload-owner-metadata-or-indices",
+      "uploads": 14,
+      "warmedUploads": 15,
+      "cameraUploads": 15,
+      "warmedVisibility": 16,
+      "cameraVisibility": 16,
+      "warmedIndexBytes": 192,
+      "cameraIndexBytes": 192,
+      "residentCpuBytes": 99,
+      "expectIndices": true,
+      "passed": true
+    },
+    {
+      "name": "status-only-original-authored-contours",
+      "differentPixels": 0,
+      "maximum": 0,
+      "painted": 15009,
+      "state": [],
+      "error": 0,
+      "passed": true
+    },
+    {
+      "name": "highlight-occurrence-and-colour",
+      "differentPixels": 0,
+      "maximum": 0,
+      "painted": 15009,
+      "state": [],
+      "error": 0,
+      "passed": true
+    },
+    {
+      "name": "highlight-colour-changes-on-same-occurrence",
+      "differentPixels": 0,
+      "maximum": 0,
+      "painted": 15009,
+      "state": [],
+      "error": 0,
+      "passed": true
+    },
+    {
+      "name": "palette-theme-and-fallback",
+      "differentPixels": 0,
+      "maximum": 0,
+      "painted": 15009,
+      "state": [],
+      "error": 0,
+      "passed": true
+    },
+    {
+      "name": "architecture-full-opacity",
+      "differentPixels": 0,
+      "maximum": 0,
+      "painted": 15009,
+      "state": [],
+      "error": 0,
+      "passed": true
+    },
+    {
+      "name": "ordinary-alpha-uses-actual-Float32-row",
+      "differentPixels": 0,
+      "maximum": 0,
+      "painted": 15009,
+      "state": [],
+      "error": 0,
+      "passed": true
+    },
+    {
+      "name": "architecture-zero-opacity",
+      "differentPixels": 0,
+      "maximum": 0,
+      "painted": 6260,
+      "state": [],
+      "error": 0,
+      "passed": true
+    },
+    {
+      "name": "fractional-global-architecture-handoff",
+      "differentPixels": 0,
+      "maximum": 0,
+      "painted": 15009,
+      "state": [],
+      "error": 0,
+      "passed": true
+    },
+    {
+      "name": "fractional-and-zero-global-architecture-handoff",
+      "differentPixels": 0,
+      "maximum": 0,
+      "painted": 10581,
+      "state": [],
+      "error": 0,
+      "passed": true
+    },
+    {
+      "name": "withdraw-all-current-instance-runs",
+      "differentPixels": 0,
+      "maximum": 0,
+      "painted": 0,
+      "state": [],
+      "error": 0,
+      "passed": true
+    },
+    {
+      "name": "withdrawn-run-releases-current-index-packets",
+      "before": 64,
+      "after": 0,
+      "residentCpuBytes": 96,
+      "expectIndices": true,
+      "passed": true
+    }
+  ],
+  "metrics": {
+    "actual": {
+      "visibilityUploads": 18,
+      "indexBytes": 0,
+      "geometryUploads": 3,
+      "geometryBytes": 2592,
+      "residentCpuBytes": 96,
+      "draws": 55,
+      "buffers": 6,
+      "programs": 1,
+      "textures": 4,
+      "textureBytes": 416,
+      "instanceBytes": 136,
+      "instanceUploads": 26,
+      "statusUploads": 21,
+      "paletteUploads": 4,
+      "evictions": 1,
+      "peakRequiredBytes": 3804,
+      "liveBuffersAfterDisposal": null,
+      "liveProgramsAfterDisposal": null,
+      "liveTexturesAfterDisposal": null
+    },
+    "beforeWithdrawal": {
+      "visibilityUploads": 18,
+      "indexBytes": 64,
+      "geometryUploads": 3,
+      "geometryBytes": 2656,
+      "residentCpuBytes": 99,
+      "draws": 55,
+      "buffers": 8,
+      "programs": 1,
+      "textures": 4,
+      "textureBytes": 416,
+      "instanceBytes": 136,
+      "instanceUploads": 26,
+      "statusUploads": 21,
+      "paletteUploads": 4,
+      "evictions": 1,
+      "peakRequiredBytes": 3804,
+      "liveBuffersAfterDisposal": null,
+      "liveProgramsAfterDisposal": null,
+      "liveTexturesAfterDisposal": null
+    },
+    "reference": {
+      "geometryUploads": 3,
+      "geometryBytes": 2592,
+      "residentCpuBytes": 0,
+      "draws": 56,
+      "buffers": 6,
+      "programs": 1,
+      "textures": 4,
+      "textureBytes": 416,
+      "instanceBytes": 136,
+      "instanceUploads": 26,
+      "statusUploads": 21,
+      "paletteUploads": 4,
+      "evictions": 1,
+      "peakRequiredBytes": 3356,
+      "liveBuffersAfterDisposal": null,
+      "liveProgramsAfterDisposal": null,
+      "liveTexturesAfterDisposal": null
+    },
+    "ordered": {
+      "geometryUploads": 1,
+      "orderUploads": 2,
+      "instanceUploads": 4,
+      "statusUploads": 2,
+      "paletteUploads": 1,
+      "draws": 12,
+      "geometryBytes": 1536,
+      "orderBytes": 64,
+      "instanceBytes": 68,
+      "traversalBytes": 56,
+      "residentCpuBytes": 4200,
+      "buffers": 3,
+      "programs": 1,
+      "textures": 2,
+      "textureBytes": 144,
+      "liveBuffersAfterDisposal": null,
+      "liveProgramsAfterDisposal": null,
+      "liveTexturesAfterDisposal": null
+    },
+    "pass": {
+      "depthFormat": "float32",
+      "samples": 4,
+      "programs": 1,
+      "textures": 1,
+      "framebuffers": 2,
+      "renderbuffers": 2,
+      "bytes": 921600,
+      "textureBytes": 102400,
+      "allocations": 1,
+      "composites": 50,
+      "liveTextures": null,
+      "livePrograms": null,
+      "liveFramebuffers": null,
+      "liveRenderbuffers": null
+    }
+  },
+  "disposal": {
+    "actual": {
+      "buffers": 0,
+      "programs": 0,
+      "textures": 0,
+      "residentCpuBytes": 0,
+      "indexBytes": 0
+    },
+    "reference": {
+      "buffers": 0,
+      "programs": 0,
+      "textures": 0
+    },
+    "ordered": {
+      "geometryUploads": 1,
+      "orderUploads": 2,
+      "instanceUploads": 4,
+      "statusUploads": 2,
+      "paletteUploads": 1,
+      "draws": 12,
+      "geometryBytes": 0,
+      "orderBytes": 0,
+      "instanceBytes": 0,
+      "traversalBytes": 0,
+      "residentCpuBytes": 0,
+      "buffers": 0,
+      "programs": 0,
+      "textures": 0,
+      "textureBytes": 0,
+      "liveBuffersAfterDisposal": 0,
+      "liveProgramsAfterDisposal": 0,
+      "liveTexturesAfterDisposal": 0
+    },
+    "pass": {
+      "depthFormat": "float32",
+      "samples": 4,
+      "programs": 0,
+      "textures": 0,
+      "framebuffers": 0,
+      "renderbuffers": 0,
+      "bytes": 0,
+      "textureBytes": 0,
+      "allocations": 1,
+      "composites": 50,
+      "liveTextures": 0,
+      "livePrograms": 0,
+      "liveFramebuffers": 0,
+      "liveRenderbuffers": 0
+    }
+  },
+  "hostState": [],
+  "dpr": 1,
+  "samples": 4
+}

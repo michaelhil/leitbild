@@ -1,0 +1,5122 @@
+{
+  "sourceCommit": "5c2342cf71772a364d96cd213e49a43d6735a849",
+  "provenance": "Actual describeProcessPlantPhysicalTargets output captured from the clean permanent main checkout before the owner-approved controller tranche. Historical physical admission tests only; no simulator or historical-runtime compatibility is supplied.",
+  "entries": [
+    {
+      "selection": {
+        "model": {
+          "ref": "process-plant.pwr.reference",
+          "parameters": {
+            "loopCount": 3
+          }
+        },
+        "operatingPoint": {
+          "ref": "process-plant.pwr.full-power"
+        },
+        "automation": {
+          "ref": "process-plant.pwr.standard"
+        }
+      },
+      "description": {
+        "objectId": "historical:loops-3",
+        "modelRef": "process-plant.pwr.reference",
+        "modelDigest": "83cda1a872eedd97bb4cc5ae0ef775ef592f19844b611841f67d35c7649fd15a",
+        "subjects": [
+          {
+            "id": "core",
+            "label": "Reactor Core"
+          },
+          {
+            "id": "vessel",
+            "label": "Reactor Vessel"
+          },
+          {
+            "id": "pressurizer",
+            "label": "Pressurizer"
+          },
+          {
+            "id": "pressurizerReliefTank",
+            "label": "Pressurizer Relief Tank"
+          },
+          {
+            "id": "sgA",
+            "label": "Steam Generator A"
+          },
+          {
+            "id": "sgB",
+            "label": "Steam Generator B"
+          },
+          {
+            "id": "sgC",
+            "label": "Steam Generator C"
+          },
+          {
+            "id": "rcpA",
+            "label": "Reactor Coolant Pump A"
+          },
+          {
+            "id": "rcpB",
+            "label": "Reactor Coolant Pump B"
+          },
+          {
+            "id": "rcpC",
+            "label": "Reactor Coolant Pump C"
+          },
+          {
+            "id": "mainFeedwaterPumpA",
+            "label": "Main Feedwater Pump A"
+          },
+          {
+            "id": "mainFeedwaterPumpB",
+            "label": "Main Feedwater Pump B"
+          },
+          {
+            "id": "feedwaterTank",
+            "label": "Feedwater Tank"
+          },
+          {
+            "id": "feedwaterHeader",
+            "label": "Main Feedwater Header"
+          },
+          {
+            "id": "feedwaterControlValveA",
+            "label": "Feedwater Control Valve A"
+          },
+          {
+            "id": "feedwaterControlValveB",
+            "label": "Feedwater Control Valve B"
+          },
+          {
+            "id": "feedwaterControlValveC",
+            "label": "Feedwater Control Valve C"
+          },
+          {
+            "id": "auxFeedwaterTank",
+            "label": "Condensate Storage Tank"
+          },
+          {
+            "id": "auxFeedwaterPumpMotor",
+            "label": "Motor-Driven Auxiliary Feedwater Pump"
+          },
+          {
+            "id": "auxFeedwaterPumpMotorB",
+            "label": "Motor-Driven Auxiliary Feedwater Pump B"
+          },
+          {
+            "id": "auxFeedwaterPumpTurbine",
+            "label": "Turbine-Driven Auxiliary Feedwater Pump"
+          },
+          {
+            "id": "auxFeedwaterHeader",
+            "label": "Auxiliary Feedwater Header"
+          },
+          {
+            "id": "auxFeedwaterValveA",
+            "label": "Auxiliary Feedwater Valve A"
+          },
+          {
+            "id": "auxFeedwaterValveB",
+            "label": "Auxiliary Feedwater Valve B"
+          },
+          {
+            "id": "auxFeedwaterValveC",
+            "label": "Auxiliary Feedwater Valve C"
+          },
+          {
+            "id": "mainSteamIsolationValveA",
+            "label": "Main Steam Isolation Valve A"
+          },
+          {
+            "id": "mainSteamIsolationValveB",
+            "label": "Main Steam Isolation Valve B"
+          },
+          {
+            "id": "mainSteamIsolationValveC",
+            "label": "Main Steam Isolation Valve C"
+          },
+          {
+            "id": "steamGeneratorReliefValveA",
+            "label": "Steam Generator A Atmospheric Relief Valve"
+          },
+          {
+            "id": "steamGeneratorReliefValveB",
+            "label": "Steam Generator B Atmospheric Relief Valve"
+          },
+          {
+            "id": "steamGeneratorReliefValveC",
+            "label": "Steam Generator C Atmospheric Relief Valve"
+          },
+          {
+            "id": "mainSteamHeader",
+            "label": "Main Steam Header"
+          },
+          {
+            "id": "turbineStopValve",
+            "label": "Turbine Stop Valve"
+          },
+          {
+            "id": "turbineBypassValve",
+            "label": "Turbine Bypass Valve"
+          },
+          {
+            "id": "turbine",
+            "label": "Turbine Generator"
+          },
+          {
+            "id": "condenser",
+            "label": "Main Condenser"
+          },
+          {
+            "id": "ultimateHeatSink",
+            "label": "Ultimate Heat Sink"
+          },
+          {
+            "id": "circulatingWaterPump",
+            "label": "Circulating Water Pump"
+          },
+          {
+            "id": "coolingWaterDischarge",
+            "label": "Cooling Water Discharge"
+          },
+          {
+            "id": "condensatePumpA",
+            "label": "Condensate Pump A"
+          },
+          {
+            "id": "condensatePumpB",
+            "label": "Condensate Pump B"
+          },
+          {
+            "id": "hotwellRejectValve",
+            "label": "Hotwell Reject Valve"
+          },
+          {
+            "id": "volumeControlTank",
+            "label": "Volume Control Tank"
+          },
+          {
+            "id": "boricAcidTank",
+            "label": "Boric Acid Tank"
+          },
+          {
+            "id": "chargingPump",
+            "label": "Charging Pump"
+          },
+          {
+            "id": "chargingPumpB",
+            "label": "Charging Pump B"
+          },
+          {
+            "id": "letdownValve",
+            "label": "Letdown Valve"
+          },
+          {
+            "id": "boricAcidInjectionValve",
+            "label": "Boric Acid Injection Valve"
+          },
+          {
+            "id": "rwst",
+            "label": "Refueling Water Storage Tank"
+          },
+          {
+            "id": "containmentSprayAdditiveTank",
+            "label": "Containment Spray Sodium Hydroxide Additive Tank"
+          },
+          {
+            "id": "safetyInjectionPumpA",
+            "label": "High-Head Safety Injection Pump A"
+          },
+          {
+            "id": "safetyInjectionPumpB",
+            "label": "High-Head Safety Injection Pump B"
+          },
+          {
+            "id": "safetyInjectionHeader",
+            "label": "Safety Injection Header"
+          },
+          {
+            "id": "containmentSprayPumpA",
+            "label": "Containment Spray Pump A"
+          },
+          {
+            "id": "containmentSprayPumpB",
+            "label": "Containment Spray Pump B"
+          },
+          {
+            "id": "containmentSprayHeader",
+            "label": "Containment Spray Header"
+          },
+          {
+            "id": "rhrPumpA",
+            "label": "Residual Heat Removal Pump A"
+          },
+          {
+            "id": "rhrPumpB",
+            "label": "Residual Heat Removal Pump B"
+          },
+          {
+            "id": "rhrHeader",
+            "label": "Residual Heat Removal Header"
+          },
+          {
+            "id": "rhrIsolationValve",
+            "label": "RHR Isolation Valve"
+          },
+          {
+            "id": "containment",
+            "label": "Containment"
+          },
+          {
+            "id": "safetyAccumulatorA",
+            "label": "Safety Injection Accumulator A"
+          },
+          {
+            "id": "safetyAccumulatorB",
+            "label": "Safety Injection Accumulator B"
+          },
+          {
+            "id": "safetyAccumulatorC",
+            "label": "Safety Injection Accumulator C"
+          },
+          {
+            "id": "atmosphere",
+            "label": "Atmosphere"
+          },
+          {
+            "id": "offsiteGrid",
+            "label": "420 kV Grid Interface"
+          },
+          {
+            "id": "unitAuxTransformer",
+            "label": "Unit Auxiliary Transformer"
+          },
+          {
+            "id": "safetyBusA",
+            "label": "Safety Bus A"
+          },
+          {
+            "id": "safetyBusB",
+            "label": "Safety Bus B"
+          },
+          {
+            "id": "offsiteBreakerA",
+            "label": "Offsite Breaker A"
+          },
+          {
+            "id": "offsiteBreakerB",
+            "label": "Offsite Breaker B"
+          },
+          {
+            "id": "unitBusBreakerA",
+            "label": "Unit Bus Supply Breaker A"
+          },
+          {
+            "id": "unitBusBreakerB",
+            "label": "Unit Bus Supply Breaker B"
+          },
+          {
+            "id": "pressurizerBackupHeaterBreakerA",
+            "label": "Pressurizer Backup Heater Breaker A"
+          },
+          {
+            "id": "unitBusA",
+            "label": "Unit Bus A"
+          },
+          {
+            "id": "unitBusB",
+            "label": "Unit Bus B"
+          },
+          {
+            "id": "dieselGeneratorA",
+            "label": "Emergency Diesel Generator A"
+          },
+          {
+            "id": "dieselGeneratorB",
+            "label": "Emergency Diesel Generator B"
+          },
+          {
+            "id": "dieselBreakerA",
+            "label": "Diesel Breaker A"
+          },
+          {
+            "id": "dieselBreakerB",
+            "label": "Diesel Breaker B"
+          },
+          {
+            "id": "vitalBatteryA",
+            "label": "Vital Battery A"
+          },
+          {
+            "id": "vitalBatteryB",
+            "label": "Vital Battery B"
+          },
+          {
+            "id": "dcInverterA",
+            "label": "DC Inverter A"
+          },
+          {
+            "id": "dcInverterB",
+            "label": "DC Inverter B"
+          },
+          {
+            "id": "plantControlsLoadA",
+            "label": "Plant Controls Load A"
+          },
+          {
+            "id": "plantControlsLoadB",
+            "label": "Plant Controls Load B"
+          },
+          {
+            "id": "loadSequencerA",
+            "label": "Load Sequencer A"
+          },
+          {
+            "id": "loadCentresA",
+            "label": "Safety Train A Load Centres"
+          },
+          {
+            "id": "componentCoolingWaterPumpA",
+            "label": "Component Cooling Water Pump A"
+          },
+          {
+            "id": "serviceWaterPumpA",
+            "label": "Service Water Pump A"
+          },
+          {
+            "id": "containmentFanCoolersA",
+            "label": "Containment Fan Coolers A"
+          },
+          {
+            "id": "loadSequencerB",
+            "label": "Load Sequencer B"
+          },
+          {
+            "id": "loadCentresB",
+            "label": "Safety Train B Load Centres"
+          },
+          {
+            "id": "componentCoolingWaterPumpB",
+            "label": "Component Cooling Water Pump B"
+          },
+          {
+            "id": "serviceWaterPumpB",
+            "label": "Service Water Pump B"
+          },
+          {
+            "id": "containmentFanCoolersB",
+            "label": "Containment Fan Coolers B"
+          },
+          {
+            "id": "reactorTripBreakerA",
+            "label": "Reactor Trip Breaker A"
+          },
+          {
+            "id": "reactorTripBreakerB",
+            "label": "Reactor Trip Breaker B"
+          },
+          {
+            "id": "deltaTChannelA",
+            "label": "Loop A Delta-T Protection Channel"
+          },
+          {
+            "id": "deltaTChannelB",
+            "label": "Loop B Delta-T Protection Channel"
+          },
+          {
+            "id": "deltaTChannelC",
+            "label": "Loop C Delta-T Protection Channel"
+          },
+          {
+            "id": "rcsInventoryBalance",
+            "label": "RCS Inventory Balance"
+          },
+          {
+            "id": "pressurizerReliefHeader",
+            "label": "Pressurizer Relief Header"
+          },
+          {
+            "id": "safetyInjectionBlockLogic",
+            "label": "Safety Injection Block Logic"
+          },
+          {
+            "id": "manualReactorTrip",
+            "label": "Manual Reactor Trip"
+          },
+          {
+            "id": "manualTurbineTrip",
+            "label": "Manual Turbine Trip"
+          },
+          {
+            "id": "manualSafetyInjection",
+            "label": "Manual Safety Injection"
+          },
+          {
+            "id": "auxFeedwaterTurbineSteamValveB",
+            "label": "TD AFW Pump Steam Supply Valve B"
+          },
+          {
+            "id": "auxFeedwaterTurbineSteamValveC",
+            "label": "TD AFW Pump Steam Supply Valve C"
+          },
+          {
+            "id": "mainSteamSafetyValveA",
+            "label": "Main Steam Safety Valves A"
+          },
+          {
+            "id": "mainSteamSafetyValveB",
+            "label": "Main Steam Safety Valves B"
+          },
+          {
+            "id": "mainSteamSafetyValveC",
+            "label": "Main Steam Safety Valves C"
+          }
+        ],
+        "connections": [
+          {
+            "id": "core-to-vessel-thermal",
+            "label": "Reactor Core to Reactor Vessel",
+            "kind": "thermalContact",
+            "from": {
+              "subjectId": "core",
+              "port": "vesselThermal"
+            },
+            "to": {
+              "subjectId": "vessel",
+              "port": "coreThermal"
+            }
+          },
+          {
+            "id": "pressurizer-surge-line",
+            "label": "Reactor Core to Pressurizer",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "core",
+              "port": "hotLegA"
+            },
+            "to": {
+              "subjectId": "pressurizer",
+              "port": "surgeLine"
+            }
+          },
+          {
+            "id": "pressurizer-relief-to-tank",
+            "label": "Pressurizer to Pressurizer Relief Header",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "pressurizer",
+              "port": "reliefOutlet"
+            },
+            "to": {
+              "subjectId": "pressurizerReliefHeader",
+              "port": "inletA"
+            }
+          },
+          {
+            "id": "pressurizer-safety-valves-to-tank",
+            "label": "Pressurizer to Pressurizer Relief Header",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "pressurizer",
+              "port": "safetyOutlet"
+            },
+            "to": {
+              "subjectId": "pressurizerReliefHeader",
+              "port": "inletA"
+            }
+          },
+          {
+            "id": "pressurizer-relief-header-to-tank",
+            "label": "Pressurizer Relief Header to Pressurizer Relief Tank",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "pressurizerReliefHeader",
+              "port": "outletA"
+            },
+            "to": {
+              "subjectId": "pressurizerReliefTank",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "rcs-hot-leg-a",
+            "label": "Reactor Core to Steam Generator A",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "core",
+              "port": "hotLegA"
+            },
+            "to": {
+              "subjectId": "sgA",
+              "port": "primaryInlet"
+            }
+          },
+          {
+            "id": "rcs-cold-leg-a",
+            "label": "Steam Generator A to Reactor Coolant Pump A",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "sgA",
+              "port": "primaryOutlet"
+            },
+            "to": {
+              "subjectId": "rcpA",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "rcp-a-to-core",
+            "label": "Reactor Coolant Pump A to Reactor Core",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "rcpA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "core",
+              "port": "coldLegA"
+            }
+          },
+          {
+            "id": "rcs-hot-leg-b",
+            "label": "Reactor Core to Steam Generator B",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "core",
+              "port": "hotLegB"
+            },
+            "to": {
+              "subjectId": "sgB",
+              "port": "primaryInlet"
+            }
+          },
+          {
+            "id": "rcs-cold-leg-b",
+            "label": "Steam Generator B to Reactor Coolant Pump B",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "sgB",
+              "port": "primaryOutlet"
+            },
+            "to": {
+              "subjectId": "rcpB",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "rcp-b-to-core",
+            "label": "Reactor Coolant Pump B to Reactor Core",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "rcpB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "core",
+              "port": "coldLegB"
+            }
+          },
+          {
+            "id": "rcs-hot-leg-c",
+            "label": "Reactor Core to Steam Generator C",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "core",
+              "port": "hotLegC"
+            },
+            "to": {
+              "subjectId": "sgC",
+              "port": "primaryInlet"
+            }
+          },
+          {
+            "id": "rcs-cold-leg-c",
+            "label": "Steam Generator C to Reactor Coolant Pump C",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "sgC",
+              "port": "primaryOutlet"
+            },
+            "to": {
+              "subjectId": "rcpC",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "rcp-c-to-core",
+            "label": "Reactor Coolant Pump C to Reactor Core",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "rcpC",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "core",
+              "port": "coldLegC"
+            }
+          },
+          {
+            "id": "feedwater-tank-to-main-feedwater-pump-a",
+            "label": "Feedwater Tank to Main Feedwater Pump A",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "feedwaterTank",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "mainFeedwaterPumpA",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "feedwater-tank-to-main-feedwater-pump-b",
+            "label": "Feedwater Tank to Main Feedwater Pump B",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "feedwaterTank",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "mainFeedwaterPumpB",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "main-feedwater-pump-a-to-header",
+            "label": "Main Feedwater Pump A to Main Feedwater Header",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "mainFeedwaterPumpA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "feedwaterHeader",
+              "port": "inletA"
+            }
+          },
+          {
+            "id": "main-feedwater-pump-b-to-header",
+            "label": "Main Feedwater Pump B to Main Feedwater Header",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "mainFeedwaterPumpB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "feedwaterHeader",
+              "port": "inletB"
+            }
+          },
+          {
+            "id": "feedwater-header-to-control-valve-a",
+            "label": "Main Feedwater Header to Feedwater Control Valve A",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "feedwaterHeader",
+              "port": "outletA"
+            },
+            "to": {
+              "subjectId": "feedwaterControlValveA",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "feedwater-control-valve-a-to-sg-a",
+            "label": "Feedwater Control Valve A to Steam Generator A",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "feedwaterControlValveA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "sgA",
+              "port": "feedwaterInlet"
+            }
+          },
+          {
+            "id": "sg-a-steam-to-msiv-a",
+            "label": "Steam Generator A to Main Steam Isolation Valve A",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "sgA",
+              "port": "steamOutlet"
+            },
+            "to": {
+              "subjectId": "mainSteamIsolationValveA",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "msiv-a-to-main-steam-header",
+            "label": "Main Steam Isolation Valve A to Main Steam Header",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "mainSteamIsolationValveA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "mainSteamHeader",
+              "port": "inletA"
+            }
+          },
+          {
+            "id": "feedwater-header-to-control-valve-b",
+            "label": "Main Feedwater Header to Feedwater Control Valve B",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "feedwaterHeader",
+              "port": "outletB"
+            },
+            "to": {
+              "subjectId": "feedwaterControlValveB",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "feedwater-control-valve-b-to-sg-b",
+            "label": "Feedwater Control Valve B to Steam Generator B",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "feedwaterControlValveB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "sgB",
+              "port": "feedwaterInlet"
+            }
+          },
+          {
+            "id": "sg-b-steam-to-msiv-b",
+            "label": "Steam Generator B to Main Steam Isolation Valve B",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "sgB",
+              "port": "steamOutlet"
+            },
+            "to": {
+              "subjectId": "mainSteamIsolationValveB",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "msiv-b-to-main-steam-header",
+            "label": "Main Steam Isolation Valve B to Main Steam Header",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "mainSteamIsolationValveB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "mainSteamHeader",
+              "port": "inletB"
+            }
+          },
+          {
+            "id": "feedwater-header-to-control-valve-c",
+            "label": "Main Feedwater Header to Feedwater Control Valve C",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "feedwaterHeader",
+              "port": "outletC"
+            },
+            "to": {
+              "subjectId": "feedwaterControlValveC",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "feedwater-control-valve-c-to-sg-c",
+            "label": "Feedwater Control Valve C to Steam Generator C",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "feedwaterControlValveC",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "sgC",
+              "port": "feedwaterInlet"
+            }
+          },
+          {
+            "id": "sg-c-steam-to-msiv-c",
+            "label": "Steam Generator C to Main Steam Isolation Valve C",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "sgC",
+              "port": "steamOutlet"
+            },
+            "to": {
+              "subjectId": "mainSteamIsolationValveC",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "msiv-c-to-main-steam-header",
+            "label": "Main Steam Isolation Valve C to Main Steam Header",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "mainSteamIsolationValveC",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "mainSteamHeader",
+              "port": "inletC"
+            }
+          },
+          {
+            "id": "main-steam-header-to-turbine-stop-valve",
+            "label": "Main Steam Header to Turbine Stop Valve",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "mainSteamHeader",
+              "port": "outletA"
+            },
+            "to": {
+              "subjectId": "turbineStopValve",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "main-steam-header-to-turbine-bypass-valve",
+            "label": "Main Steam Header to Turbine Bypass Valve",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "mainSteamHeader",
+              "port": "outletC"
+            },
+            "to": {
+              "subjectId": "turbineBypassValve",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "turbine-bypass-valve-to-condenser",
+            "label": "Turbine Bypass Valve to Main Condenser",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "turbineBypassValve",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "condenser",
+              "port": "steamInlet"
+            }
+          },
+          {
+            "id": "turbine-stop-valve-to-turbine",
+            "label": "Turbine Stop Valve to Turbine Generator",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "turbineStopValve",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "turbine",
+              "port": "steamInlet"
+            }
+          },
+          {
+            "id": "turbine-exhaust-to-condenser",
+            "label": "Turbine Generator to Main Condenser",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "turbine",
+              "port": "exhaustSteamOutlet"
+            },
+            "to": {
+              "subjectId": "condenser",
+              "port": "steamInlet"
+            }
+          },
+          {
+            "id": "condenser-to-condensate-pump-a",
+            "label": "Main Condenser to Condensate Pump A",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "condenser",
+              "port": "condensateOutlet"
+            },
+            "to": {
+              "subjectId": "condensatePumpA",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "condensate-pump-a-to-feedwater-tank",
+            "label": "Condensate Pump A to Feedwater Tank",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "condensatePumpA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "feedwaterTank",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "condenser-to-condensate-pump-b",
+            "label": "Main Condenser to Condensate Pump B",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "condenser",
+              "port": "condensateOutlet"
+            },
+            "to": {
+              "subjectId": "condensatePumpB",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "condensate-pump-b-to-feedwater-tank",
+            "label": "Condensate Pump B to Feedwater Tank",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "condensatePumpB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "feedwaterTank",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "condenser-to-hotwell-reject-valve",
+            "label": "Main Condenser to Hotwell Reject Valve",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "condenser",
+              "port": "condensateOutlet"
+            },
+            "to": {
+              "subjectId": "hotwellRejectValve",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "hotwell-reject",
+            "label": "Hotwell Reject Valve to Condensate Storage Tank",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "hotwellRejectValve",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "auxFeedwaterTank",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "aux-feedwater-tank-to-motor-pump",
+            "label": "Condensate Storage Tank to Motor-Driven Auxiliary Feedwater Pump",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "auxFeedwaterTank",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "auxFeedwaterPumpMotor",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "aux-feedwater-tank-to-turbine-pump",
+            "label": "Condensate Storage Tank to Turbine-Driven Auxiliary Feedwater Pump",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "auxFeedwaterTank",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "auxFeedwaterPumpTurbine",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "motor-afw-pump-to-header",
+            "label": "Motor-Driven Auxiliary Feedwater Pump to Auxiliary Feedwater Header",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "auxFeedwaterPumpMotor",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "auxFeedwaterHeader",
+              "port": "inletA"
+            }
+          },
+          {
+            "id": "turbine-afw-pump-to-header",
+            "label": "Turbine-Driven Auxiliary Feedwater Pump to Auxiliary Feedwater Header",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "auxFeedwaterPumpTurbine",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "auxFeedwaterHeader",
+              "port": "inletB"
+            }
+          },
+          {
+            "id": "aux-feedwater-header-to-valve-a",
+            "label": "Auxiliary Feedwater Header to Auxiliary Feedwater Valve A",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "auxFeedwaterHeader",
+              "port": "outletA"
+            },
+            "to": {
+              "subjectId": "auxFeedwaterValveA",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "aux-feedwater-valve-a-to-sg-a",
+            "label": "Auxiliary Feedwater Valve A to Steam Generator A",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "auxFeedwaterValveA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "sgA",
+              "port": "feedwaterInlet"
+            }
+          },
+          {
+            "id": "aux-feedwater-header-to-valve-b",
+            "label": "Auxiliary Feedwater Header to Auxiliary Feedwater Valve B",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "auxFeedwaterHeader",
+              "port": "outletB"
+            },
+            "to": {
+              "subjectId": "auxFeedwaterValveB",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "aux-feedwater-valve-b-to-sg-b",
+            "label": "Auxiliary Feedwater Valve B to Steam Generator B",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "auxFeedwaterValveB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "sgB",
+              "port": "feedwaterInlet"
+            }
+          },
+          {
+            "id": "aux-feedwater-header-to-valve-c",
+            "label": "Auxiliary Feedwater Header to Auxiliary Feedwater Valve C",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "auxFeedwaterHeader",
+              "port": "outletC"
+            },
+            "to": {
+              "subjectId": "auxFeedwaterValveC",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "aux-feedwater-valve-c-to-sg-c",
+            "label": "Auxiliary Feedwater Valve C to Steam Generator C",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "auxFeedwaterValveC",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "sgC",
+              "port": "feedwaterInlet"
+            }
+          },
+          {
+            "id": "vct-to-charging-pump",
+            "label": "Volume Control Tank to Charging Pump",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "volumeControlTank",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "chargingPump",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "boric-acid-tank-to-injection-valve",
+            "label": "Boric Acid Tank to Boric Acid Injection Valve",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "boricAcidTank",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "boricAcidInjectionValve",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "boric-acid-injection-to-charging-pump",
+            "label": "Boric Acid Injection Valve to Charging Pump",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "boricAcidInjectionValve",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "chargingPump",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "charging-pump-to-cold-leg-a",
+            "label": "Charging Pump to Reactor Core",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "chargingPump",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "core",
+              "port": "coldLegA"
+            }
+          },
+          {
+            "id": "rcs-letdown",
+            "label": "Reactor Vessel to Letdown Valve",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "vessel",
+              "port": "letdownOutlet"
+            },
+            "to": {
+              "subjectId": "letdownValve",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "letdown-to-vct",
+            "label": "Letdown Valve to Volume Control Tank",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "letdownValve",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "volumeControlTank",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "aux-feedwater-tank-to-motor-pump-b",
+            "label": "Condensate Storage Tank to Motor-Driven Auxiliary Feedwater Pump B",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "auxFeedwaterTank",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "auxFeedwaterPumpMotorB",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "motor-afw-pump-b-to-header",
+            "label": "Motor-Driven Auxiliary Feedwater Pump B to Auxiliary Feedwater Header",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "auxFeedwaterPumpMotorB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "auxFeedwaterHeader",
+              "port": "inletC"
+            }
+          },
+          {
+            "id": "vct-to-charging-pump-b",
+            "label": "Volume Control Tank to Charging Pump B",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "volumeControlTank",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "chargingPumpB",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "charging-pump-b-to-cold-leg-b",
+            "label": "Charging Pump B to Reactor Core",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "chargingPumpB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "core",
+              "port": "coldLegB"
+            }
+          },
+          {
+            "id": "rwst-to-safety-injection-pump-a",
+            "label": "Refueling Water Storage Tank to High-Head Safety Injection Pump A",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "rwst",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "safetyInjectionPumpA",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "rwst-to-safety-injection-pump-b",
+            "label": "Refueling Water Storage Tank to High-Head Safety Injection Pump B",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "rwst",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "safetyInjectionPumpB",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "safety-injection-pump-a-to-header",
+            "label": "High-Head Safety Injection Pump A to Safety Injection Header",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "safetyInjectionPumpA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "safetyInjectionHeader",
+              "port": "inletA"
+            }
+          },
+          {
+            "id": "safety-injection-pump-b-to-header",
+            "label": "High-Head Safety Injection Pump B to Safety Injection Header",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "safetyInjectionPumpB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "safetyInjectionHeader",
+              "port": "inletB"
+            }
+          },
+          {
+            "id": "safety-injection-header-to-cold-leg-a",
+            "label": "Safety Injection Header to Reactor Core",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "safetyInjectionHeader",
+              "port": "outletA"
+            },
+            "to": {
+              "subjectId": "core",
+              "port": "coldLegA"
+            }
+          },
+          {
+            "id": "safety-injection-header-to-cold-leg-b",
+            "label": "Safety Injection Header to Reactor Core",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "safetyInjectionHeader",
+              "port": "outletB"
+            },
+            "to": {
+              "subjectId": "core",
+              "port": "coldLegB"
+            }
+          },
+          {
+            "id": "safety-injection-header-to-cold-leg-c",
+            "label": "Safety Injection Header to Reactor Core",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "safetyInjectionHeader",
+              "port": "outletC"
+            },
+            "to": {
+              "subjectId": "core",
+              "port": "coldLegC"
+            }
+          },
+          {
+            "id": "rwst-to-containment-spray-pump-a",
+            "label": "Refueling Water Storage Tank to Containment Spray Pump A",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "rwst",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "containmentSprayPumpA",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "rwst-to-containment-spray-pump-b",
+            "label": "Refueling Water Storage Tank to Containment Spray Pump B",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "rwst",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "containmentSprayPumpB",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "containment-spray-pump-a-to-header",
+            "label": "Containment Spray Pump A to Containment Spray Header",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "containmentSprayPumpA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "containmentSprayHeader",
+              "port": "inletA"
+            }
+          },
+          {
+            "id": "containment-spray-pump-b-to-header",
+            "label": "Containment Spray Pump B to Containment Spray Header",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "containmentSprayPumpB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "containmentSprayHeader",
+              "port": "inletB"
+            }
+          },
+          {
+            "id": "containment-spray-header-to-containment",
+            "label": "Containment Spray Header to Containment",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "containmentSprayHeader",
+              "port": "outletA"
+            },
+            "to": {
+              "subjectId": "containment",
+              "port": "sprayIn"
+            }
+          },
+          {
+            "id": "containment-sump-to-rhr-pump-a",
+            "label": "Containment to Residual Heat Removal Pump A",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "containment",
+              "port": "sumpOut"
+            },
+            "to": {
+              "subjectId": "rhrPumpA",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "containment-sump-to-rhr-pump-b",
+            "label": "Containment to Residual Heat Removal Pump B",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "containment",
+              "port": "sumpOut"
+            },
+            "to": {
+              "subjectId": "rhrPumpB",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "rhr-pump-a-to-header",
+            "label": "Residual Heat Removal Pump A to Residual Heat Removal Header",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "rhrPumpA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "rhrHeader",
+              "port": "inletA"
+            }
+          },
+          {
+            "id": "rhr-pump-b-to-header",
+            "label": "Residual Heat Removal Pump B to Residual Heat Removal Header",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "rhrPumpB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "rhrHeader",
+              "port": "inletB"
+            }
+          },
+          {
+            "id": "rhr-header-to-isolation-valve",
+            "label": "Residual Heat Removal Header to RHR Isolation Valve",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "rhrHeader",
+              "port": "outletA"
+            },
+            "to": {
+              "subjectId": "rhrIsolationValve",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "rhr-isolation-valve-to-cold-leg-a",
+            "label": "RHR Isolation Valve to Reactor Core",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "rhrIsolationValve",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "core",
+              "port": "coldLegA"
+            }
+          },
+          {
+            "id": "vessel-release-to-containment",
+            "label": "Reactor Vessel to Containment",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "vessel",
+              "port": "releaseOutlet"
+            },
+            "to": {
+              "subjectId": "containment",
+              "port": "massEnergyIn"
+            }
+          },
+          {
+            "id": "safety-accumulator-a-to-cold-leg-a",
+            "label": "Safety Injection Accumulator A to Reactor Core",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "safetyAccumulatorA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "core",
+              "port": "coldLegA"
+            }
+          },
+          {
+            "id": "safety-accumulator-b-to-cold-leg-b",
+            "label": "Safety Injection Accumulator B to Reactor Core",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "safetyAccumulatorB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "core",
+              "port": "coldLegB"
+            }
+          },
+          {
+            "id": "safety-accumulator-c-to-cold-leg-c",
+            "label": "Safety Injection Accumulator C to Reactor Core",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "safetyAccumulatorC",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "core",
+              "port": "coldLegC"
+            }
+          },
+          {
+            "id": "sg-a-steam-to-relief-valve-a",
+            "label": "Steam Generator A to Steam Generator A Atmospheric Relief Valve",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "sgA",
+              "port": "steamReliefOutlet"
+            },
+            "to": {
+              "subjectId": "steamGeneratorReliefValveA",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "steam-generator-relief-valve-a-to-atmosphere",
+            "label": "Steam Generator A Atmospheric Relief Valve to Atmosphere",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "steamGeneratorReliefValveA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "atmosphere",
+              "port": "releaseIn"
+            }
+          },
+          {
+            "id": "sg-b-steam-to-relief-valve-b",
+            "label": "Steam Generator B to Steam Generator B Atmospheric Relief Valve",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "sgB",
+              "port": "steamReliefOutlet"
+            },
+            "to": {
+              "subjectId": "steamGeneratorReliefValveB",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "steam-generator-relief-valve-b-to-atmosphere",
+            "label": "Steam Generator B Atmospheric Relief Valve to Atmosphere",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "steamGeneratorReliefValveB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "atmosphere",
+              "port": "releaseIn"
+            }
+          },
+          {
+            "id": "sg-c-steam-to-relief-valve-c",
+            "label": "Steam Generator C to Steam Generator C Atmospheric Relief Valve",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "sgC",
+              "port": "steamReliefOutlet"
+            },
+            "to": {
+              "subjectId": "steamGeneratorReliefValveC",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "steam-generator-relief-valve-c-to-atmosphere",
+            "label": "Steam Generator C Atmospheric Relief Valve to Atmosphere",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "steamGeneratorReliefValveC",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "atmosphere",
+              "port": "releaseIn"
+            }
+          },
+          {
+            "id": "ultimate-heat-sink-to-circulating-water-pump",
+            "label": "Ultimate Heat Sink to Circulating Water Pump",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "ultimateHeatSink",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "circulatingWaterPump",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "circulating-water-pump-to-condenser",
+            "label": "Circulating Water Pump to Main Condenser",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "circulatingWaterPump",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "condenser",
+              "port": "coolingWater"
+            }
+          },
+          {
+            "id": "condenser-to-cooling-water-discharge",
+            "label": "Main Condenser to Cooling Water Discharge",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "condenser",
+              "port": "coolingWaterOutlet"
+            },
+            "to": {
+              "subjectId": "coolingWaterDischarge",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "turbine-generator-to-unit-aux-transformer",
+            "label": "Turbine Generator to Unit Auxiliary Transformer",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "turbine",
+              "port": "generatorOutput"
+            },
+            "to": {
+              "subjectId": "unitAuxTransformer",
+              "port": "primary"
+            }
+          },
+          {
+            "id": "offsite-grid-to-unit-aux-transformer",
+            "label": "420 kV Grid Interface to Unit Auxiliary Transformer",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "offsiteGrid",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "unitAuxTransformer",
+              "port": "primary"
+            }
+          },
+          {
+            "id": "unit-aux-transformer-to-offsite-breaker-a",
+            "label": "Unit Auxiliary Transformer to Offsite Breaker A",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "unitAuxTransformer",
+              "port": "secondary"
+            },
+            "to": {
+              "subjectId": "offsiteBreakerA",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "unit-aux-transformer-to-offsite-breaker-b",
+            "label": "Unit Auxiliary Transformer to Offsite Breaker B",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "unitAuxTransformer",
+              "port": "secondary"
+            },
+            "to": {
+              "subjectId": "offsiteBreakerB",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "offsite-breaker-a-to-safety-bus-a",
+            "label": "Offsite Breaker A to Safety Bus A",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "offsiteBreakerA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "safetyBusA",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "offsite-breaker-b-to-safety-bus-b",
+            "label": "Offsite Breaker B to Safety Bus B",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "offsiteBreakerB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "safetyBusB",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "unit-aux-transformer-to-unit-bus-breaker-a",
+            "label": "Unit Auxiliary Transformer to Unit Bus Supply Breaker A",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "unitAuxTransformer",
+              "port": "secondary"
+            },
+            "to": {
+              "subjectId": "unitBusBreakerA",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "unit-aux-transformer-to-unit-bus-breaker-b",
+            "label": "Unit Auxiliary Transformer to Unit Bus Supply Breaker B",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "unitAuxTransformer",
+              "port": "secondary"
+            },
+            "to": {
+              "subjectId": "unitBusBreakerB",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "unit-bus-breaker-a-to-unit-bus-a",
+            "label": "Unit Bus Supply Breaker A to Unit Bus A",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "unitBusBreakerA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "unitBusA",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "unit-bus-breaker-b-to-unit-bus-b",
+            "label": "Unit Bus Supply Breaker B to Unit Bus B",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "unitBusBreakerB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "unitBusB",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "diesel-generator-a-to-breaker-a",
+            "label": "Emergency Diesel Generator A to Diesel Breaker A",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "dieselGeneratorA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "dieselBreakerA",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "diesel-generator-b-to-breaker-b",
+            "label": "Emergency Diesel Generator B to Diesel Breaker B",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "dieselGeneratorB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "dieselBreakerB",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "diesel-breaker-a-to-safety-bus-a",
+            "label": "Diesel Breaker A to Safety Bus A",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "dieselBreakerA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "safetyBusA",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "diesel-breaker-b-to-safety-bus-b",
+            "label": "Diesel Breaker B to Safety Bus B",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "dieselBreakerB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "safetyBusB",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "battery-a-to-inverter-a",
+            "label": "Vital Battery A to DC Inverter A",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "vitalBatteryA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "dcInverterA",
+              "port": "dcInlet"
+            }
+          },
+          {
+            "id": "battery-b-to-inverter-b",
+            "label": "Vital Battery B to DC Inverter B",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "vitalBatteryB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "dcInverterB",
+              "port": "dcInlet"
+            }
+          },
+          {
+            "id": "inverter-a-to-controls-load-a",
+            "label": "DC Inverter A to Plant Controls Load A",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "dcInverterA",
+              "port": "acOutlet"
+            },
+            "to": {
+              "subjectId": "plantControlsLoadA",
+              "port": "power"
+            }
+          },
+          {
+            "id": "inverter-b-to-controls-load-b",
+            "label": "DC Inverter B to Plant Controls Load B",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "dcInverterB",
+              "port": "acOutlet"
+            },
+            "to": {
+              "subjectId": "plantControlsLoadB",
+              "port": "power"
+            }
+          },
+          {
+            "id": "unit-bus-a-to-rcpA",
+            "label": "Unit Bus A to Reactor Coolant Pump A",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "unitBusA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "rcpA",
+              "port": "power"
+            }
+          },
+          {
+            "id": "unit-bus-a-to-rcpC",
+            "label": "Unit Bus A to Reactor Coolant Pump C",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "unitBusA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "rcpC",
+              "port": "power"
+            }
+          },
+          {
+            "id": "unit-bus-a-to-mainFeedwaterPumpA",
+            "label": "Unit Bus A to Main Feedwater Pump A",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "unitBusA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "mainFeedwaterPumpA",
+              "port": "power"
+            }
+          },
+          {
+            "id": "safety-bus-a-to-auxFeedwaterPumpMotor",
+            "label": "Safety Bus A to Motor-Driven Auxiliary Feedwater Pump",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "safetyBusA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "auxFeedwaterPumpMotor",
+              "port": "power"
+            }
+          },
+          {
+            "id": "safety-bus-b-to-auxFeedwaterPumpMotorB",
+            "label": "Safety Bus B to Motor-Driven Auxiliary Feedwater Pump B",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "safetyBusB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "auxFeedwaterPumpMotorB",
+              "port": "power"
+            }
+          },
+          {
+            "id": "unit-bus-a-to-condensatePumpA",
+            "label": "Unit Bus A to Condensate Pump A",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "unitBusA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "condensatePumpA",
+              "port": "power"
+            }
+          },
+          {
+            "id": "unit-bus-a-to-circulatingWaterPump",
+            "label": "Unit Bus A to Circulating Water Pump",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "unitBusA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "circulatingWaterPump",
+              "port": "power"
+            }
+          },
+          {
+            "id": "unit-bus-b-to-rcpB",
+            "label": "Unit Bus B to Reactor Coolant Pump B",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "unitBusB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "rcpB",
+              "port": "power"
+            }
+          },
+          {
+            "id": "unit-bus-b-to-mainFeedwaterPumpB",
+            "label": "Unit Bus B to Main Feedwater Pump B",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "unitBusB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "mainFeedwaterPumpB",
+              "port": "power"
+            }
+          },
+          {
+            "id": "unit-bus-b-to-condensatePumpB",
+            "label": "Unit Bus B to Condensate Pump B",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "unitBusB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "condensatePumpB",
+              "port": "power"
+            }
+          },
+          {
+            "id": "safety-bus-a-to-chargingPump",
+            "label": "Safety Bus A to Charging Pump",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "safetyBusA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "chargingPump",
+              "port": "power"
+            }
+          },
+          {
+            "id": "safety-bus-b-to-chargingPumpB",
+            "label": "Safety Bus B to Charging Pump B",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "safetyBusB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "chargingPumpB",
+              "port": "power"
+            }
+          },
+          {
+            "id": "safety-bus-a-to-safetyInjectionPumpA",
+            "label": "Safety Bus A to High-Head Safety Injection Pump A",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "safetyBusA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "safetyInjectionPumpA",
+              "port": "power"
+            }
+          },
+          {
+            "id": "safety-bus-b-to-safetyInjectionPumpB",
+            "label": "Safety Bus B to High-Head Safety Injection Pump B",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "safetyBusB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "safetyInjectionPumpB",
+              "port": "power"
+            }
+          },
+          {
+            "id": "safety-bus-a-to-containmentSprayPumpA",
+            "label": "Safety Bus A to Containment Spray Pump A",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "safetyBusA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "containmentSprayPumpA",
+              "port": "power"
+            }
+          },
+          {
+            "id": "safety-bus-b-to-containmentSprayPumpB",
+            "label": "Safety Bus B to Containment Spray Pump B",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "safetyBusB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "containmentSprayPumpB",
+              "port": "power"
+            }
+          },
+          {
+            "id": "safety-bus-a-to-rhrPumpA",
+            "label": "Safety Bus A to Residual Heat Removal Pump A",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "safetyBusA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "rhrPumpA",
+              "port": "power"
+            }
+          },
+          {
+            "id": "safety-bus-b-to-rhrPumpB",
+            "label": "Safety Bus B to Residual Heat Removal Pump B",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "safetyBusB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "rhrPumpB",
+              "port": "power"
+            }
+          },
+          {
+            "id": "unit-bus-a-to-pressurizer-heater",
+            "label": "Unit Bus A to Pressurizer",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "unitBusA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "pressurizer",
+              "port": "heaterPower"
+            }
+          },
+          {
+            "id": "safety-bus-a-to-pressurizer-porv-block-valve",
+            "label": "Safety Bus A to Pressurizer",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "safetyBusA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "pressurizer",
+              "port": "blockValvePower"
+            }
+          },
+          {
+            "id": "safety-bus-a-to-pressurizer-backup-heater-breaker-a",
+            "label": "Safety Bus A to Pressurizer Backup Heater Breaker A",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "safetyBusA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "pressurizerBackupHeaterBreakerA",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "pressurizer-backup-heater-breaker-a-to-pressurizer",
+            "label": "Pressurizer Backup Heater Breaker A to Pressurizer",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "pressurizerBackupHeaterBreakerA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "pressurizer",
+              "port": "backupHeaterPower"
+            }
+          },
+          {
+            "id": "safety-bus-a-to-load-centres-a",
+            "label": "Safety Bus A to Safety Train A Load Centres",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "safetyBusA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "loadCentresA",
+              "port": "power"
+            }
+          },
+          {
+            "id": "safety-bus-a-to-ccw-pump-a",
+            "label": "Safety Bus A to Component Cooling Water Pump A",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "safetyBusA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "componentCoolingWaterPumpA",
+              "port": "power"
+            }
+          },
+          {
+            "id": "safety-bus-a-to-sw-pump-a",
+            "label": "Safety Bus A to Service Water Pump A",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "safetyBusA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "serviceWaterPumpA",
+              "port": "power"
+            }
+          },
+          {
+            "id": "safety-bus-a-to-fan-coolers-a",
+            "label": "Safety Bus A to Containment Fan Coolers A",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "safetyBusA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "containmentFanCoolersA",
+              "port": "power"
+            }
+          },
+          {
+            "id": "safety-bus-b-to-load-centres-b",
+            "label": "Safety Bus B to Safety Train B Load Centres",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "safetyBusB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "loadCentresB",
+              "port": "power"
+            }
+          },
+          {
+            "id": "safety-bus-b-to-ccw-pump-b",
+            "label": "Safety Bus B to Component Cooling Water Pump B",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "safetyBusB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "componentCoolingWaterPumpB",
+              "port": "power"
+            }
+          },
+          {
+            "id": "safety-bus-b-to-sw-pump-b",
+            "label": "Safety Bus B to Service Water Pump B",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "safetyBusB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "serviceWaterPumpB",
+              "port": "power"
+            }
+          },
+          {
+            "id": "safety-bus-b-to-fan-coolers-b",
+            "label": "Safety Bus B to Containment Fan Coolers B",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "safetyBusB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "containmentFanCoolersB",
+              "port": "power"
+            }
+          },
+          {
+            "id": "sg-b-steam-to-turbine-afw-steam-valve-b",
+            "label": "Steam Generator B to TD AFW Pump Steam Supply Valve B",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "sgB",
+              "port": "driveSteamOutlet"
+            },
+            "to": {
+              "subjectId": "auxFeedwaterTurbineSteamValveB",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "turbine-afw-steam-valve-b-to-pump-turbine",
+            "label": "TD AFW Pump Steam Supply Valve B to Turbine-Driven Auxiliary Feedwater Pump",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "auxFeedwaterTurbineSteamValveB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "auxFeedwaterPumpTurbine",
+              "port": "driveSteamInlet"
+            }
+          },
+          {
+            "id": "sg-c-steam-to-turbine-afw-steam-valve-c",
+            "label": "Steam Generator C to TD AFW Pump Steam Supply Valve C",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "sgC",
+              "port": "driveSteamOutlet"
+            },
+            "to": {
+              "subjectId": "auxFeedwaterTurbineSteamValveC",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "turbine-afw-steam-valve-c-to-pump-turbine",
+            "label": "TD AFW Pump Steam Supply Valve C to Turbine-Driven Auxiliary Feedwater Pump",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "auxFeedwaterTurbineSteamValveC",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "auxFeedwaterPumpTurbine",
+              "port": "driveSteamInlet"
+            }
+          },
+          {
+            "id": "turbine-afw-pump-turbine-exhaust-to-atmosphere",
+            "label": "Turbine-Driven Auxiliary Feedwater Pump to Atmosphere",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "auxFeedwaterPumpTurbine",
+              "port": "driveSteamExhaust"
+            },
+            "to": {
+              "subjectId": "atmosphere",
+              "port": "releaseIn"
+            }
+          },
+          {
+            "id": "sg-a-steam-to-safety-valves-a",
+            "label": "Steam Generator A to Main Steam Safety Valves A",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "sgA",
+              "port": "steamReliefOutlet"
+            },
+            "to": {
+              "subjectId": "mainSteamSafetyValveA",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "main-steam-safety-valves-a-to-atmosphere",
+            "label": "Main Steam Safety Valves A to Atmosphere",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "mainSteamSafetyValveA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "atmosphere",
+              "port": "releaseIn"
+            }
+          },
+          {
+            "id": "sg-b-steam-to-safety-valves-b",
+            "label": "Steam Generator B to Main Steam Safety Valves B",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "sgB",
+              "port": "steamReliefOutlet"
+            },
+            "to": {
+              "subjectId": "mainSteamSafetyValveB",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "main-steam-safety-valves-b-to-atmosphere",
+            "label": "Main Steam Safety Valves B to Atmosphere",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "mainSteamSafetyValveB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "atmosphere",
+              "port": "releaseIn"
+            }
+          },
+          {
+            "id": "sg-c-steam-to-safety-valves-c",
+            "label": "Steam Generator C to Main Steam Safety Valves C",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "sgC",
+              "port": "steamReliefOutlet"
+            },
+            "to": {
+              "subjectId": "mainSteamSafetyValveC",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "main-steam-safety-valves-c-to-atmosphere",
+            "label": "Main Steam Safety Valves C to Atmosphere",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "mainSteamSafetyValveC",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "atmosphere",
+              "port": "releaseIn"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "selection": {
+        "model": {
+          "ref": "process-plant.pwr.reference",
+          "parameters": {
+            "loopCount": 4
+          }
+        },
+        "operatingPoint": {
+          "ref": "process-plant.pwr.full-power"
+        },
+        "automation": {
+          "ref": "process-plant.pwr.standard"
+        }
+      },
+      "description": {
+        "objectId": "historical:loops-4",
+        "modelRef": "process-plant.pwr.reference",
+        "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea",
+        "subjects": [
+          {
+            "id": "core",
+            "label": "Reactor Core"
+          },
+          {
+            "id": "vessel",
+            "label": "Reactor Vessel"
+          },
+          {
+            "id": "pressurizer",
+            "label": "Pressurizer"
+          },
+          {
+            "id": "pressurizerReliefTank",
+            "label": "Pressurizer Relief Tank"
+          },
+          {
+            "id": "sgA",
+            "label": "Steam Generator A"
+          },
+          {
+            "id": "sgB",
+            "label": "Steam Generator B"
+          },
+          {
+            "id": "sgC",
+            "label": "Steam Generator C"
+          },
+          {
+            "id": "sgD",
+            "label": "Steam Generator D"
+          },
+          {
+            "id": "rcpA",
+            "label": "Reactor Coolant Pump A"
+          },
+          {
+            "id": "rcpB",
+            "label": "Reactor Coolant Pump B"
+          },
+          {
+            "id": "rcpC",
+            "label": "Reactor Coolant Pump C"
+          },
+          {
+            "id": "rcpD",
+            "label": "Reactor Coolant Pump D"
+          },
+          {
+            "id": "mainFeedwaterPumpA",
+            "label": "Main Feedwater Pump A"
+          },
+          {
+            "id": "mainFeedwaterPumpB",
+            "label": "Main Feedwater Pump B"
+          },
+          {
+            "id": "feedwaterTank",
+            "label": "Feedwater Tank"
+          },
+          {
+            "id": "feedwaterHeader",
+            "label": "Main Feedwater Header"
+          },
+          {
+            "id": "feedwaterControlValveA",
+            "label": "Feedwater Control Valve A"
+          },
+          {
+            "id": "feedwaterControlValveB",
+            "label": "Feedwater Control Valve B"
+          },
+          {
+            "id": "feedwaterControlValveC",
+            "label": "Feedwater Control Valve C"
+          },
+          {
+            "id": "feedwaterControlValveD",
+            "label": "Feedwater Control Valve D"
+          },
+          {
+            "id": "auxFeedwaterTank",
+            "label": "Condensate Storage Tank"
+          },
+          {
+            "id": "auxFeedwaterPumpMotor",
+            "label": "Motor-Driven Auxiliary Feedwater Pump"
+          },
+          {
+            "id": "auxFeedwaterPumpMotorB",
+            "label": "Motor-Driven Auxiliary Feedwater Pump B"
+          },
+          {
+            "id": "auxFeedwaterPumpTurbine",
+            "label": "Turbine-Driven Auxiliary Feedwater Pump"
+          },
+          {
+            "id": "auxFeedwaterHeader",
+            "label": "Auxiliary Feedwater Header"
+          },
+          {
+            "id": "auxFeedwaterValveA",
+            "label": "Auxiliary Feedwater Valve A"
+          },
+          {
+            "id": "auxFeedwaterValveB",
+            "label": "Auxiliary Feedwater Valve B"
+          },
+          {
+            "id": "auxFeedwaterValveC",
+            "label": "Auxiliary Feedwater Valve C"
+          },
+          {
+            "id": "auxFeedwaterValveD",
+            "label": "Auxiliary Feedwater Valve D"
+          },
+          {
+            "id": "mainSteamIsolationValveA",
+            "label": "Main Steam Isolation Valve A"
+          },
+          {
+            "id": "mainSteamIsolationValveB",
+            "label": "Main Steam Isolation Valve B"
+          },
+          {
+            "id": "mainSteamIsolationValveC",
+            "label": "Main Steam Isolation Valve C"
+          },
+          {
+            "id": "mainSteamIsolationValveD",
+            "label": "Main Steam Isolation Valve D"
+          },
+          {
+            "id": "steamGeneratorReliefValveA",
+            "label": "Steam Generator A Atmospheric Relief Valve"
+          },
+          {
+            "id": "steamGeneratorReliefValveB",
+            "label": "Steam Generator B Atmospheric Relief Valve"
+          },
+          {
+            "id": "steamGeneratorReliefValveC",
+            "label": "Steam Generator C Atmospheric Relief Valve"
+          },
+          {
+            "id": "steamGeneratorReliefValveD",
+            "label": "Steam Generator D Atmospheric Relief Valve"
+          },
+          {
+            "id": "mainSteamHeader",
+            "label": "Main Steam Header"
+          },
+          {
+            "id": "turbineStopValve",
+            "label": "Turbine Stop Valve"
+          },
+          {
+            "id": "turbineBypassValve",
+            "label": "Turbine Bypass Valve"
+          },
+          {
+            "id": "turbine",
+            "label": "Turbine Generator"
+          },
+          {
+            "id": "condenser",
+            "label": "Main Condenser"
+          },
+          {
+            "id": "ultimateHeatSink",
+            "label": "Ultimate Heat Sink"
+          },
+          {
+            "id": "circulatingWaterPump",
+            "label": "Circulating Water Pump"
+          },
+          {
+            "id": "coolingWaterDischarge",
+            "label": "Cooling Water Discharge"
+          },
+          {
+            "id": "condensatePumpA",
+            "label": "Condensate Pump A"
+          },
+          {
+            "id": "condensatePumpB",
+            "label": "Condensate Pump B"
+          },
+          {
+            "id": "hotwellRejectValve",
+            "label": "Hotwell Reject Valve"
+          },
+          {
+            "id": "volumeControlTank",
+            "label": "Volume Control Tank"
+          },
+          {
+            "id": "boricAcidTank",
+            "label": "Boric Acid Tank"
+          },
+          {
+            "id": "chargingPump",
+            "label": "Charging Pump"
+          },
+          {
+            "id": "chargingPumpB",
+            "label": "Charging Pump B"
+          },
+          {
+            "id": "letdownValve",
+            "label": "Letdown Valve"
+          },
+          {
+            "id": "boricAcidInjectionValve",
+            "label": "Boric Acid Injection Valve"
+          },
+          {
+            "id": "rwst",
+            "label": "Refueling Water Storage Tank"
+          },
+          {
+            "id": "containmentSprayAdditiveTank",
+            "label": "Containment Spray Sodium Hydroxide Additive Tank"
+          },
+          {
+            "id": "safetyInjectionPumpA",
+            "label": "High-Head Safety Injection Pump A"
+          },
+          {
+            "id": "safetyInjectionPumpB",
+            "label": "High-Head Safety Injection Pump B"
+          },
+          {
+            "id": "safetyInjectionHeader",
+            "label": "Safety Injection Header"
+          },
+          {
+            "id": "containmentSprayPumpA",
+            "label": "Containment Spray Pump A"
+          },
+          {
+            "id": "containmentSprayPumpB",
+            "label": "Containment Spray Pump B"
+          },
+          {
+            "id": "containmentSprayHeader",
+            "label": "Containment Spray Header"
+          },
+          {
+            "id": "rhrPumpA",
+            "label": "Residual Heat Removal Pump A"
+          },
+          {
+            "id": "rhrPumpB",
+            "label": "Residual Heat Removal Pump B"
+          },
+          {
+            "id": "rhrHeader",
+            "label": "Residual Heat Removal Header"
+          },
+          {
+            "id": "rhrIsolationValve",
+            "label": "RHR Isolation Valve"
+          },
+          {
+            "id": "containment",
+            "label": "Containment"
+          },
+          {
+            "id": "safetyAccumulatorA",
+            "label": "Safety Injection Accumulator A"
+          },
+          {
+            "id": "safetyAccumulatorB",
+            "label": "Safety Injection Accumulator B"
+          },
+          {
+            "id": "safetyAccumulatorC",
+            "label": "Safety Injection Accumulator C"
+          },
+          {
+            "id": "safetyAccumulatorD",
+            "label": "Safety Injection Accumulator D"
+          },
+          {
+            "id": "atmosphere",
+            "label": "Atmosphere"
+          },
+          {
+            "id": "offsiteGrid",
+            "label": "420 kV Grid Interface"
+          },
+          {
+            "id": "unitAuxTransformer",
+            "label": "Unit Auxiliary Transformer"
+          },
+          {
+            "id": "safetyBusA",
+            "label": "Safety Bus A"
+          },
+          {
+            "id": "safetyBusB",
+            "label": "Safety Bus B"
+          },
+          {
+            "id": "offsiteBreakerA",
+            "label": "Offsite Breaker A"
+          },
+          {
+            "id": "offsiteBreakerB",
+            "label": "Offsite Breaker B"
+          },
+          {
+            "id": "unitBusBreakerA",
+            "label": "Unit Bus Supply Breaker A"
+          },
+          {
+            "id": "unitBusBreakerB",
+            "label": "Unit Bus Supply Breaker B"
+          },
+          {
+            "id": "pressurizerBackupHeaterBreakerA",
+            "label": "Pressurizer Backup Heater Breaker A"
+          },
+          {
+            "id": "unitBusA",
+            "label": "Unit Bus A"
+          },
+          {
+            "id": "unitBusB",
+            "label": "Unit Bus B"
+          },
+          {
+            "id": "dieselGeneratorA",
+            "label": "Emergency Diesel Generator A"
+          },
+          {
+            "id": "dieselGeneratorB",
+            "label": "Emergency Diesel Generator B"
+          },
+          {
+            "id": "dieselBreakerA",
+            "label": "Diesel Breaker A"
+          },
+          {
+            "id": "dieselBreakerB",
+            "label": "Diesel Breaker B"
+          },
+          {
+            "id": "vitalBatteryA",
+            "label": "Vital Battery A"
+          },
+          {
+            "id": "vitalBatteryB",
+            "label": "Vital Battery B"
+          },
+          {
+            "id": "dcInverterA",
+            "label": "DC Inverter A"
+          },
+          {
+            "id": "dcInverterB",
+            "label": "DC Inverter B"
+          },
+          {
+            "id": "plantControlsLoadA",
+            "label": "Plant Controls Load A"
+          },
+          {
+            "id": "plantControlsLoadB",
+            "label": "Plant Controls Load B"
+          },
+          {
+            "id": "loadSequencerA",
+            "label": "Load Sequencer A"
+          },
+          {
+            "id": "loadCentresA",
+            "label": "Safety Train A Load Centres"
+          },
+          {
+            "id": "componentCoolingWaterPumpA",
+            "label": "Component Cooling Water Pump A"
+          },
+          {
+            "id": "serviceWaterPumpA",
+            "label": "Service Water Pump A"
+          },
+          {
+            "id": "containmentFanCoolersA",
+            "label": "Containment Fan Coolers A"
+          },
+          {
+            "id": "loadSequencerB",
+            "label": "Load Sequencer B"
+          },
+          {
+            "id": "loadCentresB",
+            "label": "Safety Train B Load Centres"
+          },
+          {
+            "id": "componentCoolingWaterPumpB",
+            "label": "Component Cooling Water Pump B"
+          },
+          {
+            "id": "serviceWaterPumpB",
+            "label": "Service Water Pump B"
+          },
+          {
+            "id": "containmentFanCoolersB",
+            "label": "Containment Fan Coolers B"
+          },
+          {
+            "id": "reactorTripBreakerA",
+            "label": "Reactor Trip Breaker A"
+          },
+          {
+            "id": "reactorTripBreakerB",
+            "label": "Reactor Trip Breaker B"
+          },
+          {
+            "id": "deltaTChannelA",
+            "label": "Loop A Delta-T Protection Channel"
+          },
+          {
+            "id": "deltaTChannelB",
+            "label": "Loop B Delta-T Protection Channel"
+          },
+          {
+            "id": "deltaTChannelC",
+            "label": "Loop C Delta-T Protection Channel"
+          },
+          {
+            "id": "deltaTChannelD",
+            "label": "Loop D Delta-T Protection Channel"
+          },
+          {
+            "id": "rcsInventoryBalance",
+            "label": "RCS Inventory Balance"
+          },
+          {
+            "id": "pressurizerReliefHeader",
+            "label": "Pressurizer Relief Header"
+          },
+          {
+            "id": "safetyInjectionBlockLogic",
+            "label": "Safety Injection Block Logic"
+          },
+          {
+            "id": "manualReactorTrip",
+            "label": "Manual Reactor Trip"
+          },
+          {
+            "id": "manualTurbineTrip",
+            "label": "Manual Turbine Trip"
+          },
+          {
+            "id": "manualSafetyInjection",
+            "label": "Manual Safety Injection"
+          },
+          {
+            "id": "auxFeedwaterTurbineSteamValveB",
+            "label": "TD AFW Pump Steam Supply Valve B"
+          },
+          {
+            "id": "auxFeedwaterTurbineSteamValveC",
+            "label": "TD AFW Pump Steam Supply Valve C"
+          },
+          {
+            "id": "mainSteamSafetyValveA",
+            "label": "Main Steam Safety Valves A"
+          },
+          {
+            "id": "mainSteamSafetyValveB",
+            "label": "Main Steam Safety Valves B"
+          },
+          {
+            "id": "mainSteamSafetyValveC",
+            "label": "Main Steam Safety Valves C"
+          },
+          {
+            "id": "mainSteamSafetyValveD",
+            "label": "Main Steam Safety Valves D"
+          }
+        ],
+        "connections": [
+          {
+            "id": "core-to-vessel-thermal",
+            "label": "Reactor Core to Reactor Vessel",
+            "kind": "thermalContact",
+            "from": {
+              "subjectId": "core",
+              "port": "vesselThermal"
+            },
+            "to": {
+              "subjectId": "vessel",
+              "port": "coreThermal"
+            }
+          },
+          {
+            "id": "pressurizer-surge-line",
+            "label": "Reactor Core to Pressurizer",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "core",
+              "port": "hotLegA"
+            },
+            "to": {
+              "subjectId": "pressurizer",
+              "port": "surgeLine"
+            }
+          },
+          {
+            "id": "pressurizer-relief-to-tank",
+            "label": "Pressurizer to Pressurizer Relief Header",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "pressurizer",
+              "port": "reliefOutlet"
+            },
+            "to": {
+              "subjectId": "pressurizerReliefHeader",
+              "port": "inletA"
+            }
+          },
+          {
+            "id": "pressurizer-safety-valves-to-tank",
+            "label": "Pressurizer to Pressurizer Relief Header",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "pressurizer",
+              "port": "safetyOutlet"
+            },
+            "to": {
+              "subjectId": "pressurizerReliefHeader",
+              "port": "inletA"
+            }
+          },
+          {
+            "id": "pressurizer-relief-header-to-tank",
+            "label": "Pressurizer Relief Header to Pressurizer Relief Tank",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "pressurizerReliefHeader",
+              "port": "outletA"
+            },
+            "to": {
+              "subjectId": "pressurizerReliefTank",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "rcs-hot-leg-a",
+            "label": "Reactor Core to Steam Generator A",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "core",
+              "port": "hotLegA"
+            },
+            "to": {
+              "subjectId": "sgA",
+              "port": "primaryInlet"
+            }
+          },
+          {
+            "id": "rcs-cold-leg-a",
+            "label": "Steam Generator A to Reactor Coolant Pump A",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "sgA",
+              "port": "primaryOutlet"
+            },
+            "to": {
+              "subjectId": "rcpA",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "rcp-a-to-core",
+            "label": "Reactor Coolant Pump A to Reactor Core",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "rcpA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "core",
+              "port": "coldLegA"
+            }
+          },
+          {
+            "id": "rcs-hot-leg-b",
+            "label": "Reactor Core to Steam Generator B",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "core",
+              "port": "hotLegB"
+            },
+            "to": {
+              "subjectId": "sgB",
+              "port": "primaryInlet"
+            }
+          },
+          {
+            "id": "rcs-cold-leg-b",
+            "label": "Steam Generator B to Reactor Coolant Pump B",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "sgB",
+              "port": "primaryOutlet"
+            },
+            "to": {
+              "subjectId": "rcpB",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "rcp-b-to-core",
+            "label": "Reactor Coolant Pump B to Reactor Core",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "rcpB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "core",
+              "port": "coldLegB"
+            }
+          },
+          {
+            "id": "rcs-hot-leg-c",
+            "label": "Reactor Core to Steam Generator C",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "core",
+              "port": "hotLegC"
+            },
+            "to": {
+              "subjectId": "sgC",
+              "port": "primaryInlet"
+            }
+          },
+          {
+            "id": "rcs-cold-leg-c",
+            "label": "Steam Generator C to Reactor Coolant Pump C",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "sgC",
+              "port": "primaryOutlet"
+            },
+            "to": {
+              "subjectId": "rcpC",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "rcp-c-to-core",
+            "label": "Reactor Coolant Pump C to Reactor Core",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "rcpC",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "core",
+              "port": "coldLegC"
+            }
+          },
+          {
+            "id": "rcs-hot-leg-d",
+            "label": "Reactor Core to Steam Generator D",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "core",
+              "port": "hotLegD"
+            },
+            "to": {
+              "subjectId": "sgD",
+              "port": "primaryInlet"
+            }
+          },
+          {
+            "id": "rcs-cold-leg-d",
+            "label": "Steam Generator D to Reactor Coolant Pump D",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "sgD",
+              "port": "primaryOutlet"
+            },
+            "to": {
+              "subjectId": "rcpD",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "rcp-d-to-core",
+            "label": "Reactor Coolant Pump D to Reactor Core",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "rcpD",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "core",
+              "port": "coldLegD"
+            }
+          },
+          {
+            "id": "feedwater-tank-to-main-feedwater-pump-a",
+            "label": "Feedwater Tank to Main Feedwater Pump A",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "feedwaterTank",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "mainFeedwaterPumpA",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "feedwater-tank-to-main-feedwater-pump-b",
+            "label": "Feedwater Tank to Main Feedwater Pump B",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "feedwaterTank",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "mainFeedwaterPumpB",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "main-feedwater-pump-a-to-header",
+            "label": "Main Feedwater Pump A to Main Feedwater Header",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "mainFeedwaterPumpA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "feedwaterHeader",
+              "port": "inletA"
+            }
+          },
+          {
+            "id": "main-feedwater-pump-b-to-header",
+            "label": "Main Feedwater Pump B to Main Feedwater Header",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "mainFeedwaterPumpB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "feedwaterHeader",
+              "port": "inletB"
+            }
+          },
+          {
+            "id": "feedwater-header-to-control-valve-a",
+            "label": "Main Feedwater Header to Feedwater Control Valve A",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "feedwaterHeader",
+              "port": "outletA"
+            },
+            "to": {
+              "subjectId": "feedwaterControlValveA",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "feedwater-control-valve-a-to-sg-a",
+            "label": "Feedwater Control Valve A to Steam Generator A",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "feedwaterControlValveA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "sgA",
+              "port": "feedwaterInlet"
+            }
+          },
+          {
+            "id": "sg-a-steam-to-msiv-a",
+            "label": "Steam Generator A to Main Steam Isolation Valve A",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "sgA",
+              "port": "steamOutlet"
+            },
+            "to": {
+              "subjectId": "mainSteamIsolationValveA",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "msiv-a-to-main-steam-header",
+            "label": "Main Steam Isolation Valve A to Main Steam Header",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "mainSteamIsolationValveA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "mainSteamHeader",
+              "port": "inletA"
+            }
+          },
+          {
+            "id": "feedwater-header-to-control-valve-b",
+            "label": "Main Feedwater Header to Feedwater Control Valve B",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "feedwaterHeader",
+              "port": "outletB"
+            },
+            "to": {
+              "subjectId": "feedwaterControlValveB",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "feedwater-control-valve-b-to-sg-b",
+            "label": "Feedwater Control Valve B to Steam Generator B",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "feedwaterControlValveB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "sgB",
+              "port": "feedwaterInlet"
+            }
+          },
+          {
+            "id": "sg-b-steam-to-msiv-b",
+            "label": "Steam Generator B to Main Steam Isolation Valve B",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "sgB",
+              "port": "steamOutlet"
+            },
+            "to": {
+              "subjectId": "mainSteamIsolationValveB",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "msiv-b-to-main-steam-header",
+            "label": "Main Steam Isolation Valve B to Main Steam Header",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "mainSteamIsolationValveB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "mainSteamHeader",
+              "port": "inletB"
+            }
+          },
+          {
+            "id": "feedwater-header-to-control-valve-c",
+            "label": "Main Feedwater Header to Feedwater Control Valve C",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "feedwaterHeader",
+              "port": "outletC"
+            },
+            "to": {
+              "subjectId": "feedwaterControlValveC",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "feedwater-control-valve-c-to-sg-c",
+            "label": "Feedwater Control Valve C to Steam Generator C",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "feedwaterControlValveC",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "sgC",
+              "port": "feedwaterInlet"
+            }
+          },
+          {
+            "id": "sg-c-steam-to-msiv-c",
+            "label": "Steam Generator C to Main Steam Isolation Valve C",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "sgC",
+              "port": "steamOutlet"
+            },
+            "to": {
+              "subjectId": "mainSteamIsolationValveC",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "msiv-c-to-main-steam-header",
+            "label": "Main Steam Isolation Valve C to Main Steam Header",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "mainSteamIsolationValveC",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "mainSteamHeader",
+              "port": "inletC"
+            }
+          },
+          {
+            "id": "feedwater-header-to-control-valve-d",
+            "label": "Main Feedwater Header to Feedwater Control Valve D",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "feedwaterHeader",
+              "port": "outletD"
+            },
+            "to": {
+              "subjectId": "feedwaterControlValveD",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "feedwater-control-valve-d-to-sg-d",
+            "label": "Feedwater Control Valve D to Steam Generator D",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "feedwaterControlValveD",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "sgD",
+              "port": "feedwaterInlet"
+            }
+          },
+          {
+            "id": "sg-d-steam-to-msiv-d",
+            "label": "Steam Generator D to Main Steam Isolation Valve D",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "sgD",
+              "port": "steamOutlet"
+            },
+            "to": {
+              "subjectId": "mainSteamIsolationValveD",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "msiv-d-to-main-steam-header",
+            "label": "Main Steam Isolation Valve D to Main Steam Header",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "mainSteamIsolationValveD",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "mainSteamHeader",
+              "port": "inletD"
+            }
+          },
+          {
+            "id": "main-steam-header-to-turbine-stop-valve",
+            "label": "Main Steam Header to Turbine Stop Valve",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "mainSteamHeader",
+              "port": "outletA"
+            },
+            "to": {
+              "subjectId": "turbineStopValve",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "main-steam-header-to-turbine-bypass-valve",
+            "label": "Main Steam Header to Turbine Bypass Valve",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "mainSteamHeader",
+              "port": "outletC"
+            },
+            "to": {
+              "subjectId": "turbineBypassValve",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "turbine-bypass-valve-to-condenser",
+            "label": "Turbine Bypass Valve to Main Condenser",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "turbineBypassValve",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "condenser",
+              "port": "steamInlet"
+            }
+          },
+          {
+            "id": "turbine-stop-valve-to-turbine",
+            "label": "Turbine Stop Valve to Turbine Generator",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "turbineStopValve",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "turbine",
+              "port": "steamInlet"
+            }
+          },
+          {
+            "id": "turbine-exhaust-to-condenser",
+            "label": "Turbine Generator to Main Condenser",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "turbine",
+              "port": "exhaustSteamOutlet"
+            },
+            "to": {
+              "subjectId": "condenser",
+              "port": "steamInlet"
+            }
+          },
+          {
+            "id": "condenser-to-condensate-pump-a",
+            "label": "Main Condenser to Condensate Pump A",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "condenser",
+              "port": "condensateOutlet"
+            },
+            "to": {
+              "subjectId": "condensatePumpA",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "condensate-pump-a-to-feedwater-tank",
+            "label": "Condensate Pump A to Feedwater Tank",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "condensatePumpA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "feedwaterTank",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "condenser-to-condensate-pump-b",
+            "label": "Main Condenser to Condensate Pump B",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "condenser",
+              "port": "condensateOutlet"
+            },
+            "to": {
+              "subjectId": "condensatePumpB",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "condensate-pump-b-to-feedwater-tank",
+            "label": "Condensate Pump B to Feedwater Tank",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "condensatePumpB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "feedwaterTank",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "condenser-to-hotwell-reject-valve",
+            "label": "Main Condenser to Hotwell Reject Valve",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "condenser",
+              "port": "condensateOutlet"
+            },
+            "to": {
+              "subjectId": "hotwellRejectValve",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "hotwell-reject",
+            "label": "Hotwell Reject Valve to Condensate Storage Tank",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "hotwellRejectValve",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "auxFeedwaterTank",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "aux-feedwater-tank-to-motor-pump",
+            "label": "Condensate Storage Tank to Motor-Driven Auxiliary Feedwater Pump",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "auxFeedwaterTank",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "auxFeedwaterPumpMotor",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "aux-feedwater-tank-to-turbine-pump",
+            "label": "Condensate Storage Tank to Turbine-Driven Auxiliary Feedwater Pump",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "auxFeedwaterTank",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "auxFeedwaterPumpTurbine",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "motor-afw-pump-to-header",
+            "label": "Motor-Driven Auxiliary Feedwater Pump to Auxiliary Feedwater Header",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "auxFeedwaterPumpMotor",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "auxFeedwaterHeader",
+              "port": "inletA"
+            }
+          },
+          {
+            "id": "turbine-afw-pump-to-header",
+            "label": "Turbine-Driven Auxiliary Feedwater Pump to Auxiliary Feedwater Header",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "auxFeedwaterPumpTurbine",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "auxFeedwaterHeader",
+              "port": "inletB"
+            }
+          },
+          {
+            "id": "aux-feedwater-header-to-valve-a",
+            "label": "Auxiliary Feedwater Header to Auxiliary Feedwater Valve A",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "auxFeedwaterHeader",
+              "port": "outletA"
+            },
+            "to": {
+              "subjectId": "auxFeedwaterValveA",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "aux-feedwater-valve-a-to-sg-a",
+            "label": "Auxiliary Feedwater Valve A to Steam Generator A",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "auxFeedwaterValveA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "sgA",
+              "port": "feedwaterInlet"
+            }
+          },
+          {
+            "id": "aux-feedwater-header-to-valve-b",
+            "label": "Auxiliary Feedwater Header to Auxiliary Feedwater Valve B",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "auxFeedwaterHeader",
+              "port": "outletB"
+            },
+            "to": {
+              "subjectId": "auxFeedwaterValveB",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "aux-feedwater-valve-b-to-sg-b",
+            "label": "Auxiliary Feedwater Valve B to Steam Generator B",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "auxFeedwaterValveB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "sgB",
+              "port": "feedwaterInlet"
+            }
+          },
+          {
+            "id": "aux-feedwater-header-to-valve-c",
+            "label": "Auxiliary Feedwater Header to Auxiliary Feedwater Valve C",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "auxFeedwaterHeader",
+              "port": "outletC"
+            },
+            "to": {
+              "subjectId": "auxFeedwaterValveC",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "aux-feedwater-valve-c-to-sg-c",
+            "label": "Auxiliary Feedwater Valve C to Steam Generator C",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "auxFeedwaterValveC",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "sgC",
+              "port": "feedwaterInlet"
+            }
+          },
+          {
+            "id": "aux-feedwater-header-to-valve-d",
+            "label": "Auxiliary Feedwater Header to Auxiliary Feedwater Valve D",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "auxFeedwaterHeader",
+              "port": "outletD"
+            },
+            "to": {
+              "subjectId": "auxFeedwaterValveD",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "aux-feedwater-valve-d-to-sg-d",
+            "label": "Auxiliary Feedwater Valve D to Steam Generator D",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "auxFeedwaterValveD",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "sgD",
+              "port": "feedwaterInlet"
+            }
+          },
+          {
+            "id": "vct-to-charging-pump",
+            "label": "Volume Control Tank to Charging Pump",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "volumeControlTank",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "chargingPump",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "boric-acid-tank-to-injection-valve",
+            "label": "Boric Acid Tank to Boric Acid Injection Valve",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "boricAcidTank",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "boricAcidInjectionValve",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "boric-acid-injection-to-charging-pump",
+            "label": "Boric Acid Injection Valve to Charging Pump",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "boricAcidInjectionValve",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "chargingPump",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "charging-pump-to-cold-leg-a",
+            "label": "Charging Pump to Reactor Core",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "chargingPump",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "core",
+              "port": "coldLegA"
+            }
+          },
+          {
+            "id": "rcs-letdown",
+            "label": "Reactor Vessel to Letdown Valve",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "vessel",
+              "port": "letdownOutlet"
+            },
+            "to": {
+              "subjectId": "letdownValve",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "letdown-to-vct",
+            "label": "Letdown Valve to Volume Control Tank",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "letdownValve",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "volumeControlTank",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "aux-feedwater-tank-to-motor-pump-b",
+            "label": "Condensate Storage Tank to Motor-Driven Auxiliary Feedwater Pump B",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "auxFeedwaterTank",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "auxFeedwaterPumpMotorB",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "motor-afw-pump-b-to-header",
+            "label": "Motor-Driven Auxiliary Feedwater Pump B to Auxiliary Feedwater Header",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "auxFeedwaterPumpMotorB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "auxFeedwaterHeader",
+              "port": "inletC"
+            }
+          },
+          {
+            "id": "vct-to-charging-pump-b",
+            "label": "Volume Control Tank to Charging Pump B",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "volumeControlTank",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "chargingPumpB",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "charging-pump-b-to-cold-leg-b",
+            "label": "Charging Pump B to Reactor Core",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "chargingPumpB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "core",
+              "port": "coldLegB"
+            }
+          },
+          {
+            "id": "rwst-to-safety-injection-pump-a",
+            "label": "Refueling Water Storage Tank to High-Head Safety Injection Pump A",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "rwst",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "safetyInjectionPumpA",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "rwst-to-safety-injection-pump-b",
+            "label": "Refueling Water Storage Tank to High-Head Safety Injection Pump B",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "rwst",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "safetyInjectionPumpB",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "safety-injection-pump-a-to-header",
+            "label": "High-Head Safety Injection Pump A to Safety Injection Header",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "safetyInjectionPumpA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "safetyInjectionHeader",
+              "port": "inletA"
+            }
+          },
+          {
+            "id": "safety-injection-pump-b-to-header",
+            "label": "High-Head Safety Injection Pump B to Safety Injection Header",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "safetyInjectionPumpB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "safetyInjectionHeader",
+              "port": "inletB"
+            }
+          },
+          {
+            "id": "safety-injection-header-to-cold-leg-a",
+            "label": "Safety Injection Header to Reactor Core",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "safetyInjectionHeader",
+              "port": "outletA"
+            },
+            "to": {
+              "subjectId": "core",
+              "port": "coldLegA"
+            }
+          },
+          {
+            "id": "safety-injection-header-to-cold-leg-b",
+            "label": "Safety Injection Header to Reactor Core",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "safetyInjectionHeader",
+              "port": "outletB"
+            },
+            "to": {
+              "subjectId": "core",
+              "port": "coldLegB"
+            }
+          },
+          {
+            "id": "safety-injection-header-to-cold-leg-c",
+            "label": "Safety Injection Header to Reactor Core",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "safetyInjectionHeader",
+              "port": "outletC"
+            },
+            "to": {
+              "subjectId": "core",
+              "port": "coldLegC"
+            }
+          },
+          {
+            "id": "safety-injection-header-to-cold-leg-d",
+            "label": "Safety Injection Header to Reactor Core",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "safetyInjectionHeader",
+              "port": "outletD"
+            },
+            "to": {
+              "subjectId": "core",
+              "port": "coldLegD"
+            }
+          },
+          {
+            "id": "rwst-to-containment-spray-pump-a",
+            "label": "Refueling Water Storage Tank to Containment Spray Pump A",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "rwst",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "containmentSprayPumpA",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "rwst-to-containment-spray-pump-b",
+            "label": "Refueling Water Storage Tank to Containment Spray Pump B",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "rwst",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "containmentSprayPumpB",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "containment-spray-pump-a-to-header",
+            "label": "Containment Spray Pump A to Containment Spray Header",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "containmentSprayPumpA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "containmentSprayHeader",
+              "port": "inletA"
+            }
+          },
+          {
+            "id": "containment-spray-pump-b-to-header",
+            "label": "Containment Spray Pump B to Containment Spray Header",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "containmentSprayPumpB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "containmentSprayHeader",
+              "port": "inletB"
+            }
+          },
+          {
+            "id": "containment-spray-header-to-containment",
+            "label": "Containment Spray Header to Containment",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "containmentSprayHeader",
+              "port": "outletA"
+            },
+            "to": {
+              "subjectId": "containment",
+              "port": "sprayIn"
+            }
+          },
+          {
+            "id": "containment-sump-to-rhr-pump-a",
+            "label": "Containment to Residual Heat Removal Pump A",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "containment",
+              "port": "sumpOut"
+            },
+            "to": {
+              "subjectId": "rhrPumpA",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "containment-sump-to-rhr-pump-b",
+            "label": "Containment to Residual Heat Removal Pump B",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "containment",
+              "port": "sumpOut"
+            },
+            "to": {
+              "subjectId": "rhrPumpB",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "rhr-pump-a-to-header",
+            "label": "Residual Heat Removal Pump A to Residual Heat Removal Header",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "rhrPumpA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "rhrHeader",
+              "port": "inletA"
+            }
+          },
+          {
+            "id": "rhr-pump-b-to-header",
+            "label": "Residual Heat Removal Pump B to Residual Heat Removal Header",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "rhrPumpB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "rhrHeader",
+              "port": "inletB"
+            }
+          },
+          {
+            "id": "rhr-header-to-isolation-valve",
+            "label": "Residual Heat Removal Header to RHR Isolation Valve",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "rhrHeader",
+              "port": "outletA"
+            },
+            "to": {
+              "subjectId": "rhrIsolationValve",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "rhr-isolation-valve-to-cold-leg-a",
+            "label": "RHR Isolation Valve to Reactor Core",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "rhrIsolationValve",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "core",
+              "port": "coldLegA"
+            }
+          },
+          {
+            "id": "vessel-release-to-containment",
+            "label": "Reactor Vessel to Containment",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "vessel",
+              "port": "releaseOutlet"
+            },
+            "to": {
+              "subjectId": "containment",
+              "port": "massEnergyIn"
+            }
+          },
+          {
+            "id": "safety-accumulator-a-to-cold-leg-a",
+            "label": "Safety Injection Accumulator A to Reactor Core",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "safetyAccumulatorA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "core",
+              "port": "coldLegA"
+            }
+          },
+          {
+            "id": "safety-accumulator-b-to-cold-leg-b",
+            "label": "Safety Injection Accumulator B to Reactor Core",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "safetyAccumulatorB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "core",
+              "port": "coldLegB"
+            }
+          },
+          {
+            "id": "safety-accumulator-c-to-cold-leg-c",
+            "label": "Safety Injection Accumulator C to Reactor Core",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "safetyAccumulatorC",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "core",
+              "port": "coldLegC"
+            }
+          },
+          {
+            "id": "safety-accumulator-d-to-cold-leg-d",
+            "label": "Safety Injection Accumulator D to Reactor Core",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "safetyAccumulatorD",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "core",
+              "port": "coldLegD"
+            }
+          },
+          {
+            "id": "sg-a-steam-to-relief-valve-a",
+            "label": "Steam Generator A to Steam Generator A Atmospheric Relief Valve",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "sgA",
+              "port": "steamReliefOutlet"
+            },
+            "to": {
+              "subjectId": "steamGeneratorReliefValveA",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "steam-generator-relief-valve-a-to-atmosphere",
+            "label": "Steam Generator A Atmospheric Relief Valve to Atmosphere",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "steamGeneratorReliefValveA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "atmosphere",
+              "port": "releaseIn"
+            }
+          },
+          {
+            "id": "sg-b-steam-to-relief-valve-b",
+            "label": "Steam Generator B to Steam Generator B Atmospheric Relief Valve",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "sgB",
+              "port": "steamReliefOutlet"
+            },
+            "to": {
+              "subjectId": "steamGeneratorReliefValveB",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "steam-generator-relief-valve-b-to-atmosphere",
+            "label": "Steam Generator B Atmospheric Relief Valve to Atmosphere",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "steamGeneratorReliefValveB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "atmosphere",
+              "port": "releaseIn"
+            }
+          },
+          {
+            "id": "sg-c-steam-to-relief-valve-c",
+            "label": "Steam Generator C to Steam Generator C Atmospheric Relief Valve",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "sgC",
+              "port": "steamReliefOutlet"
+            },
+            "to": {
+              "subjectId": "steamGeneratorReliefValveC",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "steam-generator-relief-valve-c-to-atmosphere",
+            "label": "Steam Generator C Atmospheric Relief Valve to Atmosphere",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "steamGeneratorReliefValveC",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "atmosphere",
+              "port": "releaseIn"
+            }
+          },
+          {
+            "id": "sg-d-steam-to-relief-valve-d",
+            "label": "Steam Generator D to Steam Generator D Atmospheric Relief Valve",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "sgD",
+              "port": "steamReliefOutlet"
+            },
+            "to": {
+              "subjectId": "steamGeneratorReliefValveD",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "steam-generator-relief-valve-d-to-atmosphere",
+            "label": "Steam Generator D Atmospheric Relief Valve to Atmosphere",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "steamGeneratorReliefValveD",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "atmosphere",
+              "port": "releaseIn"
+            }
+          },
+          {
+            "id": "ultimate-heat-sink-to-circulating-water-pump",
+            "label": "Ultimate Heat Sink to Circulating Water Pump",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "ultimateHeatSink",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "circulatingWaterPump",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "circulating-water-pump-to-condenser",
+            "label": "Circulating Water Pump to Main Condenser",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "circulatingWaterPump",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "condenser",
+              "port": "coolingWater"
+            }
+          },
+          {
+            "id": "condenser-to-cooling-water-discharge",
+            "label": "Main Condenser to Cooling Water Discharge",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "condenser",
+              "port": "coolingWaterOutlet"
+            },
+            "to": {
+              "subjectId": "coolingWaterDischarge",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "turbine-generator-to-unit-aux-transformer",
+            "label": "Turbine Generator to Unit Auxiliary Transformer",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "turbine",
+              "port": "generatorOutput"
+            },
+            "to": {
+              "subjectId": "unitAuxTransformer",
+              "port": "primary"
+            }
+          },
+          {
+            "id": "offsite-grid-to-unit-aux-transformer",
+            "label": "420 kV Grid Interface to Unit Auxiliary Transformer",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "offsiteGrid",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "unitAuxTransformer",
+              "port": "primary"
+            }
+          },
+          {
+            "id": "unit-aux-transformer-to-offsite-breaker-a",
+            "label": "Unit Auxiliary Transformer to Offsite Breaker A",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "unitAuxTransformer",
+              "port": "secondary"
+            },
+            "to": {
+              "subjectId": "offsiteBreakerA",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "unit-aux-transformer-to-offsite-breaker-b",
+            "label": "Unit Auxiliary Transformer to Offsite Breaker B",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "unitAuxTransformer",
+              "port": "secondary"
+            },
+            "to": {
+              "subjectId": "offsiteBreakerB",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "offsite-breaker-a-to-safety-bus-a",
+            "label": "Offsite Breaker A to Safety Bus A",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "offsiteBreakerA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "safetyBusA",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "offsite-breaker-b-to-safety-bus-b",
+            "label": "Offsite Breaker B to Safety Bus B",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "offsiteBreakerB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "safetyBusB",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "unit-aux-transformer-to-unit-bus-breaker-a",
+            "label": "Unit Auxiliary Transformer to Unit Bus Supply Breaker A",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "unitAuxTransformer",
+              "port": "secondary"
+            },
+            "to": {
+              "subjectId": "unitBusBreakerA",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "unit-aux-transformer-to-unit-bus-breaker-b",
+            "label": "Unit Auxiliary Transformer to Unit Bus Supply Breaker B",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "unitAuxTransformer",
+              "port": "secondary"
+            },
+            "to": {
+              "subjectId": "unitBusBreakerB",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "unit-bus-breaker-a-to-unit-bus-a",
+            "label": "Unit Bus Supply Breaker A to Unit Bus A",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "unitBusBreakerA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "unitBusA",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "unit-bus-breaker-b-to-unit-bus-b",
+            "label": "Unit Bus Supply Breaker B to Unit Bus B",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "unitBusBreakerB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "unitBusB",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "diesel-generator-a-to-breaker-a",
+            "label": "Emergency Diesel Generator A to Diesel Breaker A",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "dieselGeneratorA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "dieselBreakerA",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "diesel-generator-b-to-breaker-b",
+            "label": "Emergency Diesel Generator B to Diesel Breaker B",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "dieselGeneratorB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "dieselBreakerB",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "diesel-breaker-a-to-safety-bus-a",
+            "label": "Diesel Breaker A to Safety Bus A",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "dieselBreakerA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "safetyBusA",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "diesel-breaker-b-to-safety-bus-b",
+            "label": "Diesel Breaker B to Safety Bus B",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "dieselBreakerB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "safetyBusB",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "battery-a-to-inverter-a",
+            "label": "Vital Battery A to DC Inverter A",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "vitalBatteryA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "dcInverterA",
+              "port": "dcInlet"
+            }
+          },
+          {
+            "id": "battery-b-to-inverter-b",
+            "label": "Vital Battery B to DC Inverter B",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "vitalBatteryB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "dcInverterB",
+              "port": "dcInlet"
+            }
+          },
+          {
+            "id": "inverter-a-to-controls-load-a",
+            "label": "DC Inverter A to Plant Controls Load A",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "dcInverterA",
+              "port": "acOutlet"
+            },
+            "to": {
+              "subjectId": "plantControlsLoadA",
+              "port": "power"
+            }
+          },
+          {
+            "id": "inverter-b-to-controls-load-b",
+            "label": "DC Inverter B to Plant Controls Load B",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "dcInverterB",
+              "port": "acOutlet"
+            },
+            "to": {
+              "subjectId": "plantControlsLoadB",
+              "port": "power"
+            }
+          },
+          {
+            "id": "unit-bus-a-to-rcpA",
+            "label": "Unit Bus A to Reactor Coolant Pump A",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "unitBusA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "rcpA",
+              "port": "power"
+            }
+          },
+          {
+            "id": "unit-bus-a-to-rcpC",
+            "label": "Unit Bus A to Reactor Coolant Pump C",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "unitBusA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "rcpC",
+              "port": "power"
+            }
+          },
+          {
+            "id": "unit-bus-a-to-mainFeedwaterPumpA",
+            "label": "Unit Bus A to Main Feedwater Pump A",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "unitBusA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "mainFeedwaterPumpA",
+              "port": "power"
+            }
+          },
+          {
+            "id": "safety-bus-a-to-auxFeedwaterPumpMotor",
+            "label": "Safety Bus A to Motor-Driven Auxiliary Feedwater Pump",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "safetyBusA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "auxFeedwaterPumpMotor",
+              "port": "power"
+            }
+          },
+          {
+            "id": "safety-bus-b-to-auxFeedwaterPumpMotorB",
+            "label": "Safety Bus B to Motor-Driven Auxiliary Feedwater Pump B",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "safetyBusB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "auxFeedwaterPumpMotorB",
+              "port": "power"
+            }
+          },
+          {
+            "id": "unit-bus-a-to-condensatePumpA",
+            "label": "Unit Bus A to Condensate Pump A",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "unitBusA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "condensatePumpA",
+              "port": "power"
+            }
+          },
+          {
+            "id": "unit-bus-a-to-circulatingWaterPump",
+            "label": "Unit Bus A to Circulating Water Pump",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "unitBusA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "circulatingWaterPump",
+              "port": "power"
+            }
+          },
+          {
+            "id": "unit-bus-b-to-rcpB",
+            "label": "Unit Bus B to Reactor Coolant Pump B",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "unitBusB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "rcpB",
+              "port": "power"
+            }
+          },
+          {
+            "id": "unit-bus-b-to-rcpD",
+            "label": "Unit Bus B to Reactor Coolant Pump D",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "unitBusB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "rcpD",
+              "port": "power"
+            }
+          },
+          {
+            "id": "unit-bus-b-to-mainFeedwaterPumpB",
+            "label": "Unit Bus B to Main Feedwater Pump B",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "unitBusB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "mainFeedwaterPumpB",
+              "port": "power"
+            }
+          },
+          {
+            "id": "unit-bus-b-to-condensatePumpB",
+            "label": "Unit Bus B to Condensate Pump B",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "unitBusB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "condensatePumpB",
+              "port": "power"
+            }
+          },
+          {
+            "id": "safety-bus-a-to-chargingPump",
+            "label": "Safety Bus A to Charging Pump",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "safetyBusA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "chargingPump",
+              "port": "power"
+            }
+          },
+          {
+            "id": "safety-bus-b-to-chargingPumpB",
+            "label": "Safety Bus B to Charging Pump B",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "safetyBusB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "chargingPumpB",
+              "port": "power"
+            }
+          },
+          {
+            "id": "safety-bus-a-to-safetyInjectionPumpA",
+            "label": "Safety Bus A to High-Head Safety Injection Pump A",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "safetyBusA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "safetyInjectionPumpA",
+              "port": "power"
+            }
+          },
+          {
+            "id": "safety-bus-b-to-safetyInjectionPumpB",
+            "label": "Safety Bus B to High-Head Safety Injection Pump B",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "safetyBusB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "safetyInjectionPumpB",
+              "port": "power"
+            }
+          },
+          {
+            "id": "safety-bus-a-to-containmentSprayPumpA",
+            "label": "Safety Bus A to Containment Spray Pump A",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "safetyBusA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "containmentSprayPumpA",
+              "port": "power"
+            }
+          },
+          {
+            "id": "safety-bus-b-to-containmentSprayPumpB",
+            "label": "Safety Bus B to Containment Spray Pump B",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "safetyBusB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "containmentSprayPumpB",
+              "port": "power"
+            }
+          },
+          {
+            "id": "safety-bus-a-to-rhrPumpA",
+            "label": "Safety Bus A to Residual Heat Removal Pump A",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "safetyBusA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "rhrPumpA",
+              "port": "power"
+            }
+          },
+          {
+            "id": "safety-bus-b-to-rhrPumpB",
+            "label": "Safety Bus B to Residual Heat Removal Pump B",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "safetyBusB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "rhrPumpB",
+              "port": "power"
+            }
+          },
+          {
+            "id": "unit-bus-a-to-pressurizer-heater",
+            "label": "Unit Bus A to Pressurizer",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "unitBusA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "pressurizer",
+              "port": "heaterPower"
+            }
+          },
+          {
+            "id": "safety-bus-a-to-pressurizer-porv-block-valve",
+            "label": "Safety Bus A to Pressurizer",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "safetyBusA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "pressurizer",
+              "port": "blockValvePower"
+            }
+          },
+          {
+            "id": "safety-bus-a-to-pressurizer-backup-heater-breaker-a",
+            "label": "Safety Bus A to Pressurizer Backup Heater Breaker A",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "safetyBusA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "pressurizerBackupHeaterBreakerA",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "pressurizer-backup-heater-breaker-a-to-pressurizer",
+            "label": "Pressurizer Backup Heater Breaker A to Pressurizer",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "pressurizerBackupHeaterBreakerA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "pressurizer",
+              "port": "backupHeaterPower"
+            }
+          },
+          {
+            "id": "safety-bus-a-to-load-centres-a",
+            "label": "Safety Bus A to Safety Train A Load Centres",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "safetyBusA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "loadCentresA",
+              "port": "power"
+            }
+          },
+          {
+            "id": "safety-bus-a-to-ccw-pump-a",
+            "label": "Safety Bus A to Component Cooling Water Pump A",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "safetyBusA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "componentCoolingWaterPumpA",
+              "port": "power"
+            }
+          },
+          {
+            "id": "safety-bus-a-to-sw-pump-a",
+            "label": "Safety Bus A to Service Water Pump A",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "safetyBusA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "serviceWaterPumpA",
+              "port": "power"
+            }
+          },
+          {
+            "id": "safety-bus-a-to-fan-coolers-a",
+            "label": "Safety Bus A to Containment Fan Coolers A",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "safetyBusA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "containmentFanCoolersA",
+              "port": "power"
+            }
+          },
+          {
+            "id": "safety-bus-b-to-load-centres-b",
+            "label": "Safety Bus B to Safety Train B Load Centres",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "safetyBusB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "loadCentresB",
+              "port": "power"
+            }
+          },
+          {
+            "id": "safety-bus-b-to-ccw-pump-b",
+            "label": "Safety Bus B to Component Cooling Water Pump B",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "safetyBusB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "componentCoolingWaterPumpB",
+              "port": "power"
+            }
+          },
+          {
+            "id": "safety-bus-b-to-sw-pump-b",
+            "label": "Safety Bus B to Service Water Pump B",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "safetyBusB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "serviceWaterPumpB",
+              "port": "power"
+            }
+          },
+          {
+            "id": "safety-bus-b-to-fan-coolers-b",
+            "label": "Safety Bus B to Containment Fan Coolers B",
+            "kind": "electricalPower",
+            "from": {
+              "subjectId": "safetyBusB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "containmentFanCoolersB",
+              "port": "power"
+            }
+          },
+          {
+            "id": "sg-b-steam-to-turbine-afw-steam-valve-b",
+            "label": "Steam Generator B to TD AFW Pump Steam Supply Valve B",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "sgB",
+              "port": "driveSteamOutlet"
+            },
+            "to": {
+              "subjectId": "auxFeedwaterTurbineSteamValveB",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "turbine-afw-steam-valve-b-to-pump-turbine",
+            "label": "TD AFW Pump Steam Supply Valve B to Turbine-Driven Auxiliary Feedwater Pump",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "auxFeedwaterTurbineSteamValveB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "auxFeedwaterPumpTurbine",
+              "port": "driveSteamInlet"
+            }
+          },
+          {
+            "id": "sg-c-steam-to-turbine-afw-steam-valve-c",
+            "label": "Steam Generator C to TD AFW Pump Steam Supply Valve C",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "sgC",
+              "port": "driveSteamOutlet"
+            },
+            "to": {
+              "subjectId": "auxFeedwaterTurbineSteamValveC",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "turbine-afw-steam-valve-c-to-pump-turbine",
+            "label": "TD AFW Pump Steam Supply Valve C to Turbine-Driven Auxiliary Feedwater Pump",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "auxFeedwaterTurbineSteamValveC",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "auxFeedwaterPumpTurbine",
+              "port": "driveSteamInlet"
+            }
+          },
+          {
+            "id": "turbine-afw-pump-turbine-exhaust-to-atmosphere",
+            "label": "Turbine-Driven Auxiliary Feedwater Pump to Atmosphere",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "auxFeedwaterPumpTurbine",
+              "port": "driveSteamExhaust"
+            },
+            "to": {
+              "subjectId": "atmosphere",
+              "port": "releaseIn"
+            }
+          },
+          {
+            "id": "sg-a-steam-to-safety-valves-a",
+            "label": "Steam Generator A to Main Steam Safety Valves A",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "sgA",
+              "port": "steamReliefOutlet"
+            },
+            "to": {
+              "subjectId": "mainSteamSafetyValveA",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "main-steam-safety-valves-a-to-atmosphere",
+            "label": "Main Steam Safety Valves A to Atmosphere",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "mainSteamSafetyValveA",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "atmosphere",
+              "port": "releaseIn"
+            }
+          },
+          {
+            "id": "sg-b-steam-to-safety-valves-b",
+            "label": "Steam Generator B to Main Steam Safety Valves B",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "sgB",
+              "port": "steamReliefOutlet"
+            },
+            "to": {
+              "subjectId": "mainSteamSafetyValveB",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "main-steam-safety-valves-b-to-atmosphere",
+            "label": "Main Steam Safety Valves B to Atmosphere",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "mainSteamSafetyValveB",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "atmosphere",
+              "port": "releaseIn"
+            }
+          },
+          {
+            "id": "sg-c-steam-to-safety-valves-c",
+            "label": "Steam Generator C to Main Steam Safety Valves C",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "sgC",
+              "port": "steamReliefOutlet"
+            },
+            "to": {
+              "subjectId": "mainSteamSafetyValveC",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "main-steam-safety-valves-c-to-atmosphere",
+            "label": "Main Steam Safety Valves C to Atmosphere",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "mainSteamSafetyValveC",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "atmosphere",
+              "port": "releaseIn"
+            }
+          },
+          {
+            "id": "sg-d-steam-to-safety-valves-d",
+            "label": "Steam Generator D to Main Steam Safety Valves D",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "sgD",
+              "port": "steamReliefOutlet"
+            },
+            "to": {
+              "subjectId": "mainSteamSafetyValveD",
+              "port": "inlet"
+            }
+          },
+          {
+            "id": "main-steam-safety-valves-d-to-atmosphere",
+            "label": "Main Steam Safety Valves D to Atmosphere",
+            "kind": "fluidFlow",
+            "from": {
+              "subjectId": "mainSteamSafetyValveD",
+              "port": "outlet"
+            },
+            "to": {
+              "subjectId": "atmosphere",
+              "port": "releaseIn"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

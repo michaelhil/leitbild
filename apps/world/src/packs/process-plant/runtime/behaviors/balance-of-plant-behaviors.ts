@@ -11,6 +11,7 @@ import {
 import { inventoryBalanceStep } from '../physics.ts'
 import { heatMwFromWaterFlowAndDeltaT, latentHeatSteamMjPerKg } from '../thermophysics.ts'
 import { condenserThermalBalance } from '../condenser-thermodynamics.ts'
+import { mixedLiquidTemperatureStep } from '../thermal-inventory.ts'
 import { generatorSpeedRpm } from './electrical-behaviors.ts'
 
 const downstreamCondenserBackPressurePa = (
@@ -121,8 +122,20 @@ export const balanceOfPlantBehaviorDefinitions: ReadonlyArray<ComponentBehaviorD
       const maxOutletFlow = parameterNumber(component, 'maxOutletFlowKgPerS')
       const inventoryLimitedOutlet = context.dtSeconds > 0 ? nextInventory / context.dtSeconds : maxOutletFlow
       const nextAvailableOutletFlow = Math.min(maxOutletFlow, inventoryLimitedOutlet)
-      const incomingTemperature = averageIncomingLinkValue(system, component, 'temperatureC', context)
+      const incomingTemperature = flowWeightedIncomingComponentLinkValue(system, component, 'temperatureC', context, () => true)
       const targetTemperature = incomingTemperature ?? parameterNumber(component, 'initialTemperatureC')
+      const currentTemperature = context.readNumber(componentVariablePath(component, 'temperatureC'))
+      // A finite insulated inventory mixes only the mass/energy actually
+      // arriving. Stopping both pumps leaves its temperature where it was;
+      // it has no implicit route back to an initial/ambient temperature.
+      const inventoryTemperature = mixedLiquidTemperatureStep({
+        inventoryKg: currentInventory,
+        temperatureC: currentTemperature,
+        inflowKgPerS: incomingFlow + makeupFlow,
+        inflowThermalRateKgCPerS: incomingFlow * (incomingTemperature ?? currentTemperature) + makeupFlow * parameterNumber(component, 'initialTemperatureC'),
+        outflowKgPerS: outgoingFlow,
+        dtSeconds: context.dtSeconds,
+      })
       const currentSolute = context.readNumber(componentVariablePath(component, 'soluteConcentrationPpm'))
       const incomingSolute = averageIncomingLinkValue(system, component, 'soluteConcentrationPpm', context) ?? currentSolute
       const makeupSolute = optionalParameterNumber(component, 'makeupSoluteConcentrationPpm', currentSolute)
@@ -156,12 +169,9 @@ export const balanceOfPlantBehaviorDefinitions: ReadonlyArray<ComponentBehaviorD
       context.write(componentVariablePath(component, 'soluteConcentrationPpm'), nextSolute)
       context.write(
         componentVariablePath(component, 'temperatureC'),
-        relaxToward(
-          context.readNumber(componentVariablePath(component, 'temperatureC')),
-          targetTemperature,
-          context.dtSeconds,
-          optionalParameterNumber(component, 'thermalTimeConstantS', 30),
-        ),
+        (component.parameters as Readonly<Record<string, unknown>>).thermalModel === 'inventoryBalance'
+          ? inventoryTemperature
+          : relaxToward(currentTemperature, targetTemperature, context.dtSeconds, optionalParameterNumber(component, 'thermalTimeConstantS', 30)),
       )
     },
   },

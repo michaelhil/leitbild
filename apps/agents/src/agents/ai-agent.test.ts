@@ -1054,7 +1054,7 @@ describe('Progress lines', () => {
       if (decision.response.action === 'respond') room.post({ senderId: agent!.id, senderName: 'TestBot', content: decision.response.content, type: 'chat', ...(decision.inReplyTo ? { inReplyTo: decision.inReplyTo } : {}) })
     }, {
       toolDefinitions: [{ type: 'function', function: { name: 'workspace_call', description: 'Call operations', parameters: {} } }],
-      toolExecutor: async calls => calls.map(() => ({ success: true, data: { results: [] }, progress: [line] })),
+      toolExecutor: async calls => calls.map(() => ({ success: true, data: { results: [] }, progress: [{ content: line }] })),
       onProgress: progress => {
         if (options.failPost) throw new Error('room is gone')
         room.post({ senderId: agent!.id, senderName: 'TestBot', content: progress.content, type: 'chat', progress: true, ...(progress.inReplyTo ? { inReplyTo: progress.inReplyTo } : {}) })
@@ -1080,6 +1080,7 @@ describe('Progress lines', () => {
       ['Unit 1 · E-0 step 2 · holding for your judgement', undefined],
     ])
     expect(posted[1]!.inReplyTo).toEqual([question.id])
+    expect(posted[1]!.progressEvidence).toBeUndefined()
     expect(agent.getHistory!('room-1').map(message => message.content)).toEqual(posted.map(message => message.content))
 
     // A later turn ("continue") sees the line as the agent's own earlier message.

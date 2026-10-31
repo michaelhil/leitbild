@@ -1,0 +1,490 @@
+{
+  "passed": true,
+  "phases": [
+    {
+      "levelId": "operating",
+      "layers": "all",
+      "alert": false,
+      "camera": "home",
+      "changedPixels": 0,
+      "maxChannelDifference": 0,
+      "sourcePrimitives": 549,
+      "width": 1280,
+      "height": 920,
+      "passed": true
+    },
+    {
+      "levelId": "operating",
+      "layers": "all",
+      "alert": false,
+      "camera": "pan",
+      "changedPixels": 0,
+      "maxChannelDifference": 0,
+      "sourcePrimitives": 549,
+      "width": 1280,
+      "height": 920,
+      "passed": true
+    },
+    {
+      "levelId": "operating",
+      "layers": "all",
+      "alert": false,
+      "camera": "rotate",
+      "changedPixels": 0,
+      "maxChannelDifference": 0,
+      "sourcePrimitives": 549,
+      "width": 1280,
+      "height": 920,
+      "passed": true
+    },
+    {
+      "levelId": "operating",
+      "layers": "all",
+      "alert": true,
+      "camera": "home",
+      "changedPixels": 0,
+      "maxChannelDifference": 0,
+      "sourcePrimitives": 549,
+      "width": 1280,
+      "height": 920,
+      "passed": true
+    },
+    {
+      "levelId": "operating",
+      "layers": "all",
+      "alert": true,
+      "camera": "pan",
+      "changedPixels": 0,
+      "maxChannelDifference": 0,
+      "sourcePrimitives": 549,
+      "width": 1280,
+      "height": 920,
+      "passed": true
+    },
+    {
+      "levelId": "operating",
+      "layers": "all",
+      "alert": true,
+      "camera": "rotate",
+      "changedPixels": 0,
+      "maxChannelDifference": 0,
+      "sourcePrimitives": 549,
+      "width": 1280,
+      "height": 920,
+      "passed": true
+    },
+    {
+      "levelId": "operating",
+      "layers": "without-utilities",
+      "alert": false,
+      "camera": "home",
+      "changedPixels": 0,
+      "maxChannelDifference": 0,
+      "sourcePrimitives": 534,
+      "width": 1280,
+      "height": 920,
+      "passed": true
+    },
+    {
+      "levelId": "operating",
+      "layers": "without-utilities",
+      "alert": false,
+      "camera": "pan",
+      "changedPixels": 0,
+      "maxChannelDifference": 0,
+      "sourcePrimitives": 534,
+      "width": 1280,
+      "height": 920,
+      "passed": true
+    },
+    {
+      "levelId": "operating",
+      "layers": "without-utilities",
+      "alert": false,
+      "camera": "rotate",
+      "changedPixels": 0,
+      "maxChannelDifference": 0,
+      "sourcePrimitives": 534,
+      "width": 1280,
+      "height": 920,
+      "passed": true
+    },
+    {
+      "levelId": "operating",
+      "layers": "without-utilities",
+      "alert": true,
+      "camera": "home",
+      "changedPixels": 0,
+      "maxChannelDifference": 0,
+      "sourcePrimitives": 534,
+      "width": 1280,
+      "height": 920,
+      "passed": true
+    },
+    {
+      "levelId": "operating",
+      "layers": "without-utilities",
+      "alert": true,
+      "camera": "pan",
+      "changedPixels": 0,
+      "maxChannelDifference": 0,
+      "sourcePrimitives": 534,
+      "width": 1280,
+      "height": 920,
+      "passed": true
+    },
+    {
+      "levelId": "operating",
+      "layers": "without-utilities",
+      "alert": true,
+      "camera": "rotate",
+      "changedPixels": 0,
+      "maxChannelDifference": 0,
+      "sourcePrimitives": 534,
+      "width": 1280,
+      "height": 920,
+      "passed": true
+    },
+    {
+      "levelId": "operating",
+      "layers": "without-allowances",
+      "alert": false,
+      "camera": "home",
+      "changedPixels": 0,
+      "maxChannelDifference": 0,
+      "sourcePrimitives": 542,
+      "width": 1280,
+      "height": 920,
+      "passed": true
+    },
+    {
+      "levelId": "operating",
+      "layers": "without-allowances",
+      "alert": false,
+      "camera": "pan",
+      "changedPixels": 0,
+      "maxChannelDifference": 0,
+      "sourcePrimitives": 542,
+      "width": 1280,
+      "height": 920,
+      "passed": true
+    },
+    {
+      "levelId": "operating",
+      "layers": "without-allowances",
+      "alert": false,
+      "camera": "rotate",
+      "changedPixels": 0,
+      "maxChannelDifference": 0,
+      "sourcePrimitives": 542,
+      "width": 1280,
+      "height": 920,
+      "passed": true
+    },
+    {
+      "levelId": "operating",
+      "layers": "without-allowances",
+      "alert": true,
+      "camera": "home",
+      "changedPixels": 0,
+      "maxChannelDifference": 0,
+      "sourcePrimitives": 542,
+      "width": 1280,
+      "height": 920,
+      "passed": true
+    },
+    {
+      "levelId": "operating",
+      "layers": "without-allowances",
+      "alert": true,
+      "camera": "pan",
+      "changedPixels": 0,
+      "maxChannelDifference": 0,
+      "sourcePrimitives": 542,
+      "width": 1280,
+      "height": 920,
+      "passed": true
+    },
+    {
+      "levelId": "operating",
+      "layers": "without-allowances",
+      "alert": true,
+      "camera": "rotate",
+      "changedPixels": 0,
+      "maxChannelDifference": 0,
+      "sourcePrimitives": 542,
+      "width": 1280,
+      "height": 920,
+      "passed": true
+    },
+    {
+      "levelId": "lower",
+      "layers": "all",
+      "alert": false,
+      "camera": "home",
+      "changedPixels": 0,
+      "maxChannelDifference": 0,
+      "sourcePrimitives": 677,
+      "width": 1280,
+      "height": 920,
+      "passed": true
+    },
+    {
+      "levelId": "lower",
+      "layers": "all",
+      "alert": false,
+      "camera": "pan",
+      "changedPixels": 0,
+      "maxChannelDifference": 0,
+      "sourcePrimitives": 677,
+      "width": 1280,
+      "height": 920,
+      "passed": true
+    },
+    {
+      "levelId": "lower",
+      "layers": "all",
+      "alert": false,
+      "camera": "rotate",
+      "changedPixels": 0,
+      "maxChannelDifference": 0,
+      "sourcePrimitives": 677,
+      "width": 1280,
+      "height": 920,
+      "passed": true
+    },
+    {
+      "levelId": "lower",
+      "layers": "all",
+      "alert": true,
+      "camera": "home",
+      "changedPixels": 0,
+      "maxChannelDifference": 0,
+      "sourcePrimitives": 677,
+      "width": 1280,
+      "height": 920,
+      "passed": true
+    },
+    {
+      "levelId": "lower",
+      "layers": "all",
+      "alert": true,
+      "camera": "pan",
+      "changedPixels": 0,
+      "maxChannelDifference": 0,
+      "sourcePrimitives": 677,
+      "width": 1280,
+      "height": 920,
+      "passed": true
+    },
+    {
+      "levelId": "lower",
+      "layers": "all",
+      "alert": true,
+      "camera": "rotate",
+      "changedPixels": 0,
+      "maxChannelDifference": 0,
+      "sourcePrimitives": 677,
+      "width": 1280,
+      "height": 920,
+      "passed": true
+    },
+    {
+      "levelId": "lower",
+      "layers": "without-utilities",
+      "alert": false,
+      "camera": "home",
+      "changedPixels": 0,
+      "maxChannelDifference": 0,
+      "sourcePrimitives": 636,
+      "width": 1280,
+      "height": 920,
+      "passed": true
+    },
+    {
+      "levelId": "lower",
+      "layers": "without-utilities",
+      "alert": false,
+      "camera": "pan",
+      "changedPixels": 0,
+      "maxChannelDifference": 0,
+      "sourcePrimitives": 636,
+      "width": 1280,
+      "height": 920,
+      "passed": true
+    },
+    {
+      "levelId": "lower",
+      "layers": "without-utilities",
+      "alert": false,
+      "camera": "rotate",
+      "changedPixels": 0,
+      "maxChannelDifference": 0,
+      "sourcePrimitives": 636,
+      "width": 1280,
+      "height": 920,
+      "passed": true
+    },
+    {
+      "levelId": "lower",
+      "layers": "without-utilities",
+      "alert": true,
+      "camera": "home",
+      "changedPixels": 0,
+      "maxChannelDifference": 0,
+      "sourcePrimitives": 636,
+      "width": 1280,
+      "height": 920,
+      "passed": true
+    },
+    {
+      "levelId": "lower",
+      "layers": "without-utilities",
+      "alert": true,
+      "camera": "pan",
+      "changedPixels": 0,
+      "maxChannelDifference": 0,
+      "sourcePrimitives": 636,
+      "width": 1280,
+      "height": 920,
+      "passed": true
+    },
+    {
+      "levelId": "lower",
+      "layers": "without-utilities",
+      "alert": true,
+      "camera": "rotate",
+      "changedPixels": 0,
+      "maxChannelDifference": 0,
+      "sourcePrimitives": 636,
+      "width": 1280,
+      "height": 920,
+      "passed": true
+    },
+    {
+      "levelId": "lower",
+      "layers": "without-allowances",
+      "alert": false,
+      "camera": "home",
+      "changedPixels": 0,
+      "maxChannelDifference": 0,
+      "sourcePrimitives": 663,
+      "width": 1280,
+      "height": 920,
+      "passed": true
+    },
+    {
+      "levelId": "lower",
+      "layers": "without-allowances",
+      "alert": false,
+      "camera": "pan",
+      "changedPixels": 0,
+      "maxChannelDifference": 0,
+      "sourcePrimitives": 663,
+      "width": 1280,
+      "height": 920,
+      "passed": true
+    },
+    {
+      "levelId": "lower",
+      "layers": "without-allowances",
+      "alert": false,
+      "camera": "rotate",
+      "changedPixels": 0,
+      "maxChannelDifference": 0,
+      "sourcePrimitives": 663,
+      "width": 1280,
+      "height": 920,
+      "passed": true
+    },
+    {
+      "levelId": "lower",
+      "layers": "without-allowances",
+      "alert": true,
+      "camera": "home",
+      "changedPixels": 0,
+      "maxChannelDifference": 0,
+      "sourcePrimitives": 663,
+      "width": 1280,
+      "height": 920,
+      "passed": true
+    },
+    {
+      "levelId": "lower",
+      "layers": "without-allowances",
+      "alert": true,
+      "camera": "pan",
+      "changedPixels": 0,
+      "maxChannelDifference": 0,
+      "sourcePrimitives": 663,
+      "width": 1280,
+      "height": 920,
+      "passed": true
+    },
+    {
+      "levelId": "lower",
+      "layers": "without-allowances",
+      "alert": true,
+      "camera": "rotate",
+      "changedPixels": 0,
+      "maxChannelDifference": 0,
+      "sourcePrimitives": 663,
+      "width": 1280,
+      "height": 920,
+      "passed": true
+    }
+  ],
+  "comparisons": [
+    {
+      "levelId": "operating",
+      "sourceRevision": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+      "nativeViewport": {
+        "width": 1280,
+        "height": 920
+      },
+      "matchingLayers": {
+        "utilities": false,
+        "original": "Frozen SVG utilities group is display:none",
+        "native": "utility-routes hidden"
+      },
+      "reference": "Original authored SVG, original complete sheet extent; native explicit Plan uses identical metre scale and extent. The original 2D sheet shows operating doors which its original 3D source assigns only to ground level; this retained semantic difference is not falsified by adding upper physical doors."
+    },
+    {
+      "levelId": "lower",
+      "sourceRevision": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+      "nativeViewport": {
+        "width": 1280,
+        "height": 920
+      },
+      "matchingLayers": {
+        "utilities": false,
+        "original": "Frozen SVG utilities group is display:none",
+        "native": "utility-routes hidden"
+      },
+      "reference": "Original authored SVG, original complete sheet extent; native explicit Plan uses identical metre scale and extent. The original 2D sheet shows operating doors which its original 3D source assigns only to ground level; this retained semantic difference is not falsified by adding upper physical doors."
+    }
+  ],
+  "source": {
+    "revision": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+    "objects": 719,
+    "hash": "5fb4a80f97b902f61ef1731e4bd195d5fe075a576802cbd5239e95ae9fdbdd5b"
+  },
+  "provenance": {
+    "root": "/Users/hilde/Documents/ChatGPT/Leitbild-physical-final-quality-20261027/apps/world",
+    "commit": "2a2755715162fc2335cf958fc08c14eebb0322f3",
+    "dirty": " M apps/world/scripts/physical-layout/plan-raster-comparison-probe.ts\n",
+    "hashes": {
+      "src/ui/physical-layout/plan-drawing.ts": "849dd1e9b9daee27f26540f13966f3265b4f714565b802269c994fa016c9578b",
+      "src/ui/physical-layout/plan-paint-stream.ts": "f4199a6af9682baeb58e7f83aea82797443a4d9f3a3f86b8e1aafab04be22107",
+      "tests/browser/physical-scene/plan-raster-comparison-app.ts": "66222a49ad4d084464e6c29b1818fa17d5d6bd07d3f8ae9c0e8fa6af177e403e",
+      "/original-operating.svg": "4c2a67f5e68ccbbef72c1e482051d92591adb2a2fe8c795b28dffffb05b3f745",
+      "/original-lower.svg": "7db1f49557d7c70590c5733ab973ae26b302ecf8a5d7d5259f8112a19a31d776"
+    }
+  },
+  "reference": {
+    "operation": "Production native painter bundled independently with singleton primitive commands instead of batched streams",
+    "productionFlags": false,
+    "changedPixelsTolerance": 0,
+    "visualAcceptance": "Original SVG comparisons require independent inspection; byte equality only certifies batching equivalence"
+  }
+}

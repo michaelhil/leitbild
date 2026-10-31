@@ -1,7 +1,7 @@
 import { rejectCapabilityInput } from '../../simulation/capability-rejection.ts'
 import { processPlantPwrReferenceModelRef } from './plant-definitions.ts'
 import type { ProcessPlantRuntimeInstance } from './runtime-instance.ts'
-import { evaluateSafetyFunction } from './safety-functions.ts'
+import { evaluateSafetyFunction, type SafetyFunctionComparison } from './safety-functions.ts'
 import { pressurizedWaterReactorReferenceIc } from './specs/reference-ic.ts'
 
 // The assessments a Plant answers are the critical safety functions its I&C
@@ -28,6 +28,7 @@ export const processPlantAssessmentCatalog = (): ReadonlyArray<Record<string, un
 export const evaluateProcessPlantAssessments = (
   plant: ProcessPlantRuntimeInstance,
   assessmentIds: ReadonlyArray<string> | undefined,
+  detail: 'full' | 'summary' = 'full',
 ): ReadonlyArray<Record<string, unknown>> => {
   const declared = plant.plant.automation.safetyFunctions
   const unknown = (assessmentIds ?? []).filter(id => !declared.some(safetyFunction => safetyFunction.id === id))
@@ -39,6 +40,24 @@ export const evaluateProcessPlantAssessments = (
     .filter(safetyFunction => assessmentIds === undefined || assessmentIds.includes(safetyFunction.id))
     .map(safetyFunction => {
       const { label, basis, ...evaluation } = evaluateSafetyFunction({ system: plant.plant, runtime: plant.runtime, safetyFunction })
-      return { ...identity, ...evaluation, title: label, basis: { source, tree: basis }, ...qualification }
+      const { path, checks, ...status } = evaluation
+      const unresolved = (comparisons: ReadonlyArray<SafetyFunctionComparison>) => comparisons.filter(comparison => comparison.answer === 'unknown' || comparison.reason !== undefined)
+      // A current status board is a different read from inspecting its full
+      // tree. It retains the same verdict, frame, qualification and exceptions;
+      // it never changes the evaluator or claims to carry every deciding value.
+      const facts = detail === 'full' ? evaluation : {
+        ...status,
+        checks: checks.map(check => {
+          if (check.met !== 'yes') return check
+          const { comparisons, ...summary } = check
+          const exceptions = unresolved(comparisons)
+          return { ...summary, ...(exceptions.length === 0 ? {} : { unresolved: exceptions }) }
+        }),
+        unresolved: path.flatMap(step => {
+          const comparisons = unresolved(step.comparisons)
+          return comparisons.length === 0 ? [] : [{ ...step, comparisons }]
+        }),
+      }
+      return { ...identity, ...facts, title: label, basis: { source, tree: basis }, ...qualification }
     })
 }

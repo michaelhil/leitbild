@@ -92,13 +92,11 @@ const imageDataFromBlob = async (
   }
   const image = await createImageBitmap(blob)
   try {
-    const canvas = typeof OffscreenCanvas !== 'undefined'
-      ? new OffscreenCanvas(image.width, image.height)
+    const context = typeof OffscreenCanvas !== 'undefined'
+      ? new OffscreenCanvas(image.width, image.height).getContext('2d', { willReadFrequently: true })
       : typeof document !== 'undefined'
-        ? Object.assign(document.createElement('canvas'), { width: image.width, height: image.height })
+        ? Object.assign(document.createElement('canvas'), { width: image.width, height: image.height }).getContext('2d', { willReadFrequently: true })
         : null
-    if (!canvas) throw new Error('browser cannot decode terrain PNG tiles: no canvas implementation is available')
-    const context = canvas.getContext('2d', { willReadFrequently: true })
     if (!context) throw new Error('browser cannot decode terrain PNG tiles: 2D canvas context is unavailable')
     context.drawImage(image, 0, 0)
     return context.getImageData(0, 0, image.width, image.height)

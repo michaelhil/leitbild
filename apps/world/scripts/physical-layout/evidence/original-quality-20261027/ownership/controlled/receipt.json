@@ -1,0 +1,431 @@
+{
+  "reference": "103fa9156",
+  "referenceModules": {},
+  "commit": "03c9a2d0ef8c08836cd073c3c202dacb6061d29a",
+  "sourceRevision": "b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+  "sourceHashes": {
+    "geometry": "20ea4bb0f0dd5945ad293ac27ebbf5075bb0de84a981d18ab92de99ad5ab3d83",
+    "scope-clipping": "0b5aa44e60d7e283b330a5116efe691464bebd02c94c11fea9bbd4c5143916fc",
+    "surface-ownership": "aff4e511e5be7ab94c28dda450cdc0a2ded24d0887321e6dc0da91fab843313b",
+    "spatial-index": "f32c7c3c793a3f3e78cec0de4da2cd53c4f652c16730cb4954c74abd0e7e52b5",
+    "picking": "6c8aa7685592b2c8feadae7ddf544bfc0111a777f8a3bfa1b62bda09bb48d41f",
+    "renderer": "a15a1bb258225aebafa72537edbed4dc63beec43dbc15dabfa77952dcadcb3b0",
+    "backend": "ee7d2cca749acdb40dadc8c336ba3b271d2d359d404161f417df3efb8f269e3d"
+  },
+  "phases": [
+    {
+      "levelId": "lower",
+      "separation": 0,
+      "alert": false,
+      "changedPixels": 0,
+      "maxChannelDifference": 0,
+      "hostResolveDifferences": 0,
+      "picks": 234,
+      "pickDifferences": [],
+      "materialDifferences": [],
+      "oldStats": {
+        "physicalTriangles": 127538,
+        "duplicateFloat32Triangles": 1457
+      },
+      "newStats": {
+        "physicalTriangles": 127538,
+        "duplicateFloat32Triangles": 1457
+      },
+      "camera": {
+        "center": [
+          11.469292602795576,
+          59.08673326054321
+        ],
+        "pitch": 50,
+        "bearing": -25,
+        "zoom": 17.188570490127056,
+        "revision": 3,
+        "elevation": 7.300056755518669
+      },
+      "matrix": [
+        153357228.73086533,
+        -62327868.055288404,
+        -25145418.952568986,
+        -24759820.224542614,
+        -71511650.19063027,
+        -133662544.38517262,
+        -53924524.9628964,
+        -53097605.82210417,
+        0,
+        175760177.44165197,
+        -49925698.15131316,
+        -49160100.02231448,
+        -60439561.57052438,
+        72634138.55258842,
+        29304801.102091298,
+        28855456.75668869
+      ],
+      "sourceRevision": "b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+      "errors": [],
+      "passed": true
+    },
+    {
+      "levelId": "lower",
+      "separation": 0,
+      "alert": true,
+      "changedPixels": 0,
+      "maxChannelDifference": 0,
+      "hostResolveDifferences": 0,
+      "picks": 234,
+      "pickDifferences": [],
+      "materialDifferences": [],
+      "oldStats": {
+        "physicalTriangles": 127538,
+        "duplicateFloat32Triangles": 1457
+      },
+      "newStats": {
+        "physicalTriangles": 127538,
+        "duplicateFloat32Triangles": 1457
+      },
+      "camera": {
+        "center": [
+          11.469292602795576,
+          59.08673326054321
+        ],
+        "pitch": 50,
+        "bearing": -25,
+        "zoom": 17.188570490127056,
+        "revision": 4,
+        "elevation": 7.300056755518669
+      },
+      "matrix": [
+        153357228.73086533,
+        -62327868.055288404,
+        -25145418.952568986,
+        -24759820.224542614,
+        -71511650.19063027,
+        -133662544.38517262,
+        -53924524.9628964,
+        -53097605.82210417,
+        0,
+        175760177.44165197,
+        -49925698.15131316,
+        -49160100.02231448,
+        -60439561.57052438,
+        72634138.55258842,
+        29304801.102091298,
+        28855456.75668869
+      ],
+      "sourceRevision": "b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+      "errors": [],
+      "passed": true
+    },
+    {
+      "levelId": "all",
+      "separation": 1,
+      "alert": false,
+      "changedPixels": 0,
+      "maxChannelDifference": 0,
+      "hostResolveDifferences": 0,
+      "picks": 234,
+      "pickDifferences": [],
+      "materialDifferences": [],
+      "oldStats": {
+        "physicalTriangles": 236528,
+        "duplicateFloat32Triangles": 2991
+      },
+      "newStats": {
+        "physicalTriangles": 236528,
+        "duplicateFloat32Triangles": 2991
+      },
+      "camera": {
+        "center": [
+          11.469292602795576,
+          59.08673326054321
+        ],
+        "pitch": 50,
+        "bearing": -25,
+        "zoom": 17.140187596271524,
+        "revision": 6,
+        "elevation": 19.300150052261685
+      },
+      "matrix": [
+        148299453.1618501,
+        -60272272.952744685,
+        -24299908.164536234,
+        -23943232.608417433,
+        -69153170.7095692,
+        -129254306.46200205,
+        -52111321.22659469,
+        -51346428.028121315,
+        0,
+        169963544.71147758,
+        -48246954.34248554,
+        -47538782.56032799,
+        -58446243.48279432,
+        70238539.83233531,
+        28319506.02038046,
+        27903868.041012652
+      ],
+      "sourceRevision": "b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+      "errors": [],
+      "passed": true
+    },
+    {
+      "levelId": "all",
+      "separation": 1,
+      "alert": true,
+      "changedPixels": 0,
+      "maxChannelDifference": 0,
+      "hostResolveDifferences": 0,
+      "picks": 234,
+      "pickDifferences": [],
+      "materialDifferences": [],
+      "oldStats": {
+        "physicalTriangles": 236528,
+        "duplicateFloat32Triangles": 2991
+      },
+      "newStats": {
+        "physicalTriangles": 236528,
+        "duplicateFloat32Triangles": 2991
+      },
+      "camera": {
+        "center": [
+          11.469292602795576,
+          59.08673326054321
+        ],
+        "pitch": 50,
+        "bearing": -25,
+        "zoom": 17.140187596271524,
+        "revision": 7,
+        "elevation": 19.300150052261685
+      },
+      "matrix": [
+        148299453.1618501,
+        -60272272.952744685,
+        -24299908.164536234,
+        -23943232.608417433,
+        -69153170.7095692,
+        -129254306.46200205,
+        -52111321.22659469,
+        -51346428.028121315,
+        0,
+        169963544.71147758,
+        -48246954.34248554,
+        -47538782.56032799,
+        -58446243.48279432,
+        70238539.83233531,
+        28319506.02038046,
+        27903868.041012652
+      ],
+      "sourceRevision": "b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+      "errors": [],
+      "passed": true
+    },
+    {
+      "levelId": "lower",
+      "scopeId": "area/turbine-island",
+      "separation": 0,
+      "alert": false,
+      "changedPixels": 0,
+      "maxChannelDifference": 0,
+      "hostResolveDifferences": 2,
+      "picks": 234,
+      "pickDifferences": [],
+      "materialDifferences": [],
+      "oldStats": {
+        "physicalTriangles": 29854,
+        "duplicateFloat32Triangles": 566
+      },
+      "newStats": {
+        "physicalTriangles": 29854,
+        "duplicateFloat32Triangles": 566
+      },
+      "camera": {
+        "center": [
+          11.469992997800489,
+          59.08700899320243
+        ],
+        "pitch": 49.89295,
+        "bearing": 40.10704999999995,
+        "zoom": 18.580634124125943,
+        "revision": 9,
+        "elevation": 4.999998689361341
+      },
+      "matrix": [
+        339666923.1806497,
+        249910666.28050563,
+        100387195.44331479,
+        98901450.56041045,
+        286097546.613419,
+        -296704351.68123186,
+        -119183859.51431976,
+        -117419921.30869293,
+        0,
+        460565319.5669824,
+        -131252176.61670206,
+        -129309625.58798613,
+        -265169776.28681013,
+        -45270430.95725243,
+        -18183308.338415142,
+        -17914155.28788526
+      ],
+      "sourceRevision": "b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+      "errors": [],
+      "passed": true
+    },
+    {
+      "levelId": "lower",
+      "scopeId": "area/turbine-island",
+      "separation": 0,
+      "alert": true,
+      "changedPixels": 0,
+      "maxChannelDifference": 0,
+      "hostResolveDifferences": 2,
+      "picks": 234,
+      "pickDifferences": [],
+      "materialDifferences": [],
+      "oldStats": {
+        "physicalTriangles": 29854,
+        "duplicateFloat32Triangles": 566
+      },
+      "newStats": {
+        "physicalTriangles": 29854,
+        "duplicateFloat32Triangles": 566
+      },
+      "camera": {
+        "center": [
+          11.469992997800489,
+          59.08700899320243
+        ],
+        "pitch": 49.89295,
+        "bearing": 40.10704999999995,
+        "zoom": 18.580634124125943,
+        "revision": 10,
+        "elevation": 4.999998689361341
+      },
+      "matrix": [
+        339666923.1806497,
+        249910666.28050563,
+        100387195.44331479,
+        98901450.56041045,
+        286097546.613419,
+        -296704351.68123186,
+        -119183859.51431976,
+        -117419921.30869293,
+        0,
+        460565319.5669824,
+        -131252176.61670206,
+        -129309625.58798613,
+        -265169776.28681013,
+        -45270430.95725243,
+        -18183308.338415142,
+        -17914155.28788526
+      ],
+      "sourceRevision": "b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+      "errors": [],
+      "passed": true
+    },
+    {
+      "levelId": "operating",
+      "scopeId": "area/turbine-island",
+      "separation": 0,
+      "alert": false,
+      "changedPixels": 0,
+      "maxChannelDifference": 0,
+      "hostResolveDifferences": 0,
+      "picks": 234,
+      "pickDifferences": [],
+      "materialDifferences": [],
+      "oldStats": {
+        "physicalTriangles": 21413,
+        "duplicateFloat32Triangles": 488
+      },
+      "newStats": {
+        "physicalTriangles": 21413,
+        "duplicateFloat32Triangles": 488
+      },
+      "camera": {
+        "center": [
+          11.469992997800489,
+          59.087071945553646
+        ],
+        "pitch": 52.75774,
+        "bearing": 37.24225999999999,
+        "zoom": 18.85023067049446,
+        "revision": 12,
+        "elevation": 17.99996225362874
+      },
+      "matrix": [
+        426183727.7156472,
+        265860897.60913262,
+        117839878.58590609,
+        116574290.6206151,
+        323986783.57430494,
+        -349722871.86184555,
+        -155010763.63438344,
+        -153345964.25321957,
+        0,
+        577876240.9703689,
+        -148024471.77803355,
+        -146434704.44036388,
+        -322377193.26051915,
+        -38092406.1240757,
+        -16882287.133744065,
+        -16700935.579253208
+      ],
+      "sourceRevision": "b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+      "errors": [],
+      "passed": true
+    },
+    {
+      "levelId": "operating",
+      "scopeId": "area/turbine-island",
+      "separation": 0,
+      "alert": true,
+      "changedPixels": 0,
+      "maxChannelDifference": 0,
+      "hostResolveDifferences": 0,
+      "picks": 234,
+      "pickDifferences": [],
+      "materialDifferences": [],
+      "oldStats": {
+        "physicalTriangles": 21413,
+        "duplicateFloat32Triangles": 488
+      },
+      "newStats": {
+        "physicalTriangles": 21413,
+        "duplicateFloat32Triangles": 488
+      },
+      "camera": {
+        "center": [
+          11.469992997800489,
+          59.087071945553646
+        ],
+        "pitch": 52.75774,
+        "bearing": 37.24225999999999,
+        "zoom": 18.85023067049446,
+        "revision": 13,
+        "elevation": 17.99996225362874
+      },
+      "matrix": [
+        426183727.7156472,
+        265860897.60913262,
+        117839878.58590609,
+        116574290.6206151,
+        323986783.57430494,
+        -349722871.86184555,
+        -155010763.63438344,
+        -153345964.25321957,
+        0,
+        577876240.9703689,
+        -148024471.77803355,
+        -146434704.44036388,
+        -322377193.26051915,
+        -38092406.1240757,
+        -16882287.133744065,
+        -16700935.579253208
+      ],
+      "sourceRevision": "b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+      "errors": [],
+      "passed": true
+    }
+  ],
+  "passed": true,
+  "note": "Before/after rendering uses the SAME controlled GL context and one realized public MapLibre camera matrix with identical production shader/material/picking ports; the second panel remains the actual native map. Host framebuffer resolve differences are reported separately and were reproduced with identical geometry. Controlled status is test input. No physical microtriangle is dropped by a size threshold."
+}

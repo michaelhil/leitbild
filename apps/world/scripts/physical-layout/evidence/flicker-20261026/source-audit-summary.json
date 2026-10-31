@@ -1,0 +1,1537 @@
+{
+  "audits": [
+    {
+      "name": "coplanar",
+      "bytes": 29507,
+      "sha256": "b0816ea9066619d52e295c5d8ab33f38d1f5426d3e584921b5d51363d60e783f",
+      "summary": {
+        "source": "pwr-full-unit",
+        "objects": 49,
+        "axisAlignedTriangles": 10576,
+        "pairs": [
+          {
+            "a": "column/0/0.4",
+            "b": "wall/hall-north",
+            "axis": 1,
+            "plane": 0,
+            "sameFacing": true,
+            "area": 24.96,
+            "materials": [
+              "wall/hall-north:wall/column/0/0.4:steel"
+            ]
+          },
+          {
+            "a": "column/1/0.4",
+            "b": "wall/hall-north",
+            "axis": 1,
+            "plane": 0,
+            "sameFacing": true,
+            "area": 24.96,
+            "materials": [
+              "wall/hall-north:wall/column/1/0.4:steel"
+            ]
+          },
+          {
+            "a": "column/2/0.4",
+            "b": "wall/hall-north",
+            "axis": 1,
+            "plane": 0,
+            "sameFacing": true,
+            "area": 24.96,
+            "materials": [
+              "wall/hall-north:wall/column/2/0.4:steel"
+            ]
+          },
+          {
+            "a": "column/3/0.4",
+            "b": "wall/hall-north",
+            "axis": 1,
+            "plane": 0,
+            "sameFacing": true,
+            "area": 24.96,
+            "materials": [
+              "wall/hall-north:wall/column/3/0.4:steel"
+            ]
+          },
+          {
+            "a": "column/4/0.4",
+            "b": "wall/hall-north",
+            "axis": 1,
+            "plane": 0,
+            "sameFacing": true,
+            "area": 24.96,
+            "materials": [
+              "wall/hall-north:wall/column/4/0.4:steel"
+            ]
+          },
+          {
+            "a": "column/5/0.4",
+            "b": "wall/hall-north",
+            "axis": 1,
+            "plane": 0,
+            "sameFacing": true,
+            "area": 24.96,
+            "materials": [
+              "wall/hall-north:wall/column/5/0.4:steel"
+            ]
+          },
+          {
+            "a": "column/6/0.4",
+            "b": "wall/hall-north",
+            "axis": 1,
+            "plane": 0,
+            "sameFacing": true,
+            "area": 24.96,
+            "materials": [
+              "wall/hall-north:wall/column/6/0.4:steel"
+            ]
+          },
+          {
+            "a": "column/7/0.4",
+            "b": "wall/hall-north",
+            "axis": 1,
+            "plane": 0,
+            "sameFacing": true,
+            "area": 24.96,
+            "materials": [
+              "wall/hall-north:wall/column/7/0.4:steel"
+            ]
+          },
+          {
+            "a": "column/8/0.4",
+            "b": "wall/hall-north",
+            "axis": 1,
+            "plane": 0,
+            "sameFacing": true,
+            "area": 24.96,
+            "materials": [
+              "wall/hall-north:wall/column/8/0.4:steel"
+            ]
+          },
+          {
+            "a": "column/0/36.4",
+            "b": "wall/hall-south",
+            "axis": 1,
+            "plane": 36.8,
+            "sameFacing": true,
+            "area": 24.96,
+            "materials": [
+              "wall/hall-south:wall/column/0/36.4:steel"
+            ]
+          },
+          {
+            "a": "column/1/36.4",
+            "b": "wall/hall-south",
+            "axis": 1,
+            "plane": 36.8,
+            "sameFacing": true,
+            "area": 24.96,
+            "materials": [
+              "wall/hall-south:wall/column/1/36.4:steel"
+            ]
+          },
+          {
+            "a": "column/2/36.4",
+            "b": "wall/hall-south",
+            "axis": 1,
+            "plane": 36.8,
+            "sameFacing": true,
+            "area": 24.96,
+            "materials": [
+              "wall/hall-south:wall/column/2/36.4:steel"
+            ]
+          },
+          {
+            "a": "column/3/36.4",
+            "b": "wall/hall-south",
+            "axis": 1,
+            "plane": 36.8,
+            "sameFacing": true,
+            "area": 24.96,
+            "materials": [
+              "wall/hall-south:wall/column/3/36.4:steel"
+            ]
+          },
+          {
+            "a": "column/4/36.4",
+            "b": "wall/hall-south",
+            "axis": 1,
+            "plane": 36.8,
+            "sameFacing": true,
+            "area": 24.96,
+            "materials": [
+              "wall/hall-south:wall/column/4/36.4:steel"
+            ]
+          },
+          {
+            "a": "column/5/36.4",
+            "b": "wall/hall-south",
+            "axis": 1,
+            "plane": 36.8,
+            "sameFacing": true,
+            "area": 24.96,
+            "materials": [
+              "wall/hall-south:wall/column/5/36.4:steel"
+            ]
+          },
+          {
+            "a": "column/6/36.4",
+            "b": "wall/hall-south",
+            "axis": 1,
+            "plane": 36.8,
+            "sameFacing": true,
+            "area": 24.96,
+            "materials": [
+              "wall/hall-south:wall/column/6/36.4:steel"
+            ]
+          },
+          {
+            "a": "column/7/36.4",
+            "b": "wall/hall-south",
+            "axis": 1,
+            "plane": 36.8,
+            "sameFacing": true,
+            "area": 24.96,
+            "materials": [
+              "wall/hall-south:wall/column/7/36.4:steel"
+            ]
+          },
+          {
+            "a": "column/8/36.4",
+            "b": "wall/hall-south",
+            "axis": 1,
+            "plane": 36.8,
+            "sameFacing": true,
+            "area": 24.96,
+            "materials": [
+              "wall/hall-south:wall/column/8/36.4:steel"
+            ]
+          },
+          {
+            "a": "slab/operating",
+            "b": "wall/hall-east",
+            "axis": 0,
+            "plane": 88.4,
+            "sameFacing": true,
+            "area": 14.4,
+            "materials": [
+              "wall/hall-east:wall/slab/operating:floor"
+            ]
+          },
+          {
+            "a": "column/0/0.4",
+            "b": "wall/hall-north",
+            "axis": 0,
+            "plane": 0,
+            "sameFacing": true,
+            "area": 12.48,
+            "materials": [
+              "wall/hall-north:wall/column/0/0.4:steel"
+            ]
+          },
+          {
+            "a": "column/0/36.4",
+            "b": "wall/hall-south",
+            "axis": 0,
+            "plane": 0,
+            "sameFacing": true,
+            "area": 12.48,
+            "materials": [
+              "wall/hall-south:wall/column/0/36.4:steel"
+            ]
+          },
+          {
+            "a": "column/8/0.4",
+            "b": "wall/hall-north",
+            "axis": 0,
+            "plane": 88.8,
+            "sameFacing": true,
+            "area": 12.48,
+            "materials": [
+              "wall/hall-north:wall/column/8/0.4:steel"
+            ]
+          },
+          {
+            "a": "column/8/36.4",
+            "b": "wall/hall-south",
+            "axis": 0,
+            "plane": 88.8,
+            "sameFacing": true,
+            "area": 12.48,
+            "materials": [
+              "wall/hall-south:wall/column/8/36.4:steel"
+            ]
+          },
+          {
+            "a": "column/8/0.4",
+            "b": "wall/hall-east",
+            "axis": 0,
+            "plane": 88,
+            "sameFacing": true,
+            "area": 12.48,
+            "materials": [
+              "wall/hall-east:wall/column/8/0.4:steel"
+            ]
+          },
+          {
+            "a": "column/8/36.4",
+            "b": "wall/hall-east",
+            "axis": 0,
+            "plane": 88,
+            "sameFacing": true,
+            "area": 12.48,
+            "materials": [
+              "wall/hall-east:wall/column/8/36.4:steel"
+            ]
+          },
+          {
+            "a": "pier/18.4/8",
+            "b": "slab/operating",
+            "axis": 2,
+            "plane": 15,
+            "sameFacing": true,
+            "area": 2.16,
+            "materials": [
+              "slab/operating:floor/pier/18.4/8:steel"
+            ]
+          },
+          {
+            "a": "pier/18.4/26.7",
+            "b": "slab/operating",
+            "axis": 2,
+            "plane": 15,
+            "sameFacing": true,
+            "area": 2.16,
+            "materials": [
+              "slab/operating:floor/pier/18.4/26.7:steel"
+            ]
+          },
+          {
+            "a": "pier/29.4/8",
+            "b": "slab/operating",
+            "axis": 2,
+            "plane": 15,
+            "sameFacing": true,
+            "area": 2.16,
+            "materials": [
+              "slab/operating:floor/pier/29.4/8:steel"
+            ]
+          },
+          {
+            "a": "pier/29.4/26.7",
+            "b": "slab/operating",
+            "axis": 2,
+            "plane": 15,
+            "sameFacing": true,
+            "area": 2.16,
+            "materials": [
+              "slab/operating:floor/pier/29.4/26.7:steel"
+            ]
+          },
+          {
+            "a": "pier/40.4/8",
+            "b": "slab/operating",
+            "axis": 2,
+            "plane": 15,
+            "sameFacing": true,
+            "area": 2.16,
+            "materials": [
+              "slab/operating:floor/pier/40.4/8:steel"
+            ]
+          },
+          {
+            "a": "pier/40.4/26.7",
+            "b": "slab/operating",
+            "axis": 2,
+            "plane": 15,
+            "sameFacing": true,
+            "area": 2.16,
+            "materials": [
+              "slab/operating:floor/pier/40.4/26.7:steel"
+            ]
+          },
+          {
+            "a": "pier/51.4/8",
+            "b": "slab/operating",
+            "axis": 2,
+            "plane": 15,
+            "sameFacing": true,
+            "area": 2.16,
+            "materials": [
+              "slab/operating:floor/pier/51.4/8:steel"
+            ]
+          },
+          {
+            "a": "pier/51.4/26.7",
+            "b": "slab/operating",
+            "axis": 2,
+            "plane": 15,
+            "sameFacing": true,
+            "area": 2.16,
+            "materials": [
+              "slab/operating:floor/pier/51.4/26.7:steel"
+            ]
+          },
+          {
+            "a": "column/0/0.4",
+            "b": "wall/hall-north",
+            "axis": 2,
+            "plane": 0,
+            "sameFacing": true,
+            "area": 0.32,
+            "materials": [
+              "wall/hall-north:wall/column/0/0.4:steel"
+            ]
+          },
+          {
+            "a": "column/1/0.4",
+            "b": "wall/hall-north",
+            "axis": 2,
+            "plane": 0,
+            "sameFacing": true,
+            "area": 0.32,
+            "materials": [
+              "wall/hall-north:wall/column/1/0.4:steel"
+            ]
+          },
+          {
+            "a": "column/2/0.4",
+            "b": "wall/hall-north",
+            "axis": 2,
+            "plane": 0,
+            "sameFacing": true,
+            "area": 0.32,
+            "materials": [
+              "wall/hall-north:wall/column/2/0.4:steel"
+            ]
+          },
+          {
+            "a": "column/3/0.4",
+            "b": "wall/hall-north",
+            "axis": 2,
+            "plane": 0,
+            "sameFacing": true,
+            "area": 0.32,
+            "materials": [
+              "wall/hall-north:wall/column/3/0.4:steel"
+            ]
+          },
+          {
+            "a": "column/4/0.4",
+            "b": "wall/hall-north",
+            "axis": 2,
+            "plane": 0,
+            "sameFacing": true,
+            "area": 0.32,
+            "materials": [
+              "wall/hall-north:wall/column/4/0.4:steel"
+            ]
+          },
+          {
+            "a": "column/5/0.4",
+            "b": "wall/hall-north",
+            "axis": 2,
+            "plane": 0,
+            "sameFacing": true,
+            "area": 0.32,
+            "materials": [
+              "wall/hall-north:wall/column/5/0.4:steel"
+            ]
+          },
+          {
+            "a": "column/6/0.4",
+            "b": "wall/hall-north",
+            "axis": 2,
+            "plane": 0,
+            "sameFacing": true,
+            "area": 0.32,
+            "materials": [
+              "wall/hall-north:wall/column/6/0.4:steel"
+            ]
+          },
+          {
+            "a": "column/7/0.4",
+            "b": "wall/hall-north",
+            "axis": 2,
+            "plane": 0,
+            "sameFacing": true,
+            "area": 0.32,
+            "materials": [
+              "wall/hall-north:wall/column/7/0.4:steel"
+            ]
+          },
+          {
+            "a": "column/8/0.4",
+            "b": "wall/hall-north",
+            "axis": 2,
+            "plane": 0,
+            "sameFacing": true,
+            "area": 0.32,
+            "materials": [
+              "wall/hall-north:wall/column/8/0.4:steel"
+            ]
+          },
+          {
+            "a": "column/0/36.4",
+            "b": "wall/hall-south",
+            "axis": 2,
+            "plane": 0,
+            "sameFacing": true,
+            "area": 0.32,
+            "materials": [
+              "wall/hall-south:wall/column/0/36.4:steel"
+            ]
+          },
+          {
+            "a": "column/1/36.4",
+            "b": "wall/hall-south",
+            "axis": 2,
+            "plane": 0,
+            "sameFacing": true,
+            "area": 0.32,
+            "materials": [
+              "wall/hall-south:wall/column/1/36.4:steel"
+            ]
+          },
+          {
+            "a": "column/2/36.4",
+            "b": "wall/hall-south",
+            "axis": 2,
+            "plane": 0,
+            "sameFacing": true,
+            "area": 0.32,
+            "materials": [
+              "wall/hall-south:wall/column/2/36.4:steel"
+            ]
+          },
+          {
+            "a": "column/3/36.4",
+            "b": "wall/hall-south",
+            "axis": 2,
+            "plane": 0,
+            "sameFacing": true,
+            "area": 0.32,
+            "materials": [
+              "wall/hall-south:wall/column/3/36.4:steel"
+            ]
+          },
+          {
+            "a": "column/4/36.4",
+            "b": "wall/hall-south",
+            "axis": 2,
+            "plane": 0,
+            "sameFacing": true,
+            "area": 0.32,
+            "materials": [
+              "wall/hall-south:wall/column/4/36.4:steel"
+            ]
+          },
+          {
+            "a": "column/5/36.4",
+            "b": "wall/hall-south",
+            "axis": 2,
+            "plane": 0,
+            "sameFacing": true,
+            "area": 0.32,
+            "materials": [
+              "wall/hall-south:wall/column/5/36.4:steel"
+            ]
+          },
+          {
+            "a": "column/6/36.4",
+            "b": "wall/hall-south",
+            "axis": 2,
+            "plane": 0,
+            "sameFacing": true,
+            "area": 0.32,
+            "materials": [
+              "wall/hall-south:wall/column/6/36.4:steel"
+            ]
+          },
+          {
+            "a": "column/7/36.4",
+            "b": "wall/hall-south",
+            "axis": 2,
+            "plane": 0,
+            "sameFacing": true,
+            "area": 0.32,
+            "materials": [
+              "wall/hall-south:wall/column/7/36.4:steel"
+            ]
+          },
+          {
+            "a": "column/8/36.4",
+            "b": "wall/hall-south",
+            "axis": 2,
+            "plane": 0,
+            "sameFacing": true,
+            "area": 0.32,
+            "materials": [
+              "wall/hall-south:wall/column/8/36.4:steel"
+            ]
+          },
+          {
+            "a": "column/0/0.4",
+            "b": "wall/hall-north",
+            "axis": 2,
+            "plane": 31.2,
+            "sameFacing": true,
+            "area": 0.32,
+            "materials": [
+              "wall/hall-north:wall/column/0/0.4:steel"
+            ]
+          },
+          {
+            "a": "column/1/0.4",
+            "b": "wall/hall-north",
+            "axis": 2,
+            "plane": 31.2,
+            "sameFacing": true,
+            "area": 0.32,
+            "materials": [
+              "wall/hall-north:wall/column/1/0.4:steel"
+            ]
+          },
+          {
+            "a": "column/2/0.4",
+            "b": "wall/hall-north",
+            "axis": 2,
+            "plane": 31.2,
+            "sameFacing": true,
+            "area": 0.32,
+            "materials": [
+              "wall/hall-north:wall/column/2/0.4:steel"
+            ]
+          },
+          {
+            "a": "column/3/0.4",
+            "b": "wall/hall-north",
+            "axis": 2,
+            "plane": 31.2,
+            "sameFacing": true,
+            "area": 0.32,
+            "materials": [
+              "wall/hall-north:wall/column/3/0.4:steel"
+            ]
+          },
+          {
+            "a": "column/4/0.4",
+            "b": "wall/hall-north",
+            "axis": 2,
+            "plane": 31.2,
+            "sameFacing": true,
+            "area": 0.32,
+            "materials": [
+              "wall/hall-north:wall/column/4/0.4:steel"
+            ]
+          },
+          {
+            "a": "column/5/0.4",
+            "b": "wall/hall-north",
+            "axis": 2,
+            "plane": 31.2,
+            "sameFacing": true,
+            "area": 0.32,
+            "materials": [
+              "wall/hall-north:wall/column/5/0.4:steel"
+            ]
+          },
+          {
+            "a": "column/6/0.4",
+            "b": "wall/hall-north",
+            "axis": 2,
+            "plane": 31.2,
+            "sameFacing": true,
+            "area": 0.32,
+            "materials": [
+              "wall/hall-north:wall/column/6/0.4:steel"
+            ]
+          },
+          {
+            "a": "column/7/0.4",
+            "b": "wall/hall-north",
+            "axis": 2,
+            "plane": 31.2,
+            "sameFacing": true,
+            "area": 0.32,
+            "materials": [
+              "wall/hall-north:wall/column/7/0.4:steel"
+            ]
+          },
+          {
+            "a": "column/8/0.4",
+            "b": "wall/hall-north",
+            "axis": 2,
+            "plane": 31.2,
+            "sameFacing": true,
+            "area": 0.32,
+            "materials": [
+              "wall/hall-north:wall/column/8/0.4:steel"
+            ]
+          },
+          {
+            "a": "column/0/36.4",
+            "b": "wall/hall-south",
+            "axis": 2,
+            "plane": 31.2,
+            "sameFacing": true,
+            "area": 0.32,
+            "materials": [
+              "wall/hall-south:wall/column/0/36.4:steel"
+            ]
+          },
+          {
+            "a": "column/1/36.4",
+            "b": "wall/hall-south",
+            "axis": 2,
+            "plane": 31.2,
+            "sameFacing": true,
+            "area": 0.32,
+            "materials": [
+              "wall/hall-south:wall/column/1/36.4:steel"
+            ]
+          },
+          {
+            "a": "column/2/36.4",
+            "b": "wall/hall-south",
+            "axis": 2,
+            "plane": 31.2,
+            "sameFacing": true,
+            "area": 0.32,
+            "materials": [
+              "wall/hall-south:wall/column/2/36.4:steel"
+            ]
+          },
+          {
+            "a": "column/3/36.4",
+            "b": "wall/hall-south",
+            "axis": 2,
+            "plane": 31.2,
+            "sameFacing": true,
+            "area": 0.32,
+            "materials": [
+              "wall/hall-south:wall/column/3/36.4:steel"
+            ]
+          },
+          {
+            "a": "column/4/36.4",
+            "b": "wall/hall-south",
+            "axis": 2,
+            "plane": 31.2,
+            "sameFacing": true,
+            "area": 0.32,
+            "materials": [
+              "wall/hall-south:wall/column/4/36.4:steel"
+            ]
+          },
+          {
+            "a": "column/5/36.4",
+            "b": "wall/hall-south",
+            "axis": 2,
+            "plane": 31.2,
+            "sameFacing": true,
+            "area": 0.32,
+            "materials": [
+              "wall/hall-south:wall/column/5/36.4:steel"
+            ]
+          },
+          {
+            "a": "column/6/36.4",
+            "b": "wall/hall-south",
+            "axis": 2,
+            "plane": 31.2,
+            "sameFacing": true,
+            "area": 0.32,
+            "materials": [
+              "wall/hall-south:wall/column/6/36.4:steel"
+            ]
+          },
+          {
+            "a": "column/7/36.4",
+            "b": "wall/hall-south",
+            "axis": 2,
+            "plane": 31.2,
+            "sameFacing": true,
+            "area": 0.32,
+            "materials": [
+              "wall/hall-south:wall/column/7/36.4:steel"
+            ]
+          },
+          {
+            "a": "column/8/36.4",
+            "b": "wall/hall-south",
+            "axis": 2,
+            "plane": 31.2,
+            "sameFacing": true,
+            "area": 0.32,
+            "materials": [
+              "wall/hall-south:wall/column/8/36.4:steel"
+            ]
+          },
+          {
+            "a": "slab/operating",
+            "b": "wall/hall-east",
+            "axis": 1,
+            "plane": 26,
+            "sameFacing": true,
+            "area": 0.32,
+            "materials": [
+              "wall/hall-east:wall/slab/operating:floor"
+            ]
+          },
+          {
+            "a": "column/8/0.4",
+            "b": "wall/hall-east",
+            "axis": 2,
+            "plane": 0,
+            "sameFacing": true,
+            "area": 0.16,
+            "materials": [
+              "wall/hall-east:wall/column/8/0.4:steel"
+            ]
+          },
+          {
+            "a": "column/8/36.4",
+            "b": "wall/hall-east",
+            "axis": 2,
+            "plane": 0,
+            "sameFacing": true,
+            "area": 0.16,
+            "materials": [
+              "wall/hall-east:wall/column/8/36.4:steel"
+            ]
+          },
+          {
+            "a": "slab/operating",
+            "b": "wall/hall-east",
+            "axis": 1,
+            "plane": 0.4,
+            "sameFacing": true,
+            "area": 0.16,
+            "materials": [
+              "wall/hall-east:wall/slab/operating:floor"
+            ]
+          },
+          {
+            "a": "column/8/0.4",
+            "b": "wall/hall-east",
+            "axis": 2,
+            "plane": 31.2,
+            "sameFacing": true,
+            "area": 0.16,
+            "materials": [
+              "wall/hall-east:wall/column/8/0.4:steel"
+            ]
+          },
+          {
+            "a": "column/8/36.4",
+            "b": "wall/hall-east",
+            "axis": 2,
+            "plane": 31.2,
+            "sameFacing": true,
+            "area": 0.16,
+            "materials": [
+              "wall/hall-east:wall/column/8/36.4:steel"
+            ]
+          },
+          {
+            "a": "slab/operating",
+            "b": "wall/hall-east",
+            "axis": 1,
+            "plane": 36.4,
+            "sameFacing": true,
+            "area": 0.16,
+            "materials": [
+              "wall/hall-east:wall/slab/operating:floor"
+            ]
+          },
+          {
+            "a": "condenser-1",
+            "b": "slab/lower",
+            "axis": 2,
+            "plane": 0,
+            "sameFacing": false,
+            "area": 142.2,
+            "materials": [
+              "condenser-1:plinth/slab/lower:floor"
+            ]
+          },
+          {
+            "a": "condenser-2",
+            "b": "slab/lower",
+            "axis": 2,
+            "plane": 0,
+            "sameFacing": false,
+            "area": 142.2,
+            "materials": [
+              "condenser-2:plinth/slab/lower:floor"
+            ]
+          },
+          {
+            "a": "condenser-3",
+            "b": "slab/lower",
+            "axis": 2,
+            "plane": 0,
+            "sameFacing": false,
+            "area": 142.2,
+            "materials": [
+              "condenser-3:plinth/slab/lower:floor"
+            ]
+          },
+          {
+            "a": "slab/operating",
+            "b": "tg-generator",
+            "axis": 2,
+            "plane": 15,
+            "sameFacing": false,
+            "area": 81.018,
+            "materials": [
+              "tg-generator:plinth/slab/operating:floor"
+            ]
+          },
+          {
+            "a": "slab/operating",
+            "b": "tg-lp-1",
+            "axis": 2,
+            "plane": 15,
+            "sameFacing": false,
+            "area": 52.6,
+            "materials": [
+              "tg-lp-1:plinth/slab/operating:floor"
+            ]
+          },
+          {
+            "a": "slab/operating",
+            "b": "tg-lp-2",
+            "axis": 2,
+            "plane": 15,
+            "sameFacing": false,
+            "area": 52.6,
+            "materials": [
+              "tg-lp-2:plinth/slab/operating:floor"
+            ]
+          },
+          {
+            "a": "slab/operating",
+            "b": "tg-lp-3",
+            "axis": 2,
+            "plane": 15,
+            "sameFacing": false,
+            "area": 52.6,
+            "materials": [
+              "tg-lp-3:plinth/slab/operating:floor"
+            ]
+          },
+          {
+            "a": "slab/operating",
+            "b": "tg-hp",
+            "axis": 2,
+            "plane": 15,
+            "sameFacing": false,
+            "area": 37.536,
+            "materials": [
+              "tg-hp:plinth/slab/operating:floor"
+            ]
+          },
+          {
+            "a": "slab/operating",
+            "b": "wall/hall-north",
+            "axis": 1,
+            "plane": 0.4,
+            "sameFacing": false,
+            "area": 35.2,
+            "materials": [
+              "wall/hall-north:wall/slab/operating:floor"
+            ]
+          },
+          {
+            "a": "slab/operating",
+            "b": "wall/hall-south",
+            "axis": 1,
+            "plane": 36.4,
+            "sameFacing": false,
+            "area": 35.2,
+            "materials": [
+              "wall/hall-south:wall/slab/operating:floor"
+            ]
+          },
+          {
+            "a": "cp-a",
+            "b": "slab/lower",
+            "axis": 2,
+            "plane": 0,
+            "sameFacing": false,
+            "area": 16.124,
+            "materials": [
+              "cp-a:plinth/slab/lower:floor"
+            ]
+          },
+          {
+            "a": "cp-b",
+            "b": "slab/lower",
+            "axis": 2,
+            "plane": 0,
+            "sameFacing": false,
+            "area": 16.124,
+            "materials": [
+              "cp-b:plinth/slab/lower:floor"
+            ]
+          },
+          {
+            "a": "slab/operating",
+            "b": "tg-exciter",
+            "axis": 2,
+            "plane": 15,
+            "sameFacing": false,
+            "area": 15.26,
+            "materials": [
+              "tg-exciter:plinth/slab/operating:floor"
+            ]
+          },
+          {
+            "a": "msr-1",
+            "b": "slab/operating",
+            "axis": 2,
+            "plane": 15,
+            "sameFacing": false,
+            "area": 14.04,
+            "materials": [
+              "msr-1:plinth/slab/operating:floor"
+            ]
+          },
+          {
+            "a": "msr-2",
+            "b": "slab/operating",
+            "axis": 2,
+            "plane": 15,
+            "sameFacing": false,
+            "area": 14.04,
+            "materials": [
+              "msr-2:plinth/slab/operating:floor"
+            ]
+          },
+          {
+            "a": "wall/hall-east",
+            "b": "wall/hall-north",
+            "axis": 1,
+            "plane": 0.4,
+            "sameFacing": false,
+            "area": 12.48,
+            "materials": [
+              "wall/hall-north:wall/wall/hall-east:wall"
+            ]
+          },
+          {
+            "a": "column/0/0.4",
+            "b": "wall/hall-west",
+            "axis": 0,
+            "plane": 0,
+            "sameFacing": false,
+            "area": 12.48,
+            "materials": [
+              "wall/hall-west:wall/column/0/0.4:steel"
+            ]
+          },
+          {
+            "a": "column/0/36.4",
+            "b": "wall/hall-west",
+            "axis": 0,
+            "plane": 1.592040838891559e-15,
+            "sameFacing": false,
+            "area": 12.48,
+            "materials": [
+              "wall/hall-west:wall/column/0/36.4:steel"
+            ]
+          },
+          {
+            "a": "wall/hall-east",
+            "b": "wall/hall-south",
+            "axis": 1,
+            "plane": 36.4,
+            "sameFacing": false,
+            "area": 12.48,
+            "materials": [
+              "wall/hall-east:wall/wall/hall-south:wall"
+            ]
+          },
+          {
+            "a": "slab/lower",
+            "b": "wall/hall-east",
+            "axis": 2,
+            "plane": 0,
+            "sameFacing": false,
+            "area": 12,
+            "materials": [
+              "wall/hall-east:wall/slab/lower:floor"
+            ]
+          },
+          {
+            "a": "pier/18.4/8",
+            "b": "slab/lower",
+            "axis": 2,
+            "plane": 0,
+            "sameFacing": false,
+            "area": 2.16,
+            "materials": [
+              "slab/lower:floor/pier/18.4/8:steel"
+            ]
+          },
+          {
+            "a": "pier/18.4/26.7",
+            "b": "slab/lower",
+            "axis": 2,
+            "plane": 0,
+            "sameFacing": false,
+            "area": 2.16,
+            "materials": [
+              "slab/lower:floor/pier/18.4/26.7:steel"
+            ]
+          },
+          {
+            "a": "pier/29.4/26.7",
+            "b": "slab/lower",
+            "axis": 2,
+            "plane": 0,
+            "sameFacing": false,
+            "area": 2.16,
+            "materials": [
+              "slab/lower:floor/pier/29.4/26.7:steel"
+            ]
+          },
+          {
+            "a": "pier/40.4/26.7",
+            "b": "slab/lower",
+            "axis": 2,
+            "plane": 0,
+            "sameFacing": false,
+            "area": 2.16,
+            "materials": [
+              "slab/lower:floor/pier/40.4/26.7:steel"
+            ]
+          },
+          {
+            "a": "pier/51.4/26.7",
+            "b": "slab/lower",
+            "axis": 2,
+            "plane": 0,
+            "sameFacing": false,
+            "area": 2.16,
+            "materials": [
+              "slab/lower:floor/pier/51.4/26.7:steel"
+            ]
+          },
+          {
+            "a": "pier/29.4/8",
+            "b": "slab/lower",
+            "axis": 2,
+            "plane": 0,
+            "sameFacing": false,
+            "area": 2.16,
+            "materials": [
+              "slab/lower:floor/pier/29.4/8:steel"
+            ]
+          },
+          {
+            "a": "pier/40.4/8",
+            "b": "slab/lower",
+            "axis": 2,
+            "plane": 0,
+            "sameFacing": false,
+            "area": 2.16,
+            "materials": [
+              "slab/lower:floor/pier/40.4/8:steel"
+            ]
+          },
+          {
+            "a": "pier/51.4/8",
+            "b": "slab/lower",
+            "axis": 2,
+            "plane": 0,
+            "sameFacing": false,
+            "area": 2.16,
+            "materials": [
+              "slab/lower:floor/pier/51.4/8:steel"
+            ]
+          },
+          {
+            "a": "slab/operating",
+            "b": "stop-valve",
+            "axis": 2,
+            "plane": 15,
+            "sameFacing": false,
+            "area": 1.82,
+            "materials": [
+              "stop-valve:plinth/slab/operating:floor"
+            ]
+          },
+          {
+            "a": "hatch-cover",
+            "b": "slab/operating",
+            "axis": 1,
+            "plane": 30.8,
+            "sameFacing": false,
+            "area": 0.8,
+            "materials": [
+              "slab/operating:floor/hatch-cover:floor"
+            ]
+          },
+          {
+            "a": "hatch-cover",
+            "b": "slab/operating",
+            "axis": 1,
+            "plane": 26,
+            "sameFacing": false,
+            "area": 0.8,
+            "materials": [
+              "slab/operating:floor/hatch-cover:floor"
+            ]
+          },
+          {
+            "a": "hatch-cover",
+            "b": "slab/operating",
+            "axis": 0,
+            "plane": 75.80000000000001,
+            "sameFacing": false,
+            "area": 0.48,
+            "materials": [
+              "slab/operating:floor/hatch-cover:floor"
+            ]
+          },
+          {
+            "a": "hatch-cover",
+            "b": "slab/operating",
+            "axis": 0,
+            "plane": 83.80000000000001,
+            "sameFacing": false,
+            "area": 0.48,
+            "materials": [
+              "slab/operating:floor/hatch-cover:floor"
+            ]
+          },
+          {
+            "a": "column/1/36.4",
+            "b": "slab/lower",
+            "axis": 2,
+            "plane": 0,
+            "sameFacing": false,
+            "area": 0.32,
+            "materials": [
+              "slab/lower:floor/column/1/36.4:steel"
+            ]
+          },
+          {
+            "a": "column/2/36.4",
+            "b": "slab/lower",
+            "axis": 2,
+            "plane": 0,
+            "sameFacing": false,
+            "area": 0.32,
+            "materials": [
+              "slab/lower:floor/column/2/36.4:steel"
+            ]
+          },
+          {
+            "a": "column/3/36.4",
+            "b": "slab/lower",
+            "axis": 2,
+            "plane": 0,
+            "sameFacing": false,
+            "area": 0.32,
+            "materials": [
+              "slab/lower:floor/column/3/36.4:steel"
+            ]
+          },
+          {
+            "a": "column/4/36.4",
+            "b": "slab/lower",
+            "axis": 2,
+            "plane": 0,
+            "sameFacing": false,
+            "area": 0.32,
+            "materials": [
+              "slab/lower:floor/column/4/36.4:steel"
+            ]
+          },
+          {
+            "a": "column/5/36.4",
+            "b": "slab/lower",
+            "axis": 2,
+            "plane": 0,
+            "sameFacing": false,
+            "area": 0.32,
+            "materials": [
+              "slab/lower:floor/column/5/36.4:steel"
+            ]
+          },
+          {
+            "a": "column/6/36.4",
+            "b": "slab/lower",
+            "axis": 2,
+            "plane": 0,
+            "sameFacing": false,
+            "area": 0.32,
+            "materials": [
+              "slab/lower:floor/column/6/36.4:steel"
+            ]
+          },
+          {
+            "a": "column/7/36.4",
+            "b": "slab/lower",
+            "axis": 2,
+            "plane": 0,
+            "sameFacing": false,
+            "area": 0.32,
+            "materials": [
+              "slab/lower:floor/column/7/36.4:steel"
+            ]
+          },
+          {
+            "a": "column/1/0.4",
+            "b": "slab/lower",
+            "axis": 2,
+            "plane": 0,
+            "sameFacing": false,
+            "area": 0.32,
+            "materials": [
+              "slab/lower:floor/column/1/0.4:steel"
+            ]
+          },
+          {
+            "a": "column/2/0.4",
+            "b": "slab/lower",
+            "axis": 2,
+            "plane": 0,
+            "sameFacing": false,
+            "area": 0.32,
+            "materials": [
+              "slab/lower:floor/column/2/0.4:steel"
+            ]
+          },
+          {
+            "a": "column/3/0.4",
+            "b": "slab/lower",
+            "axis": 2,
+            "plane": 0,
+            "sameFacing": false,
+            "area": 0.32,
+            "materials": [
+              "slab/lower:floor/column/3/0.4:steel"
+            ]
+          },
+          {
+            "a": "column/4/0.4",
+            "b": "slab/lower",
+            "axis": 2,
+            "plane": 0,
+            "sameFacing": false,
+            "area": 0.32,
+            "materials": [
+              "slab/lower:floor/column/4/0.4:steel"
+            ]
+          },
+          {
+            "a": "column/5/0.4",
+            "b": "slab/lower",
+            "axis": 2,
+            "plane": 0,
+            "sameFacing": false,
+            "area": 0.32,
+            "materials": [
+              "slab/lower:floor/column/5/0.4:steel"
+            ]
+          },
+          {
+            "a": "column/6/0.4",
+            "b": "slab/lower",
+            "axis": 2,
+            "plane": 0,
+            "sameFacing": false,
+            "area": 0.32,
+            "materials": [
+              "slab/lower:floor/column/6/0.4:steel"
+            ]
+          },
+          {
+            "a": "column/7/0.4",
+            "b": "slab/lower",
+            "axis": 2,
+            "plane": 0,
+            "sameFacing": false,
+            "area": 0.32,
+            "materials": [
+              "slab/lower:floor/column/7/0.4:steel"
+            ]
+          },
+          {
+            "a": "slab/operating",
+            "b": "wall/hall-east",
+            "axis": 1,
+            "plane": 26,
+            "sameFacing": false,
+            "area": 0.32,
+            "materials": [
+              "wall/hall-east:wall/slab/operating:floor"
+            ]
+          },
+          {
+            "a": "column/0/0.4",
+            "b": "slab/lower",
+            "axis": 2,
+            "plane": 0,
+            "sameFacing": false,
+            "area": 0.16,
+            "materials": [
+              "slab/lower:floor/column/0/0.4:steel"
+            ]
+          },
+          {
+            "a": "column/0/36.4",
+            "b": "slab/lower",
+            "axis": 2,
+            "plane": 0,
+            "sameFacing": false,
+            "area": 0.16,
+            "materials": [
+              "slab/lower:floor/column/0/36.4:steel"
+            ]
+          },
+          {
+            "a": "column/8/36.4",
+            "b": "slab/lower",
+            "axis": 2,
+            "plane": 0,
+            "sameFacing": false,
+            "area": 0.16,
+            "materials": [
+              "slab/lower:floor/column/8/36.4:steel"
+            ]
+          },
+          {
+            "a": "column/8/0.4",
+            "b": "slab/lower",
+            "axis": 2,
+            "plane": 0,
+            "sameFacing": false,
+            "area": 0.16,
+            "materials": [
+              "slab/lower:floor/column/8/0.4:steel"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "winding",
+      "bytes": 342262,
+      "sha256": "f4fe5b4945ffe22a9d76fb4e9b54f618b780c07fa557a8aba0290161f6c7cc01",
+      "summary": [
+        {
+          "profile": "original",
+          "summary": {
+            "objects": 64,
+            "positive": 0,
+            "negative": 27124,
+            "degenerate": 0,
+            "otherNormal": 0,
+            "unbalancedObjects": [],
+            "nonManifoldObjects": 11
+          }
+        },
+        {
+          "profile": "explorer49",
+          "summary": {
+            "objects": 49,
+            "positive": 0,
+            "negative": 19528,
+            "degenerate": 0,
+            "otherNormal": 0,
+            "unbalancedObjects": [],
+            "nonManifoldObjects": 8
+          }
+        },
+        {
+          "profile": "explorerAllUnit",
+          "summary": {
+            "objects": 466,
+            "positive": 0,
+            "negative": 93552,
+            "degenerate": 128,
+            "otherNormal": 0,
+            "unbalancedObjects": [],
+            "nonManifoldObjects": 99
+          }
+        },
+        {
+          "profile": "explorerAllCampus",
+          "summary": {
+            "objects": 508,
+            "positive": 0,
+            "negative": 110425,
+            "degenerate": 0,
+            "otherNormal": 0,
+            "unbalancedObjects": [
+              "pavement/roads",
+              "pavement/pedestrian"
+            ],
+            "nonManifoldObjects": 93
+          }
+        }
+      ]
+    },
+    {
+      "name": "crossasset",
+      "bytes": 1083985,
+      "sha256": "4ef367fb907a18c0657e7c58f644e7f24acc94300adc5e46270195079bfdb14c",
+      "summary": {
+        "basis": "Exact retained source geometry transformed into site-anchor metres using the same Mercator scale ratios as placement; broad phase all cross-scene object AABBs; non-axis-aligned triangle planes included. Direct cross-object plane comparison normal1e-7 and distance1e-6 metres, then coplanarity1e-7 metre check; not a rendering bias.",
+        "sourceSceneCount": 5,
+        "objects": 2372,
+        "sourceBounds": [
+          {
+            "id": "campus",
+            "anchor": [
+              11.48,
+              59.08
+            ]
+          },
+          {
+            "id": "unit-1",
+            "anchor": [
+              11.47,
+              59.087
+            ]
+          },
+          {
+            "id": "unit-2",
+            "anchor": [
+              11.477,
+              59.085
+            ]
+          },
+          {
+            "id": "unit-3",
+            "anchor": [
+              11.484,
+              59.083
+            ]
+          },
+          {
+            "id": "unit-4",
+            "anchor": [
+              11.491,
+              59.081
+            ]
+          }
+        ],
+        "candidateCount": 5117,
+        "coplanar": [],
+        "sharedPlaneGroups": 1064,
+        "trianglePairsTested": 0
+      }
+    }
+  ],
+  "limits": [
+    "Source diagnostic tolerances are not production plane tolerances or depth offsets.",
+    "Cross-placement audit covers the current five admitted sources only, not arbitrary future multiasset CSG."
+  ]
+}

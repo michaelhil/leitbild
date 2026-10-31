@@ -3,6 +3,8 @@
 
   export interface MoreMenuItem {
     readonly label: string
+    /** Additional context, including why an unavailable action is disabled. */
+    readonly title?: string
     /** A link item; otherwise `onselect` runs. */
     readonly href?: string
     readonly icon?: IconName
@@ -93,9 +95,9 @@
   <div class="more-panel" class:start={(align === 'start') !== flipped} {id} hidden={!open}>
     {#each items as item (item.label)}
       {#if item.href}
-        <a class:danger={item.danger} href={item.href} onclick={() => { open = false }}>{#if item.icon}<Icon name={item.icon} size={17} />{/if}{item.label}</a>
+        <a class:danger={item.danger} href={item.href} title={item.title} onclick={() => { open = false }}>{#if item.icon}<Icon name={item.icon} size={17} />{/if}{item.label}</a>
       {:else}
-        <button type="button" class:danger={item.danger} disabled={item.disabled} onclick={() => select(item)}>{#if item.icon}<Icon name={item.icon} size={17} />{/if}{item.label}</button>
+        <button type="button" class:danger={item.danger} disabled={item.disabled} title={item.title} onclick={() => select(item)}>{#if item.icon}<Icon name={item.icon} size={17} />{/if}{item.label}</button>
       {/if}
     {/each}
   </div>

@@ -1,0 +1,58 @@
+{
+  "at": "2026-10-26T23:12:13.763Z",
+  "bun": "1.4.0",
+  "commit": "4c98e46f1d543bbfd30b971141f55a48866d866f",
+  "sourceHashes": {
+    "source-loader.ts": "774866c6aa58b200f9872ffb195d103a023ebd3cacef24609a2f9318018ab4b8",
+    "source-compile.ts": "5a2170fd69830fcddeed678c0e7984d4f5ec47039b99d5ee238c649d2a3fe982",
+    "source-validation.ts": "f0991bbb7f50b3f4205f711517889823bfff8fe36f6e9bea3ab6ea35d1f0b71a"
+  },
+  "design": {
+    "id": "pwr-full-unit",
+    "revision": "pwr-full-unit-20261026-r3",
+    "digest": "00eddf22ff7f7b0eab9987527da3a89b298092daab36e03d9533676fdcc2b2e3"
+  },
+  "compiler": {
+    "id": "physical-layout-native-architecture",
+    "digest": "5aa45af40e0a39e895405dc40eca1442c6fd42a2fe89c5adcfec4f32979f3395"
+  },
+  "phases": [
+    {
+      "phase": "first-delivery",
+      "annotationCount": 241,
+      "objectCount": 589,
+      "hashes": {
+        "annotations": "294a7116f6eea7865e35a7a860c889b5b8f02dd4025f9de6a1191ebac2898025",
+        "scopes": "5b82dff8fbb8d9f31456a7affc3fe861377ba3e40b47abd25a5ae68ec4f53040",
+        "layers": "ed6dad8358829be39221ef55bd4d74f786515234af1d896e29cf3f2de759f7ca",
+        "inspection": "61d033f920b91ea74a66707fcb7197bf9050c3596b323120dfbe4aee15e31a32"
+      }
+    },
+    {
+      "phase": "objects-carrier-only-warm-delivery",
+      "firstWrapperCollected": true,
+      "sharedObjects": true,
+      "metadataPreserved": true,
+      "headersRebound": true
+    },
+    {
+      "phase": "last-carrier-released",
+      "firstWrapperCollected": true,
+      "warmWrapperCollected": true,
+      "objectsCollected": true,
+      "memory": {
+        "rss": 546570240,
+        "heapTotal": 74397696,
+        "heapUsed": 93244059,
+        "external": 60371099,
+        "arrayBuffers": 33555472
+      }
+    }
+  ],
+  "observedCollection": true,
+  "limits": [
+    "One isolated process and one collection request per lifecycle transition; no retry or wait-until-collected loop.",
+    "Collection observations are empirical VM behavior, not an ECMAScript guarantee or a normal unit-test gate.",
+    "No browser GPU resource or worker lifecycle is measured by this source-cache witness."
+  ]
+}

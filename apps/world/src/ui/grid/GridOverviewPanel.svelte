@@ -12,6 +12,8 @@
   import GridAssetBrowser from './GridAssetBrowser.svelte'
   import GridContingencyView from './GridContingencyView.svelte'
   import GridLfddStages from './GridLfddStages.svelte'
+  import type { MapCover } from '../surface-panel-contract.ts'
+  import { gridPanelMapCover } from './panel-cover.ts'
 
   type MapTarget =
     | { readonly kind: 'point'; readonly center: readonly [number, number] }
@@ -20,14 +22,17 @@
   interface Props {
     readonly simulationRunId: SimulationRunId
     readonly objects: ReadonlyArray<OperationalObject>
+    readonly dataRevision: number
     readonly onClose: () => void
     readonly onFocusMap?: (target: MapTarget) => void
     /** `<gridId>#<assetId>` selected on the map or in this panel. */
     readonly selectedItemId?: string | null
     readonly onSelectItem?: (itemId: string | null) => void
+    /** The surface keeps the map camera and the alarm strip clear of what this panel covers. */
+    readonly onMapCover: (cover: MapCover) => void
   }
 
-  const { simulationRunId, objects, onClose, onFocusMap = () => undefined, selectedItemId = null, onSelectItem = () => undefined }: Props = $props()
+  const { simulationRunId, objects, dataRevision, onClose, onFocusMap = () => undefined, selectedItemId = null, onSelectItem = () => undefined, onMapCover }: Props = $props()
 
   interface GridOverviewSummary {
     readonly gridId: string
@@ -44,7 +49,7 @@
       readonly activeAlarmCount: number
       readonly islands: ReadonlyArray<{ readonly id: string; readonly energized: boolean; readonly loadMw: number; readonly alarmCount: number }>
     }
-    readonly thresholds: { readonly constrainedBranchLoadingPercent: number }
+    readonly thresholds: { readonly constrainedBranchLoadingPercent: number; readonly overloadLoadingPercent: number }
     readonly constrainedBranchCount: number
     readonly constrainedBranches: ReadonlyArray<{ readonly id: string; readonly label: string; readonly state: { readonly loadingPercent: number } }>
     readonly generators: ReadonlyArray<{ readonly id: string; readonly label: string; readonly state: { readonly dispatchMw: number } }>
@@ -92,6 +97,7 @@
   }))
   const gridId = $derived(gridItems.some(item => item.object.id === selectedGridId) ? selectedGridId : gridItems[0]?.object.id ?? null)
   const selectedGridItem = $derived(gridItems.find(item => item.object.id === gridId) ?? gridItems[0])
+  const refreshRevision = $derived(`${selectedGridItem?.object.revision ?? 0}:${dataRevision}`)
   const system = $derived(summary?.projection ?? selectedGridItem?.data.projection)
   const branches = $derived(summary?.constrainedBranches ?? [])
   const generators = $derived(summary?.generators ?? [])
@@ -251,6 +257,12 @@
     }
   }
 
+  // The panel is drawn only once its Grid's summary arrives; until then it covers nothing.
+  $effect(() => {
+    const cover = gridPanelMapCover(panelElement === null ? null : frame, parentSize().width)
+    untrack(() => onMapCover(cover))
+  })
+
   const panelStyle = $derived(frame
     ? `left: ${frame.left}px; top: ${frame.top}px; width: ${frame.width}px; height: ${frame.height}px;`
     : '')
@@ -332,8 +344,10 @@
   }
 
   $effect(() => {
-    selectedGridItem?.object.revision
-    void loadSummary()
+    simulationRunId
+    gridId
+    refreshRevision
+    untrack(() => void loadSummary())
   })
 
   runOnMount(() => {
@@ -462,7 +476,7 @@
           <div>
             <h3>Constrained corridors</h3>
             {#each branches as branch (branch.id)}
-              {@render assetRow(branch.id, branch.label, `${Math.round(branch.state.loadingPercent)}%`, branch.state.loadingPercent >= 100)}
+              {@render assetRow(branch.id, branch.label, `${Math.round(branch.state.loadingPercent)}%`, summary !== null && branch.state.loadingPercent >= summary.thresholds.overloadLoadingPercent)}
             {:else}
               {#if summary}<p class="empty-state">None at or above {summary.thresholds.constrainedBranchLoadingPercent}% loading.</p>{/if}
             {/each}
@@ -507,7 +521,7 @@
       </div>
     {:else if view === 'alarms' && gridId}
       {#key gridId}
-        <GridAlarmList {simulationRunId} {gridId} refreshRevision={selectedGridItem?.object.revision ?? 0} timeZone={gridLocalTimeZone} onLocate={assetId => void locateAsset(assetId)} />
+        <GridAlarmList {simulationRunId} {gridId} {refreshRevision} timeZone={gridLocalTimeZone} onLocate={assetId => void locateAsset(assetId)} />
       {/key}
     {:else if view === 'contingency' && gridId}
       {#key gridId}
@@ -515,7 +529,7 @@
       {/key}
     {:else if gridId}
       {#key gridId}
-        <GridAssetBrowser {simulationRunId} {gridId} refreshRevision={selectedGridItem?.object.revision ?? 0} {selectedAssetId} onSelectAsset={assetId => selectAsset(assetId, true)} {onFocusMap} />
+        <GridAssetBrowser {simulationRunId} {gridId} {refreshRevision} {selectedAssetId} onSelectAsset={assetId => selectAsset(assetId, true)} {onFocusMap} />
       {/key}
     {/if}
     {#if queryError}<p class="query-error">{queryError}</p>{/if}

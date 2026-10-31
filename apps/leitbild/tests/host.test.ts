@@ -102,7 +102,12 @@ const createModule = (moduleId: ModuleId) => {
           id: 'world.simulation-run.read', moduleId, kind: 'query',
           scope: { kind: 'resource', resourceType: 'world.simulation-run' },
           title: 'Read Simulation Run', description: 'Reads the selected Simulation Run.',
-          risk: 'read', idempotent: true, inputSchema: { type: 'object' }, outputSchema: { type: 'object' },
+          risk: 'read', idempotent: true, publishes: ['embedded-view'], inputSchema: { type: 'object' }, outputSchema: { type: 'object' },
+        }, {
+          id: 'world.simulation-run.context', moduleId, kind: 'query',
+          scope: { kind: 'resource', resourceType: 'world.simulation-run' },
+          title: 'Read Run Context', description: 'The Run as the Assistant sees it.',
+          risk: 'read', idempotent: true, publishes: ['context'], inputSchema: { type: 'object' }, outputSchema: { type: 'object' },
         }] : [])] })
       }
       if (new RegExp(`^/internal/${moduleId}/workspaces/[^/]+/capabilities/[^/]+/invoke$`).test(url.pathname)) {
@@ -212,9 +217,13 @@ describe('Leitbild Workspace Host', () => {
     const workspace = await host.create({ name: null })
     const resources = await host.resources(workspace.id)
     expect(resources.resources.map(resource => String(resource.ref.id))).toEqual(['run-01'])
-    expect((await host.capabilities(workspace.id)).capabilities.map(item => String(item.id))).toEqual([
-      'agents.room-definition.start', 'world.scenario.start', 'world.simulation-run.read',
+    const catalog = await host.capabilities(workspace.id)
+    expect(catalog.capabilities.map(item => String(item.id))).toEqual([
+      'agents.room-definition.start', 'world.scenario.start', 'world.simulation-run.read', 'world.simulation-run.context',
     ])
+    // What a Module declares its results publish passes through unchanged.
+    expect(catalog.capabilities.find(item => item.id === 'world.simulation-run.read')?.publishes).toEqual(['embedded-view'])
+    expect(catalog.capabilities.find(item => item.id === 'world.simulation-run.context')?.publishes).toEqual(['context'])
     const result = await host.invoke(
       workspace.id,
       capabilityIdSchema.parse('world.simulation-run.read'),

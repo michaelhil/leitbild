@@ -1,0 +1,470 @@
+{
+  "at": "2026-10-26T15:38:13.715Z",
+  "calls": [
+    {
+      "path": "module",
+      "status": 200,
+      "totalMs": 153.265833,
+      "bytes": 191,
+      "response": {
+        "kind": "query",
+        "result": {
+          "cellCount": 0,
+          "influenceCount": 1,
+          "truthResolution": 7,
+          "fieldRevision": 0,
+          "simulationTime": "2026-07-12T04:00:00.000Z",
+          "model": "prescribed-atmosphere/heuristic-ground"
+        }
+      }
+    },
+    {
+      "path": "host",
+      "status": 200,
+      "totalMs": 1394.680333,
+      "bytes": 176,
+      "response": {
+        "result": {
+          "cellCount": 0,
+          "influenceCount": 1,
+          "truthResolution": 7,
+          "fieldRevision": 0,
+          "simulationTime": "2026-07-12T04:00:00.000Z",
+          "model": "prescribed-atmosphere/heuristic-ground"
+        }
+      }
+    }
+  ],
+  "catalog": {
+    "status": 200,
+    "weather": [
+      {
+        "id": "world.weather.field-stats",
+        "moduleId": "world",
+        "kind": "query",
+        "scope": {
+          "kind": "resource",
+          "resourceType": "world.simulation-run"
+        },
+        "title": "Inspect weather field",
+        "description": "Current field size, simulation time, revision and model fidelity.",
+        "risk": "read",
+        "idempotent": true,
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "cellCount": {
+              "type": "number"
+            },
+            "influenceCount": {
+              "type": "number"
+            },
+            "truthResolution": {
+              "type": "number"
+            },
+            "fieldRevision": {
+              "type": "number"
+            },
+            "simulationTime": {
+              "type": "string"
+            },
+            "model": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "cellCount",
+            "influenceCount",
+            "truthResolution",
+            "fieldRevision",
+            "simulationTime",
+            "model"
+          ],
+          "additionalProperties": false
+        }
+      },
+      {
+        "id": "world.weather.map-features",
+        "moduleId": "world",
+        "kind": "query",
+        "scope": {
+          "kind": "resource",
+          "resourceType": "world.simulation-run"
+        },
+        "title": "Read weather map features",
+        "description": "Bounded presentation of current conditions. Zoom changes display resolution, never physics. No historical or forecast truth is synthesized.",
+        "risk": "read",
+        "idempotent": true,
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "viewport": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "Polygon"
+                },
+                "coordinates": {
+                  "minItems": 1,
+                  "type": "array",
+                  "items": {
+                    "minItems": 4,
+                    "type": "array",
+                    "items": {
+                      "type": "array",
+                      "prefixItems": [
+                        {
+                          "type": "number",
+                          "minimum": -180,
+                          "maximum": 180
+                        },
+                        {
+                          "type": "number",
+                          "minimum": -90,
+                          "maximum": 90
+                        }
+                      ],
+                      "items": false,
+                      "minItems": 2,
+                      "maxItems": 2
+                    }
+                  }
+                }
+              },
+              "required": [
+                "type",
+                "coordinates"
+              ]
+            },
+            "zoom": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 24
+            },
+            "layers": {
+              "default": [
+                "affectedCells",
+                "influenceShapes"
+              ],
+              "maxItems": 3,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "baseGrid",
+                  "affectedCells",
+                  "influenceShapes"
+                ]
+              }
+            }
+          },
+          "required": [
+            "viewport",
+            "zoom"
+          ],
+          "additionalProperties": false
+        },
+        "outputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "features": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "layerId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "categoryId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "geometry": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "const": "Point"
+                          },
+                          "coordinates": {
+                            "type": "array",
+                            "prefixItems": [
+                              {
+                                "type": "number",
+                                "minimum": -180,
+                                "maximum": 180
+                              },
+                              {
+                                "type": "number",
+                                "minimum": -90,
+                                "maximum": 90
+                              }
+                            ],
+                            "items": false,
+                            "minItems": 2,
+                            "maxItems": 2
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "coordinates"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "const": "LineString"
+                          },
+                          "coordinates": {
+                            "minItems": 2,
+                            "type": "array",
+                            "items": {
+                              "type": "array",
+                              "prefixItems": [
+                                {
+                                  "type": "number",
+                                  "minimum": -180,
+                                  "maximum": 180
+                                },
+                                {
+                                  "type": "number",
+                                  "minimum": -90,
+                                  "maximum": 90
+                                }
+                              ],
+                              "items": false,
+                              "minItems": 2,
+                              "maxItems": 2
+                            }
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "coordinates"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "const": "Polygon"
+                          },
+                          "coordinates": {
+                            "minItems": 1,
+                            "type": "array",
+                            "items": {
+                              "minItems": 4,
+                              "type": "array",
+                              "items": {
+                                "type": "array",
+                                "prefixItems": [
+                                  {
+                                    "type": "number",
+                                    "minimum": -180,
+                                    "maximum": 180
+                                  },
+                                  {
+                                    "type": "number",
+                                    "minimum": -90,
+                                    "maximum": 90
+                                  }
+                                ],
+                                "items": false,
+                                "minItems": 2,
+                                "maxItems": 2
+                              }
+                            }
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "coordinates"
+                        ]
+                      }
+                    ]
+                  },
+                  "selection": {
+                    "type": "object",
+                    "properties": {
+                      "panelId": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "itemId": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": [
+                      "panelId",
+                      "itemId"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "anchorPoint": {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "const": "Point"
+                      },
+                      "coordinates": {
+                        "type": "array",
+                        "prefixItems": [
+                          {
+                            "type": "number",
+                            "minimum": -180,
+                            "maximum": 180
+                          },
+                          {
+                            "type": "number",
+                            "minimum": -90,
+                            "maximum": 90
+                          }
+                        ],
+                        "items": false,
+                        "minItems": 2,
+                        "maxItems": 2
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "coordinates"
+                    ]
+                  },
+                  "symbol": {
+                    "type": "object",
+                    "properties": {
+                      "icon": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "tone": {
+                        "type": "string",
+                        "enum": [
+                          "ready",
+                          "working",
+                          "error",
+                          "idle"
+                        ]
+                      },
+                      "opacity": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1
+                      },
+                      "size": {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      }
+                    },
+                    "required": [
+                      "icon"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "color": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "summary": {
+                    "type": "string"
+                  },
+                  "opacity": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "lineColor": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "lineOpacity": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "lineWidth": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "lineDashed": {
+                    "type": "boolean"
+                  },
+                  "sortKey": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "id",
+                  "categoryId",
+                  "geometry",
+                  "color",
+                  "summary"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "metadata": {
+              "type": "object",
+              "properties": {
+                "cellCount": {
+                  "type": "number"
+                },
+                "influenceCount": {
+                  "type": "number"
+                },
+                "truthResolution": {
+                  "type": "number"
+                },
+                "fieldRevision": {
+                  "type": "number"
+                },
+                "simulationTime": {
+                  "type": "string"
+                },
+                "model": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "cellCount",
+                "influenceCount",
+                "truthResolution",
+                "fieldRevision",
+                "simulationTime",
+                "model"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "features",
+            "metadata"
+          ],
+          "additionalProperties": false
+        }
+      }
+    ]
+  }
+}

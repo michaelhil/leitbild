@@ -84,6 +84,13 @@ const expandItem = async (
     at: context.at,
     objects: [...context.objectMap.values()],
     objectById: (id: ObjectId) => context.objectMap.get(id),
+    physicalTargetsFor: (id: ObjectId) => {
+      const object = context.objectMap.get(id)
+      if (!object) throw new Error(`Unknown physical-layout owner: ${id}`)
+      const provider = context.packs.get(object.packId)?.physicalTargets
+      if (!provider) throw new Error(`Pack ${object.packId} does not describe physical targets`)
+      return provider(object)
+    },
     routing: context.routing,
     packConfigs: context.packConfigs,
     sides: context.sides,
@@ -238,11 +245,11 @@ export const compileScenarioDefinition = async (
         initialObjects.push(object)
       }
   }
-  for (const pack of activePacks)
-    pack.scenario?.validateInitialObjects?.(initialObjects, packConfigs[pack.descriptor.id], startsAt, source.sides ?? [])
   // Connections describe the initial physical topology. Timeline expansion may
   // create or delete later objects, but it must not rewrite that topology.
   const connections = compileElectricalConnections(source.connections, objectMap)
+  for (const pack of activePacks)
+    pack.scenario?.validateInitialObjects?.(initialObjects, packConfigs[pack.descriptor.id], startsAt, source.sides ?? [], connections)
   const timeline = source.timeline
   const compiled = compiledScenarioSchema.parse({
     id: source.id,

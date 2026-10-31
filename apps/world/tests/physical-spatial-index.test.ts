@@ -1,0 +1,105 @@
+import { expect, test } from 'bun:test'
+import type { PhysicalMesh } from '../src/ui/map/physical-scene/geometry.ts'
+import { meshBounds } from '../src/ui/map/physical-scene/geometry.ts'
+import { inverse, normalize, rayBox, rayTriangle, subtract, transform, type Vector3 } from '../src/ui/map/physical-scene/math.ts'
+import { pickPhysicalMesh, preparePhysicalPickAcceleration, type PhysicalPickEntry } from '../src/ui/map/physical-scene/picking.ts'
+import { createPhysicalSpatialIndex } from '../src/ui/map/physical-scene/spatial-index.ts'
+import type { PhysicalSceneBounds } from '../src/core/packs/scene.ts'
+
+const matrix = new Float64Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1])
+const mesh = (id: string, triangles: ReadonlyArray<number>, offset: Vector3 = [0, 0, 0]): PhysicalMesh => {
+  const vertices: number[] = []
+  for (let at = 0; at < triangles.length; at += 3) vertices.push(...triangles.slice(at, at + 3), 0, 0, 1, 0)
+  return { key: id, object: { id, label: id, kind: 'equipment', levelId: 'site', positions: [...triangles], subjectIds: [id] }, vertices, lines: [], bounds: meshBounds(vertices), offset }
+}
+const plane = (id: string, z: number, offset?: Vector3) => mesh(id, [-0.8, -0.8, z, 0.8, -0.8, z, 0.8, 0.8, z, -0.8, -0.8, z, 0.8, 0.8, z, -0.8, 0.8, z], offset)
+/** Frozen reference traversal, confined to tests, including original equal-depth ordering. */
+const reference = (entries: ReadonlyArray<PhysicalPickEntry>, point: { x: number; y: number }) => {
+  const clip: Vector3 = [point.x / 500 - 1, 1 - point.y / 350, -1]
+  let nearest: ReturnType<typeof pickPhysicalMesh> = null
+  for (const entry of entries) {
+    const inverted = inverse(entry.matrix), origin = transform(inverted, clip), far = transform(inverted, [clip[0], clip[1], 1]), direction = normalize(subtract(far, origin))
+    let localNearest = Infinity
+    for (const mesh of entry.meshes) {
+      const local = subtract(origin, mesh.offset), bounds = rayBox(local, direction, mesh.bounds)
+      if (bounds === null || bounds > localNearest) continue
+      for (let at = 0; at < mesh.vertices.length; at += 21) {
+        const a = mesh.vertices.slice(at, at + 3) as unknown as Vector3, b = mesh.vertices.slice(at + 7, at + 10) as unknown as Vector3, c = mesh.vertices.slice(at + 14, at + 17) as unknown as Vector3, d = rayTriangle(local, direction, a, b, c)
+        if (d === null || d >= localNearest) continue
+        localNearest = d
+        const position: Vector3 = [origin[0] + direction[0] * d, origin[1] + direction[1] * d, origin[2] + direction[2] * d], depth = transform(entry.matrix, position)[2]
+        if (!nearest || depth < nearest.depth) nearest = { sceneId: entry.sceneId, mesh, position, depth }
+      }
+    }
+  }
+  return nearest
+}
+
+test('indexed picks retain occlusion, coplanar order, instance identity and separated offsets', () => {
+  const shifted = new Float64Array(matrix); shifted[12] = 0.4
+  const entries = [{ sceneId: 'a', matrix, meshes: [plane('wall', 0.4), plane('column', 0.4), plane('hidden-pump', 0)] }, { sceneId: 'b', matrix: shifted, meshes: [plane('higher', 0.5, [0, 0, 0.2])] }]
+  expect(pickPhysicalMesh(entries.slice(0, 1), { x: 500, y: 350 }, 1000, 700)?.mesh.object.id).toBe('wall')
+  for (let y = -50; y <= 750; y += 20) for (let x = -50; x <= 1050; x += 20) {
+    const actual = pickPhysicalMesh(entries, { x, y }, 1000, 700), expected = reference(entries, { x, y })
+    expect(actual?.sceneId).toBe(expected?.sceneId); expect(actual?.mesh.object.id).toBe(expected?.mesh.object.id); expect(actual?.depth).toBe(expected?.depth)
+  }
+})
+
+test('SAH hierarchy preserves exact winners on long, dense and degenerate geometry without candidate truncation', () => {
+  const triangles: number[] = []
+  for (let y = 0; y < 24; y++) for (let x = 0; x < 24; x++) {
+    const px = x / 12 - 1, py = y / 12 - 1, z = (x + y) / 200
+    triangles.push(px, py, z, px + 0.08, py, z, px, py + 0.08, z)
+  }
+  triangles.push(0, 0, 0, 0, 0, 0, 0, 0, 0)
+  const entries = [{ sceneId: 'grid', matrix, meshes: [mesh('dense', triangles), mesh('long', [-10, -0.01, 0.6, 10, -0.01, 0.6, 0, 0.01, 0.6])] }]
+  const prepared = preparePhysicalPickAcceleration(entries[0]!.meshes)
+  expect(preparePhysicalPickAcceleration(entries[0]!.meshes)).toBe(prepared)
+  expect(prepared.triangles[0]!.triangles.order.length).toBe(577)
+  for (let y = 0; y <= 700; y += 25) for (let x = 0; x <= 1000; x += 25) {
+    const actual = pickPhysicalMesh(entries, { x, y }, 1000, 700), expected = reference(entries, { x, y })
+    expect(actual?.mesh.object.id).toBe(expected?.mesh.object.id); expect(actual?.depth).toBe(expected?.depth)
+  }
+  expect(pickPhysicalMesh(entries, { x: NaN, y: 1 }, 1000, 700)).toBeNull()
+})
+
+test('overlap-heavy SAH separates parallel routes along transverse axes instead of retaining one large leaf', async () => {
+  const { createPhysicalSpatialIndex, visitPhysicalSpatialBounds } = await import('../src/ui/map/physical-scene/spatial-index.ts')
+  const values = Array.from({ length: 64 }, (_, id) => { const y = (id % 32 * 17) % 32; return { min: [0, y, 0] as [number, number, number], max: [1000, y + .1, .01] as [number, number, number] } })
+  const ray = createPhysicalSpatialIndex(values), overlap = createPhysicalSpatialIndex(values, 'overlap'), query = { min: [499, 13.02, 0] as [number, number, number], max: [501, 13.08, .01] as [number, number, number] }
+  const candidates = (index: typeof ray) => { const ids: number[] = []; visitPhysicalSpatialBounds(index, query, id => ids.push(id)); return ids }
+  const all = candidates(ray), refined = candidates(overlap), exact = values.flatMap((box, id) => box.min.every((v, axis) => v <= query.max[axis]!) && box.max.every((v, axis) => v >= query.min[axis]!) ? [id] : [])
+  expect(refined.length).toBeLessThan(all.length)
+  expect(exact.every(id => refined.includes(id))).toBe(true)
+  expect(overlap.order.length).toBe(values.length)
+  expect(new Set(overlap.order).size).toBe(values.length)
+})
+
+test('ray SAH partitions use a reflexive, antisymmetric centroid order with deterministic source ties', () => {
+  // The previous left-associated comparator fails even reflexivity here.
+  expect(0.1 + 0.2 - 0.1 - 0.2).not.toBe(0)
+  const cases: PhysicalSceneBounds[][] = [
+    Array.from({ length: 73 }, (_, id) => { const x = (id * 29 % 73) / 10 + .1, width = id % 3 ? .1 : .2; return { min: [x, -.001, -.001], max: [x + width, .001, .001] } }),
+    Array.from({ length: 41 }, (_, id) => { const x = id % 2 ? .1 : .1 + Number.EPSILON, side = (id % 7 + 1) / 100; return { min: [x, id / 10, -side], max: [.2, id / 10 + side, side] } }),
+    [{ min: [-Number.MAX_VALUE / 4, 0, 0], max: [-Number.MAX_VALUE / 8, 1, 1] }, { min: [Number.MAX_VALUE / 8, 0, 0], max: [Number.MAX_VALUE / 4, 1, 1] }, { min: [-0, -Number.MIN_VALUE, 0], max: [0, Number.MIN_VALUE, 0] }],
+  ]
+  for (const values of cases) {
+    const center = (id: number, axis: number) => values[id]!.min[axis]! * .5 + values[id]!.max[axis]! * .5
+    const compare = (a: number, b: number, axis: number) => center(a, axis) - center(b, axis) || a - b
+    for (let a = 0; a < values.length; a++) for (let b = 0; b < values.length; b++) for (let axis = 0; axis < 3; axis++) {
+      expect(compare(a, a, axis)).toBe(0)
+      expect(Math.sign(compare(a, b, axis)) + Math.sign(compare(b, a, axis))).toBe(0)
+    }
+    const index = createPhysicalSpatialIndex(values)
+    expect([...index.order].sort((a, b) => a - b)).toEqual(values.map((_, id) => id))
+    const inspect = (node: number): number[] => {
+      const left = index.children[node * 2]!, right = index.children[node * 2 + 1]!
+      if (left < 0) return [...index.order.subarray(index.ranges[node * 2]!, index.ranges[node * 2]! + index.ranges[node * 2 + 1]!)]
+      const a = inspect(left), b = inspect(right), spans = [0, 1, 2].map(axis => index.bounds[node * 6 + axis + 3]! - index.bounds[node * 6 + axis]!), axis = spans.indexOf(Math.max(...spans))
+      for (const earlier of a) for (const later of b) expect(compare(earlier, later, axis)).toBeLessThanOrEqual(0)
+      return [...a, ...b]
+    }
+    inspect(0)
+    for (let repeat = 0; repeat < 3; repeat++) expect(createPhysicalSpatialIndex(values)).toEqual(index)
+  }
+})

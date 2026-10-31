@@ -10,6 +10,8 @@ import {
   type VariablePath,
 } from '../src/packs/process-plant/index.ts'
 import { resolveProcessPlantSignalBinding } from '../src/packs/process-plant/signals.ts'
+import { valvePositionController } from '../src/packs/process-plant/graph/valve-controller.ts'
+import { parameterNumber } from '../src/packs/process-plant/runtime/component-helpers.ts'
 import { guardPlantTests } from './plant-hang-guard.ts'
 
 guardPlantTests()
@@ -28,29 +30,67 @@ const started = (system: CompiledProcessPlant = plant) => {
   const read = (path: string): number => Number(runtime.readVariable(path as VariablePath))
   const tag = (tagId: string): number => Number(runtime.readVariable(resolveProcessPlantSignalBinding(system.graph, { tagId: tagId as never }).path))
   const alarmed = (): ReadonlyArray<string> => protection.snapshot().alarms.filter(lifecycle => lifecycle.active).map(lifecycle => lifecycle.id)
+  const evaluate = (): void => {
+    protection.evaluate({ runtime, elapsedMs: runtime.elapsedMs(), simulationRunId: 'run-hotwell' as SimulationRunId, sourceRuntimeId: 'process-plant.local' })
+  }
   const run = (seconds: number, each?: () => void): void => {
     for (let second = 0; second < seconds; second += 1) {
       runtime.tick(1_000)
-      protection.evaluate({ runtime, elapsedMs: runtime.elapsedMs(), simulationRunId: 'run-hotwell' as SimulationRunId, sourceRuntimeId: 'process-plant.local' })
+      evaluate()
       each?.()
     }
   }
   const act = (actionId: string): void => {
     for (const command of commandsForProcessPlantAction({ actionId, parameters: {}, graph: system.graph })) runtime.writeCommand({ type: 'setVariable', path: command.path, value: command.value })
   }
-  return { read, tag, alarmed, run, act }
+  return { runtime, read, tag, alarmed, evaluate, run, act }
 }
 
 describe('hotwell and feedwater tank level control', () => {
-  test('at full power the level control valve stands open, the reject shut, and nothing moves', () => {
+  test('the full-power hotwell starts balanced and conserves its actual production and draw as thermal stocks settle', () => {
     const plantRun = started()
-    plantRun.run(120)
-    const { read, tag } = plantRun
+    const { read, tag, runtime, evaluate } = plantRun
+    const condenser = plant.graph.components.find(component => component.kind === 'condenserSink')!
+    const reject = plant.graph.components.find(component => component.id === 'hotwellRejectValve')!
+    const rejectController = valvePositionController(reject)!
+    const lowLevel = plant.automation.rules.find(rule => rule.id === 'condenser-hotwell-level-low')!.condition
+    if (lowLevel.type !== 'comparison' || typeof lowLevel.value !== 'number') throw Error('Expected the authored hotwell low-level comparison')
+    const outlets = plant.graph.links.filter(link => link.fromComponentIndex === condenser.index && link.service === 'condensate')
+    const outletFlow = () => outlets.reduce((sum, link) => sum + read(`${link.id}.flowKgPerS`), 0)
+    const initialMass = read('condenser.condensateInventoryKg')
+    const initialFeedwaterMass = read('feedwaterTank.inventoryKg')
+    // The initial operating datum remains exact. It is not a promise of a
+    // frozen coupled thermal state: the core also receives finite CVCS flow,
+    // and the SG metal and steam inventories follow their actual heat input.
+    expect(tag('HOTWELL-LVL')).toBeCloseTo(55, 10)
+    expect(tag('FW-TANK-LVL')).toBeCloseTo(82, 10)
+    expect(outletFlow()).toBeCloseTo(read('condenser.condensateProductionKgPerS'), 8)
+    const stepMs = plant.graph.timestep.fixedStepMs
+    const dt = stepMs / 1_000
+    let integratedMassChange = 0
+    let previousMass = initialMass
+    let lowAlarm = false
+    for (let elapsed = 0; elapsed < 120_000; elapsed += stepMs) {
+      runtime.tick(stepMs)
+      // Preserve the fixture's original one-second I&C cadence while reading
+      // the material balance at every actual numerical solver step.
+      if (runtime.elapsedMs() % 1_000 === 0) evaluate()
+      const massChange = (read('condenser.condensateProductionKgPerS') - outletFlow()) * dt
+      const mass = read('condenser.condensateInventoryKg')
+      expect(mass - previousMass).toBeCloseTo(massChange, 8)
+      integratedMassChange += massChange
+      previousMass = mass
+      expect(tag('HOTWELL-LVL')).toBeGreaterThan(lowLevel.value)
+      expect(tag('HOTWELL-LVL')).toBeLessThan(rejectController.setpoint)
+      lowAlarm ||= plantRun.alarmed().includes(hotwellLow)
+    }
+    expect(read('condenser.condensateInventoryKg') - initialMass).toBeCloseTo(integratedMassChange, 7)
+    expect(tag('HOTWELL-LVL')).toBeCloseTo(100 * read('condenser.condensateInventoryKg') / parameterNumber(condenser, 'nominalCondensateInventoryKg'), 10)
     expect(tag('COND-LCV-POS')).toBeCloseTo(1, 6)
     expect(tag('HOTWELL-REJECT-POS')).toBe(0)
-    expect(tag('HOTWELL-LVL')).toBeCloseTo(55, 3)
-    expect(tag('FW-TANK-LVL')).toBeCloseTo(82, 3)
-    expect(read('condensate-pump-a-to-feedwater-tank.flowKgPerS') + read('condensate-pump-b-to-feedwater-tank.flowKgPerS')).toBeCloseTo(read('condenser.condensateProductionKgPerS'), 3)
+    expect(read('feedwaterTank.inventoryKg')).toBe(initialFeedwaterMass)
+    expect(tag('FW-TANK-LVL')).toBeCloseTo(82, 10)
+    expect(lowAlarm).toBe(false)
   })
 
   test('after a turbine trip the level control valve shuts the condensate off, and the hotwell holds without alarm', () => {

@@ -1,0 +1,798 @@
+{
+  "appCommit": "a8db5f21e6e900887c900f04ef4d433389ae15ca",
+  "sourcePins": {
+    "expectedUnitDesign": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+    "expectedCampusDesign": "91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933"
+  },
+  "metadata": {
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+    "reportedLogicalCpus": 8,
+    "dpr": 1
+  },
+  "rawFiles": {
+    "census": {
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261027/final-r5/visibility-census-dpr1/receipt.json",
+      "sha256": "d5605228f11a5b23d26fa33f403c07ccfd2e03a023ef622a7689eb8f108c65d1",
+      "bytes": 1149557
+    },
+    "opaque": {
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261027/final-r5/visible-elements-opaque-dpr1/receipt.json",
+      "sha256": "e845ff69a265444c1efab1fd559dcacbb67ed466f1de2c4f3fde38e320bd178a",
+      "bytes": 67749
+    },
+    "diagnostic": {
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261027/final-r5/visible-elements-gpu-cpu-dpr1/partial.json",
+      "sha256": "02eb43df872fae18059b66e503fb8397ed9bbb660b7fd10a093b43d703e4c43b",
+      "bytes": 182886
+    },
+    "cpuProfile": {
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261027/final-r5/visible-elements-gpu-cpu-dpr1/map-site-3d-paused.cpuprofile",
+      "sha256": "05b69b4a26cc8d8c2287f62b0344788dae19e0717e956bd9da53290bc83f64f6",
+      "bytes": 392153
+    },
+    "controls": {
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261027/final-r5/map-and-live-controls-dpr1/receipt.json",
+      "sha256": "bdb8e5b85fd436ee11b5e242f058cd286c72acb1aa9e477f1ad07d06cf839981",
+      "bytes": 234862
+    }
+  },
+  "productionEboCommit": "eb3ac3528747d0b86e99c3f716b2f4f7f52c15fd",
+  "censusSummary": [
+    {
+      "name": "map-site-3d-paused",
+      "records": 924,
+      "invalid": [],
+      "groups": [
+        {
+          "mode": "triangles",
+          "submitted": 884875761,
+          "individual": 727013319,
+          "union": 727013319,
+          "individualFraction": 0.8215993148895848,
+          "unionFraction": 0.8215993148895848,
+          "examples": [
+            {
+              "key": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\",\"utility-routes\"]}]",
+              "valid": true,
+              "mode": "triangles",
+              "instances": 4,
+              "objects": 3853,
+              "submitted": 3358116,
+              "individuallyEligible": 2751780,
+              "runUnion": 2751780
+            },
+            {
+              "key": "physical-layout/91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933/[\"3d\",\"all\",true,0,{\"layers\":[\"utility-routes\"]}]",
+              "valid": true,
+              "mode": "triangles",
+              "instances": 1,
+              "objects": 1879,
+              "submitted": 472515,
+              "individuallyEligible": 393945,
+              "runUnion": 393945
+            }
+          ]
+        },
+        {
+          "mode": "lines",
+          "submitted": 121037070,
+          "individual": 115769550,
+          "union": 115769550,
+          "individualFraction": 0.9564801097713287,
+          "unionFraction": 0.9564801097713287,
+          "examples": [
+            {
+              "key": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\",\"utility-routes\"]}]",
+              "valid": true,
+              "mode": "lines",
+              "instances": 4,
+              "objects": 3853,
+              "submitted": 379528,
+              "individuallyEligible": 356392,
+              "runUnion": 356392
+            },
+            {
+              "key": "physical-layout/91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933/[\"3d\",\"all\",true,0,{\"layers\":[\"utility-routes\"]}]",
+              "valid": true,
+              "mode": "lines",
+              "instances": 1,
+              "objects": 1879,
+              "submitted": 144442,
+              "individuallyEligible": 144442,
+              "runUnion": 144442
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "map-site-3d-playing",
+      "records": 936,
+      "invalid": [],
+      "groups": [
+        {
+          "mode": "triangles",
+          "submitted": 896367654,
+          "individual": 736451430,
+          "union": 736451430,
+          "individualFraction": 0.8215952759045007,
+          "unionFraction": 0.8215952759045007,
+          "examples": [
+            {
+              "key": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\",\"utility-routes\"]}]",
+              "valid": true,
+              "mode": "triangles",
+              "instances": 4,
+              "objects": 3853,
+              "submitted": 3358116,
+              "individuallyEligible": 2751780,
+              "runUnion": 2751780
+            },
+            {
+              "key": "physical-layout/91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933/[\"3d\",\"all\",true,0,{\"layers\":[\"utility-routes\"]}]",
+              "valid": true,
+              "mode": "triangles",
+              "instances": 1,
+              "objects": 1879,
+              "submitted": 472515,
+              "individuallyEligible": 393945,
+              "runUnion": 393945
+            }
+          ]
+        },
+        {
+          "mode": "lines",
+          "submitted": 122608980,
+          "individual": 117272660,
+          "union": 117272660,
+          "individualFraction": 0.9564769236315317,
+          "unionFraction": 0.9564769236315317,
+          "examples": [
+            {
+              "key": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\",\"utility-routes\"]}]",
+              "valid": true,
+              "mode": "lines",
+              "instances": 4,
+              "objects": 3853,
+              "submitted": 379528,
+              "individuallyEligible": 356392,
+              "runUnion": 356392
+            },
+            {
+              "key": "physical-layout/91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933/[\"3d\",\"all\",true,0,{\"layers\":[\"utility-routes\"]}]",
+              "valid": true,
+              "mode": "lines",
+              "instances": 1,
+              "objects": 1879,
+              "submitted": 144442,
+              "individuallyEligible": 144442,
+              "runUnion": 144442
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "ordinaryWindows": [
+    {
+      "name": "map-site-3d-paused",
+      "playing": false,
+      "frames": 229,
+      "rafMedianMs": 16.69999999999891,
+      "rafP95Ms": 33.29999999999927,
+      "rafMaxMs": 66.69999999999891,
+      "durationMs": 4074.5,
+      "windowStarted": 7610.799999952316,
+      "longTasks": [
+        {
+          "start": 11529.5,
+          "duration": 50
+        }
+      ],
+      "physicalDraws": [
+        {
+          "key": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\",\"utility-routes\"]}]",
+          "instances": 4,
+          "lastAt": 11683.399999856949
+        },
+        {
+          "key": "physical-layout/91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933/[\"3d\",\"all\",true,0,{\"layers\":[\"utility-routes\"]}]",
+          "instances": 1,
+          "lastAt": 11683.5
+        }
+      ],
+      "pending": 0,
+      "bspPending": 0,
+      "physicalKeys": [
+        "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\",\"utility-routes\"]}]",
+        "physical-layout/91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933/[\"3d\",\"all\",true,0,{\"layers\":[\"utility-routes\"]}]"
+      ],
+      "heapEnd": {
+        "usedSize": 277862164,
+        "totalSize": 345980928,
+        "embedderHeapUsedSize": 44039568,
+        "backingStorageSize": 327978684
+      },
+      "summedOwnChromeRssKiBEnd": 1723568,
+      "cameraStartEqualsOrdinary": null
+    },
+    {
+      "name": "map-site-3d-playing",
+      "playing": true,
+      "frames": 217,
+      "rafMedianMs": 16.69999999999891,
+      "rafP95Ms": 33.399999999999636,
+      "rafMaxMs": 66.70000000000073,
+      "durationMs": 4066.5,
+      "windowStarted": 12235.399999856949,
+      "longTasks": [
+        {
+          "start": 12913.599999904633,
+          "duration": 54
+        },
+        {
+          "start": 14972.799999952316,
+          "duration": 68
+        },
+        {
+          "start": 15153.5,
+          "duration": 58
+        }
+      ],
+      "physicalDraws": [
+        {
+          "key": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\",\"utility-routes\"]}]",
+          "instances": 4,
+          "lastAt": 16292.5
+        },
+        {
+          "key": "physical-layout/91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933/[\"3d\",\"all\",true,0,{\"layers\":[\"utility-routes\"]}]",
+          "instances": 1,
+          "lastAt": 16292.5
+        }
+      ],
+      "pending": 0,
+      "bspPending": 0,
+      "physicalKeys": [
+        "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\",\"utility-routes\"]}]",
+        "physical-layout/91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933/[\"3d\",\"all\",true,0,{\"layers\":[\"utility-routes\"]}]"
+      ],
+      "heapEnd": {
+        "usedSize": 201715640,
+        "totalSize": 425803776,
+        "embedderHeapUsedSize": 19177216,
+        "backingStorageSize": 274525609
+      },
+      "summedOwnChromeRssKiBEnd": 1765632,
+      "cameraStartEqualsOrdinary": null
+    }
+  ],
+  "controls": [
+    {
+      "name": "control-map-only-paused",
+      "playing": false,
+      "frames": 243,
+      "rafMedianMs": 16.69999999999891,
+      "rafP95Ms": 16.700000000000728,
+      "rafMaxMs": 16.80000000000109,
+      "durationMs": 4058.2000000476837,
+      "windowStarted": 7275.899999856949,
+      "longTasks": [],
+      "physicalDraws": [],
+      "pending": 0,
+      "bspPending": 0,
+      "physicalKeys": [],
+      "heapEnd": {
+        "usedSize": 232070464,
+        "totalSize": 282542080,
+        "embedderHeapUsedSize": 19778648,
+        "backingStorageSize": 285752869
+      },
+      "summedOwnChromeRssKiBEnd": 1817472,
+      "cameraStartEqualsOrdinary": null
+    },
+    {
+      "name": "control-map-only-playing",
+      "playing": true,
+      "frames": 242,
+      "rafMedianMs": 16.69999999999891,
+      "rafP95Ms": 16.700000000000728,
+      "rafMaxMs": 16.80000000000109,
+      "durationMs": 4048.2999999523163,
+      "windowStarted": 12584.799999952316,
+      "longTasks": [],
+      "physicalDraws": [],
+      "pending": 0,
+      "bspPending": 0,
+      "physicalKeys": [],
+      "heapEnd": {
+        "usedSize": 294820780,
+        "totalSize": 350978048,
+        "embedderHeapUsedSize": 31126424,
+        "backingStorageSize": 301247542
+      },
+      "summedOwnChromeRssKiBEnd": 1715264,
+      "cameraStartEqualsOrdinary": null
+    },
+    {
+      "name": "control-physical-live-off-paused",
+      "playing": false,
+      "frames": 241,
+      "rafMedianMs": 16.700000000000728,
+      "rafP95Ms": 16.700000000000728,
+      "rafMaxMs": 16.799999999999272,
+      "durationMs": 4043.5,
+      "windowStarted": 17449.299999952316,
+      "longTasks": [],
+      "physicalDraws": [
+        {
+          "key": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\",\"utility-routes\"]}]",
+          "instances": 4,
+          "lastAt": 21490.199999809265
+        },
+        {
+          "key": "physical-layout/91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933/[\"3d\",\"all\",true,0,{\"layers\":[\"utility-routes\"]}]",
+          "instances": 1,
+          "lastAt": 21490.199999809265
+        }
+      ],
+      "pending": 0,
+      "bspPending": 0,
+      "physicalKeys": [
+        "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\",\"utility-routes\"]}]",
+        "physical-layout/91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933/[\"3d\",\"all\",true,0,{\"layers\":[\"utility-routes\"]}]"
+      ],
+      "heapEnd": {
+        "usedSize": 366047484,
+        "totalSize": 414564352,
+        "embedderHeapUsedSize": 41422400,
+        "backingStorageSize": 381881567
+      },
+      "summedOwnChromeRssKiBEnd": 1630496,
+      "cameraStartEqualsOrdinary": true
+    },
+    {
+      "name": "control-physical-live-off-playing",
+      "playing": true,
+      "frames": 242,
+      "rafMedianMs": 16.69999999999709,
+      "rafP95Ms": 16.799999999999272,
+      "rafMaxMs": 16.80000000000291,
+      "durationMs": 4051.7999999523163,
+      "windowStarted": 21879.799999952316,
+      "longTasks": [],
+      "physicalDraws": [
+        {
+          "key": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\",\"utility-routes\"]}]",
+          "instances": 4,
+          "lastAt": 25930.299999952316
+        },
+        {
+          "key": "physical-layout/91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933/[\"3d\",\"all\",true,0,{\"layers\":[\"utility-routes\"]}]",
+          "instances": 1,
+          "lastAt": 25930.299999952316
+        }
+      ],
+      "pending": 0,
+      "bspPending": 0,
+      "physicalKeys": [
+        "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\",\"utility-routes\"]}]",
+        "physical-layout/91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933/[\"3d\",\"all\",true,0,{\"layers\":[\"utility-routes\"]}]"
+      ],
+      "heapEnd": {
+        "usedSize": 176797460,
+        "totalSize": 374947840,
+        "embedderHeapUsedSize": 17297128,
+        "backingStorageSize": 323428048
+      },
+      "summedOwnChromeRssKiBEnd": 1716448,
+      "cameraStartEqualsOrdinary": true
+    }
+  ],
+  "gpuDiagnostic": {
+    "sampleMs": 4309.008,
+    "gpu": {
+      "draw": {
+        "count": 227,
+        "median": 7.260208,
+        "p95": 14.528499,
+        "max": 18.100375
+      },
+      "resolve": {
+        "count": 227,
+        "median": 2.966749,
+        "p95": 7.044499,
+        "max": 10.459958
+      }
+    },
+    "gpuCpuSubmission": {
+      "count": 227,
+      "median": 0.09999990463256836,
+      "p95": 2,
+      "max": 2.8999998569488525
+    },
+    "gpuValid": true,
+    "gpuStates": {
+      "pending": 0,
+      "busyIntervals": 0,
+      "disjointEvents": 0,
+      "aborted": []
+    },
+    "submittedTriangles": {
+      "count": 227,
+      "median": 3146649,
+      "p95": 3147945,
+      "max": 3147945
+    },
+    "submittedLines": {
+      "count": 227,
+      "median": 501154,
+      "p95": 501186,
+      "max": 501186
+    }
+  },
+  "cpuTopSelf": [
+    {
+      "ms": 750.905,
+      "function": "(idle)",
+      "url": "",
+      "line": 0,
+      "column": 0,
+      "node": 78
+    },
+    {
+      "ms": 520.532,
+      "function": "(program)",
+      "url": "",
+      "line": 0,
+      "column": 0,
+      "node": 2
+    },
+    {
+      "ms": 293.314,
+      "function": "getParameter",
+      "url": "",
+      "line": 0,
+      "column": 0,
+      "node": 126
+    },
+    {
+      "ms": 273.666,
+      "function": "On",
+      "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-iz22GvCi.js",
+      "line": 105,
+      "column": 36073,
+      "node": 498
+    },
+    {
+      "ms": 129.917,
+      "function": "Pe",
+      "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-iz22GvCi.js",
+      "line": 2,
+      "column": 2598,
+      "node": 699
+    },
+    {
+      "ms": 125.138,
+      "function": "(garbage collector)",
+      "url": "",
+      "line": 0,
+      "column": 0,
+      "node": 274
+    },
+    {
+      "ms": 48.412,
+      "function": "Ke",
+      "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-iz22GvCi.js",
+      "line": 2,
+      "column": 8297,
+      "node": 616
+    },
+    {
+      "ms": 41.887,
+      "function": "",
+      "url": "http://127.0.0.1:43148/assets/world/inspection-CL0aXc8T.js",
+      "line": 2,
+      "column": 21929,
+      "node": 395
+    },
+    {
+      "ms": 37.168,
+      "function": "",
+      "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-iz22GvCi.js",
+      "line": 105,
+      "column": 141369,
+      "node": 482
+    },
+    {
+      "ms": 35.893,
+      "function": "get",
+      "url": "http://127.0.0.1:43148/assets/world/svelte-Dp-C2IIQ.js",
+      "line": 2,
+      "column": 14173,
+      "node": 587
+    },
+    {
+      "ms": 35.689,
+      "function": "Ft",
+      "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-iz22GvCi.js",
+      "line": 105,
+      "column": 6768,
+      "node": 195
+    },
+    {
+      "ms": 33.662,
+      "function": "z",
+      "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-iz22GvCi.js",
+      "line": 105,
+      "column": 63736,
+      "node": 130
+    },
+    {
+      "ms": 31.201,
+      "function": "",
+      "url": "",
+      "line": 358,
+      "column": 42,
+      "node": 291
+    },
+    {
+      "ms": 28.611,
+      "function": "",
+      "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-iz22GvCi.js",
+      "line": 105,
+      "column": 132882,
+      "node": 238
+    },
+    {
+      "ms": 26.227,
+      "function": "S",
+      "url": "http://127.0.0.1:43148/assets/world/operation-presentation-C4XAmapg.js",
+      "line": 2,
+      "column": 1012,
+      "node": 790
+    },
+    {
+      "ms": 23.937,
+      "function": "Fe",
+      "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-iz22GvCi.js",
+      "line": 2,
+      "column": 2969,
+      "node": 698
+    }
+  ],
+  "cpuTopInclusive": [
+    {
+      "ms": 4309.008,
+      "function": "(root)",
+      "url": "",
+      "line": 0,
+      "column": 0,
+      "node": 1
+    },
+    {
+      "ms": 1130.814,
+      "function": "_render",
+      "url": "http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js",
+      "line": 802,
+      "column": 184132,
+      "node": 113
+    },
+    {
+      "ms": 1130.814,
+      "function": "",
+      "url": "http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js",
+      "line": 802,
+      "column": 187636,
+      "node": 112
+    },
+    {
+      "ms": 1130.814,
+      "function": "",
+      "url": "http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js",
+      "line": 2,
+      "column": 24455,
+      "node": 111
+    },
+    {
+      "ms": 905.543,
+      "function": "render",
+      "url": "http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js",
+      "line": 802,
+      "column": 76756,
+      "node": 119
+    },
+    {
+      "ms": 811.232,
+      "function": "renderLayer",
+      "url": "http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js",
+      "line": 802,
+      "column": 80018,
+      "node": 120
+    },
+    {
+      "ms": 772.049,
+      "function": "",
+      "url": "http://127.0.0.1:43148/assets/world/svelte-Dp-C2IIQ.js",
+      "line": 2,
+      "column": 3966,
+      "node": 157
+    },
+    {
+      "ms": 770.78,
+      "function": "st",
+      "url": "http://127.0.0.1:43148/assets/world/svelte-Dp-C2IIQ.js",
+      "line": 2,
+      "column": 3882,
+      "node": 158
+    },
+    {
+      "ms": 769.536,
+      "function": "#_",
+      "url": "http://127.0.0.1:43148/assets/world/svelte-Dp-C2IIQ.js",
+      "line": 2,
+      "column": 8287,
+      "node": 162
+    },
+    {
+      "ms": 769.536,
+      "function": "flush",
+      "url": "http://127.0.0.1:43148/assets/world/svelte-Dp-C2IIQ.js",
+      "line": 2,
+      "column": 10409,
+      "node": 161
+    },
+    {
+      "ms": 769.536,
+      "function": "",
+      "url": "http://127.0.0.1:43148/assets/world/svelte-Dp-C2IIQ.js",
+      "line": 2,
+      "column": 11183,
+      "node": 160
+    },
+    {
+      "ms": 769.536,
+      "function": "h",
+      "url": "http://127.0.0.1:43148/assets/world/svelte-Dp-C2IIQ.js",
+      "line": 2,
+      "column": 401,
+      "node": 159
+    },
+    {
+      "ms": 750.905,
+      "function": "(idle)",
+      "url": "",
+      "line": 0,
+      "column": 0,
+      "node": 78
+    },
+    {
+      "ms": 593.196,
+      "function": "sO",
+      "url": "http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js",
+      "line": 802,
+      "column": 65276,
+      "node": 121
+    },
+    {
+      "ms": 588.148,
+      "function": "render",
+      "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-iz22GvCi.js",
+      "line": 105,
+      "column": 43670,
+      "node": 122
+    },
+    {
+      "ms": 586.905,
+      "function": "render",
+      "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-iz22GvCi.js",
+      "line": 105,
+      "column": 37969,
+      "node": 123
+    },
+    {
+      "ms": 524.239,
+      "function": "Kt",
+      "url": "http://127.0.0.1:43148/assets/world/svelte-Dp-C2IIQ.js",
+      "line": 2,
+      "column": 11637,
+      "node": 235
+    },
+    {
+      "ms": 520.532,
+      "function": "(program)",
+      "url": "",
+      "line": 0,
+      "column": 0,
+      "node": 2
+    },
+    {
+      "ms": 497.586,
+      "function": "cr",
+      "url": "http://127.0.0.1:43148/assets/world/svelte-Dp-C2IIQ.js",
+      "line": 2,
+      "column": 21050,
+      "node": 237
+    },
+    {
+      "ms": 497.586,
+      "function": "fr",
+      "url": "http://127.0.0.1:43148/assets/world/svelte-Dp-C2IIQ.js",
+      "line": 2,
+      "column": 22287,
+      "node": 236
+    },
+    {
+      "ms": 417.603,
+      "function": "",
+      "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-iz22GvCi.js",
+      "line": 105,
+      "column": 132882,
+      "node": 238
+    },
+    {
+      "ms": 384.819,
+      "function": "_",
+      "url": "http://127.0.0.1:43148/assets/world/operation-presentation-C4XAmapg.js",
+      "line": 2,
+      "column": 4179,
+      "node": 314
+    },
+    {
+      "ms": 382.306,
+      "function": "e._zod.run",
+      "url": "http://127.0.0.1:43148/assets/world/preload-helper-BJXbz8SI.js",
+      "line": 4,
+      "column": 1052,
+      "node": 317
+    },
+    {
+      "ms": 382.306,
+      "function": "e._zod.parse",
+      "url": "http://127.0.0.1:43148/assets/world/preload-helper-BJXbz8SI.js",
+      "line": 49,
+      "column": 12608,
+      "node": 316
+    },
+    {
+      "ms": 382.306,
+      "function": "e",
+      "url": "http://127.0.0.1:43148/assets/world/preload-helper-BJXbz8SI.js",
+      "line": 51,
+      "column": 16220,
+      "node": 315
+    },
+    {
+      "ms": 376.329,
+      "function": "Q",
+      "url": "http://127.0.0.1:43148/assets/world/svelte-Dp-C2IIQ.js",
+      "line": 2,
+      "column": 22500,
+      "node": 239
+    },
+    {
+      "ms": 371.076,
+      "function": "or",
+      "url": "http://127.0.0.1:43148/assets/world/svelte-Dp-C2IIQ.js",
+      "line": 2,
+      "column": 20700,
+      "node": 240
+    },
+    {
+      "ms": 366.272,
+      "function": "cr",
+      "url": "http://127.0.0.1:43148/assets/world/svelte-Dp-C2IIQ.js",
+      "line": 2,
+      "column": 21050,
+      "node": 244
+    }
+  ],
+  "limits": [
+    "Ordinary a8 full live geometry fails16.8ms p95; no overall speedup/pass claimed.",
+    "Census and GPU/CPU profiler runs add observer overhead; they are diagnostics, not frame-budget qualification. GPU elapsed is a command interval, not a utilization counter.",
+    "Map-only control uses public detail-hidden setting and zero physical draw witnesses. Its saved physical MVP is last observed before hiding, not a hidden camera observation. Home is applied before hiding.",
+    "Live-off controls preserve exact physical coverage and starting Float32 matrices versus ordinary a8; the control suppresses live information as a causal diagnostic only, never a product performance fix.",
+    "CPU heap and summed Chrome RSS have different ownership/measurement scopes. Backing/index/typed bytes are not process memory.",
+    "No production Run or API was used. Existing isolated paused R5 fixture retained and paused again on exit."
+  ]
+}

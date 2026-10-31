@@ -1,0 +1,3898 @@
+{
+  "passed": true,
+  "provenance": {
+    "commit": "a8db5f21e6e900887c900f04ef4d433389ae15ca",
+    "rendererRoot": "/Users/hilde/Documents/ChatGPT/Leitbild-campus-integration/apps/world",
+    "files": {
+      "src/ui/map/physical-scene/backend.ts": "be0eb90cd848742e694dd9793dd5d272bd56d5361f43cb4d9e65be3cafd8980c",
+      "src/ui/map/physical-scene/renderer.ts": "eaa6489ef685883323c02714c57e130a9e30f8b63a5349eacaf6fa9b7a3c35a3",
+      "src/ui/map/physical-scene/render-pass.ts": "c3b359387bf1502e3836c8ef3739f729beda6cde2e975db8f9ac613af099d1d9",
+      "src/ui/map/physical-scene/architecture-backend.ts": "cb575ff31bfca60d99de2ca332aaca510e0afc839bc49eaa864b98aa9dff31ce",
+      "src/ui/map/physical-scene/architecture-bsp.ts": "c95f4c7d948201aaa9c60aabc5a479784f89d1b93c0b59d337c9c5854224813d",
+      "src/ui/map/physical-scene/architecture-bsp-types.ts": "64bf2296059b9ce0b00af90460c3b93075d1a3951fcdb578d36350286e6a91c1",
+      "src/ui/map/physical-scene/architecture-cohort.ts": "c70da7bb4bc6fe5ec3036b1a800a1c23e4d747397239fe6fad90bd0185646aa9",
+      "src/ui/map/physical-scene/plan-projection.ts": "6f7f90afcb42997686a3573ea8101c25032c336120a6dbad855af1057b694e25",
+      "src/ui/map/physical-scene/preparation.ts": "da1f2c31d42d615564d4dc86c7f0c6e14880feea8cda6466077166b611544c94",
+      "src/ui/map/physical-scene/geometry.ts": "20ea4bb0f0dd5945ad293ac27ebbf5075bb0de84a981d18ab92de99ad5ab3d83",
+      "src/ui/map/physical-scene/surface-ownership.ts": "240f6f5c38d71c2d085c4dae742b7746ef2e425219f15e9678a635ab154a1e98",
+      "src/ui/map/physical-scene/picking.ts": "a7030835ed4a6e528346b41054601010952416857496aa09a3a090d0b7de68a3",
+      "src/ui/map/physical-scene/render-buffers.ts": "a4d65954df10c389f1800cd709cba0b12b7d106f2ad0a8b4ad6c1b8090c63274",
+      "src/ui/map/physical-scene/math.ts": "134edb72d2fa65f7bac65c3188a6cafeb39fb60f64b7d49efa9436ca587c04bf",
+      "src/ui/map/physical-scene/gl-state.ts": "42e05a9999413e095ea1367cb32842ac3c8b96e6482432b76e5cf1605ef1cac0",
+      "src/ui/map/physical-scene/architecture-opacity.ts": "6984d13fd4304edc461d46776d04ab93629321f14c3e8a883bbd323df131a333"
+    },
+    "fixtureCommit": "48a51f1ef9abde2290c0f4ad458b218b3426a20c",
+    "fixtureFiles": {
+      "tests/browser/physical-scene/opacity-probe.ts": "64c72fe85c0ef6dc09ee5049c7ea6ecb64bc5b84e8339dbeeab08890d1f24437",
+      "scripts/physical-layout/opacity-probe.ts": "7985e1eb224bdc5d16dc413671e2a5748806d9ab05a43d2c46710cecdb2374e0"
+    }
+  },
+  "runs": [
+    {
+      "passed": true,
+      "results": [
+        {
+          "kind": "single-red-over-blue",
+          "opacity": 0,
+          "center": [
+            0,
+            0,
+            255,
+            255
+          ],
+          "expected": [
+            0,
+            0,
+            255,
+            255
+          ],
+          "passed": true,
+          "state": [],
+          "glError": 0
+        },
+        {
+          "kind": "single-red-over-blue",
+          "opacity": 0.5,
+          "center": [
+            128,
+            0,
+            128,
+            255
+          ],
+          "expected": [
+            128,
+            0,
+            127,
+            255
+          ],
+          "passed": true,
+          "state": [],
+          "glError": 0
+        },
+        {
+          "kind": "single-red-over-blue",
+          "opacity": 1,
+          "center": [
+            255,
+            0,
+            0,
+            255
+          ],
+          "expected": [
+            255,
+            0,
+            0,
+            255
+          ],
+          "passed": true,
+          "state": [],
+          "glError": 0
+        },
+        {
+          "kind": "overlap-order",
+          "center": [
+            128,
+            64,
+            64,
+            255
+          ],
+          "reverse": [
+            128,
+            64,
+            64,
+            255
+          ],
+          "differentBytes": 0,
+          "expected": [
+            128,
+            64,
+            64,
+            255
+          ],
+          "passed": true
+        },
+        {
+          "kind": "MSAA-shared-silhouette",
+          "edgeSamples": 408,
+          "edgeFailures": 0,
+          "edgeMaximumError": 0,
+          "edgeExamples": [],
+          "passed": true
+        },
+        {
+          "kind": "slider-no-derived-geometry",
+          "geometryUploadsBefore": 8,
+          "geometryUploadsAfter": 8,
+          "preparesBefore": 3,
+          "preparesAfter": 3,
+          "bspPreparesBefore": 2,
+          "bspPreparesAfter": 2,
+          "allocationsBefore": 1,
+          "allocationsAfter": 1,
+          "passed": true
+        },
+        {
+          "kind": "same-scene-overview-does-not-replace-detailed-asset",
+          "sameSceneId": true,
+          "distinctAsset": true,
+          "differentBytes": 0,
+          "passed": true
+        },
+        {
+          "kind": "cohort-basis-remains-valid-when-reference-source-is-not-drawn",
+          "referenceId": "green/[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]",
+          "referenceAbsent": true,
+          "pixel": [
+            128,
+            0,
+            128,
+            255
+          ],
+          "expected": [
+            128,
+            0,
+            127,
+            255
+          ],
+          "passed": true
+        },
+        {
+          "kind": "three-intersecting-architecture-planes",
+          "samples": [
+            {
+              "x": -0.6171875,
+              "y": -0.2890625,
+              "expected": [
+                159,
+                96,
+                32,
+                255
+              ],
+              "actual": [
+                159,
+                96,
+                32,
+                255
+              ],
+              "reverse": [
+                159,
+                96,
+                32,
+                255
+              ]
+            },
+            {
+              "x": -0.6171875,
+              "y": -0.0078125,
+              "expected": [
+                159,
+                96,
+                32,
+                255
+              ],
+              "actual": [
+                159,
+                96,
+                32,
+                255
+              ],
+              "reverse": [
+                159,
+                96,
+                32,
+                255
+              ]
+            },
+            {
+              "x": -0.6171875,
+              "y": 0.5546875,
+              "expected": [
+                191,
+                96,
+                32,
+                255
+              ],
+              "actual": [
+                191,
+                96,
+                32,
+                255
+              ],
+              "reverse": [
+                191,
+                96,
+                32,
+                255
+              ]
+            },
+            {
+              "x": -0.3671875,
+              "y": -0.5703125,
+              "expected": [
+                96,
+                159,
+                32,
+                255
+              ],
+              "actual": [
+                96,
+                159,
+                32,
+                255
+              ],
+              "reverse": [
+                96,
+                159,
+                32,
+                255
+              ]
+            },
+            {
+              "x": -0.3671875,
+              "y": -0.2890625,
+              "expected": [
+                159,
+                96,
+                32,
+                255
+              ],
+              "actual": [
+                159,
+                96,
+                32,
+                255
+              ],
+              "reverse": [
+                159,
+                96,
+                32,
+                255
+              ]
+            },
+            {
+              "x": -0.3671875,
+              "y": -0.0078125,
+              "expected": [
+                159,
+                96,
+                32,
+                255
+              ],
+              "actual": [
+                159,
+                96,
+                32,
+                255
+              ],
+              "reverse": [
+                159,
+                96,
+                32,
+                255
+              ]
+            },
+            {
+              "x": -0.3671875,
+              "y": 0.2734375,
+              "expected": [
+                191,
+                96,
+                32,
+                255
+              ],
+              "actual": [
+                191,
+                96,
+                32,
+                255
+              ],
+              "reverse": [
+                191,
+                96,
+                32,
+                255
+              ]
+            },
+            {
+              "x": -0.3671875,
+              "y": 0.5546875,
+              "expected": [
+                191,
+                96,
+                32,
+                255
+              ],
+              "actual": [
+                191,
+                96,
+                32,
+                255
+              ],
+              "reverse": [
+                191,
+                96,
+                32,
+                255
+              ]
+            },
+            {
+              "x": -0.1328125,
+              "y": -0.5703125,
+              "expected": [
+                96,
+                159,
+                32,
+                255
+              ],
+              "actual": [
+                96,
+                159,
+                32,
+                255
+              ],
+              "reverse": [
+                96,
+                159,
+                32,
+                255
+              ]
+            },
+            {
+              "x": -0.1328125,
+              "y": -0.2890625,
+              "expected": [
+                96,
+                159,
+                32,
+                255
+              ],
+              "actual": [
+                96,
+                159,
+                32,
+                255
+              ],
+              "reverse": [
+                96,
+                159,
+                32,
+                255
+              ]
+            },
+            {
+              "x": -0.1328125,
+              "y": -0.0078125,
+              "expected": [
+                159,
+                96,
+                32,
+                255
+              ],
+              "actual": [
+                159,
+                96,
+                32,
+                255
+              ],
+              "reverse": [
+                159,
+                96,
+                32,
+                255
+              ]
+            },
+            {
+              "x": -0.1328125,
+              "y": 0.5546875,
+              "expected": [
+                191,
+                159,
+                32,
+                255
+              ],
+              "actual": [
+                191,
+                159,
+                32,
+                255
+              ],
+              "reverse": [
+                191,
+                159,
+                32,
+                255
+              ]
+            },
+            {
+              "x": 0.1171875,
+              "y": -0.5703125,
+              "expected": [
+                96,
+                159,
+                32,
+                255
+              ],
+              "actual": [
+                96,
+                159,
+                32,
+                255
+              ],
+              "reverse": [
+                96,
+                159,
+                32,
+                255
+              ]
+            },
+            {
+              "x": 0.1171875,
+              "y": -0.0078125,
+              "expected": [
+                159,
+                191,
+                32,
+                255
+              ],
+              "actual": [
+                159,
+                191,
+                32,
+                255
+              ],
+              "reverse": [
+                159,
+                191,
+                32,
+                255
+              ]
+            },
+            {
+              "x": 0.1171875,
+              "y": 0.2734375,
+              "expected": [
+                191,
+                159,
+                32,
+                255
+              ],
+              "actual": [
+                191,
+                159,
+                32,
+                255
+              ],
+              "reverse": [
+                191,
+                159,
+                32,
+                255
+              ]
+            },
+            {
+              "x": 0.1171875,
+              "y": 0.5546875,
+              "expected": [
+                191,
+                159,
+                32,
+                255
+              ],
+              "actual": [
+                191,
+                159,
+                32,
+                255
+              ],
+              "reverse": [
+                191,
+                159,
+                32,
+                255
+              ]
+            },
+            {
+              "x": 0.3515625,
+              "y": -0.5703125,
+              "expected": [
+                96,
+                191,
+                32,
+                255
+              ],
+              "actual": [
+                96,
+                191,
+                32,
+                255
+              ],
+              "reverse": [
+                96,
+                191,
+                32,
+                255
+              ]
+            },
+            {
+              "x": 0.3515625,
+              "y": -0.2890625,
+              "expected": [
+                96,
+                191,
+                32,
+                255
+              ],
+              "actual": [
+                96,
+                191,
+                32,
+                255
+              ],
+              "reverse": [
+                96,
+                191,
+                32,
+                255
+              ]
+            },
+            {
+              "x": 0.3515625,
+              "y": -0.0078125,
+              "expected": [
+                159,
+                191,
+                32,
+                255
+              ],
+              "actual": [
+                159,
+                191,
+                32,
+                255
+              ],
+              "reverse": [
+                159,
+                191,
+                32,
+                255
+              ]
+            },
+            {
+              "x": 0.3515625,
+              "y": 0.2734375,
+              "expected": [
+                159,
+                191,
+                32,
+                255
+              ],
+              "actual": [
+                159,
+                191,
+                32,
+                255
+              ],
+              "reverse": [
+                159,
+                191,
+                32,
+                255
+              ]
+            },
+            {
+              "x": 0.3515625,
+              "y": 0.5546875,
+              "expected": [
+                191,
+                159,
+                32,
+                255
+              ],
+              "actual": [
+                191,
+                159,
+                32,
+                255
+              ],
+              "reverse": [
+                191,
+                159,
+                32,
+                255
+              ]
+            },
+            {
+              "x": 0.5859375,
+              "y": -0.5703125,
+              "expected": [
+                96,
+                191,
+                32,
+                255
+              ],
+              "actual": [
+                96,
+                191,
+                32,
+                255
+              ],
+              "reverse": [
+                96,
+                191,
+                32,
+                255
+              ]
+            },
+            {
+              "x": 0.5859375,
+              "y": -0.0078125,
+              "expected": [
+                159,
+                191,
+                32,
+                255
+              ],
+              "actual": [
+                159,
+                191,
+                32,
+                255
+              ],
+              "reverse": [
+                159,
+                191,
+                32,
+                255
+              ]
+            },
+            {
+              "x": 0.5859375,
+              "y": 0.2734375,
+              "expected": [
+                159,
+                191,
+                32,
+                255
+              ],
+              "actual": [
+                159,
+                191,
+                32,
+                255
+              ],
+              "reverse": [
+                159,
+                191,
+                32,
+                255
+              ]
+            }
+          ],
+          "errors": 0,
+          "maximumError": 0,
+          "passed": true
+        },
+        {
+          "kind": "shared-family-cross-placement-order",
+          "samples": [
+            {
+              "x": -0.6171875,
+              "y": -0.2890625,
+              "expected": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "actual": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "reverse": [
+                159,
+                64,
+                32,
+                255
+              ]
+            },
+            {
+              "x": -0.6171875,
+              "y": -0.0078125,
+              "expected": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "actual": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "reverse": [
+                159,
+                64,
+                32,
+                255
+              ]
+            },
+            {
+              "x": -0.6171875,
+              "y": 0.2734375,
+              "expected": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "actual": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "reverse": [
+                159,
+                64,
+                32,
+                255
+              ]
+            },
+            {
+              "x": -0.3671875,
+              "y": -0.5703125,
+              "expected": [
+                96,
+                128,
+                32,
+                255
+              ],
+              "actual": [
+                96,
+                128,
+                32,
+                255
+              ],
+              "reverse": [
+                96,
+                128,
+                32,
+                255
+              ]
+            },
+            {
+              "x": -0.3671875,
+              "y": -0.2890625,
+              "expected": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "actual": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "reverse": [
+                159,
+                64,
+                32,
+                255
+              ]
+            },
+            {
+              "x": -0.3671875,
+              "y": -0.0078125,
+              "expected": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "actual": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "reverse": [
+                159,
+                64,
+                32,
+                255
+              ]
+            },
+            {
+              "x": -0.3671875,
+              "y": 0.2734375,
+              "expected": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "actual": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "reverse": [
+                159,
+                64,
+                32,
+                255
+              ]
+            },
+            {
+              "x": -0.3671875,
+              "y": 0.5546875,
+              "expected": [
+                191,
+                32,
+                32,
+                255
+              ],
+              "actual": [
+                191,
+                32,
+                32,
+                255
+              ],
+              "reverse": [
+                191,
+                32,
+                32,
+                255
+              ]
+            },
+            {
+              "x": -0.1328125,
+              "y": -0.5703125,
+              "expected": [
+                96,
+                128,
+                32,
+                255
+              ],
+              "actual": [
+                96,
+                128,
+                32,
+                255
+              ],
+              "reverse": [
+                96,
+                128,
+                32,
+                255
+              ]
+            },
+            {
+              "x": -0.1328125,
+              "y": -0.2890625,
+              "expected": [
+                96,
+                128,
+                32,
+                255
+              ],
+              "actual": [
+                96,
+                128,
+                32,
+                255
+              ],
+              "reverse": [
+                96,
+                128,
+                32,
+                255
+              ]
+            },
+            {
+              "x": -0.1328125,
+              "y": -0.0078125,
+              "expected": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "actual": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "reverse": [
+                159,
+                64,
+                32,
+                255
+              ]
+            },
+            {
+              "x": -0.1328125,
+              "y": 0.2734375,
+              "expected": [
+                191,
+                32,
+                32,
+                255
+              ],
+              "actual": [
+                191,
+                32,
+                32,
+                255
+              ],
+              "reverse": [
+                191,
+                32,
+                32,
+                255
+              ]
+            },
+            {
+              "x": -0.1328125,
+              "y": 0.5546875,
+              "expected": [
+                191,
+                32,
+                32,
+                255
+              ],
+              "actual": [
+                191,
+                32,
+                32,
+                255
+              ],
+              "reverse": [
+                191,
+                32,
+                32,
+                255
+              ]
+            },
+            {
+              "x": 0.1171875,
+              "y": -0.5703125,
+              "expected": [
+                96,
+                128,
+                32,
+                255
+              ],
+              "actual": [
+                96,
+                128,
+                32,
+                255
+              ],
+              "reverse": [
+                96,
+                128,
+                32,
+                255
+              ]
+            },
+            {
+              "x": 0.1171875,
+              "y": -0.2890625,
+              "expected": [
+                96,
+                128,
+                32,
+                255
+              ],
+              "actual": [
+                96,
+                128,
+                32,
+                255
+              ],
+              "reverse": [
+                96,
+                128,
+                32,
+                255
+              ]
+            },
+            {
+              "x": 0.1171875,
+              "y": -0.0078125,
+              "expected": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "actual": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "reverse": [
+                159,
+                64,
+                32,
+                255
+              ]
+            },
+            {
+              "x": 0.1171875,
+              "y": 0.2734375,
+              "expected": [
+                191,
+                32,
+                32,
+                255
+              ],
+              "actual": [
+                191,
+                32,
+                32,
+                255
+              ],
+              "reverse": [
+                191,
+                32,
+                32,
+                255
+              ]
+            },
+            {
+              "x": 0.1171875,
+              "y": 0.5546875,
+              "expected": [
+                191,
+                32,
+                32,
+                255
+              ],
+              "actual": [
+                191,
+                32,
+                32,
+                255
+              ],
+              "reverse": [
+                191,
+                32,
+                32,
+                255
+              ]
+            },
+            {
+              "x": 0.3515625,
+              "y": -0.5703125,
+              "expected": [
+                96,
+                128,
+                32,
+                255
+              ],
+              "actual": [
+                96,
+                128,
+                32,
+                255
+              ],
+              "reverse": [
+                96,
+                128,
+                32,
+                255
+              ]
+            },
+            {
+              "x": 0.3515625,
+              "y": -0.0078125,
+              "expected": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "actual": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "reverse": [
+                159,
+                64,
+                32,
+                255
+              ]
+            },
+            {
+              "x": 0.3515625,
+              "y": 0.2734375,
+              "expected": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "actual": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "reverse": [
+                159,
+                64,
+                32,
+                255
+              ]
+            },
+            {
+              "x": 0.3515625,
+              "y": 0.5546875,
+              "expected": [
+                191,
+                32,
+                32,
+                255
+              ],
+              "actual": [
+                191,
+                32,
+                32,
+                255
+              ],
+              "reverse": [
+                191,
+                32,
+                32,
+                255
+              ]
+            },
+            {
+              "x": 0.5859375,
+              "y": -0.2890625,
+              "expected": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "actual": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "reverse": [
+                159,
+                64,
+                32,
+                255
+              ]
+            },
+            {
+              "x": 0.5859375,
+              "y": -0.0078125,
+              "expected": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "actual": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "reverse": [
+                159,
+                64,
+                32,
+                255
+              ]
+            },
+            {
+              "x": 0.5859375,
+              "y": 0.2734375,
+              "expected": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "actual": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "reverse": [
+                159,
+                64,
+                32,
+                255
+              ]
+            }
+          ],
+          "errors": 0,
+          "maximumError": 0,
+          "passed": true
+        },
+        {
+          "kind": "authored-line-traverses-with-its-far-wall",
+          "linePixels": 168,
+          "errors": 0,
+          "orderDifferentBytes": 0,
+          "passed": true
+        },
+        {
+          "kind": "mixed-alpha-first-source-faces-and-authored-joints",
+          "firstAlpha": 1,
+          "secondAlpha": 0.5,
+          "overlap": [
+            0,
+            255,
+            0,
+            255
+          ],
+          "overlapExpected": [
+            0,
+            255,
+            0,
+            255
+          ],
+          "outside": [
+            128,
+            0,
+            128,
+            255
+          ],
+          "outsideExpected": [
+            128,
+            0,
+            127,
+            255
+          ],
+          "differentBytes": 0,
+          "jointPixels": 24,
+          "wrongTint": 0,
+          "authoredLineVertices": 2,
+          "passed": true
+        },
+        {
+          "kind": "mixed-alpha-first-source-faces-and-authored-joints",
+          "firstAlpha": 0.5,
+          "secondAlpha": 1,
+          "overlap": [
+            0,
+            128,
+            128,
+            255
+          ],
+          "overlapExpected": [
+            0,
+            128,
+            127,
+            255
+          ],
+          "outside": [
+            255,
+            0,
+            0,
+            255
+          ],
+          "outsideExpected": [
+            255,
+            0,
+            0,
+            255
+          ],
+          "differentBytes": 0,
+          "jointPixels": 24,
+          "wrongTint": 0,
+          "authoredLineVertices": 2,
+          "passed": true
+        },
+        {
+          "kind": "mixed-alpha-first-source-faces-and-authored-joints",
+          "firstAlpha": 0,
+          "secondAlpha": 0.5,
+          "overlap": [
+            128,
+            0,
+            128,
+            255
+          ],
+          "overlapExpected": [
+            128,
+            0,
+            127,
+            255
+          ],
+          "outside": [
+            128,
+            0,
+            128,
+            255
+          ],
+          "outsideExpected": [
+            128,
+            0,
+            127,
+            255
+          ],
+          "differentBytes": 0,
+          "jointPixels": 24,
+          "wrongTint": 0,
+          "authoredLineVertices": 2,
+          "passed": true
+        },
+        {
+          "kind": "perspective-cyclic-order-and-original-lighting",
+          "samples": [
+            {
+              "x": -0.1640625,
+              "y": -0.0859375,
+              "expected": [
+                153,
+                184,
+                31,
+                255
+              ],
+              "actual": [
+                154,
+                184,
+                31,
+                255
+              ],
+              "reverse": [
+                154,
+                184,
+                31,
+                255
+              ]
+            },
+            {
+              "x": -0.1640625,
+              "y": 0.0078125,
+              "expected": [
+                153,
+                184,
+                31,
+                255
+              ],
+              "actual": [
+                154,
+                184,
+                31,
+                255
+              ],
+              "reverse": [
+                154,
+                184,
+                31,
+                255
+              ]
+            },
+            {
+              "x": -0.1640625,
+              "y": 0.1171875,
+              "expected": [
+                92,
+                184,
+                31,
+                255
+              ],
+              "actual": [
+                92,
+                184,
+                31,
+                255
+              ],
+              "reverse": [
+                92,
+                184,
+                31,
+                255
+              ]
+            },
+            {
+              "x": -0.0703125,
+              "y": -0.1953125,
+              "expected": [
+                184,
+                153,
+                31,
+                255
+              ],
+              "actual": [
+                184,
+                154,
+                31,
+                255
+              ],
+              "reverse": [
+                184,
+                154,
+                31,
+                255
+              ]
+            },
+            {
+              "x": 0.0234375,
+              "y": -0.1953125,
+              "expected": [
+                184,
+                153,
+                31,
+                255
+              ],
+              "actual": [
+                184,
+                154,
+                31,
+                255
+              ],
+              "reverse": [
+                184,
+                154,
+                31,
+                255
+              ]
+            },
+            {
+              "x": 0.0234375,
+              "y": 0.1171875,
+              "expected": [
+                92,
+                153,
+                31,
+                255
+              ],
+              "actual": [
+                92,
+                154,
+                31,
+                255
+              ],
+              "reverse": [
+                92,
+                154,
+                31,
+                255
+              ]
+            },
+            {
+              "x": 0.1328125,
+              "y": -0.1953125,
+              "expected": [
+                184,
+                92,
+                31,
+                255
+              ],
+              "actual": [
+                184,
+                92,
+                31,
+                255
+              ],
+              "reverse": [
+                184,
+                92,
+                31,
+                255
+              ]
+            },
+            {
+              "x": 0.1328125,
+              "y": 0.0078125,
+              "expected": [
+                153,
+                92,
+                31,
+                255
+              ],
+              "actual": [
+                154,
+                92,
+                31,
+                255
+              ],
+              "reverse": [
+                154,
+                92,
+                31,
+                255
+              ]
+            }
+          ],
+          "errors": 0,
+          "maximumError": 1,
+          "passed": true
+        },
+        {
+          "kind": "legacy-plan-semantic-depth-bands-and-unlit-colour",
+          "pixel": [
+            0,
+            0,
+            255,
+            255
+          ],
+          "picked": "legacy-equipment",
+          "errors": [],
+          "passed": true
+        },
+        {
+          "kind": "hidden-architecture-reveals-coplanar-equipment",
+          "pixel": [
+            0,
+            0,
+            245,
+            255
+          ],
+          "picked": "contact-equipment",
+          "errors": [],
+          "geometryUploadsBefore": 1,
+          "geometryUploadsAfter": 1,
+          "passed": true
+        }
+      ],
+      "negativeCapability": {
+        "errors": [],
+        "floatQueries": 0,
+        "initialPick": "negative",
+        "fractionalPick": null,
+        "changedFractionalBytes": 1206,
+        "recoveredPick": "negative",
+        "opaqueDraws": 1,
+        "fractionalDraws": 3,
+        "recoveredDraws": 4,
+        "recovered": true
+      },
+      "disposal": true,
+      "metrics": {
+        "visibilityUploads": 25,
+        "indexBytes": 0,
+        "geometryUploads": 16,
+        "geometryBytes": 0,
+        "residentCpuBytes": 0,
+        "draws": 92,
+        "buffers": 0,
+        "programs": 0,
+        "textures": 0,
+        "textureBytes": 0,
+        "instanceBytes": 0,
+        "instanceUploads": 90,
+        "statusUploads": 25,
+        "paletteUploads": 16,
+        "evictions": 12,
+        "peakRequiredBytes": 1344,
+        "liveBuffersAfterDisposal": 0,
+        "liveProgramsAfterDisposal": 0,
+        "liveTexturesAfterDisposal": 0,
+        "architecture": {
+          "geometryUploads": 9,
+          "orderUploads": 11,
+          "instanceUploads": 25,
+          "statusUploads": 15,
+          "paletteUploads": 9,
+          "draws": 35,
+          "geometryBytes": 0,
+          "orderBytes": 0,
+          "instanceBytes": 0,
+          "traversalBytes": 0,
+          "residentCpuBytes": 0,
+          "buffers": 0,
+          "programs": 0,
+          "textures": 0,
+          "textureBytes": 0,
+          "liveBuffersAfterDisposal": 0,
+          "liveProgramsAfterDisposal": 0,
+          "liveTexturesAfterDisposal": 0
+        },
+        "pass": {
+          "depthFormat": "float32",
+          "samples": 4,
+          "programs": 0,
+          "textures": 0,
+          "framebuffers": 0,
+          "renderbuffers": 0,
+          "bytes": 0,
+          "textureBytes": 0,
+          "allocations": 1,
+          "composites": 31,
+          "liveTextures": 0,
+          "livePrograms": 0,
+          "liveFramebuffers": 0,
+          "liveRenderbuffers": 0
+        },
+        "negative": {
+          "visibilityUploads": 3,
+          "indexBytes": 0,
+          "geometryUploads": 2,
+          "geometryBytes": 0,
+          "residentCpuBytes": 0,
+          "draws": 4,
+          "buffers": 0,
+          "programs": 0,
+          "textures": 0,
+          "textureBytes": 0,
+          "instanceBytes": 0,
+          "instanceUploads": 4,
+          "statusUploads": 4,
+          "paletteUploads": 2,
+          "evictions": 0,
+          "peakRequiredBytes": 348,
+          "liveBuffersAfterDisposal": 0,
+          "liveProgramsAfterDisposal": 0,
+          "liveTexturesAfterDisposal": 0,
+          "architecture": {
+            "geometryUploads": 1,
+            "orderUploads": 1,
+            "instanceUploads": 1,
+            "statusUploads": 1,
+            "paletteUploads": 1,
+            "draws": 1,
+            "geometryBytes": 0,
+            "orderBytes": 0,
+            "instanceBytes": 0,
+            "traversalBytes": 0,
+            "residentCpuBytes": 0,
+            "buffers": 0,
+            "programs": 0,
+            "textures": 0,
+            "textureBytes": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0,
+            "liveTexturesAfterDisposal": 0
+          },
+          "cpuResidency": {
+            "residentViews": 0,
+            "residentBytes": 0,
+            "peakRequiredBytes": 0,
+            "evictions": 0
+          },
+          "renderPass": {
+            "depthFormat": "float32",
+            "samples": 4,
+            "programs": 0,
+            "textures": 0,
+            "framebuffers": 0,
+            "renderbuffers": 0,
+            "bytes": 0,
+            "textureBytes": 0,
+            "allocations": 1,
+            "composites": 3,
+            "liveTextures": 0,
+            "livePrograms": 0,
+            "liveFramebuffers": 0,
+            "liveRenderbuffers": 0
+          },
+          "depthNear": 0
+        },
+        "legacy": {
+          "visibilityUploads": 1,
+          "indexBytes": 0,
+          "geometryUploads": 2,
+          "geometryBytes": 0,
+          "residentCpuBytes": 0,
+          "draws": 2,
+          "buffers": 0,
+          "programs": 0,
+          "textures": 0,
+          "textureBytes": 0,
+          "instanceBytes": 0,
+          "instanceUploads": 2,
+          "statusUploads": 2,
+          "paletteUploads": 2,
+          "evictions": 0,
+          "peakRequiredBytes": 604,
+          "liveBuffersAfterDisposal": 0,
+          "liveProgramsAfterDisposal": 0,
+          "liveTexturesAfterDisposal": 0,
+          "architecture": {
+            "geometryUploads": 1,
+            "orderUploads": 1,
+            "instanceUploads": 1,
+            "statusUploads": 1,
+            "paletteUploads": 1,
+            "draws": 1,
+            "geometryBytes": 0,
+            "orderBytes": 0,
+            "instanceBytes": 0,
+            "traversalBytes": 0,
+            "residentCpuBytes": 0,
+            "buffers": 0,
+            "programs": 0,
+            "textures": 0,
+            "textureBytes": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0,
+            "liveTexturesAfterDisposal": 0
+          },
+          "cpuResidency": {
+            "residentViews": 0,
+            "residentBytes": 0,
+            "peakRequiredBytes": 0,
+            "evictions": 0
+          },
+          "renderPass": {
+            "depthFormat": "float32",
+            "samples": 4,
+            "programs": 0,
+            "textures": 0,
+            "framebuffers": 0,
+            "renderbuffers": 0,
+            "bytes": 0,
+            "textureBytes": 0,
+            "allocations": 1,
+            "composites": 1,
+            "liveTextures": 0,
+            "livePrograms": 0,
+            "liveFramebuffers": 0,
+            "liveRenderbuffers": 0
+          },
+          "depthNear": 0
+        },
+        "contact": {
+          "visibilityUploads": 2,
+          "indexBytes": 0,
+          "geometryUploads": 1,
+          "geometryBytes": 0,
+          "residentCpuBytes": 0,
+          "draws": 2,
+          "buffers": 0,
+          "programs": 0,
+          "textures": 0,
+          "textureBytes": 0,
+          "instanceBytes": 0,
+          "instanceUploads": 2,
+          "statusUploads": 2,
+          "paletteUploads": 1,
+          "evictions": 0,
+          "peakRequiredBytes": 652,
+          "liveBuffersAfterDisposal": 0,
+          "liveProgramsAfterDisposal": 0,
+          "liveTexturesAfterDisposal": 0,
+          "architecture": {
+            "geometryUploads": 0,
+            "orderUploads": 0,
+            "instanceUploads": 0,
+            "statusUploads": 0,
+            "paletteUploads": 0,
+            "draws": 0,
+            "geometryBytes": 0,
+            "orderBytes": 0,
+            "instanceBytes": 0,
+            "traversalBytes": 0,
+            "residentCpuBytes": 0,
+            "buffers": 0,
+            "programs": 0,
+            "textures": 0,
+            "textureBytes": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0,
+            "liveTexturesAfterDisposal": 0
+          },
+          "cpuResidency": {
+            "residentViews": 0,
+            "residentBytes": 0,
+            "peakRequiredBytes": 0,
+            "evictions": 0
+          },
+          "renderPass": {
+            "depthFormat": "float32",
+            "samples": 4,
+            "programs": 0,
+            "textures": 0,
+            "framebuffers": 0,
+            "renderbuffers": 0,
+            "bytes": 0,
+            "textureBytes": 0,
+            "allocations": 1,
+            "composites": 2,
+            "liveTextures": 0,
+            "livePrograms": 0,
+            "liveFramebuffers": 0,
+            "liveRenderbuffers": 0
+          },
+          "depthNear": 0
+        }
+      },
+      "device": {
+        "dpr": 1,
+        "renderer": "WebKit WebGL",
+        "version": "WebGL 2.0 (OpenGL ES 3.0 Chromium)",
+        "samples": 4
+      },
+      "hostState": []
+    },
+    {
+      "passed": true,
+      "results": [
+        {
+          "kind": "single-red-over-blue",
+          "opacity": 0,
+          "center": [
+            0,
+            0,
+            255,
+            255
+          ],
+          "expected": [
+            0,
+            0,
+            255,
+            255
+          ],
+          "passed": true,
+          "state": [],
+          "glError": 0
+        },
+        {
+          "kind": "single-red-over-blue",
+          "opacity": 0.5,
+          "center": [
+            128,
+            0,
+            128,
+            255
+          ],
+          "expected": [
+            128,
+            0,
+            127,
+            255
+          ],
+          "passed": true,
+          "state": [],
+          "glError": 0
+        },
+        {
+          "kind": "single-red-over-blue",
+          "opacity": 1,
+          "center": [
+            255,
+            0,
+            0,
+            255
+          ],
+          "expected": [
+            255,
+            0,
+            0,
+            255
+          ],
+          "passed": true,
+          "state": [],
+          "glError": 0
+        },
+        {
+          "kind": "overlap-order",
+          "center": [
+            128,
+            64,
+            64,
+            255
+          ],
+          "reverse": [
+            128,
+            64,
+            64,
+            255
+          ],
+          "differentBytes": 0,
+          "expected": [
+            128,
+            64,
+            64,
+            255
+          ],
+          "passed": true
+        },
+        {
+          "kind": "MSAA-shared-silhouette",
+          "edgeSamples": 820,
+          "edgeFailures": 0,
+          "edgeMaximumError": 0,
+          "edgeExamples": [],
+          "passed": true
+        },
+        {
+          "kind": "slider-no-derived-geometry",
+          "geometryUploadsBefore": 8,
+          "geometryUploadsAfter": 8,
+          "preparesBefore": 3,
+          "preparesAfter": 3,
+          "bspPreparesBefore": 2,
+          "bspPreparesAfter": 2,
+          "allocationsBefore": 1,
+          "allocationsAfter": 1,
+          "passed": true
+        },
+        {
+          "kind": "same-scene-overview-does-not-replace-detailed-asset",
+          "sameSceneId": true,
+          "distinctAsset": true,
+          "differentBytes": 0,
+          "passed": true
+        },
+        {
+          "kind": "cohort-basis-remains-valid-when-reference-source-is-not-drawn",
+          "referenceId": "green/[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]",
+          "referenceAbsent": true,
+          "pixel": [
+            128,
+            0,
+            128,
+            255
+          ],
+          "expected": [
+            128,
+            0,
+            127,
+            255
+          ],
+          "passed": true
+        },
+        {
+          "kind": "three-intersecting-architecture-planes",
+          "samples": [
+            {
+              "x": -0.61328125,
+              "y": -0.56640625,
+              "expected": [
+                159,
+                96,
+                32,
+                255
+              ],
+              "actual": [
+                159,
+                96,
+                32,
+                255
+              ],
+              "reverse": [
+                159,
+                96,
+                32,
+                255
+              ]
+            },
+            {
+              "x": -0.61328125,
+              "y": -0.29296875,
+              "expected": [
+                159,
+                96,
+                32,
+                255
+              ],
+              "actual": [
+                159,
+                96,
+                32,
+                255
+              ],
+              "reverse": [
+                159,
+                96,
+                32,
+                255
+              ]
+            },
+            {
+              "x": -0.61328125,
+              "y": -0.01171875,
+              "expected": [
+                159,
+                96,
+                32,
+                255
+              ],
+              "actual": [
+                159,
+                96,
+                32,
+                255
+              ],
+              "reverse": [
+                159,
+                96,
+                32,
+                255
+              ]
+            },
+            {
+              "x": -0.61328125,
+              "y": 0.26953125,
+              "expected": [
+                159,
+                96,
+                32,
+                255
+              ],
+              "actual": [
+                159,
+                96,
+                32,
+                255
+              ],
+              "reverse": [
+                159,
+                96,
+                32,
+                255
+              ]
+            },
+            {
+              "x": -0.61328125,
+              "y": 0.55078125,
+              "expected": [
+                191,
+                96,
+                32,
+                255
+              ],
+              "actual": [
+                191,
+                96,
+                32,
+                255
+              ],
+              "reverse": [
+                191,
+                96,
+                32,
+                255
+              ]
+            },
+            {
+              "x": -0.37109375,
+              "y": -0.56640625,
+              "expected": [
+                96,
+                159,
+                32,
+                255
+              ],
+              "actual": [
+                96,
+                159,
+                32,
+                255
+              ],
+              "reverse": [
+                96,
+                159,
+                32,
+                255
+              ]
+            },
+            {
+              "x": -0.37109375,
+              "y": -0.29296875,
+              "expected": [
+                159,
+                96,
+                32,
+                255
+              ],
+              "actual": [
+                159,
+                96,
+                32,
+                255
+              ],
+              "reverse": [
+                159,
+                96,
+                32,
+                255
+              ]
+            },
+            {
+              "x": -0.37109375,
+              "y": -0.01171875,
+              "expected": [
+                159,
+                96,
+                32,
+                255
+              ],
+              "actual": [
+                159,
+                96,
+                32,
+                255
+              ],
+              "reverse": [
+                159,
+                96,
+                32,
+                255
+              ]
+            },
+            {
+              "x": -0.37109375,
+              "y": 0.26953125,
+              "expected": [
+                191,
+                96,
+                32,
+                255
+              ],
+              "actual": [
+                191,
+                96,
+                32,
+                255
+              ],
+              "reverse": [
+                191,
+                96,
+                32,
+                255
+              ]
+            },
+            {
+              "x": -0.37109375,
+              "y": 0.55078125,
+              "expected": [
+                191,
+                96,
+                32,
+                255
+              ],
+              "actual": [
+                191,
+                96,
+                32,
+                255
+              ],
+              "reverse": [
+                191,
+                96,
+                32,
+                255
+              ]
+            },
+            {
+              "x": -0.12890625,
+              "y": -0.56640625,
+              "expected": [
+                96,
+                159,
+                32,
+                255
+              ],
+              "actual": [
+                96,
+                159,
+                32,
+                255
+              ],
+              "reverse": [
+                96,
+                159,
+                32,
+                255
+              ]
+            },
+            {
+              "x": -0.12890625,
+              "y": -0.29296875,
+              "expected": [
+                96,
+                159,
+                32,
+                255
+              ],
+              "actual": [
+                96,
+                159,
+                32,
+                255
+              ],
+              "reverse": [
+                96,
+                159,
+                32,
+                255
+              ]
+            },
+            {
+              "x": -0.12890625,
+              "y": -0.01171875,
+              "expected": [
+                159,
+                96,
+                32,
+                255
+              ],
+              "actual": [
+                159,
+                96,
+                32,
+                255
+              ],
+              "reverse": [
+                159,
+                96,
+                32,
+                255
+              ]
+            },
+            {
+              "x": -0.12890625,
+              "y": 0.55078125,
+              "expected": [
+                191,
+                159,
+                32,
+                255
+              ],
+              "actual": [
+                191,
+                159,
+                32,
+                255
+              ],
+              "reverse": [
+                191,
+                159,
+                32,
+                255
+              ]
+            },
+            {
+              "x": 0.11328125,
+              "y": -0.56640625,
+              "expected": [
+                96,
+                159,
+                32,
+                255
+              ],
+              "actual": [
+                96,
+                159,
+                32,
+                255
+              ],
+              "reverse": [
+                96,
+                159,
+                32,
+                255
+              ]
+            },
+            {
+              "x": 0.11328125,
+              "y": -0.29296875,
+              "expected": [
+                96,
+                159,
+                32,
+                255
+              ],
+              "actual": [
+                96,
+                159,
+                32,
+                255
+              ],
+              "reverse": [
+                96,
+                159,
+                32,
+                255
+              ]
+            },
+            {
+              "x": 0.11328125,
+              "y": -0.01171875,
+              "expected": [
+                159,
+                191,
+                32,
+                255
+              ],
+              "actual": [
+                159,
+                191,
+                32,
+                255
+              ],
+              "reverse": [
+                159,
+                191,
+                32,
+                255
+              ]
+            },
+            {
+              "x": 0.11328125,
+              "y": 0.26953125,
+              "expected": [
+                191,
+                159,
+                32,
+                255
+              ],
+              "actual": [
+                191,
+                159,
+                32,
+                255
+              ],
+              "reverse": [
+                191,
+                159,
+                32,
+                255
+              ]
+            },
+            {
+              "x": 0.11328125,
+              "y": 0.55078125,
+              "expected": [
+                191,
+                159,
+                32,
+                255
+              ],
+              "actual": [
+                191,
+                159,
+                32,
+                255
+              ],
+              "reverse": [
+                191,
+                159,
+                32,
+                255
+              ]
+            },
+            {
+              "x": 0.34765625,
+              "y": -0.56640625,
+              "expected": [
+                96,
+                191,
+                32,
+                255
+              ],
+              "actual": [
+                96,
+                191,
+                32,
+                255
+              ],
+              "reverse": [
+                96,
+                191,
+                32,
+                255
+              ]
+            },
+            {
+              "x": 0.34765625,
+              "y": -0.29296875,
+              "expected": [
+                96,
+                191,
+                32,
+                255
+              ],
+              "actual": [
+                96,
+                191,
+                32,
+                255
+              ],
+              "reverse": [
+                96,
+                191,
+                32,
+                255
+              ]
+            },
+            {
+              "x": 0.34765625,
+              "y": -0.01171875,
+              "expected": [
+                159,
+                191,
+                32,
+                255
+              ],
+              "actual": [
+                159,
+                191,
+                32,
+                255
+              ],
+              "reverse": [
+                159,
+                191,
+                32,
+                255
+              ]
+            },
+            {
+              "x": 0.34765625,
+              "y": 0.26953125,
+              "expected": [
+                159,
+                191,
+                32,
+                255
+              ],
+              "actual": [
+                159,
+                191,
+                32,
+                255
+              ],
+              "reverse": [
+                159,
+                191,
+                32,
+                255
+              ]
+            },
+            {
+              "x": 0.34765625,
+              "y": 0.55078125,
+              "expected": [
+                191,
+                159,
+                32,
+                255
+              ],
+              "actual": [
+                191,
+                159,
+                32,
+                255
+              ],
+              "reverse": [
+                191,
+                159,
+                32,
+                255
+              ]
+            },
+            {
+              "x": 0.58984375,
+              "y": -0.56640625,
+              "expected": [
+                96,
+                191,
+                32,
+                255
+              ],
+              "actual": [
+                96,
+                191,
+                32,
+                255
+              ],
+              "reverse": [
+                96,
+                191,
+                32,
+                255
+              ]
+            },
+            {
+              "x": 0.58984375,
+              "y": -0.01171875,
+              "expected": [
+                159,
+                191,
+                32,
+                255
+              ],
+              "actual": [
+                159,
+                191,
+                32,
+                255
+              ],
+              "reverse": [
+                159,
+                191,
+                32,
+                255
+              ]
+            },
+            {
+              "x": 0.58984375,
+              "y": 0.26953125,
+              "expected": [
+                159,
+                191,
+                32,
+                255
+              ],
+              "actual": [
+                159,
+                191,
+                32,
+                255
+              ],
+              "reverse": [
+                159,
+                191,
+                32,
+                255
+              ]
+            },
+            {
+              "x": 0.58984375,
+              "y": 0.55078125,
+              "expected": [
+                159,
+                191,
+                32,
+                255
+              ],
+              "actual": [
+                159,
+                191,
+                32,
+                255
+              ],
+              "reverse": [
+                159,
+                191,
+                32,
+                255
+              ]
+            }
+          ],
+          "errors": 0,
+          "maximumError": 0,
+          "passed": true
+        },
+        {
+          "kind": "shared-family-cross-placement-order",
+          "samples": [
+            {
+              "x": -0.61328125,
+              "y": -0.56640625,
+              "expected": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "actual": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "reverse": [
+                159,
+                64,
+                32,
+                255
+              ]
+            },
+            {
+              "x": -0.61328125,
+              "y": -0.29296875,
+              "expected": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "actual": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "reverse": [
+                159,
+                64,
+                32,
+                255
+              ]
+            },
+            {
+              "x": -0.61328125,
+              "y": -0.01171875,
+              "expected": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "actual": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "reverse": [
+                159,
+                64,
+                32,
+                255
+              ]
+            },
+            {
+              "x": -0.61328125,
+              "y": 0.26953125,
+              "expected": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "actual": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "reverse": [
+                159,
+                64,
+                32,
+                255
+              ]
+            },
+            {
+              "x": -0.61328125,
+              "y": 0.55078125,
+              "expected": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "actual": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "reverse": [
+                159,
+                64,
+                32,
+                255
+              ]
+            },
+            {
+              "x": -0.37109375,
+              "y": -0.56640625,
+              "expected": [
+                96,
+                128,
+                32,
+                255
+              ],
+              "actual": [
+                96,
+                128,
+                32,
+                255
+              ],
+              "reverse": [
+                96,
+                128,
+                32,
+                255
+              ]
+            },
+            {
+              "x": -0.37109375,
+              "y": -0.29296875,
+              "expected": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "actual": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "reverse": [
+                159,
+                64,
+                32,
+                255
+              ]
+            },
+            {
+              "x": -0.37109375,
+              "y": -0.01171875,
+              "expected": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "actual": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "reverse": [
+                159,
+                64,
+                32,
+                255
+              ]
+            },
+            {
+              "x": -0.37109375,
+              "y": 0.26953125,
+              "expected": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "actual": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "reverse": [
+                159,
+                64,
+                32,
+                255
+              ]
+            },
+            {
+              "x": -0.37109375,
+              "y": 0.55078125,
+              "expected": [
+                191,
+                32,
+                32,
+                255
+              ],
+              "actual": [
+                191,
+                32,
+                32,
+                255
+              ],
+              "reverse": [
+                191,
+                32,
+                32,
+                255
+              ]
+            },
+            {
+              "x": -0.12890625,
+              "y": -0.56640625,
+              "expected": [
+                96,
+                128,
+                32,
+                255
+              ],
+              "actual": [
+                96,
+                128,
+                32,
+                255
+              ],
+              "reverse": [
+                96,
+                128,
+                32,
+                255
+              ]
+            },
+            {
+              "x": -0.12890625,
+              "y": -0.29296875,
+              "expected": [
+                96,
+                128,
+                32,
+                255
+              ],
+              "actual": [
+                96,
+                128,
+                32,
+                255
+              ],
+              "reverse": [
+                96,
+                128,
+                32,
+                255
+              ]
+            },
+            {
+              "x": -0.12890625,
+              "y": -0.01171875,
+              "expected": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "actual": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "reverse": [
+                159,
+                64,
+                32,
+                255
+              ]
+            },
+            {
+              "x": -0.12890625,
+              "y": 0.26953125,
+              "expected": [
+                191,
+                32,
+                32,
+                255
+              ],
+              "actual": [
+                191,
+                32,
+                32,
+                255
+              ],
+              "reverse": [
+                191,
+                32,
+                32,
+                255
+              ]
+            },
+            {
+              "x": -0.12890625,
+              "y": 0.55078125,
+              "expected": [
+                191,
+                32,
+                32,
+                255
+              ],
+              "actual": [
+                191,
+                32,
+                32,
+                255
+              ],
+              "reverse": [
+                191,
+                32,
+                32,
+                255
+              ]
+            },
+            {
+              "x": 0.11328125,
+              "y": -0.56640625,
+              "expected": [
+                96,
+                128,
+                32,
+                255
+              ],
+              "actual": [
+                96,
+                128,
+                32,
+                255
+              ],
+              "reverse": [
+                96,
+                128,
+                32,
+                255
+              ]
+            },
+            {
+              "x": 0.11328125,
+              "y": -0.29296875,
+              "expected": [
+                96,
+                128,
+                32,
+                255
+              ],
+              "actual": [
+                96,
+                128,
+                32,
+                255
+              ],
+              "reverse": [
+                96,
+                128,
+                32,
+                255
+              ]
+            },
+            {
+              "x": 0.11328125,
+              "y": -0.01171875,
+              "expected": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "actual": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "reverse": [
+                159,
+                64,
+                32,
+                255
+              ]
+            },
+            {
+              "x": 0.11328125,
+              "y": 0.26953125,
+              "expected": [
+                191,
+                32,
+                32,
+                255
+              ],
+              "actual": [
+                191,
+                32,
+                32,
+                255
+              ],
+              "reverse": [
+                191,
+                32,
+                32,
+                255
+              ]
+            },
+            {
+              "x": 0.11328125,
+              "y": 0.55078125,
+              "expected": [
+                191,
+                32,
+                32,
+                255
+              ],
+              "actual": [
+                191,
+                32,
+                32,
+                255
+              ],
+              "reverse": [
+                191,
+                32,
+                32,
+                255
+              ]
+            },
+            {
+              "x": 0.34765625,
+              "y": -0.56640625,
+              "expected": [
+                96,
+                128,
+                32,
+                255
+              ],
+              "actual": [
+                96,
+                128,
+                32,
+                255
+              ],
+              "reverse": [
+                96,
+                128,
+                32,
+                255
+              ]
+            },
+            {
+              "x": 0.34765625,
+              "y": -0.29296875,
+              "expected": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "actual": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "reverse": [
+                159,
+                64,
+                32,
+                255
+              ]
+            },
+            {
+              "x": 0.34765625,
+              "y": -0.01171875,
+              "expected": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "actual": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "reverse": [
+                159,
+                64,
+                32,
+                255
+              ]
+            },
+            {
+              "x": 0.34765625,
+              "y": 0.26953125,
+              "expected": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "actual": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "reverse": [
+                159,
+                64,
+                32,
+                255
+              ]
+            },
+            {
+              "x": 0.34765625,
+              "y": 0.55078125,
+              "expected": [
+                191,
+                32,
+                32,
+                255
+              ],
+              "actual": [
+                191,
+                32,
+                32,
+                255
+              ],
+              "reverse": [
+                191,
+                32,
+                32,
+                255
+              ]
+            },
+            {
+              "x": 0.58984375,
+              "y": -0.29296875,
+              "expected": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "actual": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "reverse": [
+                159,
+                64,
+                32,
+                255
+              ]
+            },
+            {
+              "x": 0.58984375,
+              "y": -0.01171875,
+              "expected": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "actual": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "reverse": [
+                159,
+                64,
+                32,
+                255
+              ]
+            },
+            {
+              "x": 0.58984375,
+              "y": 0.26953125,
+              "expected": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "actual": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "reverse": [
+                159,
+                64,
+                32,
+                255
+              ]
+            },
+            {
+              "x": 0.58984375,
+              "y": 0.55078125,
+              "expected": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "actual": [
+                159,
+                64,
+                32,
+                255
+              ],
+              "reverse": [
+                159,
+                64,
+                32,
+                255
+              ]
+            }
+          ],
+          "errors": 0,
+          "maximumError": 0,
+          "passed": true
+        },
+        {
+          "kind": "authored-line-traverses-with-its-far-wall",
+          "linePixels": 332,
+          "errors": 0,
+          "orderDifferentBytes": 0,
+          "passed": true
+        },
+        {
+          "kind": "mixed-alpha-first-source-faces-and-authored-joints",
+          "firstAlpha": 1,
+          "secondAlpha": 0.5,
+          "overlap": [
+            0,
+            255,
+            0,
+            255
+          ],
+          "overlapExpected": [
+            0,
+            255,
+            0,
+            255
+          ],
+          "outside": [
+            128,
+            0,
+            128,
+            255
+          ],
+          "outsideExpected": [
+            128,
+            0,
+            127,
+            255
+          ],
+          "differentBytes": 0,
+          "jointPixels": 52,
+          "wrongTint": 0,
+          "authoredLineVertices": 2,
+          "passed": true
+        },
+        {
+          "kind": "mixed-alpha-first-source-faces-and-authored-joints",
+          "firstAlpha": 0.5,
+          "secondAlpha": 1,
+          "overlap": [
+            0,
+            128,
+            128,
+            255
+          ],
+          "overlapExpected": [
+            0,
+            128,
+            127,
+            255
+          ],
+          "outside": [
+            255,
+            0,
+            0,
+            255
+          ],
+          "outsideExpected": [
+            255,
+            0,
+            0,
+            255
+          ],
+          "differentBytes": 0,
+          "jointPixels": 52,
+          "wrongTint": 0,
+          "authoredLineVertices": 2,
+          "passed": true
+        },
+        {
+          "kind": "mixed-alpha-first-source-faces-and-authored-joints",
+          "firstAlpha": 0,
+          "secondAlpha": 0.5,
+          "overlap": [
+            128,
+            0,
+            128,
+            255
+          ],
+          "overlapExpected": [
+            128,
+            0,
+            127,
+            255
+          ],
+          "outside": [
+            128,
+            0,
+            128,
+            255
+          ],
+          "outsideExpected": [
+            128,
+            0,
+            127,
+            255
+          ],
+          "differentBytes": 0,
+          "jointPixels": 52,
+          "wrongTint": 0,
+          "authoredLineVertices": 2,
+          "passed": true
+        },
+        {
+          "kind": "perspective-cyclic-order-and-original-lighting",
+          "samples": [
+            {
+              "x": -0.16796875,
+              "y": -0.08984375,
+              "expected": [
+                153,
+                184,
+                31,
+                255
+              ],
+              "actual": [
+                154,
+                184,
+                31,
+                255
+              ],
+              "reverse": [
+                154,
+                184,
+                31,
+                255
+              ]
+            },
+            {
+              "x": -0.16796875,
+              "y": 0.01171875,
+              "expected": [
+                153,
+                184,
+                31,
+                255
+              ],
+              "actual": [
+                154,
+                184,
+                31,
+                255
+              ],
+              "reverse": [
+                154,
+                184,
+                31,
+                255
+              ]
+            },
+            {
+              "x": -0.16796875,
+              "y": 0.11328125,
+              "expected": [
+                92,
+                184,
+                31,
+                255
+              ],
+              "actual": [
+                92,
+                184,
+                31,
+                255
+              ],
+              "reverse": [
+                92,
+                184,
+                31,
+                255
+              ]
+            },
+            {
+              "x": -0.06640625,
+              "y": -0.19140625,
+              "expected": [
+                184,
+                153,
+                31,
+                255
+              ],
+              "actual": [
+                184,
+                154,
+                31,
+                255
+              ],
+              "reverse": [
+                184,
+                154,
+                31,
+                255
+              ]
+            },
+            {
+              "x": -0.06640625,
+              "y": 0.01171875,
+              "expected": [
+                153,
+                184,
+                31,
+                255
+              ],
+              "actual": [
+                154,
+                184,
+                31,
+                255
+              ],
+              "reverse": [
+                154,
+                184,
+                31,
+                255
+              ]
+            },
+            {
+              "x": 0.02734375,
+              "y": -0.19140625,
+              "expected": [
+                184,
+                153,
+                31,
+                255
+              ],
+              "actual": [
+                184,
+                154,
+                31,
+                255
+              ],
+              "reverse": [
+                184,
+                154,
+                31,
+                255
+              ]
+            },
+            {
+              "x": 0.02734375,
+              "y": -0.08984375,
+              "expected": [
+                184,
+                153,
+                31,
+                255
+              ],
+              "actual": [
+                184,
+                154,
+                31,
+                255
+              ],
+              "reverse": [
+                184,
+                154,
+                31,
+                255
+              ]
+            },
+            {
+              "x": 0.02734375,
+              "y": 0.11328125,
+              "expected": [
+                92,
+                153,
+                31,
+                255
+              ],
+              "actual": [
+                92,
+                154,
+                31,
+                255
+              ],
+              "reverse": [
+                92,
+                154,
+                31,
+                255
+              ]
+            },
+            {
+              "x": 0.12890625,
+              "y": -0.19140625,
+              "expected": [
+                184,
+                92,
+                31,
+                255
+              ],
+              "actual": [
+                184,
+                92,
+                31,
+                255
+              ],
+              "reverse": [
+                184,
+                92,
+                31,
+                255
+              ]
+            },
+            {
+              "x": 0.12890625,
+              "y": -0.08984375,
+              "expected": [
+                184,
+                92,
+                31,
+                255
+              ],
+              "actual": [
+                184,
+                92,
+                31,
+                255
+              ],
+              "reverse": [
+                184,
+                92,
+                31,
+                255
+              ]
+            },
+            {
+              "x": 0.12890625,
+              "y": 0.01171875,
+              "expected": [
+                153,
+                92,
+                31,
+                255
+              ],
+              "actual": [
+                154,
+                92,
+                31,
+                255
+              ],
+              "reverse": [
+                154,
+                92,
+                31,
+                255
+              ]
+            }
+          ],
+          "errors": 0,
+          "maximumError": 1,
+          "passed": true
+        },
+        {
+          "kind": "legacy-plan-semantic-depth-bands-and-unlit-colour",
+          "pixel": [
+            0,
+            0,
+            255,
+            255
+          ],
+          "picked": "legacy-equipment",
+          "errors": [],
+          "passed": true
+        },
+        {
+          "kind": "hidden-architecture-reveals-coplanar-equipment",
+          "pixel": [
+            0,
+            0,
+            245,
+            255
+          ],
+          "picked": "contact-equipment",
+          "errors": [],
+          "geometryUploadsBefore": 1,
+          "geometryUploadsAfter": 1,
+          "passed": true
+        }
+      ],
+      "negativeCapability": {
+        "errors": [],
+        "floatQueries": 0,
+        "initialPick": "negative",
+        "fractionalPick": null,
+        "changedFractionalBytes": 2424,
+        "recoveredPick": "negative",
+        "opaqueDraws": 1,
+        "fractionalDraws": 3,
+        "recoveredDraws": 4,
+        "recovered": true
+      },
+      "disposal": true,
+      "metrics": {
+        "visibilityUploads": 25,
+        "indexBytes": 0,
+        "geometryUploads": 16,
+        "geometryBytes": 0,
+        "residentCpuBytes": 0,
+        "draws": 92,
+        "buffers": 0,
+        "programs": 0,
+        "textures": 0,
+        "textureBytes": 0,
+        "instanceBytes": 0,
+        "instanceUploads": 90,
+        "statusUploads": 25,
+        "paletteUploads": 16,
+        "evictions": 12,
+        "peakRequiredBytes": 1344,
+        "liveBuffersAfterDisposal": 0,
+        "liveProgramsAfterDisposal": 0,
+        "liveTexturesAfterDisposal": 0,
+        "architecture": {
+          "geometryUploads": 9,
+          "orderUploads": 11,
+          "instanceUploads": 25,
+          "statusUploads": 15,
+          "paletteUploads": 9,
+          "draws": 35,
+          "geometryBytes": 0,
+          "orderBytes": 0,
+          "instanceBytes": 0,
+          "traversalBytes": 0,
+          "residentCpuBytes": 0,
+          "buffers": 0,
+          "programs": 0,
+          "textures": 0,
+          "textureBytes": 0,
+          "liveBuffersAfterDisposal": 0,
+          "liveProgramsAfterDisposal": 0,
+          "liveTexturesAfterDisposal": 0
+        },
+        "pass": {
+          "depthFormat": "float32",
+          "samples": 4,
+          "programs": 0,
+          "textures": 0,
+          "framebuffers": 0,
+          "renderbuffers": 0,
+          "bytes": 0,
+          "textureBytes": 0,
+          "allocations": 1,
+          "composites": 31,
+          "liveTextures": 0,
+          "livePrograms": 0,
+          "liveFramebuffers": 0,
+          "liveRenderbuffers": 0
+        },
+        "negative": {
+          "visibilityUploads": 3,
+          "indexBytes": 0,
+          "geometryUploads": 2,
+          "geometryBytes": 0,
+          "residentCpuBytes": 0,
+          "draws": 4,
+          "buffers": 0,
+          "programs": 0,
+          "textures": 0,
+          "textureBytes": 0,
+          "instanceBytes": 0,
+          "instanceUploads": 4,
+          "statusUploads": 4,
+          "paletteUploads": 2,
+          "evictions": 0,
+          "peakRequiredBytes": 348,
+          "liveBuffersAfterDisposal": 0,
+          "liveProgramsAfterDisposal": 0,
+          "liveTexturesAfterDisposal": 0,
+          "architecture": {
+            "geometryUploads": 1,
+            "orderUploads": 1,
+            "instanceUploads": 1,
+            "statusUploads": 1,
+            "paletteUploads": 1,
+            "draws": 1,
+            "geometryBytes": 0,
+            "orderBytes": 0,
+            "instanceBytes": 0,
+            "traversalBytes": 0,
+            "residentCpuBytes": 0,
+            "buffers": 0,
+            "programs": 0,
+            "textures": 0,
+            "textureBytes": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0,
+            "liveTexturesAfterDisposal": 0
+          },
+          "cpuResidency": {
+            "residentViews": 0,
+            "residentBytes": 0,
+            "peakRequiredBytes": 0,
+            "evictions": 0
+          },
+          "renderPass": {
+            "depthFormat": "float32",
+            "samples": 4,
+            "programs": 0,
+            "textures": 0,
+            "framebuffers": 0,
+            "renderbuffers": 0,
+            "bytes": 0,
+            "textureBytes": 0,
+            "allocations": 1,
+            "composites": 3,
+            "liveTextures": 0,
+            "livePrograms": 0,
+            "liveFramebuffers": 0,
+            "liveRenderbuffers": 0
+          },
+          "depthNear": 0
+        },
+        "legacy": {
+          "visibilityUploads": 1,
+          "indexBytes": 0,
+          "geometryUploads": 2,
+          "geometryBytes": 0,
+          "residentCpuBytes": 0,
+          "draws": 2,
+          "buffers": 0,
+          "programs": 0,
+          "textures": 0,
+          "textureBytes": 0,
+          "instanceBytes": 0,
+          "instanceUploads": 2,
+          "statusUploads": 2,
+          "paletteUploads": 2,
+          "evictions": 0,
+          "peakRequiredBytes": 604,
+          "liveBuffersAfterDisposal": 0,
+          "liveProgramsAfterDisposal": 0,
+          "liveTexturesAfterDisposal": 0,
+          "architecture": {
+            "geometryUploads": 1,
+            "orderUploads": 1,
+            "instanceUploads": 1,
+            "statusUploads": 1,
+            "paletteUploads": 1,
+            "draws": 1,
+            "geometryBytes": 0,
+            "orderBytes": 0,
+            "instanceBytes": 0,
+            "traversalBytes": 0,
+            "residentCpuBytes": 0,
+            "buffers": 0,
+            "programs": 0,
+            "textures": 0,
+            "textureBytes": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0,
+            "liveTexturesAfterDisposal": 0
+          },
+          "cpuResidency": {
+            "residentViews": 0,
+            "residentBytes": 0,
+            "peakRequiredBytes": 0,
+            "evictions": 0
+          },
+          "renderPass": {
+            "depthFormat": "float32",
+            "samples": 4,
+            "programs": 0,
+            "textures": 0,
+            "framebuffers": 0,
+            "renderbuffers": 0,
+            "bytes": 0,
+            "textureBytes": 0,
+            "allocations": 1,
+            "composites": 1,
+            "liveTextures": 0,
+            "livePrograms": 0,
+            "liveFramebuffers": 0,
+            "liveRenderbuffers": 0
+          },
+          "depthNear": 0
+        },
+        "contact": {
+          "visibilityUploads": 2,
+          "indexBytes": 0,
+          "geometryUploads": 1,
+          "geometryBytes": 0,
+          "residentCpuBytes": 0,
+          "draws": 2,
+          "buffers": 0,
+          "programs": 0,
+          "textures": 0,
+          "textureBytes": 0,
+          "instanceBytes": 0,
+          "instanceUploads": 2,
+          "statusUploads": 2,
+          "paletteUploads": 1,
+          "evictions": 0,
+          "peakRequiredBytes": 652,
+          "liveBuffersAfterDisposal": 0,
+          "liveProgramsAfterDisposal": 0,
+          "liveTexturesAfterDisposal": 0,
+          "architecture": {
+            "geometryUploads": 0,
+            "orderUploads": 0,
+            "instanceUploads": 0,
+            "statusUploads": 0,
+            "paletteUploads": 0,
+            "draws": 0,
+            "geometryBytes": 0,
+            "orderBytes": 0,
+            "instanceBytes": 0,
+            "traversalBytes": 0,
+            "residentCpuBytes": 0,
+            "buffers": 0,
+            "programs": 0,
+            "textures": 0,
+            "textureBytes": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0,
+            "liveTexturesAfterDisposal": 0
+          },
+          "cpuResidency": {
+            "residentViews": 0,
+            "residentBytes": 0,
+            "peakRequiredBytes": 0,
+            "evictions": 0
+          },
+          "renderPass": {
+            "depthFormat": "float32",
+            "samples": 4,
+            "programs": 0,
+            "textures": 0,
+            "framebuffers": 0,
+            "renderbuffers": 0,
+            "bytes": 0,
+            "textureBytes": 0,
+            "allocations": 1,
+            "composites": 2,
+            "liveTextures": 0,
+            "livePrograms": 0,
+            "liveFramebuffers": 0,
+            "liveRenderbuffers": 0
+          },
+          "depthNear": 0
+        }
+      },
+      "device": {
+        "dpr": 2,
+        "renderer": "WebKit WebGL",
+        "version": "WebGL 2.0 (OpenGL ES 3.0 Chromium)",
+        "samples": 4
+      },
+      "hostState": []
+    }
+  ]
+}

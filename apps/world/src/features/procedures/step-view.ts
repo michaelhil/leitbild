@@ -1,26 +1,31 @@
 import { z } from 'zod'
 import {
-  isoTimestampSchema, procedureAssessmentSchema, procedureBranchSchema, procedureRunDriverSchema,
-  procedureRunIdSchema, procedureRunStatusSchema, procedureStepDecisionSchema, procedureTextBlockSchema,
-  type IsoTimestamp, type ProcedureDocument, type ProcedureRunState, type ProcedureStep,
+  isoTimestampSchema, procedureInputRequestSchema, procedureAssessmentSchema, procedureBranchSchema, procedureRunDriverSchema,
+  procedureRunIdSchema, procedureRunStatusSchema, procedureTextBlockSchema, procedureStepRunStateSchema,
+  type IsoTimestamp, type ProcedureDocument, type ProcedureRunState, type ProcedureStep, type SimulationRunEvent,
 } from '../../core/model/index.ts'
-import { readProcedureTags, type ProcedureObservationPort, type ProcedureTagRead } from './pack-observations.ts'
+import { procedureBranchAssessmentSchema, type ProcedureBranchAssessment } from '../../core/model/procedure-criteria.ts'
+import { assessProcedureBranches, readProcedureBranchEvidence } from './branch-assessment.ts'
+import { type ProcedureObservationPort, type ProcedureTagRead } from './pack-observations.ts'
+import { procedureStepDecisionViewSchema, projectProcedureStepDecision } from './step-decision-view.ts'
 
 // One step of a live procedure Run, compact enough to work through step by
 // step: what it says, its branches, the step's tags as World reads them on
 // the run's plant now, and the safety function colours the document
 // monitors. Empty fields are left out.
 
-const stepCommentLength = 500
-
 const runSummarySchema = z.object({
   runId: procedureRunIdSchema,
   procedureId: z.string(),
+  sourceId: z.string(),
+  sourceRevision: z.string(),
+  sourcePath: z.string(),
   title: z.string(),
   status: procedureRunStatusSchema,
   plantId: z.string(),
   unit: z.string().optional(),
   driver: procedureRunDriverSchema.optional(),
+  inputRequest: procedureInputRequestSchema.optional(),
   currentStepId: z.string().optional(),
   /** The position of the step read, of the document's steps. */
   stepNumber: z.number().int().positive().optional(),
@@ -60,6 +65,18 @@ const stepBranchSchema = z.object({
   because: z.string().optional(),
 }).strict()
 
+/** Current facts stay complete; the exact authored query is discovered through step.definition. */
+export const procedureStepBranchAssessmentViewSchema = procedureBranchAssessmentSchema.omit({ observation: true }).extend({
+  observation: procedureBranchAssessmentSchema.shape.observation.unwrap().omit({ input: true }).optional(),
+}).strict()
+
+export const projectProcedureBranchAssessment = (assessment: ProcedureBranchAssessment) => {
+  const { observation, ...facts } = assessment
+  if (observation === undefined) return facts
+  const { input: _input, ...current } = observation
+  return { ...facts, observation: current }
+}
+
 const stepSchema = z.object({
   id: z.string(),
   label: z.string(),
@@ -67,11 +84,15 @@ const stepSchema = z.object({
   title: z.string().optional(),
   blocks: z.array(z.object({ kind: procedureTextBlockSchema.shape.kind, text: z.string() }).strict()),
   branches: z.array(stepBranchSchema),
+  branchAssessments: z.array(procedureStepBranchAssessmentViewSchema),
+  definition: z.object({ capabilityId: z.literal('world.procedure.document.read'), input: z.object({
+    sourceId: z.string(), procedureId: z.string(), sourceRevision: z.string(), sourcePath: z.string(), stepId: z.string(),
+  }).strict() }).strict(),
   observation: z.object({ status: z.enum(['satisfied', 'challenged', 'unknown']), reason: z.string().optional(), simulationTime: isoTimestampSchema }).strict().optional(),
   state: z.object({
     assessment: procedureAssessmentSchema,
     comment: z.string().optional(),
-    decision: procedureStepDecisionSchema.optional(),
+    decision: procedureStepDecisionViewSchema.optional(),
   }).strict().optional(),
 }).strict()
 
@@ -94,9 +115,52 @@ export const procedureStepViewSchema = z.object({
 }).strict()
 export type ProcedureStepView = z.infer<typeof procedureStepViewSchema>
 
+/** Explicit current-only projection for a caller that already has this exact pinned step's guidance. */
+const procedureStepCurrentViewSchema = procedureStepViewSchema.omit({ step: true, tags: true }).extend({
+  guidanceIncluded: z.literal(false),
+  step: stepSchema.omit({ blocks: true, branches: true, branchAssessments: true }).extend({
+    branchAssessments: z.array(procedureStepBranchAssessmentViewSchema.omit({ condition: true, applicability: true })),
+  }).strict().optional(),
+  tags: z.array(stepTagSchema.omit({ description: true, notes: true })).optional(),
+}).strict()
+
+export const procedureStepReadViewSchema = z.union([procedureStepViewSchema, procedureStepCurrentViewSchema])
+export type ProcedureStepReadView = z.infer<typeof procedureStepReadViewSchema>
+
+/** Canonical procedure control state; no Pack observations are acquired. */
+export const procedureRunReadViewSchema = procedureStepViewSchema.omit({ step: true, tags: true, csfs: true }).extend({
+  paused: z.boolean(),
+  observationsAcquired: z.literal(false),
+  step: stepSchema.pick({ id: true, label: true, title: true, definition: true }).extend({
+    state: procedureStepRunStateSchema.omit({ decision: true }).extend({ decision: procedureStepDecisionViewSchema.optional() }).strict().optional(),
+  }).strict().optional(),
+}).strict()
+export type ProcedureRunReadView = z.infer<typeof procedureRunReadViewSchema>
+
+/**
+ * Guidance is static source data, discoverable through step.definition. This
+ * projection never removes current Pack facts, tag caveats, current comments or authority.
+ */
+export const projectProcedureStepGuidance = (view: ProcedureStepView, includeGuidance = true): ProcedureStepReadView => {
+  if (includeGuidance) return view
+  const { step, tags, ...current } = view
+  const withoutGuidance = step === undefined ? undefined : (() => {
+    const { blocks: _blocks, branches: _branches, branchAssessments, ...facts } = step
+    return { ...facts, branchAssessments: branchAssessments.map(({ condition: _condition, applicability: _applicability, ...currentFacts }) => currentFacts) }
+  })()
+  return procedureStepCurrentViewSchema.parse({
+    ...current,
+    guidanceIncluded: false,
+    ...(withoutGuidance === undefined ? {} : { step: withoutGuidance }),
+    ...(tags === undefined ? {} : { tags: tags.map(({ description: _description, notes: _notes, ...facts }) => facts) }),
+  })
+}
+
 export interface ProcedureStepViewPorts {
   readonly sequence: () => number
   readonly clock: () => { readonly currentTime: IsoTimestamp; readonly paused: boolean }
+  /** Retained Run journal, for an exact historical decision selector without new persisted identity. */
+  readonly events: () => ReadonlyArray<SimulationRunEvent>
   /** The run scope's observations, read as the caller. */
   readonly observations: () => ProcedureObservationPort
 }
@@ -114,20 +178,40 @@ const runSummary = (run: ProcedureRunState, document: ProcedureDocument, step?: 
   return {
     runId: run.runId,
     procedureId: run.procedureId,
+    sourceId: run.sourceId, sourceRevision: run.sourceRevision, sourcePath: run.sourcePath,
     title: run.title,
     status: run.status,
     plantId: run.scope.plantId,
     ...(run.scope.label === undefined ? {} : { unit: run.scope.label }),
     ...(run.driver === undefined ? {} : { driver: run.driver }),
+    ...(run.inputRequest === undefined ? {} : { inputRequest: run.inputRequest }),
     ...(run.currentStepId === undefined ? {} : { currentStepId: run.currentStepId }),
     ...(stepIndex < 0 ? {} : { stepNumber: stepIndex + 1 }),
     totalSteps: document.steps.length,
   }
 }
 
+const stepDefinition = (run: ProcedureRunState, step: ProcedureStep) => ({
+  capabilityId: 'world.procedure.document.read', input: { sourceId: run.sourceId, procedureId: run.procedureId,
+    sourceRevision: run.sourceRevision, sourcePath: run.sourcePath, stepId: step.id },
+})
+
+const stepStateView = (run: ProcedureRunState, stepId: string, events: ReadonlyArray<SimulationRunEvent>) => {
+  const state = run.stepStates.find(item => item.stepId === stepId)
+  return state === undefined ? undefined : {
+    assessment: state.assessment,
+    ...(state.comment === undefined ? {} : { comment: state.comment }),
+    ...(state.decision === undefined ? {} : { decision: projectProcedureStepDecision({ run, stepId, decision: state.decision, events }) }),
+  }
+}
+
 const tagRow = (document: ProcedureDocument, read: ProcedureTagRead) => {
   const tag = document.tags.find(candidate => candidate.id === read.tagId)
   const notes = tag?.annotations ?? {}
+  const readingNotes = [
+    ...(read.value?.warning === undefined || read.warnings.includes(read.value.warning) ? [] : [read.value.warning]),
+    ...(read.value?.writable === true ? ['Writable command or demand; use response feedback to confirm equipment state.'] : []),
+  ]
   return {
     id: read.tagId,
     ...(tag?.description === undefined ? {} : { description: tag.description }),
@@ -138,7 +222,7 @@ const tagRow = (document: ProcedureDocument, read: ProcedureTagRead) => {
       formatted: read.value.formatted,
       ...(read.value.path !== undefined && (typeof read.value.value === 'boolean' || read.value.conversionStatus === 'unavailable') ? { signal: read.value.path } : {}),
       ...(read.value.quality === undefined ? {} : { quality: read.value.quality }),
-      ...(read.value.warning === undefined || read.warnings.includes(read.value.warning) ? {} : { note: read.value.warning }),
+      ...(readingNotes.length === 0 ? {} : { note: readingNotes.join(' ') }),
     } }),
     ...(read.value === undefined ? { unavailable: read.unavailable ?? 'no value' } : {}),
   }
@@ -179,6 +263,35 @@ export const composeProcedureRunView = (config: {
   })
 }
 
+/** A single coherent caller-supplied snapshot, without opening a Pack observation port. */
+export const composeProcedureRunReadView = (config: {
+  readonly run: ProcedureRunState
+  readonly document: ProcedureDocument
+  readonly ports: Pick<ProcedureStepViewPorts, 'sequence' | 'clock' | 'events'>
+}): ProcedureRunReadView => {
+  const { run, document, ports } = config
+  const step = document.steps.find(candidate => candidate.id === run.currentStepId)
+  if (run.currentStepId !== undefined && step === undefined) {
+    throw Object.assign(new Error(`Procedure ${document.procedureId} has no step ${run.currentStepId}.`), { code: procedureStepNotFoundCode })
+  }
+  const clock = ports.clock()
+  const stored = step === undefined ? undefined : run.stepStates.find(candidate => candidate.stepId === step.id)
+  const state = stored === undefined ? undefined : (() => {
+    const { decision, ...canonical } = stored
+    return { ...canonical, ...(decision === undefined ? {} : {
+      decision: projectProcedureStepDecision({ run, stepId: stored.stepId, decision, events: ports.events() }),
+    }) }
+  })()
+  return procedureRunReadViewSchema.parse({
+    sequence: ports.sequence(), simulationTime: clock.currentTime, paused: clock.paused, observationsAcquired: false,
+    run: runSummary(run, document, step),
+    ...(step === undefined ? {} : { step: { id: step.id, label: step.label,
+      ...(step.title === `Step ${step.label}` ? {} : { title: step.title }),
+      definition: stepDefinition(run, step), ...(state === undefined ? {} : { state }),
+    } }),
+  })
+}
+
 /** One step of a run (its current step unless stepId), as step.read returns it and an AI agent's transition answers with. */
 export const composeProcedureStepView = async (config: {
   readonly run: ProcedureRunState
@@ -193,13 +306,14 @@ export const composeProcedureStepView = async (config: {
   if (step === undefined) {
     throw Object.assign(new Error(`Procedure ${document.procedureId} has no step ${stepId}; its steps are ${document.steps.map(candidate => candidate.id).join(', ')}.`), { code: procedureStepNotFoundCode })
   }
-  const [reads, csfs] = await Promise.all([
-    readProcedureTags({ observations: ports.observations, declared: document.tags, tagIds: step.tagIds }),
+  const [acquired, csfs] = await Promise.all([
+    readProcedureBranchEvidence({ observations: ports.observations, document, step }),
     csfRows(document, ports),
   ])
+  const { reads } = acquired
   const observation = run.observations?.find(item => item.stepId === step.id)
   const labels = new Map(document.steps.map(candidate => [candidate.id, candidate.label]))
-  const state = run.stepStates.find(item => item.stepId === step.id)
+  const state = stepStateView(run, step.id, ports.events())
   // Read the clock after the reads, so the view's plant time is not older than its readings.
   const clock = ports.clock()
   return procedureStepViewSchema.parse({
@@ -211,6 +325,7 @@ export const composeProcedureStepView = async (config: {
       id: step.id,
       label: step.label,
       ...(step.title === `Step ${step.label}` ? {} : { title: step.title }),
+      definition: stepDefinition(run, step),
       blocks: step.blocks.filter(block => !omittedBlockKinds.has(block.kind)).map(block => ({ kind: block.kind, text: withoutLinkTargets(block.text) })),
       branches: step.branches.map((branch, index) => ({
         index,
@@ -223,18 +338,13 @@ export const composeProcedureStepView = async (config: {
         ...(branch.execution === undefined ? {} : { execution: branch.execution }),
         ...(branch.because === undefined ? {} : { because: withoutLinkTargets(branch.because) }),
       })),
+      branchAssessments: assessProcedureBranches({ step, reads, observations: acquired.observations, plantId: run.scope.plantId, simulationTime: clock.currentTime }).map(projectProcedureBranchAssessment),
       ...(observation === undefined ? {} : { observation: {
         status: observation.result.status,
         ...(observation.result.reason === undefined ? {} : { reason: observation.result.reason }),
         simulationTime: observation.simulationTime,
       } }),
-      ...(state === undefined ? {} : { state: {
-        assessment: state.assessment,
-        ...(state.comment === undefined ? {} : {
-          comment: state.comment.length <= stepCommentLength ? state.comment : `${state.comment.slice(0, stepCommentLength - 1)}…`,
-        }),
-        ...(state.decision === undefined ? {} : { decision: state.decision }),
-      } }),
+      ...(state === undefined ? {} : { state }),
     },
     ...(reads.length === 0 ? {} : { tags: reads.map(read => tagRow(document, read)) }),
     ...(csfs === undefined ? {} : { csfs }),

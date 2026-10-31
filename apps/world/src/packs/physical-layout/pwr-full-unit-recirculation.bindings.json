@@ -1,0 +1,2717 @@
+[
+  {
+    "physicalElementId": "tg-hp",
+    "elementId": "turbine",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "tg-lp-1",
+    "elementId": "turbine",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "tg-lp-2",
+    "elementId": "turbine",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "tg-lp-3",
+    "elementId": "turbine",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "tg-generator",
+    "elementId": "turbine",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "tg-exciter",
+    "elementId": "turbine",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "stop-valve",
+    "elementId": "turbineStopValve",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "condenser-1",
+    "elementId": "condenser",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "condenser-2",
+    "elementId": "condenser",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "condenser-3",
+    "elementId": "condenser",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "cp-a",
+    "elementId": "condensatePumpA",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "cp-b",
+    "elementId": "condensatePumpB",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "mfw-a",
+    "elementId": "mainFeedwaterPumpA",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "mfw-b",
+    "elementId": "mainFeedwaterPumpB",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/vessel",
+    "elementId": "vessel",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/pressurizer",
+    "elementId": "pressurizer",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/pressurizerReliefTank",
+    "elementId": "pressurizerReliefTank",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/sgA",
+    "elementId": "sgA",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/rcpA",
+    "elementId": "rcpA",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/safetyAccumulatorA",
+    "elementId": "safetyAccumulatorA",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/feedwaterControlValveA",
+    "elementId": "feedwaterControlValveA",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/auxFeedwaterValveA",
+    "elementId": "auxFeedwaterValveA",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/mainSteamIsolationValveA",
+    "elementId": "mainSteamIsolationValveA",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/steamGeneratorReliefValveA",
+    "elementId": "steamGeneratorReliefValveA",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/mainSteamSafetyValveA",
+    "elementId": "mainSteamSafetyValveA",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/sgB",
+    "elementId": "sgB",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/rcpB",
+    "elementId": "rcpB",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/safetyAccumulatorB",
+    "elementId": "safetyAccumulatorB",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/feedwaterControlValveB",
+    "elementId": "feedwaterControlValveB",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/auxFeedwaterValveB",
+    "elementId": "auxFeedwaterValveB",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/mainSteamIsolationValveB",
+    "elementId": "mainSteamIsolationValveB",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/steamGeneratorReliefValveB",
+    "elementId": "steamGeneratorReliefValveB",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/mainSteamSafetyValveB",
+    "elementId": "mainSteamSafetyValveB",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/sgC",
+    "elementId": "sgC",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/rcpC",
+    "elementId": "rcpC",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/safetyAccumulatorC",
+    "elementId": "safetyAccumulatorC",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/feedwaterControlValveC",
+    "elementId": "feedwaterControlValveC",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/auxFeedwaterValveC",
+    "elementId": "auxFeedwaterValveC",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/mainSteamIsolationValveC",
+    "elementId": "mainSteamIsolationValveC",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/steamGeneratorReliefValveC",
+    "elementId": "steamGeneratorReliefValveC",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/mainSteamSafetyValveC",
+    "elementId": "mainSteamSafetyValveC",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/sgD",
+    "elementId": "sgD",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/rcpD",
+    "elementId": "rcpD",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/safetyAccumulatorD",
+    "elementId": "safetyAccumulatorD",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/feedwaterControlValveD",
+    "elementId": "feedwaterControlValveD",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/auxFeedwaterValveD",
+    "elementId": "auxFeedwaterValveD",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/mainSteamIsolationValveD",
+    "elementId": "mainSteamIsolationValveD",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/steamGeneratorReliefValveD",
+    "elementId": "steamGeneratorReliefValveD",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/mainSteamSafetyValveD",
+    "elementId": "mainSteamSafetyValveD",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/rhrPumpA",
+    "elementId": "rhrPumpA",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/safetyInjectionPumpA",
+    "elementId": "safetyInjectionPumpA",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/containmentSprayPumpA",
+    "elementId": "containmentSprayPumpA",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/componentCoolingWaterPumpA",
+    "elementId": "componentCoolingWaterPumpA",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/containmentFanCoolersA",
+    "elementId": "containmentFanCoolersA",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/dieselGeneratorA",
+    "elementId": "dieselGeneratorA",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/serviceWaterPumpA",
+    "elementId": "serviceWaterPumpA",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/safetyBusA",
+    "elementId": "safetyBusA",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/unitBusA",
+    "elementId": "unitBusA",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/offsiteBreakerA",
+    "elementId": "offsiteBreakerA",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/unitBusBreakerA",
+    "elementId": "unitBusBreakerA",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/dieselBreakerA",
+    "elementId": "dieselBreakerA",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/loadCentresA",
+    "elementId": "loadCentresA",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/vitalBatteryA",
+    "elementId": "vitalBatteryA",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/dcInverterA",
+    "elementId": "dcInverterA",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/plantControlsLoadA",
+    "elementId": "plantControlsLoadA",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/reactorTripBreakerA",
+    "elementId": "reactorTripBreakerA",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/rhrPumpB",
+    "elementId": "rhrPumpB",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/safetyInjectionPumpB",
+    "elementId": "safetyInjectionPumpB",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/containmentSprayPumpB",
+    "elementId": "containmentSprayPumpB",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/componentCoolingWaterPumpB",
+    "elementId": "componentCoolingWaterPumpB",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/containmentFanCoolersB",
+    "elementId": "containmentFanCoolersB",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/dieselGeneratorB",
+    "elementId": "dieselGeneratorB",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/serviceWaterPumpB",
+    "elementId": "serviceWaterPumpB",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/safetyBusB",
+    "elementId": "safetyBusB",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/unitBusB",
+    "elementId": "unitBusB",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/offsiteBreakerB",
+    "elementId": "offsiteBreakerB",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/unitBusBreakerB",
+    "elementId": "unitBusBreakerB",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/dieselBreakerB",
+    "elementId": "dieselBreakerB",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/loadCentresB",
+    "elementId": "loadCentresB",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/vitalBatteryB",
+    "elementId": "vitalBatteryB",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/dcInverterB",
+    "elementId": "dcInverterB",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/plantControlsLoadB",
+    "elementId": "plantControlsLoadB",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/reactorTripBreakerB",
+    "elementId": "reactorTripBreakerB",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/chargingPump",
+    "elementId": "chargingPump",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/chargingPumpB",
+    "elementId": "chargingPumpB",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/volumeControlTank",
+    "elementId": "volumeControlTank",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/boricAcidTank",
+    "elementId": "boricAcidTank",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/letdownValve",
+    "elementId": "letdownValve",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/boricAcidInjectionValve",
+    "elementId": "boricAcidInjectionValve",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/auxFeedwaterPumpMotor",
+    "elementId": "auxFeedwaterPumpMotor",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/auxFeedwaterPumpMotorB",
+    "elementId": "auxFeedwaterPumpMotorB",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/auxFeedwaterPumpTurbine",
+    "elementId": "auxFeedwaterPumpTurbine",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/auxFeedwaterTurbineSteamValveB",
+    "elementId": "auxFeedwaterTurbineSteamValveB",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/auxFeedwaterTurbineSteamValveC",
+    "elementId": "auxFeedwaterTurbineSteamValveC",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/containmentSprayAdditiveTank",
+    "elementId": "containmentSprayAdditiveTank",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/feedwaterTank",
+    "elementId": "feedwaterTank",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/turbineBypassValve",
+    "elementId": "turbineBypassValve",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/hotwellRejectValve",
+    "elementId": "hotwellRejectValve",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/rwst",
+    "elementId": "rwst",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/auxFeedwaterTank",
+    "elementId": "auxFeedwaterTank",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/unitAuxTransformer",
+    "elementId": "unitAuxTransformer",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/pressurizerBackupHeaterBreakerA",
+    "elementId": "pressurizerBackupHeaterBreakerA",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/circulatingWaterPump",
+    "elementId": "circulatingWaterPump",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "route/main-steam-header",
+    "elementId": "mainSteamHeader",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "route/feedwater-header",
+    "elementId": "feedwaterHeader",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "route/aux-feedwater-header",
+    "elementId": "auxFeedwaterHeader",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "route/safety-injection-header",
+    "elementId": "safetyInjectionHeader",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "route/containment-spray-header",
+    "elementId": "containmentSprayHeader",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "route/pressurizer-relief-header",
+    "elementId": "pressurizerReliefHeader",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/vessel",
+    "elementId": "core",
+    "relation": "houses"
+  },
+  {
+    "physicalElementId": "basin/ultimateHeatSink",
+    "elementId": "ultimateHeatSink",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "basin/coolingWaterDischarge",
+    "elementId": "coolingWaterDischarge",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-00",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-01",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-02",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-03",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-04",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-05",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-06",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-07",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-08",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-09",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-10",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-11",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-12",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-13",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-14",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-15",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-16",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-17",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-18",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-19",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-20",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-21",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-22",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-23",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-24",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-25",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-26",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-27",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-28",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-29",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-30",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "wall/containment/facet-31",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "structure/shaftline",
+    "elementId": "turbine",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "structure/bearing/8.6/base",
+    "elementId": "turbine",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "structure/bearing/8.6/pedestal",
+    "elementId": "turbine",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "structure/bearing/8.6/housing",
+    "elementId": "turbine",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "structure/bearing/18.4/base",
+    "elementId": "turbine",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "structure/bearing/18.4/pedestal",
+    "elementId": "turbine",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "structure/bearing/18.4/housing",
+    "elementId": "turbine",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "structure/bearing/30/base",
+    "elementId": "turbine",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "structure/bearing/30/pedestal",
+    "elementId": "turbine",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "structure/bearing/30/housing",
+    "elementId": "turbine",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "structure/bearing/41/base",
+    "elementId": "turbine",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "structure/bearing/41/pedestal",
+    "elementId": "turbine",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "structure/bearing/41/housing",
+    "elementId": "turbine",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "structure/bearing/52.6/base",
+    "elementId": "turbine",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "structure/bearing/52.6/pedestal",
+    "elementId": "turbine",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "structure/bearing/52.6/housing",
+    "elementId": "turbine",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "structure/bearing/69/base",
+    "elementId": "turbine",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "structure/bearing/69/pedestal",
+    "elementId": "turbine",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "structure/bearing/69/housing",
+    "elementId": "turbine",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "structure/bearing/75.7/base",
+    "elementId": "turbine",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "structure/bearing/75.7/pedestal",
+    "elementId": "turbine",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "structure/bearing/75.7/housing",
+    "elementId": "turbine",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "structure/exhaust-transition/condenser-1",
+    "elementId": "turbine",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "structure/exhaust-transition/condenser-2",
+    "elementId": "turbine",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "structure/exhaust-transition/condenser-3",
+    "elementId": "turbine",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/turbine-reheat-10.4",
+    "elementId": "turbine",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/turbine-admission-24.5-10.4",
+    "elementId": "turbine",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/turbine-admission-35.5-10.4",
+    "elementId": "turbine",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/turbine-admission-46.5-10.4",
+    "elementId": "turbine",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/turbine-reheat-26.6",
+    "elementId": "turbine",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/turbine-admission-24.5-26.6",
+    "elementId": "turbine",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/turbine-admission-35.5-26.6",
+    "elementId": "turbine",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/turbine-admission-46.5-26.6",
+    "elementId": "turbine",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "connection/pressurizer-surge-line",
+    "elementId": "pressurizer-surge-line",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/pressurizer-relief-to-tank",
+    "elementId": "pressurizer-relief-to-tank",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/pressurizer-safety-valves-to-tank",
+    "elementId": "pressurizer-safety-valves-to-tank",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/pressurizer-relief-header-to-tank",
+    "elementId": "pressurizer-relief-header-to-tank",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/rcs-hot-leg-a",
+    "elementId": "rcs-hot-leg-a",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/rcs-cold-leg-a",
+    "elementId": "rcs-cold-leg-a",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/rcp-a-to-core",
+    "elementId": "rcp-a-to-core",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/rcs-hot-leg-b",
+    "elementId": "rcs-hot-leg-b",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/rcs-cold-leg-b",
+    "elementId": "rcs-cold-leg-b",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/rcp-b-to-core",
+    "elementId": "rcp-b-to-core",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/rcs-hot-leg-c",
+    "elementId": "rcs-hot-leg-c",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/rcs-cold-leg-c",
+    "elementId": "rcs-cold-leg-c",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/rcp-c-to-core",
+    "elementId": "rcp-c-to-core",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/rcs-hot-leg-d",
+    "elementId": "rcs-hot-leg-d",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/rcs-cold-leg-d",
+    "elementId": "rcs-cold-leg-d",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/rcp-d-to-core",
+    "elementId": "rcp-d-to-core",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/feedwater-tank-to-main-feedwater-pump-a",
+    "elementId": "feedwater-tank-to-main-feedwater-pump-a",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/feedwater-tank-to-main-feedwater-pump-b",
+    "elementId": "feedwater-tank-to-main-feedwater-pump-b",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/main-feedwater-pump-a-to-header",
+    "elementId": "main-feedwater-pump-a-to-header",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/main-feedwater-pump-b-to-header",
+    "elementId": "main-feedwater-pump-b-to-header",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/feedwater-header-to-control-valve-a",
+    "elementId": "feedwater-header-to-control-valve-a",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/feedwater-control-valve-a-to-sg-a",
+    "elementId": "feedwater-control-valve-a-to-sg-a",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/sg-a-steam-to-msiv-a",
+    "elementId": "sg-a-steam-to-msiv-a",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/msiv-a-to-main-steam-header",
+    "elementId": "msiv-a-to-main-steam-header",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/feedwater-header-to-control-valve-b",
+    "elementId": "feedwater-header-to-control-valve-b",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/feedwater-control-valve-b-to-sg-b",
+    "elementId": "feedwater-control-valve-b-to-sg-b",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/sg-b-steam-to-msiv-b",
+    "elementId": "sg-b-steam-to-msiv-b",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/msiv-b-to-main-steam-header",
+    "elementId": "msiv-b-to-main-steam-header",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/feedwater-header-to-control-valve-c",
+    "elementId": "feedwater-header-to-control-valve-c",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/feedwater-control-valve-c-to-sg-c",
+    "elementId": "feedwater-control-valve-c-to-sg-c",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/sg-c-steam-to-msiv-c",
+    "elementId": "sg-c-steam-to-msiv-c",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/msiv-c-to-main-steam-header",
+    "elementId": "msiv-c-to-main-steam-header",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/feedwater-header-to-control-valve-d",
+    "elementId": "feedwater-header-to-control-valve-d",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/feedwater-control-valve-d-to-sg-d",
+    "elementId": "feedwater-control-valve-d-to-sg-d",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/sg-d-steam-to-msiv-d",
+    "elementId": "sg-d-steam-to-msiv-d",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/msiv-d-to-main-steam-header",
+    "elementId": "msiv-d-to-main-steam-header",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/main-steam-header-to-turbine-stop-valve",
+    "elementId": "main-steam-header-to-turbine-stop-valve",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/main-steam-header-to-turbine-bypass-valve",
+    "elementId": "main-steam-header-to-turbine-bypass-valve",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/turbine-bypass-valve-to-condenser",
+    "elementId": "turbine-bypass-valve-to-condenser",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/turbine-stop-valve-to-turbine",
+    "elementId": "turbine-stop-valve-to-turbine",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/turbine-exhaust-to-condenser",
+    "elementId": "turbine-exhaust-to-condenser",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/condenser-to-condensate-pump-a",
+    "elementId": "condenser-to-condensate-pump-a",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/condensate-pump-a-to-feedwater-tank",
+    "elementId": "condensate-pump-a-to-feedwater-tank",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/condenser-to-condensate-pump-b",
+    "elementId": "condenser-to-condensate-pump-b",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/condensate-pump-b-to-feedwater-tank",
+    "elementId": "condensate-pump-b-to-feedwater-tank",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/condenser-to-hotwell-reject-valve",
+    "elementId": "condenser-to-hotwell-reject-valve",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/hotwell-reject",
+    "elementId": "hotwell-reject",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/aux-feedwater-tank-to-motor-pump",
+    "elementId": "aux-feedwater-tank-to-motor-pump",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/aux-feedwater-tank-to-turbine-pump",
+    "elementId": "aux-feedwater-tank-to-turbine-pump",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/motor-afw-pump-to-header",
+    "elementId": "motor-afw-pump-to-header",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/turbine-afw-pump-to-header",
+    "elementId": "turbine-afw-pump-to-header",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/aux-feedwater-header-to-valve-a",
+    "elementId": "aux-feedwater-header-to-valve-a",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/aux-feedwater-valve-a-to-sg-a",
+    "elementId": "aux-feedwater-valve-a-to-sg-a",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/aux-feedwater-header-to-valve-b",
+    "elementId": "aux-feedwater-header-to-valve-b",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/aux-feedwater-valve-b-to-sg-b",
+    "elementId": "aux-feedwater-valve-b-to-sg-b",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/aux-feedwater-header-to-valve-c",
+    "elementId": "aux-feedwater-header-to-valve-c",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/aux-feedwater-valve-c-to-sg-c",
+    "elementId": "aux-feedwater-valve-c-to-sg-c",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/aux-feedwater-header-to-valve-d",
+    "elementId": "aux-feedwater-header-to-valve-d",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/aux-feedwater-valve-d-to-sg-d",
+    "elementId": "aux-feedwater-valve-d-to-sg-d",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/vct-to-charging-pump",
+    "elementId": "vct-to-charging-pump",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/boric-acid-tank-to-injection-valve",
+    "elementId": "boric-acid-tank-to-injection-valve",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/boric-acid-injection-to-charging-pump",
+    "elementId": "boric-acid-injection-to-charging-pump",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/charging-pump-to-cold-leg-a",
+    "elementId": "charging-pump-to-cold-leg-a",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/rcs-letdown",
+    "elementId": "rcs-letdown",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/letdown-to-vct",
+    "elementId": "letdown-to-vct",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/aux-feedwater-tank-to-motor-pump-b",
+    "elementId": "aux-feedwater-tank-to-motor-pump-b",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/motor-afw-pump-b-to-header",
+    "elementId": "motor-afw-pump-b-to-header",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/vct-to-charging-pump-b",
+    "elementId": "vct-to-charging-pump-b",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/charging-pump-b-to-cold-leg-b",
+    "elementId": "charging-pump-b-to-cold-leg-b",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/safety-injection-pump-a-to-header",
+    "elementId": "safety-injection-pump-a-to-header",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/safety-injection-pump-b-to-header",
+    "elementId": "safety-injection-pump-b-to-header",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/safety-injection-header-to-cold-leg-a",
+    "elementId": "safety-injection-header-to-cold-leg-a",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/safety-injection-header-to-cold-leg-b",
+    "elementId": "safety-injection-header-to-cold-leg-b",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/safety-injection-header-to-cold-leg-c",
+    "elementId": "safety-injection-header-to-cold-leg-c",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/safety-injection-header-to-cold-leg-d",
+    "elementId": "safety-injection-header-to-cold-leg-d",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/rwst-to-containment-spray-pump-a",
+    "elementId": "rwst-to-containment-spray-pump-a",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/rwst-to-containment-spray-pump-b",
+    "elementId": "rwst-to-containment-spray-pump-b",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/containment-spray-pump-a-to-header",
+    "elementId": "containment-spray-pump-a-to-header",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/containment-spray-pump-b-to-header",
+    "elementId": "containment-spray-pump-b-to-header",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/safety-accumulator-a-to-cold-leg-a",
+    "elementId": "safety-accumulator-a-to-cold-leg-a",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/safety-accumulator-b-to-cold-leg-b",
+    "elementId": "safety-accumulator-b-to-cold-leg-b",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/safety-accumulator-c-to-cold-leg-c",
+    "elementId": "safety-accumulator-c-to-cold-leg-c",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/safety-accumulator-d-to-cold-leg-d",
+    "elementId": "safety-accumulator-d-to-cold-leg-d",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/sg-a-steam-to-relief-valve-a",
+    "elementId": "sg-a-steam-to-relief-valve-a",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/sg-b-steam-to-relief-valve-b",
+    "elementId": "sg-b-steam-to-relief-valve-b",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/sg-c-steam-to-relief-valve-c",
+    "elementId": "sg-c-steam-to-relief-valve-c",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/sg-d-steam-to-relief-valve-d",
+    "elementId": "sg-d-steam-to-relief-valve-d",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/ultimate-heat-sink-to-circulating-water-pump",
+    "elementId": "ultimate-heat-sink-to-circulating-water-pump",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/circulating-water-pump-to-condenser",
+    "elementId": "circulating-water-pump-to-condenser",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/condenser-to-cooling-water-discharge",
+    "elementId": "condenser-to-cooling-water-discharge",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/turbine-generator-to-unit-aux-transformer",
+    "elementId": "turbine-generator-to-unit-aux-transformer",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/unit-aux-transformer-to-offsite-breaker-a",
+    "elementId": "unit-aux-transformer-to-offsite-breaker-a",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/unit-aux-transformer-to-offsite-breaker-b",
+    "elementId": "unit-aux-transformer-to-offsite-breaker-b",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/offsite-breaker-a-to-safety-bus-a",
+    "elementId": "offsite-breaker-a-to-safety-bus-a",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/offsite-breaker-b-to-safety-bus-b",
+    "elementId": "offsite-breaker-b-to-safety-bus-b",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/unit-aux-transformer-to-unit-bus-breaker-a",
+    "elementId": "unit-aux-transformer-to-unit-bus-breaker-a",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/unit-aux-transformer-to-unit-bus-breaker-b",
+    "elementId": "unit-aux-transformer-to-unit-bus-breaker-b",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/unit-bus-breaker-a-to-unit-bus-a",
+    "elementId": "unit-bus-breaker-a-to-unit-bus-a",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/unit-bus-breaker-b-to-unit-bus-b",
+    "elementId": "unit-bus-breaker-b-to-unit-bus-b",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/diesel-generator-a-to-breaker-a",
+    "elementId": "diesel-generator-a-to-breaker-a",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/diesel-generator-b-to-breaker-b",
+    "elementId": "diesel-generator-b-to-breaker-b",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/diesel-breaker-a-to-safety-bus-a",
+    "elementId": "diesel-breaker-a-to-safety-bus-a",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/diesel-breaker-b-to-safety-bus-b",
+    "elementId": "diesel-breaker-b-to-safety-bus-b",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/battery-a-to-inverter-a",
+    "elementId": "battery-a-to-inverter-a",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/battery-b-to-inverter-b",
+    "elementId": "battery-b-to-inverter-b",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/inverter-a-to-controls-load-a",
+    "elementId": "inverter-a-to-controls-load-a",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/inverter-b-to-controls-load-b",
+    "elementId": "inverter-b-to-controls-load-b",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/unit-bus-a-to-rcpA",
+    "elementId": "unit-bus-a-to-rcpA",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/unit-bus-a-to-rcpC",
+    "elementId": "unit-bus-a-to-rcpC",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/unit-bus-a-to-mainFeedwaterPumpA",
+    "elementId": "unit-bus-a-to-mainFeedwaterPumpA",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/safety-bus-a-to-auxFeedwaterPumpMotor",
+    "elementId": "safety-bus-a-to-auxFeedwaterPumpMotor",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/safety-bus-b-to-auxFeedwaterPumpMotorB",
+    "elementId": "safety-bus-b-to-auxFeedwaterPumpMotorB",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/unit-bus-a-to-condensatePumpA",
+    "elementId": "unit-bus-a-to-condensatePumpA",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/unit-bus-a-to-circulatingWaterPump",
+    "elementId": "unit-bus-a-to-circulatingWaterPump",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/unit-bus-b-to-rcpB",
+    "elementId": "unit-bus-b-to-rcpB",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/unit-bus-b-to-rcpD",
+    "elementId": "unit-bus-b-to-rcpD",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/unit-bus-b-to-mainFeedwaterPumpB",
+    "elementId": "unit-bus-b-to-mainFeedwaterPumpB",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/unit-bus-b-to-condensatePumpB",
+    "elementId": "unit-bus-b-to-condensatePumpB",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/safety-bus-a-to-chargingPump",
+    "elementId": "safety-bus-a-to-chargingPump",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/safety-bus-b-to-chargingPumpB",
+    "elementId": "safety-bus-b-to-chargingPumpB",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/safety-bus-a-to-safetyInjectionPumpA",
+    "elementId": "safety-bus-a-to-safetyInjectionPumpA",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/safety-bus-b-to-safetyInjectionPumpB",
+    "elementId": "safety-bus-b-to-safetyInjectionPumpB",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/safety-bus-a-to-containmentSprayPumpA",
+    "elementId": "safety-bus-a-to-containmentSprayPumpA",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/safety-bus-b-to-containmentSprayPumpB",
+    "elementId": "safety-bus-b-to-containmentSprayPumpB",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/safety-bus-a-to-rhrPumpA",
+    "elementId": "safety-bus-a-to-rhrPumpA",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/safety-bus-b-to-rhrPumpB",
+    "elementId": "safety-bus-b-to-rhrPumpB",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/unit-bus-a-to-pressurizer-heater",
+    "elementId": "unit-bus-a-to-pressurizer-heater",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/safety-bus-a-to-pressurizer-porv-block-valve",
+    "elementId": "safety-bus-a-to-pressurizer-porv-block-valve",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/safety-bus-a-to-pressurizer-backup-heater-breaker-a",
+    "elementId": "safety-bus-a-to-pressurizer-backup-heater-breaker-a",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/pressurizer-backup-heater-breaker-a-to-pressurizer",
+    "elementId": "pressurizer-backup-heater-breaker-a-to-pressurizer",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/safety-bus-a-to-load-centres-a",
+    "elementId": "safety-bus-a-to-load-centres-a",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/safety-bus-a-to-fan-coolers-a",
+    "elementId": "safety-bus-a-to-fan-coolers-a",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/safety-bus-b-to-load-centres-b",
+    "elementId": "safety-bus-b-to-load-centres-b",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/safety-bus-b-to-fan-coolers-b",
+    "elementId": "safety-bus-b-to-fan-coolers-b",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/sg-b-steam-to-turbine-afw-steam-valve-b",
+    "elementId": "sg-b-steam-to-turbine-afw-steam-valve-b",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/turbine-afw-steam-valve-b-to-pump-turbine",
+    "elementId": "turbine-afw-steam-valve-b-to-pump-turbine",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/sg-c-steam-to-turbine-afw-steam-valve-c",
+    "elementId": "sg-c-steam-to-turbine-afw-steam-valve-c",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/turbine-afw-steam-valve-c-to-pump-turbine",
+    "elementId": "turbine-afw-steam-valve-c-to-pump-turbine",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/sg-a-steam-to-safety-valves-a",
+    "elementId": "sg-a-steam-to-safety-valves-a",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/sg-b-steam-to-safety-valves-b",
+    "elementId": "sg-b-steam-to-safety-valves-b",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/sg-c-steam-to-safety-valves-c",
+    "elementId": "sg-c-steam-to-safety-valves-c",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/sg-d-steam-to-safety-valves-d",
+    "elementId": "sg-d-steam-to-safety-valves-d",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "route/main-steam-header/blind-first",
+    "elementId": "mainSteamHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/main-steam-header/blind-last",
+    "elementId": "mainSteamHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/main-steam-header/nozzle/inletA",
+    "elementId": "mainSteamHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/main-steam-header/flange/inletA",
+    "elementId": "mainSteamHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/main-steam-header/nozzle/inletB",
+    "elementId": "mainSteamHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/main-steam-header/flange/inletB",
+    "elementId": "mainSteamHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/main-steam-header/nozzle/inletC",
+    "elementId": "mainSteamHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/main-steam-header/flange/inletC",
+    "elementId": "mainSteamHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/main-steam-header/nozzle/inletD",
+    "elementId": "mainSteamHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/main-steam-header/flange/inletD",
+    "elementId": "mainSteamHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/main-steam-header/nozzle/outletA",
+    "elementId": "mainSteamHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/main-steam-header/flange/outletA",
+    "elementId": "mainSteamHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/main-steam-header/nozzle/outletC",
+    "elementId": "mainSteamHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/main-steam-header/flange/outletC",
+    "elementId": "mainSteamHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/feedwater-header/blind-first",
+    "elementId": "feedwaterHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/feedwater-header/blind-last",
+    "elementId": "feedwaterHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/feedwater-header/nozzle/inletA",
+    "elementId": "feedwaterHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/feedwater-header/flange/inletA",
+    "elementId": "feedwaterHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/feedwater-header/nozzle/inletB",
+    "elementId": "feedwaterHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/feedwater-header/flange/inletB",
+    "elementId": "feedwaterHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/feedwater-header/nozzle/outletA",
+    "elementId": "feedwaterHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/feedwater-header/flange/outletA",
+    "elementId": "feedwaterHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/feedwater-header/nozzle/outletB",
+    "elementId": "feedwaterHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/feedwater-header/flange/outletB",
+    "elementId": "feedwaterHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/feedwater-header/nozzle/outletC",
+    "elementId": "feedwaterHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/feedwater-header/flange/outletC",
+    "elementId": "feedwaterHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/feedwater-header/nozzle/outletD",
+    "elementId": "feedwaterHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/feedwater-header/flange/outletD",
+    "elementId": "feedwaterHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/aux-feedwater-header/blind-first",
+    "elementId": "auxFeedwaterHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/aux-feedwater-header/blind-last",
+    "elementId": "auxFeedwaterHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/aux-feedwater-header/nozzle/inletA",
+    "elementId": "auxFeedwaterHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/aux-feedwater-header/flange/inletA",
+    "elementId": "auxFeedwaterHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/aux-feedwater-header/nozzle/inletB",
+    "elementId": "auxFeedwaterHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/aux-feedwater-header/flange/inletB",
+    "elementId": "auxFeedwaterHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/aux-feedwater-header/nozzle/inletC",
+    "elementId": "auxFeedwaterHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/aux-feedwater-header/flange/inletC",
+    "elementId": "auxFeedwaterHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/aux-feedwater-header/nozzle/outletA",
+    "elementId": "auxFeedwaterHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/aux-feedwater-header/flange/outletA",
+    "elementId": "auxFeedwaterHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/aux-feedwater-header/nozzle/outletB",
+    "elementId": "auxFeedwaterHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/aux-feedwater-header/flange/outletB",
+    "elementId": "auxFeedwaterHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/aux-feedwater-header/nozzle/outletC",
+    "elementId": "auxFeedwaterHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/aux-feedwater-header/flange/outletC",
+    "elementId": "auxFeedwaterHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/aux-feedwater-header/nozzle/outletD",
+    "elementId": "auxFeedwaterHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/aux-feedwater-header/flange/outletD",
+    "elementId": "auxFeedwaterHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/safety-injection-header/blind-first",
+    "elementId": "safetyInjectionHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/safety-injection-header/blind-last",
+    "elementId": "safetyInjectionHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/safety-injection-header/nozzle/inletA",
+    "elementId": "safetyInjectionHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/safety-injection-header/flange/inletA",
+    "elementId": "safetyInjectionHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/safety-injection-header/nozzle/inletB",
+    "elementId": "safetyInjectionHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/safety-injection-header/flange/inletB",
+    "elementId": "safetyInjectionHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/safety-injection-header/nozzle/outletA",
+    "elementId": "safetyInjectionHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/safety-injection-header/flange/outletA",
+    "elementId": "safetyInjectionHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/safety-injection-header/nozzle/outletB",
+    "elementId": "safetyInjectionHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/safety-injection-header/flange/outletB",
+    "elementId": "safetyInjectionHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/safety-injection-header/nozzle/outletC",
+    "elementId": "safetyInjectionHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/safety-injection-header/flange/outletC",
+    "elementId": "safetyInjectionHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/safety-injection-header/nozzle/outletD",
+    "elementId": "safetyInjectionHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/safety-injection-header/flange/outletD",
+    "elementId": "safetyInjectionHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/containment-spray-header/blind-first",
+    "elementId": "containmentSprayHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/containment-spray-header/blind-last",
+    "elementId": "containmentSprayHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/containment-spray-header/nozzle/inletA",
+    "elementId": "containmentSprayHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/containment-spray-header/flange/inletA",
+    "elementId": "containmentSprayHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/containment-spray-header/nozzle/inletB",
+    "elementId": "containmentSprayHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/containment-spray-header/flange/inletB",
+    "elementId": "containmentSprayHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/pressurizer-relief-header/blind-first",
+    "elementId": "pressurizerReliefHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/pressurizer-relief-header/blind-last",
+    "elementId": "pressurizerReliefHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/pressurizer-relief-header/nozzle/inletA",
+    "elementId": "pressurizerReliefHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/pressurizer-relief-header/flange/inletA",
+    "elementId": "pressurizerReliefHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/pressurizer-relief-header/nozzle/outletA",
+    "elementId": "pressurizerReliefHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/pressurizer-relief-header/flange/outletA",
+    "elementId": "pressurizerReliefHeader",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/turbine-msr-feed-1",
+    "elementId": "turbine",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/turbine-msr-feed-2",
+    "elementId": "turbine",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/turbine-receiver-24.5-10.4",
+    "elementId": "turbine",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/turbine-receiver-24.5-26.6",
+    "elementId": "turbine",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/turbine-receiver-35.5-10.4",
+    "elementId": "turbine",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/turbine-receiver-35.5-26.6",
+    "elementId": "turbine",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/turbine-receiver-46.5-10.4",
+    "elementId": "turbine",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "route/turbine-receiver-46.5-26.6",
+    "elementId": "turbine",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/rhrHeatExchangerA",
+    "elementId": "rhrHeatExchangerA",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/componentCoolingHeatExchangerA",
+    "elementId": "componentCoolingHeatExchangerA",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/componentCoolingTankA",
+    "elementId": "componentCoolingTankA",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/componentCoolingWaterPumpBreakerA",
+    "elementId": "componentCoolingWaterPumpBreakerA",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/serviceWaterPumpBreakerA",
+    "elementId": "serviceWaterPumpBreakerA",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/rhrHeatExchangerB",
+    "elementId": "rhrHeatExchangerB",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/componentCoolingHeatExchangerB",
+    "elementId": "componentCoolingHeatExchangerB",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/componentCoolingTankB",
+    "elementId": "componentCoolingTankB",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/componentCoolingWaterPumpBreakerB",
+    "elementId": "componentCoolingWaterPumpBreakerB",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/serviceWaterPumpBreakerB",
+    "elementId": "serviceWaterPumpBreakerB",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "nozzle/rhrHeatExchangerA/hotIn",
+    "elementId": "rhrHeatExchangerA",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "nozzle/rhrHeatExchangerA/hotOut",
+    "elementId": "rhrHeatExchangerA",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "nozzle/rhrHeatExchangerA/coldIn",
+    "elementId": "rhrHeatExchangerA",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "nozzle/rhrHeatExchangerA/coldOut",
+    "elementId": "rhrHeatExchangerA",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "nozzle/componentCoolingHeatExchangerA/hotIn",
+    "elementId": "componentCoolingHeatExchangerA",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "nozzle/componentCoolingHeatExchangerA/hotOut",
+    "elementId": "componentCoolingHeatExchangerA",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "nozzle/componentCoolingHeatExchangerA/coldIn",
+    "elementId": "componentCoolingHeatExchangerA",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "nozzle/componentCoolingHeatExchangerA/coldOut",
+    "elementId": "componentCoolingHeatExchangerA",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "nozzle/componentCoolingTankA/inlet",
+    "elementId": "componentCoolingTankA",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "nozzle/componentCoolingTankA/outlet",
+    "elementId": "componentCoolingTankA",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "nozzle/rhrHeatExchangerB/hotIn",
+    "elementId": "rhrHeatExchangerB",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "nozzle/rhrHeatExchangerB/hotOut",
+    "elementId": "rhrHeatExchangerB",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "nozzle/rhrHeatExchangerB/coldIn",
+    "elementId": "rhrHeatExchangerB",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "nozzle/rhrHeatExchangerB/coldOut",
+    "elementId": "rhrHeatExchangerB",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "nozzle/componentCoolingHeatExchangerB/hotIn",
+    "elementId": "componentCoolingHeatExchangerB",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "nozzle/componentCoolingHeatExchangerB/hotOut",
+    "elementId": "componentCoolingHeatExchangerB",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "nozzle/componentCoolingHeatExchangerB/coldIn",
+    "elementId": "componentCoolingHeatExchangerB",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "nozzle/componentCoolingHeatExchangerB/coldOut",
+    "elementId": "componentCoolingHeatExchangerB",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "nozzle/componentCoolingTankB/inlet",
+    "elementId": "componentCoolingTankB",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "nozzle/componentCoolingTankB/outlet",
+    "elementId": "componentCoolingTankB",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "connection/rhr-pump-a-to-heat-exchanger",
+    "elementId": "rhr-pump-a-to-heat-exchanger",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/rhr-pump-b-to-heat-exchanger",
+    "elementId": "rhr-pump-b-to-heat-exchanger",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/safety-bus-a-to-ccw-pump-a",
+    "elementId": "safety-bus-a-to-ccw-pump-a",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/safety-bus-a-to-sw-pump-a",
+    "elementId": "safety-bus-a-to-sw-pump-a",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/safety-bus-b-to-ccw-pump-b",
+    "elementId": "safety-bus-b-to-ccw-pump-b",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/safety-bus-b-to-sw-pump-b",
+    "elementId": "safety-bus-b-to-sw-pump-b",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/ccw-pump-a-feeder-to-motor",
+    "elementId": "ccw-pump-a-feeder-to-motor",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/sw-pump-a-feeder-to-motor",
+    "elementId": "sw-pump-a-feeder-to-motor",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/ccw-inventory-a-to-pump",
+    "elementId": "ccw-inventory-a-to-pump",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/ccw-pump-a-to-rhr-heat-exchanger",
+    "elementId": "ccw-pump-a-to-rhr-heat-exchanger",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/rhr-heat-exchanger-a-to-ccw-heat-exchanger",
+    "elementId": "rhr-heat-exchanger-a-to-ccw-heat-exchanger",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/ccw-heat-exchanger-a-to-inventory",
+    "elementId": "ccw-heat-exchanger-a-to-inventory",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/ultimate-heat-sink-to-service-water-pump-a",
+    "elementId": "ultimate-heat-sink-to-service-water-pump-a",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/service-water-pump-a-to-ccw-heat-exchanger",
+    "elementId": "service-water-pump-a-to-ccw-heat-exchanger",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/ccw-heat-exchanger-a-to-discharge",
+    "elementId": "ccw-heat-exchanger-a-to-discharge",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/ccw-pump-b-feeder-to-motor",
+    "elementId": "ccw-pump-b-feeder-to-motor",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/sw-pump-b-feeder-to-motor",
+    "elementId": "sw-pump-b-feeder-to-motor",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/ccw-inventory-b-to-pump",
+    "elementId": "ccw-inventory-b-to-pump",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/ccw-pump-b-to-rhr-heat-exchanger",
+    "elementId": "ccw-pump-b-to-rhr-heat-exchanger",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/rhr-heat-exchanger-b-to-ccw-heat-exchanger",
+    "elementId": "rhr-heat-exchanger-b-to-ccw-heat-exchanger",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/ccw-heat-exchanger-b-to-inventory",
+    "elementId": "ccw-heat-exchanger-b-to-inventory",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/ultimate-heat-sink-to-service-water-pump-b",
+    "elementId": "ultimate-heat-sink-to-service-water-pump-b",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/service-water-pump-b-to-ccw-heat-exchanger",
+    "elementId": "service-water-pump-b-to-ccw-heat-exchanger",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/ccw-heat-exchanger-b-to-discharge",
+    "elementId": "ccw-heat-exchanger-b-to-discharge",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "nozzle/containment/sumpOut/A",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/rhrRwstSuctionValveA",
+    "elementId": "rhrRwstSuctionValveA",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/rhrSumpSuctionValveA",
+    "elementId": "rhrSumpSuctionValveA",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/rhrInjectionValveA",
+    "elementId": "rhrInjectionValveA",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/siPiggybackValveA",
+    "elementId": "siPiggybackValveA",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/siRwstSuctionValveA",
+    "elementId": "siRwstSuctionValveA",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/rhrSuctionHeaderA",
+    "elementId": "rhrSuctionHeaderA",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/rhrSuctionHeaderA/blind-first",
+    "elementId": "rhrSuctionHeaderA",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/rhrSuctionHeaderA/blind-last",
+    "elementId": "rhrSuctionHeaderA",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/rhrSuctionHeaderA/nozzle/inletA",
+    "elementId": "rhrSuctionHeaderA",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/rhrSuctionHeaderA/flange/inletA",
+    "elementId": "rhrSuctionHeaderA",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/rhrSuctionHeaderA/nozzle/inletB",
+    "elementId": "rhrSuctionHeaderA",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/rhrSuctionHeaderA/flange/inletB",
+    "elementId": "rhrSuctionHeaderA",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/rhrSuctionHeaderA/nozzle/outletA",
+    "elementId": "rhrSuctionHeaderA",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/rhrSuctionHeaderA/flange/outletA",
+    "elementId": "rhrSuctionHeaderA",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/rhrDischargeHeaderA",
+    "elementId": "rhrDischargeHeaderA",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/rhrDischargeHeaderA/blind-first",
+    "elementId": "rhrDischargeHeaderA",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/rhrDischargeHeaderA/blind-last",
+    "elementId": "rhrDischargeHeaderA",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/rhrDischargeHeaderA/nozzle/inletA",
+    "elementId": "rhrDischargeHeaderA",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/rhrDischargeHeaderA/flange/inletA",
+    "elementId": "rhrDischargeHeaderA",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/rhrDischargeHeaderA/nozzle/outletA",
+    "elementId": "rhrDischargeHeaderA",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/rhrDischargeHeaderA/flange/outletA",
+    "elementId": "rhrDischargeHeaderA",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/rhrDischargeHeaderA/nozzle/outletB",
+    "elementId": "rhrDischargeHeaderA",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/rhrDischargeHeaderA/flange/outletB",
+    "elementId": "rhrDischargeHeaderA",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/siSuctionHeaderA",
+    "elementId": "siSuctionHeaderA",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/siSuctionHeaderA/blind-first",
+    "elementId": "siSuctionHeaderA",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/siSuctionHeaderA/blind-last",
+    "elementId": "siSuctionHeaderA",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/siSuctionHeaderA/nozzle/inletA",
+    "elementId": "siSuctionHeaderA",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/siSuctionHeaderA/flange/inletA",
+    "elementId": "siSuctionHeaderA",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/siSuctionHeaderA/nozzle/inletB",
+    "elementId": "siSuctionHeaderA",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/siSuctionHeaderA/flange/inletB",
+    "elementId": "siSuctionHeaderA",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/siSuctionHeaderA/nozzle/outletA",
+    "elementId": "siSuctionHeaderA",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/siSuctionHeaderA/flange/outletA",
+    "elementId": "siSuctionHeaderA",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "nozzle/containment/sumpOut/B",
+    "elementId": "containment",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/rhrRwstSuctionValveB",
+    "elementId": "rhrRwstSuctionValveB",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/rhrSumpSuctionValveB",
+    "elementId": "rhrSumpSuctionValveB",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/rhrInjectionValveB",
+    "elementId": "rhrInjectionValveB",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/siPiggybackValveB",
+    "elementId": "siPiggybackValveB",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/siRwstSuctionValveB",
+    "elementId": "siRwstSuctionValveB",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/rhrSuctionHeaderB",
+    "elementId": "rhrSuctionHeaderB",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/rhrSuctionHeaderB/blind-first",
+    "elementId": "rhrSuctionHeaderB",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/rhrSuctionHeaderB/blind-last",
+    "elementId": "rhrSuctionHeaderB",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/rhrSuctionHeaderB/nozzle/inletA",
+    "elementId": "rhrSuctionHeaderB",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/rhrSuctionHeaderB/flange/inletA",
+    "elementId": "rhrSuctionHeaderB",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/rhrSuctionHeaderB/nozzle/inletB",
+    "elementId": "rhrSuctionHeaderB",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/rhrSuctionHeaderB/flange/inletB",
+    "elementId": "rhrSuctionHeaderB",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/rhrSuctionHeaderB/nozzle/outletA",
+    "elementId": "rhrSuctionHeaderB",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/rhrSuctionHeaderB/flange/outletA",
+    "elementId": "rhrSuctionHeaderB",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/rhrDischargeHeaderB",
+    "elementId": "rhrDischargeHeaderB",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/rhrDischargeHeaderB/blind-first",
+    "elementId": "rhrDischargeHeaderB",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/rhrDischargeHeaderB/blind-last",
+    "elementId": "rhrDischargeHeaderB",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/rhrDischargeHeaderB/nozzle/inletA",
+    "elementId": "rhrDischargeHeaderB",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/rhrDischargeHeaderB/flange/inletA",
+    "elementId": "rhrDischargeHeaderB",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/rhrDischargeHeaderB/nozzle/outletA",
+    "elementId": "rhrDischargeHeaderB",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/rhrDischargeHeaderB/flange/outletA",
+    "elementId": "rhrDischargeHeaderB",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/rhrDischargeHeaderB/nozzle/outletB",
+    "elementId": "rhrDischargeHeaderB",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/rhrDischargeHeaderB/flange/outletB",
+    "elementId": "rhrDischargeHeaderB",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/siSuctionHeaderB",
+    "elementId": "siSuctionHeaderB",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "equipment/siSuctionHeaderB/blind-first",
+    "elementId": "siSuctionHeaderB",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/siSuctionHeaderB/blind-last",
+    "elementId": "siSuctionHeaderB",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/siSuctionHeaderB/nozzle/inletA",
+    "elementId": "siSuctionHeaderB",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/siSuctionHeaderB/flange/inletA",
+    "elementId": "siSuctionHeaderB",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/siSuctionHeaderB/nozzle/inletB",
+    "elementId": "siSuctionHeaderB",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/siSuctionHeaderB/flange/inletB",
+    "elementId": "siSuctionHeaderB",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/siSuctionHeaderB/nozzle/outletA",
+    "elementId": "siSuctionHeaderB",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "equipment/siSuctionHeaderB/flange/outletA",
+    "elementId": "siSuctionHeaderB",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "connection/rwst-to-rhr-rwst-suction-valve-a",
+    "elementId": "rwst-to-rhr-rwst-suction-valve-a",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/rhr-rwst-suction-valve-a-to-suction-header",
+    "elementId": "rhr-rwst-suction-valve-a-to-suction-header",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/containment-sump-to-rhr-sump-suction-valve-a",
+    "elementId": "containment-sump-to-rhr-sump-suction-valve-a",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/rhr-sump-suction-valve-a-to-suction-header",
+    "elementId": "rhr-sump-suction-valve-a-to-suction-header",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/rhr-suction-header-a-to-pump",
+    "elementId": "rhr-suction-header-a-to-pump",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/rhr-heat-exchanger-a-to-discharge-header",
+    "elementId": "rhr-heat-exchanger-a-to-discharge-header",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/rhr-discharge-header-a-to-injection-valve",
+    "elementId": "rhr-discharge-header-a-to-injection-valve",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/rhr-injection-valve-a-to-cold-leg-a",
+    "elementId": "rhr-injection-valve-a-to-cold-leg-a",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/rhr-discharge-header-a-to-si-piggyback-valve",
+    "elementId": "rhr-discharge-header-a-to-si-piggyback-valve",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/si-piggyback-valve-a-to-suction-header",
+    "elementId": "si-piggyback-valve-a-to-suction-header",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/rwst-to-si-rwst-suction-valve-a",
+    "elementId": "rwst-to-si-rwst-suction-valve-a",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/si-rwst-suction-valve-a-to-suction-header",
+    "elementId": "si-rwst-suction-valve-a-to-suction-header",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/si-suction-header-a-to-pump",
+    "elementId": "si-suction-header-a-to-pump",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/rwst-to-rhr-rwst-suction-valve-b",
+    "elementId": "rwst-to-rhr-rwst-suction-valve-b",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/rhr-rwst-suction-valve-b-to-suction-header",
+    "elementId": "rhr-rwst-suction-valve-b-to-suction-header",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/containment-sump-to-rhr-sump-suction-valve-b",
+    "elementId": "containment-sump-to-rhr-sump-suction-valve-b",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/rhr-sump-suction-valve-b-to-suction-header",
+    "elementId": "rhr-sump-suction-valve-b-to-suction-header",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/rhr-suction-header-b-to-pump",
+    "elementId": "rhr-suction-header-b-to-pump",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/rhr-heat-exchanger-b-to-discharge-header",
+    "elementId": "rhr-heat-exchanger-b-to-discharge-header",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/rhr-discharge-header-b-to-injection-valve",
+    "elementId": "rhr-discharge-header-b-to-injection-valve",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/rhr-injection-valve-b-to-cold-leg-b",
+    "elementId": "rhr-injection-valve-b-to-cold-leg-b",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/rhr-discharge-header-b-to-si-piggyback-valve",
+    "elementId": "rhr-discharge-header-b-to-si-piggyback-valve",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/si-piggyback-valve-b-to-suction-header",
+    "elementId": "si-piggyback-valve-b-to-suction-header",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/rwst-to-si-rwst-suction-valve-b",
+    "elementId": "rwst-to-si-rwst-suction-valve-b",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/si-rwst-suction-valve-b-to-suction-header",
+    "elementId": "si-rwst-suction-valve-b-to-suction-header",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "connection/si-suction-header-b-to-pump",
+    "elementId": "si-suction-header-b-to-pump",
+    "relation": "represents"
+  }
+]

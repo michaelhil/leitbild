@@ -169,7 +169,8 @@ export const balanceOfPlantReferenceIcRules = (loops: ReadonlyArray<ProcessPlant
         id: 'reactor-trip-turbine-trip',
         title: 'Turbine trip on reactor trip (P-4)',
         message: 'The reactor trip breakers are open (P-4): the turbine stop valve shuts and the generator\'s load is rejected.',
-        annunciator: annunciator({ ...turbineAlarm, firstOutGroup: 'turbine-trip', priority: 'urgent', role: 'automaticAction' }),
+        // What every reactor trip brings in: expected after its first-out, unless it is the turbine trip's own first out.
+        annunciator: annunciator({ ...turbineAlarm, firstOutGroup: 'turbine-trip', priority: 'urgent', role: 'automaticAction', expectedAfter: expectedAfterReactorTrip }),
       }),
       ...turbineTripWrites('reactor-trip'),
     ],
@@ -262,6 +263,30 @@ export const balanceOfPlantReferenceIcRules = (loops: ReadonlyArray<ProcessPlant
     latch: false,
     resetWhenClear: true,
     effects: [write(`hold-motor-driven-afw-pump-${train.toLowerCase()}`, { tagId: `AFW-PUMP-${train}` }, false)],
+  })),
+  // Pump trouble: a motor-driven auxiliary feedwater pump commanded to run,
+  // with its safety bus live, that does not run. Its start is a breaker's
+  // close, within a second; five allow for it. Commanded on a dead bus it
+  // waits for its sequencer (the hold above), which is no trouble.
+  ...(['A', 'B'] as const).map(train => rule({
+    id: `motor-driven-afw-pump-${train.toLowerCase()}-fails-to-start`,
+    label: `Motor-driven auxiliary feedwater pump ${train} fails to start`,
+    ruleClass: 'alarm',
+    condition: all([
+      comparison({ tagId: `AFW-PUMP-${train}` }, '==', true),
+      comparison({ tagId: `AFW-PUMP-${train}-RUNNING` }, '==', false),
+      comparison({ tagId: `BUS-${train}-ENERGIZED` }, '==', true),
+    ]),
+    delayMs: 5_000,
+    latch: false,
+    resetWhenClear: true,
+    effects: [alarm({
+      id: 'fails-to-start',
+      title: `MD AFW ${train} fails to start`,
+      message: `Motor-driven auxiliary feedwater pump ${train} is commanded to run, with power on safety bus ${train}, and is not running.`,
+      severity: 'warning',
+      annunciator: annunciator({ system: 'feedwater', equipmentId: train === 'A' ? 'auxFeedwaterPumpMotor' : 'auxFeedwaterPumpMotorB', group: 'auxiliary-feedwater', priority: 'high', role: 'symptom' }),
+    })],
   })),
   rule({
     id: 'main-feedwater-pump-trip',

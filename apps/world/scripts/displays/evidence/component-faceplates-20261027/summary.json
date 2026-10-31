@@ -1,0 +1,110 @@
+{
+  "testedApp": "a3eabf8c2a958deece6cb2f420c4c36a53a3e41d",
+  "pwrSameFrame": true,
+  "pwrInspectedElement": "turbine",
+  "gridSameFrame": true,
+  "gridInspectedElement": "branch:osm-50a77b48767677b0",
+  "pwrExplicitDetailChangedFrame": true,
+  "gridExplicitDetailChangedFrame": true,
+  "steps": [
+    {
+      "action": "pointer-symbol",
+      "element": "turbine",
+      "name": "Turbine: faceplate"
+    },
+    {
+      "action": "escape"
+    },
+    {
+      "action": "pointer-text",
+      "element": "turbine",
+      "name": "Turbine: faceplate"
+    },
+    {
+      "action": "enter",
+      "element": "turbine",
+      "name": "Turbine: faceplate"
+    },
+    {
+      "action": "space",
+      "element": "turbine",
+      "name": "Turbine: faceplate"
+    },
+    {
+      "action": "group",
+      "element": "mainFeedwaterPumpA",
+      "name": "MFW A/B: faceplate"
+    },
+    {
+      "action": "member",
+      "element": "mainFeedwaterPumpA",
+      "name": "Main Feedwater Pump A: faceplate"
+    },
+    {
+      "action": "single-continuation",
+      "element": "circulatingWaterPump",
+      "name": "CW pump: faceplate"
+    },
+    {
+      "action": "plural-continuation-choice",
+      "element": "pressurizer.blockValve",
+      "name": "PORV block: faceplate"
+    },
+    {
+      "action": "open-detail",
+      "title": "Halden Unit 1 · Turbine Generator"
+    },
+    {
+      "action": "display-choices"
+    },
+    {
+      "action": "grid-pointer",
+      "element": "branch:osm-50a77b48767677b0",
+      "name": "Follo - Tegneby / Sylling - Tegneby (1): faceplate"
+    },
+    {
+      "action": "grid-enter",
+      "element": "branch:osm-50a77b48767677b0",
+      "name": "Follo - Tegneby / Sylling - Tegneby (1): faceplate"
+    },
+    {
+      "action": "grid-detail",
+      "title": "Norway grid · Halden connection · Follo - Tegneby / Sylling - Tegneby (1)"
+    }
+  ],
+  "exceptions": [],
+  "files": [
+    {
+      "path": "receipt.json",
+      "bytes": 32592,
+      "sha256": "53cc0377477834bd76972d0be9e50b4db950f25aeda2a73436a8c4bc71168a7c"
+    },
+    {
+      "path": "symbol-faceplate.png",
+      "bytes": 189982,
+      "sha256": "d0e1ce18bdbbb3ba9a4e7e30eb3b2cc9dd7d071f89e068722f5c1591e25c0a4f"
+    },
+    {
+      "path": "explicit-detail.png",
+      "bytes": 128959,
+      "sha256": "c4e6a4507c8c8faff298f6ed23b72650e60aaf4d28654af695928aa6c50fb076"
+    },
+    {
+      "path": "grid-faceplate.png",
+      "bytes": 190203,
+      "sha256": "21319d9558fc8c2ef4baf5698605e9b8492f6306acb2e8988faef19965f02179"
+    },
+    {
+      "path": "grid-detail.png",
+      "bytes": 139892,
+      "sha256": "ccdad41556a07bd9a45747926fb3aa62ae7f01084dda199f36a6af86c56eef9b"
+    }
+  ],
+  "limits": [
+    "Functional browser proof on a copied paused local Run, no performance qualification.",
+    "No control/proposal/acknowledge/Run playback or production mutation.",
+    "Single active Grid card has no independent pin framework; existing Flow monitoring pins remain.",
+    "Numeric value rows remain read-only; named values headings inspect only an exact owner with a registered drawing card.",
+    "Native map child-host adoption is separately integrated and qualified by the parent task."
+  ]
+}

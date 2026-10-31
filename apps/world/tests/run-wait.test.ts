@@ -65,6 +65,11 @@ const fakeRun = () => {
       wall = until
     },
     pause: () => { paused = true },
+    finishAt: (simulationMs: number) => {
+      plantMs = startTime + simulationMs
+      paused = true
+      for (const wake of [...wakes]) wake()
+    },
     close: () => { closed = true },
     wakes,
     pendingTimers: () => timers.filter(timer => !timer.cancelled).length,
@@ -145,6 +150,35 @@ describe('waiting for a Run change', () => {
     expect(await events).toMatchObject({ reason: 'timeout', paused: true })
     expect(runWaitInputSchema.safeParse({}).success).toBe(false)
     expect(runWaitInputSchema.safeParse({ simulationSeconds: 5, maxWaitMs: 25_000 }).success).toBe(false)
+  })
+
+  test('an absolute target stays fixed across request latency and succeeds when completion pauses at that target', async () => {
+    const run = fakeRun()
+    const untilSimulationTime = new Date(startTime + 90_000).toISOString()
+    // An advance is already underway when its caller receives its receipt.
+    run.advance(5_000)
+    const waiting = waitForRunChange({ input: runWaitInputSchema.parse({ untilSimulationTime }), caller: assistant, driven, ports: run.ports })
+    run.advance(10_000)
+    run.finishAt(90_000)
+    expect(await waiting).toMatchObject({ reason: 'simulation-time', simulationTime: untilSimulationTime, paused: true })
+    // The job may have finished before the caller gets to wait at all.
+    expect(await waitForRunChange({ input: runWaitInputSchema.parse({ untilSimulationTime }), caller: assistant, driven, ports: run.ports }))
+      .toMatchObject({ reason: 'simulation-time', paused: true, waitedMs: 0 })
+    expect(runWaitInputSchema.safeParse({ untilSimulationTime, simulationSeconds: 90 }).success).toBe(false)
+    expect(runWaitInputSchema.safeParse({ untilSimulationTime: 'not-a-time' }).success).toBe(false)
+    expect(run.wakes.size).toBe(0)
+    expect(run.pendingTimers()).toBe(0)
+  })
+
+  test('a real pause before an absolute target interrupts rather than satisfying it', async () => {
+    const run = fakeRun()
+    const waiting = waitForRunChange({ input: runWaitInputSchema.parse({ untilSimulationTime: new Date(startTime + 90_000).toISOString() }), caller: assistant, driven, ports: run.ports })
+    run.advance(5_000)
+    run.pause()
+    run.advance(250)
+    expect(await waiting).toMatchObject({ reason: 'clock-paused', simulationTime: new Date(startTime + 5_000).toISOString(), paused: true })
+    expect(run.wakes.size).toBe(0)
+    expect(run.pendingTimers()).toBe(0)
   })
 
   test('a wait ends at its next tick when its Run closes, and cleans up its timers and subscription', async () => {

@@ -44,12 +44,19 @@ describe('authoritative PWR full-power operating point', () => {
         expect(read(`${component.id}.steamFlowKgPerS`)).toBeCloseTo(steamGeneratorHeat / enthalpyRise / loopCount, 8)
         steamFlow += read(`${component.id}.steamFlowKgPerS`)
       }
+      // Zero-time link propagation must precede the buoyancy solve. A pipe's
+      // construction temperature must not create a spurious startup flow ramp.
+      expect(read('rcs-hot-leg-a.flowKgPerS')).toBeCloseTo(17_000 / loopCount, 6)
+      const initialMetalTemperature = read('sgA.tubeMetalTemperatureC')
+      expect(runtime.elapsedMs()).toBe(0)
       expect(steamFlow).toBeGreaterThan(1_890)
       expect(steamFlow).toBeLessThan(1_910)
       runtime.tick(100)
       expect(read('core.temperatureFeedbackPcm')).toBeCloseTo(0, 6)
       expect(read('core.powerMw')).toBeCloseTo(3400, 6)
       expect(read('sgA.heatTransferMw')).toBeCloseTo(steamGeneratorHeat / loopCount, 4)
+      expect(read('sgA.tubeMetalTemperatureC')).toBeCloseTo(initialMetalTemperature, 6)
+      expect(read('vessel.primaryCoolantInventoryKg')).toBeCloseTo(initialInventory, 6)
       expect(runtime.readVariable('safetyBusA.energized' as VariablePath)).toBe(true)
       for (let step = 1; step < 600; step++) runtime.tick(100)
       // Normal CVCS heat exchange is a small transient, not a 15–50% collapse.
@@ -77,6 +84,38 @@ describe('authoritative PWR full-power operating point', () => {
     expect(() => compileProcessPlant(createPwrReferencePlantDefinition({ id: 'bad', parameterOverrides: { core: { initialPowerFraction: 2 } } }))).toThrow()
     expect(() => compileProcessPlant(createPwrReferencePlantDefinition({ id: 'bad', parameterOverrides: { missing: {} } }))).toThrow('unknown component')
     expect(processPlantDefinitionCatalog().operatingPoints[0]?.description).toContain('100%')
+  })
+
+  test('full-power sizing supplies every shared-source consumer while explicit undersizing remains a real constraint', () => {
+    const definition = createPwrReferencePlantDefinition({ id: 'test:shared-water' })
+    const system = compileProcessPlant(definition)
+    const source = system.graph.components.find(component => component.id === 'ultimateHeatSink')!
+    const capacity = Number((source.parameters as Record<string, unknown>).maxOutletFlowKgPerS)
+    const runtime = createProcessPlantRuntime({ system })
+    runtime.tick(5_000)
+    const outlets = system.graph.links.filter(link => link.fromComponentIndex === source.index && link.kind === 'fluidFlow')
+    expect(new Set(outlets.map(link => String(link.service)))).toEqual(new Set(['coolingWater', 'serviceWater']))
+    let total = 0
+    for (const outlet of outlets) {
+      const pump = system.graph.components[outlet.toComponentIndex]!
+      const delivered = Number(runtime.readVariable(`${outlet.id}.flowKgPerS` as VariablePath))
+      expect(delivered).toBeGreaterThan(0)
+      // At an unconstrained source, the small service-water branches may not
+      // steal an equal share from the much larger condenser cooling branch.
+      expect(delivered).toBeCloseTo(Number(runtime.readVariable(`${pump.id}.flowKgPerS` as VariablePath)), 6)
+      total += delivered
+    }
+    expect(total).toBeLessThanOrEqual(capacity)
+    const limitedSystem = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'test:undersized-water',
+      parameterOverrides: { ultimateHeatSink: { maxOutletFlowKgPerS: 500 } },
+    }))
+    const limited = createProcessPlantRuntime({ system: limitedSystem })
+    limited.tick(5_000)
+    const delivered = outlets.reduce((sum, outlet) => sum + Number(limited.readVariable(`${outlet.id}.flowKgPerS` as VariablePath)), 0)
+    expect(delivered).toBeLessThanOrEqual(500)
+    expect((limitedSystem.graph.components.find(component => component.id === source.id)!.parameters as Record<string, unknown>).maxOutletFlowKgPerS).toBe(500)
+    expect(Number(limited.readVariable('condenser.coolingWaterFlowKgPerS' as VariablePath)))
+      .toBeLessThan(Number(runtime.readVariable('condenser.coolingWaterFlowKgPerS' as VariablePath)))
   })
 
   test('restore retains actual progressed state instead of reapplying the operating point', () => {

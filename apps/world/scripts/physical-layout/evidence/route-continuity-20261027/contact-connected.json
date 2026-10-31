@@ -1,0 +1,6473 @@
+{
+  "sourceSha256": "1bfd592dc2f62b17e4132f36782200790ff82a6f31ba4fdfe631aed2c3823bfd",
+  "sourceId": "pwr-full-unit",
+  "origin": [
+    44.4,
+    26,
+    0
+  ],
+  "northAxis": "negative-y",
+  "geometryTolerance": 0.01,
+  "contacts": 239,
+  "routes": 152,
+  "maxRouteEndpointError": 0,
+  "suspicious": [],
+  "all": [
+    {
+      "id": "port/core.hotLegA",
+      "elementId": "equipment/vessel",
+      "family": "reactor-vessel",
+      "point": [
+        -94.4,
+        -15.06,
+        9.18
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -94.4,
+        -15.06,
+        9.18
+      ],
+      "winding": -0.46874999999999833,
+      "triangles": 1088,
+      "uses": [
+        {
+          "route": "connection/pressurizer-surge-line",
+          "material": "pipe",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/rcs-hot-leg-a",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/pressurizer.surgeLine",
+      "elementId": "equipment/pressurizer",
+      "family": "pressurizer",
+      "point": [
+        -94.15,
+        -0.5500000000000007,
+        7.02
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -94.15,
+        -0.5500000000000007,
+        7.02
+      ],
+      "winding": -0.46874999999999856,
+      "triangles": 840,
+      "uses": [
+        {
+          "route": "connection/pressurizer-surge-line",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/pressurizer.reliefOutlet",
+      "elementId": "equipment/pressurizer",
+      "family": "pressurizer",
+      "point": [
+        -94.15,
+        -0.5500000000000007,
+        7.02
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -94.15,
+        -0.5500000000000007,
+        7.02
+      ],
+      "winding": -0.46874999999999856,
+      "triangles": 840,
+      "uses": [
+        {
+          "route": "connection/pressurizer-relief-to-tank",
+          "material": "steam",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/pressurizerReliefHeader.inletA",
+      "elementId": "route/pressurizer-relief-header",
+      "family": "pipe",
+      "point": [
+        -98.34338851420397,
+        -0.6464847741671775,
+        12.433885142039648
+      ],
+      "nearestBodyDistance": 0.14711779206047318,
+      "closestPoint": [
+        -98.46635530651331,
+        -0.6267756693862785,
+        12.3555629617927
+      ],
+      "winding": 0.9999999999999879,
+      "triangles": 128,
+      "uses": [
+        {
+          "route": "connection/pressurizer-relief-to-tank",
+          "material": "steam",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/pressurizer-safety-valves-to-tank",
+          "material": "steam",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/pressurizer.safetyOutlet",
+      "elementId": "equipment/pressurizer",
+      "family": "pressurizer",
+      "point": [
+        -94.15,
+        -0.5500000000000007,
+        7.02
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -94.15,
+        -0.5500000000000007,
+        7.02
+      ],
+      "winding": -0.46874999999999856,
+      "triangles": 840,
+      "uses": [
+        {
+          "route": "connection/pressurizer-safety-valves-to-tank",
+          "material": "steam",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/pressurizerReliefHeader.outletA",
+      "elementId": "route/pressurizer-relief-header",
+      "family": "pipe",
+      "point": [
+        -98.4,
+        1.25,
+        13
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -98.4,
+        1.25,
+        13
+      ],
+      "winding": 0.9999999999999989,
+      "triangles": 128,
+      "uses": [
+        {
+          "route": "connection/pressurizer-relief-header-to-tank",
+          "material": "steam",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/pressurizerReliefTank.inlet",
+      "elementId": "equipment/pressurizerReliefTank",
+      "family": "tank",
+      "point": [
+        -97.39999999999999,
+        -30.71,
+        1.8375
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -97.39999999999999,
+        -30.71,
+        1.8375
+      ],
+      "winding": -0.0003298810523195661,
+      "triangles": 320,
+      "uses": [
+        {
+          "route": "connection/pressurizer-relief-header-to-tank",
+          "material": "steam",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/sgA.primaryInlet",
+      "elementId": "equipment/sgA",
+      "family": "steam-generator",
+      "point": [
+        -106.4,
+        -6.862000000000002,
+        12.84
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -106.4,
+        -6.862000000000002,
+        12.84
+      ],
+      "winding": -0.23437499999999914,
+      "triangles": 976,
+      "uses": [
+        {
+          "route": "connection/rcs-hot-leg-a",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/sgA.primaryOutlet",
+      "elementId": "equipment/sgA",
+      "family": "steam-generator",
+      "point": [
+        -106.4,
+        -4,
+        1.6799999999999997
+      ],
+      "nearestBodyDistance": 4.440892098500626e-16,
+      "closestPoint": [
+        -106.4,
+        -4,
+        1.6800000000000002
+      ],
+      "winding": 1.3666445896913548e-15,
+      "triangles": 976,
+      "uses": [
+        {
+          "route": "connection/rcs-cold-leg-a",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/rcpA.inlet",
+      "elementId": "equipment/rcpA",
+      "family": "reactor-coolant-pump",
+      "point": [
+        -105.4,
+        -13,
+        7.84
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -105.4,
+        -13,
+        7.84
+      ],
+      "winding": -0.4999999999999993,
+      "triangles": 1008,
+      "uses": [
+        {
+          "route": "connection/rcs-cold-leg-a",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/rcpA.outlet",
+      "elementId": "equipment/rcpA",
+      "family": "reactor-coolant-pump",
+      "point": [
+        -104.28,
+        -13,
+        4.12
+      ],
+      "nearestBodyDistance": 1.7763568394002505e-15,
+      "closestPoint": [
+        -104.28,
+        -13,
+        4.119999999999998
+      ],
+      "winding": -0.9979768759256358,
+      "triangles": 1008,
+      "uses": [
+        {
+          "route": "connection/rcp-a-to-core",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/core.coldLegA",
+      "elementId": "equipment/vessel",
+      "family": "reactor-vessel",
+      "point": [
+        -94.4,
+        -15.06,
+        9.18
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -94.4,
+        -15.06,
+        9.18
+      ],
+      "winding": -0.46874999999999833,
+      "triangles": 1088,
+      "uses": [
+        {
+          "route": "connection/rcp-a-to-core",
+          "material": "pipe",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/charging-pump-to-cold-leg-a",
+          "material": "pipe",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/safety-injection-header-to-cold-leg-a",
+          "material": "pipe",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/rhr-isolation-valve-to-cold-leg-a",
+          "material": "pipe",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/safety-accumulator-a-to-cold-leg-a",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/core.hotLegB",
+      "elementId": "equipment/vessel",
+      "family": "reactor-vessel",
+      "point": [
+        -94.4,
+        -15.06,
+        9.18
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -94.4,
+        -15.06,
+        9.18
+      ],
+      "winding": -0.46874999999999833,
+      "triangles": 1088,
+      "uses": [
+        {
+          "route": "connection/rcs-hot-leg-b",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/sgB.primaryInlet",
+      "elementId": "equipment/sgB",
+      "family": "steam-generator",
+      "point": [
+        -82.4,
+        -6.862000000000002,
+        12.84
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -82.4,
+        -6.862000000000002,
+        12.84
+      ],
+      "winding": -0.23437499999999914,
+      "triangles": 976,
+      "uses": [
+        {
+          "route": "connection/rcs-hot-leg-b",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/sgB.primaryOutlet",
+      "elementId": "equipment/sgB",
+      "family": "steam-generator",
+      "point": [
+        -82.4,
+        -4,
+        1.6799999999999997
+      ],
+      "nearestBodyDistance": 4.440892098500626e-16,
+      "closestPoint": [
+        -82.4,
+        -4,
+        1.6800000000000002
+      ],
+      "winding": 1.4373235826127663e-15,
+      "triangles": 976,
+      "uses": [
+        {
+          "route": "connection/rcs-cold-leg-b",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/rcpB.inlet",
+      "elementId": "equipment/rcpB",
+      "family": "reactor-coolant-pump",
+      "point": [
+        -85.4,
+        -13,
+        7.84
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -85.4,
+        -13,
+        7.84
+      ],
+      "winding": -0.4999999999999993,
+      "triangles": 1008,
+      "uses": [
+        {
+          "route": "connection/rcs-cold-leg-b",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/rcpB.outlet",
+      "elementId": "equipment/rcpB",
+      "family": "reactor-coolant-pump",
+      "point": [
+        -85.4,
+        -13,
+        7.84
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -85.4,
+        -13,
+        7.84
+      ],
+      "winding": -0.4999999999999993,
+      "triangles": 1008,
+      "uses": [
+        {
+          "route": "connection/rcp-b-to-core",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/core.coldLegB",
+      "elementId": "equipment/vessel",
+      "family": "reactor-vessel",
+      "point": [
+        -94.4,
+        -15.06,
+        9.18
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -94.4,
+        -15.06,
+        9.18
+      ],
+      "winding": -0.46874999999999833,
+      "triangles": 1088,
+      "uses": [
+        {
+          "route": "connection/rcp-b-to-core",
+          "material": "pipe",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/charging-pump-b-to-cold-leg-b",
+          "material": "pipe",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/safety-injection-header-to-cold-leg-b",
+          "material": "pipe",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/safety-accumulator-b-to-cold-leg-b",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/core.hotLegC",
+      "elementId": "equipment/vessel",
+      "family": "reactor-vessel",
+      "point": [
+        -94.4,
+        -20.939999999999998,
+        9.18
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -94.4,
+        -20.939999999999998,
+        9.18
+      ],
+      "winding": -0.46874999999999994,
+      "triangles": 1088,
+      "uses": [
+        {
+          "route": "connection/rcs-hot-leg-c",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/sgC.primaryInlet",
+      "elementId": "equipment/sgC",
+      "family": "steam-generator",
+      "point": [
+        -82.4,
+        -29.137999999999998,
+        12.84
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -82.4,
+        -29.137999999999998,
+        12.84
+      ],
+      "winding": -0.2343749999999991,
+      "triangles": 976,
+      "uses": [
+        {
+          "route": "connection/rcs-hot-leg-c",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/sgC.primaryOutlet",
+      "elementId": "equipment/sgC",
+      "family": "steam-generator",
+      "point": [
+        -82.4,
+        -32,
+        1.6799999999999997
+      ],
+      "nearestBodyDistance": 4.440892098500626e-16,
+      "closestPoint": [
+        -82.4,
+        -32,
+        1.6800000000000002
+      ],
+      "winding": 1.4635521151421964e-15,
+      "triangles": 976,
+      "uses": [
+        {
+          "route": "connection/rcs-cold-leg-c",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/rcpC.inlet",
+      "elementId": "equipment/rcpC",
+      "family": "reactor-coolant-pump",
+      "point": [
+        -85.4,
+        -25,
+        7.84
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -85.4,
+        -25,
+        7.84
+      ],
+      "winding": -0.49999999999999917,
+      "triangles": 1008,
+      "uses": [
+        {
+          "route": "connection/rcs-cold-leg-c",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/rcpC.outlet",
+      "elementId": "equipment/rcpC",
+      "family": "reactor-coolant-pump",
+      "point": [
+        -86.52,
+        -25,
+        4.12
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -86.52,
+        -25,
+        4.12
+      ],
+      "winding": 0.03472967286298751,
+      "triangles": 1008,
+      "uses": [
+        {
+          "route": "connection/rcp-c-to-core",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/core.coldLegC",
+      "elementId": "equipment/vessel",
+      "family": "reactor-vessel",
+      "point": [
+        -91.46000000000001,
+        -18,
+        9.18
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -91.46000000000001,
+        -18,
+        9.18
+      ],
+      "winding": -0.4687500000000058,
+      "triangles": 1088,
+      "uses": [
+        {
+          "route": "connection/rcp-c-to-core",
+          "material": "pipe",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/safety-injection-header-to-cold-leg-c",
+          "material": "pipe",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/safety-accumulator-c-to-cold-leg-c",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/core.hotLegD",
+      "elementId": "equipment/vessel",
+      "family": "reactor-vessel",
+      "point": [
+        -94.4,
+        -20.939999999999998,
+        9.18
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -94.4,
+        -20.939999999999998,
+        9.18
+      ],
+      "winding": -0.46874999999999994,
+      "triangles": 1088,
+      "uses": [
+        {
+          "route": "connection/rcs-hot-leg-d",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/sgD.primaryInlet",
+      "elementId": "equipment/sgD",
+      "family": "steam-generator",
+      "point": [
+        -106.4,
+        -29.137999999999998,
+        12.84
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -106.4,
+        -29.137999999999998,
+        12.84
+      ],
+      "winding": -0.23437499999999914,
+      "triangles": 976,
+      "uses": [
+        {
+          "route": "connection/rcs-hot-leg-d",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/sgD.primaryOutlet",
+      "elementId": "equipment/sgD",
+      "family": "steam-generator",
+      "point": [
+        -106.4,
+        -32,
+        1.6799999999999997
+      ],
+      "nearestBodyDistance": 4.440892098500626e-16,
+      "closestPoint": [
+        -106.4,
+        -32,
+        1.6800000000000002
+      ],
+      "winding": 1.3221941292993735e-15,
+      "triangles": 976,
+      "uses": [
+        {
+          "route": "connection/rcs-cold-leg-d",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/rcpD.inlet",
+      "elementId": "equipment/rcpD",
+      "family": "reactor-coolant-pump",
+      "point": [
+        -105.4,
+        -25,
+        7.84
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -105.4,
+        -25,
+        7.84
+      ],
+      "winding": -0.49999999999999917,
+      "triangles": 1008,
+      "uses": [
+        {
+          "route": "connection/rcs-cold-leg-d",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/rcpD.outlet",
+      "elementId": "equipment/rcpD",
+      "family": "reactor-coolant-pump",
+      "point": [
+        -104.28,
+        -25,
+        4.12
+      ],
+      "nearestBodyDistance": 1.7763568394002505e-15,
+      "closestPoint": [
+        -104.28,
+        -25,
+        4.119999999999998
+      ],
+      "winding": -0.9979345735014369,
+      "triangles": 1008,
+      "uses": [
+        {
+          "route": "connection/rcp-d-to-core",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/core.coldLegD",
+      "elementId": "equipment/vessel",
+      "family": "reactor-vessel",
+      "point": [
+        -94.4,
+        -18,
+        1.3599999999999994
+      ],
+      "nearestBodyDistance": 6.661338147750939e-16,
+      "closestPoint": [
+        -94.4,
+        -18,
+        1.36
+      ],
+      "winding": -2.618349537817885e-15,
+      "triangles": 1088,
+      "uses": [
+        {
+          "route": "connection/rcp-d-to-core",
+          "material": "pipe",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/safety-injection-header-to-cold-leg-d",
+          "material": "pipe",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/safety-accumulator-d-to-cold-leg-d",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/feedwaterTank.outlet",
+      "elementId": "equipment/feedwaterTank",
+      "family": "tank",
+      "point": [
+        3.0799999999999983,
+        18,
+        3.15
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        3.0799999999999983,
+        18,
+        3.15
+      ],
+      "winding": -0.4380910392432551,
+      "triangles": 320,
+      "uses": [
+        {
+          "route": "connection/feedwater-tank-to-main-feedwater-pump-a",
+          "material": "pipe",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/feedwater-tank-to-main-feedwater-pump-b",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/mainFeedwaterPumpA.inlet",
+      "elementId": "mfw-a",
+      "family": "feed-pump",
+      "point": [
+        -26.2,
+        14.5,
+        1.65
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -26.2,
+        14.5,
+        1.65
+      ],
+      "winding": 1.5000000000000007,
+      "triangles": 2884,
+      "uses": [
+        {
+          "route": "connection/feedwater-tank-to-main-feedwater-pump-a",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/mainFeedwaterPumpB.inlet",
+      "elementId": "mfw-b",
+      "family": "feed-pump",
+      "point": [
+        -26.2,
+        22.200000000000003,
+        1.65
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -26.2,
+        22.200000000000003,
+        1.65
+      ],
+      "winding": 1.5000000000000007,
+      "triangles": 2884,
+      "uses": [
+        {
+          "route": "connection/feedwater-tank-to-main-feedwater-pump-b",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/mainFeedwaterPumpA.outlet",
+      "elementId": "mfw-a",
+      "family": "feed-pump",
+      "point": [
+        -23.325,
+        17.1,
+        1.65
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -23.325,
+        17.1,
+        1.65
+      ],
+      "winding": 1.5000000000000002,
+      "triangles": 2884,
+      "uses": [
+        {
+          "route": "connection/main-feedwater-pump-a-to-header",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/feedwaterHeader.inletA",
+      "elementId": "route/feedwater-header",
+      "family": "pipe",
+      "point": [
+        -1.8999999999999986,
+        11.700000000000003,
+        1.65
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -1.8999999999999986,
+        11.700000000000003,
+        1.65
+      ],
+      "winding": 0.5,
+      "triangles": 128,
+      "uses": [
+        {
+          "route": "connection/main-feedwater-pump-a-to-header",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/mainFeedwaterPumpB.outlet",
+      "elementId": "mfw-b",
+      "family": "feed-pump",
+      "point": [
+        -23.325,
+        24.800000000000004,
+        1.65
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -23.325,
+        24.800000000000004,
+        1.65
+      ],
+      "winding": 1.5000000000000002,
+      "triangles": 2884,
+      "uses": [
+        {
+          "route": "connection/main-feedwater-pump-b-to-header",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/feedwaterHeader.inletB",
+      "elementId": "route/feedwater-header",
+      "family": "pipe",
+      "point": [
+        -1.8999999999999986,
+        11.700000000000003,
+        1.65
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -1.8999999999999986,
+        11.700000000000003,
+        1.65
+      ],
+      "winding": 0.5,
+      "triangles": 128,
+      "uses": [
+        {
+          "route": "connection/main-feedwater-pump-b-to-header",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/feedwaterHeader.outletA",
+      "elementId": "route/feedwater-header",
+      "family": "pipe",
+      "point": [
+        -46.4,
+        -43.3,
+        1.65
+      ],
+      "nearestBodyDistance": 0.19615705608064476,
+      "closestPoint": [
+        -46.508979021355195,
+        -43.30000000000011,
+        1.48690136863024
+      ],
+      "winding": 1.0000000000000004,
+      "triangles": 128,
+      "uses": [
+        {
+          "route": "connection/feedwater-header-to-control-valve-a",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/feedwaterControlValveA.inlet",
+      "elementId": "equipment/feedwaterControlValveA",
+      "family": "valve",
+      "point": [
+        -61.5,
+        -44.2,
+        0.84
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -61.5,
+        -44.2,
+        0.84
+      ],
+      "winding": 0.5000000000000003,
+      "triangles": 180,
+      "uses": [
+        {
+          "route": "connection/feedwater-header-to-control-valve-a",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/feedwaterControlValveA.outlet",
+      "elementId": "equipment/feedwaterControlValveA",
+      "family": "valve",
+      "point": [
+        -61.5,
+        -42.4,
+        0.84
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -61.5,
+        -42.4,
+        0.84
+      ],
+      "winding": 0.5000000000000002,
+      "triangles": 180,
+      "uses": [
+        {
+          "route": "connection/feedwater-control-valve-a-to-sg-a",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/sgA.feedwaterInlet",
+      "elementId": "equipment/sgA",
+      "family": "steam-generator",
+      "point": [
+        -103.538,
+        -4,
+        12.84
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -103.538,
+        -4,
+        12.84
+      ],
+      "winding": -0.23437499999999722,
+      "triangles": 976,
+      "uses": [
+        {
+          "route": "connection/feedwater-control-valve-a-to-sg-a",
+          "material": "pipe",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/aux-feedwater-valve-a-to-sg-a",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/sgA.steamOutlet",
+      "elementId": "equipment/sgA",
+      "family": "steam-generator",
+      "point": [
+        -103.538,
+        -4,
+        12.84
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -103.538,
+        -4,
+        12.84
+      ],
+      "winding": -0.23437499999999722,
+      "triangles": 976,
+      "uses": [
+        {
+          "route": "connection/sg-a-steam-to-msiv-a",
+          "material": "steam",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/mainSteamIsolationValveA.inlet",
+      "elementId": "equipment/mainSteamIsolationValveA",
+      "family": "valve",
+      "point": [
+        -62.4,
+        -43.3,
+        15.84
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -62.4,
+        -43.3,
+        15.84
+      ],
+      "winding": 0.49999999999999994,
+      "triangles": 180,
+      "uses": [
+        {
+          "route": "connection/sg-a-steam-to-msiv-a",
+          "material": "steam",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/mainSteamIsolationValveA.outlet",
+      "elementId": "equipment/mainSteamIsolationValveA",
+      "family": "valve",
+      "point": [
+        -60.599999999999994,
+        -43.3,
+        15.84
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -60.599999999999994,
+        -43.3,
+        15.84
+      ],
+      "winding": 0.4999999999999997,
+      "triangles": 180,
+      "uses": [
+        {
+          "route": "connection/msiv-a-to-main-steam-header",
+          "material": "steam",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/mainSteamHeader.inletA",
+      "elementId": "route/main-steam-header",
+      "family": "pipe",
+      "point": [
+        -52.4,
+        -43.3,
+        18.5
+      ],
+      "nearestBodyDistance": 0.44135337618145026,
+      "closestPoint": [
+        -52.31389622771786,
+        -43.3,
+        18.067127105184962
+      ],
+      "winding": 0.9999999999999996,
+      "triangles": 256,
+      "uses": [
+        {
+          "route": "connection/msiv-a-to-main-steam-header",
+          "material": "steam",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/feedwaterHeader.outletB",
+      "elementId": "route/feedwater-header",
+      "family": "pipe",
+      "point": [
+        -46.4,
+        -29.300000000000004,
+        1.65
+      ],
+      "nearestBodyDistance": 0.1961570560806459,
+      "closestPoint": [
+        -46.56309863136965,
+        -29.299999999934684,
+        1.5410209786446363
+      ],
+      "winding": 1.00000000000025,
+      "triangles": 128,
+      "uses": [
+        {
+          "route": "connection/feedwater-header-to-control-valve-b",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/feedwaterControlValveB.inlet",
+      "elementId": "equipment/feedwaterControlValveB",
+      "family": "valve",
+      "point": [
+        -61.5,
+        -30.2,
+        0.84
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -61.5,
+        -30.2,
+        0.84
+      ],
+      "winding": 0.5000000000000001,
+      "triangles": 180,
+      "uses": [
+        {
+          "route": "connection/feedwater-header-to-control-valve-b",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/feedwaterControlValveB.outlet",
+      "elementId": "equipment/feedwaterControlValveB",
+      "family": "valve",
+      "point": [
+        -61.5,
+        -28.4,
+        0.84
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -61.5,
+        -28.4,
+        0.84
+      ],
+      "winding": 0.5000000000000003,
+      "triangles": 180,
+      "uses": [
+        {
+          "route": "connection/feedwater-control-valve-b-to-sg-b",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/sgB.feedwaterInlet",
+      "elementId": "equipment/sgB",
+      "family": "steam-generator",
+      "point": [
+        -82.4,
+        -6.862000000000002,
+        12.84
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -82.4,
+        -6.862000000000002,
+        12.84
+      ],
+      "winding": -0.23437499999999914,
+      "triangles": 976,
+      "uses": [
+        {
+          "route": "connection/feedwater-control-valve-b-to-sg-b",
+          "material": "pipe",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/aux-feedwater-valve-b-to-sg-b",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/sgB.steamOutlet",
+      "elementId": "equipment/sgB",
+      "family": "steam-generator",
+      "point": [
+        -82.4,
+        -6.862000000000002,
+        12.84
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -82.4,
+        -6.862000000000002,
+        12.84
+      ],
+      "winding": -0.23437499999999914,
+      "triangles": 976,
+      "uses": [
+        {
+          "route": "connection/sg-b-steam-to-msiv-b",
+          "material": "steam",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/mainSteamIsolationValveB.inlet",
+      "elementId": "equipment/mainSteamIsolationValveB",
+      "family": "valve",
+      "point": [
+        -62.4,
+        -29.3,
+        15.84
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -62.4,
+        -29.3,
+        15.84
+      ],
+      "winding": 0.5000000000000004,
+      "triangles": 180,
+      "uses": [
+        {
+          "route": "connection/sg-b-steam-to-msiv-b",
+          "material": "steam",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/mainSteamIsolationValveB.outlet",
+      "elementId": "equipment/mainSteamIsolationValveB",
+      "family": "valve",
+      "point": [
+        -60.599999999999994,
+        -29.3,
+        15.84
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -60.599999999999994,
+        -29.3,
+        15.84
+      ],
+      "winding": 0.5000000000000003,
+      "triangles": 180,
+      "uses": [
+        {
+          "route": "connection/msiv-b-to-main-steam-header",
+          "material": "steam",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/mainSteamHeader.inletB",
+      "elementId": "route/main-steam-header",
+      "family": "pipe",
+      "point": [
+        -52.4,
+        -29.299999999999997,
+        18.5
+      ],
+      "nearestBodyDistance": 0.44135337618144543,
+      "closestPoint": [
+        -52.83287289481503,
+        -29.299999999999997,
+        18.58610377228213
+      ],
+      "winding": 0.9999999999999938,
+      "triangles": 256,
+      "uses": [
+        {
+          "route": "connection/msiv-b-to-main-steam-header",
+          "material": "steam",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/feedwaterHeader.outletC",
+      "elementId": "route/feedwater-header",
+      "family": "pipe",
+      "point": [
+        -46.4,
+        -15.300000000000004,
+        1.65
+      ],
+      "nearestBodyDistance": 0.19615705608064443,
+      "closestPoint": [
+        -46.23690136863022,
+        -15.300000000000004,
+        1.5410209786448303
+      ],
+      "winding": 1.000000000001361,
+      "triangles": 128,
+      "uses": [
+        {
+          "route": "connection/feedwater-header-to-control-valve-c",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/feedwaterControlValveC.inlet",
+      "elementId": "equipment/feedwaterControlValveC",
+      "family": "valve",
+      "point": [
+        -61.5,
+        -14.4,
+        0.84
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -61.5,
+        -14.4,
+        0.84
+      ],
+      "winding": 0.5000000000000002,
+      "triangles": 180,
+      "uses": [
+        {
+          "route": "connection/feedwater-header-to-control-valve-c",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/feedwaterControlValveC.outlet",
+      "elementId": "equipment/feedwaterControlValveC",
+      "family": "valve",
+      "point": [
+        -61.5,
+        -16.200000000000003,
+        0.84
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -61.5,
+        -16.200000000000003,
+        0.84
+      ],
+      "winding": 0.5000000000000003,
+      "triangles": 180,
+      "uses": [
+        {
+          "route": "connection/feedwater-control-valve-c-to-sg-c",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/sgC.feedwaterInlet",
+      "elementId": "equipment/sgC",
+      "family": "steam-generator",
+      "point": [
+        -82.4,
+        -32,
+        1.6799999999999997
+      ],
+      "nearestBodyDistance": 4.440892098500626e-16,
+      "closestPoint": [
+        -82.4,
+        -32,
+        1.6800000000000002
+      ],
+      "winding": 1.4635521151421964e-15,
+      "triangles": 976,
+      "uses": [
+        {
+          "route": "connection/feedwater-control-valve-c-to-sg-c",
+          "material": "pipe",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/aux-feedwater-valve-c-to-sg-c",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/sgC.steamOutlet",
+      "elementId": "equipment/sgC",
+      "family": "steam-generator",
+      "point": [
+        -79.538,
+        -32,
+        12.84
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -79.538,
+        -32,
+        12.84
+      ],
+      "winding": -0.23437499999999717,
+      "triangles": 976,
+      "uses": [
+        {
+          "route": "connection/sg-c-steam-to-msiv-c",
+          "material": "steam",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/mainSteamIsolationValveC.inlet",
+      "elementId": "equipment/mainSteamIsolationValveC",
+      "family": "valve",
+      "point": [
+        -62.4,
+        -15.3,
+        15.84
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -62.4,
+        -15.3,
+        15.84
+      ],
+      "winding": 0.5000000000000003,
+      "triangles": 180,
+      "uses": [
+        {
+          "route": "connection/sg-c-steam-to-msiv-c",
+          "material": "steam",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/mainSteamIsolationValveC.outlet",
+      "elementId": "equipment/mainSteamIsolationValveC",
+      "family": "valve",
+      "point": [
+        -60.599999999999994,
+        -15.3,
+        15.84
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -60.599999999999994,
+        -15.3,
+        15.84
+      ],
+      "winding": 0.5000000000000007,
+      "triangles": 180,
+      "uses": [
+        {
+          "route": "connection/msiv-c-to-main-steam-header",
+          "material": "steam",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/mainSteamHeader.inletC",
+      "elementId": "route/main-steam-header",
+      "family": "pipe",
+      "point": [
+        -52.4,
+        -15.300000000000004,
+        18.5
+      ],
+      "nearestBodyDistance": 0.44135337618145,
+      "closestPoint": [
+        -52.832872894814976,
+        -15.299999999947694,
+        18.41389622771756
+      ],
+      "winding": 0.999999999999849,
+      "triangles": 256,
+      "uses": [
+        {
+          "route": "connection/msiv-c-to-main-steam-header",
+          "material": "steam",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/feedwaterHeader.outletD",
+      "elementId": "route/feedwater-header",
+      "family": "pipe",
+      "point": [
+        -46.4,
+        -1.3000000000000043,
+        1.65
+      ],
+      "nearestBodyDistance": 0.19615705608064443,
+      "closestPoint": [
+        -46.23690136863022,
+        -1.3000000000000043,
+        1.5410209786448303
+      ],
+      "winding": 1.0000000000004872,
+      "triangles": 128,
+      "uses": [
+        {
+          "route": "connection/feedwater-header-to-control-valve-d",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/feedwaterControlValveD.inlet",
+      "elementId": "equipment/feedwaterControlValveD",
+      "family": "valve",
+      "point": [
+        -61.5,
+        -0.40000000000000213,
+        0.84
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -61.5,
+        -0.40000000000000213,
+        0.84
+      ],
+      "winding": 0.5,
+      "triangles": 180,
+      "uses": [
+        {
+          "route": "connection/feedwater-header-to-control-valve-d",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/feedwaterControlValveD.outlet",
+      "elementId": "equipment/feedwaterControlValveD",
+      "family": "valve",
+      "point": [
+        -61.5,
+        -2.200000000000003,
+        0.84
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -61.5,
+        -2.200000000000003,
+        0.84
+      ],
+      "winding": 0.5000000000000002,
+      "triangles": 180,
+      "uses": [
+        {
+          "route": "connection/feedwater-control-valve-d-to-sg-d",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/sgD.feedwaterInlet",
+      "elementId": "equipment/sgD",
+      "family": "steam-generator",
+      "point": [
+        -103.538,
+        -32,
+        12.84
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -103.538,
+        -32,
+        12.84
+      ],
+      "winding": -0.23437499999999717,
+      "triangles": 976,
+      "uses": [
+        {
+          "route": "connection/feedwater-control-valve-d-to-sg-d",
+          "material": "pipe",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/aux-feedwater-valve-d-to-sg-d",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/sgD.steamOutlet",
+      "elementId": "equipment/sgD",
+      "family": "steam-generator",
+      "point": [
+        -103.538,
+        -32,
+        12.84
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -103.538,
+        -32,
+        12.84
+      ],
+      "winding": -0.23437499999999717,
+      "triangles": 976,
+      "uses": [
+        {
+          "route": "connection/sg-d-steam-to-msiv-d",
+          "material": "steam",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/mainSteamIsolationValveD.inlet",
+      "elementId": "equipment/mainSteamIsolationValveD",
+      "family": "valve",
+      "point": [
+        -62.4,
+        -1.3000000000000007,
+        15.84
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -62.4,
+        -1.3000000000000007,
+        15.84
+      ],
+      "winding": 0.5000000000000004,
+      "triangles": 180,
+      "uses": [
+        {
+          "route": "connection/sg-d-steam-to-msiv-d",
+          "material": "steam",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/mainSteamIsolationValveD.outlet",
+      "elementId": "equipment/mainSteamIsolationValveD",
+      "family": "valve",
+      "point": [
+        -60.599999999999994,
+        -1.3000000000000007,
+        15.84
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -60.599999999999994,
+        -1.3000000000000007,
+        15.84
+      ],
+      "winding": 0.5000000000000003,
+      "triangles": 180,
+      "uses": [
+        {
+          "route": "connection/msiv-d-to-main-steam-header",
+          "material": "steam",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/mainSteamHeader.inletD",
+      "elementId": "route/main-steam-header",
+      "family": "pipe",
+      "point": [
+        -52.4,
+        -1.2999999999999972,
+        18.5
+      ],
+      "nearestBodyDistance": 0.4413533761814503,
+      "closestPoint": [
+        -52.83287289481504,
+        -1.300000000002548,
+        18.58610377228212
+      ],
+      "winding": 0.9999999999999972,
+      "triangles": 256,
+      "uses": [
+        {
+          "route": "connection/msiv-d-to-main-steam-header",
+          "material": "steam",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/mainSteamHeader.outletA",
+      "elementId": "route/main-steam-header",
+      "family": "pipe",
+      "point": [
+        -38.699999999999996,
+        -9.550000000000004,
+        23
+      ],
+      "nearestBodyDistance": 0.44135337618144194,
+      "closestPoint": [
+        -38.26712710518497,
+        -9.550000000000004,
+        23.086103772282147
+      ],
+      "winding": 1.000000000000052,
+      "triangles": 256,
+      "uses": [
+        {
+          "route": "connection/main-steam-header-to-turbine-stop-valve",
+          "material": "steam",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/turbineStopValve.inlet",
+      "elementId": "stop-valve",
+      "family": "stop-valve",
+      "point": [
+        -39.6,
+        -9.55,
+        16.3
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -39.6,
+        -9.55,
+        16.3
+      ],
+      "winding": 0.5000000000000003,
+      "triangles": 284,
+      "uses": [
+        {
+          "route": "connection/main-steam-header-to-turbine-stop-valve",
+          "material": "steam",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/mainSteamHeader.outletC",
+      "elementId": "route/main-steam-header",
+      "family": "pipe",
+      "point": [
+        -52.4,
+        -16.099999999999998,
+        18.5
+      ],
+      "nearestBodyDistance": 0.4413533761814528,
+      "closestPoint": [
+        -52.64520279804899,
+        -16.100000000010425,
+        18.133028079417905
+      ],
+      "winding": 0.9999999999998276,
+      "triangles": 256,
+      "uses": [
+        {
+          "route": "connection/main-steam-header-to-turbine-bypass-valve",
+          "material": "steam",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/turbineBypassValve.inlet",
+      "elementId": "equipment/turbineBypassValve",
+      "family": "valve",
+      "point": [
+        -41.4,
+        -16.1,
+        0.8999999999999999
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -41.4,
+        -16.1,
+        0.8999999999999999
+      ],
+      "winding": 0.49999999999999967,
+      "triangles": 180,
+      "uses": [
+        {
+          "route": "connection/main-steam-header-to-turbine-bypass-valve",
+          "material": "steam",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/turbineBypassValve.outlet",
+      "elementId": "equipment/turbineBypassValve",
+      "family": "valve",
+      "point": [
+        -39,
+        -16.1,
+        0.8999999999999999
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -39,
+        -16.1,
+        0.8999999999999999
+      ],
+      "winding": 0.49999999999999994,
+      "triangles": 180,
+      "uses": [
+        {
+          "route": "connection/turbine-bypass-valve-to-condenser",
+          "material": "steam",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/condenser.steamInlet",
+      "elementId": "condenser-2",
+      "family": "condenser",
+      "point": [
+        -8.46,
+        -15.350000000000001,
+        7.5
+      ],
+      "nearestBodyDistance": 1.7763568394002505e-15,
+      "closestPoint": [
+        -8.46,
+        -15.35,
+        7.5
+      ],
+      "winding": -6.363870261088026e-17,
+      "triangles": 948,
+      "uses": [
+        {
+          "route": "connection/turbine-bypass-valve-to-condenser",
+          "material": "steam",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/turbine-exhaust-to-condenser",
+          "material": "steam",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/turbineStopValve.outlet",
+      "elementId": "stop-valve",
+      "family": "stop-valve",
+      "point": [
+        -37.8,
+        -9.55,
+        16.3
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -37.8,
+        -9.55,
+        16.3
+      ],
+      "winding": 0.5000000000000002,
+      "triangles": 284,
+      "uses": [
+        {
+          "route": "connection/turbine-stop-valve-to-turbine",
+          "material": "steam",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/turbine.steamInlet",
+      "elementId": "tg-hp",
+      "family": "hp",
+      "point": [
+        -34.3,
+        -7.600000000000001,
+        17.095
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -34.3,
+        -7.600000000000001,
+        17.095
+      ],
+      "winding": 0.5000000000000014,
+      "triangles": 1496,
+      "uses": [
+        {
+          "route": "connection/turbine-stop-valve-to-turbine",
+          "material": "steam",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/turbine.exhaustSteamOutlet",
+      "elementId": "tg-lp-2",
+      "family": "lp",
+      "point": [
+        -8.899999999999999,
+        -2.1000000000000014,
+        17.2
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -8.899999999999999,
+        -2.1000000000000014,
+        17.2
+      ],
+      "winding": 1.0000000000000024,
+      "triangles": 1544,
+      "uses": [
+        {
+          "route": "connection/turbine-exhaust-to-condenser",
+          "material": "steam",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/condenser.condensateOutlet",
+      "elementId": "condenser-3",
+      "family": "condenser",
+      "point": [
+        6.350000000000001,
+        -7.625,
+        7.5
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        6.350000000000001,
+        -7.625,
+        7.5
+      ],
+      "winding": 0.999999999999998,
+      "triangles": 948,
+      "uses": [
+        {
+          "route": "connection/condenser-to-condensate-pump-a",
+          "material": "pipe",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/condenser-to-condensate-pump-b",
+          "material": "pipe",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/condenser-to-hotwell-reject-valve",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/condensatePumpA.inlet",
+      "elementId": "cp-a",
+      "family": "condensate-pump",
+      "point": [
+        11.100000000000001,
+        -5.5,
+        1.3999999999999997
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        11.100000000000001,
+        -5.5,
+        1.3999999999999997
+      ],
+      "winding": 0.9999999999999981,
+      "triangles": 1252,
+      "uses": [
+        {
+          "route": "connection/condenser-to-condensate-pump-a",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/condensatePumpA.outlet",
+      "elementId": "cp-a",
+      "family": "condensate-pump",
+      "point": [
+        11.925000000000004,
+        -6.800000000000001,
+        1.3999999999999997
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        11.925000000000004,
+        -6.800000000000001,
+        1.3999999999999997
+      ],
+      "winding": 1.5000000000000007,
+      "triangles": 1252,
+      "uses": [
+        {
+          "route": "connection/condensate-pump-a-to-feedwater-tank",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/feedwaterTank.inlet",
+      "elementId": "equipment/feedwaterTank",
+      "family": "tank",
+      "point": [
+        6.600000000000001,
+        16.240000000000002,
+        3.15
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        6.600000000000001,
+        16.240000000000002,
+        3.15
+      ],
+      "winding": -0.4843372595674226,
+      "triangles": 320,
+      "uses": [
+        {
+          "route": "connection/condensate-pump-a-to-feedwater-tank",
+          "material": "pipe",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/condensate-pump-b-to-feedwater-tank",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/condensatePumpB.inlet",
+      "elementId": "cp-b",
+      "family": "condensate-pump",
+      "point": [
+        19.1,
+        -0.5,
+        1.3999999999999997
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        19.1,
+        -0.5,
+        1.3999999999999997
+      ],
+      "winding": 0.9999999999999988,
+      "triangles": 1252,
+      "uses": [
+        {
+          "route": "connection/condenser-to-condensate-pump-b",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/condensatePumpB.outlet",
+      "elementId": "cp-b",
+      "family": "condensate-pump",
+      "point": [
+        19.925000000000004,
+        -1.8000000000000007,
+        1.3999999999999997
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        19.925000000000004,
+        -1.8000000000000007,
+        1.3999999999999997
+      ],
+      "winding": 1.4999999999999991,
+      "triangles": 1252,
+      "uses": [
+        {
+          "route": "connection/condensate-pump-b-to-feedwater-tank",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/hotwellRejectValve.inlet",
+      "elementId": "equipment/hotwellRejectValve",
+      "family": "valve",
+      "point": [
+        27.6,
+        -5.300000000000001,
+        0.75
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        27.6,
+        -5.300000000000001,
+        0.75
+      ],
+      "winding": 0.4999999999999997,
+      "triangles": 180,
+      "uses": [
+        {
+          "route": "connection/condenser-to-hotwell-reject-valve",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/hotwellRejectValve.outlet",
+      "elementId": "equipment/hotwellRejectValve",
+      "family": "valve",
+      "point": [
+        29.4,
+        -5.300000000000001,
+        0.75
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        29.4,
+        -5.300000000000001,
+        0.75
+      ],
+      "winding": 0.5000000000000002,
+      "triangles": 180,
+      "uses": [
+        {
+          "route": "connection/hotwell-reject",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/auxFeedwaterTank.inlet",
+      "elementId": "equipment/auxFeedwaterTank",
+      "family": "tank",
+      "point": [
+        29.6,
+        44.72,
+        6.825
+      ],
+      "nearestBodyDistance": 8.881784197001252e-16,
+      "closestPoint": [
+        29.6,
+        44.72,
+        6.825000000000001
+      ],
+      "winding": -0.4687500000000015,
+      "triangles": 320,
+      "uses": [
+        {
+          "route": "connection/hotwell-reject",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/auxFeedwaterTank.outlet",
+      "elementId": "equipment/auxFeedwaterTank",
+      "family": "tank",
+      "point": [
+        24.32,
+        50,
+        6.825
+      ],
+      "nearestBodyDistance": 8.881784197001252e-16,
+      "closestPoint": [
+        24.32,
+        50,
+        6.825000000000001
+      ],
+      "winding": -0.4687500000000017,
+      "triangles": 320,
+      "uses": [
+        {
+          "route": "connection/aux-feedwater-tank-to-motor-pump",
+          "material": "pipe",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/aux-feedwater-tank-to-turbine-pump",
+          "material": "pipe",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/aux-feedwater-tank-to-motor-pump-b",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/auxFeedwaterPumpMotor.inlet",
+      "elementId": "equipment/auxFeedwaterPumpMotor",
+      "family": "pump",
+      "point": [
+        -128.08,
+        25.081000000000003,
+        9.35
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -128.08,
+        25.081000000000003,
+        9.35
+      ],
+      "winding": 0.5000000000000001,
+      "triangles": 776,
+      "uses": [
+        {
+          "route": "connection/aux-feedwater-tank-to-motor-pump",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/auxFeedwaterPumpTurbine.inlet",
+      "elementId": "equipment/auxFeedwaterPumpTurbine",
+      "family": "pump",
+      "point": [
+        -127.63999999999999,
+        45.105000000000004,
+        9.8
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -127.63999999999999,
+        45.105000000000004,
+        9.8
+      ],
+      "winding": 0.5,
+      "triangles": 776,
+      "uses": [
+        {
+          "route": "connection/aux-feedwater-tank-to-turbine-pump",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/auxFeedwaterPumpMotor.outlet",
+      "elementId": "equipment/auxFeedwaterPumpMotor",
+      "family": "pump",
+      "point": [
+        -127.41999999999999,
+        26.35,
+        10.879999999999999
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -127.41999999999999,
+        26.35,
+        10.879999999999999
+      ],
+      "winding": 0.49999999999999994,
+      "triangles": 776,
+      "uses": [
+        {
+          "route": "connection/motor-afw-pump-to-header",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/auxFeedwaterHeader.inletA",
+      "elementId": "route/aux-feedwater-header",
+      "family": "pipe",
+      "point": [
+        -126.4,
+        30,
+        9.2
+      ],
+      "nearestBodyDistance": 0.1471177920604817,
+      "closestPoint": [
+        -126.4,
+        29.877676026472667,
+        9.118265733983625
+      ],
+      "winding": 1.000000000000009,
+      "triangles": 192,
+      "uses": [
+        {
+          "route": "connection/motor-afw-pump-to-header",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/auxFeedwaterPumpTurbine.outlet",
+      "elementId": "equipment/auxFeedwaterPumpTurbine",
+      "family": "pump",
+      "point": [
+        -126.75999999999999,
+        46.75,
+        11.84
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -126.75999999999999,
+        46.75,
+        11.84
+      ],
+      "winding": 0.49999999999999983,
+      "triangles": 776,
+      "uses": [
+        {
+          "route": "connection/turbine-afw-pump-to-header",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/auxFeedwaterHeader.inletB",
+      "elementId": "route/aux-feedwater-header",
+      "family": "pipe",
+      "point": [
+        -125.4,
+        30,
+        9.2
+      ],
+      "nearestBodyDistance": 0.14711779206048267,
+      "closestPoint": [
+        -125.4,
+        29.918265733983624,
+        9.077676026472666
+      ],
+      "winding": 0.9999999999999473,
+      "triangles": 192,
+      "uses": [
+        {
+          "route": "connection/turbine-afw-pump-to-header",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/auxFeedwaterHeader.outletA",
+      "elementId": "route/aux-feedwater-header",
+      "family": "pipe",
+      "point": [
+        -83.4,
+        30,
+        9.2
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -83.4,
+        30,
+        9.2
+      ],
+      "winding": 0.9999999999999988,
+      "triangles": 192,
+      "uses": [
+        {
+          "route": "connection/aux-feedwater-header-to-valve-a",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/auxFeedwaterValveA.inlet",
+      "elementId": "equipment/auxFeedwaterValveA",
+      "family": "valve",
+      "point": [
+        -57.5,
+        -44.2,
+        0.84
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -57.5,
+        -44.2,
+        0.84
+      ],
+      "winding": 0.5000000000000003,
+      "triangles": 180,
+      "uses": [
+        {
+          "route": "connection/aux-feedwater-header-to-valve-a",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/auxFeedwaterValveA.outlet",
+      "elementId": "equipment/auxFeedwaterValveA",
+      "family": "valve",
+      "point": [
+        -57.5,
+        -42.4,
+        0.84
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -57.5,
+        -42.4,
+        0.84
+      ],
+      "winding": 0.5000000000000003,
+      "triangles": 180,
+      "uses": [
+        {
+          "route": "connection/aux-feedwater-valve-a-to-sg-a",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/auxFeedwaterHeader.outletB",
+      "elementId": "route/aux-feedwater-header",
+      "family": "pipe",
+      "point": [
+        -83.4,
+        30,
+        9.2
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -83.4,
+        30,
+        9.2
+      ],
+      "winding": 0.9999999999999988,
+      "triangles": 192,
+      "uses": [
+        {
+          "route": "connection/aux-feedwater-header-to-valve-b",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/auxFeedwaterValveB.inlet",
+      "elementId": "equipment/auxFeedwaterValveB",
+      "family": "valve",
+      "point": [
+        -57.5,
+        -30.2,
+        0.84
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -57.5,
+        -30.2,
+        0.84
+      ],
+      "winding": 0.5000000000000002,
+      "triangles": 180,
+      "uses": [
+        {
+          "route": "connection/aux-feedwater-header-to-valve-b",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/auxFeedwaterValveB.outlet",
+      "elementId": "equipment/auxFeedwaterValveB",
+      "family": "valve",
+      "point": [
+        -57.5,
+        -28.4,
+        0.84
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -57.5,
+        -28.4,
+        0.84
+      ],
+      "winding": 0.5000000000000003,
+      "triangles": 180,
+      "uses": [
+        {
+          "route": "connection/aux-feedwater-valve-b-to-sg-b",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/auxFeedwaterHeader.outletC",
+      "elementId": "route/aux-feedwater-header",
+      "family": "pipe",
+      "point": [
+        -83.4,
+        30,
+        9.2
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -83.4,
+        30,
+        9.2
+      ],
+      "winding": 0.9999999999999988,
+      "triangles": 192,
+      "uses": [
+        {
+          "route": "connection/aux-feedwater-header-to-valve-c",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/auxFeedwaterValveC.inlet",
+      "elementId": "equipment/auxFeedwaterValveC",
+      "family": "valve",
+      "point": [
+        -57.5,
+        -14.4,
+        0.84
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -57.5,
+        -14.4,
+        0.84
+      ],
+      "winding": 0.49999999999999994,
+      "triangles": 180,
+      "uses": [
+        {
+          "route": "connection/aux-feedwater-header-to-valve-c",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/auxFeedwaterValveC.outlet",
+      "elementId": "equipment/auxFeedwaterValveC",
+      "family": "valve",
+      "point": [
+        -57.5,
+        -16.200000000000003,
+        0.84
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -57.5,
+        -16.200000000000003,
+        0.84
+      ],
+      "winding": 0.5000000000000001,
+      "triangles": 180,
+      "uses": [
+        {
+          "route": "connection/aux-feedwater-valve-c-to-sg-c",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/auxFeedwaterHeader.outletD",
+      "elementId": "route/aux-feedwater-header",
+      "family": "pipe",
+      "point": [
+        -83.4,
+        30,
+        9.2
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -83.4,
+        30,
+        9.2
+      ],
+      "winding": 0.9999999999999988,
+      "triangles": 192,
+      "uses": [
+        {
+          "route": "connection/aux-feedwater-header-to-valve-d",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/auxFeedwaterValveD.inlet",
+      "elementId": "equipment/auxFeedwaterValveD",
+      "family": "valve",
+      "point": [
+        -57.5,
+        -0.40000000000000213,
+        0.84
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -57.5,
+        -0.40000000000000213,
+        0.84
+      ],
+      "winding": 0.4999999999999997,
+      "triangles": 180,
+      "uses": [
+        {
+          "route": "connection/aux-feedwater-header-to-valve-d",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/auxFeedwaterValveD.outlet",
+      "elementId": "equipment/auxFeedwaterValveD",
+      "family": "valve",
+      "point": [
+        -57.5,
+        -2.200000000000003,
+        0.84
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -57.5,
+        -2.200000000000003,
+        0.84
+      ],
+      "winding": 0.49999999999999983,
+      "triangles": 180,
+      "uses": [
+        {
+          "route": "connection/aux-feedwater-valve-d-to-sg-d",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/volumeControlTank.outlet",
+      "elementId": "equipment/volumeControlTank",
+      "family": "tank",
+      "point": [
+        -108.16999999999999,
+        64.25,
+        3.15
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -108.16999999999999,
+        64.25,
+        3.15
+      ],
+      "winding": -0.46874999999999073,
+      "triangles": 320,
+      "uses": [
+        {
+          "route": "connection/vct-to-charging-pump",
+          "material": "pipe",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/vct-to-charging-pump-b",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/chargingPump.inlet",
+      "elementId": "equipment/chargingPump",
+      "family": "pump",
+      "point": [
+        -128.3,
+        62.075,
+        1.35
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -128.3,
+        62.075,
+        1.35
+      ],
+      "winding": 0.5,
+      "triangles": 776,
+      "uses": [
+        {
+          "route": "connection/vct-to-charging-pump",
+          "material": "pipe",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/boric-acid-injection-to-charging-pump",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/boricAcidTank.outlet",
+      "elementId": "equipment/boricAcidTank",
+      "family": "tank",
+      "point": [
+        -64.16,
+        64,
+        2.625
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -64.16,
+        64,
+        2.625
+      ],
+      "winding": 0.031249999999998772,
+      "triangles": 320,
+      "uses": [
+        {
+          "route": "connection/boric-acid-tank-to-injection-valve",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/boricAcidInjectionValve.inlet",
+      "elementId": "equipment/boricAcidInjectionValve",
+      "family": "valve",
+      "point": [
+        -72.4,
+        68.7,
+        0.75
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -72.4,
+        68.7,
+        0.75
+      ],
+      "winding": 0.5,
+      "triangles": 180,
+      "uses": [
+        {
+          "route": "connection/boric-acid-tank-to-injection-valve",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/boricAcidInjectionValve.outlet",
+      "elementId": "equipment/boricAcidInjectionValve",
+      "family": "valve",
+      "point": [
+        -70.6,
+        68.7,
+        0.75
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -70.6,
+        68.7,
+        0.75
+      ],
+      "winding": 0.49999999999999983,
+      "triangles": 180,
+      "uses": [
+        {
+          "route": "connection/boric-acid-injection-to-charging-pump",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/chargingPump.outlet",
+      "elementId": "equipment/chargingPump",
+      "family": "pump",
+      "point": [
+        -127.75,
+        63.25,
+        2.88
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -127.75,
+        63.25,
+        2.88
+      ],
+      "winding": 0.5,
+      "triangles": 776,
+      "uses": [
+        {
+          "route": "connection/charging-pump-to-cold-leg-a",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/vessel.letdownOutlet",
+      "elementId": "equipment/vessel",
+      "family": "reactor-vessel",
+      "point": [
+        -94.4,
+        -15.06,
+        9.18
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -94.4,
+        -15.06,
+        9.18
+      ],
+      "winding": -0.46874999999999833,
+      "triangles": 1088,
+      "uses": [
+        {
+          "route": "connection/rcs-letdown",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/letdownValve.inlet",
+      "elementId": "equipment/letdownValve",
+      "family": "valve",
+      "point": [
+        -121.4,
+        68.7,
+        0.75
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -121.4,
+        68.7,
+        0.75
+      ],
+      "winding": 0.49999999999999994,
+      "triangles": 180,
+      "uses": [
+        {
+          "route": "connection/rcs-letdown",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/letdownValve.outlet",
+      "elementId": "equipment/letdownValve",
+      "family": "valve",
+      "point": [
+        -119.6,
+        68.7,
+        0.75
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -119.6,
+        68.7,
+        0.75
+      ],
+      "winding": 0.4999999999999998,
+      "triangles": 180,
+      "uses": [
+        {
+          "route": "connection/letdown-to-vct",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/volumeControlTank.inlet",
+      "elementId": "equipment/volumeControlTank",
+      "family": "tank",
+      "point": [
+        -112.13,
+        64.25,
+        3.15
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -112.13,
+        64.25,
+        3.15
+      ],
+      "winding": -0.4687500000000021,
+      "triangles": 320,
+      "uses": [
+        {
+          "route": "connection/letdown-to-vct",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/auxFeedwaterPumpMotorB.inlet",
+      "elementId": "equipment/auxFeedwaterPumpMotorB",
+      "family": "pump",
+      "point": [
+        -81.08,
+        25.081000000000003,
+        9.35
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -81.08,
+        25.081000000000003,
+        9.35
+      ],
+      "winding": 0.49999999999999983,
+      "triangles": 776,
+      "uses": [
+        {
+          "route": "connection/aux-feedwater-tank-to-motor-pump-b",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/auxFeedwaterPumpMotorB.outlet",
+      "elementId": "equipment/auxFeedwaterPumpMotorB",
+      "family": "pump",
+      "point": [
+        -80.42,
+        26.35,
+        10.879999999999999
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -80.42,
+        26.35,
+        10.879999999999999
+      ],
+      "winding": 0.5000000000000001,
+      "triangles": 776,
+      "uses": [
+        {
+          "route": "connection/motor-afw-pump-b-to-header",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/auxFeedwaterHeader.inletC",
+      "elementId": "route/aux-feedwater-header",
+      "family": "pipe",
+      "point": [
+        -83.4,
+        30,
+        9.2
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -83.4,
+        30,
+        9.2
+      ],
+      "winding": 0.9999999999999988,
+      "triangles": 192,
+      "uses": [
+        {
+          "route": "connection/motor-afw-pump-b-to-header",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/chargingPumpB.inlet",
+      "elementId": "equipment/chargingPumpB",
+      "family": "pump",
+      "point": [
+        -81.3,
+        62.075,
+        1.35
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -81.3,
+        62.075,
+        1.35
+      ],
+      "winding": 0.5000000000000001,
+      "triangles": 776,
+      "uses": [
+        {
+          "route": "connection/vct-to-charging-pump-b",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/chargingPumpB.outlet",
+      "elementId": "equipment/chargingPumpB",
+      "family": "pump",
+      "point": [
+        -80.75,
+        63.25,
+        2.88
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -80.75,
+        63.25,
+        2.88
+      ],
+      "winding": 0.5,
+      "triangles": 776,
+      "uses": [
+        {
+          "route": "connection/charging-pump-b-to-cold-leg-b",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/rwst.outlet",
+      "elementId": "equipment/rwst",
+      "family": "tank",
+      "point": [
+        -149.4,
+        -31.84,
+        6.825
+      ],
+      "nearestBodyDistance": 8.881784197001252e-16,
+      "closestPoint": [
+        -149.4,
+        -31.84,
+        6.825000000000001
+      ],
+      "winding": -0.46875000000000044,
+      "triangles": 320,
+      "uses": [
+        {
+          "route": "connection/rwst-to-safety-injection-pump-a",
+          "material": "pipe",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/rwst-to-safety-injection-pump-b",
+          "material": "pipe",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/rwst-to-containment-spray-pump-a",
+          "material": "pipe",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/rwst-to-containment-spray-pump-b",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/safetyInjectionPumpA.inlet",
+      "elementId": "equipment/safetyInjectionPumpA",
+      "family": "pump",
+      "point": [
+        -110.30000000000001,
+        23.075000000000003,
+        1.35
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -110.30000000000001,
+        23.075000000000003,
+        1.35
+      ],
+      "winding": 0.5000000000000001,
+      "triangles": 776,
+      "uses": [
+        {
+          "route": "connection/rwst-to-safety-injection-pump-a",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/safetyInjectionPumpB.inlet",
+      "elementId": "equipment/safetyInjectionPumpB",
+      "family": "pump",
+      "point": [
+        -63.3,
+        23.075000000000003,
+        1.35
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -63.3,
+        23.075000000000003,
+        1.35
+      ],
+      "winding": 0.5000000000000002,
+      "triangles": 776,
+      "uses": [
+        {
+          "route": "connection/rwst-to-safety-injection-pump-b",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/safetyInjectionPumpA.outlet",
+      "elementId": "equipment/safetyInjectionPumpA",
+      "family": "pump",
+      "point": [
+        -109.75,
+        24.25,
+        2.88
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -109.75,
+        24.25,
+        2.88
+      ],
+      "winding": 0.5,
+      "triangles": 776,
+      "uses": [
+        {
+          "route": "connection/safety-injection-pump-a-to-header",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/safetyInjectionHeader.inletA",
+      "elementId": "route/safety-injection-header",
+      "family": "pipe",
+      "point": [
+        -108.4,
+        34,
+        3.8
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -108.4,
+        34,
+        3.8
+      ],
+      "winding": 0.999999999999999,
+      "triangles": 192,
+      "uses": [
+        {
+          "route": "connection/safety-injection-pump-a-to-header",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/safetyInjectionPumpB.outlet",
+      "elementId": "equipment/safetyInjectionPumpB",
+      "family": "pump",
+      "point": [
+        -62.75,
+        24.25,
+        2.88
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -62.75,
+        24.25,
+        2.88
+      ],
+      "winding": 0.5,
+      "triangles": 776,
+      "uses": [
+        {
+          "route": "connection/safety-injection-pump-b-to-header",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/safetyInjectionHeader.inletB",
+      "elementId": "route/safety-injection-header",
+      "family": "pipe",
+      "point": [
+        -62.4,
+        15,
+        3.8
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -62.4,
+        15,
+        3.8
+      ],
+      "winding": 0.5000000000000001,
+      "triangles": 192,
+      "uses": [
+        {
+          "route": "connection/safety-injection-pump-b-to-header",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/safetyInjectionHeader.outletA",
+      "elementId": "route/safety-injection-header",
+      "family": "pipe",
+      "point": [
+        -62.4,
+        15,
+        3.8
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -62.4,
+        15,
+        3.8
+      ],
+      "winding": 0.5000000000000001,
+      "triangles": 192,
+      "uses": [
+        {
+          "route": "connection/safety-injection-header-to-cold-leg-a",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/safetyInjectionHeader.outletB",
+      "elementId": "route/safety-injection-header",
+      "family": "pipe",
+      "point": [
+        -62.4,
+        15,
+        3.8
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -62.4,
+        15,
+        3.8
+      ],
+      "winding": 0.5000000000000001,
+      "triangles": 192,
+      "uses": [
+        {
+          "route": "connection/safety-injection-header-to-cold-leg-b",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/safetyInjectionHeader.outletC",
+      "elementId": "route/safety-injection-header",
+      "family": "pipe",
+      "point": [
+        -62.4,
+        15,
+        3.8
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -62.4,
+        15,
+        3.8
+      ],
+      "winding": 0.5000000000000001,
+      "triangles": 192,
+      "uses": [
+        {
+          "route": "connection/safety-injection-header-to-cold-leg-c",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/safetyInjectionHeader.outletD",
+      "elementId": "route/safety-injection-header",
+      "family": "pipe",
+      "point": [
+        -62.4,
+        15,
+        3.8
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -62.4,
+        15,
+        3.8
+      ],
+      "winding": 0.5000000000000001,
+      "triangles": 192,
+      "uses": [
+        {
+          "route": "connection/safety-injection-header-to-cold-leg-d",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/containmentSprayPumpA.inlet",
+      "elementId": "equipment/containmentSprayPumpA",
+      "family": "pump",
+      "point": [
+        -130.3,
+        44.075,
+        1.35
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -130.3,
+        44.075,
+        1.35
+      ],
+      "winding": 0.5,
+      "triangles": 776,
+      "uses": [
+        {
+          "route": "connection/rwst-to-containment-spray-pump-a",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/containmentSprayPumpB.inlet",
+      "elementId": "equipment/containmentSprayPumpB",
+      "family": "pump",
+      "point": [
+        -83.3,
+        44.075,
+        1.35
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -83.3,
+        44.075,
+        1.35
+      ],
+      "winding": 0.5000000000000001,
+      "triangles": 776,
+      "uses": [
+        {
+          "route": "connection/rwst-to-containment-spray-pump-b",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/containmentSprayPumpA.outlet",
+      "elementId": "equipment/containmentSprayPumpA",
+      "family": "pump",
+      "point": [
+        -129.75,
+        45.25,
+        2.88
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -129.75,
+        45.25,
+        2.88
+      ],
+      "winding": 0.5,
+      "triangles": 776,
+      "uses": [
+        {
+          "route": "connection/containment-spray-pump-a-to-header",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/containmentSprayHeader.inletA",
+      "elementId": "route/containment-spray-header",
+      "family": "pipe",
+      "point": [
+        -128.4,
+        53,
+        3.8
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -128.4,
+        53,
+        3.8
+      ],
+      "winding": 0.999999999999999,
+      "triangles": 192,
+      "uses": [
+        {
+          "route": "connection/containment-spray-pump-a-to-header",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/containmentSprayPumpB.outlet",
+      "elementId": "equipment/containmentSprayPumpB",
+      "family": "pump",
+      "point": [
+        -82.75,
+        45.25,
+        2.88
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -82.75,
+        45.25,
+        2.88
+      ],
+      "winding": 0.5,
+      "triangles": 776,
+      "uses": [
+        {
+          "route": "connection/containment-spray-pump-b-to-header",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/containmentSprayHeader.inletB",
+      "elementId": "route/containment-spray-header",
+      "family": "pipe",
+      "point": [
+        -81.9,
+        53,
+        3.8
+      ],
+      "nearestBodyDistance": 0.14711779206048076,
+      "closestPoint": [
+        -81.8999999999993,
+        52.91826573398369,
+        3.6776760264726263
+      ],
+      "winding": 0.9999999999999978,
+      "triangles": 192,
+      "uses": [
+        {
+          "route": "connection/containment-spray-pump-b-to-header",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/rhrPumpA.outlet",
+      "elementId": "equipment/rhrPumpA",
+      "family": "pump",
+      "point": [
+        -129.75,
+        24.25,
+        2.88
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -129.75,
+        24.25,
+        2.88
+      ],
+      "winding": 0.5,
+      "triangles": 776,
+      "uses": [
+        {
+          "route": "connection/rhr-pump-a-to-header",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/rhrHeader.inletA",
+      "elementId": "route/rhr-header",
+      "family": "pipe",
+      "point": [
+        -128.4,
+        31,
+        3.8
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -128.4,
+        31,
+        3.8
+      ],
+      "winding": 0.9999999999999997,
+      "triangles": 256,
+      "uses": [
+        {
+          "route": "connection/rhr-pump-a-to-header",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/rhrPumpB.outlet",
+      "elementId": "equipment/rhrPumpB",
+      "family": "pump",
+      "point": [
+        -82.75,
+        24.25,
+        2.88
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -82.75,
+        24.25,
+        2.88
+      ],
+      "winding": 0.5,
+      "triangles": 776,
+      "uses": [
+        {
+          "route": "connection/rhr-pump-b-to-header",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/rhrHeader.inletB",
+      "elementId": "route/rhr-header",
+      "family": "pipe",
+      "point": [
+        -81.9,
+        31,
+        3.8
+      ],
+      "nearestBodyDistance": 0.17163742407056148,
+      "closestPoint": [
+        -81.90000000000025,
+        30.83166054090527,
+        3.766515199668044
+      ],
+      "winding": 1.0000000000000018,
+      "triangles": 256,
+      "uses": [
+        {
+          "route": "connection/rhr-pump-b-to-header",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/rhrHeader.outletA",
+      "elementId": "route/rhr-header",
+      "family": "pipe",
+      "point": [
+        -96.4,
+        9,
+        3.8
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -96.4,
+        9,
+        3.8
+      ],
+      "winding": 0.4999999999999855,
+      "triangles": 256,
+      "uses": [
+        {
+          "route": "connection/rhr-header-to-isolation-valve",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/rhrIsolationValve.inlet",
+      "elementId": "equipment/rhrIsolationValve",
+      "family": "valve",
+      "point": [
+        -97.4,
+        8.700000000000003,
+        0.75
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -97.4,
+        8.700000000000003,
+        0.75
+      ],
+      "winding": 0.4999999999999998,
+      "triangles": 180,
+      "uses": [
+        {
+          "route": "connection/rhr-header-to-isolation-valve",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/rhrIsolationValve.outlet",
+      "elementId": "equipment/rhrIsolationValve",
+      "family": "valve",
+      "point": [
+        -95.6,
+        8.700000000000003,
+        0.75
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -95.6,
+        8.700000000000003,
+        0.75
+      ],
+      "winding": 0.49999999999999956,
+      "triangles": 180,
+      "uses": [
+        {
+          "route": "connection/rhr-isolation-valve-to-cold-leg-a",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/safetyAccumulatorA.outlet",
+      "elementId": "equipment/safetyAccumulatorA",
+      "family": "tank",
+      "point": [
+        -112.63999999999999,
+        -12,
+        3.15
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -112.63999999999999,
+        -12,
+        3.15
+      ],
+      "winding": -0.46874999999998823,
+      "triangles": 320,
+      "uses": [
+        {
+          "route": "connection/safety-accumulator-a-to-cold-leg-a",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/safetyAccumulatorB.outlet",
+      "elementId": "equipment/safetyAccumulatorB",
+      "family": "tank",
+      "point": [
+        -76.16,
+        -15,
+        3.15
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -76.16,
+        -15,
+        3.15
+      ],
+      "winding": -0.4687500000000019,
+      "triangles": 320,
+      "uses": [
+        {
+          "route": "connection/safety-accumulator-b-to-cold-leg-b",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/safetyAccumulatorC.outlet",
+      "elementId": "equipment/safetyAccumulatorC",
+      "family": "tank",
+      "point": [
+        -87.4,
+        -38.24,
+        3.15
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -87.4,
+        -38.24,
+        3.15
+      ],
+      "winding": -0.4687500000000011,
+      "triangles": 320,
+      "uses": [
+        {
+          "route": "connection/safety-accumulator-c-to-cold-leg-c",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/safetyAccumulatorD.outlet",
+      "elementId": "equipment/safetyAccumulatorD",
+      "family": "tank",
+      "point": [
+        -102.4,
+        -38.24,
+        3.15
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -102.4,
+        -38.24,
+        3.15
+      ],
+      "winding": -0.4687500000000011,
+      "triangles": 320,
+      "uses": [
+        {
+          "route": "connection/safety-accumulator-d-to-cold-leg-d",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/sgA.steamReliefOutlet",
+      "elementId": "equipment/sgA",
+      "family": "steam-generator",
+      "point": [
+        -103.538,
+        -4,
+        12.84
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -103.538,
+        -4,
+        12.84
+      ],
+      "winding": -0.23437499999999722,
+      "triangles": 976,
+      "uses": [
+        {
+          "route": "connection/sg-a-steam-to-relief-valve-a",
+          "material": "steam",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/sg-a-steam-to-safety-valves-a",
+          "material": "steam",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/steamGeneratorReliefValveA.inlet",
+      "elementId": "equipment/steamGeneratorReliefValveA",
+      "family": "valve",
+      "point": [
+        -55.4,
+        -39.3,
+        15.84
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -55.4,
+        -39.3,
+        15.84
+      ],
+      "winding": 0.5000000000000001,
+      "triangles": 180,
+      "uses": [
+        {
+          "route": "connection/sg-a-steam-to-relief-valve-a",
+          "material": "steam",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/sgB.steamReliefOutlet",
+      "elementId": "equipment/sgB",
+      "family": "steam-generator",
+      "point": [
+        -79.538,
+        -4,
+        12.84
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -79.538,
+        -4,
+        12.84
+      ],
+      "winding": -0.23437499999999722,
+      "triangles": 976,
+      "uses": [
+        {
+          "route": "connection/sg-b-steam-to-relief-valve-b",
+          "material": "steam",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/sg-b-steam-to-safety-valves-b",
+          "material": "steam",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/steamGeneratorReliefValveB.inlet",
+      "elementId": "equipment/steamGeneratorReliefValveB",
+      "family": "valve",
+      "point": [
+        -55.4,
+        -25.3,
+        15.84
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -55.4,
+        -25.3,
+        15.84
+      ],
+      "winding": 0.5000000000000004,
+      "triangles": 180,
+      "uses": [
+        {
+          "route": "connection/sg-b-steam-to-relief-valve-b",
+          "material": "steam",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/sgC.steamReliefOutlet",
+      "elementId": "equipment/sgC",
+      "family": "steam-generator",
+      "point": [
+        -79.538,
+        -32,
+        12.84
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -79.538,
+        -32,
+        12.84
+      ],
+      "winding": -0.23437499999999717,
+      "triangles": 976,
+      "uses": [
+        {
+          "route": "connection/sg-c-steam-to-relief-valve-c",
+          "material": "steam",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/sg-c-steam-to-safety-valves-c",
+          "material": "steam",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/steamGeneratorReliefValveC.inlet",
+      "elementId": "equipment/steamGeneratorReliefValveC",
+      "family": "valve",
+      "point": [
+        -55.4,
+        -11.3,
+        15.84
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -55.4,
+        -11.3,
+        15.84
+      ],
+      "winding": 0.5000000000000003,
+      "triangles": 180,
+      "uses": [
+        {
+          "route": "connection/sg-c-steam-to-relief-valve-c",
+          "material": "steam",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/sgD.steamReliefOutlet",
+      "elementId": "equipment/sgD",
+      "family": "steam-generator",
+      "point": [
+        -103.538,
+        -32,
+        12.84
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -103.538,
+        -32,
+        12.84
+      ],
+      "winding": -0.23437499999999717,
+      "triangles": 976,
+      "uses": [
+        {
+          "route": "connection/sg-d-steam-to-relief-valve-d",
+          "material": "steam",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/sg-d-steam-to-safety-valves-d",
+          "material": "steam",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/steamGeneratorReliefValveD.inlet",
+      "elementId": "equipment/steamGeneratorReliefValveD",
+      "family": "valve",
+      "point": [
+        -55.4,
+        2.6999999999999993,
+        15.84
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -55.4,
+        2.6999999999999993,
+        15.84
+      ],
+      "winding": 0.5000000000000004,
+      "triangles": 180,
+      "uses": [
+        {
+          "route": "connection/sg-d-steam-to-relief-valve-d",
+          "material": "steam",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/ultimateHeatSink.outlet",
+      "elementId": "basin/ultimateHeatSink",
+      "family": "slab",
+      "point": [
+        71.1,
+        -32,
+        -0.2
+      ],
+      "nearestBodyDistance": 5.551115123125783e-17,
+      "closestPoint": [
+        71.1,
+        -32,
+        -0.19999999999999996
+      ],
+      "winding": 0.4999999999999983,
+      "triangles": 12,
+      "uses": [
+        {
+          "route": "connection/ultimate-heat-sink-to-circulating-water-pump",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/circulatingWaterPump.inlet",
+      "elementId": "equipment/circulatingWaterPump",
+      "family": "pump",
+      "point": [
+        66.24000000000001,
+        -19.85,
+        2.25
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        66.24000000000001,
+        -19.85,
+        2.25
+      ],
+      "winding": 0.4999999999999997,
+      "triangles": 776,
+      "uses": [
+        {
+          "route": "connection/ultimate-heat-sink-to-circulating-water-pump",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/circulatingWaterPump.outlet",
+      "elementId": "equipment/circulatingWaterPump",
+      "family": "pump",
+      "point": [
+        67.56,
+        -17.5,
+        4.8
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        67.56,
+        -17.5,
+        4.8
+      ],
+      "winding": 0.5000000000000001,
+      "triangles": 776,
+      "uses": [
+        {
+          "route": "connection/circulating-water-pump-to-condenser",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/condenser.coolingWater",
+      "elementId": "condenser-3",
+      "family": "condenser",
+      "point": [
+        6.350000000000001,
+        -7.625,
+        7.5
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        6.350000000000001,
+        -7.625,
+        7.5
+      ],
+      "winding": 0.999999999999998,
+      "triangles": 948,
+      "uses": [
+        {
+          "route": "connection/circulating-water-pump-to-condenser",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/condenser.coolingWaterOutlet",
+      "elementId": "condenser-3",
+      "family": "condenser",
+      "point": [
+        6.350000000000001,
+        -7.625,
+        7.5
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        6.350000000000001,
+        -7.625,
+        7.5
+      ],
+      "winding": 0.999999999999998,
+      "triangles": 948,
+      "uses": [
+        {
+          "route": "connection/condenser-to-cooling-water-discharge",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/coolingWaterDischarge.inlet",
+      "elementId": "basin/coolingWaterDischarge",
+      "family": "slab",
+      "point": [
+        93.6,
+        -41,
+        -0.2
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        93.6,
+        -41,
+        -0.2
+      ],
+      "winding": 0.49999999999999684,
+      "triangles": 12,
+      "uses": [
+        {
+          "route": "connection/condenser-to-cooling-water-discharge",
+          "material": "pipe",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/turbine.generatorOutput",
+      "elementId": "tg-generator",
+      "family": "generator",
+      "point": [
+        23.000000000000007,
+        -6.75,
+        17.2
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        23.000000000000007,
+        -6.75,
+        17.2
+      ],
+      "winding": 0.5000000000000001,
+      "triangles": 2536,
+      "uses": [
+        {
+          "route": "connection/turbine-generator-to-unit-aux-transformer",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/unitAuxTransformer.primary",
+      "elementId": "equipment/unitAuxTransformer",
+      "family": "transformer",
+      "point": [
+        54.199999999999996,
+        24,
+        3.71
+      ],
+      "nearestBodyDistance": 4.440892098500626e-16,
+      "closestPoint": [
+        54.199999999999996,
+        24,
+        3.7100000000000004
+      ],
+      "winding": 1.0000000000000002,
+      "triangles": 1132,
+      "uses": [
+        {
+          "route": "connection/turbine-generator-to-unit-aux-transformer",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/unitAuxTransformer.secondary",
+      "elementId": "equipment/unitAuxTransformer",
+      "family": "transformer",
+      "point": [
+        54.199999999999996,
+        24,
+        3.71
+      ],
+      "nearestBodyDistance": 4.440892098500626e-16,
+      "closestPoint": [
+        54.199999999999996,
+        24,
+        3.7100000000000004
+      ],
+      "winding": 1.0000000000000002,
+      "triangles": 1132,
+      "uses": [
+        {
+          "route": "connection/unit-aux-transformer-to-offsite-breaker-a",
+          "material": "crane",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/unit-aux-transformer-to-offsite-breaker-b",
+          "material": "crane",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/unit-aux-transformer-to-unit-bus-breaker-a",
+          "material": "crane",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/unit-aux-transformer-to-unit-bus-breaker-b",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/offsiteBreakerA.inlet",
+      "elementId": "equipment/offsiteBreakerA",
+      "family": "cabinet",
+      "point": [
+        -25.9,
+        39.73875000000001,
+        1.4
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -25.9,
+        39.73875000000001,
+        1.4
+      ],
+      "winding": 1.0000000000000002,
+      "triangles": 84,
+      "uses": [
+        {
+          "route": "connection/unit-aux-transformer-to-offsite-breaker-a",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/offsiteBreakerB.inlet",
+      "elementId": "equipment/offsiteBreakerB",
+      "family": "cabinet",
+      "point": [
+        3.1000000000000014,
+        39.73875000000001,
+        1.4
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        3.1000000000000014,
+        39.73875000000001,
+        1.4
+      ],
+      "winding": 1.0000000000000002,
+      "triangles": 84,
+      "uses": [
+        {
+          "route": "connection/unit-aux-transformer-to-offsite-breaker-b",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/offsiteBreakerA.outlet",
+      "elementId": "equipment/offsiteBreakerA",
+      "family": "cabinet",
+      "point": [
+        -28.4,
+        39.73875000000001,
+        1.4
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -28.4,
+        39.73875000000001,
+        1.4
+      ],
+      "winding": 0.9999999999999997,
+      "triangles": 84,
+      "uses": [
+        {
+          "route": "connection/offsite-breaker-a-to-safety-bus-a",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/safetyBusA.inlet",
+      "elementId": "equipment/safetyBusA",
+      "family": "cabinet",
+      "point": [
+        -31.4,
+        39.68950000000001,
+        1.35
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -31.4,
+        39.68950000000001,
+        1.35
+      ],
+      "winding": 0.9999999999999997,
+      "triangles": 228,
+      "uses": [
+        {
+          "route": "connection/offsite-breaker-a-to-safety-bus-a",
+          "material": "crane",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/diesel-breaker-a-to-safety-bus-a",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/offsiteBreakerB.outlet",
+      "elementId": "equipment/offsiteBreakerB",
+      "family": "cabinet",
+      "point": [
+        0.6000000000000014,
+        39.73875000000001,
+        1.4
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        0.6000000000000014,
+        39.73875000000001,
+        1.4
+      ],
+      "winding": 0.9999999999999999,
+      "triangles": 84,
+      "uses": [
+        {
+          "route": "connection/offsite-breaker-b-to-safety-bus-b",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/safetyBusB.inlet",
+      "elementId": "equipment/safetyBusB",
+      "family": "cabinet",
+      "point": [
+        -2.3999999999999986,
+        39.68950000000001,
+        1.35
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -2.3999999999999986,
+        39.68950000000001,
+        1.35
+      ],
+      "winding": 1.0000000000000002,
+      "triangles": 228,
+      "uses": [
+        {
+          "route": "connection/offsite-breaker-b-to-safety-bus-b",
+          "material": "crane",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/diesel-breaker-b-to-safety-bus-b",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/unitBusBreakerA.inlet",
+      "elementId": "equipment/unitBusBreakerA",
+      "family": "cabinet",
+      "point": [
+        -25.9,
+        50.73875000000001,
+        1.4
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -25.9,
+        50.73875000000001,
+        1.4
+      ],
+      "winding": 1.0000000000000002,
+      "triangles": 84,
+      "uses": [
+        {
+          "route": "connection/unit-aux-transformer-to-unit-bus-breaker-a",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/unitBusBreakerB.inlet",
+      "elementId": "equipment/unitBusBreakerB",
+      "family": "cabinet",
+      "point": [
+        3.1000000000000014,
+        50.73875000000001,
+        1.4
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        3.1000000000000014,
+        50.73875000000001,
+        1.4
+      ],
+      "winding": 1.0000000000000002,
+      "triangles": 84,
+      "uses": [
+        {
+          "route": "connection/unit-aux-transformer-to-unit-bus-breaker-b",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/unitBusBreakerA.outlet",
+      "elementId": "equipment/unitBusBreakerA",
+      "family": "cabinet",
+      "point": [
+        -28.4,
+        50.73875000000001,
+        1.4
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -28.4,
+        50.73875000000001,
+        1.4
+      ],
+      "winding": 0.9999999999999997,
+      "triangles": 84,
+      "uses": [
+        {
+          "route": "connection/unit-bus-breaker-a-to-unit-bus-a",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/unitBusA.inlet",
+      "elementId": "equipment/unitBusA",
+      "family": "cabinet",
+      "point": [
+        -31.4,
+        50.68950000000001,
+        1.35
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -31.4,
+        50.68950000000001,
+        1.35
+      ],
+      "winding": 0.9999999999999997,
+      "triangles": 228,
+      "uses": [
+        {
+          "route": "connection/unit-bus-breaker-a-to-unit-bus-a",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/unitBusBreakerB.outlet",
+      "elementId": "equipment/unitBusBreakerB",
+      "family": "cabinet",
+      "point": [
+        0.6000000000000014,
+        50.73875000000001,
+        1.4
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        0.6000000000000014,
+        50.73875000000001,
+        1.4
+      ],
+      "winding": 0.9999999999999999,
+      "triangles": 84,
+      "uses": [
+        {
+          "route": "connection/unit-bus-breaker-b-to-unit-bus-b",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/unitBusB.inlet",
+      "elementId": "equipment/unitBusB",
+      "family": "cabinet",
+      "point": [
+        -2.3999999999999986,
+        50.68950000000001,
+        1.35
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -2.3999999999999986,
+        50.68950000000001,
+        1.35
+      ],
+      "winding": 1.0000000000000002,
+      "triangles": 228,
+      "uses": [
+        {
+          "route": "connection/unit-bus-breaker-b-to-unit-bus-b",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/dieselGeneratorA.outlet",
+      "elementId": "equipment/dieselGeneratorA",
+      "family": "diesel-generator",
+      "point": [
+        -119.15,
+        94.5,
+        2.7249999999999996
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -119.15,
+        94.5,
+        2.7249999999999996
+      ],
+      "winding": 1.0000000000000002,
+      "triangles": 288,
+      "uses": [
+        {
+          "route": "connection/diesel-generator-a-to-breaker-a",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/dieselBreakerA.inlet",
+      "elementId": "equipment/dieselBreakerA",
+      "family": "cabinet",
+      "point": [
+        -22.4,
+        39.73875000000001,
+        1.4
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -22.4,
+        39.73875000000001,
+        1.4
+      ],
+      "winding": 0.9999999999999997,
+      "triangles": 84,
+      "uses": [
+        {
+          "route": "connection/diesel-generator-a-to-breaker-a",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/dieselGeneratorB.outlet",
+      "elementId": "equipment/dieselGeneratorB",
+      "family": "diesel-generator",
+      "point": [
+        -72.15,
+        94.5,
+        2.7249999999999996
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -72.15,
+        94.5,
+        2.7249999999999996
+      ],
+      "winding": 1.0000000000000002,
+      "triangles": 288,
+      "uses": [
+        {
+          "route": "connection/diesel-generator-b-to-breaker-b",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/dieselBreakerB.inlet",
+      "elementId": "equipment/dieselBreakerB",
+      "family": "cabinet",
+      "point": [
+        6.600000000000001,
+        39.73875000000001,
+        1.4
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        6.600000000000001,
+        39.73875000000001,
+        1.4
+      ],
+      "winding": 0.9999999999999999,
+      "triangles": 84,
+      "uses": [
+        {
+          "route": "connection/diesel-generator-b-to-breaker-b",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/dieselBreakerA.outlet",
+      "elementId": "equipment/dieselBreakerA",
+      "family": "cabinet",
+      "point": [
+        -22.4,
+        39.73875000000001,
+        1.4
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -22.4,
+        39.73875000000001,
+        1.4
+      ],
+      "winding": 0.9999999999999997,
+      "triangles": 84,
+      "uses": [
+        {
+          "route": "connection/diesel-breaker-a-to-safety-bus-a",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/dieselBreakerB.outlet",
+      "elementId": "equipment/dieselBreakerB",
+      "family": "cabinet",
+      "point": [
+        6.600000000000001,
+        39.73875000000001,
+        1.4
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        6.600000000000001,
+        39.73875000000001,
+        1.4
+      ],
+      "winding": 0.9999999999999999,
+      "triangles": 84,
+      "uses": [
+        {
+          "route": "connection/diesel-breaker-b-to-safety-bus-b",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/vitalBatteryA.outlet",
+      "elementId": "equipment/vitalBatteryA",
+      "family": "battery",
+      "point": [
+        -27.659999999999997,
+        41.2,
+        9.2
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -27.659999999999997,
+        41.2,
+        9.2
+      ],
+      "winding": 0.9999999999999979,
+      "triangles": 348,
+      "uses": [
+        {
+          "route": "connection/battery-a-to-inverter-a",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/dcInverterA.dcInlet",
+      "elementId": "equipment/dcInverterA",
+      "family": "cabinet",
+      "point": [
+        -24.4,
+        41.59100000000001,
+        9.25
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -24.4,
+        41.59100000000001,
+        9.25
+      ],
+      "winding": 0.9999999999999999,
+      "triangles": 84,
+      "uses": [
+        {
+          "route": "connection/battery-a-to-inverter-a",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/vitalBatteryB.outlet",
+      "elementId": "equipment/vitalBatteryB",
+      "family": "battery",
+      "point": [
+        1.3400000000000034,
+        41.2,
+        9.2
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        1.3400000000000034,
+        41.2,
+        9.2
+      ],
+      "winding": 0.999999999999998,
+      "triangles": 348,
+      "uses": [
+        {
+          "route": "connection/battery-b-to-inverter-b",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/dcInverterB.dcInlet",
+      "elementId": "equipment/dcInverterB",
+      "family": "cabinet",
+      "point": [
+        4.600000000000001,
+        41.59100000000001,
+        9.25
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        4.600000000000001,
+        41.59100000000001,
+        9.25
+      ],
+      "winding": 0.9999999999999999,
+      "triangles": 84,
+      "uses": [
+        {
+          "route": "connection/battery-b-to-inverter-b",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/dcInverterA.acOutlet",
+      "elementId": "equipment/dcInverterA",
+      "family": "cabinet",
+      "point": [
+        -22.9,
+        42.2,
+        9.25
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -22.9,
+        42.2,
+        9.25
+      ],
+      "winding": 1.499999999999999,
+      "triangles": 84,
+      "uses": [
+        {
+          "route": "connection/inverter-a-to-controls-load-a",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/plantControlsLoadA.power",
+      "elementId": "equipment/plantControlsLoadA",
+      "family": "cabinet",
+      "point": [
+        -29.4,
+        68.64025000000001,
+        16.3
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -29.4,
+        68.64025000000001,
+        16.3
+      ],
+      "winding": 0.9999999999999999,
+      "triangles": 264,
+      "uses": [
+        {
+          "route": "connection/inverter-a-to-controls-load-a",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/dcInverterB.acOutlet",
+      "elementId": "equipment/dcInverterB",
+      "family": "cabinet",
+      "point": [
+        6.100000000000001,
+        42.2,
+        9.25
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        6.100000000000001,
+        42.2,
+        9.25
+      ],
+      "winding": 1.4999999999999991,
+      "triangles": 84,
+      "uses": [
+        {
+          "route": "connection/inverter-b-to-controls-load-b",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/plantControlsLoadB.power",
+      "elementId": "equipment/plantControlsLoadB",
+      "family": "cabinet",
+      "point": [
+        -0.3999999999999986,
+        68.64025000000001,
+        16.3
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -0.3999999999999986,
+        68.64025000000001,
+        16.3
+      ],
+      "winding": 0.9999999999999996,
+      "triangles": 264,
+      "uses": [
+        {
+          "route": "connection/inverter-b-to-controls-load-b",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/unitBusA.outlet",
+      "elementId": "equipment/unitBusA",
+      "family": "cabinet",
+      "point": [
+        -35.9,
+        50,
+        1.35
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -35.9,
+        50,
+        1.35
+      ],
+      "winding": 1.5000000000000104,
+      "triangles": 228,
+      "uses": [
+        {
+          "route": "connection/unit-bus-a-to-rcpA",
+          "material": "crane",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/unit-bus-a-to-rcpC",
+          "material": "crane",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/unit-bus-a-to-mainFeedwaterPumpA",
+          "material": "crane",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/unit-bus-a-to-condensatePumpA",
+          "material": "crane",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/unit-bus-a-to-circulatingWaterPump",
+          "material": "crane",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/unit-bus-a-to-pressurizer-heater",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/rcpA.power",
+      "elementId": "equipment/rcpA",
+      "family": "reactor-coolant-pump",
+      "point": [
+        -104.28,
+        -13,
+        4.12
+      ],
+      "nearestBodyDistance": 1.7763568394002505e-15,
+      "closestPoint": [
+        -104.28,
+        -13,
+        4.119999999999998
+      ],
+      "winding": -0.9979768759256358,
+      "triangles": 1008,
+      "uses": [
+        {
+          "route": "connection/unit-bus-a-to-rcpA",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/rcpC.power",
+      "elementId": "equipment/rcpC",
+      "family": "reactor-coolant-pump",
+      "point": [
+        -85.4,
+        -23.880000000000003,
+        4.12
+      ],
+      "nearestBodyDistance": 8.881784197001252e-16,
+      "closestPoint": [
+        -85.4,
+        -23.880000000000003,
+        4.119999999999999
+      ],
+      "winding": -0.9986010219171337,
+      "triangles": 1008,
+      "uses": [
+        {
+          "route": "connection/unit-bus-a-to-rcpC",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/mainFeedwaterPumpA.power",
+      "elementId": "mfw-a",
+      "family": "feed-pump",
+      "point": [
+        -27.25,
+        15.799999999999997,
+        1.646
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -27.25,
+        15.799999999999997,
+        1.646
+      ],
+      "winding": 0.9999999999999993,
+      "triangles": 2884,
+      "uses": [
+        {
+          "route": "connection/unit-bus-a-to-mainFeedwaterPumpA",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/safetyBusA.outlet",
+      "elementId": "equipment/safetyBusA",
+      "family": "cabinet",
+      "point": [
+        -40.4,
+        39.68950000000001,
+        1.35
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -40.4,
+        39.68950000000001,
+        1.35
+      ],
+      "winding": 0.9999999999999999,
+      "triangles": 228,
+      "uses": [
+        {
+          "route": "connection/safety-bus-a-to-auxFeedwaterPumpMotor",
+          "material": "crane",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/safety-bus-a-to-chargingPump",
+          "material": "crane",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/safety-bus-a-to-safetyInjectionPumpA",
+          "material": "crane",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/safety-bus-a-to-containmentSprayPumpA",
+          "material": "crane",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/safety-bus-a-to-rhrPumpA",
+          "material": "crane",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/safety-bus-a-to-pressurizer-porv-block-valve",
+          "material": "crane",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/safety-bus-a-to-pressurizer-backup-heater-breaker-a",
+          "material": "crane",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/safety-bus-a-to-load-centres-a",
+          "material": "crane",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/safety-bus-a-to-ccw-pump-a",
+          "material": "crane",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/safety-bus-a-to-sw-pump-a",
+          "material": "crane",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/safety-bus-a-to-fan-coolers-a",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/auxFeedwaterPumpMotor.power",
+      "elementId": "equipment/auxFeedwaterPumpMotor",
+      "family": "pump",
+      "point": [
+        -123.69999999999999,
+        26.208250000000007,
+        9.6725
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -123.69999999999999,
+        26.208250000000007,
+        9.6725
+      ],
+      "winding": 0.999999999999999,
+      "triangles": 776,
+      "uses": [
+        {
+          "route": "connection/safety-bus-a-to-auxFeedwaterPumpMotor",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/safetyBusB.outlet",
+      "elementId": "equipment/safetyBusB",
+      "family": "cabinet",
+      "point": [
+        -11.399999999999999,
+        39.68950000000001,
+        1.35
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -11.399999999999999,
+        39.68950000000001,
+        1.35
+      ],
+      "winding": 0.9999999999999999,
+      "triangles": 228,
+      "uses": [
+        {
+          "route": "connection/safety-bus-b-to-auxFeedwaterPumpMotorB",
+          "material": "crane",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/safety-bus-b-to-chargingPumpB",
+          "material": "crane",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/safety-bus-b-to-safetyInjectionPumpB",
+          "material": "crane",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/safety-bus-b-to-containmentSprayPumpB",
+          "material": "crane",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/safety-bus-b-to-rhrPumpB",
+          "material": "crane",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/safety-bus-b-to-load-centres-b",
+          "material": "crane",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/safety-bus-b-to-ccw-pump-b",
+          "material": "crane",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/safety-bus-b-to-sw-pump-b",
+          "material": "crane",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/safety-bus-b-to-fan-coolers-b",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/auxFeedwaterPumpMotorB.power",
+      "elementId": "equipment/auxFeedwaterPumpMotorB",
+      "family": "pump",
+      "point": [
+        -76.69999999999999,
+        26.208250000000007,
+        9.6725
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -76.69999999999999,
+        26.208250000000007,
+        9.6725
+      ],
+      "winding": 0.9999999999999991,
+      "triangles": 776,
+      "uses": [
+        {
+          "route": "connection/safety-bus-b-to-auxFeedwaterPumpMotorB",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/condensatePumpA.power",
+      "elementId": "cp-a",
+      "family": "condensate-pump",
+      "point": [
+        11.100000000000001,
+        -5.755000000000003,
+        1.4449999999999998
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        11.100000000000001,
+        -5.755000000000003,
+        1.4449999999999998
+      ],
+      "winding": 0.9999999999999997,
+      "triangles": 1252,
+      "uses": [
+        {
+          "route": "connection/unit-bus-a-to-condensatePumpA",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/circulatingWaterPump.power",
+      "elementId": "equipment/circulatingWaterPump",
+      "family": "pump",
+      "point": [
+        65.03999999999999,
+        -17.762500000000003,
+        2.775
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        65.03999999999999,
+        -17.762500000000003,
+        2.775
+      ],
+      "winding": 0.9999999999999979,
+      "triangles": 776,
+      "uses": [
+        {
+          "route": "connection/unit-bus-a-to-circulatingWaterPump",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/unitBusB.outlet",
+      "elementId": "equipment/unitBusB",
+      "family": "cabinet",
+      "point": [
+        -11.399999999999999,
+        50.68950000000001,
+        1.35
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -11.399999999999999,
+        50.68950000000001,
+        1.35
+      ],
+      "winding": 0.9999999999999999,
+      "triangles": 228,
+      "uses": [
+        {
+          "route": "connection/unit-bus-b-to-rcpB",
+          "material": "crane",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/unit-bus-b-to-rcpD",
+          "material": "crane",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/unit-bus-b-to-mainFeedwaterPumpB",
+          "material": "crane",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/unit-bus-b-to-condensatePumpB",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/rcpB.power",
+      "elementId": "equipment/rcpB",
+      "family": "reactor-coolant-pump",
+      "point": [
+        -84.28,
+        -13,
+        4.12
+      ],
+      "nearestBodyDistance": 1.7763568394002505e-15,
+      "closestPoint": [
+        -84.28,
+        -13,
+        4.119999999999998
+      ],
+      "winding": -0.9979768759256358,
+      "triangles": 1008,
+      "uses": [
+        {
+          "route": "connection/unit-bus-b-to-rcpB",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/rcpD.power",
+      "elementId": "equipment/rcpD",
+      "family": "reactor-coolant-pump",
+      "point": [
+        -104.28,
+        -25,
+        4.12
+      ],
+      "nearestBodyDistance": 1.7763568394002505e-15,
+      "closestPoint": [
+        -104.28,
+        -25,
+        4.119999999999998
+      ],
+      "winding": -0.9979345735014369,
+      "triangles": 1008,
+      "uses": [
+        {
+          "route": "connection/unit-bus-b-to-rcpD",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/mainFeedwaterPumpB.power",
+      "elementId": "mfw-b",
+      "family": "feed-pump",
+      "point": [
+        -15.7,
+        23.5,
+        1.646
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -15.7,
+        23.5,
+        1.646
+      ],
+      "winding": 1.0000000000000013,
+      "triangles": 2884,
+      "uses": [
+        {
+          "route": "connection/unit-bus-b-to-mainFeedwaterPumpB",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/condensatePumpB.power",
+      "elementId": "cp-b",
+      "family": "condensate-pump",
+      "point": [
+        19.1,
+        -0.7550000000000026,
+        1.4449999999999998
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        19.1,
+        -0.7550000000000026,
+        1.4449999999999998
+      ],
+      "winding": 1.0000000000000004,
+      "triangles": 1252,
+      "uses": [
+        {
+          "route": "connection/unit-bus-b-to-condensatePumpB",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/chargingPump.power",
+      "elementId": "equipment/chargingPump",
+      "family": "pump",
+      "point": [
+        -124.65,
+        63.118750000000006,
+        1.6724999999999999
+      ],
+      "nearestBodyDistance": 2.220446049250313e-16,
+      "closestPoint": [
+        -124.65,
+        63.118750000000006,
+        1.6725
+      ],
+      "winding": 0.999999999999999,
+      "triangles": 776,
+      "uses": [
+        {
+          "route": "connection/safety-bus-a-to-chargingPump",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/chargingPumpB.power",
+      "elementId": "equipment/chargingPumpB",
+      "family": "pump",
+      "point": [
+        -77.65,
+        63.118750000000006,
+        1.6724999999999999
+      ],
+      "nearestBodyDistance": 2.220446049250313e-16,
+      "closestPoint": [
+        -77.65,
+        63.118750000000006,
+        1.6725
+      ],
+      "winding": 0.9999999999999984,
+      "triangles": 776,
+      "uses": [
+        {
+          "route": "connection/safety-bus-b-to-chargingPumpB",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/safetyInjectionPumpA.power",
+      "elementId": "equipment/safetyInjectionPumpA",
+      "family": "pump",
+      "point": [
+        -106.65,
+        24.118750000000006,
+        1.6724999999999999
+      ],
+      "nearestBodyDistance": 2.220446049250313e-16,
+      "closestPoint": [
+        -106.65,
+        24.118750000000006,
+        1.6725
+      ],
+      "winding": 0.9999999999999986,
+      "triangles": 776,
+      "uses": [
+        {
+          "route": "connection/safety-bus-a-to-safetyInjectionPumpA",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/safetyInjectionPumpB.power",
+      "elementId": "equipment/safetyInjectionPumpB",
+      "family": "pump",
+      "point": [
+        -59.65,
+        24.118750000000006,
+        1.6724999999999999
+      ],
+      "nearestBodyDistance": 2.220446049250313e-16,
+      "closestPoint": [
+        -59.65,
+        24.118750000000006,
+        1.6725
+      ],
+      "winding": 0.9999999999999999,
+      "triangles": 776,
+      "uses": [
+        {
+          "route": "connection/safety-bus-b-to-safetyInjectionPumpB",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/containmentSprayPumpA.power",
+      "elementId": "equipment/containmentSprayPumpA",
+      "family": "pump",
+      "point": [
+        -126.65,
+        45.118750000000006,
+        1.6724999999999999
+      ],
+      "nearestBodyDistance": 2.220446049250313e-16,
+      "closestPoint": [
+        -126.65,
+        45.118750000000006,
+        1.6725
+      ],
+      "winding": 0.999999999999999,
+      "triangles": 776,
+      "uses": [
+        {
+          "route": "connection/safety-bus-a-to-containmentSprayPumpA",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/containmentSprayPumpB.power",
+      "elementId": "equipment/containmentSprayPumpB",
+      "family": "pump",
+      "point": [
+        -79.65,
+        45.118750000000006,
+        1.6724999999999999
+      ],
+      "nearestBodyDistance": 2.220446049250313e-16,
+      "closestPoint": [
+        -79.65,
+        45.118750000000006,
+        1.6725
+      ],
+      "winding": 0.9999999999999984,
+      "triangles": 776,
+      "uses": [
+        {
+          "route": "connection/safety-bus-b-to-containmentSprayPumpB",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/rhrPumpA.power",
+      "elementId": "equipment/rhrPumpA",
+      "family": "pump",
+      "point": [
+        -126.65,
+        24.118750000000006,
+        1.6724999999999999
+      ],
+      "nearestBodyDistance": 2.220446049250313e-16,
+      "closestPoint": [
+        -126.65,
+        24.118750000000006,
+        1.6725
+      ],
+      "winding": 0.9999999999999986,
+      "triangles": 776,
+      "uses": [
+        {
+          "route": "connection/safety-bus-a-to-rhrPumpA",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/rhrPumpB.power",
+      "elementId": "equipment/rhrPumpB",
+      "family": "pump",
+      "point": [
+        -79.65,
+        24.118750000000006,
+        1.6724999999999999
+      ],
+      "nearestBodyDistance": 2.220446049250313e-16,
+      "closestPoint": [
+        -79.65,
+        24.118750000000006,
+        1.6725
+      ],
+      "winding": 0.9999999999999988,
+      "triangles": 776,
+      "uses": [
+        {
+          "route": "connection/safety-bus-b-to-rhrPumpB",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/pressurizer.heaterPower",
+      "elementId": "equipment/pressurizer",
+      "family": "pressurizer",
+      "point": [
+        -92.35,
+        1.25,
+        7.02
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -92.35,
+        1.25,
+        7.02
+      ],
+      "winding": -0.46874999999998923,
+      "triangles": 840,
+      "uses": [
+        {
+          "route": "connection/unit-bus-a-to-pressurizer-heater",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/pressurizer.blockValvePower",
+      "elementId": "equipment/pressurizer",
+      "family": "pressurizer",
+      "point": [
+        -92.35,
+        1.25,
+        7.02
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -92.35,
+        1.25,
+        7.02
+      ],
+      "winding": -0.46874999999998923,
+      "triangles": 840,
+      "uses": [
+        {
+          "route": "connection/safety-bus-a-to-pressurizer-porv-block-valve",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/pressurizerBackupHeaterBreakerA.inlet",
+      "elementId": "equipment/pressurizerBackupHeaterBreakerA",
+      "family": "cabinet",
+      "point": [
+        -22.4,
+        50.73875000000001,
+        1.4
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -22.4,
+        50.73875000000001,
+        1.4
+      ],
+      "winding": 0.9999999999999997,
+      "triangles": 84,
+      "uses": [
+        {
+          "route": "connection/safety-bus-a-to-pressurizer-backup-heater-breaker-a",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/pressurizerBackupHeaterBreakerA.outlet",
+      "elementId": "equipment/pressurizerBackupHeaterBreakerA",
+      "family": "cabinet",
+      "point": [
+        -22.4,
+        50.73875000000001,
+        1.4
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -22.4,
+        50.73875000000001,
+        1.4
+      ],
+      "winding": 0.9999999999999997,
+      "triangles": 84,
+      "uses": [
+        {
+          "route": "connection/pressurizer-backup-heater-breaker-a-to-pressurizer",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/pressurizer.backupHeaterPower",
+      "elementId": "equipment/pressurizer",
+      "family": "pressurizer",
+      "point": [
+        -92.35,
+        1.25,
+        7.02
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -92.35,
+        1.25,
+        7.02
+      ],
+      "winding": -0.46874999999998923,
+      "triangles": 840,
+      "uses": [
+        {
+          "route": "connection/pressurizer-backup-heater-breaker-a-to-pressurizer",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/loadCentresA.power",
+      "elementId": "equipment/loadCentresA",
+      "family": "cabinet",
+      "point": [
+        -32.9,
+        68,
+        1.3
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -32.9,
+        68,
+        1.3
+      ],
+      "winding": 0.5000000000000066,
+      "triangles": 372,
+      "uses": [
+        {
+          "route": "connection/safety-bus-a-to-load-centres-a",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/componentCoolingWaterPumpA.power",
+      "elementId": "equipment/componentCoolingWaterPumpA",
+      "family": "pump",
+      "point": [
+        -106.65,
+        45.118750000000006,
+        1.6724999999999999
+      ],
+      "nearestBodyDistance": 2.220446049250313e-16,
+      "closestPoint": [
+        -106.65,
+        45.118750000000006,
+        1.6725
+      ],
+      "winding": 0.9999999999999984,
+      "triangles": 776,
+      "uses": [
+        {
+          "route": "connection/safety-bus-a-to-ccw-pump-a",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/serviceWaterPumpA.power",
+      "elementId": "equipment/serviceWaterPumpA",
+      "family": "pump",
+      "point": [
+        59.199999999999996,
+        -6.881250000000001,
+        1.6724999999999999
+      ],
+      "nearestBodyDistance": 2.220446049250313e-16,
+      "closestPoint": [
+        59.199999999999996,
+        -6.881250000000001,
+        1.6725
+      ],
+      "winding": 1.0000000000000007,
+      "triangles": 776,
+      "uses": [
+        {
+          "route": "connection/safety-bus-a-to-sw-pump-a",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/containmentFanCoolersA.power",
+      "elementId": "equipment/containmentFanCoolersA",
+      "family": "heat-exchanger",
+      "point": [
+        -111.72,
+        -24.5,
+        1.44
+      ],
+      "nearestBodyDistance": 2.220446049250313e-16,
+      "closestPoint": [
+        -111.72,
+        -24.5,
+        1.4399999999999997
+      ],
+      "winding": 0.5000000000000001,
+      "triangles": 408,
+      "uses": [
+        {
+          "route": "connection/safety-bus-a-to-fan-coolers-a",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/loadCentresB.power",
+      "elementId": "equipment/loadCentresB",
+      "family": "cabinet",
+      "point": [
+        -3.8999999999999986,
+        68,
+        1.3
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -3.8999999999999986,
+        68,
+        1.3
+      ],
+      "winding": 0.5000000000000062,
+      "triangles": 372,
+      "uses": [
+        {
+          "route": "connection/safety-bus-b-to-load-centres-b",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/componentCoolingWaterPumpB.power",
+      "elementId": "equipment/componentCoolingWaterPumpB",
+      "family": "pump",
+      "point": [
+        -59.65,
+        45.118750000000006,
+        1.6724999999999999
+      ],
+      "nearestBodyDistance": 2.220446049250313e-16,
+      "closestPoint": [
+        -59.65,
+        45.118750000000006,
+        1.6725
+      ],
+      "winding": 1.0000000000000004,
+      "triangles": 776,
+      "uses": [
+        {
+          "route": "connection/safety-bus-b-to-ccw-pump-b",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/serviceWaterPumpB.power",
+      "elementId": "equipment/serviceWaterPumpB",
+      "family": "pump",
+      "point": [
+        77.19999999999999,
+        -6.881250000000001,
+        1.6724999999999999
+      ],
+      "nearestBodyDistance": 2.220446049250313e-16,
+      "closestPoint": [
+        77.19999999999999,
+        -6.881250000000001,
+        1.6725
+      ],
+      "winding": 1.0000000000000018,
+      "triangles": 776,
+      "uses": [
+        {
+          "route": "connection/safety-bus-b-to-sw-pump-b",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/containmentFanCoolersB.power",
+      "elementId": "equipment/containmentFanCoolersB",
+      "family": "heat-exchanger",
+      "point": [
+        -69.72,
+        -24.5,
+        1.44
+      ],
+      "nearestBodyDistance": 2.220446049250313e-16,
+      "closestPoint": [
+        -69.72,
+        -24.5,
+        1.4399999999999997
+      ],
+      "winding": 0.5000000000000004,
+      "triangles": 408,
+      "uses": [
+        {
+          "route": "connection/safety-bus-b-to-fan-coolers-b",
+          "material": "crane",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/sgB.driveSteamOutlet",
+      "elementId": "equipment/sgB",
+      "family": "steam-generator",
+      "point": [
+        -82.4,
+        -1.1379999999999981,
+        12.84
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -82.4,
+        -1.1379999999999981,
+        12.84
+      ],
+      "winding": -0.23437499999999917,
+      "triangles": 976,
+      "uses": [
+        {
+          "route": "connection/sg-b-steam-to-turbine-afw-steam-valve-b",
+          "material": "steam",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/auxFeedwaterTurbineSteamValveB.inlet",
+      "elementId": "equipment/auxFeedwaterTurbineSteamValveB",
+      "family": "valve",
+      "point": [
+        -116.4,
+        46.7,
+        8.75
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -116.4,
+        46.7,
+        8.75
+      ],
+      "winding": 0.49999999999999983,
+      "triangles": 180,
+      "uses": [
+        {
+          "route": "connection/sg-b-steam-to-turbine-afw-steam-valve-b",
+          "material": "steam",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/auxFeedwaterTurbineSteamValveB.outlet",
+      "elementId": "equipment/auxFeedwaterTurbineSteamValveB",
+      "family": "valve",
+      "point": [
+        -114.6,
+        46.7,
+        8.75
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -114.6,
+        46.7,
+        8.75
+      ],
+      "winding": 0.5000000000000001,
+      "triangles": 180,
+      "uses": [
+        {
+          "route": "connection/turbine-afw-steam-valve-b-to-pump-turbine",
+          "material": "steam",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/auxFeedwaterPumpTurbine.driveSteamInlet",
+      "elementId": "equipment/auxFeedwaterPumpTurbine",
+      "family": "pump",
+      "point": [
+        -121.80000000000001,
+        46.56625,
+        10.23
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -121.80000000000001,
+        46.56625,
+        10.23
+      ],
+      "winding": 1.0000000000000009,
+      "triangles": 776,
+      "uses": [
+        {
+          "route": "connection/turbine-afw-steam-valve-b-to-pump-turbine",
+          "material": "steam",
+          "endpointError": 0
+        },
+        {
+          "route": "connection/turbine-afw-steam-valve-c-to-pump-turbine",
+          "material": "steam",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/sgC.driveSteamOutlet",
+      "elementId": "equipment/sgC",
+      "family": "steam-generator",
+      "point": [
+        -82.4,
+        -29.137999999999998,
+        12.84
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -82.4,
+        -29.137999999999998,
+        12.84
+      ],
+      "winding": -0.2343749999999991,
+      "triangles": 976,
+      "uses": [
+        {
+          "route": "connection/sg-c-steam-to-turbine-afw-steam-valve-c",
+          "material": "steam",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/auxFeedwaterTurbineSteamValveC.inlet",
+      "elementId": "equipment/auxFeedwaterTurbineSteamValveC",
+      "family": "valve",
+      "point": [
+        -109.4,
+        46.7,
+        8.75
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -109.4,
+        46.7,
+        8.75
+      ],
+      "winding": 0.4999999999999998,
+      "triangles": 180,
+      "uses": [
+        {
+          "route": "connection/sg-c-steam-to-turbine-afw-steam-valve-c",
+          "material": "steam",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/auxFeedwaterTurbineSteamValveC.outlet",
+      "elementId": "equipment/auxFeedwaterTurbineSteamValveC",
+      "family": "valve",
+      "point": [
+        -107.6,
+        46.7,
+        8.75
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -107.6,
+        46.7,
+        8.75
+      ],
+      "winding": 0.5000000000000001,
+      "triangles": 180,
+      "uses": [
+        {
+          "route": "connection/turbine-afw-steam-valve-c-to-pump-turbine",
+          "material": "steam",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/mainSteamSafetyValveA.inlet",
+      "elementId": "equipment/mainSteamSafetyValveA",
+      "family": "valve",
+      "point": [
+        -49.4,
+        -39.3,
+        15.84
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -49.4,
+        -39.3,
+        15.84
+      ],
+      "winding": 0.49999999999999994,
+      "triangles": 180,
+      "uses": [
+        {
+          "route": "connection/sg-a-steam-to-safety-valves-a",
+          "material": "steam",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/mainSteamSafetyValveB.inlet",
+      "elementId": "equipment/mainSteamSafetyValveB",
+      "family": "valve",
+      "point": [
+        -49.4,
+        -25.3,
+        15.84
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -49.4,
+        -25.3,
+        15.84
+      ],
+      "winding": 0.5000000000000003,
+      "triangles": 180,
+      "uses": [
+        {
+          "route": "connection/sg-b-steam-to-safety-valves-b",
+          "material": "steam",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/mainSteamSafetyValveC.inlet",
+      "elementId": "equipment/mainSteamSafetyValveC",
+      "family": "valve",
+      "point": [
+        -49.4,
+        -11.3,
+        15.84
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -49.4,
+        -11.3,
+        15.84
+      ],
+      "winding": 0.5000000000000003,
+      "triangles": 180,
+      "uses": [
+        {
+          "route": "connection/sg-c-steam-to-safety-valves-c",
+          "material": "steam",
+          "endpointError": 0
+        }
+      ]
+    },
+    {
+      "id": "port/mainSteamSafetyValveD.inlet",
+      "elementId": "equipment/mainSteamSafetyValveD",
+      "family": "valve",
+      "point": [
+        -49.4,
+        2.6999999999999993,
+        15.84
+      ],
+      "nearestBodyDistance": 0,
+      "closestPoint": [
+        -49.4,
+        2.6999999999999993,
+        15.84
+      ],
+      "winding": 0.5000000000000003,
+      "triangles": 180,
+      "uses": [
+        {
+          "route": "connection/sg-d-steam-to-safety-valves-d",
+          "material": "steam",
+          "endpointError": 0
+        }
+      ]
+    }
+  ],
+  "legacy": [
+    {
+      "id": "main-steam-route",
+      "ends": [
+        {
+          "world": [
+            5.7,
+            0.4,
+            23
+          ],
+          "nearest": [
+            {
+              "id": "msr-1",
+              "distance": 8.810628917197759,
+              "point": [
+                -33.85,
+                -19.914053212777816,
+                18.333664065946483
+              ]
+            },
+            {
+              "id": "equipment/mainSteamSafetyValveB",
+              "distance": 10.857008796164813,
+              "point": [
+                -48.164,
+                -25.3,
+                17.688
+              ]
+            },
+            {
+              "id": "equipment/steamGeneratorReliefValveB",
+              "distance": 16.353673593416257,
+              "point": [
+                -54.164,
+                -25.3,
+                17.688
+              ]
+            }
+          ]
+        },
+        {
+          "world": [
+            11.15,
+            18.4,
+            20
+          ],
+          "nearest": [
+            {
+              "id": "tg-hp",
+              "distance": 1.1116204388189337,
+              "point": [
+                -33.31,
+                -7.600000000000001,
+                18.89
+              ]
+            },
+            {
+              "id": "stop-valve",
+              "distance": 5.783060905058374,
+              "point": [
+                -38.30055626315603,
+                -9.420212862362522,
+                17.85
+              ]
+            },
+            {
+              "id": "tg-lp-1",
+              "distance": 9.043920610000955,
+              "point": [
+                -24.299999999999997,
+                -7.600000000000001,
+                18.7
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "feedwater-route",
+      "ends": [
+        {
+          "world": [
+            21.075,
+            43.1,
+            1.65
+          ],
+          "nearest": [
+            {
+              "id": "mfw-a",
+              "distance": 0,
+              "point": [
+                -23.325,
+                17.1,
+                1.65
+              ]
+            },
+            {
+              "id": "mfw-b",
+              "distance": 5.329999999999998,
+              "point": [
+                -23.325,
+                22.43,
+                1.6499999999999997
+              ]
+            },
+            {
+              "id": "condenser-1",
+              "distance": 16.950000000000003,
+              "point": [
+                -23.325,
+                0.14999999999999858,
+                1.6499999999999997
+              ]
+            }
+          ]
+        },
+        {
+          "world": [
+            42.5,
+            37.7,
+            1.65
+          ],
+          "nearest": [
+            {
+              "id": "equipment/feedwaterTank",
+              "distance": 7.694026111983093,
+              "point": [
+                3.356079963112426,
+                17.318866543462818,
+                1.6500000000000057
+              ]
+            },
+            {
+              "id": "condenser-3",
+              "distance": 11.550000000000004,
+              "point": [
+                -1.899999999999999,
+                0.14999999999999858,
+                1.65
+              ]
+            },
+            {
+              "id": "condenser-2",
+              "distance": 11.908505363814557,
+              "point": [
+                -4.799999999999997,
+                0.14999999999999858,
+                1.65
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

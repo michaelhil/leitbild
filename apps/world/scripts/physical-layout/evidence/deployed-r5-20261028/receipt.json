@@ -1,0 +1,325 @@
+{
+  "schema": "leitbild-native-r5-production-verification",
+  "recordedAt": "2026-10-28T00:48:04.581Z",
+  "release": {
+    "schemaVersion": 1,
+    "app": "leitbild-platform",
+    "releaseId": "20261028T003411Z-a717593d40-9df8bc304f",
+    "createdAt": "2026-10-28T00:34:11.389Z",
+    "baseCommit": "a717593d40e4c9ffb521b6349dc4c8f32d7ffaf1",
+    "codeRepository": "https://github.com/michaelhil/leitbild",
+    "knowledgeRevision": "7b081cf72feb15ec19898e6a44dbf3dc7dda1e8a",
+    "branch": "main",
+    "dirty": false,
+    "worktreeStatus": [],
+    "sourceDigest": "9df8bc304f2a323c85be876517b21d5c28327008e8b5816644935398b58a5b48",
+    "dependencyPackagesDigest": "4c4a8c463bdc4dd505eaebd8c042486240360ab373c7bd1a369eff497cd2d0d9",
+    "fileCount": 3285,
+    "persistentRootsExcluded": [
+      "/var/lib/leitbild"
+    ]
+  },
+  "health": {
+    "checkedAt": "2026-10-28T00:45:57.021Z",
+    "output": "leitbild-host=active\nleitbild-world=active\nleitbild-agents=active\ncaddy=active\nhost_local=ok world_local=ok agents_local=ok osrm=running\nleitbild_public=ok"
+  },
+  "sandbox": {
+    "url": "https://leitbild.app/workspaces/36917815-9034-4dfc-98c2-f884237a9b7b?world=run-df150834-7879-49c2-9af6-024ab2f17a92",
+    "definition": {
+      "workspaceId": "36917815-9034-4dfc-98c2-f884237a9b7b",
+      "moduleId": "world",
+      "type": "world.scenario",
+      "id": "halden-normal-operation",
+      "revisionId": "revision-527c415da38ac48b1fe63e920c77ce74"
+    },
+    "resource": {
+      "workspaceId": "36917815-9034-4dfc-98c2-f884237a9b7b",
+      "moduleId": "world",
+      "type": "world.simulation-run",
+      "id": "run-df150834-7879-49c2-9af6-024ab2f17a92"
+    },
+    "verifiedAt": "2026-10-28T00:34:59.085Z",
+    "playback": "paused",
+    "layouts": [
+      {
+        "id": "layout:halden-1",
+        "label": "Halden Unit 1 full plant",
+        "design": {
+          "id": "pwr-full-unit",
+          "revision": "pwr-full-unit-20261027-r5",
+          "digest": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9"
+        },
+        "sourceDigest": "ffe382bbba05b0c1d25ed4cd7923fffcfcffb0507a6dcd46a09e538e777ff165",
+        "bindingDigest": "6f9935ea40d840c805fe2e2f0b2577d047d048aeb561724356819e43a72d7250",
+        "owner": {
+          "objectId": "plant:halden-1",
+          "packId": "process-plant",
+          "modelRef": "process-plant.pwr.reference",
+          "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea"
+        },
+        "coverage": {
+          "represented": 260,
+          "unplaced": 28,
+          "total": 288
+        }
+      },
+      {
+        "id": "layout:halden-2",
+        "label": "Halden Unit 2 full plant",
+        "design": {
+          "id": "pwr-full-unit",
+          "revision": "pwr-full-unit-20261027-r5",
+          "digest": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9"
+        },
+        "sourceDigest": "ffe382bbba05b0c1d25ed4cd7923fffcfcffb0507a6dcd46a09e538e777ff165",
+        "bindingDigest": "6f9935ea40d840c805fe2e2f0b2577d047d048aeb561724356819e43a72d7250",
+        "owner": {
+          "objectId": "plant:halden-2",
+          "packId": "process-plant",
+          "modelRef": "process-plant.pwr.reference",
+          "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea"
+        },
+        "coverage": {
+          "represented": 260,
+          "unplaced": 28,
+          "total": 288
+        }
+      },
+      {
+        "id": "layout:halden-3",
+        "label": "Halden Unit 3 full plant",
+        "design": {
+          "id": "pwr-full-unit",
+          "revision": "pwr-full-unit-20261027-r5",
+          "digest": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9"
+        },
+        "sourceDigest": "ffe382bbba05b0c1d25ed4cd7923fffcfcffb0507a6dcd46a09e538e777ff165",
+        "bindingDigest": "6f9935ea40d840c805fe2e2f0b2577d047d048aeb561724356819e43a72d7250",
+        "owner": {
+          "objectId": "plant:halden-3",
+          "packId": "process-plant",
+          "modelRef": "process-plant.pwr.reference",
+          "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea"
+        },
+        "coverage": {
+          "represented": 260,
+          "unplaced": 28,
+          "total": 288
+        }
+      },
+      {
+        "id": "layout:halden-4",
+        "label": "Halden Unit 4 full plant",
+        "design": {
+          "id": "pwr-full-unit",
+          "revision": "pwr-full-unit-20261027-r5",
+          "digest": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9"
+        },
+        "sourceDigest": "ffe382bbba05b0c1d25ed4cd7923fffcfcffb0507a6dcd46a09e538e777ff165",
+        "bindingDigest": "6f9935ea40d840c805fe2e2f0b2577d047d048aeb561724356819e43a72d7250",
+        "owner": {
+          "objectId": "plant:halden-4",
+          "packId": "process-plant",
+          "modelRef": "process-plant.pwr.reference",
+          "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea"
+        },
+        "coverage": {
+          "represented": 260,
+          "unplaced": 28,
+          "total": 288
+        }
+      },
+      {
+        "id": "layout:halden-campus",
+        "label": "Halden shared campus and switchyard",
+        "design": {
+          "id": "pwr-campus",
+          "revision": "pwr-campus-20261027-r5",
+          "digest": "91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933"
+        },
+        "sourceDigest": "0c12a17bf7211c2fdfc26bd05139c7eb6088122c182316f89559421d3341807a",
+        "bindingDigest": "c5033d344a00722a4cbb6b44d858b13ef64f0a5511a39fdbb49ecb80a812364b",
+        "owner": {
+          "objectId": "grid:halden-four-unit",
+          "packId": "electric-grid",
+          "modelRef": "electric-grid.halden.four-unit",
+          "modelDigest": "3551eb6c70f93b5aa9bc98f1d64a3ce51d5187ce158bc54df4e394cddbaf5173"
+        },
+        "coverage": {
+          "represented": 11,
+          "unplaced": 6394,
+          "total": 6405
+        }
+      }
+    ]
+  },
+  "validation": {
+    "unifiedDeploymentExitCode": 0,
+    "world": {
+      "passed": 4823,
+      "skipped": 107,
+      "failed": 0,
+      "assertions": 2279317
+    },
+    "agents": {
+      "passed": 1788,
+      "skipped": 9,
+      "failed": 0
+    },
+    "combinedRegressions": {
+      "passed": 80,
+      "failed": 0,
+      "assertions": 1158
+    },
+    "deploymentLogSha256": "dbdee0d1f5cec0ac3262cf8eb473d4a5bba41ce2e427d3f619603a1976f5b9d3"
+  },
+  "productionUi": {
+    "newTimingBenchmark": false,
+    "viewportOverrideUsed": false,
+    "startup": "Alarm strip, layout controls and grid operations hidden; header retains 2 unacknowledged Grid alarms. Normal-operation Scenario has no briefing.",
+    "controls": "Utility routes default on; off/on verified. Cutaway, layers and floors retained. No wall/floor opacity controls.",
+    "component": "Actual 3D casing click opened Turbine Generator with fresh owner-qualified readings and declared external connections.",
+    "pipe": {
+      "subject": "main-steam-header-to-turbine-stop-valve",
+      "from": "Main Steam Header · outletA",
+      "to": "Turbine Stop Valve · inlet",
+      "medium": "Main steam",
+      "reading": "From → To · 1902 kg/s"
+    },
+    "process": "Actual RCP A activation opened a faceplate; explicit Open detail navigated to Reactor Coolant Pump A detail.",
+    "navigation": "Tilt control and actual Orbit drag changed camera; saved readout Tilt 49° / heading 62°. Actual zoom and Pan over switchyard captured.",
+    "fullSite": "5 layouts ready · 0 loading · 0 unavailable; both model families selected Stack · all floors.",
+    "finalView": "Paused, native 3D, turbine-hall/annex operating deck +15 m, fresh owner readings.",
+    "visualReview": "Independent review found no material operating Plan/3D quality regression in the captures. Smaller framing/JPEG is not lost source detail; static images are not motion or GPU timing proof."
+  },
+  "retainedPerformanceEvidence": {
+    "testedAppCommit": "954af6cf2fcf5df924a6935780fde293b4049386",
+    "unchangedNativePaths": [
+      "apps/world/src/ui/map",
+      "apps/world/src/ui/physical-layout",
+      "apps/world/src/features/displays/layout"
+    ],
+    "measuredMotionWindows": 32,
+    "localRafP95Ms": "16.7–16.8",
+    "warmWholeSite3dFenceMs": [
+      75.3,
+      82.4
+    ],
+    "coldHostNavigationFenceMs": 5538.5,
+    "coldFullSiteActionFenceMs": 3778.6,
+    "publicTransparency": "withheld after failed full-site qualification; no hidden opacity clamp or content cap",
+    "limits": "One local device; no new production timing, WAN or universal 60fps claim."
+  },
+  "artifacts": [
+    {
+      "path": "startup.jpg",
+      "bytes": 143672,
+      "sha256": "dad7e010a15d52df2ef224a6545e64012e64e9c9618ef3f9cfaf0c9dc0eaed34",
+      "originalSha256": "dad7e010a15d52df2ef224a6545e64012e64e9c9618ef3f9cfaf0c9dc0eaed34"
+    },
+    {
+      "path": "native-plan-operating.jpg",
+      "bytes": 117669,
+      "sha256": "958b32bfc79946512cf226a3dcb2730787637c649afd46f2cccf245a13959716",
+      "originalSha256": "958b32bfc79946512cf226a3dcb2730787637c649afd46f2cccf245a13959716"
+    },
+    {
+      "path": "native-3d-final.jpg",
+      "bytes": 97485,
+      "sha256": "20d352d88032a12db3bdd4cb8838f1aed15ce47b27087ad4727c5c2a1623856f",
+      "originalSha256": "20d352d88032a12db3bdd4cb8838f1aed15ce47b27087ad4727c5c2a1623856f"
+    },
+    {
+      "path": "turbine-faceplate.jpg",
+      "bytes": 120420,
+      "sha256": "3ae3f7d3f8aab3af2674ec8c406b35c4180d3433622c83d4162ba5bda918f113",
+      "originalSha256": "3ae3f7d3f8aab3af2674ec8c406b35c4180d3433622c83d4162ba5bda918f113"
+    },
+    {
+      "path": "pipe-faceplate.jpg",
+      "bytes": 120474,
+      "sha256": "5edefd57f2217f9907a2cd9496fcb78b2e55af62468898b583b02dacef41c62c",
+      "originalSha256": "5edefd57f2217f9907a2cd9496fcb78b2e55af62468898b583b02dacef41c62c"
+    },
+    {
+      "path": "process-faceplate.jpg",
+      "bytes": 85878,
+      "sha256": "28c0fa23eeef8cd61a8813a64d636e6e3c310164e2e2576feedf00d05fd862ed",
+      "originalSha256": "28c0fa23eeef8cd61a8813a64d636e6e3c310164e2e2576feedf00d05fd862ed"
+    },
+    {
+      "path": "whole-site-3d.jpg",
+      "bytes": 120243,
+      "sha256": "a0d15223a07604eace888d2705a94ddc2cf9eede9ea42f7977b0752c23fd2af4",
+      "originalSha256": "a0d15223a07604eace888d2705a94ddc2cf9eede9ea42f7977b0752c23fd2af4"
+    },
+    {
+      "path": "switchyard-zoom.jpg",
+      "bytes": 127644,
+      "sha256": "b0b4af59e0f3c2db2a037c458aad1395c39ad520ca127c2430ab512bc4afdeb7",
+      "originalSha256": "b0b4af59e0f3c2db2a037c458aad1395c39ad520ca127c2430ab512bc4afdeb7"
+    },
+    {
+      "path": "switchyard-pan.jpg",
+      "bytes": 112710,
+      "sha256": "d76f0376c909d2ca4f92659f9125bf77b99a7d33807abed423047e9ae0b3ba6d",
+      "originalSha256": "d76f0376c909d2ca4f92659f9125bf77b99a7d33807abed423047e9ae0b3ba6d"
+    },
+    {
+      "path": "view-controls.txt",
+      "bytes": 9893,
+      "sha256": "283ad18088be0173fe5349dcc1b92557ecb160ddfbf1e21534f681e4b9fa92e2",
+      "originalSha256": "723a3f8429f5fabb67697fc378b525b2fbe62d7a091f03695873c5dc6233842f",
+      "normalization": "trailing horizontal whitespace removed; original retained in research proof"
+    },
+    {
+      "path": "turbine-faceplate.txt",
+      "bytes": 11874,
+      "sha256": "a84e97328a8394af78bf6cf7055d1095380ff9258f9f6ac8934e115a6f1941db",
+      "originalSha256": "51385dabb0d1339e533f0361ad3e8fbc43dacd566a03178d4012afe92f892bc9",
+      "normalization": "trailing horizontal whitespace removed; original retained in research proof"
+    },
+    {
+      "path": "pipe-faceplate.txt",
+      "bytes": 12925,
+      "sha256": "fb731a4cc303a1fd344ad118ba2f20fcf91af5fc93879d508f901d7dcf30d113",
+      "originalSha256": "c1bb754b2d4f5a7462ee1eabbd53743913bfae4be512ae6e1b8f4246ca7b0ffd",
+      "normalization": "trailing horizontal whitespace removed; original retained in research proof"
+    },
+    {
+      "path": "process-faceplate.txt",
+      "bytes": 31091,
+      "sha256": "ca4153dca4b06533efb0e2d2125e4138c41ebae2681e67fa346d9fb4e9a7500b",
+      "originalSha256": "84dda89b207f419dea505e423e3ac63435610fe1a8b9da5f01a16cdf4b31985c",
+      "normalization": "trailing horizontal whitespace removed; original retained in research proof"
+    },
+    {
+      "path": "orbit-navigation.txt",
+      "bytes": 10061,
+      "sha256": "9e6b7c917ac19586c0a3469b99a5357b3af2183feb646a72d3296b22246f6b73",
+      "originalSha256": "23b70d3a779a527aee44f99e93e2693fe1009ffd1a58a43bff1826fedf254b4d",
+      "normalization": "trailing horizontal whitespace removed; original retained in research proof"
+    },
+    {
+      "path": "whole-site-ready.txt",
+      "bytes": 9118,
+      "sha256": "31d2282d6fa013d79f8d7c737994dd8813afcd28b7edc9579721d4ea359974db",
+      "originalSha256": "b2d51f1f7465f99b6e3a9bef93e94006c5f1b7875da65e6c29ce7a8a3aa07de9",
+      "normalization": "trailing horizontal whitespace removed; original retained in research proof"
+    },
+    {
+      "path": "switchyard-pan.txt",
+      "bytes": 8378,
+      "sha256": "17006b388b4f29df7568186ba65a3ccdd841e5e088d81e9137e1d0d10b139956",
+      "originalSha256": "ba0cb24c9a7a17328ac7c7f27c938b9297a03107d6730b707829c87437aee7e3",
+      "normalization": "trailing horizontal whitespace removed; original retained in research proof"
+    },
+    {
+      "path": "production-health.txt",
+      "bytes": 156,
+      "sha256": "3e815bb77856a56c354be405209f64c732043d4158d61bd891e00f89c52a54ab",
+      "originalSha256": "3e815bb77856a56c354be405209f64c732043d4158d61bd891e00f89c52a54ab",
+      "normalization": "trailing horizontal whitespace removed; original retained in research proof"
+    }
+  ]
+}

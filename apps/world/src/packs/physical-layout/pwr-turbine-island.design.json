@@ -1,0 +1,30 @@
+{
+  "design": {
+    "id": "pwr-turbine-island",
+    "revision": "pwr-turbine-island-20261024-r2",
+    "digest": "3ddc5ce7e37e81404c85d246b2b19bfe4cc61b847fde9f5bb8f99dca0bf9f124"
+  },
+  "sourceDigest": "59a75e1c6158c795b4fbce48b992a8d5e1333de684332e3d6b597548216e0ac7",
+  "bindingDigest": "067b470003171ab9bbd9fb4d9fd069905baa155a70d8466ebe544116db3ffc76",
+  "modelRequirement": {
+    "modelRef": "process-plant.pwr.reference",
+    "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea"
+  },
+  "bounds": {
+    "min": [
+      -44.8,
+      -26,
+      -0.4
+    ],
+    "max": [
+      44.4,
+      27.6,
+      31.2
+    ]
+  },
+  "profile": "turbine-island",
+  "compiler": {
+    "id": "physical-layout-native",
+    "digest": "89eaa4dc19d7550a08e99e1d903fba58a962a639853b7764633f3bfeb7272bf2"
+  }
+}

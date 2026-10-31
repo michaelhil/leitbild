@@ -1,0 +1,34 @@
+import type { OperationalObject } from '../../core/model/index.ts'
+import type { PackPhysicalTargetDescription } from '../../core/packs/protocol.ts'
+import { processPlantPackId, processPlantUnitPackDataSchema } from './model.ts'
+import { compileProcessPlant } from './plant-compiler.ts'
+import { createHash } from 'node:crypto'
+
+const descriptions = new Map<string, Omit<PackPhysicalTargetDescription, 'objectId'>>()
+
+/** Model description only. No simulator construction, observation or state advancement. */
+export const describeProcessPlantPhysicalTargets = (object: OperationalObject): PackPhysicalTargetDescription => {
+  if (object.packId !== processPlantPackId) throw new Error(`Not a Process Plant owner: ${object.id}`)
+  const data = processPlantUnitPackDataSchema.parse(object.packData)
+  // Exact immutable selections, including inline graphs/parameters where used.
+  // Runtime projection changes do not rebuild a model description each second.
+  const key = createHash('sha256').update(JSON.stringify([data.model, data.operatingPoint, data.automation])).digest('hex')
+  const cached = descriptions.get(key)
+  if (cached) return { objectId: object.id, ...cached }
+  const plant = compileProcessPlant({ id: object.id, model: data.model, operatingPoint: data.operatingPoint, automation: data.automation })
+  const description = Object.freeze({
+    modelRef: plant.modelRef,
+    modelDigest: plant.modelDigest,
+    subjects: Object.freeze(plant.sourceGraph.components.map(component => Object.freeze({ id: component.id, label: component.label ?? component.id }))),
+    connections: Object.freeze(plant.graph.links.map(link => {
+      const from = plant.graph.components[link.fromComponentIndex]!, to = plant.graph.components[link.toComponentIndex]!
+      return Object.freeze({ id: String(link.id), label: `${from.label} to ${to.label}`, kind: link.kind,
+        from: Object.freeze({ subjectId: String(from.id), port: String(link.fromPortName) }),
+        to: Object.freeze({ subjectId: String(to.id), port: String(link.toPortName) }),
+      })
+    })),
+  })
+  if (descriptions.size >= 64) descriptions.delete(descriptions.keys().next().value!)
+  descriptions.set(key, description)
+  return { objectId: object.id, ...description }
+}

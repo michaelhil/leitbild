@@ -10,26 +10,15 @@ import {
 } from '../behavior-contract.ts'
 import { approach, clamp, optionalParameterNumber, parameterNumber, relaxToward, type ComponentNumericReadContext } from '../component-helpers.ts'
 import { primaryCircuitHydraulics, primaryLoopPumpHeadPa, primaryLoopSignedFlowKgPerS, solvePrimaryLoopFlows, type PrimaryCircuitHydraulics } from '../primary-loop-hydraulics.ts'
-import { primarySystemPressurizer } from '../system-topology.ts'
+import { reactorCoolantDeliveryFraction } from '../pump-delivery.ts'
 import { incomingComponentLinks, outgoingComponentLinks } from '../component-link-helpers.ts'
 import { downstreamServiceDemandFraction } from '../links/link-flow-helpers.ts'
 import { serviceUsesDownstreamDemand } from '../service-profiles.ts'
 import { componentHasElectricalPower, type ElectricalReadContext } from './electrical-behaviors.ts'
 import { headerPressureBalance, pressureBalancedHeaderFedBy } from './junction/header-pressure-balance.ts'
+import { directedPumpDeliveredFlow, downstreamPumpSuctionDemandOpen } from '../directed-fluid-delivery.ts'
 
 type PumpBehaviorInput = Parameters<ComponentBehaviorDefinition['update']>[0]
-
-// A pump that injects into the reactor coolant system pumps against its
-// pressure, read at the pressurizer: Q = Qrunout * n * sqrt(1 - P / (P0 * n^2)),
-// with the shutoff pressure P0 scaled by the square of the speed n.
-const reactorCoolantDeliveryFraction = ({ system, component, context }: PumpBehaviorInput, speed: number): number => {
-  const shutoffPressure = (component.parameters as Readonly<Record<string, unknown>>).reactorCoolantShutoffPressureMPa
-  if (typeof shutoffPressure !== 'number') return 1
-  const pressurizer = primarySystemPressurizer(system)
-  if (pressurizer === null) throw new Error(`pump ${component.id} injects into the reactor coolant system, which has no pressurizer to read its pressure from`)
-  const pressure = context.readNumber(componentVariablePath(pressurizer, 'pressureMPa'))
-  return Math.sqrt(clamp(1 - pressure / Math.max(1e-6, shutoffPressure * speed * speed), 0, 1))
-}
 
 const maxSpeedFraction = 1.2
 
@@ -44,9 +33,15 @@ const driveSteamAdmitted = (system: CompiledProcessPlant, component: CompiledCom
   return supplies.reduce((total, link) => total + context.readNumber(processLinkVariablePath(link, 'flowKgPerS')), 0) >= minimum
 }
 
-/** A pump runs while it is commanded to, its motor has power, and its drive turbine, if it has one, has steam. */
+// A pump the instructor has failed to start (startFailureActive, a fault the
+// scenario injects) does not start on its command: stopped, it stays stopped
+// with its command standing; one already running runs on.
+const failsToStart = (component: CompiledComponent, context: Pick<ProcessPlantBehaviorContext, 'readBoolean'>): boolean =>
+  context.readBoolean(componentVariablePath(component, 'startFailureActive')) && !context.readBoolean(componentVariablePath(component, 'runningState'))
+
+/** A pump runs while it is commanded to, its motor has power, its drive turbine, if it has one, has steam, and it has not failed to start. */
 const pumpCanRun = (system: CompiledProcessPlant, component: CompiledComponent, context: ElectricalReadContext): boolean =>
-  componentHasElectricalPower(system, component, context) && driveSteamAdmitted(system, component, context)
+  componentHasElectricalPower(system, component, context) && driveSteamAdmitted(system, component, context) && !failsToStart(component, context)
 
 // A pump on a service whose flow the valves downstream of it set (main
 // feedwater through the feed regulating valves) delivers no more than they
@@ -55,6 +50,7 @@ const pumpCanRun = (system: CompiledProcessPlant, component: CompiledComponent, 
 // reactor trip leaves them, it runs on, dead-headed on its minimum-flow line,
 // and delivers nothing. 1 for any other pump.
 const dischargeOpenFraction = ({ system, component, context }: Pick<PumpBehaviorInput, 'system' | 'component' | 'context'>): number => {
+  if (downstreamPumpSuctionDemandOpen(system, component, context)) return 1
   const discharge = outgoingComponentLinks(system, component, link => link.kind === 'fluidFlow' && serviceUsesDownstreamDemand(link.service))
   return discharge.length === 0 ? 1 : Math.max(...discharge.map(link => downstreamServiceDemandFraction(system, link, context)))
 }
@@ -121,12 +117,26 @@ const primaryLoopOf = (system: CompiledProcessPlant, component: CompiledComponen
 const primaryLoopFlowTarget = (system: CompiledProcessPlant, loop: { readonly circuit: PrimaryCircuitHydraulics; readonly index: number }, context: ComponentNumericReadContext): number =>
   solvePrimaryLoopFlows(system, loop.circuit, loop.circuit.loops.map(other => rotorSpeedFraction(other.pump, context)), context)[loop.index]!
 
+const reconcileDirectedPumpDelivery = ({ system, component, context }: PumpBehaviorInput): void => {
+  const delivered = directedPumpDeliveredFlow(system, component, context)
+  if (delivered === null) return
+  context.write(componentVariablePath(component, 'flowKgPerS'), delivered)
+  const running = context.readBoolean(componentVariablePath(component, 'runningState'))
+  const speed = context.readNumber(componentVariablePath(component, 'speedFraction'))
+  const head = parameterNumber(component, 'nominalHeadPa') * speed * speed
+  context.write(componentVariablePath(component, 'demandMw'), running ? delivered * head / optionalParameterNumber(component, 'fluidDensityKgPerM3', 800) / optionalParameterNumber(component, 'hydraulicEfficiencyFraction', 0.82) / 1_000_000 : 0)
+}
+
 export const pumpBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefinition> = [
+  {
+    id: 'centrifugal-pump-delivered-flow', phase: 'solveThermalTransfer', componentKind: 'centrifugalPump',
+    reads: ['runningState', 'speedFraction', 'allocated outgoing:flowKgPerS'], writes: ['flowKgPerS', 'demandMw'], update: reconcileDirectedPumpDelivery,
+  },
   {
     id: 'centrifugal-pump-flow',
     phase: 'solveFluidFlowComponents',
     componentKind: 'centrifugalPump',
-    reads: ['running', 'speedFraction', 'speedRpm', 'flow demand?', 'incoming electrical energized?', 'incoming drive steam flowKgPerS?', 'pressurizer.pressureMPa?', 'pressure-balanced header branches?', 'downstream demand valves?'],
+    reads: ['running', 'runningState', 'startFailureActive', 'speedFraction', 'speedRpm', 'flow demand?', 'incoming electrical energized?', 'incoming drive steam flowKgPerS?', 'pressurizer.pressureMPa?', 'pressure-balanced header branches?', 'downstream demand valves?'],
     writes: ['runningState', 'flowKgPerS', 'speedRpm', 'demandMw', 'speedFraction'],
     update: (input): void => {
       const { system, component, context } = input
@@ -136,7 +146,7 @@ export const pumpBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefinition>
       context.write(componentVariablePath(component, 'runningState'), running)
       context.write(componentVariablePath(component, 'speedRpm'), pumpRotorSpeedRpm(component, context, running, speed))
       const balancedFlow = balancedHeaderFlow(input, running)
-      const targetFlow = running ? balancedFlow ?? parameterNumber(component, 'nominalFlowKgPerS') * speed * reactorCoolantDeliveryFraction(input, speed) * dischargeOpenFraction(input) : 0
+      const targetFlow = running ? balancedFlow ?? parameterNumber(component, 'nominalFlowKgPerS') * speed * reactorCoolantDeliveryFraction(system, component, context, speed) * dischargeOpenFraction(input) : 0
       const currentFlow = context.readNumber(componentVariablePath(component, 'flowKgPerS'))
       const timeConstant = optionalParameterNumber(component, 'flowTimeConstantS', 0)
       const maxRamp = optionalParameterNumber(component, 'maxFlowRampKgPerS2', Number.POSITIVE_INFINITY)
@@ -155,7 +165,7 @@ export const pumpBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefinition>
     id: 'centrifugal-pump-primary-loop-flow',
     phase: 'solveFluidFlowComponents',
     componentKind: 'centrifugalPump',
-    reads: ['running', 'speedFraction', 'speedRpm', 'loopFlowKgPerS', 'loopReverseFlowKgPerS', 'incoming electrical energized?', 'every primary loop pump speedRpm', 'every primary loop leg temperatureC', 'pressurizer.pressureMPa?'],
+    reads: ['running', 'runningState', 'startFailureActive', 'speedFraction', 'speedRpm', 'loopFlowKgPerS', 'loopReverseFlowKgPerS', 'incoming electrical energized?', 'every primary loop pump speedRpm', 'every primary loop leg temperatureC', 'pressurizer.pressureMPa?'],
     writes: ['developedHeadPa', 'loopFlowTargetKgPerS', 'loopFlowKgPerS', 'loopReverseFlowKgPerS'],
     update: ({ system, component, context }): void => {
       const loop = primaryLoopOf(system, component)
@@ -180,9 +190,13 @@ export const pumpBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefinition>
 
 export const pumpInitialReconciliationDefinitions: ReadonlyArray<ComponentInitialReconciliationDefinition> = [
   {
+    id: 'centrifugal-pump-initial-delivered-flow', componentKind: 'centrifugalPump', afterLinks: true,
+    reads: ['runningState', 'speedFraction', 'allocated outgoing:flowKgPerS'], writes: ['flowKgPerS', 'demandMw'], reconcile: reconcileDirectedPumpDelivery,
+  },
+  {
     id: 'centrifugal-pump-initial-state',
     componentKind: 'centrifugalPump',
-    reads: ['running', 'speedFraction', 'flow demand?', 'every primary loop pump speedRpm', 'every primary loop leg temperatureC', 'pressurizer.pressureMPa?'],
+    reads: ['running', 'runningState', 'startFailureActive', 'speedFraction', 'flow demand?', 'every primary loop pump speedRpm', 'every primary loop leg temperatureC', 'pressurizer.pressureMPa?'],
     writes: ['runningState', 'speedFraction', 'flowKgPerS', 'speedRpm', 'developedHeadPa', 'demandMw', 'loopFlowTargetKgPerS', 'loopFlowKgPerS', 'loopReverseFlowKgPerS'],
     reconcile: ({ system, component, context }): void => {
       const running = context.readBoolean(componentVariablePath(component, 'running')) && pumpCanRun(system, component, context)
@@ -192,7 +206,7 @@ export const pumpInitialReconciliationDefinitions: ReadonlyArray<ComponentInitia
       const nominalHead = parameterNumber(component, 'nominalHeadPa')
       const developedHead = running ? nominalHead * speed * speed : 0
       // As it then runs: no more than the valves downstream of it pass (dischargeOpenFraction).
-      const componentFlow = running ? balancedHeaderFlow({ system, component, context }, running) ?? nominalFlow * speed * dischargeOpenFraction({ system, component, context }) : 0
+      const componentFlow = running ? balancedHeaderFlow({ system, component, context }, running) ?? nominalFlow * speed * reactorCoolantDeliveryFraction(system, component, context, speed) * dischargeOpenFraction({ system, component, context }) : 0
       context.write(componentVariablePath(component, 'flowKgPerS'), componentFlow)
       context.write(componentVariablePath(component, 'speedRpm'), running ? speed * nominalSpeedRpm(component) : 0)
       context.write(componentVariablePath(component, 'demandMw'), running

@@ -1,0 +1,6 @@
+leitbild-host=active
+leitbild-world=active
+leitbild-agents=active
+caddy=active
+host_local=ok world_local=ok agents_local=ok osrm=running
+leitbild_public=ok

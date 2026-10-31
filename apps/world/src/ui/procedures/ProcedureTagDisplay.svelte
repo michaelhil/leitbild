@@ -1,24 +1,26 @@
 <script lang="ts">
   import { untrack } from 'svelte'
-  import type { EmbeddedViewEnvelope } from '@leitbild/contracts'
+  import type { EmbeddedViewEnvelope, EmbeddedViewListing } from '@leitbild/contracts'
   import type { ProcedureTag, SimulationRunId } from '../../core/model/index.ts'
-  import type { PackProcedureContribution, PackProcedureTagDisplay } from '../../core/packs/protocol.ts'
-  import { querySimulationRunCapability } from '../simulation-run-client.ts'
+  import type { PackProcedureContribution } from '../../core/packs/protocol.ts'
   import { runOnMount } from '../svelte-lifecycle.svelte.ts'
   import { activeWorkspaceId } from '../workspace-context.ts'
   import { readProcedureTagValue, type ProcedureTagValidation, type ProcedureTagValue } from './procedure-client.ts'
   import {
     procedureTagBindingLine,
     procedureTagDeclared,
-    procedureTagDisplayEnvelope,
     procedureTagDisplayPlan,
     procedureTagDisplaySource,
     procedureTagReadingText,
   } from './procedure-tag-display.ts'
+  import { defaultDisplayEnvelope, readDefaultDisplay } from '../process-display/default-display.ts'
+  import { createEmbeddedFrameHost } from '../process-display/embedded-frame-host.ts'
 
-  // A clicked procedure tag: the live process display World draws around the
-  // equipment it is measured on, framed read-only over the procedure, with the
-  // tag's reading above it. Where no display can be drawn, the dialog says why.
+  // A clicked procedure tag: World's live default display of the equipment the
+  // tag is measured on, framed read-only over the procedure, with the tag's
+  // reading above it. Where no display can be drawn, the dialog says why.
+  // "Open in display window" shows it there, the window in front, and closes
+  // the dialog.
 
   interface Props {
     readonly simulationRunId: SimulationRunId
@@ -31,16 +33,18 @@
     readonly provider: PackProcedureContribution
     readonly close: () => void
     /** Opens the shown display in the Workspace's display window, where one is offered. */
-    readonly openInDisplayWindow?: (envelope: EmbeddedViewEnvelope) => void
+    readonly openInDisplayWindow?: ((envelope: EmbeddedViewEnvelope) => void) | undefined
+    /** Opens a view the display asks for (its pop-over's "Open detail") in the display window, as given. */
+    readonly openView?: ((view: EmbeddedViewListing) => void) | undefined
   }
 
-  let { simulationRunId, plantId, unitLabel, tag, validation, provider, close, openInDisplayWindow }: Props = $props()
+  let { simulationRunId, plantId, unitLabel, tag, validation, provider, close, openInDisplayWindow, openView }: Props = $props()
 
   // How often the header reads the tag while the dialog is open.
   const READ_EVERY_MS = 2_000
 
   const titleId = $props.id()
-  const plan = $derived(procedureTagDisplayPlan(plantId, validation, provider))
+  const plan = $derived(procedureTagDisplayPlan(plantId, tag.id, validation))
   const declared = $derived(procedureTagDeclared(tag))
 
   let reading = $state<ProcedureTagValue | null>(null)
@@ -56,16 +60,22 @@
 
   let dialog = $state<HTMLElement | null>(null)
   let frameBox = $state<HTMLElement | null>(null)
+  let frame = $state<HTMLIFrameElement | null>(null)
+  // The frame learns that this page relays what it opens; what it asks to open goes to the display window.
+  const frameHost = createEmbeddedFrameHost({
+    origin: location.origin,
+    frame: () => frame?.contentWindow ?? null,
+    post: (target, message) => { (target as Window).postMessage(message, location.origin) },
+    open: view => { openView?.(view) },
+  })
   let disposed = false
 
   const messageOf = (error: unknown): string => error instanceof Error ? error.message : String(error)
 
-  // Drawn first for the room its frame has: a display the Pack cannot draw is refused with its reason, never framed empty.
-  const draw = async (key: string, display: PackProcedureTagDisplay, size: { readonly width: number; readonly height: number }): Promise<void> => {
+  // Composed first: a display World cannot compose is refused with its reason, never framed empty.
+  const draw = async (key: string, subject: string): Promise<void> => {
     try {
-      const query = display.drawQuery(size)
-      await querySimulationRunCapability(simulationRunId, query.capabilityId, query.input)
-      const envelope = procedureTagDisplayEnvelope({ workspaceId: activeWorkspaceId(), simulationRunId, display })
+      const envelope = defaultDisplayEnvelope({ workspaceId: activeWorkspaceId(), simulationRunId, view: await readDefaultDisplay(simulationRunId, subject) })
       if (!disposed && drawn?.key === key) drawn = { key, phase: { kind: 'shown', envelope, source: procedureTagDisplaySource(envelope) } }
     } catch (error) {
       if (!disposed && drawn?.key === key) drawn = { key, phase: { kind: 'refused', reason: messageOf(error) } }
@@ -75,12 +85,10 @@
   // Draws the display the tag names once its frame is laid out, and again only if the tag comes to name another.
   $effect(() => {
     if (plan.kind !== 'display' || frameBox === null) return
-    const display = plan.display
-    const key = `${display.viewType}\n${display.state}`
+    const key = plan.subject
     if (untrack(() => drawn?.key) === key) return
-    const size = { width: frameBox.clientWidth, height: frameBox.clientHeight }
     drawn = { key, phase: { kind: 'drawing' } }
-    void draw(key, display, size)
+    void draw(key, key)
   })
 
   let readInFlight = false
@@ -108,9 +116,12 @@
     dialog?.focus()
     void read()
     const timer = setInterval(() => { void read() }, READ_EVERY_MS)
+    const receive = (event: MessageEvent): void => frameHost.receive(event)
+    window.addEventListener('message', receive)
     return () => {
       disposed = true
       clearInterval(timer)
+      window.removeEventListener('message', receive)
       if (opener?.isConnected) opener.focus()
     }
   })
@@ -165,7 +176,8 @@
       </div>
       <div class="procedure-tag-display-actions">
         {#if openInDisplayWindow && shown}
-          <button type="button" onclick={() => { if (shown) openInDisplayWindow(shown.envelope) }}>Open in display window</button>
+          <!-- The window comes forward with the display; the dialog closes, so what opened is in view (W3.1, F4). -->
+          <button type="button" onclick={() => { if (shown) { openInDisplayWindow(shown.envelope); close() } }}>Open in display window</button>
         {/if}
         <button type="button" class="procedure-tag-display-close" aria-label="Close" onclick={close}>×</button>
       </div>
@@ -179,8 +191,9 @@
       {:else if plan.kind === 'display'}
         <div class="procedure-tag-display-frame" bind:this={frameBox}>
           {#if drawn?.phase.kind === 'shown'}
-            <!-- Read-only: no display window presents it, so it neither operates the Plant nor opens displays elsewhere. -->
+            <!-- No display window presents it, so it shows no Pack controls; this dialog relays what it opens (its pop-over's "Open detail") to the Workspace's display window. -->
             <iframe
+              bind:this={frame}
               src={drawn.phase.source}
               title={drawn.phase.envelope.title}
               allow="camera 'none'; microphone 'none'; geolocation 'none'; display-capture 'none'"
@@ -193,7 +206,6 @@
       {:else}
         <div class="procedure-tag-display-message">
           <strong>{plan.message}</strong>
-          {#if plan.kind === 'no-display'}<span>{plan.reason}.</span>{/if}
           {#if declared}<span>The procedure declares: {declared}</span>{/if}
           {#if plan.kind !== 'not-in-model'}{@render readingText()}{/if}
         </div>

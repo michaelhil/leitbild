@@ -1,0 +1,659 @@
+{
+  "baseCommit": "55771e2ee419527aeefd07350bc6eb40528c1f7f",
+  "candidateCommits": [
+    "92acceae7",
+    "4c706f698",
+    "faf656468"
+  ],
+  "engine": "Bun 1.4.0 / JavaScriptCore; CPU ownership only",
+  "preservedRoot": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261028/cold-geometry-20261028",
+  "manifestSha256": "ccb2ed0787c450d0f98aabcc7d716bf0e0d60cd95c16bdbac568b17bff443d1c",
+  "samples": [
+    {
+      "file": "campus-before-first.json",
+      "sha256": "c0e42e6fc2452830a990b236bfff9ddb65d57cd288e8fa9eddd40917200a6494",
+      "stage": "INVALID overlapping initial harness",
+      "engine": "before",
+      "family": "campus",
+      "ref": {
+        "id": "pwr-campus",
+        "revision": "pwr-campus-20261028-r6",
+        "digest": "9a8c62567fce6755922e4b6385045ec37252dfa8354a9d078143ef81347f8e41"
+      },
+      "ms": 673.6350829999999,
+      "fingerprint": "c5c7acd1f2f4f9bc73b820ec9c53dab72d305ea5b375ca7a40358117a270a463",
+      "packedBytes": 18569040,
+      "triangles": 131845,
+      "broadPhaseCandidates": 2224458
+    },
+    {
+      "file": "campus-before-quiet.json",
+      "sha256": "9fb8533811a0962d71627fe6c9ac69091f52f7c9055ae4324ef4ea0f7cf2c77d",
+      "stage": "rejected lazy-vertex prototype",
+      "engine": "before",
+      "family": "campus",
+      "ref": {
+        "id": "pwr-campus",
+        "revision": "pwr-campus-20261028-r6",
+        "digest": "9a8c62567fce6755922e4b6385045ec37252dfa8354a9d078143ef81347f8e41"
+      },
+      "ms": 670.3425000000001,
+      "fingerprint": "c5c7acd1f2f4f9bc73b820ec9c53dab72d305ea5b375ca7a40358117a270a463",
+      "packedBytes": 18569040,
+      "triangles": 131845,
+      "broadPhaseCandidates": 2224458
+    },
+    {
+      "file": "campus-current-first.json",
+      "sha256": "a9adc73957a69c3e9eef2e15ca2fb34222c83d034a0d3401485c66f739ce62ae",
+      "stage": "INVALID overlapping initial harness",
+      "engine": "current",
+      "family": "campus",
+      "ref": {
+        "id": "pwr-campus",
+        "revision": "pwr-campus-20261028-r6",
+        "digest": "9a8c62567fce6755922e4b6385045ec37252dfa8354a9d078143ef81347f8e41"
+      },
+      "ms": 683.276708,
+      "fingerprint": "c5c7acd1f2f4f9bc73b820ec9c53dab72d305ea5b375ca7a40358117a270a463",
+      "packedBytes": 18569040,
+      "triangles": 131845,
+      "broadPhaseCandidates": 2224458
+    },
+    {
+      "file": "campus-current-quiet.json",
+      "sha256": "c78468fa59e727d7976da9c9c533d1ebc10c79a9e24428179c240a3e074a7b96",
+      "stage": "rejected lazy-vertex prototype",
+      "engine": "current",
+      "family": "campus",
+      "ref": {
+        "id": "pwr-campus",
+        "revision": "pwr-campus-20261028-r6",
+        "digest": "9a8c62567fce6755922e4b6385045ec37252dfa8354a9d078143ef81347f8e41"
+      },
+      "ms": 718.005459,
+      "fingerprint": "c5c7acd1f2f4f9bc73b820ec9c53dab72d305ea5b375ca7a40358117a270a463",
+      "packedBytes": 18569040,
+      "triangles": 131845,
+      "broadPhaseCandidates": 2224458
+    },
+    {
+      "file": "prefix-campus-before-1793211511358.json",
+      "sha256": "092310b6d87851e9e5136d7f97c20b1051b5cf13270b7892f363f7ea87eb441f",
+      "stage": "exploratory prefix constructor",
+      "engine": "before",
+      "family": "campus",
+      "ref": {
+        "id": "pwr-campus",
+        "revision": "pwr-campus-20261028-r6",
+        "digest": "9a8c62567fce6755922e4b6385045ec37252dfa8354a9d078143ef81347f8e41"
+      },
+      "ms": 682.4920420000001,
+      "fingerprint": "c5c7acd1f2f4f9bc73b820ec9c53dab72d305ea5b375ca7a40358117a270a463",
+      "packedBytes": 18569040,
+      "triangles": 131845,
+      "broadPhaseCandidates": 2224458
+    },
+    {
+      "file": "prefix-campus-before-1793211518084.json",
+      "sha256": "7cf2b9377677555a6a2248986c06f1b44f61fe6eac8f31c103804049e6501ecf",
+      "stage": "exploratory prefix constructor",
+      "engine": "before",
+      "family": "campus",
+      "ref": {
+        "id": "pwr-campus",
+        "revision": "pwr-campus-20261028-r6",
+        "digest": "9a8c62567fce6755922e4b6385045ec37252dfa8354a9d078143ef81347f8e41"
+      },
+      "ms": 688.625542,
+      "fingerprint": "c5c7acd1f2f4f9bc73b820ec9c53dab72d305ea5b375ca7a40358117a270a463",
+      "packedBytes": 18569040,
+      "triangles": 131845,
+      "broadPhaseCandidates": 2224458
+    },
+    {
+      "file": "prefix-campus-current-1793211509967.json",
+      "sha256": "980c5f0a7c93e13879b4c0be119220a964b5fdeb3806caa2a3d35a4e186ea510",
+      "stage": "exploratory prefix constructor",
+      "engine": "current",
+      "family": "campus",
+      "ref": {
+        "id": "pwr-campus",
+        "revision": "pwr-campus-20261028-r6",
+        "digest": "9a8c62567fce6755922e4b6385045ec37252dfa8354a9d078143ef81347f8e41"
+      },
+      "ms": 606.9387919999999,
+      "fingerprint": "c5c7acd1f2f4f9bc73b820ec9c53dab72d305ea5b375ca7a40358117a270a463",
+      "packedBytes": 18569040,
+      "triangles": 131845,
+      "broadPhaseCandidates": 2224458
+    },
+    {
+      "file": "prefix-campus-current-1793211519583.json",
+      "sha256": "1897fff902f6fb7493ed54274745b0427de2521f1fa7d597f460f70553efad71",
+      "stage": "exploratory prefix constructor",
+      "engine": "current",
+      "family": "campus",
+      "ref": {
+        "id": "pwr-campus",
+        "revision": "pwr-campus-20261028-r6",
+        "digest": "9a8c62567fce6755922e4b6385045ec37252dfa8354a9d078143ef81347f8e41"
+      },
+      "ms": 614.32425,
+      "fingerprint": "c5c7acd1f2f4f9bc73b820ec9c53dab72d305ea5b375ca7a40358117a270a463",
+      "packedBytes": 18569040,
+      "triangles": 131845,
+      "broadPhaseCandidates": 2224458
+    },
+    {
+      "file": "prefix-unit-before-1793211512821.json",
+      "sha256": "5154de922dab64ef2d2a0d6ba5b8bd69ca891108585a92a68fb825bc51e7f569",
+      "stage": "exploratory prefix constructor",
+      "engine": "before",
+      "family": "unit",
+      "ref": {
+        "id": "pwr-full-unit",
+        "revision": "pwr-full-unit-20261028-r6",
+        "digest": "b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac"
+      },
+      "ms": 1207.738625,
+      "fingerprint": "93ec4518304c357cc5be37568bd753327ebf1e6d3e0a632945ff0332b811be05",
+      "packedBytes": 29589600,
+      "triangles": 244201,
+      "broadPhaseCandidates": 3047341
+    },
+    {
+      "file": "prefix-unit-before.json",
+      "sha256": "693884882222e7cbff739404445936da49f263a45095f96b056b60d2c6e6d5bd",
+      "stage": "exploratory prefix constructor",
+      "engine": "before",
+      "family": "unit",
+      "ref": {
+        "id": "pwr-full-unit",
+        "revision": "pwr-full-unit-20261028-r6",
+        "digest": "b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac"
+      },
+      "ms": 1250.8209169999998,
+      "fingerprint": "93ec4518304c357cc5be37568bd753327ebf1e6d3e0a632945ff0332b811be05",
+      "packedBytes": 29589600,
+      "triangles": 244201,
+      "broadPhaseCandidates": 3047341
+    },
+    {
+      "file": "prefix-unit-current-1793211507406.json",
+      "sha256": "bb4224c9ec56c50cd74aa3def7900afd346411e8861a3c0e5fd1a0a1a38348ee",
+      "stage": "exploratory prefix constructor",
+      "engine": "current",
+      "family": "unit",
+      "ref": {
+        "id": "pwr-full-unit",
+        "revision": "pwr-full-unit-20261028-r6",
+        "digest": "b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac"
+      },
+      "ms": 1145.452458,
+      "fingerprint": "93ec4518304c357cc5be37568bd753327ebf1e6d3e0a632945ff0332b811be05",
+      "packedBytes": 29589600,
+      "triangles": 244201,
+      "broadPhaseCandidates": 3047341
+    },
+    {
+      "file": "prefix-unit-current-1793211515422.json",
+      "sha256": "9a1c191c00bb1e0e4c28084f7a17c16a47a454c24632c6ee5dac318f1debce06",
+      "stage": "exploratory prefix constructor",
+      "engine": "current",
+      "family": "unit",
+      "ref": {
+        "id": "pwr-full-unit",
+        "revision": "pwr-full-unit-20261028-r6",
+        "digest": "b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac"
+      },
+      "ms": 1274.479041,
+      "fingerprint": "93ec4518304c357cc5be37568bd753327ebf1e6d3e0a632945ff0332b811be05",
+      "packedBytes": 29589600,
+      "triangles": 244201,
+      "broadPhaseCandidates": 3047341
+    },
+    {
+      "file": "prefix2-campus-before-1793211562629.json",
+      "sha256": "82364d5f8e83be091b86d5fdf2c5e1ff6b3140723e89d61c5b91311310332555",
+      "stage": "final source-prefix constructor",
+      "engine": "before",
+      "family": "campus",
+      "ref": {
+        "id": "pwr-campus",
+        "revision": "pwr-campus-20261028-r6",
+        "digest": "9a8c62567fce6755922e4b6385045ec37252dfa8354a9d078143ef81347f8e41"
+      },
+      "ms": 677.0625839999999,
+      "fingerprint": "c5c7acd1f2f4f9bc73b820ec9c53dab72d305ea5b375ca7a40358117a270a463",
+      "packedBytes": 18569040,
+      "triangles": 131845,
+      "broadPhaseCandidates": 2224458
+    },
+    {
+      "file": "prefix2-campus-current-1793211561266.json",
+      "sha256": "ccf7d828343927e622b38b22f026ccbbd478d41c14942d0f663a4df6e92f9d05",
+      "stage": "final source-prefix constructor",
+      "engine": "current",
+      "family": "campus",
+      "ref": {
+        "id": "pwr-campus",
+        "revision": "pwr-campus-20261028-r6",
+        "digest": "9a8c62567fce6755922e4b6385045ec37252dfa8354a9d078143ef81347f8e41"
+      },
+      "ms": 582.028959,
+      "fingerprint": "c5c7acd1f2f4f9bc73b820ec9c53dab72d305ea5b375ca7a40358117a270a463",
+      "packedBytes": 18569040,
+      "triangles": 131845,
+      "broadPhaseCandidates": 2224458
+    },
+    {
+      "file": "prefix2-unit-before-1793211553416.json",
+      "sha256": "7465f8eafe17328998e603fe4f4f3075ecf10ff2a4efa5b1ddc117f1bde9caa3",
+      "stage": "final source-prefix constructor",
+      "engine": "before",
+      "family": "unit",
+      "ref": {
+        "id": "pwr-full-unit",
+        "revision": "pwr-full-unit-20261028-r6",
+        "digest": "b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac"
+      },
+      "ms": 1227.532417,
+      "fingerprint": "93ec4518304c357cc5be37568bd753327ebf1e6d3e0a632945ff0332b811be05",
+      "packedBytes": 29589600,
+      "triangles": 244201,
+      "broadPhaseCandidates": 3047341
+    },
+    {
+      "file": "prefix2-unit-before-1793211558684.json",
+      "sha256": "79b128016463f906ad310a0b4dc285bd9250171ca586b581420199005866fcd4",
+      "stage": "final source-prefix constructor",
+      "engine": "before",
+      "family": "unit",
+      "ref": {
+        "id": "pwr-full-unit",
+        "revision": "pwr-full-unit-20261028-r6",
+        "digest": "b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac"
+      },
+      "ms": 1236.519166,
+      "fingerprint": "93ec4518304c357cc5be37568bd753327ebf1e6d3e0a632945ff0332b811be05",
+      "packedBytes": 29589600,
+      "triangles": 244201,
+      "broadPhaseCandidates": 3047341
+    },
+    {
+      "file": "prefix2-unit-current-1793211550771.json",
+      "sha256": "9f7d4686f78434e72fadcf24681f5be677e2780aff13ab307f5ead76059d52f5",
+      "stage": "final source-prefix constructor",
+      "engine": "current",
+      "family": "unit",
+      "ref": {
+        "id": "pwr-full-unit",
+        "revision": "pwr-full-unit-20261028-r6",
+        "digest": "b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac"
+      },
+      "ms": 1229.8019169999998,
+      "fingerprint": "93ec4518304c357cc5be37568bd753327ebf1e6d3e0a632945ff0332b811be05",
+      "packedBytes": 29589600,
+      "triangles": 244201,
+      "broadPhaseCandidates": 3047341
+    },
+    {
+      "file": "prefix2-unit-current-1793211556042.json",
+      "sha256": "72f39c17b2a689da1d1a89f80d96ed6d537da923f68c01e065c8032ab865df93",
+      "stage": "final source-prefix constructor",
+      "engine": "current",
+      "family": "unit",
+      "ref": {
+        "id": "pwr-full-unit",
+        "revision": "pwr-full-unit-20261028-r6",
+        "digest": "b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac"
+      },
+      "ms": 1221.3897920000002,
+      "fingerprint": "93ec4518304c357cc5be37568bd753327ebf1e6d3e0a632945ff0332b811be05",
+      "packedBytes": 29589600,
+      "triangles": 244201,
+      "broadPhaseCandidates": 3047341
+    },
+    {
+      "file": "query-campus-before-1793211877093.json",
+      "sha256": "f86879cb93477bb3a84efa6131201fe51a96fd17305c6a698ccd24e76733b3e7",
+      "stage": "scalar versus prefix",
+      "engine": "before",
+      "family": "campus",
+      "ref": {
+        "id": "pwr-campus",
+        "revision": "pwr-campus-20261028-r6",
+        "digest": "9a8c62567fce6755922e4b6385045ec37252dfa8354a9d078143ef81347f8e41"
+      },
+      "ms": 1056.039542,
+      "fingerprint": "c5c7acd1f2f4f9bc73b820ec9c53dab72d305ea5b375ca7a40358117a270a463",
+      "packedBytes": 18569040,
+      "triangles": 131845,
+      "broadPhaseCandidates": 2224458
+    },
+    {
+      "file": "query-campus-before-1793211885112.json",
+      "sha256": "5dcdb15526833d7d4d2fcc11a460f832d5482a547f66e42a05a58180b32d0861",
+      "stage": "scalar versus prefix",
+      "engine": "before",
+      "family": "campus",
+      "ref": {
+        "id": "pwr-campus",
+        "revision": "pwr-campus-20261028-r6",
+        "digest": "9a8c62567fce6755922e4b6385045ec37252dfa8354a9d078143ef81347f8e41"
+      },
+      "ms": 601.4295839999999,
+      "fingerprint": "c5c7acd1f2f4f9bc73b820ec9c53dab72d305ea5b375ca7a40358117a270a463",
+      "packedBytes": 18569040,
+      "triangles": 131845,
+      "broadPhaseCandidates": 2224458
+    },
+    {
+      "file": "query-campus-current-1793211875680.json",
+      "sha256": "30e0e7672bcd14f95fbec26b7f7ab0fc2051f46e553335ce71ae4dc218f7485f",
+      "stage": "scalar versus prefix",
+      "engine": "current",
+      "family": "campus",
+      "ref": {
+        "id": "pwr-campus",
+        "revision": "pwr-campus-20261028-r6",
+        "digest": "9a8c62567fce6755922e4b6385045ec37252dfa8354a9d078143ef81347f8e41"
+      },
+      "ms": 578.0865,
+      "fingerprint": "c5c7acd1f2f4f9bc73b820ec9c53dab72d305ea5b375ca7a40358117a270a463",
+      "packedBytes": 18569040,
+      "triangles": 131845,
+      "broadPhaseCandidates": 2224458
+    },
+    {
+      "file": "query-campus-current-1793211886525.json",
+      "sha256": "23ffce6276ae7d1872f5860dbc603662b41adbb17f34738c7a531fac5ebea167",
+      "stage": "scalar versus prefix",
+      "engine": "current",
+      "family": "campus",
+      "ref": {
+        "id": "pwr-campus",
+        "revision": "pwr-campus-20261028-r6",
+        "digest": "9a8c62567fce6755922e4b6385045ec37252dfa8354a9d078143ef81347f8e41"
+      },
+      "ms": 513.4963750000001,
+      "fingerprint": "c5c7acd1f2f4f9bc73b820ec9c53dab72d305ea5b375ca7a40358117a270a463",
+      "packedBytes": 18569040,
+      "triangles": 131845,
+      "broadPhaseCandidates": 2224458
+    },
+    {
+      "file": "query-unit-before-1793211870430.json",
+      "sha256": "a1bfc6e540f2abaa810baaefbf90ae743f5a8546d0f12c93e610214160d8386b",
+      "stage": "scalar versus prefix",
+      "engine": "before",
+      "family": "unit",
+      "ref": {
+        "id": "pwr-full-unit",
+        "revision": "pwr-full-unit-20261028-r6",
+        "digest": "b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac"
+      },
+      "ms": 1260.141792,
+      "fingerprint": "93ec4518304c357cc5be37568bd753327ebf1e6d3e0a632945ff0332b811be05",
+      "packedBytes": 29589600,
+      "triangles": 244201,
+      "broadPhaseCandidates": 3047341
+    },
+    {
+      "file": "query-unit-before-1793211882198.json",
+      "sha256": "b88903a175709a9c56f89decec4911313e61dba2960661cc410aa010c65ab842",
+      "stage": "scalar versus prefix",
+      "engine": "before",
+      "family": "unit",
+      "ref": {
+        "id": "pwr-full-unit",
+        "revision": "pwr-full-unit-20261028-r6",
+        "digest": "b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac"
+      },
+      "ms": 1360.56825,
+      "fingerprint": "93ec4518304c357cc5be37568bd753327ebf1e6d3e0a632945ff0332b811be05",
+      "packedBytes": 29589600,
+      "triangles": 244201,
+      "broadPhaseCandidates": 3047341
+    },
+    {
+      "file": "query-unit-current-1793211873166.json",
+      "sha256": "7617e0126bb8cce6534f058a31cbd6297b181c27f39dec86213bcf2a1e48cd6d",
+      "stage": "scalar versus prefix",
+      "engine": "current",
+      "family": "unit",
+      "ref": {
+        "id": "pwr-full-unit",
+        "revision": "pwr-full-unit-20261028-r6",
+        "digest": "b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac"
+      },
+      "ms": 1133.425375,
+      "fingerprint": "93ec4518304c357cc5be37568bd753327ebf1e6d3e0a632945ff0332b811be05",
+      "packedBytes": 29589600,
+      "triangles": 244201,
+      "broadPhaseCandidates": 3047341
+    },
+    {
+      "file": "query-unit-current-1793211879069.json",
+      "sha256": "973849c377951922daf59a07fe57cc27419e7c7b31e5b9212b9c7835a42826f3",
+      "stage": "scalar versus prefix",
+      "engine": "current",
+      "family": "unit",
+      "ref": {
+        "id": "pwr-full-unit",
+        "revision": "pwr-full-unit-20261028-r6",
+        "digest": "b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac"
+      },
+      "ms": 1307.027,
+      "fingerprint": "93ec4518304c357cc5be37568bd753327ebf1e6d3e0a632945ff0332b811be05",
+      "packedBytes": 29589600,
+      "triangles": 244201,
+      "broadPhaseCandidates": 3047341
+    },
+    {
+      "file": "raw-campus-before-1793212042467.json",
+      "sha256": "5d731c62e283782fb4c12522187ea0fbd142cce0630a9a30db61341ad19290d8",
+      "stage": "raw-interval versus scalar",
+      "engine": "before",
+      "family": "campus",
+      "ref": {
+        "id": "pwr-campus",
+        "revision": "pwr-campus-20261028-r6",
+        "digest": "9a8c62567fce6755922e4b6385045ec37252dfa8354a9d078143ef81347f8e41"
+      },
+      "ms": 530.6304580000001,
+      "fingerprint": "c5c7acd1f2f4f9bc73b820ec9c53dab72d305ea5b375ca7a40358117a270a463",
+      "packedBytes": 18569040,
+      "triangles": 131845,
+      "broadPhaseCandidates": 2224458
+    },
+    {
+      "file": "raw-campus-before-1793212048707.json",
+      "sha256": "cf407b90b7dd4e4e7635548fa938e87a8cdf1e0d71dd52c09c7b57fcc54a0f04",
+      "stage": "raw-interval versus scalar",
+      "engine": "before",
+      "family": "campus",
+      "ref": {
+        "id": "pwr-campus",
+        "revision": "pwr-campus-20261028-r6",
+        "digest": "9a8c62567fce6755922e4b6385045ec37252dfa8354a9d078143ef81347f8e41"
+      },
+      "ms": 531.3338329999999,
+      "fingerprint": "c5c7acd1f2f4f9bc73b820ec9c53dab72d305ea5b375ca7a40358117a270a463",
+      "packedBytes": 18569040,
+      "triangles": 131845,
+      "broadPhaseCandidates": 2224458
+    },
+    {
+      "file": "raw-campus-current-1793212041162.json",
+      "sha256": "7b830c28953621904b88049cf415d5f657cb073ad23e0245771df20386b6e4e6",
+      "stage": "raw-interval versus scalar",
+      "engine": "current",
+      "family": "campus",
+      "ref": {
+        "id": "pwr-campus",
+        "revision": "pwr-campus-20261028-r6",
+        "digest": "9a8c62567fce6755922e4b6385045ec37252dfa8354a9d078143ef81347f8e41"
+      },
+      "ms": 507.4101660000001,
+      "fingerprint": "c5c7acd1f2f4f9bc73b820ec9c53dab72d305ea5b375ca7a40358117a270a463",
+      "packedBytes": 18569040,
+      "triangles": 131845,
+      "broadPhaseCandidates": 2224458
+    },
+    {
+      "file": "raw-campus-current-1793212050031.json",
+      "sha256": "be44235ae104fadab3ef31fe87b8d2d74020ca2ab9c4fabc5edd5fe97067e388",
+      "stage": "raw-interval versus scalar",
+      "engine": "current",
+      "family": "campus",
+      "ref": {
+        "id": "pwr-campus",
+        "revision": "pwr-campus-20261028-r6",
+        "digest": "9a8c62567fce6755922e4b6385045ec37252dfa8354a9d078143ef81347f8e41"
+      },
+      "ms": 512.8180409999999,
+      "fingerprint": "c5c7acd1f2f4f9bc73b820ec9c53dab72d305ea5b375ca7a40358117a270a463",
+      "packedBytes": 18569040,
+      "triangles": 131845,
+      "broadPhaseCandidates": 2224458
+    },
+    {
+      "file": "raw-unit-before-1793212036171.json",
+      "sha256": "1c90e040b5323c59445045ca97b94274fe40ba2e0a3d1de38927698a87de3ce0",
+      "stage": "raw-interval versus scalar",
+      "engine": "before",
+      "family": "unit",
+      "ref": {
+        "id": "pwr-full-unit",
+        "revision": "pwr-full-unit-20261028-r6",
+        "digest": "b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac"
+      },
+      "ms": 1143.6668329999998,
+      "fingerprint": "93ec4518304c357cc5be37568bd753327ebf1e6d3e0a632945ff0332b811be05",
+      "packedBytes": 29589600,
+      "triangles": 244201,
+      "broadPhaseCandidates": 3047341
+    },
+    {
+      "file": "raw-unit-before-1793212046265.json",
+      "sha256": "a25e25fdd644e48b8569ad63e184764f44c165605fbb36a39ee115b32e99a380",
+      "stage": "raw-interval versus scalar",
+      "engine": "before",
+      "family": "unit",
+      "ref": {
+        "id": "pwr-full-unit",
+        "revision": "pwr-full-unit-20261028-r6",
+        "digest": "b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac"
+      },
+      "ms": 1071.462792,
+      "fingerprint": "93ec4518304c357cc5be37568bd753327ebf1e6d3e0a632945ff0332b811be05",
+      "packedBytes": 29589600,
+      "triangles": 244201,
+      "broadPhaseCandidates": 3047341
+    },
+    {
+      "file": "raw-unit-current-1793212038766.json",
+      "sha256": "3973218717240b328e48176a108c33558c1edcf15cbec752ec51fe60f1caa4f3",
+      "stage": "raw-interval versus scalar",
+      "engine": "current",
+      "family": "unit",
+      "ref": {
+        "id": "pwr-full-unit",
+        "revision": "pwr-full-unit-20261028-r6",
+        "digest": "b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac"
+      },
+      "ms": 1046.592959,
+      "fingerprint": "93ec4518304c357cc5be37568bd753327ebf1e6d3e0a632945ff0332b811be05",
+      "packedBytes": 29589600,
+      "triangles": 244201,
+      "broadPhaseCandidates": 3047341
+    },
+    {
+      "file": "raw-unit-current-1793212043788.json",
+      "sha256": "bf2decd36a8c1047d179a3a94b55b5f283f153f7e01007b413843cd756a358a3",
+      "stage": "raw-interval versus scalar",
+      "engine": "current",
+      "family": "unit",
+      "ref": {
+        "id": "pwr-full-unit",
+        "revision": "pwr-full-unit-20261028-r6",
+        "digest": "b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac"
+      },
+      "ms": 1058.034209,
+      "fingerprint": "93ec4518304c357cc5be37568bd753327ebf1e6d3e0a632945ff0332b811be05",
+      "packedBytes": 29589600,
+      "triangles": 244201,
+      "broadPhaseCandidates": 3047341
+    },
+    {
+      "file": "unit-before-first.json",
+      "sha256": "8c749e38f4b1649af6522482dd73134a93f4363f7887cfe894a7c79e8583b52a",
+      "stage": "INVALID overlapping initial harness",
+      "engine": "before",
+      "family": "unit",
+      "ref": {
+        "id": "pwr-full-unit",
+        "revision": "pwr-full-unit-20261028-r6",
+        "digest": "b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac"
+      },
+      "ms": 1222.670291,
+      "fingerprint": "93ec4518304c357cc5be37568bd753327ebf1e6d3e0a632945ff0332b811be05",
+      "packedBytes": 29589600,
+      "triangles": 244201,
+      "broadPhaseCandidates": 3047341
+    },
+    {
+      "file": "unit-before-quiet.json",
+      "sha256": "8a0ecb44c18762189f8f083df132a12d7b351f1f1f63ac230261143daafcc043",
+      "stage": "rejected lazy-vertex prototype",
+      "engine": "before",
+      "family": "unit",
+      "ref": {
+        "id": "pwr-full-unit",
+        "revision": "pwr-full-unit-20261028-r6",
+        "digest": "b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac"
+      },
+      "ms": 1167.6145,
+      "fingerprint": "93ec4518304c357cc5be37568bd753327ebf1e6d3e0a632945ff0332b811be05",
+      "packedBytes": 29589600,
+      "triangles": 244201,
+      "broadPhaseCandidates": 3047341
+    },
+    {
+      "file": "unit-current-first.json",
+      "sha256": "73a253c740a5e290597809341a608276ede74b3e37edf983c7885f09070cb619",
+      "stage": "INVALID overlapping initial harness",
+      "engine": "current",
+      "family": "unit",
+      "ref": {
+        "id": "pwr-full-unit",
+        "revision": "pwr-full-unit-20261028-r6",
+        "digest": "b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac"
+      },
+      "ms": 1433.896416,
+      "fingerprint": "93ec4518304c357cc5be37568bd753327ebf1e6d3e0a632945ff0332b811be05",
+      "packedBytes": 29589600,
+      "triangles": 244201,
+      "broadPhaseCandidates": 3047341
+    },
+    {
+      "file": "unit-current-quiet.json",
+      "sha256": "cdeb74f5d061a8a5ff651c3ad919816f7c5493e80e193a43431d376477f5c26e",
+      "stage": "rejected lazy-vertex prototype",
+      "engine": "current",
+      "family": "unit",
+      "ref": {
+        "id": "pwr-full-unit",
+        "revision": "pwr-full-unit-20261028-r6",
+        "digest": "b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac"
+      },
+      "ms": 1489.279583,
+      "fingerprint": "93ec4518304c357cc5be37568bd753327ebf1e6d3e0a632945ff0332b811be05",
+      "packedBytes": 29589600,
+      "triangles": 244201,
+      "broadPhaseCandidates": 3047341
+    }
+  ]
+}

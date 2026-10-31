@@ -76,6 +76,25 @@ const commandsForRole = (
   return components.map(component => ({ path: path(`${component.id}.${localPath}`), value }))
 }
 
+/**
+ * The component that owns the signal this I&C tag names (a pump's run command, AFW-PUMP-A): actions on equipment the
+ * model gives no role find it as its I&C does.
+ */
+const componentTagged = (graph: CompiledPlantGraph, tagId: string): CompiledComponent => {
+  const owner = graph.signalBindings.find(binding => binding.tagId === tagId)?.owner
+  if (owner?.type !== 'component') throw new Error(`Plant model has no component tagged ${tagId}`)
+  return graph.components[owner.componentIndex]!
+}
+
+/** A motor-driven auxiliary feedwater pump that fails to start: its command stands, it stays stopped (a fault the scenario injects). */
+const pumpFailsToStart = (train: 'A' | 'B'): ProcessPlantActionDefinition => ({
+  id: `motor-driven-afw-pump-${train.toLowerCase()}-fails-to-start`,
+  title: `MD AFW ${train} fails to start`,
+  description: `Fail motor-driven AFW pump ${train} to start: commanded with its bus live, it stays stopped.`,
+  parameters: [],
+  commands: (_values, graph) => [{ path: path(`${componentTagged(graph, `AFW-PUMP-${train}`).id}.startFailureActive`), value: true }],
+})
+
 const leakParameters = [{
   id: 'leakPercent', label: 'Leak', unit: '%', defaultValue: 1.2, min: 0.1, max: 4, step: 0.1, digits: 1,
 }] as const
@@ -189,6 +208,8 @@ export const processPlantActions: ReadonlyArray<ProcessPlantActionDefinition> = 
     parameters: [],
     commands: (_values, graph) => commandsForRole(graph, 'offsite-power-source', 'available', true),
   },
+  pumpFailsToStart('A'),
+  pumpFailsToStart('B'),
 ]
 
 const actionById = new Map(processPlantActions.map(action => [action.id, action]))

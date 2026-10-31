@@ -1,0 +1,13 @@
+# Hierarchy-independent ownership eligibility
+
+The optimized SAH exposed a pre-existing semantic error: an index leaf supplies candidates, but the old ownership callback checked only projected bounds and treated uncertain plane arithmetic as coincidence. Numerically thin physical triangles could therefore acquire masks from spatially distant covers, depending on which unrelated triangles happened to share a leaf. The correction requires actual pairwise 3D bounding overlap under the index's existing forward-error reservation. It introduces no metric epsilon, microfragment threshold, physical triangle deletion or scene limit.
+
+`exact-matrix.json` compares the cap-fixed legacy builder plus this eligibility rule against the optimized builder under the same rule. All **19** cases are byte-identical, including ordered physical vertices, normals, materials, lines, conditional owners and complete picking arrays. The matrix includes all authored unit/campus floors, full/cut/exploded views, native Plan picks and turbine area views. Every case explicitly requests all layers, so hidden utilities cannot conceal a routing cap failure.
+
+`previous-eligibility-witness.json` records the four intentional old-rule corrections, including the original computed mask areas. Their size is diagnostic, not an acceptance threshold. A separate narrow test keeps a real positive-area, numerically thin physical triangle with all original vertices and material; a distant floor cannot hide it merely because its plane arithmetic is uncertain.
+
+The production shader/material/picking gate in `controlled/receipt.json` uses the same GL context and the actually realized MapLibre camera matrix for old/new geometry. All eight affected view/status cases have **zero differing pixels**, equal material areas and normal integrals, and **1,872 identical paired picks**. The second screenshot panel remains the actual native map.
+
+The first cross-host comparison reported two differing raw framebuffer pixels in one view. Its failed receipt is retained in `failed-cross-host/`. An identical-code control reproduced those same two pixels; composited screenshots were identical. This isolated a standalone-canvas versus map-default-framebuffer resolve difference. The final gate compares the same controlled context without relaxing its zero-pixel criterion; it does not claim arbitrary host framebuffer resolves are identical.
+
+The real module-worker regression in `physical-layer-demand.test.ts` separately verifies sparse original source ordinals, graph identity, prepared status-table ordinals, source reuse and cleanup across default/all/default layer coverage. The registered source remains complete.

@@ -1,6 +1,26 @@
+import { z } from 'zod'
+import { calculateSampleChanges, sampleChangesInputSchema } from '../../core/calculations/sample-changes.ts'
 import type { RoomDirectory } from '../../core/rooms/directory.ts'
 import type { Tool, ToolContext } from '../../core/types/tool.ts'
 import { resolveRoom } from './resolve.ts'
+
+export const createSampleChangesTool = (): Tool => ({
+  name: 'sample_changes',
+  description: 'Calculate adjacent changes and per-second rates from dated numeric samples. Caller-provided inputs are unverified; this is not acquired physical evidence.',
+  usage: 'Use when a needed difference or rate is absent, or a returned historical interval differs from the intended sample interval. Copy actual times and values; never relabel a historian endpoint. Units are labels only. Results use unrounded IEEE-754 binary64 arithmetic.',
+  returns: 'Shared intervals give from/to/elapsedMs/elapsedSeconds; each series echoes key/unit/values and gives changes in the same interval order. inputsVerified:false means no source, quality, unit or sample-selection verification.',
+  parameters: z.toJSONSchema(sampleChangesInputSchema),
+  execute: async params => {
+    try {
+      return { success: true, data: calculateSampleChanges(params) }
+    } catch (error) {
+      if (!(error instanceof z.ZodError)) throw error
+      return { success: false, error: `invalid_tool_input: ${error.message}`, data: {
+        code: 'invalid_tool_input', issues: error.issues.map(issue => ({ path: issue.path, message: issue.message })),
+      } }
+    }
+  },
+})
 
 export const createGetTimeTool = (): Tool => ({
   name: 'get_time',

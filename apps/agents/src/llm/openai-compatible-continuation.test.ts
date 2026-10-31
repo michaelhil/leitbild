@@ -51,7 +51,7 @@ for (const streaming of [false, true]) test(`${streaming ? 'stream' : 'chat'} ne
   const fx = fixture(() => {
     const tools = [{ index: 0, id: 'call12345', function: { name: 'act', arguments: argumentsJSON } }]
     return streaming
-      ? new Response([chunk({ tool_calls: tools }, 'tool_calls'), '[DONE]'].map(line => `data: ${line}\n\n`).join(''))
+      ? new Response([chunk({ tool_calls: tools }, 'tool_calls'), '[DONE]'].map(line => `data: ${line}\n\n`).join(''), { headers: { 'Content-Type': 'text/event-stream' } })
       : Response.json({ choices: [{ message: { content: '', tool_calls: tools }, finish_reason: 'tool_calls' }] })
   })
   try {
@@ -91,7 +91,7 @@ for (const streaming of [false, true]) test(`${streaming ? 'stream' : 'chat'} pr
 for (const streaming of [false, true]) test(`${streaming ? 'stream' : 'chat'} marks length output incomplete without parsing/exposing partial tool arguments`, async () => {
   const tool = { index: 0, id: 'native001', function: { name: 'mutate', arguments: '{broken' } }
   const fx = fixture(() => streaming
-    ? new Response([chunk({ content: 'partial', reasoning_details: details, tool_calls: [tool] }, 'length'), '[DONE]'].map(line => `data: ${line}\n\n`).join(''))
+    ? new Response([chunk({ content: 'partial', reasoning_details: details, tool_calls: [tool] }, 'length'), '[DONE]'].map(line => `data: ${line}\n\n`).join(''), { headers: { 'Content-Type': 'text/event-stream' } })
     : Response.json({ choices: [{ message: { content: 'partial', reasoning_details: details, tool_calls: [tool] }, finish_reason: 'length' }] }))
   try {
     const provider = createOpenAICompatibleProvider({ name: 'openrouter', getBaseUrl: () => fx.url, getApiKey: () => 'fixture' })

@@ -1,0 +1,41 @@
+{
+  "installedVersion": "6.0.0-11",
+  "lockSha256": "41281e5709836a63acb3dea322d1ac310b51654cebbcabfb0280e9b9013f289e",
+  "files": [
+    {
+      "path": "node_modules/maplibre-gl/src/style/style_layer/custom_style_layer.ts",
+      "sha256": "3d01432eb435169b5356637edf935c607fd14386f7afbc553c030f49feb15664"
+    },
+    {
+      "path": "node_modules/maplibre-gl/src/webgl/draw/draw_custom.ts",
+      "sha256": "dc9d53b64294db6468c801b5e23511091f67a1b900de27786fd7c01ffe64d730"
+    },
+    {
+      "path": "node_modules/maplibre-gl/src/render/painter.ts",
+      "sha256": "51cff08ae76a1878c46c3bd17bf34a818fc3d7c283e23de761063bb1c136e547"
+    },
+    {
+      "path": "node_modules/maplibre-gl/src/webgl/context.ts",
+      "sha256": "3d808b60b56d5bd6cc70513107407f55acc022ec51deb3b2122e486a9449c405"
+    },
+    {
+      "path": "node_modules/maplibre-gl/src/webgl/render_to_texture.ts",
+      "sha256": "6a326325a1efa0ad69b11ac975685779a77ed9356195caef84fd71ab7b840044"
+    }
+  ],
+  "review": {
+    "publicPort": "CustomLayerInterface.prerender prepares resources/texture work; render draws into current main framebuffer.",
+    "hostLifecycle": "drawCustom marks tracked state dirty and reapplies base state after either callback. The complete offscreen pass resets main viewport/framebuffer before ordinary rendering.",
+    "framebuffer": "The custom render callback must composite into the currently bound host target. No default-main framebuffer assumption is needed.",
+    "trackedStateLimit": "setDirty does not reset every rawGLstate. Native owned work must establish its required sampler/PBO/rasterizer/sample-coverage state; subsequent custom layers must establish their own inputs.",
+    "genericPort": "The borrowed generic renderer retains full capture/restore; nativeMap adapter uses the explicit publicphase contract, without production imports of privatehost implementations.",
+    "ordering": "Custom layers are excluded from terrain RTTeligible layer types. Main layer order remains the actual customlayer position.",
+    "plan": "Meshless Plan must update projection/pick/frame state in prepare even when it submits no offscreen GPUgeometry.",
+    "failure": "Empty/error/contextloss invalidates frame readiness, preventing old-source colour from being composited."
+  },
+  "limits": [
+    "This is a pinned installed-code/API source audit, not actual pixel/resource/performance qualification.",
+    "The new nativephase implementation and functional oracle were pending when this receipt was authored.",
+    "Future MapLibre updates require repeating the public lifecycle/actual-GPU checks; private source is inspected only for evidence, not imported by productcode."
+  ]
+}

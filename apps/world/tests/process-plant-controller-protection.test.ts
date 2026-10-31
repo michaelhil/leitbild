@@ -1,0 +1,61 @@
+import { describe, expect, test } from 'bun:test'
+import { assertControllerProtectionIsolation } from '../src/packs/process-plant/controller-protection.ts'
+import { compileProcessPlant, createPwrReferencePlantDefinition } from '../src/packs/process-plant/index.ts'
+import { comparison, rule, write } from '../src/packs/process-plant/specs/reference-ic-helpers.ts'
+
+const plant = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'plant:controller-protection' }))
+const graph = plant.graph
+const assess = (effects: Parameters<typeof rule>[0]['effects'], ruleClass: 'protection' | 'interlock' | 'normalControl' = 'protection') => assertControllerProtectionIsolation(graph, {
+  ...plant.automation,
+  rules: [rule({ id: 'controller-hold', ruleClass, condition: comparison({ tagId: 'PZR-LVL' }, '>', 0), effects })],
+})
+
+describe('controller/protection authority admission', () => {
+  test('accepts the reference protection which uses physical isolation inputs', () => {
+    expect(() => assertControllerProtectionIsolation(graph, plant.automation)).not.toThrow()
+  })
+
+  test('refuses a one-time protective or interlock demand which a controller could overwrite', () => {
+    for (const ruleClass of ['protection', 'interlock'] as const) {
+      expect(() => assess([write('close', { tagId: 'MFW-A-CV' }, 0)], ruleClass)).toThrow('isolationSignal')
+      expect(() => assess([write('close', { path: 'feedwaterControlValveA.positionFraction' }, 0)], ruleClass)).toThrow('isolationSignal')
+    }
+  })
+
+  test('requires the exact valve isolation input, true, in the same protection action', () => {
+    const close = write('close', { tagId: 'MFW-A-CV' }, 0)
+    expect(() => assess([close, write('isolate', { path: 'feedwaterControlValveA.isolationSignal' }, true)])).not.toThrow()
+    expect(() => assess([close, write('isolate', { path: 'feedwaterControlValveB.isolationSignal' }, true)])).toThrow('isolationSignal')
+    expect(() => assess([close, write('isolate', { path: 'feedwaterControlValveA.isolationSignal' }, false)])).toThrow('isolationSignal')
+    expect(() => assess([write('open', { tagId: 'MFW-A-CV' }, 1), write('isolate', { path: 'feedwaterControlValveA.isolationSignal' }, true)])).toThrow('isolationSignal')
+  })
+
+  test('cannot bypass a protection hold indirectly through controller mode or target', () => {
+    const isolate = write('isolate', { path: 'feedwaterControlValveA.isolationSignal' }, true)
+    for (const effect of [
+      write('switch-auto', { tagId: 'MFW-A-CTRL-AUTO' }, true),
+      write('switch-manual', { path: 'feedwaterControlValveA.controllerAutomatic' }, false),
+      write('set-target', { tagId: 'MFW-A-CTRL-SP' }, 55),
+    ]) {
+      expect(() => assess([effect])).toThrow('isolationSignal')
+      expect(() => assess([effect, isolate])).not.toThrow()
+    }
+  })
+
+  test('a contradictory isolation release cannot defeat the same protective action in either order', () => {
+    const close = write('close', { tagId: 'MFW-A-CV' }, 0)
+    const isolate = write('isolate', { path: 'feedwaterControlValveA.isolationSignal' }, true)
+    const release = write('release', { path: 'feedwaterControlValveA.isolationSignal' }, false)
+    for (const effects of [[close, isolate, release], [close, release, isolate], [isolate, close, release], [release, close, isolate]]) {
+      expect(() => assess(effects)).toThrow('isolationSignal')
+    }
+    expect(() => assess([isolate, release])).toThrow('isolationSignal')
+    expect(() => assess([release, isolate])).toThrow('isolationSignal')
+    expect(() => assess([close, isolate, write('repeat-isolate', { path: 'feedwaterControlValveA.isolationSignal' }, true)])).not.toThrow()
+  })
+
+  test('does not make ordinary regulation or an uncontrolled valve into a protection hold', () => {
+    expect(() => assess([write('regulate', { tagId: 'MFW-A-CV' }, 0.5)], 'normalControl')).not.toThrow()
+    expect(() => assess([write('close-manual', { tagId: 'AFW-A-CV' }, 0)])).not.toThrow()
+  })
+})

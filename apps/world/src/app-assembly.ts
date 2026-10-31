@@ -5,6 +5,7 @@ import { einsatzPack } from './packs/einsatz/pack.ts'
 import { electricGridPack } from './packs/electric-grid/pack.ts'
 import { electricGridReferenceDatasetBuilders } from './packs/electric-grid/reference-datasets.ts'
 import { processPlantPack } from './packs/process-plant/pack.ts'
+import { physicalLayoutPack } from './packs/physical-layout/pack.ts'
 import { weatherPack } from './packs/weather/pack.ts'
 import { situationMonitorPack } from './packs/situation-monitor/pack.ts'
 import { createSituationMonitorRuntimeAdapter } from './packs/situation-monitor/runtime.ts'
@@ -36,6 +37,7 @@ export const worldPacks: ReadonlyArray<WorldPack> = [
   situationMonitorPack,
   dronePack,
   processPlantPack,
+  physicalLayoutPack,
   withReferenceDatasetBuilders(electricGridPack, electricGridReferenceDatasetBuilders),
 ]
 

@@ -1,0 +1,127 @@
+{
+  "purpose": "Use the actual MapLibre configured pitch interval before solving a physical 3D fit; source schema and native Design pins remain unchanged.",
+  "baseCommit": "7590a551d",
+  "qualification": "Untimed real-browser geometry/camera proof; not performance or full product UI acceptance.",
+  "variants": {
+    "before": {
+      "receipt": "before.json",
+      "sha256": "420bbf85aec859faa7fadd3a24b86136029c91b9a8029b3e775f230d760000cb",
+      "passed": false,
+      "ordinaryPhasesPassed": 12,
+      "ordinaryPhaseCount": 12,
+      "hostCapPhases": [
+        {
+          "minimumPitch": 0,
+          "maximumPitch": 45,
+          "requestedPitch": 89,
+          "effectivePitch": 45,
+          "actualPitch": 45,
+          "passed": false,
+          "anchor": {
+            "x": 384.8374285674779,
+            "y": 420.60180953477845
+          },
+          "expectedAnchor": {
+            "x": 386.25,
+            "y": 445.0
+          }
+        },
+        {
+          "minimumPitch": 0,
+          "maximumPitch": 70,
+          "requestedPitch": 89,
+          "effectivePitch": 70,
+          "actualPitch": 70,
+          "passed": false,
+          "anchor": {
+            "x": 385.5708352934053,
+            "y": 439.10482301011365
+          },
+          "expectedAnchor": {
+            "x": 386.25,
+            "y": 445.0
+          }
+        },
+        {
+          "minimumPitch": 20,
+          "maximumPitch": 85,
+          "requestedPitch": 0,
+          "effectivePitch": 20,
+          "actualPitch": 20,
+          "passed": false,
+          "anchor": {
+            "x": 386.99853076323205,
+            "y": 442.1585329466524
+          },
+          "expectedAnchor": {
+            "x": 386.25,
+            "y": 445.0
+          }
+        }
+      ],
+      "lifecyclePassed": true,
+      "errors": [],
+      "mapViewportSourceHash": "b65ec113ee0549c009f7e00adf1bd0aad9cdfa9090f987e53ac5e3b2e1b7d44f"
+    },
+    "after": {
+      "receipt": "after.json",
+      "sha256": "22188ec7363c80ad10d400ddf430157c8f56f69745b8cac1c23fb0dc9320de32",
+      "passed": true,
+      "ordinaryPhasesPassed": 12,
+      "ordinaryPhaseCount": 12,
+      "hostCapPhases": [
+        {
+          "minimumPitch": 0,
+          "maximumPitch": 45,
+          "requestedPitch": 89,
+          "effectivePitch": 45,
+          "actualPitch": 45,
+          "passed": true,
+          "anchor": {
+            "x": 386.25000517538047,
+            "y": 445.0000014823897
+          },
+          "expectedAnchor": {
+            "x": 386.25,
+            "y": 445.0
+          }
+        },
+        {
+          "minimumPitch": 0,
+          "maximumPitch": 70,
+          "requestedPitch": 89,
+          "effectivePitch": 70,
+          "actualPitch": 70,
+          "passed": true,
+          "anchor": {
+            "x": 386.2500008441715,
+            "y": 444.9999983917784
+          },
+          "expectedAnchor": {
+            "x": 386.25,
+            "y": 445.0
+          }
+        },
+        {
+          "minimumPitch": 20,
+          "maximumPitch": 85,
+          "requestedPitch": 0,
+          "effectivePitch": 20,
+          "actualPitch": 20,
+          "passed": true,
+          "anchor": {
+            "x": 386.2500032313859,
+            "y": 445.0000072094028
+          },
+          "expectedAnchor": {
+            "x": 386.25,
+            "y": 445.0
+          }
+        }
+      ],
+      "lifecyclePassed": true,
+      "errors": [],
+      "mapViewportSourceHash": "85fdb747796a59cd96a8a4af082097ce4e79bd8bdb9e6f2fe43e7115d7a8342b"
+    }
+  }
+}

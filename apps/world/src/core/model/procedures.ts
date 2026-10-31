@@ -1,8 +1,9 @@
 import { z } from 'zod'
-import { parseProcedureAssessment, type ProcedureAssessment as AuthoredProcedureAssessment } from '@leitbild/procmd'
+import { parseProcedureAssessment, parseProcedureDecisions, type ProcedureDecision, type ProcedureAssessment as AuthoredProcedureAssessment } from '@leitbild/procmd'
 import { sourceDocumentPathSchema, sourceRevisionSchema } from '@leitbild/contracts'
 import { actorIdSchema, commandIdSchema, idSchema, objectIdSchema } from './ids.ts'
 import { isoTimestampSchema } from './time.ts'
+import { procedureBranchAssessmentSchema } from './procedure-criteria.ts'
 
 export const procedureSourceIdSchema = idSchema
 export const procedureIdSchema = z.string().min(1).max(80).regex(/^[A-Z0-9][A-Z0-9._-]*$/)
@@ -100,6 +101,10 @@ export const procedureStepSchema = z.object({
     try { return parseProcedureAssessment(value) }
     catch (error) { context.addIssue({ code: 'custom', message: error instanceof Error ? error.message : String(error) }); return z.NEVER }
   }).optional().describe('Authored engineering criterion tree, not a live observation or execution. Comparison operands identify exact declared tag, native unit, interval bound, evidence class, source and maximum age; all/any/not/vote combine them, held requires continuous simulation-time duration, manual names physical judgment. Uninstalled criteria cannot imply automatic success.'),
+  decisions: z.unknown().transform((value, context): ReadonlyArray<ProcedureDecision> | typeof z.NEVER => {
+    try { return parseProcedureDecisions(value) }
+    catch (error) { context.addIssue({ code: 'custom', message: error instanceof Error ? error.message : String(error) }); return z.NEVER }
+  }).optional(),
   observation: z.object({
     capabilityId: z.string().min(1),
     input: z.record(z.string(), z.unknown()),
@@ -169,10 +174,10 @@ export const procedureDecisionEvidenceSchema = z.object({
   reading: z.string().min(1).max(160),
 })
 
-/** A branch selection's basis: up to 300 characters and up to six of the step's own tags, which World reads at commit. */
+/** A branch selection's basis: up to 300 characters and the step's declared tags, which World reads at commit. */
 export const procedureDecisionBasisSchema = z.object({
   basis: z.string().trim().min(1).max(300).optional(),
-  evidenceTagIds: z.array(procedureTagIdSchema).min(1).max(6).optional(),
+  evidenceTagIds: z.array(procedureTagIdSchema).optional(),
 })
 
 /** The latest branch selected on a step, with who chose it and why. The journal keeps every earlier one. */
@@ -183,7 +188,8 @@ export const procedureStepDecisionSchema = z.object({
   targetKind: procedureBranchSchema.shape.targetKind,
   target: z.string().min(1),
   basis: z.string().min(1).max(300).optional(),
-  evidence: z.array(procedureDecisionEvidenceSchema).max(6).optional(),
+  evidence: z.array(procedureDecisionEvidenceSchema).optional(),
+  criterion: procedureBranchAssessmentSchema.optional(),
   selectedBy: actorIdSchema,
   selectedByLabel: z.string().min(1).max(80).optional(),
   simulationTime: isoTimestampSchema,
@@ -204,6 +210,16 @@ export type ProcedureStepRunState = z.infer<typeof procedureStepRunStateSchema>
 export const procedureRunStatusSchema = z.enum(['active', 'transferred', 'completed', 'abandoned'])
 export type ProcedureRunStatus = z.infer<typeof procedureRunStatusSchema>
 
+/** The current driver explicitly needs a person to settle this step; the journal retains resolved requests. */
+export const procedureInputRequestSchema = z.object({
+  requestId: commandIdSchema,
+  stepId: procedureStepIdSchema,
+  issue: z.string().trim().min(1).max(500),
+  requestedAt: isoTimestampSchema,
+  requestedBy: actorIdSchema,
+})
+export type ProcedureInputRequest = z.infer<typeof procedureInputRequestSchema>
+
 export const procedureRunStateSchema = z.object({
   runId: procedureRunIdSchema,
   sourceId: procedureSourceIdSchema,
@@ -219,6 +235,7 @@ export const procedureRunStateSchema = z.object({
   closedBy: actorIdSchema.optional(),
   currentStepId: procedureStepIdSchema.optional(),
   driver: procedureRunDriverSchema.optional(),
+  inputRequest: procedureInputRequestSchema.optional(),
   stepStates: z.array(procedureStepRunStateSchema).default([]),
   observations: z.array(z.object({
     stepId: procedureStepIdSchema,
@@ -274,7 +291,7 @@ export const procedureRunTransitionPayloadSchema = z.object({
   runId: procedureRunIdSchema,
   stepId: procedureStepIdSchema,
   branchIndex: z.number().int().nonnegative(),
-}).merge(procedureDecisionBasisSchema)
+}).merge(procedureDecisionBasisSchema).strict()
 
 /** Claim a Run to work it, or release it to be shared again. */
 export const procedureRunDrivePayloadSchema = z.object({
@@ -282,6 +299,18 @@ export const procedureRunDrivePayloadSchema = z.object({
   action: z.enum(['claim', 'release']),
 })
 export type ProcedureRunDrivePayload = z.infer<typeof procedureRunDrivePayloadSchema>
+
+export const procedureRunRequestInputPayloadSchema = z.object({
+  runId: procedureRunIdSchema,
+  stepId: procedureStepIdSchema,
+  issue: procedureInputRequestSchema.shape.issue,
+})
+
+export const procedureInputRequestedEventSchema = z.object({
+  type: z.literal('procedure.run.input.requested'),
+  runId: procedureRunIdSchema,
+  request: procedureInputRequestSchema,
+})
 
 export const procedureRunResetPayloadSchema = z.object({
   sourceId: procedureSourceIdSchema,
@@ -340,7 +369,8 @@ export const procedureBranchSelectedEventSchema = z.object({
   selectedByLabel: z.string().min(1).max(80).optional(),
   label: z.string().min(1).optional(),
   basis: z.string().min(1).max(300).optional(),
-  evidence: z.array(procedureDecisionEvidenceSchema).max(6).optional(),
+  evidence: z.array(procedureDecisionEvidenceSchema).optional(),
+  criterion: procedureBranchAssessmentSchema.optional(),
   observation: procedureRunStateSchema.shape.observations.unwrap().element.optional(),
 })
 
@@ -375,6 +405,7 @@ export const procedureRunCloseCommandKind = 'world.procedure.run.close'
 export const procedureRunResetCommandKind = 'world.procedure.run.reset'
 export const procedureRunTransitionCommandKind = 'world.procedure.run.transition'
 export const procedureRunDriveCommandKind = 'world.procedure.run.drive'
+export const procedureRunRequestInputCommandKind = 'world.procedure.run.request-input'
 
 export const procedureCommandKindSchema = z.enum([
   procedureRunStartCommandKind,
@@ -383,6 +414,7 @@ export const procedureCommandKindSchema = z.enum([
   procedureRunResetCommandKind,
   procedureRunTransitionCommandKind,
   procedureRunDriveCommandKind,
+  procedureRunRequestInputCommandKind,
 ])
 export type ProcedureCommandKind = z.infer<typeof procedureCommandKindSchema>
 

@@ -198,7 +198,10 @@ export interface SaturatedWaterSteam {
 // the reactor coolant system never approaches: its safety valves lift at
 // 17.2 MPa.
 const tableStepMPa = 0.05
-const tableFirstMPa = 0.05
+/** Lower pressure represented by the shared saturated-water property table.
+ * It is a numerical property-domain boundary, not a plant operating limit. */
+export const minimumTabulatedSaturationPressureMPa = 0.05
+const tableFirstMPa = minimumTabulatedSaturationPressureMPa
 const regionTwoLimitMPa = 18.5
 const saturationTable = (() => {
   const rows: SaturatedWaterSteam[] = []

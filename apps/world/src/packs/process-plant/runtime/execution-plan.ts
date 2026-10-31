@@ -13,6 +13,7 @@ import { componentBehaviorDefinitions, componentInitialReconciliationDefinitions
 import type { ProcessPlantSolverPhase } from './model.ts'
 import { processLinkBehaviorDefinitions } from './links/process-link-behaviors.ts'
 import type { ProcessPlantVariableTable } from './variable-table.ts'
+import { prepareDirectedFluidDelivery } from './directed-fluid-delivery.ts'
 
 type ProcessPlantExecutionInvocation =
   | {
@@ -231,6 +232,17 @@ export const runProcessPlantInitialReconciliation = (config: {
       })
     }
   }
+  // Propagate initialized source state before component algebraic solves.
+  // In particular, primary-loop buoyancy must see the initialized SG outlet,
+  // not a pipe's authored construction temperature. At dt=0 these link
+  // behaviors propagate derived state without advancing heat, mass or time.
+  runProcessPlantExecutionPhase({
+    system: config.system,
+    plan: config.plan,
+    context,
+    phase: 'updateProcessLinkState',
+    dtSeconds: 0,
+  })
   reconcile(false)
   runProcessPlantExecutionPhase({
     system: config.system,
@@ -248,6 +260,16 @@ export const runProcessPlantInitialReconciliation = (config: {
   })
   // Values derived from link flows and pressures read true before the first step.
   reconcile(true)
+  // Directed delivery has now reconciled actual pump demand. Reacquire the
+  // upstream electrical load from that demand without advancing time or
+  // battery energy. The earlier pass remains necessary to power the pumps.
+  runProcessPlantExecutionPhase({
+    system: config.system,
+    plan: config.plan,
+    context,
+    phase: 'solveElectrical',
+    dtSeconds: 0,
+  })
 }
 
 export const runProcessPlantExecutionPhase = (config: {
@@ -257,6 +279,7 @@ export const runProcessPlantExecutionPhase = (config: {
   readonly phase: ProcessPlantSolverPhase
   readonly dtSeconds: number
 }): void => {
+  if (config.phase === 'solveFluidFlowLinks') prepareDirectedFluidDelivery(config.system, config.context, config.dtSeconds)
   for (const invocation of config.plan.invocationsByPhase.get(config.phase) ?? []) {
     config.context.configure({
       behaviorId: invocation.behavior.id,

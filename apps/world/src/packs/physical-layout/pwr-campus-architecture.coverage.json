@@ -1,0 +1,2862 @@
+{
+  "modelRequirement": {
+    "modelRef": "electric-grid.halden.four-unit",
+    "modelDigest": "3551eb6c70f93b5aa9bc98f1d64a3ce51d5187ce158bc54df4e394cddbaf5173"
+  },
+  "scope": "site-subset",
+  "dispositions": [
+    {
+      "subjectId": "branch:curated-halden-pwr-hasle-1",
+      "disposition": "assembly",
+      "reason": "The graph AC circuit is represented through its yard bay and three phase conductors through the first authored physical support.",
+      "physicalElementIds": [
+        "yard/hasle-1/breaker",
+        "yard/hasle-1/disconnector",
+        "yard/hasle-1/phase-1",
+        "yard/hasle-1/phase-2",
+        "yard/hasle-1/phase-3",
+        "conductor/hasle-1-phase-1",
+        "conductor/hasle-1-phase-2",
+        "conductor/hasle-1-phase-3"
+      ]
+    },
+    {
+      "subjectId": "branch:curated-halden-pwr-hasle-2",
+      "disposition": "assembly",
+      "reason": "The graph AC circuit is represented through its yard bay and three phase conductors through the first authored physical support.",
+      "physicalElementIds": [
+        "yard/hasle-2/breaker",
+        "yard/hasle-2/disconnector",
+        "yard/hasle-2/phase-1",
+        "yard/hasle-2/phase-2",
+        "yard/hasle-2/phase-3",
+        "conductor/hasle-2-phase-1",
+        "conductor/hasle-2-phase-2",
+        "conductor/hasle-2-phase-3"
+      ]
+    },
+    {
+      "subjectId": "branch:curated-halden-pwr-hasle-3",
+      "disposition": "assembly",
+      "reason": "The graph AC circuit is represented through its yard bay and three phase conductors through the first authored physical support.",
+      "physicalElementIds": [
+        "yard/hasle-3/breaker",
+        "yard/hasle-3/disconnector",
+        "yard/hasle-3/phase-1",
+        "yard/hasle-3/phase-2",
+        "yard/hasle-3/phase-3",
+        "conductor/hasle-3-phase-1",
+        "conductor/hasle-3-phase-2",
+        "conductor/hasle-3-phase-3"
+      ]
+    },
+    {
+      "subjectId": "branch:curated-halden-pwr-tegneby-1",
+      "disposition": "assembly",
+      "reason": "The graph AC circuit is represented through its yard bay and three phase conductors through the first authored physical support.",
+      "physicalElementIds": [
+        "yard/tegneby-1/breaker",
+        "yard/tegneby-1/disconnector",
+        "yard/tegneby-1/phase-1",
+        "yard/tegneby-1/phase-2",
+        "yard/tegneby-1/phase-3",
+        "conductor/tegneby-1-phase-1",
+        "conductor/tegneby-1-phase-2",
+        "conductor/tegneby-1-phase-3"
+      ]
+    },
+    {
+      "subjectId": "branch:curated-halden-pwr-tegneby-2",
+      "disposition": "assembly",
+      "reason": "The graph AC circuit is represented through its yard bay and three phase conductors through the first authored physical support.",
+      "physicalElementIds": [
+        "yard/tegneby-2/breaker",
+        "yard/tegneby-2/disconnector",
+        "yard/tegneby-2/phase-1",
+        "yard/tegneby-2/phase-2",
+        "yard/tegneby-2/phase-3",
+        "conductor/tegneby-2-phase-1",
+        "conductor/tegneby-2-phase-2",
+        "conductor/tegneby-2-phase-3"
+      ]
+    },
+    {
+      "subjectId": "branch:curated-halden-pwr-tegneby-3",
+      "disposition": "assembly",
+      "reason": "The graph AC circuit is represented through its yard bay and three phase conductors through the first authored physical support.",
+      "physicalElementIds": [
+        "yard/tegneby-3/breaker",
+        "yard/tegneby-3/disconnector",
+        "yard/tegneby-3/phase-1",
+        "yard/tegneby-3/phase-2",
+        "yard/tegneby-3/phase-3",
+        "conductor/tegneby-3-phase-1",
+        "conductor/tegneby-3-phase-2",
+        "conductor/tegneby-3-phase-3"
+      ]
+    },
+    {
+      "subjectId": "bus:curated-halden-pwr-switchyard@420",
+      "disposition": "assembly",
+      "reason": "The one graph bus is represented through its three-phase physical busbar assemblies.",
+      "physicalElementIds": [
+        "yard/bus--20-1",
+        "yard/bus--20-2",
+        "yard/bus--20-3",
+        "yard/bus-20-1",
+        "yard/bus-20-2",
+        "yard/bus-20-3"
+      ]
+    },
+    {
+      "subjectId": "unit-1-420kv",
+      "disposition": "assembly",
+      "reason": "The graph unit connection point is represented through its yard bay and authored connection corridor; the unit-owned transformer remains in the unit design.",
+      "physicalElementIds": [
+        "conductor/unit-1-phase-1",
+        "conductor/unit-1-phase-2",
+        "conductor/unit-1-phase-3",
+        "yard/unit-1/breaker",
+        "yard/unit-1/disconnector",
+        "yard/unit-1/phase-1",
+        "yard/unit-1/phase-2",
+        "yard/unit-1/phase-3"
+      ]
+    },
+    {
+      "subjectId": "unit-2-420kv",
+      "disposition": "assembly",
+      "reason": "The graph unit connection point is represented through its yard bay and authored connection corridor; the unit-owned transformer remains in the unit design.",
+      "physicalElementIds": [
+        "conductor/unit-2-phase-1",
+        "conductor/unit-2-phase-2",
+        "conductor/unit-2-phase-3",
+        "yard/unit-2/breaker",
+        "yard/unit-2/disconnector",
+        "yard/unit-2/phase-1",
+        "yard/unit-2/phase-2",
+        "yard/unit-2/phase-3"
+      ]
+    },
+    {
+      "subjectId": "unit-3-420kv",
+      "disposition": "assembly",
+      "reason": "The graph unit connection point is represented through its yard bay and authored connection corridor; the unit-owned transformer remains in the unit design.",
+      "physicalElementIds": [
+        "conductor/unit-3-phase-1",
+        "conductor/unit-3-phase-2",
+        "conductor/unit-3-phase-3",
+        "yard/unit-3/breaker",
+        "yard/unit-3/disconnector",
+        "yard/unit-3/phase-1",
+        "yard/unit-3/phase-2",
+        "yard/unit-3/phase-3"
+      ]
+    },
+    {
+      "subjectId": "unit-4-420kv",
+      "disposition": "assembly",
+      "reason": "The graph unit connection point is represented through its yard bay and authored connection corridor; the unit-owned transformer remains in the unit design.",
+      "physicalElementIds": [
+        "conductor/unit-4-phase-1",
+        "conductor/unit-4-phase-2",
+        "conductor/unit-4-phase-3",
+        "yard/unit-4/breaker",
+        "yard/unit-4/disconnector",
+        "yard/unit-4/phase-1",
+        "yard/unit-4/phase-2",
+        "yard/unit-4/phase-3"
+      ]
+    }
+  ],
+  "contextElements": [
+    {
+      "physicalElementId": "building/administration",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/floor",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/wall-south",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/entry",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/entry-door",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/south-window-8",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/south-window-8/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/south-window-14",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/south-window-14/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/south-window-20",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/south-window-20/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/south-window-26",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/south-window-26/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/south-window-32",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/south-window-32/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/south-window-38",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/south-window-38/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/south-window-44",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/south-window-44/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/south-window-50",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/south-window-50/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/south-window-56",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/south-window-56/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/wall-north",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/north-window-8",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/north-window-8/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/north-window-14",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/north-window-14/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/north-window-20",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/north-window-20/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/north-window-26",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/north-window-26/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/north-window-32",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/north-window-32/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/north-window-38",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/north-window-38/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/north-window-44",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/north-window-44/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/north-window-50",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/north-window-50/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/north-window-56",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/north-window-56/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/wall-west",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/west-window-8",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/west-window-8/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/west-window-14",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/west-window-14/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/west-window-20",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/west-window-20/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/west-window-26",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/west-window-26/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/wall-east",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/east-window-8",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/east-window-8/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/east-window-14",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/east-window-14/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/east-window-20",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/east-window-20/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/east-window-26",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/east-window-26/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/corridor-wall-south",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/corridor-wall-north",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/room-0-south",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/room-0-south-opening",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/room-0-south-door",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/room-0-north",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/room-0-north-opening",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/room-0-north-door",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/room-1-south",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/room-1-south-partition",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/room-1-south-opening",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/room-1-south-door",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/room-1-north",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/room-1-north-partition",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/room-1-north-opening",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/room-1-north-door",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/room-2-south",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/room-2-south-partition",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/room-2-south-opening",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/room-2-south-door",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/room-2-north",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/room-2-north-partition",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/room-2-north-opening",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/room-2-north-door",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/room-3-south",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/room-3-south-partition",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/room-3-south-opening",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/room-3-south-door",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/room-3-north",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/room-3-north-partition",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/room-3-north-opening",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/room-3-north-door",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/room-4-south",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/room-4-south-partition",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/room-4-south-opening",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/room-4-south-door",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/room-4-north",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/room-4-north-partition",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/room-4-north-opening",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/room-4-north-door",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/room-5-south",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/room-5-south-partition",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/room-5-south-opening",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/room-5-south-door",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/room-5-north",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/room-5-north-partition",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/room-5-north-opening",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/room-5-north-door",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/0/stair",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/floor",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/wall-south",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/south-window-8",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/south-window-8/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/south-window-14",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/south-window-14/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/south-window-20",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/south-window-20/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/south-window-26",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/south-window-26/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/south-window-32",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/south-window-32/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/south-window-38",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/south-window-38/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/south-window-44",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/south-window-44/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/south-window-50",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/south-window-50/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/south-window-56",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/south-window-56/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/wall-north",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/north-window-8",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/north-window-8/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/north-window-14",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/north-window-14/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/north-window-20",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/north-window-20/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/north-window-26",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/north-window-26/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/north-window-32",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/north-window-32/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/north-window-38",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/north-window-38/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/north-window-44",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/north-window-44/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/north-window-50",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/north-window-50/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/north-window-56",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/north-window-56/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/wall-west",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/west-window-8",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/west-window-8/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/west-window-14",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/west-window-14/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/west-window-20",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/west-window-20/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/west-window-26",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/west-window-26/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/wall-east",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/east-window-8",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/east-window-8/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/east-window-14",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/east-window-14/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/east-window-20",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/east-window-20/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/east-window-26",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/east-window-26/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/corridor-wall-south",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/corridor-wall-north",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/room-0-south",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/room-0-south-opening",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/room-0-south-door",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/room-0-north",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/room-0-north-opening",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/room-0-north-door",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/room-1-south",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/room-1-south-partition",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/room-1-south-opening",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/room-1-south-door",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/room-1-north",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/room-1-north-partition",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/room-1-north-opening",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/room-1-north-door",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/room-2-south",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/room-2-south-partition",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/room-2-south-opening",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/room-2-south-door",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/room-2-north",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/room-2-north-partition",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/room-2-north-opening",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/room-2-north-door",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/room-3-south",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/room-3-south-partition",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/room-3-south-opening",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/room-3-south-door",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/room-3-north",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/room-3-north-partition",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/room-3-north-opening",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/room-3-north-door",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/room-4-south",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/room-4-south-partition",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/room-4-south-opening",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/room-4-south-door",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/room-4-north",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/room-4-north-partition",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/room-4-north-opening",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/room-4-north-door",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/room-5-south",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/room-5-south-partition",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/room-5-south-opening",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/room-5-south-door",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/room-5-north",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/room-5-north-partition",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/room-5-north-opening",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/1/room-5-north-door",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "administration/roof",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "building/training",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/floor",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/wall-south",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/entry",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/entry-door",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/south-window-8",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/south-window-8/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/south-window-14",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/south-window-14/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/south-window-20",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/south-window-20/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/south-window-26",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/south-window-26/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/south-window-32",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/south-window-32/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/south-window-38",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/south-window-38/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/south-window-44",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/south-window-44/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/south-window-50",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/south-window-50/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/wall-north",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/north-window-8",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/north-window-8/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/north-window-14",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/north-window-14/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/north-window-20",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/north-window-20/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/north-window-26",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/north-window-26/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/north-window-32",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/north-window-32/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/north-window-38",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/north-window-38/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/north-window-44",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/north-window-44/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/north-window-50",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/north-window-50/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/wall-west",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/west-window-8",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/west-window-8/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/west-window-14",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/west-window-14/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/west-window-20",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/west-window-20/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/wall-east",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/east-window-8",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/east-window-8/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/east-window-14",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/east-window-14/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/east-window-20",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/east-window-20/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/corridor-wall-south",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/corridor-wall-north",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/room-0-south",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/room-0-south-opening",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/room-0-south-door",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/room-0-north",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/room-0-north-opening",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/room-0-north-door",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/room-1-south",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/room-1-south-partition",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/room-1-south-opening",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/room-1-south-door",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/room-1-north",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/room-1-north-partition",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/room-1-north-opening",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/room-1-north-door",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/room-2-south",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/room-2-south-partition",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/room-2-south-opening",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/room-2-south-door",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/room-2-north",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/room-2-north-partition",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/room-2-north-opening",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/0/room-2-north-door",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "training/roof",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "building/workshop",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/floor",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/wall-south",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/entry",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/entry-door",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/south-window-8",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/south-window-8/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/south-window-14",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/south-window-14/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/south-window-20",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/south-window-20/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/south-window-26",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/south-window-26/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/south-window-32",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/south-window-32/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/south-window-38",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/south-window-38/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/south-window-44",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/south-window-44/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/south-window-50",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/south-window-50/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/south-window-56",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/south-window-56/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/south-window-62",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/south-window-62/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/south-window-68",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/south-window-68/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/south-window-74",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/south-window-74/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/wall-north",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/north-window-8",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/north-window-8/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/north-window-14",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/north-window-14/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/north-window-20",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/north-window-20/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/north-window-26",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/north-window-26/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/north-window-32",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/north-window-32/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/north-window-38",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/north-window-38/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/north-window-44",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/north-window-44/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/north-window-50",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/north-window-50/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/north-window-56",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/north-window-56/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/north-window-62",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/north-window-62/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/north-window-68",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/north-window-68/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/north-window-74",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/north-window-74/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/wall-west",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/west-window-8",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/west-window-8/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/west-window-14",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/west-window-14/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/west-window-20",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/west-window-20/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/west-window-26",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/west-window-26/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/west-window-32",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/west-window-32/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/west-window-38",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/west-window-38/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/wall-east",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/east-window-8",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/east-window-8/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/east-window-14",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/east-window-14/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/east-window-20",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/east-window-20/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/east-window-26",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/east-window-26/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/east-window-32",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/east-window-32/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/east-window-38",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/east-window-38/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/corridor-wall-south",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/corridor-wall-north",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/room-0-south",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/room-0-south-opening",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/room-0-south-door",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/room-0-north",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/room-0-north-opening",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/room-0-north-door",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/room-1-south",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/room-1-south-partition",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/room-1-south-opening",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/room-1-south-door",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/room-1-north",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/room-1-north-partition",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/room-1-north-opening",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/room-1-north-door",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/room-2-south",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/room-2-south-partition",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/room-2-south-opening",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/room-2-south-door",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/room-2-north",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/room-2-north-partition",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/room-2-north-opening",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/0/room-2-north-door",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "workshop/roof",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "building/security",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "security/0/floor",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "security/0/wall-south",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "security/0/entry",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "security/0/entry-door",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "security/0/south-window-8",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "security/0/south-window-8/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "security/0/south-window-14",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "security/0/south-window-14/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "security/0/wall-north",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "security/0/north-window-8",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "security/0/north-window-8/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "security/0/north-window-14",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "security/0/north-window-14/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "security/0/wall-west",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "security/0/west-window-8",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "security/0/west-window-8/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "security/0/wall-east",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "security/0/east-window-8",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "security/0/east-window-8/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "security/0/corridor-wall-south",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "security/0/corridor-wall-north",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "security/0/room-0-south",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "security/0/room-0-south-opening",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "security/0/room-0-south-door",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "security/0/room-0-north",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "security/0/room-0-north-opening",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "security/0/room-0-north-door",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "security/0/room-1-south",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "security/0/room-1-south-partition",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "security/0/room-1-south-opening",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "security/0/room-1-south-door",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "security/0/room-1-north",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "security/0/room-1-north-partition",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "security/0/room-1-north-opening",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "security/0/room-1-north-door",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "security/roof",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "building/yard-control",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard-control/0/floor",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard-control/0/wall-south",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard-control/0/entry",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard-control/0/entry-door",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard-control/0/south-window-8",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard-control/0/south-window-8/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard-control/0/south-window-14",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard-control/0/south-window-14/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard-control/0/south-window-20",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard-control/0/south-window-20/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard-control/0/wall-north",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard-control/0/north-window-8",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard-control/0/north-window-8/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard-control/0/north-window-14",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard-control/0/north-window-14/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard-control/0/north-window-20",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard-control/0/north-window-20/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard-control/0/wall-west",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard-control/0/west-window-8",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard-control/0/west-window-8/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard-control/0/west-window-14",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard-control/0/west-window-14/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard-control/0/wall-east",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard-control/0/east-window-8",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard-control/0/east-window-8/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard-control/0/east-window-14",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard-control/0/east-window-14/glass",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard-control/0/corridor-wall-south",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard-control/0/corridor-wall-north",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard-control/0/room-0-south",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard-control/0/room-0-south-opening",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard-control/0/room-0-south-door",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard-control/0/room-0-north",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard-control/0/room-0-north-opening",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard-control/0/room-0-north-door",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard-control/0/room-1-south",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard-control/0/room-1-south-partition",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard-control/0/room-1-south-opening",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard-control/0/room-1-south-door",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard-control/0/room-1-north",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard-control/0/room-1-north-partition",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard-control/0/room-1-north-opening",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard-control/0/room-1-north-door",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard-control/roof",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/pavement",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-0-0",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-0-1",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-0-2",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-0-3",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-0-4",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-0-5",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-0-6",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-0-7",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-0-8",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-0-9",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-0-10",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-0-11",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-0-12",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-0-13",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-0-14",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-0-15",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-0-16",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-0-17",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-0-18",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-0-19",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-0-20",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/row-0-end",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-1-0",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-1-1",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-1-2",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-1-3",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-1-4",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-1-5",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-1-6",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-1-7",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-1-8",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-1-9",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-1-10",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-1-11",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-1-12",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-1-13",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-1-14",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-1-15",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-1-16",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-1-17",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-1-18",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-1-19",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-1-20",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/row-1-end",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-2-0",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-2-1",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-2-2",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-2-3",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-2-4",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-2-5",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-2-6",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-2-7",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-2-8",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-2-9",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-2-10",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-2-11",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-2-12",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-2-13",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-2-14",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-2-15",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-2-16",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-2-17",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-2-18",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-2-19",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-2-20",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/row-2-end",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-3-0",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-3-1",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-3-2",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-3-3",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-3-4",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-3-5",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-3-6",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-3-7",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-3-8",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-3-9",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-3-10",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-3-11",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-3-12",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-3-13",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-3-14",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-3-15",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-3-16",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-3-17",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-3-18",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-3-19",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/line-3-20",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "parking/row-3-end",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "fence/campus",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "fence/campus-entrance-return",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "gate/post--8",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "gate/post-8",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/gravel",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "fence/switchyard",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/bus-support--20-0--130",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/bus-support--20-0--65",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/bus-support--20-0-0",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/bus-support--20-0-65",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/bus-support--20-0-130",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/bus-support--20-1--130",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/bus-support--20-1--65",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/bus-support--20-1-0",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/bus-support--20-1-65",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/bus-support--20-1-130",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/bus-support--20-2--130",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/bus-support--20-2--65",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/bus-support--20-2-0",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/bus-support--20-2-65",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/bus-support--20-2-130",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/bus-support-20-0--130",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/bus-support-20-0--65",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/bus-support-20-0-0",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/bus-support-20-0-65",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/bus-support-20-0-130",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/bus-support-20-1--130",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/bus-support-20-1--65",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/bus-support-20-1-0",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/bus-support-20-1-65",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/bus-support-20-1-130",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/bus-support-20-2--130",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/bus-support-20-2--65",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/bus-support-20-2-0",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/bus-support-20-2-65",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/bus-support-20-2-130",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/unit-1/portal--10",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/unit-1/portal-10",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/unit-1/portal-top",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/unit-2/portal--10",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/unit-2/portal-10",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/unit-2/portal-top",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/unit-3/portal--10",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/unit-3/portal-10",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/unit-3/portal-top",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/unit-4/portal--10",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/unit-4/portal-10",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/unit-4/portal-top",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/hasle-1/portal--10",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/hasle-1/portal-10",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/hasle-1/portal-top",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/hasle-2/portal--10",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/hasle-2/portal-10",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/hasle-2/portal-top",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/hasle-3/portal--10",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/hasle-3/portal-10",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/hasle-3/portal-top",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/tegneby-1/portal--10",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/tegneby-1/portal-10",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/tegneby-1/portal-top",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/tegneby-2/portal--10",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/tegneby-2/portal-10",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/tegneby-2/portal-top",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/tegneby-3/portal--10",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/tegneby-3/portal-10",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/tegneby-3/portal-top",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "pylon/hasle-double",
+      "reason": "Authored physical support. Circuit membership is derived from conductor supportIds and correspondence; the support has no independent operational subject."
+    },
+    {
+      "physicalElementId": "pylon/hasle-single",
+      "reason": "Authored physical support. Circuit membership is derived from conductor supportIds and correspondence; the support has no independent operational subject."
+    },
+    {
+      "physicalElementId": "pylon/tegneby-double",
+      "reason": "Authored physical support. Circuit membership is derived from conductor supportIds and correspondence; the support has no independent operational subject."
+    },
+    {
+      "physicalElementId": "pylon/tegneby-single",
+      "reason": "Authored physical support. Circuit membership is derived from conductor supportIds and correspondence; the support has no independent operational subject."
+    },
+    {
+      "physicalElementId": "yard/control-cabinet-0",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/control-cabinet-1",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/control-cabinet-2",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "yard/control-cabinet-3",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "gate/switchyard--65",
+      "reason": "Authored circulation topology or its joined pavement derivative; no operational road, pedestrian or building state is invented."
+    },
+    {
+      "physicalElementId": "gate/switchyard--55",
+      "reason": "Authored circulation topology or its joined pavement derivative; no operational road, pedestrian or building state is invented."
+    },
+    {
+      "physicalElementId": "road/common-0",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "road/common-1",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "road/common-2",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "road/common-3",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "road/common-4",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "road/common-5",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "road/unit-spine",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "road/unit-1",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "road/unit-2",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "road/unit-3",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "road/unit-4",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "road/yard",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "road/unit-1-west-service",
+      "reason": "Authored circulation topology or its joined pavement derivative; no operational road, pedestrian or building state is invented."
+    },
+    {
+      "physicalElementId": "road/unit-2-west-service",
+      "reason": "Authored circulation topology or its joined pavement derivative; no operational road, pedestrian or building state is invented."
+    },
+    {
+      "physicalElementId": "road/unit-3-west-service",
+      "reason": "Authored circulation topology or its joined pavement derivative; no operational road, pedestrian or building state is invented."
+    },
+    {
+      "physicalElementId": "road/unit-4-west-service",
+      "reason": "Authored circulation topology or its joined pavement derivative; no operational road, pedestrian or building state is invented."
+    },
+    {
+      "physicalElementId": "road/parking-access",
+      "reason": "Authored circulation topology or its joined pavement derivative; no operational road, pedestrian or building state is invented."
+    },
+    {
+      "physicalElementId": "road/yard-entry",
+      "reason": "Authored circulation topology or its joined pavement derivative; no operational road, pedestrian or building state is invented."
+    },
+    {
+      "physicalElementId": "walk/administration",
+      "reason": "Authored circulation topology or its joined pavement derivative; no operational road, pedestrian or building state is invented."
+    },
+    {
+      "physicalElementId": "walk/training",
+      "reason": "Authored circulation topology or its joined pavement derivative; no operational road, pedestrian or building state is invented."
+    },
+    {
+      "physicalElementId": "walk/workshop",
+      "reason": "Authored circulation topology or its joined pavement derivative; no operational road, pedestrian or building state is invented."
+    },
+    {
+      "physicalElementId": "walk/security",
+      "reason": "Authored circulation topology or its joined pavement derivative; no operational road, pedestrian or building state is invented."
+    },
+    {
+      "physicalElementId": "walk/yard-control",
+      "reason": "Authored circulation topology or its joined pavement derivative; no operational road, pedestrian or building state is invented."
+    },
+    {
+      "physicalElementId": "parking/pedestrian-strip",
+      "reason": "Authored architectural or site context, without an invented process component or live state."
+    },
+    {
+      "physicalElementId": "walk/central-spine",
+      "reason": "Authored circulation topology or its joined pavement derivative; no operational road, pedestrian or building state is invented."
+    },
+    {
+      "physicalElementId": "pavement/roads",
+      "reason": "Authored circulation topology or its joined pavement derivative; no operational road, pedestrian or building state is invented."
+    },
+    {
+      "physicalElementId": "pavement/pedestrian",
+      "reason": "Authored circulation topology or its joined pavement derivative; no operational road, pedestrian or building state is invented."
+    }
+  ],
+  "evidence": {
+    "accuracy": "illustrative",
+    "origin": "Conceptual shared campus authored 25 October 2026 around retained four-unit and switchyard anchors. Building dimensions, bay arrangement, circuit support sharing, conductor sag and access geometry are illustrative; no surveyed or electrical-clearance qualification."
+  }
+}

@@ -10,6 +10,7 @@ const packLoaders = {
   'situation-monitor': async () => (await import('../packs/situation-monitor/ui-pack.ts')).situationMonitorPackView,
   drone: async () => (await import('../packs/drone/ui-pack.ts')).dronePackView,
   'process-plant': async () => (await import('../packs/process-plant/ui-pack.ts')).processPlantPackView,
+  'physical-layout': async () => (await import('../packs/physical-layout/ui-pack.ts')).physicalLayoutPackView,
   'electric-grid': async () => (await import('../packs/electric-grid/ui-pack.ts')).electricGridPackView,
 } satisfies Record<string, PackLoader>
 

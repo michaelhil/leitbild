@@ -1,4 +1,3 @@
-import { z } from 'zod'
 import type {
   CompiledComponent,
   CompiledPlantGraph,
@@ -7,22 +6,24 @@ import type {
   ProcessSignalBinding,
   ProcessSignalTagId,
   ProcessUnit,
+  ProcessQuantity,
   ProcessVariableValue,
   StateAspect,
   VariablePath,
 } from '../graph/index.ts'
-import { energyEnds, variablePathSchema } from '../graph/index.ts'
+import { energyEnds } from '../graph/index.ts'
 import type { CompiledProcessPlant } from '../plant-compiler.ts'
 import type { ProcessPlantIcCondition, ProcessPlantIcRule } from '../runtime/index.ts'
 import { resolveProcessPlantSignalBinding } from '../signals.ts'
-import { displayValue, formatQuantity, unitLabel } from '../displays/display-text.ts'
-import { actionOf, icRuleKind } from '../displays/ic-thresholds.ts'
-import { deviceLabel, mimicItemId, type MimicItem } from '../displays/mimic/bindings.ts'
-import { presentationFor } from '../displays/mimic/presentation.ts'
+import { displayValue, formatConfigurationQuantity, formatQuantity, unitLabel } from '../quantity-text.ts'
+import { assertProcessPlantVariableValueValid } from '../runtime/variable-validation.ts'
+import { actionOf, icRuleKind } from '../ic/thresholds.ts'
+import { equipmentItemId, equipmentItemLabel, notEquipmentReason, type EquipmentItem } from '../equipment/items.ts'
 import { instructorOnlyRefusal } from './command-guard.ts'
 import { demandStepOf, modulatingDemandSpan } from './demand-span.ts'
+import { operatorControllerBindings, valvePositionController } from '../graph/valve-controller.ts'
 
-// What a person may operate on each drawn item, read from what the model
+// What a person may operate on each item of equipment, read from what the model
 // declares: an aspect's writable command is a two-state control in the
 // aspect's words (a pump STARTs and STOPs, an isolating valve OPENs and
 // SHUTs, a breaker CLOSEs and OPENs); a modulating valve's position command
@@ -38,8 +39,8 @@ import { demandStepOf, modulatingDemandSpan } from './demand-span.ts'
 // sit (plan-final I-1). What a command sets going (a trip whose condition
 // reads what it moves) and what works against it (automation writing the
 // same command) come from the I&C config. Nothing here names a Plant,
-// equipment, signal or component kind: the mimic's kind table only says
-// what is drawn.
+// equipment, signal or component kind: the model's equipment items
+// (equipment/items.ts) say what is operated, and a drawing draws them.
 
 /** A rule an operation sets going or that works against it, as displays name what the I&C does there ("RX TRIP", "AFW", "CTL"). */
 export interface ControlRule {
@@ -97,6 +98,23 @@ export interface AnalogDemand {
   readonly words: { readonly open: string; readonly throttle: string }
 }
 
+/** An operator's controller target, in the measured signal's native unit.
+ * Bounds exist only where the model declares a real domain; no slider ceiling
+ * is invented for an unbounded pressure target. */
+export interface ControllerSetpoint {
+  readonly quantity: ProcessQuantity
+  readonly unit: ProcessUnit
+  readonly shownUnit: string
+  readonly step: number
+  readonly limits?: { readonly min: number; readonly max: number }
+}
+
+export interface OperatorController {
+  readonly automatic: VariablePath
+  readonly setpoint: VariablePath
+  readonly measured: VariablePath
+}
+
 export interface OfferedControl {
   /** The command variable written. */
   readonly path: VariablePath
@@ -104,10 +122,14 @@ export interface OfferedControl {
   /** What a button names besides its word: tag and label ("MOV-8000A PZR block valve"). */
   readonly target: string
   /** Two options, one pushbutton, or a demand set in its span with its two ends as options. */
-  readonly form: 'twoState' | 'pushbutton' | 'demand'
+  readonly form: 'twoState' | 'pushbutton' | 'demand' | 'setpoint'
   /** The span a demand control is set in; on a demand control only. */
   readonly demand?: AnalogDemand
-  /** The aspect it commands, and the solved state that says whether the equipment followed. */
+  readonly setpoint?: ControllerSetpoint
+  /** The controller owns this manual valve demand while AUTO is requested. */
+  readonly controller?: OperatorController
+  /** The aspect it commands and its feedback. Controller configuration uses
+   * its applied setting here, never as proof of physical receiver response. */
   readonly aspect?: StateAspect
   readonly state?: VariablePath
   /** The isolation input that shuts the equipment whatever this command demands. */
@@ -140,8 +162,8 @@ export interface WithheldControl {
 }
 
 export interface ItemControls {
-  readonly item: MimicItem
-  /** The id an agent names the item by (mimicItemId). */
+  readonly item: EquipmentItem
+  /** The id an agent names the item by (equipmentItemId). */
   readonly id: string
   readonly label: string
   /**
@@ -182,6 +204,17 @@ const aspectWords = (aspect: CompiledStateAspect, equipmentFunction: EquipmentFu
         : aspect.aspect === 'position' && (equipmentFunction === 'isolating' || equipmentFunction === 'relieving') ? valveWords
           : null
 
+/**
+ * The two words an aspect's state reads in, as its controls' options name
+ * them (ControlOption.state): its equipment's declared words, else the
+ * aspect's own, a modulating valve's OPEN and SHUT at the ends of its travel;
+ * null for an aspect with no two states.
+ */
+export const aspectStateWords = (graph: CompiledPlantGraph, aspect: CompiledStateAspect, equipmentFunction: EquipmentFunction | undefined): { readonly on: string; readonly off: string } | null => {
+  const words = aspectWords(aspect, equipmentFunction) ?? (aspect.aspect === 'position' ? valveWords : null)
+  return (aspect.state === undefined ? undefined : stateWordsOf(graph, aspect.state.path)) ?? (words === null ? null : { on: words.on.state, off: words.off.state })
+}
+
 // The values a two-state command writes: true and false, or a position's full span.
 const twoStateValues = (binding: ProcessSignalBinding): { readonly on: ProcessVariableValue; readonly off: ProcessVariableValue } | null =>
   binding.quantity === 'boolean' ? { on: true, off: false }
@@ -189,31 +222,41 @@ const twoStateValues = (binding: ProcessSignalBinding): { readonly on: ProcessVa
       : binding.quantity === 'ratio' && binding.unit === 'percent' ? { on: 100, off: 0 }
         : null
 
-const declaredControllerSchema = z.object({
-  measuredPath: variablePathSchema,
-  setpoint: z.number().finite(),
-}).passthrough()
-
 /**
  * The controller a component declares on its demand, which writes that
- * demand every step from what it measures (a feed regulating valve held to
+ * demand in automatic from what it measures (a feed regulating valve held to
  * its steam generator's level); null where it declares none.
  */
-export const declaredController = (component: CompiledComponent): { readonly measured: VariablePath; readonly setpoint: number } | null => {
-  const parameters = component.parameters
-  if (parameters === null || typeof parameters !== 'object' || Array.isArray(parameters)) return null
-  const controller = (parameters as Readonly<Record<string, unknown>>).controller
-  if (controller === undefined) return null
-  const parsed = declaredControllerSchema.parse(controller)
-  return { measured: parsed.measuredPath, setpoint: parsed.setpoint }
+export const declaredController = (component: CompiledComponent): { readonly measured: VariablePath; readonly setpoint: number; readonly operator?: OperatorController } | null => {
+  const controller = valvePositionController(component)
+  if (controller === null) return null
+  const operator = operatorControllerBindings(component)
+  return { measured: controller.measuredPath, setpoint: controller.setpoint,
+    ...(operator === null ? {} : { operator: { ...operator, measured: controller.measuredPath } }) }
 }
 
-const automaticReason = (graph: CompiledPlantGraph, controller: { readonly measured: VariablePath; readonly setpoint: number }): WithheldReason => {
+export const automaticReason = (graph: CompiledPlantGraph, controller: { readonly measured: VariablePath; readonly setpoint: number; readonly operator?: OperatorController }): Extract<WithheldReason, { kind: 'automatic' }> => {
   const measured = graph.signalBindingByPath.get(controller.measured)
   if (measured === undefined) throw new Error(`controller measures an unknown variable: ${controller.measured}`)
   const unit = unitLabel(measured.unit)
-  const setpoint = `${Number(displayValue(controller.setpoint, measured.unit).toPrecision(12))}${unit === '' ? '' : ` ${unit}`}`
-  return { kind: 'automatic', measured: controller.measured, setpoint: controller.setpoint, text: `AUTO · ${measured.tagId ?? measured.label} held to ${setpoint}`, manual: manualText }
+  const setpoint = controller.operator === undefined
+    ? `${Number(displayValue(controller.setpoint, measured.unit).toPrecision(12))}${unit === '' ? '' : ` ${unit}`}`
+    : formatConfigurationQuantity(controller.setpoint, measured.unit)
+  return { kind: 'automatic', measured: controller.measured, setpoint: controller.setpoint, text: `AUTO · ${measured.tagId ?? measured.label} ${controller.operator === undefined ? 'held to' : 'target'} ${setpoint}`, manual: controller.operator === undefined ? manualText : 'Select MAN to operate the valve position; protection and isolation remain in force' }
+}
+
+/** A finite target in the native physical domain; not a claim that the measured
+ * process has already reached that target. */
+export const setpointSetting = (control: OfferedControl, value: ProcessVariableValue): { readonly ok: true; readonly word: string } | { readonly ok: false; readonly reason: string } => {
+  const target = control.setpoint
+  if (target === undefined) throw new Error(`${control.path} is no controller target`)
+  try {
+    assertProcessPlantVariableValueValid({ path: control.path, descriptor: { quantity: target.quantity, unit: target.unit,
+      ...(target.limits === undefined ? {} : { limits: { hardRange: target.limits } }),
+    } }, value)
+  } catch (error) { return { ok: false, reason: error instanceof Error ? error.message : String(error) } }
+  if (typeof value !== 'number') return { ok: false, reason: `${control.target} takes a numeric target` }
+  return { ok: true, word: `SET ${formatConfigurationQuantity(value, target.unit)}` }
 }
 
 /**
@@ -246,8 +289,6 @@ export const demandSetting = (control: OfferedControl, value: ProcessVariableVal
   if (end !== undefined) return { ok: true, word: end.word }
   return { ok: true, word: `${value < position ? demand.words.throttle : demand.words.open} to ${shown(value)}` }
 }
-
-const labelOf = (component: CompiledComponent): string => component.metadata?.presentation?.shortLabel ?? component.label
 
 const localPath = (component: CompiledComponent, path: VariablePath): string => String(path).slice(String(component.id).length + 1)
 
@@ -362,14 +403,14 @@ const classify = (
     readonly aspects: ReadonlyArray<CompiledStateAspect>
     readonly isolations: ReadonlySet<VariablePath>
     readonly equipmentFunction: EquipmentFunction | undefined
-    readonly controller: { readonly measured: VariablePath; readonly setpoint: number } | null
+    readonly controller: ReturnType<typeof declaredController>
     readonly label: string
   },
   binding: ProcessSignalBinding,
 ): Classified => {
   if (context.isolations.has(binding.path)) return withheld(binding, { kind: 'isolationInput', text: isolationText })
   const aspect = context.aspects.find(candidate => candidate.command === binding.path)
-  if (aspect !== undefined && context.controller !== null) return withheld(binding, automaticReason(plant.graph, context.controller))
+  if (aspect !== undefined && context.controller !== null && context.controller.operator === undefined) return withheld(binding, automaticReason(plant.graph, context.controller))
   const words = aspect === undefined ? undefined : aspectWords(aspect, context.equipmentFunction)
   const declared = declaredWords(context.component, binding.path)
   const target = `${binding.tagId === undefined ? '' : `${binding.tagId} `}${context.label}`
@@ -380,6 +421,7 @@ const classify = (
     ...(aspect === undefined ? {} : { aspect: aspect.aspect }),
     ...(aspect?.state === undefined ? {} : { state: aspect.state.path }),
     ...(aspect?.isolation === undefined ? {} : { isolation: aspect.isolation }),
+    ...(aspect === undefined || context.controller?.operator === undefined ? {} : { controller: context.controller.operator }),
   }
   const optionContext = { command: binding.path, ...(aspect === undefined ? {} : { aspect }), memories: [] as ReadonlyArray<VariablePath> }
   const offer = (form: OfferedControl['form'], choices: ReadonlyArray<{ readonly word: string; readonly value: ProcessVariableValue; readonly state?: string; readonly on: boolean }>, memories: ReadonlyArray<VariablePath> = [], demand?: AnalogDemand): Classified => {
@@ -391,6 +433,20 @@ const classify = (
     if (kept.length === 0) return withheld(binding, { kind: 'declared', text: [...new Set(dropped.map(option => option.reason))].join('; ') })
     return { offered: { ...base, form, ...(demand === undefined ? {} : { demand }), options: kept.map(choice => optionFor(plant, { ...optionContext, memories }, choice)), withheldOptions: dropped } }
   }
+  const operator = context.controller?.operator
+  if (operator && binding.path === operator.automatic) return { offered: {
+    ...base, state: binding.path, form: 'twoState', options: [
+      optionFor(plant, optionContext, { word: 'AUTO', value: true, state: 'AUTO', on: true }),
+      optionFor(plant, optionContext, { word: 'MAN', value: false, state: 'MAN', on: false }),
+    ], withheldOptions: [],
+  } }
+  if (operator && binding.path === operator.setpoint) {
+    const source = valvePositionController(context.component)!.operator!.setpoint
+    return { offered: { ...base, state: binding.path, form: 'setpoint', options: [], withheldOptions: [], setpoint: {
+      quantity: source.quantity, unit: source.unit, shownUnit: unitLabel(source.unit), step: source.step,
+      ...(source.limits === undefined ? {} : { limits: source.limits }),
+    } } }
+  }
   // A pushbutton is never an aspect's input (the compiler holds it to that): it is worded as its presentation words it pressed.
   if (context.component.metadata?.presentation?.momentary?.includes(localPath(context.component, binding.path)) === true) {
     return offer('pushbutton', [{ word: declared?.on ?? binding.label, value: true, on: true }], memoriesOf(plant.graph, context.component))
@@ -398,7 +454,9 @@ const classify = (
   if (aspect !== undefined) {
     // Words declared for the aspect's state replace its own (a generator on its breaker reads ON LINE).
     const stated = aspect.state === undefined ? undefined : stateWordsOf(plant.graph, aspect.state.path)
-    const demand = analogDemandOf(aspect, context.equipmentFunction, binding)
+    // An opted-in controller makes its own valve position operator-modulated
+    // in MAN, including a valve whose process duty remains pressure relief.
+    const demand = analogDemandOf(aspect, operator === undefined ? context.equipmentFunction : 'modulating', binding)
     if (demand !== null) {
       return offer('demand', [
         { word: valveWords.on.word, value: demand.max, state: stated?.on ?? valveWords.on.state, on: true },
@@ -438,13 +496,13 @@ const itemWritables = (graph: CompiledPlantGraph, component: CompiledComponent, 
   })
 }
 
-const classifiedFor = (plant: CompiledProcessPlant, item: MimicItem): { readonly label: string; readonly position: VariablePath | undefined; readonly classified: ReadonlyArray<Classified> } => {
+const classifiedFor = (plant: CompiledProcessPlant, item: EquipmentItem): { readonly label: string; readonly position: VariablePath | undefined; readonly classified: ReadonlyArray<Classified> } => {
   const graph = plant.graph
   const component = graph.components[item.component]!
   const device = item.kind === 'device' ? component.semantics.embedded.find(candidate => candidate.id === item.device) : undefined
   if (item.kind === 'device' && device === undefined) throw new Error(`component ${component.id} bundles no device ${item.device}`)
   const aspects = device?.aspects ?? component.semantics.aspects
-  const label = device === undefined ? labelOf(component) : deviceLabel(component, device)
+  const label = equipmentItemLabel(component, device)
   const isolations = new Set([...component.semantics.aspects, ...component.semantics.embedded.flatMap(candidate => candidate.aspects)].map(aspect => aspect.isolation).filter(defined))
   const context = {
     component,
@@ -464,12 +522,12 @@ const classifiedFor = (plant: CompiledProcessPlant, item: MimicItem): { readonly
   return { label, position, classified: ordered.map(binding => classify(plant, context, binding)) }
 }
 
-/** The controls one drawn item offers, and the writable variables it withholds with why. */
-export const deriveItemControls = (plant: CompiledProcessPlant, item: MimicItem): ItemControls => {
+/** The controls one item of equipment offers, and the writable variables it withholds with why. */
+export const deriveItemControls = (plant: CompiledProcessPlant, item: EquipmentItem): ItemControls => {
   const { label, position, classified } = classifiedFor(plant, item)
   return {
     item,
-    id: mimicItemId(plant.graph, item),
+    id: equipmentItemId(plant.graph, item),
     label,
     ...(position === undefined ? {} : { position }),
     offered: classified.flatMap(entry => 'offered' in entry ? [entry.offered] : []),
@@ -477,11 +535,11 @@ export const deriveItemControls = (plant: CompiledProcessPlant, item: MimicItem)
   }
 }
 
-/** Every item a mimic can draw: each component its kind table draws, and each device such a component bundles. */
-export const operableItems = (plant: CompiledProcessPlant): ReadonlyArray<MimicItem> =>
-  plant.graph.components.flatMap((component): ReadonlyArray<MimicItem> => presentationFor(component).element === 'not-drawn' ? [] : [
+/** Every item of equipment: each component that is equipment, and each device such a component bundles. */
+export const operableItems = (plant: CompiledProcessPlant): ReadonlyArray<EquipmentItem> =>
+  plant.graph.components.flatMap((component): ReadonlyArray<EquipmentItem> => notEquipmentReason(component) !== undefined ? [] : [
     { kind: 'component', component: component.index },
-    ...component.semantics.embedded.map((device): MimicItem => ({ kind: 'device', component: component.index, device: device.id })),
+    ...component.semantics.embedded.map((device): EquipmentItem => ({ kind: 'device', component: component.index, device: device.id })),
   ])
 
 const readsComponent = (plant: CompiledProcessPlant, rule: ProcessPlantIcRule, component: CompiledComponent): boolean =>
@@ -521,7 +579,7 @@ export const plantControlsFor = (plant: CompiledProcessPlant): PlantControls => 
 }
 
 /**
- * Every drawn item's controls, with the pushbuttons of undrawn logic (a
+ * Every item's controls, with the pushbuttons of logic that is no item (a
  * manual trip, the SI block) on the energy ends their rules command (QA-11):
  * the drawing has no symbol for the logic itself.
  */
@@ -531,7 +589,7 @@ export const derivePlantControls = (plant: CompiledProcessPlant): PlantControls 
   const attached = new Map<number, OfferedControl[]>()
   const unplaced: Array<{ readonly path: VariablePath; readonly reason: string }> = []
   for (const component of plant.graph.components) {
-    if (presentationFor(component).element !== 'not-drawn') continue
+    if (notEquipmentReason(component) === undefined) continue
     const { classified } = classifiedFor(plant, { kind: 'component', component: component.index })
     const pushbuttons = classified.flatMap(entry => 'offered' in entry && entry.offered.form === 'pushbutton' ? [entry.offered] : [])
     if (pushbuttons.length === 0) continue
@@ -570,6 +628,16 @@ export const offeredOption = (
   for (const entry of controls.items) {
     for (const control of entry.offered) {
       if (control.path !== write.path) continue
+      if (control.controller !== undefined && read(control.controller.automatic) === true) {
+        const setpoint = read(control.controller.setpoint)
+        if (typeof setpoint !== 'number') throw new Error(`${control.controller.setpoint} reads no controller target`)
+        const reason = automaticReason(plant.graph, { measured: control.controller.measured, setpoint, operator: control.controller })
+        return { ok: false, reason: `${reason.text}. ${reason.manual}` }
+      }
+      if (control.setpoint !== undefined) {
+        const setting = setpointSetting(control, write.value)
+        return setting.ok ? { ok: true, item: entry.id, word: setting.word } : setting
+      }
       const option = control.options.find(candidate => candidate.value === write.value)
       if (option !== undefined) return { ok: true, item: entry.id, word: option.word }
       const withheldOption = control.withheldOptions.find(candidate => candidate.value === write.value)

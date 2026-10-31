@@ -17,7 +17,7 @@
   import { createWorkspaceApi, rememberedWorkspace, workspaceLabel } from './launch-workspace.ts'
   import {
     CREDIT_LINK, CREDIT_TEXT, FACTS, FOOTER_NOTE, HERO_IMAGE_HEIGHT_960, HERO_IMAGE_SIZES, HERO_IMAGE_WIDTHS, HERO_SLIDES,
-    LANDING_TITLE, LICENCE_HREF, PLAIN_LINE, TAGLINE, heroLinkRoute, heroSrcset, slidesToLoad, type HeroSlide,
+    LANDING_TITLE, LICENCE_LINK, PLAIN_LINE, TAGLINE, heroLinkRoute, heroSrcset, slidesToLoad, type HeroSlide,
   } from './landing-content.ts'
   import { createModalUrl, isDemosModalRoute, modalRouteUrl, NO_MODAL, type ModalCloseReason, type ModalRoute } from './modal-url.ts'
   import { browserWorkspaceMemory } from './workspace-memory.ts'
@@ -28,7 +28,7 @@
   const modalUrl = createModalUrl(window)
 
   // Hero images, by file stem and width.
-  const imageUrls = import.meta.glob('./assets/landing/*.webp', { eager: true, query: '?url', import: 'default' }) as Record<string, string>
+  const imageUrls = import.meta.glob('./assets/landing/*.webp', { eager: true, query: '?url', import: 'default' })
   const imagesOf = (slide: HeroSlide): { src: string; srcset: string } => {
     const urls = new Map(HERO_IMAGE_WIDTHS.map(width => [width, imageUrls[`./assets/landing/${slide.image}-${width}.webp`] ?? '']))
     return { src: urls.get(960) ?? '', srcset: heroSrcset(urls) }
@@ -221,7 +221,7 @@
 
 <footer class="foot">
   <span><Wordmark size="inline" /> · v{version}</span>
-  <a href={LICENCE_HREF}>MIT licence</a>
+  <a href={LICENCE_LINK.href}>{LICENCE_LINK.label}</a>
   <a href={CREDIT_LINK.href}>Data credits</a>
   <a href="/wiki">Wiki</a>
   <a bind:this={manageLink} href={routeHref({ kind: 'manage' })} aria-haspopup="dialog" onclick={onRouteClick({ kind: 'manage' })}>Manage Workspaces</a>

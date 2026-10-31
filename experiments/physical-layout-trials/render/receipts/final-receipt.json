@@ -1,0 +1,355 @@
+{
+  "completedAt": "2026-10-24T18:37:43.034Z",
+  "trialBaseCommit": "c9a8273a29e13e338013c671e06f1fc605fb86f9",
+  "planningFreezeSha256": "ad7f78a7c8601a487d0285628545e4c1cb3efdc927fa1beafdfbab588ffe6ff3",
+  "versions": {
+    "maplibre": "6.0.0-11",
+    "babylon": "9.23.0",
+    "bun": "1.4.0"
+  },
+  "profile": {
+    "ua": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+    "platform": "MacIntel",
+    "hardwareConcurrency": 8,
+    "viewport": [
+      1440,
+      913
+    ],
+    "dpr": 1,
+    "gl": {
+      "vendor": "WebKit",
+      "renderer": "WebKit WebGL",
+      "unmaskedVendor": "Google Inc. (Apple)",
+      "unmaskedRenderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M2, Unspecified Version)",
+      "version": "WebGL 2.0 (OpenGL ES 3.0 Chromium)",
+      "maxTextureSize": 16384,
+      "antialias": true
+    }
+  },
+  "correctness": "both pass in declared envelope",
+  "sameCanvasSha256": "e3d88c386e6794ad043b056d80d2db482f877cc93907e76f99dbeb4fc98fc7c6",
+  "negativeControls": "both deliberate shared clears detected",
+  "lifecycle": {
+    "mountCyclesPerBackend": 20,
+    "fullStyleCyclesPerBackend": 20,
+    "forcedContextRestoresPerBackend": 1,
+    "actualDeletedBuffersPerSlice": {
+      "native": 42,
+      "babylon": 168
+    },
+    "actualDeletedProgramsPerSlice": 1,
+    "stillLiveAfterRelease": 0
+  },
+  "extraBabylonModules": [
+    "babylon-jyzs1vjy.js",
+    "app-n56f0pmj.js",
+    "app-9pa1gd2w.js",
+    "app-s5dsew05.js",
+    "app-whpzh38q.js",
+    "app-jnbx94n9.js",
+    "app-vd83tdpm.js",
+    "app-zttjn0wx.js",
+    "app-j4arak99.js",
+    "app-ehcstzxx.js",
+    "app-9xanjpw2.js",
+    "app-hn0wgdkn.js",
+    "app-a597jezn.js"
+  ],
+  "extraBabylonBytes": 937491,
+  "extraBabylonGzipBytes": 226870,
+  "results": [
+    {
+      "backend": "native",
+      "firstUsefulObservedMs": 426.90000009536743,
+      "workloads": [
+        {
+          "name": "slice",
+          "triangles": 33828,
+          "visibleObjects": 42,
+          "frameIntervalsMs": {
+            "count": 90,
+            "p50": 16.600000143051147,
+            "p95": 17.799999952316284,
+            "p99": 18.90000009536743,
+            "max": 18.90000009536743
+          },
+          "sceneCpuMs": {
+            "count": 90,
+            "p50": 2.8999998569488525,
+            "p95": 3.5,
+            "p99": 3.5999999046325684,
+            "max": 3.5999999046325684
+          },
+          "idleRenders": 0,
+          "estimatedGeometryBufferBytes": 3653424,
+          "sharedGeometryUploads": 42
+        },
+        {
+          "name": "500",
+          "triangles": 1448000,
+          "visibleObjects": 500,
+          "frameIntervalsMs": {
+            "count": 90,
+            "p50": 16.600000143051147,
+            "p95": 18.40000009536743,
+            "p99": 19.200000047683716,
+            "max": 19.200000047683716
+          },
+          "sceneCpuMs": {
+            "count": 90,
+            "p50": 3.0999999046325684,
+            "p95": 3.700000047683716,
+            "p99": 3.799999952316284,
+            "max": 3.799999952316284
+          },
+          "idleRenders": 0,
+          "estimatedGeometryBufferBytes": 312768,
+          "sharedGeometryUploads": 1
+        },
+        {
+          "name": "campus",
+          "triangles": 135360,
+          "visibleObjects": 169,
+          "frameIntervalsMs": {
+            "count": 90,
+            "p50": 16.699999809265137,
+            "p95": 18.09999990463257,
+            "p99": 18.899999856948853,
+            "max": 18.899999856948853
+          },
+          "sceneCpuMs": {
+            "count": 90,
+            "p50": 2.299999952316284,
+            "p95": 3,
+            "p99": 3.200000047683716,
+            "max": 3.200000047683716
+          },
+          "idleRenders": 0,
+          "estimatedGeometryBufferBytes": 3658608,
+          "sharedGeometryUploads": 43
+        }
+      ]
+    },
+    {
+      "backend": "babylon",
+      "firstUsefulObservedMs": 248.5,
+      "workloads": [
+        {
+          "name": "slice",
+          "triangles": 33828,
+          "visibleObjects": 42,
+          "frameIntervalsMs": {
+            "count": 90,
+            "p50": 16.700000047683716,
+            "p95": 17.90000009536743,
+            "p99": 18.700000047683716,
+            "max": 18.700000047683716
+          },
+          "sceneCpuMs": {
+            "count": 90,
+            "p50": 3.4000000953674316,
+            "p95": 3.700000047683716,
+            "p99": 3.799999952316284,
+            "max": 3.799999952316284
+          },
+          "idleRenders": 0,
+          "estimatedGeometryBufferBytes": 4465296,
+          "sharedGeometryUploads": 42
+        },
+        {
+          "name": "500",
+          "triangles": 1448000,
+          "visibleObjects": 500,
+          "frameIntervalsMs": {
+            "count": 90,
+            "p50": 16.700000047683716,
+            "p95": 18,
+            "p99": 18.600000143051147,
+            "max": 18.600000143051147
+          },
+          "sceneCpuMs": {
+            "count": 90,
+            "p50": 4.400000095367432,
+            "p95": 4.799999952316284,
+            "p99": 5.200000047683716,
+            "max": 5.200000047683716
+          },
+          "idleRenders": 0,
+          "estimatedGeometryBufferBytes": 382272,
+          "sharedGeometryUploads": 1
+        },
+        {
+          "name": "campus",
+          "triangles": 135360,
+          "visibleObjects": 169,
+          "frameIntervalsMs": {
+            "count": 90,
+            "p50": 16.699999809265137,
+            "p95": 18.09999990463257,
+            "p99": 18.40000009536743,
+            "max": 18.40000009536743
+          },
+          "sceneCpuMs": {
+            "count": 90,
+            "p50": 3.799999952316284,
+            "p95": 4,
+            "p99": 4.1000001430511475,
+            "max": 4.1000001430511475
+          },
+          "idleRenders": 0,
+          "estimatedGeometryBufferBytes": 4471632,
+          "sharedGeometryUploads": 43
+        }
+      ]
+    }
+  ],
+  "recommendation": "Native WebGL2 for the bounded finite-geometry slice; Babylon remains a qualified shared-context contender but no reduced owned maintenance was demonstrated for this envelope.",
+  "limits": [
+    "Single Apple M2/Chrome155 desktop headless profile with AA=true; no constrained physical device or shaped WAN.",
+    "Native first then Babylon fresh page in same browser; startup figures are observations, not a causal startup-speed ranking.",
+    "CPU frame time includes exhaustive shared GL state instrumentation.",
+    "Shared CPU triangle-reference picking; no accelerated picker/hover latency qualification.",
+    "No glTF loader/PBR/arbitrary capped sections/terrain/globe/restricted-content integration qualified.",
+    "No real Run telemetry/alarms or production map command interactions.",
+    "Original accepted-reference geometry benchmarks are separate from source-authority quality.",
+    "638px IAB initial/reset framing can crop hall and controls cover scene; no production responsive-fit claim.",
+    "Full browser memory/GPU total not measured; byte figures cover actual requested geometry buffer payloads only."
+  ],
+  "sourceFiles": [
+    {
+      "path": ".gitignore",
+      "bytes": 79,
+      "sha256": "2bce887f3a3cf9c73958c8de1811d817cf729cb0bb49bec2fa30fff495904f8c"
+    },
+    {
+      "path": "README.md",
+      "bytes": 10779,
+      "sha256": "55439bb99cdabcc9bbcd2ae802e1c7329407eb3347d4ee30707a3c3d73e0242c"
+    },
+    {
+      "path": "build.ts",
+      "bytes": 1203,
+      "sha256": "354ea0497eaaf22719dc552d0425f43f106f04ac60b68d83d0b3e868ace37841"
+    },
+    {
+      "path": "bun.lock",
+      "bytes": 6875,
+      "sha256": "2698b11963d02a394a1e79563ea671b35667fd16e5355d09d445cdde58ccda7b"
+    },
+    {
+      "path": "finalize.ts",
+      "bytes": 4861,
+      "sha256": "d230987bad32a518ebf61181edd6bbb822d40fddbdc3f9abbe4d155798b227c3"
+    },
+    {
+      "path": "index.html",
+      "bytes": 1529,
+      "sha256": "60e6254104773f35d5287deee4a5e55b57e8ef865ca432011f432fc416b34a7b"
+    },
+    {
+      "path": "package.json",
+      "bytes": 314,
+      "sha256": "08eefac7410cc117b5218b65d1e882c5131ecbbbab1acdd8e39b2ed4447f4b5b"
+    },
+    {
+      "path": "probe-browser.ts",
+      "bytes": 6545,
+      "sha256": "567c99d6a72ae69956481c740c946b64e758576ef14205d9b02fb26217c0cab2"
+    },
+    {
+      "path": "server.ts",
+      "bytes": 1290,
+      "sha256": "334e91da1ea374a50d3d16be4bb808dd1aea81047ebb478d3507056de253a890"
+    },
+    {
+      "path": "src/app.ts",
+      "bytes": 14028,
+      "sha256": "9edd13aeb1506c05248ff2c63f639eaabc6917b30fa46697a97ed154bc893261"
+    },
+    {
+      "path": "src/babylon.ts",
+      "bytes": 4976,
+      "sha256": "091240c49d321241e63046d57dc6a24019c94223c054675a3f9dfa3a5536f4d1"
+    },
+    {
+      "path": "src/backend.ts",
+      "bytes": 603,
+      "sha256": "560530493359c0e1c81968fbc1317e218d2b21ac85edffc02520715d73f2674b"
+    },
+    {
+      "path": "src/contract.test.ts",
+      "bytes": 3826,
+      "sha256": "7d1fbf93e596ce7ab2ca43c82b1819868593cda2f4c2d4d969f8f9b81e80ccd6"
+    },
+    {
+      "path": "src/gl-state.ts",
+      "bytes": 4498,
+      "sha256": "b012520f3705340d1dd05136af052850ec36fc03ee6eb5373c09d7df51f0636e"
+    },
+    {
+      "path": "src/layer.ts",
+      "bytes": 3037,
+      "sha256": "58c2cf34ae3e30405455bfb8e7f4abe1039bf08a3ee77443772a989bb986eb7d"
+    },
+    {
+      "path": "src/matrix.ts",
+      "bytes": 1226,
+      "sha256": "82bbdb629cca5edb3f4a38f2b58c62650406cf17e483b5ed156837268c631c85"
+    },
+    {
+      "path": "src/native.ts",
+      "bytes": 3232,
+      "sha256": "44034e99785ddcdf39a681095af1ef8d76647e8d883ecab480dc206963eaf322"
+    },
+    {
+      "path": "src/overlays.ts",
+      "bytes": 1847,
+      "sha256": "2f8631931558caa8d668222ed6e506ab45c7f3df002789c8b57ca6ea0143fd9d"
+    },
+    {
+      "path": "src/picking.ts",
+      "bytes": 1006,
+      "sha256": "44f377d42b0eb431bf8af445246ee61e4dd0c8cdc89feb03bec4294852f44904"
+    },
+    {
+      "path": "src/reference/math.ts",
+      "bytes": 2253,
+      "sha256": "2a85196ece533f96ceaba392d9f554bc68a98932c6d93d12e82b4746580c1df2"
+    },
+    {
+      "path": "src/reference/mesh.ts",
+      "bytes": 3494,
+      "sha256": "e3ab640f7dde9afeff8ca191d4f802e933654cb8be58e1c940d7582c9b7fce97"
+    },
+    {
+      "path": "src/reference/model.ts",
+      "bytes": 11698,
+      "sha256": "cd21f772205558f321932b804f0182f197a2dfcf47babf1238525b78b3adacf9"
+    },
+    {
+      "path": "src/reference/scene.ts",
+      "bytes": 16824,
+      "sha256": "d8eee83a830778c632e2e142b3179d2a06f4de7ceaffdf58768e52b6186cb508"
+    },
+    {
+      "path": "src/sentinel.ts",
+      "bytes": 2586,
+      "sha256": "fe0e7872d39dd6a16ad34e47cd878c1a941cc9bdeb76f867efbd6a9913638b05"
+    },
+    {
+      "path": "src/workload.ts",
+      "bytes": 4743,
+      "sha256": "a73116e6f25d330f967d9dea4a8b306aa99f31fddf4d3ab3cedbe9b9e1ca0d0f"
+    },
+    {
+      "path": "styles.css",
+      "bytes": 983,
+      "sha256": "cdd69858fb493e30563ba44134bc71f419961a154133d125dff40482789f95ce"
+    },
+    {
+      "path": "tsconfig.json",
+      "bytes": 247,
+      "sha256": "4b4fca953341f5e0f204d78f7b870c0446549b577e9a9ecaa0c38363affead5d"
+    }
+  ]
+}

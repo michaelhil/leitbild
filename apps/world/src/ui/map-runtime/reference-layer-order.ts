@@ -1,4 +1,6 @@
 import { referenceLayerIdPrefix } from '../map/reference-layer-factory.ts'
+import { physicalSceneLayerId } from '../map/physical-scene/order.ts'
+import type { Map as MapLibreMap } from 'maplibre-gl'
 
 // Reference datasets are context drawn directly above the base map's ground
 // layers: below the first base-map label and below every runtime overlay (Pack
@@ -17,6 +19,16 @@ export interface StyleForOrder {
   readonly metadata?: unknown
 }
 
+/** MapLibre's serialized style omits custom layers; actual composition must include them. */
+export const orderedMapStyle = (map: Pick<MapLibreMap, 'getStyle' | 'getLayer' | 'getLayersOrder'>): StyleForOrder => ({
+  metadata: map.getStyle().metadata,
+  layers: map.getLayersOrder().flatMap(id => {
+    const layer = map.getLayer(id)
+    if (layer === undefined) throw new Error(`Map layer disappeared while reading composition: ${id}`)
+    return [{ id, type: layer.type, ...('source' in layer ? { source: layer.source } : {}) }]
+  }),
+})
+
 const baseSourcesKey = 'leitbild:baseSources'
 
 const baseSourceIdsOf = (style: StyleForOrder): ReadonlySet<string> => {
@@ -33,6 +45,7 @@ export const referenceLayerAnchorId = (style: StyleForOrder): string | null => {
   const baseSourceIds = baseSourceIdsOf(style)
   const anchor = style.layers.find(layer => {
     if (layer.id.startsWith(referenceLayerIdPrefix)) return false
+    if (layer.id === physicalSceneLayerId) return true
     if (layer.type === 'symbol') return true
     return typeof layer.source === 'string' && !baseSourceIds.has(layer.source)
   })

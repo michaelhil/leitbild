@@ -1,6 +1,7 @@
+import { isIncomingFluidForOutlet } from '../fluid-circuits.ts'
 import { componentVariablePath, processLinkVariablePath, type ProcessLinkBehaviorDefinition } from '../behavior-contract.ts'
 import { relaxToward } from '../component-helpers.ts'
-import { averageIncomingLinkValue, flowWeightedIncomingLinkValue, hasProcessLinkVariable, serviceMatches } from './link-flow-helpers.ts'
+import { flowWeightedIncomingLinkValue, hasProcessLinkVariable } from './link-flow-helpers.ts'
 
 export const processLinkChemistryBehaviorDefinitions: ReadonlyArray<ProcessLinkBehaviorDefinition> = [
   {
@@ -17,9 +18,10 @@ export const processLinkChemistryBehaviorDefinitions: ReadonlyArray<ProcessLinkB
         target = context.readNumber(componentVariablePath(fromComponent, 'soluteConcentrationPpm'))
       } else if (fromComponent.kind === 'reactorVessel') {
         target = context.readNumber(componentVariablePath(fromComponent, 'boronConcentrationPpm'))
+      } else if (fromComponent.kind === 'containmentVolume' && String(link.fromPortName) === 'sumpOut') {
+        target = context.readNumber(componentVariablePath(fromComponent, 'sumpSoluteConcentrationPpm'))
       } else {
-        target = flowWeightedIncomingLinkValue(system, link.fromComponentIndex, 'soluteConcentrationPpm', context, candidate => serviceMatches(candidate, link.service))
-          ?? averageIncomingLinkValue(system, link.fromComponentIndex, 'soluteConcentrationPpm', context, candidate => serviceMatches(candidate, link.service))
+        target = flowWeightedIncomingLinkValue(system, link.fromComponentIndex, 'soluteConcentrationPpm', context, candidate => isIncomingFluidForOutlet(system, link, candidate))
           ?? context.readNumber(processLinkVariablePath(link, 'soluteConcentrationPpm'))
       }
       context.write(

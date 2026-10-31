@@ -4,13 +4,13 @@
 
   interface Props {
     readonly disabled?: boolean
-    readonly submit?: (prompt: string) => Promise<void>
+    readonly submit?: ((prompt: string) => Promise<void>) | undefined
     readonly toggle?: () => Promise<void>
     readonly active?: boolean
     readonly onError?: (message: string) => void
     readonly onOpen?: () => Promise<void>
     readonly details?: Snippet<[busy: boolean]>
-    /** Visible text beside the sparkle ("Ask" on the Workspace page); icon only without it. */
+    /** Visible text beside the sparkle ("Ask", or "Assistant" while open); icon only without it. */
     readonly label?: string
   }
 
@@ -78,9 +78,9 @@
   type="button"
   disabled={disabled || busy}
   aria-busy={busy}
-  aria-label={active ? 'Hide Agents' : label === undefined ? 'Open Leitbild Assistant' : `${label} the Leitbild Assistant`}
+  aria-label={active ? 'Hide Leitbild Assistant' : label === undefined ? 'Open Leitbild Assistant' : `${label} the Leitbild Assistant`}
   aria-pressed={toggle ? active : undefined}
-  title={disabled ? 'Leitbild Assistant is unavailable' : active ? 'Hide Agents' : toggle ? 'Open Run Assistant' : 'Ask Leitbild Assistant'}
+  title={disabled ? 'Leitbild Assistant is unavailable' : active ? 'Hide Run Assistant' : toggle ? 'Open Run Assistant' : 'Ask Leitbild Assistant'}
   onclick={() => void open()}
 >
   {#if busy}
@@ -115,4 +115,5 @@
   .assistant-launch.labelled:focus-visible { outline: 2px solid var(--lb-focus-on-dark); outline-offset: 2px; }
   .assistant-launch.labelled svg { width: 16px; height: 16px; }
   @media (pointer: coarse) { .assistant-launch.labelled { min-height: 44px; } }
+  @media (max-width: 760px) { .assistant-launch.labelled { min-height: 44px; } }
 </style>

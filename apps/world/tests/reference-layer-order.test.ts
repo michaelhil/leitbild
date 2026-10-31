@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { electricGridPackView } from '../src/packs/electric-grid/ui-pack.ts'
 import { gridNorwayStyle } from '../src/packs/electric-grid/ui/grid-norway-style.ts'
 import { createMapLayerRegistry } from '../src/ui/map-runtime/map-layer-registry.ts'
-import { referenceLayerAnchorId } from '../src/ui/map-runtime/reference-layer-order.ts'
+import { orderedMapStyle, referenceLayerAnchorId } from '../src/ui/map-runtime/reference-layer-order.ts'
 import { gridNorwayReferenceTileset } from './fixtures/grid-norway-reference-manifest.ts'
 import { routeMapErrors } from './helpers/fake-map-errors.ts'
 import { createFakeMapStyle, layerOrder, leitbildBaseLayers, leitbildBaseMetadata } from './helpers/fake-map-style.ts'
@@ -21,6 +21,12 @@ const withCapabilities = async <T>(run: () => Promise<T>): Promise<T> => {
 }
 
 describe('referenceLayerAnchorId', () => {
+  test('actual custom layer order keeps context below physical geometry even though serialized style omits it', () => {
+    const fake = createFakeMapStyle()
+    fake.map.addLayer({ id: 'physical-scenes:solids', type: 'custom' } as never, 'poi-emergency')
+    expect(fake.map.getStyle().layers.some(layer => layer.id === 'physical-scenes:solids')).toBe(false)
+    expect(referenceLayerAnchorId(orderedMapStyle(fake.map))).toBe('physical-scenes:solids')
+  })
   test('anchors below the first base-map symbol layer', () => {
     expect(referenceLayerAnchorId({ layers: leitbildBaseLayers, metadata: leitbildBaseMetadata })).toBe('poi-emergency')
   })

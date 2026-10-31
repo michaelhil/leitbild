@@ -1,0 +1,151 @@
+{
+  "candidateCommit": "11e9f59cc077fded26dd792beed7852dfc952dd5",
+  "baselineCommit": "4f309c67c7a1bd69a7eb9cac7363f8f2979e3f4b",
+  "inputReceipt": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/loading-optimization-20261026/cpu-scalar-child-bounds-7cases.json",
+  "inputReceiptSha256": "71a74dfdf9a65005d2412beee61cdadbf41922bdd15c98a9dbbefa986a93677f",
+  "sourceFiles": [
+    {
+      "path": "apps/world/src/ui/map/physical-scene/surface-ownership.ts",
+      "sha256": "042d26984038994d79418a05c0c4fd6b8dd6fac1ee9795377b04287ea8753a6f"
+    },
+    {
+      "path": "apps/world/src/ui/map/physical-scene/spatial-index.ts",
+      "sha256": "82d4758e6b0956b7fbc9465693ecdb41873b6d36dc82ec33457e7ead55012a25"
+    },
+    {
+      "path": "apps/world/scripts/physical-layout/surface-preparation-probe.ts",
+      "sha256": "72e330e26b57378c443e936ed775b8ab248219957536137ed2b89d77134c5c6e"
+    },
+    {
+      "path": "apps/world/scripts/physical-layout/loading-cpu-profile.ts",
+      "sha256": "155b46008748e34c23afaf77d4aa1033efb8242c949ba87849f2abb090d8e885"
+    }
+  ],
+  "cases": [
+    {
+      "source": "pwr-full-unit-explorer",
+      "sourceSha256": "edcb2564b2eb7fb9c6a6976ed52d5c95f050aae149757f5b20014610ed4154df",
+      "variant": {
+        "mode": "3d",
+        "levelId": "all",
+        "separation": 0
+      },
+      "byteEquivalent": true,
+      "preparedSha256": "36b69dbd23e8b2f2d10be20e533e1eb61ad9243fda502918de00664a7574aa79",
+      "baselineMs": 1226.0452500000001,
+      "candidateMs": 1011.297125,
+      "reductionPercent": 17.515513803426096,
+      "preparedFragments": 1417,
+      "renderBytes": 11783520,
+      "indexBytes": 5750216
+    },
+    {
+      "source": "pwr-full-unit-explorer",
+      "sourceSha256": "edcb2564b2eb7fb9c6a6976ed52d5c95f050aae149757f5b20014610ed4154df",
+      "variant": {
+        "mode": "3d",
+        "levelId": "operating",
+        "separation": 0
+      },
+      "byteEquivalent": true,
+      "preparedSha256": "e0f705c8eb5e23669eb2291096db108faaafb82cd7453c05980a0c52938da5e7",
+      "baselineMs": 328.09191699999974,
+      "candidateMs": 258.4585830000001,
+      "reductionPercent": 21.223727373935798,
+      "preparedFragments": 485,
+      "renderBytes": 3538416,
+      "indexBytes": 1800616
+    },
+    {
+      "source": "pwr-full-unit-explorer",
+      "sourceSha256": "edcb2564b2eb7fb9c6a6976ed52d5c95f050aae149757f5b20014610ed4154df",
+      "variant": {
+        "mode": "3d",
+        "levelId": "all",
+        "separation": 1
+      },
+      "byteEquivalent": true,
+      "preparedSha256": "5691d7d369cae249e7a6630087c36682ba1dc3d8bc6b3b43f16b8458348d94f4",
+      "baselineMs": 1305.578625,
+      "candidateMs": 1066.1689580000002,
+      "reductionPercent": 18.337437701233807,
+      "preparedFragments": 2074,
+      "renderBytes": 13483728,
+      "indexBytes": 6509944
+    },
+    {
+      "source": "pwr-full-unit-explorer",
+      "sourceSha256": "edcb2564b2eb7fb9c6a6976ed52d5c95f050aae149757f5b20014610ed4154df",
+      "variant": {
+        "mode": "2d",
+        "levelId": "operating",
+        "separation": 0
+      },
+      "byteEquivalent": true,
+      "preparedSha256": "885e3e198a4263557af63cbb143dca93224d88cb13fdf1eebfb29869cfa3a341",
+      "baselineMs": 325.96799999999985,
+      "candidateMs": 246.25816699999996,
+      "reductionPercent": 24.453269339321626,
+      "preparedFragments": 374,
+      "renderBytes": 3341616,
+      "indexBytes": 1676244
+    },
+    {
+      "source": "pwr-full-unit-explorer",
+      "sourceSha256": "edcb2564b2eb7fb9c6a6976ed52d5c95f050aae149757f5b20014610ed4154df",
+      "variant": {
+        "mode": "3d",
+        "levelId": "all",
+        "separation": 0,
+        "cutaway": false
+      },
+      "byteEquivalent": true,
+      "preparedSha256": "3c4de7eb940bb6bed064dc94213baf3c1414acd87a6f7d07d89191a86d40098f",
+      "baselineMs": 1318.466042,
+      "candidateMs": 960.9943339999991,
+      "reductionPercent": 27.11269737806421,
+      "preparedFragments": 1611,
+      "renderBytes": 12244512,
+      "indexBytes": 6081744
+    },
+    {
+      "source": "pwr-campus-explorer",
+      "sourceSha256": "8da02c5408ababed931f5007240fed1a610e8d6b763e15f32c0827bfaedfdc0c",
+      "variant": {
+        "mode": "3d",
+        "levelId": "all",
+        "separation": 0
+      },
+      "byteEquivalent": true,
+      "preparedSha256": "1ab43f8a96a81a900ebd71967170d1d8fa53fa628fecc9abf4b5d813fbb8710d",
+      "baselineMs": 1946.821,
+      "candidateMs": 1400.7243749999998,
+      "reductionPercent": 28.050684937135983,
+      "preparedFragments": 1707,
+      "renderBytes": 15482064,
+      "indexBytes": 6679680
+    },
+    {
+      "source": "pwr-campus-explorer",
+      "sourceSha256": "8da02c5408ababed931f5007240fed1a610e8d6b763e15f32c0827bfaedfdc0c",
+      "variant": {
+        "mode": "3d",
+        "levelId": "all",
+        "separation": 0,
+        "cutaway": false
+      },
+      "byteEquivalent": true,
+      "preparedSha256": "8bccfdff2c0fb93181d7669c6446433abc3a183981b5b84c5b3e45df3b8cc0f6",
+      "baselineMs": 1994.114916999999,
+      "candidateMs": 1426.1660409999986,
+      "reductionPercent": 28.4812510632255,
+      "preparedFragments": 1757,
+      "renderBytes": 15520560,
+      "indexBytes": 6683700
+    }
+  ],
+  "limits": [
+    "Single sequential pure CPU preparation pass after source compilation, with GC outside each timed region; not a warm-camera or product benchmark.",
+    "Diagnostic source binding list is empty; admitted physical source and compile profiles are unchanged."
+  ]
+}

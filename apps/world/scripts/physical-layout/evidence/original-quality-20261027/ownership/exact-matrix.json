@@ -1,0 +1,179 @@
+{
+  "reference": "103fa9156 + pair eligibility fd82a6250",
+  "optimized": "03c9a2d0e",
+  "cases": [
+    {
+      "family": "unit",
+      "design": "b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+      "case": "[\"3d\",\"all\",true,0,null,[]]",
+      "allLayersExplicit": true,
+      "reference": "a7ec537f4ca525a8b2051c4a3f499f02bfbb6cc18584795acb4b632829df4555",
+      "optimized": "a7ec537f4ca525a8b2051c4a3f499f02bfbb6cc18584795acb4b632829df4555",
+      "equal": true
+    },
+    {
+      "family": "unit",
+      "design": "b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+      "case": "[\"3d\",\"lower\",true,0,null,[]]",
+      "allLayersExplicit": true,
+      "reference": "22924c9c2bee2e11b8e8628bb4e98cbd3867315d752b3214f70df55fb00691af",
+      "optimized": "22924c9c2bee2e11b8e8628bb4e98cbd3867315d752b3214f70df55fb00691af",
+      "equal": true
+    },
+    {
+      "family": "unit",
+      "design": "b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+      "case": "[\"3d\",\"service\",true,0,null,[]]",
+      "allLayersExplicit": true,
+      "reference": "ab078858ee1427c4a0d5f7da146f79c9da7a2384fd18ab4e2a6320ac1e3c58f3",
+      "optimized": "ab078858ee1427c4a0d5f7da146f79c9da7a2384fd18ab4e2a6320ac1e3c58f3",
+      "equal": true
+    },
+    {
+      "family": "unit",
+      "design": "b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+      "case": "[\"3d\",\"operating\",true,0,null,[]]",
+      "allLayersExplicit": true,
+      "reference": "06d70875d85f7809660e05c7217fc266ac37f7c066d45a9aa29b7a17e064c816",
+      "optimized": "06d70875d85f7809660e05c7217fc266ac37f7c066d45a9aa29b7a17e064c816",
+      "equal": true
+    },
+    {
+      "family": "unit",
+      "design": "b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+      "case": "[\"3d\",\"refuelling\",true,0,null,[]]",
+      "allLayersExplicit": true,
+      "reference": "7960763c99973a6ef2cc684afd5e158b28d67fd7ed8f9abde134c35015f9e4e1",
+      "optimized": "7960763c99973a6ef2cc684afd5e158b28d67fd7ed8f9abde134c35015f9e4e1",
+      "equal": true
+    },
+    {
+      "family": "unit",
+      "design": "b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+      "case": "[\"3d\",\"all\",false,0,null,[]]",
+      "allLayersExplicit": true,
+      "reference": "6da8f5b8e78d32bd058ab2c657ead4b29edfad6d995e37565f60cf287899b9cb",
+      "optimized": "6da8f5b8e78d32bd058ab2c657ead4b29edfad6d995e37565f60cf287899b9cb",
+      "equal": true
+    },
+    {
+      "family": "unit",
+      "design": "b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+      "case": "[\"3d\",\"all\",true,1,null,[]]",
+      "allLayersExplicit": true,
+      "reference": "5e8ea46f8aa0235ffecda42419603bd940ff7cd7a853ad08b3367ec587e1e020",
+      "optimized": "5e8ea46f8aa0235ffecda42419603bd940ff7cd7a853ad08b3367ec587e1e020",
+      "equal": true
+    },
+    {
+      "family": "unit",
+      "design": "b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+      "case": "[\"2d\",\"lower\",true,0,null,[]]",
+      "allLayersExplicit": true,
+      "reference": "40001a27e027e55a7cc826338ab98536fac26b19f25efe2ab080689aa3dcffee",
+      "optimized": "40001a27e027e55a7cc826338ab98536fac26b19f25efe2ab080689aa3dcffee",
+      "equal": true
+    },
+    {
+      "family": "unit",
+      "design": "b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+      "case": "[\"2d\",\"operating\",true,0,null,[]]",
+      "allLayersExplicit": true,
+      "reference": "fcb9d073387d5d6c8c8957e1e5b191bd1419cac26525d954dc50cae6790e1dd2",
+      "optimized": "fcb9d073387d5d6c8c8957e1e5b191bd1419cac26525d954dc50cae6790e1dd2",
+      "equal": true
+    },
+    {
+      "family": "unit",
+      "design": "b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+      "case": "[\"3d\",\"all\",true,0,\"area/turbine-island\",[]]",
+      "allLayersExplicit": true,
+      "reference": "da8ced261f325d3140db1dd971105e94bae66aed0c4ae629d9d87f2cdd931217",
+      "optimized": "da8ced261f325d3140db1dd971105e94bae66aed0c4ae629d9d87f2cdd931217",
+      "equal": true
+    },
+    {
+      "family": "unit",
+      "design": "b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+      "case": "[\"3d\",\"lower\",true,0,\"area/turbine-island\",[]]",
+      "allLayersExplicit": true,
+      "reference": "3fde545a6215ecc5b9c06e34d4949ae0ffa769a3d5a5d776262fc1e383b32e41",
+      "optimized": "3fde545a6215ecc5b9c06e34d4949ae0ffa769a3d5a5d776262fc1e383b32e41",
+      "equal": true
+    },
+    {
+      "family": "unit",
+      "design": "b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+      "case": "[\"3d\",\"operating\",true,0,\"area/turbine-island\",[]]",
+      "allLayersExplicit": true,
+      "reference": "791eda97b336aaa50850e80a1717c0744fe46ba75a3c606ebe28c7058e0ad60a",
+      "optimized": "791eda97b336aaa50850e80a1717c0744fe46ba75a3c606ebe28c7058e0ad60a",
+      "equal": true
+    },
+    {
+      "family": "campus",
+      "design": "4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84",
+      "case": "[\"3d\",\"all\",true,0,null,[]]",
+      "allLayersExplicit": true,
+      "reference": "ebf144968033512dd8e160a4bbf9cbefa789507cb51d37ef17d3cddd0c790451",
+      "optimized": "ebf144968033512dd8e160a4bbf9cbefa789507cb51d37ef17d3cddd0c790451",
+      "equal": true
+    },
+    {
+      "family": "campus",
+      "design": "4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84",
+      "case": "[\"3d\",\"campus-ground\",true,0,null,[]]",
+      "allLayersExplicit": true,
+      "reference": "8e46bb088d5469b71d0cadc558274706a988a814c4e3e07eee43438a49a6d3d7",
+      "optimized": "8e46bb088d5469b71d0cadc558274706a988a814c4e3e07eee43438a49a6d3d7",
+      "equal": true
+    },
+    {
+      "family": "campus",
+      "design": "4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84",
+      "case": "[\"3d\",\"admin-upper\",true,0,null,[]]",
+      "allLayersExplicit": true,
+      "reference": "6de8461355749c63aa22a55304641ff6476934cce1891fd644c7a4b5e5b8b35f",
+      "optimized": "6de8461355749c63aa22a55304641ff6476934cce1891fd644c7a4b5e5b8b35f",
+      "equal": true
+    },
+    {
+      "family": "campus",
+      "design": "4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84",
+      "case": "[\"3d\",\"all\",false,0,null,[]]",
+      "allLayersExplicit": true,
+      "reference": "773d513cbf5f8972ad0b0f2eba8a6be1bb9d0e902cb7e039e36b6631303a4641",
+      "optimized": "773d513cbf5f8972ad0b0f2eba8a6be1bb9d0e902cb7e039e36b6631303a4641",
+      "equal": true
+    },
+    {
+      "family": "campus",
+      "design": "4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84",
+      "case": "[\"3d\",\"all\",true,1,null,[]]",
+      "allLayersExplicit": true,
+      "reference": "f9c5ca331f4f40906d85af165dad0377197c8303fde9b7014549b32defd68fda",
+      "optimized": "f9c5ca331f4f40906d85af165dad0377197c8303fde9b7014549b32defd68fda",
+      "equal": true
+    },
+    {
+      "family": "campus",
+      "design": "4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84",
+      "case": "[\"2d\",\"campus-ground\",true,0,null,[]]",
+      "allLayersExplicit": true,
+      "reference": "bf759a5f3a718d066aaae3ce2608b62ae149d95c631be7cc1d5fb297e5685ab8",
+      "optimized": "bf759a5f3a718d066aaae3ce2608b62ae149d95c631be7cc1d5fb297e5685ab8",
+      "equal": true
+    },
+    {
+      "family": "campus",
+      "design": "4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84",
+      "case": "[\"2d\",\"admin-upper\",true,0,null,[]]",
+      "allLayersExplicit": true,
+      "reference": "329204050c7454a1e33352bade8ad3344747d346b64cecdd0f182e12f6b2e263",
+      "optimized": "329204050c7454a1e33352bade8ad3344747d346b64cecdd0f182e12f6b2e263",
+      "equal": true
+    }
+  ],
+  "passed": true,
+  "note": "Functional byte comparison, not CPU timing. All layers are explicitly requested, including every routed cap. Actual physical source, material, conditional owner and picking arrays are covered."
+}

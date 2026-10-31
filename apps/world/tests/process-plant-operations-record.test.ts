@@ -4,6 +4,8 @@ import { createSimulationClock, type SimulationClock } from '../src/core/model/t
 import type { CommandOrigin, PackRuntimeConnection, PackRuntimeStateStore } from '../src/simulation/protocol.ts'
 import {
   createLocalProcessPlantPackRuntimeAdapter,
+  compileProcessPlant,
+  createPwrReferencePlantDefinition,
   processPlantControlRampCommandKind,
   processPlantControlWriteCommandKind,
   type VariablePath,
@@ -22,6 +24,9 @@ guardPlantTests()
 // none (plan-final O-D4, QA-19).
 
 const simulationRunId = 'run:operations-record' as SimulationRunId
+const operationGraph = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'plant:operation-index', loopCount: 4 })).graph
+const pressureTarget = 'steamGeneratorReliefValveA.controllerSetpoint' as VariablePath
+const valvePath = 'hotwellRejectValve.positionFraction' as VariablePath
 const builtIn = scenarios.find(scenario => scenario.id === 'test-plant')!
 const basePlant = builtIn.initialObjects.find(object => object.packId === 'process-plant')!
 const plantId = String(basePlant.id)
@@ -48,17 +53,20 @@ const send = async (connection: PackRuntimeConnection, kind: string, payload: un
     payload,
     issuedAt: '2026-01-01T09:00:00.000Z' as IsoTimestamp,
   } satisfies CommandEnvelope, origin === undefined ? {} : { origin })
-const sample = async (connection: PackRuntimeConnection, paths: ReadonlyArray<string>) =>
-  await connection.invokeQuery({ capabilityId: 'world.process-plant.display.sample', input: { plantId, paths, operations: true } }) as {
-    readonly operations: { readonly log: ReadonlyArray<OperationRecord>; readonly ramps: ReadonlyArray<{ readonly path: string; readonly target: number }>; readonly proposals: ReadonlyArray<unknown>; readonly resets: ReadonlyArray<unknown> }
+/** The operations signals.read serves with the paths a display reads: the commands issued on them and the resets of actuations that held them. */
+const sample = async (connection: PackRuntimeConnection, paths: ReadonlyArray<string>) => {
+  const read = await connection.invokeQuery({ capabilityId: 'world.process-plant.signals.read', input: { plantId, signals: paths.map(path => ({ path })), operations: true } }) as {
+    readonly operations: { readonly log: ReadonlyArray<OperationRecord>; readonly resets: ReadonlyArray<unknown> }
   }
+  return { operations: { log: read.operations.log, resets: read.operations.resets } }
+}
 
 describe('the operations record', () => {
   test('logs people\'s and AI agents\' accepted commands, newest last, keeping the last 64', () => {
-    const operations = createPlantOperations()
+    const operations = createPlantOperations({ graph: operationGraph })
     expect(operations.snapshot()).toBeUndefined()
     for (let index = 0; index < OPERATIONS_KEPT + 3; index += 1) {
-      operations.record({ commandId: `command:${index}`, path: 'p.x' as VariablePath, value: index, origin: 'person', actorId: 'actor:human:op', elapsedMs: index, kind: 'write' }, { elapsedMs: index, wallMs: index })
+      operations.record({ commandId: `command:${index}`, path: pressureTarget, value: index, origin: 'person', actorId: 'actor:human:op', elapsedMs: index, kind: 'write' }, { elapsedMs: index, wallMs: index })
     }
     expect(operations.log().length).toBe(OPERATIONS_KEPT)
     expect(operations.log()[0]!.commandId).toBe('command:3')
@@ -72,16 +80,16 @@ describe('the operations record', () => {
       reading: () => ({ ok: true, path: 'p.pt' as VariablePath, value: 15 }),
       resettable: ruleId => ({ ok: false, reason: `${ruleId} is not reset in this test` }),
     }
-    const operations = createPlantOperations()
-    const proposed = proposeOperation(operations.book(), { id: 'command:p', plantId: 'p', write: { path: 'p.valve' as VariablePath, value: 0 }, reason: 'isolate', evidence: ['PT' as never], proposer: { actorId: 'actor:ai:a', origin: 'ai' }, at: { elapsedMs: 0, wallMs: 0 } }, ports)
+    const operations = createPlantOperations({ graph: operationGraph })
+    const proposed = proposeOperation(operations.book(), { id: 'command:p', plantId: 'p', write: { path: valvePath, value: 0 }, reason: 'isolate', evidence: ['PT' as never], proposer: { actorId: 'actor:ai:a', origin: 'ai' }, at: { elapsedMs: 0, wallMs: 0 } }, ports)
     operations.setBook(proposed.book)
-    const transitions = operations.record({ commandId: 'command:w', path: 'p.valve' as VariablePath, value: 0, origin: 'person', actorId: 'actor:human:op', elapsedMs: 5, kind: 'write' }, { elapsedMs: 5, wallMs: 5 })
+    const transitions = operations.record({ commandId: 'command:w', path: valvePath, value: 0, origin: 'person', actorId: 'actor:human:op', elapsedMs: 5, kind: 'write' }, { elapsedMs: 5, wallMs: 5 })
     expect(transitions.map(transition => [transition.type, transition.proposal.id])).toEqual([['superseded', 'command:p']])
   })
 })
 
 describe('on a Plant\'s Pack connection', () => {
-  test('a person\'s write and an operator ramp are served to displays drawing those paths, and persist and restore', async () => {
+  test('a person\'s write and an operator ramp are served with the paths they wrote, and persist and restore', async () => {
     const store = memoryStore()
     const clock = pausedClock()
     const first = await createLocalProcessPlantPackRuntimeAdapter().connect({ simulationRunId, scenario, runtimeStateStore: store, runClock: clock })
@@ -97,9 +105,8 @@ describe('on a Plant\'s Pack connection', () => {
         ['chargingPumpB.running', true, 'person', 'write'],
         ['rcpA.speedFraction', 0.95, 'person', 'ramp'],
       ])
-      expect(served.operations.ramps.map(ramp => [ramp.path, ramp.target])).toEqual([['rcpA.speedFraction', 0.95]])
-      // A display that does not draw a path is not served its operations.
-      expect((await sample(first, ['pressurizer.pressureMPa'])).operations).toEqual({ log: [], ramps: [], proposals: [], resets: [] })
+      // A read of other paths is not served their operations.
+      expect((await sample(first, ['pressurizer.pressureMPa'])).operations).toEqual({ log: [], resets: [] })
       await first.checkpoint!()
     } finally {
       await first.close()
@@ -126,7 +133,7 @@ describe('on a Plant\'s Pack connection', () => {
     expect('operations' in saved.plants[0]!).toBe(false)
     const restored = await createLocalProcessPlantPackRuntimeAdapter().connect({ simulationRunId, scenario, runtimeStateStore: store, runClock: pausedClock() })
     try {
-      expect((await sample(restored, ['chargingPumpB.running'])).operations).toEqual({ log: [], ramps: [], proposals: [], resets: [] })
+      expect((await sample(restored, ['chargingPumpB.running'])).operations).toEqual({ log: [], resets: [] })
     } finally {
       await restored.close()
     }

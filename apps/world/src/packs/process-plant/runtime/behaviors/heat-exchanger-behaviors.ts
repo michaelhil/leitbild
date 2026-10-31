@@ -1,5 +1,5 @@
-import { componentVariablePath, type ComponentBehaviorDefinition } from '../behavior-contract.ts'
-import { clamp, optionalParameterNumber, relaxToward } from '../component-helpers.ts'
+import { componentVariablePath, type ComponentBehaviorDefinition, type ComponentInitialReconciliationDefinition } from '../behavior-contract.ts'
+import { clamp, optionalParameterNumber } from '../component-helpers.ts'
 import { pressureDropMPaFromFlow } from '../physics.ts'
 import { sumIncomingLinkValue, flowWeightedIncomingLinkValue } from '../links/link-flow-helpers.ts'
 
@@ -41,22 +41,33 @@ export const heatExchangerBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDe
       const hotCapacityMwPerC = hotFlow * waterSpecificHeatMjPerKgC
       const coldCapacityMwPerC = coldFlow * waterSpecificHeatMjPerKgC
       const limitingCapacity = Math.min(hotCapacityMwPerC, coldCapacityMwPerC)
-      const temperatureDelta = Math.max(0, hotInlet - coldInlet)
+      // The names identify circuits, not a one-way heat diode: heat can reverse.
+      const temperatureDelta = hotInlet - coldInlet
       const ua = optionalParameterNumber(component, 'uaMwPerC', 0)
       const foulingFactor = optionalParameterNumber(component, 'foulingFactor', 0)
       const bypassFraction = optionalParameterNumber(component, 'bypassFraction', 0)
       const effectivenessLimit = optionalParameterNumber(component, 'effectivenessLimit', 0.92)
       const ntu = limitingCapacity > 0 ? ua * (1 - foulingFactor) / limitingCapacity : 0
-      const effectiveness = clamp((1 - Math.exp(-Math.max(0, ntu))) * (1 - bypassFraction), 0, effectivenessLimit)
-      const heatTransferCapacity = limitingCapacity * temperatureDelta * effectivenessLimit
+      // Counterflow epsilon-NTU with both finite stream heat capacities.
+      // expm1 and the factored denominator retain precision as Cr approaches 1;
+      // the exactly equal-capacity limit is NTU / (1 + NTU).
+      const capacityRatio = limitingCapacity > 0 ? limitingCapacity / Math.max(hotCapacityMwPerC, coldCapacityMwPerC) : 0
+      const oneMinusRatio = 1 - capacityRatio
+      const attenuation = -Math.expm1(-ntu * oneMinusRatio)
+      const counterflowEffectiveness = limitingCapacity <= 0 ? 0 : oneMinusRatio === 0
+        ? ntu / (1 + ntu)
+        : attenuation / (oneMinusRatio + capacityRatio * attenuation)
+      const effectiveness = clamp(counterflowEffectiveness * (1 - bypassFraction), 0, effectivenessLimit)
+      const heatTransferCapacity = limitingCapacity * Math.abs(temperatureDelta) * effectivenessLimit
       const heatTransfer = limitingCapacity * temperatureDelta * effectiveness
       const coolingAvailability = clamp(coldFlow / Math.max(0.001, optionalParameterNumber(component, 'coldSideDesignFlowKgPerS', 1)), 0, 1)
       const hotOutletTarget = hotCapacityMwPerC > 0 ? hotInlet - heatTransfer / hotCapacityMwPerC : hotInlet
       const coldOutletTarget = coldCapacityMwPerC > 0 ? coldInlet + heatTransfer / coldCapacityMwPerC : coldInlet
-      const thermalMass = optionalParameterNumber(component, 'thermalMassMJPerC', 0)
-      const thermalTimeConstant = Math.max(0.1, thermalMass / Math.max(0.001, ua))
-      const hotOutlet = relaxToward(context.readNumber(componentVariablePath(component, 'hotOutletTemperatureC')), hotOutletTarget, context.dtSeconds, thermalTimeConstant)
-      const coldOutlet = relaxToward(context.readNumber(componentVariablePath(component, 'coldOutletTemperatureC')), coldOutletTarget, context.dtSeconds, thermalTimeConstant)
+      // An algebraic exchanger stores no energy. Both advective sides carry the
+      // exact same signed transfer at this instant; all thermal storage lives
+      // in explicit upstream/downstream fluid inventories, not outlet lag.
+      const hotOutlet = hotOutletTarget
+      const coldOutlet = coldOutletTarget
       const hotSidePressureDrop = pressureDropMPaFromFlow({
         flowKgPerS: hotFlow,
         nominalFlowKgPerS: optionalParameterNumber(component, 'hotSideDesignFlowKgPerS', 1),
@@ -67,17 +78,17 @@ export const heatExchangerBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDe
         nominalFlowKgPerS: optionalParameterNumber(component, 'coldSideDesignFlowKgPerS', 1),
         nominalPressureDropMPa: optionalParameterNumber(component, 'coldSideNominalPressureDropMPa', 0),
       })
-      const hotRemoved = hotCapacityMwPerC * Math.max(0, hotInlet - hotOutlet)
-      const coldAdded = coldCapacityMwPerC * Math.max(0, coldOutlet - coldInlet)
+      const hotRemoved = hotCapacityMwPerC * (hotInlet - hotOutlet)
+      const coldAdded = coldCapacityMwPerC * (coldOutlet - coldInlet)
       context.write(componentVariablePath(component, 'hotInletTemperatureC'), hotInlet)
       context.write(componentVariablePath(component, 'coldInletTemperatureC'), coldInlet)
-      context.write(componentVariablePath(component, 'hotOutletTemperatureC'), Math.max(coldInlet, hotOutlet))
-      context.write(componentVariablePath(component, 'coldOutletTemperatureC'), Math.min(hotInlet, coldOutlet))
+      context.write(componentVariablePath(component, 'hotOutletTemperatureC'), hotOutlet)
+      context.write(componentVariablePath(component, 'coldOutletTemperatureC'), coldOutlet)
       context.write(componentVariablePath(component, 'hotSideFlowKgPerS'), hotFlow)
       context.write(componentVariablePath(component, 'coldSideFlowKgPerS'), coldFlow)
       context.write(componentVariablePath(component, 'heatTransferMw'), heatTransfer)
       context.write(componentVariablePath(component, 'heatTransferCapacityMw'), heatTransferCapacity)
-      context.write(componentVariablePath(component, 'approachTemperatureC'), Math.max(0, hotOutlet - coldOutlet))
+      context.write(componentVariablePath(component, 'approachTemperatureC'), Math.min(Math.abs(hotInlet - coldOutlet), Math.abs(hotOutlet - coldInlet)))
       context.write(componentVariablePath(component, 'effectivenessFraction'), effectiveness)
       context.write(componentVariablePath(component, 'coolingAvailabilityFraction'), coolingAvailability)
       context.write(componentVariablePath(component, 'hotSidePressureDropMPa'), hotSidePressureDrop)
@@ -86,3 +97,16 @@ export const heatExchangerBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDe
     },
   },
 ]
+
+// Algebraic heat transfer is already determined by solved initial link flows
+// and temperatures. A paused fresh Run must not show placeholder zero flows
+// or a nonexistent startup heat pulse until its first numerical step.
+const initialThermalTransfer = heatExchangerBehaviorDefinitions[0]!
+export const heatExchangerInitialReconciliationDefinitions: ReadonlyArray<ComponentInitialReconciliationDefinition> = [{
+  id: 'heat-exchanger-initial-thermal-transfer',
+  componentKind: 'heatExchanger',
+  afterLinks: true,
+  reads: initialThermalTransfer.reads,
+  writes: initialThermalTransfer.writes,
+  reconcile: initialThermalTransfer.update,
+}]

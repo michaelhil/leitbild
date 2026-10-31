@@ -1,8 +1,9 @@
 import { z } from 'zod'
 import { idSchema } from '../../../core/model/index.ts'
 import { defineComponent, headerVariables, valveVariables } from './component-definition-helpers.ts'
-import { type ComponentDefinition, type ComponentKind, type PortDefinition, variablePathSchema } from './model.ts'
+import { type ComponentDefinition, type ComponentKind, type PortDefinition } from './model.ts'
 import { aspect, firstOrderLagTravelS, fixedSemantics, type ComponentSemantics, type EquipmentFunction } from './semantics.ts'
+import { valvePositionControllerSchema, valveControllerVariables } from './valve-controller.ts'
 
 const headerPortIdsSchema = z.array(idSchema).min(1).max(128)
 
@@ -31,9 +32,9 @@ const valveFunctions: Readonly<Record<string, EquipmentFunction>> = {
   safety: 'relieving',
 }
 
-// A valve's position follows its demand as a first-order lag, with its
-// opening or closing time constant, else its stroke time constant, else
-// 0.1 s (valve-behaviors.ts, which reads the same parameters).
+// An isolating valve has finite full-stroke travel. Analog and self-acting
+// valves retain their first-order settling time; both read the same authored
+// opening/closing parameters as valve-behaviors.ts.
 const valveStrokeSchema = z.object({
   valveMode: z.string().default('control'),
   strokeTimeConstantS: z.number().optional(),
@@ -47,7 +48,8 @@ const valveSemantics = (parameters: unknown): ComponentSemantics => {
   const valveFunction = valveFunctions[mode]
   if (valveFunction === undefined) throw new Error(`valve mode ${mode} has no declared function`)
   const timeConstant = parsed.strokeTimeConstantS ?? 0.1
-  const travel = { onS: firstOrderLagTravelS(parsed.strokeOpenTimeS ?? timeConstant), offS: firstOrderLagTravelS(parsed.strokeCloseTimeS ?? timeConstant) }
+  const travelS = mode === 'isolation' ? (seconds: number): number => seconds : firstOrderLagTravelS
+  const travel = { onS: travelS(parsed.strokeOpenTimeS ?? timeConstant), offS: travelS(parsed.strokeCloseTimeS ?? timeConstant) }
   return {
     function: valveFunction,
     aspects: [aspect('position', { variable: 'effectivePositionFraction', reading: 'value' }, 'positionFraction', 'isolationSignal', travel)],
@@ -64,36 +66,6 @@ const valveSemantics = (parameters: unknown): ComponentSemantics => {
   }
 }
 
-const valvePositionControllerSchema = z.object({
-  kind: z.literal('proportionalPosition'),
-  measuredPath: variablePathSchema,
-  setpoint: z.number().finite(),
-  biasPositionFraction: z.number().finite().min(0).max(1),
-  gainPerUnit: z.number().finite().nonnegative(),
-  direction: z.enum(['direct', 'reverse']).default('reverse'),
-  deadband: z.number().finite().nonnegative().optional(),
-  minPositionFraction: z.number().finite().min(0).max(1).optional(),
-  maxPositionFraction: z.number().finite().min(0).max(1).optional(),
-  timeConstantS: z.number().finite().positive().optional(),
-  /**
-   * An interlock the controller acts under: while the signal reads below the
-   * minimum the valve is driven to its minimum position (steam dumps blocked
-   * while the condenser is unavailable, C-9).
-   */
-  permissive: z.object({ path: variablePathSchema, minimum: z.number().finite() }).strict().optional(),
-}).strict().superRefine((controller, ctx) => {
-  if (
-    controller.minPositionFraction !== undefined
-    && controller.maxPositionFraction !== undefined
-    && controller.minPositionFraction > controller.maxPositionFraction
-  ) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ['minPositionFraction'],
-      message: 'valve controller minPositionFraction cannot exceed maxPositionFraction',
-    })
-  }
-})
 
 export const junctionComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
   defineComponent({
@@ -126,7 +98,7 @@ export const junctionComponentDefinitions: ReadonlyArray<ComponentDefinition> = 
        * coefficient to a vessel with a pressure, and the header stands where
        * the pumps' curves deliver what the outlets pass to their vessels.
        */
-      distributionMode: z.enum(['demandWeighted', 'pressureWeighted', 'pressureBalance']).optional(),
+      distributionMode: z.enum(['demandWeighted', 'pressureWeighted', 'pressureBalance', 'directedDelivery']).optional(),
       portIds: headerPortIdsSchema.optional(),
     }).strict(),
     resolveAdditionalPorts: ({ parameters }) => headerPortsFor(headerPortIdsFrom(parameters), 'hydraulicThermal'),
@@ -140,9 +112,11 @@ export const junctionComponentDefinitions: ReadonlyArray<ComponentDefinition> = 
       inlet: { kind: 'hydraulicThermal', direction: 'in', circuit: 'flow' },
       outlet: { kind: 'hydraulicThermal', direction: 'out', circuit: 'flow' },
       demand: { kind: 'controlSignal', direction: 'in' },
+      motorPower: { kind: 'electricalAc', direction: 'in' },
     },
     parametersSchema: z.object({
       initialPositionFraction: z.number().finite().min(0).max(1).optional(),
+      powerLossBehavior: z.enum(['hold', 'close']).optional(),
       strokeTimeConstantS: z.number().finite().positive().optional(),
       strokeOpenTimeS: z.number().finite().positive().optional(),
       strokeCloseTimeS: z.number().finite().positive().optional(),
@@ -157,6 +131,7 @@ export const junctionComponentDefinitions: ReadonlyArray<ComponentDefinition> = 
     }).strict(),
     semantics: valveSemantics,
     variables: valveVariables('Process valve'),
+    resolveAdditionalVariables: ({ parameters }) => valveControllerVariables(parameters),
   }),
   defineComponent({
     kind: 'steamHeader' as ComponentKind,
@@ -196,9 +171,11 @@ export const junctionComponentDefinitions: ReadonlyArray<ComponentDefinition> = 
       inlet: { kind: 'steam', direction: 'in', circuit: 'flow' },
       outlet: { kind: 'steam', direction: 'out', circuit: 'flow' },
       demand: { kind: 'controlSignal', direction: 'in' },
+      motorPower: { kind: 'electricalAc', direction: 'in' },
     },
     parametersSchema: z.object({
       initialPositionFraction: z.number().finite().min(0).max(1).optional(),
+      powerLossBehavior: z.enum(['hold', 'close']).optional(),
       strokeTimeConstantS: z.number().finite().positive().optional(),
       strokeOpenTimeS: z.number().finite().positive().optional(),
       strokeCloseTimeS: z.number().finite().positive().optional(),
@@ -221,5 +198,6 @@ export const junctionComponentDefinitions: ReadonlyArray<ComponentDefinition> = 
     }).strict(),
     semantics: valveSemantics,
     variables: valveVariables('Steam valve'),
+    resolveAdditionalVariables: ({ parameters }) => valveControllerVariables(parameters),
   }),
 ]

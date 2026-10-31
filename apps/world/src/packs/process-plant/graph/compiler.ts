@@ -6,6 +6,7 @@ import type {
   CompiledPort,
   CompiledVariable,
   ComponentVariableBindingOverride,
+  ComponentVariableDescriptor,
   ComponentDefinition,
   ComponentId,
   ComponentKind,
@@ -25,6 +26,7 @@ import type {
 } from './model.ts'
 import { linkVariableSemanticsFor, validateProcessLinkContracts } from './link-contracts.ts'
 import { connectionKindSchema, deriveProcessVariableCapabilities, plantGraphSpecSchema } from './model.ts'
+import { valvePositionController, operatorControllerBindings } from './valve-controller.ts'
 import {
   readingAccepts,
   type CompiledComponentSemantics,
@@ -183,11 +185,11 @@ const electricalLinkVariables = (
 
 const assertComponentVariableOverridesValid = (
   componentId: ComponentId,
-  definition: ComponentDefinition,
+  variables: ReadonlyArray<ComponentVariableDescriptor>,
   overrides: ReadonlyArray<ComponentVariableBindingOverride>,
 ): void => {
   assertUnique(overrides, override => override.path, `component ${componentId} variable metadata path`)
-  const definitionPaths = new Set(definition.variables.map(variable => variable.path))
+  const definitionPaths = new Set(variables.map(variable => variable.path))
   for (const override of overrides) {
     if (!definitionPaths.has(override.path)) {
       throw new Error(`component ${componentId} variable metadata references unknown local variable: ${override.path}`)
@@ -505,6 +507,9 @@ const assertNamesUnambiguous = (components: ReadonlyArray<CompiledComponent>, va
       const variable = byPath.get(`${component.id}.${local}`)
       if (variable === undefined || variable.descriptor.quantity !== 'boolean') throw new Error(`component ${component.id} names state words for ${local}, which is not one of its on/off signals`)
     }
+    for (const local of [...Object.keys(component.metadata?.presentation?.names ?? {}), ...Object.keys(component.metadata?.presentation?.shortNames ?? {})]) {
+      if (!byPath.has(`${component.id}.${local}`)) throw new Error(`component ${component.id} names a reading ${local}, which is not one of its variables`)
+    }
   }
 }
 
@@ -569,6 +574,7 @@ const signalBindingFor = (variable: CompiledVariable): ProcessSignalBinding => (
   ...(variable.descriptor.actuation === undefined ? {} : { actuation: variable.descriptor.actuation }),
   ...(variable.descriptor.measurand === undefined ? {} : { measurand: variable.descriptor.measurand }),
   ...(variable.descriptor.simulatorOnly === undefined ? {} : { simulatorOnly: variable.descriptor.simulatorOnly }),
+  ...(variable.descriptor.faultTruth === undefined ? {} : { faultTruth: variable.descriptor.faultTruth }),
   published: variable.published,
   owner: variable.owner,
 })
@@ -641,6 +647,14 @@ const validateValveControllerBindings = (
     if (measuredVariable.descriptor.quantity === 'boolean') {
       throw new Error(`component ${component.id} valve controller measuredPath must reference a numeric variable: ${measuredPath}`)
     }
+    const operator = valvePositionController(component)?.operator
+    const bindings = operatorControllerBindings(component)
+    if (operator && bindings) {
+      const setpoint = variableByPath.get(bindings.setpoint)
+      if (!setpoint || setpoint.descriptor.quantity !== measuredVariable.descriptor.quantity || setpoint.descriptor.unit !== measuredVariable.descriptor.unit) {
+        throw new Error(`component ${component.id} controller setpoint quantity and unit must match measuredPath ${measuredPath}`)
+      }
+    }
     const permissive = (controller as { readonly permissive?: { readonly path: string } }).permissive
     if (permissive === undefined) continue
     const permissiveVariable = variableByPath.get(permissive.path as VariablePath)
@@ -659,6 +673,15 @@ const validateHeatExchangerComponent = (component: CompiledComponent, links: Rea
   assertPortConnected(component, links, 'hotOut', 'outgoing')
   assertPortConnected(component, links, 'coldIn', 'incoming')
   assertPortConnected(component, links, 'coldOut', 'outgoing')
+  for (const side of ['hot', 'cold']) {
+    const services = new Set(links.filter(link => link.kind === 'fluidFlow'
+      && ((link.toComponentIndex === component.index && String(link.toPortName) === `${side}In`)
+        || (link.fromComponentIndex === component.index && String(link.fromPortName) === `${side}Out`)))
+      .map(link => link.service))
+    if (services.size !== 1 || services.has(undefined)) {
+      throw new Error(`heat exchanger ${component.id} ${side} circuit requires one named fluid service across its inlet and outlet`)
+    }
+  }
 }
 
 const validateAccumulatorComponent = (component: CompiledComponent, links: ReadonlyArray<CompiledProcessLink>): void => {
@@ -682,15 +705,59 @@ const validateContainmentComponent = (component: CompiledComponent, links: Reado
   assertPortConnected(component, links, 'massEnergyIn', 'incoming')
 }
 
+const validateElectricalSupportComponent = (component: CompiledComponent, links: ReadonlyArray<CompiledProcessLink>): void => {
+  const params = parameterRecord(component)
+  const incomingPort = (port: string) => links.some(link => link.kind === 'electricalPower' && link.toComponentIndex === component.index && String(link.toPortName) === port)
+  if (component.kind === 'battery' && (params.charger !== undefined) !== incomingPort('chargerPower')) {
+    throw Error(`component ${component.id}: an integrated charger declaration and its actual chargerPower supply must be provided together`)
+  }
+  if ((component.kind === 'processValve' || component.kind === 'steamValve') && (params.powerLossBehavior !== undefined) !== incomingPort('motorPower')) {
+    throw Error(`component ${component.id}: a motorPower supply and its authored powerLossBehavior must be provided together`)
+  }
+}
+
+/** Forward finite storage delivery represents branching, not source-sharing
+ * dispatch or reconvergent supply paths. Ordinary upstream AC source merges
+ * remain valid; a battery's charger is a separate energy boundary. */
+const validateFiniteStorageSupplies = (components: ReadonlyArray<CompiledComponent>, links: ReadonlyArray<CompiledProcessLink>): void => {
+  const feeds = new Map<number, CompiledProcessLink[]>()
+  for (const link of links) if (link.kind === 'electricalPower') feeds.set(link.toComponentIndex, [...feeds.get(link.toComponentIndex) ?? [], link])
+  const memo = new Map<number, ReadonlySet<string>>()
+  const visiting = new Set<number>()
+  const origins = (index: number): ReadonlySet<string> => {
+    const retained = memo.get(index)
+    if (retained) return retained
+    const component = components[index]!
+    if (component.kind === 'battery') return new Set([String(component.id)])
+    if (visiting.has(index)) throw Error('Process Plant electrical supply graph contains a directed cycle')
+    visiting.add(index)
+    const found = new Set((feeds.get(index) ?? []).flatMap(link => [...origins(link.fromComponentIndex)]))
+    visiting.delete(index)
+    memo.set(index, found)
+    return found
+  }
+  for (const [index, incoming] of feeds) {
+    const ports = new Map<string, CompiledProcessLink[]>()
+    for (const link of incoming) ports.set(String(link.toPortName), [...ports.get(String(link.toPortName)) ?? [], link])
+    for (const [port, supplies] of ports) {
+      if (supplies.length === 1) continue
+      const storage = new Set(supplies.flatMap(link => [...origins(link.fromComponentIndex)]))
+      if (storage.size > 0) throw Error(`component ${components[index]!.id}.${port} merges finite-storage supply paths from ${[...storage].join(', ')}; source-sharing dispatch and reconvergent storage supplies are not represented`)
+    }
+  }
+}
+
 const validateStrongComponentContracts = (
   components: ReadonlyArray<CompiledComponent>,
   links: ReadonlyArray<CompiledProcessLink>,
 ): void => {
+  validateFiniteStorageSupplies(components, links)
   for (const component of components) {
     validateValveComponent(component)
     validateHeatExchangerComponent(component, links)
     validateAccumulatorComponent(component, links)
     validateContainmentComponent(component, links)
+    validateElectricalSupportComponent(component, links)
   }
 }
 
@@ -710,9 +777,11 @@ export const compilePlantGraph = (
   const aspectDeclarations: Array<ReadonlyArray<StateAspectDeclaration>> = []
   const ownSemantics: CompiledComponent[] = spec.components.map((component, index) => {
     const definition = resolveDefinition(registry, component.kind)
-    assertComponentVariableOverridesValid(component.id, definition, component.variables)
-    const overrideByPath = new Map(component.variables.map(override => [override.path, override]))
     const parameters = parseWithContext(definition.parametersSchema, component.parameters, `component ${component.id} parameters`)
+    const declaredVariables = [...definition.variables, ...(definition.resolveAdditionalVariables?.({ component, parameters }) ?? [])]
+    assertUnique(declaredVariables, variable => variable.path, `component ${component.id} declared variable path`)
+    assertComponentVariableOverridesValid(component.id, declaredVariables, component.variables)
+    const overrideByPath = new Map(component.variables.map(override => [override.path, override]))
     const ports = resolveComponentPorts(component.id, definition, component, parameters)
     componentIndexById.set(component.id, index)
     definitions.set(component.id, definition)
@@ -720,7 +789,7 @@ export const compilePlantGraph = (
     const declared = definition.semantics(parameters)
     programDeclarations.push(declared.programs)
     aspectDeclarations.push(declared.aspects)
-    const variables = definition.variables.map(variable => applyComponentVariableOverride({
+    const variables = declaredVariables.map(variable => applyComponentVariableOverride({
       ...variable,
       path: variablePathFor(component.id, variable.path),
     }, overrideByPath.get(variable.path)))
@@ -837,6 +906,10 @@ export const compilePlantGraph = (
   validateSignalMetadata(variables)
   assertVariableSemantics(variables)
   assertNamesUnambiguous(components, variables)
+  // A line's short names name its own variables, as a component's do (assertPresentationTargets).
+  for (const link of links) for (const local of Object.keys(link.metadata?.presentation?.shortNames ?? {})) {
+    if (!variables.some(variable => variable.path === processLinkVariablePathFor(link.id, local as never))) throw new Error(`connection ${link.id} names a reading ${local}, which is not one of its variables`)
+  }
   assertPushbuttonsMomentary(components, variables)
   assertNotOfferedCommands(components, variables)
   validateValveControllerBindings(components, variables)

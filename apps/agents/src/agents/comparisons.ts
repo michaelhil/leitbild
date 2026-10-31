@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { createComparisonStorage } from './comparison-storage.ts'
 import { workspaceDefinitionCatalogSchema, workspaceResourceCatalogSchema, type WorkspaceId } from '@leitbild/contracts'
 import type { AgentTurnStart } from './ai-agent.ts'
-import { evaluate, callLLM, streamLLM, type LLMCallMetrics } from './evaluation.ts'
+import { evaluate, callLLM, streamLLM, type EvalOptions, type LLMCallMetrics } from './evaluation.ts'
 import { createToolExecutor, type ExecutionGrowth, type RunToolOperation } from './spawn.ts'
 import { estimateTokens } from './context-builder.ts'
 import { OUTPUT_RESERVE, SAFETY_MARGIN } from './budget.ts'
@@ -19,6 +19,8 @@ import { resolveScope } from '../tools/built-in/workspace-capability-tools.ts'
 import { readProductRevision } from '@leitbild/knowledge/source'
 import { resolve } from 'node:path'
 import { conversationReadInputSchema } from '../tools/built-in/conversation-read.ts'
+import { createModelEvidenceStore, executionStageEvent } from '../core/executions/model-evidence.ts'
+import type { ExecutionCallSummary, ExecutionTurn } from '../core/executions/store.ts'
 
 // These built-ins were reviewed for conversation isolation, not merely reads.
 // Unrestricted web/recall/room tools are deliberately not comparison-safe.
@@ -70,6 +72,8 @@ export const createComparisons = (deps: Dependencies) => {
   const starts = new Map<string, number>()
   const saving = new Map<RecordData, number>()
   const storage = deps.root ? createComparisonStorage(deps.root, deps.growth) : undefined
+  const memoryModels = createModelEvidenceStore()
+  const modelsFor = (roomId: string, messageId: string) => storage?.models(roomId, messageId) ?? memoryModels // Isolated tests have no durable comparison directory.
   const jobs = new Map<string, { controller: AbortController; done: Promise<void> }>()
   let closed=false
   let writes = Promise.resolve()
@@ -213,6 +217,25 @@ export const createComparisons = (deps: Dependencies) => {
     const controller = new AbortController()
     const work = async () => {
       try {
+        const modelEvidence = modelsFor(roomId, messageId)
+        const retainModel = (bytes: number, write: () => void) => deps.growth(bytes, async () => { assertSource(); write() })
+        await retainModel(4096, () => {
+          modelEvidence.begin(alternative.id, roomId)
+          modelEvidence.stage(alternative.id, { kind: 'context_ready', model, toolCount: tools.length, messageCount: messages.length })
+        })
+        let stages = Promise.resolve()
+        const onEvent: NonNullable<EvalOptions['onEvent']> = event => {
+          const stage = executionStageEvent(event)
+          if (!stage) return
+          const at = Date.now()
+          stages = stages.then(() => retainModel(Buffer.byteLength(JSON.stringify(stage)) + 1024, () => modelEvidence.stage(alternative.id, stage, at)))
+          void stages.catch(error => { if (records.get(key) === record) console.error('[comparisons] Could not retain model stage:', error) })
+        }
+        const modelObserver: NonNullable<EvalOptions['modelObserver']> = {
+          start: async (summary, request) => { await stages; await retainModel(Buffer.byteLength(JSON.stringify(request)) + 4096, () => modelEvidence.start(alternative.id, summary, request)) },
+          complete: async (id, response, requested) => { await stages; await retainModel(Buffer.byteLength(JSON.stringify(response)) + 4096, () => modelEvidence.complete(alternative.id, id, response, requested)) },
+          fail: async (id, error, cancelled, partial) => { await stages; await retainModel(Buffer.byteLength(error) + (partial === undefined ? 0 : Buffer.byteLength(JSON.stringify(partial))) + 4096, () => modelEvidence.fail(alternative.id, id, error, cancelled, partial)) },
+        }
         const config = {...source.config,model}
         const nestedProvider:typeof provider = {...provider,
           chat:async request=>{
@@ -259,7 +282,8 @@ export const createComparisons = (deps: Dependencies) => {
           }
           return results
         }
-        const result=await evaluate({...source.context,messages,systemBlocks,tokenBudget,flushInfo:{ids:new Set(),triggerRoomId:roomId}},config,provider,tracked,undefined,roomId,{executionTurnId:alternative.id,toolDefinitions:tools,signal:controller.signal,...(source.requireView?{requireView:true}:{})})
+        const result=await evaluate({...source.context,messages,systemBlocks,tokenBudget,flushInfo:{ids:new Set(),triggerRoomId:roomId}},config,provider,tracked,undefined,roomId,{executionTurnId:alternative.id,toolDefinitions:tools,signal:controller.signal,onEvent,modelObserver,...(source.requireView?{requireView:true}:{})})
+        await stages
         const response=result.decision.response
         if(response.action==='respond') alternative.content=response.content
         else if(response.action==='error') alternative.error=response.message
@@ -288,13 +312,19 @@ export const createComparisons = (deps: Dependencies) => {
   const remove = async (roomId:string,messageId:string,id:string) => {
     const {record}=await find(roomId,messageId,id)
     const job=jobs.get(id);job?.controller.abort(new Error('Comparison deleted'));await job?.done
+    if (!storage) memoryModels.remove(id) // Persistent cleanup owns the alternative's model directory too.
     record.alternatives=record.alternatives.filter(a=>a.id!==id)
     try { if(storage) { const task=writes.then(()=>storage.removeAlternative(roomId,messageId,id));writes=task.catch(error=>console.error('[comparisons] Removal failed',error));await task };return {deleted:true} }
     finally {release(recordKey(roomId,messageId),record)}
   }
   const removeMessages = (roomId:string,messageId?:string) => {
     for (const [key,record] of records) if(record.source.roomId===roomId && (!messageId||record.messageId===messageId)) {
-      for(const alternative of record.alternatives) jobs.get(alternative.id)?.controller.abort(new Error('Source message removed'))
+      for(const alternative of record.alternatives) {
+        jobs.get(alternative.id)?.controller.abort(new Error('Source message removed'))
+        // Persistent deletion waits in the existing storage queue below.
+        // In-memory comparison evidence has the same owning lifetime.
+        if (!storage) memoryModels.remove(alternative.id)
+      }
       records.delete(key)
     }
     for(const [key,source]of pending)if(source.roomId===roomId)pending.delete(key)
@@ -303,7 +333,19 @@ export const createComparisons = (deps: Dependencies) => {
   return {capture,link,list,start,cancel,remove,removeMessages,discard:(executionTurnId:string)=>{pending.delete(executionTurnId)},
     // Comparisons whose model work is under way: a job lives from start until its outcome is saved.
     running:()=>jobs.size,
-    detail:async(roomId:string,messageId:string,id:string)=>{const {record,alternative}=await find(roomId,messageId,id);try{return {...alternative,startingInput:record.source,notice:guidance}}finally{release(recordKey(roomId,messageId),record)}},
+    detail:async(roomId:string,messageId:string,id:string)=>{const {record,alternative}=await find(roomId,messageId,id);try{
+      const turn: ExecutionTurn = { id: alternative.id, roomId, agentId: record.source.agentId, startedAt: alternative.startedAt, status: alternative.status,
+        ...(alternative.finishedAt === undefined ? {} : { finishedAt: alternative.finishedAt }), ...(alternative.error === undefined ? {} : { reason: alternative.error }) }
+      const calls: ExecutionCallSummary[] = alternative.calls.map(call => ({ id: call.id, tool: call.tool, startedAt: call.startedAt,
+        argumentBytes: Buffer.byteLength(JSON.stringify(call.arguments)), ...(call.completedAt === undefined ? {} : { completedAt: call.completedAt }),
+        ...(call.result === undefined ? {} : { resultBytes: Buffer.byteLength(JSON.stringify(call.result)) }) }))
+      return {...alternative,startingInput:record.source,notice:guidance,execution:{turn,calls,...modelsFor(roomId,messageId).summary(roomId,id)}}
+    }finally{release(recordKey(roomId,messageId),record)}},
+    model:async(roomId:string,messageId:string,id:string,modelId:string,sensitive=false)=>{const {record}=await find(roomId,messageId,id);try{return modelsFor(roomId,messageId).get(roomId,id,modelId,sensitive)}finally{release(recordKey(roomId,messageId),record)}},
+    call:async(roomId:string,messageId:string,id:string,callId:string)=>{const {record,alternative}=await find(roomId,messageId,id);try{
+      const call=alternative.calls.find(call=>call.id===callId)
+      return call === undefined ? undefined : {...call,argumentBytes:Buffer.byteLength(JSON.stringify(call.arguments)),...(call.result===undefined?{}:{resultBytes:Buffer.byteLength(JSON.stringify(call.result))})}
+    }finally{release(recordKey(roomId,messageId),record)}},
     close:async()=>{closed=true;for(const job of jobs.values())job.controller.abort(new Error('Workspace closed'));await Promise.all([...jobs.values()].map(j=>j.done));await writes;pending.clear();records.clear()},
   }
 }

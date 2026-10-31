@@ -1,0 +1,1888 @@
+[
+  {
+    "id": "phase-a",
+    "sourceSha256": "4ab0c69b4ebc642af26019c81c1c1abada089b6bc690e06fad93f7f69b2eac9d",
+    "bytes": 34180,
+    "ownership": "raw-read-only",
+    "nativeConvertedEntities": 0,
+    "editability": "No construction-history conversion; raw bytes retained as exact source dependency",
+    "facts": {
+      "entityCount": 562,
+      "types": {
+        "IfcCartesianPoint": 140,
+        "IfcDirection": 99,
+        "IfcAxis2Placement3D": 40,
+        "IfcGeometricRepresentationContext": 1,
+        "IfcSIUnit": 1,
+        "IfcUnitAssignment": 1,
+        "IfcProject": 1,
+        "IfcLocalPlacement": 21,
+        "IfcSite": 1,
+        "IfcBuilding": 1,
+        "IfcRelAggregates": 6,
+        "IfcPropertySingleValue": 71,
+        "IfcPropertySet": 22,
+        "IfcRelDefinesByProperties": 22,
+        "IfcBuildingStorey": 2,
+        "IfcPolyline": 20,
+        "IfcArbitraryProfileDefWithVoids": 4,
+        "IfcExtrudedAreaSolid": 18,
+        "IfcShapeRepresentation": 18,
+        "IfcProductDefinitionShape": 16,
+        "IfcSpace": 3,
+        "IfcShapeAspect": 18,
+        "IfcArbitraryClosedProfileDef": 12,
+        "IfcSlab": 2,
+        "IfcPump": 2,
+        "IfcCircleProfileDef": 2,
+        "IfcTank": 1,
+        "IfcBuildingElementProxy": 1,
+        "IfcWall": 1,
+        "IfcOpeningElement": 1,
+        "IfcDistributionBoard": 1,
+        "IfcCableCarrierSegment": 2,
+        "IfcPipeSegment": 1,
+        "IfcTransportElement": 1,
+        "IfcRelContainedInSpatialStructure": 2,
+        "IfcRelVoidsElement": 1,
+        "IfcZone": 2,
+        "IfcRelAssignsToGroup": 2,
+        "IfcDistributionPort": 1,
+        "IfcRelNests": 1
+      },
+      "unreadable": [],
+      "semanticHash": "78c4c799ab9ac4b7ce448d75af5f5571b599aec361e5b9bcadb1b6ce024b8163",
+      "products": [
+        {
+          "id": 9,
+          "type": "IfcProject",
+          "globalId": "3m3F46Iwk6P20GxMuaexH4",
+          "name": "current-pwr-spatial-slice-a",
+          "semanticHash": "c500d402f957b4cd9a904d478d5c0c7760b0eb6d991e0eb0aea74de7df276957"
+        },
+        {
+          "id": 15,
+          "type": "IfcSite",
+          "globalId": "09iuw4eT5B0eWWAc0$TLu9",
+          "name": "current-pwr-spatial-slice-a/site",
+          "semanticHash": "125a17b87aaa5d472f261da103d83d3bde0045f971361a1e8df48cd361ffa1b2"
+        },
+        {
+          "id": 21,
+          "type": "IfcBuilding",
+          "globalId": "2KvmeLo3tB_xkYhUnRzcu_",
+          "name": "current-pwr-spatial-slice-a/building",
+          "semanticHash": "6e23175f0347f25cc41e0f2434264656748fc7b1239b16421f4b8df1f7023c42"
+        },
+        {
+          "id": 22,
+          "type": "IfcRelAggregates",
+          "globalId": "3hmLMBd4DYSYDXrTVjb$XQ",
+          "name": "current-pwr-spatial-slice-a/project-site",
+          "semanticHash": "6d1a9056a833d1f5056f89f2be088fd5d8c3703b422e74708c39cfeeb53e8b34"
+        },
+        {
+          "id": 23,
+          "type": "IfcRelAggregates",
+          "globalId": "3hSTyo5CNQR8j3DX7KNPSC",
+          "name": "current-pwr-spatial-slice-a/site-building",
+          "semanticHash": "b99ea65f17d709d82ee5a1b27ac449ad236e32fa2fe6fb801a918cdb75cb07f2"
+        },
+        {
+          "id": 31,
+          "type": "IfcPropertySet",
+          "globalId": "0yPgKAzN6v4fPAI6WnXitF",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "77fdc06b796a44e79b4a703991d3a333b9aba5d17089d51167f1d9a1d052aee2"
+        },
+        {
+          "id": 32,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "2L_uA02ZPBOOktrsxtyAwK",
+          "name": "current-pwr-spatial-slice-a/has-profile",
+          "semanticHash": "4bfcd044f165bffe9a04e1d9af44ecad176aea99014bbaa28b4243811a1d4e63"
+        },
+        {
+          "id": 38,
+          "type": "IfcBuildingStorey",
+          "globalId": "1RbGvtb1q1pV96q0iUpbHh",
+          "name": "B1",
+          "semanticHash": "a9a9206b6523a375c83d56c51648100e993b02dc97d2afb926cbc33f44b91792"
+        },
+        {
+          "id": 43,
+          "type": "IfcPropertySet",
+          "globalId": "3DpaDXrpCSss88Najts2GP",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "a4db5fdd0ef6ceff183d3cabeebf262e2eac0292022e8a201c49c974712ee7f0"
+        },
+        {
+          "id": 44,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "2bP$nd4BzWXhh7BymkBtW5",
+          "name": "B1/has-profile",
+          "semanticHash": "0b2eedeab37ff198393606f1c87eb914aef27afa6141f3296e45f3615e968c94"
+        },
+        {
+          "id": 50,
+          "type": "IfcBuildingStorey",
+          "globalId": "0pFWeU9u5T3ExbN4S$uzoJ",
+          "name": "G",
+          "semanticHash": "40900a91bce2114df900a7cc9252d22b2003d28f873884aa9f2675aefc0c097b"
+        },
+        {
+          "id": 55,
+          "type": "IfcPropertySet",
+          "globalId": "2X5GgTQN31xuJ1QuLo9imY",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "c934422ef3d80df970cd84fdecda45a90e54b6852b3456f837e2ae50c2d7d8ba"
+        },
+        {
+          "id": 56,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "0_aICVEuIvjweJRxNepjCO",
+          "name": "G/has-profile",
+          "semanticHash": "62c354a289368020e9eeea304b37edcf100b12c7da852e5edd4556c8b01a83dc"
+        },
+        {
+          "id": 57,
+          "type": "IfcRelAggregates",
+          "globalId": "3zSSMUJPqkC3jeJTW3JGCO",
+          "name": "current-pwr-spatial-slice-a/building-levels",
+          "semanticHash": "04d5214090cbbb9dac8170d7bd81309085132e65761e8445285636b15940710f"
+        },
+        {
+          "id": 84,
+          "type": "IfcSpace",
+          "globalId": "0000000000000000000001",
+          "name": "space-b1-service",
+          "semanticHash": "45126e9d65c4c22574e43e2a427bccf832d609e52c2e9697c02fbba64c930a35"
+        },
+        {
+          "id": 88,
+          "type": "IfcPropertySet",
+          "globalId": "2$jlC5JuMkO_qHNI9KlNuz",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "caae2ae64e0b5f760d090c73cef6f6c6d3b7672213c6cb364bb3fb34c1942909"
+        },
+        {
+          "id": 89,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "1QvFjhJ6a3fDP5cpQOxLD9",
+          "name": "space-b1-service/has-profile",
+          "semanticHash": "a7d838980de58b2e593963a5d2169731f105ff2ba76660922632dfbee17bb5b6"
+        },
+        {
+          "id": 91,
+          "type": "IfcRelAggregates",
+          "globalId": "1q$wHTs6nXNb3DHbabo8Bk",
+          "name": "space-b1-service/space-level",
+          "semanticHash": "7af6c925d8bc3d4a5009d27de825bc2f67eee5e3642d0c6982303572628c77ac"
+        },
+        {
+          "id": 112,
+          "type": "IfcSpace",
+          "globalId": "0000000000000000000002",
+          "name": "space-b1-corridor",
+          "semanticHash": "35ae17d1a855d420ca6f2718601c5362836518620acc300581792983ca1a6da4"
+        },
+        {
+          "id": 116,
+          "type": "IfcPropertySet",
+          "globalId": "04Wt23A8cpZAlLcC0VLO1P",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "382db1f3e262dc7c8195e9bf658530230627023d352fa9df1de16bd598a6b4c3"
+        },
+        {
+          "id": 117,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "1yvhNaeU_6OCIroJRR$P3x",
+          "name": "space-b1-corridor/has-profile",
+          "semanticHash": "f6e7503e72134337df2367f29426957d7bb000545232b56af2c7303a3887c297"
+        },
+        {
+          "id": 119,
+          "type": "IfcRelAggregates",
+          "globalId": "0rYlLNS1cMfSaOGRxj4x8h",
+          "name": "space-b1-corridor/space-level",
+          "semanticHash": "294b1d50e91bf6e23bde86a2e8664b142b5d67ec857ebe41fb618410fcc5adc1"
+        },
+        {
+          "id": 146,
+          "type": "IfcSpace",
+          "globalId": "0000000000000000000003",
+          "name": "space-g-hall",
+          "semanticHash": "039c65dbfedfbb82016e8dfb01d9254a7358ff22809d16ef3514efd6f8ee8203"
+        },
+        {
+          "id": 150,
+          "type": "IfcPropertySet",
+          "globalId": "3N4CnnR85jGj_4sXXVYYUE",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "48903968b2fe6a286fc3018286341647bbee8c3cd8175ef931a07c0317be8c58"
+        },
+        {
+          "id": 151,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "0TW9G4kWUETiwNIBwBijVw",
+          "name": "space-g-hall/has-profile",
+          "semanticHash": "66fc272965b11616d5ba2298fcd383a945462d1ce745e54543a4e2fff673b159"
+        },
+        {
+          "id": 153,
+          "type": "IfcRelAggregates",
+          "globalId": "22rE0gCc_ahONjTLN3OW20",
+          "name": "space-g-hall/space-level",
+          "semanticHash": "fb415298d03578469361dc6ad7e65dc87f4b01af8083f346c270c8fb852399a7"
+        },
+        {
+          "id": 180,
+          "type": "IfcSlab",
+          "globalId": "0000000000000000000004",
+          "name": "slab-b1",
+          "semanticHash": "72a49e176b28c7a51b551aa4651bed021c9f7e8fe1b6833631ad52ea98b6e369"
+        },
+        {
+          "id": 184,
+          "type": "IfcPropertySet",
+          "globalId": "1ZkiVm3acejiEY7jKmL2Xx",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "9e73c0f3eecceb48c6070fbe666f7c4d546d6803e0d7eec5bb8c8085827cf6e0"
+        },
+        {
+          "id": 185,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "3$PQ0jJJ4MebqMMOCZLQ3z",
+          "name": "slab-b1/has-profile",
+          "semanticHash": "524719c6c6aa93db07517a77e69aff8dfd3c1fa02dfeaa38238a3d568c7410af"
+        },
+        {
+          "id": 213,
+          "type": "IfcSlab",
+          "globalId": "0000000000000000000005",
+          "name": "slab-g",
+          "semanticHash": "3a32ea5091f99d94a9cce08b0db24167e4a6e7b71b10ad02842e60dae14ed850"
+        },
+        {
+          "id": 217,
+          "type": "IfcPropertySet",
+          "globalId": "1Jxyp_VildMo0lACfcYyWO",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "c6b4216a5d96159152454aaa15d839bbd46f2ef7bfda682b191db33ee8f2f7b5"
+        },
+        {
+          "id": 218,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "27wKpCcO4AxdwWtnXn38Zg",
+          "name": "slab-g/has-profile",
+          "semanticHash": "1b5583faeebf7ef7de9702840bceaae20768142e69dc74aef106b5530e1c74b1"
+        },
+        {
+          "id": 268,
+          "type": "IfcPump",
+          "globalId": "0000000000000000000006",
+          "name": "Primary pump",
+          "semanticHash": "3fa28962bb571c529e2e3f2eab79c13647fe77eead3752222ee4ed1b2deab05a"
+        },
+        {
+          "id": 272,
+          "type": "IfcPropertySet",
+          "globalId": "1APaF3xeshDrDQPfcDLDSz",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "6077f603ff01d617e6816a2dde6dd79248457a46f00f27c4e419ffcb3abf7fec"
+        },
+        {
+          "id": 273,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "1PTXifpvJvblVvaa5fPdD5",
+          "name": "pump-a/has-profile",
+          "semanticHash": "ccea006e1b9bab35b6cfee71899a13e9e8eac8778e646eefb19b15724f8e81b0"
+        },
+        {
+          "id": 297,
+          "type": "IfcPump",
+          "globalId": "0000000000000000000007",
+          "name": "Primary pump",
+          "semanticHash": "b3c618d990704b26b10bcb7faa1550b18abe2d1824235ef628b9eca89ae9cd19"
+        },
+        {
+          "id": 301,
+          "type": "IfcPropertySet",
+          "globalId": "2Yift05aWMBgPZKw9IojZl",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "ef6faca7035df355244aa9a97bba20269bfe05cd64d4753952870e4501b8b550"
+        },
+        {
+          "id": 302,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "0ucD54LMUwzg8iiAWVswXc",
+          "name": "pump-b/has-profile",
+          "semanticHash": "d1216a290e9a26612664fc84a2cb4d96b1fab4b3b2abd23547aebe8f730197e9"
+        },
+        {
+          "id": 318,
+          "type": "IfcTank",
+          "globalId": "0000000000000000000008",
+          "name": "vessel",
+          "semanticHash": "b03d759b43eaa6db0ff60a142ced28feed7cfdf741ef11ccf1f85186b8e22ca9"
+        },
+        {
+          "id": 324,
+          "type": "IfcPropertySet",
+          "globalId": "10VeqSPvbdaPOH88VhomcJ",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "723eab6de436b93311632117c8c5d225146a1112a82d1583c684deab98f4edf1"
+        },
+        {
+          "id": 325,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "0OKlzf0iatkVPVVh9l8Ove",
+          "name": "vessel/has-profile",
+          "semanticHash": "908f4f5751ce6a2b499bf7351cfd83bc031bbce29eed741294df45127baf1373"
+        },
+        {
+          "id": 347,
+          "type": "IfcBuildingElementProxy",
+          "globalId": "0000000000000000000009",
+          "name": "obstacle",
+          "semanticHash": "45cfd3886c693b685ab5ea77efc5cdde75593d4f93cff4e9cc7777fd6dc7996f"
+        },
+        {
+          "id": 351,
+          "type": "IfcPropertySet",
+          "globalId": "3IZyvhuHgu5PJwkGDryIZY",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "832802fd6d679d5f3acd86aa29ab87409e55ce642668761d6a4e193144cce4f8"
+        },
+        {
+          "id": 352,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "3T9s5fwbfmSem8PjAiNqYD",
+          "name": "obstacle/has-profile",
+          "semanticHash": "b4371bb6c1ef64954dda697c97580acfad90674d128dcbc0ed927b578e81f1a2"
+        },
+        {
+          "id": 374,
+          "type": "IfcWall",
+          "globalId": "0000000000000000000010",
+          "name": "wall-b1",
+          "semanticHash": "f2e51734df63640741c2c85627878973a826460b92a8c5bd7a6c4377a55b98d4"
+        },
+        {
+          "id": 378,
+          "type": "IfcPropertySet",
+          "globalId": "3yOZfieaGabUjF6$knuNh1",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "8a35b1c3d07fda5b23750974d508b0d4c78bcd02bb3aee4eb35b0408984c7aaa"
+        },
+        {
+          "id": 379,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "3lfJFm4vmgMSmzHgS2$N7g",
+          "name": "wall-b1/has-profile",
+          "semanticHash": "36340b523c92936fa3588362b3fe5891c66884ff4d62372f9ab382e39163cf8a"
+        },
+        {
+          "id": 401,
+          "type": "IfcOpeningElement",
+          "globalId": "0000000000000000000011",
+          "name": "hatch",
+          "semanticHash": "243cb8894ea3b939fd4e83e1946d47a2ab1e912552ccc37af716f4efb4987d04"
+        },
+        {
+          "id": 405,
+          "type": "IfcPropertySet",
+          "globalId": "0xzglN3xKFLOR2kRhhfwp4",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "a72916011a8060b266c9ca376742b9c8c222c2167f0faeb3f51f04b059bfa052"
+        },
+        {
+          "id": 406,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "2vAr2SjSrnCaA91_Q520R6",
+          "name": "hatch/has-profile",
+          "semanticHash": "5254ad58f9a5f20994c79d132782ba8781637ae2952d0555bb74d3aa9b405801"
+        },
+        {
+          "id": 428,
+          "type": "IfcDistributionBoard",
+          "globalId": "0000000000000000000012",
+          "name": "board",
+          "semanticHash": "9840a5eb07b4ef9c70f9dd7aedcadad3538dac8d276882ab1f4fca05688c6f88"
+        },
+        {
+          "id": 432,
+          "type": "IfcPropertySet",
+          "globalId": "3IXVm4eZXnks$8fs9YrQir",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "743deb41aa68e571bdfa957d6218cfcb6908e98f168a410ea5d35d2820835a5a"
+        },
+        {
+          "id": 433,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "07FpBHCS4AMljxosSwZ0kM",
+          "name": "board/has-profile",
+          "semanticHash": "c99d52ba49a8a15a29c1db49b4f613752c01b82cc2716772c8c053f555a93c9b"
+        },
+        {
+          "id": 455,
+          "type": "IfcCableCarrierSegment",
+          "globalId": "0000000000000000000013",
+          "name": "tray-a",
+          "semanticHash": "b44228318ff39d9f44f581288c9a3c31c8e33135266252bb2e73cea5f932bd09"
+        },
+        {
+          "id": 459,
+          "type": "IfcPropertySet",
+          "globalId": "0GqKkbmhoc7hc4dCn5ciZO",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "7883fd3ca5f1ecccd802e9e10c7264bc76eae95eb91b93d0515d637597f70413"
+        },
+        {
+          "id": 460,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "3kVYzquLFpdBtcNojf0_rm",
+          "name": "tray-a/has-profile",
+          "semanticHash": "0b2ddee14aad3f2f7d7f3c9739406b227539066fb9786d0cff02db2e8f566a69"
+        },
+        {
+          "id": 482,
+          "type": "IfcCableCarrierSegment",
+          "globalId": "0000000000000000000014",
+          "name": "tray-b",
+          "semanticHash": "0d1d1dc45c5ee12d6c5b0de32ca58154b682696c01982bd07967447e311f7e57"
+        },
+        {
+          "id": 486,
+          "type": "IfcPropertySet",
+          "globalId": "32S4mnfvxJtV6sAvAwEqHX",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "8d804dda128699ae82f4ea1ca79a7fd29af09e279d2c9f4b47fdb73412d36b5e"
+        },
+        {
+          "id": 487,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "08ROXG_lYv8EzacoV102Am",
+          "name": "tray-b/has-profile",
+          "semanticHash": "b050f06da53c29c45647312d4ca92d9cfae9ac95de9c3ade5967c52300b9a7f7"
+        },
+        {
+          "id": 503,
+          "type": "IfcPipeSegment",
+          "globalId": "0000000000000000000015",
+          "name": "riser",
+          "semanticHash": "b03b066d2718b0588b13da296a497c846bacfa8549132f10316bbb249a0b28f7"
+        },
+        {
+          "id": 507,
+          "type": "IfcPropertySet",
+          "globalId": "0B6f8l7lzS_plMFDAA_eYQ",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "53d4c5403c982be74e603811bad5ec32a8b50991b4871ff330b5e81bf76cf7e6"
+        },
+        {
+          "id": 508,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "238lt$KfXLjK$PHoblEF31",
+          "name": "riser/has-profile",
+          "semanticHash": "057cf4a1e92270a0f2937ac55bf2c64f224814f41509fc75b0c8c4f6270fda58"
+        },
+        {
+          "id": 530,
+          "type": "IfcTransportElement",
+          "globalId": "0000000000000000000016",
+          "name": "hoist",
+          "semanticHash": "7b5a75380a99f4746956f1e6aab238b392d3559e2724d30be5d3ad9532d207d5"
+        },
+        {
+          "id": 534,
+          "type": "IfcPropertySet",
+          "globalId": "1qPTNAm8XZOldsT51cVMeO",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "c075feeef09646054afebce04b37f20ab43cbfcbb4a9aa4a01df4cb297794e25"
+        },
+        {
+          "id": 535,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "0zQ2JeNqZuKWP1P5Eqwclf",
+          "name": "hoist/has-profile",
+          "semanticHash": "7209924fc13985e6a0d43437f36ffc48a9385e9297d6dc053cebff66b7bd310a"
+        },
+        {
+          "id": 537,
+          "type": "IfcRelContainedInSpatialStructure",
+          "globalId": "3UpCBloSNjWFqB3PpSmjJv",
+          "name": "B1/contains",
+          "semanticHash": "5f99e2f172a3108703310031aaffbb807e58c5fb423f3ef4aa2643e672e779fd"
+        },
+        {
+          "id": 538,
+          "type": "IfcRelContainedInSpatialStructure",
+          "globalId": "3fcxbftQggVV2V5RGnm73j",
+          "name": "G/contains",
+          "semanticHash": "1eae60fb0b25ed0579f94538fae0c76e7b69a874f4f8317e70384dc654439512"
+        },
+        {
+          "id": 539,
+          "type": "IfcRelVoidsElement",
+          "globalId": "1izSbT2TvUqqc46hK681nk",
+          "name": "hatch/voids",
+          "semanticHash": "364a38e9386ae0726e5f4318c5e8a5774b69f16087530807e6d09c6916051075"
+        },
+        {
+          "id": 540,
+          "type": "IfcZone",
+          "globalId": "0000000000000000000018",
+          "name": "zone-fire-a",
+          "semanticHash": "01987ae5c2d7ea2d26e8e08faf85bb3d8f328bb4c2e12055ad00ff4e2081a4e4"
+        },
+        {
+          "id": 543,
+          "type": "IfcPropertySet",
+          "globalId": "0tayXw4TynCKS1B7g_jRa_",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "21156a739dcfff3a3b93d54acaa6909fa31b5f35c528b88ae77493ae5b457a5a"
+        },
+        {
+          "id": 544,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "3oAoHE1YFhRllLfLiO57CM",
+          "name": "zone-fire-a/has-profile",
+          "semanticHash": "16c45a67c1837fb211cfb245a39b908f9a7c1e9478f0ebd347736eeaa76b063a"
+        },
+        {
+          "id": 545,
+          "type": "IfcRelAssignsToGroup",
+          "globalId": "32wPtRyMOTJBgxYtYm$LPM",
+          "name": "zone-fire-a/members",
+          "semanticHash": "81aa2cb8197984c449141ce3b5afb9651267b5f9884ee537ea99ac7398d814ff"
+        },
+        {
+          "id": 546,
+          "type": "IfcZone",
+          "globalId": "0000000000000000000019",
+          "name": "zone-controlled",
+          "semanticHash": "b0065d078b5425044d95d06d3a974586c6b0e14fb869884c0deb140942f973d5"
+        },
+        {
+          "id": 549,
+          "type": "IfcPropertySet",
+          "globalId": "1fTEWIe5dOMhkYN_YxxAPb",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "c45e9f5add632daaa3e7bc80c18fb239e7a8df8fa77219fd283010dcac68c967"
+        },
+        {
+          "id": 550,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "2zsbyzw9mv9O$IEzr3Js6L",
+          "name": "zone-controlled/has-profile",
+          "semanticHash": "562fdafc045c50402acb1705554a1f934206b0796eba92320035374ff6ebcbd1"
+        },
+        {
+          "id": 551,
+          "type": "IfcRelAssignsToGroup",
+          "globalId": "0xREBmITNHkUSHlOs3R5tq",
+          "name": "zone-controlled/members",
+          "semanticHash": "d2d169968dd2fc6dacfab89206cd05ec0da38a726046cda5876eb49786bb054a"
+        },
+        {
+          "id": 557,
+          "type": "IfcDistributionPort",
+          "globalId": "0000000000000000000017",
+          "name": "pump-a-outlet",
+          "semanticHash": "57712b54b7a3b2d4b49c20e206933c728e3958730aa0fe1fd2550da9ef81e001"
+        },
+        {
+          "id": 560,
+          "type": "IfcPropertySet",
+          "globalId": "0atfBW4GaXO7snKH0VmVHO",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "3527ec309a854f631b79316e6d53757f1e5958ae0801b2d1103bb55c589d16bd"
+        },
+        {
+          "id": 561,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "1mkDNYRC1EXykkfDAZriJx",
+          "name": "pump-a-outlet/has-profile",
+          "semanticHash": "707416a52b2bd570e1d2582710e11e62de38dc01a8bb371ba05b3537911b32a7"
+        },
+        {
+          "id": 562,
+          "type": "IfcRelNests",
+          "globalId": "0sF69yVWlsvqksTNwilRtG",
+          "name": "pump-a-outlet/owner",
+          "semanticHash": "7986fbc1f1832ffedd66613fb4a06a171fcb43e46b5010773902432d3ca03560"
+        }
+      ],
+      "openingCount": 1,
+      "voidRelations": 1,
+      "fillRelations": 0,
+      "portCount": 1
+    },
+    "renderedMeshes": 12,
+    "triangleCount": 1208,
+    "renderGeometryHash": "5590c6070ed93ddf0900b1a425fed8d06aa88694a2a35a7d79a2458d518c9e31",
+    "geometryStatus": "actual-web-ifc-native-tessellation",
+    "lossPolicy": "Unknown entities retained in raw IFC; native editing refuses; raw hash failure refuses build"
+  },
+  {
+    "id": "phase-a-edited",
+    "sourceSha256": "4b1091fcc3b33ab57180f1a926971f31f074f397d000a76433fed628e08479c5",
+    "bytes": 34189,
+    "ownership": "raw-read-only",
+    "nativeConvertedEntities": 0,
+    "editability": "No construction-history conversion; raw bytes retained as exact source dependency",
+    "facts": {
+      "entityCount": 562,
+      "types": {
+        "IfcCartesianPoint": 140,
+        "IfcDirection": 99,
+        "IfcAxis2Placement3D": 40,
+        "IfcGeometricRepresentationContext": 1,
+        "IfcSIUnit": 1,
+        "IfcUnitAssignment": 1,
+        "IfcProject": 1,
+        "IfcLocalPlacement": 21,
+        "IfcSite": 1,
+        "IfcBuilding": 1,
+        "IfcRelAggregates": 6,
+        "IfcPropertySingleValue": 71,
+        "IfcPropertySet": 22,
+        "IfcRelDefinesByProperties": 22,
+        "IfcBuildingStorey": 2,
+        "IfcPolyline": 20,
+        "IfcArbitraryProfileDefWithVoids": 4,
+        "IfcExtrudedAreaSolid": 18,
+        "IfcShapeRepresentation": 18,
+        "IfcProductDefinitionShape": 16,
+        "IfcSpace": 3,
+        "IfcShapeAspect": 18,
+        "IfcArbitraryClosedProfileDef": 12,
+        "IfcSlab": 2,
+        "IfcPump": 2,
+        "IfcCircleProfileDef": 2,
+        "IfcTank": 1,
+        "IfcBuildingElementProxy": 1,
+        "IfcWall": 1,
+        "IfcOpeningElement": 1,
+        "IfcDistributionBoard": 1,
+        "IfcCableCarrierSegment": 2,
+        "IfcPipeSegment": 1,
+        "IfcTransportElement": 1,
+        "IfcRelContainedInSpatialStructure": 2,
+        "IfcRelVoidsElement": 1,
+        "IfcZone": 2,
+        "IfcRelAssignsToGroup": 2,
+        "IfcDistributionPort": 1,
+        "IfcRelNests": 1
+      },
+      "unreadable": [],
+      "semanticHash": "db5a0d5e8cb73503af6804a3bcba1cbeb1149625153f4339b56fd3351f1f60e4",
+      "products": [
+        {
+          "id": 9,
+          "type": "IfcProject",
+          "globalId": "3m3F46Iwk6P20GxMuaexH4",
+          "name": "current-pwr-spatial-slice-a",
+          "semanticHash": "c500d402f957b4cd9a904d478d5c0c7760b0eb6d991e0eb0aea74de7df276957"
+        },
+        {
+          "id": 15,
+          "type": "IfcSite",
+          "globalId": "09iuw4eT5B0eWWAc0$TLu9",
+          "name": "current-pwr-spatial-slice-a/site",
+          "semanticHash": "125a17b87aaa5d472f261da103d83d3bde0045f971361a1e8df48cd361ffa1b2"
+        },
+        {
+          "id": 21,
+          "type": "IfcBuilding",
+          "globalId": "2KvmeLo3tB_xkYhUnRzcu_",
+          "name": "current-pwr-spatial-slice-a/building",
+          "semanticHash": "6e23175f0347f25cc41e0f2434264656748fc7b1239b16421f4b8df1f7023c42"
+        },
+        {
+          "id": 22,
+          "type": "IfcRelAggregates",
+          "globalId": "3hmLMBd4DYSYDXrTVjb$XQ",
+          "name": "current-pwr-spatial-slice-a/project-site",
+          "semanticHash": "6d1a9056a833d1f5056f89f2be088fd5d8c3703b422e74708c39cfeeb53e8b34"
+        },
+        {
+          "id": 23,
+          "type": "IfcRelAggregates",
+          "globalId": "3hSTyo5CNQR8j3DX7KNPSC",
+          "name": "current-pwr-spatial-slice-a/site-building",
+          "semanticHash": "b99ea65f17d709d82ee5a1b27ac449ad236e32fa2fe6fb801a918cdb75cb07f2"
+        },
+        {
+          "id": 31,
+          "type": "IfcPropertySet",
+          "globalId": "0yPgKAzN6v4fPAI6WnXitF",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "77fdc06b796a44e79b4a703991d3a333b9aba5d17089d51167f1d9a1d052aee2"
+        },
+        {
+          "id": 32,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "2L_uA02ZPBOOktrsxtyAwK",
+          "name": "current-pwr-spatial-slice-a/has-profile",
+          "semanticHash": "4bfcd044f165bffe9a04e1d9af44ecad176aea99014bbaa28b4243811a1d4e63"
+        },
+        {
+          "id": 38,
+          "type": "IfcBuildingStorey",
+          "globalId": "1RbGvtb1q1pV96q0iUpbHh",
+          "name": "B1",
+          "semanticHash": "a9a9206b6523a375c83d56c51648100e993b02dc97d2afb926cbc33f44b91792"
+        },
+        {
+          "id": 43,
+          "type": "IfcPropertySet",
+          "globalId": "3DpaDXrpCSss88Najts2GP",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "a4db5fdd0ef6ceff183d3cabeebf262e2eac0292022e8a201c49c974712ee7f0"
+        },
+        {
+          "id": 44,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "2bP$nd4BzWXhh7BymkBtW5",
+          "name": "B1/has-profile",
+          "semanticHash": "0b2eedeab37ff198393606f1c87eb914aef27afa6141f3296e45f3615e968c94"
+        },
+        {
+          "id": 50,
+          "type": "IfcBuildingStorey",
+          "globalId": "0pFWeU9u5T3ExbN4S$uzoJ",
+          "name": "G",
+          "semanticHash": "40900a91bce2114df900a7cc9252d22b2003d28f873884aa9f2675aefc0c097b"
+        },
+        {
+          "id": 55,
+          "type": "IfcPropertySet",
+          "globalId": "2X5GgTQN31xuJ1QuLo9imY",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "c934422ef3d80df970cd84fdecda45a90e54b6852b3456f837e2ae50c2d7d8ba"
+        },
+        {
+          "id": 56,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "0_aICVEuIvjweJRxNepjCO",
+          "name": "G/has-profile",
+          "semanticHash": "62c354a289368020e9eeea304b37edcf100b12c7da852e5edd4556c8b01a83dc"
+        },
+        {
+          "id": 57,
+          "type": "IfcRelAggregates",
+          "globalId": "3zSSMUJPqkC3jeJTW3JGCO",
+          "name": "current-pwr-spatial-slice-a/building-levels",
+          "semanticHash": "04d5214090cbbb9dac8170d7bd81309085132e65761e8445285636b15940710f"
+        },
+        {
+          "id": 84,
+          "type": "IfcSpace",
+          "globalId": "0000000000000000000001",
+          "name": "space-b1-service",
+          "semanticHash": "45126e9d65c4c22574e43e2a427bccf832d609e52c2e9697c02fbba64c930a35"
+        },
+        {
+          "id": 88,
+          "type": "IfcPropertySet",
+          "globalId": "2$jlC5JuMkO_qHNI9KlNuz",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "caae2ae64e0b5f760d090c73cef6f6c6d3b7672213c6cb364bb3fb34c1942909"
+        },
+        {
+          "id": 89,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "1QvFjhJ6a3fDP5cpQOxLD9",
+          "name": "space-b1-service/has-profile",
+          "semanticHash": "a7d838980de58b2e593963a5d2169731f105ff2ba76660922632dfbee17bb5b6"
+        },
+        {
+          "id": 91,
+          "type": "IfcRelAggregates",
+          "globalId": "1q$wHTs6nXNb3DHbabo8Bk",
+          "name": "space-b1-service/space-level",
+          "semanticHash": "7af6c925d8bc3d4a5009d27de825bc2f67eee5e3642d0c6982303572628c77ac"
+        },
+        {
+          "id": 112,
+          "type": "IfcSpace",
+          "globalId": "0000000000000000000002",
+          "name": "space-b1-corridor",
+          "semanticHash": "35ae17d1a855d420ca6f2718601c5362836518620acc300581792983ca1a6da4"
+        },
+        {
+          "id": 116,
+          "type": "IfcPropertySet",
+          "globalId": "04Wt23A8cpZAlLcC0VLO1P",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "382db1f3e262dc7c8195e9bf658530230627023d352fa9df1de16bd598a6b4c3"
+        },
+        {
+          "id": 117,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "1yvhNaeU_6OCIroJRR$P3x",
+          "name": "space-b1-corridor/has-profile",
+          "semanticHash": "f6e7503e72134337df2367f29426957d7bb000545232b56af2c7303a3887c297"
+        },
+        {
+          "id": 119,
+          "type": "IfcRelAggregates",
+          "globalId": "0rYlLNS1cMfSaOGRxj4x8h",
+          "name": "space-b1-corridor/space-level",
+          "semanticHash": "294b1d50e91bf6e23bde86a2e8664b142b5d67ec857ebe41fb618410fcc5adc1"
+        },
+        {
+          "id": 146,
+          "type": "IfcSpace",
+          "globalId": "0000000000000000000003",
+          "name": "space-g-hall",
+          "semanticHash": "039c65dbfedfbb82016e8dfb01d9254a7358ff22809d16ef3514efd6f8ee8203"
+        },
+        {
+          "id": 150,
+          "type": "IfcPropertySet",
+          "globalId": "3N4CnnR85jGj_4sXXVYYUE",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "48903968b2fe6a286fc3018286341647bbee8c3cd8175ef931a07c0317be8c58"
+        },
+        {
+          "id": 151,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "0TW9G4kWUETiwNIBwBijVw",
+          "name": "space-g-hall/has-profile",
+          "semanticHash": "66fc272965b11616d5ba2298fcd383a945462d1ce745e54543a4e2fff673b159"
+        },
+        {
+          "id": 153,
+          "type": "IfcRelAggregates",
+          "globalId": "22rE0gCc_ahONjTLN3OW20",
+          "name": "space-g-hall/space-level",
+          "semanticHash": "fb415298d03578469361dc6ad7e65dc87f4b01af8083f346c270c8fb852399a7"
+        },
+        {
+          "id": 180,
+          "type": "IfcSlab",
+          "globalId": "0000000000000000000004",
+          "name": "slab-b1",
+          "semanticHash": "72a49e176b28c7a51b551aa4651bed021c9f7e8fe1b6833631ad52ea98b6e369"
+        },
+        {
+          "id": 184,
+          "type": "IfcPropertySet",
+          "globalId": "1ZkiVm3acejiEY7jKmL2Xx",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "9e73c0f3eecceb48c6070fbe666f7c4d546d6803e0d7eec5bb8c8085827cf6e0"
+        },
+        {
+          "id": 185,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "3$PQ0jJJ4MebqMMOCZLQ3z",
+          "name": "slab-b1/has-profile",
+          "semanticHash": "524719c6c6aa93db07517a77e69aff8dfd3c1fa02dfeaa38238a3d568c7410af"
+        },
+        {
+          "id": 213,
+          "type": "IfcSlab",
+          "globalId": "0000000000000000000005",
+          "name": "slab-g",
+          "semanticHash": "3a32ea5091f99d94a9cce08b0db24167e4a6e7b71b10ad02842e60dae14ed850"
+        },
+        {
+          "id": 217,
+          "type": "IfcPropertySet",
+          "globalId": "1Jxyp_VildMo0lACfcYyWO",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "c6b4216a5d96159152454aaa15d839bbd46f2ef7bfda682b191db33ee8f2f7b5"
+        },
+        {
+          "id": 218,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "27wKpCcO4AxdwWtnXn38Zg",
+          "name": "slab-g/has-profile",
+          "semanticHash": "1b5583faeebf7ef7de9702840bceaae20768142e69dc74aef106b5530e1c74b1"
+        },
+        {
+          "id": 268,
+          "type": "IfcPump",
+          "globalId": "0000000000000000000006",
+          "name": "Primary pump",
+          "semanticHash": "3fa28962bb571c529e2e3f2eab79c13647fe77eead3752222ee4ed1b2deab05a"
+        },
+        {
+          "id": 272,
+          "type": "IfcPropertySet",
+          "globalId": "1APaF3xeshDrDQPfcDLDSz",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "6077f603ff01d617e6816a2dde6dd79248457a46f00f27c4e419ffcb3abf7fec"
+        },
+        {
+          "id": 273,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "1PTXifpvJvblVvaa5fPdD5",
+          "name": "pump-a/has-profile",
+          "semanticHash": "ccea006e1b9bab35b6cfee71899a13e9e8eac8778e646eefb19b15724f8e81b0"
+        },
+        {
+          "id": 297,
+          "type": "IfcPump",
+          "globalId": "0000000000000000000007",
+          "name": "Primary pump",
+          "semanticHash": "b3c618d990704b26b10bcb7faa1550b18abe2d1824235ef628b9eca89ae9cd19"
+        },
+        {
+          "id": 301,
+          "type": "IfcPropertySet",
+          "globalId": "2Yift05aWMBgPZKw9IojZl",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "ef6faca7035df355244aa9a97bba20269bfe05cd64d4753952870e4501b8b550"
+        },
+        {
+          "id": 302,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "0ucD54LMUwzg8iiAWVswXc",
+          "name": "pump-b/has-profile",
+          "semanticHash": "d1216a290e9a26612664fc84a2cb4d96b1fab4b3b2abd23547aebe8f730197e9"
+        },
+        {
+          "id": 318,
+          "type": "IfcTank",
+          "globalId": "0000000000000000000008",
+          "name": "vessel",
+          "semanticHash": "b03d759b43eaa6db0ff60a142ced28feed7cfdf741ef11ccf1f85186b8e22ca9"
+        },
+        {
+          "id": 324,
+          "type": "IfcPropertySet",
+          "globalId": "10VeqSPvbdaPOH88VhomcJ",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "723eab6de436b93311632117c8c5d225146a1112a82d1583c684deab98f4edf1"
+        },
+        {
+          "id": 325,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "0OKlzf0iatkVPVVh9l8Ove",
+          "name": "vessel/has-profile",
+          "semanticHash": "908f4f5751ce6a2b499bf7351cfd83bc031bbce29eed741294df45127baf1373"
+        },
+        {
+          "id": 347,
+          "type": "IfcBuildingElementProxy",
+          "globalId": "0000000000000000000009",
+          "name": "obstacle",
+          "semanticHash": "45cfd3886c693b685ab5ea77efc5cdde75593d4f93cff4e9cc7777fd6dc7996f"
+        },
+        {
+          "id": 351,
+          "type": "IfcPropertySet",
+          "globalId": "3IZyvhuHgu5PJwkGDryIZY",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "832802fd6d679d5f3acd86aa29ab87409e55ce642668761d6a4e193144cce4f8"
+        },
+        {
+          "id": 352,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "3T9s5fwbfmSem8PjAiNqYD",
+          "name": "obstacle/has-profile",
+          "semanticHash": "b4371bb6c1ef64954dda697c97580acfad90674d128dcbc0ed927b578e81f1a2"
+        },
+        {
+          "id": 374,
+          "type": "IfcWall",
+          "globalId": "0000000000000000000010",
+          "name": "wall-b1",
+          "semanticHash": "f2e51734df63640741c2c85627878973a826460b92a8c5bd7a6c4377a55b98d4"
+        },
+        {
+          "id": 378,
+          "type": "IfcPropertySet",
+          "globalId": "3yOZfieaGabUjF6$knuNh1",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "8a35b1c3d07fda5b23750974d508b0d4c78bcd02bb3aee4eb35b0408984c7aaa"
+        },
+        {
+          "id": 379,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "3lfJFm4vmgMSmzHgS2$N7g",
+          "name": "wall-b1/has-profile",
+          "semanticHash": "36340b523c92936fa3588362b3fe5891c66884ff4d62372f9ab382e39163cf8a"
+        },
+        {
+          "id": 401,
+          "type": "IfcOpeningElement",
+          "globalId": "0000000000000000000011",
+          "name": "hatch",
+          "semanticHash": "243cb8894ea3b939fd4e83e1946d47a2ab1e912552ccc37af716f4efb4987d04"
+        },
+        {
+          "id": 405,
+          "type": "IfcPropertySet",
+          "globalId": "0xzglN3xKFLOR2kRhhfwp4",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "a72916011a8060b266c9ca376742b9c8c222c2167f0faeb3f51f04b059bfa052"
+        },
+        {
+          "id": 406,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "2vAr2SjSrnCaA91_Q520R6",
+          "name": "hatch/has-profile",
+          "semanticHash": "5254ad58f9a5f20994c79d132782ba8781637ae2952d0555bb74d3aa9b405801"
+        },
+        {
+          "id": 428,
+          "type": "IfcDistributionBoard",
+          "globalId": "0000000000000000000012",
+          "name": "board",
+          "semanticHash": "9840a5eb07b4ef9c70f9dd7aedcadad3538dac8d276882ab1f4fca05688c6f88"
+        },
+        {
+          "id": 432,
+          "type": "IfcPropertySet",
+          "globalId": "3IXVm4eZXnks$8fs9YrQir",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "743deb41aa68e571bdfa957d6218cfcb6908e98f168a410ea5d35d2820835a5a"
+        },
+        {
+          "id": 433,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "07FpBHCS4AMljxosSwZ0kM",
+          "name": "board/has-profile",
+          "semanticHash": "c99d52ba49a8a15a29c1db49b4f613752c01b82cc2716772c8c053f555a93c9b"
+        },
+        {
+          "id": 455,
+          "type": "IfcCableCarrierSegment",
+          "globalId": "0000000000000000000013",
+          "name": "tray-a",
+          "semanticHash": "b44228318ff39d9f44f581288c9a3c31c8e33135266252bb2e73cea5f932bd09"
+        },
+        {
+          "id": 459,
+          "type": "IfcPropertySet",
+          "globalId": "0GqKkbmhoc7hc4dCn5ciZO",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "7883fd3ca5f1ecccd802e9e10c7264bc76eae95eb91b93d0515d637597f70413"
+        },
+        {
+          "id": 460,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "3kVYzquLFpdBtcNojf0_rm",
+          "name": "tray-a/has-profile",
+          "semanticHash": "0b2ddee14aad3f2f7d7f3c9739406b227539066fb9786d0cff02db2e8f566a69"
+        },
+        {
+          "id": 482,
+          "type": "IfcCableCarrierSegment",
+          "globalId": "0000000000000000000014",
+          "name": "tray-b",
+          "semanticHash": "0d1d1dc45c5ee12d6c5b0de32ca58154b682696c01982bd07967447e311f7e57"
+        },
+        {
+          "id": 486,
+          "type": "IfcPropertySet",
+          "globalId": "32S4mnfvxJtV6sAvAwEqHX",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "8d804dda128699ae82f4ea1ca79a7fd29af09e279d2c9f4b47fdb73412d36b5e"
+        },
+        {
+          "id": 487,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "08ROXG_lYv8EzacoV102Am",
+          "name": "tray-b/has-profile",
+          "semanticHash": "b050f06da53c29c45647312d4ca92d9cfae9ac95de9c3ade5967c52300b9a7f7"
+        },
+        {
+          "id": 503,
+          "type": "IfcPipeSegment",
+          "globalId": "0000000000000000000015",
+          "name": "riser",
+          "semanticHash": "b03b066d2718b0588b13da296a497c846bacfa8549132f10316bbb249a0b28f7"
+        },
+        {
+          "id": 507,
+          "type": "IfcPropertySet",
+          "globalId": "0B6f8l7lzS_plMFDAA_eYQ",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "53d4c5403c982be74e603811bad5ec32a8b50991b4871ff330b5e81bf76cf7e6"
+        },
+        {
+          "id": 508,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "238lt$KfXLjK$PHoblEF31",
+          "name": "riser/has-profile",
+          "semanticHash": "057cf4a1e92270a0f2937ac55bf2c64f224814f41509fc75b0c8c4f6270fda58"
+        },
+        {
+          "id": 530,
+          "type": "IfcTransportElement",
+          "globalId": "0000000000000000000016",
+          "name": "hoist",
+          "semanticHash": "7b5a75380a99f4746956f1e6aab238b392d3559e2724d30be5d3ad9532d207d5"
+        },
+        {
+          "id": 534,
+          "type": "IfcPropertySet",
+          "globalId": "1qPTNAm8XZOldsT51cVMeO",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "c075feeef09646054afebce04b37f20ab43cbfcbb4a9aa4a01df4cb297794e25"
+        },
+        {
+          "id": 535,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "0zQ2JeNqZuKWP1P5Eqwclf",
+          "name": "hoist/has-profile",
+          "semanticHash": "7209924fc13985e6a0d43437f36ffc48a9385e9297d6dc053cebff66b7bd310a"
+        },
+        {
+          "id": 537,
+          "type": "IfcRelContainedInSpatialStructure",
+          "globalId": "3UpCBloSNjWFqB3PpSmjJv",
+          "name": "B1/contains",
+          "semanticHash": "5f99e2f172a3108703310031aaffbb807e58c5fb423f3ef4aa2643e672e779fd"
+        },
+        {
+          "id": 538,
+          "type": "IfcRelContainedInSpatialStructure",
+          "globalId": "3fcxbftQggVV2V5RGnm73j",
+          "name": "G/contains",
+          "semanticHash": "1eae60fb0b25ed0579f94538fae0c76e7b69a874f4f8317e70384dc654439512"
+        },
+        {
+          "id": 539,
+          "type": "IfcRelVoidsElement",
+          "globalId": "1izSbT2TvUqqc46hK681nk",
+          "name": "hatch/voids",
+          "semanticHash": "364a38e9386ae0726e5f4318c5e8a5774b69f16087530807e6d09c6916051075"
+        },
+        {
+          "id": 540,
+          "type": "IfcZone",
+          "globalId": "0000000000000000000018",
+          "name": "zone-fire-a",
+          "semanticHash": "01987ae5c2d7ea2d26e8e08faf85bb3d8f328bb4c2e12055ad00ff4e2081a4e4"
+        },
+        {
+          "id": 543,
+          "type": "IfcPropertySet",
+          "globalId": "0tayXw4TynCKS1B7g_jRa_",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "21156a739dcfff3a3b93d54acaa6909fa31b5f35c528b88ae77493ae5b457a5a"
+        },
+        {
+          "id": 544,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "3oAoHE1YFhRllLfLiO57CM",
+          "name": "zone-fire-a/has-profile",
+          "semanticHash": "16c45a67c1837fb211cfb245a39b908f9a7c1e9478f0ebd347736eeaa76b063a"
+        },
+        {
+          "id": 545,
+          "type": "IfcRelAssignsToGroup",
+          "globalId": "32wPtRyMOTJBgxYtYm$LPM",
+          "name": "zone-fire-a/members",
+          "semanticHash": "81aa2cb8197984c449141ce3b5afb9651267b5f9884ee537ea99ac7398d814ff"
+        },
+        {
+          "id": 546,
+          "type": "IfcZone",
+          "globalId": "0000000000000000000019",
+          "name": "zone-controlled",
+          "semanticHash": "b0065d078b5425044d95d06d3a974586c6b0e14fb869884c0deb140942f973d5"
+        },
+        {
+          "id": 549,
+          "type": "IfcPropertySet",
+          "globalId": "1fTEWIe5dOMhkYN_YxxAPb",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "c45e9f5add632daaa3e7bc80c18fb239e7a8df8fa77219fd283010dcac68c967"
+        },
+        {
+          "id": 550,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "2zsbyzw9mv9O$IEzr3Js6L",
+          "name": "zone-controlled/has-profile",
+          "semanticHash": "562fdafc045c50402acb1705554a1f934206b0796eba92320035374ff6ebcbd1"
+        },
+        {
+          "id": 551,
+          "type": "IfcRelAssignsToGroup",
+          "globalId": "0xREBmITNHkUSHlOs3R5tq",
+          "name": "zone-controlled/members",
+          "semanticHash": "d2d169968dd2fc6dacfab89206cd05ec0da38a726046cda5876eb49786bb054a"
+        },
+        {
+          "id": 557,
+          "type": "IfcDistributionPort",
+          "globalId": "0000000000000000000017",
+          "name": "pump-a-outlet",
+          "semanticHash": "57712b54b7a3b2d4b49c20e206933c728e3958730aa0fe1fd2550da9ef81e001"
+        },
+        {
+          "id": 560,
+          "type": "IfcPropertySet",
+          "globalId": "0atfBW4GaXO7snKH0VmVHO",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "3527ec309a854f631b79316e6d53757f1e5958ae0801b2d1103bb55c589d16bd"
+        },
+        {
+          "id": 561,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "1mkDNYRC1EXykkfDAZriJx",
+          "name": "pump-a-outlet/has-profile",
+          "semanticHash": "707416a52b2bd570e1d2582710e11e62de38dc01a8bb371ba05b3537911b32a7"
+        },
+        {
+          "id": 562,
+          "type": "IfcRelNests",
+          "globalId": "0sF69yVWlsvqksTNwilRtG",
+          "name": "pump-a-outlet/owner",
+          "semanticHash": "7986fbc1f1832ffedd66613fb4a06a171fcb43e46b5010773902432d3ca03560"
+        }
+      ],
+      "openingCount": 1,
+      "voidRelations": 1,
+      "fillRelations": 0,
+      "portCount": 1
+    },
+    "renderedMeshes": 12,
+    "triangleCount": 1208,
+    "renderGeometryHash": "bd43bb761cff3d58ec738910c31f066870b9279fc9d3d39a85d47b6cde82c041",
+    "geometryStatus": "actual-web-ifc-native-tessellation",
+    "lossPolicy": "Unknown entities retained in raw IFC; native editing refuses; raw hash failure refuses build"
+  },
+  {
+    "id": "unsupported-content",
+    "sourceSha256": "b816e8ddd2474db0592216ad6d56454073eec315e8acd47a9b7c0a72b2123028",
+    "bytes": 34275,
+    "ownership": "raw-read-only",
+    "nativeConvertedEntities": 0,
+    "editability": "No construction-history conversion; raw bytes retained as exact source dependency",
+    "facts": {
+      "entityCount": 563,
+      "types": {
+        "IfcCartesianPoint": 140,
+        "IfcDirection": 99,
+        "IfcAxis2Placement3D": 40,
+        "IfcGeometricRepresentationContext": 1,
+        "IfcSIUnit": 1,
+        "IfcUnitAssignment": 1,
+        "IfcProject": 1,
+        "IfcLocalPlacement": 21,
+        "IfcSite": 1,
+        "IfcBuilding": 1,
+        "IfcRelAggregates": 6,
+        "IfcPropertySingleValue": 71,
+        "IfcPropertySet": 22,
+        "IfcRelDefinesByProperties": 22,
+        "IfcBuildingStorey": 2,
+        "IfcPolyline": 20,
+        "IfcArbitraryProfileDefWithVoids": 4,
+        "IfcExtrudedAreaSolid": 18,
+        "IfcShapeRepresentation": 18,
+        "IfcProductDefinitionShape": 16,
+        "IfcSpace": 3,
+        "IfcShapeAspect": 18,
+        "IfcArbitraryClosedProfileDef": 12,
+        "IfcSlab": 2,
+        "IfcPump": 2,
+        "IfcCircleProfileDef": 2,
+        "IfcTank": 1,
+        "IfcBuildingElementProxy": 1,
+        "IfcWall": 1,
+        "IfcOpeningElement": 1,
+        "IfcDistributionBoard": 1,
+        "IfcCableCarrierSegment": 2,
+        "IfcPipeSegment": 1,
+        "IfcTransportElement": 1,
+        "IfcRelContainedInSpatialStructure": 2,
+        "IfcRelVoidsElement": 1,
+        "IfcZone": 2,
+        "IfcRelAssignsToGroup": 2,
+        "IfcDistributionPort": 1,
+        "IfcRelNests": 1,
+        "IfcBeam": 1
+      },
+      "unreadable": [],
+      "semanticHash": "0d121b18bff61935e83f42f959d89319999997c7e25ac3e28219b86a7346e559",
+      "products": [
+        {
+          "id": 9,
+          "type": "IfcProject",
+          "globalId": "3m3F46Iwk6P20GxMuaexH4",
+          "name": "current-pwr-spatial-slice-a",
+          "semanticHash": "c500d402f957b4cd9a904d478d5c0c7760b0eb6d991e0eb0aea74de7df276957"
+        },
+        {
+          "id": 15,
+          "type": "IfcSite",
+          "globalId": "09iuw4eT5B0eWWAc0$TLu9",
+          "name": "current-pwr-spatial-slice-a/site",
+          "semanticHash": "125a17b87aaa5d472f261da103d83d3bde0045f971361a1e8df48cd361ffa1b2"
+        },
+        {
+          "id": 21,
+          "type": "IfcBuilding",
+          "globalId": "2KvmeLo3tB_xkYhUnRzcu_",
+          "name": "current-pwr-spatial-slice-a/building",
+          "semanticHash": "6e23175f0347f25cc41e0f2434264656748fc7b1239b16421f4b8df1f7023c42"
+        },
+        {
+          "id": 22,
+          "type": "IfcRelAggregates",
+          "globalId": "3hmLMBd4DYSYDXrTVjb$XQ",
+          "name": "current-pwr-spatial-slice-a/project-site",
+          "semanticHash": "6d1a9056a833d1f5056f89f2be088fd5d8c3703b422e74708c39cfeeb53e8b34"
+        },
+        {
+          "id": 23,
+          "type": "IfcRelAggregates",
+          "globalId": "3hSTyo5CNQR8j3DX7KNPSC",
+          "name": "current-pwr-spatial-slice-a/site-building",
+          "semanticHash": "b99ea65f17d709d82ee5a1b27ac449ad236e32fa2fe6fb801a918cdb75cb07f2"
+        },
+        {
+          "id": 31,
+          "type": "IfcPropertySet",
+          "globalId": "0yPgKAzN6v4fPAI6WnXitF",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "77fdc06b796a44e79b4a703991d3a333b9aba5d17089d51167f1d9a1d052aee2"
+        },
+        {
+          "id": 32,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "2L_uA02ZPBOOktrsxtyAwK",
+          "name": "current-pwr-spatial-slice-a/has-profile",
+          "semanticHash": "4bfcd044f165bffe9a04e1d9af44ecad176aea99014bbaa28b4243811a1d4e63"
+        },
+        {
+          "id": 38,
+          "type": "IfcBuildingStorey",
+          "globalId": "1RbGvtb1q1pV96q0iUpbHh",
+          "name": "B1",
+          "semanticHash": "a9a9206b6523a375c83d56c51648100e993b02dc97d2afb926cbc33f44b91792"
+        },
+        {
+          "id": 43,
+          "type": "IfcPropertySet",
+          "globalId": "3DpaDXrpCSss88Najts2GP",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "a4db5fdd0ef6ceff183d3cabeebf262e2eac0292022e8a201c49c974712ee7f0"
+        },
+        {
+          "id": 44,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "2bP$nd4BzWXhh7BymkBtW5",
+          "name": "B1/has-profile",
+          "semanticHash": "0b2eedeab37ff198393606f1c87eb914aef27afa6141f3296e45f3615e968c94"
+        },
+        {
+          "id": 50,
+          "type": "IfcBuildingStorey",
+          "globalId": "0pFWeU9u5T3ExbN4S$uzoJ",
+          "name": "G",
+          "semanticHash": "40900a91bce2114df900a7cc9252d22b2003d28f873884aa9f2675aefc0c097b"
+        },
+        {
+          "id": 55,
+          "type": "IfcPropertySet",
+          "globalId": "2X5GgTQN31xuJ1QuLo9imY",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "c934422ef3d80df970cd84fdecda45a90e54b6852b3456f837e2ae50c2d7d8ba"
+        },
+        {
+          "id": 56,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "0_aICVEuIvjweJRxNepjCO",
+          "name": "G/has-profile",
+          "semanticHash": "62c354a289368020e9eeea304b37edcf100b12c7da852e5edd4556c8b01a83dc"
+        },
+        {
+          "id": 57,
+          "type": "IfcRelAggregates",
+          "globalId": "3zSSMUJPqkC3jeJTW3JGCO",
+          "name": "current-pwr-spatial-slice-a/building-levels",
+          "semanticHash": "04d5214090cbbb9dac8170d7bd81309085132e65761e8445285636b15940710f"
+        },
+        {
+          "id": 84,
+          "type": "IfcSpace",
+          "globalId": "0000000000000000000001",
+          "name": "space-b1-service",
+          "semanticHash": "45126e9d65c4c22574e43e2a427bccf832d609e52c2e9697c02fbba64c930a35"
+        },
+        {
+          "id": 88,
+          "type": "IfcPropertySet",
+          "globalId": "2$jlC5JuMkO_qHNI9KlNuz",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "caae2ae64e0b5f760d090c73cef6f6c6d3b7672213c6cb364bb3fb34c1942909"
+        },
+        {
+          "id": 89,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "1QvFjhJ6a3fDP5cpQOxLD9",
+          "name": "space-b1-service/has-profile",
+          "semanticHash": "a7d838980de58b2e593963a5d2169731f105ff2ba76660922632dfbee17bb5b6"
+        },
+        {
+          "id": 91,
+          "type": "IfcRelAggregates",
+          "globalId": "1q$wHTs6nXNb3DHbabo8Bk",
+          "name": "space-b1-service/space-level",
+          "semanticHash": "7af6c925d8bc3d4a5009d27de825bc2f67eee5e3642d0c6982303572628c77ac"
+        },
+        {
+          "id": 112,
+          "type": "IfcSpace",
+          "globalId": "0000000000000000000002",
+          "name": "space-b1-corridor",
+          "semanticHash": "35ae17d1a855d420ca6f2718601c5362836518620acc300581792983ca1a6da4"
+        },
+        {
+          "id": 116,
+          "type": "IfcPropertySet",
+          "globalId": "04Wt23A8cpZAlLcC0VLO1P",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "382db1f3e262dc7c8195e9bf658530230627023d352fa9df1de16bd598a6b4c3"
+        },
+        {
+          "id": 117,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "1yvhNaeU_6OCIroJRR$P3x",
+          "name": "space-b1-corridor/has-profile",
+          "semanticHash": "f6e7503e72134337df2367f29426957d7bb000545232b56af2c7303a3887c297"
+        },
+        {
+          "id": 119,
+          "type": "IfcRelAggregates",
+          "globalId": "0rYlLNS1cMfSaOGRxj4x8h",
+          "name": "space-b1-corridor/space-level",
+          "semanticHash": "294b1d50e91bf6e23bde86a2e8664b142b5d67ec857ebe41fb618410fcc5adc1"
+        },
+        {
+          "id": 146,
+          "type": "IfcSpace",
+          "globalId": "0000000000000000000003",
+          "name": "space-g-hall",
+          "semanticHash": "039c65dbfedfbb82016e8dfb01d9254a7358ff22809d16ef3514efd6f8ee8203"
+        },
+        {
+          "id": 150,
+          "type": "IfcPropertySet",
+          "globalId": "3N4CnnR85jGj_4sXXVYYUE",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "48903968b2fe6a286fc3018286341647bbee8c3cd8175ef931a07c0317be8c58"
+        },
+        {
+          "id": 151,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "0TW9G4kWUETiwNIBwBijVw",
+          "name": "space-g-hall/has-profile",
+          "semanticHash": "66fc272965b11616d5ba2298fcd383a945462d1ce745e54543a4e2fff673b159"
+        },
+        {
+          "id": 153,
+          "type": "IfcRelAggregates",
+          "globalId": "22rE0gCc_ahONjTLN3OW20",
+          "name": "space-g-hall/space-level",
+          "semanticHash": "fb415298d03578469361dc6ad7e65dc87f4b01af8083f346c270c8fb852399a7"
+        },
+        {
+          "id": 180,
+          "type": "IfcSlab",
+          "globalId": "0000000000000000000004",
+          "name": "slab-b1",
+          "semanticHash": "72a49e176b28c7a51b551aa4651bed021c9f7e8fe1b6833631ad52ea98b6e369"
+        },
+        {
+          "id": 184,
+          "type": "IfcPropertySet",
+          "globalId": "1ZkiVm3acejiEY7jKmL2Xx",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "9e73c0f3eecceb48c6070fbe666f7c4d546d6803e0d7eec5bb8c8085827cf6e0"
+        },
+        {
+          "id": 185,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "3$PQ0jJJ4MebqMMOCZLQ3z",
+          "name": "slab-b1/has-profile",
+          "semanticHash": "524719c6c6aa93db07517a77e69aff8dfd3c1fa02dfeaa38238a3d568c7410af"
+        },
+        {
+          "id": 213,
+          "type": "IfcSlab",
+          "globalId": "0000000000000000000005",
+          "name": "slab-g",
+          "semanticHash": "3a32ea5091f99d94a9cce08b0db24167e4a6e7b71b10ad02842e60dae14ed850"
+        },
+        {
+          "id": 217,
+          "type": "IfcPropertySet",
+          "globalId": "1Jxyp_VildMo0lACfcYyWO",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "c6b4216a5d96159152454aaa15d839bbd46f2ef7bfda682b191db33ee8f2f7b5"
+        },
+        {
+          "id": 218,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "27wKpCcO4AxdwWtnXn38Zg",
+          "name": "slab-g/has-profile",
+          "semanticHash": "1b5583faeebf7ef7de9702840bceaae20768142e69dc74aef106b5530e1c74b1"
+        },
+        {
+          "id": 268,
+          "type": "IfcPump",
+          "globalId": "0000000000000000000006",
+          "name": "Primary pump",
+          "semanticHash": "3fa28962bb571c529e2e3f2eab79c13647fe77eead3752222ee4ed1b2deab05a"
+        },
+        {
+          "id": 272,
+          "type": "IfcPropertySet",
+          "globalId": "1APaF3xeshDrDQPfcDLDSz",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "6077f603ff01d617e6816a2dde6dd79248457a46f00f27c4e419ffcb3abf7fec"
+        },
+        {
+          "id": 273,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "1PTXifpvJvblVvaa5fPdD5",
+          "name": "pump-a/has-profile",
+          "semanticHash": "ccea006e1b9bab35b6cfee71899a13e9e8eac8778e646eefb19b15724f8e81b0"
+        },
+        {
+          "id": 297,
+          "type": "IfcPump",
+          "globalId": "0000000000000000000007",
+          "name": "Primary pump",
+          "semanticHash": "b3c618d990704b26b10bcb7faa1550b18abe2d1824235ef628b9eca89ae9cd19"
+        },
+        {
+          "id": 301,
+          "type": "IfcPropertySet",
+          "globalId": "2Yift05aWMBgPZKw9IojZl",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "ef6faca7035df355244aa9a97bba20269bfe05cd64d4753952870e4501b8b550"
+        },
+        {
+          "id": 302,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "0ucD54LMUwzg8iiAWVswXc",
+          "name": "pump-b/has-profile",
+          "semanticHash": "d1216a290e9a26612664fc84a2cb4d96b1fab4b3b2abd23547aebe8f730197e9"
+        },
+        {
+          "id": 318,
+          "type": "IfcTank",
+          "globalId": "0000000000000000000008",
+          "name": "vessel",
+          "semanticHash": "b03d759b43eaa6db0ff60a142ced28feed7cfdf741ef11ccf1f85186b8e22ca9"
+        },
+        {
+          "id": 324,
+          "type": "IfcPropertySet",
+          "globalId": "10VeqSPvbdaPOH88VhomcJ",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "723eab6de436b93311632117c8c5d225146a1112a82d1583c684deab98f4edf1"
+        },
+        {
+          "id": 325,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "0OKlzf0iatkVPVVh9l8Ove",
+          "name": "vessel/has-profile",
+          "semanticHash": "908f4f5751ce6a2b499bf7351cfd83bc031bbce29eed741294df45127baf1373"
+        },
+        {
+          "id": 347,
+          "type": "IfcBuildingElementProxy",
+          "globalId": "0000000000000000000009",
+          "name": "obstacle",
+          "semanticHash": "45cfd3886c693b685ab5ea77efc5cdde75593d4f93cff4e9cc7777fd6dc7996f"
+        },
+        {
+          "id": 351,
+          "type": "IfcPropertySet",
+          "globalId": "3IZyvhuHgu5PJwkGDryIZY",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "832802fd6d679d5f3acd86aa29ab87409e55ce642668761d6a4e193144cce4f8"
+        },
+        {
+          "id": 352,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "3T9s5fwbfmSem8PjAiNqYD",
+          "name": "obstacle/has-profile",
+          "semanticHash": "b4371bb6c1ef64954dda697c97580acfad90674d128dcbc0ed927b578e81f1a2"
+        },
+        {
+          "id": 374,
+          "type": "IfcWall",
+          "globalId": "0000000000000000000010",
+          "name": "wall-b1",
+          "semanticHash": "f2e51734df63640741c2c85627878973a826460b92a8c5bd7a6c4377a55b98d4"
+        },
+        {
+          "id": 378,
+          "type": "IfcPropertySet",
+          "globalId": "3yOZfieaGabUjF6$knuNh1",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "8a35b1c3d07fda5b23750974d508b0d4c78bcd02bb3aee4eb35b0408984c7aaa"
+        },
+        {
+          "id": 379,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "3lfJFm4vmgMSmzHgS2$N7g",
+          "name": "wall-b1/has-profile",
+          "semanticHash": "36340b523c92936fa3588362b3fe5891c66884ff4d62372f9ab382e39163cf8a"
+        },
+        {
+          "id": 401,
+          "type": "IfcOpeningElement",
+          "globalId": "0000000000000000000011",
+          "name": "hatch",
+          "semanticHash": "243cb8894ea3b939fd4e83e1946d47a2ab1e912552ccc37af716f4efb4987d04"
+        },
+        {
+          "id": 405,
+          "type": "IfcPropertySet",
+          "globalId": "0xzglN3xKFLOR2kRhhfwp4",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "a72916011a8060b266c9ca376742b9c8c222c2167f0faeb3f51f04b059bfa052"
+        },
+        {
+          "id": 406,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "2vAr2SjSrnCaA91_Q520R6",
+          "name": "hatch/has-profile",
+          "semanticHash": "5254ad58f9a5f20994c79d132782ba8781637ae2952d0555bb74d3aa9b405801"
+        },
+        {
+          "id": 428,
+          "type": "IfcDistributionBoard",
+          "globalId": "0000000000000000000012",
+          "name": "board",
+          "semanticHash": "9840a5eb07b4ef9c70f9dd7aedcadad3538dac8d276882ab1f4fca05688c6f88"
+        },
+        {
+          "id": 432,
+          "type": "IfcPropertySet",
+          "globalId": "3IXVm4eZXnks$8fs9YrQir",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "743deb41aa68e571bdfa957d6218cfcb6908e98f168a410ea5d35d2820835a5a"
+        },
+        {
+          "id": 433,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "07FpBHCS4AMljxosSwZ0kM",
+          "name": "board/has-profile",
+          "semanticHash": "c99d52ba49a8a15a29c1db49b4f613752c01b82cc2716772c8c053f555a93c9b"
+        },
+        {
+          "id": 455,
+          "type": "IfcCableCarrierSegment",
+          "globalId": "0000000000000000000013",
+          "name": "tray-a",
+          "semanticHash": "b44228318ff39d9f44f581288c9a3c31c8e33135266252bb2e73cea5f932bd09"
+        },
+        {
+          "id": 459,
+          "type": "IfcPropertySet",
+          "globalId": "0GqKkbmhoc7hc4dCn5ciZO",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "7883fd3ca5f1ecccd802e9e10c7264bc76eae95eb91b93d0515d637597f70413"
+        },
+        {
+          "id": 460,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "3kVYzquLFpdBtcNojf0_rm",
+          "name": "tray-a/has-profile",
+          "semanticHash": "0b2ddee14aad3f2f7d7f3c9739406b227539066fb9786d0cff02db2e8f566a69"
+        },
+        {
+          "id": 482,
+          "type": "IfcCableCarrierSegment",
+          "globalId": "0000000000000000000014",
+          "name": "tray-b",
+          "semanticHash": "0d1d1dc45c5ee12d6c5b0de32ca58154b682696c01982bd07967447e311f7e57"
+        },
+        {
+          "id": 486,
+          "type": "IfcPropertySet",
+          "globalId": "32S4mnfvxJtV6sAvAwEqHX",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "8d804dda128699ae82f4ea1ca79a7fd29af09e279d2c9f4b47fdb73412d36b5e"
+        },
+        {
+          "id": 487,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "08ROXG_lYv8EzacoV102Am",
+          "name": "tray-b/has-profile",
+          "semanticHash": "b050f06da53c29c45647312d4ca92d9cfae9ac95de9c3ade5967c52300b9a7f7"
+        },
+        {
+          "id": 503,
+          "type": "IfcPipeSegment",
+          "globalId": "0000000000000000000015",
+          "name": "riser",
+          "semanticHash": "b03b066d2718b0588b13da296a497c846bacfa8549132f10316bbb249a0b28f7"
+        },
+        {
+          "id": 507,
+          "type": "IfcPropertySet",
+          "globalId": "0B6f8l7lzS_plMFDAA_eYQ",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "53d4c5403c982be74e603811bad5ec32a8b50991b4871ff330b5e81bf76cf7e6"
+        },
+        {
+          "id": 508,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "238lt$KfXLjK$PHoblEF31",
+          "name": "riser/has-profile",
+          "semanticHash": "057cf4a1e92270a0f2937ac55bf2c64f224814f41509fc75b0c8c4f6270fda58"
+        },
+        {
+          "id": 530,
+          "type": "IfcTransportElement",
+          "globalId": "0000000000000000000016",
+          "name": "hoist",
+          "semanticHash": "7b5a75380a99f4746956f1e6aab238b392d3559e2724d30be5d3ad9532d207d5"
+        },
+        {
+          "id": 534,
+          "type": "IfcPropertySet",
+          "globalId": "1qPTNAm8XZOldsT51cVMeO",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "c075feeef09646054afebce04b37f20ab43cbfcbb4a9aa4a01df4cb297794e25"
+        },
+        {
+          "id": 535,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "0zQ2JeNqZuKWP1P5Eqwclf",
+          "name": "hoist/has-profile",
+          "semanticHash": "7209924fc13985e6a0d43437f36ffc48a9385e9297d6dc053cebff66b7bd310a"
+        },
+        {
+          "id": 537,
+          "type": "IfcRelContainedInSpatialStructure",
+          "globalId": "3UpCBloSNjWFqB3PpSmjJv",
+          "name": "B1/contains",
+          "semanticHash": "5f99e2f172a3108703310031aaffbb807e58c5fb423f3ef4aa2643e672e779fd"
+        },
+        {
+          "id": 538,
+          "type": "IfcRelContainedInSpatialStructure",
+          "globalId": "3fcxbftQggVV2V5RGnm73j",
+          "name": "G/contains",
+          "semanticHash": "1eae60fb0b25ed0579f94538fae0c76e7b69a874f4f8317e70384dc654439512"
+        },
+        {
+          "id": 539,
+          "type": "IfcRelVoidsElement",
+          "globalId": "1izSbT2TvUqqc46hK681nk",
+          "name": "hatch/voids",
+          "semanticHash": "364a38e9386ae0726e5f4318c5e8a5774b69f16087530807e6d09c6916051075"
+        },
+        {
+          "id": 540,
+          "type": "IfcZone",
+          "globalId": "0000000000000000000018",
+          "name": "zone-fire-a",
+          "semanticHash": "01987ae5c2d7ea2d26e8e08faf85bb3d8f328bb4c2e12055ad00ff4e2081a4e4"
+        },
+        {
+          "id": 543,
+          "type": "IfcPropertySet",
+          "globalId": "0tayXw4TynCKS1B7g_jRa_",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "21156a739dcfff3a3b93d54acaa6909fa31b5f35c528b88ae77493ae5b457a5a"
+        },
+        {
+          "id": 544,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "3oAoHE1YFhRllLfLiO57CM",
+          "name": "zone-fire-a/has-profile",
+          "semanticHash": "16c45a67c1837fb211cfb245a39b908f9a7c1e9478f0ebd347736eeaa76b063a"
+        },
+        {
+          "id": 545,
+          "type": "IfcRelAssignsToGroup",
+          "globalId": "32wPtRyMOTJBgxYtYm$LPM",
+          "name": "zone-fire-a/members",
+          "semanticHash": "81aa2cb8197984c449141ce3b5afb9651267b5f9884ee537ea99ac7398d814ff"
+        },
+        {
+          "id": 546,
+          "type": "IfcZone",
+          "globalId": "0000000000000000000019",
+          "name": "zone-controlled",
+          "semanticHash": "b0065d078b5425044d95d06d3a974586c6b0e14fb869884c0deb140942f973d5"
+        },
+        {
+          "id": 549,
+          "type": "IfcPropertySet",
+          "globalId": "1fTEWIe5dOMhkYN_YxxAPb",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "c45e9f5add632daaa3e7bc80c18fb239e7a8df8fa77219fd283010dcac68c967"
+        },
+        {
+          "id": 550,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "2zsbyzw9mv9O$IEzr3Js6L",
+          "name": "zone-controlled/has-profile",
+          "semanticHash": "562fdafc045c50402acb1705554a1f934206b0796eba92320035374ff6ebcbd1"
+        },
+        {
+          "id": 551,
+          "type": "IfcRelAssignsToGroup",
+          "globalId": "0xREBmITNHkUSHlOs3R5tq",
+          "name": "zone-controlled/members",
+          "semanticHash": "d2d169968dd2fc6dacfab89206cd05ec0da38a726046cda5876eb49786bb054a"
+        },
+        {
+          "id": 557,
+          "type": "IfcDistributionPort",
+          "globalId": "0000000000000000000017",
+          "name": "pump-a-outlet",
+          "semanticHash": "57712b54b7a3b2d4b49c20e206933c728e3958730aa0fe1fd2550da9ef81e001"
+        },
+        {
+          "id": 560,
+          "type": "IfcPropertySet",
+          "globalId": "0atfBW4GaXO7snKH0VmVHO",
+          "name": "LeitbildLayoutProfile",
+          "semanticHash": "3527ec309a854f631b79316e6d53757f1e5958ae0801b2d1103bb55c589d16bd"
+        },
+        {
+          "id": 561,
+          "type": "IfcRelDefinesByProperties",
+          "globalId": "1mkDNYRC1EXykkfDAZriJx",
+          "name": "pump-a-outlet/has-profile",
+          "semanticHash": "707416a52b2bd570e1d2582710e11e62de38dc01a8bb371ba05b3537911b32a7"
+        },
+        {
+          "id": 562,
+          "type": "IfcRelNests",
+          "globalId": "0sF69yVWlsvqksTNwilRtG",
+          "name": "pump-a-outlet/owner",
+          "semanticHash": "7986fbc1f1832ffedd66613fb4a06a171fcb43e46b5010773902432d3ca03560"
+        },
+        {
+          "id": 563,
+          "type": "IfcBeam",
+          "globalId": "0000000000000000000099",
+          "name": "Unsupported added beam",
+          "semanticHash": "81fb8a0a8ae96a6c1158dba5a43cf08156e24862e33bdbd288d9211800e86730"
+        }
+      ],
+      "openingCount": 1,
+      "voidRelations": 1,
+      "fillRelations": 0,
+      "portCount": 1
+    },
+    "renderedMeshes": 13,
+    "triangleCount": 1244,
+    "renderGeometryHash": "016a57f56d8ca8cd458a48975f257d7351cb57eee059a1551990bec6931ca7ff",
+    "geometryStatus": "actual-web-ifc-native-tessellation",
+    "lossPolicy": "Unknown entities retained in raw IFC; native editing refuses; raw hash failure refuses build"
+  }
+]

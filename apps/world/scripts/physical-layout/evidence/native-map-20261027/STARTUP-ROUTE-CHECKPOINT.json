@@ -1,0 +1,624 @@
+{
+  "startup": {
+    "rawPath": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/unified-native-map-20261027/startup-fff/functional-ready-map/receipt.json",
+    "sha256": "c8378c80b43ca1ee05f3be60414a582269ce6ceaf3c80a0cda79db0fa5cded06",
+    "bytes": 11406,
+    "receipt": {
+      "testedAppCommit": "fff1009a0",
+      "runA": {
+        "workspaceId": "b5da5f9e-c051-4810-a39e-1b7ba789f2dd",
+        "moduleId": "world",
+        "type": "world.simulation-run",
+        "id": "run-333acbd6-5e35-4ad5-ad8b-9be9867e9b84"
+      },
+      "runB": {
+        "workspaceId": "b5da5f9e-c051-4810-a39e-1b7ba789f2dd",
+        "moduleId": "world",
+        "type": "world.simulation-run",
+        "id": "run-fb8f352d-addf-4128-ade6-dc07e9199a90"
+      },
+      "phases": [
+        {
+          "name": "fresh-offsite-a",
+          "initial": {
+            "map": true,
+            "briefing": true,
+            "layout": false,
+            "grid": false,
+            "alarms": false,
+            "briefingText": "In two minutes, a fault cuts Halden off the grid\n\nTo jump ahead, press the stopwatch next to the clock, \u201cRun at maximum pace for a fixed duration\u201d, and choose +2 min. Then follow the grid frequency on the right.\n\n\u00d7",
+            "stripText": null,
+            "offer": {
+              "type": "leitbild:ui-controls-offer",
+              "subject": {
+                "workspaceId": "b5da5f9e-c051-4810-a39e-1b7ba789f2dd",
+                "moduleId": "world",
+                "type": "world.simulation-run",
+                "id": "run-333acbd6-5e35-4ad5-ad8b-9be9867e9b84"
+              },
+              "channel": "e348854b-baef-473f-accb-59abcc68ab14",
+              "controls": [
+                {
+                  "id": "scenario-briefing",
+                  "label": "Scenario briefing",
+                  "visible": true
+                },
+                {
+                  "id": "alarm-strip",
+                  "label": "Alarm strip",
+                  "visible": false
+                },
+                {
+                  "id": "layout-controls",
+                  "label": "Layout controls",
+                  "visible": false
+                },
+                {
+                  "id": "panel:electric-grid.overview",
+                  "label": "Grid operations",
+                  "visible": false
+                }
+              ],
+              "notification": {
+                "count": 2,
+                "label": "2 unacknowledged alarms"
+              }
+            },
+            "viewNotification": "2 unacknowledged alarms"
+          },
+          "controls": [
+            {
+              "label": "Scenario briefing",
+              "checked": true
+            },
+            {
+              "label": "Alarm strip",
+              "checked": false
+            },
+            {
+              "label": "Layout controls",
+              "checked": false
+            },
+            {
+              "label": "Grid operations",
+              "checked": false
+            }
+          ]
+        },
+        {
+          "name": "explicitly-opened",
+          "state": {
+            "map": true,
+            "briefing": true,
+            "layout": true,
+            "grid": true,
+            "alarms": true,
+            "briefingText": "In two minutes, a fault cuts Halden off the grid\n\nTo jump ahead, press the stopwatch next to the clock, \u201cRun at maximum pace for a fixed duration\u201d, and choose +2 min. Then follow the grid frequency on the right.\n\n\u00d7",
+            "stripText": "Alarms \u00b7 1 group \u00b7 2 unacknowledged\n\u00d7\nFold",
+            "offer": {
+              "type": "leitbild:ui-controls-offer",
+              "subject": {
+                "workspaceId": "b5da5f9e-c051-4810-a39e-1b7ba789f2dd",
+                "moduleId": "world",
+                "type": "world.simulation-run",
+                "id": "run-333acbd6-5e35-4ad5-ad8b-9be9867e9b84"
+              },
+              "channel": "e348854b-baef-473f-accb-59abcc68ab14",
+              "controls": [
+                {
+                  "id": "scenario-briefing",
+                  "label": "Scenario briefing",
+                  "visible": true
+                },
+                {
+                  "id": "alarm-strip",
+                  "label": "Alarm strip",
+                  "visible": true
+                },
+                {
+                  "id": "layout-controls",
+                  "label": "Layout controls",
+                  "visible": true
+                },
+                {
+                  "id": "panel:electric-grid.overview",
+                  "label": "Grid operations",
+                  "visible": true
+                }
+              ],
+              "notification": {
+                "count": 2,
+                "label": "2 unacknowledged alarms"
+              }
+            },
+            "viewNotification": "2 unacknowledged alarms"
+          }
+        },
+        {
+          "name": "same-run-reload",
+          "saved": {
+            "map": true,
+            "briefing": false,
+            "layout": true,
+            "grid": true,
+            "alarms": false,
+            "briefingText": null,
+            "stripText": null,
+            "offer": {
+              "type": "leitbild:ui-controls-offer",
+              "subject": {
+                "workspaceId": "b5da5f9e-c051-4810-a39e-1b7ba789f2dd",
+                "moduleId": "world",
+                "type": "world.simulation-run",
+                "id": "run-333acbd6-5e35-4ad5-ad8b-9be9867e9b84"
+              },
+              "channel": "e348854b-baef-473f-accb-59abcc68ab14",
+              "controls": [
+                {
+                  "id": "scenario-briefing",
+                  "label": "Scenario briefing",
+                  "visible": false
+                },
+                {
+                  "id": "alarm-strip",
+                  "label": "Alarm strip",
+                  "visible": false
+                },
+                {
+                  "id": "layout-controls",
+                  "label": "Layout controls",
+                  "visible": true
+                },
+                {
+                  "id": "panel:electric-grid.overview",
+                  "label": "Grid operations",
+                  "visible": true
+                }
+              ],
+              "notification": {
+                "count": 2,
+                "label": "2 unacknowledged alarms"
+              }
+            },
+            "viewNotification": "2 unacknowledged alarms"
+          },
+          "restored": {
+            "map": true,
+            "briefing": false,
+            "layout": true,
+            "grid": true,
+            "alarms": false,
+            "briefingText": null,
+            "stripText": null,
+            "offer": {
+              "type": "leitbild:ui-controls-offer",
+              "subject": {
+                "workspaceId": "b5da5f9e-c051-4810-a39e-1b7ba789f2dd",
+                "moduleId": "world",
+                "type": "world.simulation-run",
+                "id": "run-333acbd6-5e35-4ad5-ad8b-9be9867e9b84"
+              },
+              "channel": "265769c4-5c2c-41f1-bacb-019eb2022972",
+              "controls": [
+                {
+                  "id": "scenario-briefing",
+                  "label": "Scenario briefing",
+                  "visible": false
+                },
+                {
+                  "id": "alarm-strip",
+                  "label": "Alarm strip",
+                  "visible": false
+                },
+                {
+                  "id": "layout-controls",
+                  "label": "Layout controls",
+                  "visible": true
+                },
+                {
+                  "id": "panel:electric-grid.overview",
+                  "label": "Grid operations",
+                  "visible": true
+                }
+              ],
+              "notification": {
+                "count": 2,
+                "label": "2 unacknowledged alarms"
+              }
+            },
+            "viewNotification": "2 unacknowledged alarms"
+          },
+          "controls": [
+            {
+              "label": "Scenario briefing",
+              "checked": false
+            },
+            {
+              "label": "Alarm strip",
+              "checked": false
+            },
+            {
+              "label": "Layout controls",
+              "checked": true
+            },
+            {
+              "label": "Grid operations",
+              "checked": true
+            }
+          ]
+        },
+        {
+          "name": "different-run-b-fresh",
+          "initial": {
+            "map": true,
+            "briefing": true,
+            "layout": false,
+            "grid": false,
+            "alarms": false,
+            "briefingText": "In two minutes, a fault cuts Halden off the grid\n\nTo jump ahead, press the stopwatch next to the clock, \u201cRun at maximum pace for a fixed duration\u201d, and choose +2 min. Then follow the grid frequency on the right.\n\n\u00d7",
+            "stripText": null,
+            "offer": {
+              "type": "leitbild:ui-controls-offer",
+              "subject": {
+                "workspaceId": "b5da5f9e-c051-4810-a39e-1b7ba789f2dd",
+                "moduleId": "world",
+                "type": "world.simulation-run",
+                "id": "run-fb8f352d-addf-4128-ade6-dc07e9199a90"
+              },
+              "channel": "ce19165d-e238-4074-860e-3b5c18a53c1f",
+              "controls": [
+                {
+                  "id": "scenario-briefing",
+                  "label": "Scenario briefing",
+                  "visible": true
+                },
+                {
+                  "id": "alarm-strip",
+                  "label": "Alarm strip",
+                  "visible": false
+                },
+                {
+                  "id": "layout-controls",
+                  "label": "Layout controls",
+                  "visible": false
+                },
+                {
+                  "id": "panel:electric-grid.overview",
+                  "label": "Grid operations",
+                  "visible": false
+                }
+              ],
+              "notification": {
+                "count": 2,
+                "label": "2 unacknowledged alarms"
+              }
+            },
+            "viewNotification": "2 unacknowledged alarms"
+          },
+          "controls": [
+            {
+              "label": "Scenario briefing",
+              "checked": true
+            },
+            {
+              "label": "Alarm strip",
+              "checked": false
+            },
+            {
+              "label": "Layout controls",
+              "checked": false
+            },
+            {
+              "label": "Grid operations",
+              "checked": false
+            }
+          ]
+        },
+        {
+          "name": "narrow-keyboard-menu",
+          "bounds": {
+            "x": 8,
+            "y": 100,
+            "width": 290,
+            "height": 272,
+            "viewport": {
+              "width": 390,
+              "height": 844
+            }
+          }
+        },
+        {
+          "name": "return-run-a",
+          "state": {
+            "map": true,
+            "briefing": false,
+            "layout": true,
+            "grid": true,
+            "alarms": false,
+            "briefingText": null,
+            "stripText": null,
+            "offer": {
+              "type": "leitbild:ui-controls-offer",
+              "subject": {
+                "workspaceId": "b5da5f9e-c051-4810-a39e-1b7ba789f2dd",
+                "moduleId": "world",
+                "type": "world.simulation-run",
+                "id": "run-333acbd6-5e35-4ad5-ad8b-9be9867e9b84"
+              },
+              "channel": "ab632153-767d-4c60-8883-f1ee7c051ccd",
+              "controls": [
+                {
+                  "id": "scenario-briefing",
+                  "label": "Scenario briefing",
+                  "visible": false
+                },
+                {
+                  "id": "alarm-strip",
+                  "label": "Alarm strip",
+                  "visible": false
+                },
+                {
+                  "id": "layout-controls",
+                  "label": "Layout controls",
+                  "visible": true
+                },
+                {
+                  "id": "panel:electric-grid.overview",
+                  "label": "Grid operations",
+                  "visible": true
+                }
+              ],
+              "notification": {
+                "count": 2,
+                "label": "2 unacknowledged alarms"
+              }
+            },
+            "viewNotification": "2 unacknowledged alarms"
+          }
+        }
+      ],
+      "errors": [],
+      "physicalWorkersAfterExit": [],
+      "limits": [
+        "Functional public Host/World UI check on two own paused local Runs; no production mutations.",
+        "Fresh startup screenshot is recorded before dismissal. The canonical alarm notification is compared while paused; hiding never issues an alarm lifecycle command.",
+        "Stale-channel rejection is a real parent-origin protocol delivery using a previously observed channel. Unit tests cover malformed/sender cases separately.",
+        "Not a performance or constrained-device qualification."
+      ]
+    }
+  },
+  "route": {
+    "rawPath": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/unified-native-map-20261027/candidate-7aa/route-ui-ready-overview/receipt.json",
+    "sha256": "467da03a374c44669a62fd419e42807dbaf53b94830604f657fe816a9dd5dbb1",
+    "bytes": 12736,
+    "receipt": {
+      "testedAppCommit": "7aa8370dd",
+      "instrumentationSha256": "242cc7c7e21ee1dc4ad4aaa1272f7d05d3f11ea6acaa1ae0850ffc76e3090c11",
+      "expected": {
+        "elementId": "main-steam-header-to-turbine-stop-valve",
+        "physicalId": "connection/main-steam-header-to-turbine-stop-valve",
+        "from": {
+          "id": "port/mainSteamHeader.outletA",
+          "elementId": "route/main-steam-header",
+          "subjectId": "mainSteamHeader",
+          "port": "outletA",
+          "local": [
+            5.700000000000003,
+            16.449999999999996,
+            23
+          ],
+          "outward": [
+            0,
+            0,
+            -1
+          ]
+        },
+        "to": {
+          "id": "port/turbineStopValve.inlet",
+          "elementId": "stop-valve",
+          "subjectId": "turbineStopValve",
+          "port": "inlet",
+          "local": [
+            0,
+            1.05,
+            1.3
+          ],
+          "outward": [
+            -1,
+            0,
+            0
+          ]
+        }
+      },
+      "startup": {
+        "legacyAlreadyOpen": true,
+        "initial": null,
+        "openedControls": true
+      },
+      "picked": {
+        "label": "\u2315 Quick look \u00b7 Pipe \u00b7 main-steam-header-to-turbine-stop-valve",
+        "object": {
+          "id": "connection/main-steam-header-to-turbine-stop-valve",
+          "label": "Pipe \u00b7 main-steam-header-to-turbine-stop-valve",
+          "subjectIds": [
+            "main-steam-header-to-turbine-stop-valve"
+          ],
+          "layerId": "utility-routes"
+        },
+        "point": {
+          "x": 832.1285286201485,
+          "y": 363.30160878405064
+        },
+        "attempted": 1,
+        "candidates": 1066
+      },
+      "card": {
+        "text": "Paused \u00b7 readings fresh\nClose\nMain Steam Header to Turbine Stop Valve\nIn window \u203a\nSteam header\u2026\nMain steam to turbine stop valve flow \u00b7 Steam header \u2192 Turbine stop valves\nStop valves\u2026\nHalden Unit 1 \u00b7 Main steam header pressure \u00b7 Steam header \u2192 Turbine stop valves",
+        "faceplate": "main-steam-header-to-turbine-stop-valve",
+        "samples": [
+          {
+            "elementId": "main-steam-header-to-turbine-stop-valve",
+            "label": "Main Steam Header to Turbine Stop Valve",
+            "values": [
+              {
+                "ref": "plant:halden-1#main-steam-header-to-turbine-stop-valve.flowKgPerS",
+                "label": "Main steam to turbine stop valve flow \u00b7 Steam header \u2192 Turbine stop valves",
+                "unit": "kg/s"
+              },
+              {
+                "ref": "plant:halden-1#main-steam-header-to-turbine-stop-valve.pressureMPa",
+                "label": "Halden Unit 1 \u00b7 Main steam header pressure \u00b7 Steam header \u2192 Turbine stop valves",
+                "unit": "MPa"
+              }
+            ],
+            "observedRefs": [
+              "plant:halden-1#main-steam-header-to-turbine-stop-valve.flowKgPerS",
+              "plant:halden-1#main-steam-header-to-turbine-stop-valve.pressureMPa"
+            ],
+            "stamp": {
+              "scope": {
+                "runId": "run-447f0ca8-7a8a-4d73-ae91-8c1157d57f11",
+                "layoutObjectId": "layout:halden-1",
+                "revision": "b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+                "objectId": "plant:halden-1",
+                "packId": "process-plant",
+                "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea"
+              },
+              "epoch": "514a2788-c65c-408e-a3ee-ea73235e7be8",
+              "sequence": 279,
+              "receivedWallMs": 1793103539741
+            }
+          },
+          {
+            "elementId": "main-steam-header-to-turbine-stop-valve",
+            "label": "Main Steam Header to Turbine Stop Valve",
+            "values": [
+              {
+                "ref": "plant:halden-1#main-steam-header-to-turbine-stop-valve.flowKgPerS",
+                "label": "Main steam to turbine stop valve flow \u00b7 Steam header \u2192 Turbine stop valves",
+                "unit": "kg/s"
+              },
+              {
+                "ref": "plant:halden-1#main-steam-header-to-turbine-stop-valve.pressureMPa",
+                "label": "Halden Unit 1 \u00b7 Main steam header pressure \u00b7 Steam header \u2192 Turbine stop valves",
+                "unit": "MPa"
+              }
+            ],
+            "observedRefs": [
+              "plant:halden-1#main-steam-header-to-turbine-stop-valve.flowKgPerS",
+              "plant:halden-1#main-steam-header-to-turbine-stop-valve.pressureMPa"
+            ],
+            "stamp": {
+              "scope": {
+                "runId": "run-447f0ca8-7a8a-4d73-ae91-8c1157d57f11",
+                "layoutObjectId": "layout:halden-1",
+                "revision": "b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+                "objectId": "plant:halden-1",
+                "packId": "process-plant",
+                "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea"
+              },
+              "epoch": "514a2788-c65c-408e-a3ee-ea73235e7be8",
+              "sequence": 279,
+              "receivedWallMs": 1793103539741
+            }
+          }
+        ]
+      },
+      "detail": {
+        "text": "Halden Unit 1 \u00b7 Main Steam Header to Turbine Stop Valve\nLEAD VALUES\n10 min\nSteam header flow\nMain steam to turbine stop valve flow \u00b7 Steam header \u2192 Turbine stop valves\nStop valves inlet press.\nHalden Unit 1 \u00b7 Main steam header pressure \u00b7 Steam header \u2192 Turbine stop valves\nMARGINS \u00b7 none near a limit\nALERTS \u00b7 NONE\nPAUSED\nsim 04:00:35\nGenerated from the model \u00b7 not an operating display",
+        "src": "http://127.0.0.1:43140/workspaces/b5da5f9e-c051-4810-a39e-1b7ba789f2dd/world/embed/display.vignette#view=%7B%22moduleId%22%3A%22world%22%2C%22subject%22%3A%7B%22workspaceId%22%3A%22b5da5f9e-c051-4810-a39e-1b7ba789f2dd%22%2C%22moduleId%22%3A%22world%22%2C%22type%22%3A%22world.simulation-run%22%2C%22id%22%3A%22run-447f0ca8-7a8a-4d73-ae91-8c1157d57f11%22%7D%2C%22viewType%22%3A%22display.vignette%22%2C%22title%22%3A%22Halden%20Unit%201%20%C2%B7%20Main%20Steam%20Header%20to%20Turbine%20Stop%20Valve%22%2C%22height%22%3A360%2C%22state%22%3A%22%7B%5C%22title%5C%22%3A%5C%22Halden%20Unit%201%20%C2%B7%20Main%20Steam%20Header%20to%20Turbine%20Stop%20Valve%5C%22%2C%5C%22at%5C%22%3A%7B%5C%22at%5C%22%3A%5C%222026-07-12T04%3A00%3A35.740Z%5C%22%2C%5C%22clock%5C%22%3A%5C%22simulation%5C%22%7D%2C%5C%22views%5C%22%3A%5B%7B%5C%22kind%5C%22%3A%5C%22values%5C%22%2C%5C%22lead%5C%22%3A%7B%5C%22objectId%5C%22%3A%5C%22plant%3Ahalden-1%5C%22%2C%5C%22element%5C%22%3A%5C%22main-steam-header-to-turbine-stop-valve%5C%22%7D%2C%5C%22zones%5C%22%3Atrue%2C%5C%22rows%5C%22%3A7%7D%2C%7B%5C%22kind%5C%22%3A%5C%22alerts%5C%22%2C%5C%22objectIds%5C%22%3A%5B%5C%22plant%3Ahalden-1%5C%22%5D%2C%5C%22elements%5C%22%3A%5B%5C%22main-steam-header-to-turbine-stop-valve%5C%22%5D%2C%5C%22rows%5C%22%3A5%7D%5D%7D%22%7D",
+        "items": [],
+        "endpointContexts": [],
+        "envelope": {
+          "moduleId": "world",
+          "subject": {
+            "workspaceId": "b5da5f9e-c051-4810-a39e-1b7ba789f2dd",
+            "moduleId": "world",
+            "type": "world.simulation-run",
+            "id": "run-447f0ca8-7a8a-4d73-ae91-8c1157d57f11"
+          },
+          "viewType": "display.vignette",
+          "title": "Halden Unit 1 \u00b7 Main Steam Header to Turbine Stop Valve",
+          "height": 360,
+          "state": "{\"title\":\"Halden Unit 1 \u00b7 Main Steam Header to Turbine Stop Valve\",\"at\":{\"at\":\"2026-07-12T04:00:35.740Z\",\"clock\":\"simulation\"},\"views\":[{\"kind\":\"values\",\"lead\":{\"objectId\":\"plant:halden-1\",\"element\":\"main-steam-header-to-turbine-stop-valve\"},\"zones\":true,\"rows\":7},{\"kind\":\"alerts\",\"objectIds\":[\"plant:halden-1\"],\"elements\":[\"main-steam-header-to-turbine-stop-valve\"],\"rows\":5}]}"
+        }
+      },
+      "body": {
+        "windows": [
+          "2 / 8\nHalden Unit 1\n\u00b7 Overview\n100 %\nFit\nInstructor"
+        ],
+        "iframes": [
+          "http://127.0.0.1:43140/workspaces/b5da5f9e-c051-4810-a39e-1b7ba789f2dd/world/embed/display.vignette#view=%7B%22moduleId%22%3A%22world%22%2C%22subject%22%3A%7B%22workspaceId%22%3A%22b5da5f9e-c051-4810-a39e-1b7ba789f2dd%22%2C%22moduleId%22%3A%22world%22%2C%22type%22%3A%22world.simulation-run%22%2C%22id%22%3A%22run-447f0ca8-7a8a-4d73-ae91-8c1157d57f11%22%7D%2C%22viewType%22%3A%22display.vignette%22%2C%22title%22%3A%22Halden%20Unit%201%22%2C%22height%22%3A960%2C%22state%22%3A%22%7B%5C%22title%5C%22%3A%5C%22Halden%20Unit%201%5C%22%2C%5C%22at%5C%22%3A%7B%5C%22at%5C%22%3A%5C%222026-07-12T04%3A00%3A35.740Z%5C%22%2C%5C%22clock%5C%22%3A%5C%22simulation%5C%22%7D%2C%5C%22chips%5C%22%3A%5B%5C%22plant%3Ahalden-1%23csf.subcriticality%5C%22%2C%5C%22plant%3Ahalden-1%23csf.core-cooling%5C%22%2C%5C%22plant%3Ahalden-1%23csf.heat-sink%5C%22%2C%5C%22plant%3Ahalden-1%23csf.rcs-integrity%5C%22%2C%5C%22plant%3Ahalden-1%23csf.containment%5C%22%2C%5C%22plant%3Ahalden-1%23csf.rcs-inventory%5C%22%2C%5C%22plant%3Ahalden-1%23mode%5C%22%5D%2C%5C%22beside%5C%22%3Atrue%2C%5C%22views%5C%22%3A%5B%7B%5C%22kind%5C%22%3A%5C%22values%5C%22%2C%5C%22lead%5C%22%3A%7B%5C%22objectId%5C%22%3A%5C%22plant%3Ahalden-1%5C%22%7D%2C%5C%22zones%5C%22%3Atrue%2C%5C%22rows%5C%22%3A13%7D%2C%7B%5C%22kind%5C%22%3A%5C%22alerts%5C%22%2C%5C%22objectIds%5C%22%3A%5B%5C%22plant%3Ahalden-1%5C%22%5D%2C%5C%22rows%5C%22%3A24%7D%2C%7B%5C%22kind%5C%22%3A%5C%22topology%5C%22%2C%5C%22objectId%5C%22%3A%5C%22plant%3Ahalden-1%5C%22%2C%5C%22request%5C%22%3A%7B%5C%22overview%5C%22%3Atrue%7D%2C%5C%22rows%5C%22%3A37%7D%5D%7D%22%7D"
+        ],
+        "envelopes": [
+          {
+            "moduleId": "world",
+            "subject": {
+              "workspaceId": "b5da5f9e-c051-4810-a39e-1b7ba789f2dd",
+              "moduleId": "world",
+              "type": "world.simulation-run",
+              "id": "run-447f0ca8-7a8a-4d73-ae91-8c1157d57f11"
+            },
+            "viewType": "display.vignette",
+            "title": "Halden Unit 1",
+            "height": 960,
+            "state": "{\"title\":\"Halden Unit 1\",\"at\":{\"at\":\"2026-07-12T04:00:35.740Z\",\"clock\":\"simulation\"},\"chips\":[\"plant:halden-1#csf.subcriticality\",\"plant:halden-1#csf.core-cooling\",\"plant:halden-1#csf.heat-sink\",\"plant:halden-1#csf.rcs-integrity\",\"plant:halden-1#csf.containment\",\"plant:halden-1#csf.rcs-inventory\",\"plant:halden-1#mode\"],\"beside\":true,\"views\":[{\"kind\":\"values\",\"lead\":{\"objectId\":\"plant:halden-1\"},\"zones\":true,\"rows\":13},{\"kind\":\"alerts\",\"objectIds\":[\"plant:halden-1\"],\"rows\":24},{\"kind\":\"topology\",\"objectId\":\"plant:halden-1\",\"request\":{\"overview\":true},\"rows\":37}]}"
+          }
+        ]
+      },
+      "witness": {
+        "object": {
+          "id": "connection/main-steam-header-to-turbine-stop-valve",
+          "label": "Pipe \u00b7 main-steam-header-to-turbine-stop-valve",
+          "subjectIds": [
+            "main-steam-header-to-turbine-stop-valve"
+          ],
+          "layerId": "utility-routes"
+        },
+        "registrations": [
+          {
+            "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+            "index": 628,
+            "id": "connection/main-steam-header-to-turbine-stop-valve",
+            "label": "Pipe \u00b7 main-steam-header-to-turbine-stop-valve",
+            "subjectIds": [
+              "main-steam-header-to-turbine-stop-valve"
+            ],
+            "layerId": "utility-routes"
+          }
+        ],
+        "prepared": [
+          {
+            "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"2d\",\"lower\",true,0]",
+            "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+            "meshes": 0,
+            "triangles": 0
+          },
+          {
+            "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"lower\",true,0]",
+            "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+            "meshes": 0,
+            "triangles": 0
+          },
+          {
+            "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"all\",true,0]",
+            "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+            "meshes": 2,
+            "triangles": 1093
+          }
+        ],
+        "instances": 1,
+        "reportedLogicalCpus": 8,
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36"
+      },
+      "errors": [],
+      "workerTargetsAfterExit": [],
+      "limits": [
+        "Functional real Host/World native-map test on one isolated local Run; no production data mutations.",
+        "Projection uses actual prepared route surface centroids and the exact submitted instance matrix. The accepted target is then verified through a real pointer hover and the public Quick look UI.",
+        "Hosted-card metadata records actual acquired references and stamps; process detail retains the exact edge/owner lead and actual endpoint-context labels. A graph connection opens its existing values-and-alerts detail, rather than claiming a component topology section. No numerical plant values are fabricated.",
+        "This is not a frame-time or cold-load benchmark."
+      ]
+    }
+  }
+}

@@ -1,16 +1,18 @@
 import type { WorkspaceId } from '@leitbild/contracts'
 import { randomUUID } from 'node:crypto'
-import type { RunHistorian } from '../../features/historian/store.ts'
+import type { RunHistorian, SeriesSamplesQuery } from '../../features/historian/store.ts'
 import type { RunHistorianStatus } from '../../features/historian/policy.ts'
 import { recordingSeriesQuerySchema, type RecordingPage } from '../model/recording.ts'
 import { prepareProcedureCommand } from '../../features/procedures/run-state.ts'
+import { procedureTransitionDecision, publishProcedureTransitionDecision } from '../../features/procedures/transition-receipt.ts'
 import { createProcedureObservationPort,type ProcedureObservationPort } from '../../features/procedures/pack-observations.ts'
+import { createObservationCache, createObservationPort, observationProviderFor, type ObservationPort } from '../../features/displays/observation/port.ts'
 import { createProcedureSourceService,type ProcedureSourceService, type ProcedureEvidenceRequest, type ProcedureEvidence } from '../../features/procedures/source.ts'
 import type { CommandOrigin,PackRuntimeConnection,PackRuntimeEmission,PackRuntimeEvent,PackRuntimeHealth,PackRuntimeRealtimeInput,PackRuntimeRealtimeMessage,SimulationCapability } from '../../simulation/protocol.ts'
 import type { AgentRestrictions,RunRoles,ScenarioSide,CommandEnvelope,CommandResult,EventId,InteractionEffect,InteractionHandler,InteractionSignal,IsoTimestamp,ObjectId,OperationalObject,ProcedureCatalog,ProcedureDocument,ProcedureId,ProcedureSourceId,Provenance,RecordedSample,RecordingProfileDescriptor,RecordingSeriesDescriptor,RecordingSeriesQuery,ScenarioExecutionState,ScenarioRecordingSelection,ScenarioTimeline,ScenarioTimelineAction,ScenarioTimelineCue,SimulationClockState,SimulationClockUpdate,SimulationRunEvent,SimulationRunId } from '../model/index.ts'
 import { procedureObservationUpdatedEventSchema, objectIdSchema, actorIdSchema,agentRestrictionsSchema,commandEnvelopeSchema,deleteObjectCommandKind,deleteObjectPayloadSchema,interactionEffectSchema,interactionSignalSchema,isSideView,notificationIdSchema,nowIso,sidedObjectAudienceIssue,simulationClockUpdateSchema,type AudienceIssue } from '../model/index.ts'
 import { createSimulationClock,type SimulationClock } from '../model/time.ts'
-import type { PackProcedureContribution,PackWikiRef } from '../packs/protocol.ts'
+import type { PackProcedureContribution,PackWikiRef,WorldPack } from '../packs/protocol.ts'
 import type { ScenarioRevisionId } from '../scenarios/library.ts'
 import { canIssueCommand,type Actor } from './actors.ts'
 import { assertRunCapabilityAllowed,isAudienceRefusal,roleGateRefusal,roleViewNotSupportedRefusal,viewerForActor,type RoleGateRefusal } from './role-gates.ts'
@@ -88,12 +90,18 @@ export interface SimulationRunRuntime {
    * contribution, read as `actor` so that actor's restrictions apply.
    */
   readonly procedureObservations: (actor: Actor, plantId: string) => ProcedureObservationPort
+  /** Pack observation content (declarations, values, topology), read lazily as `actor`. */
+  readonly observations: (actor: Actor) => ObservationPort
+  /** The Packs this Run runs, for World's server-side presentation (words, categories) of its objects. */
+  readonly packs: () => ReadonlyArray<WorldPack>
   readonly publishInteractionSignal: (signal: InteractionSignal, provenance: Provenance) => Promise<void>
   readonly metrics: () => SimulationRunRuntimeMetricsSnapshot
   readonly health: () => ReadonlyArray<PackRuntimeHealth>
   readonly recordingStatus: () => RunHistorianStatus | null
   readonly recordingSeries: () => ReadonlyArray<RecordingSeriesDescriptor & { readonly runtimeId: string }>
   readonly recordedSamples: (query: RecordingSeriesQuery) => RecordingPage
+  /** A series' samples by id between two simulation times, newest first up to the limit, without a page's summaries: what a display draws. */
+  readonly recordedSeriesSamples: (query: SeriesSamplesQuery) => ReadonlyArray<RecordedSample>
   readonly close: () => Promise<void>
 }
 
@@ -183,6 +191,8 @@ export const createSimulationRunRuntime = async (config: {
   readonly procedureSourceService?: ProcedureSourceService
   /** The procedure contribution of the Pack that owns an object, where that Pack offers one. */
   readonly procedureProvider?: (object: OperationalObject) => PackProcedureContribution | undefined
+  /** The Packs the Run's Scenario resolved, whose observation contributions and presentation World reads. */
+  readonly packs?: ReadonlyArray<WorldPack>
   /** Wall-time transport health bound; never a physical qualification duration. */
   readonly observationAcquisitionTimeoutMs?: number
   readonly historian?: RunHistorian
@@ -886,9 +896,11 @@ export const createSimulationRunRuntime = async (config: {
           },
         })
         if (commit === null) return null
+        let publishedDecision: ReturnType<typeof publishProcedureTransitionDecision> | undefined
         await publishGenerated(async () => {
           await evaluateProcedureObservationsNow()
           const snapshot = state.snapshot()
+          const evidenceBudget = { deadline: performance.now() + observationAcquisitionTimeoutMs, exhausted: false }
           // Document preparation may outlive a controller's restriction change.
           // Recheck current AI authority at the serialized procedure commit,
           // including the actual live Run scope rather than just caller targets.
@@ -901,7 +913,7 @@ export const createSimulationRunRuntime = async (config: {
             const denied = targets.filter(objectId => restrictions.objects.some(entry => entry.objectId === objectId && entry.deny.includes('change')))
             if (denied.length > 0) throw new Error(`AI change access is restricted for: ${denied.join(', ')}`)
           }
-          return commit({
+          const events = await commit({
             simulationRunId: config.id, at: nowIso(), procedures: snapshot.procedures,
             simulationTime: runClock.read().currentTime,
             commandSource,
@@ -910,9 +922,21 @@ export const createSimulationRunRuntime = async (config: {
             objectIds: new Set(snapshot.objects.map(object => object.id)),
             objects: new Map(snapshot.objects.map(object => [object.id, object])),
             factory: { eventId, nextSeq: () => ++seq },
+            observations: plantId => procedureObservations(actor, plantId, evidenceBudget),
+            clock: () => runClock.read().currentTime,
           })
+          if (command.kind === 'world.procedure.run.transition') {
+            const selected = events.find((event): event is Extract<SimulationRunEvent, { type: 'procedure.branch.selected' }> => event.type === 'procedure.branch.selected')
+            const run = snapshot.procedures?.runs.find(run => run.runId === selected?.runId)
+            if (!selected || !run) throw new Error('Procedure transition produced no pinned decision receipt')
+            // Capture the exact commit batch, never the latest step or a later journal search.
+            publishedDecision = publishProcedureTransitionDecision(procedureTransitionDecision(run, selected))
+          }
+          return events
         })
-        return { ok: true, commandId: command.id, acceptedAt: at }
+        const result = { ok: true as const, commandId: command.id, acceptedAt: at,
+          ...publishedDecision }
+        return result
       } catch (error) {
         assertCommitAvailable()
         return {
@@ -920,6 +944,8 @@ export const createSimulationRunRuntime = async (config: {
           commandId: command.id,
           rejectedAt: at,
           reason: error instanceof Error ? error.message : String(error),
+          ...(typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'string' ? { code: error.code } : {}),
+          ...(typeof error === 'object' && error !== null && 'details' in error && typeof error.details === 'object' && error.details !== null && !Array.isArray(error.details) ? { details: error.details as Record<string, unknown> } : {}),
         }
       }
     }
@@ -1127,6 +1153,12 @@ export const createSimulationRunRuntime = async (config: {
   const procedureDrivenBy = (command: CommandEnvelope): ReadonlySet<string> => new Set((state.snapshot().procedures?.runs ?? [])
     .filter(run => run.status === 'active' && run.driver?.actorId === command.actorId).map(run => run.scope.plantId))
 
+  // A person's Take over remains authoritative even on a Plant whose AI
+  // operation policy is direct. This is current state, never an earlier read.
+  const procedureHolds = (): ReadonlyMap<string, string> => new Map((state.snapshot().procedures?.runs ?? [])
+    .filter(run => run.status === 'active' && run.driver?.kind === 'person')
+    .map(run => [run.scope.plantId, `A person${run.driver?.label === undefined ? '' : ` (${run.driver.label})`} drives ${run.procedureId} on ${run.scope.label ?? run.scope.plantId}; AI operations wait until the person hands it back.`]))
+
   const issueCommandThroughRuntime = async (
     actor: Actor,
     command: CommandEnvelope,
@@ -1152,9 +1184,13 @@ export const createSimulationRunRuntime = async (config: {
     const viewer = viewerForActor(runRoles, actor)
     const result = await handleCoreCommand(command, commandSource, actor)
       ?? await config.runtimeConnection.sendCommand(command, {
-        ...(viewer === undefined ? {} : { viewer }), origin: commandOriginOf(actor), procedureDriven: procedureDrivenBy(command),
+        ...(viewer === undefined ? {} : { viewer }), origin: commandOriginOf(actor), procedureDriven: procedureDrivenBy(command), procedureHolds: procedureHolds(),
       })
     await drainRuntimeEmissions()
+    // The branch event already journals the complete proof. Its API receipt
+    // carries the same event without persisting another copy in command.result.
+    const journalResult: CommandResult = command.kind === 'world.procedure.run.transition' && result.ok
+      ? { ok: true, commandId: result.commandId, acceptedAt: result.acceptedAt } : result
     await publishOneGenerated(() => ({
       id: eventId(),
       simulationRunId: config.id,
@@ -1162,7 +1198,7 @@ export const createSimulationRunRuntime = async (config: {
       at: result.ok ? result.acceptedAt : result.rejectedAt,
       provenance: { source: 'simulator', causedByCommandId: command.id },
       type: 'command.result',
-      result,
+      result: journalResult,
     }), { history: commandEventDisposition })
     return result
   }
@@ -1430,19 +1466,29 @@ export const createSimulationRunRuntime = async (config: {
   // An AI agent's command is journaled as the AI's, not as an operator's (plan-final S3).
   const commandSourceOf = (actor: Actor): Provenance['source'] => actor.role === 'ai_agent' ? 'ai' : 'operator'
 
-  const invokeCapability = async (
-    actor: Actor,
-    invocation: SimulationRunCapabilityInvocation,
-  ): Promise<SimulationRunCapabilityInvocationResult> => {
-    assertRunCapabilityAllowed(runRoles, actor, invocation.capabilityId)
+  // The gates every caller passes before a Capability runs, public or as
+  // admitted by World core; restrictions and the viewer stamp follow in
+  // invokeCapabilityThroughRuntime.
+  const admit = (actor: Actor, capabilityId: string): void => {
+    assertRunCapabilityAllowed(runRoles, actor, capabilityId)
     // Deny by default: a side view reaches only Capabilities of role-aware
     // Packs, which answer within its picture. World's own operations and any
     // other Pack's would show it truth.
     const viewer = viewerForActor(runRoles, actor)
     if (viewer !== undefined && isSideView(viewer.sees)) {
-      const packId = runtimeCapabilities.get(invocation.capabilityId)?.packId
-      if (packId === undefined || !roleAwarePackIds.has(packId)) throw roleViewNotSupportedRefusal(`Capability ${invocation.capabilityId}`)
+      const packId = runtimeCapabilities.get(capabilityId)?.packId
+      if (packId === undefined || !roleAwarePackIds.has(packId)) throw roleViewNotSupportedRefusal(`Capability ${capabilityId}`)
     }
+  }
+
+  const invokeCapability = async (
+    actor: Actor,
+    invocation: SimulationRunCapabilityInvocation,
+  ): Promise<SimulationRunCapabilityInvocationResult> => {
+    if (runtimeCapabilities.get(invocation.capabilityId)?.capability.audience === 'system') {
+      throw Object.assign(new Error(`Capability ${invocation.capabilityId} is World's own and not offered to callers`), { code: 'capability_not_public', status: 404 })
+    }
+    admit(actor, invocation.capabilityId)
     // Generic object deletion is a short canonical mutation. Commit it inside
     // the execution queue so maximum pace cannot advance another slice between
     // validation and deletion. Pack cleanup follows the resulting core event.
@@ -1471,7 +1517,7 @@ export const createSimulationRunRuntime = async (config: {
 
   // The scope's owning Pack answers through its declared read Capabilities,
   // invoked as the caller: World interprets none of its plant logic.
-  const procedureObservations = (actor: Actor, plantId: string): ProcedureObservationPort => {
+  const procedureObservations = (actor: Actor, plantId: string, atCommit?: { readonly deadline: number; exhausted: boolean }): ProcedureObservationPort => {
     const object = state.snapshot().objects.find(candidate => candidate.id === plantId)
     if (!object) throw new Error(`procedure target no longer exists: ${plantId}`)
     const provider = config.procedureProvider?.(object)
@@ -1481,12 +1527,39 @@ export const createSimulationRunRuntime = async (config: {
       scopeId: plantId,
       provider,
       query: async query => {
-        const outcome = await invokeCapability(actor, { capabilityId: query.capabilityId, input: query.input })
+        const active = runtimeCapabilities.get(query.capabilityId)
+        if (!active || active.capability.kind !== 'query') throw new Error(`Procedure evidence requires an active read-only capability: ${query.capabilityId}`)
+        const input = active.capability.input.parse(query.input)
+        const targets = active.capability.inspectObjectIds?.(input) ?? []
+        if (!targets.includes(objectIdSchema.parse(plantId)) || targets.some(target => target !== plantId)) throw new Error('Procedure evidence must inspect only its scoped operational object')
+        if (atCommit) {
+          admit(actor, query.capabilityId)
+          if (runtimeCapabilities.get(query.capabilityId)?.capability.kind !== 'query') throw new Error(`procedure observation ${query.capabilityId} is not a read`)
+        }
+        const outcome = atCommit
+          ? await acquireObservation(JSON.stringify(['procedure-commit', actor.id, query.capabilityId, input]),
+              async () => await invokeCapabilityThroughRuntime(actor, { capabilityId: query.capabilityId, input }, commandSourceOf(actor)), atCommit)
+          : await invokeCapability(actor, { capabilityId: query.capabilityId, input: query.input })
         if (outcome.kind !== 'query') throw new Error(`procedure observation ${query.capabilityId} is not a read`)
         return outcome.result
       },
     })
   }
+
+  // Observation Capabilities run only here, admitted as the caller, from an exact execution boundary like any read.
+  const observationCache = createObservationCache()
+  const observationProvider = observationProviderFor(config.packs ?? [])
+  const observations = (actor: Actor): ObservationPort => createObservationPort({
+    object: objectId => committedState.getObject(objectId),
+    provider: observationProvider,
+    cache: observationCache,
+    query: async (capabilityId, input) => {
+      if (runtimeCapabilities.get(capabilityId)?.capability.audience !== 'system') throw new Error(`not an observation Capability: ${capabilityId}`)
+      admit(actor, capabilityId)
+      await enqueueOperation(async () => {})
+      return (await invokeCapabilityThroughRuntime(actor, { capabilityId, input }, commandSourceOf(actor))).result
+    },
+  })
 
   const checkpointForCopy = async (): Promise<SimulationRunCopyCheckpoint> => await enqueueOperation(async () => {
     if (commandsInFlight.size > 0 || pendingCues > 0) throw Object.assign(
@@ -1667,6 +1740,8 @@ export const createSimulationRunRuntime = async (config: {
     procedureDocument: async (documentConfig) => await procedureSourceService.readDocument(documentConfig),
     procedureEvidence: async evidenceConfig => await procedureSourceService.readEvidence(evidenceConfig),
     procedureObservations,
+    observations,
+    packs: () => config.packs ?? [],
     publishInteractionSignal: async (signal: InteractionSignal, provenance: Provenance): Promise<void> => await enqueueOperation(async () => {
         await enqueuePublish(async () => {
           await handleInteractionSignalNow(signal, provenance)
@@ -1699,6 +1774,8 @@ export const createSimulationRunRuntime = async (config: {
     },
     recordingStatus: () => config.historian?.status() ?? null,
     recordingSeries: () => config.historian?.listSeries() ?? [],
+    // No recording selection is legitimate: nothing recorded. An unavailable configured historian throws, as its query does.
+    recordedSeriesSamples: query => config.historian?.seriesSamples(query) ?? [],
     recordedSamples: (input) => {
       const query = recordingSeriesQuerySchema.parse(input)
       if (config.historian) return config.historian.query(query)

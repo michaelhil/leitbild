@@ -29,7 +29,7 @@ Basis: Test comparison of the represented pump state, with no CSF adequacy claim
 Check: Compare the represented running state.
 \`\`\`procedure-observation
 ${JSON.stringify({ capabilityId: 'world.process-plant.procedure-condition.evaluate', continuous: true, input: {
-  condition: { type: 'comparison', signal: { path: 'rcpA.running' }, operator: '==', value: true, unit: 'boolean' },
+  condition: { type: 'comparison', signal: { path: 'rcpA.runningState' }, operator: '==', value: true, unit: 'boolean' },
   basis: { modelRef, modelDigest, source: 'source:apps/world/src/packs/process-plant/specs/pwr-reference-template.graph.json', description: 'Test-only pump-running comparison; no functional sufficiency claim.' },
 } })}
 \`\`\`
@@ -76,7 +76,7 @@ describe('procedure evidence through the real Run and process-plant runtime', ()
       const initial = current().observations?.[0]
       expect(initial).toMatchObject({ stepId: 'observe-pump', result: { status: 'satisfied', targetObjectId: plant.id,
         modelRef: plant.modelRef, modelDigest: plant.modelDigest, automaticCsfQualified: false,
-        evidence: [{ instrumentationValidity: 'not-established', provenance: 'runtime-model', variable: { value: true, unit: 'boolean' } }],
+        readings: [{ instrumentationValidity: 'not-established', provenance: 'runtime-model', variable: { value: true, unit: 'boolean' } }], evidence: [{ readingIndex: 0, status: 'satisfied' }],
       } })
       const pausedTime = runtime.snapshot().clock!.currentTime
       const pausedEvidence = structuredClone(initial)
@@ -99,7 +99,7 @@ describe('procedure evidence through the real Run and process-plant runtime', ()
       await waitForCondition('maximum pace reaches its exact requested boundary', () => runtime.snapshot().clock?.currentTime === targetTime, { timeoutMs: 10_000 })
       await registry.setExecution(runtime.id, { playback: 'paused' })
       expect(current()).toMatchObject({ currentStepId: 'record-handover', observations: [{ stepId: 'observe-pump', simulationTime: targetTime,
-        result: { status: 'challenged', evidence: [{ variable: { value: false }, instrumentationValidity: 'not-established' }] },
+        result: { status: 'challenged', readings: [{ variable: { value: false }, instrumentationValidity: 'not-established' }], evidence: [{ readingIndex: 0, status: 'challenged' }] },
       }] })
       expect(runtime.events().filter(event => event.type === 'procedure.observation.updated').map(event => event.observation.result.status)).toEqual(['satisfied', 'challenged'])
 

@@ -1,0 +1,54 @@
+{
+  "note": "CPU-only diagnostic; source/preparation all-utility R5. Visibility mask includes alternatives as construction stress, not a final camera view.",
+  "root": "/Users/hilde/Documents/ChatGPT/Leitbild-physical-draw-stack-qa-20261027/apps/world",
+  "sourceHashes": {
+    "architecture-bsp.ts": "119d8a01c3be00d7a4992b126dfdad06b2d77fd66bc6eead2633301c72de61f3",
+    "architecture-bsp-types.ts": "64bf2296059b9ce0b00af90460c3b93075d1a3951fcdb578d36350286e6a91c1"
+  },
+  "sourceDesigns": [
+    {
+      "id": "layout:halden-1",
+      "revision": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9"
+    },
+    {
+      "id": "layout:halden-2",
+      "revision": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9"
+    },
+    {
+      "id": "layout:halden-3",
+      "revision": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9"
+    },
+    {
+      "id": "layout:halden-4",
+      "revision": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9"
+    },
+    {
+      "id": "layout:halden-campus",
+      "revision": "91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933"
+    }
+  ],
+  "sources": 8026,
+  "diagnostics": {
+    "inputTriangles": 125536,
+    "inputLines": 32168,
+    "splitPolygons": 10103,
+    "splitLines": 1549,
+    "coplanarOverlaps": 0,
+    "retainedAlternatives": 0,
+    "vertexBytes": 34630992
+  },
+  "ms": 1502.5853749999997,
+  "nodes": 6861,
+  "fragments": 161835,
+  "triangles": 137904,
+  "lines": 33637,
+  "traverseMs": 12.186625000000276,
+  "order": 161835,
+  "warm": {
+    "samples": 60,
+    "reused": 60,
+    "medianMs": 0.1504159999994954,
+    "p95Ms": 0.8080419999996593
+  },
+  "verticesSha256": "e361b6d532cdb97c919d3ab2e819ca22fe49195643cd5a791a0eeee650d04111"
+}

@@ -1,0 +1,43 @@
+{
+  "baseline": "b748ae05e",
+  "productionChange": "Only the private overlap builder and its explanatory interface comment",
+  "rayBuilderByteUnchanged": true,
+  "queryAndPairPredicatesByteUnchanged": true,
+  "tests": {
+    "passed": 35,
+    "assertions": 10216,
+    "command": "bun test tests/physical-centroid-overlap.test.ts tests/physical-spatial-index.test.ts tests/physical-surface-ownership.test.ts tests/physical-architecture-bsp.test.ts tests/physical-architecture-bsp-preparation.test.ts"
+  },
+  "worldCheck": {
+    "command": "bun run check",
+    "errors": 0,
+    "warnings": 0
+  },
+  "r6ExactOutputQualification": {
+    "layers": "all declared layers",
+    "views": [
+      "Every actual unit/campus floor",
+      "All floors with cutaway on and off",
+      "All floors separated",
+      "Turbine area all/lower/operating"
+    ],
+    "compared": [
+      "Ordered Float64 vertices/normals/material metadata",
+      "Authored line arrays/styles",
+      "Conditional ownership masks and coincident pairs",
+      "Packed native render buffers",
+      "Picking broadphase and triangle-index arrays"
+    ],
+    "excluded": [
+      "Broadphase candidate count: algorithm work, not display truth"
+    ]
+  },
+  "memoryBoundary": "Atomic overlap nodes are temporary preparation storage. Retained picking/render/source/GPU assets are unchanged.",
+  "browserQualification": "Pending combined actual-product verification; pure CPU results are not a loading/frame-time promise.",
+  "hashes": {
+    "src/ui/map/physical-scene/spatial-index.ts": "d4614ebe7ef2a8b892c61dc300efd6987c8bdcf079b5429fb93efdaf74871fb3",
+    "tests/fixtures/physical-layout/spatial-index-before-centroid.ts": "f7a0f67a8308ac7a239fcbb9ebc48192fb423bed30870feedb513d56ab1cef19",
+    "tests/fixtures/physical-layout/surface-ownership-before-centroid.ts": "9399955641ffb406a542042e5ca52325fd49633da384045142b5d398462f7f3a",
+    "tests/physical-centroid-overlap.test.ts": "b709459104992be191270198ab19f31061d5bb91bda758330353a6cbb6947526"
+  }
+}

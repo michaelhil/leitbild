@@ -1,6 +1,8 @@
 import { primaryLoopPumpForLink } from '../../graph/index.ts'
-import type { CompiledPlantGraph, CompiledProcessLink } from '../../graph/index.ts'
+import type { CompiledComponent, CompiledPlantGraph, CompiledProcessLink } from '../../graph/index.ts'
 import { processPlantServices } from '../service-profiles.ts'
+import { sameComponentFluidCircuit } from '../fluid-circuits.ts'
+import { isShutdownCoolingSource } from '../shutdown-cooling.ts'
 
 /**
  * How far a link's solved flow can be trusted, read from where the runtime
@@ -15,12 +17,13 @@ import { processPlantServices } from '../service-profiles.ts'
  */
 export type ProcessLinkFlowFidelity = 'solved' | 'magnitudeOnly' | 'unverified'
 
-const drivenSources: ReadonlyArray<(source: { readonly kind: string }, link: CompiledProcessLink) => boolean> = [
+const drivenSources: ReadonlyArray<(source: CompiledComponent, link: CompiledProcessLink) => boolean> = [
   source => source.kind === 'centrifugalPump',
   source => source.kind === 'processTank',
   (source, link) => source.kind === 'condenserSink' && (link.service === processPlantServices.condensate || link.service === 'coolingWater'),
   (source, link) => source.kind === 'pressurizer' && link.service === 'primaryRelief',
   (source, link) => source.kind === 'reactorVessel' && (link.service === 'primaryRelease' || link.service === 'letdown'),
+  (source, link) => isShutdownCoolingSource(source, String(link.fromPortName)),
   (source, link) => source.kind === 'steamGenerator' && link.service === processPlantServices.mainSteam,
   source => source.kind === 'turbineLoadSink',
   (source, link) => source.kind === 'containmentVolume' && (String(link.fromPortName) === 'sumpOut' || String(link.fromPortName) === 'ventOut'),
@@ -36,14 +39,19 @@ export const processLinkFlowFidelityFor = (graph: CompiledPlantGraph, link: Comp
   if (source === undefined) throw new Error(`link ${link.id} references a missing source component`)
   if (drivenSources.some(driven => driven(source, link))) return 'solved'
   // Otherwise the runtime passes on what flows into the source, split over its outlets.
-  const sameService = (index: number): boolean => {
-    const other = graph.links[index]
-    return other !== undefined && other.kind === 'fluidFlow' && other.service === link.service
-  }
-  const fed = (graph.incomingLinksByComponent[source.index] ?? []).some(sameService)
+  // Services name purposes; actual compatible fluid and this component's
+  // internal circuit determine whether a feed can drive this outlet.
+  const sameFluid = (other: CompiledProcessLink): boolean => other.kind === 'fluidFlow' && other.nominalFluid === link.nominalFluid
+  const fed = (graph.incomingLinksByComponent[source.index] ?? []).some(index => {
+    const incoming = graph.links[index]!
+    return sameFluid(incoming) && sameComponentFluidCircuit(source, String(link.fromPortName), String(incoming.toPortName))
+  })
   if (!fed) return 'unverified'
   // A hub whose other outlets carry pump-driven loop flow does not split by demand; the share is not this link's flow.
   const siblingLoopDriven = (graph.outgoingLinksByComponent[source.index] ?? [])
-    .some(index => index !== link.index && sameService(index) && primaryLoopPumpForLink(graph, graph.links[index]!) !== null)
+    .some(index => {
+      const sibling = graph.links[index]!
+      return index !== link.index && sameFluid(sibling) && sameComponentFluidCircuit(source, String(link.fromPortName), String(sibling.fromPortName)) && primaryLoopPumpForLink(graph, sibling) !== null
+    })
   return siblingLoopDriven ? 'unverified' : 'solved'
 }

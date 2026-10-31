@@ -19,7 +19,7 @@ export const objectHoverCardHtml = (config: {
   const preview = config.targetPreview
     ? `<div class="hover-target-preview${config.targetPreview.refused ? ' refused' : ''}">${escapeHtml(config.targetPreview.text)}</div>`
     : ''
-  // An object with a card shows its glance, the card's own first lines; the card has the rest.
+  // An object with a glance shows it, its few lines at a glance, in place of every field.
   const lines = config.presentation.glance === undefined
     ? fieldLines(config.presentation.fields)
     : config.presentation.glance.map(line => `<div>${escapeHtml(line)}</div>`).join('')

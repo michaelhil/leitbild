@@ -1,0 +1,121 @@
+{
+  "reference": "03c9a2d0e",
+  "referenceModules": {},
+  "commit": "03c9a2d0ef8c08836cd073c3c202dacb6061d29a",
+  "sourceRevision": "b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+  "sourceHashes": {
+    "geometry": "20ea4bb0f0dd5945ad293ac27ebbf5075bb0de84a981d18ab92de99ad5ab3d83",
+    "scope-clipping": "0b5aa44e60d7e283b330a5116efe691464bebd02c94c11fea9bbd4c5143916fc",
+    "surface-ownership": "aff4e511e5be7ab94c28dda450cdc0a2ded24d0887321e6dc0da91fab843313b",
+    "spatial-index": "f32c7c3c793a3f3e78cec0de4da2cd53c4f652c16730cb4954c74abd0e7e52b5",
+    "picking": "6c8aa7685592b2c8feadae7ddf544bfc0111a777f8a3bfa1b62bda09bb48d41f",
+    "renderer": "a15a1bb258225aebafa72537edbed4dc63beec43dbc15dabfa77952dcadcb3b0",
+    "backend": "ee7d2cca749acdb40dadc8c336ba3b271d2d359d404161f417df3efb8f269e3d"
+  },
+  "phases": [
+    {
+      "levelId": "lower",
+      "scopeId": "area/turbine-island",
+      "separation": 0,
+      "alert": false,
+      "changedPixels": 2,
+      "maxChannelDifference": 64,
+      "picks": 234,
+      "pickDifferences": [],
+      "materialDifferences": [],
+      "oldStats": {
+        "physicalTriangles": 29854,
+        "duplicateFloat32Triangles": 566
+      },
+      "newStats": {
+        "physicalTriangles": 29854,
+        "duplicateFloat32Triangles": 566
+      },
+      "camera": {
+        "center": [
+          11.469992997800489,
+          59.08700899320243
+        ],
+        "pitch": 49.89295,
+        "bearing": 40.10704999999995,
+        "zoom": 18.580634124125943,
+        "revision": 3,
+        "elevation": 4.999998689361341
+      },
+      "matrix": [
+        339666923.1806497,
+        249910666.28050563,
+        100387195.44331479,
+        98901450.56041045,
+        286097546.613419,
+        -296704351.68123186,
+        -119183859.51431976,
+        -117419921.30869293,
+        0,
+        460565319.5669824,
+        -131252176.61670206,
+        -129309625.58798613,
+        -265169776.28681013,
+        -45270430.95725243,
+        -18183308.338415142,
+        -17914155.28788526
+      ],
+      "sourceRevision": "b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+      "errors": [],
+      "passed": false
+    },
+    {
+      "levelId": "lower",
+      "scopeId": "area/turbine-island",
+      "separation": 0,
+      "alert": true,
+      "changedPixels": 2,
+      "maxChannelDifference": 64,
+      "picks": 234,
+      "pickDifferences": [],
+      "materialDifferences": [],
+      "oldStats": {
+        "physicalTriangles": 29854,
+        "duplicateFloat32Triangles": 566
+      },
+      "newStats": {
+        "physicalTriangles": 29854,
+        "duplicateFloat32Triangles": 566
+      },
+      "camera": {
+        "center": [
+          11.469992997800489,
+          59.08700899320243
+        ],
+        "pitch": 49.89295,
+        "bearing": 40.10704999999995,
+        "zoom": 18.580634124125943,
+        "revision": 4,
+        "elevation": 4.999998689361341
+      },
+      "matrix": [
+        339666923.1806497,
+        249910666.28050563,
+        100387195.44331479,
+        98901450.56041045,
+        286097546.613419,
+        -296704351.68123186,
+        -119183859.51431976,
+        -117419921.30869293,
+        0,
+        460565319.5669824,
+        -131252176.61670206,
+        -129309625.58798613,
+        -265169776.28681013,
+        -45270430.95725243,
+        -18183308.338415142,
+        -17914155.28788526
+      ],
+      "sourceRevision": "b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+      "errors": [],
+      "passed": false
+    }
+  ],
+  "passed": false,
+  "note": "Before/after rendering uses one realized public MapLibre camera matrix and identical production shader/material/picking ports. Controlled status is test input. No physical microtriangle is dropped by a size threshold."
+}

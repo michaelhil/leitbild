@@ -7,8 +7,11 @@ import {
   workspaceResourceReferenceSchema,
   type WorkspaceRoomScope,
 } from '@leitbild/contracts'
-import { createWorkspaceCapabilityTools, workspaceCallResultForModel } from './workspace-capability-tools.ts'
+import { createContextPublisherLookup, createViewPublisherLookup, createWorkspaceCapabilityTools, workspaceCallResultForModel } from './workspace-capability-tools.ts'
 import { toolsToDefinitions } from '../../llm/tool-capability.ts'
+import { createTurnCards } from '../../agents/answer-cards.ts'
+import { collectViewRefs, evaluate } from '../../agents/evaluation.ts'
+import type { LLMProvider } from '../../core/types/llm.ts'
 
 const workspaceId = newWorkspaceId()
 const moduleId = moduleIdSchema.parse('world')
@@ -300,6 +303,184 @@ describe('Workspace progressive-discovery tools', () => {
     expect(await explore!.execute({ view: 'all' }, context)).toMatchObject({ success: false, error: expect.stringContaining('invalid_tool_input') })
   })
 
+  // A Pack's many operations share the words of its namespace: World's
+  // process-plant ids all read world, process, plant.
+  const packCatalogTools = () => {
+    const nouns = ['plants', 'signals', 'alarms', 'controls', 'components', 'actions', 'credibility', 'catalog', 'graph', 'display', 'assessments', 'conditions']
+    const verbs = ['list', 'search', 'read', 'evaluate', 'compose', 'view', 'propose']
+    const packOperations = nouns.flatMap(noun => verbs.map(verb => ({
+      id: capabilityIdSchema.parse(`world.process-plant.${noun}.${verb}`), moduleId, kind: 'query' as const,
+      scope: { kind: 'resource' as const, resourceType: run.type },
+      title: `${noun} · ${verb}`, description: `Process Plant ${noun}: ${verb} them for one Plant of the Run.`,
+      risk: 'read' as const, idempotent: true,
+      inputSchema: { $schema: 'https://json-schema.org/draft/2020-12/schema', type: 'object', properties: { plantId: { type: 'string' } } },
+      outputSchema: { type: 'object' },
+    })))
+    const base = catalogFetch([])
+    return createWorkspaceCapabilityTools({
+      workspaceId, hostBaseUrl: 'https://host.test', getRoomScope: () => ({ kind: 'resource', resource: run }),
+      fetchImpl: (async (input, init) => {
+        const response = await base(input, init)
+        const path = new URL(String(input)).pathname
+        if (path.endsWith('/capabilities')) {
+          const body = await response.json() as { capabilities: unknown[] }
+          body.capabilities.push(...packOperations)
+          return Response.json(body)
+        }
+        if (path.endsWith('/resources')) {
+          const body = await response.json() as { resources: Array<{ ref: typeof run; capabilityIds: string[] }> }
+          body.resources[0]!.capabilityIds.push(...packOperations.map(operation => operation.id))
+          return Response.json(body)
+        }
+        return response
+      }) as typeof fetch,
+    })
+  }
+  const operationIdsOf = (result: Awaited<ReturnType<NonNullable<ReturnType<typeof makeTools>[0]>['execute']>>) =>
+    (result.data as { operations: Array<{ operationId: string }> }).operations.map(operation => operation.operationId)
+
+  test('an operation id passed as a query is that exact operation, never its namespace words matched against every operation', async () => {
+    const [explore] = packCatalogTools()
+    const ids = ['world.process-plant.plants.list', 'world.process-plant.signals.search', 'world.process-plant.signals.read', 'world.process-plant.display.compose', 'world.process-plant.assessments.evaluate']
+    const result = await explore!.execute({ view: 'operations', queries: ids, includeInputSchema: true }, context)
+    expect(result).toMatchObject({ success: true, data: { total: 5, returned: 5, hasMore: false } })
+    expect(operationIdsOf(result).sort()).toEqual([...ids].sort())
+    expect(result.data).not.toHaveProperty('unavailableOperationIds')
+    // The same as asking for them by operationIds.
+    expect(await explore!.execute({ view: 'operations', operationIds: ids, includeInputSchema: true }, context)).toEqual(result)
+  })
+
+  test('an exact id this Room cannot reach is named, not answered with a word search', async () => {
+    const [explore] = packCatalogTools()
+    const result = await explore!.execute({ view: 'operations', queries: ['world.process-plant.plant.list', 'world.process-plant.signals.read'] }, context)
+    expect(result).toMatchObject({ success: true, data: { total: 1, unavailableOperationIds: ['world.process-plant.plant.list'] } })
+    expect(operationIdsOf(result)).toEqual(['world.process-plant.signals.read'])
+  })
+
+  test('each plain-language query gets its best match first, by the words that tell operations apart', async () => {
+    const [explore] = packCatalogTools()
+    // Namespace words every operation shares rank nothing; the page takes
+    // every query's best match before any query's second best.
+    const result = await explore!.execute({ view: 'operations', queries: ['world process plant plants list', 'world process plant signals search', 'process plant display compose'], limit: 3 }, context)
+    expect(operationIdsOf(result)).toEqual(['world.process-plant.plants.list', 'world.process-plant.signals.search', 'world.process-plant.display.compose'])
+    expect(result).toMatchObject({ success: true, data: { hasMore: true } })
+  })
+
+  test('a page carrying schemas holds a focused search by default, and always every exact id asked for', async () => {
+    const [explore] = packCatalogTools()
+    const focused = await explore!.execute({ view: 'operations', queries: ['process plant signals'], includeInputSchema: true }, context)
+    expect(focused).toMatchObject({ success: true, data: { returned: 5, hasMore: true } })
+    const compact = await explore!.execute({ view: 'operations', queries: ['process plant signals'] }, context)
+    expect(compact).toMatchObject({ success: true, data: { returned: 30, hasMore: true } })
+    const verbs = ['list', 'search', 'read', 'evaluate', 'compose', 'view', 'propose'].map(verb => `world.process-plant.signals.${verb}`)
+    const exact = await explore!.execute({ view: 'operations', operationIds: verbs, queries: ['alarms'], includeInputSchema: true }, context)
+    expect(exact).toMatchObject({ success: true, data: { returned: 7, hasMore: true } })
+    expect(operationIdsOf(exact).sort()).toEqual([...verbs].sort())
+    // The schema the model reads keeps every constraint, without the dialect URI.
+    expect((exact.data as { operations: Array<{ inputSchema: unknown }> }).operations[0]!.inputSchema).toEqual({ type: 'object', properties: { plantId: { type: 'string' } } })
+  })
+
+  test('a Room reaches the display publishers its Scope holds, as their Module marks them, never by id', async () => {
+    const compose = capabilityIdSchema.parse('world.process-plant.display.compose')
+    const base = catalogFetch([])
+    const lookup = (scope: WorkspaceRoomScope, publishes: boolean) => createViewPublisherLookup({
+      workspaceId, hostBaseUrl: 'https://host.test', getRoomScope: roomId => roomId === 'room' ? scope : undefined,
+      fetchImpl: (async (input, init) => {
+        const response = await base(input, init)
+        const path = new URL(String(input)).pathname
+        if (path.endsWith('/capabilities')) {
+          const body = await response.json() as { capabilities: unknown[] }
+          body.capabilities.push({ id: compose, moduleId, kind: 'query', scope: { kind: 'resource', resourceType: run.type }, title: 'display · compose', description: 'Compose a display.', risk: 'read', idempotent: true, ...(publishes ? { publishes: ['embedded-view'] } : {}), inputSchema: { type: 'object' }, outputSchema: { type: 'object' } })
+          return Response.json(body)
+        }
+        if (path.endsWith('/resources')) {
+          // Only Run 01 offers the display operation.
+          const body = await response.json() as { resources: Array<{ ref: typeof run; capabilityIds: string[] }> }
+          body.resources.find(resource => resource.ref.id === run.id)!.capabilityIds.push(compose)
+          return Response.json(body)
+        }
+        return response
+      }) as typeof fetch,
+    })
+    expect(await lookup({ kind: 'workspace' }, true)('room')).toEqual([compose])
+    expect(await lookup({ kind: 'resource', resource: run }, true)('room')).toEqual([compose])
+    expect(await lookup({ kind: 'resource', resource: otherRun }, true)('room')).toEqual([])
+    expect(await lookup({ kind: 'workspace' }, false)('room')).toEqual([])
+    expect(lookup({ kind: 'workspace' }, true)('missing')).rejects.toThrow('has no valid scope')
+  })
+
+  test('a Room\'s context publishers are the Resources in its Scope whose operation is marked context, read as the Agent', async () => {
+    const contextId = capabilityIdSchema.parse('world.simulation-run.context')
+    const base = catalogFetch([])
+    const invoked: Array<{ path: string; body: Record<string, unknown> }> = []
+    const lookup = (scope: WorkspaceRoomScope) => createContextPublisherLookup({
+      workspaceId, hostBaseUrl: 'https://host.test', getRoomScope: roomId => roomId === 'room' ? scope : undefined,
+      fetchImpl: (async (input, init) => {
+        const request = input instanceof Request ? new Request(input, init) : new Request(String(input), init)
+        const path = new URL(request.url).pathname
+        if (path.endsWith('/invoke')) {
+          invoked.push({ path, body: await request.json() as Record<string, unknown> })
+          return Response.json({ result: { context: { text: 'Run 01 · PAUSED', at: now, clock: 'simulation' } } })
+        }
+        const response = await base(input, init)
+        if (path.endsWith('/capabilities')) {
+          const body = await response.json() as { capabilities: unknown[] }
+          body.capabilities.push({ id: contextId, moduleId, kind: 'query', scope: { kind: 'resource', resourceType: run.type }, title: 'context', description: 'Run context.', risk: 'read', idempotent: true, publishes: ['context'], inputSchema: { type: 'object' }, outputSchema: { type: 'object' } })
+          return Response.json(body)
+        }
+        if (path.endsWith('/resources')) {
+          const body = await response.json() as { resources: Array<{ ref: typeof run; capabilityIds: string[] }> }
+          for (const resource of body.resources) if (resource.ref.type === run.type) resource.capabilityIds.push(contextId)
+          return Response.json(body)
+        }
+        return response
+      }) as typeof fetch,
+    })
+    expect(await lookup({ kind: 'workspace' }).publishers('room')).toEqual([{ operationId: contextId, resource: run }, { operationId: contextId, resource: otherRun }])
+    expect(await lookup({ kind: 'resource', resource: otherRun }).publishers('room')).toEqual([{ operationId: contextId, resource: otherRun }])
+    expect(await lookup({ kind: 'resource', resource: family }).publishers('room')).toEqual([])
+    const read = await lookup({ kind: 'workspace' }).read({ operationId: contextId, resource: run }, { id: 'agent-1', name: 'Assistant' })
+    expect(read).toEqual({ ok: true, context: { text: 'Run 01 · PAUSED', at: now, clock: 'simulation' } })
+    expect(invoked[0]).toEqual({ path: `/api/workspaces/${workspaceId}/capabilities/${contextId}/invoke`, body: { resource: run, input: {}, actor: { kind: 'ai', id: 'agent-1', displayName: 'Assistant' } } })
+  })
+
+  test('publisher discovery uses the current Room scope after a delayed catalog read', async () => {
+    for (const next of [{ kind: 'resource' as const, resource: otherRun }, undefined]) {
+      let scope: WorkspaceRoomScope | undefined = { kind: 'resource', resource: run }
+      const reached = Promise.withResolvers<void>(), release = Promise.withResolvers<void>()
+      let readers = 0
+      const base = catalogFetch([])
+      const fetchImpl = (async (input, init) => {
+        const path = new URL(String(input)).pathname
+        if (path.endsWith('/resources')) {
+          if (++readers === 2) reached.resolve()
+          await release.promise
+        }
+        const response = await base(input, init)
+        if (!path.endsWith('/capabilities')) return response
+        const body = await response.json() as { capabilities: Array<Record<string, unknown>> }
+        return Response.json({ ...body, capabilities: body.capabilities.map(operation => ({ ...operation,
+          ...(operation.id === readId ? { publishes: ['context'] } : operation.id === writeId ? { publishes: ['embedded-view'] } : {}),
+        })) })
+      }) as typeof fetch
+      const deps = { workspaceId, hostBaseUrl: 'https://host.test', getRoomScope: () => scope, fetchImpl }
+      const contexts = createContextPublisherLookup(deps).publishers('room')
+      const views = createViewPublisherLookup(deps)('room')
+      const outcomes = Promise.allSettled([contexts, views])
+      await reached.promise
+      scope = next
+      release.resolve()
+      if (next === undefined) {
+        const results = await outcomes
+        expect(results.every(result => result.status === 'rejected' && String(result.reason).includes('has no valid scope'))).toBe(true)
+      } else {
+        expect(await contexts).toEqual([{ operationId: readId, resource: otherRun }])
+        expect(await views).toEqual([])
+        await outcomes
+      }
+    }
+  })
+
   test('essential discovery and action semantics reach the actual native model schema', () => {
     const [explore, call] = toolsToDefinitions(makeTools({ kind: 'workspace' }))
     const properties = explore!.function.parameters.properties as Record<string, { description?: string }>
@@ -352,15 +533,95 @@ describe('Workspace progressive-discovery tools', () => {
     expect(standalone).toMatchObject({ success: true, data: { results: [{ viewError: expect.stringContaining('no execution evidence') }] } })
   })
 
+  test('a decision receipt stays actionable while its owner-published evidence locator remains opaque', async () => {
+    const source = { sourceId: 'source-1', sourceRevision: 'revision-1', sourcePath: 'procedures/example.md' }
+    const locator = { runId: 'procedure-1', ...source, eventId: 'event-7', sequence: 7, commandId: 'command-1' }
+    const decision = {
+      run: { runId: 'procedure-1', procedureId: 'example', ...source, scope: { objectId: 'plant:unit-2' } },
+      event: { id: 'event-7', simulationRunId: run.id, seq: 7, runId: 'procedure-1', stepId: '4', branchIndex: 0, target: '5', targetKind: 'step', simulationTime: '2026-01-01T12:00:00.000Z', selectedBy: 'ai', criterionStatus: 'supported' },
+    }
+    const view = { viewType: 'procedure.decision', title: 'Recorded step decision', height: 640, state: JSON.stringify(locator), windowOnly: true }
+    const invocations: string[] = []
+    const receiptFetch = (async (input: Request | string | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? new Request(input, init) : new Request(String(input), init)
+      if (new URL(request.url).pathname.endsWith('/invoke')) {
+        invocations.push(request.url)
+        return Response.json({ result: { ok: true, decision, view } })
+      }
+      return catalogFetch([])(input, init)
+    }) as typeof fetch
+    const [, call] = createWorkspaceCapabilityTools({ workspaceId, hostBaseUrl: 'https://host.test', getRoomScope: () => ({ kind: 'resource', resource: run }), fetchImpl: receiptFetch })
+    const raw = await call!.execute({ calls: [{ key: 'step', operationId: writeId, input: {}, say: 'Step 4 verified' }] }, { ...context, executionCallId: 'call_4_0' })
+    const before = JSON.stringify(raw)
+    const shown = workspaceCallResultForModel(raw, createTurnCards())
+    const [entry] = (shown.data as { results: ReadonlyArray<Record<string, unknown>> }).results
+    expect(entry).toMatchObject({ success: true, data: { ok: true, decision } })
+    expect(entry).not.toHaveProperty('viewRef')
+    expect(entry!.data).not.toHaveProperty('view')
+    const viewRefs = new Set<string>()
+    collectViewRefs(viewRefs, 'workspace_call', raw)
+    expect(viewRefs.size).toBe(0)
+    expect(JSON.stringify(shown.data)).not.toContain('state')
+    expect(JSON.stringify(shown.data)).not.toContain('sequence')
+    expect(JSON.stringify(shown.data)).not.toContain('criterionReadings')
+    expect(JSON.stringify(shown.data)).not.toContain('command-1')
+    expect(entry).not.toHaveProperty('embeddedView')
+    // The Inspector still resolves the exact owner-published view from the
+    // immutable result; Agents does not request its proof while evaluating.
+    expect((raw.data as { results: ReadonlyArray<unknown> }).results[0]).toMatchObject({ embeddedView: { ...view, subject: run, moduleId: 'world' } })
+    expect(JSON.stringify(raw)).toBe(before)
+    expect(invocations).toHaveLength(1)
+    // This diagnostic window is not an answer display. The ordinary loop
+    // must accept its plain answer without a forced view fence or retry.
+    let passes = 0
+    const corrections: unknown[] = []
+    const provider: LLMProvider = {
+      models: async () => ['fixture'],
+      chat: async () => {
+        passes++
+        if (passes > 2) throw new Error('Unexpected extra model round for diagnostic evidence')
+        return passes === 1
+          ? { content: '', generationMs: 0, tokensUsed: { prompt: 1, completion: 1 }, toolCalls: [{ function: { name: 'workspace_call', arguments: { calls: [{ key: 'step', operationId: writeId, input: {} }] } } }] }
+          : { content: 'Step 4 verified; continuing to step 5.', generationMs: 0, tokensUsed: { prompt: 1, completion: 1 } }
+      },
+    }
+    const evaluated = await evaluate({ messages: [{ role: 'user', content: 'Continue the procedure' }], flushInfo: { ids: new Set<string>(), triggerRoomId: 'room' }, warnings: [] },
+      { name: 'Tester', model: 'fixture', persona: 'Run the procedure.' }, provider, async () => [raw], undefined, 'room',
+      { onEvent: event => { if (event.kind === 'correction') corrections.push(event) } })
+    expect(evaluated.decision.response).toEqual({ action: 'respond', content: 'Step 4 verified; continuing to step 5.' })
+    expect(passes).toBe(2)
+    expect(corrections).toEqual([])
+  })
+
+  test('a window-only view (a dashboard\'s board) is kept as evidence a cited line opens, with no viewRef, and the model reads no view (R4 §2.6)', async () => {
+    const board = { viewType: 'display.dashboard', title: 'Whole Run · dashboard', height: 960, state: '{"scope":"run"}', windowOnly: true }
+    const card = { at: { at: '2026-01-01T10:16:00.000Z', clock: 'simulation' }, more: 0, adjusted: [], items: [{ key: 'k1', label: 'Unit One · speed', reading: '93.2 %', numbers: [{ value: 93.2, decimals: 1 }], at: 'Unit One' }] }
+    const boardFetch = (async (input: Request | string | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? new Request(input, init) : new Request(String(input), init)
+      if (new URL(request.url).pathname.endsWith('/invoke')) return Response.json({ result: { scope: 'run', view: board, card } })
+      return catalogFetch([])(input, init)
+    }) as typeof fetch
+    const [, call] = createWorkspaceCapabilityTools({ workspaceId, hostBaseUrl: 'https://host.test', getRoomScope: () => ({ kind: 'resource', resource: run }), fetchImpl: boardFetch })
+    const raw = await call!.execute({ calls: [{ key: 'board', operationId: readId, input: {} }] }, { ...context, executionCallId: 'call_1_0' })
+    const [entry] = (raw.data as { results: ReadonlyArray<Record<string, unknown>> }).results
+    expect(entry).toMatchObject({ key: 'board', embeddedView: { ...board, moduleId: 'world', subject: run } })
+    expect(entry).not.toHaveProperty('viewRef')
+    expect(entry).not.toHaveProperty('viewError')
+    const viewRefs = new Set<string>()
+    collectViewRefs(viewRefs, 'workspace_call', raw)
+    expect(viewRefs.size).toBe(0)
+    const [shown] = (workspaceCallResultForModel(raw, createTurnCards()).data as { results: ReadonlyArray<Record<string, unknown>> }).results
+    expect(shown).toEqual({ key: 'board', operationId: readId, target: runTarget, success: true, data: { scope: 'run', card: ['card at 2026-01-01T10:16:00.000Z (simulation)', 'k1 · Unit One · speed · 93.2 %'] } })
+  })
+
   test('the model reads a view by reference: its opaque state and envelope stay in the execution evidence', async () => {
     const state = JSON.stringify({ composition: { title: 'Pressure', panels: [{ kind: 'trend', signals: ['PZR-P'] }] }, issuedAt: now })
     const view = { viewType: 'process-plant.display', title: 'Pressure', height: 340, state }
-    const viewContent = { items: [{ names: ['PZR-P'], values: [{ value: 15.5, unit: 'MPa' }], limits: [], history: true }], span: null, lead: null }
     const viewFetch = (async (input: Request | string | URL, init?: RequestInit) => {
       const request = input instanceof Request ? new Request(input, init) : new Request(String(input), init)
       if (!new URL(request.url).pathname.endsWith('/invoke')) return catalogFetch([])(input, init)
       const { input: asked } = await request.json() as { input: { display?: true } }
-      return Response.json({ result: asked.display === true ? { view, shows: ['trend'], viewContent } : { state: 'running' } })
+      return Response.json({ result: asked.display === true ? { view, shows: ['trend'] } : { state: 'running' } })
     }) as typeof fetch
     const [, call] = createWorkspaceCapabilityTools({ workspaceId, hostBaseUrl: 'https://host.test', getRoomScope: () => ({ kind: 'resource', resource: run }), fetchImpl: viewFetch })
     const raw = await call!.execute({ calls: [
@@ -369,21 +630,38 @@ describe('Workspace progressive-discovery tools', () => {
       { key: 'refused', operationId: readId, target: { kind: 'resource', ref: otherRun }, input: {} },
     ] }, { ...context, executionCallId: 'call_0_0' })
     const before = JSON.stringify(raw)
-    const shown = workspaceCallResultForModel(raw)
+    const shown = workspaceCallResultForModel(raw, createTurnCards())
     // The raw result, which the execution store and every check read, keeps the view.
     expect(JSON.stringify(raw)).toBe(before)
     expect((raw.data as { results: ReadonlyArray<unknown> }).results[0]).toMatchObject({ embeddedView: { state }, data: { view: { state } } })
     const [display, plain, refused] = (shown.data as { results: ReadonlyArray<Record<string, unknown>> }).results
     expect(display).toEqual({
       key: 'display', operationId: readId, target: runTarget, success: true, viewRef: 'call_0_0/display',
-      data: { view: { viewType: 'process-plant.display', title: 'Pressure', height: 340 }, shows: ['trend'], viewContent },
+      data: { view: { viewType: 'process-plant.display', title: 'Pressure', height: 340 }, shows: ['trend'] },
     })
     expect(JSON.stringify(shown)).not.toContain('composition')
     const [, rawPlain, rawRefused] = (raw.data as { results: ReadonlyArray<Record<string, unknown>> }).results
     expect(plain).toBe(rawPlain)
     expect(refused).toBe(rawRefused)
     const failed = { success: false, error: 'invalid_tool_input: Batch keys must be unique', data: { code: 'invalid_tool_input' } }
-    expect(workspaceCallResultForModel(failed)).toBe(failed)
+    expect(workspaceCallResultForModel(failed, createTurnCards())).toBe(failed)
+  })
+
+  test('a card reads as its lines; each further card of the turn is re-keyed from the last key + 1; a broken card fails loudly', () => {
+    const at = { at: '2026-01-01T10:16:00.000Z', clock: 'simulation' as const }
+    const card = (labels: ReadonlyArray<string>) => ({ at, more: 0, adjusted: [], items: labels.map((label, index) => ({ key: `k${index + 1}`, label, reading: `${index + 1}.0 %`, numbers: [{ value: index + 1, decimals: 1 }] })) })
+    const vignette = (key: string, labels: ReadonlyArray<string>) => ({ key, operationId: readId, success: true, data: { view: { viewType: 'display.vignette', title: 'Loading', height: 240, state: '{}' }, card: card(labels) }, embeddedView: {}, viewRef: `call_0_0/${key}` })
+    const cards = createTurnCards()
+    const first = workspaceCallResultForModel({ success: true, data: { results: [vignette('a', ['Line A · loading', 'Line B · loading'])] } }, cards)
+    const second = workspaceCallResultForModel({ success: true, data: { results: [{ key: 'b', operationId: readId, success: true, data: { card: card(['Reserve']) } }] } }, cards)
+    expect((first.data as { results: ReadonlyArray<unknown> }).results[0]).toEqual({
+      key: 'a', operationId: readId, success: true, viewRef: 'call_0_0/a',
+      data: { view: { viewType: 'display.vignette', title: 'Loading', height: 240 }, card: ['card at 2026-01-01T10:16:00.000Z (simulation)', 'k1 · Line A · loading · 1.0 %', 'k2 · Line B · loading · 2.0 %'] },
+    })
+    expect((second.data as { results: ReadonlyArray<{ data: unknown }> }).results[0]!.data).toEqual({ card: ['card at 2026-01-01T10:16:00.000Z (simulation)', 'k3 · Reserve · 1.0 %'] })
+    // The turn's map holds every line by the key the model read it under.
+    expect(cards.items().map(item => `${item.key} ${item.label}`)).toEqual(['k1 Line A · loading', 'k2 Line B · loading', 'k3 Reserve'])
+    expect(() => workspaceCallResultForModel({ success: true, data: { results: [{ key: 'c', operationId: readId, success: true, data: { card: { items: 'none' } } }] } }, cards)).toThrow()
   })
 
   test('a refusal of input that does not match the schema carries the schema, within a bound', async () => {
@@ -470,12 +748,12 @@ describe('Workspace progressive-discovery tools', () => {
 
     // No execution evidence is needed: a scripted or standalone executor gets the line too.
     const done = await call!.execute({ calls: [{ key: 'step', operationId: writeId, input: {}, say: `  ${line} ` }] }, context)
-    expect(done).toMatchObject({ success: true, data: { results: [{ key: 'step', success: true }] }, progress: [line] })
+    expect(done).toMatchObject({ success: true, data: { results: [{ key: 'step', success: true }] }, progress: [{ content: line, operationKey: 'step' }] })
     // The line is for the person: the Module never receives it, and the model's reading of the result does not repeat it.
     const invoked = requests.filter(request => request.url.includes('/invoke'))
     expect(invoked).toHaveLength(1)
     expect(await invoked[0]!.json()).not.toHaveProperty('say')
-    expect(JSON.stringify(workspaceCallResultForModel(done).data)).not.toContain('BUS-A-EMERG')
+    expect(JSON.stringify(workspaceCallResultForModel(done, createTurnCards()).data)).not.toContain('BUS-A-EMERG')
 
     const refused = await call!.execute({ calls: [{ key: 'step', operationId: writeId, input: { refuse: true }, say: line }] }, context)
     expect(refused).toMatchObject({ success: true, data: { results: [{ success: false, error: expect.stringContaining('simulation_command_rejected') }] } })

@@ -1,0 +1,78 @@
+{
+  "comparison.json": {
+    "bytes": 1645,
+    "sha256": "d1dee1732fd56f2e3a472a821710e8fe9505ee9b6829d32fb52480c88b7e4a48"
+  },
+  "primary-dpr1-canvas-2d-0-strokes.png": {
+    "bytes": 21674,
+    "sha256": "4273d4d522fbf6aab2fa705c80cb3da27a13adf78bfc4a0546a02266353080f5"
+  },
+  "primary-dpr1-canvas-3d-0.75-strokes.png": {
+    "bytes": 156914,
+    "sha256": "c87cb72fe3118240b761acd20afb707b878ccde62f6255ed6b327d3915a27e0b"
+  },
+  "primary-dpr1-map-3d-0.75-strokes.png": {
+    "bytes": 134304,
+    "sha256": "80116719e714b8624a93fc91424d3f4f38d8f60ae5dffc3aacf5e2996b3ec4df"
+  },
+  "primary-dpr1.raw.json": {
+    "bytes": 5594858,
+    "sha256": "52c5893bffde1b04e873d12d3735137e28dd06e89b59edbf95d69983bcd6b304"
+  },
+  "primary-dpr1.summary.json": {
+    "bytes": 430106,
+    "sha256": "332ac3c0260836b7f727cf80805f5e8bade3f7c4e7de1e91d54f336840128c2f"
+  },
+  "primary-dpr2-canvas-2d-0-strokes.png": {
+    "bytes": 50087,
+    "sha256": "2e8113e339639ff5a5cb33169c346d05ed012632415c080f682cc8b0adc70e9c"
+  },
+  "primary-dpr2-canvas-3d-0.75-strokes.png": {
+    "bytes": 385301,
+    "sha256": "5027c86cb78bfc438b030fc5b101e45edc014429fbe79810d01fe18ad3c390d6"
+  },
+  "primary-dpr2-map-3d-0.75-strokes.png": {
+    "bytes": 337432,
+    "sha256": "968c591565312e60b8d709ad943e54588ac0942bf83839ecdfd069458426fc9e"
+  },
+  "primary-dpr2.raw.json": {
+    "bytes": 5609784,
+    "sha256": "aeaae4c8bbf6dbbd1e26ea299f1f53dfc2e412cbcf4fc6f1e35e3d577a22e464"
+  },
+  "primary-dpr2.summary.json": {
+    "bytes": 430130,
+    "sha256": "ae6b3ca167a82f25db4b450978d8baac827e7d3eb21610ebe2936fcff45e3d55"
+  },
+  "real-gap-dpr1-canvas-strokes.png": {
+    "bytes": 53972,
+    "sha256": "8da88fce50480bc84c8aa3ce5dac1c2653ac603d4bcb51095014b988e1fe2168"
+  },
+  "real-gap-dpr1-map-strokes.png": {
+    "bytes": 65426,
+    "sha256": "723bfcaa88483585d7f2ffb6f1626871380e4d1c9bd6d9b0c4d388c8a8595a71"
+  },
+  "real-gap-dpr1.raw.json": {
+    "bytes": 939593,
+    "sha256": "1ae95204c0b43211071996a411caf984336684030ec77366d5e30cb2b3cfa0f1"
+  },
+  "real-gap-dpr1.summary.json": {
+    "bytes": 76931,
+    "sha256": "50da66e2adfafa0eabfe5a12ae57499b041894b33f9ddae86888f7715260de79"
+  },
+  "real-gap-dpr2-canvas-strokes.png": {
+    "bytes": 146278,
+    "sha256": "2beac1a5671bdf783563f441250070eeff6072f7e490d500bfa09739d048fe27"
+  },
+  "real-gap-dpr2-map-strokes.png": {
+    "bytes": 173205,
+    "sha256": "26beb8a196f4dcb075113bb26fe8684acdfeafd00c9780e79c5fdb07ad9f99f5"
+  },
+  "real-gap-dpr2.raw.json": {
+    "bytes": 938659,
+    "sha256": "1db8f46303adbcfe5066dba2a2abd36d62ff7fb0c4e3b4fb2ce22cb7db4144cd"
+  },
+  "real-gap-dpr2.summary.json": {
+    "bytes": 76933,
+    "sha256": "dd83cf2032b8daf8035739aa05169a788bc2ddcb73c4987be0a5221751b8f0c8"
+  }
+}

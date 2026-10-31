@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount, tick, untrack } from 'svelte'
   import {
+    type UiControlsOfferMessage,
     type FeaturedDefinitionCatalog,
     type InspectionView,
     type ModuleCapabilityDescriptor,
@@ -15,6 +16,7 @@
   import JsonTree from './JsonTree.svelte'
   import WikiLink from './WikiLink.svelte'
   import WorkspaceComposer from './WorkspaceComposer.svelte'
+  import ViewControls from './ViewControls.svelte'
   import SimulationRunControls from './SimulationRunControls.svelte'
   import AssistantLauncher from './AssistantLauncher.svelte'
   import RunRoomControls from './RunRoomControls.svelte'
@@ -42,6 +44,7 @@
   import { demosHref, guideHref } from './modal-url.ts'
   import { createWorkspaceAdmin } from './workspace-admin.ts'
   import { errorDiagnostic, plainError, plainErrorText } from './error-text.ts'
+  import { bannerAfterRetract } from './recoverable-error.ts'
   import { createStartRunner, startAnnouncement, type StartState, type StartTarget } from './definition-start.ts'
   import { readFeaturedCatalogue } from './featured-catalogue.ts'
   import { continueItems, featuredStartRevision, openedFromGuide, workspaceDemos, type FeaturedCard } from './workspace-page.ts'
@@ -66,6 +69,8 @@
   const initialSelection = new URLSearchParams(location.search)
   const initialAgentsVisible = initialSelection.get('agents') !== null
   let selectedWorldRunId = $state(initialSelection.get('world'))
+  let uiControlsOffer = $state.raw<UiControlsOfferMessage | null>(null)
+  let workspaceComposer = $state<{ setViewControl: (id: string, visible: boolean) => void } | null>(null)
   let selectedAgentsRoomId = $state(initialSelection.get('agents'))
   let agentsVisible = $state(initialAgentsVisible)
   // A conversation the Getting started guide opened links back to it (plan v2 §2).
@@ -122,8 +127,8 @@
   ].slice(0, 4))
   const pageTitle = $derived(workspacePageTitle({
     workspace: workspace ? workspaceTitle : null,
-    run: selectedWorldResource?.title,
-    room: selectedAgentsResource?.title,
+    run: selectedWorldResource?.title ?? null,
+    room: selectedAgentsResource?.title ?? null,
   }))
 
   /** The Modules' answers to the last Resource read, so Back and Forward can check a restored selection too. */
@@ -625,6 +630,7 @@
       {#if fromGuide}<a class="guide-back" href={guideHref('ask')}>← Getting started</a>{/if}</div>
     <div class="workspace-actions">
       {#if selectedWorldResource}
+        <ViewControls offer={uiControlsOffer?.subject.id === selectedWorldRunId ? uiControlsOffer : null} set={(id, visible) => workspaceComposer?.setViewControl(id, visible)} />
         <SimulationRunControls
           workspaceId={workspace.id}
           resource={selectedWorldResource}
@@ -634,6 +640,7 @@
           onClose={closeWorldRun}
           refreshResources={() => refreshResources(workspace!.id)}
           reportError={message => { error = message }}
+          retractError={message => { error = bannerAfterRetract(error, message) }}
         />
         {#if agentsVisible && selectedRunFamily && !runDeclaresRoles(selectedWorldResource)}
           {@const familyResource = resources.find(resource => resource.ref.type === 'world.run-family' && resource.ref.id === selectedRunFamily.id)}
@@ -654,10 +661,10 @@
       {/if}
       {#if selectedWorldResource}
         {#if !runDeclaresRoles(selectedWorldResource)}
-          <AssistantLauncher disabled={assistantCapability === undefined} toggle={toggleRunAssistant} active={agentsVisible} onError={message => { error = message }} />
+          <AssistantLauncher label={agentsVisible ? 'Assistant' : 'Ask'} disabled={assistantCapability === undefined} toggle={toggleRunAssistant} active={agentsVisible} onError={message => { error = message }} />
         {/if}
       {:else}
-        <AssistantLauncher disabled={assistantCapability === undefined} submit={openAssistant} />
+        <AssistantLauncher label="Ask" disabled={assistantCapability === undefined} submit={openAssistant} />
       {/if}
       <WikiLink />
     </div>
@@ -703,7 +710,7 @@
     {#each catalogFailures as outcome (outcome.moduleId)}{#if outcome.status === 'failed'}<p class="notice error" role="alert">{moduleTitle(outcome.moduleId)}: {outcome.failure.message}</p>{/if}{/each}
     {#if refreshError}<p class="notice error" role="alert">Catalog refresh failed: {refreshError}</p>{/if}
     {#if showingComposer}
-    <WorkspaceComposer workspaceId={workspace.id} worldRunId={selectedWorldRunId} {focusedSubjects} agentsRoomId={selectedAgentsRoomId} {agentsVisible} onShowAgents={showRunAssistant}
+    <WorkspaceComposer bind:this={workspaceComposer} onUiControls={offer => { uiControlsOffer = offer }} workspaceId={workspace.id} worldRunId={selectedWorldRunId} {focusedSubjects} agentsRoomId={selectedAgentsRoomId} {agentsVisible} onShowAgents={showRunAssistant}
       {runRefusal} onOpenRun={runId => switchWorldRun(runId)} {runAssistantAvailable} onOpenRunAssistant={openRunAssistant}
       onError={message => { error = message }} bind:worldPane />
     {#if peopleShown && people && peopleState?.chat}<PeopleChat session={people} chat={peopleState.chat} notice={peopleState.notice} outboxSaved={peopleState.outboxSaved} anchor={worldPane}
@@ -789,18 +796,34 @@
 
   /* A crowded Run bar gives way in order, so nothing overlaps: first the Workspace name
      ellipsises down to four letters, never further, as it is the way back to the Workspace
-     page; then the Run's title; then, at 760 px and below, the Run's controls scroll
-     sideways in their own strip (SimulationRunControls.svelte). The identity never gets
+     page; then the Run and Room titles; fixed controls wrap when they exhaust the
+     available width. At 760 px and below, the Run's core controls wrap
+     in their own strip (SimulationRunControls.svelte). The identity never gets
      narrower than its mark, those letters and the people control (the name's grid column
      has no minimum, so the name adds only its four letters to that), its shrink weight
-     makes it give way before the Run's controls, and no other control in the bar shrinks. */
+     makes it give way before the Run's controls; the Room selector can also shrink
+     while its scope and action buttons retain their size. */
   .workspace-identity { min-width: auto; flex-shrink: 100; }
   .workspace-name { display: grid; grid-template-columns: minmax(0, auto); min-width: 4ch; }
   .workspace-name > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .workspace-actions > :global(:not(.run-controls)) { flex-shrink: 0; }
+  .workspace-bar { height: auto; min-height: 42px; }
+  .workspace-actions { flex-wrap: wrap; }
+  .workspace-actions > :global(:not(.run-controls):not(.run-room-controls)) { flex-shrink: 0; }
+  .workspace-actions > :global(.run-room-controls) { flex: 0 1 auto; }
+  .workspace-actions :global(.run-room-controls select) { min-width: 4ch; flex: 1 1 auto; }
+  .workspace-actions :global(.run-room-controls > :not(select)) { flex-shrink: 0; }
   .guide-back { flex: none; color: #aebbb0; font-size: .78rem; text-decoration: none; white-space: nowrap; }
   .guide-back:hover { color: white; }
   .guide-back:focus-visible { outline: 2px solid var(--lb-focus-on-dark); outline-offset: 2px; border-radius: 4px; }
+  @media (max-width: 760px) {
+    .workspace-bar { height: auto; min-height: 44px; flex-wrap: wrap; gap: 2px; padding: 2px 8px; }
+    .workspace-identity { flex: 1 0 100%; min-width: 0; }
+    .workspace-actions { width: 100%; flex-wrap: wrap; gap: 4px; }
+    .workspace-actions > :global(.run-controls) { flex: 1 1 auto; }
+    .workspace-bar :global(button), .workspace-bar :global(.workspace-actions > a) { min-height: 44px; }
+    .workspace-name { max-width: 42vw; }
+    .guide-back { overflow: hidden; text-overflow: ellipsis; }
+  }
 
   /* Workspace page body (plan v2 §6): 28 px from the bar, sections 36 px apart. */
   main.ws-page { width: 100%; max-width: calc(1200px + 2 * var(--lb-gutter)); margin: 0 auto; padding: 28px var(--lb-gutter) 64px; }

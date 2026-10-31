@@ -5,15 +5,58 @@
   color-scheme: light;
 }
 /* OpenBridge declares Noto Sans, without a fallback, on every element (*).
-   These selectors outrank * wherever the stylesheets load. System faces stand
-   in rather than shipping a 600 KB font into every chat view. */
+   These selectors outrank * wherever the stylesheets load. The embed ships
+   Noto Sans cut to the characters a drawing's text is measured in (about
+   20 kB, vignette/noto-sans.ts); system faces stand in for any other. Components read
+   the family inside their shadow roots through the typography token, resolved
+   at :root before this override applies, so it is re-derived per element too
+   (a vignette's bus label and status words otherwise drew in a serif face). */
 :root, :root * {
   --font-family-main: "Noto Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --global-typography-font-family: var(--font-family-main);
 }
 :root.dark { color-scheme: dark; }
 /* A sideways trackpad swipe over a display scrolls the display, never the
    browser's history (Back/Forward) or the window around the frame. */
 :root { overscroll-behavior-x: none; }
+
+/* Alert colour without unreadable text: display-contrast.test.ts holds every
+   text/background pair below at 4.5:1 or more in the day, dusk and night
+   palettes. A chip or flap names an alert state on the alert colour's fill,
+   in OpenBridge's on-colour for that fill, with the alert colour as its border.
+   Words on a panel's own background that say a value is past a limit are
+   neutral text, bold, marked in the alert colour (an underline, a bar), never
+   written in it: caution yellow on the day background reads 1.27:1. */
+:root {
+  --display-alarm-fill: var(--alert-alarm-color);
+  --display-on-alarm: var(--on-alarm-active-color);
+  --display-warning-fill: var(--alert-warning-color);
+  --display-on-warning: var(--on-warning-active-color);
+  --display-caution-fill: var(--alert-caution-color);
+  --display-on-caution: var(--on-caution-active-color);
+  /* Emergency: OpenBridge's critical magenta. */
+  --display-critical-fill: var(--alert-critical-color);
+  --display-on-critical: var(--on-critical-active-color);
+  --display-alert-text: var(--element-active-color);
+  /* The mark beside such words: caution's darker outline, so a mark also shows on the day background. */
+  --display-alarm-mark: var(--alert-alarm-color);
+  --display-warning-mark: var(--alert-warning-color);
+  --display-caution-mark: var(--alert-caution-outline-color);
+  --display-critical-mark: var(--alert-critical-color);
+}
+/* Night keeps dark adaptation: its alert fills are too dark for any text it
+   allows, so its chips are outlined in the alert colour on the panel's own
+   background, their text the palette's own. */
+:root[data-obc-theme="night"] {
+  --display-alarm-fill: var(--container-background-color);
+  --display-on-alarm: var(--element-active-color);
+  --display-warning-fill: var(--container-background-color);
+  --display-on-warning: var(--element-active-color);
+  --display-caution-fill: var(--container-background-color);
+  --display-on-caution: var(--element-active-color);
+  --display-critical-fill: var(--container-background-color);
+  --display-on-critical: var(--element-active-color);
+}
 
 * { box-sizing: border-box; }
 

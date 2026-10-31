@@ -21,6 +21,20 @@ export const comparisonRoutes:RouteEntry[] = [
   {method:'GET',pattern:new RegExp(`${path}/([^/]+)$`),handler:async(_req,m,{system})=>{
     try{return json(await system.comparisons.detail(decodeURIComponent(m[1]!),decodeURIComponent(m[2]!),decodeURIComponent(m[3]!)))}catch(e){return failed(e)}
   }},
+  {method:'GET',pattern:new RegExp(`${path}/([^/]+)/models/([^/]+)$`),handler:async(req,m,{system})=>{
+    try{
+      const sensitive=new URL(req.url).searchParams.get('sensitive')
+      if(sensitive!==null&&sensitive!=='1')return errorResponse('Sensitive protocol disclosure requires sensitive=1')
+      const model=await system.comparisons.model(decodeURIComponent(m[1]!),decodeURIComponent(m[2]!),decodeURIComponent(m[3]!),decodeURIComponent(m[4]!),sensitive==='1')
+      return model?json(model):errorResponse('Comparison model call not found',404)
+    }catch(e){return failed(e)}
+  }},
+  {method:'GET',pattern:new RegExp(`${path}/([^/]+)/calls/([^/]+)$`),handler:async(_req,m,{system})=>{
+    try{
+      const call=await system.comparisons.call(decodeURIComponent(m[1]!),decodeURIComponent(m[2]!),decodeURIComponent(m[3]!),decodeURIComponent(m[4]!))
+      return call?json(call):errorResponse('Comparison tool call not found',404)
+    }catch(e){return failed(e)}
+  }},
   {method:'DELETE',pattern:new RegExp(`${path}/([^/]+)$`),handler:async(_req,m,{system})=>{
     try{return json(await system.comparisons.remove(decodeURIComponent(m[1]!),decodeURIComponent(m[2]!),decodeURIComponent(m[3]!)))}catch(e){return failed(e)}
   }},

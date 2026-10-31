@@ -1,12 +1,13 @@
 import { semanticVersionSchema,type WorkspaceId } from '@leitbild/contracts'
 import { createOperationScope, createStorageBudget, type StorageBudget } from '@leitbild/module-runtime'
 import { createCaptureAdmission } from '../../features/historian/capture-admission.ts'
+import { readDashboards, writeDashboards, type DashboardFile } from '../../features/displays/dashboards/store.ts'
 import { lstat,readdir,rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z,ZodError } from 'zod'
 import { openRunHistorian, recordedHistoryOf } from '../../features/historian/store.ts'
 import { createProcedureSourceService,type ProcedureSourceService } from '../../features/procedures/source.ts'
-import { capabilityJsonSchema } from '../../simulation/capabilities.ts'
+import { capabilityJsonSchema, isPublicCapability } from '../../simulation/capabilities.ts'
 import { worldCoreCapabilities } from '../../simulation/core-capabilities.ts'
 import type { PackRuntimeAdapter, PackWorkspaceCapability } from '../../simulation/protocol.ts'
 import { createRuntimeHub } from '../../simulation/runtime-hub.ts'
@@ -114,6 +115,8 @@ export interface SimulationRunRegistry {
   readonly workspaceCapabilities: ReadonlyArray<PackWorkspaceCapability>
   readonly create: (config: { readonly scenarioId: string; readonly scenarioRevisionId?: ScenarioRevisionId }) => Promise<SimulationRunRuntime>
   readonly copy: (sourceId: SimulationRunId, input: { readonly name?: string }) => Promise<SimulationRunRuntime>
+  /** Whether this loaded Run advances, including a running maximum-pace job over its paused realtime clock. */
+  readonly isAdvancing: (id: SimulationRunId) => boolean
   readonly executionStatus: (id: SimulationRunId) => Promise<RunExecutionState>
   readonly executionOverview: (id: SimulationRunId) => Promise<RunExecutionState>
   readonly setExecution: (id: SimulationRunId, input: ExecutionSetInput) => Promise<RunExecutionState>
@@ -131,6 +134,8 @@ export interface SimulationRunRegistry {
   readonly reset: (id: SimulationRunId) => Promise<SimulationRunRuntime>
   readonly delete: (id: SimulationRunId) => Promise<boolean>
   readonly rename: (id: SimulationRunId, name: string | null, expectedTitle: string) => Promise<SimulationRunSummary>
+  /** The Run's stored dashboards (runs/<id>/dashboards.json): read when asked, never on load; a change is one step of the Run's lifecycle. */
+  readonly dashboards: (id: SimulationRunId) => DashboardFile
   readonly get: (id: SimulationRunId) => SimulationRunRuntime | undefined
   readonly list: () => ReadonlyArray<SimulationRunRuntime>
   readonly listKnown: () => Promise<ReadonlyArray<SimulationRunSummary>>
@@ -257,7 +262,7 @@ export const createSimulationRunRegistry = (config: {
   const capabilityIdsForRuntimeIds = (runtimeIds: ReadonlyArray<string>): ReadonlyArray<string> => {
     const activeRuntimeIds = new Set(runtimeIds)
     return [...new Set(installedCapabilities
-      .filter(entry => entry.runtimeId === 'world.core' || activeRuntimeIds.has(entry.runtimeId))
+      .filter(entry => isPublicCapability(entry.capability) && (entry.runtimeId === 'world.core' || activeRuntimeIds.has(entry.runtimeId)))
       .map(entry => entry.capability.id))].sort()
   }
 
@@ -365,7 +370,7 @@ export const createSimulationRunRegistry = (config: {
         packId: 'world',
         runtimeId: 'world.core',
       })),
-      ...activeAdapters.flatMap(adapter => adapter.capabilities.map(capability => ({
+      ...activeAdapters.flatMap(adapter => adapter.capabilities.filter(isPublicCapability).map(capability => ({
         id: capability.id,
         kind: capability.kind,
         title: capability.title,
@@ -673,6 +678,7 @@ export const createSimulationRunRegistry = (config: {
         roleAwarePackIds: scenarioRuntime.packs.flatMap(pack => pack.roleAware === true ? [pack.descriptor.id] : []),
         procedureSourceService,
         procedureProvider: object => scenarioRuntime.packs.find(pack => pack.descriptor.id === object.packId)?.procedures,
+        packs: scenarioRuntime.packs,
         runtimeStateLoaders: Object.fromEntries(Object.entries(runtimeStateStores).map(([runtimeId, store]) => [runtimeId, store.load])),
         ...(historian === undefined ? {} : { historian }),
       })
@@ -1003,6 +1009,9 @@ export const createSimulationRunRegistry = (config: {
         }
         const sourceSummary = await summaryFor(sourceId)
         await writeRunDisplayName(join(simulationRunRoot, id, 'display-name.json'), input.name ?? `${sourceSummary.title} - copy ${copyNumber}`)
+        // A copy holds the source's dashboards as they stand (A4).
+        const dashboards = await readDashboards(join(simulationRunRoot, sourceId, 'dashboards.json'))
+        if (dashboards.dashboards.length > 0) await writeDashboards(join(simulationRunRoot, id, 'dashboards.json'), dashboards)
       })
       return await createRuntime({ manifest })
     })
@@ -1291,6 +1300,11 @@ export const createSimulationRunRegistry = (config: {
     workspaceCapabilities: config.runtimeAdapters.flatMap(adapter => adapter.workspaceCapabilities ?? []),
     create,
     copy: copyRun,
+    isAdvancing: id => {
+      const runtime = simulationRuns.get(id)
+      if (!runtime) throw new Error(`Simulation Run is not loaded: ${id}`)
+      return advances(id, runtime)
+    },
     executionStatus,
     executionOverview,
     setExecution,
@@ -1300,6 +1314,17 @@ export const createSimulationRunRegistry = (config: {
     reset,
     delete: deleteSimulationRun,
     rename: renameRun,
+    dashboards: id => {
+      const path = join(simulationRunRoot, id, 'dashboards.json')
+      return {
+        read: () => readDashboards(path),
+        change: apply => lifecycle.run(id, async () => {
+          const { next, result } = apply(await readDashboards(path))
+          if (next !== undefined) await writeDashboards(path, next)
+          return result
+        }),
+      }
+    },
     get: (id: SimulationRunId) => simulationRuns.get(id),
     list: () => [...simulationRuns.values()],
     listKnown,

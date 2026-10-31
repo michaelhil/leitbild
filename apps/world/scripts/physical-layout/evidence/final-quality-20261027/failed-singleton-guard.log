@@ -1,0 +1,11 @@
+19 | const layout = scenario.initialObjects.find(object => object.id === 'layout:halden-1')!
+20 | const descriptor = describePhysicalLayoutScene(layout, scenario.initialObjects)!, scene = await loadPhysicalLayoutScene(layout)
+21 | if (!descriptor?.locationValid) throw Error('The admitted physical scene has no valid placement')
+22 | const painterFile = join(root, 'src/ui/physical-layout/plan-drawing.ts'), painterSource = await readFile(painterFile, 'utf8')
+23 | const batched = 'stream = compilePhysicalPlanPaint(primitives, objects, pathFor)', ordered = 'stream = primitives.flatMap(primitive => compilePhysicalPlanPaint([primitive], objects, pathFor))'
+24 | if (!painterSource.includes(batched)) throw Error('The independent Plan stream reference no longer matches the production compilation boundary')
+                                                 ^
+error: The independent Plan stream reference no longer matches the production compilation boundary
+      at /Users/hilde/Documents/ChatGPT/Leitbild-campus-integration/apps/world/scripts/physical-layout/plan-raster-comparison-probe.ts:24:45
+
+Bun v1.4.0 (macOS arm64)

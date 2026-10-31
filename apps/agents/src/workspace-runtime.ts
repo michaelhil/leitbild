@@ -5,6 +5,7 @@
 // starting a process. The executable entrypoint lives in main.ts.
 // ============================================================================
 
+import { createProcedureResumes, createProcedureResumeReader, type ProcedureResumes } from './agents/procedure-resumes.ts'
 import type { Agent, AIAgent, AIAgentConfig, RouteMessage, Team } from './core/types/agent.ts'
 import type { DeliverFn, ResolveAgentName, ResolveTagFn } from './core/types/messaging.ts'
 import type {
@@ -60,6 +61,8 @@ import {
   createPostToRoomTool, createGetRoomHistoryTool, createConversationReadTool,
   createRecallTool,
   createQueryDocumentsTool,
+  createContextPublisherLookup,
+  createViewPublisherLookup,
   createWorkspaceCapabilityTools,
 } from './tools/built-in/index.ts'
 import { createBiometricsTools, BIOMETRICS_PACK_NAMESPACE } from './tools/built-in/biometric-tools.ts'
@@ -72,7 +75,8 @@ import { createDocumentManager, type DocumentManager } from './documents/manager
 import type { DocumentMetadata } from './documents/types.ts'
 import { dirname, join } from 'node:path'
 import { createComparisons } from './agents/comparisons.ts'
-import { requestDisplay } from './agents/display-requests.ts'
+import { createRunContextFetcher } from './agents/run-context.ts'
+import { displayRequestOffered, requestDisplay, type DisplayRequestDeps } from './agents/display-requests.ts'
 import { createProposalCardReader, proposedOperationsOf, type ProposalCard } from './agents/proposal-cards.ts'
 import { createProposalResumes, type ProposalResumes } from './agents/proposal-resumes.ts'
 import type { DisplayRequestAccepted } from './core/display-request.ts'
@@ -185,14 +189,17 @@ export interface AgentsWorkspaceRuntime {
   // Manual-mode activation: catch the agent up and force one eval.
   readonly activateAgentInRoom: (agentId: string, roomId: string) => { ok: boolean; queued: boolean; reason?: string }
   // Asks the author of an answer to show it as a live display (see
-  // core/display-request.ts). Throws DisplayRequestRefusal naming the rule.
-  readonly requestDisplay: (roomId: string, messageId: string, requesterId: string) => DisplayRequestAccepted
+  // core/display-request.ts). Rejects with DisplayRequestRefusal naming the rule.
+  readonly requestDisplay: (roomId: string, messageId: string, requesterId: string) => Promise<DisplayRequestAccepted>
+  // Whether an Agent's answers in a Room offer that request: its Scope reaches an operation that publishes a display.
+  readonly displayRequestOffered: (roomId: string, agentId: string) => Promise<boolean>
   // The operations a turn proposed and where World says each stands now (agents/proposal-cards.ts).
   // Throws with a code where the Room, the turn or the Workspace Host is missing.
   readonly readProposalCards: (roomId: string, turnId: string) => Promise<ReadonlyArray<ProposalCard>>
   // Watches the proposals of procedure turns and resumes their agent once one is approved
   // (agents/proposal-resumes.ts). Absent without a Workspace Host; disposed with the runtime.
   readonly proposalResumes?: ProposalResumes
+  readonly procedureResumes?: ProcedureResumes
   readonly setOnMessagePosted: (callback: OnMessagePosted) => void
   readonly setOnTurnChanged: (callback: OnTurnChanged) => void
   readonly setOnDeliveryModeChanged: (callback: OnDeliveryModeChanged) => void
@@ -838,16 +845,47 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
       ? undefined
       : createProposalResumes({ rooms, team, executions: executionStore, readStatus: proposalCards.read })
 
+    const procedureResumes = options.workspaceId !== undefined && options.workspaceHostUrl !== undefined
+      ? createProcedureResumes({ rooms, team, executions: executionStore,
+          reader: createProcedureResumeReader({ workspaceId: options.workspaceId, hostBaseUrl: options.workspaceHostUrl }) })
+      : undefined
+
+    // "Show display" is offered where a Room's Scope reaches an operation whose
+    // Module declares that it publishes a display, asked of the same Host.
+    const displayRequestDeps: DisplayRequestDeps = {
+      rooms,
+      team,
+      isScriptRunning: roomId => scriptRunnerRef?.getRun(roomId) !== undefined,
+      viewPublishers: options.workspaceId !== undefined && options.workspaceHostUrl !== undefined
+        ? createViewPublisherLookup({
+            workspaceId: options.workspaceId,
+            hostBaseUrl: options.workspaceHostUrl,
+            getRoomScope: roomId => rooms.getRoom(roomId)?.profile.scope,
+          })
+        : undefined,
+    }
+
+    // Each turn reads its Room Scope's Run context through the same Host (agents/run-context.ts).
+    const fetchRunContext = options.workspaceId !== undefined && options.workspaceHostUrl !== undefined
+      ? createRunContextFetcher(createContextPublisherLookup({
+          workspaceId: options.workspaceId,
+          hostBaseUrl: options.workspaceHostUrl,
+          getRoomScope: roomId => rooms.getRoom(roomId)?.profile.scope,
+        }))
+      : undefined
+
     const runToolOperation = options.runWorkspaceOperation
     const boundSpawnAIAgent = (config: AIAgentConfig, options?: SpawnOptions) =>
       spawnAIAgent(config, llmService, rooms, settings, team, routeMessage, toolRegistry, {
         ...options,
         executionStore,
         executionGrowth,
+        ...(fetchRunContext ? { fetchRunContext } : {}),
         onTurnStart: comparisons.capture,
         onTurnMessageLinked: input => {
           // Absent without a Workspace Host (see proposalResumes above).
           proposalResumes?.answered(input)
+          procedureResumes?.answered(input)
           comparisons.link(input)
         },
         onTurnFinished: comparisons.discard,
@@ -1041,9 +1079,9 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
         return await proposalCards.read(operations, { id: turn.agentId, name: team.getAgent(turn.agentId)?.name ?? turn.agentId })
       },
       ...(proposalResumes === undefined ? {} : { proposalResumes }),
-      requestDisplay: (roomId, messageId, requesterId) => requestDisplay({
-        rooms, team, isScriptRunning: roomId => scriptRunnerRef?.getRun(roomId) !== undefined,
-      }, roomId, messageId, requesterId),
+      ...(procedureResumes === undefined ? {} : { procedureResumes }),
+      requestDisplay: (roomId, messageId, requesterId) => requestDisplay(displayRequestDeps, roomId, messageId, requesterId),
+      displayRequestOffered: (roomId, agentId) => displayRequestOffered(displayRequestDeps, roomId, agentId),
       setOnMessagePosted: messagePosted.set,
       setOnMessagesRemoved: messagesRemoved.set,
       setOnTurnChanged: turnChanged.set,

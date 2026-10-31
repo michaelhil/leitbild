@@ -1,5 +1,6 @@
 /** Format data only. Reading these declarations never evaluates or executes them. */
 import type { ProcedureAssessment } from './assessment.ts'
+import type { ProcedureDecision } from './decisions.ts'
 export interface ProcedureTextBlock {
   readonly kind: 'check' | 'action' | 'expected' | 'rno' | 'unknown' | 'basis' | 'decision' | 'when' | 'until' | 'abort-if' | 'abort-to' | 'within' | 'concurrent' | 'caution' | 'note' | 'because' | 'against' | 'text'
   readonly text: string
@@ -35,6 +36,8 @@ export interface ProcedureStep {
   readonly sourceEndLine: number
   /** Engineering criteria; no live binding or automatic execution is implied. */
   readonly assessment?: ProcedureAssessment
+  /** Explicit eligibility for source-ordered branches; absent branches are unestablished. */
+  readonly decisions?: ReadonlyArray<ProcedureDecision>
   /** A read-only owning-Pack query; this document never executes equipment commands. */
   readonly observation?: {
     readonly capabilityId: string

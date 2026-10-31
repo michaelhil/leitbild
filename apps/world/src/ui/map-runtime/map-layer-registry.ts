@@ -4,7 +4,7 @@ import type { PackMapAppearance, PackReferenceDatasetStyle } from '../../core/pa
 import type { MapErrorClaim, RenderPhase } from './types.ts'
 import { createReferenceDataController, type ReferenceDatasetController } from '../map/reference-data-controller.ts'
 import { createPackLayerGroupControllerFromGroups, type PackLayerGroupController } from '../map/pack-layer-group-controller.ts'
-import { referenceLayerAnchorId } from './reference-layer-order.ts'
+import { orderedMapStyle, referenceLayerAnchorId } from './reference-layer-order.ts'
 
 export interface MapLayerRegistration {
   readonly phase: RenderPhase
@@ -52,7 +52,7 @@ export const createMapLayerRegistry = (): MapLayerRegistry => {
         map: config.map,
         styles: config.styles,
         appearance: config.appearance,
-        beforeLayerId: () => referenceLayerAnchorId(config.map.getStyle()),
+        beforeLayerId: () => referenceLayerAnchorId(orderedMapStyle(config.map)),
         ...(config.logger === undefined ? {} : { logger: config.logger }),
         onBuildRecoveryFailed: config.onError,
         claimErrors: config.claimErrors,

@@ -1,0 +1,1418 @@
+{
+  "appCommit": "b7d8a928869bdfdc76fab0cb00d0c1222e1f8cde",
+  "rawFiles": {
+    "native-phase-opaque-dpr1": {
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261027/final-r5/native-phase-opaque-dpr1/receipt.json",
+      "sha256": "30a67c1b7da8aa5eb6f5ca346dde41b91cd7dd290ba4561f527e3ef28e98678a",
+      "bytes": 68875
+    },
+    "native-phase-fractional-dpr1": {
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261027/final-r5/native-phase-fractional-dpr1/receipt.json",
+      "sha256": "bcadd00f2cf9279a2276c10ce46f010f9dc26debd1a228352573130295cc39ad",
+      "bytes": 116828
+    },
+    "partial.json": {
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261027/final-r5/native-phase-fractional-gpu-cpu-dpr1/partial.json",
+      "sha256": "6f1a6f2ddc467218cf7779d2005acb5e3cfee06ca94920b780e4821239784c32",
+      "bytes": 95216
+    },
+    "map-site-3d-fractional-paused.cpuprofile": {
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261027/final-r5/native-phase-fractional-gpu-cpu-dpr1/map-site-3d-fractional-paused.cpuprofile",
+      "sha256": "132b577bc5e983bee8463fb5bb8d60c1a1128893295345ef7b40bf2d461a7c43",
+      "bytes": 246479
+    }
+  },
+  "ordinary": [
+    {
+      "name": "map-site-3d-paused",
+      "playing": false,
+      "frames": 243,
+      "rafMedianMs": 16.69999999999891,
+      "rafP95Ms": 16.799999999999272,
+      "rafMaxMs": 33.399999999999636,
+      "durationMs": 4096.099999904633,
+      "windowStarted": 8332.299999952316,
+      "longTasks": [],
+      "baseDraws": {
+        "calls": 976,
+        "triangleVertices": 767923632,
+        "lineVertices": 122283144
+      },
+      "orderedDraws": {
+        "calls": 0,
+        "indices": 0,
+        "firstAt": null,
+        "lastAt": null
+      },
+      "physicalDraws": [
+        {
+          "key": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\",\"utility-routes\"]}]",
+          "instances": 4,
+          "lastAt": 12423.700000047684
+        },
+        {
+          "key": "physical-layout/91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933/[\"3d\",\"all\",true,0,{\"layers\":[\"utility-routes\"]}]",
+          "instances": 1,
+          "lastAt": 12423.700000047684
+        }
+      ],
+      "pending": 0,
+      "bspPending": 0,
+      "metricDelta": {
+        "ScriptDuration": 2.6819889999999997,
+        "ThreadTime": 3.1891839999999996,
+        "TaskDuration": 3.2616350000000005,
+        "TaskOtherDuration": 0.514294
+      }
+    },
+    {
+      "name": "map-site-3d-playing",
+      "playing": true,
+      "frames": 237,
+      "rafMedianMs": 16.69999999999891,
+      "rafP95Ms": 16.799999999999272,
+      "rafMaxMs": 33.400000000001455,
+      "durationMs": 4031.399999856949,
+      "windowStarted": 12737.5,
+      "longTasks": [],
+      "baseDraws": {
+        "calls": 952,
+        "triangleVertices": 749046990,
+        "lineVertices": 119277788
+      },
+      "orderedDraws": {
+        "calls": 0,
+        "indices": 0,
+        "firstAt": null,
+        "lastAt": null
+      },
+      "physicalDraws": [
+        {
+          "key": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\",\"utility-routes\"]}]",
+          "instances": 4,
+          "lastAt": 16759.200000047684
+        },
+        {
+          "key": "physical-layout/91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933/[\"3d\",\"all\",true,0,{\"layers\":[\"utility-routes\"]}]",
+          "instances": 1,
+          "lastAt": 16759.200000047684
+        }
+      ],
+      "pending": 0,
+      "bspPending": 0,
+      "metricDelta": {
+        "ScriptDuration": 2.6526330000000002,
+        "ThreadTime": 3.1015189999999997,
+        "TaskDuration": 3.1685560000000006,
+        "TaskOtherDuration": 0.439238
+      }
+    }
+  ],
+  "fractional": [
+    {
+      "name": "map-site-3d-fractional-paused",
+      "playing": false,
+      "frames": 41,
+      "rafMedianMs": 66.69999999999709,
+      "rafP95Ms": 749.9000000000015,
+      "rafMaxMs": 1416.5,
+      "durationMs": 8127.200000047684,
+      "windowStarted": 16018.399999856949,
+      "longTasks": [
+        {
+          "start": 16106.099999904633,
+          "duration": 77
+        },
+        {
+          "start": 16185.299999952316,
+          "duration": 308
+        },
+        {
+          "start": 16663.89999985695,
+          "duration": 87
+        },
+        {
+          "start": 16751.599999904633,
+          "duration": 287
+        },
+        {
+          "start": 17039.39999985695,
+          "duration": 104
+        },
+        {
+          "start": 17174.5,
+          "duration": 66
+        },
+        {
+          "start": 17348.599999904633,
+          "duration": 1356
+        },
+        {
+          "start": 18775.39999985695,
+          "duration": 647
+        },
+        {
+          "start": 19530.39999985695,
+          "duration": 56
+        },
+        {
+          "start": 19706.89999985695,
+          "duration": 163
+        },
+        {
+          "start": 19877.799999952316,
+          "duration": 105
+        },
+        {
+          "start": 20247.599999904633,
+          "duration": 720
+        },
+        {
+          "start": 21080.199999809265,
+          "duration": 276
+        },
+        {
+          "start": 21426.699999809265,
+          "duration": 75
+        },
+        {
+          "start": 21508.39999985695,
+          "duration": 253
+        },
+        {
+          "start": 21772.699999809265,
+          "duration": 112
+        },
+        {
+          "start": 21903.099999904633,
+          "duration": 585
+        },
+        {
+          "start": 22595.599999904633,
+          "duration": 56
+        },
+        {
+          "start": 22756.199999809265,
+          "duration": 55
+        },
+        {
+          "start": 22813.299999952316,
+          "duration": 96
+        },
+        {
+          "start": 22921.099999904633,
+          "duration": 995
+        },
+        {
+          "start": 23918.39999985695,
+          "duration": 72
+        }
+      ],
+      "baseDraws": {
+        "calls": 104,
+        "triangleVertices": 77879136,
+        "lineVertices": 11940500
+      },
+      "orderedDraws": {
+        "calls": 53152,
+        "indices": 5333930,
+        "firstAt": 16711.099999904633,
+        "lastAt": 24033.199999809265
+      },
+      "physicalDraws": [
+        {
+          "key": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\",\"utility-routes\"]}]",
+          "instances": 4,
+          "lastAt": 24028.39999985695
+        },
+        {
+          "key": "physical-layout/91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933/[\"3d\",\"all\",true,0,{\"layers\":[\"utility-routes\"]}]",
+          "instances": 1,
+          "lastAt": 24028.39999985695
+        }
+      ],
+      "pending": 0,
+      "bspPending": 0,
+      "metricDelta": {
+        "ScriptDuration": 5.885719,
+        "ThreadTime": 2.1764639999999997,
+        "TaskDuration": 8.34666,
+        "TaskOtherDuration": 2.1567779999999996
+      }
+    },
+    {
+      "name": "map-site-3d-fractional-playing",
+      "playing": true,
+      "frames": 43,
+      "rafMedianMs": 16.799999999999272,
+      "rafP95Ms": 716.5,
+      "rafMaxMs": 2000,
+      "durationMs": 6336.099999904633,
+      "windowStarted": 30787.5,
+      "longTasks": [
+        {
+          "start": 30616.39999985695,
+          "duration": 95
+        },
+        {
+          "start": 30789.599999904633,
+          "duration": 57
+        },
+        {
+          "start": 31212.89999985695,
+          "duration": 110
+        },
+        {
+          "start": 31323.5,
+          "duration": 57
+        },
+        {
+          "start": 31739.89999985695,
+          "duration": 788
+        },
+        {
+          "start": 32529.599999904633,
+          "duration": 149
+        },
+        {
+          "start": 32679.099999904633,
+          "duration": 90
+        },
+        {
+          "start": 32934.09999990463,
+          "duration": 78
+        },
+        {
+          "start": 33013.199999809265,
+          "duration": 427
+        },
+        {
+          "start": 33506.39999985695,
+          "duration": 131
+        },
+        {
+          "start": 33647.699999809265,
+          "duration": 326
+        },
+        {
+          "start": 34083.699999809265,
+          "duration": 91
+        },
+        {
+          "start": 34481.299999952316,
+          "duration": 1075
+        },
+        {
+          "start": 35615.5,
+          "duration": 71
+        },
+        {
+          "start": 35773.199999809265,
+          "duration": 91
+        },
+        {
+          "start": 35886.5,
+          "duration": 244
+        },
+        {
+          "start": 36142.199999809265,
+          "duration": 74
+        },
+        {
+          "start": 36299,
+          "duration": 195
+        },
+        {
+          "start": 36830.299999952316,
+          "duration": 62
+        }
+      ],
+      "baseDraws": {
+        "calls": 92,
+        "triangleVertices": 68901888,
+        "lineVertices": 10562750
+      },
+      "orderedDraws": {
+        "calls": 47306,
+        "indices": 4731545,
+        "firstAt": 31194.599999904633,
+        "lastAt": 37081.799999952316
+      },
+      "physicalDraws": [
+        {
+          "key": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\",\"utility-routes\"]}]",
+          "instances": 4,
+          "lastAt": 37066.5
+        },
+        {
+          "key": "physical-layout/91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933/[\"3d\",\"all\",true,0,{\"layers\":[\"utility-routes\"]}]",
+          "instances": 1,
+          "lastAt": 37066.5
+        }
+      ],
+      "pending": 0,
+      "bspPending": 0,
+      "metricDelta": {
+        "ScriptDuration": 4.171323000000001,
+        "ThreadTime": 1.2324070000000003,
+        "TaskDuration": 5.3650839999999995,
+        "TaskOtherDuration": 1.0522870000000006
+      }
+    },
+    {
+      "name": "map-room-3d-fractional-paused",
+      "playing": false,
+      "frames": 242,
+      "rafMedianMs": 16.69999999999709,
+      "rafP95Ms": 16.700000000004366,
+      "rafMaxMs": 16.80000000000291,
+      "durationMs": 4045.2000000476837,
+      "windowStarted": 62023.299999952316,
+      "longTasks": [],
+      "baseDraws": {
+        "calls": 478,
+        "triangleVertices": 13619415,
+        "lineVertices": 3292464
+      },
+      "orderedDraws": {
+        "calls": 717,
+        "indices": 1324060,
+        "firstAt": 62037.299999952316,
+        "lastAt": 66064.19999980927
+      },
+      "physicalDraws": [
+        {
+          "key": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/[\"3d\",\"operating\",true,0,\"area/turbine-island\",{\"layers\":[\"plan-allowances\",\"utility-routes\"]}]",
+          "instances": 1,
+          "lastAt": 66064.09999990463
+        }
+      ],
+      "pending": 0,
+      "bspPending": 0,
+      "metricDelta": {
+        "ScriptDuration": 0.9522890000000004,
+        "ThreadTime": 1.3005579999999988,
+        "TaskDuration": 1.3365050000000025,
+        "TaskOtherDuration": 0.3277600000000014
+      }
+    },
+    {
+      "name": "map-room-3d-fractional-playing",
+      "playing": true,
+      "frames": 242,
+      "rafMedianMs": 16.69999999999709,
+      "rafP95Ms": 16.79999999998836,
+      "rafMaxMs": 16.80000000000291,
+      "durationMs": 4048.7000000476837,
+      "windowStarted": 66685.79999995232,
+      "longTasks": [],
+      "baseDraws": {
+        "calls": 478,
+        "triangleVertices": 13619415,
+        "lineVertices": 3292464
+      },
+      "orderedDraws": {
+        "calls": 717,
+        "indices": 1324060,
+        "firstAt": 66697.39999985695,
+        "lastAt": 70730.89999985695
+      },
+      "physicalDraws": [
+        {
+          "key": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9/[\"3d\",\"operating\",true,0,\"area/turbine-island\",{\"layers\":[\"plan-allowances\",\"utility-routes\"]}]",
+          "instances": 1,
+          "lastAt": 70730.79999995232
+        }
+      ],
+      "pending": 0,
+      "bspPending": 0,
+      "metricDelta": {
+        "ScriptDuration": 0.9340159999999997,
+        "ThreadTime": 1.2585130000000007,
+        "TaskDuration": 1.2926889999999958,
+        "TaskOtherDuration": 0.3020840000000007
+      }
+    }
+  ],
+  "diagnostic": {
+    "diagnosticOnly": true,
+    "sampleMs": 5074.178,
+    "self": [
+      {
+        "ms": 1037.176,
+        "function": "(program)",
+        "url": "",
+        "line": 0,
+        "column": 0,
+        "node": 2
+      },
+      {
+        "ms": 381.941,
+        "function": "(idle)",
+        "url": "",
+        "line": 0,
+        "column": 0,
+        "node": 4
+      },
+      {
+        "ms": 276.59,
+        "function": "On",
+        "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-C5PfJ0wZ.js",
+        "line": 105,
+        "column": 37261,
+        "node": 483
+      },
+      {
+        "ms": 203.447,
+        "function": "(garbage collector)",
+        "url": "",
+        "line": 0,
+        "column": 0,
+        "node": 347
+      },
+      {
+        "ms": 184.962,
+        "function": "draw",
+        "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-C5PfJ0wZ.js",
+        "line": 105,
+        "column": 18180,
+        "node": 287
+      },
+      {
+        "ms": 141.561,
+        "function": "Vt",
+        "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-C5PfJ0wZ.js",
+        "line": 105,
+        "column": 11734,
+        "node": 358
+      },
+      {
+        "ms": 116.585,
+        "function": "_",
+        "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-C5PfJ0wZ.js",
+        "line": 105,
+        "column": 14911,
+        "node": 289
+      },
+      {
+        "ms": 100.3,
+        "function": "",
+        "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-C5PfJ0wZ.js",
+        "line": 105,
+        "column": 18680,
+        "node": 288
+      },
+      {
+        "ms": 87.549,
+        "function": "",
+        "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-C5PfJ0wZ.js",
+        "line": 2,
+        "column": 9619,
+        "node": 749
+      },
+      {
+        "ms": 83.331,
+        "function": "Ue",
+        "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-C5PfJ0wZ.js",
+        "line": 2,
+        "column": 6136,
+        "node": 345
+      },
+      {
+        "ms": 74.225,
+        "function": "get",
+        "url": "http://127.0.0.1:43148/assets/world/svelte-Dp-C2IIQ.js",
+        "line": 2,
+        "column": 14173,
+        "node": 505
+      },
+      {
+        "ms": 63.021,
+        "function": "Ue",
+        "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-C5PfJ0wZ.js",
+        "line": 2,
+        "column": 6136,
+        "node": 350
+      },
+      {
+        "ms": 58.176,
+        "function": "getShaderParameter",
+        "url": "",
+        "line": 0,
+        "column": 0,
+        "node": 464
+      },
+      {
+        "ms": 48.546,
+        "function": "",
+        "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-C5PfJ0wZ.js",
+        "line": 2,
+        "column": 9619,
+        "node": 572
+      },
+      {
+        "ms": 41.208,
+        "function": "draw",
+        "url": "http://127.0.0.1:43148/assets/world/OperationalMap-lKQsTuQ5.js",
+        "line": 1528,
+        "column": 51254,
+        "node": 704
+      },
+      {
+        "ms": 40.231,
+        "function": "Q",
+        "url": "http://127.0.0.1:43148/assets/world/svelte-Dp-C2IIQ.js",
+        "line": 2,
+        "column": 22500,
+        "node": 506
+      },
+      {
+        "ms": 37.343,
+        "function": "state",
+        "url": "",
+        "line": 20,
+        "column": 19,
+        "node": 692
+      },
+      {
+        "ms": 37.267,
+        "function": "",
+        "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-C5PfJ0wZ.js",
+        "line": 2,
+        "column": 9688,
+        "node": 945
+      },
+      {
+        "ms": 36.613,
+        "function": "",
+        "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-C5PfJ0wZ.js",
+        "line": 105,
+        "column": 143150,
+        "node": 513
+      },
+      {
+        "ms": 35.71,
+        "function": "D",
+        "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-C5PfJ0wZ.js",
+        "line": 105,
+        "column": 39151,
+        "node": 278
+      },
+      {
+        "ms": 31.752,
+        "function": "z",
+        "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-C5PfJ0wZ.js",
+        "line": 105,
+        "column": 65517,
+        "node": 316
+      },
+      {
+        "ms": 29.83,
+        "function": "request",
+        "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-C5PfJ0wZ.js",
+        "line": 105,
+        "column": 56061,
+        "node": 315
+      },
+      {
+        "ms": 27.613,
+        "function": "",
+        "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-C5PfJ0wZ.js",
+        "line": 105,
+        "column": 143150,
+        "node": 394
+      },
+      {
+        "ms": 26.654,
+        "function": "measureText",
+        "url": "",
+        "line": 0,
+        "column": 0,
+        "node": 766
+      },
+      {
+        "ms": 26.343,
+        "function": "AbortController",
+        "url": "",
+        "line": 0,
+        "column": 0,
+        "node": 951
+      },
+      {
+        "ms": 25.805,
+        "function": "ri",
+        "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-C5PfJ0wZ.js",
+        "line": 105,
+        "column": 113584,
+        "node": 485
+      },
+      {
+        "ms": 25.632,
+        "function": "WebGL2RenderingContext.drawElementsInstanced",
+        "url": "",
+        "line": 150,
+        "column": 70,
+        "node": 294
+      },
+      {
+        "ms": 25.087,
+        "function": "",
+        "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-C5PfJ0wZ.js",
+        "line": 105,
+        "column": 140209,
+        "node": 474
+      },
+      {
+        "ms": 23.832,
+        "function": "",
+        "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-C5PfJ0wZ.js",
+        "line": 105,
+        "column": 15109,
+        "node": 290
+      },
+      {
+        "ms": 23.056,
+        "function": "i",
+        "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-C5PfJ0wZ.js",
+        "line": 2,
+        "column": 6196,
+        "node": 562
+      },
+      {
+        "ms": 22.944,
+        "function": "fetch",
+        "url": "",
+        "line": 0,
+        "column": 0,
+        "node": 336
+      },
+      {
+        "ms": 22.936,
+        "function": "",
+        "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-C5PfJ0wZ.js",
+        "line": 2,
+        "column": 12541,
+        "node": 352
+      },
+      {
+        "ms": 22.726,
+        "function": "",
+        "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-C5PfJ0wZ.js",
+        "line": 105,
+        "column": 38849,
+        "node": 479
+      },
+      {
+        "ms": 21.898,
+        "function": "i",
+        "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-C5PfJ0wZ.js",
+        "line": 2,
+        "column": 6196,
+        "node": 553
+      },
+      {
+        "ms": 21.609,
+        "function": "",
+        "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-C5PfJ0wZ.js",
+        "line": 105,
+        "column": 19520,
+        "node": 574
+      },
+      {
+        "ms": 21.431,
+        "function": "Ye",
+        "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-C5PfJ0wZ.js",
+        "line": 2,
+        "column": 9205,
+        "node": 346
+      },
+      {
+        "ms": 20.708,
+        "function": "DD",
+        "url": "http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js",
+        "line": 802,
+        "column": 49694,
+        "node": 297
+      },
+      {
+        "ms": 20.381,
+        "function": "readPixels",
+        "url": "",
+        "line": 0,
+        "column": 0,
+        "node": 103
+      },
+      {
+        "ms": 20.32,
+        "function": "Kx",
+        "url": "http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js",
+        "line": 2,
+        "column": 476042,
+        "node": 982
+      },
+      {
+        "ms": 19.466,
+        "function": "Ft",
+        "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-C5PfJ0wZ.js",
+        "line": 105,
+        "column": 7235,
+        "node": 782
+      }
+    ],
+    "inclusive": [
+      {
+        "ms": 5074.178,
+        "function": "(root)",
+        "url": "",
+        "line": 0,
+        "column": 0,
+        "node": 1
+      },
+      {
+        "ms": 2220.13,
+        "function": "_render",
+        "url": "http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js",
+        "line": 802,
+        "column": 184132,
+        "node": 262
+      },
+      {
+        "ms": 2220.13,
+        "function": "",
+        "url": "http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js",
+        "line": 802,
+        "column": 187636,
+        "node": 261
+      },
+      {
+        "ms": 2220.13,
+        "function": "",
+        "url": "http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js",
+        "line": 2,
+        "column": 24455,
+        "node": 260
+      },
+      {
+        "ms": 1945.654,
+        "function": "render",
+        "url": "http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js",
+        "line": 802,
+        "column": 76756,
+        "node": 273
+      },
+      {
+        "ms": 1898.847,
+        "function": "renderLayer",
+        "url": "http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js",
+        "line": 802,
+        "column": 80018,
+        "node": 274
+      },
+      {
+        "ms": 1647.577,
+        "function": "sO",
+        "url": "http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js",
+        "line": 802,
+        "column": 65276,
+        "node": 275
+      },
+      {
+        "ms": 1640.16,
+        "function": "D",
+        "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-C5PfJ0wZ.js",
+        "line": 105,
+        "column": 39151,
+        "node": 278
+      },
+      {
+        "ms": 1640.16,
+        "function": "prepareFrame",
+        "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-C5PfJ0wZ.js",
+        "line": 105,
+        "column": 41806,
+        "node": 277
+      },
+      {
+        "ms": 1640.16,
+        "function": "prerender",
+        "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-C5PfJ0wZ.js",
+        "line": 105,
+        "column": 45380,
+        "node": 276
+      },
+      {
+        "ms": 1037.176,
+        "function": "(program)",
+        "url": "",
+        "line": 0,
+        "column": 0,
+        "node": 2
+      },
+      {
+        "ms": 768.729,
+        "function": "#_",
+        "url": "http://127.0.0.1:43148/assets/world/svelte-Dp-C2IIQ.js",
+        "line": 2,
+        "column": 8287,
+        "node": 183
+      },
+      {
+        "ms": 768.729,
+        "function": "flush",
+        "url": "http://127.0.0.1:43148/assets/world/svelte-Dp-C2IIQ.js",
+        "line": 2,
+        "column": 10409,
+        "node": 182
+      },
+      {
+        "ms": 768.729,
+        "function": "",
+        "url": "http://127.0.0.1:43148/assets/world/svelte-Dp-C2IIQ.js",
+        "line": 2,
+        "column": 11183,
+        "node": 181
+      },
+      {
+        "ms": 768.729,
+        "function": "h",
+        "url": "http://127.0.0.1:43148/assets/world/svelte-Dp-C2IIQ.js",
+        "line": 2,
+        "column": 401,
+        "node": 180
+      },
+      {
+        "ms": 768.729,
+        "function": "st",
+        "url": "http://127.0.0.1:43148/assets/world/svelte-Dp-C2IIQ.js",
+        "line": 2,
+        "column": 3882,
+        "node": 179
+      },
+      {
+        "ms": 768.729,
+        "function": "",
+        "url": "http://127.0.0.1:43148/assets/world/svelte-Dp-C2IIQ.js",
+        "line": 2,
+        "column": 3966,
+        "node": 178
+      },
+      {
+        "ms": 743.353,
+        "function": "draw",
+        "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-C5PfJ0wZ.js",
+        "line": 105,
+        "column": 18180,
+        "node": 287
+      },
+      {
+        "ms": 572.029,
+        "function": "Kt",
+        "url": "http://127.0.0.1:43148/assets/world/svelte-Dp-C2IIQ.js",
+        "line": 2,
+        "column": 11637,
+        "node": 205
+      },
+      {
+        "ms": 563.922,
+        "function": "fr",
+        "url": "http://127.0.0.1:43148/assets/world/svelte-Dp-C2IIQ.js",
+        "line": 2,
+        "column": 22287,
+        "node": 206
+      },
+      {
+        "ms": 561.791,
+        "function": "cr",
+        "url": "http://127.0.0.1:43148/assets/world/svelte-Dp-C2IIQ.js",
+        "line": 2,
+        "column": 21050,
+        "node": 207
+      },
+      {
+        "ms": 500.759,
+        "function": "",
+        "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-C5PfJ0wZ.js",
+        "line": 105,
+        "column": 39817,
+        "node": 341
+      },
+      {
+        "ms": 462.317,
+        "function": "",
+        "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-C5PfJ0wZ.js",
+        "line": 105,
+        "column": 134663,
+        "node": 208
+      },
+      {
+        "ms": 460.489,
+        "function": "tt",
+        "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-C5PfJ0wZ.js",
+        "line": 2,
+        "column": 10856,
+        "node": 342
+      },
+      {
+        "ms": 454.983,
+        "function": "Q",
+        "url": "http://127.0.0.1:43148/assets/world/svelte-Dp-C2IIQ.js",
+        "line": 2,
+        "column": 22500,
+        "node": 395
+      },
+      {
+        "ms": 447.46,
+        "function": "cr",
+        "url": "http://127.0.0.1:43148/assets/world/svelte-Dp-C2IIQ.js",
+        "line": 2,
+        "column": 21050,
+        "node": 399
+      },
+      {
+        "ms": 447.46,
+        "function": "kt",
+        "url": "http://127.0.0.1:43148/assets/world/svelte-Dp-C2IIQ.js",
+        "line": 2,
+        "column": 6710,
+        "node": 398
+      },
+      {
+        "ms": 447.46,
+        "function": "At",
+        "url": "http://127.0.0.1:43148/assets/world/svelte-Dp-C2IIQ.js",
+        "line": 2,
+        "column": 6844,
+        "node": 397
+      },
+      {
+        "ms": 447.46,
+        "function": "or",
+        "url": "http://127.0.0.1:43148/assets/world/svelte-Dp-C2IIQ.js",
+        "line": 2,
+        "column": 20700,
+        "node": 396
+      },
+      {
+        "ms": 427.966,
+        "function": "Qe",
+        "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-C5PfJ0wZ.js",
+        "line": 2,
+        "column": 9930,
+        "node": 343
+      },
+      {
+        "ms": 424.343,
+        "function": "",
+        "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-C5PfJ0wZ.js",
+        "line": 105,
+        "column": 141347,
+        "node": 400
+      },
+      {
+        "ms": 411.287,
+        "function": "Xe",
+        "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-C5PfJ0wZ.js",
+        "line": 2,
+        "column": 9563,
+        "node": 344
+      },
+      {
+        "ms": 399.776,
+        "function": "visitOccurrencePoints",
+        "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-C5PfJ0wZ.js",
+        "line": 105,
+        "column": 83799,
+        "node": 480
+      },
+      {
+        "ms": 397.219,
+        "function": "visitOccurrencePoints",
+        "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-C5PfJ0wZ.js",
+        "line": 105,
+        "column": 45955,
+        "node": 481
+      },
+      {
+        "ms": 396.018,
+        "function": "visitOccurrencePoints",
+        "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-C5PfJ0wZ.js",
+        "line": 105,
+        "column": 42534,
+        "node": 482
+      },
+      {
+        "ms": 391.046,
+        "function": "On",
+        "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-C5PfJ0wZ.js",
+        "line": 105,
+        "column": 37261,
+        "node": 483
+      },
+      {
+        "ms": 381.941,
+        "function": "(idle)",
+        "url": "",
+        "line": 0,
+        "column": 0,
+        "node": 4
+      },
+      {
+        "ms": 250.525,
+        "function": "Ue",
+        "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-C5PfJ0wZ.js",
+        "line": 2,
+        "column": 6136,
+        "node": 345
+      },
+      {
+        "ms": 239.172,
+        "function": "Qe",
+        "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-C5PfJ0wZ.js",
+        "line": 2,
+        "column": 9930,
+        "node": 348
+      },
+      {
+        "ms": 233.582,
+        "function": "Xe",
+        "url": "http://127.0.0.1:43148/assets/world/PhysicalExplorer-C5PfJ0wZ.js",
+        "line": 2,
+        "column": 9563,
+        "node": 349
+      }
+    ],
+    "syncCallers": [
+      {
+        "selfMs": 20.381000000000004,
+        "chain": [
+          {
+            "function": "readPixels",
+            "url": "",
+            "line": 0,
+            "column": 0,
+            "node": 103
+          },
+          {
+            "function": "WebGL2RenderingContext.readPixels",
+            "url": "",
+            "line": 55,
+            "column": 59,
+            "node": 102
+          },
+          {
+            "function": "Mx",
+            "url": "http://127.0.0.1:43148/assets/world/OperationalMap-lKQsTuQ5.js",
+            "line": 1530,
+            "column": 78528,
+            "node": 101
+          },
+          {
+            "function": "readPixelsToArrayWebGL",
+            "url": "http://127.0.0.1:43148/assets/world/OperationalMap-lKQsTuQ5.js",
+            "line": 1530,
+            "column": 84068,
+            "node": 100
+          },
+          {
+            "function": "_drawAndSample",
+            "url": "http://127.0.0.1:43148/assets/world/OperationalMap-lKQsTuQ5.js",
+            "line": 1528,
+            "column": 117882,
+            "node": 74
+          },
+          {
+            "function": "_pickClosestObject",
+            "url": "http://127.0.0.1:43148/assets/world/OperationalMap-lKQsTuQ5.js",
+            "line": 1528,
+            "column": 112810,
+            "node": 20
+          },
+          {
+            "function": "pickObject",
+            "url": "http://127.0.0.1:43148/assets/world/OperationalMap-lKQsTuQ5.js",
+            "line": 1528,
+            "column": 110011,
+            "node": 19
+          },
+          {
+            "function": "_pick",
+            "url": "http://127.0.0.1:43148/assets/world/OperationalMap-lKQsTuQ5.js",
+            "line": 1530,
+            "column": 96375,
+            "node": 18
+          },
+          {
+            "function": "_pickPointSync",
+            "url": "http://127.0.0.1:43148/assets/world/OperationalMap-lKQsTuQ5.js",
+            "line": 1530,
+            "column": 95149,
+            "node": 17
+          },
+          {
+            "function": "Wx._onPointerDown",
+            "url": "http://127.0.0.1:43148/assets/world/OperationalMap-lKQsTuQ5.js",
+            "line": 1530,
+            "column": 88781,
+            "node": 16
+          },
+          {
+            "function": "Dw._handleMouseEvent",
+            "url": "http://127.0.0.1:43148/assets/world/OperationalMap-lKQsTuQ5.js",
+            "line": 1610,
+            "column": 45742,
+            "node": 15
+          },
+          {
+            "function": "fire",
+            "url": "http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js",
+            "line": 2,
+            "column": 33362,
+            "node": 14
+          },
+          {
+            "function": "_firePreventable",
+            "url": "http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js",
+            "line": 802,
+            "column": 91478,
+            "node": 13
+          },
+          {
+            "function": "mousedown",
+            "url": "http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js",
+            "line": 802,
+            "column": 90780,
+            "node": 12
+          },
+          {
+            "function": "Ck.handleEvent",
+            "url": "http://127.0.0.1:43148/assets/world/maplibre-BWHoUTg1.js",
+            "line": 802,
+            "column": 116613,
+            "node": 11
+          },
+          {
+            "function": "(root)",
+            "url": "",
+            "line": 0,
+            "column": 0,
+            "node": 1
+          }
+        ]
+      },
+      {
+        "selfMs": 6.692,
+        "chain": [
+          {
+            "function": "getQueryParameter",
+            "url": "",
+            "line": 0,
+            "column": 0,
+            "node": 302
+          },
+          {
+            "function": "poll",
+            "url": "",
+            "line": 475,
+            "column": 18,
+            "node": 301
+          },
+          {
+            "function": "",
+            "url": "",
+            "line": 522,
+            "column": 41,
+            "node": 300
+          },
+          {
+            "function": "(root)",
+            "url": "",
+            "line": 0,
+            "column": 0,
+            "node": 1
+          }
+        ]
+      },
+      {
+        "selfMs": 2.565,
+        "chain": [
+          {
+            "function": "readPixels",
+            "url": "",
+            "line": 0,
+            "column": 0,
+            "node": 259
+          },
+          {
+            "function": "WebGL2RenderingContext.readPixels",
+            "url": "",
+            "line": 55,
+            "column": 59,
+            "node": 258
+          },
+          {
+            "function": "Mx",
+            "url": "http://127.0.0.1:43148/assets/world/OperationalMap-lKQsTuQ5.js",
+            "line": 1530,
+            "column": 78528,
+            "node": 257
+          },
+          {
+            "function": "readPixelsToArrayWebGL",
+            "url": "http://127.0.0.1:43148/assets/world/OperationalMap-lKQsTuQ5.js",
+            "line": 1530,
+            "column": 84068,
+            "node": 256
+          },
+          {
+            "function": "_drawAndSample",
+            "url": "http://127.0.0.1:43148/assets/world/OperationalMap-lKQsTuQ5.js",
+            "line": 1528,
+            "column": 117882,
+            "node": 243
+          },
+          {
+            "function": "_pickClosestObject",
+            "url": "http://127.0.0.1:43148/assets/world/OperationalMap-lKQsTuQ5.js",
+            "line": 1528,
+            "column": 112810,
+            "node": 242
+          },
+          {
+            "function": "pickObject",
+            "url": "http://127.0.0.1:43148/assets/world/OperationalMap-lKQsTuQ5.js",
+            "line": 1528,
+            "column": 110011,
+            "node": 241
+          },
+          {
+            "function": "_pick",
+            "url": "http://127.0.0.1:43148/assets/world/OperationalMap-lKQsTuQ5.js",
+            "line": 1530,
+            "column": 96375,
+            "node": 240
+          },
+          {
+            "function": "_pickPointSync",
+            "url": "http://127.0.0.1:43148/assets/world/OperationalMap-lKQsTuQ5.js",
+            "line": 1530,
+            "column": 95149,
+            "node": 239
+          },
+          {
+            "function": "_pickAndCallback",
+            "url": "http://127.0.0.1:43148/assets/world/OperationalMap-lKQsTuQ5.js",
+            "line": 1530,
+            "column": 99803,
+            "node": 238
+          },
+          {
+            "function": "_onRenderFrame",
+            "url": "http://127.0.0.1:43148/assets/world/OperationalMap-lKQsTuQ5.js",
+            "line": 1530,
+            "column": 102971,
+            "node": 237
+          },
+          {
+            "function": "redraw",
+            "url": "http://127.0.0.1:43148/assets/world/OperationalMap-lKQsTuQ5.js",
+            "line": 1528,
+            "column": 23909,
+            "node": 236
+          },
+          {
+            "function": "_animationFrame",
+            "url": "http://127.0.0.1:43148/assets/world/OperationalMap-lKQsTuQ5.js",
+            "line": 1528,
+            "column": 25163,
+            "node": 235
+          },
+          {
+            "function": "(root)",
+            "url": "",
+            "line": 0,
+            "column": 0,
+            "node": 1
+          }
+        ]
+      }
+    ],
+    "frames": 68,
+    "p95": 300,
+    "actualOrdered": {
+      "calls": 131044,
+      "indices": 13142879,
+      "firstAt": 20677.200000047684,
+      "lastAt": 25371.700000047684
+    },
+    "gpu": {
+      "draw": {
+        "count": 128,
+        "median": 8.80725,
+        "p95": 14.402666,
+        "max": 19.596124
+      },
+      "resolve": {
+        "count": 64,
+        "median": 1.915249,
+        "p95": 3.996791,
+        "max": 6.483666
+      }
+    },
+    "drawClasses": {
+      "base": {
+        "gpu": {
+          "count": 64,
+          "median": 9.10725,
+          "p95": 12.791875,
+          "max": 18.32675
+        },
+        "cpuSubmission": {
+          "count": 64,
+          "median": 5.800000190734863,
+          "p95": 17.90000009536743,
+          "max": 24.600000143051147
+        },
+        "drawCalls": {
+          "count": 64,
+          "median": 4,
+          "p95": 4,
+          "max": 4
+        }
+      },
+      "ordered": {
+        "gpu": {
+          "count": 64,
+          "median": 8.676458,
+          "p95": 14.561833,
+          "max": 19.596124
+        },
+        "cpuSubmission": {
+          "count": 64,
+          "median": 6.199999809265137,
+          "p95": 12.799999952316284,
+          "max": 16.200000047683716
+        },
+        "drawCalls": {
+          "count": 64,
+          "median": 2045,
+          "p95": 2058,
+          "max": 2058
+        }
+      }
+    },
+    "gpuValid": true,
+    "gpuStates": {
+      "pending": 0,
+      "busyIntervals": 0,
+      "disjointEvents": 0,
+      "aborted": []
+    }
+  },
+  "limits": [
+    "Actual full-site fractional749.9/716.5ms p95 remains a valid failure. Nativephasequery removal alone does not fix FPS.",
+    "Diagnostic300ms p95 has different profiler/query pacing and is not a replacement performance pass.",
+    "Native getParameter no longer appears as a sampled hotfunction; initialDeckmousedown and postrelease readPixels do not explain repeated1secondtasks.",
+    "GPUelapsed is a commandinterval, not utilization; unassigned(program) samples are not automatically CPUarithmetic or GPUwait.",
+    "Actual nativeGL walltime and observeroverhead must be measured before further residual attribution."
+  ]
+}

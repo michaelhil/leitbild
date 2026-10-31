@@ -4,11 +4,16 @@ import {
   railWidthFromPointer,
   readStoredRailWidth,
   storeRailWidth,
+  railPresentation,
 } from './rail-state.ts'
 
 export interface RailLayoutState {
   readonly width: number
   readonly collapsed: boolean
+  readonly drawer: boolean
+  readonly panelWidth: number
+  readonly setPaneWidth: (width: number) => void
+  readonly toggleDrawer: () => void
   readonly initialize: () => void
   /** Collapses the rail for this page without storing it; the operator's stored width returns on the next expand. */
   readonly collapse: () => void
@@ -21,6 +26,9 @@ export const createRailLayoutState = (): RailLayoutState => {
   let lastOpenWidth = $state(defaultRailWidth)
   let resizing = $state(false)
   let widthBeforeResize = $state(defaultRailWidth)
+  let paneWidth = $state(typeof window === 'undefined' ? Number.POSITIVE_INFINITY : window.innerWidth)
+  let drawerOpen = $state(false)
+  const presentation = $derived(railPresentation(width, paneWidth, lastOpenWidth))
 
   const setWidth = (nextWidth: number, persist = false): void => {
     width = nextWidth
@@ -62,17 +70,22 @@ export const createRailLayoutState = (): RailLayoutState => {
   }
 
   const collapse = (): void => {
+    if (presentation.drawer) { drawerOpen = false; return }
     if (width > 0) lastOpenWidth = width
     width = 0
   }
 
   return {
     get width() {
-      return width
+      return presentation.width
     },
     get collapsed() {
-      return width === 0
+      return presentation.drawer ? !drawerOpen : width === 0
     },
+    get drawer() { return presentation.drawer },
+    get panelWidth() { return presentation.panelWidth },
+    setPaneWidth: next => { if (Number.isFinite(next) && next >= 0) paneWidth = next },
+    toggleDrawer: () => { drawerOpen = !drawerOpen },
     initialize,
     collapse,
     startResize,

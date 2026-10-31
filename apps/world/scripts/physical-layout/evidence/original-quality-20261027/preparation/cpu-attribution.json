@@ -1,0 +1,75 @@
+{
+  "purpose": "CPU causal attribution; final browser qualification is separate",
+  "capFix": "552dec19a",
+  "implementation": "ac332b65a",
+  "comparison": [
+    {
+      "design": "b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+      "levelId": "all",
+      "objects": 744,
+      "meshes": 3964,
+      "beforeTimings": {
+        "build": 279.98404200000004,
+        "clip": 0.15420799999992596,
+        "annotations": 2.2689580000001115,
+        "ownership": 2327.9955,
+        "picking": 422.47379200000023,
+        "buffers": 38.30774999999994
+      },
+      "afterTimings": {
+        "build": 136.28774999999996,
+        "clip": 0.17229199999997036,
+        "annotations": 2.5876670000000104,
+        "ownership": 1790.931583,
+        "picking": 432.3673749999998,
+        "buffers": 37.101042000000234
+      },
+      "beforeGeometryAndPickingSha256": "a7ec537f4ca525a8b2051c4a3f499f02bfbb6cc18584795acb4b632829df4555",
+      "afterGeometryAndPickingSha256": "a7ec537f4ca525a8b2051c4a3f499f02bfbb6cc18584795acb4b632829df4555",
+      "exact": true,
+      "beforeCandidates": 12240616,
+      "afterCandidates": 4126529,
+      "coplanarCandidates": 189711,
+      "actualPartitions": 24129
+    },
+    {
+      "design": "4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84",
+      "levelId": "all",
+      "objects": 540,
+      "meshes": 1837,
+      "beforeTimings": {
+        "build": 174.2993749999996,
+        "clip": 0.012541000000055647,
+        "annotations": 0.010167000000365078,
+        "ownership": 1925.2054169999992,
+        "picking": 175.6852910000007,
+        "buffers": 20.250041999999667
+      },
+      "afterTimings": {
+        "build": 80.53020800000013,
+        "clip": 0.010209000000031665,
+        "annotations": 0.009500000000116415,
+        "ownership": 1027.0495409999994,
+        "picking": 183.35050000000047,
+        "buffers": 20.100459000000228
+      },
+      "beforeGeometryAndPickingSha256": "ebf144968033512dd8e160a4bbf9cbefa789507cb51d37ef17d3cddd0c790451",
+      "afterGeometryAndPickingSha256": "ebf144968033512dd8e160a4bbf9cbefa789507cb51d37ef17d3cddd0c790451",
+      "exact": true,
+      "beforeCandidates": 54077166,
+      "afterCandidates": 3629488,
+      "coplanarCandidates": 110891,
+      "actualPartitions": 8096
+    }
+  ],
+  "sourceHashes": {
+    "geometry": "20ea4bb0f0dd5945ad293ac27ebbf5075bb0de84a981d18ab92de99ad5ab3d83",
+    "scope-clipping": "0b5aa44e60d7e283b330a5116efe691464bebd02c94c11fea9bbd4c5143916fc",
+    "surface-annotations": "758ab39979bfc027938e0c40f4b9a7233ce2a1c83cd7d10e01ce69fb1ac50a19",
+    "surface-ownership": "a2bbf588145004bc00719847b0e06a62f2a20c8ac465c77131a243aa4911e2e3",
+    "spatial-index": "e11a10cc7415835f85fca062be468984b09f1d8bb9682b05e211c5d19a96b675",
+    "picking": "6c8aa7685592b2c8feadae7ddf544bfc0111a777f8a3bfa1b62bda09bb48d41f",
+    "render-buffers": "bf335c55c4b5630c417e079c2d1c24e8a85f69b47340032b98eec7f77f3d8657"
+  },
+  "note": "The original and optimized complete ordered geometry/material/conditional-owner/picking-array SHA-256 hashes match. Timings are diagnostic CPU samples; they are not a browser cold-load claim."
+}

@@ -1,0 +1,2557 @@
+{
+  "testedAppCommit": "d8ebc139f35399d8ae99dc10b241e9c14d488b96",
+  "profile": "Final R3 actual product, not a retained R2 speedup comparison",
+  "sourceIdentities": [
+    {
+      "design": {
+        "id": "pwr-full-unit",
+        "revision": "pwr-full-unit-20261026-r3",
+        "digest": "812180a48a97a1e42a27c9837dc47a3b14e09512cf3554c4925e6f4e5e8fab12"
+      },
+      "compiler": {
+        "id": "physical-layout-native-architecture",
+        "digest": "96e82c37da017162c4f768eb37db11b8e38f513355a2a9ba2052b453baa156f8"
+      },
+      "sourceAnnotations": 241,
+      "representedSubjects": 108,
+      "totalOwnerSubjects": 121
+    },
+    {
+      "design": {
+        "id": "pwr-campus",
+        "revision": "pwr-campus-20261026-r3",
+        "digest": "e0987eae580fc873d69cc4b880d2e385cec4878a11bcd3978863fa5d3089e6d6"
+      },
+      "compiler": {
+        "id": "physical-layout-native-architecture",
+        "digest": "96e82c37da017162c4f768eb37db11b8e38f513355a2a9ba2052b453baa156f8"
+      },
+      "sourceAnnotations": 5,
+      "representedSubjects": 11,
+      "totalOwnerSubjects": 6405
+    }
+  ],
+  "loading": {
+    "instrumentationSha256": "3b8b7035ba3d8b27c65f39083fac57d3d266593d8b5fd946be509d6f4816d011",
+    "actions": [
+      {
+        "name": "open-browser-cold",
+        "expected": {
+          "mode": "3d",
+          "levelId": "all",
+          "readyCount": 5
+        },
+        "actionToFirstDrawMs": 2148.4000000953674,
+        "actionToGpuCompletedMs": 2186.5,
+        "preparedAfterAction": true,
+        "preparedResponseMs": 2085.2999999523163,
+        "ownerFresh": {
+          "applicable": false,
+          "evidence": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run"
+        },
+        "pending": 0,
+        "glError": 0
+      },
+      {
+        "name": "site-3d",
+        "expected": {
+          "mode": "3d",
+          "readyCount": 5
+        },
+        "actionToFirstDrawMs": 37.799999952316284,
+        "actionToGpuCompletedMs": 58.59999990463257,
+        "preparedAfterAction": false,
+        "preparedResponseMs": null,
+        "ownerFresh": {
+          "applicable": false,
+          "evidence": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run"
+        },
+        "pending": 0,
+        "glError": 0
+      },
+      {
+        "name": "first-turbine-hall-focus",
+        "expected": {
+          "mode": "3d"
+        },
+        "actionToFirstDrawMs": 14.299999952316284,
+        "actionToGpuCompletedMs": 31.90000009536743,
+        "preparedAfterAction": false,
+        "preparedResponseMs": null,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 4015.7999999523163,
+          "actionToFreshMs": 32.5,
+          "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+        },
+        "pending": 0,
+        "glError": 0
+      },
+      {
+        "name": "first-operating-3d",
+        "expected": {
+          "mode": "3d",
+          "levelId": "operating"
+        },
+        "actionToFirstDrawMs": 316.60000014305115,
+        "actionToGpuCompletedMs": 327.40000009536743,
+        "preparedAfterAction": true,
+        "preparedResponseMs": 312,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 4346.099999904633,
+          "actionToFreshMs": 328,
+          "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+        },
+        "pending": 0,
+        "glError": 0
+      },
+      {
+        "name": "first-stack-3d",
+        "expected": {
+          "mode": "3d",
+          "levelId": "all"
+        },
+        "actionToFirstDrawMs": 21.5,
+        "actionToGpuCompletedMs": 31.40000009536743,
+        "preparedAfterAction": false,
+        "preparedResponseMs": null,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 4379.5,
+          "actionToFreshMs": 32.700000047683716,
+          "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+        },
+        "pending": 0,
+        "glError": 0
+      },
+      {
+        "name": "gc-return-operating-3d",
+        "expected": {
+          "mode": "3d",
+          "levelId": "operating"
+        },
+        "actionToFirstDrawMs": 24.899999856948853,
+        "actionToGpuCompletedMs": 31.399999856948853,
+        "preparedAfterAction": false,
+        "preparedResponseMs": null,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 4495.099999904633,
+          "actionToFreshMs": 32.19999980926514,
+          "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+        },
+        "pending": 0,
+        "glError": 0
+      },
+      {
+        "name": "gc-return-stack-3d",
+        "expected": {
+          "mode": "3d",
+          "levelId": "all"
+        },
+        "actionToFirstDrawMs": 26.40000009536743,
+        "actionToGpuCompletedMs": 33.30000019073486,
+        "preparedAfterAction": false,
+        "preparedResponseMs": null,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 4579.599999904633,
+          "actionToFreshMs": 34,
+          "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+        },
+        "pending": 0,
+        "glError": 0
+      },
+      {
+        "name": "first-uncut-stack",
+        "expected": {
+          "mode": "3d",
+          "levelId": "all",
+          "cutaway": false
+        },
+        "actionToFirstDrawMs": 1044.1000001430511,
+        "actionToGpuCompletedMs": 1062.5,
+        "preparedAfterAction": true,
+        "preparedResponseMs": 1033,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 5644.799999952316,
+          "actionToFreshMs": 1063.2000000476837,
+          "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+        },
+        "pending": 0,
+        "glError": 0
+      },
+      {
+        "name": "gc-return-cutaway-stack",
+        "expected": {
+          "mode": "3d",
+          "levelId": "all",
+          "cutaway": true
+        },
+        "actionToFirstDrawMs": 26.299999952316284,
+        "actionToGpuCompletedMs": 44.700000047683716,
+        "preparedAfterAction": false,
+        "preparedResponseMs": null,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 5745.200000047684,
+          "actionToFreshMs": 45.5,
+          "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+        },
+        "pending": 0,
+        "glError": 0
+      },
+      {
+        "name": "first-plan",
+        "expected": {
+          "mode": "2d"
+        },
+        "actionToFirstDrawMs": 476.10000014305115,
+        "actionToGpuCompletedMs": 482.5,
+        "preparedAfterAction": true,
+        "preparedResponseMs": 466.2000000476837,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 6229.5,
+          "actionToFreshMs": 483.2000000476837,
+          "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+        },
+        "pending": 0,
+        "glError": 0
+      },
+      {
+        "name": "first-plan-operating",
+        "expected": {
+          "mode": "2d",
+          "levelId": "operating"
+        },
+        "actionToFirstDrawMs": 218,
+        "actionToGpuCompletedMs": 231.89999985694885,
+        "preparedAfterAction": true,
+        "preparedResponseMs": 200.20000004768372,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 6464,
+          "actionToFreshMs": 233.79999995231628,
+          "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+        },
+        "pending": 0,
+        "glError": 0
+      },
+      {
+        "name": "first-plan-lower",
+        "expected": {
+          "mode": "2d",
+          "levelId": "lower"
+        },
+        "actionToFirstDrawMs": 14.299999952316284,
+        "actionToGpuCompletedMs": 29.299999952316284,
+        "preparedAfterAction": false,
+        "preparedResponseMs": null,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 6494.599999904633,
+          "actionToFreshMs": 29.899999856948853,
+          "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+        },
+        "pending": 0,
+        "glError": 0
+      },
+      {
+        "name": "gc-return-plan-operating",
+        "expected": {
+          "mode": "2d",
+          "levelId": "operating"
+        },
+        "actionToFirstDrawMs": 18.5,
+        "actionToGpuCompletedMs": 31.899999856948853,
+        "preparedAfterAction": false,
+        "preparedResponseMs": null,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 6577.799999952316,
+          "actionToFreshMs": 32.59999990463257,
+          "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+        },
+        "pending": 0,
+        "glError": 0
+      },
+      {
+        "name": "return-3d-operating",
+        "expected": {
+          "mode": "3d",
+          "levelId": "operating"
+        },
+        "actionToFirstDrawMs": 302.5,
+        "actionToGpuCompletedMs": 315.69999980926514,
+        "preparedAfterAction": true,
+        "preparedResponseMs": 287.59999990463257,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 6895,
+          "actionToFreshMs": 316.59999990463257,
+          "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+        },
+        "pending": 0,
+        "glError": 0
+      },
+      {
+        "name": "gc-fresh-browser-owner",
+        "expected": {
+          "mode": "3d",
+          "levelId": "all",
+          "readyCount": 5
+        },
+        "actionToFirstDrawMs": 1252.5999999046326,
+        "actionToGpuCompletedMs": 1461,
+        "preparedAfterAction": true,
+        "preparedResponseMs": 1199.5999999046326,
+        "ownerFresh": {
+          "applicable": false,
+          "evidence": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run"
+        },
+        "pending": 0,
+        "glError": 0
+      }
+    ],
+    "preparationWorkersObserved": 2,
+    "observerErrors": [],
+    "pending": 0,
+    "exceptionCount": 0,
+    "navigationToControlsMs": 1900.171708,
+    "coldObservedInstancesBeforeFirstFrozenMilestone": {
+      "physical-layout/812180a48a97a1e42a27c9837dc47a3b14e09512cf3554c4925e6f4e5e8fab12/detail": [
+        4
+      ]
+    },
+    "firstAllSourceDrawObservedMs": 2194.4000000953674,
+    "allSourceDrawInventory": {
+      "physical-layout/812180a48a97a1e42a27c9837dc47a3b14e09512cf3554c4925e6f4e5e8fab12/detail": 4,
+      "physical-layout/e0987eae580fc873d69cc4b880d2e385cec4878a11bcd3978863fa5d3089e6d6/detail": 1
+    },
+    "verifiedAllSourceGpuUpperBoundMs": 2257.7000000476837,
+    "followUpSiteActionDrawInventory": {
+      "physical-layout/812180a48a97a1e42a27c9837dc47a3b14e09512cf3554c4925e6f4e5e8fab12/detail": [
+        4
+      ],
+      "physical-layout/e0987eae580fc873d69cc4b880d2e385cec4878a11bcd3978863fa5d3089e6d6/detail": [
+        1
+      ]
+    },
+    "frozenMilestoneBoundary": "The first action fence completes after its matching unit draw and a pending/readiness check. The campus response arrived before that fence check but its draw was next frame, so2186.5ms is not an all-family GPU guarantee. Both families draw in the immediate follow-up site action before its fence, yielding the conservative2257.7ms upper bound from original dispatch."
+  },
+  "displayScales": [
+    {
+      "metadata": {
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+        "reportedLogicalCpus": 8,
+        "dpr": 1
+      },
+      "runnerCommit": "e2a70b67c23b682f06ad3d48bd10a875456c2d08",
+      "instrumentationSha256": "5aa65888d123bd27aca8a698a3feaacc407fb86dc96da9a70c776b8653a0a1ae",
+      "phases": [
+        {
+          "name": "browser-site-3d-paused",
+          "playing": false,
+          "moves": 126,
+          "processWindows": 0,
+          "durationMs": 4002.5,
+          "frames": 239,
+          "rafMedianMs": 16.699999999999818,
+          "rafP95Ms": 16.700000000000728,
+          "rafMaxMs": 16.800000000000182,
+          "longTasks": [],
+          "fillTextCalls": 0,
+          "drawnTexts": [],
+          "drawnTextAngles": [],
+          "annotationObserverMs": 0,
+          "ownedPhysicalTargets": [
+            {
+              "context": 89,
+              "surface": "layout-canvas svelte-1yhpxpp",
+              "width": 1440,
+              "height": 871,
+              "samples": 4,
+              "depthBytes": 20067840,
+              "colorBytes": 20067840,
+              "resolveBytes": 5016960
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            },
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            }
+          ],
+          "pending": 0,
+          "activePhysicalWorkers": 2,
+          "errors": [],
+          "viewport": {
+            "width": 1440,
+            "height": 871,
+            "dpr": 1,
+            "reportedLogicalCpus": 8
+          },
+          "status": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run"
+        },
+        {
+          "name": "browser-site-3d-playing",
+          "playing": true,
+          "moves": 123,
+          "processWindows": 0,
+          "durationMs": 4018.5999999046326,
+          "frames": 239,
+          "rafMedianMs": 16.69999999999891,
+          "rafP95Ms": 16.700000000000728,
+          "rafMaxMs": 33.30000000000109,
+          "longTasks": [],
+          "fillTextCalls": 0,
+          "drawnTexts": [],
+          "drawnTextAngles": [],
+          "annotationObserverMs": 0,
+          "ownedPhysicalTargets": [
+            {
+              "context": 89,
+              "surface": "layout-canvas svelte-1yhpxpp",
+              "width": 1440,
+              "height": 871,
+              "samples": 4,
+              "depthBytes": 20067840,
+              "colorBytes": 20067840,
+              "resolveBytes": 5016960
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            },
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            }
+          ],
+          "pending": 0,
+          "activePhysicalWorkers": 2,
+          "errors": [],
+          "viewport": {
+            "width": 1440,
+            "height": 871,
+            "dpr": 1,
+            "reportedLogicalCpus": 8
+          },
+          "status": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run"
+        },
+        {
+          "name": "browser-site-plan-paused",
+          "playing": false,
+          "moves": 122,
+          "processWindows": 0,
+          "durationMs": 4002.100000143051,
+          "frames": 239,
+          "rafMedianMs": 16.69999999999891,
+          "rafP95Ms": 16.799999999999272,
+          "rafMaxMs": 16.80000000000109,
+          "longTasks": [],
+          "fillTextCalls": 0,
+          "drawnTexts": [],
+          "drawnTextAngles": [],
+          "annotationObserverMs": 0,
+          "ownedPhysicalTargets": [
+            {
+              "context": 89,
+              "surface": "layout-canvas svelte-1yhpxpp",
+              "width": 1440,
+              "height": 871,
+              "samples": 4,
+              "depthBytes": 20067840,
+              "colorBytes": 20067840,
+              "resolveBytes": 5016960
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            },
+            {
+              "width": 1440,
+              "height": 871,
+              "rgbaBytesLowerBound": 5016960
+            }
+          ],
+          "pending": 0,
+          "activePhysicalWorkers": 2,
+          "errors": [],
+          "viewport": {
+            "width": 1440,
+            "height": 871,
+            "dpr": 1,
+            "reportedLogicalCpus": 8
+          },
+          "status": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run"
+        },
+        {
+          "name": "browser-site-plan-playing",
+          "playing": true,
+          "moves": 124,
+          "processWindows": 0,
+          "durationMs": 4026.0999999046326,
+          "frames": 240,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.799999999999272,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "fillTextCalls": 0,
+          "drawnTexts": [],
+          "drawnTextAngles": [],
+          "annotationObserverMs": 0,
+          "ownedPhysicalTargets": [
+            {
+              "context": 89,
+              "surface": "layout-canvas svelte-1yhpxpp",
+              "width": 1440,
+              "height": 871,
+              "samples": 4,
+              "depthBytes": 20067840,
+              "colorBytes": 20067840,
+              "resolveBytes": 5016960
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            },
+            {
+              "width": 1440,
+              "height": 871,
+              "rgbaBytesLowerBound": 5016960
+            }
+          ],
+          "pending": 0,
+          "activePhysicalWorkers": 2,
+          "errors": [],
+          "viewport": {
+            "width": 1440,
+            "height": 871,
+            "dpr": 1,
+            "reportedLogicalCpus": 8
+          },
+          "status": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run"
+        },
+        {
+          "name": "browser-room-3d-paused",
+          "playing": false,
+          "moves": 121,
+          "processWindows": 0,
+          "durationMs": 4022.0999999046326,
+          "frames": 240,
+          "rafMedianMs": 16.700000000000728,
+          "rafP95Ms": 16.700000000000728,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "fillTextCalls": 0,
+          "drawnTexts": [],
+          "drawnTextAngles": [],
+          "annotationObserverMs": 0,
+          "ownedPhysicalTargets": [
+            {
+              "context": 89,
+              "surface": "layout-canvas svelte-1yhpxpp",
+              "width": 1440,
+              "height": 871,
+              "samples": 4,
+              "depthBytes": 20067840,
+              "colorBytes": 20067840,
+              "resolveBytes": 5016960
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            },
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            }
+          ],
+          "pending": 0,
+          "activePhysicalWorkers": 2,
+          "errors": [],
+          "viewport": {
+            "width": 1440,
+            "height": 871,
+            "dpr": 1,
+            "reportedLogicalCpus": 8
+          },
+          "status": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+        },
+        {
+          "name": "browser-room-3d-playing",
+          "playing": true,
+          "moves": 122,
+          "processWindows": 0,
+          "durationMs": 4001.7999999523163,
+          "frames": 239,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.700000000000728,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "fillTextCalls": 0,
+          "drawnTexts": [],
+          "drawnTextAngles": [],
+          "annotationObserverMs": 0,
+          "ownedPhysicalTargets": [
+            {
+              "context": 89,
+              "surface": "layout-canvas svelte-1yhpxpp",
+              "width": 1440,
+              "height": 871,
+              "samples": 4,
+              "depthBytes": 20067840,
+              "colorBytes": 20067840,
+              "resolveBytes": 5016960
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            },
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            }
+          ],
+          "pending": 0,
+          "activePhysicalWorkers": 2,
+          "errors": [],
+          "viewport": {
+            "width": 1440,
+            "height": 871,
+            "dpr": 1,
+            "reportedLogicalCpus": 8
+          },
+          "status": "Live \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+        },
+        {
+          "name": "browser-room-plan-paused",
+          "playing": false,
+          "moves": 123,
+          "processWindows": 0,
+          "durationMs": 4035.5,
+          "frames": 241,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.799999999995634,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "fillTextCalls": 1304,
+          "drawnTexts": [
+            "36 m",
+            "88 m",
+            "EXC",
+            "GEN",
+            "HP",
+            "LP 1",
+            "LP 2",
+            "LP 3",
+            "MSR 1",
+            "MSR 2",
+            "TURBINE HALL"
+          ],
+          "drawnTextAngles": [
+            {
+              "text": "88 m",
+              "min": 0,
+              "max": 0,
+              "count": 123
+            },
+            {
+              "text": "36 m",
+              "min": -1.5707963267948966,
+              "max": -1.5707963267948966,
+              "count": 74
+            },
+            {
+              "text": "HP",
+              "min": 0,
+              "max": 0,
+              "count": 123
+            },
+            {
+              "text": "LP 1",
+              "min": 0,
+              "max": 0,
+              "count": 123
+            },
+            {
+              "text": "LP 2",
+              "min": 0,
+              "max": 0,
+              "count": 123
+            },
+            {
+              "text": "LP 3",
+              "min": 0,
+              "max": 0,
+              "count": 123
+            },
+            {
+              "text": "GEN",
+              "min": 0,
+              "max": 0,
+              "count": 123
+            },
+            {
+              "text": "EXC",
+              "min": 0,
+              "max": 0,
+              "count": 123
+            },
+            {
+              "text": "MSR 1",
+              "min": 0,
+              "max": 0,
+              "count": 123
+            },
+            {
+              "text": "MSR 2",
+              "min": 0,
+              "max": 0,
+              "count": 123
+            },
+            {
+              "text": "TURBINE HALL",
+              "min": 0,
+              "max": 0,
+              "count": 123
+            }
+          ],
+          "annotationObserverMs": 2.5999999046325684,
+          "ownedPhysicalTargets": [
+            {
+              "context": 89,
+              "surface": "layout-canvas svelte-1yhpxpp",
+              "width": 1440,
+              "height": 871,
+              "samples": 4,
+              "depthBytes": 20067840,
+              "colorBytes": 20067840,
+              "resolveBytes": 5016960
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            },
+            {
+              "width": 1440,
+              "height": 871,
+              "rgbaBytesLowerBound": 5016960
+            }
+          ],
+          "pending": 0,
+          "activePhysicalWorkers": 2,
+          "errors": [],
+          "viewport": {
+            "width": 1440,
+            "height": 871,
+            "dpr": 1,
+            "reportedLogicalCpus": 8
+          },
+          "status": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+        },
+        {
+          "name": "browser-room-plan-playing",
+          "playing": true,
+          "moves": 121,
+          "processWindows": 0,
+          "durationMs": 4001.9000000953674,
+          "frames": 239,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.700000000004366,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "fillTextCalls": 1285,
+          "drawnTexts": [
+            "36 m",
+            "88 m",
+            "EXC",
+            "GEN",
+            "HP",
+            "LP 1",
+            "LP 2",
+            "LP 3",
+            "MSR 1",
+            "MSR 2",
+            "TURBINE HALL"
+          ],
+          "drawnTextAngles": [
+            {
+              "text": "88 m",
+              "min": 0,
+              "max": 0,
+              "count": 121
+            },
+            {
+              "text": "36 m",
+              "min": -1.5707963267948966,
+              "max": -1.5707963267948966,
+              "count": 75
+            },
+            {
+              "text": "HP",
+              "min": 0,
+              "max": 0,
+              "count": 121
+            },
+            {
+              "text": "LP 1",
+              "min": 0,
+              "max": 0,
+              "count": 121
+            },
+            {
+              "text": "LP 2",
+              "min": 0,
+              "max": 0,
+              "count": 121
+            },
+            {
+              "text": "LP 3",
+              "min": 0,
+              "max": 0,
+              "count": 121
+            },
+            {
+              "text": "GEN",
+              "min": 0,
+              "max": 0,
+              "count": 121
+            },
+            {
+              "text": "EXC",
+              "min": 0,
+              "max": 0,
+              "count": 121
+            },
+            {
+              "text": "MSR 1",
+              "min": 0,
+              "max": 0,
+              "count": 121
+            },
+            {
+              "text": "MSR 2",
+              "min": 0,
+              "max": 0,
+              "count": 121
+            },
+            {
+              "text": "TURBINE HALL",
+              "min": 0,
+              "max": 0,
+              "count": 121
+            }
+          ],
+          "annotationObserverMs": 1.6000006198883057,
+          "ownedPhysicalTargets": [
+            {
+              "context": 89,
+              "surface": "layout-canvas svelte-1yhpxpp",
+              "width": 1440,
+              "height": 871,
+              "samples": 4,
+              "depthBytes": 20067840,
+              "colorBytes": 20067840,
+              "resolveBytes": 5016960
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            },
+            {
+              "width": 1440,
+              "height": 871,
+              "rgbaBytesLowerBound": 5016960
+            }
+          ],
+          "pending": 0,
+          "activePhysicalWorkers": 2,
+          "errors": [],
+          "viewport": {
+            "width": 1440,
+            "height": 871,
+            "dpr": 1,
+            "reportedLogicalCpus": 8
+          },
+          "status": "Live \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+        },
+        {
+          "name": "map-room-3d-paused",
+          "playing": false,
+          "moves": 121,
+          "processWindows": 0,
+          "durationMs": 4018.2000000476837,
+          "frames": 240,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.799999999995634,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "fillTextCalls": 0,
+          "drawnTexts": [],
+          "drawnTextAngles": [],
+          "annotationObserverMs": 0,
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 1080,
+              "height": 871,
+              "samples": 4,
+              "depthBytes": 15050880,
+              "colorBytes": 15050880,
+              "resolveBytes": 3762720
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            }
+          ],
+          "pending": 0,
+          "activePhysicalWorkers": 2,
+          "errors": [],
+          "viewport": {
+            "width": 1440,
+            "height": 871,
+            "dpr": 1,
+            "reportedLogicalCpus": 8
+          },
+          "status": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+        },
+        {
+          "name": "map-room-3d-playing",
+          "playing": true,
+          "moves": 122,
+          "processWindows": 0,
+          "durationMs": 4039,
+          "frames": 241,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.700000000004366,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "fillTextCalls": 0,
+          "drawnTexts": [],
+          "drawnTextAngles": [],
+          "annotationObserverMs": 0,
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 1080,
+              "height": 871,
+              "samples": 4,
+              "depthBytes": 15050880,
+              "colorBytes": 15050880,
+              "resolveBytes": 3762720
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            }
+          ],
+          "pending": 0,
+          "activePhysicalWorkers": 2,
+          "errors": [],
+          "viewport": {
+            "width": 1440,
+            "height": 871,
+            "dpr": 1,
+            "reportedLogicalCpus": 8
+          },
+          "status": "Live \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+        },
+        {
+          "name": "map-room-plan-paused",
+          "playing": false,
+          "moves": 121,
+          "processWindows": 0,
+          "durationMs": 4017.699999809265,
+          "frames": 240,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.799999999995634,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "fillTextCalls": 1284,
+          "drawnTexts": [
+            "36 m",
+            "88 m",
+            "EXC",
+            "GEN",
+            "HP",
+            "LP 1",
+            "LP 2",
+            "LP 3",
+            "MSR 1",
+            "MSR 2",
+            "TURBINE HALL"
+          ],
+          "drawnTextAngles": [
+            {
+              "text": "88 m",
+              "min": 0,
+              "max": 0,
+              "count": 121
+            },
+            {
+              "text": "36 m",
+              "min": -1.5707963267948966,
+              "max": -1.5707963267948966,
+              "count": 74
+            },
+            {
+              "text": "HP",
+              "min": 0,
+              "max": 0,
+              "count": 121
+            },
+            {
+              "text": "LP 1",
+              "min": 0,
+              "max": 0,
+              "count": 121
+            },
+            {
+              "text": "LP 2",
+              "min": 0,
+              "max": 0,
+              "count": 121
+            },
+            {
+              "text": "LP 3",
+              "min": 0,
+              "max": 0,
+              "count": 121
+            },
+            {
+              "text": "GEN",
+              "min": 0,
+              "max": 0,
+              "count": 121
+            },
+            {
+              "text": "EXC",
+              "min": 0,
+              "max": 0,
+              "count": 121
+            },
+            {
+              "text": "MSR 1",
+              "min": 0,
+              "max": 0,
+              "count": 121
+            },
+            {
+              "text": "MSR 2",
+              "min": 0,
+              "max": 0,
+              "count": 121
+            },
+            {
+              "text": "TURBINE HALL",
+              "min": 0,
+              "max": 0,
+              "count": 121
+            }
+          ],
+          "annotationObserverMs": 1.3000001907348633,
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 1080,
+              "height": 871,
+              "samples": 4,
+              "depthBytes": 15050880,
+              "colorBytes": 15050880,
+              "resolveBytes": 3762720
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 1080,
+              "height": 871,
+              "rgbaBytesLowerBound": 3762720
+            }
+          ],
+          "pending": 0,
+          "activePhysicalWorkers": 2,
+          "errors": [],
+          "viewport": {
+            "width": 1440,
+            "height": 871,
+            "dpr": 1,
+            "reportedLogicalCpus": 8
+          },
+          "status": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+        },
+        {
+          "name": "map-room-plan-playing",
+          "playing": true,
+          "moves": 124,
+          "processWindows": 0,
+          "durationMs": 4037.0999999046326,
+          "frames": 241,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.700000000004366,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "fillTextCalls": 1325,
+          "drawnTexts": [
+            "36 m",
+            "88 m",
+            "EXC",
+            "GEN",
+            "HP",
+            "LP 1",
+            "LP 2",
+            "LP 3",
+            "MSR 1",
+            "MSR 2",
+            "TURBINE HALL"
+          ],
+          "drawnTextAngles": [
+            {
+              "text": "88 m",
+              "min": 0,
+              "max": 0,
+              "count": 124
+            },
+            {
+              "text": "36 m",
+              "min": -1.5707963267948966,
+              "max": -1.5707963267948966,
+              "count": 85
+            },
+            {
+              "text": "HP",
+              "min": 0,
+              "max": 0,
+              "count": 124
+            },
+            {
+              "text": "LP 1",
+              "min": 0,
+              "max": 0,
+              "count": 124
+            },
+            {
+              "text": "LP 2",
+              "min": 0,
+              "max": 0,
+              "count": 124
+            },
+            {
+              "text": "LP 3",
+              "min": 0,
+              "max": 0,
+              "count": 124
+            },
+            {
+              "text": "GEN",
+              "min": 0,
+              "max": 0,
+              "count": 124
+            },
+            {
+              "text": "EXC",
+              "min": 0,
+              "max": 0,
+              "count": 124
+            },
+            {
+              "text": "MSR 1",
+              "min": 0,
+              "max": 0,
+              "count": 124
+            },
+            {
+              "text": "MSR 2",
+              "min": 0,
+              "max": 0,
+              "count": 124
+            },
+            {
+              "text": "TURBINE HALL",
+              "min": 0,
+              "max": 0,
+              "count": 124
+            }
+          ],
+          "annotationObserverMs": 2.000000238418579,
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 1080,
+              "height": 871,
+              "samples": 4,
+              "depthBytes": 15050880,
+              "colorBytes": 15050880,
+              "resolveBytes": 3762720
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 1080,
+              "height": 871,
+              "rgbaBytesLowerBound": 3762720
+            }
+          ],
+          "pending": 0,
+          "activePhysicalWorkers": 2,
+          "errors": [],
+          "viewport": {
+            "width": 1440,
+            "height": 871,
+            "dpr": 1,
+            "reportedLogicalCpus": 8
+          },
+          "status": "Live \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+        },
+        {
+          "name": "browser-return-plan-paused",
+          "playing": false,
+          "moves": 123,
+          "processWindows": 0,
+          "durationMs": 4021.2000000476837,
+          "frames": 240,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.799999999995634,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "fillTextCalls": 1304,
+          "drawnTexts": [
+            "36 m",
+            "88 m",
+            "EXC",
+            "GEN",
+            "HP",
+            "LP 1",
+            "LP 2",
+            "LP 3",
+            "MSR 1",
+            "MSR 2",
+            "TURBINE HALL"
+          ],
+          "drawnTextAngles": [
+            {
+              "text": "88 m",
+              "min": 0,
+              "max": 0,
+              "count": 123
+            },
+            {
+              "text": "36 m",
+              "min": -1.5707963267948966,
+              "max": -1.5707963267948966,
+              "count": 74
+            },
+            {
+              "text": "HP",
+              "min": 0,
+              "max": 0,
+              "count": 123
+            },
+            {
+              "text": "LP 1",
+              "min": 0,
+              "max": 0,
+              "count": 123
+            },
+            {
+              "text": "LP 2",
+              "min": 0,
+              "max": 0,
+              "count": 123
+            },
+            {
+              "text": "LP 3",
+              "min": 0,
+              "max": 0,
+              "count": 123
+            },
+            {
+              "text": "GEN",
+              "min": 0,
+              "max": 0,
+              "count": 123
+            },
+            {
+              "text": "EXC",
+              "min": 0,
+              "max": 0,
+              "count": 123
+            },
+            {
+              "text": "MSR 1",
+              "min": 0,
+              "max": 0,
+              "count": 123
+            },
+            {
+              "text": "MSR 2",
+              "min": 0,
+              "max": 0,
+              "count": 123
+            },
+            {
+              "text": "TURBINE HALL",
+              "min": 0,
+              "max": 0,
+              "count": 123
+            }
+          ],
+          "annotationObserverMs": 2.3000001907348633,
+          "ownedPhysicalTargets": [
+            {
+              "context": 536,
+              "surface": "layout-canvas svelte-1yhpxpp",
+              "width": 1440,
+              "height": 871,
+              "samples": 4,
+              "depthBytes": 20067840,
+              "colorBytes": 20067840,
+              "resolveBytes": 5016960
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            },
+            {
+              "width": 1440,
+              "height": 871,
+              "rgbaBytesLowerBound": 5016960
+            }
+          ],
+          "pending": 0,
+          "activePhysicalWorkers": 2,
+          "errors": [],
+          "viewport": {
+            "width": 1440,
+            "height": 871,
+            "dpr": 1,
+            "reportedLogicalCpus": 8
+          },
+          "status": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+        }
+      ],
+      "closedDedicatedHost": {
+        "ownedPhysicalTargets": [],
+        "draftingCanvases": [
+          {
+            "width": 0,
+            "height": 0,
+            "rgbaBytesLowerBound": 0
+          }
+        ],
+        "pending": 0,
+        "activePhysicalWorkers": 2,
+        "errors": [],
+        "status": "0 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run"
+      },
+      "reopenedDedicatedHost": {
+        "ownedPhysicalTargets": [
+          {
+            "context": 536,
+            "surface": "layout-canvas svelte-1yhpxpp",
+            "width": 1440,
+            "height": 871,
+            "samples": 4,
+            "depthBytes": 20067840,
+            "colorBytes": 20067840,
+            "resolveBytes": 5016960
+          }
+        ],
+        "draftingCanvases": [
+          {
+            "width": 0,
+            "height": 0,
+            "rgbaBytesLowerBound": 0
+          },
+          {
+            "width": 1440,
+            "height": 871,
+            "rgbaBytesLowerBound": 5016960
+          }
+        ],
+        "pending": 0,
+        "activePhysicalWorkers": 2,
+        "errors": [],
+        "status": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+      },
+      "physicalWorkerTargetsAfterExit": [],
+      "exceptionCount": 0
+    },
+    {
+      "metadata": {
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+        "reportedLogicalCpus": 8,
+        "dpr": 2
+      },
+      "runnerCommit": "e2a70b67c23b682f06ad3d48bd10a875456c2d08",
+      "instrumentationSha256": "5aa65888d123bd27aca8a698a3feaacc407fb86dc96da9a70c776b8653a0a1ae",
+      "phases": [
+        {
+          "name": "browser-site-3d-paused",
+          "playing": false,
+          "moves": 128,
+          "processWindows": 0,
+          "durationMs": 4019.9000000953674,
+          "frames": 240,
+          "rafMedianMs": 16.699999999999818,
+          "rafP95Ms": 16.800000000000182,
+          "rafMaxMs": 16.800000000000182,
+          "longTasks": [],
+          "fillTextCalls": 0,
+          "drawnTexts": [],
+          "drawnTextAngles": [],
+          "annotationObserverMs": 0,
+          "ownedPhysicalTargets": [
+            {
+              "context": 85,
+              "surface": "layout-canvas svelte-1yhpxpp",
+              "width": 2880,
+              "height": 1742,
+              "samples": 4,
+              "depthBytes": 80271360,
+              "colorBytes": 80271360,
+              "resolveBytes": 20067840
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            },
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            }
+          ],
+          "pending": 0,
+          "activePhysicalWorkers": 2,
+          "errors": [],
+          "viewport": {
+            "width": 1440,
+            "height": 871,
+            "dpr": 2,
+            "reportedLogicalCpus": 8
+          },
+          "status": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run"
+        },
+        {
+          "name": "browser-site-3d-playing",
+          "playing": true,
+          "moves": 124,
+          "processWindows": 0,
+          "durationMs": 4035.2000000476837,
+          "frames": 240,
+          "rafMedianMs": 16.69999999999891,
+          "rafP95Ms": 16.799999999999272,
+          "rafMaxMs": 33.29999999999927,
+          "longTasks": [],
+          "fillTextCalls": 0,
+          "drawnTexts": [],
+          "drawnTextAngles": [],
+          "annotationObserverMs": 0,
+          "ownedPhysicalTargets": [
+            {
+              "context": 85,
+              "surface": "layout-canvas svelte-1yhpxpp",
+              "width": 2880,
+              "height": 1742,
+              "samples": 4,
+              "depthBytes": 80271360,
+              "colorBytes": 80271360,
+              "resolveBytes": 20067840
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            },
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            }
+          ],
+          "pending": 0,
+          "activePhysicalWorkers": 2,
+          "errors": [],
+          "viewport": {
+            "width": 1440,
+            "height": 871,
+            "dpr": 2,
+            "reportedLogicalCpus": 8
+          },
+          "status": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run"
+        },
+        {
+          "name": "browser-site-plan-paused",
+          "playing": false,
+          "moves": 124,
+          "processWindows": 0,
+          "durationMs": 4018.5,
+          "frames": 240,
+          "rafMedianMs": 16.69999999999891,
+          "rafP95Ms": 16.799999999999272,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "fillTextCalls": 0,
+          "drawnTexts": [],
+          "drawnTextAngles": [],
+          "annotationObserverMs": 0,
+          "ownedPhysicalTargets": [
+            {
+              "context": 85,
+              "surface": "layout-canvas svelte-1yhpxpp",
+              "width": 2880,
+              "height": 1742,
+              "samples": 4,
+              "depthBytes": 80271360,
+              "colorBytes": 80271360,
+              "resolveBytes": 20067840
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            },
+            {
+              "width": 2880,
+              "height": 1742,
+              "rgbaBytesLowerBound": 20067840
+            }
+          ],
+          "pending": 0,
+          "activePhysicalWorkers": 2,
+          "errors": [],
+          "viewport": {
+            "width": 1440,
+            "height": 871,
+            "dpr": 2,
+            "reportedLogicalCpus": 8
+          },
+          "status": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run"
+        },
+        {
+          "name": "browser-site-plan-playing",
+          "playing": true,
+          "moves": 125,
+          "processWindows": 0,
+          "durationMs": 4019.0999999046326,
+          "frames": 240,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.799999999999272,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "fillTextCalls": 0,
+          "drawnTexts": [],
+          "drawnTextAngles": [],
+          "annotationObserverMs": 0,
+          "ownedPhysicalTargets": [
+            {
+              "context": 85,
+              "surface": "layout-canvas svelte-1yhpxpp",
+              "width": 2880,
+              "height": 1742,
+              "samples": 4,
+              "depthBytes": 80271360,
+              "colorBytes": 80271360,
+              "resolveBytes": 20067840
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            },
+            {
+              "width": 2880,
+              "height": 1742,
+              "rgbaBytesLowerBound": 20067840
+            }
+          ],
+          "pending": 0,
+          "activePhysicalWorkers": 2,
+          "errors": [],
+          "viewport": {
+            "width": 1440,
+            "height": 871,
+            "dpr": 2,
+            "reportedLogicalCpus": 8
+          },
+          "status": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run"
+        },
+        {
+          "name": "browser-room-3d-paused",
+          "playing": false,
+          "moves": 123,
+          "processWindows": 0,
+          "durationMs": 4023.2000000476837,
+          "frames": 240,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.799999999999272,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "fillTextCalls": 0,
+          "drawnTexts": [],
+          "drawnTextAngles": [],
+          "annotationObserverMs": 0,
+          "ownedPhysicalTargets": [
+            {
+              "context": 85,
+              "surface": "layout-canvas svelte-1yhpxpp",
+              "width": 2880,
+              "height": 1742,
+              "samples": 4,
+              "depthBytes": 80271360,
+              "colorBytes": 80271360,
+              "resolveBytes": 20067840
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            },
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            }
+          ],
+          "pending": 0,
+          "activePhysicalWorkers": 2,
+          "errors": [],
+          "viewport": {
+            "width": 1440,
+            "height": 871,
+            "dpr": 2,
+            "reportedLogicalCpus": 8
+          },
+          "status": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+        },
+        {
+          "name": "browser-room-3d-playing",
+          "playing": true,
+          "moves": 122,
+          "processWindows": 0,
+          "durationMs": 4002.5,
+          "frames": 239,
+          "rafMedianMs": 16.700000000000728,
+          "rafP95Ms": 16.799999999999272,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "fillTextCalls": 0,
+          "drawnTexts": [],
+          "drawnTextAngles": [],
+          "annotationObserverMs": 0,
+          "ownedPhysicalTargets": [
+            {
+              "context": 85,
+              "surface": "layout-canvas svelte-1yhpxpp",
+              "width": 2880,
+              "height": 1742,
+              "samples": 4,
+              "depthBytes": 80271360,
+              "colorBytes": 80271360,
+              "resolveBytes": 20067840
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            },
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            }
+          ],
+          "pending": 0,
+          "activePhysicalWorkers": 2,
+          "errors": [],
+          "viewport": {
+            "width": 1440,
+            "height": 871,
+            "dpr": 2,
+            "reportedLogicalCpus": 8
+          },
+          "status": "Live \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+        },
+        {
+          "name": "browser-room-plan-paused",
+          "playing": false,
+          "moves": 121,
+          "processWindows": 0,
+          "durationMs": 4003.0999999046326,
+          "frames": 239,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.700000000004366,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "fillTextCalls": 1282,
+          "drawnTexts": [
+            "36 m",
+            "88 m",
+            "EXC",
+            "GEN",
+            "HP",
+            "LP 1",
+            "LP 2",
+            "LP 3",
+            "MSR 1",
+            "MSR 2",
+            "TURBINE HALL"
+          ],
+          "drawnTextAngles": [
+            {
+              "text": "88 m",
+              "min": 0,
+              "max": 0,
+              "count": 121
+            },
+            {
+              "text": "36 m",
+              "min": -1.5707963267948966,
+              "max": -1.5707963267948966,
+              "count": 72
+            },
+            {
+              "text": "HP",
+              "min": 0,
+              "max": 0,
+              "count": 121
+            },
+            {
+              "text": "LP 1",
+              "min": 0,
+              "max": 0,
+              "count": 121
+            },
+            {
+              "text": "LP 2",
+              "min": 0,
+              "max": 0,
+              "count": 121
+            },
+            {
+              "text": "LP 3",
+              "min": 0,
+              "max": 0,
+              "count": 121
+            },
+            {
+              "text": "GEN",
+              "min": 0,
+              "max": 0,
+              "count": 121
+            },
+            {
+              "text": "EXC",
+              "min": 0,
+              "max": 0,
+              "count": 121
+            },
+            {
+              "text": "MSR 1",
+              "min": 0,
+              "max": 0,
+              "count": 121
+            },
+            {
+              "text": "MSR 2",
+              "min": 0,
+              "max": 0,
+              "count": 121
+            },
+            {
+              "text": "TURBINE HALL",
+              "min": 0,
+              "max": 0,
+              "count": 121
+            }
+          ],
+          "annotationObserverMs": 2.4000003337860107,
+          "ownedPhysicalTargets": [
+            {
+              "context": 85,
+              "surface": "layout-canvas svelte-1yhpxpp",
+              "width": 2880,
+              "height": 1742,
+              "samples": 4,
+              "depthBytes": 80271360,
+              "colorBytes": 80271360,
+              "resolveBytes": 20067840
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            },
+            {
+              "width": 2880,
+              "height": 1742,
+              "rgbaBytesLowerBound": 20067840
+            }
+          ],
+          "pending": 0,
+          "activePhysicalWorkers": 2,
+          "errors": [],
+          "viewport": {
+            "width": 1440,
+            "height": 871,
+            "dpr": 2,
+            "reportedLogicalCpus": 8
+          },
+          "status": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+        },
+        {
+          "name": "browser-room-plan-playing",
+          "playing": true,
+          "moves": 121,
+          "processWindows": 0,
+          "durationMs": 4020.7999999523163,
+          "frames": 240,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.700000000004366,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "fillTextCalls": 1298,
+          "drawnTexts": [
+            "36 m",
+            "88 m",
+            "EXC",
+            "GEN",
+            "HP",
+            "LP 1",
+            "LP 2",
+            "LP 3",
+            "MSR 1",
+            "MSR 2",
+            "TURBINE HALL"
+          ],
+          "drawnTextAngles": [
+            {
+              "text": "88 m",
+              "min": 0,
+              "max": 0,
+              "count": 121
+            },
+            {
+              "text": "36 m",
+              "min": -1.5707963267948966,
+              "max": -1.5707963267948966,
+              "count": 88
+            },
+            {
+              "text": "HP",
+              "min": 0,
+              "max": 0,
+              "count": 121
+            },
+            {
+              "text": "LP 1",
+              "min": 0,
+              "max": 0,
+              "count": 121
+            },
+            {
+              "text": "LP 2",
+              "min": 0,
+              "max": 0,
+              "count": 121
+            },
+            {
+              "text": "LP 3",
+              "min": 0,
+              "max": 0,
+              "count": 121
+            },
+            {
+              "text": "GEN",
+              "min": 0,
+              "max": 0,
+              "count": 121
+            },
+            {
+              "text": "EXC",
+              "min": 0,
+              "max": 0,
+              "count": 121
+            },
+            {
+              "text": "MSR 1",
+              "min": 0,
+              "max": 0,
+              "count": 121
+            },
+            {
+              "text": "MSR 2",
+              "min": 0,
+              "max": 0,
+              "count": 121
+            },
+            {
+              "text": "TURBINE HALL",
+              "min": 0,
+              "max": 0,
+              "count": 121
+            }
+          ],
+          "annotationObserverMs": 2.8000004291534424,
+          "ownedPhysicalTargets": [
+            {
+              "context": 85,
+              "surface": "layout-canvas svelte-1yhpxpp",
+              "width": 2880,
+              "height": 1742,
+              "samples": 4,
+              "depthBytes": 80271360,
+              "colorBytes": 80271360,
+              "resolveBytes": 20067840
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            },
+            {
+              "width": 2880,
+              "height": 1742,
+              "rgbaBytesLowerBound": 20067840
+            }
+          ],
+          "pending": 0,
+          "activePhysicalWorkers": 2,
+          "errors": [],
+          "viewport": {
+            "width": 1440,
+            "height": 871,
+            "dpr": 2,
+            "reportedLogicalCpus": 8
+          },
+          "status": "Live \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+        },
+        {
+          "name": "map-room-3d-paused",
+          "playing": false,
+          "moves": 121,
+          "processWindows": 0,
+          "durationMs": 4052,
+          "frames": 242,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.700000000004366,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "fillTextCalls": 0,
+          "drawnTexts": [],
+          "drawnTextAngles": [],
+          "annotationObserverMs": 0,
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 2160,
+              "height": 1742,
+              "samples": 4,
+              "depthBytes": 60203520,
+              "colorBytes": 60203520,
+              "resolveBytes": 15050880
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            }
+          ],
+          "pending": 0,
+          "activePhysicalWorkers": 2,
+          "errors": [],
+          "viewport": {
+            "width": 1440,
+            "height": 871,
+            "dpr": 2,
+            "reportedLogicalCpus": 8
+          },
+          "status": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+        },
+        {
+          "name": "map-room-3d-playing",
+          "playing": true,
+          "moves": 118,
+          "processWindows": 0,
+          "durationMs": 4018.2999999523163,
+          "frames": 240,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.700000000004366,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "fillTextCalls": 0,
+          "drawnTexts": [],
+          "drawnTextAngles": [],
+          "annotationObserverMs": 0,
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 2160,
+              "height": 1742,
+              "samples": 4,
+              "depthBytes": 60203520,
+              "colorBytes": 60203520,
+              "resolveBytes": 15050880
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            }
+          ],
+          "pending": 0,
+          "activePhysicalWorkers": 2,
+          "errors": [],
+          "viewport": {
+            "width": 1440,
+            "height": 871,
+            "dpr": 2,
+            "reportedLogicalCpus": 8
+          },
+          "status": "Live \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+        },
+        {
+          "name": "map-room-plan-paused",
+          "playing": false,
+          "moves": 121,
+          "processWindows": 0,
+          "durationMs": 4036.2999999523163,
+          "frames": 241,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.700000000004366,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "fillTextCalls": 1284,
+          "drawnTexts": [
+            "36 m",
+            "88 m",
+            "EXC",
+            "GEN",
+            "HP",
+            "LP 1",
+            "LP 2",
+            "LP 3",
+            "MSR 1",
+            "MSR 2",
+            "TURBINE HALL"
+          ],
+          "drawnTextAngles": [
+            {
+              "text": "88 m",
+              "min": 0,
+              "max": 0,
+              "count": 121
+            },
+            {
+              "text": "36 m",
+              "min": -1.5707963267948966,
+              "max": -1.5707963267948966,
+              "count": 74
+            },
+            {
+              "text": "HP",
+              "min": 0,
+              "max": 0,
+              "count": 121
+            },
+            {
+              "text": "LP 1",
+              "min": 0,
+              "max": 0,
+              "count": 121
+            },
+            {
+              "text": "LP 2",
+              "min": 0,
+              "max": 0,
+              "count": 121
+            },
+            {
+              "text": "LP 3",
+              "min": 0,
+              "max": 0,
+              "count": 121
+            },
+            {
+              "text": "GEN",
+              "min": 0,
+              "max": 0,
+              "count": 121
+            },
+            {
+              "text": "EXC",
+              "min": 0,
+              "max": 0,
+              "count": 121
+            },
+            {
+              "text": "MSR 1",
+              "min": 0,
+              "max": 0,
+              "count": 121
+            },
+            {
+              "text": "MSR 2",
+              "min": 0,
+              "max": 0,
+              "count": 121
+            },
+            {
+              "text": "TURBINE HALL",
+              "min": 0,
+              "max": 0,
+              "count": 121
+            }
+          ],
+          "annotationObserverMs": 1.5999999046325684,
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 2160,
+              "height": 1742,
+              "samples": 4,
+              "depthBytes": 60203520,
+              "colorBytes": 60203520,
+              "resolveBytes": 15050880
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 2160,
+              "height": 1742,
+              "rgbaBytesLowerBound": 15050880
+            }
+          ],
+          "pending": 0,
+          "activePhysicalWorkers": 2,
+          "errors": [],
+          "viewport": {
+            "width": 1440,
+            "height": 871,
+            "dpr": 2,
+            "reportedLogicalCpus": 8
+          },
+          "status": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+        },
+        {
+          "name": "map-room-plan-playing",
+          "playing": true,
+          "moves": 122,
+          "processWindows": 0,
+          "durationMs": 4020.399999856949,
+          "frames": 240,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.80000000000291,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "fillTextCalls": 1303,
+          "drawnTexts": [
+            "36 m",
+            "88 m",
+            "EXC",
+            "GEN",
+            "HP",
+            "LP 1",
+            "LP 2",
+            "LP 3",
+            "MSR 1",
+            "MSR 2",
+            "TURBINE HALL"
+          ],
+          "drawnTextAngles": [
+            {
+              "text": "88 m",
+              "min": 0,
+              "max": 0,
+              "count": 122
+            },
+            {
+              "text": "36 m",
+              "min": -1.5707963267948966,
+              "max": -1.5707963267948966,
+              "count": 83
+            },
+            {
+              "text": "HP",
+              "min": 0,
+              "max": 0,
+              "count": 122
+            },
+            {
+              "text": "LP 1",
+              "min": 0,
+              "max": 0,
+              "count": 122
+            },
+            {
+              "text": "LP 2",
+              "min": 0,
+              "max": 0,
+              "count": 122
+            },
+            {
+              "text": "LP 3",
+              "min": 0,
+              "max": 0,
+              "count": 122
+            },
+            {
+              "text": "GEN",
+              "min": 0,
+              "max": 0,
+              "count": 122
+            },
+            {
+              "text": "EXC",
+              "min": 0,
+              "max": 0,
+              "count": 122
+            },
+            {
+              "text": "MSR 1",
+              "min": 0,
+              "max": 0,
+              "count": 122
+            },
+            {
+              "text": "MSR 2",
+              "min": 0,
+              "max": 0,
+              "count": 122
+            },
+            {
+              "text": "TURBINE HALL",
+              "min": 0,
+              "max": 0,
+              "count": 122
+            }
+          ],
+          "annotationObserverMs": 1.9000000953674316,
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 2160,
+              "height": 1742,
+              "samples": 4,
+              "depthBytes": 60203520,
+              "colorBytes": 60203520,
+              "resolveBytes": 15050880
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 2160,
+              "height": 1742,
+              "rgbaBytesLowerBound": 15050880
+            }
+          ],
+          "pending": 0,
+          "activePhysicalWorkers": 2,
+          "errors": [],
+          "viewport": {
+            "width": 1440,
+            "height": 871,
+            "dpr": 2,
+            "reportedLogicalCpus": 8
+          },
+          "status": "Live \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+        },
+        {
+          "name": "browser-return-plan-paused",
+          "playing": false,
+          "moves": 122,
+          "processWindows": 0,
+          "durationMs": 4014.5,
+          "frames": 239,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.700000000004366,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "fillTextCalls": 1293,
+          "drawnTexts": [
+            "36 m",
+            "88 m",
+            "EXC",
+            "GEN",
+            "HP",
+            "LP 1",
+            "LP 2",
+            "LP 3",
+            "MSR 1",
+            "MSR 2",
+            "TURBINE HALL"
+          ],
+          "drawnTextAngles": [
+            {
+              "text": "88 m",
+              "min": 0,
+              "max": 0,
+              "count": 122
+            },
+            {
+              "text": "36 m",
+              "min": -1.5707963267948966,
+              "max": -1.5707963267948966,
+              "count": 73
+            },
+            {
+              "text": "HP",
+              "min": 0,
+              "max": 0,
+              "count": 122
+            },
+            {
+              "text": "LP 1",
+              "min": 0,
+              "max": 0,
+              "count": 122
+            },
+            {
+              "text": "LP 2",
+              "min": 0,
+              "max": 0,
+              "count": 122
+            },
+            {
+              "text": "LP 3",
+              "min": 0,
+              "max": 0,
+              "count": 122
+            },
+            {
+              "text": "GEN",
+              "min": 0,
+              "max": 0,
+              "count": 122
+            },
+            {
+              "text": "EXC",
+              "min": 0,
+              "max": 0,
+              "count": 122
+            },
+            {
+              "text": "MSR 1",
+              "min": 0,
+              "max": 0,
+              "count": 122
+            },
+            {
+              "text": "MSR 2",
+              "min": 0,
+              "max": 0,
+              "count": 122
+            },
+            {
+              "text": "TURBINE HALL",
+              "min": 0,
+              "max": 0,
+              "count": 122
+            }
+          ],
+          "annotationObserverMs": 2.3000004291534424,
+          "ownedPhysicalTargets": [
+            {
+              "context": 516,
+              "surface": "layout-canvas svelte-1yhpxpp",
+              "width": 2880,
+              "height": 1742,
+              "samples": 4,
+              "depthBytes": 80271360,
+              "colorBytes": 80271360,
+              "resolveBytes": 20067840
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            },
+            {
+              "width": 2880,
+              "height": 1742,
+              "rgbaBytesLowerBound": 20067840
+            }
+          ],
+          "pending": 0,
+          "activePhysicalWorkers": 2,
+          "errors": [],
+          "viewport": {
+            "width": 1440,
+            "height": 871,
+            "dpr": 2,
+            "reportedLogicalCpus": 8
+          },
+          "status": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+        }
+      ],
+      "closedDedicatedHost": {
+        "ownedPhysicalTargets": [],
+        "draftingCanvases": [
+          {
+            "width": 0,
+            "height": 0,
+            "rgbaBytesLowerBound": 0
+          }
+        ],
+        "pending": 0,
+        "activePhysicalWorkers": 2,
+        "errors": [],
+        "status": "0 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run"
+      },
+      "reopenedDedicatedHost": {
+        "ownedPhysicalTargets": [
+          {
+            "context": 516,
+            "surface": "layout-canvas svelte-1yhpxpp",
+            "width": 2880,
+            "height": 1742,
+            "samples": 4,
+            "depthBytes": 80271360,
+            "colorBytes": 80271360,
+            "resolveBytes": 20067840
+          }
+        ],
+        "draftingCanvases": [
+          {
+            "width": 0,
+            "height": 0,
+            "rgbaBytesLowerBound": 0
+          },
+          {
+            "width": 2880,
+            "height": 1742,
+            "rgbaBytesLowerBound": 20067840
+          }
+        ],
+        "pending": 0,
+        "activePhysicalWorkers": 2,
+        "errors": [],
+        "status": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+      },
+      "physicalWorkerTargetsAfterExit": [],
+      "exceptionCount": 0
+    }
+  ],
+  "rawEvidence": [
+    {
+      "researchRelativePath": "r3-true-final-loading/receipt.json",
+      "sha256": "d6effb5f203cacb3c7c091d1393c628bf40c2a1111a679017d509afaf3487809",
+      "bytes": 67150
+    },
+    {
+      "researchRelativePath": "r3-accepted-product-dpr1/receipt.json",
+      "sha256": "0278f983cf239bb0d3a3f08310e96edba88e0fc12728f8ffb91a40e64e2702d2",
+      "bytes": 33132
+    },
+    {
+      "researchRelativePath": "r3-accepted-product-dpr2/receipt.json",
+      "sha256": "8a750d8e9c6d5fe82b6a1b26af77747eb29b9486368b7ebe097cb2770eb6061b",
+      "bytes": 33180
+    },
+    {
+      "researchRelativePath": "r3-accepted-product-dpr1/room-plan.png",
+      "sha256": "83160bfcebb53ca472cc5c1471dc8da7918acf700f8f0e95806f2747583415bc",
+      "bytes": 84211
+    },
+    {
+      "researchRelativePath": "r3-accepted-product-dpr2/room-plan.png",
+      "sha256": "f41180a1e8bc4b2baec3afd3fdc6781fa7ce5c3c94d45e9aeb5625a64ac4ddcb",
+      "bytes": 186792
+    },
+    {
+      "researchRelativePath": "r3-accepted-product-dpr1/returned-room-plan.png",
+      "sha256": "c6c252f3a045042a3100a6487efde8934092070c5b30c424162f6ede64f30728",
+      "bytes": 84563
+    },
+    {
+      "researchRelativePath": "r3-accepted-product-dpr2/returned-room-plan.png",
+      "sha256": "6d7030a4a6959ff71e81028f7f92423439ecef23d151347a4d8f66fe694c0dc2",
+      "bytes": 187263
+    }
+  ],
+  "limits": [
+    "One device and actual built loopback Host/World; read-only HTTPS proxy supplies the same published vector/reference map assets. No production Run commands.",
+    "Cold Run restored after a complete local-stack stop/restart; browser and source/preparation workers are fresh. Product source and pins remain exact; no saved Run state or source blob is published.",
+    "RAF intervals are motion scheduling, not GPU duration or monitor presentation. Frozen loading checkpoints separately observe matching semantic asset draw and GPU completion.",
+    "Memory counts are observed owned renderbuffer/resolve storage plus Canvas2D RGBA lower bounds; they exclude geometry buffers, module/worker heaps, native MapLibre/default buffers, driver overhead and peak process memory.",
+    "Observer cost is included; annotation spy time is separately reported, remaining wrapper overhead is not fully attributed.",
+    "Whole-site text fitting may reject labels below readable footprint scale; room/return gates require actual authored captions and upright Canvas2D transforms.",
+    "WAN, constrained devices and human usability beyond the separate manual review are not qualified here."
+  ]
+}

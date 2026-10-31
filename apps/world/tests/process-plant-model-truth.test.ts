@@ -13,15 +13,17 @@ import {
   type VariablePath,
 } from '../src/packs/process-plant/index.ts'
 import { resolveProcessPlantSignalBinding } from '../src/packs/process-plant/signals.ts'
+import { steamGeneratorDomeState } from '../src/packs/process-plant/runtime/steam-generator-dome.ts'
+import { compressedWaterState, saturatedWaterSteam } from '../src/packs/process-plant/runtime/water-properties.ts'
+import { parameterNumber } from '../src/packs/process-plant/runtime/component-helpers.ts'
 import { processPlantElectricalPortsAt } from '../src/packs/process-plant/electrical-ports.ts'
-import { itemBinding, flapText, framingRules } from '../src/packs/process-plant/displays/mimic/bindings.ts'
-import { indexSample, itemLook } from '../src/packs/process-plant/displays/mimic/evaluate.ts'
-import { icThresholdsForSignal } from '../src/packs/process-plant/displays/ic-thresholds.ts'
-import { formatQuantity } from '../src/packs/process-plant/displays/display-text.ts'
-import { compileMimic } from '../src/packs/process-plant/displays/mimic/compile-mimic.ts'
-import { MIMIC_MAX_WIDTH } from '../src/packs/process-plant/displays/mimic/mimic-model.ts'
-import { chatMimicProfile } from '../src/packs/process-plant/displays/mimic/profiles.ts'
-import { itemRowTexts, pipeStatesLook } from '../src/packs/process-plant/displays/mimic/rows.ts'
+import { icThresholdsForSignal } from '../src/packs/process-plant/ic/thresholds.ts'
+import { formatQuantity } from '../src/packs/process-plant/quantity-text.ts'
+import { derivedObservables, readDerived } from '../src/packs/process-plant/observation/derived.ts'
+import { servedPlantTopology } from '../src/packs/process-plant/observation/topology.ts'
+import type { ProcessPlantRuntimeInstance } from '../src/packs/process-plant/runtime-instance.ts'
+import { textWidth } from '../src/features/displays/topology/text.ts'
+import { orderWord } from '../src/ui/embed/vignette/readout.ts'
 import { guardPlantTests, PLANT_HANG_GUARD_MS } from './plant-hang-guard.ts'
 
 guardPlantTests()
@@ -52,7 +54,13 @@ const started = (system = plant) => {
     const snapshot = protection.snapshot()
     return [...snapshot.alarms, ...snapshot.trips].filter(lifecycle => lifecycle.active).map(lifecycle => lifecycle.id)
   }
-  return { runtime, protection, run, act, tag, read, activeIds }
+  // What an item's state observable says, as a display writes it: its word, and the command it does not follow.
+  const stateOf = (item: string) => {
+    const observable = derivedObservables('plant:model-truth' as never, system).find(entry => entry.ref.endsWith(`#${item}.state`))!
+    const reading = readDerived({ plant: system, runtime } as unknown as ProcessPlantRuntimeInstance, `${item}.state`, () => [])
+    return { word: observable.states!.find(state => state.value === reading.value)?.label ?? null, why: reading.why ?? null }
+  }
+  return { runtime, protection, run, act, tag, read, activeIds, stateOf }
 }
 
 describe('the pressurizer PORV', () => {
@@ -66,11 +74,16 @@ describe('the pressurizer PORV', () => {
     expect(plantRun.tag('PORV-456A-POS')).toBe(1)
     expect(Number(plantRun.read('pressurizer.reliefFlowKgPerS'))).toBeGreaterThan(1)
 
-    // The drawn PORV says it is open and that its demand disagrees.
-    const pzr = graph.componentIndexById.get('pressurizer' as never)!
-    const binding = itemBinding(plant, { kind: 'device', component: pzr, device: 'reliefValve' }, 'position', framingRules(plant))
-    const sample = indexSample([binding.state!.state!.path, binding.state!.command!].map(path => ({ path, value: plantRun.read(path), quality: 'good' })))
-    expect(itemLook(binding, sample)).toMatchObject({ state: { kind: 'position', fraction: 1 }, notMeasured: false, mismatch: 'CMD SHUT' })
+    // The PORV's state says it is open and that its demand disagrees.
+    expect(plantRun.stateOf('pressurizer.reliefValve')).toEqual({ word: 'OPEN', why: 'CMD SHUT' })
+
+    // Commanded to part of its travel, it writes the opening it was commanded to, in the room of its command line.
+    const demand = resolveProcessPlantSignalBinding(graph, { tagId: 'PORV-456A' as never }).path
+    plantRun.runtime.writeCommand({ type: 'setVariable', path: demand, value: 0.4 })
+    plantRun.run(1_000)
+    const stuck = plantRun.stateOf('pressurizer.reliefValve')
+    expect(stuck).toEqual({ word: 'OPEN', why: 'CMD 40 %' })
+    expect(textWidth(stuck.why!, 'command')).toBeLessThanOrEqual(textWidth('CMD 100 %', 'command'))
   })
 
   test('a partly failed PORV reads the opening it fails to', () => {
@@ -82,23 +95,17 @@ describe('the pressurizer PORV', () => {
 })
 
 describe('breakers', () => {
-  const breakerLook = (system: typeof plant, id: string, read: (path: string) => unknown) => {
-    const binding = itemBinding(system, { kind: 'component', component: system.graph.componentIndexById.get(id as never)! }, 'position', framingRules(system))
-    const paths = [binding.state!.state!.path, binding.state!.command!]
-    return itemLook(binding, indexSample(paths.map(path => ({ path, value: read(path), quality: 'good' }))))
-  }
-
   test('a breaker opened by its command reads open', () => {
     const plantRun = started()
     plantRun.run(2_000, { withIc: false })
     expect(plantRun.tag('BRK-OFFSITE-A-POS')).toBe(true)
-    expect(breakerLook(plant, 'offsiteBreakerA', plantRun.read)).toMatchObject({ state: { kind: 'closed' }, mismatch: null, words: 'closed' })
+    expect(plantRun.stateOf('offsiteBreakerA')).toEqual({ word: 'CLOSED', why: null })
     plantRun.runtime.writeCommand({ type: 'setVariable', path: 'offsiteBreakerA.closed' as VariablePath, value: false })
     plantRun.run(1_000, { withIc: false })
     expect(plantRun.tag('BRK-OFFSITE-A-CLOSED')).toBe(false)
     expect(plantRun.tag('BRK-OFFSITE-A-POS')).toBe(false)
     expect(plantRun.read('offsiteBreakerA.energized')).toBe(false)
-    expect(breakerLook(plant, 'offsiteBreakerA', plantRun.read)).toMatchObject({ state: { kind: 'open' }, mismatch: null, words: 'open' })
+    expect(plantRun.stateOf('offsiteBreakerA')).toEqual({ word: 'OPEN', why: null })
   })
 
   test('a tripped breaker reads open while its close command stays', () => {
@@ -111,7 +118,7 @@ describe('breakers', () => {
     expect(plantRun.tag('BRK-OFFSITE-A-POS')).toBe(false)
     expect(plantRun.tag('BRK-OFFSITE-B-POS')).toBe(true)
     expect(plantRun.read('offsiteBreakerA.energized')).toBe(false)
-    expect(breakerLook(plant, 'offsiteBreakerA', plantRun.read)).toMatchObject({ state: { kind: 'open' }, mismatch: 'CMD CLOSE', words: 'open; commanded close disagrees' })
+    expect(plantRun.stateOf('offsiteBreakerA')).toEqual({ word: 'OPEN', why: 'CMD CLOSED' })
   })
 
   test('a standby diesel output breaker stands open and closes onto its dead bus only once the diesel runs', () => {
@@ -121,7 +128,7 @@ describe('breakers', () => {
       expect(plantRun.tag(`EDG-${train}-RUN`), train).toBe(false)
       expect(plantRun.tag(`BRK-EDG-${train}-POS`), train).toBe(false)
     }
-    expect(breakerLook(plant, 'dieselBreakerA', plantRun.read)).toMatchObject({ state: { kind: 'open' }, mismatch: null, words: 'open' })
+    expect(plantRun.stateOf('dieselBreakerA')).toEqual({ word: 'OPEN', why: null })
 
     plantRun.act('loss-offsite-power')
     const firstTrue: Record<string, number> = {}
@@ -142,7 +149,7 @@ describe('breakers', () => {
       expect(firstTrue[`BRK-EDG-${train}-POS`]!).toBeLessThanOrEqual(15)
       expect(firstTrue[`BUS-${train}-ENERGIZED`]).toBe(firstTrue[`BRK-EDG-${train}-POS`])
     }
-    expect(breakerLook(plant, 'dieselBreakerA', plantRun.read)).toMatchObject({ state: { kind: 'closed' }, mismatch: null, words: 'closed' })
+    expect(plantRun.stateOf('dieselBreakerA')).toEqual({ word: 'CLOSED', why: null })
 
     // The safety loads run on the diesels when demanded.
     const safetyPumps = ['AFW-PUMP-A', 'AFW-PUMP-B', 'SI-PUMP-A', 'SI-PUMP-B', 'CHG-PUMP-A', 'CHG-PUMP-B', 'RHR-PUMP-A', 'RHR-PUMP-B', 'CSPRAY-A', 'CSPRAY-B']
@@ -168,7 +175,7 @@ describe('breakers', () => {
     expect(plantRun.tag('SI-PUMP-A-RUNNING')).toBe(true)
   })
 
-  test('a power line reads energized from what feeds it, and a drawn bus feeder from all its lines', () => {
+  test('a power line reads energized from what feeds it', () => {
     const plantRun = started()
     plantRun.run(2_000)
     const live = (linkId: string) => plantRun.read(`${linkId}.energized`)
@@ -186,48 +193,25 @@ describe('breakers', () => {
     expect(live('diesel-breaker-a-to-safety-bus-a')).toBe(true)
     expect(live('unit-bus-a-to-rcpA')).toBe(false)
 
-    const drawn = (intent: Parameters<typeof compileMimic>[1]) => {
-      const drawing = compileMimic(plant, intent, { profile: chatMimicProfile, maxWidth: MIMIC_MAX_WIDTH, maxHeight: 900 })
-      if (!drawing.ok) throw new Error(JSON.stringify(drawing.issues))
-      return { mimic: drawing.mimic, sample: indexSample(drawing.mimic.paths.map(path => ({ path, value: plantRun.read(path), quality: 'good' }))) }
-    }
-    // Drawn from the diesel to its pump, every line between them reads live.
-    const route = drawn({ from: ['dieselGeneratorA'], to: ['auxFeedwaterPumpMotor'] })
-    const lines = route.mimic.pipes.filter(pipe => !route.mimic.stubs.some(stub => pipe.id.startsWith(`${stub.id}.`)))
-    expect(lines.map(pipe => pipeStatesLook([pipe.state], route.sample))).toEqual(lines.map(() => 'live'))
-    // Around the pump, the bus's two feeders stop the drawing as one stub: live, as its diesel feeder is.
-    const around = drawn({ around: ['auxFeedwaterPumpMotor'], reach: 1 })
-    const feeders = around.mimic.stubs.find(stub => stub.states.length === 2 && stub.states.every(state => state.kind === 'power'))!
-    expect(feeders.states.map(state => pipeStatesLook([state], around.sample)).sort()).toEqual(['dead', 'live'])
-    expect(pipeStatesLook(feeders.states, around.sample)).toBe('live')
   })
 
-  test('a drawn bus reads its voltage, and a drawn diesel its running state from its run feedback', () => {
+  test('a bus reads its voltage, and a diesel its running state from its run feedback', () => {
     const plantRun = started()
     plantRun.run(2_000)
-    const drawing = compileMimic(plant, { from: ['dieselGeneratorA'], to: ['auxFeedwaterPumpMotor'] }, { profile: chatMimicProfile, maxWidth: MIMIC_MAX_WIDTH, maxHeight: 900 })
-    if (!drawing.ok) throw new Error(JSON.stringify(drawing.issues))
-    const rowsOf = (label: string) => {
-      const item = drawing.mimic.items.find(candidate => candidate.binding.label === label)!
-      const sample = indexSample(drawing.mimic.paths.map(path => ({ path, value: plantRun.read(path), quality: 'good' })))
-      return itemRowTexts(item.binding, item.presentation, item.rows, sample, formatQuantity)
-    }
-    expect(drawing.mimic.items.find(item => item.binding.label === 'EDG A')!.binding.state).toMatchObject({ aspect: 'running', state: { path: 'dieselGeneratorA.running' }, command: 'dieselGeneratorA.startCommand' })
-    // The bus reads its voltmeter, in kilovolts.
-    expect(rowsOf('Bus A')).toEqual(['6.60 kV'])
-    // A diesel writes its load beside its state, in the kW its instrument reads.
-    expect(rowsOf('EDG A')).toEqual(['STOP', '0 kW'])
+    // The bus reads its voltmeter, in kilovolts; the diesel stands by.
+    expect(Number(plantRun.read('safetyBusA.voltageKv'))).toBeCloseTo(6.6, 2)
+    expect(plantRun.stateOf('dieselGeneratorA')).toEqual({ word: 'STOP', why: null })
+    expect(Number(plantRun.read('dieselGeneratorA.outputKw'))).toBe(0)
     plantRun.act('loss-offsite-power')
     plantRun.run(5_000)
-    // Started on the dead bus and not yet up to speed: its start command shows beside it.
-    expect(rowsOf('EDG A')).toEqual(['CMD RUN', '0 kW'])
-    expect(rowsOf('Bus A')).toEqual(['0 kV'])
+    // Started on the dead bus and not yet up to speed: its state says the start command it does not yet follow.
+    expect(plantRun.stateOf('dieselGeneratorA')).toEqual({ word: 'STOP', why: 'CMD RUN' })
+    expect(Number(plantRun.read('safetyBusA.voltageKv'))).toBe(0)
     plantRun.run(45_000)
-    // Running, its load sequence done, the symbol shows it and says RUN, as a pump's does.
-    const load = Number(plantRun.read('dieselGeneratorA.outputKw'))
-    expect(load).toBeGreaterThan(1_000)
-    expect(rowsOf('EDG A')).toEqual(['RUN', `${Math.round(load)} kW`])
-    expect(rowsOf('Bus A')).toEqual(['6.60 kV'])
+    // Running, its load sequence done, it says RUN, as a pump does.
+    expect(Number(plantRun.read('dieselGeneratorA.outputKw'))).toBeGreaterThan(1_000)
+    expect(plantRun.stateOf('dieselGeneratorA')).toEqual({ word: 'RUN', why: null })
+    expect(Number(plantRun.read('safetyBusA.voltageKv'))).toBeCloseTo(6.6, 2)
   })
 
   test('a reactor trip opens both reactor trip breakers, read from their position feedback', () => {
@@ -251,9 +235,11 @@ describe('breakers', () => {
 
 describe('offsite power alarms', () => {
   test('each names one cause: a grid with no voltage is lost, a sagging grid degraded', () => {
-    const flap = (ruleId: string) => flapText(plant, plant.automation.rules.find(rule => rule.id === ruleId)!, undefined)
-    expect(flap('loss-of-offsite-power')).toEqual({ flap: 'V LO-LO · ALM', watches: 'V LO-LO', action: 'ALM' })
-    expect(flap('offsite-grid-degraded-voltage')).toEqual({ flap: 'V LO · ALM', watches: 'V LO', action: 'ALM' })
+    // The limit each rule sets on the grid's voltage, as a readout's chip names it: its order word and what the I&C does.
+    const limit = (ruleId: string) => graph.signalBindings.flatMap(binding => icThresholdsForSignal(plant, binding.path).thresholds
+      .filter(threshold => threshold.ruleId === ruleId).map(threshold => ({ path: String(binding.path), chip: `${orderWord(threshold)} · ${threshold.action}` })))
+    expect(limit('loss-of-offsite-power')).toEqual([{ path: 'offsiteGrid.supplyVoltageFraction', chip: 'LO-LO · ALM' }])
+    expect(limit('offsite-grid-degraded-voltage')).toEqual([{ path: 'offsiteGrid.supplyVoltageFraction', chip: 'LO · ALM' }])
     const plantRun = started()
     plantRun.run(2_000)
     plantRun.act('loss-offsite-power')
@@ -734,7 +720,8 @@ describe('a turbine trip', () => {
     expect(Number(plantRun.tag('SG-A-LVL-NR'))).toBeLessThan(levelBefore - 20)
     // The dumps open to the condenser and the safety valves stay shut.
     expect(dumpOpening).toBeGreaterThan(0.3)
-    expect(highestPressure).toBeLessThan(8.1)
+    const safetySetpoint = parameterNumber(graph.components.find(component => component.id === 'mainSteamSafetyValveA')!, 'setpointMPa')
+    expect(highestPressure).toBeLessThan(safetySetpoint)
     expect(safetyValveOpening).toBe(0)
   })
 
@@ -917,17 +904,35 @@ describe('main steam safety valves', () => {
     // None stands on the header past the isolation valves.
     expect(graph.components.some(component => String(component.id) === 'mainSteamSafetyValve')).toBe(false)
 
+    const nominal = createProcessPlantRuntime({ system: plant })
     const overpressured = compileProcessPlant(createPwrReferencePlantDefinition({
       id: 'plant:mssv-lift',
-      valueOverrides: Object.fromEntries(['A', 'B', 'C', 'D'].map(loop => [`sg${loop}.pressureMPa`, 10])),
+      // Pressure is derived from finite steam mass and dome volume. Start with
+      // the corresponding extra stock, not just a pressure indication that
+      // the first physical step would correctly recompute at nominal stock.
+      valueOverrides: Object.fromEntries(['A', 'B', 'C', 'D'].flatMap(loop => {
+        const component = graph.components.find(component => component.id === `sg${loop}`)!
+        const read = (local: string) => Number(nominal.readVariable(`sg${loop}.${local}` as VariablePath))
+        const liquidInventoryKg = read('secondaryInventoryKg')
+        const initial = { liquidInventoryKg, liquidTemperatureC: read('secondaryTemperatureC'), steamMassKg: read('steamMassKg'), pressureMPa: read('pressureMPa') }
+        const totalVolume = steamGeneratorDomeState(component, initial).steamSpaceVolumeM3
+          + liquidInventoryKg / compressedWaterState(initial.liquidTemperatureC, initial.pressureMPa).densityKgPerM3
+        const saturation = saturatedWaterSteam(10)
+        const steamSpace = totalVolume - liquidInventoryKg / compressedWaterState(saturation.temperatureC, 10).densityKgPerM3
+        return [[`sg${loop}.pressureMPa`, 10], [`sg${loop}.secondaryTemperatureC`, saturation.temperatureC],
+          [`sg${loop}.tubeMetalTemperatureC`, saturation.temperatureC + 3], [`sg${loop}.steamMassKg`, saturation.vapourDensityKgPerM3 * steamSpace]]
+      })),
     }))
     const runtime = createProcessPlantRuntime({ system: overpressured })
     const protection = createProcessPlantProtectionRunner({ system: overpressured, protection: overpressured.automation })
     const read = (path: string) => Number(runtime.readVariable(path as VariablePath))
+    // The first step establishes containment's algebraic gas pressure. Keep
+    // that baseline and include the safety-valve response from this very step.
     runtime.tick(1_000)
+    expect(read('sgA.pressureMPa')).toBeGreaterThan(parameterNumber(graph.components.find(component => component.id === 'mainSteamSafetyValveA')!, 'fullLiftMPa'))
     const containmentPressure = read('containment.pressureMPa')
-    let lift = 0
-    let containmentInflow = 0
+    let lift = read('mainSteamSafetyValveA.effectivePositionFraction')
+    let containmentInflow = read('containment.incomingMassKgPerS')
     for (let second = 0; second < 30; second += 1) {
       runtime.tick(1_000)
       protection.evaluate({ runtime, elapsedMs: runtime.elapsedMs(), simulationRunId: 'run-model-truth' as SimulationRunId, sourceRuntimeId: 'process-plant.local' })
@@ -1017,8 +1022,8 @@ describe('steam generator atmospheric relief valves as displays read them', () =
       for (const binding of [position, flow]) expect(binding.published, String(binding.path)).toBe(true)
       expect(String(flow.equipmentId)).toBe(`steamGeneratorReliefValve${loop}`)
       // A drawing reads the valve's position from that published feedback, never a value no instrument shows.
-      const valve = graph.componentIndexById.get(`steamGeneratorReliefValve${loop}` as never)!
-      expect(itemBinding(plant, { kind: 'component', component: valve }, 'position', framingRules(plant)).state?.state?.path).toBe(position.path)
+      const node = servedPlantTopology('plant:model-truth' as never, plant).nodes.find(entry => entry.id === `steamGeneratorReliefValve${loop}`)!
+      expect(node.bindings).toContainEqual({ role: 'position', ref: `plant:model-truth#${position.path}` })
       // Declared at the end, so every variable published before keeps its place.
       expect(published.indexOf(String(position.path))).toBeGreaterThan(published.indexOf('core.controlBankDStepsWithdrawn'))
       expect(published.indexOf(String(flow.path))).toBeGreaterThan(published.indexOf('core.controlBankDStepsWithdrawn'))
@@ -1071,19 +1076,23 @@ describe('signal labels', () => {
 describe('the condenser hotwell', () => {
   const hotwellLow = 'alarm:condenser-hotwell-level-low:hotwell-level-low'
 
-  test('alarms below 35 %, as the condensate pumps draw a low hotwell down after a trip', () => {
+  test('a near-low initial hotwell alarms below 35 % as condensate pumps draw it down after a trip', () => {
     const level = resolveProcessPlantSignalBinding(graph, { path: 'condenser.condensateLevelPercent' as never }).path
     expect(icThresholdsForSignal(plant, level).thresholds.map(threshold => [threshold.value, threshold.kind, threshold.direction])).toEqual([[35, 'alarm', 'low']])
-    // From its 55 % normal level a trip draws the hotwell down to about 43 % while the feedwater tank's level control
-    // valve shuts the condensate off; from 42 % the same draw-down passes the alarm.
+    // Start above the actual low alarm, with little reserve. The finite SG
+    // steam return competes with the condensate draw; do not assume the old
+    // fixed 12-point drawdown regardless of that arriving material.
+    const initialLevel = 36
     const low = compileProcessPlant(createPwrReferencePlantDefinition({
       id: 'plant:model-truth-hotwell',
       loopCount: 4,
-      valueOverrides: { 'condenser.condensateInventoryKg': 0.42 * 250_000, 'condenser.condensateLevelPercent': 42 },
+      valueOverrides: { 'condenser.condensateInventoryKg': initialLevel / 100 * 250_000, 'condenser.condensateLevelPercent': initialLevel },
     }))
     const plantRun = started(low)
     plantRun.run(5_000)
-    expect(Number(plantRun.read('condenser.condensateLevelPercent'))).toBeCloseTo(42, 0)
+    expect(Number(plantRun.read('condenser.condensateLevelPercent'))).toBeCloseTo(initialLevel, 0)
+    expect(plantRun.read('condensatePumpA.runningState')).toBe(true)
+    expect(plantRun.read('condensatePumpB.runningState')).toBe(true)
     expect(plantRun.activeIds()).not.toContain(hotwellLow)
     plantRun.act('turbine-trip')
     let alarmedAt: number | null = null

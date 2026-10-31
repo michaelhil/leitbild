@@ -1,0 +1,79 @@
+{
+  "status": "rejected",
+  "reason": "Depth-only resolution lost antialias coverage",
+  "control": {
+    "passed": false,
+    "foreground": [
+      255,
+      0,
+      0,
+      255
+    ],
+    "behind": [
+      255,
+      255,
+      255,
+      255
+    ],
+    "planFront": [
+      255,
+      255,
+      255,
+      255
+    ],
+    "coveredEdgePixels": 107,
+    "coverageMismatches": 47,
+    "hostDepthRange": [
+      0.2,
+      0.8
+    ],
+    "metrics": {
+      "depthFormat": "float32",
+      "samples": 4,
+      "programs": 1,
+      "textures": 2,
+      "framebuffers": 2,
+      "renderbuffers": 2,
+      "bytes": 655360,
+      "textureBytes": 131072,
+      "allocations": 1,
+      "composites": 3,
+      "liveTextures": null,
+      "livePrograms": null,
+      "liveFramebuffers": null,
+      "liveRenderbuffers": null
+    },
+    "glError": 0
+  },
+  "provenance": {
+    "rendererRoot": "/Users/hilde/Documents/ChatGPT/Leitbild-switchyard-depth-proof/apps/world",
+    "sourceRoot": "/Users/hilde/Documents/ChatGPT/Leitbild/apps/world",
+    "rendererCommit": "bc62403865f7e44faf0cf4de8bdcd39f86f72f14",
+    "sourceCommit": "e0ff789dd58033b7ddfa3728efa811f01f101dd8",
+    "fixtureDeliveryBytes": 29780801,
+    "fixtureSha256": "194eec67e761e41868afbc2d8e3695f7be1ec3df988a820b3255aa5c23bab200",
+    "definitions": [
+      {
+        "id": "layout:halden-campus",
+        "revision": "8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15",
+        "geometryKey": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15"
+      }
+    ],
+    "sources": {
+      "src/ui/map/physical-scene/backend.ts": "03b226927003d46b00824add4fcc75b816d3a904d20199d586138eb29e691a36",
+      "src/ui/map/physical-scene/render-pass.ts": "ec80ae7ae381fb4a004925d7a5de98bdd411f28441d15aa8a9c13687e6eebdb6",
+      "src/ui/map/physical-scene/depth-projection.ts": "f521601df604d6bc6f44b9b2dc0d0062d243eeb19ef55dcafaefda7a6f68b75b",
+      "src/ui/map/physical-scene/plan-projection.ts": "d4bcfd222c282ef7ae3634074876ecfdc09094698f4726dee30d098362ea8087",
+      "src/ui/map/physical-scene/gl-state.ts": "42e05a9999413e095ea1367cb32842ac3c8b96e6482432b76e5cf1605ef1cac0",
+      "src/ui/map/physical-scene/visibility.ts": "700e872682267dd2decbc14b534e676b99f8fcde88202ca6772cd24d25264f25",
+      "src/ui/map/physical-scene/map-viewport.ts": "8dc02a2203f18b883451ef22827e5235e9471876a3ef101c4192d57eb855145a",
+      "src/ui/map/physical-scene/scene-controller.ts": "94e735920c926a5f353e21252d8d506bc6a6161202c7f8c172ace318858a72dd",
+      "src/ui/map/physical-scene/preparation.ts": "1a254b6aa6a3b4546dac24e55ed2bd12314bf5921705bd7b64810aca7630537b",
+      "src/ui/map/physical-scene/renderer.ts": "b04bc8d841a9b70699c42cf3d981134fe7ad5a6479f9f8957a31407627dcd837",
+      "src/ui/map/physical-scene/geometry.ts": "6f99822044fc3e350a78bf1a0aebb9283c261a58c0a66ef4761448b2185e84fd",
+      "src/ui/map/physical-scene/canvas-viewport.ts": "bab0909663cea9109d84dc6fe06da6713e6154ed8272081cebffa5c77259313e",
+      "tests/browser/physical-scene/yard-depth-app.ts": "1bbcc9d000ad381898748cf712a260e3b2c52ee04b4cb559fa43ab0c5fa1b6b4"
+    }
+  },
+  "rawReceiptSha256": "c6e45094ec28fd61febf7e573788f9f230437459e71606c987ed509ef927fc3f"
+}

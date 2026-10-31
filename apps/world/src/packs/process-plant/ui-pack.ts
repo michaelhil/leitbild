@@ -1,12 +1,8 @@
 import type { WorldPackView } from '../../core/packs/protocol.ts'
 import { createWorldPackDescriptor } from '../../core/packs/protocol.ts'
-import { COMPOSED_DISPLAY_VIEW_TYPE, detailDisplayStateSchema } from './displays/composition.ts'
 import { processPlantPackId, processPlantUnitPackDataSchema } from './model.ts'
 import { processPlantPresentation } from './presentation.ts'
 import { processPlantSimRuntimeId } from './sim/constants.ts'
-
-// An embedded view's title holds at most this (embeddedViewPublicationSchema).
-const TAG_DISPLAY_TITLE_MAX = 120
 
 /** Browser-only Pack view. Simulation compilation and runtime code stay outside
  * the UI dependency graph. */
@@ -16,7 +12,7 @@ export const processPlantPackView = {
     version: '1.0.0',
     name: 'Process Plant',
     description: 'Configurable component-graph process plants with transient dynamics, procedures, controls, and engineering views.',
-    contributions: ['runtime', 'recording', 'knowledge', 'scenario', 'presentation'],
+    contributions: ['runtime', 'recording', 'knowledge', 'scenario', 'presentation', 'observation'],
   }),
   runtime: {
     runtimes: [{ id: processPlantSimRuntimeId, version: '1.0.0', label: 'Local process plant runtime', kind: 'local', clock: 'simulation' }],
@@ -28,9 +24,9 @@ export const processPlantPackView = {
       const parsed = processPlantUnitPackDataSchema.safeParse(object.packData)
       return parsed.success ? String(object.id) : null
     },
-    signalReadQuery: (plantId, tag) => ({
+    signalReadQuery: (plantId, tags) => ({
       capabilityId: 'world.process-plant.signals.read',
-      input: { plantId, signals: [{ tagId: tag.id, ...(tag.units === undefined ? {} : { requestedUnit: tag.units }) }] },
+      input: { plantId, evidence: true, signals: tags.map(tag => ({ tagId: tag.id, ...(tag.units === undefined ? {} : { requestedUnit: tag.units }) })) },
     }),
     tagValidationQuery: (plantId, tags) => ({
       capabilityId: 'world.process-plant.procedure-tags.validate',
@@ -47,19 +43,14 @@ export const processPlantPackView = {
     assessmentsQuery: (plantId, assessmentIds) => ({
       capabilityId: 'world.process-plant.assessments.evaluate', input: { plantId, assessmentIds },
     }),
-    // The equipment the tag is measured on, opened as from a unit overview: World draws what feeds it and where its outflow goes.
-    tagDisplay: (plantId, validation) => {
-      if (validation.measuredOn === undefined) return null
-      const label = typeof validation.signal?.label === 'string' ? validation.signal.label : null
-      const title = label === null ? validation.id : `${validation.id}: ${label}`
-      const state = JSON.stringify(detailDisplayStateSchema.parse({ detail: { plantId, components: [validation.measuredOn] } }))
-      return {
-        viewType: COMPOSED_DISPLAY_VIEW_TYPE,
-        title: title.length <= TAG_DISPLAY_TITLE_MAX ? title : `${title.slice(0, TAG_DISPLAY_TITLE_MAX - 1)}…`,
-        state,
-        // Equipment is drawn for the view it is shown in, as the embedded view draws it.
-        drawQuery: size => ({ capabilityId: 'world.process-plant.display.view', input: { plantId, state, size } }),
-      }
-    },
+  },
+  ui: {
+    surfacePanels: [],
+    // The display window's header, for a Plant's display: its runtime not started, pending proposals, the procedure its
+    // worst safety function calls for, the operations log, the Run's Assistant, its engineering views and the Plant
+    // catalog, the Instructor's actions.
+    windowTools: async () => await import('./ui/displays/WindowTools.svelte'),
+    // A press on a unit's map icon or rail row opens its overview display.
+    displayOnPress: true,
   },
 } satisfies WorldPackView

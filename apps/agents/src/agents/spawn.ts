@@ -22,6 +22,7 @@ import { callLLM, streamLLM } from './evaluation.ts'
 import { addAgentToRoom } from './actions.ts'
 import { createToolSurface } from '../tool-surface/index.ts'
 import { WORKSPACE_CAPABILITY_TOOL_NAMES } from '../tools/built-in/workspace-capability-tools.ts'
+import type { RunContextFetcher } from './run-context.ts'
 import type { WorkspaceSubjectReference } from '@leitbild/contracts'
 import type { ExecutionStore } from '../core/executions/store.ts'
 
@@ -325,6 +326,7 @@ export interface SpawnOptions {
   readonly executionStore?: ExecutionStore
   readonly executionGrowth?: ExecutionGrowth
   readonly runToolOperation?: RunToolOperation
+  readonly fetchRunContext?: RunContextFetcher
   readonly overrideId?: string
   readonly getSkills?: (skillNames: ReadonlyArray<string>, roomId: string) => string
   readonly getActiveSkillsDeclarations?: (skillNames: ReadonlyArray<string>, roomId: string) => ReadonlyArray<{
@@ -366,8 +368,8 @@ export const spawnAIAgent = async (
   toolRegistry?: ToolRegistry,
   spawnOptions?: SpawnOptions,
 ): Promise<AIAgent> => {
-  // Bind once per agent: source='agent', agentId baked in, chain-switch
-  // events surface via onEvalEvent as the existing model_fallback kind.
+  // Bind the metadata/tool provider to this Agent; generation binds each
+  // turn separately so late cancelled calls retain their own evidence sink.
   // agentId is fixed up-front so the bound provider can carry it before
   // createAIAgent is called (resolveAgentTools needs the provider too).
   const agentId = spawnOptions?.overrideId ?? crypto.randomUUID()
@@ -378,20 +380,16 @@ export const spawnAIAgent = async (
   // additionally per-target so a long outage produces ONE notice, not one
   // per call.
   let lastFallbackTarget: string | null = null
-  const onChainSwitch = spawnOptions?.onEvalEvent
-    ? (preferred: string, effective: string, reason: string) => {
-        if (lastFallbackTarget === effective) return
-        lastFallbackTarget = effective
-        spawnOptions.onEvalEvent!(
-          { agentId, agentName: config.name },
-          { kind: 'model_fallback', preferred, effective, reason },
-        )
-      }
-    : undefined
+  const onChainSwitch = (preferred: string, effective: string, reason: string): void => {
+    const event = { kind: 'model_fallback' as const, preferred, effective, reason }
+    if (lastFallbackTarget === effective) return
+    lastFallbackTarget = effective
+    spawnOptions?.onEvalEvent?.({ agentId, agentName: config.name }, event)
+  }
   const llmProvider: LLMProvider = llmService.bound({
     source: 'agent',
     agentId,
-    ...(onChainSwitch ? { onChainSwitch } : {}),
+    onChainSwitch,
   })
   // Validate name before any expensive work — prevents orphaned agent creation on collision
   if (team.getAgent(config.name)) {
@@ -498,8 +496,8 @@ export const spawnAIAgent = async (
   }
 
   // A progress line goes to the turn's Room at once, as the Agent's own chat
-  // message, while its turn continues. It carries no generation evidence or
-  // telemetry and is linked to no turn: it is no answer, so display requests,
+  // message, while its turn continues. Its exact activity link is separate
+  // from final-answer generation metadata: it is no answer, so display requests,
   // proposal watches and model comparisons attach only to the answer that
   // follows, and no Agent answers it (ai-agent.ts triggersEvaluation).
   const onProgress = (progress: AgentProgress): void => {
@@ -509,6 +507,7 @@ export const spawnAIAgent = async (
       content: progress.content,
       type: 'chat',
       progress: true,
+      ...(progress.progressEvidence === undefined ? {} : { progressEvidence: progress.progressEvidence }),
       ...(progress.inReplyTo ? { inReplyTo: progress.inReplyTo } : {}),
     })
   }
@@ -528,11 +527,16 @@ export const spawnAIAgent = async (
 
   const agent = createAIAgent(config, llmProvider, onDecision, {
     ...toolSupport,
+    providerForTurn: observer => llmService.bound({ source: 'agent', agentId, onChainSwitch: (preferred, effective, reason) => {
+      observer({ kind: 'model_fallback', preferred, effective, reason })
+      onChainSwitch(preferred, effective, reason)
+    } }),
     onProgress,
     ...(spawnOptions?.onTurnStart ? { onTurnStart: spawnOptions.onTurnStart } : {}),
     ...(spawnOptions?.onTurnFinished ? { onTurnFinished: spawnOptions.onTurnFinished } : {}),
     ...(spawnOptions?.executionStore ? { executionStore: spawnOptions.executionStore } : {}),
     ...(spawnOptions?.executionGrowth ? { executionGrowth: spawnOptions.executionGrowth } : {}),
+    ...(spawnOptions?.fetchRunContext ? { fetchRunContext: spawnOptions.fetchRunContext } : {}),
     getWorkspacePrompt: settings.getPrompt,
     getResponseFormat: settings.getResponseFormat,
     getCompressedIds: (roomId: string) => rooms.getRoom(roomId)?.getCompressedIds() ?? new Set(),

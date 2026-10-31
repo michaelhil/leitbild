@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { answerProcessPlantQuery, compileProcessPlant, createProcessPlantRampRunner, createProcessPlantRuntime, createPwrReferencePlantDefinition } from '../src/packs/process-plant/index.ts'
+import { answerProcessPlantQuery, compileProcessPlant, createProcessPlantRampRunner, createProcessPlantRuntime, createProcessPlantProtectionRunner, createPwrReferencePlantDefinition } from '../src/packs/process-plant/index.ts'
 import { createProcessPlantRuntimePerformance, type ProcessPlantRuntimeInstance } from '../src/packs/process-plant/runtime-instance.ts'
 import { processPlantSignalReferenceSchema } from '../src/packs/process-plant/signals.ts'
 import { evaluateProcessPlantProcedureCondition, processPlantProcedureConditionSchema, type ProcessPlantProcedureCondition } from '../src/packs/process-plant/condition-evidence.ts'
@@ -8,6 +8,7 @@ import { processPlantCapabilities } from '../src/packs/process-plant/capabilitie
 import { createProcessPlantRecordingPlan } from '../src/packs/process-plant/recording.ts'
 import { isoTimestampSchema, objectIdSchema } from '../src/core/model/index.ts'
 import { guardPlantTests } from './plant-hang-guard.ts'
+import { expandProcessPlantProcedureEvidence } from '../src/packs/process-plant/procedure-evidence-facts.ts'
 
 guardPlantTests()
 
@@ -17,7 +18,12 @@ const plant: ProcessPlantRuntimeInstance = { plant: compiled, runtime, ramps: cr
 const basis = { modelRef: compiled.modelRef, modelDigest: compiled.modelDigest, source: 'source:apps/world/src/packs/process-plant/specs/pwr-reference-template.graph.json', description: 'A bounded model comparison; no CSF adequacy claim.' }
 const power = (value: number, operator: '>' | '<' = '>'): ProcessPlantProcedureCondition => ({ type: 'comparison', signal: processPlantSignalReferenceSchema.parse({ path: 'core.powerMw' }), operator, value, unit: 'MW' })
 const missing: ProcessPlantProcedureCondition = { type: 'comparison', signal: processPlantSignalReferenceSchema.parse({ tagId: 'UNINSTALLED-NI' }), operator: '>', value: 0, unit: 'MW' }
-const evaluate = (condition: ProcessPlantProcedureCondition, target = plant) => evaluateProcessPlantProcedureCondition({ plant: target, condition, basis })
+// Decision assertions inspect the explicit expanded view; the public result
+// retains each exact acquisition once in its frame-local readings table.
+const evaluate = (condition: ProcessPlantProcedureCondition, target = plant) => {
+  const result = evaluateProcessPlantProcedureCondition({ plant: target, condition, basis })
+  return { ...result, evidence: expandProcessPlantProcedureEvidence(result) }
+}
 
 describe('read-only procedure condition evidence', () => {
   test('retains actual values, native metadata, model identity and simulation time without accepting any actuation', () => {
@@ -28,9 +34,53 @@ describe('read-only procedure condition evidence', () => {
     expect(runtime.checkpoint()).toEqual(before)
   })
 
+  test('factual evidence preserves every comparison decision and the independently acquired native facts', () => {
+    const signal = processPlantSignalReferenceSchema.parse({ path: 'core.powerMw' })
+    const binding = compiled.graph.signalBindingByPath.get(signal.path!)!
+    const snapshot = runtime.readVariableSnapshot(binding.path)
+    const actual = Number(snapshot.value)
+    const operators = ['<', '<=', '==', '!=', '>=', '>'] as const
+    const expected = (operator: typeof operators[number], threshold: number) => operator === '<' ? actual < threshold : operator === '<=' ? actual <= threshold
+      : operator === '==' ? actual === threshold : operator === '!=' ? actual !== threshold : operator === '>=' ? actual >= threshold : actual > threshold
+    for (const operator of operators) for (const value of [actual - 1, actual, actual + 1]) {
+      const result = evaluate({ type: 'comparison', signal, operator, value, unit: 'MW' })
+      expect(result.status).toBe(expected(operator, value) ? 'satisfied' : 'challenged')
+      expect(result.evidence[0]).toMatchObject({ reference: signal, comparison: { operator, value, unit: 'MW' }, quality: { status: 'good' },
+        signal: { path: binding.path, label: binding.label, unit: binding.unit, writable: binding.writable, published: binding.published },
+        variable: { path: snapshot.path, value: snapshot.value, canonicalValue: snapshot.canonicalValue, unit: snapshot.unit, writable: snapshot.writable, published: snapshot.published } })
+    }
+    // Graph and acquired snapshot are independent evidence. A read must not hide
+    // a unit or writability disagreement by merging one over the other.
+    const changed = { ...plant, runtime: { ...runtime, readVariableSnapshot: (path: Parameters<typeof runtime.readVariableSnapshot>[0]) => ({ ...runtime.readVariableSnapshot(path),
+      canonicalValue: 17, unit: 'kW' as const, writable: true, limits: { hardRange: { min: 0, max: 1e9 } } }) } }
+    const result = evaluate(power(1), changed)
+    expect(result).toMatchObject({ status: 'unknown', evidence: [{ signal: { unit: 'MW', writable: false },
+      variable: { value: actual, canonicalValue: 17, unit: 'kW', writable: true, limits: { hardRange: { min: 0, max: 1e9 } } },
+      reason: expect.stringContaining('Writable commands/demands') }] })
+  })
+
+  test('one acquired operand serves all its comparisons without losing a single threshold, reference or outcome', () => {
+    const result = evaluateProcessPlantProcedureCondition({ plant, basis, condition: { type: 'all', conditions: [power(0), power(1e9), power(1e9, '<')] } })
+    expect(result.readings).toHaveLength(1)
+    expect(result.evidence).toHaveLength(3)
+    expect(result.evidence.map(row => 'readingIndex' in row ? row.readingIndex : undefined)).toEqual([0, 0, 0])
+    expect(expandProcessPlantProcedureEvidence(result)).toEqual([evaluate(power(0)).evidence[0]!, evaluate(power(1e9)).evidence[0]!, evaluate(power(1e9, '<')).evidence[0]!])
+    expect(result.status).toBe('challenged')
+  })
+
+  test('strict expansion accepts the actual graph-declared external identity without inventing a new binding', () => {
+    const external = processPlantSignalReferenceSchema.parse({ tagId: 'nis.power_range.avg' })
+    const canonical = processPlantSignalReferenceSchema.parse({ tagId: 'NIS-PR-AVG' })
+    const result = evaluateProcessPlantProcedureCondition({ plant, basis, condition: { type: 'all', conditions: [external, canonical].map(signal => ({ type: 'comparison', signal, operator: '>', value: 0, unit: 'percent' })) } })
+    expect(result.status).toBe('satisfied')
+    expect(result.readings).toHaveLength(1)
+    expect(result.readings[0]?.signal).toMatchObject({ tagId: 'NIS-PR-AVG', externalRefs: ['nis.power_range.avg'] })
+    expect(expandProcessPlantProcedureEvidence(result).map(row => 'reference' in row ? row.reference : undefined)).toEqual([external, canonical])
+  })
+
   test('unknown units, absent bindings and value types cannot become successful comparisons', () => {
     expect(evaluate({ ...power(1), unit: 'percent' } as ProcessPlantProcedureCondition).evidence[0]?.reason).toContain('native signal unit MW')
-    expect(evaluate(missing)).toMatchObject({ status: 'unknown', evidence: [{ status: 'unknown', rangeValidity: 'unavailable' }] })
+    expect(evaluate(missing)).toMatchObject({ status: 'unknown', evidence: [{ status: 'unknown', rangeValidity: 'unavailable', quality: { status: 'unavailable', reason: 'Signal is absent from the current Plant graph.' } }] })
     expect(evaluate({ ...power(1), value: true } as ProcessPlantProcedureCondition)).toMatchObject({ status: 'unknown' })
     expect(evaluate({ type: 'not', condition: missing }).status).toBe('unknown')
   })
@@ -56,7 +106,8 @@ describe('read-only procedure condition evidence', () => {
   test('an out-of-range reading is unknown rather than a qualified overrange bound', () => {
     // Test-only failed reading; production variable tables reject invalid writes.
     const failed = { ...plant, runtime: { ...runtime, readVariableSnapshot: (path: Parameters<typeof runtime.readVariableSnapshot>[0]) => ({ ...runtime.readVariableSnapshot(path), value: 5000, limits: { hardRange: { min: 0, max: 4000 } } }) } }
-    expect(evaluate(power(1), failed)).toMatchObject({ status: 'unknown', evidence: [{ rangeValidity: 'outside-declared-range', instrumentationValidity: 'not-established' }] })
+    expect(evaluate(power(1), failed)).toMatchObject({ status: 'unknown', evidence: [{ rangeValidity: 'outside-declared-range', instrumentationValidity: 'not-established',
+      variable: { value: 5000, limits: { hardRange: { min: 0, max: 4000 } } }, quality: { status: 'outside-hard-range' } }] })
   })
 
   test('capability binds the canonical target and validates typed input and full output', () => {
@@ -69,6 +120,24 @@ describe('read-only procedure condition evidence', () => {
     expect(processPlantProcedureConditionSchema.safeParse({ type: 'vote', required: 3, conditions: [power(0)] }).success).toBe(false)
     const result = answerProcessPlantQuery({ request: { capabilityId: capability.id, input }, plants: new Map([[compiled.id, plant]]), objects: new Map() })
     expect(capability.output.parse(result)).toMatchObject({ targetObjectId: compiled.id, status: 'satisfied' })
+  })
+
+  test('I&C state reads actual rules and latches; missing state, failures and physical command substitutions remain unknown', () => {
+    const protection = createProcessPlantProtectionRunner({ system: compiled, protection: compiled.automation })
+    const current = { ...plant, protection }
+    const inactive = { type: 'ic-rule-state', ruleId: 'safety-injection-manual', field: 'active', value: false, source: '../basis.md#si' } as const
+    expect(evaluate(inactive, current).status).toBe('satisfied')
+    let snapshotReads = 0
+    const counted = { ...current, protection: { ...protection, snapshot: () => { snapshotReads++; return protection.snapshot() } } }
+    expect(evaluate({ type: 'all', conditions: [inactive, { ...inactive, field: 'latched' }] }, counted).status).toBe('satisfied')
+    expect(snapshotReads).toBe(1)
+    expect(evaluate({ ...inactive, ruleId: 'UNMODELED-PHASE-B' }, current).status).toBe('unknown')
+    expect(evaluate(inactive, plant).status).toBe('unknown')
+    const failed = { ...current, protection: { ...protection, snapshot: () => ({ ...protection.snapshot(), failures: [{ ruleId: inactive.ruleId, elapsedMs: 0, message: 'Acquisition failed' }] }) } }
+    expect(evaluate(inactive, failed)).toMatchObject({ status: 'unknown', evidence: [{ reason: expect.stringContaining('Acquisition failed') }] })
+    expect(evaluate({ type: 'comparison', signal: processPlantSignalReferenceSchema.parse({ tagId: 'SI-PUMP-A' }), operator: '==', value: true, unit: 'boolean' }, current)).toMatchObject({ status: 'unknown', evidence: [{ reason: expect.stringContaining('Writable commands/demands') }] })
+    const latched = { ...current, protection: { ...protection, snapshot: () => ({ ...protection.snapshot(), rules: protection.snapshot().rules.map(rule => rule.ruleId === inactive.ruleId ? { ...rule, active: false, latched: true } : rule) }) } }
+    expect(evaluate({ ...inactive, field: 'latched', value: true }, latched)).toMatchObject({ status: 'satisfied', evidence: [{ type: 'ic-rule-state', field: 'latched', value: true }] })
   })
 
   test('critical safety functions are judged by declared reference-model trees that read the actual loops, never as qualified criteria', () => {
@@ -94,12 +163,12 @@ describe('read-only procedure condition evidence', () => {
     expect(evaluateProcessPlantAssessments(failed, ['core-cooling'])[0]).toMatchObject({ status: 'green' })
     const reactivity: ProcessPlantProcedureCondition = { type: 'comparison', signal: processPlantSignalReferenceSchema.parse({ path: 'core.effectiveReactivityPcm' }), operator: '<', value: 0, unit: 'pcm' }
     const frame = evaluate({ type: 'all', conditions: [reactivity, power(1e9)] }, failed)
-    expect(frame).toMatchObject({ status: 'challenged', evidence: [{ status: 'unknown', rangeValidity: 'unavailable', reason: 'Acquisition failed' }, { status: 'challenged', variable: { unit: 'MW' } }] })
+    expect(frame).toMatchObject({ status: 'challenged', evidence: [{ status: 'unknown', rangeValidity: 'unavailable', reason: 'Acquisition failed', quality: { status: 'unavailable', reason: 'Acquisition failed' } }, { status: 'challenged', variable: { unit: 'MW' } }] })
   })
 
   test('recording preserves a declared range failure instead of marking every sample good', () => {
     const failed = { ...plant, runtime: { ...runtime, readVariableSnapshotHandle: (handle: Parameters<typeof runtime.readVariableSnapshotHandle>[0]) => ({ ...runtime.readVariableSnapshotHandle(handle), ...(String(handle.path) === 'core.powerMw' ? { value: 5000, limits: { hardRange: { min: 0, max: 4000 } } } : {}) }) } }
-    const plan = createProcessPlantRecordingPlan({ selection: { packId: 'process-plant', profileId: 'operations' }, plants: new Map([[compiled.id, failed]]) })
+    const plan = createProcessPlantRecordingPlan({ selection: { packId: 'process-plant', profileId: 'operations' }, plants: new Map([[compiled.id, failed]]), unitLabels: new Map([[compiled.id, 'Test Unit']]) })
     const timestamp = isoTimestampSchema.parse('2026-10-02T10:00:00.000Z')
     const descriptor = plan.descriptors.find(row => row.signalId === 'core.powerMw')!
     const batch = plan.sample({ observedAt: timestamp, simulationTime: timestamp })

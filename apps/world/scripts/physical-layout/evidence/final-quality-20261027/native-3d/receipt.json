@@ -1,0 +1,1061 @@
+{
+  "phases": [
+    {
+      "mode": "all",
+      "status": false,
+      "errors": [],
+      "originalCamera": {
+        "target": [
+          44.4,
+          11.5,
+          24
+        ],
+        "distance": 115,
+        "azimuth": -0.7,
+        "elevation": 0.56,
+        "top": false
+      },
+      "nativeCamera": {
+        "center": [
+          11.469999999999999,
+          59.08701798640254
+        ],
+        "pitch": 57.914,
+        "bearing": 40.10699999999997,
+        "zoom": 18.47916739958944,
+        "revision": 4,
+        "elevation": 11.499993971062663
+      },
+      "originalViewport": {
+        "width": 1280,
+        "height": 944
+      },
+      "nativeViewport": {
+        "width": 1280,
+        "height": 944
+      },
+      "nativeMetrics": {
+        "geometryUploads": 1,
+        "geometryBytes": 15574800,
+        "residentCpuBytes": 49508088,
+        "draws": 8,
+        "buffers": 3,
+        "programs": 2,
+        "textures": 3,
+        "textureBytes": 4981760,
+        "instanceBytes": 68,
+        "instanceUploads": 4,
+        "statusUploads": 3,
+        "paletteUploads": 1,
+        "evictions": 0,
+        "peakRequiredBytes": 15723348,
+        "liveBuffersAfterDisposal": null,
+        "liveProgramsAfterDisposal": null,
+        "liveTexturesAfterDisposal": null,
+        "architecture": {
+          "geometryUploads": 0,
+          "orderUploads": 0,
+          "instanceUploads": 0,
+          "statusUploads": 0,
+          "paletteUploads": 0,
+          "draws": 0,
+          "geometryBytes": 0,
+          "orderBytes": 0,
+          "instanceBytes": 0,
+          "traversalBytes": 0,
+          "residentCpuBytes": 0,
+          "buffers": 0,
+          "programs": 0,
+          "textures": 0,
+          "textureBytes": 0,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null,
+          "liveTexturesAfterDisposal": null
+        },
+        "cpuResidency": {
+          "residentViews": 1,
+          "residentBytes": 49508088,
+          "peakRequiredBytes": 49508088,
+          "evictions": 0
+        },
+        "renderPass": {
+          "depthFormat": "float32",
+          "samples": 4,
+          "programs": 1,
+          "textures": 1,
+          "framebuffers": 2,
+          "renderbuffers": 2,
+          "bytes": 43499520,
+          "textureBytes": 4833280,
+          "allocations": 1,
+          "composites": 4,
+          "liveTextures": null,
+          "livePrograms": null,
+          "liveFramebuffers": null,
+          "liveRenderbuffers": null
+        },
+        "depthNear": 18.879999995992936
+      },
+      "statusWitness": {
+        "changedPixels": 11658,
+        "unchangedPixels": 1196662,
+        "geometryUploadsBefore": 1,
+        "geometryUploadsAfter": 1
+      },
+      "note": "The original uses its actual per-level natural camera. Native uses the admitted scope Home and real MapLibre camera. Poses are recorded rather than assumed equal; no reflected comparison matrix is supplied. Status is controlled fixture input, never live plant evidence. The technical pass does not certify visual parity."
+    },
+    {
+      "mode": "all",
+      "status": true,
+      "errors": [],
+      "originalCamera": {
+        "target": [
+          44.4,
+          11.5,
+          24
+        ],
+        "distance": 115,
+        "azimuth": -0.7,
+        "elevation": 0.56,
+        "top": false
+      },
+      "nativeCamera": {
+        "center": [
+          11.469999999999999,
+          59.08701798640254
+        ],
+        "pitch": 57.914,
+        "bearing": 40.10699999999997,
+        "zoom": 18.47916739958944,
+        "revision": 6,
+        "elevation": 11.499993971062663
+      },
+      "originalViewport": {
+        "width": 1280,
+        "height": 944
+      },
+      "nativeViewport": {
+        "width": 1280,
+        "height": 944
+      },
+      "nativeMetrics": {
+        "geometryUploads": 1,
+        "geometryBytes": 15574800,
+        "residentCpuBytes": 49508088,
+        "draws": 14,
+        "buffers": 3,
+        "programs": 2,
+        "textures": 3,
+        "textureBytes": 4981760,
+        "instanceBytes": 68,
+        "instanceUploads": 7,
+        "statusUploads": 4,
+        "paletteUploads": 1,
+        "evictions": 0,
+        "peakRequiredBytes": 15723348,
+        "liveBuffersAfterDisposal": null,
+        "liveProgramsAfterDisposal": null,
+        "liveTexturesAfterDisposal": null,
+        "architecture": {
+          "geometryUploads": 0,
+          "orderUploads": 0,
+          "instanceUploads": 0,
+          "statusUploads": 0,
+          "paletteUploads": 0,
+          "draws": 0,
+          "geometryBytes": 0,
+          "orderBytes": 0,
+          "instanceBytes": 0,
+          "traversalBytes": 0,
+          "residentCpuBytes": 0,
+          "buffers": 0,
+          "programs": 0,
+          "textures": 0,
+          "textureBytes": 0,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null,
+          "liveTexturesAfterDisposal": null
+        },
+        "cpuResidency": {
+          "residentViews": 1,
+          "residentBytes": 49508088,
+          "peakRequiredBytes": 49508088,
+          "evictions": 0
+        },
+        "renderPass": {
+          "depthFormat": "float32",
+          "samples": 4,
+          "programs": 1,
+          "textures": 1,
+          "framebuffers": 2,
+          "renderbuffers": 2,
+          "bytes": 43499520,
+          "textureBytes": 4833280,
+          "allocations": 1,
+          "composites": 7,
+          "liveTextures": null,
+          "livePrograms": null,
+          "liveFramebuffers": null,
+          "liveRenderbuffers": null
+        },
+        "depthNear": 18.879999995992936
+      },
+      "statusWitness": {
+        "changedPixels": 11658,
+        "unchangedPixels": 1196662,
+        "geometryUploadsBefore": 1,
+        "geometryUploadsAfter": 1
+      },
+      "note": "The original uses its actual per-level natural camera. Native uses the admitted scope Home and real MapLibre camera. Poses are recorded rather than assumed equal; no reflected comparison matrix is supplied. Status is controlled fixture input, never live plant evidence. The technical pass does not certify visual parity."
+    },
+    {
+      "mode": "operating",
+      "status": false,
+      "errors": [],
+      "originalCamera": {
+        "target": [
+          44,
+          18,
+          18
+        ],
+        "distance": 120,
+        "azimuth": -0.65,
+        "elevation": 0.65,
+        "top": false
+      },
+      "nativeCamera": {
+        "center": [
+          11.469992997800489,
+          59.087071945553646
+        ],
+        "pitch": 52.75774,
+        "bearing": 37.24225999999999,
+        "zoom": 18.803162309180895,
+        "revision": 9,
+        "elevation": 17.99996225362874
+      },
+      "originalViewport": {
+        "width": 1280,
+        "height": 944
+      },
+      "nativeViewport": {
+        "width": 1280,
+        "height": 944
+      },
+      "nativeMetrics": {
+        "geometryUploads": 2,
+        "geometryBytes": 4414896,
+        "residentCpuBytes": 13927524,
+        "draws": 22,
+        "buffers": 3,
+        "programs": 2,
+        "textures": 3,
+        "textureBytes": 4871776,
+        "instanceBytes": 68,
+        "instanceUploads": 11,
+        "statusUploads": 7,
+        "paletteUploads": 2,
+        "evictions": 1,
+        "peakRequiredBytes": 15723348,
+        "liveBuffersAfterDisposal": null,
+        "liveProgramsAfterDisposal": null,
+        "liveTexturesAfterDisposal": null,
+        "architecture": {
+          "geometryUploads": 0,
+          "orderUploads": 0,
+          "instanceUploads": 0,
+          "statusUploads": 0,
+          "paletteUploads": 0,
+          "draws": 0,
+          "geometryBytes": 0,
+          "orderBytes": 0,
+          "instanceBytes": 0,
+          "traversalBytes": 0,
+          "residentCpuBytes": 0,
+          "buffers": 0,
+          "programs": 0,
+          "textures": 0,
+          "textureBytes": 0,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null,
+          "liveTexturesAfterDisposal": null
+        },
+        "cpuResidency": {
+          "residentViews": 1,
+          "residentBytes": 13927524,
+          "peakRequiredBytes": 49508088,
+          "evictions": 1
+        },
+        "renderPass": {
+          "depthFormat": "float32",
+          "samples": 4,
+          "programs": 1,
+          "textures": 1,
+          "framebuffers": 2,
+          "renderbuffers": 2,
+          "bytes": 43499520,
+          "textureBytes": 4833280,
+          "allocations": 1,
+          "composites": 11,
+          "liveTextures": null,
+          "livePrograms": null,
+          "liveFramebuffers": null,
+          "liveRenderbuffers": null
+        },
+        "depthNear": 18.879999993703255
+      },
+      "statusWitness": {
+        "changedPixels": 11142,
+        "unchangedPixels": 1197178,
+        "geometryUploadsBefore": 2,
+        "geometryUploadsAfter": 2
+      },
+      "note": "The original uses its actual per-level natural camera. Native uses the admitted scope Home and real MapLibre camera. Poses are recorded rather than assumed equal; no reflected comparison matrix is supplied. Status is controlled fixture input, never live plant evidence. The technical pass does not certify visual parity."
+    },
+    {
+      "mode": "operating",
+      "status": true,
+      "errors": [],
+      "originalCamera": {
+        "target": [
+          44,
+          18,
+          18
+        ],
+        "distance": 120,
+        "azimuth": -0.65,
+        "elevation": 0.65,
+        "top": false
+      },
+      "nativeCamera": {
+        "center": [
+          11.469992997800489,
+          59.087071945553646
+        ],
+        "pitch": 52.75774,
+        "bearing": 37.24225999999999,
+        "zoom": 18.803162309180895,
+        "revision": 11,
+        "elevation": 17.99996225362874
+      },
+      "originalViewport": {
+        "width": 1280,
+        "height": 944
+      },
+      "nativeViewport": {
+        "width": 1280,
+        "height": 944
+      },
+      "nativeMetrics": {
+        "geometryUploads": 2,
+        "geometryBytes": 4414896,
+        "residentCpuBytes": 13927524,
+        "draws": 28,
+        "buffers": 3,
+        "programs": 2,
+        "textures": 3,
+        "textureBytes": 4871776,
+        "instanceBytes": 68,
+        "instanceUploads": 14,
+        "statusUploads": 8,
+        "paletteUploads": 2,
+        "evictions": 1,
+        "peakRequiredBytes": 15723348,
+        "liveBuffersAfterDisposal": null,
+        "liveProgramsAfterDisposal": null,
+        "liveTexturesAfterDisposal": null,
+        "architecture": {
+          "geometryUploads": 0,
+          "orderUploads": 0,
+          "instanceUploads": 0,
+          "statusUploads": 0,
+          "paletteUploads": 0,
+          "draws": 0,
+          "geometryBytes": 0,
+          "orderBytes": 0,
+          "instanceBytes": 0,
+          "traversalBytes": 0,
+          "residentCpuBytes": 0,
+          "buffers": 0,
+          "programs": 0,
+          "textures": 0,
+          "textureBytes": 0,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null,
+          "liveTexturesAfterDisposal": null
+        },
+        "cpuResidency": {
+          "residentViews": 1,
+          "residentBytes": 13927524,
+          "peakRequiredBytes": 49508088,
+          "evictions": 1
+        },
+        "renderPass": {
+          "depthFormat": "float32",
+          "samples": 4,
+          "programs": 1,
+          "textures": 1,
+          "framebuffers": 2,
+          "renderbuffers": 2,
+          "bytes": 43499520,
+          "textureBytes": 4833280,
+          "allocations": 1,
+          "composites": 14,
+          "liveTextures": null,
+          "livePrograms": null,
+          "liveFramebuffers": null,
+          "liveRenderbuffers": null
+        },
+        "depthNear": 18.879999993703255
+      },
+      "statusWitness": {
+        "changedPixels": 11142,
+        "unchangedPixels": 1197178,
+        "geometryUploadsBefore": 2,
+        "geometryUploadsAfter": 2
+      },
+      "note": "The original uses its actual per-level natural camera. Native uses the admitted scope Home and real MapLibre camera. Poses are recorded rather than assumed equal; no reflected comparison matrix is supplied. Status is controlled fixture input, never live plant evidence. The technical pass does not certify visual parity."
+    },
+    {
+      "mode": "lower",
+      "status": false,
+      "errors": [],
+      "originalCamera": {
+        "target": [
+          44,
+          5,
+          25
+        ],
+        "distance": 121,
+        "azimuth": -0.7,
+        "elevation": 0.7,
+        "top": false
+      },
+      "nativeCamera": {
+        "center": [
+          11.469992997800489,
+          59.08700899320243
+        ],
+        "pitch": 49.89295,
+        "bearing": 40.10704999999995,
+        "zoom": 18.523219126936166,
+        "revision": 14,
+        "elevation": 4.999998689361341
+      },
+      "originalViewport": {
+        "width": 1280,
+        "height": 944
+      },
+      "nativeViewport": {
+        "width": 1280,
+        "height": 944
+      },
+      "nativeMetrics": {
+        "geometryUploads": 3,
+        "geometryBytes": 14205600,
+        "residentCpuBytes": 44961952,
+        "draws": 36,
+        "buffers": 6,
+        "programs": 2,
+        "textures": 5,
+        "textureBytes": 4956608,
+        "instanceBytes": 136,
+        "instanceUploads": 18,
+        "statusUploads": 11,
+        "paletteUploads": 3,
+        "evictions": 1,
+        "peakRequiredBytes": 15723348,
+        "liveBuffersAfterDisposal": null,
+        "liveProgramsAfterDisposal": null,
+        "liveTexturesAfterDisposal": null,
+        "architecture": {
+          "geometryUploads": 0,
+          "orderUploads": 0,
+          "instanceUploads": 0,
+          "statusUploads": 0,
+          "paletteUploads": 0,
+          "draws": 0,
+          "geometryBytes": 0,
+          "orderBytes": 0,
+          "instanceBytes": 0,
+          "traversalBytes": 0,
+          "residentCpuBytes": 0,
+          "buffers": 0,
+          "programs": 0,
+          "textures": 0,
+          "textureBytes": 0,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null,
+          "liveTexturesAfterDisposal": null
+        },
+        "cpuResidency": {
+          "residentViews": 2,
+          "residentBytes": 44961952,
+          "peakRequiredBytes": 49508088,
+          "evictions": 1
+        },
+        "renderPass": {
+          "depthFormat": "float32",
+          "samples": 4,
+          "programs": 1,
+          "textures": 1,
+          "framebuffers": 2,
+          "renderbuffers": 2,
+          "bytes": 43499520,
+          "textureBytes": 4833280,
+          "allocations": 1,
+          "composites": 18,
+          "liveTextures": null,
+          "livePrograms": null,
+          "liveFramebuffers": null,
+          "liveRenderbuffers": null
+        },
+        "depthNear": 18.879999996933545
+      },
+      "statusWitness": {
+        "changedPixels": 8833,
+        "unchangedPixels": 1199487,
+        "geometryUploadsBefore": 3,
+        "geometryUploadsAfter": 3
+      },
+      "note": "The original uses its actual per-level natural camera. Native uses the admitted scope Home and real MapLibre camera. Poses are recorded rather than assumed equal; no reflected comparison matrix is supplied. Status is controlled fixture input, never live plant evidence. The technical pass does not certify visual parity."
+    },
+    {
+      "mode": "lower",
+      "status": true,
+      "errors": [],
+      "originalCamera": {
+        "target": [
+          44,
+          5,
+          25
+        ],
+        "distance": 121,
+        "azimuth": -0.7,
+        "elevation": 0.7,
+        "top": false
+      },
+      "nativeCamera": {
+        "center": [
+          11.469992997800489,
+          59.08700899320243
+        ],
+        "pitch": 49.89295,
+        "bearing": 40.10704999999995,
+        "zoom": 18.523219126936166,
+        "revision": 16,
+        "elevation": 4.999998689361341
+      },
+      "originalViewport": {
+        "width": 1280,
+        "height": 944
+      },
+      "nativeViewport": {
+        "width": 1280,
+        "height": 944
+      },
+      "nativeMetrics": {
+        "geometryUploads": 3,
+        "geometryBytes": 14205600,
+        "residentCpuBytes": 44961952,
+        "draws": 42,
+        "buffers": 6,
+        "programs": 2,
+        "textures": 5,
+        "textureBytes": 4956608,
+        "instanceBytes": 136,
+        "instanceUploads": 21,
+        "statusUploads": 12,
+        "paletteUploads": 3,
+        "evictions": 1,
+        "peakRequiredBytes": 15723348,
+        "liveBuffersAfterDisposal": null,
+        "liveProgramsAfterDisposal": null,
+        "liveTexturesAfterDisposal": null,
+        "architecture": {
+          "geometryUploads": 0,
+          "orderUploads": 0,
+          "instanceUploads": 0,
+          "statusUploads": 0,
+          "paletteUploads": 0,
+          "draws": 0,
+          "geometryBytes": 0,
+          "orderBytes": 0,
+          "instanceBytes": 0,
+          "traversalBytes": 0,
+          "residentCpuBytes": 0,
+          "buffers": 0,
+          "programs": 0,
+          "textures": 0,
+          "textureBytes": 0,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null,
+          "liveTexturesAfterDisposal": null
+        },
+        "cpuResidency": {
+          "residentViews": 2,
+          "residentBytes": 44961952,
+          "peakRequiredBytes": 49508088,
+          "evictions": 1
+        },
+        "renderPass": {
+          "depthFormat": "float32",
+          "samples": 4,
+          "programs": 1,
+          "textures": 1,
+          "framebuffers": 2,
+          "renderbuffers": 2,
+          "bytes": 43499520,
+          "textureBytes": 4833280,
+          "allocations": 1,
+          "composites": 21,
+          "liveTextures": null,
+          "livePrograms": null,
+          "liveFramebuffers": null,
+          "liveRenderbuffers": null
+        },
+        "depthNear": 18.879999996933545
+      },
+      "statusWitness": {
+        "changedPixels": 8833,
+        "unchangedPixels": 1199487,
+        "geometryUploadsBefore": 3,
+        "geometryUploadsAfter": 3
+      },
+      "note": "The original uses its actual per-level natural camera. Native uses the admitted scope Home and real MapLibre camera. Poses are recorded rather than assumed equal; no reflected comparison matrix is supplied. Status is controlled fixture input, never live plant evidence. The technical pass does not certify visual parity."
+    }
+  ],
+  "actualCapDetails": [
+    {
+      "kind": "scope",
+      "occurrenceId": "connection/feedwater-tank-to-main-feedwater-pump-a",
+      "subjects": [
+        "feedwater-tank-to-main-feedwater-pump-a"
+      ],
+      "sourceRevision": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+      "radius": 0.14,
+      "center": [
+        -3.200000000000003,
+        -13.119999999999997,
+        1.603333333333333
+      ],
+      "normal": [
+        1,
+        0,
+        0
+      ],
+      "camera": {
+        "center": [
+          11.469943982404004,
+          59.086882008965375
+        ],
+        "pitch": 55.00000000000001,
+        "bearing": -90,
+        "zoom": 22,
+        "revision": 20,
+        "elevation": 1.603333333333333
+      },
+      "errors": []
+    },
+    {
+      "kind": "floor",
+      "occurrenceId": "connection/turbine-stop-valve-to-turbine",
+      "subjects": [
+        "turbine-stop-valve-to-turbine"
+      ],
+      "sourceRevision": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+      "radius": 0.14,
+      "center": [
+        -35.78886430661174,
+        7.714702658444535,
+        15
+      ],
+      "normal": [
+        0,
+        0,
+        1
+      ],
+      "camera": {
+        "center": [
+          11.4693734980807,
+          59.087069379821855
+        ],
+        "pitch": 0,
+        "bearing": 0,
+        "zoom": 22,
+        "revision": 24,
+        "elevation": 15
+      },
+      "errors": []
+    }
+  ],
+  "statusContours": {
+    "results": [
+      {
+        "mode": "2d",
+        "changedContours": 588,
+        "preservedInterior": 1024,
+        "changedInterior": 0,
+        "geometryUploadsBefore": 1,
+        "geometryUploadsAfter": 1,
+        "error": 0,
+        "liveBuffers": 0,
+        "liveTextures": 0,
+        "livePrograms": 0
+      },
+      {
+        "mode": "3d",
+        "changedContours": 588,
+        "preservedInterior": 1024,
+        "changedInterior": 0,
+        "geometryUploadsBefore": 1,
+        "geometryUploadsAfter": 1,
+        "error": 0,
+        "liveBuffers": 0,
+        "liveTextures": 0,
+        "livePrograms": 0
+      }
+    ],
+    "passed": true
+  },
+  "scopeCaps": {
+    "observations": [
+      {
+        "plain": [
+          88,
+          112,
+          113,
+          255
+        ],
+        "stripe": [
+          77,
+          100,
+          88,
+          255
+        ],
+        "pick": "supply-edge"
+      },
+      {
+        "plain": [
+          88,
+          112,
+          113,
+          255
+        ],
+        "stripe": [
+          77,
+          100,
+          88,
+          255
+        ],
+        "pick": "supply-edge"
+      },
+      {
+        "plain": [
+          88,
+          112,
+          113,
+          255
+        ],
+        "stripe": [
+          77,
+          100,
+          88,
+          255
+        ],
+        "pick": "supply-edge"
+      },
+      {
+        "plain": [
+          88,
+          112,
+          113,
+          255
+        ],
+        "stripe": [
+          77,
+          100,
+          88,
+          255
+        ],
+        "pick": "supply-edge"
+      },
+      {
+        "plain": [
+          88,
+          112,
+          113,
+          255
+        ],
+        "stripe": [
+          77,
+          100,
+          88,
+          255
+        ],
+        "pick": "supply-edge"
+      },
+      {
+        "plain": [
+          88,
+          112,
+          113,
+          255
+        ],
+        "stripe": [
+          77,
+          100,
+          88,
+          255
+        ],
+        "pick": "supply-edge"
+      },
+      {
+        "plain": [
+          88,
+          112,
+          113,
+          255
+        ],
+        "stripe": [
+          77,
+          100,
+          88,
+          255
+        ],
+        "pick": "supply-edge"
+      },
+      {
+        "plain": [
+          88,
+          112,
+          113,
+          255
+        ],
+        "stripe": [
+          77,
+          100,
+          88,
+          255
+        ],
+        "pick": "supply-edge"
+      },
+      {
+        "plain": [
+          88,
+          112,
+          113,
+          255
+        ],
+        "stripe": [
+          77,
+          100,
+          88,
+          255
+        ],
+        "pick": "supply-edge"
+      },
+      {
+        "plain": [
+          88,
+          112,
+          113,
+          255
+        ],
+        "stripe": [
+          77,
+          100,
+          88,
+          255
+        ],
+        "pick": "supply-edge"
+      },
+      {
+        "plain": [
+          88,
+          112,
+          113,
+          255
+        ],
+        "stripe": [
+          77,
+          100,
+          88,
+          255
+        ],
+        "pick": "supply-edge"
+      },
+      {
+        "plain": [
+          88,
+          112,
+          113,
+          255
+        ],
+        "stripe": [
+          77,
+          100,
+          88,
+          255
+        ],
+        "pick": "supply-edge"
+      },
+      {
+        "plain": [
+          88,
+          112,
+          113,
+          255
+        ],
+        "stripe": [
+          77,
+          100,
+          88,
+          255
+        ],
+        "pick": "supply-edge"
+      },
+      {
+        "plain": [
+          88,
+          112,
+          113,
+          255
+        ],
+        "stripe": [
+          77,
+          100,
+          88,
+          255
+        ],
+        "pick": "supply-edge"
+      },
+      {
+        "plain": [
+          88,
+          112,
+          113,
+          255
+        ],
+        "stripe": [
+          77,
+          100,
+          88,
+          255
+        ],
+        "pick": "supply-edge"
+      },
+      {
+        "plain": [
+          88,
+          112,
+          113,
+          255
+        ],
+        "stripe": [
+          77,
+          100,
+          88,
+          255
+        ],
+        "pick": "supply-edge"
+      }
+    ],
+    "errors": [],
+    "metrics": {
+      "geometryUploads": 1,
+      "geometryBytes": 0,
+      "residentCpuBytes": 0,
+      "draws": 16,
+      "buffers": 0,
+      "programs": 0,
+      "textures": 0,
+      "textureBytes": 0,
+      "instanceBytes": 0,
+      "instanceUploads": 16,
+      "statusUploads": 1,
+      "paletteUploads": 1,
+      "evictions": 0,
+      "peakRequiredBytes": 12052,
+      "liveBuffersAfterDisposal": 0,
+      "liveProgramsAfterDisposal": 0,
+      "liveTexturesAfterDisposal": 0,
+      "architecture": {
+        "geometryUploads": 0,
+        "orderUploads": 0,
+        "instanceUploads": 0,
+        "statusUploads": 0,
+        "paletteUploads": 0,
+        "draws": 0,
+        "geometryBytes": 0,
+        "orderBytes": 0,
+        "instanceBytes": 0,
+        "traversalBytes": 0,
+        "residentCpuBytes": 0,
+        "buffers": 0,
+        "programs": 0,
+        "textures": 0,
+        "textureBytes": 0,
+        "liveBuffersAfterDisposal": 0,
+        "liveProgramsAfterDisposal": 0,
+        "liveTexturesAfterDisposal": 0
+      },
+      "cpuResidency": {
+        "residentViews": 0,
+        "residentBytes": 0,
+        "peakRequiredBytes": 0,
+        "evictions": 0
+      },
+      "renderPass": {
+        "depthFormat": "float32",
+        "samples": 4,
+        "programs": 0,
+        "textures": 0,
+        "framebuffers": 0,
+        "renderbuffers": 0,
+        "bytes": 0,
+        "textureBytes": 0,
+        "allocations": 1,
+        "composites": 16,
+        "liveTextures": 0,
+        "livePrograms": 0,
+        "liveFramebuffers": 0,
+        "liveRenderbuffers": 0
+      },
+      "depthNear": 0.1
+    },
+    "error": 0,
+    "materials": [
+      "pipe",
+      "continuation/pipe/0.5"
+    ],
+    "passed": true
+  },
+  "source": {
+    "revision": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+    "geometryKey": "physical-layout/95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+    "objects": 719,
+    "hash": "5fb4a80f97b902f61ef1731e4bd195d5fe075a576802cbd5239e95ae9fdbdd5b"
+  },
+  "provenance": {
+    "root": "/Users/hilde/Documents/ChatGPT/Leitbild-physical-final-quality-20261027/apps/world",
+    "commit": "2a2755715162fc2335cf958fc08c14eebb0322f3",
+    "dirty": " M apps/world/scripts/physical-layout/plan-raster-comparison-probe.ts\n",
+    "hashes": {
+      "src/ui/map/physical-scene/backend.ts": "24f343ac103ea3ca61548d88abd893d466f5dcdafac5854aba8de034d3d483ae",
+      "src/ui/map/physical-scene/geometry.ts": "20ea4bb0f0dd5945ad293ac27ebbf5075bb0de84a981d18ab92de99ad5ab3d83",
+      "src/ui/map/physical-scene/scope-regions.ts": "226f989ac6c255d43f279b007b1dd59fd925e62881fb477add4f1f870a99da25",
+      "src/ui/map/physical-scene/scope-clipping.ts": "0b5aa44e60d7e283b330a5116efe691464bebd02c94c11fea9bbd4c5143916fc",
+      "src/ui/map/physical-scene/surface-annotations.ts": "758ab39979bfc027938e0c40f4b9a7233ce2a1c83cd7d10e01ce69fb1ac50a19",
+      "src/ui/map/physical-scene/render-buffers.ts": "bf335c55c4b5630c417e079c2d1c24e8a85f69b47340032b98eec7f77f3d8657",
+      "src/ui/map/physical-scene/preparation.ts": "da1f2c31d42d615564d4dc86c7f0c6e14880feea8cda6466077166b611544c94",
+      "src/ui/map/physical-scene/surface-ownership.ts": "240f6f5c38d71c2d085c4dae742b7746ef2e425219f15e9678a635ab154a1e98",
+      "src/ui/map/physical-scene/scene-controller.ts": "717111b8d60f6e6bd401a61a98c43e1541b95ffed15273e3be5faef5cb1b0d09",
+      "src/ui/map/physical-scene/map-viewport.ts": "3c0fc7fd0fa410bd1c13a2ccfabb9f4b70fd5cf0d3992a184c1cd6d9a91c2b28",
+      "tests/fixtures/physical-scope-route.ts": "9c1d2e982ea8abd6e2f268926c00a67401be39fc3d716f1963749dd8c4876510",
+      "tests/browser/physical-scene/original-native-comparison-app.ts": "e653c107ceb27da6d32c2a0759558a38ce3ef107519c66c7dcc7ae90125f4e6c",
+      "tests/browser/physical-scene/original-reference-renderer.ts": "a7900ff553e4ca3de1bb5527a00278430ca69550f2a5184d9c381991750b273d"
+    }
+  },
+  "passed": true
+}

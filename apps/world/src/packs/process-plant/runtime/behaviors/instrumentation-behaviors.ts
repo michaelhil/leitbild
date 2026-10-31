@@ -12,6 +12,7 @@ import { deltaTChannelSpans } from '../../graph/instrumentation-component-defini
 import { clamp, parameterNumber, relaxToward } from '../component-helpers.ts'
 import { primaryLoopLegReversed } from '../primary-loop-hydraulics.ts'
 import { primarySystemPressurizer, primarySystemReactorCore, primarySystemReactorVessel } from '../system-topology.ts'
+import { componentHasElectricalPower } from './electrical-behaviors.ts'
 
 interface LoopLegs {
   readonly hotLeg: CompiledProcessLink
@@ -94,7 +95,7 @@ const deltaTChannelReadings = (system: CompiledProcessPlant, channel: CompiledCo
   }
 }
 
-const deltaTChannelWrites = ['deltaTC', 'averageTemperatureC', 'overtemperatureSetpointC', 'overpowerSetpointC', 'overtemperatureMarginC', 'overpowerMarginC', 'deltaTPowerPercent', 'forcedFlow', 'hotLegTemperatureRateCPerS', 'loopFlowFraction']
+const deltaTChannelWrites = ['deltaTC', 'averageTemperatureC', 'overtemperatureSetpointC', 'overpowerSetpointC', 'overtemperatureMarginC', 'overpowerMarginC', 'deltaTPowerPercent', 'forcedFlow', 'supplyAvailable', 'powerIndicationAvailable', 'hotLegTemperatureRateCPerS', 'loopFlowFraction']
 
 // The hot leg the channel read last, from its own delta-T and average temperature.
 const previousHotLegC = (channel: CompiledComponent, context: ProcessPlantBehaviorContext): number =>
@@ -102,6 +103,8 @@ const previousHotLegC = (channel: CompiledComponent, context: ProcessPlantBehavi
 
 const writeDeltaTChannel = (system: CompiledProcessPlant, channel: CompiledComponent, context: ProcessPlantBehaviorContext, hotLegRateCPerS: (hotLegC: number) => number): void => {
   const reading = deltaTChannelReadings(system, channel, context)
+  const powered = componentHasElectricalPower(system, channel, context, 'power')
+  context.write(componentVariablePath(channel, 'supplyAvailable'), powered)
   context.write(componentVariablePath(channel, 'hotLegTemperatureRateCPerS'), hotLegRateCPerS(reading.averageTemperature + reading.deltaT / 2))
   context.write(componentVariablePath(channel, 'deltaTC'), reading.deltaT)
   context.write(componentVariablePath(channel, 'averageTemperatureC'), reading.averageTemperature)
@@ -110,7 +113,10 @@ const writeDeltaTChannel = (system: CompiledProcessPlant, channel: CompiledCompo
   context.write(componentVariablePath(channel, 'overtemperatureMarginC'), reading.overtemperatureSetpoint - reading.deltaT)
   context.write(componentVariablePath(channel, 'overpowerMarginC'), reading.overpowerSetpoint - reading.deltaT)
   context.write(componentVariablePath(channel, 'deltaTPowerPercent'), reading.deltaTPowerPercent)
+  // This flag qualifies the indicated delta-T power. Physical loop flow and
+  // private thermal calculations continue independently of instrument power.
   context.write(componentVariablePath(channel, 'forcedFlow'), reading.forcedFlow)
+  context.write(componentVariablePath(channel, 'powerIndicationAvailable'), powered && reading.forcedFlow)
   context.write(componentVariablePath(channel, 'loopFlowFraction'), reading.loopFlowFraction)
 }
 
@@ -127,7 +133,7 @@ const rcsInventoryKg = (system: CompiledProcessPlant, balance: CompiledComponent
     + context.readNumber(componentVariablePath(pressurizer, 'steamMassKg'))
 }
 
-const rcsInventoryReads = ['vessel.chargingFlowKgPerS', 'vessel.safetyInjectionFlowKgPerS', 'vessel.letdownFlowKgPerS', 'pressurizer.reliefFlowKgPerS', 'pressurizer.safetyValveFlowKgPerS', 'vessel.primaryCoolantInventoryKg', 'pressurizer.waterInventoryKg', 'pressurizer.steamMassKg', 'leakRateKgPerS', 'balancedInventoryKg']
+const rcsInventoryReads = ['vessel.chargingFlowKgPerS', 'vessel.safetyInjectionFlowKgPerS', 'vessel.letdownFlowKgPerS', 'vessel.shutdownCoolingWithdrawalFlowKgPerS', 'pressurizer.reliefFlowKgPerS', 'pressurizer.safetyValveFlowKgPerS', 'vessel.primaryCoolantInventoryKg', 'pressurizer.waterInventoryKg', 'pressurizer.steamMassKg', 'leakRateKgPerS', 'balancedInventoryKg']
 
 interface ActedReading {
   readonly path: VariablePath
@@ -206,7 +212,12 @@ export const instrumentationBehaviorDefinitions: ReadonlyArray<ComponentBehavior
       const pressurizer = required(primarySystemPressurizer(system), `RCS inventory balance ${component.id} needs a pressurizer`)
       const relief = context.readNumber(componentVariablePath(pressurizer, 'reliefFlowKgPerS'))
         + context.readNumber(componentVariablePath(pressurizer, 'safetyValveFlowKgPerS'))
-      const unaccounted = flow('chargingFlowKgPerS') + flow('safetyInjectionFlowKgPerS') - flow('letdownFlowKgPerS') - relief - inventoryChange
+      // The injection reading includes actual RHR return. Its corresponding
+      // achieved RCS withdrawal is another identified boundary flow, not a
+      // leak or makeup. Count both independently: a lost return still changes
+      // inventory, while a separate unaccounted loss must remain visible.
+      const unaccounted = flow('chargingFlowKgPerS') + flow('safetyInjectionFlowKgPerS')
+        - flow('letdownFlowKgPerS') - flow('shutdownCoolingWithdrawalFlowKgPerS') - relief - inventoryChange
       const leakRate = context.readNumber(componentVariablePath(component, 'leakRateKgPerS'))
       context.write(componentVariablePath(component, 'leakRateKgPerS'), relaxToward(leakRate, unaccounted, context.dtSeconds, parameterNumber(component, 'averagingTimeConstantS')))
       context.write(componentVariablePath(component, 'balancedInventoryKg'), inventory)

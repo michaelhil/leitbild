@@ -1,0 +1,341 @@
+{
+  "candidate": "native-typed-source",
+  "completedAt": "2026-10-24T18:45:13.012Z",
+  "bun": "1.4.0",
+  "platform": "darwin",
+  "arch": "arm64",
+  "elapsedMs": 7543.113625,
+  "memory": {
+    "rss": 1049952256,
+    "heapTotal": 618493952,
+    "heapUsed": 53695885,
+    "external": 27577389,
+    "arrayBuffers": 9563744
+  },
+  "resourceUsage": {
+    "userCPUTime": 6971169,
+    "systemCPUTime": 1072380,
+    "maxRSS": 1327984,
+    "sharedMemorySize": 0,
+    "unsharedDataSize": 0,
+    "unsharedStackSize": 0,
+    "minorPageFault": 203900,
+    "majorPageFault": 66,
+    "swappedOut": 0,
+    "fsRead": 0,
+    "fsWrite": 0,
+    "ipcSent": 0,
+    "ipcReceived": 1,
+    "signalsCount": 0,
+    "voluntaryContextSwitches": 796,
+    "involuntaryContextSwitches": 47192
+  },
+  "checks": [
+    {
+      "name": "F1:16-equipment",
+      "pass": true
+    },
+    {
+      "name": "F1:seven-operational-subjects",
+      "pass": true
+    },
+    {
+      "name": "F1:real-slab-holes",
+      "pass": true
+    },
+    {
+      "name": "F1:shaped-family-triangles",
+      "pass": true
+    },
+    {
+      "name": "F1:source-routes",
+      "pass": true
+    },
+    {
+      "name": "door:full-geometry-collateral-diff",
+      "pass": true,
+      "detail": [
+        "access-door",
+        "edit-wall"
+      ]
+    },
+    {
+      "name": "door:old-identities-preserved",
+      "pass": true
+    },
+    {
+      "name": "door:study-invalidated",
+      "pass": true
+    },
+    {
+      "name": "door:process-pin-unchanged",
+      "pass": true
+    },
+    {
+      "name": "roof:full-geometry-collateral-diff",
+      "pass": true,
+      "detail": [
+        "edit-roof",
+        "edit-wall"
+      ]
+    },
+    {
+      "name": "roof:old-identities-preserved",
+      "pass": true
+    },
+    {
+      "name": "roof:study-invalidated",
+      "pass": true
+    },
+    {
+      "name": "roof:process-pin-unchanged",
+      "pass": true
+    },
+    {
+      "name": "deck:full-geometry-collateral-diff",
+      "pass": true,
+      "detail": [
+        "edit-deck",
+        "edit-landing",
+        "edit-riser",
+        "edit-stair",
+        "edit-support"
+      ]
+    },
+    {
+      "name": "deck:old-identities-preserved",
+      "pass": true
+    },
+    {
+      "name": "deck:study-invalidated",
+      "pass": true
+    },
+    {
+      "name": "deck:process-pin-unchanged",
+      "pass": true
+    },
+    {
+      "name": "move:full-geometry-collateral-diff",
+      "pass": true,
+      "detail": [
+        "mfw-a"
+      ]
+    },
+    {
+      "name": "move:old-identities-preserved",
+      "pass": true
+    },
+    {
+      "name": "move:study-invalidated",
+      "pass": true
+    },
+    {
+      "name": "move:process-pin-unchanged",
+      "pass": true
+    },
+    {
+      "name": "type:full-geometry-collateral-diff",
+      "pass": true,
+      "detail": [
+        "mfw-a",
+        "mfw-b"
+      ]
+    },
+    {
+      "name": "type:old-identities-preserved",
+      "pass": true
+    },
+    {
+      "name": "type:study-invalidated",
+      "pass": true
+    },
+    {
+      "name": "type:process-pin-unchanged",
+      "pass": true
+    },
+    {
+      "name": "variant:A-only-geometry-after-shared-type-edit",
+      "pass": true
+    },
+    {
+      "name": "variant:B-identical",
+      "pass": true
+    },
+    {
+      "name": "type:resolved-length-up10percent",
+      "pass": true
+    },
+    {
+      "name": "type:dependent-interface-moves",
+      "pass": true
+    },
+    {
+      "name": "type:dependent-service-envelope-changes",
+      "pass": true
+    },
+    {
+      "name": "move:assembly-interfaces-exact2m",
+      "pass": true
+    },
+    {
+      "name": "door:rotated-host-local-to-world",
+      "pass": true
+    },
+    {
+      "name": "door:real-void-cell-gap",
+      "pass": true
+    },
+    {
+      "name": "door:opening-and-fill-and-adjacency",
+      "pass": true
+    },
+    {
+      "name": "door:existing-opening-preserved",
+      "pass": true
+    },
+    {
+      "name": "roof:deck-and-pump-datums-preserved",
+      "pass": true
+    },
+    {
+      "name": "deck:actual-elevations-and-dependencies",
+      "pass": true
+    },
+    {
+      "name": "F3:all-qualified-IDs-unique",
+      "pass": true
+    },
+    {
+      "name": "F3:one-shared-yard-in-site-one",
+      "pass": true
+    },
+    {
+      "name": "F3:separate-layout-instance-scopes",
+      "pass": true
+    },
+    {
+      "name": "F3:two-circuits-one-first-support",
+      "pass": true
+    },
+    {
+      "name": "negative:stale-base",
+      "pass": true,
+      "detail": "Error: stale-base"
+    },
+    {
+      "name": "negative:unrelated-collateral",
+      "pass": true,
+      "detail": "Error: unrelated-collateral-change:/elements/fixed-vessel/pose/position,/elements/fixed-vessel/world/position"
+    },
+    {
+      "name": "negative:unsupported-dependency",
+      "pass": true,
+      "detail": "Error: unsupported-dependency-set"
+    },
+    {
+      "name": "negative:independent-height10m",
+      "pass": true,
+      "detail": "Error: independent-requirement:max-clear-height"
+    },
+    {
+      "name": "negative:cannot-edit-governing-requirement",
+      "pass": true,
+      "detail": "Error: independent-requirement-edit"
+    },
+    {
+      "name": "negative:stale-binding",
+      "pass": true,
+      "detail": "Error: stale-binding"
+    },
+    {
+      "name": "negative:stale-model",
+      "pass": true,
+      "detail": "Error: stale-operational-model"
+    },
+    {
+      "name": "negative:stale-study-rejected",
+      "pass": true,
+      "detail": "Error: unrelated-collateral-change:"
+    },
+    {
+      "name": "negative:unsupported-source-field",
+      "pass": true,
+      "detail": "Error: unknown-field:source.arbitraryScript"
+    },
+    {
+      "name": "negative:inconsistent-parameter-body-recipe",
+      "pass": true,
+      "detail": "Error: unknown-field:element.bodyPositions"
+    },
+    {
+      "name": "F4:actual-imported-meshes",
+      "pass": true
+    },
+    {
+      "name": "F4:raw-exact-byte-owned",
+      "pass": true
+    },
+    {
+      "name": "F4:native-openings-and-ports-inspected",
+      "pass": true
+    },
+    {
+      "name": "exchange:actual-shapes-bounds-identity",
+      "pass": true,
+      "detail": []
+    },
+    {
+      "name": "exchange:ports-not-invented-components",
+      "pass": true
+    },
+    {
+      "name": "exchange:host-void-and-fill-relations",
+      "pass": true
+    },
+    {
+      "name": "source-only:fresh-process-exit0",
+      "pass": true,
+      "detail": {
+        "exitCode": 0,
+        "stderr": ""
+      }
+    },
+    {
+      "name": "source-only:geometry-reproduced",
+      "pass": true
+    },
+    {
+      "name": "source-only:raw-import-tessellation-reproduced",
+      "pass": true
+    },
+    {
+      "name": "source-only:SVG-reproduced:lower",
+      "pass": true
+    },
+    {
+      "name": "source-only:SVG-reproduced:operating",
+      "pass": true
+    },
+    {
+      "name": "source-only:SVG-reproduced:edit-basement",
+      "pass": true
+    },
+    {
+      "name": "source-only:SVG-reproduced:level/edit-deck",
+      "pass": true
+    },
+    {
+      "name": "source-only:compiler-provenance-reproduced",
+      "pass": true
+    }
+  ],
+  "passed": true,
+  "baseSourceSha256": "ac5d2336c154a8a89531a664cb4ec40293004b58f5456873c4908d94d7bd3abb",
+  "sourceBytes": 44865,
+  "meshDeliveryBytes": 9271312,
+  "meshDeliveryGzipBytes": 326142,
+  "reviewedCommit": "8b15e74c2423967f7f90c3ddf76bc6e4349c9f26",
+  "reproductionCommand": "bun run trial /tmp/leitbild-native-independent-review-20261024",
+  "frozenContenderOutputsUnchanged": true,
+  "originalIndependentReceiptSha256": "2950d4c30e1e9571dfceacb31aec42e74627f2ccb69e0bcbf06394ed369d5f93"
+}

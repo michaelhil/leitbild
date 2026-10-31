@@ -17,8 +17,8 @@
   interface Props {
     readonly simulationRunId: SimulationRunId
     readonly gridId: string
-    /** The Grid object's revision: the list refreshes when it changes, never on a timer. */
-    readonly refreshRevision: number
+    /** Current Grid object and Pack data revisions; refreshes are event-driven. */
+    readonly refreshRevision: string
     /** Time zone alarm times are shown in. */
     readonly timeZone: string
     readonly onLocate: (assetId: string) => void
@@ -87,6 +87,8 @@
   const actionLabel: Readonly<Record<GridAlarmLifecycleAction, string>> = { acknowledge: 'Ack', shelve: 'Shelve', unshelve: 'Unshelve' }
 
   $effect(() => {
+    simulationRunId
+    gridId
     refreshRevision
     untrack(() => void load())
   })

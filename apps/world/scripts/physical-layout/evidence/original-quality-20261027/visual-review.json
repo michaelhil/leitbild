@@ -1,0 +1,147 @@
+{
+  "review": "Independent original/native visual review, supplemented by exact raster and GPU checks",
+  "commit": "17cc5022987f32ecfa3cf2e90ffb3dcf25a479d9",
+  "workingTreeClean": true,
+  "source": {
+    "revision": "b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+    "geometryKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+    "objects": 744,
+    "hash": "6d61847305d335d223e4b38016a51b4699f04bc2815b149e6110fd4c863edb09"
+  },
+  "visualReviews": [
+    {
+      "case": "both-levels-3d",
+      "verdict": "accepted",
+      "evidence": "native-3d/all.png",
+      "observations": "Original detailed machinery, steel frame, stairs, windows, crane and physical floor relationships survive. Additional graph-owned piping is explicit source content."
+    },
+    {
+      "case": "operating-3d",
+      "verdict": "accepted",
+      "evidence": "native-3d/operating.png",
+      "observations": "Casing contours, bolts, ribs, bearings and foundation apertures are credible at useful scale; authored materials and quiet work areas remain readable."
+    },
+    {
+      "case": "lower-3d",
+      "verdict": "accepted",
+      "evidence": "native-3d/lower.png",
+      "observations": "Condenser shells, waterboxes, framing, stairs and pump assemblies retain detailed form. Actual upper machinery is excluded by floor membership."
+    },
+    {
+      "case": "operating-plan",
+      "verdict": "accepted",
+      "evidence": "native-plan/operating-original-native.png",
+      "observations": "Heavy cut walls, finely drafted equipment, dimensions, structural grid, access and laydown retain original architectural quality. The restored source-derived A\u2013A inset has exhausts, hatch necks, condenser ribs and piers."
+    },
+    {
+      "case": "lower-plan",
+      "verdict": "accepted",
+      "evidence": "native-plan/lower-original-native.png",
+      "observations": "Condensers, pump sets, access and service bay remain architecturally legible and detailed. Floor geometry is coherent; above/below context is explicit rather than opaque upper-deck rectangles."
+    },
+    {
+      "case": "controlled-status",
+      "verdict": "accepted",
+      "evidence": "native-3d/operating-status.png",
+      "observations": "Alarm contour input preserves authored solid materials and mechanical detail. This is controlled test input, not evidence of live plant alarms."
+    }
+  ],
+  "technical": {
+    "plan": {
+      "cases": 36,
+      "changedPixels": 0,
+      "permittedDifference": 0,
+      "passed": true
+    },
+    "controlledCap": {
+      "panPhases": 16,
+      "sameGraphPicks": true,
+      "passed": true
+    },
+    "actualAdmittedCaps": [
+      {
+        "kind": "scope",
+        "occurrenceId": "connection/feedwater-tank-to-main-feedwater-pump-a",
+        "subjects": [
+          "feedwater-tank-to-main-feedwater-pump-a"
+        ],
+        "sourceRevision": "b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+        "radius": 0.14,
+        "center": [
+          -1.8999999999999986,
+          -13.119999999999997,
+          1.603333333333333
+        ],
+        "normal": [
+          1,
+          0,
+          0
+        ],
+        "camera": {
+          "center": [
+            11.469966739552376,
+            59.086882008965375
+          ],
+          "pitch": 55.00000000000001,
+          "bearing": -90,
+          "zoom": 22,
+          "revision": 20,
+          "elevation": 1.603333333333333
+        },
+        "errors": []
+      },
+      {
+        "kind": "floor",
+        "occurrenceId": "connection/turbine-stop-valve-to-turbine",
+        "subjects": [
+          "turbine-stop-valve-to-turbine"
+        ],
+        "sourceRevision": "b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+        "radius": 0.14,
+        "center": [
+          -35.78886430661174,
+          7.714702658444535,
+          15
+        ],
+        "normal": [
+          0,
+          0,
+          1
+        ],
+        "camera": {
+          "center": [
+            11.4693734980807,
+            59.087069379821855
+          ],
+          "pitch": 0,
+          "bearing": 0,
+          "zoom": 22,
+          "revision": 24,
+          "elevation": 15
+        },
+        "errors": []
+      }
+    ],
+    "nativeCodeHashReceipt": "native-3d/receipt.json",
+    "planCodeHashReceipt": "native-plan/receipt.json"
+  },
+  "comparisonBounds": [
+    "Actual MapLibre camera poses and equal viewport dimensions are recorded; no reflected comparison VP is supplied.",
+    "Native map geographic context replaces the standalone reference grid; per-floor native Home fits differ.",
+    "Plan original and native baseline both hide utilities. The original 2D/3D door inconsistency is recorded, not hidden with invented upper doors.",
+    "Native Plan uses map UI for title, scope and scale context instead of the original standalone printed title block.",
+    "These are illustrative architectural/source models, not as-built survey validation.",
+    "These functional browser runs were not quiet performance measurements."
+  ],
+  "evidenceSha256": {
+    "native-3d/actual-floor-cap.png": "5fbae22344b873529720bd19a4dbfa22f26700608231f3b1a54a5d0a5bdd3e6b",
+    "native-3d/actual-scope-cap.png": "2525222c1ab54ed3e532300a4f8254f473100cf59283121dbb8167d1d8e88e0d",
+    "native-3d/all.png": "1396f0c54febbbec132b5c0cad270fdf2dca114dfd9a65f9d90912b45081fccf",
+    "native-3d/lower.png": "3377fbc80f8a654bcee53d4fcee8a8210434931bfe3b7cba8375a961b781159f",
+    "native-3d/operating-status.png": "a0451e6edb487914f658d8b1700fe96b2a1a09b1ae427bc0257374b8ebcc4ed7",
+    "native-3d/operating.png": "47c9bfa4b0ad7f8cab7ce58f0b1dc4be3c6b0d85ffbd637c73cbab1085dc524d",
+    "native-3d/scope-cap.png": "2b4a5dfbd7bc818dd34c6634005816be03dca5b2e49b3774f8e33e09c3048a3b",
+    "native-plan/lower-original-native.png": "443686df91104a1a47b3e8b20ff60f38bc2f51860bf9ba3def5e5bd3817171a5",
+    "native-plan/operating-original-native.png": "27a830d26ad84212a77172a5d798115dc6d9087b13145e9312796eaa9f397f3d"
+  }
+}

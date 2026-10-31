@@ -1,0 +1,136 @@
+{
+  "refs": {
+    "renderer_original": "95c16392d7865d96b85b02f3d434f011d82fe33e",
+    "renderer_test_checkout": "2283a07838950e04a285ec41429ffc2085965afc",
+    "root_integrated": "24e5c368818eadbac88c7fc72435a1258dcdee7f"
+  },
+  "appsWorldSrcTree": {
+    "renderer_original": "de1dff13251060059bac34fcf646d6369d5b33d4",
+    "renderer_test_checkout": "de1dff13251060059bac34fcf646d6369d5b33d4",
+    "root_integrated": "de1dff13251060059bac34fcf646d6369d5b33d4"
+  },
+  "allProductionSourceTreesEqual": true,
+  "files": {
+    "apps/world/src/ui/map/physical-scene/backend.ts": {
+      "bytes": 18574,
+      "sha256": "c5d931b4beab114e238bdb11e96b59578e90ca6bd72e5cb198aec4d07889cf0d"
+    },
+    "apps/world/src/ui/map/physical-scene/canvas-controller.ts": {
+      "bytes": 403,
+      "sha256": "0de36db306a306d009f0d61acb4c4dadd11e6e4bd3f4f5e167f5e77304ca13e1"
+    },
+    "apps/world/src/ui/map/physical-scene/canvas-viewport.ts": {
+      "bytes": 13925,
+      "sha256": "9d03f01197c3d4d0472472cbfe00f2ab45fa80dee0b2fcac2f9f8f44123ed857"
+    },
+    "apps/world/src/ui/map/physical-scene/controller.ts": {
+      "bytes": 1715,
+      "sha256": "f7c1ab97d309030af0ecd225026eb33d7dc3f23db11355e06f60ad912223ca8d"
+    },
+    "apps/world/src/ui/map/physical-scene/geometry.ts": {
+      "bytes": 13959,
+      "sha256": "6f99822044fc3e350a78bf1a0aebb9283c261a58c0a66ef4761448b2185e84fd"
+    },
+    "apps/world/src/ui/map/physical-scene/gl-state.ts": {
+      "bytes": 4193,
+      "sha256": "f4798d9485051dcdfd0dc974c6637bf682692f0c6d4398510f58f4b238fff80c"
+    },
+    "apps/world/src/ui/map/physical-scene/inspection-demand.ts": {
+      "bytes": 1910,
+      "sha256": "fff0509984fb6deca90bc1cf005f874b3207b68381fdd8a7356f460f1ff2d4ae"
+    },
+    "apps/world/src/ui/map/physical-scene/layer.ts": {
+      "bytes": 2516,
+      "sha256": "4e49375761294dac1e10acf87a03800cc27f40783245eebe9d16a3ee965e8993"
+    },
+    "apps/world/src/ui/map/physical-scene/map-viewport.ts": {
+      "bytes": 12506,
+      "sha256": "8dc02a2203f18b883451ef22827e5235e9471876a3ef101c4192d57eb855145a"
+    },
+    "apps/world/src/ui/map/physical-scene/math.ts": {
+      "bytes": 4234,
+      "sha256": "fae79036b79cf003b40fcae44c09a44bef3dff7be6ffce0ba3df368227a3d10c"
+    },
+    "apps/world/src/ui/map/physical-scene/order.ts": {
+      "bytes": 1124,
+      "sha256": "7522d1d36d862ef8af9d3af8450a132c19c16591b9b040451dd5c2523457579a"
+    },
+    "apps/world/src/ui/map/physical-scene/overview-geometry.ts": {
+      "bytes": 2294,
+      "sha256": "1d38b9ff6ab117544850616ac49ecdcb84cde2988d5230a1eb41e327e544cf77"
+    },
+    "apps/world/src/ui/map/physical-scene/overview.ts": {
+      "bytes": 6078,
+      "sha256": "37d8a226ef9e6624b6c207831c5b93e2500dd1c9b62cf814c76f2eb781428c6b"
+    },
+    "apps/world/src/ui/map/physical-scene/picking.ts": {
+      "bytes": 5631,
+      "sha256": "6c8aa7685592b2c8feadae7ddf544bfc0111a777f8a3bfa1b62bda09bb48d41f"
+    },
+    "apps/world/src/ui/map/physical-scene/plan-pass.ts": {
+      "bytes": 8353,
+      "sha256": "608ead36dc5293ab2fb7eb1c7ec2feb60c1ef8c227f987fb095c21460b178fd0"
+    },
+    "apps/world/src/ui/map/physical-scene/plan-projection.ts": {
+      "bytes": 4321,
+      "sha256": "d4bcfd222c282ef7ae3634074876ecfdc09094698f4726dee30d098362ea8087"
+    },
+    "apps/world/src/ui/map/physical-scene/preparation-worker.ts": {
+      "bytes": 2350,
+      "sha256": "551e21afa270a1b21aa51280208d855081171798831da4219902b2e901610cfa"
+    },
+    "apps/world/src/ui/map/physical-scene/preparation.ts": {
+      "bytes": 13017,
+      "sha256": "4b4b62e6f28d4f4914685e744a43e317f7935e1874a321126400300a82314cee"
+    },
+    "apps/world/src/ui/map/physical-scene/render-buffers.ts": {
+      "bytes": 1906,
+      "sha256": "cd4da318b99cc8b27d86f73a54bb3961a171d42ec3ac716389371d06ad9556f0"
+    },
+    "apps/world/src/ui/map/physical-scene/renderer.ts": {
+      "bytes": 8026,
+      "sha256": "d014acdb970805a9704880cf66986973f0be924030913cea17063d1412276c14"
+    },
+    "apps/world/src/ui/map/physical-scene/scene-controller.ts": {
+      "bytes": 25939,
+      "sha256": "10813471340e49c523bd4fa6721e0577c93ee5a951f35a3e2a32adf12ff2d435"
+    },
+    "apps/world/src/ui/map/physical-scene/spatial-index.ts": {
+      "bytes": 5541,
+      "sha256": "ba202fbaca8f0099f50f53201eddd3f7e928b5e8076ae232b1ff069f157867f5"
+    },
+    "apps/world/src/ui/map/physical-scene/surface-ownership.ts": {
+      "bytes": 10207,
+      "sha256": "396df497db8efdd2ab9725fc4cb0501db37690ad11ab89930bc6758752f8c37c"
+    },
+    "apps/world/src/ui/map/physical-scene/types.ts": {
+      "bytes": 3934,
+      "sha256": "44026fae37d006d7e0eafe7848fab5f54a66a3b10858315dbe0a7093c3cd2b6c"
+    },
+    "apps/world/src/ui/map/physical-scene/viewport.ts": {
+      "bytes": 2670,
+      "sha256": "daa57e40a96f189cf2b03934495c8f5a97e3805edc3a46a6c882b35e1ebe8fce"
+    },
+    "apps/world/src/ui/map/physical-scene/visibility.ts": {
+      "bytes": 2202,
+      "sha256": "700e872682267dd2decbc14b534e676b99f8fcde88202ca6772cd24d25264f25"
+    },
+    "apps/world/scripts/physical-layout/flicker-probe.ts": {
+      "bytes": 12259,
+      "sha256": "137ba36b038b8ed6655bc63191d24da1d0c21454d243ab1084908bd57bddef31"
+    },
+    "apps/world/scripts/physical-layout/near-gap-probe.ts": {
+      "bytes": 11705,
+      "sha256": "55729913dc264ee055378f0cc6789618369c80d25939c9300ce6f69930b8714b"
+    },
+    "apps/world/tests/browser/physical-scene/flicker-app.ts": {
+      "bytes": 11845,
+      "sha256": "a229da6575162ea7e20752f818f39653af9b3e04aef508a97b2cfc90fb574a6c"
+    },
+    "apps/world/tests/browser/physical-scene/near-gap-app.ts": {
+      "bytes": 10990,
+      "sha256": "a002517d732b332ec0af7558400fa01ad570a88429cd1c71ab8e6ab8bc648211"
+    }
+  },
+  "maplibreVersion": "6.0.0-11"
+}

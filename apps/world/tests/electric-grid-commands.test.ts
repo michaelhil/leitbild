@@ -390,6 +390,31 @@ const connectAdapter = async () => {
 }
 
 describe('electric grid command Capabilities', () => {
+  test('paused and playing Agent/human trips publish the same revision path used by live inspectors', async () => {
+    for (const paused of [true, false]) for (const actor of ['ai:inspector', 'human:inspector']) {
+      const connection = await connectAdapter()
+      try {
+        await connection.setClock({ currentTime: isoAt(0), updatedAt: isoAt(0), paused })
+        const before = (await connection.getSnapshot()).objects.find(object => object.id === 'grid:norway')!
+        const emitted: PackRuntimeEvent[] = []
+        const unsubscribe = connection.subscribe(emission => emitted.push(...emission.events))
+        const result = await connection.sendCommand({
+          id: `command:${crypto.randomUUID()}` as CommandId, simulationRunId: 'run:grid-commands' as SimulationRunId,
+          actorId: `actor:${actor}` as ActorId, kind: gridTripGeneratorCommandKind,
+          targetObjectIds: ['grid:norway' as ObjectId], payload: { assetId: kvilldalId }, issuedAt: isoAt(0),
+        }, {})
+        expect(result.ok).toBe(true)
+        const update = emitted.find(event => event.type === 'object.upserted' && event.provenance.causedByCommandId === result.commandId)
+        expect(update?.type).toBe('object.upserted')
+        if (update?.type !== 'object.upserted') throw new Error('Trip emitted no Grid update')
+        expect(update.object.revision).toBeGreaterThan(before.revision)
+        expect(update.provenance.source).toBe(actor.startsWith('ai:') ? 'ai' : 'operator')
+        const detail = await connection.invokeQuery({ capabilityId: 'world.electric-grid.asset.get', input: { gridId: 'grid:norway', assetId: kvilldalId } }) as { asset: { state: { state: string; dispatchMw: number } } }
+        expect(detail.asset.state).toMatchObject({ state: 'tripped', dispatchMw: 0 })
+        unsubscribe()
+      } finally { await connection.close() }
+    }
+  })
   test('publish absolute, idempotent commands with consequence risk and bilingual search terms', () => {
     const commands = createLocalElectricGridPackRuntimeAdapter().capabilities.filter(capability => capability.kind === 'command')
     expect(commands.map(capability => capability.id)).not.toContain('world.electric-grid.return-generator-to-service')
@@ -461,7 +486,8 @@ const untypedObjectPaths = (schema: unknown, path = '$'): ReadonlyArray<string> 
 
 describe('electric grid query Capabilities', () => {
   test('publish typed output schemas with properties for every known shape', () => {
-    for (const capability of electricGridQueryCapabilities) {
+    // System-audience observation Capabilities carry the core shapes (assembly checks them) and never reach a catalog.
+    for (const capability of electricGridQueryCapabilities.filter(candidate => candidate.audience !== 'system')) {
       const schema = capabilityJsonSchema(capability.output) as { readonly type?: string; readonly properties?: Record<string, unknown> }
       expect(schema.type).toBe('object')
       expect(Object.keys(schema.properties ?? {}).length).toBeGreaterThan(0)
@@ -548,7 +574,7 @@ describe('electric grid query Capabilities', () => {
   test('summary lists only constrained branches and affected loads and states its thresholds', () => {
     const { grid, send } = harness()
     const normal = query(grid, 'world.electric-grid.grid.summary')
-    expect(normal.thresholds).toEqual({ constrainedBranchLoadingPercent: 70, affectedLoadUnservedMw: 0 })
+    expect(normal.thresholds).toEqual({ constrainedBranchLoadingPercent: 70, overloadLoadingPercent: 100, affectedLoadUnservedMw: 0 })
     expect(normal.affectedLoads).toEqual([])
     expect(normal.affectedLoadCount).toBe(0)
     expect(normal.constrainedBranchCount).toBe([...grid.branches.values()].filter(state => state.state === 'closed' && state.loadingPercent >= 70).length)

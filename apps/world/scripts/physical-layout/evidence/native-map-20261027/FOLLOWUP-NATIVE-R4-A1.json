@@ -1,0 +1,5592 @@
+{
+  "dateUtc": "2026-10-27T14:48:15.010036+00:00",
+  "builtAppCommit": "a1c56446436943963478f4d6dadbd950ea8d0139",
+  "evidenceHelperCommit": "885613fa0",
+  "previousAppCommit": "20a10558a6",
+  "sourcePins": {
+    "unit": "b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+    "campus": "4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84",
+    "compiler": "738f7a053a2567552490e2c9147d2960a139dd8a8c06a5bfa4b5505d160d51f0"
+  },
+  "summary": {
+    "windows": 32,
+    "p95RangeMs": [
+      16.700000000000728,
+      16.800000000000182
+    ],
+    "longTasks": [
+      {
+        "trial": "all-layers-dpr2",
+        "phase": "map-site-3d-playing",
+        "start": 19749.099999904633,
+        "duration": 69
+      }
+    ],
+    "exceptions": 0,
+    "workersAfterExit": 0
+  },
+  "cold": {
+    "scope": "Default declared mesh layers; freshly restarted local server and isolated fresh Chrome profile. All five placements/two actual source families must draw before the subsequent GPU fence. Not all-layers cold or WAN.",
+    "actions": [
+      {
+        "name": "cold-native-full-site-3d",
+        "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+        "expected": {
+          "mode": "3d",
+          "levelId": "all",
+          "readyCount": 5,
+          "sourceInstances": [
+            1,
+            4
+          ]
+        },
+        "actionToFirstDrawMs": 2037.7000000476837,
+        "actionToAllRequiredSourcesFirstDrawMs": 2507.4000000953674,
+        "actionToGpuCompletedMs": 2531.7000000476837,
+        "actionToFirstInkMs": null,
+        "actionToPaintOpportunityMs": null,
+        "pending": 0,
+        "ownerFresh": null,
+        "prepareJobs": 2
+      },
+      {
+        "name": "first-turbine-hall-focus",
+        "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+        "expected": {
+          "mode": "3d"
+        },
+        "actionToFirstDrawMs": 21.800000190734863,
+        "actionToAllRequiredSourcesFirstDrawMs": 21.800000190734863,
+        "actionToGpuCompletedMs": 34,
+        "actionToFirstInkMs": null,
+        "actionToPaintOpportunityMs": null,
+        "pending": 0,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 4377,
+          "actionToFreshMs": 36.80000019073486,
+          "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts \u00b7 Choose a floor to inspect the interior."
+        },
+        "prepareJobs": 0
+      },
+      {
+        "name": "first-operating-3d",
+        "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+        "expected": {
+          "mode": "3d",
+          "levelId": "operating"
+        },
+        "actionToFirstDrawMs": 314.2000000476837,
+        "actionToAllRequiredSourcesFirstDrawMs": 314.2000000476837,
+        "actionToGpuCompletedMs": 327.7999999523163,
+        "actionToFirstInkMs": null,
+        "actionToPaintOpportunityMs": null,
+        "pending": 0,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 4713.799999952316,
+          "actionToFreshMs": 328.7000000476837,
+          "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts"
+        },
+        "prepareJobs": 1
+      },
+      {
+        "name": "first-stack-3d",
+        "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+        "expected": {
+          "mode": "3d",
+          "levelId": "all"
+        },
+        "actionToFirstDrawMs": 34,
+        "actionToAllRequiredSourcesFirstDrawMs": 34,
+        "actionToGpuCompletedMs": 40.60000014305115,
+        "actionToFirstInkMs": null,
+        "actionToPaintOpportunityMs": null,
+        "pending": 0,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 4756.899999856949,
+          "actionToFreshMs": 42.200000047683716,
+          "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts \u00b7 Choose a floor to inspect the interior."
+        },
+        "prepareJobs": 0
+      },
+      {
+        "name": "gc-return-operating-3d",
+        "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+        "expected": {
+          "mode": "3d",
+          "levelId": "operating"
+        },
+        "actionToFirstDrawMs": 33.90000009536743,
+        "actionToAllRequiredSourcesFirstDrawMs": 33.90000009536743,
+        "actionToGpuCompletedMs": 40.90000009536743,
+        "actionToFirstInkMs": null,
+        "actionToPaintOpportunityMs": null,
+        "pending": 0,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 4884,
+          "actionToFreshMs": 42.30000019073486,
+          "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts"
+        },
+        "prepareJobs": 0
+      },
+      {
+        "name": "gc-return-stack-3d",
+        "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+        "expected": {
+          "mode": "3d",
+          "levelId": "all"
+        },
+        "actionToFirstDrawMs": 37.5,
+        "actionToAllRequiredSourcesFirstDrawMs": 37.5,
+        "actionToGpuCompletedMs": 44.69999980926514,
+        "actionToFirstInkMs": null,
+        "actionToPaintOpportunityMs": null,
+        "pending": 0,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 5000.599999904633,
+          "actionToFreshMs": 47.09999990463257,
+          "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts \u00b7 Choose a floor to inspect the interior."
+        },
+        "prepareJobs": 0
+      },
+      {
+        "name": "first-uncut-stack",
+        "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+        "expected": {
+          "mode": "3d",
+          "levelId": "all",
+          "cutaway": false
+        },
+        "actionToFirstDrawMs": 817.7000000476837,
+        "actionToAllRequiredSourcesFirstDrawMs": 817.7000000476837,
+        "actionToGpuCompletedMs": 829.2000000476837,
+        "actionToFirstInkMs": null,
+        "actionToPaintOpportunityMs": null,
+        "pending": 0,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 5845.899999856949,
+          "actionToFreshMs": 831.7000000476837,
+          "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts \u00b7 Choose a floor to inspect the interior."
+        },
+        "prepareJobs": 1
+      },
+      {
+        "name": "gc-return-cutaway-stack",
+        "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+        "expected": {
+          "mode": "3d",
+          "levelId": "all",
+          "cutaway": true
+        },
+        "actionToFirstDrawMs": 35.90000009536743,
+        "actionToAllRequiredSourcesFirstDrawMs": 35.90000009536743,
+        "actionToGpuCompletedMs": 41.30000019073486,
+        "actionToFirstInkMs": null,
+        "actionToPaintOpportunityMs": null,
+        "pending": 0,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 5967.799999952316,
+          "actionToFreshMs": 42.60000014305115,
+          "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts \u00b7 Choose a floor to inspect the interior."
+        },
+        "prepareJobs": 0
+      },
+      {
+        "name": "first-plan",
+        "milestone": "actual-plan-ink-and-two-painted-scheduling-frames",
+        "expected": {
+          "mode": "2d"
+        },
+        "actionToFirstDrawMs": null,
+        "actionToAllRequiredSourcesFirstDrawMs": null,
+        "actionToGpuCompletedMs": null,
+        "actionToFirstInkMs": 409.60000014305115,
+        "actionToPaintOpportunityMs": 444.2000000476837,
+        "pending": 0,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 6421.799999952316,
+          "actionToFreshMs": 446.60000014305115,
+          "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts"
+        },
+        "prepareJobs": 1
+      },
+      {
+        "name": "first-plan-operating",
+        "milestone": "actual-plan-ink-and-two-painted-scheduling-frames",
+        "expected": {
+          "mode": "2d",
+          "levelId": "operating"
+        },
+        "actionToFirstDrawMs": null,
+        "actionToAllRequiredSourcesFirstDrawMs": null,
+        "actionToGpuCompletedMs": null,
+        "actionToFirstInkMs": 180.90000009536743,
+        "actionToPaintOpportunityMs": 206.70000004768372,
+        "pending": 0,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 6630.199999809265,
+          "actionToFreshMs": 207.59999990463257,
+          "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts"
+        },
+        "prepareJobs": 1
+      },
+      {
+        "name": "first-plan-lower",
+        "milestone": "actual-plan-ink-and-two-painted-scheduling-frames",
+        "expected": {
+          "mode": "2d",
+          "levelId": "lower"
+        },
+        "actionToFirstDrawMs": null,
+        "actionToAllRequiredSourcesFirstDrawMs": null,
+        "actionToGpuCompletedMs": null,
+        "actionToFirstInkMs": 5.800000190734863,
+        "actionToPaintOpportunityMs": 28.700000047683716,
+        "pending": 0,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 6660.5,
+          "actionToFreshMs": 29.300000190734863,
+          "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts"
+        },
+        "prepareJobs": 0
+      },
+      {
+        "name": "gc-return-plan-operating",
+        "milestone": "actual-plan-ink-and-two-painted-scheduling-frames",
+        "expected": {
+          "mode": "2d",
+          "levelId": "operating"
+        },
+        "actionToFirstDrawMs": null,
+        "actionToAllRequiredSourcesFirstDrawMs": null,
+        "actionToGpuCompletedMs": null,
+        "actionToFirstInkMs": 8.600000143051147,
+        "actionToPaintOpportunityMs": 52.90000009536743,
+        "pending": 0,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 6784.199999809265,
+          "actionToFreshMs": 54.10000014305115,
+          "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts"
+        },
+        "prepareJobs": 0
+      },
+      {
+        "name": "return-3d-operating",
+        "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+        "expected": {
+          "mode": "3d",
+          "levelId": "operating"
+        },
+        "actionToFirstDrawMs": 274.7999999523163,
+        "actionToAllRequiredSourcesFirstDrawMs": 274.7999999523163,
+        "actionToGpuCompletedMs": 288.10000014305115,
+        "actionToFirstInkMs": null,
+        "actionToPaintOpportunityMs": null,
+        "pending": 0,
+        "ownerFresh": {
+          "applicable": true,
+          "at": 7081.699999809265,
+          "actionToFreshMs": 289.7999999523163,
+          "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts"
+        },
+        "prepareJobs": 1
+      }
+    ],
+    "hostNavigationToFirstDrawMs": 4194.400146484375,
+    "hostNavigationToAllSourcesDrawMs": 4664.10009765625,
+    "sourceJobs": [
+      {
+        "worker": 1,
+        "design": "b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+        "compiler": "738f7a053a2567552490e2c9147d2960a139dd8a8c06a5bfa4b5505d160d51f0",
+        "started": 1852.3999998569489,
+        "postMs": 1.7999999523162842,
+        "transferBytes": 0,
+        "responseAt": 2976.5,
+        "responseMs": 1124.1000001430511,
+        "ok": true,
+        "occurrences": 744,
+        "terminatedAt": 2976.5
+      },
+      {
+        "worker": 2,
+        "design": "4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84",
+        "compiler": "738f7a053a2567552490e2c9147d2960a139dd8a8c06a5bfa4b5505d160d51f0",
+        "started": 1870.3999998569489,
+        "postMs": 1.5,
+        "transferBytes": 0,
+        "responseAt": 2605.399999856949,
+        "responseMs": 735,
+        "ok": true,
+        "occurrences": 540,
+        "terminatedAt": 2605.399999856949
+      }
+    ],
+    "preparationJobs": [
+      {
+        "worker": 3,
+        "id": 1,
+        "kind": "register",
+        "sourceKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84/detail",
+        "started": 2614,
+        "postMs": 6.599999904632568,
+        "transferBytes": 27598236,
+        "responseAt": 2728.199999809265,
+        "responseMs": 114.19999980926514,
+        "responseKind": "registered"
+      },
+      {
+        "worker": 3,
+        "id": 2,
+        "kind": "prepare",
+        "key": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84/[\"3d\",\"all\",true,0,{\"layers\":[]}]",
+        "sourceKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84/detail",
+        "view": {
+          "mode": "3d",
+          "levelId": "all",
+          "cutaway": true,
+          "separation": 0,
+          "detail": "auto",
+          "live": true,
+          "surroundings": false,
+          "hiddenLayerIds": [
+            "plan-allowances",
+            "roof-structure",
+            "utility-routes"
+          ]
+        },
+        "started": 2728.5,
+        "postMs": 0,
+        "transferBytes": 0,
+        "responseAt": 3805.199999809265,
+        "responseMs": 1076.6999998092651,
+        "responseKind": "prepared",
+        "meshes": 1551,
+        "renderBytes": 15233904
+      },
+      {
+        "worker": 4,
+        "id": 3,
+        "kind": "register",
+        "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+        "started": 2989.5999999046326,
+        "postMs": 20,
+        "transferBytes": 25480032,
+        "responseAt": 3163.0999999046326,
+        "responseMs": 173.5,
+        "responseKind": "registered"
+      },
+      {
+        "worker": 4,
+        "id": 4,
+        "kind": "prepare",
+        "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\"]}]",
+        "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+        "view": {
+          "mode": "3d",
+          "levelId": "all",
+          "cutaway": true,
+          "separation": 0,
+          "detail": "auto",
+          "live": true,
+          "surroundings": false,
+          "hiddenLayerIds": [
+            "roof-structure",
+            "utility-routes"
+          ]
+        },
+        "started": 3163.199999809265,
+        "postMs": 0,
+        "transferBytes": 0,
+        "responseAt": 4227.099999904633,
+        "responseMs": 1063.9000000953674,
+        "responseKind": "prepared",
+        "meshes": 2949,
+        "renderBytes": 13556352
+      },
+      {
+        "worker": 4,
+        "id": 5,
+        "kind": "prepare",
+        "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"operating\",true,0,{\"layers\":[\"plan-allowances\"]}]",
+        "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+        "view": {
+          "mode": "3d",
+          "levelId": "operating",
+          "cutaway": true,
+          "separation": 0,
+          "detail": "auto",
+          "live": true,
+          "surroundings": false,
+          "hiddenLayerIds": [
+            "roof-structure",
+            "utility-routes"
+          ]
+        },
+        "started": 4410.5,
+        "postMs": 0,
+        "transferBytes": 0,
+        "responseAt": 4681.699999809265,
+        "responseMs": 271.19999980926514,
+        "responseKind": "prepared",
+        "meshes": 770,
+        "renderBytes": 3964368
+      },
+      {
+        "worker": 4,
+        "id": 6,
+        "kind": "prepare",
+        "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"all\",false,0,{\"layers\":[\"plan-allowances\"]}]",
+        "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+        "view": {
+          "mode": "3d",
+          "levelId": "all",
+          "cutaway": false,
+          "separation": 0,
+          "detail": "auto",
+          "live": true,
+          "surroundings": false,
+          "hiddenLayerIds": [
+            "roof-structure",
+            "utility-routes"
+          ]
+        },
+        "started": 5046.399999856949,
+        "postMs": 0.10000014305114746,
+        "transferBytes": 0,
+        "responseAt": 5817.299999952316,
+        "responseMs": 770.9000000953674,
+        "responseKind": "prepared",
+        "meshes": 1963,
+        "renderBytes": 12708768
+      },
+      {
+        "worker": 4,
+        "id": 7,
+        "kind": "prepare",
+        "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"2d\",\"lower\",true,0,{\"layers\":[]}]",
+        "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+        "view": {
+          "mode": "2d",
+          "levelId": "lower",
+          "cutaway": true,
+          "separation": 0,
+          "detail": "auto",
+          "live": true,
+          "surroundings": false,
+          "hiddenLayerIds": [
+            "roof-structure",
+            "utility-routes"
+          ]
+        },
+        "started": 5980.5,
+        "postMs": 0,
+        "transferBytes": 0,
+        "responseAt": 6378.5,
+        "responseMs": 398,
+        "responseKind": "prepared",
+        "meshes": 533,
+        "renderBytes": 7010496
+      },
+      {
+        "worker": 4,
+        "id": 8,
+        "kind": "prepare",
+        "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"2d\",\"operating\",true,0,{\"layers\":[]}]",
+        "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+        "view": {
+          "mode": "2d",
+          "levelId": "operating",
+          "cutaway": true,
+          "separation": 0,
+          "detail": "auto",
+          "live": true,
+          "surroundings": false,
+          "hiddenLayerIds": [
+            "roof-structure",
+            "utility-routes"
+          ]
+        },
+        "started": 6424.899999856949,
+        "postMs": 0,
+        "transferBytes": 0,
+        "responseAt": 6599,
+        "responseMs": 174.10000014305115,
+        "responseKind": "prepared",
+        "meshes": 351,
+        "renderBytes": 3328272
+      },
+      {
+        "worker": 4,
+        "id": 9,
+        "kind": "prepare",
+        "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"operating\",true,0,{\"layers\":[\"plan-allowances\"]}]",
+        "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+        "view": {
+          "mode": "3d",
+          "levelId": "operating",
+          "cutaway": true,
+          "separation": 0,
+          "detail": "auto",
+          "live": true,
+          "surroundings": false,
+          "hiddenLayerIds": [
+            "roof-structure",
+            "utility-routes"
+          ]
+        },
+        "started": 6800.599999904633,
+        "postMs": 0,
+        "transferBytes": 0,
+        "responseAt": 7053,
+        "responseMs": 252.40000009536743,
+        "responseKind": "prepared",
+        "meshes": 770,
+        "renderBytes": 3964368
+      }
+    ],
+    "gc": [
+      {
+        "name": "before-operating-return",
+        "before": {
+          "jobs": 5,
+          "sources": 2,
+          "at": 4757.799999952316
+        },
+        "after": {
+          "jobs": 5,
+          "sources": 2,
+          "at": 4841.199999809265
+        }
+      },
+      {
+        "name": "before-stack-return",
+        "before": {
+          "jobs": 5,
+          "sources": 2,
+          "at": 4884.799999952316
+        },
+        "after": {
+          "jobs": 5,
+          "sources": 2,
+          "at": 4953
+        }
+      },
+      {
+        "name": "before-cutaway-return",
+        "before": {
+          "jobs": 6,
+          "sources": 2,
+          "at": 5847.399999856949
+        },
+        "after": {
+          "jobs": 6,
+          "sources": 2,
+          "at": 5923.599999904633
+        }
+      },
+      {
+        "name": "before-plan-return",
+        "before": {
+          "jobs": 8,
+          "sources": 2,
+          "at": 6661.299999952316
+        },
+        "after": {
+          "jobs": 8,
+          "sources": 2,
+          "at": 6729.199999809265
+        }
+      }
+    ],
+    "workersAfterExit": [],
+    "exceptions": []
+  },
+  "trials": [
+    {
+      "name": "default-dpr1",
+      "app": "a1c56446436943963478f4d6dadbd950ea8d0139",
+      "runnerCommit": "89622cdc380cb96ebdfec4513a90a271eab21614",
+      "runnerSha256": "bb9b2e8d963bba6d5b00ac587ae2113ef2fe9867849a6c3f1012e8a8212807be",
+      "instrumentationSha256": "cc45fb9fe3fc2b1168e9aa9d48b0b9f9d068385af36dfa6a6f2aec2f86eba7ad",
+      "metadata": {
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+        "reportedLogicalCpus": 8,
+        "dpr": 1
+      },
+      "allLayersOn": false,
+      "layerSelections": [],
+      "collectionFloors": [
+        {
+          "label": "Turbine and main control",
+          "restore": false,
+          "previous": [
+            {
+              "label": "Halden Unit 1, Halden Unit 2, Halden Unit 3, Halden Unit 4",
+              "value": "all"
+            },
+            {
+              "label": "Norway grid \u00b7 Halden connection",
+              "value": "all"
+            }
+          ],
+          "chosen": "operating",
+          "jobStart": 6,
+          "rows": [
+            {
+              "label": "Halden Unit 1, Halden Unit 2, Halden Unit 3, Halden Unit 4",
+              "value": "operating"
+            },
+            {
+              "label": "Norway grid \u00b7 Halden connection",
+              "value": "all"
+            }
+          ],
+          "jobs": [
+            {
+              "worker": 284,
+              "kind": "prepare",
+              "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+              "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"operating\",true,0,{\"layers\":[\"plan-allowances\"]}]",
+              "view": {
+                "mode": "3d",
+                "levelId": "operating",
+                "cutaway": true,
+                "separation": 0,
+                "detail": "auto",
+                "live": true,
+                "surroundings": false,
+                "hiddenLayerIds": [
+                  "roof-structure",
+                  "utility-routes"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "label": "Stack",
+          "restore": true,
+          "previous": [
+            {
+              "label": "Halden Unit 1, Halden Unit 2, Halden Unit 3, Halden Unit 4",
+              "value": "operating"
+            },
+            {
+              "label": "Norway grid \u00b7 Halden connection",
+              "value": "all"
+            }
+          ],
+          "chosen": "all",
+          "jobStart": 7,
+          "rows": [
+            {
+              "label": "Halden Unit 1, Halden Unit 2, Halden Unit 3, Halden Unit 4",
+              "value": "all"
+            },
+            {
+              "label": "Norway grid \u00b7 Halden connection",
+              "value": "all"
+            }
+          ],
+          "jobs": []
+        }
+      ],
+      "sources": [
+        {
+          "sourceKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84/detail",
+          "geometryKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84",
+          "layers": [
+            {
+              "id": "utility-routes",
+              "label": "Utility routes",
+              "defaultVisible": false
+            },
+            {
+              "id": "roof-structure",
+              "label": "Roof structure",
+              "defaultVisible": false
+            },
+            {
+              "id": "plan-labels",
+              "label": "Plan labels",
+              "defaultVisible": true
+            },
+            {
+              "id": "plan-dimensions",
+              "label": "Dimensions",
+              "defaultVisible": true
+            },
+            {
+              "id": "plan-allowances",
+              "label": "Illustrative work areas",
+              "defaultVisible": false
+            }
+          ],
+          "meshLayerIds": [
+            "utility-routes"
+          ]
+        },
+        {
+          "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+          "geometryKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+          "layers": [
+            {
+              "id": "utility-routes",
+              "label": "Utility routes",
+              "defaultVisible": false
+            },
+            {
+              "id": "roof-structure",
+              "label": "Roof structure",
+              "defaultVisible": false
+            },
+            {
+              "id": "plan-labels",
+              "label": "Plan labels",
+              "defaultVisible": true
+            },
+            {
+              "id": "plan-dimensions",
+              "label": "Dimensions",
+              "defaultVisible": true
+            },
+            {
+              "id": "plan-allowances",
+              "label": "Illustrative work areas",
+              "defaultVisible": true
+            },
+            {
+              "id": "plan-grid",
+              "label": "Structural grid",
+              "defaultVisible": true
+            }
+          ],
+          "meshLayerIds": [
+            "plan-allowances",
+            "roof-structure",
+            "utility-routes"
+          ]
+        }
+      ],
+      "phases": [
+        {
+          "name": "map-site-3d-paused",
+          "playing": false,
+          "moves": 123,
+          "frames": 242,
+          "rafMedianMs": 16.699999999999818,
+          "rafP95Ms": 16.800000000000182,
+          "rafMaxMs": 16.800000000000182,
+          "longTasks": [],
+          "processWindows": 0,
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 1080,
+              "height": 871,
+              "samples": 4,
+              "depthBytes": 15050880,
+              "colorBytes": 15050880,
+              "resolveBytes": 3762720
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            }
+          ],
+          "status": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run",
+          "fillTextCalls": 0,
+          "drawnTexts": []
+        },
+        {
+          "name": "map-site-3d-playing",
+          "playing": true,
+          "moves": 121,
+          "frames": 241,
+          "rafMedianMs": 16.69999999999891,
+          "rafP95Ms": 16.799999999999272,
+          "rafMaxMs": 16.80000000000109,
+          "longTasks": [],
+          "processWindows": 0,
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 1080,
+              "height": 871,
+              "samples": 4,
+              "depthBytes": 15050880,
+              "colorBytes": 15050880,
+              "resolveBytes": 3762720
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            }
+          ],
+          "status": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run",
+          "fillTextCalls": 0,
+          "drawnTexts": []
+        },
+        {
+          "name": "map-site-plan-paused",
+          "playing": false,
+          "moves": 124,
+          "frames": 240,
+          "rafMedianMs": 16.69999999999891,
+          "rafP95Ms": 16.700000000000728,
+          "rafMaxMs": 16.80000000000109,
+          "longTasks": [],
+          "processWindows": 0,
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 1080,
+              "height": 871,
+              "samples": 4,
+              "depthBytes": 15050880,
+              "colorBytes": 15050880,
+              "resolveBytes": 3762720
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 1080,
+              "height": 871,
+              "rgbaBytesLowerBound": 3762720
+            }
+          ],
+          "status": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run",
+          "fillTextCalls": 92008,
+          "drawnTexts": [
+            "+15.00 m",
+            "1",
+            "11 000 mm",
+            "16 000 mm",
+            "18 000 mm",
+            "19 000 mm",
+            "19 500 mm",
+            "2",
+            "27 000 mm",
+            "28 000 mm",
+            "28 500 mm",
+            "3",
+            "3,168 m\u00b2 floorplate \u00b7 88 \u00d7 36 m",
+            "30 000 mm",
+            "32 000 mm",
+            "34 000 mm",
+            "36 000 mm",
+            "39 000 mm",
+            "4",
+            "4 500 mm",
+            "41 000 mm",
+            "5",
+            "5 000 mm",
+            "5 500 mm",
+            "56 000 mm",
+            "57 000 mm",
+            "58 000 mm",
+            "6",
+            "6 000 mm",
+            "7",
+            "7 000 mm",
+            "7 500 mm",
+            "8",
+            "8 000 mm",
+            "88 000 mm",
+            "9",
+            "A",
+            "ACCESS SPINE",
+            "Administration and visitor reception",
+            "Auxiliary access corridor",
+            "Auxiliary feedwater valve A",
+            "Auxiliary feedwater valve B",
+            "Auxiliary feedwater valve C",
+            "Auxiliary feedwater valve D",
+            "A\u2013A / LEVEL RELATIONSHIP",
+            "B",
+            "Boric-acid injection valve",
+            "Boric-acid storage tank",
+            "COND 1",
+            "COND 2",
+            "COND 3",
+            "CONDENSER",
+            "CONDENSERS BELOW THE DECK",
+            "CP A",
+            "CP B",
+            "CVCS charging A and volume control",
+            "CVCS charging B and boric acid",
+            "CVCS letdown valve",
+            "Central maintenance workshop and stores",
+            "Charging pump A",
+            "Charging pump B",
+            "Circulating and service-water pumps",
+            "Circulating-water pump assembly",
+            "Component cooling-water pump A",
+            "Component cooling-water pump B",
+            "Condensate storage tank",
+            "Containment fan-cooler bank A",
+            "Containment fan-cooler bank B",
+            "Containment personnel access vestibule",
+            "Containment spray pump A",
+            "Containment spray pump B",
+            "Controlled maintenance workshop",
+            "Diesel A machine hall",
+            "Diesel B machine hall",
+            "Diesel incoming breaker A",
+            "Diesel incoming breaker B",
+            "Electrical stairwell",
+            "Electrical/control access corridor",
+            "Emergency diesel generator A",
+            "Emergency diesel generator B",
+            "FEEDWATER PUMP ROOM",
+            "Feedwater and auxiliary-feedwater valve gallery",
+            "Feedwater control valve A",
+            "Feedwater control valve B",
+            "Feedwater control valve C",
+            "Feedwater control valve D",
+            "Feedwater/deaerator tank",
+            "Fuel-service stores and maintenance",
+            "Fuel/day-tank and ventilation service",
+            "Gatehouse and site access control",
+            "High-head safety injection pump A",
+            "High-head safety injection pump B",
+            "Hotwell reject valve",
+            "LP EXHAUSTS",
+            "MFW A",
+            "MFW B",
+            "Offsite supply breaker A",
+            "Offsite supply breaker B",
+            "PUMP ROOM ACCESS",
+            "Pressurizer",
+            "Pressurizer backup-heater breaker",
+            "Pressurizer relief tank",
+            "Reactor cavity and primary-loop area",
+            "Reactor coolant pump A",
+            "Reactor coolant pump B",
+            "Reactor coolant pump C",
+            "Reactor coolant pump D",
+            "Reactor pressure vessel",
+            "Refuelling-water storage tank",
+            "Residual heat removal pump A",
+            "Residual heat removal pump B",
+            "Residual-heat removal isolation valve",
+            "S \u00b7 DN",
+            "S \u00b7 UP",
+            "SERVICE BAY \u00b7 8.5 \u00d7 4.2 m",
+            "Safety bus A",
+            "Safety bus B",
+            "Safety injection accumulator A",
+            "Safety injection accumulator B",
+            "Safety injection accumulator C",
+            "Safety injection accumulator D",
+            "Safety-train motor-control centre A",
+            "Safety-train motor-control centre B",
+            "Schematic section \u00b7 heights are study assumptions",
+            "Service-water pump A",
+            "Service-water pump B",
+            "Steam generator A",
+            "Steam generator B",
+            "Steam generator C",
+            "Steam generator D",
+            "Switchyard protection and control house",
+            "TURBINE HALL",
+            "Train A AC switchgear",
+            "Train A injection and RHR pump cells",
+            "Train A motor-control centres",
+            "Train A spray and component-cooling cells",
+            "Train B AC switchgear",
+            "Train B injection and RHR pump cells",
+            "Train B motor-control centres",
+            "Train B spray and component-cooling cells",
+            "Training and engineering offices",
+            "Turbine bypass valve",
+            "Unit auxiliary transformer",
+            "Unit bus A",
+            "Unit bus B",
+            "Unit bus supply breaker A",
+            "Unit bus supply breaker B",
+            "Volume-control tank",
+            "\u00b10.00 m"
+          ]
+        },
+        {
+          "name": "map-site-plan-playing",
+          "playing": true,
+          "moves": 124,
+          "frames": 239,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.799999999999272,
+          "rafMaxMs": 33.400000000001455,
+          "longTasks": [],
+          "processWindows": 0,
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 1080,
+              "height": 871,
+              "samples": 4,
+              "depthBytes": 15050880,
+              "colorBytes": 15050880,
+              "resolveBytes": 3762720
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 1080,
+              "height": 871,
+              "rgbaBytesLowerBound": 3762720
+            }
+          ],
+          "status": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run",
+          "fillTextCalls": 92008,
+          "drawnTexts": [
+            "+15.00 m",
+            "1",
+            "11 000 mm",
+            "16 000 mm",
+            "18 000 mm",
+            "19 000 mm",
+            "19 500 mm",
+            "2",
+            "27 000 mm",
+            "28 000 mm",
+            "28 500 mm",
+            "3",
+            "3,168 m\u00b2 floorplate \u00b7 88 \u00d7 36 m",
+            "30 000 mm",
+            "32 000 mm",
+            "34 000 mm",
+            "36 000 mm",
+            "39 000 mm",
+            "4",
+            "4 500 mm",
+            "41 000 mm",
+            "5",
+            "5 000 mm",
+            "5 500 mm",
+            "56 000 mm",
+            "57 000 mm",
+            "58 000 mm",
+            "6",
+            "6 000 mm",
+            "7",
+            "7 000 mm",
+            "7 500 mm",
+            "8",
+            "8 000 mm",
+            "88 000 mm",
+            "9",
+            "A",
+            "ACCESS SPINE",
+            "Administration and visitor reception",
+            "Auxiliary access corridor",
+            "Auxiliary feedwater valve A",
+            "Auxiliary feedwater valve B",
+            "Auxiliary feedwater valve C",
+            "Auxiliary feedwater valve D",
+            "A\u2013A / LEVEL RELATIONSHIP",
+            "B",
+            "Boric-acid injection valve",
+            "Boric-acid storage tank",
+            "COND 1",
+            "COND 2",
+            "COND 3",
+            "CONDENSER",
+            "CONDENSERS BELOW THE DECK",
+            "CP A",
+            "CP B",
+            "CVCS charging A and volume control",
+            "CVCS charging B and boric acid",
+            "CVCS letdown valve",
+            "Central maintenance workshop and stores",
+            "Charging pump A",
+            "Charging pump B",
+            "Circulating and service-water pumps",
+            "Circulating-water pump assembly",
+            "Component cooling-water pump A",
+            "Component cooling-water pump B",
+            "Condensate storage tank",
+            "Containment fan-cooler bank A",
+            "Containment fan-cooler bank B",
+            "Containment personnel access vestibule",
+            "Containment spray pump A",
+            "Containment spray pump B",
+            "Controlled maintenance workshop",
+            "Diesel A machine hall",
+            "Diesel B machine hall",
+            "Diesel incoming breaker A",
+            "Diesel incoming breaker B",
+            "Electrical stairwell",
+            "Electrical/control access corridor",
+            "Emergency diesel generator A",
+            "Emergency diesel generator B",
+            "FEEDWATER PUMP ROOM",
+            "Feedwater and auxiliary-feedwater valve gallery",
+            "Feedwater control valve A",
+            "Feedwater control valve B",
+            "Feedwater control valve C",
+            "Feedwater control valve D",
+            "Feedwater/deaerator tank",
+            "Fuel-service stores and maintenance",
+            "Fuel/day-tank and ventilation service",
+            "Gatehouse and site access control",
+            "High-head safety injection pump A",
+            "High-head safety injection pump B",
+            "Hotwell reject valve",
+            "LP EXHAUSTS",
+            "MFW A",
+            "MFW B",
+            "Offsite supply breaker A",
+            "Offsite supply breaker B",
+            "PUMP ROOM ACCESS",
+            "Pressurizer",
+            "Pressurizer backup-heater breaker",
+            "Pressurizer relief tank",
+            "Reactor cavity and primary-loop area",
+            "Reactor coolant pump A",
+            "Reactor coolant pump B",
+            "Reactor coolant pump C",
+            "Reactor coolant pump D",
+            "Reactor pressure vessel",
+            "Refuelling-water storage tank",
+            "Residual heat removal pump A",
+            "Residual heat removal pump B",
+            "Residual-heat removal isolation valve",
+            "S \u00b7 DN",
+            "S \u00b7 UP",
+            "SERVICE BAY \u00b7 8.5 \u00d7 4.2 m",
+            "Safety bus A",
+            "Safety bus B",
+            "Safety injection accumulator A",
+            "Safety injection accumulator B",
+            "Safety injection accumulator C",
+            "Safety injection accumulator D",
+            "Safety-train motor-control centre A",
+            "Safety-train motor-control centre B",
+            "Schematic section \u00b7 heights are study assumptions",
+            "Service-water pump A",
+            "Service-water pump B",
+            "Steam generator A",
+            "Steam generator B",
+            "Steam generator C",
+            "Steam generator D",
+            "Switchyard protection and control house",
+            "TURBINE HALL",
+            "Train A AC switchgear",
+            "Train A injection and RHR pump cells",
+            "Train A motor-control centres",
+            "Train A spray and component-cooling cells",
+            "Train B AC switchgear",
+            "Train B injection and RHR pump cells",
+            "Train B motor-control centres",
+            "Train B spray and component-cooling cells",
+            "Training and engineering offices",
+            "Turbine bypass valve",
+            "Unit auxiliary transformer",
+            "Unit bus A",
+            "Unit bus B",
+            "Unit bus supply breaker A",
+            "Unit bus supply breaker B",
+            "Volume-control tank",
+            "\u00b10.00 m"
+          ]
+        },
+        {
+          "name": "map-room-3d-paused",
+          "playing": false,
+          "moves": 120,
+          "frames": 240,
+          "rafMedianMs": 16.700000000000728,
+          "rafP95Ms": 16.700000000000728,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "processWindows": 0,
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 1080,
+              "height": 871,
+              "samples": 4,
+              "depthBytes": 15050880,
+              "colorBytes": 15050880,
+              "resolveBytes": 3762720
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            }
+          ],
+          "status": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+          "fillTextCalls": 0,
+          "drawnTexts": []
+        },
+        {
+          "name": "map-room-3d-playing",
+          "playing": true,
+          "moves": 122,
+          "frames": 240,
+          "rafMedianMs": 16.700000000000728,
+          "rafP95Ms": 16.700000000000728,
+          "rafMaxMs": 16.799999999999272,
+          "longTasks": [],
+          "processWindows": 0,
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 1080,
+              "height": 871,
+              "samples": 4,
+              "depthBytes": 15050880,
+              "colorBytes": 15050880,
+              "resolveBytes": 3762720
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            }
+          ],
+          "status": "Live \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+          "fillTextCalls": 0,
+          "drawnTexts": []
+        },
+        {
+          "name": "map-room-plan-paused",
+          "playing": false,
+          "moves": 123,
+          "frames": 241,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.700000000004366,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "processWindows": 0,
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 1080,
+              "height": 871,
+              "samples": 4,
+              "depthBytes": 15050880,
+              "colorBytes": 15050880,
+              "resolveBytes": 3762720
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 1080,
+              "height": 871,
+              "rgbaBytesLowerBound": 3762720
+            }
+          ],
+          "status": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+          "fillTextCalls": 5313,
+          "drawnTexts": [
+            "+15.00 m",
+            "1",
+            "11 000 mm",
+            "2",
+            "2 m ACCESS SPINE",
+            "3",
+            "3,168 m\u00b2 floorplate \u00b7 88 \u00d7 36 m",
+            "36 000 mm",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "88 000 mm",
+            "9",
+            "A",
+            "A\u2013A / LEVEL RELATIONSHIP",
+            "B",
+            "CASING / ROTOR LAYDOWN",
+            "CONDENSER",
+            "CONDENSERS BELOW THE DECK",
+            "EXC",
+            "FLOOR HATCH",
+            "GEN",
+            "HP",
+            "LP 1",
+            "LP 2",
+            "LP 3",
+            "LP EXHAUSTS",
+            "MSR 1",
+            "MSR 2",
+            "ROTOR WITHDRAWAL",
+            "S \u00b7 DN",
+            "Schematic section \u00b7 heights are study assumptions",
+            "TSV",
+            "TURBINE HALL",
+            "\u00b10.00 m"
+          ]
+        },
+        {
+          "name": "map-room-plan-playing",
+          "playing": true,
+          "moves": 123,
+          "frames": 241,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.799999999995634,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "processWindows": 0,
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 1080,
+              "height": 871,
+              "samples": 4,
+              "depthBytes": 15050880,
+              "colorBytes": 15050880,
+              "resolveBytes": 3762720
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 1080,
+              "height": 871,
+              "rgbaBytesLowerBound": 3762720
+            }
+          ],
+          "status": "Live \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+          "fillTextCalls": 5301,
+          "drawnTexts": [
+            "+15.00 m",
+            "1",
+            "11 000 mm",
+            "2",
+            "2 m ACCESS SPINE",
+            "3",
+            "3,168 m\u00b2 floorplate \u00b7 88 \u00d7 36 m",
+            "36 000 mm",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "88 000 mm",
+            "9",
+            "A",
+            "A\u2013A / LEVEL RELATIONSHIP",
+            "B",
+            "CASING / ROTOR LAYDOWN",
+            "CONDENSER",
+            "CONDENSERS BELOW THE DECK",
+            "EXC",
+            "FLOOR HATCH",
+            "GEN",
+            "HP",
+            "LP 1",
+            "LP 2",
+            "LP 3",
+            "LP EXHAUSTS",
+            "MSR 1",
+            "MSR 2",
+            "ROTOR WITHDRAWAL",
+            "S \u00b7 DN",
+            "Schematic section \u00b7 heights are study assumptions",
+            "TSV",
+            "TURBINE HALL",
+            "\u00b10.00 m"
+          ]
+        }
+      ],
+      "workersAfterExit": [],
+      "exceptions": []
+    },
+    {
+      "name": "default-dpr2",
+      "app": "a1c56446436943963478f4d6dadbd950ea8d0139",
+      "runnerCommit": "89622cdc380cb96ebdfec4513a90a271eab21614",
+      "runnerSha256": "bb9b2e8d963bba6d5b00ac587ae2113ef2fe9867849a6c3f1012e8a8212807be",
+      "instrumentationSha256": "cc45fb9fe3fc2b1168e9aa9d48b0b9f9d068385af36dfa6a6f2aec2f86eba7ad",
+      "metadata": {
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+        "reportedLogicalCpus": 8,
+        "dpr": 2
+      },
+      "allLayersOn": false,
+      "layerSelections": [],
+      "collectionFloors": [
+        {
+          "label": "Turbine and main control",
+          "restore": false,
+          "previous": [
+            {
+              "label": "Halden Unit 1, Halden Unit 2, Halden Unit 3, Halden Unit 4",
+              "value": "all"
+            },
+            {
+              "label": "Norway grid \u00b7 Halden connection",
+              "value": "all"
+            }
+          ],
+          "chosen": "operating",
+          "jobStart": 6,
+          "rows": [
+            {
+              "label": "Halden Unit 1, Halden Unit 2, Halden Unit 3, Halden Unit 4",
+              "value": "operating"
+            },
+            {
+              "label": "Norway grid \u00b7 Halden connection",
+              "value": "all"
+            }
+          ],
+          "jobs": [
+            {
+              "worker": 276,
+              "kind": "prepare",
+              "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+              "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"operating\",true,0,{\"layers\":[\"plan-allowances\"]}]",
+              "view": {
+                "mode": "3d",
+                "levelId": "operating",
+                "cutaway": true,
+                "separation": 0,
+                "detail": "auto",
+                "live": true,
+                "surroundings": false,
+                "hiddenLayerIds": [
+                  "roof-structure",
+                  "utility-routes"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "label": "Stack",
+          "restore": true,
+          "previous": [
+            {
+              "label": "Halden Unit 1, Halden Unit 2, Halden Unit 3, Halden Unit 4",
+              "value": "operating"
+            },
+            {
+              "label": "Norway grid \u00b7 Halden connection",
+              "value": "all"
+            }
+          ],
+          "chosen": "all",
+          "jobStart": 7,
+          "rows": [
+            {
+              "label": "Halden Unit 1, Halden Unit 2, Halden Unit 3, Halden Unit 4",
+              "value": "all"
+            },
+            {
+              "label": "Norway grid \u00b7 Halden connection",
+              "value": "all"
+            }
+          ],
+          "jobs": []
+        }
+      ],
+      "sources": [
+        {
+          "sourceKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84/detail",
+          "geometryKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84",
+          "layers": [
+            {
+              "id": "utility-routes",
+              "label": "Utility routes",
+              "defaultVisible": false
+            },
+            {
+              "id": "roof-structure",
+              "label": "Roof structure",
+              "defaultVisible": false
+            },
+            {
+              "id": "plan-labels",
+              "label": "Plan labels",
+              "defaultVisible": true
+            },
+            {
+              "id": "plan-dimensions",
+              "label": "Dimensions",
+              "defaultVisible": true
+            },
+            {
+              "id": "plan-allowances",
+              "label": "Illustrative work areas",
+              "defaultVisible": false
+            }
+          ],
+          "meshLayerIds": [
+            "utility-routes"
+          ]
+        },
+        {
+          "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+          "geometryKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+          "layers": [
+            {
+              "id": "utility-routes",
+              "label": "Utility routes",
+              "defaultVisible": false
+            },
+            {
+              "id": "roof-structure",
+              "label": "Roof structure",
+              "defaultVisible": false
+            },
+            {
+              "id": "plan-labels",
+              "label": "Plan labels",
+              "defaultVisible": true
+            },
+            {
+              "id": "plan-dimensions",
+              "label": "Dimensions",
+              "defaultVisible": true
+            },
+            {
+              "id": "plan-allowances",
+              "label": "Illustrative work areas",
+              "defaultVisible": true
+            },
+            {
+              "id": "plan-grid",
+              "label": "Structural grid",
+              "defaultVisible": true
+            }
+          ],
+          "meshLayerIds": [
+            "plan-allowances",
+            "roof-structure",
+            "utility-routes"
+          ]
+        }
+      ],
+      "phases": [
+        {
+          "name": "map-site-3d-paused",
+          "playing": false,
+          "moves": 121,
+          "frames": 240,
+          "rafMedianMs": 16.699999999999818,
+          "rafP95Ms": 16.799999999999272,
+          "rafMaxMs": 16.800000000000182,
+          "longTasks": [],
+          "processWindows": 0,
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 2160,
+              "height": 1742,
+              "samples": 4,
+              "depthBytes": 60203520,
+              "colorBytes": 60203520,
+              "resolveBytes": 15050880
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            }
+          ],
+          "status": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run",
+          "fillTextCalls": 0,
+          "drawnTexts": []
+        },
+        {
+          "name": "map-site-3d-playing",
+          "playing": true,
+          "moves": 120,
+          "frames": 242,
+          "rafMedianMs": 16.69999999999891,
+          "rafP95Ms": 16.799999999999272,
+          "rafMaxMs": 16.80000000000109,
+          "longTasks": [],
+          "processWindows": 0,
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 2160,
+              "height": 1742,
+              "samples": 4,
+              "depthBytes": 60203520,
+              "colorBytes": 60203520,
+              "resolveBytes": 15050880
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            }
+          ],
+          "status": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run",
+          "fillTextCalls": 0,
+          "drawnTexts": []
+        },
+        {
+          "name": "map-site-plan-paused",
+          "playing": false,
+          "moves": 124,
+          "frames": 238,
+          "rafMedianMs": 16.69999999999891,
+          "rafP95Ms": 16.700000000000728,
+          "rafMaxMs": 33.400000000001455,
+          "longTasks": [],
+          "processWindows": 0,
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 2160,
+              "height": 1742,
+              "samples": 4,
+              "depthBytes": 60203520,
+              "colorBytes": 60203520,
+              "resolveBytes": 15050880
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 2160,
+              "height": 1742,
+              "rgbaBytesLowerBound": 15050880
+            }
+          ],
+          "status": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run",
+          "fillTextCalls": 92008,
+          "drawnTexts": [
+            "+15.00 m",
+            "1",
+            "11 000 mm",
+            "16 000 mm",
+            "18 000 mm",
+            "19 000 mm",
+            "19 500 mm",
+            "2",
+            "27 000 mm",
+            "28 000 mm",
+            "28 500 mm",
+            "3",
+            "3,168 m\u00b2 floorplate \u00b7 88 \u00d7 36 m",
+            "30 000 mm",
+            "32 000 mm",
+            "34 000 mm",
+            "36 000 mm",
+            "39 000 mm",
+            "4",
+            "4 500 mm",
+            "41 000 mm",
+            "5",
+            "5 000 mm",
+            "5 500 mm",
+            "56 000 mm",
+            "57 000 mm",
+            "58 000 mm",
+            "6",
+            "6 000 mm",
+            "7",
+            "7 000 mm",
+            "7 500 mm",
+            "8",
+            "8 000 mm",
+            "88 000 mm",
+            "9",
+            "A",
+            "ACCESS SPINE",
+            "Administration and visitor reception",
+            "Auxiliary access corridor",
+            "Auxiliary feedwater valve A",
+            "Auxiliary feedwater valve B",
+            "Auxiliary feedwater valve C",
+            "Auxiliary feedwater valve D",
+            "A\u2013A / LEVEL RELATIONSHIP",
+            "B",
+            "Boric-acid injection valve",
+            "Boric-acid storage tank",
+            "COND 1",
+            "COND 2",
+            "COND 3",
+            "CONDENSER",
+            "CONDENSERS BELOW THE DECK",
+            "CP A",
+            "CP B",
+            "CVCS charging A and volume control",
+            "CVCS charging B and boric acid",
+            "CVCS letdown valve",
+            "Central maintenance workshop and stores",
+            "Charging pump A",
+            "Charging pump B",
+            "Circulating and service-water pumps",
+            "Circulating-water pump assembly",
+            "Component cooling-water pump A",
+            "Component cooling-water pump B",
+            "Condensate storage tank",
+            "Containment fan-cooler bank A",
+            "Containment fan-cooler bank B",
+            "Containment personnel access vestibule",
+            "Containment spray pump A",
+            "Containment spray pump B",
+            "Controlled maintenance workshop",
+            "Diesel A machine hall",
+            "Diesel B machine hall",
+            "Diesel incoming breaker A",
+            "Diesel incoming breaker B",
+            "Electrical stairwell",
+            "Electrical/control access corridor",
+            "Emergency diesel generator A",
+            "Emergency diesel generator B",
+            "FEEDWATER PUMP ROOM",
+            "Feedwater and auxiliary-feedwater valve gallery",
+            "Feedwater control valve A",
+            "Feedwater control valve B",
+            "Feedwater control valve C",
+            "Feedwater control valve D",
+            "Feedwater/deaerator tank",
+            "Fuel-service stores and maintenance",
+            "Fuel/day-tank and ventilation service",
+            "Gatehouse and site access control",
+            "High-head safety injection pump A",
+            "High-head safety injection pump B",
+            "Hotwell reject valve",
+            "LP EXHAUSTS",
+            "MFW A",
+            "MFW B",
+            "Offsite supply breaker A",
+            "Offsite supply breaker B",
+            "PUMP ROOM ACCESS",
+            "Pressurizer",
+            "Pressurizer backup-heater breaker",
+            "Pressurizer relief tank",
+            "Reactor cavity and primary-loop area",
+            "Reactor coolant pump A",
+            "Reactor coolant pump B",
+            "Reactor coolant pump C",
+            "Reactor coolant pump D",
+            "Reactor pressure vessel",
+            "Refuelling-water storage tank",
+            "Residual heat removal pump A",
+            "Residual heat removal pump B",
+            "Residual-heat removal isolation valve",
+            "S \u00b7 DN",
+            "S \u00b7 UP",
+            "SERVICE BAY \u00b7 8.5 \u00d7 4.2 m",
+            "Safety bus A",
+            "Safety bus B",
+            "Safety injection accumulator A",
+            "Safety injection accumulator B",
+            "Safety injection accumulator C",
+            "Safety injection accumulator D",
+            "Safety-train motor-control centre A",
+            "Safety-train motor-control centre B",
+            "Schematic section \u00b7 heights are study assumptions",
+            "Service-water pump A",
+            "Service-water pump B",
+            "Steam generator A",
+            "Steam generator B",
+            "Steam generator C",
+            "Steam generator D",
+            "Switchyard protection and control house",
+            "TURBINE HALL",
+            "Train A AC switchgear",
+            "Train A injection and RHR pump cells",
+            "Train A motor-control centres",
+            "Train A spray and component-cooling cells",
+            "Train B AC switchgear",
+            "Train B injection and RHR pump cells",
+            "Train B motor-control centres",
+            "Train B spray and component-cooling cells",
+            "Training and engineering offices",
+            "Turbine bypass valve",
+            "Unit auxiliary transformer",
+            "Unit bus A",
+            "Unit bus B",
+            "Unit bus supply breaker A",
+            "Unit bus supply breaker B",
+            "Volume-control tank",
+            "\u00b10.00 m"
+          ]
+        },
+        {
+          "name": "map-site-plan-playing",
+          "playing": true,
+          "moves": 125,
+          "frames": 242,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.700000000000728,
+          "rafMaxMs": 33.400000000001455,
+          "longTasks": [],
+          "processWindows": 0,
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 2160,
+              "height": 1742,
+              "samples": 4,
+              "depthBytes": 60203520,
+              "colorBytes": 60203520,
+              "resolveBytes": 15050880
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 2160,
+              "height": 1742,
+              "rgbaBytesLowerBound": 15050880
+            }
+          ],
+          "status": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run",
+          "fillTextCalls": 94234,
+          "drawnTexts": [
+            "+15.00 m",
+            "1",
+            "11 000 mm",
+            "16 000 mm",
+            "18 000 mm",
+            "19 000 mm",
+            "19 500 mm",
+            "2",
+            "27 000 mm",
+            "28 000 mm",
+            "28 500 mm",
+            "3",
+            "3,168 m\u00b2 floorplate \u00b7 88 \u00d7 36 m",
+            "30 000 mm",
+            "32 000 mm",
+            "34 000 mm",
+            "36 000 mm",
+            "39 000 mm",
+            "4",
+            "4 500 mm",
+            "41 000 mm",
+            "5",
+            "5 000 mm",
+            "5 500 mm",
+            "56 000 mm",
+            "57 000 mm",
+            "58 000 mm",
+            "6",
+            "6 000 mm",
+            "7",
+            "7 000 mm",
+            "7 500 mm",
+            "8",
+            "8 000 mm",
+            "88 000 mm",
+            "9",
+            "A",
+            "ACCESS SPINE",
+            "Administration and visitor reception",
+            "Auxiliary access corridor",
+            "Auxiliary feedwater valve A",
+            "Auxiliary feedwater valve B",
+            "Auxiliary feedwater valve C",
+            "Auxiliary feedwater valve D",
+            "A\u2013A / LEVEL RELATIONSHIP",
+            "B",
+            "Boric-acid injection valve",
+            "Boric-acid storage tank",
+            "COND 1",
+            "COND 2",
+            "COND 3",
+            "CONDENSER",
+            "CONDENSERS BELOW THE DECK",
+            "CP A",
+            "CP B",
+            "CVCS charging A and volume control",
+            "CVCS charging B and boric acid",
+            "CVCS letdown valve",
+            "Central maintenance workshop and stores",
+            "Charging pump A",
+            "Charging pump B",
+            "Circulating and service-water pumps",
+            "Circulating-water pump assembly",
+            "Component cooling-water pump A",
+            "Component cooling-water pump B",
+            "Condensate storage tank",
+            "Containment fan-cooler bank A",
+            "Containment fan-cooler bank B",
+            "Containment personnel access vestibule",
+            "Containment spray pump A",
+            "Containment spray pump B",
+            "Controlled maintenance workshop",
+            "Diesel A machine hall",
+            "Diesel B machine hall",
+            "Diesel incoming breaker A",
+            "Diesel incoming breaker B",
+            "Electrical stairwell",
+            "Electrical/control access corridor",
+            "Emergency diesel generator A",
+            "Emergency diesel generator B",
+            "FEEDWATER PUMP ROOM",
+            "Feedwater and auxiliary-feedwater valve gallery",
+            "Feedwater control valve A",
+            "Feedwater control valve B",
+            "Feedwater control valve C",
+            "Feedwater control valve D",
+            "Feedwater/deaerator tank",
+            "Fuel-service stores and maintenance",
+            "Fuel/day-tank and ventilation service",
+            "Gatehouse and site access control",
+            "High-head safety injection pump A",
+            "High-head safety injection pump B",
+            "Hotwell reject valve",
+            "LP EXHAUSTS",
+            "MFW A",
+            "MFW B",
+            "Offsite supply breaker A",
+            "Offsite supply breaker B",
+            "PUMP ROOM ACCESS",
+            "Pressurizer",
+            "Pressurizer backup-heater breaker",
+            "Pressurizer relief tank",
+            "Reactor cavity and primary-loop area",
+            "Reactor coolant pump A",
+            "Reactor coolant pump B",
+            "Reactor coolant pump C",
+            "Reactor coolant pump D",
+            "Reactor pressure vessel",
+            "Refuelling-water storage tank",
+            "Residual heat removal pump A",
+            "Residual heat removal pump B",
+            "Residual-heat removal isolation valve",
+            "S \u00b7 DN",
+            "S \u00b7 UP",
+            "SERVICE BAY \u00b7 8.5 \u00d7 4.2 m",
+            "Safety bus A",
+            "Safety bus B",
+            "Safety injection accumulator A",
+            "Safety injection accumulator B",
+            "Safety injection accumulator C",
+            "Safety injection accumulator D",
+            "Safety-train motor-control centre A",
+            "Safety-train motor-control centre B",
+            "Schematic section \u00b7 heights are study assumptions",
+            "Service-water pump A",
+            "Service-water pump B",
+            "Steam generator A",
+            "Steam generator B",
+            "Steam generator C",
+            "Steam generator D",
+            "Switchyard protection and control house",
+            "TURBINE HALL",
+            "Train A AC switchgear",
+            "Train A injection and RHR pump cells",
+            "Train A motor-control centres",
+            "Train A spray and component-cooling cells",
+            "Train B AC switchgear",
+            "Train B injection and RHR pump cells",
+            "Train B motor-control centres",
+            "Train B spray and component-cooling cells",
+            "Training and engineering offices",
+            "Turbine bypass valve",
+            "Unit auxiliary transformer",
+            "Unit bus A",
+            "Unit bus B",
+            "Unit bus supply breaker A",
+            "Unit bus supply breaker B",
+            "Volume-control tank",
+            "\u00b10.00 m"
+          ]
+        },
+        {
+          "name": "map-room-3d-paused",
+          "playing": false,
+          "moves": 122,
+          "frames": 240,
+          "rafMedianMs": 16.700000000000728,
+          "rafP95Ms": 16.700000000000728,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "processWindows": 0,
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 2160,
+              "height": 1742,
+              "samples": 4,
+              "depthBytes": 60203520,
+              "colorBytes": 60203520,
+              "resolveBytes": 15050880
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            }
+          ],
+          "status": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+          "fillTextCalls": 0,
+          "drawnTexts": []
+        },
+        {
+          "name": "map-room-3d-playing",
+          "playing": true,
+          "moves": 123,
+          "frames": 241,
+          "rafMedianMs": 16.700000000000728,
+          "rafP95Ms": 16.700000000004366,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "processWindows": 0,
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 2160,
+              "height": 1742,
+              "samples": 4,
+              "depthBytes": 60203520,
+              "colorBytes": 60203520,
+              "resolveBytes": 15050880
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            }
+          ],
+          "status": "Live \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+          "fillTextCalls": 0,
+          "drawnTexts": []
+        },
+        {
+          "name": "map-room-plan-paused",
+          "playing": false,
+          "moves": 122,
+          "frames": 240,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.799999999995634,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "processWindows": 0,
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 2160,
+              "height": 1742,
+              "samples": 4,
+              "depthBytes": 60203520,
+              "colorBytes": 60203520,
+              "resolveBytes": 15050880
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 2160,
+              "height": 1742,
+              "rgbaBytesLowerBound": 15050880
+            }
+          ],
+          "status": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+          "fillTextCalls": 5269,
+          "drawnTexts": [
+            "+15.00 m",
+            "1",
+            "11 000 mm",
+            "2",
+            "2 m ACCESS SPINE",
+            "3",
+            "3,168 m\u00b2 floorplate \u00b7 88 \u00d7 36 m",
+            "36 000 mm",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "88 000 mm",
+            "9",
+            "A",
+            "A\u2013A / LEVEL RELATIONSHIP",
+            "B",
+            "CASING / ROTOR LAYDOWN",
+            "CONDENSER",
+            "CONDENSERS BELOW THE DECK",
+            "EXC",
+            "FLOOR HATCH",
+            "GEN",
+            "HP",
+            "LP 1",
+            "LP 2",
+            "LP 3",
+            "LP EXHAUSTS",
+            "MSR 1",
+            "MSR 2",
+            "ROTOR WITHDRAWAL",
+            "S \u00b7 DN",
+            "Schematic section \u00b7 heights are study assumptions",
+            "TSV",
+            "TURBINE HALL",
+            "\u00b10.00 m"
+          ]
+        },
+        {
+          "name": "map-room-plan-playing",
+          "playing": true,
+          "moves": 123,
+          "frames": 240,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.799999999995634,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "processWindows": 0,
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 2160,
+              "height": 1742,
+              "samples": 4,
+              "depthBytes": 60203520,
+              "colorBytes": 60203520,
+              "resolveBytes": 15050880
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 2160,
+              "height": 1742,
+              "rgbaBytesLowerBound": 15050880
+            }
+          ],
+          "status": "Live \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+          "fillTextCalls": 5317,
+          "drawnTexts": [
+            "+15.00 m",
+            "1",
+            "11 000 mm",
+            "2",
+            "2 m ACCESS SPINE",
+            "3",
+            "3,168 m\u00b2 floorplate \u00b7 88 \u00d7 36 m",
+            "36 000 mm",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "88 000 mm",
+            "9",
+            "A",
+            "A\u2013A / LEVEL RELATIONSHIP",
+            "B",
+            "CASING / ROTOR LAYDOWN",
+            "CONDENSER",
+            "CONDENSERS BELOW THE DECK",
+            "EXC",
+            "FLOOR HATCH",
+            "GEN",
+            "HP",
+            "LP 1",
+            "LP 2",
+            "LP 3",
+            "LP EXHAUSTS",
+            "MSR 1",
+            "MSR 2",
+            "ROTOR WITHDRAWAL",
+            "S \u00b7 DN",
+            "Schematic section \u00b7 heights are study assumptions",
+            "TSV",
+            "TURBINE HALL",
+            "\u00b10.00 m"
+          ]
+        }
+      ],
+      "workersAfterExit": [],
+      "exceptions": []
+    },
+    {
+      "name": "all-layers-dpr1",
+      "app": "a1c56446436943963478f4d6dadbd950ea8d0139",
+      "runnerCommit": "89622cdc380cb96ebdfec4513a90a271eab21614",
+      "runnerSha256": "bb9b2e8d963bba6d5b00ac587ae2113ef2fe9867849a6c3f1012e8a8212807be",
+      "instrumentationSha256": "cc45fb9fe3fc2b1168e9aa9d48b0b9f9d068385af36dfa6a6f2aec2f86eba7ad",
+      "metadata": {
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+        "reportedLogicalCpus": 8,
+        "dpr": 1
+      },
+      "allLayersOn": true,
+      "layerSelections": [
+        {
+          "title": "Halden Unit 1 full plant",
+          "labels": [
+            {
+              "label": "Utility routes",
+              "before": false
+            },
+            {
+              "label": "Roof structure",
+              "before": false
+            },
+            {
+              "label": "Plan labels",
+              "before": true
+            },
+            {
+              "label": "Dimensions",
+              "before": true
+            },
+            {
+              "label": "Illustrative work areas",
+              "before": true
+            },
+            {
+              "label": "Structural grid",
+              "before": true
+            }
+          ],
+          "after": [
+            {
+              "label": "Utility routes",
+              "checked": true
+            },
+            {
+              "label": "Roof structure",
+              "checked": true
+            },
+            {
+              "label": "Plan labels",
+              "checked": true
+            },
+            {
+              "label": "Dimensions",
+              "checked": true
+            },
+            {
+              "label": "Illustrative work areas",
+              "checked": true
+            },
+            {
+              "label": "Structural grid",
+              "checked": true
+            }
+          ],
+          "responses": [
+            {
+              "started": 3710.5,
+              "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\",\"utility-routes\"]}]",
+              "kind": "prepare",
+              "responseAt": 5886.799999952316,
+              "responseMs": 2176.2999999523163,
+              "responseKind": "prepared"
+            },
+            {
+              "started": 5970.799999952316,
+              "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\",\"roof-structure\",\"utility-routes\"]}]",
+              "kind": "prepare",
+              "responseAt": 8018.399999856949,
+              "responseMs": 2047.5999999046326,
+              "responseKind": "prepared"
+            }
+          ]
+        },
+        {
+          "title": "Halden Unit 2 full plant",
+          "labels": [
+            {
+              "label": "Utility routes",
+              "before": false
+            },
+            {
+              "label": "Roof structure",
+              "before": false
+            },
+            {
+              "label": "Plan labels",
+              "before": true
+            },
+            {
+              "label": "Dimensions",
+              "before": true
+            },
+            {
+              "label": "Illustrative work areas",
+              "before": true
+            },
+            {
+              "label": "Structural grid",
+              "before": true
+            }
+          ],
+          "after": [
+            {
+              "label": "Utility routes",
+              "checked": true
+            },
+            {
+              "label": "Roof structure",
+              "checked": true
+            },
+            {
+              "label": "Plan labels",
+              "checked": true
+            },
+            {
+              "label": "Dimensions",
+              "checked": true
+            },
+            {
+              "label": "Illustrative work areas",
+              "checked": true
+            },
+            {
+              "label": "Structural grid",
+              "checked": true
+            }
+          ],
+          "responses": []
+        },
+        {
+          "title": "Halden Unit 3 full plant",
+          "labels": [
+            {
+              "label": "Utility routes",
+              "before": false
+            },
+            {
+              "label": "Roof structure",
+              "before": false
+            },
+            {
+              "label": "Plan labels",
+              "before": true
+            },
+            {
+              "label": "Dimensions",
+              "before": true
+            },
+            {
+              "label": "Illustrative work areas",
+              "before": true
+            },
+            {
+              "label": "Structural grid",
+              "before": true
+            }
+          ],
+          "after": [
+            {
+              "label": "Utility routes",
+              "checked": true
+            },
+            {
+              "label": "Roof structure",
+              "checked": true
+            },
+            {
+              "label": "Plan labels",
+              "checked": true
+            },
+            {
+              "label": "Dimensions",
+              "checked": true
+            },
+            {
+              "label": "Illustrative work areas",
+              "checked": true
+            },
+            {
+              "label": "Structural grid",
+              "checked": true
+            }
+          ],
+          "responses": []
+        },
+        {
+          "title": "Halden Unit 4 full plant",
+          "labels": [
+            {
+              "label": "Utility routes",
+              "before": false
+            },
+            {
+              "label": "Roof structure",
+              "before": false
+            },
+            {
+              "label": "Plan labels",
+              "before": true
+            },
+            {
+              "label": "Dimensions",
+              "before": true
+            },
+            {
+              "label": "Illustrative work areas",
+              "before": true
+            },
+            {
+              "label": "Structural grid",
+              "before": true
+            }
+          ],
+          "after": [
+            {
+              "label": "Utility routes",
+              "checked": true
+            },
+            {
+              "label": "Roof structure",
+              "checked": true
+            },
+            {
+              "label": "Plan labels",
+              "checked": true
+            },
+            {
+              "label": "Dimensions",
+              "checked": true
+            },
+            {
+              "label": "Illustrative work areas",
+              "checked": true
+            },
+            {
+              "label": "Structural grid",
+              "checked": true
+            }
+          ],
+          "responses": []
+        },
+        {
+          "title": "Halden shared campus and switchyard",
+          "labels": [
+            {
+              "label": "Utility routes",
+              "before": false
+            },
+            {
+              "label": "Roof structure",
+              "before": false
+            },
+            {
+              "label": "Plan labels",
+              "before": true
+            },
+            {
+              "label": "Dimensions",
+              "before": true
+            },
+            {
+              "label": "Illustrative work areas",
+              "before": false
+            }
+          ],
+          "after": [
+            {
+              "label": "Utility routes",
+              "checked": true
+            },
+            {
+              "label": "Roof structure",
+              "checked": true
+            },
+            {
+              "label": "Plan labels",
+              "checked": true
+            },
+            {
+              "label": "Dimensions",
+              "checked": true
+            },
+            {
+              "label": "Illustrative work areas",
+              "checked": true
+            }
+          ],
+          "responses": [
+            {
+              "started": 9824.899999856949,
+              "key": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84/[\"3d\",\"all\",true,0,{\"layers\":[\"utility-routes\"]}]",
+              "kind": "prepare",
+              "responseAt": 11117,
+              "responseMs": 1292.1000001430511,
+              "responseKind": "prepared"
+            }
+          ]
+        }
+      ],
+      "collectionFloors": [
+        {
+          "label": "Turbine and main control",
+          "restore": false,
+          "previous": [
+            {
+              "label": "Halden Unit 1, Halden Unit 2, Halden Unit 3, Halden Unit 4",
+              "value": "all"
+            },
+            {
+              "label": "Norway grid \u00b7 Halden connection",
+              "value": "all"
+            }
+          ],
+          "chosen": "operating",
+          "jobStart": 9,
+          "rows": [
+            {
+              "label": "Halden Unit 1, Halden Unit 2, Halden Unit 3, Halden Unit 4",
+              "value": "operating"
+            },
+            {
+              "label": "Norway grid \u00b7 Halden connection",
+              "value": "all"
+            }
+          ],
+          "jobs": [
+            {
+              "worker": 256,
+              "kind": "prepare",
+              "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+              "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"operating\",true,0,{\"layers\":[\"plan-allowances\",\"roof-structure\",\"utility-routes\"]}]",
+              "view": {
+                "mode": "3d",
+                "levelId": "operating",
+                "cutaway": true,
+                "separation": 0,
+                "detail": "auto",
+                "live": true,
+                "surroundings": false,
+                "hiddenLayerIds": []
+              }
+            }
+          ]
+        },
+        {
+          "label": "Stack",
+          "restore": true,
+          "previous": [
+            {
+              "label": "Halden Unit 1, Halden Unit 2, Halden Unit 3, Halden Unit 4",
+              "value": "operating"
+            },
+            {
+              "label": "Norway grid \u00b7 Halden connection",
+              "value": "all"
+            }
+          ],
+          "chosen": "all",
+          "jobStart": 10,
+          "rows": [
+            {
+              "label": "Halden Unit 1, Halden Unit 2, Halden Unit 3, Halden Unit 4",
+              "value": "all"
+            },
+            {
+              "label": "Norway grid \u00b7 Halden connection",
+              "value": "all"
+            }
+          ],
+          "jobs": []
+        }
+      ],
+      "sources": [
+        {
+          "sourceKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84/detail",
+          "geometryKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84",
+          "layers": [
+            {
+              "id": "utility-routes",
+              "label": "Utility routes",
+              "defaultVisible": false
+            },
+            {
+              "id": "roof-structure",
+              "label": "Roof structure",
+              "defaultVisible": false
+            },
+            {
+              "id": "plan-labels",
+              "label": "Plan labels",
+              "defaultVisible": true
+            },
+            {
+              "id": "plan-dimensions",
+              "label": "Dimensions",
+              "defaultVisible": true
+            },
+            {
+              "id": "plan-allowances",
+              "label": "Illustrative work areas",
+              "defaultVisible": false
+            }
+          ],
+          "meshLayerIds": [
+            "utility-routes"
+          ]
+        },
+        {
+          "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+          "geometryKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+          "layers": [
+            {
+              "id": "utility-routes",
+              "label": "Utility routes",
+              "defaultVisible": false
+            },
+            {
+              "id": "roof-structure",
+              "label": "Roof structure",
+              "defaultVisible": false
+            },
+            {
+              "id": "plan-labels",
+              "label": "Plan labels",
+              "defaultVisible": true
+            },
+            {
+              "id": "plan-dimensions",
+              "label": "Dimensions",
+              "defaultVisible": true
+            },
+            {
+              "id": "plan-allowances",
+              "label": "Illustrative work areas",
+              "defaultVisible": true
+            },
+            {
+              "id": "plan-grid",
+              "label": "Structural grid",
+              "defaultVisible": true
+            }
+          ],
+          "meshLayerIds": [
+            "plan-allowances",
+            "roof-structure",
+            "utility-routes"
+          ]
+        }
+      ],
+      "phases": [
+        {
+          "name": "map-site-3d-paused",
+          "playing": false,
+          "moves": 121,
+          "frames": 242,
+          "rafMedianMs": 16.69999999999891,
+          "rafP95Ms": 16.700000000000728,
+          "rafMaxMs": 16.799999999999272,
+          "longTasks": [],
+          "processWindows": 0,
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 1080,
+              "height": 871,
+              "samples": 4,
+              "depthBytes": 15050880,
+              "colorBytes": 15050880,
+              "resolveBytes": 3762720
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            }
+          ],
+          "status": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run",
+          "fillTextCalls": 0,
+          "drawnTexts": []
+        },
+        {
+          "name": "map-site-3d-playing",
+          "playing": true,
+          "moves": 121,
+          "frames": 236,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.799999999999272,
+          "rafMaxMs": 50,
+          "longTasks": [],
+          "processWindows": 0,
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 1080,
+              "height": 871,
+              "samples": 4,
+              "depthBytes": 15050880,
+              "colorBytes": 15050880,
+              "resolveBytes": 3762720
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            }
+          ],
+          "status": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run",
+          "fillTextCalls": 0,
+          "drawnTexts": []
+        },
+        {
+          "name": "map-site-plan-paused",
+          "playing": false,
+          "moves": 122,
+          "frames": 241,
+          "rafMedianMs": 16.700000000000728,
+          "rafP95Ms": 16.700000000000728,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "processWindows": 0,
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 1080,
+              "height": 871,
+              "samples": 4,
+              "depthBytes": 15050880,
+              "colorBytes": 15050880,
+              "resolveBytes": 3762720
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 1080,
+              "height": 871,
+              "rgbaBytesLowerBound": 3762720
+            }
+          ],
+          "status": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run",
+          "fillTextCalls": 90524,
+          "drawnTexts": [
+            "+15.00 m",
+            "1",
+            "11 000 mm",
+            "16 000 mm",
+            "18 000 mm",
+            "19 000 mm",
+            "19 500 mm",
+            "2",
+            "27 000 mm",
+            "28 000 mm",
+            "28 500 mm",
+            "3",
+            "3,168 m\u00b2 floorplate \u00b7 88 \u00d7 36 m",
+            "30 000 mm",
+            "32 000 mm",
+            "34 000 mm",
+            "36 000 mm",
+            "39 000 mm",
+            "4",
+            "4 500 mm",
+            "41 000 mm",
+            "5",
+            "5 000 mm",
+            "5 500 mm",
+            "56 000 mm",
+            "57 000 mm",
+            "58 000 mm",
+            "6",
+            "6 000 mm",
+            "7",
+            "7 000 mm",
+            "7 500 mm",
+            "8",
+            "8 000 mm",
+            "88 000 mm",
+            "9",
+            "A",
+            "ACCESS SPINE",
+            "Administration and visitor reception",
+            "Auxiliary access corridor",
+            "Auxiliary feedwater valve A",
+            "Auxiliary feedwater valve B",
+            "Auxiliary feedwater valve C",
+            "Auxiliary feedwater valve D",
+            "A\u2013A / LEVEL RELATIONSHIP",
+            "B",
+            "Boric-acid injection valve",
+            "Boric-acid storage tank",
+            "COND 1",
+            "COND 2",
+            "COND 3",
+            "CONDENSER",
+            "CONDENSERS BELOW THE DECK",
+            "CP A",
+            "CP B",
+            "CVCS charging A and volume control",
+            "CVCS charging B and boric acid",
+            "CVCS letdown valve",
+            "Central maintenance workshop and stores",
+            "Charging pump A",
+            "Charging pump B",
+            "Circulating and service-water pumps",
+            "Circulating-water pump assembly",
+            "Component cooling-water pump A",
+            "Component cooling-water pump B",
+            "Condensate storage tank",
+            "Containment fan-cooler bank A",
+            "Containment fan-cooler bank B",
+            "Containment personnel access vestibule",
+            "Containment spray pump A",
+            "Containment spray pump B",
+            "Controlled maintenance workshop",
+            "Diesel A machine hall",
+            "Diesel B machine hall",
+            "Diesel incoming breaker A",
+            "Diesel incoming breaker B",
+            "Electrical stairwell",
+            "Electrical/control access corridor",
+            "Emergency diesel generator A",
+            "Emergency diesel generator B",
+            "FEEDWATER PUMP ROOM",
+            "Feedwater and auxiliary-feedwater valve gallery",
+            "Feedwater control valve A",
+            "Feedwater control valve B",
+            "Feedwater control valve C",
+            "Feedwater control valve D",
+            "Feedwater/deaerator tank",
+            "Fuel-service stores and maintenance",
+            "Fuel/day-tank and ventilation service",
+            "Gatehouse and site access control",
+            "High-head safety injection pump A",
+            "High-head safety injection pump B",
+            "Hotwell reject valve",
+            "LP EXHAUSTS",
+            "MFW A",
+            "MFW B",
+            "Offsite supply breaker A",
+            "Offsite supply breaker B",
+            "PUMP ROOM ACCESS",
+            "Pressurizer",
+            "Pressurizer backup-heater breaker",
+            "Pressurizer relief tank",
+            "Reactor cavity and primary-loop area",
+            "Reactor coolant pump A",
+            "Reactor coolant pump B",
+            "Reactor coolant pump C",
+            "Reactor coolant pump D",
+            "Reactor pressure vessel",
+            "Refuelling-water storage tank",
+            "Residual heat removal pump A",
+            "Residual heat removal pump B",
+            "Residual-heat removal isolation valve",
+            "S \u00b7 DN",
+            "S \u00b7 UP",
+            "SERVICE BAY \u00b7 8.5 \u00d7 4.2 m",
+            "Safety bus A",
+            "Safety bus B",
+            "Safety injection accumulator A",
+            "Safety injection accumulator B",
+            "Safety injection accumulator C",
+            "Safety injection accumulator D",
+            "Safety-train motor-control centre A",
+            "Safety-train motor-control centre B",
+            "Schematic section \u00b7 heights are study assumptions",
+            "Service-water pump A",
+            "Service-water pump B",
+            "Steam generator A",
+            "Steam generator B",
+            "Steam generator C",
+            "Steam generator D",
+            "Switchyard protection and control house",
+            "TURBINE HALL",
+            "Train A AC switchgear",
+            "Train A injection and RHR pump cells",
+            "Train A motor-control centres",
+            "Train A spray and component-cooling cells",
+            "Train B AC switchgear",
+            "Train B injection and RHR pump cells",
+            "Train B motor-control centres",
+            "Train B spray and component-cooling cells",
+            "Training and engineering offices",
+            "Turbine bypass valve",
+            "Unit auxiliary transformer",
+            "Unit bus A",
+            "Unit bus B",
+            "Unit bus supply breaker A",
+            "Unit bus supply breaker B",
+            "Volume-control tank",
+            "\u00b10.00 m"
+          ]
+        },
+        {
+          "name": "map-site-plan-playing",
+          "playing": true,
+          "moves": 126,
+          "frames": 240,
+          "rafMedianMs": 16.700000000000728,
+          "rafP95Ms": 16.700000000000728,
+          "rafMaxMs": 33.30000000000291,
+          "longTasks": [],
+          "processWindows": 0,
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 1080,
+              "height": 871,
+              "samples": 4,
+              "depthBytes": 15050880,
+              "colorBytes": 15050880,
+              "resolveBytes": 3762720
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 1080,
+              "height": 871,
+              "rgbaBytesLowerBound": 3762720
+            }
+          ],
+          "status": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run",
+          "fillTextCalls": 93492,
+          "drawnTexts": [
+            "+15.00 m",
+            "1",
+            "11 000 mm",
+            "16 000 mm",
+            "18 000 mm",
+            "19 000 mm",
+            "19 500 mm",
+            "2",
+            "27 000 mm",
+            "28 000 mm",
+            "28 500 mm",
+            "3",
+            "3,168 m\u00b2 floorplate \u00b7 88 \u00d7 36 m",
+            "30 000 mm",
+            "32 000 mm",
+            "34 000 mm",
+            "36 000 mm",
+            "39 000 mm",
+            "4",
+            "4 500 mm",
+            "41 000 mm",
+            "5",
+            "5 000 mm",
+            "5 500 mm",
+            "56 000 mm",
+            "57 000 mm",
+            "58 000 mm",
+            "6",
+            "6 000 mm",
+            "7",
+            "7 000 mm",
+            "7 500 mm",
+            "8",
+            "8 000 mm",
+            "88 000 mm",
+            "9",
+            "A",
+            "ACCESS SPINE",
+            "Administration and visitor reception",
+            "Auxiliary access corridor",
+            "Auxiliary feedwater valve A",
+            "Auxiliary feedwater valve B",
+            "Auxiliary feedwater valve C",
+            "Auxiliary feedwater valve D",
+            "A\u2013A / LEVEL RELATIONSHIP",
+            "B",
+            "Boric-acid injection valve",
+            "Boric-acid storage tank",
+            "COND 1",
+            "COND 2",
+            "COND 3",
+            "CONDENSER",
+            "CONDENSERS BELOW THE DECK",
+            "CP A",
+            "CP B",
+            "CVCS charging A and volume control",
+            "CVCS charging B and boric acid",
+            "CVCS letdown valve",
+            "Central maintenance workshop and stores",
+            "Charging pump A",
+            "Charging pump B",
+            "Circulating and service-water pumps",
+            "Circulating-water pump assembly",
+            "Component cooling-water pump A",
+            "Component cooling-water pump B",
+            "Condensate storage tank",
+            "Containment fan-cooler bank A",
+            "Containment fan-cooler bank B",
+            "Containment personnel access vestibule",
+            "Containment spray pump A",
+            "Containment spray pump B",
+            "Controlled maintenance workshop",
+            "Diesel A machine hall",
+            "Diesel B machine hall",
+            "Diesel incoming breaker A",
+            "Diesel incoming breaker B",
+            "Electrical stairwell",
+            "Electrical/control access corridor",
+            "Emergency diesel generator A",
+            "Emergency diesel generator B",
+            "FEEDWATER PUMP ROOM",
+            "Feedwater and auxiliary-feedwater valve gallery",
+            "Feedwater control valve A",
+            "Feedwater control valve B",
+            "Feedwater control valve C",
+            "Feedwater control valve D",
+            "Feedwater/deaerator tank",
+            "Fuel-service stores and maintenance",
+            "Fuel/day-tank and ventilation service",
+            "Gatehouse and site access control",
+            "High-head safety injection pump A",
+            "High-head safety injection pump B",
+            "Hotwell reject valve",
+            "LP EXHAUSTS",
+            "MFW A",
+            "MFW B",
+            "Offsite supply breaker A",
+            "Offsite supply breaker B",
+            "PUMP ROOM ACCESS",
+            "Pressurizer",
+            "Pressurizer backup-heater breaker",
+            "Pressurizer relief tank",
+            "Reactor cavity and primary-loop area",
+            "Reactor coolant pump A",
+            "Reactor coolant pump B",
+            "Reactor coolant pump C",
+            "Reactor coolant pump D",
+            "Reactor pressure vessel",
+            "Refuelling-water storage tank",
+            "Residual heat removal pump A",
+            "Residual heat removal pump B",
+            "Residual-heat removal isolation valve",
+            "S \u00b7 DN",
+            "S \u00b7 UP",
+            "SERVICE BAY \u00b7 8.5 \u00d7 4.2 m",
+            "Safety bus A",
+            "Safety bus B",
+            "Safety injection accumulator A",
+            "Safety injection accumulator B",
+            "Safety injection accumulator C",
+            "Safety injection accumulator D",
+            "Safety-train motor-control centre A",
+            "Safety-train motor-control centre B",
+            "Schematic section \u00b7 heights are study assumptions",
+            "Service-water pump A",
+            "Service-water pump B",
+            "Steam generator A",
+            "Steam generator B",
+            "Steam generator C",
+            "Steam generator D",
+            "Switchyard protection and control house",
+            "TURBINE HALL",
+            "Train A AC switchgear",
+            "Train A injection and RHR pump cells",
+            "Train A motor-control centres",
+            "Train A spray and component-cooling cells",
+            "Train B AC switchgear",
+            "Train B injection and RHR pump cells",
+            "Train B motor-control centres",
+            "Train B spray and component-cooling cells",
+            "Training and engineering offices",
+            "Turbine bypass valve",
+            "Unit auxiliary transformer",
+            "Unit bus A",
+            "Unit bus B",
+            "Unit bus supply breaker A",
+            "Unit bus supply breaker B",
+            "Volume-control tank",
+            "\u00b10.00 m"
+          ]
+        },
+        {
+          "name": "map-room-3d-paused",
+          "playing": false,
+          "moves": 123,
+          "frames": 241,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.700000000004366,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "processWindows": 0,
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 1080,
+              "height": 871,
+              "samples": 4,
+              "depthBytes": 15050880,
+              "colorBytes": 15050880,
+              "resolveBytes": 3762720
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            }
+          ],
+          "status": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+          "fillTextCalls": 0,
+          "drawnTexts": []
+        },
+        {
+          "name": "map-room-3d-playing",
+          "playing": true,
+          "moves": 123,
+          "frames": 241,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.700000000004366,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "processWindows": 0,
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 1080,
+              "height": 871,
+              "samples": 4,
+              "depthBytes": 15050880,
+              "colorBytes": 15050880,
+              "resolveBytes": 3762720
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            }
+          ],
+          "status": "Live \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+          "fillTextCalls": 0,
+          "drawnTexts": []
+        },
+        {
+          "name": "map-room-plan-paused",
+          "playing": false,
+          "moves": 121,
+          "frames": 238,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.700000000004366,
+          "rafMaxMs": 33.400000000001455,
+          "longTasks": [],
+          "processWindows": 0,
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 1080,
+              "height": 871,
+              "samples": 4,
+              "depthBytes": 15050880,
+              "colorBytes": 15050880,
+              "resolveBytes": 3762720
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 1080,
+              "height": 871,
+              "rgbaBytesLowerBound": 3762720
+            }
+          ],
+          "status": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+          "fillTextCalls": 5316,
+          "drawnTexts": [
+            "+15.00 m",
+            "1",
+            "11 000 mm",
+            "2",
+            "2 m ACCESS SPINE",
+            "3",
+            "3,168 m\u00b2 floorplate \u00b7 88 \u00d7 36 m",
+            "36 000 mm",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "88 000 mm",
+            "9",
+            "A",
+            "A\u2013A / LEVEL RELATIONSHIP",
+            "B",
+            "CASING / ROTOR LAYDOWN",
+            "CONDENSER",
+            "CONDENSERS BELOW THE DECK",
+            "EXC",
+            "FLOOR HATCH",
+            "GEN",
+            "HP",
+            "LP 1",
+            "LP 2",
+            "LP 3",
+            "LP EXHAUSTS",
+            "MSR 1",
+            "MSR 2",
+            "ROTOR WITHDRAWAL",
+            "S \u00b7 DN",
+            "Schematic section \u00b7 heights are study assumptions",
+            "TSV",
+            "TURBINE HALL",
+            "\u00b10.00 m"
+          ]
+        },
+        {
+          "name": "map-room-plan-playing",
+          "playing": true,
+          "moves": 124,
+          "frames": 241,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.700000000004366,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "processWindows": 0,
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 1080,
+              "height": 871,
+              "samples": 4,
+              "depthBytes": 15050880,
+              "colorBytes": 15050880,
+              "resolveBytes": 3762720
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 1080,
+              "height": 871,
+              "rgbaBytesLowerBound": 3762720
+            }
+          ],
+          "status": "Live \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+          "fillTextCalls": 5419,
+          "drawnTexts": [
+            "+15.00 m",
+            "1",
+            "11 000 mm",
+            "2",
+            "2 m ACCESS SPINE",
+            "3",
+            "3,168 m\u00b2 floorplate \u00b7 88 \u00d7 36 m",
+            "36 000 mm",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "88 000 mm",
+            "9",
+            "A",
+            "A\u2013A / LEVEL RELATIONSHIP",
+            "B",
+            "CASING / ROTOR LAYDOWN",
+            "CONDENSER",
+            "CONDENSERS BELOW THE DECK",
+            "EXC",
+            "FLOOR HATCH",
+            "GEN",
+            "HP",
+            "LP 1",
+            "LP 2",
+            "LP 3",
+            "LP EXHAUSTS",
+            "MSR 1",
+            "MSR 2",
+            "ROTOR WITHDRAWAL",
+            "S \u00b7 DN",
+            "Schematic section \u00b7 heights are study assumptions",
+            "TSV",
+            "TURBINE HALL",
+            "\u00b10.00 m"
+          ]
+        }
+      ],
+      "workersAfterExit": [],
+      "exceptions": []
+    },
+    {
+      "name": "all-layers-dpr2",
+      "app": "a1c56446436943963478f4d6dadbd950ea8d0139",
+      "runnerCommit": "89622cdc380cb96ebdfec4513a90a271eab21614",
+      "runnerSha256": "bb9b2e8d963bba6d5b00ac587ae2113ef2fe9867849a6c3f1012e8a8212807be",
+      "instrumentationSha256": "cc45fb9fe3fc2b1168e9aa9d48b0b9f9d068385af36dfa6a6f2aec2f86eba7ad",
+      "metadata": {
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+        "reportedLogicalCpus": 8,
+        "dpr": 2
+      },
+      "allLayersOn": true,
+      "layerSelections": [
+        {
+          "title": "Halden Unit 1 full plant",
+          "labels": [
+            {
+              "label": "Utility routes",
+              "before": false
+            },
+            {
+              "label": "Roof structure",
+              "before": false
+            },
+            {
+              "label": "Plan labels",
+              "before": true
+            },
+            {
+              "label": "Dimensions",
+              "before": true
+            },
+            {
+              "label": "Illustrative work areas",
+              "before": true
+            },
+            {
+              "label": "Structural grid",
+              "before": true
+            }
+          ],
+          "after": [
+            {
+              "label": "Utility routes",
+              "checked": true
+            },
+            {
+              "label": "Roof structure",
+              "checked": true
+            },
+            {
+              "label": "Plan labels",
+              "checked": true
+            },
+            {
+              "label": "Dimensions",
+              "checked": true
+            },
+            {
+              "label": "Illustrative work areas",
+              "checked": true
+            },
+            {
+              "label": "Structural grid",
+              "checked": true
+            }
+          ],
+          "responses": [
+            {
+              "started": 3966.2000000476837,
+              "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\",\"utility-routes\"]}]",
+              "kind": "prepare",
+              "responseAt": 6144.599999904633,
+              "responseMs": 2178.399999856949,
+              "responseKind": "prepared"
+            },
+            {
+              "started": 6224.5,
+              "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\",\"roof-structure\",\"utility-routes\"]}]",
+              "kind": "prepare",
+              "responseAt": 8324.299999952316,
+              "responseMs": 2099.7999999523163,
+              "responseKind": "prepared"
+            }
+          ]
+        },
+        {
+          "title": "Halden Unit 2 full plant",
+          "labels": [
+            {
+              "label": "Utility routes",
+              "before": false
+            },
+            {
+              "label": "Roof structure",
+              "before": false
+            },
+            {
+              "label": "Plan labels",
+              "before": true
+            },
+            {
+              "label": "Dimensions",
+              "before": true
+            },
+            {
+              "label": "Illustrative work areas",
+              "before": true
+            },
+            {
+              "label": "Structural grid",
+              "before": true
+            }
+          ],
+          "after": [
+            {
+              "label": "Utility routes",
+              "checked": true
+            },
+            {
+              "label": "Roof structure",
+              "checked": true
+            },
+            {
+              "label": "Plan labels",
+              "checked": true
+            },
+            {
+              "label": "Dimensions",
+              "checked": true
+            },
+            {
+              "label": "Illustrative work areas",
+              "checked": true
+            },
+            {
+              "label": "Structural grid",
+              "checked": true
+            }
+          ],
+          "responses": []
+        },
+        {
+          "title": "Halden Unit 3 full plant",
+          "labels": [
+            {
+              "label": "Utility routes",
+              "before": false
+            },
+            {
+              "label": "Roof structure",
+              "before": false
+            },
+            {
+              "label": "Plan labels",
+              "before": true
+            },
+            {
+              "label": "Dimensions",
+              "before": true
+            },
+            {
+              "label": "Illustrative work areas",
+              "before": true
+            },
+            {
+              "label": "Structural grid",
+              "before": true
+            }
+          ],
+          "after": [
+            {
+              "label": "Utility routes",
+              "checked": true
+            },
+            {
+              "label": "Roof structure",
+              "checked": true
+            },
+            {
+              "label": "Plan labels",
+              "checked": true
+            },
+            {
+              "label": "Dimensions",
+              "checked": true
+            },
+            {
+              "label": "Illustrative work areas",
+              "checked": true
+            },
+            {
+              "label": "Structural grid",
+              "checked": true
+            }
+          ],
+          "responses": []
+        },
+        {
+          "title": "Halden Unit 4 full plant",
+          "labels": [
+            {
+              "label": "Utility routes",
+              "before": false
+            },
+            {
+              "label": "Roof structure",
+              "before": false
+            },
+            {
+              "label": "Plan labels",
+              "before": true
+            },
+            {
+              "label": "Dimensions",
+              "before": true
+            },
+            {
+              "label": "Illustrative work areas",
+              "before": true
+            },
+            {
+              "label": "Structural grid",
+              "before": true
+            }
+          ],
+          "after": [
+            {
+              "label": "Utility routes",
+              "checked": true
+            },
+            {
+              "label": "Roof structure",
+              "checked": true
+            },
+            {
+              "label": "Plan labels",
+              "checked": true
+            },
+            {
+              "label": "Dimensions",
+              "checked": true
+            },
+            {
+              "label": "Illustrative work areas",
+              "checked": true
+            },
+            {
+              "label": "Structural grid",
+              "checked": true
+            }
+          ],
+          "responses": []
+        },
+        {
+          "title": "Halden shared campus and switchyard",
+          "labels": [
+            {
+              "label": "Utility routes",
+              "before": false
+            },
+            {
+              "label": "Roof structure",
+              "before": false
+            },
+            {
+              "label": "Plan labels",
+              "before": true
+            },
+            {
+              "label": "Dimensions",
+              "before": true
+            },
+            {
+              "label": "Illustrative work areas",
+              "before": false
+            }
+          ],
+          "after": [
+            {
+              "label": "Utility routes",
+              "checked": true
+            },
+            {
+              "label": "Roof structure",
+              "checked": true
+            },
+            {
+              "label": "Plan labels",
+              "checked": true
+            },
+            {
+              "label": "Dimensions",
+              "checked": true
+            },
+            {
+              "label": "Illustrative work areas",
+              "checked": true
+            }
+          ],
+          "responses": [
+            {
+              "started": 10061.200000047684,
+              "key": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84/[\"3d\",\"all\",true,0,{\"layers\":[\"utility-routes\"]}]",
+              "kind": "prepare",
+              "responseAt": 11105.099999904633,
+              "responseMs": 1043.8999998569489,
+              "responseKind": "prepared"
+            }
+          ]
+        }
+      ],
+      "collectionFloors": [
+        {
+          "label": "Turbine and main control",
+          "restore": false,
+          "previous": [
+            {
+              "label": "Halden Unit 1, Halden Unit 2, Halden Unit 3, Halden Unit 4",
+              "value": "all"
+            },
+            {
+              "label": "Norway grid \u00b7 Halden connection",
+              "value": "all"
+            }
+          ],
+          "chosen": "operating",
+          "jobStart": 9,
+          "rows": [
+            {
+              "label": "Halden Unit 1, Halden Unit 2, Halden Unit 3, Halden Unit 4",
+              "value": "operating"
+            },
+            {
+              "label": "Norway grid \u00b7 Halden connection",
+              "value": "all"
+            }
+          ],
+          "jobs": [
+            {
+              "worker": 286,
+              "kind": "prepare",
+              "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+              "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"operating\",true,0,{\"layers\":[\"plan-allowances\",\"roof-structure\",\"utility-routes\"]}]",
+              "view": {
+                "mode": "3d",
+                "levelId": "operating",
+                "cutaway": true,
+                "separation": 0,
+                "detail": "auto",
+                "live": true,
+                "surroundings": false,
+                "hiddenLayerIds": []
+              }
+            }
+          ]
+        },
+        {
+          "label": "Stack",
+          "restore": true,
+          "previous": [
+            {
+              "label": "Halden Unit 1, Halden Unit 2, Halden Unit 3, Halden Unit 4",
+              "value": "operating"
+            },
+            {
+              "label": "Norway grid \u00b7 Halden connection",
+              "value": "all"
+            }
+          ],
+          "chosen": "all",
+          "jobStart": 10,
+          "rows": [
+            {
+              "label": "Halden Unit 1, Halden Unit 2, Halden Unit 3, Halden Unit 4",
+              "value": "all"
+            },
+            {
+              "label": "Norway grid \u00b7 Halden connection",
+              "value": "all"
+            }
+          ],
+          "jobs": []
+        }
+      ],
+      "sources": [
+        {
+          "sourceKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84/detail",
+          "geometryKey": "physical-layout/4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84",
+          "layers": [
+            {
+              "id": "utility-routes",
+              "label": "Utility routes",
+              "defaultVisible": false
+            },
+            {
+              "id": "roof-structure",
+              "label": "Roof structure",
+              "defaultVisible": false
+            },
+            {
+              "id": "plan-labels",
+              "label": "Plan labels",
+              "defaultVisible": true
+            },
+            {
+              "id": "plan-dimensions",
+              "label": "Dimensions",
+              "defaultVisible": true
+            },
+            {
+              "id": "plan-allowances",
+              "label": "Illustrative work areas",
+              "defaultVisible": false
+            }
+          ],
+          "meshLayerIds": [
+            "utility-routes"
+          ]
+        },
+        {
+          "sourceKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/detail",
+          "geometryKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82",
+          "layers": [
+            {
+              "id": "utility-routes",
+              "label": "Utility routes",
+              "defaultVisible": false
+            },
+            {
+              "id": "roof-structure",
+              "label": "Roof structure",
+              "defaultVisible": false
+            },
+            {
+              "id": "plan-labels",
+              "label": "Plan labels",
+              "defaultVisible": true
+            },
+            {
+              "id": "plan-dimensions",
+              "label": "Dimensions",
+              "defaultVisible": true
+            },
+            {
+              "id": "plan-allowances",
+              "label": "Illustrative work areas",
+              "defaultVisible": true
+            },
+            {
+              "id": "plan-grid",
+              "label": "Structural grid",
+              "defaultVisible": true
+            }
+          ],
+          "meshLayerIds": [
+            "plan-allowances",
+            "roof-structure",
+            "utility-routes"
+          ]
+        }
+      ],
+      "phases": [
+        {
+          "name": "map-site-3d-paused",
+          "playing": false,
+          "moves": 123,
+          "frames": 238,
+          "rafMedianMs": 16.69999999999891,
+          "rafP95Ms": 16.700000000000728,
+          "rafMaxMs": 33.399999999999636,
+          "longTasks": [],
+          "processWindows": 0,
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 2160,
+              "height": 1742,
+              "samples": 4,
+              "depthBytes": 60203520,
+              "colorBytes": 60203520,
+              "resolveBytes": 15050880
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            }
+          ],
+          "status": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run",
+          "fillTextCalls": 0,
+          "drawnTexts": []
+        },
+        {
+          "name": "map-site-3d-playing",
+          "playing": true,
+          "moves": 124,
+          "frames": 234,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.799999999999272,
+          "rafMaxMs": 83.29999999999927,
+          "longTasks": [
+            {
+              "start": 19749.099999904633,
+              "duration": 69
+            }
+          ],
+          "processWindows": 0,
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 2160,
+              "height": 1742,
+              "samples": 4,
+              "depthBytes": 60203520,
+              "colorBytes": 60203520,
+              "resolveBytes": 15050880
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            }
+          ],
+          "status": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run",
+          "fillTextCalls": 0,
+          "drawnTexts": []
+        },
+        {
+          "name": "map-site-plan-paused",
+          "playing": false,
+          "moves": 131,
+          "frames": 238,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.799999999999272,
+          "rafMaxMs": 33.39999999999782,
+          "longTasks": [],
+          "processWindows": 0,
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 2160,
+              "height": 1742,
+              "samples": 4,
+              "depthBytes": 60203520,
+              "colorBytes": 60203520,
+              "resolveBytes": 15050880
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 2160,
+              "height": 1742,
+              "rgbaBytesLowerBound": 15050880
+            }
+          ],
+          "status": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run",
+          "fillTextCalls": 97202,
+          "drawnTexts": [
+            "+15.00 m",
+            "1",
+            "11 000 mm",
+            "16 000 mm",
+            "18 000 mm",
+            "19 000 mm",
+            "19 500 mm",
+            "2",
+            "27 000 mm",
+            "28 000 mm",
+            "28 500 mm",
+            "3",
+            "3,168 m\u00b2 floorplate \u00b7 88 \u00d7 36 m",
+            "30 000 mm",
+            "32 000 mm",
+            "34 000 mm",
+            "36 000 mm",
+            "39 000 mm",
+            "4",
+            "4 500 mm",
+            "41 000 mm",
+            "5",
+            "5 000 mm",
+            "5 500 mm",
+            "56 000 mm",
+            "57 000 mm",
+            "58 000 mm",
+            "6",
+            "6 000 mm",
+            "7",
+            "7 000 mm",
+            "7 500 mm",
+            "8",
+            "8 000 mm",
+            "88 000 mm",
+            "9",
+            "A",
+            "ACCESS SPINE",
+            "Administration and visitor reception",
+            "Auxiliary access corridor",
+            "Auxiliary feedwater valve A",
+            "Auxiliary feedwater valve B",
+            "Auxiliary feedwater valve C",
+            "Auxiliary feedwater valve D",
+            "A\u2013A / LEVEL RELATIONSHIP",
+            "B",
+            "Boric-acid injection valve",
+            "Boric-acid storage tank",
+            "COND 1",
+            "COND 2",
+            "COND 3",
+            "CONDENSER",
+            "CONDENSERS BELOW THE DECK",
+            "CP A",
+            "CP B",
+            "CVCS charging A and volume control",
+            "CVCS charging B and boric acid",
+            "CVCS letdown valve",
+            "Central maintenance workshop and stores",
+            "Charging pump A",
+            "Charging pump B",
+            "Circulating and service-water pumps",
+            "Circulating-water pump assembly",
+            "Component cooling-water pump A",
+            "Component cooling-water pump B",
+            "Condensate storage tank",
+            "Containment fan-cooler bank A",
+            "Containment fan-cooler bank B",
+            "Containment personnel access vestibule",
+            "Containment spray pump A",
+            "Containment spray pump B",
+            "Controlled maintenance workshop",
+            "Diesel A machine hall",
+            "Diesel B machine hall",
+            "Diesel incoming breaker A",
+            "Diesel incoming breaker B",
+            "Electrical stairwell",
+            "Electrical/control access corridor",
+            "Emergency diesel generator A",
+            "Emergency diesel generator B",
+            "FEEDWATER PUMP ROOM",
+            "Feedwater and auxiliary-feedwater valve gallery",
+            "Feedwater control valve A",
+            "Feedwater control valve B",
+            "Feedwater control valve C",
+            "Feedwater control valve D",
+            "Feedwater/deaerator tank",
+            "Fuel-service stores and maintenance",
+            "Fuel/day-tank and ventilation service",
+            "Gatehouse and site access control",
+            "High-head safety injection pump A",
+            "High-head safety injection pump B",
+            "Hotwell reject valve",
+            "LP EXHAUSTS",
+            "MFW A",
+            "MFW B",
+            "Offsite supply breaker A",
+            "Offsite supply breaker B",
+            "PUMP ROOM ACCESS",
+            "Pressurizer",
+            "Pressurizer backup-heater breaker",
+            "Pressurizer relief tank",
+            "Reactor cavity and primary-loop area",
+            "Reactor coolant pump A",
+            "Reactor coolant pump B",
+            "Reactor coolant pump C",
+            "Reactor coolant pump D",
+            "Reactor pressure vessel",
+            "Refuelling-water storage tank",
+            "Residual heat removal pump A",
+            "Residual heat removal pump B",
+            "Residual-heat removal isolation valve",
+            "S \u00b7 DN",
+            "S \u00b7 UP",
+            "SERVICE BAY \u00b7 8.5 \u00d7 4.2 m",
+            "Safety bus A",
+            "Safety bus B",
+            "Safety injection accumulator A",
+            "Safety injection accumulator B",
+            "Safety injection accumulator C",
+            "Safety injection accumulator D",
+            "Safety-train motor-control centre A",
+            "Safety-train motor-control centre B",
+            "Schematic section \u00b7 heights are study assumptions",
+            "Service-water pump A",
+            "Service-water pump B",
+            "Steam generator A",
+            "Steam generator B",
+            "Steam generator C",
+            "Steam generator D",
+            "Switchyard protection and control house",
+            "TURBINE HALL",
+            "Train A AC switchgear",
+            "Train A injection and RHR pump cells",
+            "Train A motor-control centres",
+            "Train A spray and component-cooling cells",
+            "Train B AC switchgear",
+            "Train B injection and RHR pump cells",
+            "Train B motor-control centres",
+            "Train B spray and component-cooling cells",
+            "Training and engineering offices",
+            "Turbine bypass valve",
+            "Unit auxiliary transformer",
+            "Unit bus A",
+            "Unit bus B",
+            "Unit bus supply breaker A",
+            "Unit bus supply breaker B",
+            "Volume-control tank",
+            "\u00b10.00 m"
+          ]
+        },
+        {
+          "name": "map-site-plan-playing",
+          "playing": true,
+          "moves": 124,
+          "frames": 239,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.700000000000728,
+          "rafMaxMs": 33.400000000001455,
+          "longTasks": [],
+          "processWindows": 0,
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 2160,
+              "height": 1742,
+              "samples": 4,
+              "depthBytes": 60203520,
+              "colorBytes": 60203520,
+              "resolveBytes": 15050880
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 2160,
+              "height": 1742,
+              "rgbaBytesLowerBound": 15050880
+            }
+          ],
+          "status": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run",
+          "fillTextCalls": 91663,
+          "drawnTexts": [
+            "+15.00 m",
+            "1",
+            "11 000 mm",
+            "16 000 mm",
+            "18 000 mm",
+            "19 000 mm",
+            "19 500 mm",
+            "2",
+            "27 000 mm",
+            "28 000 mm",
+            "28 500 mm",
+            "3",
+            "3,168 m\u00b2 floorplate \u00b7 88 \u00d7 36 m",
+            "30 000 mm",
+            "32 000 mm",
+            "34 000 mm",
+            "36 000 mm",
+            "39 000 mm",
+            "4",
+            "4 500 mm",
+            "41 000 mm",
+            "5",
+            "5 000 mm",
+            "5 500 mm",
+            "56 000 mm",
+            "57 000 mm",
+            "58 000 mm",
+            "6",
+            "6 000 mm",
+            "7",
+            "7 000 mm",
+            "7 500 mm",
+            "8",
+            "8 000 mm",
+            "88 000 mm",
+            "9",
+            "A",
+            "ACCESS SPINE",
+            "Administration and visitor reception",
+            "Auxiliary access corridor",
+            "Auxiliary feedwater valve A",
+            "Auxiliary feedwater valve B",
+            "Auxiliary feedwater valve C",
+            "Auxiliary feedwater valve D",
+            "A\u2013A / LEVEL RELATIONSHIP",
+            "B",
+            "Boric-acid injection valve",
+            "Boric-acid storage tank",
+            "COND 1",
+            "COND 2",
+            "COND 3",
+            "CONDENSER",
+            "CONDENSERS BELOW THE DECK",
+            "CP A",
+            "CP B",
+            "CVCS charging A and volume control",
+            "CVCS charging B and boric acid",
+            "CVCS letdown valve",
+            "Central maintenance workshop and stores",
+            "Charging pump A",
+            "Charging pump B",
+            "Circulating and service-water pumps",
+            "Circulating-water pump assembly",
+            "Component cooling-water pump A",
+            "Component cooling-water pump B",
+            "Condensate storage tank",
+            "Containment fan-cooler bank A",
+            "Containment fan-cooler bank B",
+            "Containment personnel access vestibule",
+            "Containment spray pump A",
+            "Containment spray pump B",
+            "Controlled maintenance workshop",
+            "Diesel A machine hall",
+            "Diesel B machine hall",
+            "Diesel incoming breaker A",
+            "Diesel incoming breaker B",
+            "Electrical stairwell",
+            "Electrical/control access corridor",
+            "Emergency diesel generator A",
+            "Emergency diesel generator B",
+            "FEEDWATER PUMP ROOM",
+            "Feedwater and auxiliary-feedwater valve gallery",
+            "Feedwater control valve A",
+            "Feedwater control valve B",
+            "Feedwater control valve C",
+            "Feedwater control valve D",
+            "Feedwater/deaerator tank",
+            "Fuel-service stores and maintenance",
+            "Fuel/day-tank and ventilation service",
+            "Gatehouse and site access control",
+            "High-head safety injection pump A",
+            "High-head safety injection pump B",
+            "Hotwell reject valve",
+            "LP EXHAUSTS",
+            "MFW A",
+            "MFW B",
+            "Offsite supply breaker A",
+            "Offsite supply breaker B",
+            "PUMP ROOM ACCESS",
+            "Pressurizer",
+            "Pressurizer backup-heater breaker",
+            "Pressurizer relief tank",
+            "Reactor cavity and primary-loop area",
+            "Reactor coolant pump A",
+            "Reactor coolant pump B",
+            "Reactor coolant pump C",
+            "Reactor coolant pump D",
+            "Reactor pressure vessel",
+            "Refuelling-water storage tank",
+            "Residual heat removal pump A",
+            "Residual heat removal pump B",
+            "Residual-heat removal isolation valve",
+            "S \u00b7 DN",
+            "S \u00b7 UP",
+            "SERVICE BAY \u00b7 8.5 \u00d7 4.2 m",
+            "Safety bus A",
+            "Safety bus B",
+            "Safety injection accumulator A",
+            "Safety injection accumulator B",
+            "Safety injection accumulator C",
+            "Safety injection accumulator D",
+            "Safety-train motor-control centre A",
+            "Safety-train motor-control centre B",
+            "Schematic section \u00b7 heights are study assumptions",
+            "Service-water pump A",
+            "Service-water pump B",
+            "Steam generator A",
+            "Steam generator B",
+            "Steam generator C",
+            "Steam generator D",
+            "Switchyard protection and control house",
+            "TURBINE HALL",
+            "Train A AC switchgear",
+            "Train A injection and RHR pump cells",
+            "Train A motor-control centres",
+            "Train A spray and component-cooling cells",
+            "Train B AC switchgear",
+            "Train B injection and RHR pump cells",
+            "Train B motor-control centres",
+            "Train B spray and component-cooling cells",
+            "Training and engineering offices",
+            "Turbine bypass valve",
+            "Unit auxiliary transformer",
+            "Unit bus A",
+            "Unit bus B",
+            "Unit bus supply breaker A",
+            "Unit bus supply breaker B",
+            "Volume-control tank",
+            "\u00b10.00 m"
+          ]
+        },
+        {
+          "name": "map-room-3d-paused",
+          "playing": false,
+          "moves": 122,
+          "frames": 241,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.700000000004366,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "processWindows": 0,
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 2160,
+              "height": 1742,
+              "samples": 4,
+              "depthBytes": 60203520,
+              "colorBytes": 60203520,
+              "resolveBytes": 15050880
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            }
+          ],
+          "status": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+          "fillTextCalls": 0,
+          "drawnTexts": []
+        },
+        {
+          "name": "map-room-3d-playing",
+          "playing": true,
+          "moves": 122,
+          "frames": 241,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.799999999995634,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "processWindows": 0,
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 2160,
+              "height": 1742,
+              "samples": 4,
+              "depthBytes": 60203520,
+              "colorBytes": 60203520,
+              "resolveBytes": 15050880
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 0,
+              "height": 0,
+              "rgbaBytesLowerBound": 0
+            }
+          ],
+          "status": "Live \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+          "fillTextCalls": 0,
+          "drawnTexts": []
+        },
+        {
+          "name": "map-room-plan-paused",
+          "playing": false,
+          "moves": 122,
+          "frames": 241,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.700000000004366,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "processWindows": 0,
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 2160,
+              "height": 1742,
+              "samples": 4,
+              "depthBytes": 60203520,
+              "colorBytes": 60203520,
+              "resolveBytes": 15050880
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 2160,
+              "height": 1742,
+              "rgbaBytesLowerBound": 15050880
+            }
+          ],
+          "status": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+          "fillTextCalls": 5360,
+          "drawnTexts": [
+            "+15.00 m",
+            "1",
+            "11 000 mm",
+            "2",
+            "2 m ACCESS SPINE",
+            "3",
+            "3,168 m\u00b2 floorplate \u00b7 88 \u00d7 36 m",
+            "36 000 mm",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "88 000 mm",
+            "9",
+            "A",
+            "A\u2013A / LEVEL RELATIONSHIP",
+            "B",
+            "CASING / ROTOR LAYDOWN",
+            "CONDENSER",
+            "CONDENSERS BELOW THE DECK",
+            "EXC",
+            "FLOOR HATCH",
+            "GEN",
+            "HP",
+            "LP 1",
+            "LP 2",
+            "LP 3",
+            "LP EXHAUSTS",
+            "MSR 1",
+            "MSR 2",
+            "ROTOR WITHDRAWAL",
+            "S \u00b7 DN",
+            "Schematic section \u00b7 heights are study assumptions",
+            "TSV",
+            "TURBINE HALL",
+            "\u00b10.00 m"
+          ]
+        },
+        {
+          "name": "map-room-plan-playing",
+          "playing": true,
+          "moves": 122,
+          "frames": 241,
+          "rafMedianMs": 16.69999999999709,
+          "rafP95Ms": 16.799999999995634,
+          "rafMaxMs": 16.80000000000291,
+          "longTasks": [],
+          "processWindows": 0,
+          "pending": 0,
+          "errors": [],
+          "ownedPhysicalTargets": [
+            {
+              "context": 1,
+              "surface": "maplibregl-canvas",
+              "width": 2160,
+              "height": 1742,
+              "samples": 4,
+              "depthBytes": 60203520,
+              "colorBytes": 60203520,
+              "resolveBytes": 15050880
+            }
+          ],
+          "draftingCanvases": [
+            {
+              "width": 2160,
+              "height": 1742,
+              "rgbaBytesLowerBound": 15050880
+            }
+          ],
+          "status": "Live \u00b7 260 modelled subjects \u00b7 0 owner alerts",
+          "fillTextCalls": 5348,
+          "drawnTexts": [
+            "+15.00 m",
+            "1",
+            "11 000 mm",
+            "2",
+            "2 m ACCESS SPINE",
+            "3",
+            "3,168 m\u00b2 floorplate \u00b7 88 \u00d7 36 m",
+            "36 000 mm",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "88 000 mm",
+            "9",
+            "A",
+            "A\u2013A / LEVEL RELATIONSHIP",
+            "B",
+            "CASING / ROTOR LAYDOWN",
+            "CONDENSER",
+            "CONDENSERS BELOW THE DECK",
+            "EXC",
+            "FLOOR HATCH",
+            "GEN",
+            "HP",
+            "LP 1",
+            "LP 2",
+            "LP 3",
+            "LP EXHAUSTS",
+            "MSR 1",
+            "MSR 2",
+            "ROTOR WITHDRAWAL",
+            "S \u00b7 DN",
+            "Schematic section \u00b7 heights are study assumptions",
+            "TSV",
+            "TURBINE HALL",
+            "\u00b10.00 m"
+          ]
+        }
+      ],
+      "workersAfterExit": [],
+      "exceptions": []
+    }
+  ],
+  "interaction": {
+    "app": "a1c564464",
+    "steps": [
+      {
+        "name": "recognized-orbit-and-Escape-release",
+        "before": {
+          "matrix": [
+            5.831892013549805,
+            -2.167480230331421,
+            -0.8738311529159546,
+            -0.861034095287323,
+            2.7194559574127197,
+            4.648176193237305,
+            1.8739368915557861,
+            1.8464934825897217,
+            0,
+            6.112140655517578,
+            -1.7349733114242554,
+            -1.7095649242401123,
+            255.54937744140625,
+            -155.25994873046875,
+            1332.6011962890625,
+            1347.67041015625
+          ],
+          "reads": 0
+        },
+        "held": {
+          "matrix": [
+            4.856390953063965,
+            -3.1880698204040527,
+            -1.4031435251235962,
+            -1.383919358253479,
+            4.2215962409973145,
+            3.667454719543457,
+            1.6141319274902344,
+            1.5920170545578003,
+            0,
+            6.328330039978027,
+            -1.642309308052063,
+            -1.6198084354400635,
+            244.49742126464844,
+            -213.53060913085938,
+            1305.641357421875,
+            1322.3543701171875
+          ],
+          "events": [
+            {
+              "type": "pointermove",
+              "buttons": 0,
+              "trusted": true
+            },
+            {
+              "type": "mousemove",
+              "buttons": 0,
+              "trusted": true
+            },
+            {
+              "type": "pointerdown",
+              "buttons": 1,
+              "trusted": true
+            },
+            {
+              "type": "mousedown",
+              "buttons": 1,
+              "trusted": true
+            },
+            {
+              "type": "pointermove",
+              "buttons": 1,
+              "trusted": true
+            },
+            {
+              "type": "mousemove",
+              "buttons": 1,
+              "trusted": true
+            },
+            {
+              "type": "pointermove",
+              "buttons": 1,
+              "trusted": true
+            },
+            {
+              "type": "mousemove",
+              "buttons": 1,
+              "trusted": true
+            },
+            {
+              "type": "pointermove",
+              "buttons": 1,
+              "trusted": true
+            },
+            {
+              "type": "mousemove",
+              "buttons": 1,
+              "trusted": true
+            },
+            {
+              "type": "pointermove",
+              "buttons": 1,
+              "trusted": true
+            },
+            {
+              "type": "mousemove",
+              "buttons": 1,
+              "trusted": true
+            },
+            {
+              "type": "pointermove",
+              "buttons": 1,
+              "trusted": true
+            },
+            {
+              "type": "mousemove",
+              "buttons": 1,
+              "trusted": true
+            },
+            {
+              "type": "pointermove",
+              "buttons": 1,
+              "trusted": true
+            },
+            {
+              "type": "mousemove",
+              "buttons": 1,
+              "trusted": true
+            },
+            {
+              "type": "pointermove",
+              "buttons": 1,
+              "trusted": true
+            },
+            {
+              "type": "mousemove",
+              "buttons": 1,
+              "trusted": true
+            },
+            {
+              "type": "pointermove",
+              "buttons": 1,
+              "trusted": true
+            },
+            {
+              "type": "mousemove",
+              "buttons": 1,
+              "trusted": true
+            },
+            {
+              "type": "pointermove",
+              "buttons": 1,
+              "trusted": true
+            },
+            {
+              "type": "mousemove",
+              "buttons": 1,
+              "trusted": true
+            },
+            {
+              "type": "pointermove",
+              "buttons": 1,
+              "trusted": true
+            },
+            {
+              "type": "mousemove",
+              "buttons": 1,
+              "trusted": true
+            },
+            {
+              "type": "pointermove",
+              "buttons": 1,
+              "trusted": true
+            },
+            {
+              "type": "mousemove",
+              "buttons": 1,
+              "trusted": true
+            },
+            {
+              "type": "pointermove",
+              "buttons": 1,
+              "trusted": true
+            },
+            {
+              "type": "mousemove",
+              "buttons": 1,
+              "trusted": true
+            }
+          ],
+          "reads": [],
+          "initialActivationReads": [
+            {
+              "buttons": 0,
+              "at": 10908
+            },
+            {
+              "buttons": 1,
+              "at": 10927.899999856949
+            }
+          ]
+        },
+        "cancelled": {
+          "events": [
+            {
+              "type": "pointermove",
+              "buttons": 0,
+              "trusted": true
+            },
+            {
+              "type": "mousemove",
+              "buttons": 0,
+              "trusted": true
+            },
+            {
+              "type": "pointerdown",
+              "buttons": 1,
+              "trusted": true
+            },
+            {
+              "type": "mousedown",
+              "buttons": 1,
+              "trusted": true
+            },
+            {
+              "type": "pointermove",
+              "buttons": 1,
+              "trusted": true
+            },
+            {
+              "type": "mousemove",
+              "buttons": 1,
+              "trusted": true
+            },
+            {
+              "type": "pointermove",
+              "buttons": 1,
+              "trusted": true
+            },
+            {
+              "type": "mousemove",
+              "buttons": 1,
+              "trusted": true
+            },
+            {
+              "type": "pointermove",
+              "buttons": 1,
+              "trusted": true
+            },
+            {
+              "type": "mousemove",
+              "buttons": 1,
+              "trusted": true
+            },
+            {
+              "type": "pointermove",
+              "buttons": 1,
+              "trusted": true
+            },
+            {
+              "type": "mousemove",
+              "buttons": 1,
+              "trusted": true
+            },
+            {
+              "type": "pointermove",
+              "buttons": 1,
+              "trusted": true
+            },
+            {
+              "type": "mousemove",
+              "buttons": 1,
+              "trusted": true
+            },
+            {
+              "type": "pointermove",
+              "buttons": 1,
+              "trusted": true
+            },
+            {
+              "type": "mousemove",
+              "buttons": 1,
+              "trusted": true
+            },
+            {
+              "type": "pointermove",
+              "buttons": 1,
+              "trusted": true
+            },
+            {
+              "type": "mousemove",
+              "buttons": 1,
+              "trusted": true
+            },
+            {
+              "type": "pointermove",
+              "buttons": 1,
+              "trusted": true
+            },
+            {
+              "type": "mousemove",
+              "buttons": 1,
+              "trusted": true
+            },
+            {
+              "type": "pointermove",
+              "buttons": 1,
+              "trusted": true
+            },
+            {
+              "type": "mousemove",
+              "buttons": 1,
+              "trusted": true
+            },
+            {
+              "type": "pointermove",
+              "buttons": 1,
+              "trusted": true
+            },
+            {
+              "type": "mousemove",
+              "buttons": 1,
+              "trusted": true
+            },
+            {
+              "type": "pointermove",
+              "buttons": 1,
+              "trusted": true
+            },
+            {
+              "type": "mousemove",
+              "buttons": 1,
+              "trusted": true
+            },
+            {
+              "type": "pointermove",
+              "buttons": 1,
+              "trusted": true
+            },
+            {
+              "type": "mousemove",
+              "buttons": 1,
+              "trusted": true
+            },
+            {
+              "type": "pointerup",
+              "buttons": 0,
+              "trusted": true
+            },
+            {
+              "type": "mouseup",
+              "buttons": 0,
+              "trusted": true
+            }
+          ],
+          "reads": [],
+          "windows": 0
+        }
+      },
+      {
+        "name": "public-operational-capture-cancel",
+        "supported": true,
+        "active": {
+          "banner": "Click map to place new weather probe ",
+          "orbitDisabled": [
+            false
+          ]
+        }
+      },
+      {
+        "name": "Deck-hover-picking-resumed",
+        "newReads": [
+          {
+            "buttons": 0,
+            "at": 11396.799999952316
+          }
+        ],
+        "events": [
+          {
+            "type": "pointerup",
+            "buttons": 0,
+            "trusted": true
+          },
+          {
+            "type": "mouseup",
+            "buttons": 0,
+            "trusted": true
+          },
+          {
+            "type": "pointermove",
+            "buttons": 0,
+            "trusted": true
+          },
+          {
+            "type": "mousemove",
+            "buttons": 0,
+            "trusted": true
+          }
+        ]
+      },
+      {
+        "name": "real-hover-resumed-after-navigation-and-capture",
+        "picked": {
+          "label": "\u2315 Quick look \u00b7 Pipe \u00b7 main-steam-header-to-turbine-stop-valve",
+          "object": {
+            "id": "connection/main-steam-header-to-turbine-stop-valve",
+            "label": "Pipe \u00b7 main-steam-header-to-turbine-stop-valve",
+            "subjectIds": [
+              "main-steam-header-to-turbine-stop-valve"
+            ],
+            "layerId": "utility-routes"
+          },
+          "point": {
+            "x": 1010.8650357258944,
+            "y": 322.86461249379397
+          },
+          "attempted": 1,
+          "candidates": 1077
+        },
+        "reads": [
+          {
+            "buttons": 0,
+            "at": 11396.799999952316
+          },
+          {
+            "buttons": 0,
+            "at": 11546.5
+          }
+        ]
+      }
+    ],
+    "layerRecoverySteps": [
+      {
+        "name": "pending-retains-current-model",
+        "held": {
+          "id": 5,
+          "key": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\",\"utility-routes\"]}]"
+        },
+        "currentDrawKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\"]}]",
+        "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts \u00b7 Preparing additional layers: Utility routes \u00b7 Choose a floor to inspect the interior."
+      },
+      {
+        "name": "failure-retains-current-model",
+        "currentDrawKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\"]}]",
+        "evidence": "RetryPaused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts \u00b7 Additional layers unavailable: Utility routes \u00b7 Intentional isolated test failure while adding Utility routes \u00b7 Choose a floor to inspect the interior."
+      },
+      {
+        "name": "public-retry-recovered",
+        "currentDrawKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\",\"utility-routes\"]}]",
+        "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts \u00b7 Choose a floor to inspect the interior."
+      },
+      {
+        "name": "rapid-toggle-recovered",
+        "currentDrawKey": "physical-layout/b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\",\"roof-structure\",\"utility-routes\"]}]",
+        "evidence": "Paused \u00b7 fresh \u00b7 260 modelled subjects \u00b7 0 owner alerts \u00b7 Choose a floor to inspect the interior."
+      }
+    ],
+    "cardSubject": "main-steam-header-to-turbine-stop-valve",
+    "bodyOverviewEnvelopeCount": 1,
+    "errors": [],
+    "workersAfterExit": [],
+    "limits": "Post-mount native canvas capture observes actual trusted events; readPixels observes every WebGL2 context including Deck offscreen. Initial activation is recorded separately; repeated recognized movement is the suppressed-hover interval. This actual UI checks Escape and public placement cancellation; other style/context/deactivate paths retain focused unit coverage rather than a new product framework."
+  },
+  "startup": {
+    "app": "20a10558a",
+    "currentGuidanceRequired": true,
+    "phaseNames": [
+      "fresh-offsite-a",
+      "explicitly-opened",
+      "same-run-reload",
+      "different-run-b-fresh",
+      "narrow-keyboard-menu",
+      "return-run-a"
+    ],
+    "errors": [],
+    "workersAfterExit": []
+  },
+  "replay": {
+    "baselineApp": "20a10558a6",
+    "candidateApp": "273c75f90 (lease and bridge only; shelf excluded)",
+    "method": {
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/unified-native-map-20261027/final-20a/all-layers-dpr2/receipt.json",
+      "sha256": "2ca320342cc25e60751dcbc9e0ab8a30a90dbcbf6922e56b86a98e49ad2e4c36",
+      "method": "Original move counts and position formula; original event timestamps were not recorded, so commands are spaced uniformly over the original4second interval."
+    },
+    "phases": [
+      {
+        "name": "map-site-3d-paused",
+        "baselineP95Ms": 16.799999999999272,
+        "candidateP95Ms": 16.799999999999272,
+        "baselineReadPixels": {
+          "calls": 136,
+          "cpuMs": 445.5000002384186
+        },
+        "candidateReadPixels": {
+          "calls": 1,
+          "cpuMs": 1.7000000476837158
+        },
+        "startMvpMaximumDifference": 0.0,
+        "endMvpMaximumDifference": 0.0,
+        "actualCameraMotionMaximumMatrixDelta": 208.7032470703125
+      },
+      {
+        "name": "map-site-3d-playing",
+        "baselineP95Ms": 16.799999999999272,
+        "candidateP95Ms": 16.799999999999272,
+        "baselineReadPixels": {
+          "calls": 130,
+          "cpuMs": 349.2000005245209
+        },
+        "candidateReadPixels": {
+          "calls": 1,
+          "cpuMs": 9.700000047683716
+        },
+        "startMvpMaximumDifference": 0.0,
+        "endMvpMaximumDifference": 0.0,
+        "actualCameraMotionMaximumMatrixDelta": 225.49246978759766
+      },
+      {
+        "name": "map-site-plan-paused",
+        "baselineP95Ms": 16.799999999999272,
+        "candidateP95Ms": 16.700000000000728,
+        "baselineReadPixels": {
+          "calls": 1,
+          "cpuMs": 6.200000047683716
+        },
+        "candidateReadPixels": {
+          "calls": 1,
+          "cpuMs": 3.5999999046325684
+        }
+      },
+      {
+        "name": "map-site-plan-playing",
+        "baselineP95Ms": 16.799999999999272,
+        "candidateP95Ms": 16.700000000000728,
+        "baselineReadPixels": {
+          "calls": 1,
+          "cpuMs": 2.4000000953674316
+        },
+        "candidateReadPixels": {
+          "calls": 1,
+          "cpuMs": 1.2999999523162842
+        }
+      },
+      {
+        "name": "map-room-3d-paused",
+        "baselineP95Ms": 16.799999999995634,
+        "candidateP95Ms": 16.799999999995634,
+        "baselineReadPixels": {
+          "calls": 118,
+          "cpuMs": 77.19999885559082
+        },
+        "candidateReadPixels": {
+          "calls": 1,
+          "cpuMs": 3.3999998569488525
+        },
+        "startMvpMaximumDifference": 0.0,
+        "endMvpMaximumDifference": 0.0,
+        "actualCameraMotionMaximumMatrixDelta": 44.01335906982422
+      },
+      {
+        "name": "map-room-3d-playing",
+        "baselineP95Ms": 16.700000000004366,
+        "candidateP95Ms": 16.700000000004366,
+        "baselineReadPixels": {
+          "calls": 122,
+          "cpuMs": 78.30000138282776
+        },
+        "candidateReadPixels": {
+          "calls": 1,
+          "cpuMs": 1.5
+        },
+        "startMvpMaximumDifference": 0.0,
+        "endMvpMaximumDifference": 0.0,
+        "actualCameraMotionMaximumMatrixDelta": 19.873172283172607
+      },
+      {
+        "name": "map-room-plan-paused",
+        "baselineP95Ms": 16.700000000004366,
+        "candidateP95Ms": 16.799999999995634,
+        "baselineReadPixels": {
+          "calls": 1,
+          "cpuMs": 0.7000000476837158
+        },
+        "candidateReadPixels": {
+          "calls": 1,
+          "cpuMs": 1.2999999523162842
+        }
+      },
+      {
+        "name": "map-room-plan-playing",
+        "baselineP95Ms": 16.799999999995634,
+        "candidateP95Ms": 16.700000000004366,
+        "baselineReadPixels": {
+          "calls": 1,
+          "cpuMs": 2.5
+        },
+        "candidateReadPixels": {
+          "calls": 1,
+          "cpuMs": 1.5
+        }
+      }
+    ],
+    "limits": [
+      "Original acceptance did not capture MVPs or input timestamps. These are reconstructed inputs using original move counts/formula uniformly spaced over four seconds, not the original recorded trajectory.",
+      "Both replays already meet frame target. ReadPixels reduction is causal on the four exactly matched start/end Orbit cameras; it does not prove the original intermittent p95 misses cured.",
+      "Early document input observer produced no input events; its whileHeld fields are invalid and excluded. Final post-mount trusted-event and offscreen-context witness supplies the held/release gate.",
+      "Plan paused ink affine matches; Plan playing differs by about0.22devicepixel because native Pan inertia changes timing. Pan readPixels stays1before/after, so no native-Pan lease is claimed."
+    ]
+  },
+  "gpuDiagnostic": {
+    "app": "20a10558a6",
+    "phases": [
+      {
+        "name": "map-site-3d-paused",
+        "intervals": [
+          {
+            "phase": "draw",
+            "samples": 246,
+            "gpuMedianMs": 6.433083,
+            "gpuP95Ms": 10.490125,
+            "cpuSubmissionMedianMs": 1.4000000953674316,
+            "triangleVertices": [
+              3895575
+            ]
+          },
+          {
+            "phase": "resolve",
+            "samples": 246,
+            "gpuMedianMs": 2.794083,
+            "gpuP95Ms": 4.876374,
+            "cpuSubmissionMedianMs": 0,
+            "triangleVertices": [
+              0
+            ]
+          }
+        ],
+        "stateReads": [
+          {
+            "reader": "getParameter/34016",
+            "calls": 246,
+            "cpuMs": 1.3999991416931152
+          },
+          {
+            "reader": "getParameter/32873",
+            "calls": 492,
+            "cpuMs": 0.2999999523162842
+          },
+          {
+            "reader": "getParameter/35097",
+            "calls": 492,
+            "cpuMs": 0.5
+          },
+          {
+            "reader": "getParameter/36006",
+            "calls": 246,
+            "cpuMs": 0
+          },
+          {
+            "reader": "getParameter/36010",
+            "calls": 246,
+            "cpuMs": 0.3000001907348633
+          },
+          {
+            "reader": "getParameter/36007",
+            "calls": 246,
+            "cpuMs": 0.2999997138977051
+          },
+          {
+            "reader": "getParameter/2978",
+            "calls": 246,
+            "cpuMs": 2.299999952316284
+          },
+          {
+            "reader": "isEnabled/3089",
+            "calls": 246,
+            "cpuMs": 0.20000004768371582
+          },
+          {
+            "reader": "getParameter/2928",
+            "calls": 246,
+            "cpuMs": 82.50000023841858
+          },
+          {
+            "reader": "getParameter/3106",
+            "calls": 246,
+            "cpuMs": 16.20000147819519
+          },
+          {
+            "reader": "getParameter/2931",
+            "calls": 246,
+            "cpuMs": 13.399998903274536
+          },
+          {
+            "reader": "getParameter/35725",
+            "calls": 246,
+            "cpuMs": 0.40000033378601074
+          },
+          {
+            "reader": "getParameter/34229",
+            "calls": 246,
+            "cpuMs": 0.10000014305114746
+          },
+          {
+            "reader": "getParameter/34964",
+            "calls": 246,
+            "cpuMs": 0.4999997615814209
+          },
+          {
+            "reader": "isEnabled/2929",
+            "calls": 246,
+            "cpuMs": 0.09999990463256836
+          },
+          {
+            "reader": "getParameter/2932",
+            "calls": 246,
+            "cpuMs": 14.70000147819519
+          },
+          {
+            "reader": "getParameter/2930",
+            "calls": 246,
+            "cpuMs": 12.100001573562622
+          },
+          {
+            "reader": "isEnabled/3042",
+            "calls": 246,
+            "cpuMs": 0
+          },
+          {
+            "reader": "getParameter/32777",
+            "calls": 246,
+            "cpuMs": 13.099998712539673
+          },
+          {
+            "reader": "getParameter/34877",
+            "calls": 246,
+            "cpuMs": 14.699998378753662
+          },
+          {
+            "reader": "getParameter/32969",
+            "calls": 246,
+            "cpuMs": 12.500000715255737
+          },
+          {
+            "reader": "getParameter/32968",
+            "calls": 246,
+            "cpuMs": 12.399998903274536
+          },
+          {
+            "reader": "getParameter/32971",
+            "calls": 246,
+            "cpuMs": 13
+          },
+          {
+            "reader": "getParameter/32970",
+            "calls": 246,
+            "cpuMs": 12.000000476837158
+          },
+          {
+            "reader": "getParameter/2849",
+            "calls": 246,
+            "cpuMs": 11.299998760223389
+          },
+          {
+            "reader": "isEnabled/2884",
+            "calls": 246,
+            "cpuMs": 0.5
+          },
+          {
+            "reader": "isEnabled/2960",
+            "calls": 246,
+            "cpuMs": 0.19999980926513672
+          },
+          {
+            "reader": "isEnabled/32823",
+            "calls": 246,
+            "cpuMs": 0.2999997138977051
+          },
+          {
+            "reader": "getParameter/32824",
+            "calls": 246,
+            "cpuMs": 14.100000143051147
+          },
+          {
+            "reader": "getParameter/10752",
+            "calls": 246,
+            "cpuMs": 12.700002193450928
+          },
+          {
+            "reader": "getParameter/3107",
+            "calls": 246,
+            "cpuMs": 12.8000009059906
+          }
+        ],
+        "validGpuWindow": true,
+        "pending": 0,
+        "busy": 0,
+        "disjointEvents": 0,
+        "aborted": []
+      },
+      {
+        "name": "map-site-3d-playing",
+        "intervals": [
+          {
+            "phase": "draw",
+            "samples": 241,
+            "gpuMedianMs": 6.189999,
+            "gpuP95Ms": 11.521958,
+            "cpuSubmissionMedianMs": 1.3999998569488525,
+            "triangleVertices": [
+              3895575
+            ]
+          },
+          {
+            "phase": "resolve",
+            "samples": 241,
+            "gpuMedianMs": 2.692916,
+            "gpuP95Ms": 5.051666,
+            "cpuSubmissionMedianMs": 0,
+            "triangleVertices": [
+              0
+            ]
+          }
+        ],
+        "stateReads": [
+          {
+            "reader": "getParameter/34016",
+            "calls": 241,
+            "cpuMs": 1.6000006198883057
+          },
+          {
+            "reader": "getParameter/32873",
+            "calls": 482,
+            "cpuMs": 0.3000001907348633
+          },
+          {
+            "reader": "getParameter/35097",
+            "calls": 482,
+            "cpuMs": 0.3000001907348633
+          },
+          {
+            "reader": "getParameter/36006",
+            "calls": 241,
+            "cpuMs": 0.09999990463256836
+          },
+          {
+            "reader": "getParameter/36010",
+            "calls": 241,
+            "cpuMs": 0.20000004768371582
+          },
+          {
+            "reader": "getParameter/36007",
+            "calls": 241,
+            "cpuMs": 0.19999980926513672
+          },
+          {
+            "reader": "getParameter/2978",
+            "calls": 241,
+            "cpuMs": 1.6999998092651367
+          },
+          {
+            "reader": "isEnabled/3089",
+            "calls": 241,
+            "cpuMs": 0.40000009536743164
+          },
+          {
+            "reader": "getParameter/2928",
+            "calls": 241,
+            "cpuMs": 75.00000143051147
+          },
+          {
+            "reader": "getParameter/3106",
+            "calls": 241,
+            "cpuMs": 15.90000057220459
+          },
+          {
+            "reader": "getParameter/2931",
+            "calls": 241,
+            "cpuMs": 14.200000047683716
+          },
+          {
+            "reader": "getParameter/35725",
+            "calls": 241,
+            "cpuMs": 0.2999999523162842
+          },
+          {
+            "reader": "getParameter/34229",
+            "calls": 241,
+            "cpuMs": 0.3000001907348633
+          },
+          {
+            "reader": "getParameter/34964",
+            "calls": 241,
+            "cpuMs": 0
+          },
+          {
+            "reader": "isEnabled/2929",
+            "calls": 241,
+            "cpuMs": 0.4999995231628418
+          },
+          {
+            "reader": "getParameter/2932",
+            "calls": 241,
+            "cpuMs": 14.399997234344482
+          },
+          {
+            "reader": "getParameter/2930",
+            "calls": 241,
+            "cpuMs": 13.500003099441528
+          },
+          {
+            "reader": "isEnabled/3042",
+            "calls": 241,
+            "cpuMs": 0.20000004768371582
+          },
+          {
+            "reader": "getParameter/32777",
+            "calls": 241,
+            "cpuMs": 13.599999904632568
+          },
+          {
+            "reader": "getParameter/34877",
+            "calls": 241,
+            "cpuMs": 12.099998950958252
+          },
+          {
+            "reader": "getParameter/32969",
+            "calls": 241,
+            "cpuMs": 12.799998998641968
+          },
+          {
+            "reader": "getParameter/32968",
+            "calls": 241,
+            "cpuMs": 12.300001382827759
+          },
+          {
+            "reader": "getParameter/32971",
+            "calls": 241,
+            "cpuMs": 12.300001621246338
+          },
+          {
+            "reader": "getParameter/32970",
+            "calls": 241,
+            "cpuMs": 12
+          },
+          {
+            "reader": "getParameter/2849",
+            "calls": 241,
+            "cpuMs": 10.799998044967651
+          },
+          {
+            "reader": "isEnabled/2884",
+            "calls": 241,
+            "cpuMs": 0.40000009536743164
+          },
+          {
+            "reader": "isEnabled/2960",
+            "calls": 241,
+            "cpuMs": 0.20000004768371582
+          },
+          {
+            "reader": "isEnabled/32823",
+            "calls": 241,
+            "cpuMs": 0.20000004768371582
+          },
+          {
+            "reader": "getParameter/32824",
+            "calls": 241,
+            "cpuMs": 13.09999942779541
+          },
+          {
+            "reader": "getParameter/10752",
+            "calls": 241,
+            "cpuMs": 13.000002384185791
+          },
+          {
+            "reader": "getParameter/3107",
+            "calls": 241,
+            "cpuMs": 10.09999942779541
+          }
+        ],
+        "validGpuWindow": true,
+        "pending": 0,
+        "busy": 0,
+        "disjointEvents": 0,
+        "aborted": []
+      }
+    ],
+    "limits": [
+      "Diagnostic elapsed intervals, not utilization; include potential idle awaiting CPU commands. Draw/resolve separately measured; clear/full-screen composite excluded.",
+      "Marginal p95values must not be added into a combinedp95. These are a different matched-Home path from the original failed acceptance poses."
+    ]
+  },
+  "historicalLimitations": [
+    "Previous20a acceptance retained four full-layer p95misses33.3\u201333.4ms. They are not discarded or attributed solely to Deck hover, live status, or a background browser.",
+    "Current32windows all pass frame-p95target but include one69ms longtask. Its cause is not profiled or claimed fixed; no repeat was used to replace it.",
+    "One old paused agent IABtab was present unchanged during lease A/B, then root closed it before final qualification. No background-causality claim.",
+    "Default source delivery includes full immutable source; hidden mesh layers are prepared only when requested. Full-layer runs enable alldeclared layers through actual UI and verify the new VBO coverage keys.",
+    "Typed renderbuffers/Canvas backing stores are inventories, not process RSS or driver total. Optional diagnostic RSS is own Chrome descendant mappings, not PSS and not production-servermemory.",
+    "Local vector/reference proxy uses read-only productionGET/HEAD. No production Workspace/RunAPI is invoked. One machine/browser/profile; no WAN/constraineddevice assurance."
+  ],
+  "artifacts": [
+    {
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/unified-native-map-20261027/final-a1c/default-dpr1/receipt.json",
+      "bytes": 107061,
+      "sha256": "5bed9f12fa962d0b795d3815ed9e9626534f4fca3d8a099c91ad158a8faf4724"
+    },
+    {
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/unified-native-map-20261027/final-a1c/default-dpr2/receipt.json",
+      "bytes": 107106,
+      "sha256": "5d5b91e9bbcaa1a70cf1f57045708641e1c915f6768c526ffd6381332b0222cf"
+    },
+    {
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/unified-native-map-20261027/final-a1c/all-layers-dpr1/receipt.json",
+      "bytes": 113922,
+      "sha256": "0c5a9072516074aea60f2817a63e4e733bca6d7f0385981033d8ecdf025d1434"
+    },
+    {
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/unified-native-map-20261027/final-a1c/all-layers-dpr2/receipt.json",
+      "bytes": 114074,
+      "sha256": "26951e103afe5d8d75c830f1738ecd4734db4d5d6129023c156420fba07c1e29"
+    },
+    {
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/unified-native-map-20261027/final-a1c/cold-floor-gc/receipt.json",
+      "bytes": 108316,
+      "sha256": "7e6a31e5e9a412b9f6a90c125eba15af9fcc4677552875061b2975576918487a"
+    },
+    {
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/unified-native-map-20261027/final-a1c/combined-interaction-recognized/receipt.json",
+      "bytes": 25716,
+      "sha256": "2917ff90ce2cf59c8976fa76249ce6f1d2f82e4405b12b83e231e0243e742647"
+    },
+    {
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/unified-native-map-20261027/final-20a/original-input-replay-baseline-dpr2/receipt.json",
+      "bytes": 263640,
+      "sha256": "5c1ea6a61f720293520c25ffecad4b4ff6cd1b37edcea7900080e574ac540b23"
+    },
+    {
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/unified-native-map-20261027/orbit-ab-273c/original-input-replay-dpr2/receipt.json",
+      "bytes": 263805,
+      "sha256": "2780b479a269f9bf5a22142c63c10359a46195e32fd99a7062a6517765c0fc19"
+    },
+    {
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/unified-native-map-20261027/final-20a/matched-cpu-dpr1/failure.json",
+      "bytes": 56163,
+      "sha256": "96fb2958e619db1a13985643c7dbea07fd88b82fc028ddf1a668317b22d2b583"
+    },
+    {
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/unified-native-map-20261027/final-20a/matched-cpu-dpr1/map-site-3d-playing.cpuprofile",
+      "bytes": 309045,
+      "sha256": "c09a565ad82e7b80f0368544a7c786948e46a1f3871862a490bbdb73912448e5"
+    },
+    {
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/unified-native-map-20261027/final-20a/matched-gpu-dpr2/receipt.json",
+      "bytes": 405053,
+      "sha256": "8871f092594e68ff4341d8fb0ee1e361cbb06dffdd7cdf48451d0ea2407db2d2"
+    },
+    {
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/unified-native-map-20261027/final-20a/startup-current-guidance/receipt.json",
+      "bytes": 11734,
+      "sha256": "4c1b93bd929f7f46a32884438a304c0f074c526f6528028ead90a585777f9a9a"
+    },
+    {
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/unified-native-map-20261027/final-a1c/combined-interaction/receipt.json",
+      "bytes": 24808,
+      "sha256": "936f658be3afc22498785f405e8e53bf68e6fdd9ac4d263e05b0985c21fb59bf"
+    },
+    {
+      "path": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/unified-native-map-20261027/final-a1c/combined-interaction-offscreen-aware/failure.json",
+      "bytes": 5692,
+      "sha256": "19ec82775d1a2239470034b7e28948720edb433d65b066f3e1a89b8a9910db35"
+    }
+  ]
+}

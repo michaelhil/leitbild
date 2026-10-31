@@ -19,8 +19,10 @@ import {
   processPlantPwrReferenceModelRef,
 } from './plant-definitions.ts'
 import { processPlantRecordingProfiles, recordedPlantVariables } from './recording.ts'
+import { processPlantObservationCapabilityIds } from './observation/query.ts'
 import { processPlantSimAdapterId } from './sim/constants.ts'
 import { processPlantPackView } from './ui-pack.ts'
+import { describeProcessPlantPhysicalTargets } from './physical-targets.ts'
 
 const processPlantScenarioItemSchema = z.object({
   pack: z.literal('process-plant'),
@@ -36,8 +38,8 @@ const processPlantScenarioItemSchema = z.object({
   automation: processPlantAutomationSelectionSchema,
   clusterId: z.string().min(1).optional(),
   coolingWater: z.string().min(1).optional(),
-  /** An AI agent operates this Plant directly (a training sandbox); absent, it only proposes (ProcessPlantUnitPackData.aiOperation). */
-  aiOperation: z.literal('direct').optional(),
+  /** Direct AI operation by default; propose is an explicit Plant review policy. */
+  aiOperation: z.enum(['direct', 'propose']).optional(),
 }).strict()
 
 const unsupported = (operation: string): never => {
@@ -81,7 +83,7 @@ const expandPlantObject = (spec: PackScenarioItemSpec, at: IsoTimestamp): Operat
     electricalPorts: [...processPlantElectricalPortDefinitions(compiledPlant)],
     ...optionalUnitData(spec, 'clusterId'),
     ...optionalUnitData(spec, 'coolingWater'),
-    ...(spec.aiOperation === undefined ? {} : { aiOperation: z.literal('direct').parse(spec.aiOperation) }),
+    ...(spec.aiOperation === undefined ? {} : { aiOperation: z.enum(['direct', 'propose']).parse(spec.aiOperation) }),
     projection: emptyProcessPlantProjection(at),
   }
   return {
@@ -122,6 +124,7 @@ const expandPlantObject = (spec: PackScenarioItemSpec, at: IsoTimestamp): Operat
 export const processPlantPack: WorldPack = {
   ...processPlantPackView,
   scenarioConfigSchema: processPlantPackConfigSchema,
+  physicalTargets: describeProcessPlantPhysicalTargets,
   authoring: {
     itemTypes: [{
       id: 'plant',
@@ -154,6 +157,12 @@ export const processPlantPack: WorldPack = {
     }, 0),
   },
   knowledge: { wikiRefs: [{ name: 'Process plant knowledge', url: '/wiki?path=world%2Fpacks%2Fprocess-plant%2Findex.md' }] },
+  observation: {
+    categories: ['process-plants'],
+    declarations: processPlantObservationCapabilityIds.declarations,
+    read: processPlantObservationCapabilityIds.read,
+    topology: { family: 'flow', capability: processPlantObservationCapabilityIds.topology },
+  },
   scenario: {
     itemSchemas: { plant: processPlantScenarioItemSchema },
     expandItem: (spec, context) => {

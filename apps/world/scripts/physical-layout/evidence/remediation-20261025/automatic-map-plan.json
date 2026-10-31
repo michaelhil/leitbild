@@ -1,0 +1,15 @@
+{
+  "source": "b7fbf04e3e2ac778643675ed08d148a922be5fa0",
+  "environment": "Real built local Host/World/PMTiles, current normal-operation Run, paused, background IAB, dark theme, 1280x720 outer viewport",
+  "initial": { "scope": "All layouts", "mode": "Plan", "ready": 0 },
+  "actions": [
+    "Close the existing Grid overview panel",
+    "Pan with ordinary map drag and keyboard arrows to the current PWR site",
+    "Use the native map Zoom in control until authored inspection features become legible"
+  ],
+  "explicitPhysicalFocusUsed": false,
+  "observedTransition": { "loading": 3, "unavailable": 0 },
+  "final": { "scope": "All layouts", "mode": "Plan", "ready": 3, "loading": 0, "unavailable": 0, "interiorGeometryVisible": true },
+  "artifacts": "Owner research workspace: remediation-audit/final-product/automatic-map-plan.png and automatic-map-plan.ax.txt",
+  "limits": ["One real UI trace, not a device or loading-time qualification", "The existing user production Run was not accessed or modified"]
+}

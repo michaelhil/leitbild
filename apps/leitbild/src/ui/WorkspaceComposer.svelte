@@ -1,7 +1,9 @@
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte'
-  import type { WorkspaceResourceReference, WorkspaceSubjectReference } from '@leitbild/contracts'
+  import { workspaceResourceReferenceSchema } from '@leitbild/contracts'
+  import type { UiControlsOfferMessage, WorkspaceResourceReference, WorkspaceSubjectReference } from '@leitbild/contracts'
   import { createViewRelay, type WorldPane } from './view-relay.ts'
+  import { createUiControlsBridge } from './ui-controls-bridge.ts'
   import { createRunAssistantBridge } from './run-assistant-bridge.ts'
   import { workspaceSubjectFocusMessage } from './workspace-focus.ts'
 
@@ -21,6 +23,7 @@
     /** Shows the shown Run's Assistant room, creating it where none serves the Run; it never hides the room. */
     readonly onOpenRunAssistant: () => Promise<void>
     readonly onError: (message: string) => void
+    readonly onUiControls: (offer: UiControlsOfferMessage | null) => void
     /** The World pane, for overlays anchored to it (the people chat); null without a Run. */
     worldPane?: HTMLElement | null
   }
@@ -33,7 +36,7 @@
 
   let {
     workspaceId, worldRunId, focusedSubjects, agentsRoomId, agentsVisible, onShowAgents, runRefusal, onOpenRun,
-    runAssistantAvailable, onOpenRunAssistant, onError, worldPane = $bindable(null),
+    runAssistantAvailable, onOpenRunAssistant, onError, onUiControls, worldPane = $bindable(null),
   }: Props = $props()
   let splitPercent = $state(initialSplit)
   let lastOpenSplit = $state(initialSplit)
@@ -157,9 +160,19 @@
     reportError: message => onError(message),
   })
 
+  const uiControls = createUiControlsBridge({
+    subject: () => worldRunId === null ? null : workspaceResourceReferenceSchema.parse({ workspaceId, moduleId: 'world', type: 'world.simulation-run', id: worldRunId }),
+    post: message => worldFrame?.contentWindow?.postMessage(message, location.origin),
+    offer: offer => onUiControls(offer),
+    error: message => onError(message),
+  })
+  export const setViewControl = (id: string, visible: boolean): void => uiControls.set(id, visible)
+  onDestroy(() => uiControls.clear())
+
   // The World document that last said it listens; a frame that loads another
   // document (a reload, or the World start page) no longer listens.
   let listeningWorldDocument: Document | null = null
+  let listeningControlsDocument: Document | null = null
 
   // Only the two frames' own documents take part in the window's protocol.
   const receiveViewMessage = (event: MessageEvent): void => {
@@ -169,12 +182,17 @@
       if ((event.data as { readonly type?: unknown } | null)?.type === 'leitbild:view-window-ready') listeningWorldDocument = worldFrame?.contentDocument ?? null
       relay.fromWorld(event.data)
       assistantBridge.fromWorld(event.data)
+      if (uiControls.receive(event.data)) listeningControlsDocument = worldFrame?.contentDocument ?? null
     }
   }
 
   // World says it listens as its route mounts, which can be before or after the
   // frame's load event: only a load of a document other than the listening one ends it.
   const worldFrameLoaded = (): void => {
+    if (worldFrame?.contentDocument !== listeningControlsDocument) {
+      listeningControlsDocument = null
+      uiControls.clear()
+    }
     if (worldFrame?.contentDocument === listeningWorldDocument) return
     listeningWorldDocument = null
     relay.worldFrameUnloaded()
@@ -189,6 +207,8 @@
     untrack(() => {
       relay.worldFrameUnloaded()
       assistantBridge.worldFrameUnloaded()
+      uiControls.clear()
+      listeningControlsDocument = null
     })
   })
 

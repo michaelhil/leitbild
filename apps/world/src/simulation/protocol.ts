@@ -1,6 +1,7 @@
 import type { z } from 'zod'
 import type { ActorId,ClientId,CommandEnvelope,CommandResult,ElectricalConnectionDefinition,InteractionSignal,IsoTimestamp,ObjectId,OperationalObject,PackRuntimeRecordingBatch,Provenance,RecordedSample,RunViewer,ScenarioRecordingSelection,ScenarioRole,ScenarioSide,ScenarioWorldDefinition,SimulationClockState,SimulationRunEvent,SimulationRunId,TelemetryState } from '../core/model/index.ts'
 import type { PackRuntimeClock } from '../core/packs/protocol.ts'
+import type { CapabilityPublication } from '@leitbild/contracts'
 
 export interface PackRuntimeSnapshot {
   readonly simulationRunId: SimulationRunId
@@ -133,6 +134,9 @@ export interface PackCommandContext {
    * that procedure's operator, until a person takes the Run over.
    */
   readonly procedureDriven?: ReadonlySet<string>
+  /** Active human procedure drivers hold these objects against AI operation;
+   * the reason is read from canonical placekeeping at command dispatch. */
+  readonly procedureHolds?: ReadonlyMap<string, string>
 }
 
 export interface PackRuntimeStateStore {
@@ -157,6 +161,12 @@ export interface SimulationCapability {
   readonly input: z.ZodType
   readonly output: z.ZodType
   readonly schedulable?: boolean
+  /** `system`: called only by World core for a caller it admits (a Pack's observation Capabilities);
+   * never on the public path or in the AI catalog. */
+  readonly audience?: 'system'
+  /** What a successful result publishes for other Modules to present (contracts resources.ts):
+   * `embedded-view` where the result carries an embedded view publication in `view`. */
+  readonly publishes?: ReadonlyArray<CapabilityPublication>
   /** Objects whose detailed state a query inspects. Broad discovery/list
    * operations deliberately omit this: they may reveal that an object exists,
    * but not bypass a restriction on detailed inspection. */
@@ -165,6 +175,11 @@ export interface SimulationCapability {
     readonly targetObjectIds: ReadonlyArray<ObjectId>
     readonly payload: unknown
   }
+  /**
+   * Whether a command with this payload sets up what the Run's AI agents are not to learn of (an injected fault,
+   * D-88, D13): its journal events reach an AI caller only as a count. People and the instructor see them whole.
+   */
+  readonly withheldFromAgents?: (payload: unknown) => boolean
 }
 
 export interface PackRuntimeAdapter {

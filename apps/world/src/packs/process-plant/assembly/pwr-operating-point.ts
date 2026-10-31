@@ -118,7 +118,22 @@ export const pwrFullPowerParameters = (graph: PlantGraphSpec, authored: Readonly
     // the CVCS heat exchangers are not modelled, so in a steady plant the tank
     // and the charging it supplies are at that temperature too.
     if (component.kind === 'processTank' && graph.connections.some(link => String(link.to).startsWith(`${component.id}.`) && link.service === 'letdown')) set(component, { initialTemperatureC: thermal.inlet })
-    if (component.kind === 'processTank' && graph.connections.some(link => String(link.from).startsWith(`${component.id}.`) && link.service === 'coolingWater')) set(component, { makeupFlowKgPerS: coolingWaterFlow, maxOutletFlowKgPerS: coolingWaterFlow })
+    if (component.kind === 'processTank' && graph.connections.some(link => String(link.from).startsWith(`${component.id}.`) && link.service === 'coolingWater')) {
+      // This operating point sizes the condenser pumps from its thermal duty.
+      // Size the source once for all pumps it feeds, including service water,
+      // rather than granting the full source budget separately to each service.
+      // Explicit authored capacity overrides still win through set(); the live
+      // solver never enlarges this physical capacity to satisfy a demand.
+      const outletPumpIds = new Set(graph.connections.filter(link => link.connectionKind === 'fluidFlow' && String(link.from).startsWith(`${component.id}.`))
+        .map(link => String(link.to).slice(0, String(link.to).lastIndexOf('.'))))
+      let sourceDesignFlow = 0
+      for (const id of outletPumpIds) {
+        const pump = graph.components.find(candidate => candidate.id === id)
+        if (pump?.kind !== 'centrifugalPump') throw new Error(`PWR cooling-source sizing requires a pump at ${id}`)
+        sourceDesignFlow += Number(effective(pump).nominalFlowKgPerS)
+      }
+      set(component, { makeupFlowKgPerS: coolingWaterFlow, maxOutletFlowKgPerS: sourceDesignFlow })
+    }
     if (component.kind === 'processValve' && feedsFeedwater(component)) {
       const p = effective(component)
       const controller = z.record(z.string(), z.unknown()).parse(p.controller)

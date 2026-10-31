@@ -76,6 +76,10 @@ export const createRuntimeHub = (adapters: ReadonlyArray<PackRuntimeAdapter>): P
       const activeRuntimeIds = new Set(config.scenario.runtimeIds)
       const activeAdapters = adapters.filter(adapter => activeRuntimeIds.has(adapter.id))
       const committedObjects = new Map((config.initialObjects ?? config.scenario.initialObjects).map(object => [object.id, object]))
+      // A static Pack owns admitted objects without inventing a simulator. On
+      // restore this is canonical retained state, never a fresh Scenario seed.
+      const runtimePackIds = new Set(activeAdapters.map(adapter => adapter.packId))
+      const staticObjects = (): ReadonlyArray<OperationalObject> => [...committedObjects.values()].filter(object => !runtimePackIds.has(object.packId))
       const pendingUpserts = new Map<string, OperationalObject>()
       const providerAvailable = new Map<string, () => boolean>()
       // An observation may have partially applied. Retrying a later batch cannot
@@ -200,7 +204,7 @@ export const createRuntimeHub = (adapters: ReadonlyArray<PackRuntimeAdapter>): P
         })
       }
       const initialSnapshots = await Promise.all(connections.map(({ connection }) => connection.getSnapshot()))
-      const initialSnapshotObjects = initialSnapshots.flatMap(snapshot => snapshot.objects)
+      const initialSnapshotObjects = [...staticObjects(), ...initialSnapshots.flatMap(snapshot => snapshot.objects)]
       for (const object of initialSnapshotObjects) committedObjects.set(object.id, object)
       const initialDuplicates = duplicateObjectIds(initialSnapshotObjects)
       if (initialDuplicates.length > 0) {
@@ -257,7 +261,7 @@ export const createRuntimeHub = (adapters: ReadonlyArray<PackRuntimeAdapter>): P
           if (result.status === 'rejected') throw result.reason
           return result.value
         })
-        const objects = snapshots.flatMap(snapshot => snapshot.objects)
+        const objects = [...staticObjects(), ...snapshots.flatMap(snapshot => snapshot.objects)]
         const duplicates = duplicateObjectIds(objects)
         if (duplicates.length > 0) {
           throw new Error(`duplicate runtime object ids from runtimes: ${duplicates.join(', ')}`)

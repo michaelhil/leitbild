@@ -1,0 +1,842 @@
+{
+  "candidate": "native-typed-source",
+  "completedAt": "2026-10-24T18:25:54.047Z",
+  "bun": "1.4.0",
+  "platform": "darwin",
+  "arch": "arm64",
+  "elapsedMs": 7413.449417,
+  "memory": {
+    "rss": 1317371904,
+    "heapTotal": 473470976,
+    "heapUsed": 710265646,
+    "external": 683684968,
+    "arrayBuffers": 363602898
+  },
+  "resourceUsage": {
+    "userCPUTime": 6539515,
+    "systemCPUTime": 883896,
+    "maxRSS": 1351248,
+    "sharedMemorySize": 0,
+    "unsharedDataSize": 0,
+    "unsharedStackSize": 0,
+    "minorPageFault": 156796,
+    "majorPageFault": 179,
+    "swappedOut": 0,
+    "fsRead": 0,
+    "fsWrite": 0,
+    "ipcSent": 0,
+    "ipcReceived": 1,
+    "signalsCount": 0,
+    "voluntaryContextSwitches": 1085,
+    "involuntaryContextSwitches": 47821
+  },
+  "checks": [
+    {
+      "name": "F1:16-equipment",
+      "pass": true
+    },
+    {
+      "name": "F1:seven-operational-subjects",
+      "pass": true
+    },
+    {
+      "name": "F1:real-slab-holes",
+      "pass": true
+    },
+    {
+      "name": "F1:shaped-family-triangles",
+      "pass": true
+    },
+    {
+      "name": "F1:source-routes",
+      "pass": true
+    },
+    {
+      "name": "door:full-geometry-collateral-diff",
+      "pass": true,
+      "detail": [
+        "access-door",
+        "edit-wall"
+      ]
+    },
+    {
+      "name": "door:old-identities-preserved",
+      "pass": true
+    },
+    {
+      "name": "door:study-invalidated",
+      "pass": true
+    },
+    {
+      "name": "door:process-pin-unchanged",
+      "pass": true
+    },
+    {
+      "name": "roof:full-geometry-collateral-diff",
+      "pass": true,
+      "detail": [
+        "edit-roof",
+        "edit-wall"
+      ]
+    },
+    {
+      "name": "roof:old-identities-preserved",
+      "pass": true
+    },
+    {
+      "name": "roof:study-invalidated",
+      "pass": true
+    },
+    {
+      "name": "roof:process-pin-unchanged",
+      "pass": true
+    },
+    {
+      "name": "deck:full-geometry-collateral-diff",
+      "pass": true,
+      "detail": [
+        "edit-deck",
+        "edit-landing",
+        "edit-riser",
+        "edit-stair",
+        "edit-support"
+      ]
+    },
+    {
+      "name": "deck:old-identities-preserved",
+      "pass": true
+    },
+    {
+      "name": "deck:study-invalidated",
+      "pass": true
+    },
+    {
+      "name": "deck:process-pin-unchanged",
+      "pass": true
+    },
+    {
+      "name": "move:full-geometry-collateral-diff",
+      "pass": true,
+      "detail": [
+        "mfw-a"
+      ]
+    },
+    {
+      "name": "move:old-identities-preserved",
+      "pass": true
+    },
+    {
+      "name": "move:study-invalidated",
+      "pass": true
+    },
+    {
+      "name": "move:process-pin-unchanged",
+      "pass": true
+    },
+    {
+      "name": "type:full-geometry-collateral-diff",
+      "pass": true,
+      "detail": [
+        "mfw-a",
+        "mfw-b"
+      ]
+    },
+    {
+      "name": "type:old-identities-preserved",
+      "pass": true
+    },
+    {
+      "name": "type:study-invalidated",
+      "pass": true
+    },
+    {
+      "name": "type:process-pin-unchanged",
+      "pass": true
+    },
+    {
+      "name": "variant:A-only-geometry-after-shared-type-edit",
+      "pass": true
+    },
+    {
+      "name": "variant:B-identical",
+      "pass": true
+    },
+    {
+      "name": "type:resolved-length-up10percent",
+      "pass": true
+    },
+    {
+      "name": "type:dependent-interface-moves",
+      "pass": true
+    },
+    {
+      "name": "type:dependent-service-envelope-changes",
+      "pass": true
+    },
+    {
+      "name": "move:assembly-interfaces-exact2m",
+      "pass": true
+    },
+    {
+      "name": "door:rotated-host-local-to-world",
+      "pass": true
+    },
+    {
+      "name": "door:real-void-cell-gap",
+      "pass": true
+    },
+    {
+      "name": "door:opening-and-fill-and-adjacency",
+      "pass": true
+    },
+    {
+      "name": "door:existing-opening-preserved",
+      "pass": true
+    },
+    {
+      "name": "roof:deck-and-pump-datums-preserved",
+      "pass": true
+    },
+    {
+      "name": "deck:actual-elevations-and-dependencies",
+      "pass": true
+    },
+    {
+      "name": "F3:all-qualified-IDs-unique",
+      "pass": true
+    },
+    {
+      "name": "F3:one-shared-yard-in-site-one",
+      "pass": true
+    },
+    {
+      "name": "F3:separate-layout-instance-scopes",
+      "pass": true
+    },
+    {
+      "name": "F3:two-circuits-one-first-support",
+      "pass": true
+    },
+    {
+      "name": "negative:stale-base",
+      "pass": true,
+      "detail": "Error: stale-base"
+    },
+    {
+      "name": "negative:unrelated-collateral",
+      "pass": true,
+      "detail": "Error: unrelated-collateral-change:/elements/fixed-vessel/pose/position,/elements/fixed-vessel/world/position"
+    },
+    {
+      "name": "negative:unsupported-dependency",
+      "pass": true,
+      "detail": "Error: unsupported-dependency-set"
+    },
+    {
+      "name": "negative:independent-height10m",
+      "pass": true,
+      "detail": "Error: independent-requirement:max-clear-height"
+    },
+    {
+      "name": "negative:cannot-edit-governing-requirement",
+      "pass": true,
+      "detail": "Error: independent-requirement-edit"
+    },
+    {
+      "name": "negative:stale-binding",
+      "pass": true,
+      "detail": "Error: stale-binding"
+    },
+    {
+      "name": "negative:stale-model",
+      "pass": true,
+      "detail": "Error: stale-operational-model"
+    },
+    {
+      "name": "negative:stale-study-rejected",
+      "pass": true,
+      "detail": "Error: unrelated-collateral-change:"
+    },
+    {
+      "name": "negative:unsupported-source-field",
+      "pass": true,
+      "detail": "Error: unknown-field:source.arbitraryScript"
+    },
+    {
+      "name": "negative:inconsistent-parameter-body-recipe",
+      "pass": true,
+      "detail": "Error: unknown-field:element.bodyPositions"
+    },
+    {
+      "name": "F4:actual-imported-meshes",
+      "pass": true
+    },
+    {
+      "name": "F4:raw-exact-byte-owned",
+      "pass": true
+    },
+    {
+      "name": "F4:native-openings-and-ports-inspected",
+      "pass": false
+    },
+    {
+      "name": "exchange:actual-shapes-bounds-identity",
+      "pass": true,
+      "detail": []
+    },
+    {
+      "name": "exchange:ports-not-invented-components",
+      "pass": false
+    },
+    {
+      "name": "exchange:host-void-and-fill-relations",
+      "pass": false
+    },
+    {
+      "name": "source-only:fresh-process-exit0",
+      "pass": true,
+      "detail": {
+        "exitCode": 0,
+        "stderr": ""
+      }
+    },
+    {
+      "name": "source-only:geometry-reproduced",
+      "pass": true
+    },
+    {
+      "name": "source-only:raw-import-tessellation-reproduced",
+      "pass": true
+    }
+  ],
+  "passed": false,
+  "operationReceipts": [
+    {
+      "name": "door",
+      "command": {
+        "kind": "addDoor"
+      },
+      "sourceSha256": "bcf77a5ea4dc1bcc75e2ea4d6f967225f8e1577dc0ed2ef3578678e3ecb8cb33",
+      "changedGeometry": [
+        "access-door",
+        "edit-wall"
+      ],
+      "fullSemanticDiff": [
+        {
+          "path": "/revision",
+          "before": "native-r1",
+          "after": "native-r1.addDoor"
+        },
+        {
+          "path": "/elements/access-door-opening",
+          "after": {
+            "id": "access-door-opening",
+            "label": "Access door opening",
+            "kind": "opening",
+            "scope": "unit",
+            "levelId": "lower",
+            "hostId": "edit-wall",
+            "pose": {
+              "position": [
+                7,
+                0,
+                0
+              ],
+              "yaw": 0
+            },
+            "dimensions": {
+              "length": 1.4,
+              "width": 0.3,
+              "height": 2.7
+            },
+            "spaceIds": [
+              "edit-space",
+              "site"
+            ],
+            "disposition": "installed",
+            "resolvedParameters": {
+              "length": 1.4,
+              "width": 0.3,
+              "height": 2.7
+            },
+            "world": {
+              "position": [
+                116.06217782649107,
+                3.4999999999999996,
+                0
+              ],
+              "yaw": 0.5235987755982988
+            }
+          }
+        },
+        {
+          "path": "/elements/access-door",
+          "after": {
+            "id": "access-door",
+            "label": "Access door",
+            "kind": "door",
+            "scope": "unit",
+            "levelId": "lower",
+            "pose": {
+              "position": [
+                116.06217782649107,
+                3.4999999999999996,
+                0
+              ],
+              "yaw": 2.0943951023931953
+            },
+            "dimensions": {
+              "length": 1.4,
+              "width": 0.07,
+              "height": 2.7
+            },
+            "fillsId": "access-door-opening",
+            "spaceIds": [
+              "edit-space",
+              "site"
+            ],
+            "door": {
+              "swing": 1.5707963267948966
+            },
+            "disposition": "installed",
+            "resolvedParameters": {
+              "length": 1.4,
+              "width": 0.07,
+              "height": 2.7
+            },
+            "world": {
+              "position": [
+                116.06217782649107,
+                3.4999999999999996,
+                0
+              ],
+              "yaw": 2.0943951023931953
+            }
+          }
+        },
+        {
+          "path": "/studies",
+          "before": [
+            {
+              "id": "motor-removal",
+              "designRevision": "native-r1",
+              "applicability": "current"
+            }
+          ],
+          "after": [
+            {
+              "id": "motor-removal",
+              "designRevision": "native-r1",
+              "applicability": "stale"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "roof",
+      "command": {
+        "kind": "raiseRoof",
+        "height": 8
+      },
+      "sourceSha256": "f9673bfb207c05189b9488e37bf2a966dce7ad1357dffde7a3e758ce9f8d7a5a",
+      "changedGeometry": [
+        "edit-roof",
+        "edit-wall"
+      ],
+      "fullSemanticDiff": [
+        {
+          "path": "/revision",
+          "before": "native-r1",
+          "after": "native-r1.raiseRoof"
+        },
+        {
+          "path": "/elements/edit-wall/dimensions/height",
+          "before": 6,
+          "after": 8
+        },
+        {
+          "path": "/elements/edit-wall/resolvedParameters/height",
+          "before": 6,
+          "after": 8
+        },
+        {
+          "path": "/elements/edit-roof/pose/position",
+          "before": [
+            110,
+            0,
+            6
+          ],
+          "after": [
+            110,
+            0,
+            8
+          ]
+        },
+        {
+          "path": "/elements/edit-roof/world/position",
+          "before": [
+            110,
+            0,
+            6
+          ],
+          "after": [
+            110,
+            0,
+            8
+          ]
+        },
+        {
+          "path": "/elements/edit-space/dimensions/height",
+          "before": 6,
+          "after": 8
+        },
+        {
+          "path": "/elements/edit-space/resolvedParameters/height",
+          "before": 6,
+          "after": 8
+        },
+        {
+          "path": "/studies",
+          "before": [
+            {
+              "id": "motor-removal",
+              "designRevision": "native-r1",
+              "applicability": "current"
+            }
+          ],
+          "after": [
+            {
+              "id": "motor-removal",
+              "designRevision": "native-r1",
+              "applicability": "stale"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "deck",
+      "command": {
+        "kind": "raiseDeck",
+        "height": 3.5,
+        "dependencies": [
+          "edit-stair",
+          "edit-landing",
+          "edit-riser",
+          "edit-support"
+        ]
+      },
+      "sourceSha256": "b4243e876366502c9e8689ece758a4d5a53e915546fd91bd8b9737abc905117f",
+      "changedGeometry": [
+        "edit-deck",
+        "edit-landing",
+        "edit-riser",
+        "edit-stair",
+        "edit-support"
+      ],
+      "fullSemanticDiff": [
+        {
+          "path": "/revision",
+          "before": "native-r1",
+          "after": "native-r1.raiseDeck"
+        },
+        {
+          "path": "/levels/level/edit-deck/elevation",
+          "before": 3,
+          "after": 3.5
+        },
+        {
+          "path": "/elements/edit-deck/pose/position",
+          "before": [
+            110,
+            0,
+            2.8
+          ],
+          "after": [
+            110,
+            0,
+            3.3
+          ]
+        },
+        {
+          "path": "/elements/edit-deck/world/position",
+          "before": [
+            110,
+            0,
+            2.8
+          ],
+          "after": [
+            110,
+            0,
+            3.3
+          ]
+        },
+        {
+          "path": "/elements/edit-stair/dimensions/height",
+          "before": 3,
+          "after": 3.5
+        },
+        {
+          "path": "/elements/edit-stair/resolvedParameters/height",
+          "before": 3,
+          "after": 3.5
+        },
+        {
+          "path": "/elements/edit-landing/pose/position",
+          "before": [
+            110,
+            5,
+            2.8
+          ],
+          "after": [
+            110,
+            5,
+            3.3
+          ]
+        },
+        {
+          "path": "/elements/edit-landing/world/position",
+          "before": [
+            110,
+            5,
+            2.8
+          ],
+          "after": [
+            110,
+            5,
+            3.3
+          ]
+        },
+        {
+          "path": "/elements/edit-riser/dimensions/height",
+          "before": 3,
+          "after": 3.5
+        },
+        {
+          "path": "/elements/edit-riser/resolvedParameters/height",
+          "before": 3,
+          "after": 3.5
+        },
+        {
+          "path": "/elements/edit-support/dimensions/height",
+          "before": 2.8,
+          "after": 3.3
+        },
+        {
+          "path": "/elements/edit-support/resolvedParameters/height",
+          "before": 2.8,
+          "after": 3.3
+        },
+        {
+          "path": "/studies",
+          "before": [
+            {
+              "id": "motor-removal",
+              "designRevision": "native-r1",
+              "applicability": "current"
+            }
+          ],
+          "after": [
+            {
+              "id": "motor-removal",
+              "designRevision": "native-r1",
+              "applicability": "stale"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "move",
+      "command": {
+        "kind": "move",
+        "elementId": "mfw-a",
+        "east": 2
+      },
+      "sourceSha256": "7352cb751656195923d9bd278782f747b0cd8dacf4cea403c949f1754d10c285",
+      "changedGeometry": [
+        "mfw-a"
+      ],
+      "fullSemanticDiff": [
+        {
+          "path": "/revision",
+          "before": "native-r1",
+          "after": "native-r1.move"
+        },
+        {
+          "path": "/elements/mfw-a/pose/position",
+          "before": [
+            17,
+            40.4,
+            0
+          ],
+          "after": [
+            19,
+            40.4,
+            0
+          ]
+        },
+        {
+          "path": "/elements/mfw-a/world/position",
+          "before": [
+            17,
+            40.4,
+            0
+          ],
+          "after": [
+            19,
+            40.4,
+            0
+          ]
+        },
+        {
+          "path": "/studies",
+          "before": [
+            {
+              "id": "motor-removal",
+              "designRevision": "native-r1",
+              "applicability": "current"
+            }
+          ],
+          "after": [
+            {
+              "id": "motor-removal",
+              "designRevision": "native-r1",
+              "applicability": "stale"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "type",
+      "command": {
+        "kind": "typeLength",
+        "typeId": "type/feed-pump",
+        "factor": 1.1
+      },
+      "sourceSha256": "f090ea299552514ae40f065983911885a46b89a5694043d2cb012871e2e0140a",
+      "changedGeometry": [
+        "mfw-a",
+        "mfw-b"
+      ],
+      "fullSemanticDiff": [
+        {
+          "path": "/revision",
+          "before": "native-r1",
+          "after": "native-r1.typeLength"
+        },
+        {
+          "path": "/types/type/feed-pump/parameters/length",
+          "before": 12,
+          "after": 13.200000000000001
+        },
+        {
+          "path": "/elements/mfw-a/resolvedParameters/length",
+          "before": 12,
+          "after": 13.200000000000001
+        },
+        {
+          "path": "/elements/mfw-b/resolvedParameters/length",
+          "before": 12,
+          "after": 13.200000000000001
+        },
+        {
+          "path": "/studies",
+          "before": [
+            {
+              "id": "motor-removal",
+              "designRevision": "native-r1",
+              "applicability": "current"
+            }
+          ],
+          "after": [
+            {
+              "id": "motor-removal",
+              "designRevision": "native-r1",
+              "applicability": "stale"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "sourceAuthority": "Saved JSON type/occurrence parameters; output plans/meshes/IFC are generated derivatives. Imported IFC raw dependencies own read-only content.",
+  "frozenBriefSha256": "ac914834f8eede8a4d53ba93387832e86eb82e6691c5dfef5a79cb1085923a2b",
+  "baseSourceSha256": "f7ffc21eda754636fc926b585a42d21517947d3c88d1b4c4211b54f8ccae80f2",
+  "sourceBytes": 41119,
+  "meshDeliveryBytes": 9268244,
+  "meshDeliveryGzipBytes": 325806,
+  "ownership": [
+    {
+      "file": "model.ts",
+      "bytes": 9699,
+      "lines": 54
+    },
+    {
+      "file": "compile.ts",
+      "bytes": 11240,
+      "lines": 50
+    },
+    {
+      "file": "family-solid.ts",
+      "bytes": 5537,
+      "lines": 66
+    },
+    {
+      "file": "family-plan.ts",
+      "bytes": 5977,
+      "lines": 53
+    },
+    {
+      "file": "mesh.ts",
+      "bytes": 3494,
+      "lines": 34
+    },
+    {
+      "file": "math.ts",
+      "bytes": 2253,
+      "lines": 17
+    },
+    {
+      "file": "edit.ts",
+      "bytes": 4020,
+      "lines": 25
+    },
+    {
+      "file": "ifc.ts",
+      "bytes": 10741,
+      "lines": 42
+    },
+    {
+      "file": "build.ts",
+      "bytes": 1732,
+      "lines": 9
+    },
+    {
+      "file": "bootstrap.ts",
+      "bytes": 6762,
+      "lines": 48
+    },
+    {
+      "file": "trial.ts",
+      "bytes": 13563,
+      "lines": 45
+    }
+  ],
+  "dependencyCost": {
+    "runtimeBrowser": [],
+    "build": [
+      "web-ifc@0.0.78 JS/WASM for import and exchange"
+    ],
+    "familyTooling": "Reusable shaped mesh/symbol code adapted from prior MIT visual trial, counted in native owned code"
+  },
+  "unsupported": [
+    "arbitrary IFC parametric reconstruction: imported native geometry is read-only",
+    "automatic route repair and arbitrary CAD constraints",
+    "whole-campus engineered accuracy",
+    "human architectural/usability acceptance"
+  ],
+  "visualQuality": "Source-derived SVG/mesh supplied for independent browser review; not automatically passed by numerical checks"
+}

@@ -2,6 +2,7 @@
   import { BookOpen, Bug, Check, ChevronLeft, ChevronRight, ExternalLink, GripVertical, Info, MessageSquare, MoreHorizontal, Play, RefreshCw, Star, X } from 'lucide-svelte'
   import { tick, untrack } from 'svelte'
   import type { ProcedureSession } from './procedure-session.ts'
+  import { currentProcedureInput, procedureInputDocumentMatches, procedureInputFocusFor, resolveProcedureInputFocus, type ProcedureInputFocus } from './procedure-input.ts'
   import { procedureBindingStatusWord, procedureComparisonText, procedureCsfChip, procedureDescriptionText, procedureDisplayReading, procedureElapsedText, procedureStepBindingSummary } from './procedure-view.ts'
   import { readProcedureTagValue } from './procedure-client.ts'
   import { procedureViewKey, procedureCategories, procedureStepItems, procedureStepTagBindings, procedureTextSegments, procedureBlockLabel, procedureObservationEvidence, procedureObservationBasis, procedureObservationLabel, procedureSourceEvidenceRequest, procedureUnitJump } from './procedure-view.ts'
@@ -62,12 +63,14 @@
     procedureStepRangeText,
     procedureStepRows,
     procedureRunFor,
+    procedureRunDocumentKey,
     procedureRunSummariesForScope,
     procedureRunVisualStateFor as selectedProcedureRunVisualStateFor,
     procedureStepById,
     procedureStepDisplayName,
     procedureStepHoverLabel,
     type ProcedureRunSummary,
+    type ProcedureRunSummaryGroup,
     type ProcedureRunVisualState,
   } from './procedure-run-selectors.ts'
   import {
@@ -85,12 +88,13 @@
     readonly unitStatus?: PackObjectStatusPresentation
     readonly unitContexts?: ReadonlyArray<ProcedureUnitContext>
     readonly session: ProcedureSession
-    readonly initialProcedureId?: ProcedureId
+    readonly initialProcedureId?: ProcedureId | undefined
     readonly windowOffsetIndex?: number
     /** Raised by the route when this unit's procedures are opened again: focus this window (and its requested procedure). */
+    readonly inputFocus?: ProcedureInputFocus | undefined
     readonly focusRequest?: number
     /** The Run an AI agent last started on this unit, a new object per start: shown without raising or focusing this window. */
-    readonly aiStart?: { readonly runId: ProcedureRunId }
+    readonly aiStart?: { readonly runId: ProcedureRunId } | undefined
     readonly selectUnit: (objectId: ObjectId) => void
     /** Opens a display in the Workspace's process display window, where it can be operated. */
     readonly openDisplay?: (listing: EmbeddedViewListing) => void
@@ -152,12 +156,14 @@
     initialProcedureId = undefined,
     windowOffsetIndex = 0,
     focusRequest = 0,
+    inputFocus = undefined,
     aiStart = undefined,
     selectUnit,
     openDisplay = undefined,
     close,
   }: Props = $props()
 
+  const compactProcedureWidth = 600
   const minWindowWidth = 48
   const minWindowHeight = 32
   const viewportMargin = 12
@@ -252,6 +258,12 @@
     ? procedureCurrentStep(selectedProcedureRun, document)
     : null)
   const driverView = $derived(procedureDriverView(selectedProcedureRun))
+  const requestedInputRun = $derived(selectedProcedureRun && currentProcedureInput(selectedProcedureRun) ? selectedProcedureRun : null)
+  const displayedInputFocus = $derived(requestedInputRun ? procedureInputFocusFor(simulationRunId, requestedInputRun) : null)
+  const displayedInputMatches = $derived(displayedInputFocus !== null && procedureInputDocumentMatches(document, displayedInputFocus))
+  const inputStepLabel = $derived(requestedInputRun?.inputRequest ? runDocuments.get(procedureRunDocumentKey(requestedInputRun))?.steps.find(step => step.id === requestedInputRun.inputRequest!.stepId)?.label : undefined)
+  let handledInputFocus: ProcedureInputFocus | undefined
+
   const busy = $derived(pendingControl !== null)
   const procedureRows = $derived(document ? procedureStepRows(document, selectedProcedureRun) : [])
   const catalogCategories = $derived(procedureCategories(catalog?.procedures ?? []))
@@ -275,6 +287,7 @@
   }
 
   const cycleProcedureTocMode = (): void => {
+    if (windowBounds.width <= compactProcedureWidth) { procedureTocMode = procedureTocMode === 'collapsed' ? 'detail' : 'collapsed'; return }
     if (procedureTocMode === 'detail') {
       procedureTocMode = 'compact'
       return
@@ -334,7 +347,7 @@
   const startWindowDrag = (event: PointerEvent, mode: FloatingWindowDragMode): void => {
     if (event.button !== 0) return
     const target = event.target
-    if (target instanceof Element && target.closest('button, a, textarea, input, .procedure-csf-shell, .procedure-run-badges')) return
+    if (target instanceof Element && target.closest('button, a, textarea, input, .procedure-cross-unit-strip, .procedure-csf-shell, .procedure-run-badges')) return
     event.preventDefault()
     const element = event.currentTarget as Element
     element.setPointerCapture(event.pointerId)
@@ -368,6 +381,7 @@
   }
 
   const procedureTocModeLabel = (): string => {
+    if (windowBounds.width <= compactProcedureWidth) return procedureTocMode === 'collapsed' ? 'Open procedures' : 'Hide procedures'
     if (procedureTocMode === 'detail') return 'Show compact procedure list'
     if (procedureTocMode === 'compact') return 'Collapse procedure list'
     return 'Open procedure list'
@@ -403,10 +417,7 @@
     readonly sourceId?: string; readonly sourceRevision?: string; readonly sourcePath?: string
   } = {}) => session.readDocument(documentRequest(procedureId, sourceConfig))
 
-  const unitProcedureSummariesFor = (unit: ProcedureUnitContext): {
-    readonly active: ReadonlyArray<ProcedureRunSummary>
-    readonly completed: ReadonlyArray<ProcedureRunSummary>
-  } =>
+  const unitProcedureSummariesFor = (unit: ProcedureUnitContext): ProcedureRunSummaryGroup =>
     procedureRunSummariesForScope(runs, procedureScopeFor(unit), runDocuments)
 
   const statusForUnit = (unit: ProcedureUnitContext): PackObjectStatusPresentation =>
@@ -469,7 +480,8 @@
       setLoadStage('source', 'done', `${nextCatalog.procedures.length} procedures available`)
       setLoadStage('runs', 'done', `${runs.length} tracked runs`)
       selectedProcedureId = selectedProcedureId ?? initialProcedureId ?? nextCatalog.procedures[0]?.procedureId ?? null
-      if (selectedProcedureId) await loadProcedure(selectedProcedureId, !loading)
+      // Exact input activation owns its pinned load and focuses only after revalidation.
+      if (selectedProcedureId && inputFocus === undefined) await loadProcedure(selectedProcedureId, !loading)
       if (disposed || request !== catalogRequest) return
     } catch (err) {
       if (disposed || request !== catalogRequest) return
@@ -497,6 +509,7 @@
       readonly sourceRevision?: string
       readonly sourcePath?: string
       readonly rememberCurrentPosition?: boolean
+      readonly restorePosition?: boolean
     } = {},
   ): Promise<void> => {
     const requestId = ++latestProcedureLoadRequest
@@ -535,12 +548,13 @@
       if (disposed || requestId !== latestProcedureLoadRequest) return
       const unitChanged = documentScope !== null && documentScope.plantId !== targetScope.plantId
       document = nextDocument
+      if (windowBounds.width <= compactProcedureWidth) procedureTocMode = 'collapsed'
       documentScope = targetScope
       loading = false
       if (catalog && !releasePrefetch) releasePrefetch = session.retainPrefetch(catalog)
       loadingProcedureId = null
       setLoadStage('document', 'done', `${nextDocument.steps.length} steps`)
-      await restoreProcedurePosition(nextDocument, targetScope, requestId, unitChanged)
+      if (sourceConfig.restorePosition !== false) await restoreProcedurePosition(nextDocument, targetScope, requestId, unitChanged)
       if (disposed || requestId !== latestProcedureLoadRequest) return
       const loadTagValidation = async (): Promise<ReadonlyMap<string, ProcedureTagValidation>> => {
         try {
@@ -633,17 +647,20 @@
   const scrollToProcedureStep = (
     stepId: string,
     behavior: ScrollBehavior = 'smooth',
+    focusHeading = false,
+    stillCurrent: () => boolean = () => true,
   ): void => {
     const request = latestProcedureLoadRequest
     if (scrollFrame !== null) window.cancelAnimationFrame(scrollFrame)
     scrollFrame = window.requestAnimationFrame(() => {
-      if (disposed || request !== latestProcedureLoadRequest) return
+      if (disposed || request !== latestProcedureLoadRequest || !stillCurrent()) return
       const stepElement = [...(procedureDocumentBodyElement?.querySelectorAll<HTMLElement>('[data-procedure-step-id]') ?? [])]
         .find(element => element.dataset.procedureStepId === stepId)
       stepElement?.scrollIntoView({
         block: 'start',
         behavior,
       })
+      if (focusHeading) stepElement?.querySelector<HTMLElement>('h3')?.focus({ preventScroll: true })
     })
   }
 
@@ -812,6 +829,14 @@
   }
 
   // The procedure list is one Tab stop: arrows, Home and End move between its entries.
+  const chooseProcedure = async (procedureId: ProcedureId): Promise<void> => {
+    await loadProcedure(procedureId)
+    if (disposed || windowBounds.width > compactProcedureWidth || document?.procedureId !== procedureId || selectedProcedureId !== procedureId) return
+    const shown = document
+    const step = currentProcedureStep?.step ?? procedureFirstStep(shown)
+    if (step) scrollToProcedureStep(step.id, 'auto', true, () => document === shown && selectedProcedureId === procedureId)
+  }
+
   const moveInProcedureList = (event: KeyboardEvent): void => {
     if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
     const current = event.currentTarget as HTMLButtonElement
@@ -1230,6 +1255,7 @@
     if (!boundsInitialized) {
       windowBounds = clampWindowBounds(defaultWindowBounds())
       boundsInitialized = true
+      if (windowBounds.width <= compactProcedureWidth) procedureTocMode = 'collapsed'
     }
     const unsubscribe = session.subscribe(state => { runs = state.runs; runDocuments = state.documents })
     void loadCatalogAndRuns()
@@ -1279,11 +1305,46 @@
 
   // Opening this unit's procedures again focuses this window instead of a second one.
   $effect(() => {
-    if (focusRequest === 0) return
+    if (focusRequest === 0 || inputFocus !== undefined) return
     untrack(() => {
       procedureWindowElement?.focus()
       if (initialProcedureId !== undefined && initialProcedureId !== document?.procedureId) void loadProcedure(initialProcedureId)
     })
+  })
+
+  const showCurrentInputStep = (): void => {
+    const run = requestedInputRun
+    const focus = run ? procedureInputFocusFor(simulationRunId, run) : null
+    if (!focus || !procedureInputDocumentMatches(document, focus)) return
+    scrollToProcedureStep(focus.stepId, 'auto', true, () => procedureInputDocumentMatches(document, focus) && resolveProcedureInputFocus(runs, focus, currentScope, simulationRunId) !== null)
+  }
+
+  const focusRequestedInput = async (focus: ProcedureInputFocus): Promise<void> => {
+    const current = () => resolveProcedureInputFocus(runs, focus, currentScope, simulationRunId)
+    const run = current()
+    if (!run) { error = 'This procedure input request is no longer current. No step was opened.'; return }
+    // Opening the request is a deliberate human interaction. Hold automatic
+    // follow while this exact retained step is checked, then focus it once.
+    lastInteractionAt = Date.now()
+    await loadProcedure(run.procedureId, true, { ...run, rememberCurrentPosition: true, restorePosition: false })
+    if (disposed || inputFocus !== focus) return
+    const requested = current()
+    const pinned = procedureInputDocumentMatches(document, focus)
+    if (!requested || !pinned || selectedProcedureRun?.runId !== focus.runId) {
+      error = 'This procedure input request changed while its document loaded. No step was focused.'
+      return
+    }
+    await tick()
+    if (inputFocus !== focus || !current()) return
+    if (!document?.steps.some(step => step.id === focus.stepId)) { error = 'The requested step is absent from the retained procedure revision.'; return }
+    scrollToProcedureStep(focus.stepId, 'auto', true, () => inputFocus === focus && current() !== null)
+  }
+
+  $effect(() => {
+    const focus = inputFocus
+    const ready = catalog !== null
+    if (!ready || focus === undefined || focus === handledInputFocus) return
+    untrack(() => { handledInputFocus = focus; void focusRequestedInput(focus) })
   })
 
   // Another operator may start this procedure at a different pinned revision.
@@ -1372,7 +1433,7 @@
         </div>
       {/each}
     {/if}
-    <small>Values read when this opened. World does not evaluate this step's checks; a selected branch records a judgement.</small>
+    <small>Values read when this opened, separately from recorded decision evidence. World evaluates declared branch criteria when selecting a branch; prose checks and manual judgments are not automatic proof.</small>
   </div>
 {/snippet}
 
@@ -1521,6 +1582,21 @@
   </span>
 {/snippet}
 
+{#snippet procedureRunActions()}
+  {#if completedRun}
+    <button type="button" class="reset" class:busy={busy} disabled={busy} onclick={() => { summaryOpen = false; confirmation = 'reset' }}>{#if pendingControl === 'reset'}{@render recordingNote()}{:else}Reset…{/if}</button>
+  {:else if activeRun}
+    <button type="button" class="complete" class:busy={busy} disabled={busy} onclick={() => { summaryOpen = false; confirmation = 'completed' }}>
+      {#if pendingControl === 'complete'}{@render recordingNote()}{:else}Complete…{/if}
+    </button>
+    <button type="button" class="reset" class:busy={busy} disabled={busy} onclick={() => { summaryOpen = false; confirmation = 'reset' }}>{#if pendingControl === 'reset'}{@render recordingNote()}{:else}Reset…{/if}</button>
+  {:else}
+    <button type="button" class="run" class:busy={busy} disabled={busy} onclick={() => { summaryOpen = false; confirmation = 'run' }}>
+      {#if pendingControl === 'run'}{@render recordingNote()}{:else}<Play size={13} aria-hidden="true" /> {selectedProcedureRun?.status === 'transferred' ? 'Resume' : 'Run'}{/if}
+    </button>
+  {/if}
+{/snippet}
+
 {#snippet recordingNote()}
   <span class="procedure-recording" role="status"><span class="procedure-spinner" aria-hidden="true"></span>Recording…</span>
 {/snippet}
@@ -1558,6 +1634,7 @@
 <div class="procedure-window-layer">
   <div
     class="procedure-modal procedure-window"
+    class:compact-procedure={windowBounds.width <= compactProcedureWidth}
     bind:this={procedureWindowElement}
     role="dialog"
     aria-modal="true"
@@ -1695,7 +1772,7 @@
                     aria-current={selectedProcedureId === item.procedureId ? 'true' : undefined}
                     onkeydown={moveInProcedureList}
                     aria-busy={loadingProcedureId === item.procedureId}
-                    onclick={() => void loadProcedure(item.procedureId)}
+                    onclick={() => void chooseProcedure(item.procedureId)}
                   >
                     <span class="procedure-book-icon {runState}">
                       <BookOpen size={15} aria-hidden="true" />
@@ -1721,6 +1798,7 @@
           {:else}
             <ChevronLeft size={17} aria-hidden="true" />
           {/if}
+          <span class="procedure-toc-label">{procedureTocMode === 'collapsed' ? 'Procedures' : 'Hide procedures'}</span>
         </button>
 
         <main
@@ -1732,17 +1810,24 @@
           <div class="procedure-document-toolbar">
             <div class="procedure-document-title">
               <span class="procedure-unit-chip" title="Procedures in this window are for {displayUnitName}">{displayUnitName}</span>
-              <h2>{document.procedureId} — {document.title}</h2>
+              <h2 title={`${document.procedureId} — ${document.title}`} aria-label={`${document.procedureId} — ${document.title}`}>{windowBounds.width <= compactProcedureWidth ? document.procedureId : `${document.procedureId} — ${document.title}`}</h2>
               <span class="procedure-info-shell">
-                <button type="button" class="procedure-info-button" aria-label="About {document.procedureId}" aria-expanded={summaryOpen} onclick={() => { summaryOpen = !summaryOpen }}>
-                  <Info size={17} aria-hidden="true" />
+                <button type="button" class="procedure-info-button" aria-label={windowBounds.width <= compactProcedureWidth ? `Details and actions for ${document.procedureId}` : `About ${document.procedureId}`} aria-expanded={summaryOpen} onclick={() => { summaryOpen = !summaryOpen }}>
+                  {#if windowBounds.width <= compactProcedureWidth}<MoreHorizontal size={17} aria-hidden="true" />{:else}<Info size={17} aria-hidden="true" />{/if}
                 </button>
                 {#if summaryOpen}
-                <div class="procedure-info-popover procedure-summary-popover" role="dialog" aria-label="About {document.procedureId}" tabindex="-1" onkeydown={(event) => { if (event.key === 'Escape') { event.stopPropagation(); summaryOpen = false } }}>
+                <div class="procedure-info-popover procedure-summary-popover" role="dialog" aria-label={windowBounds.width <= compactProcedureWidth ? `Details and actions for ${document.procedureId}` : `About ${document.procedureId}`} tabindex="-1" onkeydown={(event) => { if (event.key === 'Escape') { event.stopPropagation(); summaryOpen = false } }}>
                   <div class="procedure-popover-head">
-                    <b>About {document.procedureId}</b>
+                    <b>{windowBounds.width <= compactProcedureWidth ? `${displayUnitName} · ${document.procedureId}` : `About ${document.procedureId}`}</b>
                     <button type="button" aria-label="Close" onclick={() => { summaryOpen = false }}><X size={14} aria-hidden="true" /></button>
                   </div>
+                  {#if windowBounds.width <= compactProcedureWidth}
+                    <div class="procedure-mode-actions">
+                      {@render procedureRunActions()}
+                      <button type="button" onclick={() => document && void loadBasis({ sourceId: document.source.sourceId, sourceRevision: document.source.revision, sourcePath: document.sourcePath, lineCount: 100 })}>Read retained procedure source</button>
+                    </div>
+                    <p><b>{document.procedureId} — {document.title}</b></p>
+                  {/if}
                   {#if document.description}<p class="procedure-summary-text">{@render procedureText(procedureDescriptionText(document.description), [])}</p>{/if}
                   {#if document.appliesTo}<p><b>Applies to</b> {document.appliesTo}</p>{/if}
                   {#if document.referencePlant}<p><b>Reference plant</b> {document.referencePlant}</p>{/if}
@@ -1754,9 +1839,11 @@
                 </div>
                 {/if}
               </span>
+              {#if windowBounds.width > compactProcedureWidth}
               <button type="button" class="procedure-source-icon" onclick={() => document && void loadBasis({ sourceId: document.source.sourceId, sourceRevision: document.source.revision, sourcePath: document.sourcePath, lineCount: 100 })} title="Read retained procedure source" aria-label="Read retained procedure source">
                 <ExternalLink size={15} aria-hidden="true" />
               </button>
+              {/if}
             </div>
             <div class="procedure-mode-actions">
               <span class="procedure-status-pill {selectedProcedureRun?.status ?? 'idle'}">
@@ -1772,18 +1859,7 @@
                   >step {currentProcedureStep.step.label}/{document.steps.length}</button>
                 {/if}
               </span>
-              {#if completedRun}
-                <button type="button" class="reset" class:busy={busy} disabled={busy} onclick={() => { confirmation = 'reset' }}>{#if pendingControl === 'reset'}{@render recordingNote()}{:else}Reset…{/if}</button>
-              {:else if activeRun}
-                <button type="button" class="complete" class:busy={busy} disabled={busy} onclick={() => { confirmation = 'completed' }}>
-                  {#if pendingControl === 'complete'}{@render recordingNote()}{:else}Complete…{/if}
-                </button>
-                <button type="button" class="reset" class:busy={busy} disabled={busy} onclick={() => { confirmation = 'reset' }}>{#if pendingControl === 'reset'}{@render recordingNote()}{:else}Reset…{/if}</button>
-              {:else}
-                <button type="button" class="run" class:busy={busy} disabled={busy} onclick={() => { confirmation = 'run' }}>
-                  {#if pendingControl === 'run'}{@render recordingNote()}{:else}<Play size={13} aria-hidden="true" /> {selectedProcedureRun?.status === 'transferred' ? 'Resume' : 'Run'}{/if}
-                </button>
-              {/if}
+              {#if windowBounds.width > compactProcedureWidth}{@render procedureRunActions()}{/if}
             </div>
           </div>
           {@render errorStrips()}
@@ -1792,11 +1868,18 @@
               {#if driverView.kind === 'ai'}
                 <span class="procedure-ai-tag">AI</span>
                 <span class="procedure-driver-text"><b>{driverView.label} driving {document.procedureId}</b> on {displayUnitName} · since {driverView.since} · {driverView.aiSteps} {driverView.aiSteps === 1 ? 'step' : 'steps'}</span>
-                <button type="button" title="Drive {document.procedureId} yourself; the AI only reads it until you hand it back. Ticking a step or selecting a branch also takes over." class:busy={busy} disabled={busy} onclick={() => void driveSelectedRun('claim')}>{#if pendingControl === 'drive'}{@render recordingNote()}{:else}Take over{/if}</button>
+                <button type="button" title="Drive {document.procedureId} yourself; the AI stops acting until you hand it back. A branch at the current step lets the AI continue. Marking a step, changing placekeeping or selecting an off-current branch takes over." class:busy={busy} disabled={busy} onclick={() => void driveSelectedRun('claim')}>{#if pendingControl === 'drive'}{@render recordingNote()}{:else}Take over{/if}</button>
               {:else}
                 <span class="procedure-driver-text"><b>You are driving {document.procedureId}</b>{driverView.handBackTo ? '' : ' · AI agents only read it'}</span>
                 <button type="button" title={driverView.handBackTo ? `Let ${driverView.handBackTo} continue ${document.procedureId}` : `Share ${document.procedureId} again`} class:busy={busy} disabled={busy} onclick={() => void driveSelectedRun('release')}>{#if pendingControl === 'drive'}{@render recordingNote()}{:else}{driverView.handBackTo ? `Hand back to ${driverView.handBackTo}` : 'Release'}{/if}</button>
               {/if}
+            </div>
+          {/if}
+
+          {#if requestedInputRun?.inputRequest}
+            <div class="procedure-input-band" role="status">
+              <div><strong>Agent needs your input on step {inputStepLabel ?? requestedInputRun.inputRequest.stepId}</strong><details><summary>Read request</summary><p>{requestedInputRun.inputRequest.issue}</p></details></div>
+              <button type="button" disabled={!displayedInputMatches} title={displayedInputMatches ? 'Focus the requested step in its retained revision' : 'Waiting for the requested procedure revision'} onclick={showCurrentInputStep}>Show step</button>
             </div>
           {/if}
 
@@ -1854,6 +1937,7 @@
             provider={currentProvider}
             close={closeTag}
             openInDisplayWindow={openDisplay === undefined ? undefined : (envelope) => { if (openTagId) openDisplay(tagDisplayListing(openTagId, envelope)) }}
+            openView={openDisplay}
           />
         {/key}
       {/if}
@@ -1999,3 +2083,43 @@
     ></div>
   </div>
 </div>
+
+<style>
+  .procedure-input-band { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex: 0 0 auto; padding: 10px 16px; border-bottom: 1px solid #cbd5e1; background: #fffbeb; color: #713f12; font-size: 13px; }
+  .procedure-input-band p { margin: 6px 0 0; overflow-wrap: anywhere; }
+  .procedure-input-band details { margin-top: 3px; }
+  .procedure-input-band summary { cursor: pointer; }
+  .procedure-input-band button { flex: 0 0 auto; min-height: 44px; border: 1px solid #d6c5a0; border-radius: 5px; padding: 6px 10px; color: inherit; background: #fff; cursor: pointer; }
+  .procedure-toc-label { display: none; }
+  :global(.procedure-modal.compact-procedure .procedure-document-toolbar) { flex-direction: row; flex-wrap: nowrap; gap: 6px; padding: 2px 6px; flex-shrink: 0; }
+  :global(.procedure-modal.compact-procedure .procedure-document-title) { flex: 1; gap: 4px; }
+  :global(.procedure-modal.compact-procedure .procedure-document-title h2) { margin: 0; font-size: 14px; line-height: 1.2; }
+  :global(.procedure-modal.compact-procedure .procedure-mode-actions) { flex: 0 0 auto; flex-wrap: nowrap; gap: 4px; }
+  :global(.procedure-modal.compact-procedure .procedure-info-button) { min-width: 44px; min-height: 44px; cursor: pointer; }
+  :global(.procedure-modal.compact-procedure .procedure-info-shell) { position: static; }
+  :global(.procedure-modal.compact-procedure .procedure-summary-popover) { top: 8px; left: 8px; right: 8px; width: auto; max-height: calc(100% - 16px); transform: none; margin-top: 0; }
+  :global(.procedure-modal.compact-procedure .procedure-summary-popover .procedure-mode-actions) { flex-wrap: wrap; justify-content: flex-start; }
+  :global(.procedure-modal.compact-procedure .procedure-summary-popover button) { min-height: 44px; }
+  :global(.procedure-modal.compact-procedure .procedure-input-band) { padding: 4px 6px; gap: 6px; }
+  :global(.procedure-modal.compact-procedure .procedure-header) { padding: 4px 8px; gap: 4px; }
+  :global(.procedure-modal.compact-procedure .procedure-document-body) { padding: 8px 8px 16px; }
+  :global(.procedure-modal.compact-procedure .procedure-step) { padding: 8px; }
+  :global(.procedure-modal.compact-procedure .procedure-driver-band.ai button) { white-space: nowrap; }
+  :global(.procedure-modal.compact-procedure .procedure-header-bar) { touch-action: pan-x; }
+  :global(.procedure-modal.compact-procedure .procedure-grip) { touch-action: none; }
+  :global(.procedure-modal.compact-procedure .procedure-cross-unit-strip) { flex-wrap: nowrap; flex: 1; width: auto; overflow-x: auto; overscroll-behavior-inline: contain; }
+  :global(.procedure-modal.compact-procedure .procedure-cross-unit) { flex: 0 0 auto; flex-wrap: nowrap; }
+  :global(.procedure-modal.compact-procedure .procedure-header-actions) { flex-shrink: 0; }
+  :global(.procedure-modal.compact-procedure .procedure-csf-strip) { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 3px; overscroll-behavior-inline: contain; }
+  :global(.procedure-modal.compact-procedure .procedure-csf-shell) { flex: 0 0 auto; }
+  /* Preserve the existing CSF help outside its scrolling strip. */
+  :global(.procedure-modal.compact-procedure .procedure-csf-popover) { position: fixed; top: auto; bottom: 12px; left: 24px; right: 24px; width: auto; max-width: none; max-height: calc(100dvh - 48px); overflow-y: auto; }
+  /* On a narrow window the existing catalogue is a recoverable picker, not
+     a permanent block above the procedure. No separate navigation state. */
+  :global(.procedure-modal.compact-procedure .procedure-layout) { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  :global(.procedure-modal.compact-procedure .procedure-layout:not(.toc-collapsed)) { grid-template-rows: minmax(0, 1fr) auto; }
+  :global(.procedure-modal.compact-procedure .procedure-layout:not(.toc-collapsed) .procedure-document) { display: none; }
+  :global(.procedure-modal.compact-procedure .procedure-list) { max-height: none; }
+  :global(.procedure-modal.compact-procedure .procedure-toc-handle) { width: 100%; min-height: 44px; display: flex; align-items: center; justify-content: flex-start; gap: 4px; padding: 0 8px; }
+  :global(.procedure-modal.compact-procedure .procedure-toc-label) { display: inline; }
+</style>

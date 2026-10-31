@@ -1,0 +1,24 @@
+{
+  "kind": "add-door",
+  "beforeSha": "6c28ed351642cf904d6caf473b05a866bf6d5505207cca1dcae72d8848478a13",
+  "afterSha": "922addc8acdf79c341a4662c418accb77432aa5b75d12e233a3558544dd3a63e",
+  "beforeRevision": "physical-1",
+  "afterRevision": "physical-8ac419fd560d",
+  "intended": [
+    "access-door",
+    "access-opening",
+    "edit-wall"
+  ],
+  "actual": [
+    "access-door",
+    "access-opening",
+    "edit-wall"
+  ],
+  "unchangedIdentityCount": 91,
+  "studyApplicability": "old results retained against old source; stale for new design",
+  "impacts": [
+    "Access/portal applicability needs review; fire/egress classification not inferred"
+  ],
+  "interfacesBefore": [],
+  "interfacesAfter": []
+}

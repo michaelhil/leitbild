@@ -1,0 +1,73 @@
+{
+  "driverSha256": "b0d059cb98f0499e0761c742f2a7f6b398c8e57850d03f91215103e0b456f77d",
+  "files": {
+    "cutaway-on-annotations.png": {
+      "bytes": 14604,
+      "sha256": "71448b7a91290bfcc32323fa52b0c342a522c7cf4ab6ca2cc36d386a90e1b636"
+    },
+    "resized-public-recomputation.png": {
+      "bytes": 247774,
+      "sha256": "9b0d29d39dfbf883f44fa60e9da590075690f26a781cbe3ef0e5a3a04860de8c"
+    },
+    "resized-public-recomputation.json": {
+      "bytes": 1360,
+      "sha256": "e326e082b302c185de170cf7f34f3f09dd5b9d6a9145fa09726a8e9265054175"
+    },
+    "rejected-empty-canvas-capture.json": {
+      "bytes": 1398,
+      "sha256": "da9147701ceea84c615c7d111b684bb0bbfc906e2a20fa2db6838d29031898f5"
+    },
+    "cutaway-off.png": {
+      "bytes": 132776,
+      "sha256": "2fca10096425fd324284947cf0a183f024618ebce6d6c09a2c29eaf59a639de5"
+    },
+    "README.md": {
+      "bytes": 2479,
+      "sha256": "dad6842679cac1fbb20ae92443ae251b815b499e7d8d4245896fef57f91eefdb"
+    },
+    "resized-public-recomputation-annotations.png": {
+      "bytes": 14604,
+      "sha256": "71448b7a91290bfcc32323fa52b0c342a522c7cf4ab6ca2cc36d386a90e1b636"
+    },
+    "cutaway-on.png": {
+      "bytes": 247774,
+      "sha256": "9b0d29d39dfbf883f44fa60e9da590075690f26a781cbe3ef0e5a3a04860de8c"
+    },
+    "fixed-home.png": {
+      "bytes": 293487,
+      "sha256": "fd9ac70f0ab0aff0dc978b1f40e326952a1e6e889a119f48dc81545caebca770"
+    },
+    "cutaway-off.json": {
+      "bytes": 1100,
+      "sha256": "35613a2c400e2ead9527c0c1d74216bab592c1a39f83780b0d6c578427b13a83"
+    },
+    "fixed-home-annotations.png": {
+      "bytes": 24988,
+      "sha256": "68ffbff241a00c1401afdc729c254390ef7f51e564f31cb3a410e26b7586a7a2"
+    },
+    "fixed-home.json": {
+      "bytes": 1348,
+      "sha256": "a2275e46987b7758da025f202482ca138b16faf2198af8139702a45cd54a738b"
+    },
+    "resized-no-motion.png": {
+      "bytes": 248009,
+      "sha256": "ecffcbc37919a1b07eb9ac2322f0fd4beccabf5272238946e9cf83b6a1d1dfc9"
+    },
+    "resized-no-motion-annotations.png": {
+      "bytes": 14604,
+      "sha256": "71448b7a91290bfcc32323fa52b0c342a522c7cf4ab6ca2cc36d386a90e1b636"
+    },
+    "resized-no-motion.json": {
+      "bytes": 1349,
+      "sha256": "d2a4d7ef32a7712a09cdf0e171b63aaab4dc1c4524cbf7a05bbc07608571b9c1"
+    },
+    "cutaway-on.json": {
+      "bytes": 1342,
+      "sha256": "8c96f2c55e3d5e5f9376247c67e4294368c1dc4bfc7147ec7e0fb149bb576a15"
+    },
+    "receipt.json": {
+      "bytes": 7651,
+      "sha256": "a0d2188c2302dc53aa49d8184f3951e4af45a21bad537e29b5dea3780ee5d863"
+    }
+  }
+}

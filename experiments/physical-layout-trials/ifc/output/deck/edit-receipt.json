@@ -1,0 +1,28 @@
+{
+  "kind": "raise-deck",
+  "beforeSha": "6c28ed351642cf904d6caf473b05a866bf6d5505207cca1dcae72d8848478a13",
+  "afterSha": "e533b391c0675d362325fb49e6042278ecca2a346621968bae651235f90bc186",
+  "beforeRevision": "physical-1",
+  "afterRevision": "physical-fcb3954fe656",
+  "intended": [
+    "edit-deck",
+    "edit-landing",
+    "edit-riser",
+    "edit-stair",
+    "edit-support"
+  ],
+  "actual": [
+    "edit-deck",
+    "edit-landing",
+    "edit-riser",
+    "edit-stair",
+    "edit-support"
+  ],
+  "unchangedIdentityCount": 87,
+  "studyApplicability": "old results retained against old source; stale for new design",
+  "impacts": [
+    "Enumerated stair/landing/riser/support dependency set only; arbitrary structure propagation unsupported"
+  ],
+  "interfacesBefore": [],
+  "interfacesAfter": []
+}

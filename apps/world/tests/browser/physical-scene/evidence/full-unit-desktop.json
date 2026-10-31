@@ -1,0 +1,3643 @@
+{
+  "passed": true,
+  "profile": {
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+    "width": 1440,
+    "height": 913,
+    "dpr": 1,
+    "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M2, Unspecified Version)",
+    "antialias": true
+  },
+  "source": {
+    "revision": "099153636442cb7088068d7afbb264fdc32e978d7fa51765f72021385824205a",
+    "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea",
+    "objects": 466
+  },
+  "coarse": {
+    "polygons": 44,
+    "noDetailLoad": true,
+    "replacedByDetail": true
+  },
+  "basic": {
+    "sentinel": {
+      "colorDepth": [
+        204,
+        26,
+        178,
+        255
+      ],
+      "stencil": [
+        229,
+        204,
+        26,
+        255
+      ],
+      "after": [
+        26,
+        204,
+        51,
+        255
+      ],
+      "passed": true
+    },
+    "state": {
+      "uploadsBefore": 306,
+      "uploadsAfter": 306,
+      "changedPixels": true
+    },
+    "pick": {
+      "sceneId": "layout:proof",
+      "targetObjectId": "plant:proof",
+      "occurrenceId": "condenser-1",
+      "label": "Condenser section 1",
+      "subjectIds": [
+        "condenser"
+      ],
+      "screen": {
+        "x": 809.0948669205778,
+        "y": 579.2815119445432,
+        "visible": true
+      }
+    },
+    "statusKeepsPicks": true,
+    "levelChangeClearsPicks": true,
+    "lowerVisibleCount": 249,
+    "layers": [
+      "ground",
+      "probe-before",
+      "probe-after",
+      "physical-scenes:solids",
+      "operational-zone"
+    ],
+    "canvasCount": 2
+  },
+  "levels": {
+    "upperVisibleCount": 168,
+    "lowerAndUpperDiffer": true,
+    "pitch": 50
+  },
+  "cycles": [
+    {
+      "index": 0,
+      "disposal": {
+        "current": null,
+        "disposals": [
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 504,
+            "geometryBytes": 0,
+            "draws": 11988,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          }
+        ],
+        "retainedScenes": 0,
+        "loadingScenes": 0
+      },
+      "current": {
+        "geometryUploads": 306,
+        "geometryBytes": 7822368,
+        "draws": 1224,
+        "buffers": 612,
+        "programs": 1,
+        "liveBuffersAfterDisposal": null,
+        "liveProgramsAfterDisposal": null
+      }
+    },
+    {
+      "index": 1,
+      "disposal": {
+        "current": null,
+        "disposals": [
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 1224,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          }
+        ],
+        "retainedScenes": 0,
+        "loadingScenes": 0
+      },
+      "current": {
+        "geometryUploads": 306,
+        "geometryBytes": 7822368,
+        "draws": 1224,
+        "buffers": 612,
+        "programs": 1,
+        "liveBuffersAfterDisposal": null,
+        "liveProgramsAfterDisposal": null
+      }
+    },
+    {
+      "index": 2,
+      "disposal": {
+        "current": null,
+        "disposals": [
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 1224,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          }
+        ],
+        "retainedScenes": 0,
+        "loadingScenes": 0
+      },
+      "current": {
+        "geometryUploads": 306,
+        "geometryBytes": 7822368,
+        "draws": 1224,
+        "buffers": 612,
+        "programs": 1,
+        "liveBuffersAfterDisposal": null,
+        "liveProgramsAfterDisposal": null
+      }
+    },
+    {
+      "index": 3,
+      "disposal": {
+        "current": null,
+        "disposals": [
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 1224,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          }
+        ],
+        "retainedScenes": 0,
+        "loadingScenes": 0
+      },
+      "current": {
+        "geometryUploads": 306,
+        "geometryBytes": 7822368,
+        "draws": 1224,
+        "buffers": 612,
+        "programs": 1,
+        "liveBuffersAfterDisposal": null,
+        "liveProgramsAfterDisposal": null
+      }
+    },
+    {
+      "index": 4,
+      "disposal": {
+        "current": null,
+        "disposals": [
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 1224,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          }
+        ],
+        "retainedScenes": 0,
+        "loadingScenes": 0
+      },
+      "current": {
+        "geometryUploads": 306,
+        "geometryBytes": 7822368,
+        "draws": 1224,
+        "buffers": 612,
+        "programs": 1,
+        "liveBuffersAfterDisposal": null,
+        "liveProgramsAfterDisposal": null
+      }
+    },
+    {
+      "index": 5,
+      "disposal": {
+        "current": null,
+        "disposals": [
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 1224,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          }
+        ],
+        "retainedScenes": 0,
+        "loadingScenes": 0
+      },
+      "current": {
+        "geometryUploads": 306,
+        "geometryBytes": 7822368,
+        "draws": 1224,
+        "buffers": 612,
+        "programs": 1,
+        "liveBuffersAfterDisposal": null,
+        "liveProgramsAfterDisposal": null
+      }
+    },
+    {
+      "index": 6,
+      "disposal": {
+        "current": null,
+        "disposals": [
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 1224,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          }
+        ],
+        "retainedScenes": 0,
+        "loadingScenes": 0
+      },
+      "current": {
+        "geometryUploads": 306,
+        "geometryBytes": 7822368,
+        "draws": 1224,
+        "buffers": 612,
+        "programs": 1,
+        "liveBuffersAfterDisposal": null,
+        "liveProgramsAfterDisposal": null
+      }
+    },
+    {
+      "index": 7,
+      "disposal": {
+        "current": null,
+        "disposals": [
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 1224,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          }
+        ],
+        "retainedScenes": 0,
+        "loadingScenes": 0
+      },
+      "current": {
+        "geometryUploads": 306,
+        "geometryBytes": 7822368,
+        "draws": 1224,
+        "buffers": 612,
+        "programs": 1,
+        "liveBuffersAfterDisposal": null,
+        "liveProgramsAfterDisposal": null
+      }
+    },
+    {
+      "index": 8,
+      "disposal": {
+        "current": null,
+        "disposals": [
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 1224,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          }
+        ],
+        "retainedScenes": 0,
+        "loadingScenes": 0
+      },
+      "current": {
+        "geometryUploads": 306,
+        "geometryBytes": 7822368,
+        "draws": 1224,
+        "buffers": 612,
+        "programs": 1,
+        "liveBuffersAfterDisposal": null,
+        "liveProgramsAfterDisposal": null
+      }
+    },
+    {
+      "index": 9,
+      "disposal": {
+        "current": null,
+        "disposals": [
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 1224,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          }
+        ],
+        "retainedScenes": 0,
+        "loadingScenes": 0
+      },
+      "current": {
+        "geometryUploads": 306,
+        "geometryBytes": 7822368,
+        "draws": 1224,
+        "buffers": 612,
+        "programs": 1,
+        "liveBuffersAfterDisposal": null,
+        "liveProgramsAfterDisposal": null
+      }
+    },
+    {
+      "index": 10,
+      "disposal": {
+        "current": null,
+        "disposals": [
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 1224,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          }
+        ],
+        "retainedScenes": 0,
+        "loadingScenes": 0
+      },
+      "current": {
+        "geometryUploads": 306,
+        "geometryBytes": 7822368,
+        "draws": 1224,
+        "buffers": 612,
+        "programs": 1,
+        "liveBuffersAfterDisposal": null,
+        "liveProgramsAfterDisposal": null
+      }
+    },
+    {
+      "index": 11,
+      "disposal": {
+        "current": null,
+        "disposals": [
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 1224,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          }
+        ],
+        "retainedScenes": 0,
+        "loadingScenes": 0
+      },
+      "current": {
+        "geometryUploads": 306,
+        "geometryBytes": 7822368,
+        "draws": 1224,
+        "buffers": 612,
+        "programs": 1,
+        "liveBuffersAfterDisposal": null,
+        "liveProgramsAfterDisposal": null
+      }
+    },
+    {
+      "index": 12,
+      "disposal": {
+        "current": null,
+        "disposals": [
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 1224,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          }
+        ],
+        "retainedScenes": 0,
+        "loadingScenes": 0
+      },
+      "current": {
+        "geometryUploads": 306,
+        "geometryBytes": 7822368,
+        "draws": 1224,
+        "buffers": 612,
+        "programs": 1,
+        "liveBuffersAfterDisposal": null,
+        "liveProgramsAfterDisposal": null
+      }
+    },
+    {
+      "index": 13,
+      "disposal": {
+        "current": null,
+        "disposals": [
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 1224,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          }
+        ],
+        "retainedScenes": 0,
+        "loadingScenes": 0
+      },
+      "current": {
+        "geometryUploads": 306,
+        "geometryBytes": 7822368,
+        "draws": 1224,
+        "buffers": 612,
+        "programs": 1,
+        "liveBuffersAfterDisposal": null,
+        "liveProgramsAfterDisposal": null
+      }
+    },
+    {
+      "index": 14,
+      "disposal": {
+        "current": null,
+        "disposals": [
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 1224,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          }
+        ],
+        "retainedScenes": 0,
+        "loadingScenes": 0
+      },
+      "current": {
+        "geometryUploads": 306,
+        "geometryBytes": 7822368,
+        "draws": 1224,
+        "buffers": 612,
+        "programs": 1,
+        "liveBuffersAfterDisposal": null,
+        "liveProgramsAfterDisposal": null
+      }
+    },
+    {
+      "index": 15,
+      "disposal": {
+        "current": null,
+        "disposals": [
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 1224,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          }
+        ],
+        "retainedScenes": 0,
+        "loadingScenes": 0
+      },
+      "current": {
+        "geometryUploads": 306,
+        "geometryBytes": 7822368,
+        "draws": 1224,
+        "buffers": 612,
+        "programs": 1,
+        "liveBuffersAfterDisposal": null,
+        "liveProgramsAfterDisposal": null
+      }
+    },
+    {
+      "index": 16,
+      "disposal": {
+        "current": null,
+        "disposals": [
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 1224,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          }
+        ],
+        "retainedScenes": 0,
+        "loadingScenes": 0
+      },
+      "current": {
+        "geometryUploads": 306,
+        "geometryBytes": 7822368,
+        "draws": 1224,
+        "buffers": 612,
+        "programs": 1,
+        "liveBuffersAfterDisposal": null,
+        "liveProgramsAfterDisposal": null
+      }
+    },
+    {
+      "index": 17,
+      "disposal": {
+        "current": null,
+        "disposals": [
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 1224,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          }
+        ],
+        "retainedScenes": 0,
+        "loadingScenes": 0
+      },
+      "current": {
+        "geometryUploads": 306,
+        "geometryBytes": 7822368,
+        "draws": 1224,
+        "buffers": 612,
+        "programs": 1,
+        "liveBuffersAfterDisposal": null,
+        "liveProgramsAfterDisposal": null
+      }
+    },
+    {
+      "index": 18,
+      "disposal": {
+        "current": null,
+        "disposals": [
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 1224,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          }
+        ],
+        "retainedScenes": 0,
+        "loadingScenes": 0
+      },
+      "current": {
+        "geometryUploads": 306,
+        "geometryBytes": 7822368,
+        "draws": 1224,
+        "buffers": 612,
+        "programs": 1,
+        "liveBuffersAfterDisposal": null,
+        "liveProgramsAfterDisposal": null
+      }
+    },
+    {
+      "index": 19,
+      "disposal": {
+        "current": null,
+        "disposals": [
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 1224,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          }
+        ],
+        "retainedScenes": 0,
+        "loadingScenes": 0
+      },
+      "current": {
+        "geometryUploads": 306,
+        "geometryBytes": 7822368,
+        "draws": 1224,
+        "buffers": 612,
+        "programs": 1,
+        "liveBuffersAfterDisposal": null,
+        "liveProgramsAfterDisposal": null
+      }
+    }
+  ],
+  "styles": [
+    {
+      "index": 0,
+      "diagnostics": {
+        "current": {
+          "geometryUploads": 306,
+          "geometryBytes": 7822368,
+          "draws": 2448,
+          "buffers": 612,
+          "programs": 1,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null
+        },
+        "disposals": [
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 1224,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          }
+        ],
+        "retainedScenes": 1,
+        "loadingScenes": 0
+      },
+      "sentinel": {
+        "colorDepth": [
+          204,
+          26,
+          178,
+          255
+        ],
+        "stencil": [
+          229,
+          204,
+          26,
+          255
+        ],
+        "after": [
+          26,
+          204,
+          51,
+          255
+        ],
+        "passed": true
+      }
+    },
+    {
+      "index": 1,
+      "diagnostics": {
+        "current": {
+          "geometryUploads": 306,
+          "geometryBytes": 7822368,
+          "draws": 2448,
+          "buffers": 612,
+          "programs": 1,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null
+        },
+        "disposals": [
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 1224,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          }
+        ],
+        "retainedScenes": 1,
+        "loadingScenes": 0
+      },
+      "sentinel": {
+        "colorDepth": [
+          204,
+          26,
+          178,
+          255
+        ],
+        "stencil": [
+          229,
+          204,
+          26,
+          255
+        ],
+        "after": [
+          26,
+          204,
+          51,
+          255
+        ],
+        "passed": true
+      }
+    },
+    {
+      "index": 2,
+      "diagnostics": {
+        "current": {
+          "geometryUploads": 306,
+          "geometryBytes": 7822368,
+          "draws": 2448,
+          "buffers": 612,
+          "programs": 1,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null
+        },
+        "disposals": [
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 1224,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          }
+        ],
+        "retainedScenes": 1,
+        "loadingScenes": 0
+      },
+      "sentinel": {
+        "colorDepth": [
+          204,
+          26,
+          178,
+          255
+        ],
+        "stencil": [
+          229,
+          204,
+          26,
+          255
+        ],
+        "after": [
+          26,
+          204,
+          51,
+          255
+        ],
+        "passed": true
+      }
+    },
+    {
+      "index": 3,
+      "diagnostics": {
+        "current": {
+          "geometryUploads": 306,
+          "geometryBytes": 7822368,
+          "draws": 2448,
+          "buffers": 612,
+          "programs": 1,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null
+        },
+        "disposals": [
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 1224,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          }
+        ],
+        "retainedScenes": 1,
+        "loadingScenes": 0
+      },
+      "sentinel": {
+        "colorDepth": [
+          204,
+          26,
+          178,
+          255
+        ],
+        "stencil": [
+          229,
+          204,
+          26,
+          255
+        ],
+        "after": [
+          26,
+          204,
+          51,
+          255
+        ],
+        "passed": true
+      }
+    },
+    {
+      "index": 4,
+      "diagnostics": {
+        "current": {
+          "geometryUploads": 306,
+          "geometryBytes": 7822368,
+          "draws": 2448,
+          "buffers": 612,
+          "programs": 1,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null
+        },
+        "disposals": [
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 1224,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          }
+        ],
+        "retainedScenes": 1,
+        "loadingScenes": 0
+      },
+      "sentinel": {
+        "colorDepth": [
+          204,
+          26,
+          178,
+          255
+        ],
+        "stencil": [
+          229,
+          204,
+          26,
+          255
+        ],
+        "after": [
+          26,
+          204,
+          51,
+          255
+        ],
+        "passed": true
+      }
+    },
+    {
+      "index": 5,
+      "diagnostics": {
+        "current": {
+          "geometryUploads": 306,
+          "geometryBytes": 7822368,
+          "draws": 2448,
+          "buffers": 612,
+          "programs": 1,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null
+        },
+        "disposals": [
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 1224,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          }
+        ],
+        "retainedScenes": 1,
+        "loadingScenes": 0
+      },
+      "sentinel": {
+        "colorDepth": [
+          204,
+          26,
+          178,
+          255
+        ],
+        "stencil": [
+          229,
+          204,
+          26,
+          255
+        ],
+        "after": [
+          26,
+          204,
+          51,
+          255
+        ],
+        "passed": true
+      }
+    },
+    {
+      "index": 6,
+      "diagnostics": {
+        "current": {
+          "geometryUploads": 306,
+          "geometryBytes": 7822368,
+          "draws": 2448,
+          "buffers": 612,
+          "programs": 1,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null
+        },
+        "disposals": [
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 1224,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          }
+        ],
+        "retainedScenes": 1,
+        "loadingScenes": 0
+      },
+      "sentinel": {
+        "colorDepth": [
+          204,
+          26,
+          178,
+          255
+        ],
+        "stencil": [
+          229,
+          204,
+          26,
+          255
+        ],
+        "after": [
+          26,
+          204,
+          51,
+          255
+        ],
+        "passed": true
+      }
+    },
+    {
+      "index": 7,
+      "diagnostics": {
+        "current": {
+          "geometryUploads": 306,
+          "geometryBytes": 7822368,
+          "draws": 2448,
+          "buffers": 612,
+          "programs": 1,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null
+        },
+        "disposals": [
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 1224,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          }
+        ],
+        "retainedScenes": 1,
+        "loadingScenes": 0
+      },
+      "sentinel": {
+        "colorDepth": [
+          204,
+          26,
+          178,
+          255
+        ],
+        "stencil": [
+          229,
+          204,
+          26,
+          255
+        ],
+        "after": [
+          26,
+          204,
+          51,
+          255
+        ],
+        "passed": true
+      }
+    },
+    {
+      "index": 8,
+      "diagnostics": {
+        "current": {
+          "geometryUploads": 306,
+          "geometryBytes": 7822368,
+          "draws": 2448,
+          "buffers": 612,
+          "programs": 1,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null
+        },
+        "disposals": [
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 1224,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          }
+        ],
+        "retainedScenes": 1,
+        "loadingScenes": 0
+      },
+      "sentinel": {
+        "colorDepth": [
+          204,
+          26,
+          178,
+          255
+        ],
+        "stencil": [
+          229,
+          204,
+          26,
+          255
+        ],
+        "after": [
+          26,
+          204,
+          51,
+          255
+        ],
+        "passed": true
+      }
+    },
+    {
+      "index": 9,
+      "diagnostics": {
+        "current": {
+          "geometryUploads": 306,
+          "geometryBytes": 7822368,
+          "draws": 2448,
+          "buffers": 612,
+          "programs": 1,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null
+        },
+        "disposals": [
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 1224,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          }
+        ],
+        "retainedScenes": 1,
+        "loadingScenes": 0
+      },
+      "sentinel": {
+        "colorDepth": [
+          204,
+          26,
+          178,
+          255
+        ],
+        "stencil": [
+          229,
+          204,
+          26,
+          255
+        ],
+        "after": [
+          26,
+          204,
+          51,
+          255
+        ],
+        "passed": true
+      }
+    },
+    {
+      "index": 10,
+      "diagnostics": {
+        "current": {
+          "geometryUploads": 306,
+          "geometryBytes": 7822368,
+          "draws": 2448,
+          "buffers": 612,
+          "programs": 1,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null
+        },
+        "disposals": [
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 1224,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          }
+        ],
+        "retainedScenes": 1,
+        "loadingScenes": 0
+      },
+      "sentinel": {
+        "colorDepth": [
+          204,
+          26,
+          178,
+          255
+        ],
+        "stencil": [
+          229,
+          204,
+          26,
+          255
+        ],
+        "after": [
+          26,
+          204,
+          51,
+          255
+        ],
+        "passed": true
+      }
+    },
+    {
+      "index": 11,
+      "diagnostics": {
+        "current": {
+          "geometryUploads": 306,
+          "geometryBytes": 7822368,
+          "draws": 2448,
+          "buffers": 612,
+          "programs": 1,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null
+        },
+        "disposals": [
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 1224,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          }
+        ],
+        "retainedScenes": 1,
+        "loadingScenes": 0
+      },
+      "sentinel": {
+        "colorDepth": [
+          204,
+          26,
+          178,
+          255
+        ],
+        "stencil": [
+          229,
+          204,
+          26,
+          255
+        ],
+        "after": [
+          26,
+          204,
+          51,
+          255
+        ],
+        "passed": true
+      }
+    },
+    {
+      "index": 12,
+      "diagnostics": {
+        "current": {
+          "geometryUploads": 306,
+          "geometryBytes": 7822368,
+          "draws": 2448,
+          "buffers": 612,
+          "programs": 1,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null
+        },
+        "disposals": [
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 1224,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          }
+        ],
+        "retainedScenes": 1,
+        "loadingScenes": 0
+      },
+      "sentinel": {
+        "colorDepth": [
+          204,
+          26,
+          178,
+          255
+        ],
+        "stencil": [
+          229,
+          204,
+          26,
+          255
+        ],
+        "after": [
+          26,
+          204,
+          51,
+          255
+        ],
+        "passed": true
+      }
+    },
+    {
+      "index": 13,
+      "diagnostics": {
+        "current": {
+          "geometryUploads": 306,
+          "geometryBytes": 7822368,
+          "draws": 2448,
+          "buffers": 612,
+          "programs": 1,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null
+        },
+        "disposals": [
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 1224,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          }
+        ],
+        "retainedScenes": 1,
+        "loadingScenes": 0
+      },
+      "sentinel": {
+        "colorDepth": [
+          204,
+          26,
+          178,
+          255
+        ],
+        "stencil": [
+          229,
+          204,
+          26,
+          255
+        ],
+        "after": [
+          26,
+          204,
+          51,
+          255
+        ],
+        "passed": true
+      }
+    },
+    {
+      "index": 14,
+      "diagnostics": {
+        "current": {
+          "geometryUploads": 306,
+          "geometryBytes": 7822368,
+          "draws": 2448,
+          "buffers": 612,
+          "programs": 1,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null
+        },
+        "disposals": [
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 1224,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          }
+        ],
+        "retainedScenes": 1,
+        "loadingScenes": 0
+      },
+      "sentinel": {
+        "colorDepth": [
+          204,
+          26,
+          178,
+          255
+        ],
+        "stencil": [
+          229,
+          204,
+          26,
+          255
+        ],
+        "after": [
+          26,
+          204,
+          51,
+          255
+        ],
+        "passed": true
+      }
+    },
+    {
+      "index": 15,
+      "diagnostics": {
+        "current": {
+          "geometryUploads": 306,
+          "geometryBytes": 7822368,
+          "draws": 2448,
+          "buffers": 612,
+          "programs": 1,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null
+        },
+        "disposals": [
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 1224,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          }
+        ],
+        "retainedScenes": 1,
+        "loadingScenes": 0
+      },
+      "sentinel": {
+        "colorDepth": [
+          204,
+          26,
+          178,
+          255
+        ],
+        "stencil": [
+          229,
+          204,
+          26,
+          255
+        ],
+        "after": [
+          26,
+          204,
+          51,
+          255
+        ],
+        "passed": true
+      }
+    },
+    {
+      "index": 16,
+      "diagnostics": {
+        "current": {
+          "geometryUploads": 306,
+          "geometryBytes": 7822368,
+          "draws": 2448,
+          "buffers": 612,
+          "programs": 1,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null
+        },
+        "disposals": [
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 1224,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          }
+        ],
+        "retainedScenes": 1,
+        "loadingScenes": 0
+      },
+      "sentinel": {
+        "colorDepth": [
+          204,
+          26,
+          178,
+          255
+        ],
+        "stencil": [
+          229,
+          204,
+          26,
+          255
+        ],
+        "after": [
+          26,
+          204,
+          51,
+          255
+        ],
+        "passed": true
+      }
+    },
+    {
+      "index": 17,
+      "diagnostics": {
+        "current": {
+          "geometryUploads": 306,
+          "geometryBytes": 7822368,
+          "draws": 2448,
+          "buffers": 612,
+          "programs": 1,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null
+        },
+        "disposals": [
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 1224,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          }
+        ],
+        "retainedScenes": 1,
+        "loadingScenes": 0
+      },
+      "sentinel": {
+        "colorDepth": [
+          204,
+          26,
+          178,
+          255
+        ],
+        "stencil": [
+          229,
+          204,
+          26,
+          255
+        ],
+        "after": [
+          26,
+          204,
+          51,
+          255
+        ],
+        "passed": true
+      }
+    },
+    {
+      "index": 18,
+      "diagnostics": {
+        "current": {
+          "geometryUploads": 306,
+          "geometryBytes": 7822368,
+          "draws": 2448,
+          "buffers": 612,
+          "programs": 1,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null
+        },
+        "disposals": [
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 1224,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          }
+        ],
+        "retainedScenes": 1,
+        "loadingScenes": 0
+      },
+      "sentinel": {
+        "colorDepth": [
+          204,
+          26,
+          178,
+          255
+        ],
+        "stencil": [
+          229,
+          204,
+          26,
+          255
+        ],
+        "after": [
+          26,
+          204,
+          51,
+          255
+        ],
+        "passed": true
+      }
+    },
+    {
+      "index": 19,
+      "diagnostics": {
+        "current": {
+          "geometryUploads": 306,
+          "geometryBytes": 7822368,
+          "draws": 2448,
+          "buffers": 612,
+          "programs": 1,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null
+        },
+        "disposals": [
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 1224,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          },
+          {
+            "geometryUploads": 306,
+            "geometryBytes": 0,
+            "draws": 2448,
+            "buffers": 0,
+            "programs": 0,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0
+          }
+        ],
+        "retainedScenes": 1,
+        "loadingScenes": 0
+      },
+      "sentinel": {
+        "colorDepth": [
+          204,
+          26,
+          178,
+          255
+        ],
+        "stencil": [
+          229,
+          204,
+          26,
+          255
+        ],
+        "after": [
+          26,
+          204,
+          51,
+          255
+        ],
+        "passed": true
+      }
+    }
+  ],
+  "contextRestore": {
+    "diagnostics": {
+      "current": {
+        "geometryUploads": 306,
+        "geometryBytes": 7822368,
+        "draws": 2448,
+        "buffers": 612,
+        "programs": 1,
+        "liveBuffersAfterDisposal": null,
+        "liveProgramsAfterDisposal": null
+      },
+      "disposals": [
+        {
+          "geometryUploads": 306,
+          "geometryBytes": 0,
+          "draws": 1224,
+          "buffers": 0,
+          "programs": 0,
+          "liveBuffersAfterDisposal": 0,
+          "liveProgramsAfterDisposal": 0
+        },
+        {
+          "geometryUploads": 306,
+          "geometryBytes": 0,
+          "draws": 2448,
+          "buffers": 0,
+          "programs": 0,
+          "liveBuffersAfterDisposal": 0,
+          "liveProgramsAfterDisposal": 0
+        },
+        {
+          "geometryUploads": 306,
+          "geometryBytes": 0,
+          "draws": 2448,
+          "buffers": 0,
+          "programs": 0,
+          "liveBuffersAfterDisposal": 0,
+          "liveProgramsAfterDisposal": 0
+        },
+        {
+          "geometryUploads": 306,
+          "geometryBytes": 0,
+          "draws": 2448,
+          "buffers": 0,
+          "programs": 0,
+          "liveBuffersAfterDisposal": 0,
+          "liveProgramsAfterDisposal": 0
+        },
+        {
+          "geometryUploads": 306,
+          "geometryBytes": 0,
+          "draws": 2448,
+          "buffers": 0,
+          "programs": 0,
+          "liveBuffersAfterDisposal": 0,
+          "liveProgramsAfterDisposal": 0
+        },
+        {
+          "geometryUploads": 306,
+          "geometryBytes": 0,
+          "draws": 2448,
+          "buffers": 0,
+          "programs": 0,
+          "liveBuffersAfterDisposal": 0,
+          "liveProgramsAfterDisposal": 0
+        },
+        {
+          "geometryUploads": 306,
+          "geometryBytes": 0,
+          "draws": 2448,
+          "buffers": 0,
+          "programs": 0,
+          "liveBuffersAfterDisposal": 0,
+          "liveProgramsAfterDisposal": 0
+        },
+        {
+          "geometryUploads": 306,
+          "geometryBytes": 0,
+          "draws": 2448,
+          "buffers": 0,
+          "programs": 0,
+          "liveBuffersAfterDisposal": 0,
+          "liveProgramsAfterDisposal": 0
+        },
+        {
+          "geometryUploads": 306,
+          "geometryBytes": 0,
+          "draws": 2448,
+          "buffers": 0,
+          "programs": 0,
+          "liveBuffersAfterDisposal": 0,
+          "liveProgramsAfterDisposal": 0
+        },
+        {
+          "geometryUploads": 306,
+          "geometryBytes": 0,
+          "draws": 2448,
+          "buffers": 0,
+          "programs": 0,
+          "liveBuffersAfterDisposal": 0,
+          "liveProgramsAfterDisposal": 0
+        },
+        {
+          "geometryUploads": 306,
+          "geometryBytes": 0,
+          "draws": 2448,
+          "buffers": 0,
+          "programs": 0,
+          "liveBuffersAfterDisposal": 0,
+          "liveProgramsAfterDisposal": 0
+        },
+        {
+          "geometryUploads": 306,
+          "geometryBytes": 0,
+          "draws": 2448,
+          "buffers": 0,
+          "programs": 0,
+          "liveBuffersAfterDisposal": 0,
+          "liveProgramsAfterDisposal": 0
+        },
+        {
+          "geometryUploads": 306,
+          "geometryBytes": 0,
+          "draws": 2448,
+          "buffers": 0,
+          "programs": 0,
+          "liveBuffersAfterDisposal": 0,
+          "liveProgramsAfterDisposal": 0
+        },
+        {
+          "geometryUploads": 306,
+          "geometryBytes": 0,
+          "draws": 2448,
+          "buffers": 0,
+          "programs": 0,
+          "liveBuffersAfterDisposal": 0,
+          "liveProgramsAfterDisposal": 0
+        },
+        {
+          "geometryUploads": 306,
+          "geometryBytes": 0,
+          "draws": 2448,
+          "buffers": 0,
+          "programs": 0,
+          "liveBuffersAfterDisposal": 0,
+          "liveProgramsAfterDisposal": 0
+        },
+        {
+          "geometryUploads": 306,
+          "geometryBytes": 0,
+          "draws": 2448,
+          "buffers": 0,
+          "programs": 0,
+          "liveBuffersAfterDisposal": 0,
+          "liveProgramsAfterDisposal": 0
+        },
+        {
+          "geometryUploads": 306,
+          "geometryBytes": 0,
+          "draws": 2448,
+          "buffers": 0,
+          "programs": 0,
+          "liveBuffersAfterDisposal": 0,
+          "liveProgramsAfterDisposal": 0
+        },
+        {
+          "geometryUploads": 306,
+          "geometryBytes": 0,
+          "draws": 2448,
+          "buffers": 0,
+          "programs": 0,
+          "liveBuffersAfterDisposal": 0,
+          "liveProgramsAfterDisposal": 0
+        },
+        {
+          "geometryUploads": 306,
+          "geometryBytes": 0,
+          "draws": 2448,
+          "buffers": 0,
+          "programs": 0,
+          "liveBuffersAfterDisposal": 0,
+          "liveProgramsAfterDisposal": 0
+        },
+        {
+          "geometryUploads": 306,
+          "geometryBytes": 0,
+          "draws": 2448,
+          "buffers": 0,
+          "programs": 0,
+          "liveBuffersAfterDisposal": 0,
+          "liveProgramsAfterDisposal": 0
+        },
+        {
+          "geometryUploads": 306,
+          "geometryBytes": 0,
+          "draws": 2448,
+          "buffers": 0,
+          "programs": 0,
+          "liveBuffersAfterDisposal": 0,
+          "liveProgramsAfterDisposal": 0
+        }
+      ],
+      "retainedScenes": 1,
+      "loadingScenes": 0
+    },
+    "sentinel": {
+      "colorDepth": [
+        204,
+        26,
+        178,
+        255
+      ],
+      "stencil": [
+        229,
+        204,
+        26,
+        255
+      ],
+      "after": [
+        26,
+        204,
+        51,
+        255
+      ],
+      "passed": true
+    }
+  },
+  "idleFrames": 0,
+  "unchangedStateRefreshes": 5,
+  "idleMeasurement": "350ms after500ms recoveryquiescence, with repeated equalstyle refreshes",
+  "repaintCalls": [],
+  "negativeControlDetected": true,
+  "deckPick": {
+    "id": "plant:proof",
+    "layer": "leitbild-object-status-disks"
+  },
+  "stateErrors": [],
+  "glErrors": [],
+  "errors": [],
+  "loadCount": 21,
+  "limits": [
+    "Isolated desktop Chrome, not constrained hardware or WAN.",
+    "Empty test ground style; full PMTiles/context and app input/card/Run flow require separate integrated checks.",
+    "Test-controlled shader state is not operational plant status.",
+    "Same production native scene/controller and operational Deck layer factory; no experiment renderer imported."
+  ],
+  "sourceHashes": {
+    "src/ui/map/physical-scene/controller.ts": "a9621aa77d1e4fea70777112d8b2b17c1d9812c606e9cfceb8e39b9119d086b7",
+    "src/ui/map/physical-scene/backend.ts": "5f7fec660c057fb8368d64bb03c35fff3983f60c575533adc65d5efdaec696c7",
+    "src/ui/map/physical-scene/geometry.ts": "44dcc4d23f914314aa0cdb498e252de685e2d7e1df702b0009f9ac66f9a92d6b",
+    "src/ui/map/physical-scene/overview.ts": "37d8a226ef9e6624b6c207831c5b93e2500dd1c9b62cf814c76f2eb781428c6b",
+    "src/ui/map-runtime/operational-deck-layers.ts": "2eb3c1b415db921b58ecb940a32d9725edc31c128f0eeeef8c0b6ed16982e25e",
+    "src/packs/physical-layout/native/compile-scene.ts": "b3e70a671f13b48e7724b0bb4ad67f0fe47069dbdf9d8ff9b9369296299820ad",
+    "src/packs/physical-layout/native/campus/compile-scene.ts": "f5ca21f0d5d26be45b76515f7702c5b40309ba1a621f9cb58b09a2f71f16cbda"
+  },
+  "sceneSha256": "9f83e678e6492ce04b0367a2c50df8b766203645d19287512e7ae1e3c7679e0b",
+  "designMode": "full-unit",
+  "design": {
+    "id": "pwr-full-unit",
+    "revision": "pwr-full-unit-20261025-r1",
+    "digest": "099153636442cb7088068d7afbb264fdc32e978d7fa51765f72021385824205a"
+  },
+  "responsive": {
+    "width": 638,
+    "height": 720,
+    "bounds": {
+      "left": 80,
+      "right": 558.0000000035321,
+      "top": 206.7063768722393,
+      "bottom": 483.29362313305893
+    },
+    "inside": true
+  },
+  "responsive3d": {
+    "width": 638,
+    "height": 720,
+    "separation": 0,
+    "displayBounds": {
+      "min": [
+        -186.72,
+        -60,
+        -0.4
+      ],
+      "max": [
+        105.9,
+        109.32,
+        48
+      ]
+    },
+    "bounds": {
+      "left": 102.89418622938823,
+      "right": 535.1058137719544,
+      "top": 231.19607556974236,
+      "bottom": 421.26085690831604
+    },
+    "inside": true
+  },
+  "responsiveSeparated": {
+    "width": 638,
+    "height": 720,
+    "separation": 30,
+    "displayBounds": {
+      "min": [
+        -186.72,
+        -60,
+        -0.4
+      ],
+      "max": [
+        105.9,
+        109.32,
+        138
+      ]
+    },
+    "bounds": {
+      "left": 138.05821275747613,
+      "right": 499.94178723980133,
+      "top": 172.21700405038453,
+      "bottom": 405.414342456748
+    },
+    "inside": true
+  }
+}

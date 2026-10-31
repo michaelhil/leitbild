@@ -1,0 +1,9 @@
+{
+  "command": "bun run trial /tmp/leitbild-native-independent-20261024",
+  "exitCode": 0,
+  "checks": 65,
+  "passed": true,
+  "sourceBytes": 44865,
+  "outputDirectory": "/tmp/leitbild-native-independent-20261024",
+  "frozenCandidateOutputsModified": false
+}

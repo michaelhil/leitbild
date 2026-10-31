@@ -1,0 +1,617 @@
+{
+  "base": "b748ae05e39eeb7bc3172bb20981f74753c15c09",
+  "decision": "Discarded all these production prototypes; the original production files were restored before further work.",
+  "records": [
+    {
+      "raw": "/Users/hilde/.codex/worktrees/layout-detail-latency/Leitbild/.health/layout-detail-latency/ownership-pair.json",
+      "sha256": "4ce52ed56f26a3812d78de1c193c093d61bb11228ba877a3a6d5a4740f7554f5",
+      "records": [
+        {
+          "design": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+          "engine": "before",
+          "phase": "calibration",
+          "ms": 1840.2039590000002,
+          "cpu": null,
+          "digest": "69703abdea9607e89b6a38abc76b35948ad333c59b57b39cf8ee20d5b2c94337",
+          "candidates": 3946353,
+          "coplanar": 183625,
+          "processMaxRSSKiB": null
+        },
+        {
+          "design": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+          "engine": "current",
+          "phase": "calibration",
+          "ms": 1387.3854999999999,
+          "cpu": null,
+          "digest": "69703abdea9607e89b6a38abc76b35948ad333c59b57b39cf8ee20d5b2c94337",
+          "candidates": 4722639,
+          "coplanar": 183625,
+          "processMaxRSSKiB": null
+        },
+        {
+          "design": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+          "engine": "before",
+          "phase": "paired",
+          "ms": 1744.240917,
+          "cpu": null,
+          "digest": "69703abdea9607e89b6a38abc76b35948ad333c59b57b39cf8ee20d5b2c94337",
+          "candidates": 3946353,
+          "coplanar": 183625,
+          "processMaxRSSKiB": null
+        },
+        {
+          "design": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+          "engine": "current",
+          "phase": "paired",
+          "ms": 1326.8289169999998,
+          "cpu": null,
+          "digest": "69703abdea9607e89b6a38abc76b35948ad333c59b57b39cf8ee20d5b2c94337",
+          "candidates": 4722639,
+          "coplanar": 183625,
+          "processMaxRSSKiB": null
+        },
+        {
+          "design": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+          "engine": "current",
+          "phase": "paired",
+          "ms": 1201.2306669999998,
+          "cpu": null,
+          "digest": "69703abdea9607e89b6a38abc76b35948ad333c59b57b39cf8ee20d5b2c94337",
+          "candidates": 4722639,
+          "coplanar": 183625,
+          "processMaxRSSKiB": null
+        },
+        {
+          "design": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+          "engine": "before",
+          "phase": "paired",
+          "ms": 1884.291541999999,
+          "cpu": null,
+          "digest": "69703abdea9607e89b6a38abc76b35948ad333c59b57b39cf8ee20d5b2c94337",
+          "candidates": 3946353,
+          "coplanar": 183625,
+          "processMaxRSSKiB": null
+        },
+        {
+          "design": "91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933",
+          "engine": "before",
+          "phase": "calibration",
+          "ms": 981.9198329999999,
+          "cpu": null,
+          "digest": "05538e142fcaa3174d1bc2575c51cdad22e5908fcc0ec4a3a0cdf013a4779401",
+          "candidates": 3629488,
+          "coplanar": 110891,
+          "processMaxRSSKiB": null
+        },
+        {
+          "design": "91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933",
+          "engine": "current",
+          "phase": "calibration",
+          "ms": 2034.8391250000004,
+          "cpu": null,
+          "digest": "05538e142fcaa3174d1bc2575c51cdad22e5908fcc0ec4a3a0cdf013a4779401",
+          "candidates": 68634117,
+          "coplanar": 110891,
+          "processMaxRSSKiB": null
+        },
+        {
+          "design": "91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933",
+          "engine": "before",
+          "phase": "paired",
+          "ms": 897.485999999999,
+          "cpu": null,
+          "digest": "05538e142fcaa3174d1bc2575c51cdad22e5908fcc0ec4a3a0cdf013a4779401",
+          "candidates": 3629488,
+          "coplanar": 110891,
+          "processMaxRSSKiB": null
+        },
+        {
+          "design": "91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933",
+          "engine": "current",
+          "phase": "paired",
+          "ms": 1911.6075419999997,
+          "cpu": null,
+          "digest": "05538e142fcaa3174d1bc2575c51cdad22e5908fcc0ec4a3a0cdf013a4779401",
+          "candidates": 68634117,
+          "coplanar": 110891,
+          "processMaxRSSKiB": null
+        },
+        {
+          "design": "91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933",
+          "engine": "current",
+          "phase": "paired",
+          "ms": 1954.3145829999994,
+          "cpu": null,
+          "digest": "05538e142fcaa3174d1bc2575c51cdad22e5908fcc0ec4a3a0cdf013a4779401",
+          "candidates": 68634117,
+          "coplanar": 110891,
+          "processMaxRSSKiB": null
+        },
+        {
+          "design": "91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933",
+          "engine": "before",
+          "phase": "paired",
+          "ms": 940.4075830000002,
+          "cpu": null,
+          "digest": "05538e142fcaa3174d1bc2575c51cdad22e5908fcc0ec4a3a0cdf013a4779401",
+          "candidates": 3629488,
+          "coplanar": 110891,
+          "processMaxRSSKiB": null
+        }
+      ]
+    },
+    {
+      "raw": "/Users/hilde/.codex/worktrees/layout-detail-latency/Leitbild/.health/layout-detail-latency/ownership-pair-refined.json",
+      "sha256": "4ef50d9733edd31aa2a4a1bd7349944ada436ab75106c366079e73a0cae40a58",
+      "records": [
+        {
+          "design": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+          "engine": "before",
+          "phase": "calibration",
+          "ms": 1839.7169169999997,
+          "cpu": null,
+          "digest": "69703abdea9607e89b6a38abc76b35948ad333c59b57b39cf8ee20d5b2c94337",
+          "candidates": 3946353,
+          "coplanar": 183625,
+          "processMaxRSSKiB": null
+        },
+        {
+          "design": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+          "engine": "current",
+          "phase": "calibration",
+          "ms": 1631.7255409999998,
+          "cpu": null,
+          "digest": "69703abdea9607e89b6a38abc76b35948ad333c59b57b39cf8ee20d5b2c94337",
+          "candidates": 3560409,
+          "coplanar": 183625,
+          "processMaxRSSKiB": null
+        },
+        {
+          "design": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+          "engine": "index-only",
+          "phase": "calibration",
+          "ms": 2062.546875,
+          "cpu": null,
+          "digest": "69703abdea9607e89b6a38abc76b35948ad333c59b57b39cf8ee20d5b2c94337",
+          "candidates": 3538332,
+          "coplanar": 183625,
+          "processMaxRSSKiB": null
+        },
+        {
+          "design": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+          "engine": "before",
+          "phase": "paired",
+          "ms": 1802.127458,
+          "cpu": null,
+          "digest": "69703abdea9607e89b6a38abc76b35948ad333c59b57b39cf8ee20d5b2c94337",
+          "candidates": 3946353,
+          "coplanar": 183625,
+          "processMaxRSSKiB": null
+        },
+        {
+          "design": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+          "engine": "index-only",
+          "phase": "paired",
+          "ms": 2661.4527500000004,
+          "cpu": null,
+          "digest": "69703abdea9607e89b6a38abc76b35948ad333c59b57b39cf8ee20d5b2c94337",
+          "candidates": 3538332,
+          "coplanar": 183625,
+          "processMaxRSSKiB": null
+        },
+        {
+          "design": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+          "engine": "current",
+          "phase": "paired",
+          "ms": 3847.977541,
+          "cpu": null,
+          "digest": "69703abdea9607e89b6a38abc76b35948ad333c59b57b39cf8ee20d5b2c94337",
+          "candidates": 3560409,
+          "coplanar": 183625,
+          "processMaxRSSKiB": null
+        },
+        {
+          "design": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+          "engine": "current",
+          "phase": "paired",
+          "ms": 5958.454666999998,
+          "cpu": null,
+          "digest": "69703abdea9607e89b6a38abc76b35948ad333c59b57b39cf8ee20d5b2c94337",
+          "candidates": 3560409,
+          "coplanar": 183625,
+          "processMaxRSSKiB": null
+        },
+        {
+          "design": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+          "engine": "index-only",
+          "phase": "paired",
+          "ms": 7985.434874999999,
+          "cpu": null,
+          "digest": "69703abdea9607e89b6a38abc76b35948ad333c59b57b39cf8ee20d5b2c94337",
+          "candidates": 3538332,
+          "coplanar": 183625,
+          "processMaxRSSKiB": null
+        },
+        {
+          "design": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+          "engine": "before",
+          "phase": "paired",
+          "ms": 3335.4932499999995,
+          "cpu": null,
+          "digest": "69703abdea9607e89b6a38abc76b35948ad333c59b57b39cf8ee20d5b2c94337",
+          "candidates": 3946353,
+          "coplanar": 183625,
+          "processMaxRSSKiB": null
+        },
+        {
+          "design": "91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933",
+          "engine": "before",
+          "phase": "calibration",
+          "ms": 1281.9986669999998,
+          "cpu": null,
+          "digest": "05538e142fcaa3174d1bc2575c51cdad22e5908fcc0ec4a3a0cdf013a4779401",
+          "candidates": 3629488,
+          "coplanar": 110891,
+          "processMaxRSSKiB": null
+        },
+        {
+          "design": "91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933",
+          "engine": "current",
+          "phase": "calibration",
+          "ms": 1715.4568750000035,
+          "cpu": null,
+          "digest": "05538e142fcaa3174d1bc2575c51cdad22e5908fcc0ec4a3a0cdf013a4779401",
+          "candidates": 2769184,
+          "coplanar": 110891,
+          "processMaxRSSKiB": null
+        },
+        {
+          "design": "91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933",
+          "engine": "index-only",
+          "phase": "calibration",
+          "ms": 2082.7406249999985,
+          "cpu": null,
+          "digest": "05538e142fcaa3174d1bc2575c51cdad22e5908fcc0ec4a3a0cdf013a4779401",
+          "candidates": 2807069,
+          "coplanar": 110891,
+          "processMaxRSSKiB": null
+        },
+        {
+          "design": "91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933",
+          "engine": "before",
+          "phase": "paired",
+          "ms": 1347.637042000002,
+          "cpu": null,
+          "digest": "05538e142fcaa3174d1bc2575c51cdad22e5908fcc0ec4a3a0cdf013a4779401",
+          "candidates": 3629488,
+          "coplanar": 110891,
+          "processMaxRSSKiB": null
+        },
+        {
+          "design": "91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933",
+          "engine": "index-only",
+          "phase": "paired",
+          "ms": 1233.1130419999972,
+          "cpu": null,
+          "digest": "05538e142fcaa3174d1bc2575c51cdad22e5908fcc0ec4a3a0cdf013a4779401",
+          "candidates": 2807069,
+          "coplanar": 110891,
+          "processMaxRSSKiB": null
+        },
+        {
+          "design": "91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933",
+          "engine": "current",
+          "phase": "paired",
+          "ms": 1334.136166999997,
+          "cpu": null,
+          "digest": "05538e142fcaa3174d1bc2575c51cdad22e5908fcc0ec4a3a0cdf013a4779401",
+          "candidates": 2769184,
+          "coplanar": 110891,
+          "processMaxRSSKiB": null
+        },
+        {
+          "design": "91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933",
+          "engine": "current",
+          "phase": "paired",
+          "ms": 1448.7836249999964,
+          "cpu": null,
+          "digest": "05538e142fcaa3174d1bc2575c51cdad22e5908fcc0ec4a3a0cdf013a4779401",
+          "candidates": 2769184,
+          "coplanar": 110891,
+          "processMaxRSSKiB": null
+        },
+        {
+          "design": "91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933",
+          "engine": "index-only",
+          "phase": "paired",
+          "ms": 1481.1111249999958,
+          "cpu": null,
+          "digest": "05538e142fcaa3174d1bc2575c51cdad22e5908fcc0ec4a3a0cdf013a4779401",
+          "candidates": 2807069,
+          "coplanar": 110891,
+          "processMaxRSSKiB": null
+        },
+        {
+          "design": "91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933",
+          "engine": "before",
+          "phase": "paired",
+          "ms": 1084.4634589999987,
+          "cpu": null,
+          "digest": "05538e142fcaa3174d1bc2575c51cdad22e5908fcc0ec4a3a0cdf013a4779401",
+          "candidates": 3629488,
+          "coplanar": 110891,
+          "processMaxRSSKiB": null
+        }
+      ]
+    },
+    {
+      "raw": "/Users/hilde/.codex/worktrees/layout-detail-latency/Leitbild/.health/layout-detail-latency/ownership-profile.json",
+      "sha256": "2764d45eb4738285ae7444001adb50434bafc6e9c7e2c541fdebb5ba57a91456",
+      "records": [
+        {
+          "design": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+          "engine": "before",
+          "phase": "paired",
+          "ms": 1923.130375,
+          "cpu": {
+            "user": 2038141,
+            "system": 137236
+          },
+          "digest": "69703abdea9607e89b6a38abc76b35948ad333c59b57b39cf8ee20d5b2c94337",
+          "candidates": 3946353,
+          "coplanar": 183625,
+          "processMaxRSSKiB": null
+        },
+        {
+          "design": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+          "engine": "current",
+          "phase": "paired",
+          "ms": 1921.259,
+          "cpu": {
+            "user": 1832522,
+            "system": 238893
+          },
+          "digest": "69703abdea9607e89b6a38abc76b35948ad333c59b57b39cf8ee20d5b2c94337",
+          "candidates": 3560409,
+          "coplanar": 183625,
+          "processMaxRSSKiB": null
+        },
+        {
+          "design": "91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933",
+          "engine": "before",
+          "phase": "paired",
+          "ms": 910.8142909999997,
+          "cpu": {
+            "user": 864831,
+            "system": 48007
+          },
+          "digest": "05538e142fcaa3174d1bc2575c51cdad22e5908fcc0ec4a3a0cdf013a4779401",
+          "candidates": 3629488,
+          "coplanar": 110891,
+          "processMaxRSSKiB": null
+        },
+        {
+          "design": "91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933",
+          "engine": "current",
+          "phase": "paired",
+          "ms": 1347.6763329999994,
+          "cpu": {
+            "user": 1217441,
+            "system": 139646
+          },
+          "digest": "05538e142fcaa3174d1bc2575c51cdad22e5908fcc0ec4a3a0cdf013a4779401",
+          "candidates": 2769184,
+          "coplanar": 110891,
+          "processMaxRSSKiB": null
+        }
+      ]
+    },
+    {
+      "raw": "/Users/hilde/.codex/worktrees/layout-detail-latency/Leitbild/.health/layout-detail-latency/ownership-fresh-95c2-before.json",
+      "sha256": "0ffd4442a6dbfb41041336336c4af59aef9f52918a74055ab8992be47d8b6c06",
+      "records": [
+        {
+          "design": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+          "engine": "before",
+          "phase": "paired",
+          "ms": 1864.036791,
+          "cpu": {
+            "user": 2019208,
+            "system": 115830
+          },
+          "digest": "69703abdea9607e89b6a38abc76b35948ad333c59b57b39cf8ee20d5b2c94337",
+          "candidates": 3946353,
+          "coplanar": 183625,
+          "processMaxRSSKiB": 1011440
+        }
+      ]
+    },
+    {
+      "raw": "/Users/hilde/.codex/worktrees/layout-detail-latency/Leitbild/.health/layout-detail-latency/ownership-fresh-95c2-current.json",
+      "sha256": "86f0c7fba48ed3798e623121c3bbc986e0ea39c200a06abc21507d822d6910a2",
+      "records": [
+        {
+          "design": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+          "engine": "current",
+          "phase": "paired",
+          "ms": 1572.5625840000002,
+          "cpu": {
+            "user": 1791321,
+            "system": 87457
+          },
+          "digest": "69703abdea9607e89b6a38abc76b35948ad333c59b57b39cf8ee20d5b2c94337",
+          "candidates": 3560409,
+          "coplanar": 183625,
+          "processMaxRSSKiB": 1082720
+        }
+      ]
+    },
+    {
+      "raw": "/Users/hilde/.codex/worktrees/layout-detail-latency/Leitbild/.health/layout-detail-latency/ownership-fresh-95c2-index-only.json",
+      "sha256": "7b48d5ef575c639f5f8bb178c0a72f6a25f07fd24935d2e0c8f42c6a1d01b9a2",
+      "records": [
+        {
+          "design": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+          "engine": "index-only",
+          "phase": "paired",
+          "ms": 2061.321584,
+          "cpu": {
+            "user": 2232211,
+            "system": 134163
+          },
+          "digest": "69703abdea9607e89b6a38abc76b35948ad333c59b57b39cf8ee20d5b2c94337",
+          "candidates": 3538332,
+          "coplanar": 183625,
+          "processMaxRSSKiB": 1006688
+        }
+      ]
+    },
+    {
+      "raw": "/Users/hilde/.codex/worktrees/layout-detail-latency/Leitbild/.health/layout-detail-latency/ownership-fresh-91f9-before.json",
+      "sha256": "dbac9de29250270e0455cb973e331891c760a8b5081d018cd594013d1bf2de10",
+      "records": [
+        {
+          "design": "91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933",
+          "engine": "before",
+          "phase": "paired",
+          "ms": 867.438,
+          "cpu": {
+            "user": 1060723,
+            "system": 52905
+          },
+          "digest": "05538e142fcaa3174d1bc2575c51cdad22e5908fcc0ec4a3a0cdf013a4779401",
+          "candidates": 3629488,
+          "coplanar": 110891,
+          "processMaxRSSKiB": 785360
+        }
+      ]
+    },
+    {
+      "raw": "/Users/hilde/.codex/worktrees/layout-detail-latency/Leitbild/.health/layout-detail-latency/ownership-fresh-91f9-current.json",
+      "sha256": "e2f0b3b0f060c2ae4fcd67c01586f8f6986119b6a1199b11663228117ebd3539",
+      "records": [
+        {
+          "design": "91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933",
+          "engine": "current",
+          "phase": "paired",
+          "ms": 1086.363417,
+          "cpu": {
+            "user": 1272990,
+            "system": 60848
+          },
+          "digest": "05538e142fcaa3174d1bc2575c51cdad22e5908fcc0ec4a3a0cdf013a4779401",
+          "candidates": 2769184,
+          "coplanar": 110891,
+          "processMaxRSSKiB": 742128
+        }
+      ]
+    },
+    {
+      "raw": "/Users/hilde/.codex/worktrees/layout-detail-latency/Leitbild/.health/layout-detail-latency/ownership-fresh-91f9-index-only.json",
+      "sha256": "2c7d25044f72837707e7ccbe1e210056a0d90425498ed5c71493ed2ba21d521e",
+      "records": [
+        {
+          "design": "91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933",
+          "engine": "index-only",
+          "phase": "paired",
+          "ms": 962.388125,
+          "cpu": {
+            "user": 1204429,
+            "system": 58387
+          },
+          "digest": "05538e142fcaa3174d1bc2575c51cdad22e5908fcc0ec4a3a0cdf013a4779401",
+          "candidates": 2807069,
+          "coplanar": 110891,
+          "processMaxRSSKiB": 799312
+        }
+      ]
+    },
+    {
+      "raw": "/Users/hilde/.codex/worktrees/layout-detail-latency/Leitbild/.health/layout-detail-latency/ownership-fresh-query-95c2.json",
+      "sha256": "cb59d05269e8dcf2614c41ff55cb29c504ec096650cd8b2ce6ef1b44912ae8e9",
+      "records": [
+        {
+          "design": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+          "engine": "current",
+          "phase": "paired",
+          "ms": 2138.046875,
+          "cpu": {
+            "user": 2079958,
+            "system": 214637
+          },
+          "digest": "69703abdea9607e89b6a38abc76b35948ad333c59b57b39cf8ee20d5b2c94337",
+          "candidates": 3560409,
+          "coplanar": 183625,
+          "processMaxRSSKiB": 910592
+        }
+      ]
+    },
+    {
+      "raw": "/Users/hilde/.codex/worktrees/layout-detail-latency/Leitbild/.health/layout-detail-latency/ownership-fresh-query-91f9.json",
+      "sha256": "b4e8ff8093213fffc0ad0c6644ad2c7c942e067439cc6f426827ee1e27c9709b",
+      "records": [
+        {
+          "design": "91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933",
+          "engine": "current",
+          "phase": "paired",
+          "ms": 1066.4770829999998,
+          "cpu": {
+            "user": 1218597,
+            "system": 68803
+          },
+          "digest": "05538e142fcaa3174d1bc2575c51cdad22e5908fcc0ec4a3a0cdf013a4779401",
+          "candidates": 2769184,
+          "coplanar": 110891,
+          "processMaxRSSKiB": 662720
+        }
+      ]
+    },
+    {
+      "raw": "/Users/hilde/.codex/worktrees/layout-detail-latency/Leitbild/.health/layout-detail-latency/ownership-fresh-ray-95c2.json",
+      "sha256": "5b310cd4c8ec65d18e1d4e894647710f46d9909fc393c8528820a49480be7b4b",
+      "records": [
+        {
+          "design": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+          "engine": "index-only",
+          "phase": "paired",
+          "ms": 3140.13625,
+          "cpu": {
+            "user": 2774209,
+            "system": 392116
+          },
+          "digest": "69703abdea9607e89b6a38abc76b35948ad333c59b57b39cf8ee20d5b2c94337",
+          "candidates": 11286834,
+          "coplanar": 183625,
+          "processMaxRSSKiB": 720544
+        }
+      ]
+    },
+    {
+      "raw": "/Users/hilde/.codex/worktrees/layout-detail-latency/Leitbild/.health/layout-detail-latency/ownership-fresh-ray-91f9.json",
+      "sha256": "57931d615c416167d19ada62e3ca522fe293701484935aa71f01f273ca41be13",
+      "records": [
+        {
+          "design": "91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933",
+          "engine": "index-only",
+          "phase": "paired",
+          "ms": 2124.381125,
+          "cpu": {
+            "user": 2218225,
+            "system": 125127
+          },
+          "digest": "05538e142fcaa3174d1bc2575c51cdad22e5908fcc0ec4a3a0cdf013a4779401",
+          "candidates": 54077166,
+          "coplanar": 110891,
+          "processMaxRSSKiB": 515104
+        }
+      ]
+    }
+  ],
+  "limits": [
+    "Bun CPU ownership-engine experiments, not built-app speedups. Input compilation/meshing and output hashing are outside measured engine calls.",
+    "First AB/BA lacked explicit pre-call GC. Long refined in-process sequence was unstable and not used for ranking. Later fresh processes each execute one call after an explicit test-only GC.",
+    "Broadphase false-leaf work can differ; all compared ownership/render/pick fingerprints remain exact.",
+    "Whole-process RSS includes source compilation and engine work, is not incremental builder allocation or retained GPU residency.",
+    "The two-level grouping helped unit but regressed campus; exact nonmedian refinement and the existing ray builder did not produce a robust two-family win. No prototype was adopted."
+  ]
+}

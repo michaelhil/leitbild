@@ -1,0 +1,618 @@
+{
+  "source": "1789768a5ea1ee08209024e33997a6def0a4f550",
+  "run": {
+    "workspaceId": "4e0a977a-2a7b-4688-98aa-f965fec4f4c3",
+    "definition": {
+      "workspaceId": "4e0a977a-2a7b-4688-98aa-f965fec4f4c3",
+      "moduleId": "world",
+      "type": "world.scenario",
+      "id": "halden-normal-operation",
+      "revisionId": "revision-cabc73270612df18fb798c431b629b45"
+    },
+    "invocationSent": true,
+    "start": {
+      "result": {
+        "id": "run-13cee898-546e-46b4-944b-f3b2b0524cc6",
+        "uiPath": "/workspaces/4e0a977a-2a7b-4688-98aa-f965fec4f4c3/world/runs/run-13cee898-546e-46b4-944b-f3b2b0524cc6"
+      },
+      "createdResources": [
+        {
+          "workspaceId": "4e0a977a-2a7b-4688-98aa-f965fec4f4c3",
+          "moduleId": "world",
+          "type": "world.simulation-run",
+          "id": "run-13cee898-546e-46b4-944b-f3b2b0524cc6"
+        }
+      ]
+    },
+    "resource": {
+      "workspaceId": "4e0a977a-2a7b-4688-98aa-f965fec4f4c3",
+      "moduleId": "world",
+      "type": "world.simulation-run",
+      "id": "run-13cee898-546e-46b4-944b-f3b2b0524cc6"
+    },
+    "runId": "run-13cee898-546e-46b4-944b-f3b2b0524cc6",
+    "url": "http://127.0.0.1:43130/workspaces/4e0a977a-2a7b-4688-98aa-f965fec4f4c3?world=run-13cee898-546e-46b4-944b-f3b2b0524cc6",
+    "execution": {
+      "result": {
+        "playback": "paused",
+        "pace": "realtime",
+        "currentSimulationTime": "2026-07-12T04:00:00.007Z",
+        "updatedAt": "2026-10-26T18:41:56.150Z",
+        "maximumPace": {
+          "available": true
+        },
+        "acceleration": null
+      }
+    }
+  },
+  "cold": {
+    "wallMs": 2351,
+    "world": {
+      "durationMs": 2000.8999998569489,
+      "frames": 0,
+      "longTasks": [
+        {
+          "start": 508.40000009536743,
+          "duration": 79
+        },
+        {
+          "start": 1660.7000000476837,
+          "duration": 51
+        },
+        {
+          "start": 1712.4000000953674,
+          "duration": 57
+        },
+        {
+          "start": 1813.5999999046326,
+          "duration": 120
+        }
+      ],
+      "viewport": {
+        "width": 1440,
+        "height": 871,
+        "dpr": 1
+      },
+      "status": "0 layouts ready · 0 loading · 0 unavailable · owner-qualified alarms remain in Run"
+    },
+    "host": [
+      {
+        "start": 848.6000001430511,
+        "duration": 79
+      },
+      {
+        "start": 2000.9000000953674,
+        "duration": 51
+      },
+      {
+        "start": 2052.600000143051,
+        "duration": 57
+      },
+      {
+        "start": 2153.7999999523163,
+        "duration": 120
+      }
+    ],
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36"
+  },
+  "initial": {
+    "name": "browser-initial-ready",
+    "durationMs": 6089.699999809265,
+    "frames": 0,
+    "longTasks": [
+      {
+        "start": 508.40000009536743,
+        "duration": 79
+      },
+      {
+        "start": 1660.7000000476837,
+        "duration": 51
+      },
+      {
+        "start": 1712.4000000953674,
+        "duration": 57
+      },
+      {
+        "start": 1813.5999999046326,
+        "duration": 120
+      }
+    ],
+    "viewport": {
+      "width": 1440,
+      "height": 871,
+      "dpr": 1
+    },
+    "status": "5 layouts ready · 0 loading · 0 unavailable · owner-qualified alarms remain in Run"
+  },
+  "transitions": [
+    {
+      "name": "initial-site-3d",
+      "wallMs": 82,
+      "durationMs": 6245,
+      "frames": 0,
+      "longTasks": [
+        {
+          "start": 508.40000009536743,
+          "duration": 79
+        },
+        {
+          "start": 1660.7000000476837,
+          "duration": 51
+        },
+        {
+          "start": 1712.4000000953674,
+          "duration": 57
+        },
+        {
+          "start": 1813.5999999046326,
+          "duration": 120
+        }
+      ],
+      "viewport": {
+        "width": 1440,
+        "height": 871,
+        "dpr": 1
+      },
+      "status": "5 layouts ready · 0 loading · 0 unavailable · owner-qualified alarms remain in Run",
+      "responses": []
+    },
+    {
+      "name": "first-room-focus",
+      "wallMs": 582,
+      "durationMs": 6828.099999904633,
+      "frames": 0,
+      "longTasks": [
+        {
+          "start": 508.40000009536743,
+          "duration": 79
+        },
+        {
+          "start": 1660.7000000476837,
+          "duration": 51
+        },
+        {
+          "start": 1712.4000000953674,
+          "duration": 57
+        },
+        {
+          "start": 1813.5999999046326,
+          "duration": 120
+        }
+      ],
+      "viewport": {
+        "width": 1440,
+        "height": 871,
+        "dpr": 1
+      },
+      "status": "Paused · fresh · 108 modelled subjects · 0 owner alerts",
+      "responses": [
+        {
+          "id": 9,
+          "key": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/overview/3d",
+          "sourceKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/overview",
+          "request": "prepare",
+          "started": 6285.400000095367,
+          "kind": "prepared",
+          "ms": 13.5
+        },
+        {
+          "id": 10,
+          "key": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/overview/3d",
+          "sourceKey": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/overview",
+          "request": "prepare",
+          "started": 6285.400000095367,
+          "kind": "prepared",
+          "ms": 15
+        }
+      ]
+    },
+    {
+      "name": "first-operating-floor",
+      "wallMs": 782,
+      "durationMs": 7610.599999904633,
+      "frames": 0,
+      "longTasks": [
+        {
+          "start": 508.40000009536743,
+          "duration": 79
+        },
+        {
+          "start": 1660.7000000476837,
+          "duration": 51
+        },
+        {
+          "start": 1712.4000000953674,
+          "duration": 57
+        },
+        {
+          "start": 1813.5999999046326,
+          "duration": 120
+        }
+      ],
+      "viewport": {
+        "width": 1440,
+        "height": 871,
+        "dpr": 1
+      },
+      "status": "Paused · fresh · 108 modelled subjects · 0 owner alerts",
+      "responses": [
+        {
+          "id": 11,
+          "key": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/[\"3d\",\"operating\",true,0]",
+          "sourceKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/detail",
+          "request": "prepare",
+          "started": 6870.200000047684,
+          "kind": "prepared",
+          "ms": 316.59999990463257
+        }
+      ]
+    },
+    {
+      "name": "first-stack-all-floors",
+      "wallMs": 783,
+      "durationMs": 8394.799999952316,
+      "frames": 0,
+      "longTasks": [
+        {
+          "start": 508.40000009536743,
+          "duration": 79
+        },
+        {
+          "start": 1660.7000000476837,
+          "duration": 51
+        },
+        {
+          "start": 1712.4000000953674,
+          "duration": 57
+        },
+        {
+          "start": 1813.5999999046326,
+          "duration": 120
+        }
+      ],
+      "viewport": {
+        "width": 1440,
+        "height": 871,
+        "dpr": 1
+      },
+      "status": "Paused · fresh · 108 modelled subjects · 0 owner alerts",
+      "responses": []
+    },
+    {
+      "name": "return-operating-floor",
+      "wallMs": 798,
+      "durationMs": 9194.299999952316,
+      "frames": 0,
+      "longTasks": [
+        {
+          "start": 508.40000009536743,
+          "duration": 79
+        },
+        {
+          "start": 1660.7000000476837,
+          "duration": 51
+        },
+        {
+          "start": 1712.4000000953674,
+          "duration": 57
+        },
+        {
+          "start": 1813.5999999046326,
+          "duration": 120
+        }
+      ],
+      "viewport": {
+        "width": 1440,
+        "height": 871,
+        "dpr": 1
+      },
+      "status": "Paused · fresh · 108 modelled subjects · 0 owner alerts",
+      "responses": [
+        {
+          "id": 12,
+          "key": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/[\"3d\",\"operating\",true,0]",
+          "sourceKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/detail",
+          "request": "prepare",
+          "started": 8445.599999904633,
+          "kind": "prepared",
+          "ms": 296.80000019073486
+        }
+      ]
+    },
+    {
+      "name": "return-stack-all-floors",
+      "wallMs": 784,
+      "durationMs": 9979,
+      "frames": 0,
+      "longTasks": [
+        {
+          "start": 508.40000009536743,
+          "duration": 79
+        },
+        {
+          "start": 1660.7000000476837,
+          "duration": 51
+        },
+        {
+          "start": 1712.4000000953674,
+          "duration": 57
+        },
+        {
+          "start": 1813.5999999046326,
+          "duration": 120
+        }
+      ],
+      "viewport": {
+        "width": 1440,
+        "height": 871,
+        "dpr": 1
+      },
+      "status": "Paused · fresh · 108 modelled subjects · 0 owner alerts",
+      "responses": []
+    },
+    {
+      "name": "first-uncut-stack",
+      "wallMs": 1214,
+      "durationMs": 11194.799999952316,
+      "frames": 0,
+      "longTasks": [
+        {
+          "start": 508.40000009536743,
+          "duration": 79
+        },
+        {
+          "start": 1660.7000000476837,
+          "duration": 51
+        },
+        {
+          "start": 1712.4000000953674,
+          "duration": 57
+        },
+        {
+          "start": 1813.5999999046326,
+          "duration": 120
+        }
+      ],
+      "viewport": {
+        "width": 1440,
+        "height": 871,
+        "dpr": 1
+      },
+      "status": "Paused · fresh · 108 modelled subjects · 0 owner alerts",
+      "responses": [
+        {
+          "id": 13,
+          "key": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/[\"3d\",\"all\",false,0]",
+          "sourceKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/detail",
+          "request": "prepare",
+          "started": 10034.700000047684,
+          "kind": "prepared",
+          "ms": 1102.0999999046326
+        }
+      ]
+    }
+  ],
+  "messages": [
+    {
+      "kind": "register",
+      "sourceKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/overview",
+      "bytes": 20880,
+      "ms": 0.09999990463256836
+    },
+    {
+      "kind": "register",
+      "sourceKey": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/overview",
+      "bytes": 5520,
+      "ms": 0.09999990463256836
+    },
+    {
+      "kind": "physical-source",
+      "sourceKey": "pwr-full-unit",
+      "bytes": 0,
+      "ms": 1.0999999046325684
+    },
+    {
+      "kind": "physical-source",
+      "sourceKey": "pwr-campus",
+      "bytes": 0,
+      "ms": 1.0999999046325684
+    },
+    {
+      "kind": "prepare",
+      "sourceKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/overview",
+      "key": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/overview/2d",
+      "bytes": 0,
+      "ms": 0
+    },
+    {
+      "kind": "prepare",
+      "sourceKey": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/overview",
+      "key": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/overview/2d",
+      "bytes": 0,
+      "ms": 0
+    },
+    {
+      "kind": "register",
+      "sourceKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/detail",
+      "bytes": 18361536,
+      "ms": 3
+    },
+    {
+      "kind": "prepare",
+      "sourceKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/detail",
+      "key": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/[\"3d\",\"all\",true,0]",
+      "bytes": 0,
+      "ms": 0
+    },
+    {
+      "kind": "register",
+      "sourceKey": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/detail",
+      "bytes": 22970652,
+      "ms": 3.799999952316284
+    },
+    {
+      "kind": "prepare",
+      "sourceKey": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/detail",
+      "key": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/[\"3d\",\"all\",true,0]",
+      "bytes": 0,
+      "ms": 0
+    },
+    {
+      "kind": "prepare",
+      "sourceKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/overview",
+      "key": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/overview/3d",
+      "bytes": 0,
+      "ms": 0
+    },
+    {
+      "kind": "prepare",
+      "sourceKey": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/overview",
+      "key": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/overview/3d",
+      "bytes": 0,
+      "ms": 0
+    },
+    {
+      "kind": "prepare",
+      "sourceKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/detail",
+      "key": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/[\"3d\",\"operating\",true,0]",
+      "bytes": 0,
+      "ms": 0
+    },
+    {
+      "kind": "prepare",
+      "sourceKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/detail",
+      "key": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/[\"3d\",\"operating\",true,0]",
+      "bytes": 0,
+      "ms": 0
+    },
+    {
+      "kind": "prepare",
+      "sourceKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/detail",
+      "key": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/[\"3d\",\"all\",false,0]",
+      "bytes": 0,
+      "ms": 0
+    }
+  ],
+  "responses": [
+    {
+      "id": 1,
+      "sourceKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/overview",
+      "request": "register",
+      "started": 2269.2000000476837,
+      "kind": "registered",
+      "ms": 90.29999995231628
+    },
+    {
+      "id": 2,
+      "sourceKey": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/overview",
+      "request": "register",
+      "started": 2270,
+      "kind": "registered",
+      "ms": 90.59999990463257
+    },
+    {
+      "id": 3,
+      "key": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/overview/2d",
+      "sourceKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/overview",
+      "request": "prepare",
+      "started": 2359.5,
+      "kind": "prepared",
+      "ms": 13.5
+    },
+    {
+      "id": 4,
+      "key": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/overview/2d",
+      "sourceKey": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/overview",
+      "request": "prepare",
+      "started": 2360.5999999046326,
+      "kind": "prepared",
+      "ms": 13.600000143051147
+    },
+    {
+      "id": 5,
+      "sourceKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/detail",
+      "request": "register",
+      "started": 2895.9000000953674,
+      "kind": "registered",
+      "ms": 46.59999990463257
+    },
+    {
+      "id": 6,
+      "key": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/[\"3d\",\"all\",true,0]",
+      "sourceKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/detail",
+      "request": "prepare",
+      "started": 2942.5,
+      "kind": "prepared",
+      "ms": 1218.9000000953674
+    },
+    {
+      "id": 7,
+      "sourceKey": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/detail",
+      "request": "register",
+      "started": 2984.2000000476837,
+      "kind": "registered",
+      "ms": 1198.2999999523163
+    },
+    {
+      "id": 8,
+      "key": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/[\"3d\",\"all\",true,0]",
+      "sourceKey": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/detail",
+      "request": "prepare",
+      "started": 4182.5,
+      "kind": "prepared",
+      "ms": 1851.7999999523163
+    },
+    {
+      "id": 9,
+      "key": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/overview/3d",
+      "sourceKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/overview",
+      "request": "prepare",
+      "started": 6285.400000095367,
+      "kind": "prepared",
+      "ms": 13.5
+    },
+    {
+      "id": 10,
+      "key": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/overview/3d",
+      "sourceKey": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/overview",
+      "request": "prepare",
+      "started": 6285.400000095367,
+      "kind": "prepared",
+      "ms": 15
+    },
+    {
+      "id": 11,
+      "key": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/[\"3d\",\"operating\",true,0]",
+      "sourceKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/detail",
+      "request": "prepare",
+      "started": 6870.200000047684,
+      "kind": "prepared",
+      "ms": 316.59999990463257
+    },
+    {
+      "id": 12,
+      "key": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/[\"3d\",\"operating\",true,0]",
+      "sourceKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/detail",
+      "request": "prepare",
+      "started": 8445.599999904633,
+      "kind": "prepared",
+      "ms": 296.80000019073486
+    },
+    {
+      "id": 13,
+      "key": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/[\"3d\",\"all\",false,0]",
+      "sourceKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/detail",
+      "request": "prepare",
+      "started": 10034.700000047684,
+      "kind": "prepared",
+      "ms": 1102.0999999046326
+    }
+  ],
+  "pending": 0,
+  "exceptions": [],
+  "limits": [
+    "Real built product, fresh isolated Chrome profile and paused local Run; no production Run changes.",
+    "Worker timings include queueing and response transfer; transition wall time includes the existing test helper polling/UI waits, not isolated geometry CPU.",
+    "One Apple M2, DPR1, local services and read-only HTTPS vector assets; not WAN or constrained-device qualification."
+  ]
+}

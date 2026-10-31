@@ -1,0 +1,382 @@
+{
+  "baseline": {
+    "testedAppCommit": "e0ff789dd58033b7ddfa3728efa811f01f101dd8",
+    "runnerCommit": "e0ff789dd58033b7ddfa3728efa811f01f101dd8",
+    "receiptSourceDesigns": [
+      {
+        "design": "58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f",
+        "compiler": "743047de52fe80efb06f9c9e2a2aedb2cf216482a97ef8f4873a7917737cbfe7"
+      },
+      {
+        "design": "8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15",
+        "compiler": "743047de52fe80efb06f9c9e2a2aedb2cf216482a97ef8f4873a7917737cbfe7"
+      }
+    ],
+    "preparationWorkers": 1,
+    "mounted": {
+      "navigationToControlsMs": 2451.274708,
+      "world": {
+        "at": 2222.199999809265,
+        "pending": 0,
+        "jobs": 0,
+        "sources": 0
+      }
+    },
+    "exceptions": 0,
+    "observerErrors": [],
+    "pending": 0
+  },
+  "candidate": {
+    "testedAppCommit": "1079c53603234ba44100df85df98757a7b7e7839",
+    "runnerCommit": "1079c53603234ba44100df85df98757a7b7e7839",
+    "receiptSourceDesigns": [
+      {
+        "design": "58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f",
+        "compiler": "743047de52fe80efb06f9c9e2a2aedb2cf216482a97ef8f4873a7917737cbfe7"
+      },
+      {
+        "design": "8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15",
+        "compiler": "743047de52fe80efb06f9c9e2a2aedb2cf216482a97ef8f4873a7917737cbfe7"
+      }
+    ],
+    "preparationWorkers": 2,
+    "mounted": {
+      "navigationToControlsMs": 2306.393709,
+      "world": {
+        "at": 1964.9000000953674,
+        "pending": 0,
+        "jobs": 0,
+        "sources": 0
+      }
+    },
+    "exceptions": 0,
+    "observerErrors": [],
+    "pending": 0
+  },
+  "instrumentationSha256": "3b8b7035ba3d8b27c65f39083fac57d3d266593d8b5fd946be509d6f4816d011",
+  "sameRetainedSourceIdentities": true,
+  "sameRetainedRunFilesBeforeStart": {
+    "allRetainedRunFilesMatchOriginal": true,
+    "files": 11,
+    "method": "Byte-hash equality of the same closed paused Run before both isolated local server starts; no saved state is published here."
+  },
+  "coldObservedInstances": {
+    "baseline": {
+      "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/detail": [
+        4
+      ],
+      "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/detail": [
+        1
+      ]
+    },
+    "candidate": {
+      "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/detail": [
+        4
+      ],
+      "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/detail": [
+        1
+      ]
+    }
+  },
+  "actions": [
+    {
+      "name": "open-browser-cold",
+      "baselineFirstDrawMs": 1787.5999999046326,
+      "candidateFirstDrawMs": 1817.6000001430511,
+      "baselineGlobalSettledGpuMs": 3332.2999999523163,
+      "candidateGlobalSettledGpuMs": 2270.600000143051,
+      "settledReductionPercent": 31.86087686656236,
+      "baselineOwnerFresh": {
+        "applicable": false,
+        "evidence": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run"
+      },
+      "candidateOwnerFresh": {
+        "applicable": false,
+        "evidence": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run"
+      }
+    },
+    {
+      "name": "site-3d",
+      "baselineFirstDrawMs": 67.70000004768372,
+      "candidateFirstDrawMs": 24.899999856948853,
+      "baselineGlobalSettledGpuMs": 97.29999995231628,
+      "candidateGlobalSettledGpuMs": 45.700000047683716,
+      "settledReductionPercent": 53.0318601540803,
+      "baselineOwnerFresh": {
+        "applicable": false,
+        "evidence": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run"
+      },
+      "candidateOwnerFresh": {
+        "applicable": false,
+        "evidence": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run"
+      }
+    },
+    {
+      "name": "first-turbine-hall-focus",
+      "baselineFirstDrawMs": 30.40000009536743,
+      "candidateFirstDrawMs": 22.40000009536743,
+      "baselineGlobalSettledGpuMs": 62.200000047683716,
+      "candidateGlobalSettledGpuMs": 30.200000047683716,
+      "settledReductionPercent": 51.44694529818037,
+      "baselineOwnerFresh": {
+        "applicable": true,
+        "at": 5787.099999904633,
+        "actionToFreshMs": 65.5,
+        "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+      },
+      "candidateOwnerFresh": {
+        "applicable": true,
+        "at": 4330.700000047684,
+        "actionToFreshMs": 33.90000009536743,
+        "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+      }
+    },
+    {
+      "name": "first-operating-3d",
+      "baselineFirstDrawMs": 297.19999980926514,
+      "candidateFirstDrawMs": 323.19999980926514,
+      "baselineGlobalSettledGpuMs": 328.59999990463257,
+      "candidateGlobalSettledGpuMs": 336.5,
+      "settledReductionPercent": -2.404138800261779,
+      "baselineOwnerFresh": {
+        "applicable": true,
+        "at": 6117.799999952316,
+        "actionToFreshMs": 329.2999999523163,
+        "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+      },
+      "candidateOwnerFresh": {
+        "applicable": true,
+        "at": 4691.700000047684,
+        "actionToFreshMs": 337.39999985694885,
+        "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+      }
+    },
+    {
+      "name": "first-stack-3d",
+      "baselineFirstDrawMs": 35.09999990463257,
+      "candidateFirstDrawMs": 25.799999952316284,
+      "baselineGlobalSettledGpuMs": 65.29999995231628,
+      "candidateGlobalSettledGpuMs": 31.59999990463257,
+      "settledReductionPercent": 51.60796335726234,
+      "baselineOwnerFresh": {
+        "applicable": true,
+        "at": 6184.5,
+        "actionToFreshMs": 66,
+        "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+      },
+      "candidateOwnerFresh": {
+        "applicable": true,
+        "at": 4725.400000095367,
+        "actionToFreshMs": 32.90000009536743,
+        "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+      }
+    },
+    {
+      "name": "gc-return-operating-3d",
+      "baselineFirstDrawMs": 334.2000000476837,
+      "candidateFirstDrawMs": 334.40000009536743,
+      "baselineGlobalSettledGpuMs": 365.40000009536743,
+      "candidateGlobalSettledGpuMs": 348.90000009536743,
+      "settledReductionPercent": 4.515599342007004,
+      "baselineOwnerFresh": {
+        "applicable": true,
+        "at": 6651.299999952316,
+        "actionToFreshMs": 366.2000000476837,
+        "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+      },
+      "candidateOwnerFresh": {
+        "applicable": true,
+        "at": 5161.299999952316,
+        "actionToFreshMs": 352.5,
+        "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+      }
+    },
+    {
+      "name": "gc-return-stack-3d",
+      "baselineFirstDrawMs": 34.90000009536743,
+      "candidateFirstDrawMs": 26.800000190734863,
+      "baselineGlobalSettledGpuMs": 66,
+      "candidateGlobalSettledGpuMs": 32.30000019073486,
+      "settledReductionPercent": 51.060605771613844,
+      "baselineOwnerFresh": {
+        "applicable": true,
+        "at": 6818.299999952316,
+        "actionToFreshMs": 67.10000014305115,
+        "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+      },
+      "candidateOwnerFresh": {
+        "applicable": true,
+        "at": 5258.200000047684,
+        "actionToFreshMs": 33.10000014305115,
+        "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+      }
+    },
+    {
+      "name": "first-uncut-stack",
+      "baselineFirstDrawMs": 1106.6999998092651,
+      "candidateFirstDrawMs": 997.3999998569489,
+      "baselineGlobalSettledGpuMs": 1130.3999998569489,
+      "candidateGlobalSettledGpuMs": 1013.5999999046326,
+      "settledReductionPercent": 10.332625616339108,
+      "baselineOwnerFresh": {
+        "applicable": true,
+        "at": 7951,
+        "actionToFreshMs": 1131,
+        "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+      },
+      "candidateOwnerFresh": {
+        "applicable": true,
+        "at": 6275.700000047684,
+        "actionToFreshMs": 1015,
+        "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+      }
+    },
+    {
+      "name": "gc-return-cutaway-stack",
+      "baselineFirstDrawMs": 27.5,
+      "candidateFirstDrawMs": 27.5,
+      "baselineGlobalSettledGpuMs": 58.39999985694885,
+      "candidateGlobalSettledGpuMs": 48.299999952316284,
+      "settledReductionPercent": 17.294520427007843,
+      "baselineOwnerFresh": {
+        "applicable": true,
+        "at": 8084.899999856949,
+        "actionToFreshMs": 59.39999985694885,
+        "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+      },
+      "candidateOwnerFresh": {
+        "applicable": true,
+        "at": 6391.700000047684,
+        "actionToFreshMs": 49.200000047683716,
+        "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+      }
+    },
+    {
+      "name": "first-plan",
+      "baselineFirstDrawMs": 533.0999999046326,
+      "candidateFirstDrawMs": 452.60000014305115,
+      "baselineGlobalSettledGpuMs": 563.8999998569489,
+      "candidateGlobalSettledGpuMs": 464.10000014305115,
+      "settledReductionPercent": 17.698173388759553,
+      "baselineOwnerFresh": {
+        "applicable": true,
+        "at": 8651,
+        "actionToFreshMs": 564.5,
+        "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+      },
+      "candidateOwnerFresh": {
+        "applicable": true,
+        "at": 6858.200000047684,
+        "actionToFreshMs": 464.90000009536743,
+        "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+      }
+    },
+    {
+      "name": "first-plan-operating",
+      "baselineFirstDrawMs": 266.90000009536743,
+      "candidateFirstDrawMs": 250.20000004768372,
+      "baselineGlobalSettledGpuMs": 298.7000000476837,
+      "candidateGlobalSettledGpuMs": 265,
+      "settledReductionPercent": 11.282222980349488,
+      "baselineOwnerFresh": {
+        "applicable": true,
+        "at": 8951.099999904633,
+        "actionToFreshMs": 299.40000009536743,
+        "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+      },
+      "candidateOwnerFresh": {
+        "applicable": true,
+        "at": 7124.700000047684,
+        "actionToFreshMs": 265.60000014305115,
+        "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+      }
+    },
+    {
+      "name": "first-plan-lower",
+      "baselineFirstDrawMs": 33.39999985694885,
+      "candidateFirstDrawMs": 16.399999856948853,
+      "baselineGlobalSettledGpuMs": 64.89999985694885,
+      "candidateGlobalSettledGpuMs": 31.699999809265137,
+      "settledReductionPercent": 51.15562422320866,
+      "baselineOwnerFresh": {
+        "applicable": true,
+        "at": 9017.599999904633,
+        "actionToFreshMs": 65.59999990463257,
+        "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+      },
+      "candidateOwnerFresh": {
+        "applicable": true,
+        "at": 7158.200000047684,
+        "actionToFreshMs": 32.299999952316284,
+        "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+      }
+    },
+    {
+      "name": "gc-return-plan-operating",
+      "baselineFirstDrawMs": 34.5,
+      "candidateFirstDrawMs": 17.40000009536743,
+      "baselineGlobalSettledGpuMs": 66,
+      "candidateGlobalSettledGpuMs": 32.60000014305115,
+      "settledReductionPercent": 50.60606038931644,
+      "baselineOwnerFresh": {
+        "applicable": true,
+        "at": 9184.5,
+        "actionToFreshMs": 66.80000019073486,
+        "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+      },
+      "candidateOwnerFresh": {
+        "applicable": true,
+        "at": 7241.5,
+        "actionToFreshMs": 33.40000009536743,
+        "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+      }
+    },
+    {
+      "name": "return-3d-operating",
+      "baselineFirstDrawMs": 300.60000014305115,
+      "candidateFirstDrawMs": 266.69999980926514,
+      "baselineGlobalSettledGpuMs": 1698.2000000476837,
+      "candidateGlobalSettledGpuMs": 1231.6999998092651,
+      "settledReductionPercent": 27.470262644289235,
+      "baselineOwnerFresh": {
+        "applicable": true,
+        "at": 10884.399999856949,
+        "actionToFreshMs": 1699,
+        "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+      },
+      "candidateOwnerFresh": {
+        "applicable": true,
+        "at": 8475.099999904633,
+        "actionToFreshMs": 1232.6999998092651,
+        "evidence": "Paused \u00b7 fresh \u00b7 108 modelled subjects \u00b7 0 owner alerts"
+      }
+    },
+    {
+      "name": "gc-fresh-browser-owner",
+      "baselineFirstDrawMs": 1245.0999999046326,
+      "candidateFirstDrawMs": 1051.3999998569489,
+      "baselineGlobalSettledGpuMs": 2779.2000000476837,
+      "candidateGlobalSettledGpuMs": 1398.0999999046326,
+      "settledReductionPercent": 49.694156596119576,
+      "baselineOwnerFresh": {
+        "applicable": false,
+        "evidence": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run"
+      },
+      "candidateOwnerFresh": {
+        "applicable": false,
+        "evidence": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run"
+      }
+    }
+  ],
+  "rawReceiptSha256": {
+    "baseline": "d67bda29a11bbad9e0504a3595908c0317247357c2da8b887b183b5103958dc2",
+    "candidate": "79ddc05d9798097f341d387a799fb152f4086653a558015835f28f8f3f72e001"
+  },
+  "limits": [
+    "Single quiet paired run on one device/browser; this compares the combined frozen1079 candidate, not worker changes alone.",
+    "First requested asset draw and global all-site settled GPU checkpoint are different; no physical-monitor presentation timestamp is claimed.",
+    "Source/Run are identical retainedr2. Newr3profile qualifies separately and is not an optimization comparison.",
+    "Real map/reference assets use the same read-only production HTTPS proxy. No productionRunAPIroute is proxied.",
+    "Rejected missing-map calibration and build-contended functional run are preserved but excluded from timing comparison."
+  ]
+}

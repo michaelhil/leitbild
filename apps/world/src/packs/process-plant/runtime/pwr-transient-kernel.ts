@@ -35,6 +35,9 @@ export interface PwrTransientKernel {
     readonly steamGeneratorTubeUncoveredFraction: ReadonlyArray<NumberHandle>
     readonly steamGeneratorVoidFraction: ReadonlyArray<NumberHandle>
     readonly steamGeneratorHeatTransferMw: ReadonlyArray<NumberHandle>
+    readonly steamGeneratorSecondaryHeatTransferMw: ReadonlyArray<NumberHandle>
+    readonly steamGeneratorMetalStoredEnergyRateMw: ReadonlyArray<NumberHandle>
+    readonly steamGeneratorMetalEnergyResidualMw: ReadonlyArray<NumberHandle>
     readonly steamGeneratorSteamOutflowKgPerS: ReadonlyArray<NumberHandle>
     readonly steamGeneratorFeedwaterFlowKgPerS: ReadonlyArray<NumberHandle>
     readonly feedwaterTankInventoryKg: NumberHandle | null
@@ -60,6 +63,8 @@ export interface PwrTransientKernel {
     readonly coreDecayHeatMw: NumberHandle | null
     readonly coreTotalThermalPowerMw: NumberHandle | null
     readonly coreHeatRemovalDeficitMw: NumberHandle | null
+    readonly primaryLiquidBoundaryCoolingMw: NumberHandle | null
+    readonly primaryNetHeatLoadMw: NumberHandle | null
     readonly coreCoolingAvailabilityFraction: NumberHandle | null
     readonly fuelHeatupRateCPerS: NumberHandle | null
     readonly accumulatorInventoryKg: ReadonlyArray<NumberHandle>
@@ -113,7 +118,9 @@ export interface PwrTransientDiagnostics {
     readonly maxVoidFraction: number | null
     readonly drySteamGeneratorCount: number
     readonly tubeBundleUncoveredSteamGeneratorCount: number
-    readonly heatTransferMw: number
+    readonly primaryHeatTransferMw: number
+    readonly boilingHeatTransferMw: number
+    readonly metalStoredEnergyRateMw: number
     readonly steamOutflowKgPerS: number
     readonly feedwaterFlowKgPerS: number
     readonly feedwaterTankInventoryKg: number | null
@@ -145,6 +152,8 @@ export interface PwrTransientDiagnostics {
     readonly decayHeatMw: number | null
     readonly totalThermalPowerMw: number | null
     readonly heatRemovalDeficitMw: number | null
+    readonly liquidBoundaryCoolingMw: number | null
+    readonly netHeatLoadMw: number | null
     readonly coolingAvailabilityFraction: number | null
     readonly fuelHeatupRateCPerS: number | null
   }
@@ -170,6 +179,7 @@ export interface PwrTransientDiagnostics {
     readonly maxSteamGeneratorLiquidResidualKg: number
     readonly maxSteamGeneratorSteamResidualKg: number
     readonly maxSteamGeneratorBoilingResidualMw: number
+    readonly maxSteamGeneratorMetalEnergyResidualMw: number
     readonly primaryInventoryResidualKg: number | null
     readonly pressurizerWaterResidualKg: number | null
     readonly pressurizerSteamResidualKg: number | null
@@ -340,6 +350,9 @@ export const compilePwrTransientKernel = (
       steamGeneratorTubeUncoveredFraction: handlesFor(table, steamGenerators, 'tubeUncoveredFraction'),
       steamGeneratorVoidFraction: handlesFor(table, steamGenerators, 'voidFraction'),
       steamGeneratorHeatTransferMw: handlesFor(table, steamGenerators, 'heatTransferMw'),
+      steamGeneratorSecondaryHeatTransferMw: handlesFor(table, steamGenerators, 'secondaryHeatTransferMw'),
+      steamGeneratorMetalStoredEnergyRateMw: handlesFor(table, steamGenerators, 'metalStoredEnergyRateMw'),
+      steamGeneratorMetalEnergyResidualMw: handlesFor(table, steamGenerators, 'metalEnergyBalanceResidualMw'),
       steamGeneratorSteamOutflowKgPerS: handlesFor(table, steamGenerators, 'steamOutflowKgPerS'),
       steamGeneratorFeedwaterFlowKgPerS: handlesFor(table, steamGenerators, 'feedwaterFlowKgPerS'),
       feedwaterTankInventoryKg: handleFor(table, feedwaterTank, 'inventoryKg'),
@@ -365,6 +378,8 @@ export const compilePwrTransientKernel = (
       coreDecayHeatMw: handleFor(table, core, 'decayHeatMw'),
       coreTotalThermalPowerMw: handleFor(table, core, 'totalThermalPowerMw'),
       coreHeatRemovalDeficitMw: handleFor(table, core, 'coreHeatRemovalDeficitMw'),
+      primaryLiquidBoundaryCoolingMw: handleFor(table, core, 'primaryLiquidBoundaryCoolingMw'),
+      primaryNetHeatLoadMw: handleFor(table, core, 'primaryNetHeatLoadMw'),
       coreCoolingAvailabilityFraction: handleFor(table, core, 'coreCoolingAvailabilityFraction'),
       fuelHeatupRateCPerS: handleFor(table, core, 'fuelHeatupRateCPerS'),
       accumulatorInventoryKg: handlesFor(table, accumulators, 'liquidInventoryKg'),
@@ -429,7 +444,9 @@ export const evaluatePwrTransientKernel = (
       maxVoidFraction: maximum(table, handles.steamGeneratorVoidFraction),
       drySteamGeneratorCount: countNumbers(table, handles.steamGeneratorLevelPercent, level => level <= 5),
       tubeBundleUncoveredSteamGeneratorCount: countNumbers(table, handles.steamGeneratorTubeUncoveredFraction, uncovered => uncovered > 0.05),
-      heatTransferMw: heatTransfer,
+      primaryHeatTransferMw: heatTransfer,
+      boilingHeatTransferMw: sumNumbers(table, handles.steamGeneratorSecondaryHeatTransferMw),
+      metalStoredEnergyRateMw: sumNumbers(table, handles.steamGeneratorMetalStoredEnergyRateMw),
       steamOutflowKgPerS: sumNumbers(table, handles.steamGeneratorSteamOutflowKgPerS),
       feedwaterFlowKgPerS: sumNumbers(table, handles.steamGeneratorFeedwaterFlowKgPerS),
       feedwaterTankInventoryKg: readOptionalNumber(table, handles.feedwaterTankInventoryKg),
@@ -460,8 +477,9 @@ export const evaluatePwrTransientKernel = (
       fissionPowerMw: readOptionalNumber(table, handles.coreFissionPowerMw),
       decayHeatMw: readOptionalNumber(table, handles.coreDecayHeatMw),
       totalThermalPowerMw: totalThermalPower,
-      heatRemovalDeficitMw: explicitHeatRemovalDeficit
-        ?? (totalThermalPower === null ? null : Math.max(0, totalThermalPower - heatTransfer)),
+      heatRemovalDeficitMw: explicitHeatRemovalDeficit,
+      liquidBoundaryCoolingMw: readOptionalNumber(table, handles.primaryLiquidBoundaryCoolingMw),
+      netHeatLoadMw: readOptionalNumber(table, handles.primaryNetHeatLoadMw),
       coolingAvailabilityFraction: readOptionalNumber(table, handles.coreCoolingAvailabilityFraction),
       fuelHeatupRateCPerS: readOptionalNumber(table, handles.fuelHeatupRateCPerS),
     },
@@ -487,6 +505,7 @@ export const evaluatePwrTransientKernel = (
       maxSteamGeneratorLiquidResidualKg: maxAbs(table, handles.steamGeneratorLiquidResidualKg),
       maxSteamGeneratorSteamResidualKg: maxAbs(table, handles.steamGeneratorSteamResidualKg),
       maxSteamGeneratorBoilingResidualMw: maxAbs(table, handles.steamGeneratorBoilingResidualMw),
+      maxSteamGeneratorMetalEnergyResidualMw: maxAbs(table, handles.steamGeneratorMetalEnergyResidualMw),
       primaryInventoryResidualKg: readOptionalNumber(table, handles.primaryInventoryResidualKg),
       pressurizerWaterResidualKg: readOptionalNumber(table, handles.pressurizerWaterResidualKg),
       pressurizerSteamResidualKg: readOptionalNumber(table, handles.pressurizerSteamResidualKg),

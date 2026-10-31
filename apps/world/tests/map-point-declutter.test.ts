@@ -140,7 +140,7 @@ describe('operational points as the map draws them', () => {
     objects,
     selectedControllerId: selected,
     highlightedObjectIds: [],
-    hiddenObjectCategoryIds: [],
+    hiddenObjectCategoryIds: [], alertPalette: 'day' as const,
     placementPoints: [],
     packFeatures: [],
     hasNewInfo: object => object.id === 'grid',

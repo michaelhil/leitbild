@@ -8,13 +8,20 @@ import { DISPLAY_ZOOM_MAX, DISPLAY_ZOOM_MIN } from '../embed/display-frame-proto
 /** The steps − and + move between. */
 export const DISPLAY_ZOOM_LADDER: ReadonlyArray<number> = [0.5, 0.67, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2]
 
-/** The slider, in percent. */
-export const DISPLAY_ZOOM_SLIDER = { min: 50, max: 200, step: 5 } as const
+/** The ordinary slider range. Complete canvases can extend its lower endpoint
+ * to their measured Fit; sub-one-percent values retain readable precision. */
+export const DISPLAY_ZOOM_SLIDER = { min: 50, max: 200, step: 1 } as const
 
-// Advice opens as large as fits, but never below 75 % (text gets too small)
-// nor above 100 % (a default must not magnify). A generated display is drawn
-// for its frame, so Fit never magnifies it either.
-const ADVICE_DEFAULT_MIN = 0.75
+// A display's operational text (values, captions, banners, alarm rows) is
+// 12 px at 100 %. A zoom the window picks by itself (Fit, the advice default)
+// never takes it below 11 px: beyond that the display scrolls rather than
+// shrinks. Explicit Fit of a complete canvas instead shows its whole extent;
+// automatic opening and responsive/inline presentations retain this floor.
+const OPERATIONAL_TEXT_PX = 12
+const FIT_TEXT_FLOOR_PX = 11
+// Advice opens as large as fits, but not above 100 % (a default must not
+// magnify). A generated display is drawn for its frame, so Fit never
+// magnifies it either.
 const ADVICE_DEFAULT_MAX = 1
 const GENERATED_FIT_MAX = 1
 // Below this, two zooms are the same step (0.67 vs 2/3).
@@ -34,6 +41,7 @@ export interface DisplayExtent {
   readonly minWidth: number
   readonly width: number
   readonly height: number
+  readonly fit?: 'complete'
 }
 
 const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value))
@@ -43,25 +51,33 @@ const tidy = (zoom: number): number => Math.round(zoom * 1000) / 1000
 // A fitted zoom rounds down, so the fitted display never overflows the body by a fraction of a pixel.
 const tidyDown = (zoom: number): number => Math.floor(zoom * 1000 + 1e-6) / 1000
 
-export const clampDisplayZoom = (zoom: number): number => tidy(clamp(zoom, DISPLAY_ZOOM_MIN, DISPLAY_ZOOM_MAX))
+/** The automatic-opening and ordinary responsive Fit floor. */
+export const FIT_MIN_ZOOM = Math.ceil(FIT_TEXT_FLOOR_PX / OPERATIONAL_TEXT_PX * 1000) / 1000
 
-export const displayZoomPercent = (zoom: number): number => Math.round(zoom * 100)
+export const clampDisplayZoom = (zoom: number, minimum = DISPLAY_ZOOM_MIN): number => {
+  if (!Number.isFinite(zoom) || zoom <= 0) throw new Error('display zoom must be positive and finite')
+  if (!Number.isFinite(minimum) || minimum <= 0) throw new Error('display zoom minimum must be positive and finite')
+  const bounded = clamp(zoom, minimum, DISPLAY_ZOOM_MAX)
+  // Rounding must neither cross a measured minimum nor turn a tiny valid
+  // complete-canvas fit into zero.
+  return clamp(tidy(bounded) || bounded, minimum, DISPLAY_ZOOM_MAX)
+}
+
+export const displayZoomPercent = (zoom: number): number => zoom * 100 < 1 ? Number((zoom * 100).toPrecision(2)) : Math.round(zoom * 100)
 
 export const isActualSize = (zoom: number): boolean => displayZoomPercent(zoom) === 100
 
 /** The next ladder step above (in) or below (out) the current zoom; zooms between steps snap to the next one. */
-export const steppedDisplayZoom = (zoom: number, direction: 'in' | 'out'): number => {
+export const steppedDisplayZoom = (zoom: number, direction: 'in' | 'out', minimum = DISPLAY_ZOOM_MIN): number => {
   if (direction === 'in') return DISPLAY_ZOOM_LADDER.find(step => step > zoom + SAME_ZOOM) ?? DISPLAY_ZOOM_MAX
-  return [...DISPLAY_ZOOM_LADDER].reverse().find(step => step < zoom - SAME_ZOOM) ?? DISPLAY_ZOOM_MIN
+  return Math.max(minimum, [...DISPLAY_ZOOM_LADDER].reverse().find(step => step < zoom - SAME_ZOOM) ?? minimum)
 }
 
-export const displayZoomFromSlider = (percent: number): number => {
-  const stepped = Math.round(percent / DISPLAY_ZOOM_SLIDER.step) * DISPLAY_ZOOM_SLIDER.step
-  return clampDisplayZoom(stepped / 100)
-}
+export const displayZoomFromSlider = (percent: number, minimum = DISPLAY_ZOOM_MIN): number => clampDisplayZoom((percent < 1 ? percent : Math.round(percent)) / 100, minimum)
 
-export const sliderPercentForZoom = (zoom: number): number =>
-  clamp(Math.round(zoom * 100 / DISPLAY_ZOOM_SLIDER.step) * DISPLAY_ZOOM_SLIDER.step, DISPLAY_ZOOM_SLIDER.min, DISPLAY_ZOOM_SLIDER.max)
+/** The slider's position for a zoom: the percent the readout shows. */
+export const sliderPercentForZoom = (zoom: number, minimum = DISPLAY_ZOOM_MIN): number =>
+  clamp(displayZoomPercent(zoom), displayZoomPercent(minimum), DISPLAY_ZOOM_SLIDER.max)
 
 /** What the window knows about a display when it sizes or fits it. */
 export interface DisplayZoomContext {
@@ -74,6 +90,17 @@ export interface DisplayZoomContext {
   /** The height the view was published with, used for advice until the frame reports its own. */
   readonly envelopeHeight: number
 }
+
+const completeFit = (context: DisplayZoomContext): number | null => {
+  const { body, extent } = context
+  return extent?.fit === 'complete' && body !== null && body.width > 0 && body.height > 0
+    ? Math.min(body.width / Math.max(extent.width, extent.minWidth), body.height / extent.height) : null
+}
+
+/** The complete canvas can reach its measured Fit below the ordinary manual
+ * range. Retain an explicit smaller operator choice across resizing/back. */
+export const minimumDisplayZoom = (context: DisplayZoomContext, operatorZoom?: number): number =>
+  Math.min(DISPLAY_ZOOM_MIN, completeFit(context) ?? DISPLAY_ZOOM_MIN, context.extent?.fit === 'complete' || context.extent === null ? operatorZoom ?? DISPLAY_ZOOM_MIN : DISPLAY_ZOOM_MIN)
 
 export interface DisplayFrameGeometry {
   /** The frame's own CSS size: what its page lays out for. */
@@ -92,7 +119,10 @@ const adviceHeight = (context: DisplayZoomContext): number => context.extent?.he
  * Where a display's frame goes. A generated display gets the whole body at
  * its zoom (W/z x B/z, scaled by z), so it is drawn for exactly the room it
  * has. Advice keeps its height, stretches to the body width, and never gets
- * narrower than its content needs; the body scrolls what does not fit.
+ * narrower than its content needs; the body scrolls what does not fit. While
+ * the display asks for it (`fill`: a faceplate stands on it, W3.4, or it shows
+ * alerts only, W2.5), advice is at least as tall as the body, so the faceplate
+ * or the list has the window's room, not only the display's.
  */
 export const displayFrameGeometry = (config: {
   readonly kind: DisplayKind
@@ -100,13 +130,15 @@ export const displayFrameGeometry = (config: {
   readonly body: DisplaySize
   readonly extent: DisplayExtent | null
   readonly envelopeHeight: number
+  readonly fill?: boolean
 }): DisplayFrameGeometry => {
   const { zoom, body } = config
   if (config.kind === 'generated') {
     return { frameWidth: body.width / zoom, frameHeight: body.height / zoom, boxWidth: body.width, boxHeight: body.height, bodyScrolls: false }
   }
   const frameWidth = Math.max(body.width / zoom, config.extent?.minWidth ?? 0)
-  const frameHeight = config.extent?.height ?? config.envelopeHeight
+  const content = config.extent?.height ?? config.envelopeHeight
+  const frameHeight = config.fill === true ? Math.max(content, body.height / zoom) : content
   return { frameWidth, frameHeight, boxWidth: frameWidth * zoom, boxHeight: frameHeight * zoom, bodyScrolls: true }
 }
 
@@ -124,41 +156,48 @@ export const presentedFrameGeometry = (
 ): DisplayFrameGeometry => shown || previous === null ? current : previous
 
 /**
- * The zoom at which a display fits the body. Advice: as large as shows its
- * whole height and its narrowest width (50-200 %). A generated display: the
- * zoom at which the room it reported needing fits, never above 100 %; its
- * layout changes with its size, so the caller allows one correction after the
- * next report and then stops, and tries 100 % first where the display is
- * already drawn whole.
+ * The zoom at which a display fits the body. Complete canvases use their
+ * whole measured bounds; other views retain FIT_MIN_ZOOM and scroll beyond
+ * it. Advice: as large as shows its whole height and
+ * its narrowest width (up to 200 %). A generated display: the zoom at which
+ * the room it reported needing fits, never above 100 %; its layout changes
+ * with its size, so the caller allows one correction after the next report
+ * and then stops, and tries 100 % first where the display is already drawn
+ * whole.
  */
 export const fitDisplayZoom = (context: DisplayZoomContext, zoom: number): number => {
   const body = context.body
-  if (body === null) return clampDisplayZoom(zoom)
+  if (body === null) return clampDisplayZoom(zoom, minimumDisplayZoom(context, zoom))
+  const complete = completeFit(context)
+  if (complete !== null) return Math.min(complete, DISPLAY_ZOOM_MAX)
   if (context.kind === 'advice') {
     const byHeight = body.height / adviceHeight(context)
     const byWidth = context.extent === null ? Number.POSITIVE_INFINITY : body.width / context.extent.minWidth
-    return clampDisplayZoom(tidyDown(Math.min(byHeight, byWidth)))
+    return tidy(clamp(tidyDown(Math.min(byHeight, byWidth)), FIT_MIN_ZOOM, DISPLAY_ZOOM_MAX))
   }
-  if (context.extent === null) return tidy(clamp(zoom, DISPLAY_ZOOM_MIN, GENERATED_FIT_MAX))
+  if (context.extent === null) return tidy(clamp(zoom, FIT_MIN_ZOOM, GENERATED_FIT_MAX))
   // z * min((W/z)/w, (B/z)/h): the frame's needed room at its current zoom, fitted to the body.
   const scale = Math.min((body.width / zoom) / context.extent.width, (body.height / zoom) / context.extent.height)
-  return tidy(clamp(tidyDown(zoom * scale), DISPLAY_ZOOM_MIN, GENERATED_FIT_MAX))
+  return tidy(clamp(tidyDown(zoom * scale), FIT_MIN_ZOOM, GENERATED_FIT_MAX))
 }
 
 const adviceDefaultZoom = (context: DisplayZoomContext): number =>
-  context.body === null ? ADVICE_DEFAULT_MAX : tidy(clamp(fitDisplayZoom(context, ADVICE_DEFAULT_MAX), ADVICE_DEFAULT_MIN, ADVICE_DEFAULT_MAX))
+  context.body === null ? ADVICE_DEFAULT_MAX : tidy(clamp(fitDisplayZoom(context, ADVICE_DEFAULT_MAX), FIT_MIN_ZOOM, ADVICE_DEFAULT_MAX))
 
-/** An operator's zoom of one display, as remembered. */
+/**
+ * An operator's zoom of one display, as remembered. Fit is never remembered:
+ * a fitted zoom belongs to the window it was fitted in, and a remembered one
+ * fed back into the next window's layout.
+ */
 export interface StoredDisplayZoom {
   readonly zoom: number
-  readonly fit: boolean
 }
 
 export interface DisplayZoomState {
   readonly zoom: number
   /** Fit is sticky: it refits when the body changes, until the operator zooms. */
   readonly fit: boolean
-  /** Advice nobody zoomed yet follows its default: Fit held to 75-100 %. */
+  /** Advice nobody zoomed yet follows its default: Fit held to FIT_MIN_ZOOM-100 %. */
   readonly auto: boolean
   /** Refits still allowed on a generated display's extent reports since Fit last fitted it. */
   readonly corrections: number
@@ -174,7 +213,7 @@ export type DisplayZoomAction =
   /** The frame reported its extent; the context carries it. */
   | { readonly type: 'extent' }
 
-const manual = (zoom: number): DisplayZoomState => ({ zoom: clampDisplayZoom(zoom), fit: false, auto: false, corrections: 0 })
+const manual = (zoom: number, context?: DisplayZoomContext, operatorZoom?: number): DisplayZoomState => ({ zoom: clampDisplayZoom(zoom, context === undefined ? DISPLAY_ZOOM_MIN : minimumDisplayZoom(context, operatorZoom)), fit: false, auto: false, corrections: 0 })
 
 // A generated display drawn whole reports exactly its frame, which says
 // nothing about how much larger it could be drawn whole.
@@ -204,9 +243,9 @@ const fitted = (context: DisplayZoomContext, zoom: number, options: { readonly t
 const adviceDefault = (context: DisplayZoomContext): DisplayZoomState =>
   ({ zoom: adviceDefaultZoom(context), fit: false, auto: true, corrections: FIT_CORRECTIONS })
 
-/** A display's zoom when the window first shows it: what the operator left, else 100 % (generated) or the advice default. */
+/** A display's zoom when the window first shows it: the zoom the operator left, else 100 % (generated) or the advice default. */
 export const initialDisplayZoom = (context: DisplayZoomContext, stored: StoredDisplayZoom | null): DisplayZoomState => {
-  if (stored !== null) return stored.fit ? fitted(context, stored.zoom) : manual(stored.zoom)
+  if (stored !== null) return manual(stored.zoom, context, stored.zoom)
   if (context.kind === 'generated') return manual(1)
   return adviceDefault(context)
 }
@@ -216,7 +255,7 @@ export const initialDisplayZoom = (context: DisplayZoomContext, stored: StoredDi
 // all (a generated display, whose report changes with its arrangement).
 const followReport = (state: DisplayZoomState, next: number, context: DisplayZoomContext): DisplayZoomState => {
   if (state.corrections > 0) return { ...state, zoom: next, corrections: state.corrections - 1 }
-  if (context.kind === 'advice' && next < state.zoom - SAME_ZOOM) return { ...state, zoom: next }
+  if (context.kind === 'advice' && next < state.zoom - (state.fit && context.extent?.fit === 'complete' ? 0 : SAME_ZOOM)) return { ...state, zoom: next }
   return state
 }
 
@@ -227,11 +266,11 @@ export const reduceDisplayZoom = (
 ): DisplayZoomState => {
   switch (action.type) {
     case 'step':
-      return manual(action.step === 'reset' ? 1 : steppedDisplayZoom(state.zoom, action.step))
+      return manual(action.step === 'reset' ? 1 : steppedDisplayZoom(state.zoom, action.step, minimumDisplayZoom(context, state.zoom)), context, state.zoom)
     case 'set':
-      return manual(action.zoom)
+      return Number.isFinite(action.zoom) && action.zoom > 0 ? manual(action.zoom, context, state.zoom) : state
     case 'scale':
-      return Number.isFinite(action.factor) && action.factor > 0 ? manual(state.zoom * action.factor) : state
+      return Number.isFinite(action.factor) && action.factor > 0 && Number.isFinite(state.zoom * action.factor) && state.zoom * action.factor > 0 ? manual(state.zoom * action.factor, context, state.zoom) : state
     case 'toggle-fit':
       return state.fit ? { ...state, fit: false, corrections: 0 } : fitted(context, state.zoom, { tryFull: true })
     case 'body':
@@ -241,13 +280,13 @@ export const reduceDisplayZoom = (
     case 'extent':
       if (state.fit) return followReport(state, fitDisplayZoom(context, state.zoom), context)
       if (state.auto) return followReport(state, adviceDefaultZoom(context), context)
-      return state
+      return manual(state.zoom, context, state.zoom)
   }
 }
 
-/** The zoom an operator chose is remembered; a default or a refit is not a choice. */
+/** The zoom an operator set is remembered; a default or a Fit is not (null: the display forgets any it had). */
 export const storedDisplayZoom = (state: DisplayZoomState): StoredDisplayZoom | null =>
-  state.auto ? null : { zoom: state.zoom, fit: state.fit }
+  state.auto || state.fit ? null : { zoom: state.zoom }
 
 interface StorageLike {
   readonly getItem: (key: string) => string | null
@@ -257,16 +296,19 @@ interface StorageLike {
 export interface DisplayZoomStore {
   readonly read: (key: string) => StoredDisplayZoom | null
   readonly write: (key: string, value: StoredDisplayZoom) => void
+  /** Drops a display's remembered zoom, where it has one. */
+  readonly forget: (key: string) => void
 }
 
 const parseStoredZoom = (value: unknown): StoredDisplayZoom => {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error('stored display zoom must be an object')
   const record = value as Record<string, unknown>
-  if (typeof record.zoom !== 'number' || !Number.isFinite(record.zoom) || record.zoom < DISPLAY_ZOOM_MIN || record.zoom > DISPLAY_ZOOM_MAX) {
+  const unknown = Object.keys(record).filter(key => key !== 'zoom')
+  if (unknown.length > 0) throw new Error(`stored display zoom has unknown fields: ${unknown.join(', ')}`)
+  if (typeof record.zoom !== 'number' || !Number.isFinite(record.zoom) || record.zoom <= 0 || record.zoom > DISPLAY_ZOOM_MAX) {
     throw new Error('stored display zoom is out of range')
   }
-  if (typeof record.fit !== 'boolean') throw new Error('stored display zoom requires fit')
-  return { zoom: record.zoom, fit: record.fit }
+  return { zoom: record.zoom }
 }
 
 const parseZoomEntries = (raw: string, storageKey: string): ReadonlyArray<readonly [string, StoredDisplayZoom]> => {
@@ -301,18 +343,25 @@ export const createDisplayZoomStore = (config: {
     read: key => entries().find(([candidate]) => candidate === key)?.[1] ?? null,
     write: (key, value) => {
       if (!config.storage) return
-      const next = [...entries().filter(([candidate]) => candidate !== key), [key, { zoom: value.zoom, fit: value.fit }] as const]
+      const next = [...entries().filter(([candidate]) => candidate !== key), [key, { zoom: value.zoom }] as const]
       config.storage.setItem(config.storageKey, JSON.stringify(next.slice(Math.max(0, next.length - config.limit))))
+    },
+    forget: key => {
+      if (!config.storage) return
+      const current = entries()
+      if (!current.some(([candidate]) => candidate === key)) return
+      config.storage.setItem(config.storageKey, JSON.stringify(current.filter(([candidate]) => candidate !== key)))
     },
   }
 }
 
-const OVERVIEW_ZOOM_STORAGE_KEY = 'leitbild.processDisplayZoom.v1'
+// The operator's zooms only: Fit is never stored (StoredDisplayZoom).
+const OVERVIEW_ZOOM_STORAGE_KEY = 'leitbild.processDisplayZoom.v2'
 const OVERVIEW_ZOOM_LIMIT = 200
-const ANSWER_ZOOM_STORAGE_KEY = 'leitbild.processDisplayAnswerZoom.v1'
+const ANSWER_ZOOM_STORAGE_KEY = 'leitbild.processDisplayAnswerZoom.v2'
 const ANSWER_ZOOM_LIMIT = 100
 
-/** Unit overview zoom outlives the session, per Run and Plant. */
+/** An asset's default display keeps its zoom beyond the session, per Run and asset. */
 export const overviewZoomStore = (
   storage: StorageLike | null = typeof localStorage === 'undefined' ? null : localStorage,
 ): DisplayZoomStore => createDisplayZoomStore({ storageKey: OVERVIEW_ZOOM_STORAGE_KEY, limit: OVERVIEW_ZOOM_LIMIT, storage })
@@ -322,4 +371,4 @@ export const answerZoomStore = (
   storage: StorageLike | null = typeof sessionStorage === 'undefined' ? null : sessionStorage,
 ): DisplayZoomStore => createDisplayZoomStore({ storageKey: ANSWER_ZOOM_STORAGE_KEY, limit: ANSWER_ZOOM_LIMIT, storage })
 
-export const overviewZoomKey = (simulationRunId: string, plantId: string): string => `${simulationRunId}:${plantId}`
+export const overviewZoomKey = (simulationRunId: string, objectId: string): string => `${simulationRunId}:${objectId}`

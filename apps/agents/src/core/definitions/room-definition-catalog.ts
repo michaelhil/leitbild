@@ -12,7 +12,7 @@ const agentDefinitionSchema = z.object({
   temperature: z.number().finite().optional(),
   reasoningEffort: z.enum(REASONING_EFFORTS).optional(),
   historyTokenBudget: z.number().int().positive().optional(),
-  maxToolIterations: z.number().int().min(1).max(50).optional(),
+  maxToolIterations: z.number().int().positive().optional(),
   includeContext: z.object({
     participants: z.boolean().optional(),
     activity: z.boolean().optional(),

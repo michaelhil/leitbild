@@ -1,7 +1,10 @@
 import { componentVariablePath, processLinkVariablePath, type ComponentBehaviorDefinition } from '../behavior-contract.ts'
 import { clamp, optionalParameterNumber } from '../component-helpers.ts'
+import { saturationTemperatureCFromPressureMPa } from '../thermophysics.ts'
+import { mixedLiquidTemperatureStep } from '../thermal-inventory.ts'
 import { inventoryBalanceStep } from '../physics.ts'
-import { averageIncomingLinkValue, sumIncomingLinkValue } from '../links/link-flow-helpers.ts'
+import { incomingComponentLinks, sumOutgoingComponentLinkValue } from '../component-link-helpers.ts'
+import { averageIncomingLinkValue, flowWeightedIncomingLinkValue, sumIncomingLinkValue } from '../links/link-flow-helpers.ts'
 
 const gasPressureMPa = (config: {
   readonly airMassKg: number
@@ -19,11 +22,13 @@ export const containmentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefi
     id: 'containment-lumped-atmosphere-sump',
     phase: 'updateComponentState',
     componentKind: 'containmentVolume',
-    reads: ['incoming:flowKgPerS', 'incoming:temperatureC', 'incoming:radiationMSvPerH', 'pressureMPa', 'temperatureC', 'steamMassKg', 'sumpInventoryKg'],
+    reads: ['incoming:flowKgPerS', 'incoming:temperatureC', 'incoming:soluteConcentrationPpm', 'incoming:radiationMSvPerH', 'pressureMPa', 'temperatureC', 'steamMassKg', 'sumpInventoryKg', 'sumpTemperatureC', 'sumpSoluteConcentrationPpm', 'outgoing:flowKgPerS'],
     writes: [
       'atmosphereMassKg',
       'steamMassKg',
       'sumpInventoryKg',
+      'sumpTemperatureC',
+      'sumpSoluteConcentrationPpm',
       'sumpLevelPercent',
       'pressureMPa',
       'temperatureC',
@@ -39,7 +44,7 @@ export const containmentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefi
     update: ({ system, component, context }): void => {
       const incomingMass = sumIncomingLinkValue(system, component.index, 'flowKgPerS', context, link => String(link.toPortName) === 'massEnergyIn' || String(link.toPortName) === 'steamIn')
       const sprayFlow = sumIncomingLinkValue(system, component.index, 'flowKgPerS', context, link => String(link.toPortName) === 'sprayIn')
-      const incomingTemperature = averageIncomingLinkValue(system, component.index, 'temperatureC', context, link => String(link.toPortName) === 'massEnergyIn' || String(link.toPortName) === 'steamIn')
+      const incomingTemperature = flowWeightedIncomingLinkValue(system, component.index, 'temperatureC', context, link => String(link.toPortName) === 'massEnergyIn' || String(link.toPortName) === 'steamIn')
         ?? context.readNumber(componentVariablePath(component, 'temperatureC'))
       const incomingRadiation = averageIncomingLinkValue(system, component.index, 'radiationMSvPerH', context, link => String(link.toPortName) === 'massEnergyIn' || String(link.toPortName) === 'steamIn') ?? 0.02
       const currentPressure = context.readNumber(componentVariablePath(component, 'pressureMPa'))
@@ -60,10 +65,9 @@ export const containmentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefi
         minInventory: 0,
         maxInventory: Number.POSITIVE_INFINITY,
       })
-      const sumpOutflow = Math.min(
-        optionalParameterNumber(component, 'maxSumpOutflowKgPerS', 0),
-        context.readNumber(componentVariablePath(component, 'sumpInventoryKg')) / Math.max(1, context.dtSeconds),
-      )
+      // Debit only fluid actually delivered through sump outlet links. The
+      // source solver shares the finite inventory/capacity across all trains.
+      const sumpOutflow = sumOutgoingComponentLinkValue(system, component, 'flowKgPerS', context, link => String(link.fromPortName) === 'sumpOut')
       const nextSumpInventory = inventoryBalanceStep({
         currentInventory: context.readNumber(componentVariablePath(component, 'sumpInventoryKg')),
         inflowKgPerS: incomingLiquid + sprayCondensation + sprayFlow,
@@ -72,6 +76,40 @@ export const containmentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefi
         minInventory: 0,
         maxInventory: Number.POSITIVE_INFINITY,
       })
+      const currentSumpTemperature = context.readNumber(componentVariablePath(component, 'sumpTemperatureC'))
+      const sprayTemperature = flowWeightedIncomingLinkValue(system, component.index, 'temperatureC', context, link => String(link.toPortName) === 'sprayIn') ?? currentSumpTemperature
+      // The containment atmosphere remains the existing lumped steam model.
+      // Its condensate enters the separate liquid inventory at local saturation;
+      // liquid arrivals and spray retain their actual advected temperatures.
+      const condensateTemperature = saturationTemperatureCFromPressureMPa(currentPressure)
+      const nextSumpTemperature = mixedLiquidTemperatureStep({
+        inventoryKg: context.readNumber(componentVariablePath(component, 'sumpInventoryKg')),
+        temperatureC: currentSumpTemperature,
+        inflowKgPerS: incomingLiquid + sprayCondensation + sprayFlow,
+        inflowThermalRateKgCPerS: incomingLiquid * incomingTemperature + sprayCondensation * condensateTemperature + sprayFlow * sprayTemperature,
+        outflowKgPerS: sumpOutflow,
+        dtSeconds: context.dtSeconds,
+      })
+      // The tracer is nonvolatile: primary liquid's incoming solute remains
+      // in the sump as the existing atmosphere model flashes part of its water.
+      // Spray carries its actual dissolved material; pure steam/condensate
+      // carries none. This is not boron solubility or precipitation chemistry.
+      let incomingSoluteRateKgPpmPerS = 0
+      for (const link of incomingComponentLinks(system, component, link => ['massEnergyIn', 'steamIn', 'sprayIn'].includes(String(link.toPortName)))) {
+        const flow = context.readNumber(processLinkVariablePath(link, 'flowKgPerS'))
+        if (flow <= 0) continue
+        const concentration = processLinkVariablePath(link, 'soluteConcentrationPpm')
+        if (!context.has(concentration)) {
+          if (link.nominalFluid === 'steam') continue
+          throw new Error(`containment liquid inflow ${link.id} requires an actual dissolved-solute reading`)
+        }
+        incomingSoluteRateKgPpmPerS += flow * context.readNumber(concentration)
+      }
+      const currentSumpSolute = context.readNumber(componentVariablePath(component, 'sumpSoluteConcentrationPpm'))
+      const remainingSumpMass = Math.max(0, context.readNumber(componentVariablePath(component, 'sumpInventoryKg')) - sumpOutflow * context.dtSeconds)
+      const nextSumpSolute = nextSumpInventory > 0
+        ? (remainingSumpMass * currentSumpSolute + incomingSoluteRateKgPpmPerS * context.dtSeconds) / nextSumpInventory
+        : currentSumpSolute
       const sumpLevelReferenceInventory = optionalParameterNumber(component, 'sumpLevelReferenceInventoryKg', 100_000)
       const sumpLevelPercent = clamp(nextSumpInventory / sumpLevelReferenceInventory * 100, 0, 100)
       const airMass = context.readNumber(componentVariablePath(component, 'airMassKg'))
@@ -93,6 +131,8 @@ export const containmentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefi
       context.write(componentVariablePath(component, 'atmosphereMassKg'), atmosphereMass)
       context.write(componentVariablePath(component, 'steamMassKg'), nextSteamMass)
       context.write(componentVariablePath(component, 'sumpInventoryKg'), nextSumpInventory)
+      context.write(componentVariablePath(component, 'sumpTemperatureC'), nextSumpTemperature)
+      context.write(componentVariablePath(component, 'sumpSoluteConcentrationPpm'), nextSumpSolute)
       context.write(componentVariablePath(component, 'sumpLevelPercent'), sumpLevelPercent)
       context.write(componentVariablePath(component, 'pressureMPa'), Math.max(0.01, pressure))
       context.write(componentVariablePath(component, 'temperatureC'), nextTemperature)

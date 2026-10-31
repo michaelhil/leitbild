@@ -57,7 +57,7 @@
             "guidance": {
               "id": "corridor-security-briefing",
               "title": "At ten minutes a major line trips, and others follow",
-              "message": "Try a what-if: press “Copy this Run” beside the Run name, and in the copy open Smibelg – Sjona (Assets in the grid panel, search “Smibelg”, then Open and Confirm). Then fast-forward each Run past ten minutes with the stopwatch next to the clock, and compare.",
+              "message": "Try a what-if: choose More, then Copy this Run. In the copy, turn on Grid operations from View and open Smibelg – Sjona (Assets in the grid panel, search “Smibelg”, then Open and Confirm). Use Advance… next to the clock to fast-forward each Run past ten minutes, and compare.",
               "objectIds": ["grid:norway"],
               "dismissible": false,
               "tone": "default"

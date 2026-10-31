@@ -8,7 +8,8 @@ import type { PackCommandRequest, PackMapTarget, PackTargetContext, PackTargetin
  * controller of the panel's own Pack goes to that panel and the surface never
  * sends one, a second click on the selected controller included. A controller
  * of another Pack keeps the generic path. A click that orders nothing, with no
- * unit chosen and no such panel open, opens the object's card where it has one.
+ * unit chosen and no such panel open, opens the object's display where its Pack
+ * asks so (`PackUiContribution.displayOnPress`).
  */
 
 /** The open panel declaring map targets, with its handlers once it has connected them. */
@@ -27,8 +28,8 @@ export interface MapClickContext {
   readonly targeting: PackTargetingContribution | undefined
   readonly context: PackTargetContext
   readonly panel: MapTargetPanel | null
-  /** Whether a click on the object opens its card (`plant-card.ts`), when the click orders nothing. */
-  readonly opensCard: (object: OperationalObject) => boolean
+  /** Whether a click on the object opens its display in the display window, when the click orders nothing. */
+  readonly opensDisplay: (object: OperationalObject) => boolean
 }
 
 export type MapClickRoute =
@@ -37,7 +38,7 @@ export type MapClickRoute =
   | { readonly kind: 'panel'; readonly controllerId: ObjectId; readonly target: PackMapTarget }
   | { readonly kind: 'note'; readonly text: string }
   | { readonly kind: 'send'; readonly command: PackCommandRequest; readonly subject: string }
-  | { readonly kind: 'card'; readonly objectId: ObjectId }
+  | { readonly kind: 'display'; readonly objectId: ObjectId }
 
 const none: MapClickRoute = { kind: 'none' }
 
@@ -71,8 +72,8 @@ export const routeObjectClick = (object: OperationalObject, click: MapClickConte
   // With no unit chosen, a click shares the object's selection with the panel instead of ordering anything.
   if (panel && !controller) return { kind: 'select', objectId: object.id, note: null }
   if (owningPanel && controller) return toPanel(owningPanel, controller.id, { kind: 'object', objectId: object.id })
-  // With no unit chosen and no panel taking map targets, a click orders nothing: it opens the object's card, where it has one.
-  if (!controller) return click.opensCard(object) ? { kind: 'card', objectId: object.id } : none
+  // With no unit chosen and no panel taking map targets, a click orders nothing: it opens the object's display, where it opens one.
+  if (!controller) return click.opensDisplay(object) ? { kind: 'display', objectId: object.id } : none
   if (!targeting || object.id === controller.id) return none
   const target: PackMapTarget = { kind: 'object', objectId: object.id }
   const preview = previewOf(click, controller, target)

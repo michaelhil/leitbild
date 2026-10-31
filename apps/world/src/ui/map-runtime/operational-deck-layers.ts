@@ -2,7 +2,7 @@ import type { Layer, PickingInfo } from '@deck.gl/core'
 import type { OperationalObject } from '../../core/model/index.ts'
 import { IconLayer, PathLayer, ScatterplotLayer } from '@deck.gl/layers'
 import type { CatalogueSymbolAtlasState } from './catalogue-symbol-atlas.ts'
-import { darkStroke, rgba, white } from './colors.ts'
+import { colorWithAlpha, darkStroke, rgba, white } from './colors.ts'
 import { ObjectLabelLayer } from './object-label-layer.ts'
 import { declutterPoints, type PointLeader } from './point-declutter.ts'
 import {
@@ -40,7 +40,7 @@ export interface OperationalDeckLayerConfig {
   readonly disksPick: boolean
   /**
    * Objects whose whole disk takes a mouse click and hover on every surface,
-   * not only while it picks targets: those a click opens a card for
+   * not only while it picks targets: those a click opens a display for
    * (`OperationalMap.svelte`, `takesDiskClicks`). Every other disk picks only
    * as `disksPick` says, so it never takes a ground, placement or Pack feature
    * click that used to pass between a glyph's strokes. Null for a finger or
@@ -116,14 +116,14 @@ const pointFill = (point: OperationalPointFeature): ColorRgba => {
 const haloFill = (point: OperationalPointFeature): ColorRgba => {
   if (point.selected) return rgba(29, 102, 210, 62)
   if (point.highlighted) return rgba(193, 122, 19, 58)
-  if (point.statusTone === 'error') return rgba(199, 53, 43, 52)
+  if (point.alert !== null) return colorWithAlpha(point.alert.color, 52)
   return rgba(255, 255, 255, 0)
 }
 
 const haloStroke = (point: OperationalPointFeature): ColorRgba => {
   if (point.selected) return rgba(29, 102, 210, 245)
   if (point.highlighted) return rgba(193, 122, 19, 230)
-  if (point.statusTone === 'error') return rgba(199, 53, 43, 220)
+  if (point.alert !== null) return colorWithAlpha(point.alert.color, 230)
   return rgba(255, 255, 255, 0)
 }
 
@@ -429,10 +429,10 @@ export const createOperationalDeckLayers = (config: OperationalDeckLayerConfig):
       stroked: true,
       filled: true,
       getPosition: point => point.position,
-      getRadius: point => point.selected || point.highlighted || point.statusTone === 'error' ? 18 : 0,
+      getRadius: point => point.selected || point.highlighted || point.alert !== null ? 18 : 0,
       getFillColor: haloFill,
       getLineColor: haloStroke,
-      getLineWidth: point => point.selected || point.highlighted ? 2.5 : point.statusTone === 'error' ? 2 : 0,
+      getLineWidth: point => point.selected || point.highlighted ? 2.5 : point.alert !== null ? 2 : 0,
       updateTriggers: {
         getPosition: snapshot.revisions.points,
         getRadius: snapshot.revisions.points,
@@ -463,7 +463,7 @@ export const createOperationalDeckLayers = (config: OperationalDeckLayerConfig):
         getFillColor: snapshot.revisions.points,
       },
     }),
-    // The disks of objects a click opens a card for, drawn transparent and
+    // The disks of objects a click opens a display for, drawn transparent and
     // picked: a click anywhere on such a disk is its object's. Not needed
     // while every disk picks.
     ...(diskClickPoints.length > 0

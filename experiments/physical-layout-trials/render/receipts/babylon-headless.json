@@ -1,0 +1,1594 @@
+{
+  "backend": "babylon",
+  "profile": {
+    "ua": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+    "platform": "MacIntel",
+    "hardwareConcurrency": 8,
+    "viewport": [
+      1440,
+      913
+    ],
+    "dpr": 1,
+    "gl": {
+      "vendor": "WebKit",
+      "renderer": "WebKit WebGL",
+      "unmaskedVendor": "Google Inc. (Apple)",
+      "unmaskedRenderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M2, Unspecified Version)",
+      "version": "WebGL 2.0 (OpenGL ES 3.0 Chromium)",
+      "maxTextureSize": 16384,
+      "antialias": true
+    }
+  },
+  "correctness": {
+    "pumpPick": {
+      "expected": "mfw-a",
+      "actual": "mfw-a",
+      "passed": true
+    },
+    "opaqueFloorOcclusion": {
+      "lowerLevel": "cp-a",
+      "allLevels": "tg-generator",
+      "passed": true
+    },
+    "separation": {
+      "expected": 12,
+      "actual": 12,
+      "passed": true
+    },
+    "statusWithoutGeometryUpload": {
+      "before": 42,
+      "after": 42,
+      "passed": true
+    },
+    "sentinels": {
+      "before": [
+        204,
+        26,
+        178,
+        255
+      ],
+      "after": [
+        26,
+        204,
+        51,
+        255
+      ],
+      "stencil": [
+        229,
+        204,
+        26,
+        255
+      ]
+    },
+    "sentinelPass": true,
+    "frameSha256": "e3d88c386e6794ad043b056d80d2db482f877cc93907e76f99dbeb4fc98fc7c6",
+    "nonBackgroundPixels": 298825,
+    "glStateRestoration": {
+      "passed": true,
+      "mismatches": []
+    },
+    "glErrors": [],
+    "errors": []
+  },
+  "correctnessGatePassed": true,
+  "workloads": [
+    {
+      "workload": "slice",
+      "backend": "babylon",
+      "elapsedMs": 1498.1000001430511,
+      "frameIntervalsMs": {
+        "count": 90,
+        "p50": 16.700000047683716,
+        "p95": 17.90000009536743,
+        "p99": 18.700000047683716,
+        "max": 18.700000047683716
+      },
+      "sceneCpuMs": {
+        "count": 90,
+        "p50": 3.4000000953674316,
+        "p95": 3.700000047683716,
+        "p99": 3.799999952316284,
+        "max": 3.799999952316284
+      },
+      "idleRenders": 0,
+      "triangles": 33828,
+      "visibleObjects": 42,
+      "metrics": {
+        "backend": "babylon",
+        "frames": 94,
+        "initialMs": 8.5,
+        "cpuFrameMs": [
+          24.799999952316284,
+          4.3999998569488525,
+          3.200000047683716,
+          3.6999998092651367,
+          3.5999999046325684,
+          3.4000000953674316,
+          3.700000047683716,
+          3.5,
+          3.4000000953674316,
+          3.5,
+          2.700000047683716,
+          3.5,
+          3.5999999046325684,
+          3.299999952316284,
+          3.5,
+          3.3999998569488525,
+          3.6000001430511475,
+          3.700000047683716,
+          3.5,
+          3.4000000953674316,
+          3.6000001430511475,
+          3.5999999046325684,
+          3.0999999046325684,
+          3.0999999046325684,
+          3.200000047683716,
+          3.1000001430511475,
+          3.4000000953674316,
+          3.6000001430511475,
+          3.299999952316284,
+          3.299999952316284,
+          3.5999999046325684,
+          3.6999998092651367,
+          3.200000047683716,
+          3.4000000953674316,
+          3.6000001430511475,
+          3.1000001430511475,
+          3.799999952316284,
+          3.6000001430511475,
+          3.299999952316284,
+          3.5,
+          3.5,
+          3.799999952316284,
+          3.6000001430511475,
+          3.299999952316284,
+          3.3999998569488525,
+          3.4000000953674316,
+          3.299999952316284,
+          3.6000001430511475,
+          3.200000047683716,
+          3.700000047683716,
+          3.200000047683716,
+          2.5,
+          3,
+          3.5,
+          3.200000047683716,
+          3.3000001907348633,
+          3.200000047683716,
+          3,
+          3.3000001907348633,
+          3.299999952316284,
+          3.700000047683716,
+          3.299999952316284,
+          3.4000000953674316,
+          3.4000000953674316,
+          3.5,
+          3.1000001430511475,
+          3.700000047683716,
+          3.6999998092651367,
+          3.6000001430511475,
+          3.5,
+          3.200000047683716,
+          3.200000047683716,
+          3.3000001907348633,
+          3.0999999046325684,
+          3.700000047683716,
+          3.0999999046325684,
+          3.4000000953674316,
+          3,
+          3.1999998092651367,
+          3.5,
+          3.200000047683716,
+          3.700000047683716,
+          3.5999999046325684,
+          3.0999999046325684,
+          3.0999999046325684,
+          3.0999999046325684,
+          3.4000000953674316,
+          3.6000001430511475,
+          3.0999999046325684,
+          3.200000047683716,
+          3.1999998092651367,
+          3.5,
+          3.5999999046325684,
+          3.0999999046325684
+        ],
+        "stateMismatches": [],
+        "glErrors": [],
+        "resources": {
+          "renders": 94,
+          "drawCalls": 3906,
+          "geometryUploads": 42,
+          "geometryBytes": 4465296,
+          "stateUpdates": 0,
+          "objects": 42,
+          "disposeCount": 0
+        }
+      }
+    },
+    {
+      "workload": "500",
+      "backend": "babylon",
+      "elapsedMs": 1500,
+      "frameIntervalsMs": {
+        "count": 90,
+        "p50": 16.700000047683716,
+        "p95": 18,
+        "p99": 18.600000143051147,
+        "max": 18.600000143051147
+      },
+      "sceneCpuMs": {
+        "count": 90,
+        "p50": 4.400000095367432,
+        "p95": 4.799999952316284,
+        "p99": 5.200000047683716,
+        "max": 5.200000047683716
+      },
+      "idleRenders": 0,
+      "triangles": 1448000,
+      "visibleObjects": 500,
+      "metrics": {
+        "backend": "babylon",
+        "frames": 94,
+        "initialMs": 11.700000047683716,
+        "cpuFrameMs": [
+          284.7000000476837,
+          5.099999904632568,
+          4.8999998569488525,
+          4.299999952316284,
+          4.799999952316284,
+          4.200000047683716,
+          4.3999998569488525,
+          4.299999952316284,
+          4.5,
+          4.3999998569488525,
+          4.400000095367432,
+          4.1000001430511475,
+          4.3999998569488525,
+          4.699999809265137,
+          4.400000095367432,
+          4.200000047683716,
+          4.299999952316284,
+          4.200000047683716,
+          4.400000095367432,
+          4.700000047683716,
+          4.3999998569488525,
+          4.5,
+          4.5,
+          4.6000001430511475,
+          4.199999809265137,
+          4.200000047683716,
+          3.3999998569488525,
+          4.200000047683716,
+          4.5,
+          4.5,
+          4.5,
+          4.200000047683716,
+          4.900000095367432,
+          4.299999952316284,
+          4.200000047683716,
+          4.300000190734863,
+          4.400000095367432,
+          4.300000190734863,
+          4.400000095367432,
+          4.200000047683716,
+          4.400000095367432,
+          4.299999952316284,
+          4.5,
+          3.6000001430511475,
+          4.200000047683716,
+          4.6000001430511475,
+          4.200000047683716,
+          4.200000047683716,
+          4.3999998569488525,
+          4.5,
+          3.700000047683716,
+          4.299999952316284,
+          4.299999952316284,
+          4.099999904632568,
+          4.400000095367432,
+          4.700000047683716,
+          5.200000047683716,
+          4.700000047683716,
+          4.400000095367432,
+          4.799999952316284,
+          4.3999998569488525,
+          4.200000047683716,
+          4.5,
+          4.099999904632568,
+          4.400000095367432,
+          4.400000095367432,
+          4.6000001430511475,
+          4.700000047683716,
+          4.400000095367432,
+          4.400000095367432,
+          4.799999952316284,
+          4.099999904632568,
+          4.5,
+          4.799999952316284,
+          4.400000095367432,
+          4.1000001430511475,
+          4.599999904632568,
+          4.400000095367432,
+          4.200000047683716,
+          4.5,
+          4.5,
+          4,
+          4.200000047683716,
+          4,
+          4.299999952316284,
+          4.5,
+          4.5,
+          3.8999998569488525,
+          4.3999998569488525,
+          4.3999998569488525,
+          4.799999952316284,
+          4.5,
+          4.5,
+          4.299999952316284
+        ],
+        "stateMismatches": [],
+        "glErrors": [],
+        "resources": {
+          "renders": 94,
+          "drawCalls": 46500,
+          "geometryUploads": 1,
+          "geometryBytes": 382272,
+          "stateUpdates": 0,
+          "objects": 500,
+          "disposeCount": 0
+        }
+      }
+    },
+    {
+      "workload": "campus",
+      "backend": "babylon",
+      "elapsedMs": 1499.7000000476837,
+      "frameIntervalsMs": {
+        "count": 90,
+        "p50": 16.699999809265137,
+        "p95": 18.09999990463257,
+        "p99": 18.40000009536743,
+        "max": 18.40000009536743
+      },
+      "sceneCpuMs": {
+        "count": 90,
+        "p50": 3.799999952316284,
+        "p95": 4,
+        "p99": 4.1000001430511475,
+        "max": 4.1000001430511475
+      },
+      "idleRenders": 0,
+      "triangles": 135360,
+      "visibleObjects": 169,
+      "metrics": {
+        "backend": "babylon",
+        "frames": 94,
+        "initialMs": 8.599999904632568,
+        "cpuFrameMs": [
+          55.700000047683716,
+          4.699999809265137,
+          3.9000000953674316,
+          4.299999952316284,
+          3.799999952316284,
+          3.799999952316284,
+          3.700000047683716,
+          3.5,
+          4,
+          3.9000000953674316,
+          4,
+          3.700000047683716,
+          3.799999952316284,
+          3.9000000953674316,
+          3.9000000953674316,
+          3.5,
+          3.5,
+          3.5,
+          3.700000047683716,
+          3.299999952316284,
+          3.9000000953674316,
+          3.8000001907348633,
+          4,
+          3.5,
+          3.700000047683716,
+          3.8999998569488525,
+          3.799999952316284,
+          3.299999952316284,
+          3.8000001907348633,
+          4.1000001430511475,
+          4,
+          3.799999952316284,
+          4.099999904632568,
+          3.8000001907348633,
+          3.6000001430511475,
+          3.5,
+          3.700000047683716,
+          3.8000001907348633,
+          4,
+          3.5999999046325684,
+          3.700000047683716,
+          3.5,
+          3.5999999046325684,
+          3.5,
+          3.4000000953674316,
+          3.5,
+          4,
+          4,
+          3.799999952316284,
+          3.8999998569488525,
+          3.4000000953674316,
+          3.5,
+          3.700000047683716,
+          3.700000047683716,
+          4,
+          3.5999999046325684,
+          4,
+          4,
+          3.1000001430511475,
+          3.6000001430511475,
+          3.9000000953674316,
+          4,
+          3.8999998569488525,
+          4,
+          3.700000047683716,
+          3.8999998569488525,
+          4.099999904632568,
+          3.6999998092651367,
+          3.799999952316284,
+          3.9000000953674316,
+          3.5,
+          4,
+          4,
+          3.1999998092651367,
+          3.5,
+          3.5999999046325684,
+          3.799999952316284,
+          4,
+          3.799999952316284,
+          3.799999952316284,
+          4,
+          3.4000000953674316,
+          4,
+          3.700000047683716,
+          3.700000047683716,
+          3.3999998569488525,
+          3.5,
+          3.299999952316284,
+          3.9000000953674316,
+          3.799999952316284,
+          3.799999952316284,
+          3.700000047683716,
+          4.099999904632568,
+          3.6000001430511475
+        ],
+        "stateMismatches": [],
+        "glErrors": [],
+        "resources": {
+          "renders": 94,
+          "drawCalls": 15717,
+          "geometryUploads": 43,
+          "geometryBytes": 4471632,
+          "stateUpdates": 0,
+          "objects": 169,
+          "disposeCount": 0
+        }
+      }
+    }
+  ],
+  "limits": [
+    "One Chrome headless desktop profile, not a constrained physical device.",
+    "CPU times include shared GL snapshot/restore instrumentation.",
+    "Source-triangle CPU picking is shared by both backends; no accelerated-pick claim.",
+    "Synthetic benchmark state is not operational plant data.",
+    "638px IAB initial/reset camera may crop hall and toolbar covers scene; responsive fit/UI not qualified."
+  ],
+  "lifecycle": {
+    "cycles": 20,
+    "passed": true,
+    "results": [
+      {
+        "cycle": 0,
+        "oldDisposed": 1,
+        "oldGeometryBytes": 0,
+        "disposedHandles": {
+          "buffers": 168,
+          "liveBuffersAfter": 0,
+          "programs": 1,
+          "liveProgramsAfter": 0
+        },
+        "newUploads": 42,
+        "objects": 42
+      },
+      {
+        "cycle": 1,
+        "oldDisposed": 1,
+        "oldGeometryBytes": 0,
+        "disposedHandles": {
+          "buffers": 168,
+          "liveBuffersAfter": 0,
+          "programs": 1,
+          "liveProgramsAfter": 0
+        },
+        "newUploads": 42,
+        "objects": 42
+      },
+      {
+        "cycle": 2,
+        "oldDisposed": 1,
+        "oldGeometryBytes": 0,
+        "disposedHandles": {
+          "buffers": 168,
+          "liveBuffersAfter": 0,
+          "programs": 1,
+          "liveProgramsAfter": 0
+        },
+        "newUploads": 42,
+        "objects": 42
+      },
+      {
+        "cycle": 3,
+        "oldDisposed": 1,
+        "oldGeometryBytes": 0,
+        "disposedHandles": {
+          "buffers": 168,
+          "liveBuffersAfter": 0,
+          "programs": 1,
+          "liveProgramsAfter": 0
+        },
+        "newUploads": 42,
+        "objects": 42
+      },
+      {
+        "cycle": 4,
+        "oldDisposed": 1,
+        "oldGeometryBytes": 0,
+        "disposedHandles": {
+          "buffers": 168,
+          "liveBuffersAfter": 0,
+          "programs": 1,
+          "liveProgramsAfter": 0
+        },
+        "newUploads": 42,
+        "objects": 42
+      },
+      {
+        "cycle": 5,
+        "oldDisposed": 1,
+        "oldGeometryBytes": 0,
+        "disposedHandles": {
+          "buffers": 168,
+          "liveBuffersAfter": 0,
+          "programs": 1,
+          "liveProgramsAfter": 0
+        },
+        "newUploads": 42,
+        "objects": 42
+      },
+      {
+        "cycle": 6,
+        "oldDisposed": 1,
+        "oldGeometryBytes": 0,
+        "disposedHandles": {
+          "buffers": 168,
+          "liveBuffersAfter": 0,
+          "programs": 1,
+          "liveProgramsAfter": 0
+        },
+        "newUploads": 42,
+        "objects": 42
+      },
+      {
+        "cycle": 7,
+        "oldDisposed": 1,
+        "oldGeometryBytes": 0,
+        "disposedHandles": {
+          "buffers": 168,
+          "liveBuffersAfter": 0,
+          "programs": 1,
+          "liveProgramsAfter": 0
+        },
+        "newUploads": 42,
+        "objects": 42
+      },
+      {
+        "cycle": 8,
+        "oldDisposed": 1,
+        "oldGeometryBytes": 0,
+        "disposedHandles": {
+          "buffers": 168,
+          "liveBuffersAfter": 0,
+          "programs": 1,
+          "liveProgramsAfter": 0
+        },
+        "newUploads": 42,
+        "objects": 42
+      },
+      {
+        "cycle": 9,
+        "oldDisposed": 1,
+        "oldGeometryBytes": 0,
+        "disposedHandles": {
+          "buffers": 168,
+          "liveBuffersAfter": 0,
+          "programs": 1,
+          "liveProgramsAfter": 0
+        },
+        "newUploads": 42,
+        "objects": 42
+      },
+      {
+        "cycle": 10,
+        "oldDisposed": 1,
+        "oldGeometryBytes": 0,
+        "disposedHandles": {
+          "buffers": 168,
+          "liveBuffersAfter": 0,
+          "programs": 1,
+          "liveProgramsAfter": 0
+        },
+        "newUploads": 42,
+        "objects": 42
+      },
+      {
+        "cycle": 11,
+        "oldDisposed": 1,
+        "oldGeometryBytes": 0,
+        "disposedHandles": {
+          "buffers": 168,
+          "liveBuffersAfter": 0,
+          "programs": 1,
+          "liveProgramsAfter": 0
+        },
+        "newUploads": 42,
+        "objects": 42
+      },
+      {
+        "cycle": 12,
+        "oldDisposed": 1,
+        "oldGeometryBytes": 0,
+        "disposedHandles": {
+          "buffers": 168,
+          "liveBuffersAfter": 0,
+          "programs": 1,
+          "liveProgramsAfter": 0
+        },
+        "newUploads": 42,
+        "objects": 42
+      },
+      {
+        "cycle": 13,
+        "oldDisposed": 1,
+        "oldGeometryBytes": 0,
+        "disposedHandles": {
+          "buffers": 168,
+          "liveBuffersAfter": 0,
+          "programs": 1,
+          "liveProgramsAfter": 0
+        },
+        "newUploads": 42,
+        "objects": 42
+      },
+      {
+        "cycle": 14,
+        "oldDisposed": 1,
+        "oldGeometryBytes": 0,
+        "disposedHandles": {
+          "buffers": 168,
+          "liveBuffersAfter": 0,
+          "programs": 1,
+          "liveProgramsAfter": 0
+        },
+        "newUploads": 42,
+        "objects": 42
+      },
+      {
+        "cycle": 15,
+        "oldDisposed": 1,
+        "oldGeometryBytes": 0,
+        "disposedHandles": {
+          "buffers": 168,
+          "liveBuffersAfter": 0,
+          "programs": 1,
+          "liveProgramsAfter": 0
+        },
+        "newUploads": 42,
+        "objects": 42
+      },
+      {
+        "cycle": 16,
+        "oldDisposed": 1,
+        "oldGeometryBytes": 0,
+        "disposedHandles": {
+          "buffers": 168,
+          "liveBuffersAfter": 0,
+          "programs": 1,
+          "liveProgramsAfter": 0
+        },
+        "newUploads": 42,
+        "objects": 42
+      },
+      {
+        "cycle": 17,
+        "oldDisposed": 1,
+        "oldGeometryBytes": 0,
+        "disposedHandles": {
+          "buffers": 168,
+          "liveBuffersAfter": 0,
+          "programs": 1,
+          "liveProgramsAfter": 0
+        },
+        "newUploads": 42,
+        "objects": 42
+      },
+      {
+        "cycle": 18,
+        "oldDisposed": 1,
+        "oldGeometryBytes": 0,
+        "disposedHandles": {
+          "buffers": 168,
+          "liveBuffersAfter": 0,
+          "programs": 1,
+          "liveProgramsAfter": 0
+        },
+        "newUploads": 42,
+        "objects": 42
+      },
+      {
+        "cycle": 19,
+        "oldDisposed": 1,
+        "oldGeometryBytes": 0,
+        "disposedHandles": {
+          "buffers": 168,
+          "liveBuffersAfter": 0,
+          "programs": 1,
+          "liveProgramsAfter": 0
+        },
+        "newUploads": 42,
+        "objects": 42
+      }
+    ]
+  },
+  "styleReload": {
+    "cycles": 20,
+    "styleRestores": 20,
+    "passed": true,
+    "results": [
+      {
+        "cycle": 0,
+        "oldDisposed": 1,
+        "oldGeometryBytes": 0,
+        "disposedHandles": {
+          "buffers": 168,
+          "liveBuffersAfter": 0,
+          "programs": 1,
+          "liveProgramsAfter": 0
+        },
+        "newBytes": 4465296,
+        "sentinels": {
+          "before": [
+            204,
+            26,
+            178,
+            255
+          ],
+          "after": [
+            26,
+            204,
+            51,
+            255
+          ],
+          "stencil": [
+            229,
+            204,
+            26,
+            255
+          ]
+        }
+      },
+      {
+        "cycle": 1,
+        "oldDisposed": 1,
+        "oldGeometryBytes": 0,
+        "disposedHandles": {
+          "buffers": 168,
+          "liveBuffersAfter": 0,
+          "programs": 1,
+          "liveProgramsAfter": 0
+        },
+        "newBytes": 4465296,
+        "sentinels": {
+          "before": [
+            204,
+            26,
+            178,
+            255
+          ],
+          "after": [
+            26,
+            204,
+            51,
+            255
+          ],
+          "stencil": [
+            229,
+            204,
+            26,
+            255
+          ]
+        }
+      },
+      {
+        "cycle": 2,
+        "oldDisposed": 1,
+        "oldGeometryBytes": 0,
+        "disposedHandles": {
+          "buffers": 168,
+          "liveBuffersAfter": 0,
+          "programs": 1,
+          "liveProgramsAfter": 0
+        },
+        "newBytes": 4465296,
+        "sentinels": {
+          "before": [
+            204,
+            26,
+            178,
+            255
+          ],
+          "after": [
+            26,
+            204,
+            51,
+            255
+          ],
+          "stencil": [
+            229,
+            204,
+            26,
+            255
+          ]
+        }
+      },
+      {
+        "cycle": 3,
+        "oldDisposed": 1,
+        "oldGeometryBytes": 0,
+        "disposedHandles": {
+          "buffers": 168,
+          "liveBuffersAfter": 0,
+          "programs": 1,
+          "liveProgramsAfter": 0
+        },
+        "newBytes": 4465296,
+        "sentinels": {
+          "before": [
+            204,
+            26,
+            178,
+            255
+          ],
+          "after": [
+            26,
+            204,
+            51,
+            255
+          ],
+          "stencil": [
+            229,
+            204,
+            26,
+            255
+          ]
+        }
+      },
+      {
+        "cycle": 4,
+        "oldDisposed": 1,
+        "oldGeometryBytes": 0,
+        "disposedHandles": {
+          "buffers": 168,
+          "liveBuffersAfter": 0,
+          "programs": 1,
+          "liveProgramsAfter": 0
+        },
+        "newBytes": 4465296,
+        "sentinels": {
+          "before": [
+            204,
+            26,
+            178,
+            255
+          ],
+          "after": [
+            26,
+            204,
+            51,
+            255
+          ],
+          "stencil": [
+            229,
+            204,
+            26,
+            255
+          ]
+        }
+      },
+      {
+        "cycle": 5,
+        "oldDisposed": 1,
+        "oldGeometryBytes": 0,
+        "disposedHandles": {
+          "buffers": 168,
+          "liveBuffersAfter": 0,
+          "programs": 1,
+          "liveProgramsAfter": 0
+        },
+        "newBytes": 4465296,
+        "sentinels": {
+          "before": [
+            204,
+            26,
+            178,
+            255
+          ],
+          "after": [
+            26,
+            204,
+            51,
+            255
+          ],
+          "stencil": [
+            229,
+            204,
+            26,
+            255
+          ]
+        }
+      },
+      {
+        "cycle": 6,
+        "oldDisposed": 1,
+        "oldGeometryBytes": 0,
+        "disposedHandles": {
+          "buffers": 168,
+          "liveBuffersAfter": 0,
+          "programs": 1,
+          "liveProgramsAfter": 0
+        },
+        "newBytes": 4465296,
+        "sentinels": {
+          "before": [
+            204,
+            26,
+            178,
+            255
+          ],
+          "after": [
+            26,
+            204,
+            51,
+            255
+          ],
+          "stencil": [
+            229,
+            204,
+            26,
+            255
+          ]
+        }
+      },
+      {
+        "cycle": 7,
+        "oldDisposed": 1,
+        "oldGeometryBytes": 0,
+        "disposedHandles": {
+          "buffers": 168,
+          "liveBuffersAfter": 0,
+          "programs": 1,
+          "liveProgramsAfter": 0
+        },
+        "newBytes": 4465296,
+        "sentinels": {
+          "before": [
+            204,
+            26,
+            178,
+            255
+          ],
+          "after": [
+            26,
+            204,
+            51,
+            255
+          ],
+          "stencil": [
+            229,
+            204,
+            26,
+            255
+          ]
+        }
+      },
+      {
+        "cycle": 8,
+        "oldDisposed": 1,
+        "oldGeometryBytes": 0,
+        "disposedHandles": {
+          "buffers": 168,
+          "liveBuffersAfter": 0,
+          "programs": 1,
+          "liveProgramsAfter": 0
+        },
+        "newBytes": 4465296,
+        "sentinels": {
+          "before": [
+            204,
+            26,
+            178,
+            255
+          ],
+          "after": [
+            26,
+            204,
+            51,
+            255
+          ],
+          "stencil": [
+            229,
+            204,
+            26,
+            255
+          ]
+        }
+      },
+      {
+        "cycle": 9,
+        "oldDisposed": 1,
+        "oldGeometryBytes": 0,
+        "disposedHandles": {
+          "buffers": 168,
+          "liveBuffersAfter": 0,
+          "programs": 1,
+          "liveProgramsAfter": 0
+        },
+        "newBytes": 4465296,
+        "sentinels": {
+          "before": [
+            204,
+            26,
+            178,
+            255
+          ],
+          "after": [
+            26,
+            204,
+            51,
+            255
+          ],
+          "stencil": [
+            229,
+            204,
+            26,
+            255
+          ]
+        }
+      },
+      {
+        "cycle": 10,
+        "oldDisposed": 1,
+        "oldGeometryBytes": 0,
+        "disposedHandles": {
+          "buffers": 168,
+          "liveBuffersAfter": 0,
+          "programs": 1,
+          "liveProgramsAfter": 0
+        },
+        "newBytes": 4465296,
+        "sentinels": {
+          "before": [
+            204,
+            26,
+            178,
+            255
+          ],
+          "after": [
+            26,
+            204,
+            51,
+            255
+          ],
+          "stencil": [
+            229,
+            204,
+            26,
+            255
+          ]
+        }
+      },
+      {
+        "cycle": 11,
+        "oldDisposed": 1,
+        "oldGeometryBytes": 0,
+        "disposedHandles": {
+          "buffers": 168,
+          "liveBuffersAfter": 0,
+          "programs": 1,
+          "liveProgramsAfter": 0
+        },
+        "newBytes": 4465296,
+        "sentinels": {
+          "before": [
+            204,
+            26,
+            178,
+            255
+          ],
+          "after": [
+            26,
+            204,
+            51,
+            255
+          ],
+          "stencil": [
+            229,
+            204,
+            26,
+            255
+          ]
+        }
+      },
+      {
+        "cycle": 12,
+        "oldDisposed": 1,
+        "oldGeometryBytes": 0,
+        "disposedHandles": {
+          "buffers": 168,
+          "liveBuffersAfter": 0,
+          "programs": 1,
+          "liveProgramsAfter": 0
+        },
+        "newBytes": 4465296,
+        "sentinels": {
+          "before": [
+            204,
+            26,
+            178,
+            255
+          ],
+          "after": [
+            26,
+            204,
+            51,
+            255
+          ],
+          "stencil": [
+            229,
+            204,
+            26,
+            255
+          ]
+        }
+      },
+      {
+        "cycle": 13,
+        "oldDisposed": 1,
+        "oldGeometryBytes": 0,
+        "disposedHandles": {
+          "buffers": 168,
+          "liveBuffersAfter": 0,
+          "programs": 1,
+          "liveProgramsAfter": 0
+        },
+        "newBytes": 4465296,
+        "sentinels": {
+          "before": [
+            204,
+            26,
+            178,
+            255
+          ],
+          "after": [
+            26,
+            204,
+            51,
+            255
+          ],
+          "stencil": [
+            229,
+            204,
+            26,
+            255
+          ]
+        }
+      },
+      {
+        "cycle": 14,
+        "oldDisposed": 1,
+        "oldGeometryBytes": 0,
+        "disposedHandles": {
+          "buffers": 168,
+          "liveBuffersAfter": 0,
+          "programs": 1,
+          "liveProgramsAfter": 0
+        },
+        "newBytes": 4465296,
+        "sentinels": {
+          "before": [
+            204,
+            26,
+            178,
+            255
+          ],
+          "after": [
+            26,
+            204,
+            51,
+            255
+          ],
+          "stencil": [
+            229,
+            204,
+            26,
+            255
+          ]
+        }
+      },
+      {
+        "cycle": 15,
+        "oldDisposed": 1,
+        "oldGeometryBytes": 0,
+        "disposedHandles": {
+          "buffers": 168,
+          "liveBuffersAfter": 0,
+          "programs": 1,
+          "liveProgramsAfter": 0
+        },
+        "newBytes": 4465296,
+        "sentinels": {
+          "before": [
+            204,
+            26,
+            178,
+            255
+          ],
+          "after": [
+            26,
+            204,
+            51,
+            255
+          ],
+          "stencil": [
+            229,
+            204,
+            26,
+            255
+          ]
+        }
+      },
+      {
+        "cycle": 16,
+        "oldDisposed": 1,
+        "oldGeometryBytes": 0,
+        "disposedHandles": {
+          "buffers": 168,
+          "liveBuffersAfter": 0,
+          "programs": 1,
+          "liveProgramsAfter": 0
+        },
+        "newBytes": 4465296,
+        "sentinels": {
+          "before": [
+            204,
+            26,
+            178,
+            255
+          ],
+          "after": [
+            26,
+            204,
+            51,
+            255
+          ],
+          "stencil": [
+            229,
+            204,
+            26,
+            255
+          ]
+        }
+      },
+      {
+        "cycle": 17,
+        "oldDisposed": 1,
+        "oldGeometryBytes": 0,
+        "disposedHandles": {
+          "buffers": 168,
+          "liveBuffersAfter": 0,
+          "programs": 1,
+          "liveProgramsAfter": 0
+        },
+        "newBytes": 4465296,
+        "sentinels": {
+          "before": [
+            204,
+            26,
+            178,
+            255
+          ],
+          "after": [
+            26,
+            204,
+            51,
+            255
+          ],
+          "stencil": [
+            229,
+            204,
+            26,
+            255
+          ]
+        }
+      },
+      {
+        "cycle": 18,
+        "oldDisposed": 1,
+        "oldGeometryBytes": 0,
+        "disposedHandles": {
+          "buffers": 168,
+          "liveBuffersAfter": 0,
+          "programs": 1,
+          "liveProgramsAfter": 0
+        },
+        "newBytes": 4465296,
+        "sentinels": {
+          "before": [
+            204,
+            26,
+            178,
+            255
+          ],
+          "after": [
+            26,
+            204,
+            51,
+            255
+          ],
+          "stencil": [
+            229,
+            204,
+            26,
+            255
+          ]
+        }
+      },
+      {
+        "cycle": 19,
+        "oldDisposed": 1,
+        "oldGeometryBytes": 0,
+        "disposedHandles": {
+          "buffers": 168,
+          "liveBuffersAfter": 0,
+          "programs": 1,
+          "liveProgramsAfter": 0
+        },
+        "newBytes": 4465296,
+        "sentinels": {
+          "before": [
+            204,
+            26,
+            178,
+            255
+          ],
+          "after": [
+            26,
+            204,
+            51,
+            255
+          ],
+          "stencil": [
+            229,
+            204,
+            26,
+            255
+          ]
+        }
+      }
+    ]
+  },
+  "contextRestore": {
+    "status": "executed",
+    "restores": 1,
+    "sentinel": {
+      "before": [
+        204,
+        26,
+        178,
+        255
+      ],
+      "after": [
+        26,
+        204,
+        51,
+        255
+      ],
+      "stencil": [
+        229,
+        204,
+        26,
+        255
+      ]
+    },
+    "errors": []
+  },
+  "final": {
+    "backend": "babylon",
+    "workload": "slice",
+    "view": {
+      "level": "all",
+      "explode": 0,
+      "cutaway": true
+    },
+    "metrics": {
+      "backend": "babylon",
+      "frames": 13,
+      "initialMs": 11.900000095367432,
+      "cpuFrameMs": [
+        24.5,
+        4.1000001430511475,
+        3.200000047683716,
+        2.799999952316284,
+        4.299999952316284,
+        3.299999952316284,
+        4.5,
+        4,
+        3.6000001430511475,
+        2.6999998092651367,
+        2.9000000953674316,
+        3,
+        3.5
+      ],
+      "stateMismatches": [],
+      "glErrors": [
+        1282
+      ],
+      "resources": {
+        "renders": 13,
+        "drawCalls": 504,
+        "geometryUploads": 42,
+        "geometryBytes": 4465296,
+        "stateUpdates": 0,
+        "objects": 42,
+        "disposeCount": 0
+      }
+    },
+    "errors": [],
+    "gl": {
+      "vendor": "WebKit",
+      "renderer": "WebKit WebGL",
+      "unmaskedVendor": "Google Inc. (Apple)",
+      "unmaskedRenderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M2, Unspecified Version)",
+      "version": "WebGL 2.0 (OpenGL ES 3.0 Chromium)",
+      "maxTextureSize": 16384,
+      "antialias": true
+    }
+  },
+  "elapsedMs": 9414.700000047684,
+  "resources": [
+    {
+      "name": "maplibre-gl.css",
+      "transferSize": 70324,
+      "encodedBodySize": 70024,
+      "duration": 2
+    },
+    {
+      "name": "styles.css",
+      "transferSize": 1283,
+      "encodedBodySize": 983,
+      "duration": 2.6000001430511475
+    },
+    {
+      "name": "app.js",
+      "transferSize": 974320,
+      "encodedBodySize": 974020,
+      "duration": 4.3999998569488525
+    },
+    {
+      "name": "app-ajfdjc38.js",
+      "transferSize": 428,
+      "encodedBodySize": 128,
+      "duration": 2.0999999046325684
+    },
+    {
+      "name": "app-gq4p0kq2.js",
+      "transferSize": 569,
+      "encodedBodySize": 269,
+      "duration": 2.799999952316284
+    },
+    {
+      "name": "babylon-jyzs1vjy.js",
+      "transferSize": 418450,
+      "encodedBodySize": 418150,
+      "duration": 3
+    },
+    {
+      "name": "maplibre-gl-worker.mjs",
+      "transferSize": 455833,
+      "encodedBodySize": 455533,
+      "duration": -24.299999952316284
+    },
+    {
+      "name": "app-n56f0pmj.js",
+      "transferSize": 19905,
+      "encodedBodySize": 19605,
+      "duration": 3.299999952316284
+    },
+    {
+      "name": "app-9pa1gd2w.js",
+      "transferSize": 25051,
+      "encodedBodySize": 24751,
+      "duration": 3.0999999046325684
+    },
+    {
+      "name": "app-s5dsew05.js",
+      "transferSize": 191864,
+      "encodedBodySize": 191564,
+      "duration": 2.700000047683716
+    },
+    {
+      "name": "app-whpzh38q.js",
+      "transferSize": 15838,
+      "encodedBodySize": 15538,
+      "duration": 6
+    },
+    {
+      "name": "app-jnbx94n9.js",
+      "transferSize": 103457,
+      "encodedBodySize": 103157,
+      "duration": 6.400000095367432
+    },
+    {
+      "name": "app-vd83tdpm.js",
+      "transferSize": 978,
+      "encodedBodySize": 678,
+      "duration": 4.200000047683716
+    },
+    {
+      "name": "app-zttjn0wx.js",
+      "transferSize": 8545,
+      "encodedBodySize": 8245,
+      "duration": 5.700000047683716
+    },
+    {
+      "name": "app-j4arak99.js",
+      "transferSize": 128668,
+      "encodedBodySize": 128368,
+      "duration": 4.6000001430511475
+    },
+    {
+      "name": "app-ehcstzxx.js",
+      "transferSize": 7588,
+      "encodedBodySize": 7288,
+      "duration": 7.900000095367432
+    },
+    {
+      "name": "app-9xanjpw2.js",
+      "transferSize": 18092,
+      "encodedBodySize": 17792,
+      "duration": 8.700000047683716
+    },
+    {
+      "name": "app-hn0wgdkn.js",
+      "transferSize": 2190,
+      "encodedBodySize": 1890,
+      "duration": 9.900000095367432
+    },
+    {
+      "name": "app-a597jezn.js",
+      "transferSize": 765,
+      "encodedBodySize": 465,
+      "duration": 10.600000143051147
+    }
+  ],
+  "driverObservedFirstUsefulSinceNavigationMs": 248.5,
+  "coldReadyMeasurementLimit": "Fresh page with no-store loopback resources; observer poll≤50ms; not a shaped WAN/cold OS cache trial."
+}

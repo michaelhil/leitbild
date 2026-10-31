@@ -1,0 +1,1408 @@
+{
+  "passed": true,
+  "reuse": [
+    {
+      "name": "3d",
+      "geometryUploadsDelta": 0,
+      "viewRequestsDelta": 0
+    },
+    {
+      "name": "plan",
+      "geometryUploadsDelta": 0,
+      "viewRequestsDelta": 0
+    }
+  ],
+  "ownerHit": {
+    "sceneId": "layout:halden-2",
+    "targetObjectId": "plant:halden-2",
+    "occurrenceId": "tg-hp",
+    "label": "High-pressure turbine",
+    "subjectIds": [
+      "turbine"
+    ],
+    "screen": {
+      "x": 224.39461883934132,
+      "y": 456.49999994935354,
+      "depth": -0.4389262820512818,
+      "visible": true
+    }
+  },
+  "ownerCorrect": true,
+  "errors": [],
+  "limits": [
+    "Actual admitted five-layout fixture and real canvas/map ports with module worker. This is a bounded lifetime test, not a new product timing claim.",
+    "Two real frame boundaries bracket forced GC so diagnostics cannot pin WeakRef referents during the collection.",
+    "Typed CPU byte figures exclude source arrays and JS metadata. Shared per-host assets must not be summed as distinct physical memory.",
+    "A returned variant may legitimately prepare/upload again after measured GPU eviction; only surviving resident variants promise CPU reuse."
+  ],
+  "provenance": {
+    "rendererRoot": "/Users/hilde/Documents/ChatGPT/Leitbild-loading-proof/apps/world",
+    "sourceRoot": "/Users/hilde/Documents/ChatGPT/Leitbild/apps/world",
+    "rendererCommit": "0b126b0182a923ff757ce13f0182806bdc7cdcac",
+    "sourceCommit": "4f309c67c7a1bd69a7eb9cac7363f8f2979e3f4b",
+    "fixtureDeliveryBytes": 130861583,
+    "fixtureSha256": "215ec4f9f2d21377c9190913c83d45dcbc160f7012b6e8bf77977f69af8448ef",
+    "definitions": [
+      {
+        "id": "layout:halden-1",
+        "revision": "58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f",
+        "geometryKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f"
+      },
+      {
+        "id": "layout:halden-2",
+        "revision": "58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f",
+        "geometryKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f"
+      },
+      {
+        "id": "layout:halden-3",
+        "revision": "58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f",
+        "geometryKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f"
+      },
+      {
+        "id": "layout:halden-4",
+        "revision": "58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f",
+        "geometryKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f"
+      },
+      {
+        "id": "layout:halden-campus",
+        "revision": "8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15",
+        "geometryKey": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15"
+      }
+    ],
+    "sources": {
+      "src/ui/map/physical-scene/surface-ownership.ts": "042d26984038994d79418a05c0c4fd6b8dd6fac1ee9795377b04287ea8753a6f",
+      "src/ui/map/physical-scene/spatial-index.ts": "82d4758e6b0956b7fbc9465693ecdb41873b6d36dc82ec33457e7ead55012a25",
+      "src/ui/map/physical-scene/backend.ts": "7d323720e8213b81b9d99d3afbc580aa33e1cb17640de016a40072dbd72f5cb2",
+      "src/ui/map/physical-scene/scene-controller.ts": "94e735920c926a5f353e21252d8d506bc6a6161202c7f8c172ace318858a72dd",
+      "src/ui/map/physical-scene/preparation.ts": "1a254b6aa6a3b4546dac24e55ed2bd12314bf5921705bd7b64810aca7630537b",
+      "src/ui/map/physical-scene/renderer.ts": "d014acdb970805a9704880cf66986973f0be924030913cea17063d1412276c14",
+      "src/ui/map/physical-scene/geometry.ts": "6f99822044fc3e350a78bf1a0aebb9283c261a58c0a66ef4761448b2185e84fd",
+      "src/ui/map/physical-scene/canvas-viewport.ts": "9d03f01197c3d4d0472472cbfe00f2ab45fa80dee0b2fcac2f9f8f44123ed857",
+      "tests/browser/physical-scene/cache-residency-app.ts": "b5b474461ee5bb688fefeaf0b3c688c879fd9ac697cc84671e3c434043b83ac3"
+    }
+  },
+  "phases": [
+    {
+      "name": "site-five-ready",
+      "inventory": [
+        {
+          "id": "layout:halden-1",
+          "status": "ready",
+          "view": {
+            "mode": "3d",
+            "levelId": "all",
+            "cutaway": true,
+            "separation": 0,
+            "detail": "auto",
+            "live": true
+          },
+          "occurrences": 466
+        },
+        {
+          "id": "layout:halden-2",
+          "status": "ready",
+          "view": {
+            "mode": "3d",
+            "levelId": "all",
+            "cutaway": true,
+            "separation": 0,
+            "detail": "auto",
+            "live": true
+          },
+          "occurrences": 466
+        },
+        {
+          "id": "layout:halden-3",
+          "status": "ready",
+          "view": {
+            "mode": "3d",
+            "levelId": "all",
+            "cutaway": true,
+            "separation": 0,
+            "detail": "auto",
+            "live": true
+          },
+          "occurrences": 466
+        },
+        {
+          "id": "layout:halden-4",
+          "status": "ready",
+          "view": {
+            "mode": "3d",
+            "levelId": "all",
+            "cutaway": true,
+            "separation": 0,
+            "detail": "auto",
+            "live": true
+          },
+          "occurrences": 466
+        },
+        {
+          "id": "layout:halden-campus",
+          "status": "ready",
+          "view": {
+            "mode": "3d",
+            "levelId": "all",
+            "cutaway": true,
+            "separation": 0,
+            "detail": "auto",
+            "live": true
+          },
+          "occurrences": 508
+        }
+      ],
+      "metrics": {
+        "preparation": {
+          "workerAlive": true,
+          "clients": 1,
+          "registeredSources": 4,
+          "registeredBytes": 41358588,
+          "leases": 4,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 4,
+          "viewRequests": 2,
+          "transferredBytes": 41358588,
+          "retainedViews": 2,
+          "retainedViewBytes": 83878040,
+          "cacheHits": 0,
+          "queuedViews": 0,
+          "skippedViews": 0
+        },
+        "current": {
+          "geometryUploads": 2,
+          "geometryBytes": 27265584,
+          "residentCpuBytes": 83878040,
+          "draws": 6,
+          "buffers": 6,
+          "programs": 1,
+          "textures": 4,
+          "textureBytes": 236432,
+          "instanceBytes": 340,
+          "instanceUploads": 3,
+          "statusUploads": 2,
+          "paletteUploads": 2,
+          "evictions": 0,
+          "peakRequiredBytes": 27502356,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null,
+          "liveTexturesAfterDisposal": null,
+          "plan": null
+        },
+        "disposals": [],
+        "retainedScenes": 5,
+        "loadingScenes": 0
+      }
+    },
+    {
+      "name": "first-operating3d",
+      "inventory": [
+        {
+          "id": "layout:halden-1",
+          "status": "ready",
+          "view": {
+            "mode": "3d",
+            "levelId": "operating",
+            "cutaway": true,
+            "separation": 0,
+            "detail": "auto",
+            "live": true
+          },
+          "occurrences": 466
+        },
+        {
+          "id": "layout:halden-2",
+          "status": "distant",
+          "view": {
+            "mode": "3d",
+            "levelId": "all",
+            "cutaway": true,
+            "separation": 0,
+            "detail": "auto",
+            "live": true
+          },
+          "occurrences": 466
+        },
+        {
+          "id": "layout:halden-3",
+          "status": "distant",
+          "view": {
+            "mode": "3d",
+            "levelId": "all",
+            "cutaway": true,
+            "separation": 0,
+            "detail": "auto",
+            "live": true
+          },
+          "occurrences": 466
+        },
+        {
+          "id": "layout:halden-4",
+          "status": "distant",
+          "view": {
+            "mode": "3d",
+            "levelId": "all",
+            "cutaway": true,
+            "separation": 0,
+            "detail": "auto",
+            "live": true
+          },
+          "occurrences": 466
+        },
+        {
+          "id": "layout:halden-campus",
+          "status": "distant",
+          "view": {
+            "mode": "3d",
+            "levelId": "all",
+            "cutaway": true,
+            "separation": 0,
+            "detail": "auto",
+            "live": true
+          },
+          "occurrences": 508
+        }
+      ],
+      "metrics": {
+        "preparation": {
+          "workerAlive": true,
+          "clients": 1,
+          "registeredSources": 4,
+          "registeredBytes": 41358588,
+          "leases": 4,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 4,
+          "viewRequests": 5,
+          "transferredBytes": 41358588,
+          "retainedViews": 5,
+          "retainedViewBytes": 95131516,
+          "cacheHits": 0,
+          "queuedViews": 0,
+          "skippedViews": 0
+        },
+        "current": {
+          "geometryUploads": 5,
+          "geometryBytes": 15354192,
+          "residentCpuBytes": 48030708,
+          "draws": 20,
+          "buffers": 12,
+          "programs": 1,
+          "textures": 8,
+          "textureBytes": 63056,
+          "instanceBytes": 476,
+          "instanceUploads": 10,
+          "statusUploads": 7,
+          "paletteUploads": 5,
+          "evictions": 1,
+          "peakRequiredBytes": 27502356,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null,
+          "liveTexturesAfterDisposal": null,
+          "plan": null
+        },
+        "disposals": [],
+        "retainedScenes": 5,
+        "loadingScenes": 0
+      }
+    },
+    {
+      "name": "stack-before-gc",
+      "inventory": [
+        {
+          "id": "layout:halden-1",
+          "status": "ready",
+          "view": {
+            "mode": "3d",
+            "levelId": "all",
+            "cutaway": true,
+            "separation": 0,
+            "detail": "auto",
+            "live": true
+          },
+          "occurrences": 466
+        },
+        {
+          "id": "layout:halden-2",
+          "status": "distant",
+          "view": {
+            "mode": "3d",
+            "levelId": "all",
+            "cutaway": true,
+            "separation": 0,
+            "detail": "auto",
+            "live": true
+          },
+          "occurrences": 466
+        },
+        {
+          "id": "layout:halden-3",
+          "status": "distant",
+          "view": {
+            "mode": "3d",
+            "levelId": "all",
+            "cutaway": true,
+            "separation": 0,
+            "detail": "auto",
+            "live": true
+          },
+          "occurrences": 466
+        },
+        {
+          "id": "layout:halden-4",
+          "status": "distant",
+          "view": {
+            "mode": "3d",
+            "levelId": "all",
+            "cutaway": true,
+            "separation": 0,
+            "detail": "auto",
+            "live": true
+          },
+          "occurrences": 466
+        },
+        {
+          "id": "layout:halden-campus",
+          "status": "distant",
+          "view": {
+            "mode": "3d",
+            "levelId": "all",
+            "cutaway": true,
+            "separation": 0,
+            "detail": "auto",
+            "live": true
+          },
+          "occurrences": 508
+        }
+      ],
+      "metrics": {
+        "preparation": {
+          "workerAlive": true,
+          "clients": 1,
+          "registeredSources": 4,
+          "registeredBytes": 41358588,
+          "leases": 4,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 4,
+          "viewRequests": 5,
+          "transferredBytes": 41358588,
+          "retainedViews": 5,
+          "retainedViewBytes": 95131516,
+          "cacheHits": 1,
+          "queuedViews": 0,
+          "skippedViews": 0
+        },
+        "current": {
+          "geometryUploads": 5,
+          "geometryBytes": 15354192,
+          "residentCpuBytes": 48030708,
+          "draws": 32,
+          "buffers": 12,
+          "programs": 1,
+          "textures": 8,
+          "textureBytes": 63056,
+          "instanceBytes": 476,
+          "instanceUploads": 16,
+          "statusUploads": 7,
+          "paletteUploads": 5,
+          "evictions": 1,
+          "peakRequiredBytes": 27502356,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null,
+          "liveTexturesAfterDisposal": null,
+          "plan": null
+        },
+        "disposals": [],
+        "retainedScenes": 5,
+        "loadingScenes": 0
+      }
+    },
+    {
+      "name": "stack-after-gc",
+      "inventory": [
+        {
+          "id": "layout:halden-1",
+          "status": "ready",
+          "view": {
+            "mode": "3d",
+            "levelId": "all",
+            "cutaway": true,
+            "separation": 0,
+            "detail": "auto",
+            "live": true
+          },
+          "occurrences": 466
+        },
+        {
+          "id": "layout:halden-2",
+          "status": "distant",
+          "view": {
+            "mode": "3d",
+            "levelId": "all",
+            "cutaway": true,
+            "separation": 0,
+            "detail": "auto",
+            "live": true
+          },
+          "occurrences": 466
+        },
+        {
+          "id": "layout:halden-3",
+          "status": "distant",
+          "view": {
+            "mode": "3d",
+            "levelId": "all",
+            "cutaway": true,
+            "separation": 0,
+            "detail": "auto",
+            "live": true
+          },
+          "occurrences": 466
+        },
+        {
+          "id": "layout:halden-4",
+          "status": "distant",
+          "view": {
+            "mode": "3d",
+            "levelId": "all",
+            "cutaway": true,
+            "separation": 0,
+            "detail": "auto",
+            "live": true
+          },
+          "occurrences": 466
+        },
+        {
+          "id": "layout:halden-campus",
+          "status": "distant",
+          "view": {
+            "mode": "3d",
+            "levelId": "all",
+            "cutaway": true,
+            "separation": 0,
+            "detail": "auto",
+            "live": true
+          },
+          "occurrences": 508
+        }
+      ],
+      "metrics": {
+        "preparation": {
+          "workerAlive": true,
+          "clients": 1,
+          "registeredSources": 4,
+          "registeredBytes": 41358588,
+          "leases": 4,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 4,
+          "viewRequests": 5,
+          "transferredBytes": 41358588,
+          "retainedViews": 5,
+          "retainedViewBytes": 95131516,
+          "cacheHits": 1,
+          "queuedViews": 0,
+          "skippedViews": 0
+        },
+        "current": {
+          "geometryUploads": 5,
+          "geometryBytes": 15354192,
+          "residentCpuBytes": 48030708,
+          "draws": 32,
+          "buffers": 12,
+          "programs": 1,
+          "textures": 8,
+          "textureBytes": 63056,
+          "instanceBytes": 476,
+          "instanceUploads": 16,
+          "statusUploads": 7,
+          "paletteUploads": 5,
+          "evictions": 1,
+          "peakRequiredBytes": 27502356,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null,
+          "liveTexturesAfterDisposal": null,
+          "plan": null
+        },
+        "disposals": [],
+        "retainedScenes": 5,
+        "loadingScenes": 0
+      }
+    },
+    {
+      "name": "return-operating3d",
+      "inventory": [
+        {
+          "id": "layout:halden-1",
+          "status": "ready",
+          "view": {
+            "mode": "3d",
+            "levelId": "operating",
+            "cutaway": true,
+            "separation": 0,
+            "detail": "auto",
+            "live": true
+          },
+          "occurrences": 466
+        },
+        {
+          "id": "layout:halden-2",
+          "status": "distant",
+          "view": {
+            "mode": "3d",
+            "levelId": "all",
+            "cutaway": true,
+            "separation": 0,
+            "detail": "auto",
+            "live": true
+          },
+          "occurrences": 466
+        },
+        {
+          "id": "layout:halden-3",
+          "status": "distant",
+          "view": {
+            "mode": "3d",
+            "levelId": "all",
+            "cutaway": true,
+            "separation": 0,
+            "detail": "auto",
+            "live": true
+          },
+          "occurrences": 466
+        },
+        {
+          "id": "layout:halden-4",
+          "status": "distant",
+          "view": {
+            "mode": "3d",
+            "levelId": "all",
+            "cutaway": true,
+            "separation": 0,
+            "detail": "auto",
+            "live": true
+          },
+          "occurrences": 466
+        },
+        {
+          "id": "layout:halden-campus",
+          "status": "distant",
+          "view": {
+            "mode": "3d",
+            "levelId": "all",
+            "cutaway": true,
+            "separation": 0,
+            "detail": "auto",
+            "live": true
+          },
+          "occurrences": 508
+        }
+      ],
+      "metrics": {
+        "preparation": {
+          "workerAlive": true,
+          "clients": 1,
+          "registeredSources": 4,
+          "registeredBytes": 41358588,
+          "leases": 4,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 4,
+          "viewRequests": 5,
+          "transferredBytes": 41358588,
+          "retainedViews": 5,
+          "retainedViewBytes": 95131516,
+          "cacheHits": 2,
+          "queuedViews": 0,
+          "skippedViews": 0
+        },
+        "current": {
+          "geometryUploads": 5,
+          "geometryBytes": 15354192,
+          "residentCpuBytes": 48030708,
+          "draws": 44,
+          "buffers": 12,
+          "programs": 1,
+          "textures": 8,
+          "textureBytes": 63056,
+          "instanceBytes": 476,
+          "instanceUploads": 22,
+          "statusUploads": 7,
+          "paletteUploads": 5,
+          "evictions": 1,
+          "peakRequiredBytes": 27502356,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null,
+          "liveTexturesAfterDisposal": null,
+          "plan": null
+        },
+        "disposals": [],
+        "retainedScenes": 5,
+        "loadingScenes": 0
+      }
+    },
+    {
+      "name": "first-operating-plan",
+      "inventory": [
+        {
+          "id": "layout:halden-1",
+          "status": "ready",
+          "view": {
+            "mode": "2d",
+            "levelId": "operating",
+            "cutaway": true,
+            "separation": 0,
+            "detail": "auto",
+            "live": true
+          },
+          "occurrences": 466
+        },
+        {
+          "id": "layout:halden-2",
+          "status": "distant",
+          "view": {
+            "mode": "2d",
+            "levelId": "lower",
+            "cutaway": true,
+            "separation": 0,
+            "detail": "auto",
+            "live": true
+          },
+          "occurrences": 466
+        },
+        {
+          "id": "layout:halden-3",
+          "status": "distant",
+          "view": {
+            "mode": "2d",
+            "levelId": "lower",
+            "cutaway": true,
+            "separation": 0,
+            "detail": "auto",
+            "live": true
+          },
+          "occurrences": 466
+        },
+        {
+          "id": "layout:halden-4",
+          "status": "distant",
+          "view": {
+            "mode": "2d",
+            "levelId": "lower",
+            "cutaway": true,
+            "separation": 0,
+            "detail": "auto",
+            "live": true
+          },
+          "occurrences": 466
+        },
+        {
+          "id": "layout:halden-campus",
+          "status": "distant",
+          "view": {
+            "mode": "2d",
+            "levelId": "campus-ground",
+            "cutaway": true,
+            "separation": 0,
+            "detail": "auto",
+            "live": true
+          },
+          "occurrences": 508
+        }
+      ],
+      "metrics": {
+        "preparation": {
+          "workerAlive": true,
+          "clients": 1,
+          "registeredSources": 4,
+          "registeredBytes": 41358588,
+          "leases": 4,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 4,
+          "viewRequests": 8,
+          "transferredBytes": 41358588,
+          "retainedViews": 8,
+          "retainedViewBytes": 105713372,
+          "cacheHits": 2,
+          "queuedViews": 0,
+          "skippedViews": 0
+        },
+        "current": {
+          "geometryUploads": 8,
+          "geometryBytes": 18728064,
+          "residentCpuBytes": 58612564,
+          "draws": 52,
+          "buffers": 21,
+          "programs": 2,
+          "textures": 15,
+          "textureBytes": 5334736,
+          "instanceBytes": 680,
+          "instanceUploads": 26,
+          "statusUploads": 11,
+          "paletteUploads": 8,
+          "evictions": 1,
+          "peakRequiredBytes": 27502356,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null,
+          "liveTexturesAfterDisposal": null,
+          "plan": {
+            "programs": 1,
+            "textures": 1,
+            "framebuffers": 2,
+            "renderbuffers": 2,
+            "bytes": 47329920,
+            "textureBytes": 5258880,
+            "allocations": 1,
+            "composites": 2,
+            "liveTextures": null,
+            "livePrograms": null,
+            "liveFramebuffers": null,
+            "liveRenderbuffers": null
+          }
+        },
+        "disposals": [],
+        "retainedScenes": 5,
+        "loadingScenes": 0
+      }
+    },
+    {
+      "name": "lower-plan-before-gc",
+      "inventory": [
+        {
+          "id": "layout:halden-1",
+          "status": "ready",
+          "view": {
+            "mode": "2d",
+            "levelId": "lower",
+            "cutaway": true,
+            "separation": 0,
+            "detail": "auto",
+            "live": true
+          },
+          "occurrences": 466
+        },
+        {
+          "id": "layout:halden-2",
+          "status": "distant",
+          "view": {
+            "mode": "2d",
+            "levelId": "lower",
+            "cutaway": true,
+            "separation": 0,
+            "detail": "auto",
+            "live": true
+          },
+          "occurrences": 466
+        },
+        {
+          "id": "layout:halden-3",
+          "status": "distant",
+          "view": {
+            "mode": "2d",
+            "levelId": "lower",
+            "cutaway": true,
+            "separation": 0,
+            "detail": "auto",
+            "live": true
+          },
+          "occurrences": 466
+        },
+        {
+          "id": "layout:halden-4",
+          "status": "distant",
+          "view": {
+            "mode": "2d",
+            "levelId": "lower",
+            "cutaway": true,
+            "separation": 0,
+            "detail": "auto",
+            "live": true
+          },
+          "occurrences": 466
+        },
+        {
+          "id": "layout:halden-campus",
+          "status": "distant",
+          "view": {
+            "mode": "2d",
+            "levelId": "campus-ground",
+            "cutaway": true,
+            "separation": 0,
+            "detail": "auto",
+            "live": true
+          },
+          "occurrences": 508
+        }
+      ],
+      "metrics": {
+        "preparation": {
+          "workerAlive": true,
+          "clients": 1,
+          "registeredSources": 4,
+          "registeredBytes": 41358588,
+          "leases": 4,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 4,
+          "viewRequests": 9,
+          "transferredBytes": 41358588,
+          "retainedViews": 8,
+          "retainedViewBytes": 79778772,
+          "cacheHits": 2,
+          "queuedViews": 0,
+          "skippedViews": 0
+        },
+        "current": {
+          "geometryUploads": 9,
+          "geometryBytes": 25611360,
+          "residentCpuBytes": 79778772,
+          "draws": 62,
+          "buffers": 24,
+          "programs": 2,
+          "textures": 17,
+          "textureBytes": 5351776,
+          "instanceBytes": 748,
+          "instanceUploads": 31,
+          "statusUploads": 15,
+          "paletteUploads": 9,
+          "evictions": 1,
+          "peakRequiredBytes": 27502356,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null,
+          "liveTexturesAfterDisposal": null,
+          "plan": {
+            "programs": 1,
+            "textures": 1,
+            "framebuffers": 2,
+            "renderbuffers": 2,
+            "bytes": 47329920,
+            "textureBytes": 5258880,
+            "allocations": 1,
+            "composites": 4,
+            "liveTextures": null,
+            "livePrograms": null,
+            "liveFramebuffers": null,
+            "liveRenderbuffers": null
+          }
+        },
+        "disposals": [],
+        "retainedScenes": 5,
+        "loadingScenes": 0
+      }
+    },
+    {
+      "name": "lower-plan-after-gc",
+      "inventory": [
+        {
+          "id": "layout:halden-1",
+          "status": "ready",
+          "view": {
+            "mode": "2d",
+            "levelId": "lower",
+            "cutaway": true,
+            "separation": 0,
+            "detail": "auto",
+            "live": true
+          },
+          "occurrences": 466
+        },
+        {
+          "id": "layout:halden-2",
+          "status": "distant",
+          "view": {
+            "mode": "2d",
+            "levelId": "lower",
+            "cutaway": true,
+            "separation": 0,
+            "detail": "auto",
+            "live": true
+          },
+          "occurrences": 466
+        },
+        {
+          "id": "layout:halden-3",
+          "status": "distant",
+          "view": {
+            "mode": "2d",
+            "levelId": "lower",
+            "cutaway": true,
+            "separation": 0,
+            "detail": "auto",
+            "live": true
+          },
+          "occurrences": 466
+        },
+        {
+          "id": "layout:halden-4",
+          "status": "distant",
+          "view": {
+            "mode": "2d",
+            "levelId": "lower",
+            "cutaway": true,
+            "separation": 0,
+            "detail": "auto",
+            "live": true
+          },
+          "occurrences": 466
+        },
+        {
+          "id": "layout:halden-campus",
+          "status": "distant",
+          "view": {
+            "mode": "2d",
+            "levelId": "campus-ground",
+            "cutaway": true,
+            "separation": 0,
+            "detail": "auto",
+            "live": true
+          },
+          "occurrences": 508
+        }
+      ],
+      "metrics": {
+        "preparation": {
+          "workerAlive": true,
+          "clients": 1,
+          "registeredSources": 4,
+          "registeredBytes": 41358588,
+          "leases": 4,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 4,
+          "viewRequests": 9,
+          "transferredBytes": 41358588,
+          "retainedViews": 8,
+          "retainedViewBytes": 79778772,
+          "cacheHits": 2,
+          "queuedViews": 0,
+          "skippedViews": 0
+        },
+        "current": {
+          "geometryUploads": 9,
+          "geometryBytes": 25611360,
+          "residentCpuBytes": 79778772,
+          "draws": 62,
+          "buffers": 24,
+          "programs": 2,
+          "textures": 17,
+          "textureBytes": 5351776,
+          "instanceBytes": 748,
+          "instanceUploads": 31,
+          "statusUploads": 15,
+          "paletteUploads": 9,
+          "evictions": 1,
+          "peakRequiredBytes": 27502356,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null,
+          "liveTexturesAfterDisposal": null,
+          "plan": {
+            "programs": 1,
+            "textures": 1,
+            "framebuffers": 2,
+            "renderbuffers": 2,
+            "bytes": 47329920,
+            "textureBytes": 5258880,
+            "allocations": 1,
+            "composites": 4,
+            "liveTextures": null,
+            "livePrograms": null,
+            "liveFramebuffers": null,
+            "liveRenderbuffers": null
+          }
+        },
+        "disposals": [],
+        "retainedScenes": 5,
+        "loadingScenes": 0
+      }
+    },
+    {
+      "name": "return-operating-plan",
+      "inventory": [
+        {
+          "id": "layout:halden-1",
+          "status": "ready",
+          "view": {
+            "mode": "2d",
+            "levelId": "operating",
+            "cutaway": true,
+            "separation": 0,
+            "detail": "auto",
+            "live": true
+          },
+          "occurrences": 466
+        },
+        {
+          "id": "layout:halden-2",
+          "status": "distant",
+          "view": {
+            "mode": "2d",
+            "levelId": "lower",
+            "cutaway": true,
+            "separation": 0,
+            "detail": "auto",
+            "live": true
+          },
+          "occurrences": 466
+        },
+        {
+          "id": "layout:halden-3",
+          "status": "distant",
+          "view": {
+            "mode": "2d",
+            "levelId": "lower",
+            "cutaway": true,
+            "separation": 0,
+            "detail": "auto",
+            "live": true
+          },
+          "occurrences": 466
+        },
+        {
+          "id": "layout:halden-4",
+          "status": "distant",
+          "view": {
+            "mode": "2d",
+            "levelId": "lower",
+            "cutaway": true,
+            "separation": 0,
+            "detail": "auto",
+            "live": true
+          },
+          "occurrences": 466
+        },
+        {
+          "id": "layout:halden-campus",
+          "status": "distant",
+          "view": {
+            "mode": "2d",
+            "levelId": "campus-ground",
+            "cutaway": true,
+            "separation": 0,
+            "detail": "auto",
+            "live": true
+          },
+          "occurrences": 508
+        }
+      ],
+      "metrics": {
+        "preparation": {
+          "workerAlive": true,
+          "clients": 1,
+          "registeredSources": 4,
+          "registeredBytes": 41358588,
+          "leases": 4,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 4,
+          "viewRequests": 9,
+          "transferredBytes": 41358588,
+          "retainedViews": 8,
+          "retainedViewBytes": 79778772,
+          "cacheHits": 3,
+          "queuedViews": 0,
+          "skippedViews": 0
+        },
+        "current": {
+          "geometryUploads": 9,
+          "geometryBytes": 25611360,
+          "residentCpuBytes": 79778772,
+          "draws": 74,
+          "buffers": 24,
+          "programs": 2,
+          "textures": 17,
+          "textureBytes": 5351776,
+          "instanceBytes": 748,
+          "instanceUploads": 37,
+          "statusUploads": 17,
+          "paletteUploads": 9,
+          "evictions": 1,
+          "peakRequiredBytes": 27502356,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null,
+          "liveTexturesAfterDisposal": null,
+          "plan": {
+            "programs": 1,
+            "textures": 1,
+            "framebuffers": 2,
+            "renderbuffers": 2,
+            "bytes": 47329920,
+            "textureBytes": 5258880,
+            "allocations": 1,
+            "composites": 6,
+            "liveTextures": null,
+            "livePrograms": null,
+            "liveFramebuffers": null,
+            "liveRenderbuffers": null
+          }
+        },
+        "disposals": [],
+        "retainedScenes": 5,
+        "loadingScenes": 0
+      }
+    },
+    {
+      "name": "second-owner",
+      "inventory": [
+        {
+          "id": "layout:halden-2",
+          "status": "ready",
+          "view": {
+            "mode": "2d",
+            "levelId": "operating",
+            "cutaway": true,
+            "separation": 0,
+            "detail": "auto",
+            "live": true
+          },
+          "occurrences": 466
+        }
+      ],
+      "metrics": {
+        "preparation": {
+          "workerAlive": true,
+          "clients": 2,
+          "registeredSources": 4,
+          "registeredBytes": 41358588,
+          "leases": 6,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 4,
+          "viewRequests": 9,
+          "transferredBytes": 41358588,
+          "retainedViews": 8,
+          "retainedViewBytes": 79778772,
+          "cacheHits": 5,
+          "queuedViews": 0,
+          "skippedViews": 0
+        },
+        "current": {
+          "geometryUploads": 2,
+          "geometryBytes": 3367152,
+          "residentCpuBytes": 10563700,
+          "draws": 8,
+          "buffers": 6,
+          "programs": 2,
+          "textures": 5,
+          "textureBytes": 5271488,
+          "instanceBytes": 136,
+          "instanceUploads": 4,
+          "statusUploads": 2,
+          "paletteUploads": 2,
+          "evictions": 0,
+          "peakRequiredBytes": 3379896,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null,
+          "liveTexturesAfterDisposal": null,
+          "plan": {
+            "programs": 1,
+            "textures": 1,
+            "framebuffers": 2,
+            "renderbuffers": 2,
+            "bytes": 47329920,
+            "textureBytes": 5258880,
+            "allocations": 1,
+            "composites": 2,
+            "liveTextures": null,
+            "livePrograms": null,
+            "liveFramebuffers": null,
+            "liveRenderbuffers": null
+          }
+        },
+        "disposals": [],
+        "retainedScenes": 1,
+        "loadingScenes": 0
+      }
+    },
+    {
+      "name": "first-owner-closed",
+      "inventory": [
+        {
+          "id": "layout:halden-2",
+          "status": "ready",
+          "view": {
+            "mode": "2d",
+            "levelId": "operating",
+            "cutaway": true,
+            "separation": 0,
+            "detail": "auto",
+            "live": true
+          },
+          "occurrences": 466
+        }
+      ],
+      "metrics": {
+        "preparation": {
+          "workerAlive": true,
+          "clients": 1,
+          "registeredSources": 2,
+          "registeredBytes": 18382416,
+          "leases": 2,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 4,
+          "viewRequests": 9,
+          "transferredBytes": 41358588,
+          "retainedViews": 2,
+          "retainedViewBytes": 10563700,
+          "cacheHits": 5,
+          "queuedViews": 0,
+          "skippedViews": 0
+        },
+        "current": {
+          "geometryUploads": 2,
+          "geometryBytes": 3367152,
+          "residentCpuBytes": 10563700,
+          "draws": 16,
+          "buffers": 6,
+          "programs": 2,
+          "textures": 5,
+          "textureBytes": 5271488,
+          "instanceBytes": 136,
+          "instanceUploads": 8,
+          "statusUploads": 2,
+          "paletteUploads": 2,
+          "evictions": 0,
+          "peakRequiredBytes": 3379896,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null,
+          "liveTexturesAfterDisposal": null,
+          "plan": {
+            "programs": 1,
+            "textures": 1,
+            "framebuffers": 2,
+            "renderbuffers": 2,
+            "bytes": 47329920,
+            "textureBytes": 5258880,
+            "allocations": 1,
+            "composites": 4,
+            "liveTextures": null,
+            "livePrograms": null,
+            "liveFramebuffers": null,
+            "liveRenderbuffers": null
+          }
+        },
+        "disposals": [],
+        "retainedScenes": 1,
+        "loadingScenes": 0
+      }
+    }
+  ],
+  "closed": {
+    "canvas": {
+      "preparation": {
+        "workerAlive": false,
+        "clients": 0,
+        "registeredSources": 0,
+        "registeredBytes": 0,
+        "leases": 0,
+        "inFlightJobs": 0,
+        "pinnedSources": 0,
+        "registrations": 4,
+        "viewRequests": 9,
+        "transferredBytes": 41358588,
+        "retainedViews": 0,
+        "retainedViewBytes": 0,
+        "cacheHits": 5,
+        "queuedViews": 0,
+        "skippedViews": 0
+      },
+      "current": null,
+      "disposals": [
+        {
+          "geometryUploads": 9,
+          "geometryBytes": 0,
+          "residentCpuBytes": 0,
+          "draws": 74,
+          "buffers": 0,
+          "programs": 0,
+          "textures": 0,
+          "textureBytes": 0,
+          "instanceBytes": 0,
+          "instanceUploads": 37,
+          "statusUploads": 17,
+          "paletteUploads": 9,
+          "evictions": 1,
+          "peakRequiredBytes": 27502356,
+          "liveBuffersAfterDisposal": 0,
+          "liveProgramsAfterDisposal": 0,
+          "liveTexturesAfterDisposal": 0,
+          "plan": {
+            "programs": 0,
+            "textures": 0,
+            "framebuffers": 0,
+            "renderbuffers": 0,
+            "bytes": 0,
+            "textureBytes": 0,
+            "allocations": 1,
+            "composites": 6,
+            "liveTextures": 0,
+            "livePrograms": 0,
+            "liveFramebuffers": 0,
+            "liveRenderbuffers": 0
+          }
+        }
+      ],
+      "retainedScenes": 0,
+      "loadingScenes": 0
+    },
+    "map": {
+      "preparation": {
+        "workerAlive": false,
+        "clients": 0,
+        "registeredSources": 0,
+        "registeredBytes": 0,
+        "leases": 0,
+        "inFlightJobs": 0,
+        "pinnedSources": 0,
+        "registrations": 4,
+        "viewRequests": 9,
+        "transferredBytes": 41358588,
+        "retainedViews": 0,
+        "retainedViewBytes": 0,
+        "cacheHits": 5,
+        "queuedViews": 0,
+        "skippedViews": 0
+      },
+      "current": null,
+      "disposals": [
+        {
+          "geometryUploads": 2,
+          "geometryBytes": 0,
+          "residentCpuBytes": 0,
+          "draws": 16,
+          "buffers": 0,
+          "programs": 0,
+          "textures": 0,
+          "textureBytes": 0,
+          "instanceBytes": 0,
+          "instanceUploads": 8,
+          "statusUploads": 2,
+          "paletteUploads": 2,
+          "evictions": 0,
+          "peakRequiredBytes": 3379896,
+          "liveBuffersAfterDisposal": 0,
+          "liveProgramsAfterDisposal": 0,
+          "liveTexturesAfterDisposal": 0,
+          "plan": {
+            "programs": 0,
+            "textures": 0,
+            "framebuffers": 0,
+            "renderbuffers": 0,
+            "bytes": 0,
+            "textureBytes": 0,
+            "allocations": 1,
+            "composites": 4,
+            "liveTextures": 0,
+            "livePrograms": 0,
+            "liveFramebuffers": 0,
+            "liveRenderbuffers": 0
+          }
+        }
+      ],
+      "retainedScenes": 0,
+      "loadingScenes": 0
+    }
+  }
+}

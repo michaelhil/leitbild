@@ -1,0 +1,89 @@
+{
+  "purpose": "Final pre-release native R10/R12 admission after explicit SG primary-heat diagnostic authority correction. Prior model proofs remain prior evidence and are not relabeled.",
+  "modelDigest": "b7d6924f768f44bf2b7c965b85aae723386c7e47dff6908b95bb1ae581425cb5",
+  "automationDigest": "51ba771b09e0ebad4282fd98b4f06968fde83b19f2907bfadc96835ad9b0c0fa",
+  "counts": {
+    "components": 151,
+    "links": 233,
+    "variables": 2323
+  },
+  "admissions": {
+    "pwr-full-unit-shutdown-cooling": {
+      "design": {
+        "id": "pwr-full-unit",
+        "revision": "pwr-full-unit-20261030-r10",
+        "digest": "6c19cdb839f0c03856e9530558eb7b9fca9d63a5c8fa64b6be90ef8951cc4ade"
+      },
+      "sourceDigest": "ea5342503802596a622e3a93fe6c99ad867fc84e2ed10c5ed2289bccd190931e",
+      "bindingDigest": "06a38e6a294c67de0394f1122c7193f4a762070aca6d889099b0dfa9a78cc8ea",
+      "geometryDigest": "9666d7aaedfe6ca7bc2b2d0f86efb93696a9d777635aac4f61e523dd6f995cb8",
+      "physicalApplicabilityDigest": "e2cece57e095acfa8c3c655db682569a07be230669a651312c532fbb05c95403",
+      "modelRequirement": {
+        "modelRef": "process-plant.pwr.reference",
+        "modelDigest": "b7d6924f768f44bf2b7c965b85aae723386c7e47dff6908b95bb1ae581425cb5"
+      }
+    },
+    "pwr-campus-shutdown-cooling": {
+      "design": {
+        "id": "pwr-campus",
+        "revision": "pwr-campus-20261030-r12",
+        "digest": "1ed56594c261cff3f0e9f3dbcb810388b3b51ed5a32f67bd634b6ce1279f7340"
+      },
+      "sourceDigest": "d5716939432a41da347abb61c0fb8d303ce014852c8adbf65d9cc02662e09c57",
+      "bindingDigest": "c5033d344a00722a4cbb6b44d858b13ef64f0a5511a39fdbb49ecb80a812364b",
+      "geometryDigest": "9e01b57bc882de0e6b483c3ddc1bc81c639fa56424e1f56b9e1a503381f61c87",
+      "physicalApplicabilityDigest": "1e0c31c51d7ce9326ac67815f8804aeafaeaebc36c5181bd2c35606ad217cd9c",
+      "modelRequirement": {
+        "modelRef": "electric-grid.halden.four-unit",
+        "modelDigest": "3551eb6c70f93b5aa9bc98f1d64a3ce51d5187ce158bc54df4e394cddbaf5173"
+      }
+    }
+  },
+  "priorLineupAdmission": {
+    "pwr-full-unit-shutdown-cooling": {
+      "design": {
+        "id": "pwr-full-unit",
+        "revision": "pwr-full-unit-20261030-r10",
+        "digest": "4b8af3935685d2e7fdc4a77cb7542477a175cfcde4fed4ea7c833ca134762d30"
+      },
+      "modelRequirement": {
+        "modelRef": "process-plant.pwr.reference",
+        "modelDigest": "01d69a2a778c957d7785afa3a0cc15881de3a05633e0c960b393ffe5164df7b5"
+      },
+      "geometryDigest": "9666d7aaedfe6ca7bc2b2d0f86efb93696a9d777635aac4f61e523dd6f995cb8"
+    },
+    "pwr-campus-shutdown-cooling": {
+      "design": {
+        "id": "pwr-campus",
+        "revision": "pwr-campus-20261030-r12",
+        "digest": "b6e2a22af2fe383bde8ddfdbe82b416ee9c7e02c98da86e276b9557dcffe106e"
+      },
+      "modelRequirement": {
+        "modelRef": "electric-grid.halden.four-unit",
+        "modelDigest": "3551eb6c70f93b5aa9bc98f1d64a3ce51d5187ce158bc54df4e394cddbaf5173"
+      },
+      "geometryDigest": "9e01b57bc882de0e6b483c3ddc1bc81c639fa56424e1f56b9e1a503381f61c87"
+    }
+  },
+  "preservation": {
+    "unitAndCampusSourceDigestsUnchanged": true,
+    "unitAndCampusBindingDigestsUnchanged": true,
+    "unitAndCampusTriangleDigestsUnchanged": true,
+    "compilerUnchanged": true,
+    "scope": "Relative to the already-verified straight-barrier pre-release installation. Relative to the first undeployed trial, only four new barrier placements and six fluid/four power routes change; published R9 data and all unrelated geometry are preserved.",
+    "priorLineupEvidence": "shutdown-barrier-lineup-20261030.json"
+  },
+  "standaloneValidation": {
+    "command": "bun test tests/physical-shutdown-cooling-admission.test.ts tests/physical-recirculation-authoring.test.ts tests/physical-recirculation-admission.test.ts",
+    "passedTests": 6,
+    "assertions": 7214,
+    "checks": [
+      "Current native authoring exactly reproduces source, bindings, complete model coverage and campus dependencies.",
+      "Twelve new barrier endpoints contact actual rendered body triangles and their continuous route centerlines.",
+      "Both inter-barrier connections are straight two-point accepted routes.",
+      "All six current Halden Scenarios pin the new exact admissions.",
+      "Historical R9 evidence remains on its actual captured model and graph ports."
+    ]
+  },
+  "runPolicy": "Fresh sandbox Runs only; no old Run migration, digest alias or silent reinterpretation."
+}

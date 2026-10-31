@@ -8,7 +8,7 @@ const channelPaths = new Set(['deltaTC', 'averageTemperatureC', 'overtemperature
 export const instrumentationInitialValueDefinitions: ReadonlyArray<ComponentInitialValueDefinition> = [
   {
     componentKind: 'deltaTProtectionChannel',
-    initialValueFor: (_component, localPath) => channelPaths.has(localPath) ? 0 : localPath === 'forcedFlow' ? false : undefined,
+    initialValueFor: (_component, localPath) => channelPaths.has(localPath) ? 0 : localPath === 'forcedFlow' || localPath === 'powerIndicationAvailable' ? false : localPath === 'supplyAvailable' ? true : undefined,
   },
   {
     componentKind: 'safetyInjectionBlockLogic',

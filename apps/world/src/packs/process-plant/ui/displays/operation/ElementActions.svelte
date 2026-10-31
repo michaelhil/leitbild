@@ -1,0 +1,159 @@
+<script lang="ts">
+  import { recordingSeriesIdFor } from '../../../../../core/model/index.ts'
+  import type { PackElementActionsProps } from '../../../../../core/packs/protocol.ts'
+  import { appendPoint, HOLD_GAP_MS, readHistory, sparkline, sparklineText, type TrendPoint } from '../../recorded-sparkline.ts'
+  import type { ProcessVariableValue, VariablePath } from '../../../graph/index.ts'
+  import type { ProcessPlantProposal, ProposalReview } from '../../../operations/proposals.ts'
+  import { runOnMount } from '../../../../../ui/svelte-lifecycle.svelte.ts'
+  import ControlSection from './ControlSection.svelte'
+  import ProposalSection from './ProposalSection.svelte'
+  import { operationClient, type OperationOutcome, type PlantRead } from './operation-client.ts'
+  import { operatedItems, readElementOperation } from './element-operation.ts'
+  import { citedMargin, ratePerMinute, type CitedReading } from './cited-reading.ts'
+  import { faceplateControls, itemControlView, operationNow, proposalCard, shownProposal, type ListedItem, type ListedReset, type OperationNow } from './operation-presenter.ts'
+
+  // The Plant's actions on one element, in a display's element faceplate (the
+  // embed contribution ui/embed.ts): the item of equipment the element is (a
+  // component, or a device it bundles drawn as its own node), its
+  // proposal card while one is pending or just closed, its CONTROL section
+  // and the RESETs of the actuations holding it, select-check-execute as the
+  // drawing's popover always offered them. In a pinned overlay its controls
+  // fold behind one line; elsewhere, while no proposal waits, its protective
+  // pushbuttons do (faceplateControls). World derives what may be operated
+  // and where it stands (controls.list); a command goes through World's one
+  // validated queued write path as this screen's actor (control.write), a
+  // decision on a proposal through control.decide. It reads the Run every
+  // second while open: controls.list, control.proposals, and signals.read
+  // with its operations on the paths its controls and proposals write and
+  // cite. A read that fails, or the display's samples FROZEN, disables every
+  // control and says so, until it reads again.
+
+  let { runId, objectId, elementId, frozen, pinned, short }: PackElementActionsProps = $props()
+
+  type Write = { readonly path: VariablePath; readonly value: ProcessVariableValue }
+  const READ_EVERY_MS = 1_000
+  const client = operationClient
+
+  // Whether the element is an item the Plant operates, once controls.list has said; null before.
+  let operated = $state<boolean | null>(null)
+  let item = $state.raw<ListedItem | null>(null)
+  let resets = $state.raw<ReadonlyArray<ListedReset>>([])
+  let proposals = $state.raw<ReadonlyArray<ProcessPlantProposal>>([])
+  let reviews = $state.raw<ReadonlyMap<string, ProposalReview>>(new Map())
+  let read = $state.raw<PlantRead | null>(null)
+  let failure = $state<string | null>(null)
+  // A proposal used as a draft: CONTROL opens with its command selected, as this person's own.
+  let draft = $state.raw<{ readonly write: Write; readonly at: number } | null>(null)
+  // Folded controls open on a person's press or on a draft, and stay open: each read redraws the line, never closes it.
+  let unfolded = $state(false)
+
+  const messageOf = (error: unknown): string => error instanceof Error ? error.message : String(error)
+
+  let reading = false
+  const refresh = async (): Promise<void> => {
+    if (reading) return
+    reading = true
+    try {
+      operated ??= (await operatedItems(client, runId, objectId)).has(elementId)
+      if (!operated) return
+      const next = await readElementOperation(client, runId, objectId, elementId)
+      read = next.read
+      if (read !== null) extendHistories(read, [...new Set(next.proposals.flatMap(proposal => proposal.evidence.map(evidence => String(evidence.path))))])
+      item = next.item
+      resets = next.resets
+      proposals = next.proposals
+      reviews = next.reviews
+      failure = null
+    } catch (error) {
+      failure = `Controls cannot be read: ${messageOf(error)}`
+    } finally {
+      reading = false
+    }
+  }
+  // The readings a proposal cites: what the Run's historian holds of their last ten minutes, read once, then each read's value.
+  const TREND_MS = 10 * 60_000
+  const SPARK = { width: 72, height: 18 } as const
+  let histories = $state.raw<ReadonlyMap<string, ReadonlyArray<TrendPoint>>>(new Map())
+  const extendHistories = (latest: PlantRead, cited: ReadonlyArray<string>): void => {
+    const at = Date.parse(latest.sample.simulationTime)
+    const next = new Map(histories)
+    for (const path of cited) {
+      const value = latest.sample.values.find(entry => entry.path === path)?.value
+      const known = next.get(path)
+      if (known === undefined) {
+        void readHistory(runId, recordingSeriesIdFor(objectId, path), { from: at - TREND_MS - HOLD_GAP_MS, to: at }).then(
+          recorded => { histories = new Map(histories).set(path, [...recorded, ...(histories.get(path) ?? []).filter(point => point.t > (recorded.at(-1)?.t ?? -Infinity))]) },
+          error => { failure = `The history of ${path} cannot be read: ${messageOf(error)}` },
+        )
+      }
+      if (typeof value === 'number') next.set(path, appendPoint(next.get(path) ?? [], { t: at, v: value }, at - TREND_MS))
+    }
+    histories = next
+  }
+  runOnMount(() => {
+    void refresh()
+    const timer = setInterval(() => { void refresh() }, READ_EVERY_MS)
+    return () => clearInterval(timer)
+  })
+
+  const stale = $derived(failure !== null || frozen)
+  const now = $derived.by((): OperationNow | null => read === null ? null : operationNow(read.sample, read.units))
+  const proposal = $derived(now === null ? undefined : shownProposal(elementId, proposals, now))
+  // Each cited reading's margin to its limits and its last ten minutes, by tag (World's ranking, never the proposer's urgency).
+  const cited = $derived.by((): ReadonlyMap<string, CitedReading> => {
+    if (proposal === undefined || read === null || now === null) return new Map()
+    const at = Date.parse(read.sample.simulationTime)
+    return new Map(proposal.evidence.map(evidence => {
+      const path = String(evidence.path)
+      const points = histories.get(path) ?? []
+      const observed = read!.observed.get(path)
+      const line = sparkline(points, at, TREND_MS, SPARK)
+      return [String(evidence.tagId), {
+        margin: observed === undefined || observed === null ? null : citedMargin({ value: now!.read(evidence.path), unit: observed.unit, quantity: observed.quantity, thresholds: observed.thresholds, ...(observed.observation?.past === undefined ? {} : { past: observed.observation.past }), ratePerMinute: ratePerMinute(points) }),
+        line: line === null || observed === undefined || observed === null ? null : { ...line, text: sparklineText(line, TREND_MS, observed.unit) },
+      }] as const
+    }))
+  })
+  const shown = $derived(item !== null && (item.offered.length > 0 || item.withheld.length > 0 || resets.length > 0))
+
+  const validate = (write: Write) => client.validate(runId, objectId, write)
+  const execute = (write: Write): Promise<OperationOutcome> => client.write(runId, objectId, write)
+  const reset = (ruleId: string): Promise<OperationOutcome> => client.reset(runId, objectId, ruleId)
+  const decide = (decided: ProcessPlantProposal, decision: 'approve' | 'reject' | 'extend', reason: string | null = null): Promise<OperationOutcome> =>
+    client.decide(runId, objectId, decided.id, decision, reason)
+  const acceptedAt = (commandId: string): number | undefined => read?.log.find(record => record.commandId === commandId)?.elapsedMs
+</script>
+
+{#if item !== null && now !== null}
+  {#if proposal !== undefined}
+    <ProposalSection
+      card={proposalCard(proposal, reviews.get(proposal.id) ?? null, item, now)}
+      {cited}
+      spark={SPARK}
+      {stale}
+      approve={() => decide(proposal, 'approve')}
+      reject={reason => decide(proposal, 'reject', reason)}
+      extend={() => decide(proposal, 'extend')}
+      useAsDraft={() => { if (proposal.write !== undefined) { draft = { write: proposal.write, at: Date.now() }; unfolded = true } }}
+    />
+  {/if}
+  {#if shown}
+    {@const parts = faceplateControls(itemControlView(item, now, resets), { pinned, short, proposalPending: proposal?.status === 'pending' })}
+    {#key `${item.id}|${draft?.at ?? ''}`}
+      {#if parts.open !== null}<ControlSection view={parts.open} {now} {stale} {validate} {execute} {reset} draft={draft?.write ?? null} {acceptedAt} />{/if}
+      {#if parts.folded !== null}
+        <!-- Folded controls stay one line until a person opens them; a draft taken from a proposal opens them. -->
+        <details class="folded" bind:open={unfolded}>
+          <summary>Controls ({parts.count})</summary>
+          <ControlSection view={parts.folded} {now} {stale} {validate} {execute} {reset} draft={draft?.write ?? null} {acceptedAt} />
+        </details>
+      {/if}
+    {/key}
+  {/if}
+{/if}
+{#if failure !== null}<p class="failure" role="status">{failure}</p>{/if}
+
+<style>
+  .failure { margin: 2px 0 0; font-size: 11.5px; color: var(--element-active-color); }
+  .folded summary { min-height: 24px; line-height: 24px; cursor: pointer; font-size: 12px; font-weight: 600; color: var(--element-active-color); }
+</style>

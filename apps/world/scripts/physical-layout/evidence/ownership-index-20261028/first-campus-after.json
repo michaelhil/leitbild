@@ -1,0 +1,68 @@
+{
+  "engine": "centroid",
+  "design": {
+    "id": "pwr-campus",
+    "revision": "pwr-campus-20261027-r5",
+    "digest": "91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933"
+  },
+  "sourceDigest": "0c12a17bf7211c2fdfc26bd05139c7eb6088122c182316f89559421d3341807a",
+  "compiler": {
+    "id": "physical-layout-native-drafting",
+    "digest": "738f7a053a2567552490e2c9147d2960a139dd8a8c06a5bfa4b5505d160d51f0"
+  },
+  "inputMeshes": 535,
+  "inputTriangles": 131845,
+  "ms": 990.8187920000001,
+  "cpu": {
+    "user": 1191070,
+    "system": 51512
+  },
+  "memoryBefore": {
+    "rss": 300335104,
+    "heapTotal": 44837888,
+    "heapUsed": 75457740,
+    "external": 31908284,
+    "arrayBuffers": 1120
+  },
+  "memoryAfter": {
+    "rss": 565477376,
+    "heapTotal": 307403776,
+    "heapUsed": 184088976,
+    "external": 59095920,
+    "arrayBuffers": 15295372
+  },
+  "process": {
+    "userCPUTime": 2775294,
+    "systemCPUTime": 186173,
+    "maxRSS": 630384,
+    "sharedMemorySize": 0,
+    "unsharedDataSize": 0,
+    "unsharedStackSize": 0,
+    "minorPageFault": 39514,
+    "majorPageFault": 109,
+    "swappedOut": 0,
+    "fsRead": 0,
+    "fsWrite": 0,
+    "ipcSent": 0,
+    "ipcReceived": 0,
+    "signalsCount": 0,
+    "voluntaryContextSwitches": 5,
+    "involuntaryContextSwitches": 10268
+  },
+  "outputMeshes": 1837,
+  "packedBytes": 18569040,
+  "diagnostics": {
+    "broadPhaseCandidates": 2224458,
+    "coplanarCandidates": 110891,
+    "triangles": 131845,
+    "partitionedTriangles": 8096,
+    "retainedCandidates": 1302,
+    "coincidentPairs": 973
+  },
+  "fingerprint": "cd4977772446826d679168929fd03c0b889d839397841a630cf6299638f2a954",
+  "limits": [
+    "One fresh Bun process and one engine call; compilation, mesh generation, render/pick fingerprint outside measured interval.",
+    "One explicit test-only GC before the measured call; not a production cache/GC policy.",
+    "Process memory snapshots/peak are not retained product GPU residency. No browser or network latency claim."
+  ]
+}

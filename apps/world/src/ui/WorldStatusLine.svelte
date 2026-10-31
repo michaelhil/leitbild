@@ -9,9 +9,10 @@
     readonly clock: SimulationClockState | undefined
     readonly execution: RunExecutionState | null
     readonly feedback: CommandFeedbackLine | null
+    readonly placementHint: string
   }
 
-  const { clock, execution, feedback }: Props = $props()
+  const { clock, execution, feedback, placementHint }: Props = $props()
 
   let wallNow = $state(Date.now())
   const clockView = $derived(worldClockView({ clock, execution }, wallNow))
@@ -31,7 +32,9 @@
     </span>
   {/if}
   <div class="command-feedback-region" role="status" aria-live="polite">
-    {#if feedback}
+    {#if placementHint}
+      <p class="command-feedback" data-tone="notice"><span class="command-feedback-subject">{placementHint}</span></p>
+    {:else if feedback}
       <p class="command-feedback" data-tone={feedback.tone}>
         <span class="command-feedback-subject">{feedback.subject}{#if feedback.tone === 'pending'}{feedbackStatus}{/if}</span>
         <!-- Reads as commandFeedbackText: "<subject> · refused: <reason>". -->

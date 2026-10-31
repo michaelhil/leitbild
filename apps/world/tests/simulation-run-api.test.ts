@@ -16,7 +16,7 @@ import type {
   SimulationRunEvent,
   SimulationRunId,
 } from '../src/core/model/index.ts'
-import { deleteObjectCommandKind, geoPointFromLonLat } from '../src/core/model/index.ts'
+import { deleteObjectCommandKind, geoPointFromLonLat, objectIdSchema } from '../src/core/model/index.ts'
 import { handleSimulationRunApi } from '../src/core/api/simulation-run-routes.ts'
 import { createSimulationRunRegistry, type SimulationRunRegistry } from '../src/core/simulation-runs/registry.ts'
 import type { ProcedureSourceService } from '../src/features/procedures/source.ts'
@@ -25,6 +25,9 @@ import { fixturePackId, fixtureRuntimeId } from './fixtures/fixture-pack.ts'
 import { fixtureCommandIds, fixtureQueryIds } from './fixtures/fixture-runtime.ts'
 import { createTestPackRuntimeAdapters, createTestScenarioRuntimeResolver, testPacks, testScenarioAuthoring, waitForCondition } from './helpers.ts'
 import { responseScenario } from './fixtures/scenarios.ts'
+import { draftingLayoutDataSchema } from '../src/packs/physical-layout/model.ts'
+import { physicalLayoutScenarioItemSchema } from '../src/packs/physical-layout/pack.ts'
+import { pwrShutdownCoolingCampusPhysicalDesignRef, pwrShutdownCoolingUnitPhysicalDesignRef } from '../src/packs/physical-layout/design.ts'
 
 interface ApiResponse<T> {
   readonly status: number
@@ -215,6 +218,40 @@ const closeAll = async (registry: SimulationRunRegistry): Promise<void> => {
   for (const runtime of registry.list()) await registry.close(runtime.id)
 }
 
+test('join, snapshot and reset return the exact admitted live Scenario without rereading its retained file', async () => {
+  const registry = await createTestRegistry()
+  try {
+    const created = await createRun(registry)
+    const retained = JSON.parse(JSON.stringify(await registry.compiledScenarioForRun(created.id)))
+    const selected: SimulationRunId[] = []
+    const liveOnly: SimulationRunRegistry = {
+      ...registry,
+      compiledScenarioForRun: async () => { throw new Error('The loaded response must not reread the retained Scenario') },
+      loadedCompiledScenario: id => { selected.push(id); return registry.loadedCompiledScenario(id) },
+    }
+    await registry.close(created.id)
+    expect(() => registry.loadedCompiledScenario(created.id)).toThrow('Simulation Run is not loaded')
+    const joined = await callRoute<{ scenario: unknown }>(liveOnly, runPath(created.id))
+    expect(joined.status).toBe(200)
+    expect(joined.body.scenario).toEqual(retained)
+    const firstLoaded = registry.loadedCompiledScenario(created.id)
+    const snapshot = await callRoute<{ scenario: unknown }>(liveOnly, runPath(created.id, '/snapshot'))
+    expect(snapshot.status).toBe(200)
+    expect(snapshot.body.scenario).toEqual(retained)
+    const reset = await callRoute<{ scenario: unknown }>(liveOnly, runPath(created.id, '/reset'), { method: 'POST' })
+    expect(reset.status).toBe(200)
+    expect(reset.body.scenario).toEqual(retained)
+    expect(registry.loadedCompiledScenario(created.id)).not.toBe(firstLoaded)
+    expect(selected).toEqual([created.id, created.id, created.id])
+    const missingLoaded: SimulationRunRegistry = {
+      ...liveOnly,
+      loadedCompiledScenario: () => { throw new Error('The admitted live Scenario is unavailable') },
+    }
+    await expect(callRoute(missingLoaded, runPath(created.id, '/snapshot')))
+      .rejects.toThrow('The admitted live Scenario is unavailable')
+  } finally { await registry.shutdown() }
+})
+
 describe('Simulation Run API', () => {
   test('copies an ordinary Run without a second execution REST surface', async () => {
     const registry = await createTestRegistry()
@@ -232,20 +269,38 @@ describe('Simulation Run API', () => {
   })
   test('fetches the complete Scenario Definition needed by an active Run UI', async () => {
     const registry = await createTestRegistry()
-    const fetched = await callRoute<{
-      readonly scenario: {
-        readonly id: string
-        readonly packs: readonly string[]
-        readonly initialObjects: ReadonlyArray<{ readonly packId: string }>
-      }
-      readonly source: { readonly packs: ReadonlyArray<{ readonly id: string; readonly config: unknown; readonly items: readonly unknown[] }> }
-    }>(registry, '/scenarios/halden-power-complex')
-    expect(fetched.body.scenario.packs).toEqual(['process-plant', 'electric-grid', 'weather'])
-    expect(fetched.body.scenario.initialObjects.filter(object => object.packId === 'weather')).toHaveLength(3)
-    expect(fetched.body.scenario.initialObjects.filter(object => object.packId === 'process-plant')).toHaveLength(4)
-    const processPlant = fetched.body.source.packs.find(pack => pack.id === 'process-plant')
-    expect(processPlant?.config).toEqual({})
-    expect(processPlant?.items).toHaveLength(4)
+    try {
+      const fetched = await callRoute<{
+        readonly scenario: {
+          readonly id: string
+          readonly packs: readonly string[]
+          readonly initialObjects: ReadonlyArray<OperationalObject>
+        }
+        readonly source: { readonly packs: ReadonlyArray<{ readonly id: string; readonly config: unknown; readonly items: readonly unknown[] }> }
+      }>(registry, '/scenarios/halden-power-complex')
+      expect(fetched.status).toBe(200)
+      expect(fetched.body.scenario.packs).toEqual(['process-plant', 'electric-grid', 'weather', 'physical-layout'])
+      expect(fetched.body.scenario.initialObjects.filter(object => object.packId === 'weather')).toHaveLength(3)
+      expect(fetched.body.scenario.initialObjects.filter(object => object.packId === 'process-plant')).toHaveLength(4)
+      const layouts = fetched.body.scenario.initialObjects.filter(object => object.packId === 'physical-layout')
+      expect(layouts.map(object => String(object.id)).sort()).toEqual(['layout:halden-1', 'layout:halden-2', 'layout:halden-3', 'layout:halden-4', 'layout:halden-campus'])
+      const campus = draftingLayoutDataSchema.parse(layouts.find(object => object.id === 'layout:halden-campus')!.packData)
+      expect(campus.design).toEqual(pwrShutdownCoolingCampusPhysicalDesignRef)
+      expect(campus.source.planAnnotations!.length).toBeGreaterThan(0)
+      expect(campus.owner).toMatchObject({ objectId: 'grid:halden-four-unit', packId: 'electric-grid' })
+      expect(campus.coverage.representedSubjectIds).toHaveLength(11)
+      expect(campus.relatedMembers).toHaveLength(4)
+      const physicalSource = fetched.body.source.packs.find(pack => pack.id === 'physical-layout')!
+      const items = physicalSource.items.map(item => physicalLayoutScenarioItemSchema.parse({ ...(item as Record<string, unknown>), pack: 'physical-layout' }))
+      expect(items).toHaveLength(5)
+      const sharedItem = items.find(item => item.id === 'layout:halden-campus')!
+      expect(sharedItem.design).toEqual(campus.design)
+      expect(sharedItem.members).toEqual({ [campus.requirements.ownerRole]: objectIdSchema.parse(campus.owner.objectId), ...Object.fromEntries(campus.relatedMembers.map(member => [member.role, objectIdSchema.parse(member.objectId)])) })
+      expect(items.filter(item => item.id !== sharedItem.id).every(item => item.design.digest === pwrShutdownCoolingUnitPhysicalDesignRef.digest)).toBe(true)
+      const processPlant = fetched.body.source.packs.find(pack => pack.id === 'process-plant')
+      expect(processPlant?.config).toEqual({})
+      expect(processPlant?.items).toHaveLength(4)
+    } finally { await registry.shutdown() }
   })
 
   test('joins only existing runs and exposes their objects and capabilities', async () => {

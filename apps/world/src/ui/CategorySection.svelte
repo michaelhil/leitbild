@@ -18,8 +18,6 @@
     readonly fieldOptions: ReadonlyArray<FieldVisibilityOption>
     readonly presentedRows: ReadonlyArray<PresentedObjectRow>
     readonly selectedControllerId: string | null
-    /** The object whose card is open (`PlantCard.svelte`). */
-    readonly cardObjectId?: string | null
     readonly categoryMapVisible: boolean
     readonly isFieldVisible: (categoryId: string, field: string) => boolean
     readonly toggleField: (categoryId: string, field: string) => void
@@ -30,14 +28,14 @@
     readonly markSeen: (object: OperationalObject) => void
     readonly selectObject: (object: OperationalObject) => void
     /** Absent where this screen may not delete: a role Run's operator-class role sets. */
-    readonly deleteObject?: (object: OperationalObject) => Promise<void>
-    readonly detailPresentationFor?: (object: OperationalObject) => PackObjectPresentation | Promise<PackObjectPresentation>
-    readonly openProcessDisplay?: (object: OperationalObject) => void
-    readonly openProcedureSystem?: (object: OperationalObject) => void
-    readonly openProcedureSystemAt?: (object: OperationalObject, summary?: ProcedureRunSummary) => void
-    readonly openDroneControl?: (object: OperationalObject) => void
-    readonly openDroneProfileEditor?: (object: OperationalObject) => void
-    readonly procedureSummariesForObject?: (object: OperationalObject) => ProcedureRunSummaryGroup
+    readonly deleteObject?: ((object: OperationalObject) => Promise<void>) | undefined
+    readonly detailPresentationFor?: ((object: OperationalObject) => PackObjectPresentation | Promise<PackObjectPresentation>) | undefined
+    readonly openProcessDisplay?: ((object: OperationalObject) => void) | undefined
+    readonly openProcedureSystem?: ((object: OperationalObject) => void) | undefined
+    readonly openProcedureSystemAt?: ((object: OperationalObject, summary?: ProcedureRunSummary) => void) | undefined
+    readonly openDroneControl?: ((object: OperationalObject) => void) | undefined
+    readonly openDroneProfileEditor?: ((object: OperationalObject) => void) | undefined
+    readonly procedureSummariesForObject?: ((object: OperationalObject) => ProcedureRunSummaryGroup) | undefined
     readonly proceduresVisible: boolean
   }
 
@@ -49,7 +47,6 @@
     fieldOptions,
     presentedRows,
     selectedControllerId,
-    cardObjectId = null,
     categoryMapVisible,
     isFieldVisible,
     toggleField,
@@ -127,7 +124,6 @@
         presentation={entry.presentation}
         statusPresentation={entry.status}
         selected={selectedControllerId === entry.object.id}
-        cardOpen={cardObjectId === entry.object.id}
         hasNewInfo={entry.hasNewInfo}
         visibleFields={entry.visibleFields}
         {markSeen}

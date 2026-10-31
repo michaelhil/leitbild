@@ -1,0 +1,31 @@
+{
+  "result": {
+    "type": "object",
+    "value": {}
+  },
+  "exceptionDetails": {
+    "exceptionId": 1,
+    "text": "Uncaught (in promise) Error: Physical controller did not become ready: [{\"descriptor\":{\"id\":\"layout:proof\",\"revision\":\"864666e0f6a49afd32dacd4debdb6bb23c1d1946be6fe6f3bfe69e8322e3b5ee\",\"targetObjectId\":\"plant:proof\",\"anchor\":[11.47,59.087],\"bearing\":0,\"bounds\":{\"min\":[-44.8,-26,-0.4],\"max\":[44.4,27.6,31.2]},\"levels\":[{\"id\":\"lower\",\"label\":\"Lower floor · +0 m\",\"elevation\":0,\"cutHeight\":1.2},{\"id\":\"operating\",\"label\":\"Turbine operating floor · +15 m\",\"elevation\":15,\"cutHeight\":16.2}],\"subjectIds\":[\"condensatePumpA\",\"condensatePumpB\",\"condenser\",\"mainFeedwaterPumpA\",\"mainFeedwaterPumpB\",\"turbine\",\"turbineStopValve\"],\"modelDigest\":\"47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea\",\"locationValid\":true},\"view\":{\"mode\":\"2d\",\"levelId\":\"lower\",\"cutaway\":true,\"separation\":0,\"detail\":\"auto\",\"live\":true},\"status\":\"ready\",\"occurrenceCount\":64}]",
+    "lineNumber": 3592,
+    "columnNumber": 4063,
+    "scriptId": "3",
+    "stackTrace": {
+      "callFrames": [
+        {
+          "functionName": "L_",
+          "scriptId": "3",
+          "url": "http://127.0.0.1:64224/app.js",
+          "lineNumber": 3591,
+          "columnNumber": 4062
+        }
+      ]
+    },
+    "exception": {
+      "type": "object",
+      "subtype": "error",
+      "className": "Error",
+      "description": "Error: Physical controller did not become ready: [{\"descriptor\":{\"id\":\"layout:proof\",\"revision\":\"864666e0f6a49afd32dacd4debdb6bb23c1d1946be6fe6f3bfe69e8322e3b5ee\",\"targetObjectId\":\"plant:proof\",\"anchor\":[11.47,59.087],\"bearing\":0,\"bounds\":{\"min\":[-44.8,-26,-0.4],\"max\":[44.4,27.6,31.2]},\"levels\":[{\"id\":\"lower\",\"label\":\"Lower floor · +0 m\",\"elevation\":0,\"cutHeight\":1.2},{\"id\":\"operating\",\"label\":\"Turbine operating floor · +15 m\",\"elevation\":15,\"cutHeight\":16.2}],\"subjectIds\":[\"condensatePumpA\",\"condensatePumpB\",\"condenser\",\"mainFeedwaterPumpA\",\"mainFeedwaterPumpB\",\"turbine\",\"turbineStopValve\"],\"modelDigest\":\"47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea\",\"locationValid\":true},\"view\":{\"mode\":\"2d\",\"levelId\":\"lower\",\"cutaway\":true,\"separation\":0,\"detail\":\"auto\",\"live\":true},\"status\":\"ready\",\"occurrenceCount\":64}]\n    at L_ (http://127.0.0.1:64224/app.js:3592:4063)\n    at async Object.run (http://127.0.0.1:64224/app.js:3592:7183)",
+      "objectId": "-5309627057297411115.1.1"
+    }
+  }
+}

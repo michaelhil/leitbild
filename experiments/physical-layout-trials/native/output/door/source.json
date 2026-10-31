@@ -1,0 +1,2357 @@
+{
+  "schema": "leitbild-native-authoring-trial",
+  "revision": "native-r1.addDoor",
+  "designId": "matched-plant-design",
+  "units": "m",
+  "axes": "Z-up",
+  "configuration": "installed",
+  "modelRequirement": {
+    "modelRef": "process-plant.pwr.reference",
+    "digest": "16523e5a06e67b517862fd96650bfef2cdd5e4ad05a1dd70c8f27eb2dff9bdff"
+  },
+  "bindingsRevision": "bindings-r1",
+  "levels": [
+    {
+      "id": "lower",
+      "elevation": 0,
+      "cutHeight": 1.2
+    },
+    {
+      "id": "operating",
+      "elevation": 15,
+      "cutHeight": 1.2
+    },
+    {
+      "id": "edit-basement",
+      "elevation": -3,
+      "cutHeight": 1.2
+    },
+    {
+      "id": "level/edit-deck",
+      "elevation": 3,
+      "cutHeight": 1.2
+    }
+  ],
+  "types": [
+    {
+      "id": "type/hp",
+      "kind": "hp",
+      "parameters": {
+        "length": 7,
+        "width": 4.8,
+        "height": 5.1
+      }
+    },
+    {
+      "id": "type/lp",
+      "kind": "lp",
+      "parameters": {
+        "length": 9,
+        "width": 11.2,
+        "height": 6.7
+      }
+    },
+    {
+      "id": "type/generator",
+      "kind": "generator",
+      "parameters": {
+        "length": 12.5,
+        "width": 6,
+        "height": 6.5
+      }
+    },
+    {
+      "id": "type/exciter",
+      "kind": "exciter",
+      "parameters": {
+        "length": 4,
+        "width": 3.2,
+        "height": 3.8
+      }
+    },
+    {
+      "id": "type/msr",
+      "kind": "msr",
+      "parameters": {
+        "length": 7.4,
+        "width": 3,
+        "height": 4.5
+      }
+    },
+    {
+      "id": "type/stop-valve",
+      "kind": "stop-valve",
+      "parameters": {
+        "length": 1.8,
+        "width": 2.1,
+        "height": 3.1
+      }
+    },
+    {
+      "id": "type/condenser",
+      "kind": "condenser",
+      "parameters": {
+        "length": 9,
+        "width": 15.8,
+        "height": 14.6
+      }
+    },
+    {
+      "id": "type/condensate-pump",
+      "kind": "condensate-pump",
+      "parameters": {
+        "length": 5.2,
+        "width": 2.6,
+        "height": 3.2
+      }
+    },
+    {
+      "id": "type/feed-pump",
+      "kind": "feed-pump",
+      "parameters": {
+        "length": 12,
+        "width": 2.7,
+        "height": 3.4
+      }
+    }
+  ],
+  "elements": [
+    {
+      "id": "tg-hp",
+      "label": "High-pressure turbine",
+      "kind": "equipment",
+      "levelId": "operating",
+      "pose": {
+        "position": [
+          10,
+          16,
+          15
+        ],
+        "yaw": 0
+      },
+      "typeId": "type/hp",
+      "equipmentKind": "hp",
+      "spaceIds": [
+        "space/turbine-hall"
+      ],
+      "binding": {
+        "componentId": "turbine",
+        "relation": "part-of"
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "tg-lp-1",
+      "label": "Low-pressure turbine 1",
+      "kind": "equipment",
+      "levelId": "operating",
+      "pose": {
+        "position": [
+          20,
+          12.8,
+          15
+        ],
+        "yaw": 0
+      },
+      "typeId": "type/lp",
+      "equipmentKind": "lp",
+      "spaceIds": [
+        "space/turbine-hall"
+      ],
+      "binding": {
+        "componentId": "turbine",
+        "relation": "part-of"
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "tg-lp-2",
+      "label": "Low-pressure turbine 2",
+      "kind": "equipment",
+      "levelId": "operating",
+      "pose": {
+        "position": [
+          31,
+          12.8,
+          15
+        ],
+        "yaw": 0
+      },
+      "typeId": "type/lp",
+      "equipmentKind": "lp",
+      "spaceIds": [
+        "space/turbine-hall"
+      ],
+      "binding": {
+        "componentId": "turbine",
+        "relation": "part-of"
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "tg-lp-3",
+      "label": "Low-pressure turbine 3",
+      "kind": "equipment",
+      "levelId": "operating",
+      "pose": {
+        "position": [
+          42,
+          12.8,
+          15
+        ],
+        "yaw": 0
+      },
+      "typeId": "type/lp",
+      "equipmentKind": "lp",
+      "spaceIds": [
+        "space/turbine-hall"
+      ],
+      "binding": {
+        "componentId": "turbine",
+        "relation": "part-of"
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "tg-generator",
+      "label": "Electrical generator",
+      "kind": "equipment",
+      "levelId": "operating",
+      "pose": {
+        "position": [
+          55,
+          15.4,
+          15
+        ],
+        "yaw": 0
+      },
+      "typeId": "type/generator",
+      "equipmentKind": "generator",
+      "spaceIds": [
+        "space/turbine-hall"
+      ],
+      "binding": {
+        "componentId": "turbine",
+        "relation": "part-of"
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "tg-exciter",
+      "label": "Exciter & coupling",
+      "kind": "equipment",
+      "levelId": "operating",
+      "pose": {
+        "position": [
+          70,
+          16.8,
+          15
+        ],
+        "yaw": 0
+      },
+      "typeId": "type/exciter",
+      "equipmentKind": "exciter",
+      "spaceIds": [
+        "space/turbine-hall"
+      ],
+      "binding": {
+        "componentId": "turbine",
+        "relation": "part-of"
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "msr-1",
+      "label": "Moisture separator / reheater 1",
+      "kind": "equipment",
+      "levelId": "operating",
+      "pose": {
+        "position": [
+          10.2,
+          5.4,
+          15
+        ],
+        "yaw": 0
+      },
+      "typeId": "type/msr",
+      "equipmentKind": "msr",
+      "spaceIds": [
+        "space/turbine-hall"
+      ],
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "msr-2",
+      "label": "Moisture separator / reheater 2",
+      "kind": "equipment",
+      "levelId": "operating",
+      "pose": {
+        "position": [
+          10.2,
+          27.8,
+          15
+        ],
+        "yaw": 0
+      },
+      "typeId": "type/msr",
+      "equipmentKind": "msr",
+      "spaceIds": [
+        "space/turbine-hall"
+      ],
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "stop-valve",
+      "label": "Turbine stop valve",
+      "kind": "equipment",
+      "levelId": "operating",
+      "pose": {
+        "position": [
+          4.8,
+          15.4,
+          15
+        ],
+        "yaw": 0
+      },
+      "typeId": "type/stop-valve",
+      "equipmentKind": "stop-valve",
+      "spaceIds": [
+        "space/turbine-hall"
+      ],
+      "binding": {
+        "componentId": "turbineStopValve",
+        "relation": "component"
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "condenser-1",
+      "label": "Condenser section 1",
+      "kind": "equipment",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          20,
+          10.5,
+          0
+        ],
+        "yaw": 0
+      },
+      "typeId": "type/condenser",
+      "equipmentKind": "condenser",
+      "spaceIds": [
+        "space/turbine-hall"
+      ],
+      "binding": {
+        "componentId": "condenser",
+        "relation": "part-of"
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "condenser-2",
+      "label": "Condenser section 2",
+      "kind": "equipment",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          31,
+          10.5,
+          0
+        ],
+        "yaw": 0
+      },
+      "typeId": "type/condenser",
+      "equipmentKind": "condenser",
+      "spaceIds": [
+        "space/turbine-hall"
+      ],
+      "binding": {
+        "componentId": "condenser",
+        "relation": "part-of"
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "condenser-3",
+      "label": "Condenser section 3",
+      "kind": "equipment",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          42,
+          10.5,
+          0
+        ],
+        "yaw": 0
+      },
+      "typeId": "type/condenser",
+      "equipmentKind": "condenser",
+      "spaceIds": [
+        "space/turbine-hall"
+      ],
+      "binding": {
+        "componentId": "condenser",
+        "relation": "part-of"
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "cp-a",
+      "label": "Condensate pump A",
+      "kind": "equipment",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          55.5,
+          19.2,
+          0
+        ],
+        "yaw": 0
+      },
+      "typeId": "type/condensate-pump",
+      "equipmentKind": "condensate-pump",
+      "spaceIds": [
+        "space/turbine-hall"
+      ],
+      "binding": {
+        "componentId": "condensatePumpA",
+        "relation": "component"
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "cp-b",
+      "label": "Condensate pump B",
+      "kind": "equipment",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          63.5,
+          24.2,
+          0
+        ],
+        "yaw": 0
+      },
+      "typeId": "type/condensate-pump",
+      "equipmentKind": "condensate-pump",
+      "spaceIds": [
+        "space/turbine-hall"
+      ],
+      "binding": {
+        "componentId": "condensatePumpB",
+        "relation": "component"
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "mfw-a",
+      "label": "Main feedwater pump A",
+      "kind": "equipment",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          17,
+          40.4,
+          0
+        ],
+        "yaw": 0
+      },
+      "typeId": "type/feed-pump",
+      "equipmentKind": "feed-pump",
+      "spaceIds": [
+        "space/feedwater-room"
+      ],
+      "binding": {
+        "componentId": "mainFeedwaterPumpA",
+        "relation": "component"
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "mfw-b",
+      "label": "Main feedwater pump B",
+      "kind": "equipment",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          17,
+          48.1,
+          0
+        ],
+        "yaw": 0
+      },
+      "typeId": "type/feed-pump",
+      "equipmentKind": "feed-pump",
+      "spaceIds": [
+        "space/feedwater-room"
+      ],
+      "binding": {
+        "componentId": "mainFeedwaterPumpB",
+        "relation": "component"
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "wall/hall-north",
+      "label": "wall/hall-north",
+      "kind": "wall",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 88.8,
+        "width": 0.4,
+        "height": 31.2
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "opening/wall/hall-north/D-N1/lower",
+      "label": "D-N1",
+      "kind": "opening",
+      "levelId": "lower",
+      "hostId": "wall/hall-north",
+      "pose": {
+        "position": [
+          74,
+          0,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 1.2,
+        "width": 0.4,
+        "height": 2.7
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "opening/wall/hall-north/W-1/operating",
+      "label": "W-1",
+      "kind": "opening",
+      "levelId": "operating",
+      "hostId": "wall/hall-north",
+      "pose": {
+        "position": [
+          13.4,
+          0,
+          17.2
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 7,
+        "width": 0.4,
+        "height": 3
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "opening/wall/hall-north/W-2/operating",
+      "label": "W-2",
+      "kind": "opening",
+      "levelId": "operating",
+      "hostId": "wall/hall-north",
+      "pose": {
+        "position": [
+          35.4,
+          0,
+          17.2
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 7,
+        "width": 0.4,
+        "height": 3
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "opening/wall/hall-north/W-3/operating",
+      "label": "W-3",
+      "kind": "opening",
+      "levelId": "operating",
+      "hostId": "wall/hall-north",
+      "pose": {
+        "position": [
+          57.4,
+          0,
+          17.2
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 7,
+        "width": 0.4,
+        "height": 3
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "wall/hall-west",
+      "label": "wall/hall-west",
+      "kind": "wall",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          0,
+          0.4,
+          0
+        ],
+        "yaw": 1.5707963267948966
+      },
+      "dimensions": {
+        "length": 36,
+        "width": 0.4,
+        "height": 31.2
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "opening/wall/hall-west/D-W1/lower",
+      "label": "D-W1",
+      "kind": "opening",
+      "levelId": "lower",
+      "hostId": "wall/hall-west",
+      "pose": {
+        "position": [
+          23.6,
+          0,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 2.4,
+        "width": 0.4,
+        "height": 2.7
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "wall/hall-east",
+      "label": "wall/hall-east",
+      "kind": "wall",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          88.4,
+          0.4,
+          0
+        ],
+        "yaw": 1.5707963267948966
+      },
+      "dimensions": {
+        "length": 36,
+        "width": 0.4,
+        "height": 31.2
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "opening/wall/hall-east/D-E1/lower",
+      "label": "D-E1",
+      "kind": "opening",
+      "levelId": "lower",
+      "hostId": "wall/hall-east",
+      "pose": {
+        "position": [
+          25.6,
+          0,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 6,
+        "width": 0.4,
+        "height": 5.2
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "wall/hall-south",
+      "label": "wall/hall-south",
+      "kind": "wall",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          0,
+          36.4,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 88.8,
+        "width": 0.4,
+        "height": 31.2
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "opening/wall/hall-south/D-P1/lower",
+      "label": "D-P1",
+      "kind": "opening",
+      "levelId": "lower",
+      "hostId": "wall/hall-south",
+      "pose": {
+        "position": [
+          12.4,
+          0,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 2.4,
+        "width": 0.4,
+        "height": 2.7
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "wall/annex-north",
+      "label": "wall/annex-north",
+      "kind": "wall",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          8.4,
+          36.8,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 32.8,
+        "width": 0.4,
+        "height": 6.2
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "opening/wall/annex-north/D-P1b/lower",
+      "label": "D-P1b",
+      "kind": "opening",
+      "levelId": "lower",
+      "hostId": "wall/annex-north",
+      "pose": {
+        "position": [
+          4,
+          0,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 2.4,
+        "width": 0.4,
+        "height": 2.7
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "wall/annex-west",
+      "label": "wall/annex-west",
+      "kind": "wall",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          8.4,
+          37.2,
+          0
+        ],
+        "yaw": 1.5707963267948966
+      },
+      "dimensions": {
+        "length": 16,
+        "width": 0.4,
+        "height": 6.2
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "opening/wall/annex-west/D-P2/lower",
+      "label": "D-P2",
+      "kind": "opening",
+      "levelId": "lower",
+      "hostId": "wall/annex-west",
+      "pose": {
+        "position": [
+          4.6,
+          0,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 6,
+        "width": 0.4,
+        "height": 5.2
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "wall/annex-east",
+      "label": "wall/annex-east",
+      "kind": "wall",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          40.8,
+          37.2,
+          0
+        ],
+        "yaw": 1.5707963267948966
+      },
+      "dimensions": {
+        "length": 16,
+        "width": 0.4,
+        "height": 6.2
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "wall/annex-south",
+      "label": "wall/annex-south",
+      "kind": "wall",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          8.4,
+          53.2,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 32.8,
+        "width": 0.4,
+        "height": 6.2
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "opening/wall/annex-south/D-P3/lower",
+      "label": "D-P3",
+      "kind": "opening",
+      "levelId": "lower",
+      "hostId": "wall/annex-south",
+      "pose": {
+        "position": [
+          27.2,
+          0,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 2.4,
+        "width": 0.4,
+        "height": 2.7
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "door/D-W1a",
+      "label": "D-W1a",
+      "kind": "door",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          0.4,
+          24,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 1.2,
+        "width": 0.07,
+        "height": 2.7
+      },
+      "door": {
+        "swing": 1.5707963267948966
+      },
+      "disposition": "installed",
+      "scope": "unit",
+      "assemblyId": "door-assembly/opening/wall/hall-west/D-W1/lower"
+    },
+    {
+      "id": "door/D-W1b",
+      "label": "D-W1b",
+      "kind": "door",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          0.4,
+          26.4,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 1.2,
+        "width": 0.07,
+        "height": 2.7
+      },
+      "door": {
+        "swing": 1.5707963267948966
+      },
+      "disposition": "installed",
+      "scope": "unit",
+      "assemblyId": "door-assembly/opening/wall/hall-west/D-W1/lower"
+    },
+    {
+      "id": "door/D-N1",
+      "label": "D-N1",
+      "kind": "door",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          74,
+          0.4,
+          0
+        ],
+        "yaw": 1.5707963267948966
+      },
+      "dimensions": {
+        "length": 1.2,
+        "width": 0.07,
+        "height": 2.7
+      },
+      "door": {
+        "swing": 1.5707963267948966
+      },
+      "fillsId": "opening/wall/hall-north/D-N1/lower",
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "door/D-P1a",
+      "label": "D-P1a",
+      "kind": "door",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          12.4,
+          37.2,
+          0
+        ],
+        "yaw": 1.5707963267948966
+      },
+      "dimensions": {
+        "length": 1.2,
+        "width": 0.07,
+        "height": 2.7
+      },
+      "door": {
+        "swing": 1.5707963267948966
+      },
+      "disposition": "installed",
+      "scope": "unit",
+      "assemblyId": "door-assembly/opening/wall/hall-south/D-P1/lower"
+    },
+    {
+      "id": "door/D-P1b",
+      "label": "D-P1b",
+      "kind": "door",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          14.8,
+          37.2,
+          0
+        ],
+        "yaw": 1.5707963267948966
+      },
+      "dimensions": {
+        "length": 1.2,
+        "width": 0.07,
+        "height": 2.7
+      },
+      "door": {
+        "swing": 1.5707963267948966
+      },
+      "disposition": "installed",
+      "scope": "unit",
+      "assemblyId": "door-assembly/opening/wall/hall-south/D-P1/lower"
+    },
+    {
+      "id": "door/D-P3a",
+      "label": "D-P3a",
+      "kind": "door",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          35.6,
+          53.2,
+          0
+        ],
+        "yaw": -1.5707963267948966
+      },
+      "dimensions": {
+        "length": 1.2,
+        "width": 0.07,
+        "height": 2.7
+      },
+      "door": {
+        "swing": 1.5707963267948966
+      },
+      "disposition": "installed",
+      "scope": "unit",
+      "assemblyId": "door-assembly/opening/wall/annex-south/D-P3/lower"
+    },
+    {
+      "id": "door/D-P3b",
+      "label": "D-P3b",
+      "kind": "door",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          38,
+          53.2,
+          0
+        ],
+        "yaw": -1.5707963267948966
+      },
+      "dimensions": {
+        "length": 1.2,
+        "width": 0.07,
+        "height": 2.7
+      },
+      "door": {
+        "swing": 1.5707963267948966
+      },
+      "disposition": "installed",
+      "scope": "unit",
+      "assemblyId": "door-assembly/opening/wall/annex-south/D-P3/lower"
+    },
+    {
+      "id": "door-assembly/opening/wall/hall-west/D-W1/lower",
+      "label": "D-W1 door assembly",
+      "kind": "assembly",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          1.4450832229938768e-15,
+          24,
+          0
+        ],
+        "yaw": 1.5707963267948966
+      },
+      "dimensions": {
+        "length": 2.4,
+        "width": 0.4,
+        "height": 2.7
+      },
+      "fillsId": "opening/wall/hall-west/D-W1/lower",
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "door-assembly/opening/wall/hall-south/D-P1/lower",
+      "label": "D-P1 door assembly",
+      "kind": "assembly",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          12.4,
+          36.4,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 2.4,
+        "width": 0.4,
+        "height": 2.7
+      },
+      "fillsId": "opening/wall/hall-south/D-P1/lower",
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "door-assembly/opening/wall/annex-south/D-P3/lower",
+      "label": "D-P3 door assembly",
+      "kind": "assembly",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          35.6,
+          53.2,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 2.4,
+        "width": 0.4,
+        "height": 2.7
+      },
+      "fillsId": "opening/wall/annex-south/D-P3/lower",
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "slab/lower",
+      "label": "lower floor",
+      "kind": "slab",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          0.4,
+          0.4,
+          -0.4
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 88,
+        "width": 36,
+        "height": 0.4
+      },
+      "holes": [],
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "slab/operating",
+      "label": "operating floor",
+      "kind": "slab",
+      "levelId": "operating",
+      "pose": {
+        "position": [
+          0.4,
+          0.4,
+          14.6
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 88,
+        "width": 36,
+        "height": 0.4
+      },
+      "holes": [
+        {
+          "x": 20.9,
+          "y": 13.7,
+          "width": 8.6,
+          "length": 6.4
+        },
+        {
+          "x": 31.9,
+          "y": 13.7,
+          "width": 8.6,
+          "length": 6.4
+        },
+        {
+          "x": 42.9,
+          "y": 13.7,
+          "width": 8.6,
+          "length": 6.4
+        },
+        {
+          "x": 3.2,
+          "y": 27,
+          "width": 7.4,
+          "length": 5.2
+        },
+        {
+          "x": 75.4,
+          "y": 25.6,
+          "width": 4.8,
+          "length": 8
+        }
+      ],
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "slab/annex",
+      "label": "slab/annex",
+      "kind": "slab",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          8.8,
+          37.2,
+          -0.4
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 32,
+        "width": 16,
+        "height": 0.4
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "space/turbine-hall",
+      "label": "TURBINE HALL",
+      "kind": "space",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          0.4,
+          0.4,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 88,
+        "width": 36,
+        "height": 31.2
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "space/feedwater-room",
+      "label": "FEEDWATER PUMP ROOM",
+      "kind": "space",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          8.8,
+          37.2,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 32,
+        "width": 16,
+        "height": 6.2
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "hatch-cover",
+      "label": "hatch-cover",
+      "kind": "slab",
+      "levelId": "operating",
+      "pose": {
+        "position": [
+          75.8,
+          26,
+          14.9
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 8,
+        "width": 4.8,
+        "height": 0.1
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "stair/main",
+      "label": "stair/main",
+      "kind": "stair",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          3.6,
+          27.4,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 5.2,
+        "width": 7.4,
+        "height": 15
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "column/0/0.4",
+      "label": "column/0/0.4",
+      "kind": "support",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 0.8,
+        "width": 0.8,
+        "height": 31.2
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "column/0/36.4",
+      "label": "column/0/36.4",
+      "kind": "support",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          0,
+          36,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 0.8,
+        "width": 0.8,
+        "height": 31.2
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "column/1/0.4",
+      "label": "column/1/0.4",
+      "kind": "support",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          11,
+          0,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 0.8,
+        "width": 0.8,
+        "height": 31.2
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "column/1/36.4",
+      "label": "column/1/36.4",
+      "kind": "support",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          11,
+          36,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 0.8,
+        "width": 0.8,
+        "height": 31.2
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "column/2/0.4",
+      "label": "column/2/0.4",
+      "kind": "support",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          22,
+          0,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 0.8,
+        "width": 0.8,
+        "height": 31.2
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "column/2/36.4",
+      "label": "column/2/36.4",
+      "kind": "support",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          22,
+          36,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 0.8,
+        "width": 0.8,
+        "height": 31.2
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "column/3/0.4",
+      "label": "column/3/0.4",
+      "kind": "support",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          33,
+          0,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 0.8,
+        "width": 0.8,
+        "height": 31.2
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "column/3/36.4",
+      "label": "column/3/36.4",
+      "kind": "support",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          33,
+          36,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 0.8,
+        "width": 0.8,
+        "height": 31.2
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "column/4/0.4",
+      "label": "column/4/0.4",
+      "kind": "support",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          44,
+          0,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 0.8,
+        "width": 0.8,
+        "height": 31.2
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "column/4/36.4",
+      "label": "column/4/36.4",
+      "kind": "support",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          44,
+          36,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 0.8,
+        "width": 0.8,
+        "height": 31.2
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "column/5/0.4",
+      "label": "column/5/0.4",
+      "kind": "support",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          55,
+          0,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 0.8,
+        "width": 0.8,
+        "height": 31.2
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "column/5/36.4",
+      "label": "column/5/36.4",
+      "kind": "support",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          55,
+          36,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 0.8,
+        "width": 0.8,
+        "height": 31.2
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "column/6/0.4",
+      "label": "column/6/0.4",
+      "kind": "support",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          66,
+          0,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 0.8,
+        "width": 0.8,
+        "height": 31.2
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "column/6/36.4",
+      "label": "column/6/36.4",
+      "kind": "support",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          66,
+          36,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 0.8,
+        "width": 0.8,
+        "height": 31.2
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "column/7/0.4",
+      "label": "column/7/0.4",
+      "kind": "support",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          77,
+          0,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 0.8,
+        "width": 0.8,
+        "height": 31.2
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "column/7/36.4",
+      "label": "column/7/36.4",
+      "kind": "support",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          77,
+          36,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 0.8,
+        "width": 0.8,
+        "height": 31.2
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "column/8/0.4",
+      "label": "column/8/0.4",
+      "kind": "support",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          88,
+          0,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 0.8,
+        "width": 0.8,
+        "height": 31.2
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "column/8/36.4",
+      "label": "column/8/36.4",
+      "kind": "support",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          88,
+          36,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 0.8,
+        "width": 0.8,
+        "height": 31.2
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "pier/18.4/8",
+      "label": "pier/18.4/8",
+      "kind": "support",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          18.4,
+          8,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 1.2,
+        "width": 1.8,
+        "height": 15
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "pier/18.4/26.7",
+      "label": "pier/18.4/26.7",
+      "kind": "support",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          18.4,
+          26.7,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 1.2,
+        "width": 1.8,
+        "height": 15
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "pier/29.4/8",
+      "label": "pier/29.4/8",
+      "kind": "support",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          29.4,
+          8,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 1.2,
+        "width": 1.8,
+        "height": 15
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "pier/29.4/26.7",
+      "label": "pier/29.4/26.7",
+      "kind": "support",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          29.4,
+          26.7,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 1.2,
+        "width": 1.8,
+        "height": 15
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "pier/40.4/8",
+      "label": "pier/40.4/8",
+      "kind": "support",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          40.4,
+          8,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 1.2,
+        "width": 1.8,
+        "height": 15
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "pier/40.4/26.7",
+      "label": "pier/40.4/26.7",
+      "kind": "support",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          40.4,
+          26.7,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 1.2,
+        "width": 1.8,
+        "height": 15
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "pier/51.4/8",
+      "label": "pier/51.4/8",
+      "kind": "support",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          51.4,
+          8,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 1.2,
+        "width": 1.8,
+        "height": 15
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "pier/51.4/26.7",
+      "label": "pier/51.4/26.7",
+      "kind": "support",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          51.4,
+          26.7,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 1.2,
+        "width": 1.8,
+        "height": 15
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "edit-wall",
+      "label": "edit-wall",
+      "kind": "wall",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          110,
+          0,
+          0
+        ],
+        "yaw": 0.5235987755982988
+      },
+      "dimensions": {
+        "length": 12,
+        "width": 0.3,
+        "height": 6
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "existing-opening",
+      "label": "Existing opening",
+      "kind": "opening",
+      "levelId": "lower",
+      "hostId": "edit-wall",
+      "pose": {
+        "position": [
+          1,
+          0,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 1.2,
+        "width": 0.3,
+        "height": 2.4
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "edit-roof",
+      "label": "edit-roof",
+      "kind": "roof",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          110,
+          0,
+          6
+        ],
+        "yaw": 0.5235987755982988
+      },
+      "dimensions": {
+        "length": 12,
+        "width": 8,
+        "height": 0.3
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "edit-space",
+      "label": "edit-space",
+      "kind": "space",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          110,
+          0,
+          0
+        ],
+        "yaw": 0.5235987755982988
+      },
+      "dimensions": {
+        "length": 12,
+        "width": 8,
+        "height": 6
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "edit-deck",
+      "label": "edit-deck",
+      "kind": "slab",
+      "levelId": "level/edit-deck",
+      "pose": {
+        "position": [
+          110,
+          0,
+          2.8
+        ],
+        "yaw": 0.5235987755982988
+      },
+      "dimensions": {
+        "length": 12,
+        "width": 8,
+        "height": 0.2
+      },
+      "disposition": "installed",
+      "scope": "unit",
+      "dependsOn": [
+        "edit-stair",
+        "edit-landing",
+        "edit-riser",
+        "edit-support"
+      ]
+    },
+    {
+      "id": "edit-stair",
+      "label": "edit-stair",
+      "kind": "stair",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          110,
+          2,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 2.5,
+        "width": 4,
+        "height": 3
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "edit-landing",
+      "label": "edit-landing",
+      "kind": "slab",
+      "levelId": "level/edit-deck",
+      "pose": {
+        "position": [
+          110,
+          5,
+          2.8
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 3,
+        "width": 2,
+        "height": 0.2
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "edit-riser",
+      "label": "edit-riser",
+      "kind": "riser",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          120,
+          4,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 0.3,
+        "width": 0.3,
+        "height": 3
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "edit-support",
+      "label": "edit-support",
+      "kind": "support",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          120,
+          2,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 0.3,
+        "width": 0.3,
+        "height": 2.8
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "fixed-vessel",
+      "label": "fixed-vessel",
+      "kind": "context",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          125,
+          20,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 2,
+        "width": 2,
+        "height": 5
+      },
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "shared-yard",
+      "label": "shared-yard",
+      "kind": "context",
+      "levelId": "site",
+      "pose": {
+        "position": [
+          80,
+          -60,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 25,
+        "width": 20,
+        "height": 0.1
+      },
+      "disposition": "installed",
+      "scope": "site"
+    },
+    {
+      "id": "shared-transformer",
+      "label": "shared-transformer",
+      "kind": "context",
+      "levelId": "site",
+      "pose": {
+        "position": [
+          85,
+          -55,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 6,
+        "width": 4,
+        "height": 4
+      },
+      "disposition": "installed",
+      "scope": "site"
+    },
+    {
+      "id": "first-support",
+      "label": "first-support",
+      "kind": "support",
+      "levelId": "site",
+      "pose": {
+        "position": [
+          100,
+          -70,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 1,
+        "width": 1,
+        "height": 18
+      },
+      "disposition": "installed",
+      "scope": "site"
+    },
+    {
+      "id": "main-steam-route",
+      "label": "Illustrative main steam route",
+      "kind": "pipe",
+      "levelId": "operating",
+      "pose": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 1,
+        "width": 0.76,
+        "height": 0.76
+      },
+      "path": [
+        [
+          5.7,
+          0.4,
+          23
+        ],
+        [
+          5.7,
+          16.45,
+          23
+        ],
+        [
+          11.15,
+          16.45,
+          23
+        ],
+        [
+          11.15,
+          18.4,
+          20
+        ]
+      ],
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "feedwater-route",
+      "label": "Illustrative feedwater route",
+      "kind": "pipe",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 1,
+        "width": 0.3,
+        "height": 0.3
+      },
+      "path": [
+        [
+          21.075,
+          43.1,
+          1.65
+        ],
+        [
+          21.075,
+          43.8,
+          1.65
+        ],
+        [
+          32.9,
+          43.8,
+          1.65
+        ],
+        [
+          32.9,
+          37.7,
+          1.65
+        ],
+        [
+          42.5,
+          37.7,
+          1.65
+        ]
+      ],
+      "disposition": "installed",
+      "scope": "unit"
+    },
+    {
+      "id": "access-door-opening",
+      "label": "Access door opening",
+      "kind": "opening",
+      "scope": "unit",
+      "levelId": "lower",
+      "hostId": "edit-wall",
+      "pose": {
+        "position": [
+          7,
+          0,
+          0
+        ],
+        "yaw": 0
+      },
+      "dimensions": {
+        "length": 1.4,
+        "width": 0.3,
+        "height": 2.7
+      },
+      "spaceIds": [
+        "edit-space",
+        "site"
+      ],
+      "disposition": "installed"
+    },
+    {
+      "id": "access-door",
+      "label": "Access door",
+      "kind": "door",
+      "scope": "unit",
+      "levelId": "lower",
+      "pose": {
+        "position": [
+          116.06217782649107,
+          3.4999999999999996,
+          0
+        ],
+        "yaw": 2.0943951023931953
+      },
+      "dimensions": {
+        "length": 1.4,
+        "width": 0.07,
+        "height": 2.7
+      },
+      "fillsId": "access-door-opening",
+      "spaceIds": [
+        "edit-space",
+        "site"
+      ],
+      "door": {
+        "swing": 1.5707963267948966
+      },
+      "disposition": "installed"
+    }
+  ],
+  "requirements": [
+    {
+      "id": "max-clear-height",
+      "targetId": "edit-wall",
+      "dimension": "height",
+      "max": 9,
+      "owner": "independent-physical-brief"
+    }
+  ],
+  "instances": [
+    {
+      "id": "unit-a",
+      "siteId": "site-one",
+      "memberId": "unit-a",
+      "ownerId": "plant:trial-a",
+      "position": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "unit-b",
+      "siteId": "site-one",
+      "memberId": "unit-b",
+      "ownerId": "plant:trial-b",
+      "position": [
+        160,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "unit-a",
+      "siteId": "site-two",
+      "memberId": "unit-a",
+      "ownerId": "plant:trial-other",
+      "position": [
+        0,
+        0,
+        0
+      ]
+    }
+  ],
+  "imports": [],
+  "circuits": [
+    {
+      "id": "circuit-a",
+      "fromElementId": "shared-transformer",
+      "firstSupportId": "first-support"
+    },
+    {
+      "id": "circuit-b",
+      "fromElementId": "shared-transformer",
+      "firstSupportId": "first-support"
+    }
+  ],
+  "studies": [
+    {
+      "id": "motor-removal",
+      "designRevision": "native-r1",
+      "applicability": "stale"
+    }
+  ]
+}

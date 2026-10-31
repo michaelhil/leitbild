@@ -1,0 +1,13 @@
+# R6 explicit inspection
+
+The actual built Host/World application `53b443ed9709069139acfa2ddbd22bbb79a7f3cb` passed the current operation probe in an isolated paused R6 Run. The [compact receipt](receipt.json) retains exact unit/campus/model identities, actual hovered occurrences, acquired card scope/stamps and hashes of the raw receipt and screenshots. This is functional evidence, separate from loading and frame-time measurements.
+
+In both native Plan and 3D, genuine pointer hover on the HP casing and a graph-bound steam route lasted over 2.3 seconds with **Live status off**. Each of the four windows observed zero newly created inspection frames and zero layout POST requests, including aborted requests. The equipment/connection highlight and hover context remained present. This deliberately quiet acquisition state is necessary to distinguish an unwanted hover read from ordinary live polling.
+
+Explicit body clicks then opened the shared faceplate with fresh exact-owner evidence. Turbine cards contained no layout context rows. Actual connection cards retained Main Steam Header.outletA → Turbine Stop Valve.inlet, Main steam and the acquired `From → To · 1902 kg/s`. Mounted-card Escape closed inspection. Pressurizer → PORV selection acquired that device's own card/readings rather than substituting the parent's observations. No runtime exception was recorded.
+
+The runner uses the exact tested commit's retained owner label, scrolls actual public controls into view, and delivers native pointer/key/edit input. Earlier wrong-label, offscreen-click and search-replacement harness failures remain separately in the raw research folder; they are not product failures or passing interaction evidence. Historical positive-dwell receipts retain their original runner commits and have not been overwritten.
+
+The process display's symbol/text/keyboard card-first behavior is unchanged in this pass; its earlier dedicated component-faceplate receipt remains separate. This receipt does not claim to rerun that independent gate.
+
+Coordinator review in the actual in-app browser also inspected operating-floor Plan, operating 3D, the turbine-hall/annex Stack and the corrected main-steam-header body. Drafted machinery, grids/dimensions/hatches/section inset, HP/three LP casings/generator, MSRs, framing/windows/crane, stairs, lower condensers and pump annex remain present. The former raised teal header return is absent; the header is an explicit brown steam manifold with side interfaces and blind ends. Clicking that body opens the fresh header faceplate without component-level connection rows. These observations are visual checks, not a surveyed plant or universal frame-time claim.

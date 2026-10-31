@@ -1,0 +1,21 @@
+{
+  "invalidOrDiagnosticAttempts": [
+    {
+      "folder": "/Users/hilde/.codex/worktrees/layout-detail-latency/Leitbild/.health/layout-detail-latency/baseline-plan-first",
+      "reason": "Invalid range observer used nonexistent packed-buffer count fields."
+    },
+    {
+      "folder": "/Users/hilde/.codex/worktrees/layout-detail-latency/Leitbild/.health/layout-detail-latency/baseline-plan-first-detail",
+      "reason": "Cold actions ran, but diagnostic lost its weak CPU index after forced GC; observer threw into a product draw. Not a product failure."
+    },
+    {
+      "folder": "/Users/hilde/.codex/worktrees/layout-detail-latency/Leitbild/.health/layout-detail-latency/baseline-plan-first-cold-only",
+      "reason": "Initial Plan guard omitted meshless-Plan witness flag; no 3D request was dispatched."
+    },
+    {
+      "folder": "/Users/hilde/.codex/worktrees/layout-detail-latency/Leitbild/.health/layout-detail-latency/baseline-plan-first-detail-final",
+      "reason": "Heavy inventory recorded 102 campus and 295 unit operational interiors, but treated one fully conditional route as required; possible overlap with another agent TypeScript check. Not clean latency evidence."
+    }
+  ],
+  "disposition": "Raw files preserved outside versioned source; no failed attempt was overwritten or represented as product qualification."
+}

@@ -1,0 +1,687 @@
+{
+  "applicationBeforeRayFix": "faf656468",
+  "rayFix": "f8d0b4c89",
+  "preservedRoot": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261028/cold-geometry-v8-20261028",
+  "manifestSha256": "3dd0c5e4545a19c38ff18b98f520b04d0f5b02dbc2b9e608ee6775b3a64fff1d",
+  "samples": [
+    {
+      "file": "samples/campus-baseline-1/receipt.json",
+      "sha256": "ec08805e47f72d8ffe2e40ea23d536e1ed85e5674c236bf63cd745e61c024342",
+      "engine": "baseline",
+      "engineFile": "/Users/hilde/.codex/worktrees/layout-cold-geometry/Leitbild/.health/surface-ownership-baseline.ts",
+      "family": "campus",
+      "ref": {
+        "id": "pwr-campus",
+        "revision": "pwr-campus-20261028-r6",
+        "digest": "9a8c62567fce6755922e4b6385045ec37252dfa8354a9d078143ef81347f8e41"
+      },
+      "workerSha256": "313ade07fadb006bca6da37d2c66bfd1f1cbb2791a1e050a08f3b297ad556e9a",
+      "ownershipMs": 767.4000000953674,
+      "pickingMs": 164.79999995231628,
+      "packingMs": 15.900000095367432,
+      "phasesMs": 948.1000001430511,
+      "fingerprint": "91c35c2078b33dd897c62ae0c4c4e997e581858afccb03aef9cb1e495ac2bfe5",
+      "hashedBytes": 58238934,
+      "packedBytes": 18569040,
+      "notes": "Fresh Chrome/Worker CPU sample; no product loading claim"
+    },
+    {
+      "file": "samples/campus-baseline-2/receipt.json",
+      "sha256": "d811371d02b3660d762c63a9543db1373085e82c7ee4e1c33aa01de6dd39d2cc",
+      "engine": "baseline",
+      "engineFile": "/Users/hilde/.codex/worktrees/layout-cold-geometry/Leitbild/.health/surface-ownership-baseline.ts",
+      "family": "campus",
+      "ref": {
+        "id": "pwr-campus",
+        "revision": "pwr-campus-20261028-r6",
+        "digest": "9a8c62567fce6755922e4b6385045ec37252dfa8354a9d078143ef81347f8e41"
+      },
+      "workerSha256": "313ade07fadb006bca6da37d2c66bfd1f1cbb2791a1e050a08f3b297ad556e9a",
+      "ownershipMs": 854.6000001430511,
+      "pickingMs": 159.79999995231628,
+      "packingMs": 21.09999990463257,
+      "phasesMs": 1035.5,
+      "fingerprint": "91c35c2078b33dd897c62ae0c4c4e997e581858afccb03aef9cb1e495ac2bfe5",
+      "hashedBytes": 58238934,
+      "packedBytes": 18569040,
+      "notes": "Fresh Chrome/Worker CPU sample; no product loading claim"
+    },
+    {
+      "file": "samples/campus-baseline-fixed-ray/receipt.json",
+      "sha256": "c461e375deecac1d6c836f08204a04bb6dab445e73ebf5713ba21e51b0332b76",
+      "engine": "baseline",
+      "engineFile": "/Users/hilde/.codex/worktrees/layout-cold-geometry/Leitbild/.health/surface-ownership-baseline.ts",
+      "family": "campus",
+      "ref": {
+        "id": "pwr-campus",
+        "revision": "pwr-campus-20261028-r6",
+        "digest": "9a8c62567fce6755922e4b6385045ec37252dfa8354a9d078143ef81347f8e41"
+      },
+      "workerSha256": "a8985b281f8f57cc966a8665a2d3c9ba0851bd866236912072999b2b5f8eb3a3",
+      "ownershipMs": 582.5999999046326,
+      "pickingMs": 126.40000009536743,
+      "packingMs": 13.899999856948853,
+      "phasesMs": 722.8999998569489,
+      "fingerprint": "5ea4eda183616c40acbdaa75448ea6587f8659e8dd1c8773e58f5fed044ce995",
+      "hashedBytes": 58383830,
+      "packedBytes": 18569040,
+      "notes": "Fresh Chrome/Worker CPU sample; no product loading claim"
+    },
+    {
+      "file": "samples/campus-dual-diagnostic/receipt.json",
+      "sha256": "018340a3b1d45b6dfdfc36c4a3ebcb9b7d3f8443966da5942bfc75d0c3bc6b10",
+      "engine": "dual",
+      "engineFile": "/Users/hilde/.codex/worktrees/layout-cold-transfer/Leitbild/apps/world/src/ui/map/physical-scene/surface-ownership.ts",
+      "family": "campus",
+      "ref": {
+        "id": "pwr-campus",
+        "revision": "pwr-campus-20261028-r6",
+        "digest": "9a8c62567fce6755922e4b6385045ec37252dfa8354a9d078143ef81347f8e41"
+      },
+      "workerSha256": "150522701f68f43247ca7e3bfd615726c23abd2607545a4566b84579a19e45a1",
+      "ownershipMs": 482.7000000476837,
+      "pickingMs": 150.39999985694885,
+      "packingMs": 16.40000009536743,
+      "phasesMs": 649.5,
+      "fingerprint": "91c35c2078b33dd897c62ae0c4c4e997e581858afccb03aef9cb1e495ac2bfe5",
+      "hashedBytes": 58238934,
+      "packedBytes": 18569040,
+      "sections": [
+        {
+          "label": "meshes",
+          "bytes": 31622210,
+          "sha256": "b97a1cd6e1c85bc313f5a2e488b7ee38723b486e3609e25bb3b5590755199d53"
+        },
+        {
+          "label": "render",
+          "bytes": 18569170,
+          "sha256": "f2058a567974001a8950ab36a98ff1bc67032c520155fa8dcd47deebe907a134"
+        },
+        {
+          "label": "picking",
+          "bytes": 7949384,
+          "sha256": "33e2eacf4e6dcc284a77a93620d6481c9573a6d86563c6b6a301821238f11299"
+        },
+        {
+          "label": "diagnostics",
+          "bytes": 98170,
+          "sha256": "8be73f018de972a68c56f953a8f4d98a4b86f4a88cb5a81aba6473218868fc59"
+        }
+      ],
+      "notes": "Untimed diagnostic section hashing; timing not used for rankings"
+    },
+    {
+      "file": "samples/campus-dual-fixed-ray-1/receipt.json",
+      "sha256": "b1c0ff381b0031bf2720661ff2222f6b1e1f9568183a5ca4e45894aa7c9951cd",
+      "engine": "dual-fixed-ray",
+      "engineFile": "/Users/hilde/.codex/worktrees/layout-cold-transfer/Leitbild/apps/world/src/ui/map/physical-scene/surface-ownership.ts",
+      "family": "campus",
+      "ref": {
+        "id": "pwr-campus",
+        "revision": "pwr-campus-20261028-r6",
+        "digest": "9a8c62567fce6755922e4b6385045ec37252dfa8354a9d078143ef81347f8e41"
+      },
+      "workerSha256": "7b514436eda48672892ff860ac5654c5fc4e0bfc66dfb2df9516caff7d28840b",
+      "ownershipMs": 439.5,
+      "pickingMs": 122.09999990463257,
+      "packingMs": 14.400000095367432,
+      "phasesMs": 576,
+      "fingerprint": "5ea4eda183616c40acbdaa75448ea6587f8659e8dd1c8773e58f5fed044ce995",
+      "hashedBytes": 58383830,
+      "packedBytes": 18569040,
+      "sections": [
+        {
+          "label": "meshes",
+          "bytes": 31622210,
+          "sha256": "b97a1cd6e1c85bc313f5a2e488b7ee38723b486e3609e25bb3b5590755199d53"
+        },
+        {
+          "label": "render",
+          "bytes": 18569170,
+          "sha256": "f2058a567974001a8950ab36a98ff1bc67032c520155fa8dcd47deebe907a134"
+        },
+        {
+          "label": "picking",
+          "bytes": 8094280,
+          "sha256": "52e5f2c0e7696f2d2a46f6b42b5289f10d64d0cc6df3441f51c6d7456ef73fc5"
+        },
+        {
+          "label": "diagnostics",
+          "bytes": 98170,
+          "sha256": "8be73f018de972a68c56f953a8f4d98a4b86f4a88cb5a81aba6473218868fc59"
+        }
+      ],
+      "notes": "Untimed diagnostic section hashing; timing not used for rankings"
+    },
+    {
+      "file": "samples/campus-final-1/receipt.json",
+      "sha256": "75a2973a5439d290b0fc41afe9f097ee5c41854671a20a9802dc2e50df5b87e7",
+      "engine": "final",
+      "engineFile": "/Users/hilde/.codex/worktrees/layout-cold-geometry/Leitbild/apps/world/src/ui/map/physical-scene/surface-ownership.ts",
+      "family": "campus",
+      "ref": {
+        "id": "pwr-campus",
+        "revision": "pwr-campus-20261028-r6",
+        "digest": "9a8c62567fce6755922e4b6385045ec37252dfa8354a9d078143ef81347f8e41"
+      },
+      "workerSha256": "6d7710994b762f593761201a067da2b9a4fe2e9e0dfa867ce8592d37fa919777",
+      "ownershipMs": 561.3999998569489,
+      "pickingMs": 148.20000004768372,
+      "packingMs": 14.700000047683716,
+      "phasesMs": 724.2999999523163,
+      "fingerprint": "91c35c2078b33dd897c62ae0c4c4e997e581858afccb03aef9cb1e495ac2bfe5",
+      "hashedBytes": 58238934,
+      "packedBytes": 18569040,
+      "notes": "Fresh Chrome/Worker CPU sample; no product loading claim"
+    },
+    {
+      "file": "samples/campus-final-2/receipt.json",
+      "sha256": "85995b8f198518e88ac680592b45a7722982ae3d4fcadfa7f6a1d4c86d98128b",
+      "engine": "final",
+      "engineFile": "/Users/hilde/.codex/worktrees/layout-cold-geometry/Leitbild/apps/world/src/ui/map/physical-scene/surface-ownership.ts",
+      "family": "campus",
+      "ref": {
+        "id": "pwr-campus",
+        "revision": "pwr-campus-20261028-r6",
+        "digest": "9a8c62567fce6755922e4b6385045ec37252dfa8354a9d078143ef81347f8e41"
+      },
+      "workerSha256": "6d7710994b762f593761201a067da2b9a4fe2e9e0dfa867ce8592d37fa919777",
+      "ownershipMs": 644.2999999523163,
+      "pickingMs": 167.30000019073486,
+      "packingMs": 20.09999990463257,
+      "phasesMs": 831.7000000476837,
+      "fingerprint": "91c35c2078b33dd897c62ae0c4c4e997e581858afccb03aef9cb1e495ac2bfe5",
+      "hashedBytes": 58238934,
+      "packedBytes": 18569040,
+      "notes": "Fresh Chrome/Worker CPU sample; no product loading claim"
+    },
+    {
+      "file": "samples/campus-lazy-1/receipt.json",
+      "sha256": "d578f5ea3286dd2d35fcf1cb1aa37ddd72f77c312ae5482b82bde93cea8853bb",
+      "engine": "lazy",
+      "engineFile": "/Users/hilde/.codex/worktrees/layout-cold-geometry/Leitbild/.health/surface-ownership-lazy.ts",
+      "family": "campus",
+      "ref": {
+        "id": "pwr-campus",
+        "revision": "pwr-campus-20261028-r6",
+        "digest": "9a8c62567fce6755922e4b6385045ec37252dfa8354a9d078143ef81347f8e41"
+      },
+      "workerSha256": "dd6f42c787c5947d622f80577669d35ff10bccd0181b773cc9f41c7ebd09e3ae",
+      "ownershipMs": 742.0999999046326,
+      "pickingMs": 150.70000004768372,
+      "packingMs": 14.5,
+      "phasesMs": 907.2999999523163,
+      "fingerprint": "91c35c2078b33dd897c62ae0c4c4e997e581858afccb03aef9cb1e495ac2bfe5",
+      "hashedBytes": 58238934,
+      "packedBytes": 18569040,
+      "notes": "Fresh Chrome/Worker CPU sample; no product loading claim"
+    },
+    {
+      "file": "samples/campus-prefix-1/receipt.json",
+      "sha256": "176a432a76ef43281276297d4772160fa260ce76c0f1446522e2619c30ff1f8d",
+      "engine": "prefix",
+      "engineFile": "/Users/hilde/.codex/worktrees/layout-cold-geometry/Leitbild/.health/surface-ownership-prefix.ts",
+      "family": "campus",
+      "ref": {
+        "id": "pwr-campus",
+        "revision": "pwr-campus-20261028-r6",
+        "digest": "9a8c62567fce6755922e4b6385045ec37252dfa8354a9d078143ef81347f8e41"
+      },
+      "workerSha256": "3461c88f1e1816367767773a899bf35a8fbc3cde96d6e156a8a4dacc9d49b9fd",
+      "ownershipMs": 624.8000001907349,
+      "pickingMs": 145.59999990463257,
+      "packingMs": 14.700000047683716,
+      "phasesMs": 785.1000001430511,
+      "fingerprint": "91c35c2078b33dd897c62ae0c4c4e997e581858afccb03aef9cb1e495ac2bfe5",
+      "hashedBytes": 58238934,
+      "packedBytes": 18569040,
+      "notes": "Fresh Chrome/Worker CPU sample; no product loading claim"
+    },
+    {
+      "file": "samples/campus-scalar-1/receipt.json",
+      "sha256": "debc5a05784c22c62241ac00f0238ded29bcb2d94196a853f7480cb82bd4991c",
+      "engine": "scalar",
+      "engineFile": "/Users/hilde/.codex/worktrees/layout-cold-geometry/Leitbild/.health/surface-ownership-scalar.ts",
+      "family": "campus",
+      "ref": {
+        "id": "pwr-campus",
+        "revision": "pwr-campus-20261028-r6",
+        "digest": "9a8c62567fce6755922e4b6385045ec37252dfa8354a9d078143ef81347f8e41"
+      },
+      "workerSha256": "47059e658b4ec33b2c5c586009cb06d15df1dc704081876344671c7a7f0cd887",
+      "ownershipMs": 582.9000000953674,
+      "pickingMs": 146.79999995231628,
+      "packingMs": 16,
+      "phasesMs": 745.7000000476837,
+      "fingerprint": "91c35c2078b33dd897c62ae0c4c4e997e581858afccb03aef9cb1e495ac2bfe5",
+      "hashedBytes": 58238934,
+      "packedBytes": 18569040,
+      "notes": "Fresh Chrome/Worker CPU sample; no product loading claim"
+    },
+    {
+      "file": "samples/campus-scalar-2/receipt.json",
+      "sha256": "9170a42e9abb5c55c6aaff71492847cb4dd0ffdfc3bb8ff815252ff6085fa618",
+      "engine": "scalar",
+      "engineFile": "/Users/hilde/.codex/worktrees/layout-cold-geometry/Leitbild/.health/surface-ownership-scalar.ts",
+      "family": "campus",
+      "ref": {
+        "id": "pwr-campus",
+        "revision": "pwr-campus-20261028-r6",
+        "digest": "9a8c62567fce6755922e4b6385045ec37252dfa8354a9d078143ef81347f8e41"
+      },
+      "workerSha256": "47059e658b4ec33b2c5c586009cb06d15df1dc704081876344671c7a7f0cd887",
+      "ownershipMs": 641.4000000953674,
+      "pickingMs": 163.5,
+      "packingMs": 20.59999990463257,
+      "phasesMs": 825.5,
+      "fingerprint": "91c35c2078b33dd897c62ae0c4c4e997e581858afccb03aef9cb1e495ac2bfe5",
+      "hashedBytes": 58238934,
+      "packedBytes": 18569040,
+      "notes": "Fresh Chrome/Worker CPU sample; no product loading claim"
+    },
+    {
+      "file": "samples/unit-baseline-1/receipt.json",
+      "sha256": "f6354ef6d84d6a5a03613066b7859915d029d83af10c757112c331504b6f5447",
+      "engine": "baseline",
+      "engineFile": "/Users/hilde/.codex/worktrees/layout-cold-geometry/Leitbild/.health/surface-ownership-baseline.ts",
+      "family": "unit",
+      "ref": {
+        "id": "pwr-full-unit",
+        "revision": "pwr-full-unit-20261028-r6",
+        "digest": "b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac"
+      },
+      "workerSha256": "313ade07fadb006bca6da37d2c66bfd1f1cbb2791a1e050a08f3b297ad556e9a",
+      "ownershipMs": 1484.6000001430511,
+      "pickingMs": 377,
+      "packingMs": 55.5,
+      "phasesMs": 1917.1000001430511,
+      "fingerprint": "75aa326d87ec8196b909f9a6d41fdcc5a08968b0e6331d3bd74e86c51c3ab385",
+      "hashedBytes": 101138706,
+      "packedBytes": 29589600,
+      "notes": "Fresh Chrome/Worker CPU sample; no product loading claim"
+    },
+    {
+      "file": "samples/unit-baseline-2/receipt.json",
+      "sha256": "1ad220d0ae97bdce9a331c8ee273d3cbf1def651a4839637c71fe2bb9bb24550",
+      "engine": "baseline",
+      "engineFile": "/Users/hilde/.codex/worktrees/layout-cold-geometry/Leitbild/.health/surface-ownership-baseline.ts",
+      "family": "unit",
+      "ref": {
+        "id": "pwr-full-unit",
+        "revision": "pwr-full-unit-20261028-r6",
+        "digest": "b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac"
+      },
+      "workerSha256": "313ade07fadb006bca6da37d2c66bfd1f1cbb2791a1e050a08f3b297ad556e9a",
+      "ownershipMs": 1390.6999998092651,
+      "pickingMs": 353.7000000476837,
+      "packingMs": 43.40000009536743,
+      "phasesMs": 1787.7999999523163,
+      "fingerprint": "75aa326d87ec8196b909f9a6d41fdcc5a08968b0e6331d3bd74e86c51c3ab385",
+      "hashedBytes": 101138706,
+      "packedBytes": 29589600,
+      "notes": "Fresh Chrome/Worker CPU sample; no product loading claim"
+    },
+    {
+      "file": "samples/unit-baseline-diagnostic/receipt.json",
+      "sha256": "4e57681d4a82d4736c98f26b8d6a97f83868d4de438e7533c2d9d7a18deaed8b",
+      "engine": "baseline",
+      "engineFile": "/Users/hilde/.codex/worktrees/layout-cold-geometry/Leitbild/.health/surface-ownership-baseline.ts",
+      "family": "unit",
+      "ref": {
+        "id": "pwr-full-unit",
+        "revision": "pwr-full-unit-20261028-r6",
+        "digest": "b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac"
+      },
+      "workerSha256": "d058b22e85c83654454c45bbf5f58e441007f892765d9e656aeeb2bb771e1c13",
+      "ownershipMs": 1051.1000001430511,
+      "pickingMs": 343.89999985694885,
+      "packingMs": 53.5,
+      "phasesMs": 1448.5,
+      "fingerprint": "16e78ea48f8d1477327f92015e4fb9689b2d9a714ba519c7a191134c8601853d",
+      "hashedBytes": 101139602,
+      "packedBytes": 29589600,
+      "sections": [
+        {
+          "label": "meshes",
+          "bytes": 52245746,
+          "sha256": "7dce347ae21bacf9f0ae490cd96acee08ac63c56f561322c70e95452a18ad2d6"
+        },
+        {
+          "label": "render",
+          "bytes": 29589767,
+          "sha256": "fd807cc0cf13aaa7f609d869461c16be53c847e8cc5e20a46f8055ebd14cbbc9"
+        },
+        {
+          "label": "picking",
+          "bytes": 19106868,
+          "sha256": "c5ffe6a7be7b3cd3e6dcdd2923330a99a811149b6ca452381e95c7025e3fda62"
+        },
+        {
+          "label": "diagnostics",
+          "bytes": 197221,
+          "sha256": "ba44a542932c105dc739d2dc9adaecee5d408bc84cc03fc1e40692db93eca12b"
+        }
+      ],
+      "notes": "Untimed diagnostic section hashing; timing not used for rankings"
+    },
+    {
+      "file": "samples/unit-baseline-fixed-ray-diag/receipt.json",
+      "sha256": "ce43b3c572d965cf52d58fe5e868226eb115cce28e1e4f4d18ee798bf854bf68",
+      "engine": "baseline",
+      "engineFile": "/Users/hilde/.codex/worktrees/layout-cold-geometry/Leitbild/.health/surface-ownership-baseline.ts",
+      "family": "unit",
+      "ref": {
+        "id": "pwr-full-unit",
+        "revision": "pwr-full-unit-20261028-r6",
+        "digest": "b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac"
+      },
+      "workerSha256": "a8985b281f8f57cc966a8665a2d3c9ba0851bd866236912072999b2b5f8eb3a3",
+      "ownershipMs": 1044.2000000476837,
+      "pickingMs": 264.5,
+      "packingMs": 42.5,
+      "phasesMs": 1351.2000000476837,
+      "fingerprint": "69ca71bf2b8cd710116cd1fa482addb33c51fec5db7ad733847583a5faed59ff",
+      "hashedBytes": 101253394,
+      "packedBytes": 29589600,
+      "sections": [
+        {
+          "label": "meshes",
+          "bytes": 52245746,
+          "sha256": "7dce347ae21bacf9f0ae490cd96acee08ac63c56f561322c70e95452a18ad2d6"
+        },
+        {
+          "label": "render",
+          "bytes": 29589767,
+          "sha256": "fd807cc0cf13aaa7f609d869461c16be53c847e8cc5e20a46f8055ebd14cbbc9"
+        },
+        {
+          "label": "picking",
+          "bytes": 19220660,
+          "sha256": "198f9f63f8e3af6c4604ada5d09ca887f3102563f237bbf41f7d991baaa34855"
+        },
+        {
+          "label": "diagnostics",
+          "bytes": 197221,
+          "sha256": "ba44a542932c105dc739d2dc9adaecee5d408bc84cc03fc1e40692db93eca12b"
+        }
+      ],
+      "notes": "Untimed diagnostic section hashing; timing not used for rankings"
+    },
+    {
+      "file": "samples/unit-dual-1/receipt.json",
+      "sha256": "8622a30ec5e77f0aaaf6e6f266141bca03405079850fec6541a8fa782868e61f",
+      "engine": "dual",
+      "engineFile": "/Users/hilde/.codex/worktrees/layout-cold-transfer/Leitbild/apps/world/src/ui/map/physical-scene/surface-ownership.ts",
+      "family": "unit",
+      "ref": {
+        "id": "pwr-full-unit",
+        "revision": "pwr-full-unit-20261028-r6",
+        "digest": "b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac"
+      },
+      "workerSha256": "150522701f68f43247ca7e3bfd615726c23abd2607545a4566b84579a19e45a1",
+      "ownershipMs": 804.7999999523163,
+      "pickingMs": 324,
+      "packingMs": 44.40000009536743,
+      "phasesMs": 1173.2000000476837,
+      "fingerprint": "bbc6de80f83901b1b9a3ec21af5a987043b508d7a14adda576e201c22961e228",
+      "hashedBytes": 101139858,
+      "packedBytes": 29589600,
+      "notes": "Fresh Chrome/Worker CPU sample; no product loading claim"
+    },
+    {
+      "file": "samples/unit-dual-diagnostic/receipt.json",
+      "sha256": "e36fca1e860eed1c6435f9b9fda3e9e058eabc0e6126db8c79a22a70e0b82dde",
+      "engine": "dual",
+      "engineFile": "/Users/hilde/.codex/worktrees/layout-cold-transfer/Leitbild/apps/world/src/ui/map/physical-scene/surface-ownership.ts",
+      "family": "unit",
+      "ref": {
+        "id": "pwr-full-unit",
+        "revision": "pwr-full-unit-20261028-r6",
+        "digest": "b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac"
+      },
+      "workerSha256": "150522701f68f43247ca7e3bfd615726c23abd2607545a4566b84579a19e45a1",
+      "ownershipMs": 810.3000001907349,
+      "pickingMs": 323.19999980926514,
+      "packingMs": 45.40000009536743,
+      "phasesMs": 1178.9000000953674,
+      "fingerprint": "f895b84505dca159496f7900e40103ebbe18bf69ab2594e5fa4971b0abc46b0f",
+      "hashedBytes": 101139858,
+      "packedBytes": 29589600,
+      "sections": [
+        {
+          "label": "meshes",
+          "bytes": 52245746,
+          "sha256": "7dce347ae21bacf9f0ae490cd96acee08ac63c56f561322c70e95452a18ad2d6"
+        },
+        {
+          "label": "render",
+          "bytes": 29589767,
+          "sha256": "fd807cc0cf13aaa7f609d869461c16be53c847e8cc5e20a46f8055ebd14cbbc9"
+        },
+        {
+          "label": "picking",
+          "bytes": 19107124,
+          "sha256": "eab5dbd13622f2053e5c9fb69ad123988f6d07e1453a0b140516682d917d7935"
+        },
+        {
+          "label": "diagnostics",
+          "bytes": 197221,
+          "sha256": "ba44a542932c105dc739d2dc9adaecee5d408bc84cc03fc1e40692db93eca12b"
+        }
+      ],
+      "notes": "Untimed diagnostic section hashing; timing not used for rankings"
+    },
+    {
+      "file": "samples/unit-dual-fixed-ray-1/receipt.json",
+      "sha256": "815eb9e10eb9ef0394c1def42ea3907fb1fe6a524415d325e7bbe8a05d2637d0",
+      "engine": "dual-fixed-ray",
+      "engineFile": "/Users/hilde/.codex/worktrees/layout-cold-transfer/Leitbild/apps/world/src/ui/map/physical-scene/surface-ownership.ts",
+      "family": "unit",
+      "ref": {
+        "id": "pwr-full-unit",
+        "revision": "pwr-full-unit-20261028-r6",
+        "digest": "b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac"
+      },
+      "workerSha256": "7b514436eda48672892ff860ac5654c5fc4e0bfc66dfb2df9516caff7d28840b",
+      "ownershipMs": 856.0999999046326,
+      "pickingMs": 275.7000000476837,
+      "packingMs": 50.40000009536743,
+      "phasesMs": 1182.2000000476837,
+      "fingerprint": "69ca71bf2b8cd710116cd1fa482addb33c51fec5db7ad733847583a5faed59ff",
+      "hashedBytes": 101253394,
+      "packedBytes": 29589600,
+      "sections": [
+        {
+          "label": "meshes",
+          "bytes": 52245746,
+          "sha256": "7dce347ae21bacf9f0ae490cd96acee08ac63c56f561322c70e95452a18ad2d6"
+        },
+        {
+          "label": "render",
+          "bytes": 29589767,
+          "sha256": "fd807cc0cf13aaa7f609d869461c16be53c847e8cc5e20a46f8055ebd14cbbc9"
+        },
+        {
+          "label": "picking",
+          "bytes": 19220660,
+          "sha256": "198f9f63f8e3af6c4604ada5d09ca887f3102563f237bbf41f7d991baaa34855"
+        },
+        {
+          "label": "diagnostics",
+          "bytes": 197221,
+          "sha256": "ba44a542932c105dc739d2dc9adaecee5d408bc84cc03fc1e40692db93eca12b"
+        }
+      ],
+      "notes": "Untimed diagnostic section hashing; timing not used for rankings"
+    },
+    {
+      "file": "samples/unit-final-1/receipt.json",
+      "sha256": "fa05493f2fc61b1c41ceb1c9163b51605df1df297dd4d86c47b7df10287c96da",
+      "engine": "final",
+      "engineFile": "/Users/hilde/.codex/worktrees/layout-cold-geometry/Leitbild/apps/world/src/ui/map/physical-scene/surface-ownership.ts",
+      "family": "unit",
+      "ref": {
+        "id": "pwr-full-unit",
+        "revision": "pwr-full-unit-20261028-r6",
+        "digest": "b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac"
+      },
+      "workerSha256": "6d7710994b762f593761201a067da2b9a4fe2e9e0dfa867ce8592d37fa919777",
+      "ownershipMs": 1165.7999999523163,
+      "pickingMs": 439.2999999523163,
+      "packingMs": 53.90000009536743,
+      "phasesMs": 1659,
+      "fingerprint": "75aa326d87ec8196b909f9a6d41fdcc5a08968b0e6331d3bd74e86c51c3ab385",
+      "hashedBytes": 101138706,
+      "packedBytes": 29589600,
+      "notes": "Fresh Chrome/Worker CPU sample; no product loading claim"
+    },
+    {
+      "file": "samples/unit-final-2/receipt.json",
+      "sha256": "7b0b5229fcc68ef4d876d19229b83b7d17a99a95ce8ab70f1286956f64f05bed",
+      "engine": "final",
+      "engineFile": "/Users/hilde/.codex/worktrees/layout-cold-geometry/Leitbild/apps/world/src/ui/map/physical-scene/surface-ownership.ts",
+      "family": "unit",
+      "ref": {
+        "id": "pwr-full-unit",
+        "revision": "pwr-full-unit-20261028-r6",
+        "digest": "b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac"
+      },
+      "workerSha256": "6d7710994b762f593761201a067da2b9a4fe2e9e0dfa867ce8592d37fa919777",
+      "ownershipMs": 1050.2999999523163,
+      "pickingMs": 365.60000014305115,
+      "packingMs": 43.799999952316284,
+      "phasesMs": 1459.7000000476837,
+      "fingerprint": "75aa326d87ec8196b909f9a6d41fdcc5a08968b0e6331d3bd74e86c51c3ab385",
+      "hashedBytes": 101138706,
+      "packedBytes": 29589600,
+      "notes": "Fresh Chrome/Worker CPU sample; no product loading claim"
+    },
+    {
+      "file": "samples/unit-lazy-1/receipt.json",
+      "sha256": "90d211c5283dfd10dbadd2a3982bd3f2ca9b0cc6b572e3883f360e048832f58a",
+      "engine": "lazy",
+      "engineFile": "/Users/hilde/.codex/worktrees/layout-cold-geometry/Leitbild/.health/surface-ownership-lazy.ts",
+      "family": "unit",
+      "ref": {
+        "id": "pwr-full-unit",
+        "revision": "pwr-full-unit-20261028-r6",
+        "digest": "b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac"
+      },
+      "workerSha256": "dd6f42c787c5947d622f80577669d35ff10bccd0181b773cc9f41c7ebd09e3ae",
+      "ownershipMs": 1326.3999998569489,
+      "pickingMs": 389.2000000476837,
+      "packingMs": 52.09999990463257,
+      "phasesMs": 1767.6999998092651,
+      "fingerprint": "f895b84505dca159496f7900e40103ebbe18bf69ab2594e5fa4971b0abc46b0f",
+      "hashedBytes": 101139858,
+      "packedBytes": 29589600,
+      "notes": "Fresh Chrome/Worker CPU sample; no product loading claim"
+    },
+    {
+      "file": "samples/unit-lazy-fixed-ray-diag/receipt.json",
+      "sha256": "b9d87727049dde7efef6a86e38aa528c7f1f370acedfd601cf2b76c1891ed3e3",
+      "engine": "lazy",
+      "engineFile": "/Users/hilde/.codex/worktrees/layout-cold-geometry/Leitbild/.health/surface-ownership-lazy.ts",
+      "family": "unit",
+      "ref": {
+        "id": "pwr-full-unit",
+        "revision": "pwr-full-unit-20261028-r6",
+        "digest": "b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac"
+      },
+      "workerSha256": "01b21dabcd05eafaf0147d43a4c2a8c1f36f305123ad44354d1e6277882b3edb",
+      "ownershipMs": 950.2999999523163,
+      "pickingMs": 269.2000000476837,
+      "packingMs": 47.700000047683716,
+      "phasesMs": 1267.2000000476837,
+      "fingerprint": "69ca71bf2b8cd710116cd1fa482addb33c51fec5db7ad733847583a5faed59ff",
+      "hashedBytes": 101253394,
+      "packedBytes": 29589600,
+      "sections": [
+        {
+          "label": "meshes",
+          "bytes": 52245746,
+          "sha256": "7dce347ae21bacf9f0ae490cd96acee08ac63c56f561322c70e95452a18ad2d6"
+        },
+        {
+          "label": "render",
+          "bytes": 29589767,
+          "sha256": "fd807cc0cf13aaa7f609d869461c16be53c847e8cc5e20a46f8055ebd14cbbc9"
+        },
+        {
+          "label": "picking",
+          "bytes": 19220660,
+          "sha256": "198f9f63f8e3af6c4604ada5d09ca887f3102563f237bbf41f7d991baaa34855"
+        },
+        {
+          "label": "diagnostics",
+          "bytes": 197221,
+          "sha256": "ba44a542932c105dc739d2dc9adaecee5d408bc84cc03fc1e40692db93eca12b"
+        }
+      ],
+      "notes": "Untimed diagnostic section hashing; timing not used for rankings"
+    },
+    {
+      "file": "samples/unit-prefix-1/receipt.json",
+      "sha256": "ed353753e49d47c71bfe39b8d1acc8f5ed6bb38150dbdb99e3e6d9751fa725e9",
+      "engine": "prefix",
+      "engineFile": "/Users/hilde/.codex/worktrees/layout-cold-geometry/Leitbild/.health/surface-ownership-prefix.ts",
+      "family": "unit",
+      "ref": {
+        "id": "pwr-full-unit",
+        "revision": "pwr-full-unit-20261028-r6",
+        "digest": "b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac"
+      },
+      "workerSha256": "3461c88f1e1816367767773a899bf35a8fbc3cde96d6e156a8a4dacc9d49b9fd",
+      "ownershipMs": 1317.5999999046326,
+      "pickingMs": 440.5,
+      "packingMs": 50.200000047683716,
+      "phasesMs": 1808.2999999523163,
+      "fingerprint": "75aa326d87ec8196b909f9a6d41fdcc5a08968b0e6331d3bd74e86c51c3ab385",
+      "hashedBytes": 101138706,
+      "packedBytes": 29589600,
+      "notes": "Fresh Chrome/Worker CPU sample; no product loading claim"
+    },
+    {
+      "file": "samples/unit-scalar-1/receipt.json",
+      "sha256": "8147061a9e56b26be22e3e4642abac7c1d4e9c300e23635afa47af2cc21f9b04",
+      "engine": "scalar",
+      "engineFile": "/Users/hilde/.codex/worktrees/layout-cold-geometry/Leitbild/.health/surface-ownership-scalar.ts",
+      "family": "unit",
+      "ref": {
+        "id": "pwr-full-unit",
+        "revision": "pwr-full-unit-20261028-r6",
+        "digest": "b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac"
+      },
+      "workerSha256": "47059e658b4ec33b2c5c586009cb06d15df1dc704081876344671c7a7f0cd887",
+      "ownershipMs": 1062,
+      "pickingMs": 361.30000019073486,
+      "packingMs": 61,
+      "phasesMs": 1484.3000001907349,
+      "fingerprint": "75aa326d87ec8196b909f9a6d41fdcc5a08968b0e6331d3bd74e86c51c3ab385",
+      "hashedBytes": 101138706,
+      "packedBytes": 29589600,
+      "notes": "Fresh Chrome/Worker CPU sample; no product loading claim"
+    },
+    {
+      "file": "samples/unit-scalar-2/receipt.json",
+      "sha256": "21bb44befe35546bc16650ce017ab5b8963e48bdf85338a500b076f831644c71",
+      "engine": "scalar",
+      "engineFile": "/Users/hilde/.codex/worktrees/layout-cold-geometry/Leitbild/.health/surface-ownership-scalar.ts",
+      "family": "unit",
+      "ref": {
+        "id": "pwr-full-unit",
+        "revision": "pwr-full-unit-20261028-r6",
+        "digest": "b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac"
+      },
+      "workerSha256": "47059e658b4ec33b2c5c586009cb06d15df1dc704081876344671c7a7f0cd887",
+      "ownershipMs": 1060.4000000953674,
+      "pickingMs": 392.39999985694885,
+      "packingMs": 53.200000047683716,
+      "phasesMs": 1506,
+      "fingerprint": "75aa326d87ec8196b909f9a6d41fdcc5a08968b0e6331d3bd74e86c51c3ab385",
+      "hashedBytes": 101138706,
+      "packedBytes": 29589600,
+      "notes": "Fresh Chrome/Worker CPU sample; no product loading claim"
+    }
+  ]
+}

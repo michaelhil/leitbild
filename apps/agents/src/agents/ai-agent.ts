@@ -20,17 +20,20 @@
 // ============================================================================
 
 import type { AIAgent, AIAgentConfig, IncludeContext, IncludePrompts, PromptSection, ContextSection, RequestedTurn } from '../core/types/agent.ts'
-import type { AgentHistory, Message } from '../core/types/messaging.ts'
+import type { AgentHistory, Message, ProgressEvidence } from '../core/types/messaging.ts'
 import type { EvalEvent, EvalEventCore, EvalEventScope } from '../core/types/agent-eval.ts'
 import { generateTraceId } from '../core/types/agent-eval.ts'
 import type { LLMProvider } from '../core/types/llm.ts'
 import { modelSupportsImages } from '../llm/multimodal.ts'
 import type { Room } from '../core/types/room.ts'
-import type { ToolDefinition, ToolExecutor } from '../core/types/tool.ts'
+import type { ToolDefinition, ToolExecutor, ToolProgress } from '../core/types/tool.ts'
 import { DEFAULTS, SYSTEM_SENDER_ID } from '../core/types/constants.ts'
 import { extractAgentProfile as extractProfile } from './shared.ts'
 import { buildContext, buildSystemSections, estimateTokens, flushIncoming, type BuildContextDeps, type ContextResult } from './context-builder.ts'
-import { evaluate, type EvalResult, type OnDecision } from './evaluation.ts'
+import type { RunContextFetcher } from './run-context.ts'
+import { discoveryMemo } from './discovery-memo.ts'
+import { evaluate, type EvalOptions, type EvalResult, type OnDecision } from './evaluation.ts'
+import { executionStageEvent, type ExecutionStage } from '../core/executions/model-evidence.ts'
 import { createConcurrencyManager } from './concurrency.ts'
 import type { ModelInfo } from '../core/types/model-info.ts'
 import { messageFocus } from '../core/message-focus.ts'
@@ -63,6 +66,7 @@ export interface AgentProgress {
   readonly roomId: string
   readonly content: string
   readonly inReplyTo?: ReadonlyArray<string>
+  readonly progressEvidence?: ProgressEvidence
 }
 
 export interface AIAgentOptions {
@@ -74,6 +78,9 @@ export interface AIAgentOptions {
   readonly onProgress?: (progress: AgentProgress) => void
   readonly executionStore?: ExecutionStore
   readonly executionGrowth?: <T>(bytes: number, work: () => Promise<T>) => Promise<T>
+  // Reads the Room Scope's Run context once per turn, before its context is
+  // built (run-context.ts); absent without a Workspace Host.
+  readonly fetchRunContext?: RunContextFetcher
   readonly toolExecutor?: ToolExecutor
   readonly toolDefinitions?: ReadonlyArray<ToolDefinition>
   // Per-eval tool-surface resolver — when provided, the agent calls this
@@ -102,6 +109,9 @@ export interface AIAgentOptions {
     | { systemDoc: string; dialogue: ReadonlyArray<{ speaker: string; content: string }> }
     | undefined
   readonly onEvalEvent?: (scope: EvalEventScope, event: EvalEvent) => void
+  // Existing provider-chain notices observed while this turn is executing.
+  // Separate from UI notice deduplication; no transport-attempt inference.
+  readonly providerForTurn?: (observer: (event: Extract<EvalEventCore, { kind: 'model_fallback' }>) => void) => LLMProvider
   // Per-call effective-model resolution. When provided, the agent calls this
   // before each LLM request to derive the actual model from the user's
   // preference. Returns the resolved model + whether a fallback was used.
@@ -267,6 +277,7 @@ export const createAIAgent = (
     contextTokenBudget: resolveContextTokenBudget(effectiveModel, definitions),
     getCompressedIds: (roomId: string) => getCompressedIds?.(roomId) ?? new Set<string>(),
     getCompressionSummary: options?.getCompressionSummary,
+    ...(options?.executionStore === undefined ? {} : { getDiscoveryMemo: (roomId: string) => discoveryMemo(options.executionStore!, roomId, agentId) }),
     getRoomMembers,
     supportsImages: modelSupportsImages(effectiveModel),
     modelForWarn: effectiveModel,
@@ -281,6 +292,77 @@ export const createAIAgent = (
   //   • room hist   → AgentHistory window (historyLimit-sized)
   //   • members     → getRoomMembers (participant profiles + running summary)
   //   • compression → getCompressedIds (folded into single room_summary)
+
+  // Scheduled advice and ordinary questions use the same scoped, fresh turn
+  // preparation. Only a trigger's trailing prompt differs: it is evidence in
+  // the model request, not a new message in the Room's transcript.
+  const prepareTurnContext = async (
+    roomId: string,
+    epoch: number,
+    signal: AbortSignal,
+    emit: (event: EvalEventCore) => void,
+    instruction?: string,
+    trailingPrompt?: string,
+  ) => {
+    const resolved = resolveEffective
+      ? resolveEffective(currentModel)
+      : { model: currentModel, fallback: false, reason: 'preferred_available' }
+    const effectiveModel = resolved.model
+    if (resolved.fallback && effectiveModel !== currentModel) {
+      if (lastFallbackTarget !== effectiveModel) {
+        emit({ kind: 'model_fallback', preferred: currentModel, effective: effectiveModel, reason: resolved.reason })
+      }
+      lastFallbackTarget = effectiveModel
+    } else if (!resolved.fallback) {
+      lastFallbackTarget = null
+    }
+    const info = await llmProvider.modelInfo?.(effectiveModel)
+    if (!cm.isEpochCurrent(epoch) || signal.aborted) return undefined
+    describedModel = { requested: effectiveModel, info: info ?? { id: effectiveModel, provider: 'unknown', contextMax: 0, source: 'unavailable' } }
+    // A scripted turn's context is the script's alone, so it reads no Run context.
+    const runContext = getScriptContext?.(roomId, config.name) === undefined
+      ? await options?.fetchRunContext?.(roomId, focusedSubjectsByRoom.get(roomId) ?? [], { id: agentId, name: config.name }, signal)
+      : undefined
+    if (!cm.isEpochCurrent(epoch) || signal.aborted) return undefined
+    const effectiveToolDefs = effectiveToolsForRoom(roomId)
+    const baseDeps = contextDeps(effectiveModel, effectiveToolDefs, instruction)
+    // Human questions arriving while a scheduled read awaits still need their
+    // own answer. They join the pending queue, not this transient prompt.
+    const deps = trailingPrompt === undefined ? baseDeps : { ...baseDeps, history: { ...agentHistory, incoming: [] } }
+    const appendPrompt = (context: ContextResult): ContextResult => trailingPrompt === undefined ? context : {
+      ...context,
+      messages: [...context.messages, { role: 'user', content: trailingPrompt }],
+      flushInfo: { ids: new Set<string>(), triggerRoomId: roomId },
+    }
+    const initialContext = appendPrompt(buildContext({ ...deps, ...(runContext === undefined ? {} : { runContext }) }, roomId))
+    // Comparison starting input omits the automatic Run context (owner,
+    // 20 Oct); exact live Inspector requests retain what the model reads.
+    // This separate build counts no metrics twice.
+    const { metricsSink: _counted, ...quiet } = deps
+    const captured = runContext === undefined ? undefined : appendPrompt(buildContext(quiet, roomId))
+    // Only prior replay uses the working target. During a tool turn, keep
+    // complete new evidence and fit older history to actual known capacity.
+    const toolTokens = estimateTokens(JSON.stringify(effectiveToolDefs ?? []))
+    const contextResult: ContextResult = { ...initialContext,
+      tokenBudget: info && info.contextMax > 0 ? Math.max(0, info.contextMax - toolTokens - OUTPUT_RESERVE - SAFETY_MARGIN) : undefined,
+    }
+    emit({ kind: 'context_ready', messages: contextResult.messages, model: effectiveModel,
+      temperature: currentTemperature, toolCount: effectiveToolDefs?.length ?? 0 })
+    for (const warning of contextResult.warnings) emit({ kind: 'warning', message: warning })
+    // Compare skill declarations with the exact Room tool surface, for every
+    // turn origin. A mismatch is visible evidence, not a new permission gate.
+    if (getActiveSkillsDeclarations && effectiveToolDefs) {
+      const surfaceNames = new Set(effectiveToolDefs.map(definition => definition.function.name))
+      for (const skill of getActiveSkillsDeclarations(currentSkills, roomId)) {
+        const missing = skill.declaredTools.filter(tool => !surfaceNames.has(tool))
+        if (missing.length > 0) emit({ kind: 'warning',
+          message: `Skill "${skill.name}" declares tools not in the LLM surface: ${missing.join(', ')}. Check pack activation in this room.` })
+      }
+    }
+    if (!cm.isEpochCurrent(epoch) || signal.aborted) return undefined
+    return { effectiveModel, effectiveToolDefs, contextResult,
+      captured: captured === undefined ? undefined : { ...captured, tokenBudget: contextResult.tokenBudget } }
+  }
 
   // --- Evaluation loop: per-room generation with pending queue ---
 
@@ -344,6 +426,8 @@ export const createAIAgent = (
     evalToolDefs: ReadonlyArray<ToolDefinition> | undefined,
     inReplyTo?: ReadonlyArray<string>,
     requireView?: boolean,
+    capturedContext?: ContextResult,
+    preparationStages: ReadonlyArray<ExecutionStage> = [],
   ): Promise<EvalResult> => {
     const evalConfig = {
       ...baseConfig,
@@ -380,9 +464,20 @@ export const createAIAgent = (
     // A line that cannot be posted is reported, never a failed turn: the
     // change it reports has happened and its answer still follows.
     const onProgress = options?.onProgress
-    const postProgress = onProgress && ((line: string): void => {
+    const postProgress = onProgress && ((progress: ToolProgress & { readonly callId?: string; readonly callIds: ReadonlyArray<string> }): void => {
       try {
-        onProgress({ roomId: triggerRoomId, content: line, ...(inReplyTo ? { inReplyTo } : {}) })
+        let progressEvidence: ProgressEvidence | undefined
+        if (options?.executionStore !== undefined && progress.callId !== undefined) {
+          const completed = new Set(options.executionStore.listCalls(triggerRoomId, traceId).filter(call => call.completedAt !== undefined).map(call => call.id))
+          if (progress.callIds.includes(progress.callId) && progress.callIds.every(id => completed.has(id))) progressEvidence = {
+            turnId: traceId, callId: progress.callId, callIds: progress.callIds,
+            ...(progress.operationKey === undefined ? {} : { operationKey: progress.operationKey }),
+          }
+          else emit({ kind: 'warning', message: 'Progress activity link unavailable: the exact tool outcome was not durably recorded.' })
+        }
+        // Standalone agents intentionally have no persisted execution to link.
+        onProgress({ roomId: triggerRoomId, content: progress.content, ...(inReplyTo ? { inReplyTo } : {}),
+          ...(progressEvidence === undefined ? {} : { progressEvidence }) })
       } catch (error) {
         const message = `Could not post a progress line: ${error instanceof Error ? error.message : String(error)}`
         console.error(`[${config.name}] ${message}`)
@@ -406,7 +501,7 @@ export const createAIAgent = (
           executionTurnId: traceId,
           roomId: triggerRoomId,
           agentId,
-          context: contextResult,
+          context: capturedContext ?? contextResult,
           config: evalConfig,
           toolDefinitions: evalToolDefs ?? [],
           focusedSubjects: focusedSubjectsByRoom.get(triggerRoomId) ?? [],
@@ -430,28 +525,79 @@ export const createAIAgent = (
     const begin = async (): Promise<void> => {
       signal.throwIfAborted()
       store.beginTurn({ id: traceId, roomId: triggerRoomId, agentId, startedAt: Date.now() })
+      try {
+        store.beginModelCapture(traceId, triggerRoomId)
+        for (const stage of preparationStages) store.recordStage(traceId, stage.event, stage.at)
+      } catch (error) {
+        store.finishTurn(traceId, 'failed', error instanceof Error ? error.message : String(error))
+        throw error
+      }
     }
     if (options?.executionGrowth) await options.executionGrowth(4096, begin)
     else await begin() // In-memory tests have no Workspace storage policy.
+    let retaining = true
+    const stopObservingStore = store.beforeClose(() => {
+      store.finishTurn(traceId, 'interrupted', 'Execution store closed; unfinished model and tool outcomes remain unknown')
+      retaining = false
+    })
     const interrupted = (): void => {
+      if (!retaining) return // Store closure retired this capture before closing its DB.
       try { store.finishTurn(traceId, 'interrupted', 'Generation cancelled; calls without a durable result have unknown outcomes') }
       catch (error) { console.error(`[${config.name}] Could not retain cancellation status:`, error) }
     }
     signal.addEventListener('abort', interrupted, { once: true })
     if (signal.aborted) interrupted()
+    // Stage records are small and serialized through the same Workspace
+    // admission port as tool evidence. Model boundaries and turn completion
+    // await them; a failed capture is visible rather than silently omitted.
+    let pendingStages = Promise.resolve()
+    const retain = async (bytes: number, work: () => void): Promise<void> => {
+      if (!retaining) return // Late outcomes belong to a retired store lifetime.
+      if (options?.executionGrowth) await options.executionGrowth(bytes, async () => { if (retaining) work() })
+      else work() // Isolated tests have no persistent Workspace budget.
+    }
+    const retainEvent = (event: EvalEventCore): void => {
+      if (!retaining) return // Keep closed-store outcomes unknown; do not queue new writes.
+      const stage = executionStageEvent(event)
+      if (!stage) return
+      const at = Date.now()
+      pendingStages = pendingStages.then(() => retain(Buffer.byteLength(JSON.stringify(stage)) + 1024, () => store.recordStage(traceId, stage, at)))
+      void pendingStages.catch(error => { if (retaining) console.error(`[${config.name}] Could not retain execution stage:`, error) })
+    }
+    const captureEvent = (event: EvalEventCore): void => { emit(event); retainEvent(event) }
+    const modelObserver: NonNullable<EvalOptions['modelObserver']> = {
+      start: async (summary, request) => {
+        await pendingStages
+        if (!retaining) throw new Error('Execution evidence closed before model dispatch')
+        await retain(Buffer.byteLength(JSON.stringify(request)) + 4096, () => store.recordModelStart(traceId, summary, request))
+      },
+      complete: async (id, response, requestedTools) => {
+        await pendingStages
+        await retain(Buffer.byteLength(JSON.stringify(response)) + 4096, () => store.recordModelComplete(traceId, id, response, requestedTools))
+      },
+      fail: async (id, error, cancelled, partial) => {
+        await pendingStages
+        await retain(Buffer.byteLength(error) + (partial === undefined ? 0 : Buffer.byteLength(JSON.stringify(partial))) + 4096, () => store.recordModelFailure(traceId, id, error, cancelled, partial))
+      },
+    }
+    // A cancelled call can unwind after a new turn has started. Its provider
+    // callback must remain bound to its own turn, never a mutable Agent slot.
     try {
+      const turnProvider = options?.providerForTurn?.(retainEvent) ?? llmProvider // Isolated providers have no service chain to observe.
       const result = await evaluate(
-        contextResult, evalConfig, llmProvider, evalToolExec,
-        maxToolIterationsCfg, triggerRoomId, evalOpts,
+        contextResult, evalConfig, turnProvider, evalToolExec,
+        maxToolIterationsCfg, triggerRoomId, { ...evalOpts, onEvent: captureEvent, modelObserver },
       )
-      store.finishTurn(traceId, signal.aborted ? 'interrupted' : result.decision.response.action === 'error' ? 'failed' : 'completed',
+      await pendingStages
+      if (retaining) store.finishTurn(traceId, signal.aborted ? 'interrupted' : result.decision.response.action === 'error' ? 'failed' : 'completed',
         result.decision.response.action === 'error' ? result.decision.response.message : undefined)
       return result
     } catch (error) {
-      store.finishTurn(traceId, signal.aborted ? 'interrupted' : 'failed', error instanceof Error ? error.message : String(error))
+      if (retaining) store.finishTurn(traceId, signal.aborted ? 'interrupted' : 'failed', error instanceof Error ? error.message : String(error))
       throw error
     } finally {
       signal.removeEventListener('abort', interrupted)
+      stopObservingStore()
     }
   }
 
@@ -503,80 +649,31 @@ export const createAIAgent = (
     const epoch = cm.epochAtStart()
     const abortController = new AbortController()
     activeAbortController = abortController
-    const { emit, finish } = createTurnEvents(triggerRoomId, traceId, abortController.signal)
+    const { emit: liveEmit, finish } = createTurnEvents(triggerRoomId, traceId, abortController.signal)
+    const preparationStages: ExecutionStage[] = []
+    let preparing = true
+    const emit = (event: EvalEventCore): void => {
+      liveEmit(event)
+      const stage = preparing ? executionStageEvent(event) : undefined
+      if (stage) preparationStages.push({ id: `stage_${preparationStages.length + 1}`, at: Date.now(), event: stage })
+    }
     // epoch guards: each cancelGeneration() increments generationEpoch so stale
     // in-flight results from a prior generation cycle are silently discarded.
     const run = async (): Promise<void> => {
       let wasRespond = false
       let outcome: 'respond' | 'pass' | 'error' = 'error'
       try {
-        // Model resolution belongs to the turn too: it can fail or emit a
-        // fallback before context construction starts.
-        const resolved = resolveEffective
-          ? resolveEffective(currentModel)
-          : { model: currentModel, fallback: false, reason: 'preferred_available' }
-        const effectiveModel = resolved.model
-        if (resolved.fallback && effectiveModel !== currentModel) {
-          if (lastFallbackTarget !== effectiveModel) {
-            emit({ kind: 'model_fallback', preferred: currentModel, effective: effectiveModel, reason: resolved.reason })
-          }
-          lastFallbackTarget = effectiveModel
-        } else if (!resolved.fallback) {
-          lastFallbackTarget = null
-        }
-        const info = await llmProvider.modelInfo?.(effectiveModel)
-        if (!cm.isEpochCurrent(epoch) || abortController.signal.aborted) return
-        describedModel = { requested: effectiveModel, info: info ?? { id: effectiveModel, provider: 'unknown', contextMax: 0, source: 'unavailable' } }
-        const effectiveToolDefs = effectiveToolsForRoom(triggerRoomId)
-        const initialContext = buildContext(contextDeps(effectiveModel, effectiveToolDefs, requested?.instruction), triggerRoomId)
-        // Only prior replay uses the working target. During a tool turn, keep
-        // complete new evidence and fit older history to actual known capacity.
-        const toolTokens = estimateTokens(JSON.stringify(effectiveToolDefs ?? []))
-        const contextResult: ContextResult = { ...initialContext,
-          tokenBudget: info && info.contextMax > 0 ? Math.max(0, info.contextMax - toolTokens - OUTPUT_RESERVE - SAFETY_MARGIN) : undefined,
-        }
+        const prepared = await prepareTurnContext(triggerRoomId, epoch, abortController.signal, emit, requested?.instruction)
+        if (!prepared) return // Cancellation during preparation starts no model call.
+        const { contextResult, effectiveModel, effectiveToolDefs, captured } = prepared
         // A requested turn replies first to what it was asked about.
         const replyIds = [...new Set([...(requested?.inReplyTo ?? []), ...contextResult.flushInfo.ids])]
         const inReplyTo = replyIds.length > 0 ? replyIds : undefined
-        // Pack-aware tool count for the context_ready event — same resolution
-        // path the eval will take, so the UI's tool-count badge matches what
-        // the LLM actually sees.
-        // Emit context_ready + any context builder warnings before LLM call
-        if (emit) {
-          emit({
-            kind: 'context_ready',
-            messages: contextResult.messages,
-            model: effectiveModel,
-            temperature: currentTemperature,
-            toolCount: effectiveToolDefs?.length ?? 0,
-          })
-          for (const w of contextResult.warnings) {
-            emit({ kind: 'warning', message: w })
-          }
-          // Skill / tool surface coherence check: if an active skill declares
-          // `allowed-tools: [...]` in its frontmatter, every tool it lists
-          // should be in the LLM-facing surface — otherwise the prompt and
-          // tool list contradict each other and models rationalise refusal
-          // (the prod biometrics symptom). Coherence warnings show up in the
-          // diagnostic API immediately. Not a hard gate — the skill text
-          // wins as a recommendation, but the agent may still call other
-          // tools. The warning makes the mismatch visible.
-          if (getActiveSkillsDeclarations && effectiveToolDefs) {
-            const surfaceNames = new Set(effectiveToolDefs.map(d => d.function.name))
-            const skills = getActiveSkillsDeclarations(currentSkills, triggerRoomId)
-            for (const skill of skills) {
-              const missing = skill.declaredTools.filter(t => !surfaceNames.has(t))
-              if (missing.length > 0) {
-                emit({
-                  kind: 'warning',
-                  message: `Skill "${skill.name}" declares tools not in the LLM surface: ${missing.join(', ')}. Check pack activation in this room.`,
-                })
-              }
-            }
-          }
-        }
+        preparing = false
         const { decision, flushInfo } = await runEvaluate(
           contextResult, effectiveModel, triggerRoomId, abortController.signal, traceId, emit, effectiveToolDefs, inReplyTo, requested?.requireView,
+          captured,
+          preparationStages,
         )
         if (!cm.isEpochCurrent(epoch)) return  // cancelled — discard stale result
 
@@ -922,36 +1019,30 @@ export const createAIAgent = (
       const abortController = new AbortController()
       activeAbortController = abortController
       const triggerTraceId = generateTraceId()
-      const { emit, finish } = createTurnEvents(roomId, triggerTraceId, abortController.signal)
+      const { emit: liveEmit, finish } = createTurnEvents(roomId, triggerTraceId, abortController.signal)
+      const preparationStages: ExecutionStage[] = []
+      let preparing = true
+      const emit = (event: EvalEventCore): void => {
+        liveEmit(event)
+        const stage = preparing ? executionStageEvent(event) : undefined
+        if (stage) preparationStages.push({ id: `stage_${preparationStages.length + 1}`, at: Date.now(), event: stage })
+      }
       let outcome: 'respond' | 'pass' | 'error' = 'error'
 
       try {
-        // Resolve effective model (mirrors tryEvaluate).
-        const resolved = resolveEffective
-          ? resolveEffective(currentModel)
-          : { model: currentModel, fallback: false, reason: 'preferred_available' as const }
-        const effectiveModel = resolved.model
-
-        const effectiveToolDefs = effectiveToolsForRoom(roomId)
-        const baseCtx = buildContext(contextDeps(effectiveModel, effectiveToolDefs), roomId)
-        // Append the trigger prompt as a transient trailing user message.
-        // Not in incoming, so flushIncoming has nothing to do; the prompt
-        // never lands in room history.
-        const messages = [
-          ...baseCtx.messages,
-          { role: 'user' as const, content: prompt },
-        ]
-        const contextResult = {
-          ...baseCtx,
-          messages,
-          flushInfo: { ids: new Set<string>(), triggerRoomId: roomId },
-        }
-
+        const prepared = await prepareTurnContext(roomId, epoch, abortController.signal, emit, undefined, prompt)
+        if (!prepared) return // Cancellation during preparation starts no model call.
+        const { contextResult, effectiveModel, effectiveToolDefs, captured } = prepared
+        preparing = false
         const { decision } = await runEvaluate(
           contextResult, effectiveModel, roomId, abortController.signal, triggerTraceId, emit, effectiveToolDefs,
+          undefined, undefined, captured, preparationStages,
         )
         if (!cm.isEpochCurrent(epoch)) return  // cancelled
-        onDecision({ ...decision, generationTraceId: triggerTraceId })
+        // A scheduled "nothing changed" stays quiet. Its observed model/tool
+        // evidence remains in Room execution history without inventing a posted
+        // message or a message-owned comparison/delegation attachment.
+        if (decision.response.action !== 'pass') onDecision({ ...decision, generationTraceId: triggerTraceId })
         outcome = decision.response.action
       } catch (err) {
         if (cm.isEpochCurrent(epoch)) {

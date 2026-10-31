@@ -1,0 +1,252 @@
+{
+  "scope": "Independent exported triangle geometry only, not source/native relationship or engineering qualification",
+  "acceptedTriangleEncodings": "Explicit indices or sequential triangle vertices in the shared mesh contract",
+  "toleranceMetres": 0.0001,
+  "checks": [
+    {
+      "candidate": "ifc",
+      "name": "delivery-frame",
+      "pass": true,
+      "detail": {}
+    },
+    {
+      "candidate": "ifc",
+      "name": "finite-indexed-triangles",
+      "pass": true,
+      "detail": {}
+    },
+    {
+      "candidate": "ifc",
+      "name": "all-sixteen-occurrences",
+      "pass": true,
+      "detail": {
+        "expected": [
+          "tg-hp",
+          "tg-lp-1",
+          "tg-lp-2",
+          "tg-lp-3",
+          "tg-generator",
+          "tg-exciter",
+          "msr-1",
+          "msr-2",
+          "stop-valve",
+          "condenser-1",
+          "condenser-2",
+          "condenser-3",
+          "cp-a",
+          "cp-b",
+          "mfw-a",
+          "mfw-b"
+        ]
+      }
+    },
+    {
+      "candidate": "ifc",
+      "name": "rotated-wall-positive-control",
+      "pass": true,
+      "detail": {}
+    },
+    {
+      "candidate": "ifc",
+      "name": "actual-door-void",
+      "pass": true,
+      "detail": {}
+    },
+    {
+      "candidate": "ifc",
+      "name": "existing-opening-preserved",
+      "pass": true,
+      "detail": {}
+    },
+    {
+      "candidate": "ifc",
+      "name": "lintel-and-adjacent-solid",
+      "pass": true,
+      "detail": {}
+    },
+    {
+      "candidate": "ifc",
+      "name": "pump-actual-two-metre-move",
+      "pass": true,
+      "detail": {
+        "before": {
+          "min": [
+            16.82,
+            40.25,
+            0
+          ],
+          "max": [
+            29.18,
+            43.25,
+            2.85328
+          ]
+        },
+        "after": {
+          "min": [
+            18.82,
+            40.25,
+            0
+          ],
+          "max": [
+            31.18,
+            43.25,
+            2.85328
+          ]
+        }
+      }
+    },
+    {
+      "candidate": "ifc",
+      "name": "move-preserves-other-pump",
+      "pass": true,
+      "detail": {}
+    },
+    {
+      "candidate": "ifc",
+      "name": "roof-preserves-deck-and-pump",
+      "pass": true,
+      "detail": {}
+    },
+    {
+      "candidate": "ifc",
+      "name": "fixed-vessel-unchanged",
+      "pass": true,
+      "detail": {}
+    },
+    {
+      "candidate": "ifc",
+      "name": "type-updates-both-physical-solids",
+      "pass": true,
+      "detail": {}
+    },
+    {
+      "candidate": "ifc",
+      "name": "a-only-variant-preserves-b",
+      "pass": true,
+      "detail": {}
+    },
+    {
+      "candidate": "native",
+      "name": "delivery-frame",
+      "pass": true,
+      "detail": {}
+    },
+    {
+      "candidate": "native",
+      "name": "finite-indexed-triangles",
+      "pass": true,
+      "detail": {}
+    },
+    {
+      "candidate": "native",
+      "name": "all-sixteen-occurrences",
+      "pass": true,
+      "detail": {
+        "expected": [
+          "tg-hp",
+          "tg-lp-1",
+          "tg-lp-2",
+          "tg-lp-3",
+          "tg-generator",
+          "tg-exciter",
+          "msr-1",
+          "msr-2",
+          "stop-valve",
+          "condenser-1",
+          "condenser-2",
+          "condenser-3",
+          "cp-a",
+          "cp-b",
+          "mfw-a",
+          "mfw-b"
+        ]
+      }
+    },
+    {
+      "candidate": "native",
+      "name": "rotated-wall-positive-control",
+      "pass": true,
+      "detail": {}
+    },
+    {
+      "candidate": "native",
+      "name": "actual-door-void",
+      "pass": true,
+      "detail": {}
+    },
+    {
+      "candidate": "native",
+      "name": "existing-opening-preserved",
+      "pass": true,
+      "detail": {}
+    },
+    {
+      "candidate": "native",
+      "name": "lintel-and-adjacent-solid",
+      "pass": true,
+      "detail": {}
+    },
+    {
+      "candidate": "native",
+      "name": "pump-actual-two-metre-move",
+      "pass": true,
+      "detail": {
+        "before": {
+          "min": [
+            16.82,
+            40.25,
+            0
+          ],
+          "max": [
+            29.18,
+            43.25,
+            2.942
+          ]
+        },
+        "after": {
+          "min": [
+            18.82,
+            40.25,
+            0
+          ],
+          "max": [
+            31.18,
+            43.25,
+            2.942
+          ]
+        }
+      }
+    },
+    {
+      "candidate": "native",
+      "name": "move-preserves-other-pump",
+      "pass": true,
+      "detail": {}
+    },
+    {
+      "candidate": "native",
+      "name": "roof-preserves-deck-and-pump",
+      "pass": true,
+      "detail": {}
+    },
+    {
+      "candidate": "native",
+      "name": "fixed-vessel-unchanged",
+      "pass": true,
+      "detail": {}
+    },
+    {
+      "candidate": "native",
+      "name": "type-updates-both-physical-solids",
+      "pass": true,
+      "detail": {}
+    },
+    {
+      "candidate": "native",
+      "name": "a-only-variant-preserves-b",
+      "pass": false,
+      "detail": {}
+    }
+  ],
+  "passed": false
+}

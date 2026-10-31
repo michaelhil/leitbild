@@ -1,0 +1,493 @@
+{
+  "record": "Complete native-map PWR cold-loading qualification",
+  "date": "2026-10-28",
+  "deploymentStatus": "Not a deployment receipt; release validation and activation are separate.",
+  "source": {
+    "productCommit": "b94fe94d94f9bdb1a587c17806fd0570bbcbefb4",
+    "testedBuildCommit": "0c2d173e196d2e3bc88ce1a80de11ba3c286a692",
+    "runnerCommit": "0c2d173e196d2e3bc88ce1a80de11ba3c286a692",
+    "productSourcePaths": [
+      "apps/world/src",
+      "apps/leitbild/src",
+      "apps/agents/src",
+      "packages"
+    ],
+    "sourceTreeSha256": "6d2ad2267097653bc62d374a32e5a7b138bb04cecc2be8ac97b9e260528ab265",
+    "emptySourceDiff": true,
+    "fixtureSha256": "3737f841fb9d1c77ef8208b8ab7723ef503ac4fba54060c8eb471c2911b8bbd0",
+    "unitDesign": "b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac",
+    "campusDesign": "9a8c62567fce6755922e4b6385045ec37252dfa8354a9d078143ef81347f8e41",
+    "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea",
+    "compiler": "738f7a053a2567552490e2c9147d2960a139dd8a8c06a5bfa4b5505d160d51f0"
+  },
+  "pairedCold": {
+    "baselineProductCommit": "55771e2ee419527aeefd07350bc6eb40528c1f7f",
+    "candidateProductCommit": "e61b932b8",
+    "candidateBuiltCommit": "4667b2862aa28448936c04018f7eb9cad6eaecd7",
+    "order": "A/B/B/A",
+    "freshBackendAndChromeEachTrial": true,
+    "sharedReadOnlyWarmup": "execution.read plus full Run GET, before browser; no layout live read or physical-worker/preparation warmup",
+    "coldObserverSha256": "6dfc391534dfab0b8347700cf4e4968ef0c5d2f275031cd700e427bea2c60e12",
+    "trials": [
+      {
+        "name": "matched-1-baseline",
+        "productCommit": "55771e2ee419527aeefd07350bc6eb40528c1f7f",
+        "builtCommit": "55771e2ee419527aeefd07350bc6eb40528c1f7f",
+        "drawMs": 3178.300000190735,
+        "fenceMs": 3230.800000190735,
+        "restorationMs": 552.7126659999994,
+        "simulationTime": "2026-07-12T04:00:08.862Z",
+        "fixtureSha256": "3737f841fb9d1c77ef8208b8ab7723ef503ac4fba54060c8eb471c2911b8bbd0"
+      },
+      {
+        "name": "matched-2-candidate",
+        "productCommit": "e61b932b8",
+        "builtCommit": "4667b2862aa28448936c04018f7eb9cad6eaecd7",
+        "drawMs": 2393.4000000953674,
+        "fenceMs": 2451.100000143051,
+        "restorationMs": 527.1995420000003,
+        "simulationTime": "2026-07-12T04:00:08.862Z",
+        "fixtureSha256": "3737f841fb9d1c77ef8208b8ab7723ef503ac4fba54060c8eb471c2911b8bbd0"
+      },
+      {
+        "name": "matched-3-candidate",
+        "productCommit": "e61b932b8",
+        "builtCommit": "4667b2862aa28448936c04018f7eb9cad6eaecd7",
+        "drawMs": 2802.2000000476837,
+        "fenceMs": 2833.300000190735,
+        "restorationMs": 537.5818749999999,
+        "simulationTime": "2026-07-12T04:00:08.862Z",
+        "fixtureSha256": "3737f841fb9d1c77ef8208b8ab7723ef503ac4fba54060c8eb471c2911b8bbd0"
+      },
+      {
+        "name": "matched-4-baseline",
+        "productCommit": "55771e2ee419527aeefd07350bc6eb40528c1f7f",
+        "builtCommit": "55771e2ee419527aeefd07350bc6eb40528c1f7f",
+        "drawMs": 3683.2000000476837,
+        "fenceMs": 3711.7000000476837,
+        "restorationMs": 554.2213330000013,
+        "simulationTime": "2026-07-12T04:00:08.862Z",
+        "fixtureSha256": "3737f841fb9d1c77ef8208b8ab7723ef503ac4fba54060c8eb471c2911b8bbd0"
+      }
+    ],
+    "meanDrawMs": {
+      "baseline": 3430.7500001192093,
+      "candidate": 2597.8000000715256,
+      "reductionPercent": 24.27894775249555
+    },
+    "meanFenceMs": {
+      "baseline": 3471.2500001192093,
+      "candidate": 2642.200000166893,
+      "reductionPercent": 23.883327329458993
+    }
+  },
+  "finalColdSanity": {
+    "kind": "Single fresh-backend/fresh-Chrome sanity after final UI annotation/picking fixes; separate from the balanced e61 comparison.",
+    "firstFamilyDrawMs": 1589.1999998092651,
+    "allFiveLayoutsDrawMs": 2331.5999999046326,
+    "allFiveLayoutsFenceMs": 2393.0999999046326,
+    "prior3dPrepareJobs": 0,
+    "prepareJobs": 2,
+    "defaultUtilityRoutes": true,
+    "geometryCohorts": [
+      {
+        "design": "9a8c62567fce6755922e4b6385045ec37252dfa8354a9d078143ef81347f8e41",
+        "sourceKey": "physical-layout/9a8c62567fce6755922e4b6385045ec37252dfa8354a9d078143ef81347f8e41/detail",
+        "key": "physical-layout/9a8c62567fce6755922e4b6385045ec37252dfa8354a9d078143ef81347f8e41/[\"3d\",\"all\",true,0,{\"layers\":[\"utility-routes\"]}]",
+        "meshes": 1879,
+        "renderBytes": 18587088,
+        "cpuBytes": 56647112,
+        "workerResponseMs": 842.2999999523163,
+        "instances": 1
+      },
+      {
+        "design": "b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac",
+        "sourceKey": "physical-layout/b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac/detail",
+        "key": "physical-layout/b0a2c9abb942dbe0ca786535eaac21d77a59ec86c01bdb8dfb1507ab8a3f7cac/[\"3d\",\"all\",true,0,{\"layers\":[\"plan-allowances\",\"utility-routes\"]}]",
+        "meshes": 4133,
+        "renderBytes": 29479104,
+        "cpuBytes": 98456840,
+        "workerResponseMs": 1519.7999999523163,
+        "instances": 4
+      }
+    ],
+    "restorationMs": 588.646709,
+    "simulationTime": "2026-07-12T04:01:01.886Z",
+    "glError": 0,
+    "exceptions": [],
+    "workerTargetsAfterExit": []
+  },
+  "transitions": {
+    "count": 17,
+    "actions": [
+      {
+        "name": "first-3d-after-cold-plan",
+        "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+        "firstDrawMs": 1589.1999998092651,
+        "allSourcesDrawMs": 2331.5999999046326,
+        "gpuFenceMs": 2393.0999999046326,
+        "prepareJobs": 2,
+        "pending": 0,
+        "glError": 0
+      },
+      {
+        "name": "all-utility-first-plan",
+        "milestone": "actual-plan-ink-and-two-painted-scheduling-frames",
+        "firstInkMs": 45,
+        "paintOpportunityMs": 270.89999985694885,
+        "prepareJobs": 0,
+        "pending": 0
+      },
+      {
+        "name": "all-utility-return-3d",
+        "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+        "firstDrawMs": 67.10000014305115,
+        "allSourcesDrawMs": 67.10000014305115,
+        "gpuFenceMs": 85.29999995231628,
+        "prepareJobs": 0,
+        "pending": 0,
+        "glError": 0
+      },
+      {
+        "name": "all-utility-warm-plan",
+        "milestone": "actual-plan-ink-and-two-painted-scheduling-frames",
+        "firstInkMs": 16.59999990463257,
+        "paintOpportunityMs": 228.29999995231628,
+        "prepareJobs": 0,
+        "pending": 0
+      },
+      {
+        "name": "all-utility-gc-return-3d",
+        "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+        "firstDrawMs": 65.70000004768372,
+        "allSourcesDrawMs": 65.70000004768372,
+        "gpuFenceMs": 106.29999995231628,
+        "prepareJobs": 0,
+        "pending": 0,
+        "glError": 0
+      },
+      {
+        "name": "first-turbine-hall-focus",
+        "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+        "firstDrawMs": 863.8999998569489,
+        "allSourcesDrawMs": 863.8999998569489,
+        "gpuFenceMs": 880.8999998569489,
+        "prepareJobs": 1,
+        "pending": 0,
+        "glError": 0
+      },
+      {
+        "name": "first-operating-3d",
+        "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+        "firstDrawMs": 253.5,
+        "allSourcesDrawMs": 253.5,
+        "gpuFenceMs": 263.39999985694885,
+        "prepareJobs": 1,
+        "pending": 0,
+        "glError": 0
+      },
+      {
+        "name": "first-stack-3d",
+        "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+        "firstDrawMs": 17.09999990463257,
+        "allSourcesDrawMs": 17.09999990463257,
+        "gpuFenceMs": 32.5,
+        "prepareJobs": 0,
+        "pending": 0,
+        "glError": 0
+      },
+      {
+        "name": "gc-return-operating-3d",
+        "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+        "firstDrawMs": 12.599999904632568,
+        "allSourcesDrawMs": 12.599999904632568,
+        "gpuFenceMs": 23.59999990463257,
+        "prepareJobs": 0,
+        "pending": 0,
+        "glError": 0
+      },
+      {
+        "name": "gc-return-stack-3d",
+        "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+        "firstDrawMs": 18.699999809265137,
+        "allSourcesDrawMs": 18.699999809265137,
+        "gpuFenceMs": 25.699999809265137,
+        "prepareJobs": 0,
+        "pending": 0,
+        "glError": 0
+      },
+      {
+        "name": "first-uncut-stack",
+        "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+        "firstDrawMs": 693.2999999523163,
+        "allSourcesDrawMs": 693.2999999523163,
+        "gpuFenceMs": 711.5999999046326,
+        "prepareJobs": 1,
+        "pending": 0,
+        "glError": 0
+      },
+      {
+        "name": "gc-return-cutaway-stack",
+        "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+        "firstDrawMs": 24.799999952316284,
+        "allSourcesDrawMs": 24.799999952316284,
+        "gpuFenceMs": 38.799999952316284,
+        "prepareJobs": 0,
+        "pending": 0,
+        "glError": 0
+      },
+      {
+        "name": "first-plan",
+        "milestone": "actual-plan-ink-and-two-painted-scheduling-frames",
+        "firstInkMs": 18.90000009536743,
+        "paintOpportunityMs": 63.700000047683716,
+        "prepareJobs": 0,
+        "pending": 0
+      },
+      {
+        "name": "first-plan-operating",
+        "milestone": "actual-plan-ink-and-two-painted-scheduling-frames",
+        "firstInkMs": 7.400000095367432,
+        "paintOpportunityMs": 36.10000014305115,
+        "prepareJobs": 0,
+        "pending": 0
+      },
+      {
+        "name": "first-plan-lower",
+        "milestone": "actual-plan-ink-and-two-painted-scheduling-frames",
+        "firstInkMs": 17.799999952316284,
+        "paintOpportunityMs": 48.700000047683716,
+        "prepareJobs": 0,
+        "pending": 0
+      },
+      {
+        "name": "gc-return-plan-operating",
+        "milestone": "actual-plan-ink-and-two-painted-scheduling-frames",
+        "firstInkMs": 22.40000009536743,
+        "paintOpportunityMs": 49.90000009536743,
+        "prepareJobs": 0,
+        "pending": 0
+      },
+      {
+        "name": "return-3d-operating",
+        "milestone": "actual-matching-3d-draw-and-all-required-source-fence",
+        "firstDrawMs": 19.899999856948853,
+        "allSourcesDrawMs": 19.899999856948853,
+        "gpuFenceMs": 34.299999952316284,
+        "prepareJobs": 0,
+        "pending": 0,
+        "glError": 0
+      }
+    ],
+    "forcedGc": [
+      {
+        "name": "before-all-utility-3d-return",
+        "jobsBefore": 4,
+        "jobsAfter": 4,
+        "sourcesBefore": 2,
+        "sourcesAfter": 2
+      },
+      {
+        "name": "before-operating-return",
+        "jobsBefore": 6,
+        "jobsAfter": 6,
+        "sourcesBefore": 2,
+        "sourcesAfter": 2
+      },
+      {
+        "name": "before-stack-return",
+        "jobsBefore": 6,
+        "jobsAfter": 6,
+        "sourcesBefore": 2,
+        "sourcesAfter": 2
+      },
+      {
+        "name": "before-cutaway-return",
+        "jobsBefore": 7,
+        "jobsAfter": 7,
+        "sourcesBefore": 2,
+        "sourcesAfter": 2
+      },
+      {
+        "name": "before-plan-return",
+        "jobsBefore": 7,
+        "jobsAfter": 7,
+        "sourcesBefore": 2,
+        "sourcesAfter": 2
+      }
+    ]
+  },
+  "motion": {
+    "publicHomeCamera": true,
+    "minimalPlanCanvasObserver": true,
+    "dpr": 2,
+    "windows": [
+      {
+        "name": "map-site-plan-paused",
+        "rafP95Ms": 16.799999999999272,
+        "rafMedianMs": 16.69999999999891,
+        "frames": 242,
+        "moves": 138,
+        "durationMs": 4061.199999809265,
+        "longTasks": 0,
+        "pending": 0,
+        "processWindows": 0,
+        "errors": [],
+        "dpr": 2,
+        "reportedLogicalCpus": 8
+      },
+      {
+        "name": "map-site-plan-playing",
+        "rafP95Ms": 16.799999999999272,
+        "rafMedianMs": 16.69999999999891,
+        "frames": 243,
+        "moves": 128,
+        "durationMs": 4132,
+        "longTasks": 0,
+        "pending": 0,
+        "processWindows": 0,
+        "errors": [],
+        "dpr": 2,
+        "reportedLogicalCpus": 8
+      },
+      {
+        "name": "map-site-3d-paused",
+        "rafP95Ms": 16.800000000000182,
+        "rafMedianMs": 16.699999999999818,
+        "frames": 242,
+        "moves": 123,
+        "durationMs": 4099,
+        "longTasks": 0,
+        "pending": 0,
+        "processWindows": 0,
+        "errors": [],
+        "dpr": 2,
+        "reportedLogicalCpus": 8
+      },
+      {
+        "name": "map-site-3d-playing",
+        "rafP95Ms": 16.799999999999272,
+        "rafMedianMs": 16.69999999999891,
+        "frames": 241,
+        "moves": 121,
+        "durationMs": 4039.7999999523163,
+        "longTasks": 0,
+        "pending": 0,
+        "processWindows": 0,
+        "errors": [],
+        "dpr": 2,
+        "reportedLogicalCpus": 8
+      }
+    ],
+    "workerTargetsAfterExit": [],
+    "allRequestedGeometryAndLiveStatusRemainEnabled": true
+  },
+  "functional": {
+    "policy": "click-only",
+    "trials": [
+      {
+        "kind": "equipment",
+        "mode": "3d",
+        "defaultUtilityRoutes": true
+      },
+      {
+        "kind": "connection",
+        "mode": "3d",
+        "defaultUtilityRoutes": true
+      },
+      {
+        "kind": "equipment",
+        "mode": "2d",
+        "defaultUtilityRoutes": true
+      },
+      {
+        "kind": "connection",
+        "mode": "2d",
+        "defaultUtilityRoutes": true
+      },
+      {
+        "kind": "owner-and-device",
+        "mode": null,
+        "defaultUtilityRoutes": null
+      }
+    ],
+    "errors": [],
+    "notes": [
+      "Real pointer hover/click in Plan and 3D; equipment hover does not open a faceplate or fetch hidden live readings.",
+      "Click opens the same hosted equipment faceplate; graph-route cards preserve exact endpoints, ports, medium and acquired live flow.",
+      "Child-device action acquires its own exact subject readings. All UI startup panels remain hidden initially."
+    ]
+  },
+  "quality": {
+    "completeAuthoredSourcePreserved": true,
+    "noComponentOrGeometryCapsAdded": true,
+    "defaultRenderMeshCountsAndBytesEqualEveryPairedTrial": true,
+    "correctedRayCompleteGeometryFingerprints": {
+      "unit": "69ca71bf2b8cd710116cd1fa482addb33c51fec5db7ad733847583a5faed59ff",
+      "campus": "5ea4eda183616c40acbdaa75448ea6587f8659e8dd1c8773e58f5fed044ce995"
+    },
+    "separateGates": [
+      "../self-pair-overlap-20261028/README.md",
+      "../overlap-query-20261028/README.md",
+      "../cold-transfer-20261028/README.md"
+    ],
+    "transparency": "Withdrawn/disabled under the existing user decision; not reintroduced by this performance pass."
+  },
+  "rawEvidence": {
+    "directory": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261028/cold-site-20261028/performance-raw",
+    "manifestPath": "/Users/hilde/Documents/ChatGPT/plant-layout-research-20261025/draw-stack-audit-20261028/cold-site-20261028/RAW-MANIFEST.json",
+    "manifestSha256": "b913c8723c787dc7e8794ff3889a15799ecf4423c82e32e176fbbbb7cd8851d9",
+    "fileCount": 2602,
+    "bytes": 274415770,
+    "receiptReferences": [
+      {
+        "path": "MATCHED-ABBA.json",
+        "sha256": "1e17c476393e9a2fc42588b67acbd10175e3a95e17b41ef6e523895a354f35c8"
+      },
+      {
+        "path": "matched-1-baseline/browser/receipt.json",
+        "sha256": "60f212f2e02d972b91fdd704bd2da9ff1ebe2918b031e74911c84b22bd92456c"
+      },
+      {
+        "path": "matched-2-candidate/browser/receipt.json",
+        "sha256": "c60fad0b2ce23f32403c91ed194258c73ca1b8d417dd303be716b1a994f7e109"
+      },
+      {
+        "path": "matched-3-candidate/browser/receipt.json",
+        "sha256": "4983f8d903f1614b5cc231260647c0c1fe55d7280c3b7493dd85d2d17122efda"
+      },
+      {
+        "path": "matched-4-baseline/browser/receipt.json",
+        "sha256": "6f9f5fb14e9d3b1dbd1524f15d8e7870d258d63d67ddf780212b85fc86ab3251"
+      },
+      {
+        "path": "final-cold-sanity/warmup.json",
+        "sha256": "4ea7368d8eae25bfbedc9f371188fb81a7c6d29d0b267dcba6805947e4315b9d"
+      },
+      {
+        "path": "final-cold-sanity/browser/receipt.json",
+        "sha256": "503fb9b51c6d80a20d07996299534a6e57a75a13966b4cd5fa1260dc65e5bd74"
+      },
+      {
+        "path": "final-aabb-plan-matched/receipt.json",
+        "sha256": "56d8cd6bedba2fcaee3179a139dfbdc28c8e430149f24f465fedb4e871386752"
+      },
+      {
+        "path": "final-aabb-3d-matched/receipt.json",
+        "sha256": "b2b86bc53205160fc24545163f8502bbdc4627a8f3ea5a3f14133a97b3eb2640"
+      },
+      {
+        "path": "final-aabb-operation/receipt.json",
+        "sha256": "3364c482136da572083a9dced0dfe56795a4f9ead42b01d0afe7ec163b5dd4d6"
+      }
+    ]
+  },
+  "limits": [
+    "Balanced timings measure the Plan-ready user action to all required source-family draw or a new GPU fence. They exclude earlier Host/Run navigation and are not physical-monitor presentation times.",
+    "Final 2.332-second result is one sanity sample on the final UI, not an additional paired estimate or universal guarantee. e61 paired candidate samples remain 2.393–2.802 seconds.",
+    "One Apple M2 local loopback environment with fresh isolated Chrome; read-only production vector/reference assets. No WAN, low-end device or broad hardware qualification.",
+    "DPR1 cold and transition observer and DPR2 motion observer are separate workloads. Minimal Plan Canvas observation avoids per-command instrumentation overhead while retaining actual ink witnesses and trusted input.",
+    "Invalid process-window drag samples, CPU-profile diagnostics, rejected alternatives and all raw evidence are preserved separately and are not pooled into qualified samples.",
+    "No preloading, reduced authored detail, geometry/component cap, delayed interior population, altered live polling cadence or new permanent geometry cache is used to claim the improvement."
+  ]
+}

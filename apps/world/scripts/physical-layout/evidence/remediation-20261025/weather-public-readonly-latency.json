@@ -1,0 +1,89 @@
+{
+  "scope": {
+    "workspaceId": "a05a2a08-355e-446a-ae52-84d34b8cfa62",
+    "runId": "run-ef6cf7c4-798c-42cb-b021-1cbc9d305eb4",
+    "deployedCommit": "26bab2f6910aa28b93594635c3bfcac485e247a1",
+    "queriesAreReadOnly": true,
+    "productionRunMutations": 0,
+    "queriesSequential": true
+  },
+  "source": "Exact tool-call receipts from the bounded read-only pass; later route comparison has its own timestamped raw JSON.",
+  "calls": [
+    {
+      "route": "module",
+      "capability": "world.weather.field-stats",
+      "status": 404,
+      "totalMs": 78.151625,
+      "bytes": 82,
+      "code": "simulation_run_not_found"
+    },
+    {
+      "route": "host",
+      "capability": "world.weather.field-stats",
+      "status": 200,
+      "totalMs": 79.83175,
+      "bytes": 176
+    },
+    {
+      "route": "host",
+      "capability": "world.weather.map-features",
+      "case": "site-first",
+      "status": 200,
+      "totalMs": 74.509458,
+      "bytes": 3038,
+      "features": 2
+    },
+    {
+      "route": "host",
+      "capability": "world.weather.map-features",
+      "case": "site-repeat",
+      "status": 200,
+      "totalMs": 19.998666,
+      "bytes": 3038,
+      "features": 2
+    },
+    {
+      "route": "host",
+      "capability": "world.weather.map-features",
+      "case": "room",
+      "status": 200,
+      "totalMs": 21.957875,
+      "bytes": 203,
+      "features": 0
+    }
+  ],
+  "viewports": {
+    "site": {
+      "zoom": 16,
+      "west": 11.45,
+      "east": 11.49,
+      "south": 59.075,
+      "north": 59.095
+    },
+    "room": {
+      "zoom": 20,
+      "west": 11.469,
+      "east": 11.471,
+      "south": 59.086,
+      "north": 59.088
+    }
+  },
+  "layers": [
+    "baseGrid",
+    "affectedCells",
+    "influenceShapes"
+  ],
+  "field": {
+    "cellCount": 0,
+    "influenceCount": 1,
+    "truthResolution": 7,
+    "fieldRevision": 0,
+    "simulationTime": "2026-07-12T04:00:00.000Z",
+    "model": "prescribed-atmosphere/heuristic-ground"
+  },
+  "limits": [
+    "A few sequential requests do not isolate network, Caddy, Host/World queues or IAB reconnect behaviour.",
+    "No browser connection tracing or user-browser control was performed by this agent.",
+    "The gate removes verified unnecessary covered-map demand; it does not prove transient fetch/timeout warnings resolved."
+  ]
+}

@@ -60,7 +60,7 @@ const query = async <T,>(run: SimulationRunRuntime, actor: Actor, capabilityId: 
   return outcome.result as T
 }
 const proposals = async (run: SimulationRunRuntime, plantId: string) =>
-  (await query<{ readonly proposals: ReadonlyArray<{ readonly proposal: ProcessPlantProposal; readonly review?: ProposalReview }> }>(run, agent, 'world.process-plant.control.proposals', { plantId })).proposals
+  (await query<{ readonly proposals: ReadonlyArray<{ readonly proposal: ProcessPlantProposal; readonly label: string; readonly review?: ProposalReview }> }>(run, agent, 'world.process-plant.control.proposals', { plantId })).proposals
 /** A propose result read as accepted: what the agent sees of its proposal. */
 type ProposeAccepted = Extract<ProcessPlantControlProposeResult, { readonly ok: true }>
 const signalTypes = (run: SimulationRunRuntime) => run.events().flatMap(event => event.type === 'interaction.signal.received' && event.signal.type.startsWith('process-plant.proposal.') ? [event.signal.type] : [])
@@ -91,9 +91,9 @@ describe('an AI agent proposes, a person approves', () => {
       // The block valve strokes shut within its travel and margin; the log names the approval.
       const startedAt = Date.parse(run.snapshot().clock!.currentTime)
       await run.runMaximumPace(new Date(startedAt + 13_000).toISOString() as IsoTimestamp, { shouldStop: () => false })
-      const sample = await query<{ readonly values: ReadonlyArray<{ readonly path: string; readonly value: number }>; readonly operations: { readonly log: ReadonlyArray<{ readonly kind: string; readonly proposalId?: string; readonly origin: string; readonly actorId: string }> } }>(
-        run, operator, 'world.process-plant.display.sample', { plantId, paths: ['pressurizer.blockValveEffectivePositionFraction', 'pressurizer.blockValvePositionFraction'], operations: true })
-      expect(sample.values[0]!.value).toBeLessThanOrEqual(0.05)
+      const sample = await query<{ readonly signals: ReadonlyArray<{ readonly variable: { readonly value: number } }>; readonly operations: { readonly log: ReadonlyArray<{ readonly kind: string; readonly proposalId?: string; readonly origin: string; readonly actorId: string }> } }>(
+        run, operator, 'world.process-plant.signals.read', { plantId, signals: [{ path: 'pressurizer.blockValveEffectivePositionFraction' }, { path: 'pressurizer.blockValvePositionFraction' }], operations: true })
+      expect(sample.signals[0]!.variable.value).toBeLessThanOrEqual(0.05)
       expect(sample.operations.log).toEqual([expect.objectContaining({ kind: 'approval', proposalId: proposed.commandId, origin: 'person', actorId: operator.id })])
     })
   })
@@ -114,8 +114,6 @@ describe('an AI agent proposes, a person approves', () => {
     await withRun(async (run, plantId) => {
       const listed = await query<{ readonly items: ReadonlyArray<ListedItem> }>(run, agent, 'world.process-plant.controls.list', { plantId, items: ['pressurizer.blockValve', 'core'] })
       expect(listed.items.map(item => item.id)).toEqual(['core', 'pressurizer.blockValve'])
-      // Each names the component its own detail draws around: a bundled device's, the one that bundles it.
-      expect(listed.items.map(item => item.components)).toEqual([['core'], ['pressurizer']])
       const [block] = listed.items.find(item => item.id === 'pressurizer.blockValve')!.offered
       expect(block).toMatchObject({ control: { tagId: 'MOV-8000A', form: 'twoState' }, travelMs: 10_000 })
       expect(block!.standing.length).toBe(block!.control.options.length)
@@ -133,10 +131,12 @@ describe('a modulating valve set to a % (owner feedback, plan-final §12 item 3)
       const [valve] = afw.offered
       expect(valve).toMatchObject({ control: { tagId: 'AFW-A-CV', form: 'demand', demand: { min: 0, max: 1, step: 0.01, unit: 'fraction', shownUnit: '%' } }, now: { demand: 0, position: 0 } })
       expect(afw.position).toEqual({ path: valve!.control.state!, value: 0 })
-      // A controller's valve is withheld as AUTO with what manual operation would take, and still shows its position.
+      // An opted-in controller exposes mode/target while AUTO refuses its manual position demand.
       const feed = listed.items.find(item => item.id === 'feedwaterControlValveA')!
-      expect(feed.offered).toEqual([])
-      expect(feed.withheld[0]!.reason).toMatchObject({ kind: 'automatic', manual: expect.stringContaining('AUTO/MAN') })
+      expect(feed.offered.find(control => control.control.tagId === 'MFW-A-CV')).toMatchObject({ control: { form: 'demand' }, unavailable: expect.stringContaining('Select MAN') })
+      expect(feed.offered.find(control => control.control.tagId === 'MFW-A-CTRL-AUTO')).toMatchObject({ control: { form: 'twoState', options: [{ word: 'AUTO', value: true }, { word: 'MAN', value: false }] } })
+      expect(feed.offered.find(control => control.control.tagId === 'MFW-A-CTRL-SP')).toMatchObject({ control: { form: 'setpoint', setpoint: { unit: 'percent' } } })
+      expect(await query(run, operator, 'world.process-plant.control.validate', { plantId, tagId: 'MFW-A-CV', value: 0.4 })).toMatchObject({ accepted: false, reason: expect.stringContaining('select MAN') })
       expect(feed.position!.value).toBeGreaterThan(0)
       // World checks the exact % write as a person's.
       expect(await query(run, operator, 'world.process-plant.control.validate', { plantId, tagId: 'AFW-A-CV', value: 0.4 })).toMatchObject({ accepted: true })
@@ -146,6 +146,8 @@ describe('a modulating valve set to a % (owner feedback, plan-final §12 item 3)
       const proposed = await command(run, agent, 'world.process-plant.control.propose', throttle)
       expect(proposed.ok).toBe(true)
       expect((await proposals(run, plantId))[0]!.proposal).toMatchObject({ word: 'OPEN to 40 %', item: 'auxFeedwaterValveA', write: { value: 0.4 } })
+      // The read names the item as a person reads it on the drawing (W7.4: labels, not ids).
+      expect((await proposals(run, plantId))[0]!.label).toBe('AFW valve A')
       expect((await command(run, operator, 'world.process-plant.control.decide', { plantId, proposalId: proposed.commandId, decision: 'approve' })).ok).toBe(true)
       // Within a second: the fixture's own feedwater line-up trips the unit on steam generator A level a second later.
       const startedAt = Date.parse(run.snapshot().clock!.currentTime)
@@ -192,7 +194,7 @@ describe('a throttle under a standing actuation', () => {
       expect(throttled.throttledUnder!.length).toBeGreaterThan(0)
       expect(throttled.throttledUnder!.every(rule => rule.action === 'AFW START' && rule.label !== rule.ruleId)).toBe(true)
       const sample = await query<{ readonly operations: { readonly log: ReadonlyArray<{ readonly kind: string; readonly throttledUnder?: ReadonlyArray<{ readonly ruleId: string; readonly label: string }> }> } }>(
-        run, operator, 'world.process-plant.display.sample', { plantId, paths: [throttled.control.path, throttled.control.state!], operations: true })
+        run, operator, 'world.process-plant.signals.read', { plantId, signals: [{ path: throttled.control.path }, { path: throttled.control.state! }], operations: true })
       expect(sample.operations.log).toEqual([expect.objectContaining({ kind: 'approval', throttledUnder: throttled.throttledUnder })])
       // It holds: nothing rewrites the demand after the actuation's edge.
       await run.runMaximumPace(new Date(approvedAt + 13_000).toISOString() as IsoTimestamp, { shouldStop: () => false })
@@ -224,7 +226,21 @@ describe('the consequence of an operation that stops, shuts or disconnects', () 
 })
 
 describe('an actuation reset', () => {
-  test('a person resets a latched actuation once it is offered; an AI agent only proposes it, and the approved reset is logged', async () => {
+  test('an authorized direct AI reset uses the same interlocks and records its own actor', async () => {
+    await withRun(async (run, plantId) => {
+      expect((await command(run, agent, 'world.process-plant.control.write', { plantId, tagId: 'RX-TRIP-MAN', value: true })).ok).toBe(true)
+      const startedAt = Date.parse(run.snapshot().clock!.currentTime)
+      await run.runMaximumPace(new Date(startedAt + 5_000).toISOString() as IsoTimestamp, { shouldStop: () => false })
+      const listing = await query<{ readonly resets: ReadonlyArray<{ readonly ruleId: string; readonly holds: ReadonlyArray<string> }> }>(run, agent, 'world.process-plant.controls.list', { plantId })
+      const manual = listing.resets.find(reset => reset.ruleId === 'reactor-manual-trip')!
+      const reset = await command(run, agent, 'world.process-plant.actuation.reset', { plantId, ruleId: 'reactor-manual-trip' })
+      expect(reset.ok).toBe(true)
+      const sample = await query<{ readonly operations: { readonly resets: ReadonlyArray<unknown> } }>(run, agent, 'world.process-plant.signals.read', { plantId, signals: [{ path: manual.holds[0]! }], operations: true })
+      expect(sample.operations.resets).toEqual([expect.objectContaining({ kind: 'reset', ruleId: 'reactor-manual-trip', origin: 'ai', actorId: agent.id, commandId: reset.commandId })])
+    })
+  })
+
+  test('a requested proposal retains human approval and logs the actual approver', async () => {
     await withRun(async (run, plantId) => {
       expect((await command(run, operator, 'world.process-plant.control.write', { plantId, tagId: 'RX-TRIP-MAN', value: true })).ok).toBe(true)
       const startedAt = Date.parse(run.snapshot().clock!.currentTime)
@@ -237,16 +253,13 @@ describe('an actuation reset', () => {
       const lowLow = (await resets()).find(reset => reset.ruleId === 'sg-a-level-low-low-afw-actuation')!
       expect(await command(run, operator, 'world.process-plant.actuation.reset', { plantId, ruleId: lowLow.ruleId }))
         .toMatchObject({ ok: false, reason: `RESET Steam generator A low-low level auxiliary feedwater actuation is not offered: ${lowLow.reason}` })
-      // An AI agent driving no procedure Run on the Plant never resets; it proposes.
-      expect(await command(run, agent, 'world.process-plant.actuation.reset', { plantId, ruleId: 'reactor-manual-trip' }))
-        .toMatchObject({ ok: false, reason: 'An AI agent proposes an actuation reset for a person to approve (world.process-plant.control.propose with reset); it resets one itself only while it drives an active procedure Run on this Plant' })
       const proposed = await command(run, agent, 'world.process-plant.control.propose', { plantId, reset: 'reactor-manual-trip', reason: 'The manual trip has acted and its demand has cleared', evidence: ['PT-455'] }) as ProposeAccepted
       expect(proposed).toMatchObject({ ok: true, word: 'RESET Manual reactor trip' })
       expect((await proposals(run, plantId))[0]!.proposal).toMatchObject({ reset: { ruleId: 'reactor-manual-trip', label: 'Manual reactor trip' }, item: manual.items[0], status: 'pending' })
       const approved = await command(run, operator, 'world.process-plant.control.decide', { plantId, proposalId: proposed.commandId, decision: 'approve' })
       expect(approved.ok).toBe(true)
       expect((await resets()).some(reset => reset.ruleId === 'reactor-manual-trip')).toBe(false)
-      const sample = await query<{ readonly operations: { readonly resets: ReadonlyArray<unknown> } }>(run, operator, 'world.process-plant.display.sample', { plantId, paths: [manual.holds[0]!], operations: true })
+      const sample = await query<{ readonly operations: { readonly resets: ReadonlyArray<unknown> } }>(run, operator, 'world.process-plant.signals.read', { plantId, signals: [{ path: manual.holds[0]! }], operations: true })
       expect(sample.operations.resets).toEqual([expect.objectContaining({ kind: 'reset', ruleId: 'reactor-manual-trip', origin: 'person', actorId: operator.id, proposalId: proposed.commandId, commandId: approved.commandId })])
     })
   })

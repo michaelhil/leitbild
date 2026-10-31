@@ -1,0 +1,359 @@
+{
+  "rendererCommit": "61271b286",
+  "rawReceiptPreCommitHead": "a0183ba7a8e3e672e6694edb7625709cda18627b",
+  "sourceCommit": "f6f588020459ae620f2eac683534994c0c0c4919",
+  "passed": true,
+  "finalCommittedSourceMatchesPreBuild": {
+    "src/ui/map/physical-scene/backend.ts": {
+      "expected": "968e40727ae99edcb810485b9ebfa397e05aa21589297907a044257492a4a8fd",
+      "actual": "968e40727ae99edcb810485b9ebfa397e05aa21589297907a044257492a4a8fd",
+      "matches": true
+    },
+    "src/ui/map/physical-scene/plan-pass.ts": {
+      "expected": "608ead36dc5293ab2fb7eb1c7ec2feb60c1ef8c227f987fb095c21460b178fd0",
+      "actual": "608ead36dc5293ab2fb7eb1c7ec2feb60c1ef8c227f987fb095c21460b178fd0",
+      "matches": true
+    },
+    "src/ui/map/physical-scene/plan-projection.ts": {
+      "expected": "d4bcfd222c282ef7ae3634074876ecfdc09094698f4726dee30d098362ea8087",
+      "actual": "d4bcfd222c282ef7ae3634074876ecfdc09094698f4726dee30d098362ea8087",
+      "matches": true
+    },
+    "src/ui/map/physical-scene/gl-state.ts": {
+      "expected": "f4798d9485051dcdfd0dc974c6637bf682692f0c6d4398510f58f4b238fff80c",
+      "actual": "f4798d9485051dcdfd0dc974c6637bf682692f0c6d4398510f58f4b238fff80c",
+      "matches": true
+    },
+    "src/ui/map/physical-scene/visibility.ts": {
+      "expected": "700e872682267dd2decbc14b534e676b99f8fcde88202ca6772cd24d25264f25",
+      "actual": "700e872682267dd2decbc14b534e676b99f8fcde88202ca6772cd24d25264f25",
+      "matches": true
+    },
+    "src/ui/map/physical-scene/map-viewport.ts": {
+      "expected": "8dc02a2203f18b883451ef22827e5235e9471876a3ef101c4192d57eb855145a",
+      "actual": "8dc02a2203f18b883451ef22827e5235e9471876a3ef101c4192d57eb855145a",
+      "matches": true
+    },
+    "src/ui/map/physical-scene/scene-controller.ts": {
+      "expected": "f0cb2f563ad14ea1ddb3e1bc976769e14ad97cd1465e18ab8270ea7f25062706",
+      "actual": "f0cb2f563ad14ea1ddb3e1bc976769e14ad97cd1465e18ab8270ea7f25062706",
+      "matches": true
+    },
+    "src/ui/map/physical-scene/preparation.ts": {
+      "expected": "f503c49865e1eed29ff6236a137737630a3f6bab3f4e679ab6da1b6eeed87e63",
+      "actual": "f503c49865e1eed29ff6236a137737630a3f6bab3f4e679ab6da1b6eeed87e63",
+      "matches": true
+    },
+    "src/ui/map/physical-scene/renderer.ts": {
+      "expected": "1674a208094c5197fd3675cfe15e254c0cbbc7dafc7db11af60f523f843eae7f",
+      "actual": "1674a208094c5197fd3675cfe15e254c0cbbc7dafc7db11af60f523f843eae7f",
+      "matches": true
+    },
+    "src/ui/map/physical-scene/geometry.ts": {
+      "expected": "a0713f5ee6a5699639c0e361cb402b91a19bd228015561bac6e0208349448b3b",
+      "actual": "a0713f5ee6a5699639c0e361cb402b91a19bd228015561bac6e0208349448b3b",
+      "matches": true
+    },
+    "src/ui/map/physical-scene/canvas-viewport.ts": {
+      "expected": "9d03f01197c3d4d0472472cbfe00f2ab45fa80dee0b2fcac2f9f8f44123ed857",
+      "actual": "9d03f01197c3d4d0472472cbfe00f2ab45fa80dee0b2fcac2f9f8f44123ed857",
+      "matches": true
+    },
+    "tests/browser/physical-scene/plan-parking-app.ts": {
+      "expected": "b1dff4be9cfa52b2bf3b1e4e1d3d24aa4c5622545a2ec9aa4c0963397484b5f7",
+      "actual": "b1dff4be9cfa52b2bf3b1e4e1d3d24aa4c5622545a2ec9aa4c0963397484b5f7",
+      "matches": true
+    },
+    "src/ui/map/physical-scene/controller.ts": {
+      "expected": "f7c1ab97d309030af0ecd225026eb33d7dc3f23db11355e06f60ad912223ca8d",
+      "actual": "f7c1ab97d309030af0ecd225026eb33d7dc3f23db11355e06f60ad912223ca8d",
+      "matches": true
+    },
+    "src/ui/map/physical-scene/preparation-worker.ts": {
+      "expected": "866b832e49dabf621bb8ee8b3c975284be8939a14df20c199a3346240bddd05b",
+      "actual": "866b832e49dabf621bb8ee8b3c975284be8939a14df20c199a3346240bddd05b",
+      "matches": true
+    },
+    "src/ui/map/physical-scene/inspection-demand.ts": {
+      "expected": "fff0509984fb6deca90bc1cf005f874b3207b68381fdd8a7356f460f1ff2d4ae",
+      "actual": "fff0509984fb6deca90bc1cf005f874b3207b68381fdd8a7356f460f1ff2d4ae",
+      "matches": true
+    },
+    "src/core/packs/scene.ts": {
+      "expected": "ba6941e4f2df9f00d4cd52bae7235a1820aaac6766f052f155c29354305b2738",
+      "actual": "ba6941e4f2df9f00d4cd52bae7235a1820aaac6766f052f155c29354305b2738",
+      "matches": true
+    },
+    "src/core/packs/scene-transfer.ts": {
+      "expected": "721de87648a44b7e4cfcfaea6de928766d29e4d3fd87b4604eec0002476ab523",
+      "actual": "721de87648a44b7e4cfcfaea6de928766d29e4d3fd87b4604eec0002476ab523",
+      "matches": true
+    },
+    "src/ui/map/physical-scene/overview.ts": {
+      "expected": "37d8a226ef9e6624b6c207831c5b93e2500dd1c9b62cf814c76f2eb781428c6b",
+      "actual": "37d8a226ef9e6624b6c207831c5b93e2500dd1c9b62cf814c76f2eb781428c6b",
+      "matches": true
+    },
+    "src/ui/map-runtime/operational-deck-layers.ts": {
+      "expected": "2eb3c1b415db921b58ecb940a32d9725edc31c128f0eeeef8c0b6ed16982e25e",
+      "actual": "2eb3c1b415db921b58ecb940a32d9725edc31c128f0eeeef8c0b6ed16982e25e",
+      "matches": true
+    },
+    "src/packs/physical-layout/native/compile-scene.ts": {
+      "expected": "b3e70a671f13b48e7724b0bb4ad67f0fe47069dbdf9d8ff9b9369296299820ad",
+      "actual": "b3e70a671f13b48e7724b0bb4ad67f0fe47069dbdf9d8ff9b9369296299820ad",
+      "matches": true
+    },
+    "src/packs/physical-layout/native/campus/compile-scene.ts": {
+      "expected": "f5ca21f0d5d26be45b76515f7702c5b40309ba1a621f9cb58b09a2f71f16cbda",
+      "actual": "f5ca21f0d5d26be45b76515f7702c5b40309ba1a621f9cb58b09a2f71f16cbda",
+      "matches": true
+    }
+  },
+  "profile": {
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+    "width": 1440,
+    "height": 913,
+    "dpr": 1,
+    "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M2, Unspecified Version)",
+    "antialias": true
+  },
+  "phases": [
+    {
+      "host": "map",
+      "mode": "2d",
+      "theme": "day",
+      "passed": true,
+      "painted": 84,
+      "correct": 84,
+      "bright": 84
+    },
+    {
+      "host": "map",
+      "mode": "3d",
+      "theme": "day",
+      "passed": true,
+      "painted": 84,
+      "correct": 84,
+      "bright": 10
+    },
+    {
+      "host": "map",
+      "mode": "2d",
+      "theme": "dusk",
+      "passed": true,
+      "painted": 84,
+      "correct": 84,
+      "bright": 84
+    },
+    {
+      "host": "map",
+      "mode": "3d",
+      "theme": "dusk",
+      "passed": true,
+      "painted": 84,
+      "correct": 84,
+      "bright": 52
+    },
+    {
+      "host": "canvas",
+      "mode": "2d",
+      "theme": "day",
+      "passed": true,
+      "painted": 84,
+      "correct": 84,
+      "bright": 84
+    },
+    {
+      "host": "canvas",
+      "mode": "3d",
+      "theme": "day",
+      "passed": true,
+      "painted": 84,
+      "correct": 84,
+      "bright": 11
+    },
+    {
+      "host": "canvas",
+      "mode": "2d",
+      "theme": "dusk",
+      "passed": true,
+      "painted": 84,
+      "correct": 84,
+      "bright": 84
+    },
+    {
+      "host": "canvas",
+      "mode": "3d",
+      "theme": "dusk",
+      "passed": true,
+      "painted": 84,
+      "correct": 84,
+      "bright": 60
+    }
+  ],
+  "planTargets": [
+    {
+      "host": "map",
+      "mode": "2d",
+      "theme": "day",
+      "plan": {
+        "programs": 1,
+        "textures": 1,
+        "framebuffers": 2,
+        "renderbuffers": 2,
+        "bytes": 47329920,
+        "textureBytes": 5258880,
+        "allocations": 1,
+        "composites": 1,
+        "liveTextures": null,
+        "livePrograms": null,
+        "liveFramebuffers": null,
+        "liveRenderbuffers": null
+      }
+    },
+    {
+      "host": "map",
+      "mode": "2d",
+      "theme": "dusk",
+      "plan": {
+        "programs": 1,
+        "textures": 1,
+        "framebuffers": 2,
+        "renderbuffers": 2,
+        "bytes": 47329920,
+        "textureBytes": 5258880,
+        "allocations": 1,
+        "composites": 2,
+        "liveTextures": null,
+        "livePrograms": null,
+        "liveFramebuffers": null,
+        "liveRenderbuffers": null
+      }
+    },
+    {
+      "host": "canvas",
+      "mode": "2d",
+      "theme": "day",
+      "plan": {
+        "programs": 1,
+        "textures": 1,
+        "framebuffers": 2,
+        "renderbuffers": 2,
+        "bytes": 47329920,
+        "textureBytes": 5258880,
+        "allocations": 1,
+        "composites": 1,
+        "liveTextures": null,
+        "livePrograms": null,
+        "liveFramebuffers": null,
+        "liveRenderbuffers": null
+      }
+    },
+    {
+      "host": "canvas",
+      "mode": "2d",
+      "theme": "dusk",
+      "plan": {
+        "programs": 1,
+        "textures": 1,
+        "framebuffers": 2,
+        "renderbuffers": 2,
+        "bytes": 47329920,
+        "textureBytes": 5258880,
+        "allocations": 1,
+        "composites": 2,
+        "liveTextures": null,
+        "livePrograms": null,
+        "liveFramebuffers": null,
+        "liveRenderbuffers": null
+      }
+    }
+  ],
+  "coplanarOrder": {
+    "passed": true,
+    "results": [
+      {
+        "flat": false,
+        "interleaved": true,
+        "picked": "B",
+        "pixel": [
+          0,
+          232,
+          0,
+          255
+        ],
+        "draws": 3,
+        "geometryUploads": 2,
+        "passed": true
+      },
+      {
+        "flat": false,
+        "interleaved": false,
+        "picked": "A2",
+        "pixel": [
+          232,
+          0,
+          0,
+          255
+        ],
+        "draws": 2,
+        "geometryUploads": 2,
+        "passed": true
+      },
+      {
+        "flat": true,
+        "interleaved": true,
+        "picked": "B",
+        "pixel": [
+          0,
+          255,
+          0,
+          255
+        ],
+        "draws": 3,
+        "geometryUploads": 2,
+        "passed": true
+      },
+      {
+        "flat": true,
+        "interleaved": false,
+        "picked": "A2",
+        "pixel": [
+          255,
+          0,
+          0,
+          255
+        ],
+        "draws": 2,
+        "geometryUploads": 2,
+        "passed": true
+      }
+    ],
+    "disposal": {
+      "geometryUploads": 2,
+      "geometryBytes": 0,
+      "draws": 10,
+      "buffers": 0,
+      "programs": 0,
+      "textures": 0,
+      "textureBytes": 0,
+      "instanceBytes": 0,
+      "instanceUploads": 8,
+      "statusUploads": 2,
+      "paletteUploads": 2,
+      "evictions": 0,
+      "peakRequiredBytes": 524,
+      "liveBuffersAfterDisposal": 0,
+      "liveProgramsAfterDisposal": 0,
+      "liveTexturesAfterDisposal": 0
+    }
+  },
+  "gl": {
+    "passed": true,
+    "idleFrames": 0,
+    "stateErrors": [],
+    "glErrors": [],
+    "negativeControlDetected": true
+  }
+}

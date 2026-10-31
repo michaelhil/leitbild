@@ -33,10 +33,12 @@ export type ReferenceFirstOutGroupId = (typeof referenceFirstOutGroups)[number][
  * tripping the already tripped reactor again), feed flow stops as the feed
  * regulating valves shut, Tavg falls to the feedwater isolation after a trip,
  * the steam generators' relief valves lift briefly before the dumps open, and
- * the pressurizer's pressure dips below its low alarm as the coolant shrinks.
- * Each
+ * the pressurizer's pressure dips below its low alarm as the coolant shrinks,
+ * the turbine trips on the open trip breakers (P-4), and every reactor trip
+ * signal after the first out comes in on a reactor already tripping. Each
  * such alarm's annunciator declares it, so displays show these as expected
  * after the reactor trip's first-out, never hidden, while the first-out and
- * what came in before it stand out.
+ * what came in before it stand out; past the window from the first-out, one
+ * still standing is news again.
  */
 export const expectedAfterReactorTrip = { firstOutGroup: 'reactor-trip', withinMs: 300_000 } as const satisfies { readonly firstOutGroup: ReferenceFirstOutGroupId; readonly withinMs: number }

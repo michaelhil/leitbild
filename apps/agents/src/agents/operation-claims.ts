@@ -1,9 +1,9 @@
 // ============================================================================
 // Operation claims — does an answer say it did what its turn only proposed?
 //
-// On a Plant an AI agent operates by proposing: World records the exact
-// command and a person approves it in the display window, or not (plan C1
-// §4.4). The answer must never say "I closed the block valve" when the turn
+// World may execute an explicitly requested command directly, or record a
+// proposal for a person to approve in the display window. The answer must
+// never say "I closed the block valve" when the turn
 // only proposed it, and never say it proposed what World refused. This check
 // reads what the turn's own workspace_call results say happened: a command's
 // result carries its commandId, and a proposal is the one command whose
@@ -15,6 +15,7 @@
 import type { ToolResult } from '../core/types/tool.ts'
 
 /** The operation through which an AI agent proposes a plant command for a person to approve (World). */
+// Dated exception (P0, 2026-10-20): names a World operation id, against the platform rule that Agents discover Capabilities at runtime, until the swap (plan v3.1 §7), when command receipts replace this English claim check.
 export const PROPOSE_OPERATION_ID = 'world.process-plant.control.propose'
 
 /** One operation a workspace_call of this turn issued, with what it returned. */

@@ -32,7 +32,7 @@ import {
 import { processPlantDefinitionSchema,type ProcessPlantDefinition } from '../config.ts'
 import type { ProcessPlantControlProposeResult } from '../capabilities.ts'
 import { validateProcessPlantControlWrite } from '../control-write-validation.ts'
-import { aiProposeOnlyRefusal, drivesProcedureOn, instructorOnlyRefusal, throttledUnder, validateOperatorWrite } from '../operations/command-guard.ts'
+import { aiProposeOnlyRefusal, throttledUnder, validateOperatorWrite } from '../operations/command-guard.ts'
 import { listedResetsFor, proposalPortsFor, resetContextFor } from '../operations/instance-ports.ts'
 import { resetRefusal } from '../operations/actuation-reset.ts'
 import { decideProposal, proposeOperation } from '../operations/proposals.ts'
@@ -89,6 +89,10 @@ const processPlantDefinitionsFor = (
     automation: data.automation,
   })]
 })
+
+/** Each Plant object's label: it names the unit in its recorded series' titles. */
+const unitLabelsOf = (objects: Iterable<OperationalObject>): ReadonlyMap<string, string> =>
+  new Map([...objects].flatMap(object => object.packId === processPlantPackId ? [[String(object.id), object.label] as const] : []))
 
 const emitPackRuntimeEvents = (
   handlers: ReadonlySet<PackRuntimeEventHandler>,
@@ -290,7 +294,7 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
     }
     let recordingPlan = config.recording === undefined
       ? null
-      : createProcessPlantRecordingPlan({ selection: config.recording, plants })
+      : createProcessPlantRecordingPlan({ selection: config.recording, plants, unitLabels: unitLabelsOf(initialObjects) })
     let recordingDescriptorsPending = recordingPlan !== null
     let nextRecordingElapsedMs = recordingPlan?.intervalMs ?? Number.POSITIVE_INFINITY
     // Composed displays say which trended signals have history in this Run.
@@ -353,12 +357,9 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
       proposalId?: string,
     ): string | null => {
       if (plant.protection === undefined) return `process plant I&C is not configured for plant: ${plant.plant.id}`
-      // An AI agent resets one itself only as the operator of a procedure it drives on this Plant.
-      if (context.origin !== 'person' && context.origin !== 'system' && !(context.origin === 'ai' && drivesProcedureOn(context, plant.plant.id))) {
-        return context.origin === 'ai'
-          ? 'An AI agent proposes an actuation reset for a person to approve (world.process-plant.control.propose with reset); it resets one itself only while it drives an active procedure Run on this Plant'
-          : 'A reset needs who takes it'
-      }
+      if (context.origin !== 'person' && context.origin !== 'system' && context.origin !== 'ai') return 'A reset needs who takes it'
+      const policyRefusal = aiProposeOnlyRefusal(command.kind, context, plant.plant.id, aiOperationOf(plant.plant.id))
+      if (policyRefusal !== null) return policyRefusal
       const refusal = resetRefusal(plant.plant, plant.protection.snapshot(), ruleId, resetContextFor(plant))
       if (refusal !== null) return refusal
       const reset = listedResetsFor(plant).find(candidate => candidate.ruleId === ruleId)!
@@ -372,7 +373,7 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
         ...(reason === undefined ? {} : { reason }),
       })
       emitPackRuntimeEvents(handlers, events)
-      if (plant.operations !== undefined && context.origin === 'person') {
+      if (plant.operations !== undefined && (context.origin === 'person' || context.origin === 'ai')) {
         const at = { elapsedMs: plant.runtime.elapsedMs(), wallMs: Date.now() }
         const transitions = plant.operations.recordReset({
           commandId: command.id, kind: 'reset', ruleId, label: reset.label, holds: [...reset.holds],
@@ -391,7 +392,7 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
     const rebuildRecordingPlan = (): void => {
       recordingPlan = config.recording === undefined || plants.size === 0
         ? null
-        : createProcessPlantRecordingPlan({ selection: config.recording, plants })
+        : createProcessPlantRecordingPlan({ selection: config.recording, plants, unitLabels: unitLabelsOf(objectsById.values()) })
       recordingDescriptorsPending = recordingPlan !== null
       nextRecordingElapsedMs = recordingPlan?.intervalMs ?? Number.POSITIVE_INFINITY
       recordedSeriesIds = recordedSeriesFor(recordingPlan)
@@ -519,9 +520,6 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
                 },
               })
               if (!result.accepted) throw new Error(result.reason)
-              // An instructor action is a person's or the Scenario's; an AI agent's reaches no fault or boundary input.
-              const refusal = context.origin === 'ai' ? instructorOnlyRefusal(plant.plant.graph.signalBindingByPath.get(result.targetPath)!, context.origin) : null
-              if (refusal !== null) throw new Error(refusal)
               return { type: 'setVariable' as const, path: result.targetPath, value: actionCommand.value }
             })
             const boundary = coupledBoundaryEffect(boundaryVariablesByPlant.get(payload.data.plantId), validated)
@@ -564,7 +562,12 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
               ...(payload.data.reason === undefined ? {} : { reason: payload.data.reason }),
               ...(payload.data.shelveDurationMs === undefined ? {} : { shelveDurationMs: payload.data.shelveDurationMs }),
             })
-            emitPackRuntimeEvents(handlers, events)
+            // What a person acknowledged shows at once, the Run paused or playing: its Plant's objects project again now.
+            const projected = processPlantProjectionEvents({
+              objectsById, plants, at: nowIso(), simulationTime: new Date(lastSimulationMs).toISOString() as IsoTimestamp, connectedPlantIds,
+              provenance: { source: 'simulator', adapterId: processPlantSimAdapterId },
+            })
+            emitPackRuntimeEvents(handlers, [...events, ...projected])
             await persistence.saveNow()
             return { ok: true, commandId: command.id, acceptedAt }
           } catch (err) {
@@ -738,6 +741,7 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
           objects: objectsById,
           simulationTime: new Date(lastSimulationMs).toISOString() as IsoTimestamp,
           recordedSeriesIds,
+          ...(recordingPlan === null ? {} : { recordingIntervalMs: recordingPlan.intervalMs }),
           ...(config.recordedHistory === undefined ? {} : { recordedHistory: config.recordedHistory }),
         })
       },

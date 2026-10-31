@@ -12,6 +12,8 @@ import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { createTestPackRuntimeAdapters, createTestScenarioRuntimeResolver, testPacks, testScenarioAuthoring } from './helpers.ts'
 import { testScenarioDefinitions } from './fixtures/scenarios.ts'
 import { fixtureDataOf, fixturePackId } from './fixtures/fixture-pack.ts'
+import { draftingLayoutDataSchema, canonicalPhysicalJson } from '../src/packs/physical-layout/model.ts'
+import { pwrShutdownCoolingCampusPhysicalDesignRef, pwrShutdownCoolingUnitPhysicalDesignRef } from '../src/packs/physical-layout/design.ts'
 
 const unitSettings = { speedMps: 15 }
 const taskDataOf = (object: Parameters<typeof fixtureDataOf>[0]) => {
@@ -39,7 +41,7 @@ test('Scenario AI restrictions compile as the initial Run policy without Pack-sp
   expect(compiled.agentRestrictions).toEqual(source.agentRestrictions)
 })
 
-test('all five test Packs share one paused startup clock and preserve progress through controls and restart', async () => {
+test('five runtime Packs share one paused startup clock and retain static layouts through controls and restart', async () => {
   const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-shared-clock-'))
   const clocks: SimulationClockReader[] = []
   const adapters = createTestPackRuntimeAdapters().map(adapter => ({
@@ -68,14 +70,29 @@ test('all five test Packs share one paused startup clock and preserve progress t
     const frozen = run.snapshot().clock!.currentTime
     expect(Date.parse(frozen)).toBeGreaterThan(Date.parse(source.world.startsAt))
     expect(clocks.every(clock => clock.read().currentTime === frozen && clock.read().paused)).toBe(true)
-    expect(run.snapshot().objects).toHaveLength(10)
+    expect(run.snapshot().objects).toHaveLength(15)
+    const layoutObjects = run.snapshot().objects.filter(object => object.packId === 'physical-layout')
+    expect(layoutObjects.map(object => String(object.id)).sort()).toEqual(['layout:halden-1', 'layout:halden-2', 'layout:halden-3', 'layout:halden-4', 'layout:halden-campus'])
+    const campus = draftingLayoutDataSchema.parse(layoutObjects.find(object => object.id === 'layout:halden-campus')!.packData)
+    expect(campus.design).toEqual(pwrShutdownCoolingCampusPhysicalDesignRef)
+    expect(campus.source.planAnnotations!.length).toBeGreaterThan(0)
+    expect(campus.owner.objectId).toBe('grid:halden-four-unit')
+    expect(campus.coverage.representedSubjectIds).toHaveLength(11)
+    expect(campus.relatedMembers).toHaveLength(4)
+    expect(campus.relatedMembers.every(member => member.physicalLayout?.physical.id === pwrShutdownCoolingUnitPhysicalDesignRef.id)).toBe(true)
+    expect(campus.requirements.connections).toHaveLength(4)
+    const retainedLayouts = layoutObjects.map(object => [object.id, canonicalPhysicalJson(object.packData)] as const).sort(([a], [b]) => a.localeCompare(b))
+    const retainedConnections = registry.loadedCompiledScenario(run.id).connections
     await Bun.sleep(30)
     expect(run.snapshot().clock!.currentTime).toBe(frozen)
+    expect(run.snapshot().objects.filter(object => object.packId === 'physical-layout').map(object => [object.id, canonicalPhysicalJson(object.packData)] as const).sort(([a], [b]) => a.localeCompare(b))).toEqual(retainedLayouts)
     await registry.close(run.id)
     clocks.length = 0
     const restored = await registry.load(run.id)
     expect(restored.snapshot().clock!.currentTime).toBe(frozen)
-    expect(restored.snapshot().objects).toHaveLength(10)
+    expect(restored.snapshot().objects).toHaveLength(15)
+    expect(restored.snapshot().objects.filter(object => object.packId === 'physical-layout').map(object => [object.id, canonicalPhysicalJson(object.packData)] as const).sort(([a], [b]) => a.localeCompare(b))).toEqual(retainedLayouts)
+    expect(registry.loadedCompiledScenario(restored.id).connections).toEqual(retainedConnections)
     expect(clocks).toHaveLength(5)
     expect(new Set(clocks).size).toBe(1)
     expect(clocks.every(clock => clock.read().currentTime === frozen && clock.read().paused)).toBe(true)

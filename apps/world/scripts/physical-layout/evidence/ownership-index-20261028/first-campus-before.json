@@ -1,0 +1,68 @@
+{
+  "engine": "before",
+  "design": {
+    "id": "pwr-campus",
+    "revision": "pwr-campus-20261027-r5",
+    "digest": "91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933"
+  },
+  "sourceDigest": "0c12a17bf7211c2fdfc26bd05139c7eb6088122c182316f89559421d3341807a",
+  "compiler": {
+    "id": "physical-layout-native-drafting",
+    "digest": "738f7a053a2567552490e2c9147d2960a139dd8a8c06a5bfa4b5505d160d51f0"
+  },
+  "inputMeshes": 535,
+  "inputTriangles": 131845,
+  "ms": 1255.48175,
+  "cpu": {
+    "user": 1490155,
+    "system": 90816
+  },
+  "memoryBefore": {
+    "rss": 295632896,
+    "heapTotal": 45202432,
+    "heapUsed": 75475552,
+    "external": 31918208,
+    "arrayBuffers": 1120
+  },
+  "memoryAfter": {
+    "rss": 790102016,
+    "heapTotal": 498335744,
+    "heapUsed": 244529900,
+    "external": 70994508,
+    "arrayBuffers": 1583548
+  },
+  "process": {
+    "userCPUTime": 3090849,
+    "systemCPUTime": 246676,
+    "maxRSS": 846224,
+    "sharedMemorySize": 0,
+    "unsharedDataSize": 0,
+    "unsharedStackSize": 0,
+    "minorPageFault": 53585,
+    "majorPageFault": 60,
+    "swappedOut": 0,
+    "fsRead": 0,
+    "fsWrite": 0,
+    "ipcSent": 0,
+    "ipcReceived": 0,
+    "signalsCount": 0,
+    "voluntaryContextSwitches": 0,
+    "involuntaryContextSwitches": 9858
+  },
+  "outputMeshes": 1837,
+  "packedBytes": 18569040,
+  "diagnostics": {
+    "broadPhaseCandidates": 3629488,
+    "coplanarCandidates": 110891,
+    "triangles": 131845,
+    "partitionedTriangles": 8096,
+    "retainedCandidates": 1302,
+    "coincidentPairs": 973
+  },
+  "fingerprint": "cd4977772446826d679168929fd03c0b889d839397841a630cf6299638f2a954",
+  "limits": [
+    "One fresh Bun process and one engine call; compilation, mesh generation, render/pick fingerprint outside measured interval.",
+    "One explicit test-only GC before the measured call; not a production cache/GC policy.",
+    "Process memory snapshots/peak are not retained product GPU residency. No browser or network latency claim."
+  ]
+}

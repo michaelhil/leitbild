@@ -1,0 +1,21 @@
+{
+  "observedAt": "2026-10-24T18:53:22.107132+00:00",
+  "scope": "Coordinator browser review, not formal human architectural or engineering acceptance",
+  "nativeSvgAndSolid": "Credible architectural walls/openings/stairs/rooms and shaped machinery, corrected stale baseline and missing SVG paint, level isolation shown; 638px fit/plot labels remain refinements.",
+  "ifcSvg": "Credible bounded source-derived floor/operating-deck drawings; cannot override failed integrity gate.",
+  "formats": {
+    "nativeSourceCommit": "8b15e74c2423967f7f90c3ddf76bc6e4349c9f26",
+    "ifcSourceCommit": "91670729621fecaec85ff0e8a9d99b55b19afbb9"
+  },
+  "nativeOutputHashes": {
+    "plan-lower.svg": "e707e4fa09031731d6a0ace5f9bf2e90d752690d74d984af0dad7cbfe755085b",
+    "plan-operating.svg": "8fdb966f93f4b7891762be849226c1fb499c747e62bb2ffe6897303fdffd86dc",
+    "geometry.json": "079856dfa571964f171d9964e764292873b46024fa25d610ee912cf705f5131d"
+  },
+  "notQualified": [
+    "formal architectural acceptance",
+    "production responsive UI",
+    "general imported multilevel separation",
+    "engineering or outage suitability"
+  ]
+}

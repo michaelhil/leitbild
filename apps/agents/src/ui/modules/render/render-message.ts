@@ -112,7 +112,8 @@ export const renderMessage = (opts: RenderMessageOptions): void => {
   // The Host's conversation view shows membership in its member row instead.
   if (isJoinLeave && (ageMs > 10_000 || isFocusedRoomView)) return
 
-  const div = document.createElement('div')
+  const inspectableProgress = msg.progress === true && msg.progressEvidence !== undefined && onViewContext !== undefined
+  const div = document.createElement(inspectableProgress ? 'button' : 'div')
   div.setAttribute('data-msg-id', msg.id)
   // Stage cards (script engine setup messages) are sent with senderId='system'
   // but senderName='Stage'. They are scene-boundary markers we want visible,
@@ -133,6 +134,14 @@ export const renderMessage = (opts: RenderMessageOptions): void => {
     label.textContent = `⚠ ${senderName} ${msg.content}`
     label.className = 'flex-1'
     div.appendChild(label)
+    if (onViewContext && msg.generationTraceId) {
+      const inspect = document.createElement('button')
+      inspect.className = 'text-xs underline shrink-0 hover:text-danger-strong'
+      inspect.textContent = 'Inspect'
+      inspect.title = 'Inspect inputs, model calls and actual operation results'
+      inspect.onclick = event => { event.stopPropagation(); onViewContext(msg) }
+      div.appendChild(inspect)
+    }
     // Offer "Change model" affordance for failures the user can fix in config.
     const code = msg.errorCode
     const offersChangeModel = code === 'no_api_key' || code === 'model_unavailable' || code === 'provider_down'
@@ -175,6 +184,17 @@ export const renderMessage = (opts: RenderMessageOptions): void => {
     textEl.className = 'text-text min-w-0 break-words'
     textEl.textContent = msg.content
     div.append(nameEl, timeEl, textEl)
+    if (inspectableProgress) {
+      div.setAttribute('type', 'button')
+      div.classList.add('msg-progress-inspect')
+      div.setAttribute('aria-label', `Inspect activity: ${msg.content}`)
+      div.title = 'Inspect the recorded activity behind this update'
+      const hint = document.createElement('span')
+      hint.className = 'msg-progress-hint'
+      hint.textContent = 'Details ›'
+      div.appendChild(hint)
+      div.onclick = () => onViewContext(msg)
+    }
   } else if (isSystem || isRoomSummary) {
     // System messages are normally plain text (compact, muted). Biometric-
     // caused system messages carry a ```biometric fenced block that must
@@ -341,13 +361,12 @@ export const renderMessage = (opts: RenderMessageOptions): void => {
     div.appendChild(header)
 
     // Persisted thinking renders above the response so reading
-    // order is reasoning → answer. `<details>` is open by default so
-    // the user sees the model's chain-of-thought after a kimi-k2.6 or
-    // o-series eval; when the user toggles the global "Thinking" piece
-    // off in the visibility popover (body.mh-hide-thinking), CSS
-    // suppresses the body and collapses to a single-line summary so
-    // the thinking pane doesn't dominate the chat. The user can still
-    // unfold any one message via the disclosure triangle.
+    // order is reasoning → answer. `<details>` is collapsed to a
+    // single-line summary while the global "Thinking" piece is hidden
+    // (body.mh-hide-thinking, the default: message-header-prefs.ts), so
+    // the thinking pane doesn't dominate the chat; showing the piece in
+    // the visibility popover opens it. The user can still unfold any one
+    // message via the disclosure triangle.
     const thinkingText = $messageThinking.get()[msg.id]
     if (thinkingText && thinkingText.length > 0) {
       const det = document.createElement('details')

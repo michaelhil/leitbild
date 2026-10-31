@@ -4,7 +4,7 @@ import { defineComponent, variable } from './component-definition-helpers.ts'
 import { fixedSemantics } from './semantics.ts'
 
 // Instrument channels: equipment that measures and computes, moves no fluid
-// and has no ports. Each reads the plant's solved state the way its
+// and may declare an explicit instrument-power supply. Each reads the plant's solved state the way its
 // instruments would and publishes what it computes; the I&C rules act on that.
 
 const positive = z.number().finite().positive()
@@ -42,7 +42,7 @@ export const instrumentationComponentDefinitions: ReadonlyArray<ComponentDefinit
     // loop's flow instruments on its cold leg read the loop's forward flow as
     // a share of its rated flow; a loop the others drive backwards reads none.
     // Both indicators pin at the ends of their spans.
-    ports: {},
+    ports: { power: { kind: 'electricalAc', direction: 'in' } },
     parametersSchema: z.object({
       /** Overtemperature delta-T margin at T' and P', a fraction of dT0. */
       overtemperatureK1: positive,
@@ -57,7 +57,10 @@ export const instrumentationComponentDefinitions: ReadonlyArray<ComponentDefinit
     }).strict(),
     semantics: fixedSemantics({
       keyValues: ['overtemperatureMarginC', 'overpowerMarginC'],
-      meaningfulWhile: [{ flag: 'forcedFlow', variables: ['deltaTPowerPercent'] }],
+      meaningfulWhile: [
+        { flag: 'powerIndicationAvailable', variables: ['deltaTPowerPercent'] },
+        { flag: 'supplyAvailable', variables: ['deltaTC', 'averageTemperatureC', 'overtemperatureSetpointC', 'overpowerSetpointC', 'overtemperatureMarginC', 'overpowerMarginC', 'forcedFlow', 'hotLegTemperatureRateCPerS', 'loopFlowFraction'] },
+      ],
     }),
     variables: [
       variable({ path: 'deltaTC', label: 'Loop delta-T', kind: 'derived', discipline: 'thermal', writable: false, publish: 'telemetry', quantity: 'temperatureDelta', unit: 'degC' }),
@@ -69,6 +72,8 @@ export const instrumentationComponentDefinitions: ReadonlyArray<ComponentDefinit
       // Declared last, so the variables before them keep their places.
       variable({ path: 'deltaTPowerPercent', label: 'Loop delta-T power', kind: 'derived', discipline: 'thermal', writable: false, publish: 'telemetry', quantity: 'power', unit: 'percent', limits: { hardRange: deltaTChannelSpans.deltaTPowerPercent, instrumentSpan: deltaTChannelSpans.deltaTPowerPercent } }),
       variable({ path: 'forcedFlow', label: 'Loop forced flow', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'boolean', unit: 'boolean' }),
+      variable({ path: 'supplyAvailable', label: 'Delta-T channel instrument supply available', kind: 'derived', discipline: 'electrical', writable: false, publish: 'telemetry', quantity: 'boolean', unit: 'boolean' }),
+      variable({ path: 'powerIndicationAvailable', label: 'Instrument powered and loop forced flow', kind: 'derived', discipline: 'control', writable: false, publish: 'internal', quantity: 'boolean', unit: 'boolean' }),
       // How fast the loop's hot leg moves, which natural circulation checks stable or falling.
       variable({ path: 'hotLegTemperatureRateCPerS', label: 'Loop hot-leg temperature rate', kind: 'derived', discipline: 'thermal', writable: false, publish: 'telemetry', quantity: 'temperatureRate', unit: 'degC/s' }),
       variable({ path: 'loopFlowFraction', label: 'Loop flow', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', measurand: 'flow', quantity: 'ratio', unit: 'fraction', limits: { hardRange: deltaTChannelSpans.loopFlowFraction, instrumentSpan: deltaTChannelSpans.loopFlowFraction } }),

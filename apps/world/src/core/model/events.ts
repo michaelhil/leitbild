@@ -8,7 +8,7 @@ import { isoTimestampSchema, simulationClockStateSchema, type IsoTimestamp, type
 import { telemetryStateSchema, type TelemetryState } from './telemetry.ts'
 import { interactionSignalSchema, operationalNotificationSchema, type InteractionSignal, type OperationalNotification } from './interactions.ts'
 import { agentRestrictionsSchema, scenarioGuidanceSchema, type AgentRestrictions, type ScenarioGuidance } from './scenario.ts'
-import { procedureObservationUpdatedEventSchema, procedureBranchSelectedEventSchema, procedureRunDriverChangedEventSchema, procedureRunResumedEventSchema, procedureRunClosedEventSchema, procedureRunResetEventSchema, procedureRunStartedEventSchema, procedureStepUpdatedEventSchema, type ProcedureRunState, type ProcedureRunId, type ProcedureRunScope, type ProcedureRunStatus, type ProcedureStepId, type ProcedureAssessment, type ProcedureId, type ProcedureSourceId } from './procedures.ts'
+import { procedureInputRequestedEventSchema, procedureObservationUpdatedEventSchema, procedureBranchSelectedEventSchema, procedureRunDriverChangedEventSchema, procedureRunResumedEventSchema, procedureRunClosedEventSchema, procedureRunResetEventSchema, procedureRunStartedEventSchema, procedureStepUpdatedEventSchema, type ProcedureRunState, type ProcedureRunId, type ProcedureRunScope, type ProcedureRunStatus, type ProcedureStepId, type ProcedureAssessment, type ProcedureId, type ProcedureSourceId } from './procedures.ts'
 
 export interface EventEnvelopeBase {
   readonly id: EventId
@@ -23,6 +23,7 @@ export type SimulationRunEvent =
   | (EventEnvelopeBase & z.infer<typeof procedureRunResumedEventSchema>)
   | (EventEnvelopeBase & z.infer<typeof procedureBranchSelectedEventSchema>)
   | (EventEnvelopeBase & z.infer<typeof procedureRunDriverChangedEventSchema>)
+  | (EventEnvelopeBase & z.infer<typeof procedureInputRequestedEventSchema>)
   | (EventEnvelopeBase & {
       readonly type: 'object.upserted'
       readonly object: OperationalObject
@@ -126,7 +127,7 @@ export type SimulationRunEvent =
       readonly resetBy: ActorId
     })
 
-const eventBaseSchema = z.object({
+export const eventBaseSchema = z.object({
   id: eventIdSchema,
   simulationRunId: simulationRunIdSchema,
   seq: z.number().int().nonnegative(),
@@ -207,6 +208,7 @@ export const simulationRunEventSchema = z.discriminatedUnion('type', [
   eventBaseSchema.merge(procedureRunResumedEventSchema),
   eventBaseSchema.merge(procedureBranchSelectedEventSchema),
   eventBaseSchema.merge(procedureRunDriverChangedEventSchema),
+  eventBaseSchema.merge(procedureInputRequestedEventSchema),
   eventBaseSchema.merge(procedureObservationUpdatedEventSchema),
   eventBaseSchema.merge(procedureRunResetEventSchema),
 ])

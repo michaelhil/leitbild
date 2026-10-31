@@ -1,5 +1,6 @@
 import { optionalParameterNumber } from '../component-helpers.ts'
 import type { ComponentInitialValueDefinition } from './model.ts'
+import { valvePositionController } from '../../graph/valve-controller.ts'
 
 export const junctionInitialValueDefinitions: ReadonlyArray<ComponentInitialValueDefinition> = [
   {
@@ -43,9 +44,13 @@ const valveInitialValueFor = (
   component: Parameters<ComponentInitialValueDefinition['initialValueFor']>[0],
   localPath: string,
 ) => {
+  const controller = valvePositionController(component)
+  if (localPath === 'controllerAutomatic' && controller?.operator) return controller.operator.initialAutomatic
+  if (localPath === 'controllerSetpoint' && controller?.operator) return controller.setpoint
   const initialPosition = optionalParameterNumber(component, 'initialPositionFraction', 1)
   const failedPosition = optionalParameterNumber(component, 'failPositionFraction', initialPosition)
   if (localPath === 'positionFraction') return initialPosition
+  if (localPath === 'motorPowerAvailable') return true
   if (localPath === 'positionFailureActive') return false
   if (localPath === 'isolationSignal') return false
   if (localPath === 'failedPositionFraction') return failedPosition

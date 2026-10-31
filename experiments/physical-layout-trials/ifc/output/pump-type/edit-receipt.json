@@ -1,0 +1,128 @@
+{
+  "kind": "pump-type",
+  "beforeSha": "6c28ed351642cf904d6caf473b05a866bf6d5505207cca1dcae72d8848478a13",
+  "afterSha": "c702f2552948aa54646078a24f9069059483bb74fa3acc00a150395b696496fc",
+  "beforeRevision": "physical-1",
+  "afterRevision": "physical-a4ceafb7cc2b",
+  "intended": [
+    "mfw-a",
+    "mfw-b"
+  ],
+  "actual": [
+    "mfw-a",
+    "mfw-b"
+  ],
+  "unchangedIdentityCount": 90,
+  "studyApplicability": "old results retained against old source; stale for new design",
+  "impacts": [
+    "Physical nozzle/service-envelope changes; routes stale, no numerical retuning"
+  ],
+  "interfacesBefore": [
+    {
+      "id": "mfw-a/inlet",
+      "position": [
+        18.2,
+        40.4,
+        1.768
+      ],
+      "direction": [
+        0,
+        -1,
+        0
+      ]
+    },
+    {
+      "id": "mfw-a/outlet",
+      "position": [
+        21.08,
+        43.1,
+        1.768
+      ],
+      "direction": [
+        0,
+        1,
+        0
+      ]
+    },
+    {
+      "id": "mfw-b/inlet",
+      "position": [
+        18.2,
+        48.1,
+        1.768
+      ],
+      "direction": [
+        0,
+        -1,
+        0
+      ]
+    },
+    {
+      "id": "mfw-b/outlet",
+      "position": [
+        21.08,
+        50.800000000000004,
+        1.768
+      ],
+      "direction": [
+        0,
+        1,
+        0
+      ]
+    }
+  ],
+  "interfacesAfter": [
+    {
+      "id": "mfw-a/inlet",
+      "position": [
+        18.32,
+        40.4,
+        1.768
+      ],
+      "direction": [
+        0,
+        -1,
+        0
+      ]
+    },
+    {
+      "id": "mfw-a/outlet",
+      "position": [
+        21.488,
+        43.1,
+        1.768
+      ],
+      "direction": [
+        0,
+        1,
+        0
+      ]
+    },
+    {
+      "id": "mfw-b/inlet",
+      "position": [
+        18.32,
+        48.1,
+        1.768
+      ],
+      "direction": [
+        0,
+        -1,
+        0
+      ]
+    },
+    {
+      "id": "mfw-b/outlet",
+      "position": [
+        21.488,
+        50.800000000000004,
+        1.768
+      ],
+      "direction": [
+        0,
+        1,
+        0
+      ]
+    }
+  ]
+}

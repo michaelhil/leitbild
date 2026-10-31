@@ -1,4 +1,5 @@
-import { createHash } from 'node:crypto'
+import { processPlantModelDigest, processPlantSourceDigest } from './model-identity.ts'
+import { assertControllerProtectionIsolation } from './controller-protection.ts'
 import {
   compilePlantGraph,
   plantGraphSpecSchema,
@@ -22,6 +23,7 @@ import {
   resolveProcessPlantOperatingPoint,
 } from './plant-definitions.ts'
 import { assertPrimaryLoopTopologyValid } from './graph/index.ts'
+import { assertDirectedFluidDeliveryValid } from './runtime/directed-fluid-delivery.ts'
 
 export interface ProcessPlantInitialVariableValue {
   readonly path: VariablePath
@@ -40,24 +42,6 @@ export interface CompiledProcessPlant {
   readonly initialState: ReadonlyArray<ProcessPlantInitialVariableValue>
   readonly automation: ProcessPlantProtectionConfig
 }
-
-// A Plant's identity is everything that can change its simulation. How
-// operators name equipment (metadata.presentation) cannot, so renaming never
-// orphans a persisted Run checkpoint.
-const withoutPresentation = <T extends { readonly metadata?: { readonly presentation?: unknown } | undefined }>(item: T): T => {
-  if (item.metadata?.presentation === undefined) return item
-  const { presentation: _presentation, ...metadata } = item.metadata
-  if (Object.keys(metadata).length > 0) return { ...item, metadata }
-  const { metadata: _metadata, ...rest } = item
-  return rest as T
-}
-
-const modelDigestFor = (graph: PlantGraphSpec): string =>
-  createHash('sha256').update(JSON.stringify({
-    ...graph,
-    components: graph.components.map(withoutPresentation),
-    connections: graph.connections.map(withoutPresentation),
-  })).digest('hex')
 
 const compiledModelCache = new Map<string, CompiledPlantGraph>()
 const maxCompiledModelCacheEntries = 32
@@ -159,9 +143,11 @@ export const compileResolvedProcessPlant = (
     cloneGraphSpec(definition.graph),
     definition.parameterOverrides as Record<string, unknown> | undefined,
   )
-  const modelDigest = modelDigestFor(graph)
-  const compiledGraph = compiledGraphFor(graph, modelDigest)
+  const sourceDigest = processPlantSourceDigest(graph)
+  const compiledGraph = compiledGraphFor(graph, sourceDigest)
+  const modelDigest = processPlantModelDigest(sourceDigest, compiledGraph)
   definition.validateGraph?.(compiledGraph)
+  assertDirectedFluidDeliveryValid(compiledGraph)
   const initialState = parseInitialState(definition.valueOverrides as Record<string, unknown> | undefined)
   assertInitialStateTargetsDeclaredVariables(compiledGraph, initialState)
   // Validated once here, so every reader sees declared operating modes, annunciator systems, safety functions and their references whole.
@@ -171,6 +157,7 @@ export const compileResolvedProcessPlant = (
   assertProcessPlantIcSafetyFunctionsValid(compiledGraph, automation.safetyFunctions)
   assertThrottleFloorsValid(compiledGraph, automation.rules)
   assertResetTimesValid(automation.rules)
+  assertControllerProtectionIsolation(compiledGraph, automation)
   return {
     id: definition.id,
     modelRef: definition.modelRef,

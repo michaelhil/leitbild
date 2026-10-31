@@ -1,0 +1,58 @@
+{
+  "design": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+  "target": "connection/pressurizer-safety-valves-to-tank",
+  "view": {
+    "mode": "3d",
+    "levelId": "all",
+    "cutaway": true,
+    "separation": 0,
+    "detail": "auto",
+    "live": true,
+    "surroundings": false,
+    "hiddenLayerIds": [
+      "roof-structure"
+    ]
+  },
+  "pieces": [
+    {
+      "key": "connection/pressurizer-safety-valves-to-tank/all",
+      "triangles": 880,
+      "lines": 0,
+      "coveredBy": [
+        "connection/pressurizer-relief-to-tank/all"
+      ],
+      "earlierOwners": [
+        {
+          "key": "connection/pressurizer-relief-to-tank/all",
+          "id": "connection/pressurizer-relief-to-tank",
+          "triangles": 20
+        }
+      ]
+    },
+    {
+      "key": "connection/pressurizer-safety-valves-to-tank/all",
+      "triangles": 20,
+      "lines": 0,
+      "coveredBy": [
+        "connection/pressurizer-surge-line/all",
+        "connection/pressurizer-relief-to-tank/all"
+      ],
+      "earlierOwners": [
+        {
+          "key": "connection/pressurizer-surge-line/all",
+          "id": "connection/pressurizer-surge-line",
+          "triangles": 888
+        },
+        {
+          "key": "connection/pressurizer-relief-to-tank/all",
+          "id": "connection/pressurizer-relief-to-tank",
+          "triangles": 20
+        }
+      ]
+    }
+  ],
+  "allPositiveFacesConditional": true,
+  "limits": [
+    "Untimed exact production preparation of the retained R5 unit. Conditional metadata explains whether a missing EBO occurrence is a retained source alternative, not a delayed job. No camera visibility assumption is added."
+  ]
+}

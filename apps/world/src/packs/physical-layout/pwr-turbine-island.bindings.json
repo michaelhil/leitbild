@@ -1,0 +1,72 @@
+[
+  {
+    "physicalElementId": "tg-hp",
+    "elementId": "turbine",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "tg-lp-1",
+    "elementId": "turbine",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "tg-lp-2",
+    "elementId": "turbine",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "tg-lp-3",
+    "elementId": "turbine",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "tg-generator",
+    "elementId": "turbine",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "tg-exciter",
+    "elementId": "turbine",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "stop-valve",
+    "elementId": "turbineStopValve",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "condenser-1",
+    "elementId": "condenser",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "condenser-2",
+    "elementId": "condenser",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "condenser-3",
+    "elementId": "condenser",
+    "relation": "partOf"
+  },
+  {
+    "physicalElementId": "cp-a",
+    "elementId": "condensatePumpA",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "cp-b",
+    "elementId": "condensatePumpB",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "mfw-a",
+    "elementId": "mainFeedwaterPumpA",
+    "relation": "represents"
+  },
+  {
+    "physicalElementId": "mfw-b",
+    "elementId": "mainFeedwaterPumpB",
+    "relation": "represents"
+  }
+]

@@ -1,10 +1,13 @@
 <script lang="ts">
   import 'maplibre-gl/dist/maplibre-gl.css'
   import { untrack } from 'svelte'
+  import type { EmbeddedViewListing } from '@leitbild/contracts'
+  import type { PhysicalLayoutBinding, PhysicalLayoutMapInteraction } from './physical-layout/sources.ts'
   import type {
     GeoJsonPoint,
     GeoJsonPolygon,
     IsoTimestamp,
+    SimulationRunId,
     OperationalObject,
     SimulationClockState,
     MapLayerId,
@@ -43,7 +46,6 @@
   import { createMapStackChooser } from './map/map-stack-chooser.ts'
   import { objectsUnder, stackPick } from './map/map-stack.ts'
   import { disksPickFor, hoverCardsFor, longPressObject, pickingRadiusFor } from './map/map-pointer.ts'
-  import { objectCardAnchor, sameCardFrame, type MapCardFrame } from './map/object-card-anchor.ts'
   import { operationalIconPx } from './map-runtime/symbol-kit.ts'
   import { createReferenceLayerController } from './map-runtime/reference-layer-controller.ts'
   import {
@@ -70,7 +72,7 @@
     readonly placementPoints: ReadonlyArray<GeoJsonPoint>
     readonly theme: ThemeMode
     readonly mapConfig: StartingMapView
-    readonly clock?: SimulationClockState
+    readonly clock?: SimulationClockState | undefined
     readonly routeRevision: number
     readonly debugMapInput?: boolean
     readonly highlightedObjectIds?: ReadonlyArray<string>
@@ -104,6 +106,11 @@
     readonly mapLayerGroupVisibility?: Readonly<Record<string, boolean>>
     readonly referenceStyles?: ReadonlyArray<PackReferenceDatasetStyle>
     readonly liveMapLayers?: ReadonlyArray<PackLiveMapLayerBinding>
+    physicalLayoutControlsOpen?: boolean
+    readonly physicalLayoutBindings?: ReadonlyArray<PhysicalLayoutBinding>
+    readonly onPhysicalDisplay?: (listing: EmbeddedViewListing) => void
+    readonly physicalLayoutSuspended: boolean
+    readonly layoutClearTop?: number
     readonly queryLiveMapLayer?: (request: PackMapFeatureQuery, signal: AbortSignal) => Promise<unknown>
     /** The selected item per surface panel; live map layers highlight it. */
     readonly packSelections?: Readonly<Record<string, string | null>>
@@ -138,23 +145,19 @@
      */
     readonly targetPicking?: boolean
     /** Reported only when given: a click on open ground, neither an object nor a Pack feature. */
-    readonly onGroundSelected?: (point: GeoJsonPoint) => void
+    readonly onGroundSelected?: ((point: GeoJsonPoint) => void) | undefined
     /** The order preview a hovered object's card shows, when the selected controller's Pack describes targets. */
-    readonly targetPreviewFor?: (object: OperationalObject) => PackTargetPreview | null
+    readonly targetPreviewFor?: ((object: OperationalObject) => PackTargetPreview | null) | undefined
     /**
-     * Objects a click opens a card for: a mouse click or hover anywhere on
+     * Objects a click opens a display for: a mouse click or hover anywhere on
      * their coloured disk is theirs on every surface, not only while the
      * surface picks targets. Every other object's disk picks as before. It
      * answers by the object alone, so the icons are not drawn again for it.
      */
     readonly takesDiskClicks?: (object: OperationalObject) => boolean
-    /** The object whose card is open: its hover card stays away, and the map reports where its icon is drawn. */
-    readonly cardObjectId?: string | null
-    /** Where the open card's icon is drawn as the camera and the icons move, and the map's clear part (`map/object-card-anchor.ts`). */
-    readonly onCardFrame?: (frame: MapCardFrame) => void
   }
 
-  const {
+  let {
     objects,
     selectedControllerId,
     controllerHighlighted = false,
@@ -187,6 +190,11 @@
     mapLayerGroupVisibility = {},
     referenceStyles = [],
     liveMapLayers = [],
+    physicalLayoutBindings = [],
+    physicalLayoutControlsOpen = $bindable(false),
+    onPhysicalDisplay = () => {},
+    physicalLayoutSuspended,
+    layoutClearTop = 0,
     queryLiveMapLayer = async () => { throw new Error('live map layers need a capability query') },
     packSelections = {},
     packFeatureLayers = [],
@@ -209,8 +217,6 @@
     onGroundSelected,
     targetPreviewFor,
     takesDiskClicks = () => false,
-    cardObjectId = null,
-    onCardFrame = () => undefined,
   }: Props = $props()
 
   let mapElement = $state<HTMLDivElement | null>(null)
@@ -280,6 +286,16 @@
   }
 
   const promptController = createMapPromptController({ getMap: () => runtime?.map ?? null })
+  let physicalLayoutInteraction: PhysicalLayoutMapInteraction | null = null
+  let detailedLayoutOwnerIds = $state.raw<ReadonlySet<string>>(new Set())
+  const physicalMapPresentation = (object: OperationalObject): PackObjectPresentation => {
+    const presentation = presentationFor(object)
+    return detailedLayoutOwnerIds.has(object.id) ? { ...presentation, mapIconVisible: false } : presentation
+  }
+  const setDetailedLayoutOwners = (ids: ReadonlyArray<string>): void => {
+    const next = new Set(ids)
+    if (next.size !== detailedLayoutOwnerIds.size || [...next].some(id => !detailedLayoutOwnerIds.has(id))) detailedLayoutOwnerIds = next
+  }
   const stackChooser = createMapStackChooser({ getMap: () => runtime?.map ?? null })
 
   /** An object a click picked, or the one chosen from a stack: an assignment's target, or a selection. */
@@ -311,40 +327,6 @@
     })))
   }
 
-  // The open card's frame, measured once per animation frame while the map draws.
-  let cardFrameRequest: number | null = null
-  let lastCardFrame: MapCardFrame | null = null
-  const reportCardFrame = (): void => {
-    cardFrameRequest = null
-    const current = runtime
-    if (cardObjectId === null || current === null) return
-    const canvas = current.map.getCanvas()
-    const bounds = canvas.getBoundingClientRect()
-    const clear = {
-      left: cameraPadding.left,
-      top: cameraPadding.top,
-      right: canvas.clientWidth - cameraPadding.right,
-      bottom: canvas.clientHeight - cameraPadding.bottom,
-    }
-    const frame: MapCardFrame = {
-      origin: { x: bounds.left, y: bounds.top },
-      clear,
-      anchor: objectCardAnchor({
-        points: operationalRenderController.points(),
-        objectId: cardObjectId,
-        screenOf: position => current.map.project([position[0], position[1]]),
-        clear,
-      }),
-    }
-    if (sameCardFrame(lastCardFrame, frame)) return
-    lastCardFrame = frame
-    onCardFrame(frame)
-  }
-  const scheduleCardFrame = (): void => {
-    if (cardObjectId === null || cardFrameRequest !== null) return
-    cardFrameRequest = requestAnimationFrame(reportCardFrame)
-  }
-
   const popupController = createMapPopupController({
     getMap: () => runtime?.map ?? null,
     presentationFor: (object) => presentationFor(object),
@@ -372,6 +354,7 @@
       selectedControllerId,
       highlightedObjectIds,
       mutedObjectIds,
+      alertPalette: theme === 'dark' ? 'dusk' : 'day',
       hiddenObjectCategoryIds,
       placementPoints,
       packFeatures: cachedPackMapFeatures,
@@ -380,10 +363,10 @@
       assignmentInteraction: assignmentInteraction(),
       disksPick: disksPickFor(targetPicking, pickingRadius),
       diskClicks: pickingRadius === 0 ? takesDiskClicks : null,
-      presentationKey,
+      presentationKey: `${presentationKey}|physical:${[...detailedLayoutOwnerIds].sort().join(',')}`,
     }),
     hasNewInfo: object => hasNewInfo(object),
-    presentationFor: object => presentationFor(object),
+    presentationFor: object => physicalMapPresentation(object),
     onObjectSelected: object => {
       clickHandled = true
       objectTookClick = true
@@ -400,7 +383,7 @@
     onObjectSeen: object => onObjectSeen(object),
     onObjectHover: object => {
       hoveredObject = object
-      if (object && hoverCardsFor(lastPointerType) && object.id !== cardObjectId) popupController.show(object)
+      if (object && hoverCardsFor(lastPointerType)) popupController.show(object)
       else popupController.hide()
     },
     onAssignmentHandleSelected: handle => { clickHandled = true; suppressBackgroundClick = true; onAssignmentHandleSelected(handle.controllerId) },
@@ -429,7 +412,7 @@
   const liveLayerController = createPackLiveLayerController({
     query: (request, signal) => queryLiveMapLayer(request, signal),
     rasterize: rasterizeSymbol,
-    documentHidden: () => document.hidden,
+    active: () => !document.hidden,
     onSelect: selection => { clickHandled = true; featureSelection = selection },
     onHover: hover => { if (hover && hoverCardsFor(lastPointerType)) popupController.showCard(hover); else popupController.hide() },
     onError: message => onMapError(`Live map layer: ${message}`),
@@ -540,6 +523,7 @@
     getViewport: currentViewport,
     getCurrentTime: currentDisplayTime,
     getSourceRevisionKey: packFeatureSourceRevisionKey,
+    active: () => !document.hidden,
     enabled: packFeaturesEnabled,
     loadFeatures: context => mapFeaturesFor(context),
     setFeatures: features => {
@@ -550,6 +534,11 @@
     },
     performanceDiagnostics: mapPerformanceDiagnostics,
   })
+
+  const syncViewportDemand = (): void => {
+    packOverlayController.syncEnabled()
+    syncLiveLayers()
+  }
 
   const registerReferenceLayers = (): void => {
     const currentRuntime = runtime
@@ -569,7 +558,7 @@
     const padding = { top: cameraPadding.top, right: cameraPadding.right, bottom: cameraPadding.bottom, left: cameraPadding.left }
     const container = current.getContainer()
     current.jumpTo({
-      center: mapConfig.center.coordinates,
+      center: [mapConfig.center.coordinates[0], mapConfig.center.coordinates[1]],
       zoom: startingZoomFor(mapConfig.zoom, { width: container.clientWidth, height: container.clientHeight }, padding),
       padding,
     })
@@ -625,10 +614,15 @@
             clickHandled = false
             objectTookClick = false
             featureSelection = null
+            if (outcome === 'handled') physicalLayoutInteraction?.dismiss()
             if (feature !== null && !placementMode) onPackFeatureSelected(feature)
             if (outcome === 'suppressed') suppressBackgroundClick = false
             else if (outcome === 'assignment-cancel') onAssignmentCancelled()
-            else if (outcome === 'ground') onGroundSelected?.(point)
+            else if (outcome === 'ground') {
+              const captured = placementMode !== null || targetPicking || selectedControllerId !== null
+              if (!captured && physicalLayoutInteraction?.activate(lastPointerScreen)) return
+              onGroundSelected?.(point)
+            }
           })
         },
         onMoveStart: event => {
@@ -655,8 +649,6 @@
       runtime = nextRuntime
       // Icons that would overlap fan out anew at each zoom step (point-declutter.ts).
       nextRuntime.map.on('zoom', () => operationalRenderController.syncZoom())
-      // Every frame the map draws, the open card follows its icon: a pan, a zoom, a resize, icons fanned anew.
-      nextRuntime.map.on('render', scheduleCardFrame)
       const canvas = nextRuntime.map.getCanvas()
       let holdTimer: ReturnType<typeof setTimeout> | null = null
       let holdStart: { x: number; y: number } | null = null
@@ -738,11 +730,11 @@
     }
 
     void runInitializeMap()
-    document.addEventListener('visibilitychange', syncLiveLayers)
+    document.addEventListener('visibilitychange', syncViewportDemand)
 
     return () => {
       cancelled = true
-      document.removeEventListener('visibilitychange', syncLiveLayers)
+      document.removeEventListener('visibilitychange', syncViewportDemand)
       liveLayerController.destroy()
       liveStyleTheme = null
       stopFrameLagMonitor()
@@ -750,8 +742,6 @@
       cleanupMapPerformanceGlobal()
       resetMapInputDebugController()
       operationalRenderController.destroy()
-      if (cardFrameRequest !== null) cancelAnimationFrame(cardFrameRequest)
-      cardFrameRequest = null
       catalogueAtlas.reset()
       packFeatureLayer.destroy()
       packOverlayController.destroy()
@@ -770,10 +760,12 @@
 
   $effect(() => {
     objects
+    detailedLayoutOwnerIds
     selectedControllerId
     highlightedObjectIds
     mutedObjectIds
     routeRevision
+    theme
     untrack(() => operationalRenderController.syncObjects())
   })
 
@@ -827,17 +819,6 @@
 
   $effect(() => { packDataRevisionKey; untrack(() => { void packOverlayController.refresh() }) })
   $effect(() => { perspectiveEpoch; untrack(() => { hoveredObject = null; popupController.hide(); stackChooser.hide() }) })
-
-  // A card opening takes over from its object's hover card; it is placed at once, then on every frame the map draws.
-  $effect(() => {
-    cardObjectId
-    cameraPadding
-    untrack(() => {
-      if (cardObjectId !== null && hoveredObject?.id === cardObjectId) popupController.hide()
-      lastCardFrame = null
-      scheduleCardFrame()
-    })
-  })
 
   $effect(() => {
     mapConfig.layers.join('|')
@@ -940,6 +921,20 @@
   style:--map-cover-left={`${cameraPadding.left}px`}
   bind:this={mapElement}
 ></div>
+{#if runtime !== null && simulationRunId !== null && physicalLayoutBindings.length > 0}
+  {#key runtime.map}
+  {#key simulationRunId}
+  {#await import('./physical-layout/PhysicalExplorer.svelte') then { default: PhysicalExplorer }}
+    <PhysicalExplorer suspendPickingForNavigation={runtime.suspendPickingForNavigation} bind:controlsOpen={physicalLayoutControlsOpen} map={runtime.map} {objects} bindings={physicalLayoutBindings} hiddenCategoryIds={hiddenObjectCategoryIds}
+      {presentationFor} runId={simulationRunId as SimulationRunId} {perspectiveEpoch} {theme} clearTop={layoutClearTop} reservedPadding={cameraPadding} onDetailedOwners={setDetailedLayoutOwners}
+      suspended={physicalLayoutSuspended}
+      onoverview={onObjectSelected} onopen={onPhysicalDisplay} onerror={onMapError} onconnect={interaction => physicalLayoutInteraction = interaction} />
+  {:catch error}
+    <p role="alert">Physical layouts cannot be shown: {error instanceof Error ? error.message : String(error)}</p>
+  {/await}
+  {/key}
+  {/key}
+{/if}
 {#if debugMapInput}
   <aside class="map-input-debug" aria-live="polite">
     <strong>Map Input Trace</strong>

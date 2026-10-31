@@ -61,7 +61,7 @@ export const reactorInitialValueDefinitions: ReadonlyArray<ComponentInitialValue
       if (localPath === 'coolantOutletTemperatureC') return initialCoolantOutlet
       if (localPath === 'coreExitTemperatureC') return initialCoreExit
       if (localPath === 'coreExitTemperatureRateCPerS') return 0
-      if (localPath === 'averageHotLegFlowKgPerS') return optionalParameterNumber(component, 'nominalPrimaryFlowKgPerS', 0)
+      if (localPath === 'primaryLoopNetFlowKgPerS') return optionalParameterNumber(component, 'nominalPrimaryFlowKgPerS', 0)
       if (localPath === 'fuelTemperatureC') return initialFuelAverage
       if (localPath === 'fuelLowerTemperatureC') return initialFuelLower
       if (localPath === 'fuelMidTemperatureC') return initialFuelMid
@@ -69,6 +69,7 @@ export const reactorInitialValueDefinitions: ReadonlyArray<ComponentInitialValue
       if (localPath === 'fuelStoredEnergyMj') return Math.max(0, initialFuelAverage - initialCoolantOutlet) * parameterNumber(component, 'fuelThermalCapacityMjPerC')
       if (localPath === 'coreCoolingAvailabilityFraction') return 1
       if (localPath === 'coreHeatRemovalDeficitMw') return 0
+      if (localPath === 'primaryLiquidBoundaryCoolingMw' || localPath === 'primaryNetHeatLoadMw') return 0
       if (localPath === 'fuelHeatupRateCPerS') return 0
       if (localPath === 'decayHeatMw') return initialDecayHeat
       if (localPath === 'pumpHeatMw') return initialPumpHeat
@@ -93,6 +94,7 @@ export const reactorInitialValueDefinitions: ReadonlyArray<ComponentInitialValue
       if (localPath === 'surgeFlowKgPerS') return 0
       if (localPath === 'chargingFlowKgPerS') return 0
       if (localPath === 'safetyInjectionFlowKgPerS') return 0
+      if (localPath === 'shutdownCoolingWithdrawalFlowKgPerS') return 0
       if (localPath === 'letdownFlowKgPerS') return optionalParameterNumber(component, 'normalLetdownFlowKgPerS', 0)
       if (localPath === 'reliefOutflowKgPerS') return 0
       if (localPath === 'primaryLeakFlowKgPerS') return 0
@@ -111,6 +113,7 @@ export const reactorInitialValueDefinitions: ReadonlyArray<ComponentInitialValue
       const primaryLoopId = primaryLoopIdForPump(component)
       if (localPath === 'running') return running
       if (localPath === 'runningState') return running
+      if (localPath === 'startFailureActive') return false
       if (localPath === 'speedFraction') return 1
       if (localPath === 'speedRpm') return running ? optionalParameterNumber(component, 'nominalSpeedRpm', 3600) : 0
       if (localPath === 'flowKgPerS') return running ? parameterNumber(component, 'nominalFlowKgPerS') : 0

@@ -1,4 +1,5 @@
-import type { CompiledComponent, CompiledProcessLink, VariablePath } from '../../../graph/index.ts'
+import type { CompiledComponent, CompiledProcessLink } from '../../../graph/index.ts'
+import { valvePositionController, operatorControllerBindings } from '../../../graph/valve-controller.ts'
 import { componentVariablePath, processLinkVariablePath, type ComponentBehaviorDefinition, type ComponentInitialReconciliationDefinition } from '../../behavior-contract.ts'
 import {
   firstFluidService,
@@ -7,87 +8,16 @@ import {
   outgoingComponentLinks,
   sumProcessLinkValue,
 } from '../../component-link-helpers.ts'
-import { clamp, optionalParameterNumber, optionalParameterString, relaxToward } from '../../component-helpers.ts'
+import { approach, clamp, optionalParameterNumber, optionalParameterString, relaxToward } from '../../component-helpers.ts'
 import { balancedBranchPressures } from './header-pressure-balance.ts'
+import { componentHasElectricalPower } from '../electrical-behaviors.ts'
 
 type ValveMode = 'control' | 'isolation' | 'check' | 'relief' | 'safety' | 'throttle' | 'bypass'
-type ValvePositionControllerDirection = 'direct' | 'reverse'
-
-interface ValvePositionController {
-  readonly kind: 'proportionalPosition'
-  readonly measuredPath: VariablePath
-  readonly setpoint: number
-  readonly biasPositionFraction: number
-  readonly gainPerUnit: number
-  readonly direction: ValvePositionControllerDirection
-  readonly deadband: number
-  readonly minPositionFraction: number
-  readonly maxPositionFraction: number
-  readonly timeConstantS: number
-  readonly permissive: { readonly path: VariablePath; readonly minimum: number } | null
-}
 
 const valveModes: ReadonlySet<ValveMode> = new Set(['control', 'isolation', 'check', 'relief', 'safety', 'throttle', 'bypass'])
-const valveControllerByComponent = new WeakMap<CompiledComponent, ValvePositionController | null>()
 
-const valvePositionControllerFor = (component: CompiledComponent): ValvePositionController | null => {
-  const cached = valveControllerByComponent.get(component)
-  if (cached !== undefined) return cached
-  const parameters = component.parameters
-  if (!parameters || typeof parameters !== 'object' || Array.isArray(parameters)) {
-    valveControllerByComponent.set(component, null)
-    return null
-  }
-  const controller = (parameters as Record<string, unknown>).controller
-  if (controller === undefined) {
-    valveControllerByComponent.set(component, null)
-    return null
-  }
-  if (!controller || typeof controller !== 'object' || Array.isArray(controller)) {
-    throw new Error(`component ${component.id} valve controller must be an object`)
-  }
-  const config = controller as Record<string, unknown>
-  if (config.kind !== 'proportionalPosition') {
-    throw new Error(`component ${component.id} valve controller kind must be proportionalPosition`)
-  }
-  if (typeof config.measuredPath !== 'string') throw new Error(`component ${component.id} valve controller measuredPath must be a variable path`)
-  if (typeof config.setpoint !== 'number' || !Number.isFinite(config.setpoint)) throw new Error(`component ${component.id} valve controller setpoint must be numeric`)
-  if (typeof config.biasPositionFraction !== 'number' || !Number.isFinite(config.biasPositionFraction)) throw new Error(`component ${component.id} valve controller biasPositionFraction must be numeric`)
-  if (typeof config.gainPerUnit !== 'number' || !Number.isFinite(config.gainPerUnit)) throw new Error(`component ${component.id} valve controller gainPerUnit must be numeric`)
-  const direction = config.direction ?? 'reverse'
-  if (direction !== 'direct' && direction !== 'reverse') throw new Error(`component ${component.id} valve controller direction must be direct or reverse`)
-  const minPositionFraction = typeof config.minPositionFraction === 'number' ? config.minPositionFraction : 0
-  const maxPositionFraction = typeof config.maxPositionFraction === 'number' ? config.maxPositionFraction : 1
-  const parsed: ValvePositionController = {
-    kind: 'proportionalPosition',
-    measuredPath: config.measuredPath as VariablePath,
-    setpoint: config.setpoint,
-    biasPositionFraction: clamp(config.biasPositionFraction, 0, 1),
-    gainPerUnit: Math.max(0, config.gainPerUnit),
-    direction,
-    deadband: typeof config.deadband === 'number' && Number.isFinite(config.deadband) ? Math.max(0, config.deadband) : 0,
-    minPositionFraction: clamp(minPositionFraction, 0, 1),
-    maxPositionFraction: clamp(maxPositionFraction, 0, 1),
-    timeConstantS: typeof config.timeConstantS === 'number' && Number.isFinite(config.timeConstantS) ? Math.max(1e-9, config.timeConstantS) : 1,
-    permissive: permissiveFor(component, config.permissive),
-  }
-  valveControllerByComponent.set(component, parsed)
-  return parsed
-}
-
-const permissiveFor = (component: CompiledComponent, value: unknown): ValvePositionController['permissive'] => {
-  if (value === undefined) return null
-  const permissive = value as Record<string, unknown>
-  if (typeof permissive.path !== 'string' || typeof permissive.minimum !== 'number' || !Number.isFinite(permissive.minimum)) {
-    throw new Error(`component ${component.id} valve controller permissive needs a variable path and a numeric minimum`)
-  }
-  return { path: permissive.path as VariablePath, minimum: permissive.minimum }
-}
-
-const deadbandedError = (error: number, deadband: number): number => {
-  if (Math.abs(error) <= deadband) return 0
-  return error - Math.sign(error) * deadband
-}
+const deadbandedError = (error: number, deadband: number): number =>
+  Math.abs(error) <= deadband ? 0 : error - Math.sign(error) * deadband
 
 const maxLinkValue = (
   links: ReadonlyArray<CompiledProcessLink>,
@@ -125,9 +55,8 @@ const updateValveFlowDiagnostics = (
   const { system, component, context } = input
   const incomingLinks = incomingComponentLinks(system, component)
   const outgoingLinks = outgoingComponentLinks(system, component)
-  const service = firstFluidService([...incomingLinks, ...outgoingLinks])
-  const matchingIncoming = fluidLinksForService(incomingLinks, service)
-  const matchingOutgoing = fluidLinksForService(outgoingLinks, service)
+  const matchingIncoming = incomingLinks.filter(link => link.kind === 'fluidFlow')
+  const matchingOutgoing = outgoingLinks.filter(link => link.kind === 'fluidFlow')
   const inletFlow = sumProcessLinkValue(matchingIncoming, 'flowKgPerS', context)
   const outletFlow = sumProcessLinkValue(matchingOutgoing, 'flowKgPerS', context)
   // A valve on a pressure-balanced header's branch drops the header's pressure to its vessel's.
@@ -158,22 +87,27 @@ const updateValvePositionController = (
   input: Parameters<ComponentBehaviorDefinition['update']>[0],
 ): void => {
   const { component, context } = input
-  const controller = valvePositionControllerFor(component)
+  const controller = valvePositionController(component)
   if (controller === null) return
   const positionPath = componentVariablePath(component, 'positionFraction')
+  const isolated = context.readBoolean(componentVariablePath(component, 'isolationSignal'))
   // Under an isolation signal the controller yields: it demands the valve shut until the signal is released.
-  if (context.readBoolean(componentVariablePath(component, 'isolationSignal'))) {
+  if (isolated) {
     context.write(positionPath, 0)
     return
   }
+  // Permissives constrain manual control too; changing ownership cannot open a blocked path.
+  if (controller.permissive !== undefined && context.readNumber(controller.permissive.path) < controller.permissive.minimum) {
+    context.write(positionPath, controller.minPositionFraction)
+    return
+  }
+  const bindings = operatorControllerBindings(component)
+  if (bindings !== null && !context.readBoolean(bindings.automatic)) return
   const measured = context.readNumber(controller.measuredPath)
-  const error = deadbandedError(measured - controller.setpoint, controller.deadband)
+  const setpoint = bindings === null ? controller.setpoint : context.readNumber(bindings.setpoint)
+  const error = deadbandedError(measured - setpoint, controller.deadband)
   const action = controller.direction === 'direct' ? error : -error
-  // Without its permissive the controller holds the valve at its minimum.
-  const permitted = controller.permissive === null || context.readNumber(controller.permissive.path) >= controller.permissive.minimum
-  const target = permitted
-    ? clamp(controller.biasPositionFraction + controller.gainPerUnit * action, controller.minPositionFraction, controller.maxPositionFraction)
-    : controller.minPositionFraction
+  const target = clamp(controller.biasPositionFraction + controller.gainPerUnit * action, controller.minPositionFraction, controller.maxPositionFraction)
   context.write(
     positionPath,
     relaxToward(context.readNumber(positionPath), target, context.dtSeconds, controller.timeConstantS),
@@ -193,7 +127,7 @@ const valveControlBehavior = (componentKind: 'processValve' | 'steamValve'): Com
   phase: 'solveFluidFlowComponents',
   componentKind,
   reads: ['positionFraction', 'positionFailureActive', 'failedPositionFraction', 'isolationSignal', 'incoming:pressureMPa', 'availablePressureDropMPa', 'autoOpenActive'],
-  writes: ['demandPositionFraction', 'effectivePositionFraction', 'autoOpenActive'],
+  writes: ['demandPositionFraction', 'effectivePositionFraction', 'autoOpenActive', 'motorPowerAvailable'],
   update: ({ system, component, context }): void => {
     // An isolation signal shuts the valve whatever its demand; a failed actuator or a self-acting relief still decides.
     const manualTarget = context.readBoolean(componentVariablePath(component, 'isolationSignal'))
@@ -219,18 +153,32 @@ const valveControlBehavior = (componentKind: 'processValve' | 'steamValve'): Com
     // (fullLiftMPa); a single relief or safety valve pops fully open at its set pressure and reseats below it.
     const lift = bankLift(component, mode, setpoint, automaticPressure)
     const autoOpen = lift !== null ? lift > 0 : (mode === 'relief' || mode === 'safety') && (automaticPressure >= setpoint || (wasAutoOpen && automaticPressure > reseat))
-    const target = failureActive ? failedPosition : autoOpen ? lift ?? 1 : manualTarget
+    const requested = failureActive ? failedPosition : autoOpen ? lift ?? 1 : manualTarget
     const current = context.readNumber(componentVariablePath(component, 'effectivePositionFraction'))
+    const powered = componentHasElectricalPower(system, component, context, 'motorPower')
+    const powerLossBehavior = (component.parameters as { readonly powerLossBehavior?: 'hold' | 'close' }).powerLossBehavior
+    const hasMotorSupply = incomingLinks.some(link => link.kind === 'electricalPower' && String(link.toPortName) === 'motorPower')
+    if (hasMotorSupply && powerLossBehavior === undefined) throw Error(`Valve ${component.id} has motor power but no authored powerLossBehavior`)
+    // An accepted command/protection demand cannot move a powerless motor.
+    // An explicitly spring-return actuator may still close mechanically.
+    // A spring safety valve without an electric feed keeps self-acting lift.
+    const target = powered ? requested : powerLossBehavior === 'close' ? 0 : current
     const timeConstant = target >= current
       ? optionalParameterNumber(component, 'strokeOpenTimeS', optionalParameterNumber(component, 'strokeTimeConstantS', 0.1))
       : optionalParameterNumber(component, 'strokeCloseTimeS', optionalParameterNumber(component, 'strokeTimeConstantS', 0.1))
-    const nextPosition = relaxToward(current, target, context.dtSeconds, timeConstant)
+    // An isolating actuator traverses a finite stroke in its authored travel
+    // time. A first-order lag never reaches shut and leaks forever; analog
+    // regulation and self-acting valves keep their existing lag response.
+    const nextPosition = mode === 'isolation'
+      ? approach(current, target, context.dtSeconds / timeConstant)
+      : relaxToward(current, target, context.dtSeconds, timeConstant)
     const minimumPosition = optionalParameterNumber(component, 'leakageFractionClosed', 0)
     context.write(
       componentVariablePath(component, 'effectivePositionFraction'),
       clamp(Math.max(nextPosition, minimumPosition), 0, 1),
     )
-    context.write(componentVariablePath(component, 'demandPositionFraction'), target)
+    context.write(componentVariablePath(component, 'demandPositionFraction'), requested)
+    context.write(componentVariablePath(component, 'motorPowerAvailable'), powered)
     context.write(componentVariablePath(component, 'autoOpenActive'), autoOpen)
   },
 })
@@ -239,7 +187,7 @@ const valvePositionControllerBehavior = (componentKind: 'processValve' | 'steamV
   id: `${componentKind}-position-controller`,
   phase: 'updateControlLogic',
   componentKind,
-  reads: ['positionFraction', 'isolationSignal', 'controller.measuredPath', 'controller.permissive.path?'],
+  reads: ['positionFraction', 'isolationSignal', 'controller.measuredPath', 'controller.permissive.path?', 'controllerAutomatic?', 'controllerSetpoint?'],
   writes: ['positionFraction'],
   update: updateValvePositionController,
 })
@@ -263,6 +211,12 @@ const valveDiagnosticsReconciliation = (componentKind: 'processValve' | 'steamVa
 })
 
 export const valveInitialReconciliationDefinitions: ReadonlyArray<ComponentInitialReconciliationDefinition> = [
+  ...(['processValve', 'steamValve'] as const).map(componentKind => ({
+    id: `${componentKind}-initial-motor-power`, componentKind, reads: ['motorPower electrical supply'], writes: ['motorPowerAvailable'],
+    reconcile: ({ system, component, context }: Parameters<ComponentInitialReconciliationDefinition['reconcile']>[0]) => {
+      context.write(componentVariablePath(component, 'motorPowerAvailable'), componentHasElectricalPower(system, component, context, 'motorPower'))
+    },
+  })),
   valveDiagnosticsReconciliation('processValve'),
   valveDiagnosticsReconciliation('steamValve'),
 ]

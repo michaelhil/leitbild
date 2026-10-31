@@ -1,0 +1,16 @@
+import type {Mesh} from './reference/mesh';
+import type {Backend} from './backend';import {metrics} from './backend';
+const vs=`#version 300 es
+precision highp float;layout(location=0)in vec3 position;layout(location=1)in vec3 normal;layout(location=2)in vec3 color;uniform mat4 uVP;uniform vec3 uOffset;out vec3 vNormal;out vec3 vColor;void main(){gl_Position=uVP*vec4(position+uOffset,1.);vNormal=normal;vColor=color;}`;
+const fs=`#version 300 es
+precision highp float;in vec3 vNormal;in vec3 vColor;uniform float uStatus;out vec4 outColor;void main(){vec3 n=normalize(vNormal);float light=.62+.10*n.y+.26*max(dot(n,normalize(vec3(-.45,.88,.55))),0.)+.12*max(dot(n,normalize(vec3(.65,.4,-.8))),0.);vec3 c=mix(vColor*light,vec3(.91,.34,.20),uStatus*.7);outColor=vec4(c,1.);}`;
+type GPU={vao:WebGLVertexArrayObject;buffer:WebGLBuffer;count:number};
+export function createNative(gl:WebGL2RenderingContext):Backend{
+ const m=metrics(),cache=new Map<Mesh,GPU>();
+ function shader(kind:number,source:string){const s=gl.createShader(kind)!;gl.shaderSource(s,source);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(s)??'Native shader compile');return s;}
+ const program=gl.createProgram()!,a=shader(gl.VERTEX_SHADER,vs),b=shader(gl.FRAGMENT_SHADER,fs);gl.attachShader(program,a);gl.attachShader(program,b);gl.linkProgram(program);gl.deleteShader(a);gl.deleteShader(b);if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(program)??'Native link');
+ const vp=gl.getUniformLocation(program,'uVP'),offset=gl.getUniformLocation(program,'uOffset'),status=gl.getUniformLocation(program,'uStatus');
+ function upload(mesh:Mesh){let gpu=cache.get(mesh);if(gpu)return gpu;const vao=gl.createVertexArray()!,buffer=gl.createBuffer()!;gl.bindVertexArray(vao);gl.bindBuffer(gl.ARRAY_BUFFER,buffer);const data=new Float32Array(mesh.vertices);gl.bufferData(gl.ARRAY_BUFFER,data,gl.STATIC_DRAW);for(let i=0;i<3;i++){gl.enableVertexAttribArray(i);gl.vertexAttribPointer(i,3,gl.FLOAT,false,36,i*12);}gpu={vao,buffer,count:data.length/9};cache.set(mesh,gpu);m.geometryUploads++;m.geometryBytes+=data.byteLength;return gpu;}
+ let disposed=false;
+ return{metrics:m,ready:()=>!disposed,draw(matrix,objects,states){if(disposed)throw Error('Disposed native backend');m.renders++;m.objects=objects.length;gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);gl.depthMask(true);gl.disable(gl.CULL_FACE);gl.disable(gl.STENCIL_TEST);gl.disable(gl.BLEND);gl.useProgram(program);gl.uniformMatrix4fv(vp,false,matrix);for(const o of objects){if(o.opacity!==undefined)continue;const gpu=upload(o.mesh);gl.uniform3f(offset,...o.offset);gl.uniform1f(status,states.has(o.id)?1:0);gl.bindVertexArray(gpu.vao);gl.drawArrays(gl.TRIANGLES,0,gpu.count);m.drawCalls++;}},dispose(){if(disposed)return;const buffers=[...cache.values()].map(g=>g.buffer);for(const g of cache.values()){gl.deleteBuffer(g.buffer);gl.deleteVertexArray(g.vao);}cache.clear();gl.deleteProgram(program);m.disposedHandles={buffers:buffers.length,liveBuffersAfter:buffers.filter(b=>gl.isBuffer(b)).length,programs:1,liveProgramsAfter:Number(gl.isProgram(program))};m.geometryBytes=0;m.objects=0;m.disposeCount++;disposed=true;}};
+}

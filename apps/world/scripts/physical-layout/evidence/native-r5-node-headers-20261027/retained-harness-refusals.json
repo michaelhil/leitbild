@@ -1,0 +1,54 @@
+[
+  {
+    "attempt": "initial",
+    "error": "Error: No actual pointer hit reached the exact route in 2d",
+    "completedPhases": 1,
+    "actualObject": {
+      "id": "route/main-steam-header",
+      "label": "Main-steam header assembly",
+      "subjectIds": [
+        "mainSteamHeader"
+      ],
+      "layerId": "utility-routes"
+    },
+    "actualPlanTransform": [
+      0.1603547344539998,
+      -0.9870594506604895,
+      0.9870594506604895,
+      0.1603547344539998,
+      383.2421569824219,
+      304.13525390625
+    ],
+    "interpretation": "Helper chose Show in 3D context after Plan; the actual representation remained 3D. Restrict architectural projection observation to actual Path2D ink and activate/verify Plan after focus."
+  },
+  {
+    "attempt": "path2d-refusal",
+    "error": "Error: Timed out prepared actual target projection",
+    "completedPhases": 1,
+    "actualObject": {
+      "id": "route/main-steam-header",
+      "label": "Main-steam header assembly",
+      "subjectIds": [
+        "mainSteamHeader"
+      ],
+      "layerId": "utility-routes"
+    },
+    "actualPlanTransform": null,
+    "interpretation": "Helper chose Show in 3D context after Plan; the actual representation remained 3D. Restrict architectural projection observation to actual Path2D ink and activate/verify Plan after focus."
+  },
+  {
+    "attempt": "broad-turbine-search",
+    "error": "Error: Timed out exact subject search",
+    "completedPhases": 2,
+    "actualObject": {
+      "id": "route/turbine-reheat-10.4",
+      "label": "Illustrative turbine reheat steam distribution",
+      "subjectIds": [
+        "turbine"
+      ],
+      "layerId": "utility-routes"
+    },
+    "actualPlanTransform": null,
+    "interpretation": "Search for turbine matched several actual subjects. Select the exact owner-authored Turbine Generator label before choosing its physical part."
+  }
+]

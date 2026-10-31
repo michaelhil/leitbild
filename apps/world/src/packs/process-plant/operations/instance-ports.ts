@@ -1,14 +1,13 @@
 import type { CommandOrigin } from '../../../simulation/protocol.ts'
-import type { CompiledPlantGraph, ProcessSignalTagId, ProcessVariableValue, VariablePath } from '../graph/index.ts'
-import { PROCESS_DISPLAY_DETAIL_MAX_COMPONENTS } from '../displays/composition.ts'
-import type { MimicItem } from '../displays/mimic/bindings.ts'
+import type { ProcessSignalTagId, ProcessVariableValue, VariablePath } from '../graph/index.ts'
 import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
+import { isInjectedFault } from '../signals.ts'
 import { evaluateProcessPlantIcCondition, processPlantOperatingMode } from '../runtime/index.ts'
 import { actuationResets, resetRefusal, type ActuationReset, type ResetContext } from './actuation-reset.ts'
 import { actuationHold, throttledUnder, validateOperatorWrite } from './command-guard.ts'
 import { itemCarrier, offVerb, operationConsequence, type ConsequenceContext, type OperationConsequence } from './consequence.ts'
 import { optionStanding, ruleStatesFrom, type OptionStanding, type StandingContext } from './control-standing.ts'
-import { offeredOption, plantControlsFor, type ControlOption, type ControlRule, type ItemControls, type OfferedControl, type WithheldControl } from './controls.ts'
+import { automaticReason, offeredOption, plantControlsFor, type ControlOption, type ControlRule, type ItemControls, type OfferedControl, type WithheldControl } from './controls.ts'
 import { pushbuttonProtection, type PushbuttonProtection } from './pushbutton-protection.ts'
 import type { ProposalPorts } from './proposals.ts'
 
@@ -101,9 +100,10 @@ export const proposalPortsFor = (instance: ProcessPlantRuntimeInstance, origin: 
   },
   reading: (tagId: ProcessSignalTagId) => {
     const binding = instance.plant.graph.signalBindingByTagId.get(tagId)
-    return binding?.published === true
-      ? { ok: true, path: binding.path, value: instance.runtime.readVariable(binding.path) }
-      : { ok: false, reason: `${tagId} is no reading this Plant publishes` }
+    if (binding?.published !== true) return { ok: false, reason: `${tagId} is no reading this Plant publishes` }
+    // A proposal cites only what a person reads: never an injected fault or the model's truth about one.
+    if (isInjectedFault(binding)) return { ok: false, reason: `${tagId} is an injected fault, not a reading: no person or AI agent cites it` }
+    return { ok: true, path: binding.path, value: instance.runtime.readVariable(binding.path) }
   },
   // A reset is reviewed on the first drawn item whose controls its actuation holds.
   resettable: ruleId => {
@@ -120,6 +120,9 @@ export const proposalPortsFor = (instance: ProcessPlantRuntimeInstance, origin: 
 /** One offered control as controls.list gives it: the derivation, where each option's rules stand now, and how long it takes to follow. */
 export interface ListedControl {
   readonly control: OfferedControl
+  /** Stable descriptor retained for pending proposals; currently unavailable
+   * to operate because its normal controller owns the manual demand. */
+  readonly unavailable?: string
   /** optionStanding for each option, in option order. */
   readonly standing: ReadonlyArray<OptionStanding>
   /** The longest declared travel of its options; null where none declares one (the state is then awaited, never judged not followed). */
@@ -156,34 +159,12 @@ export interface ListedItem {
   readonly label: string
   /** Where a valve stands now: the value its popover shows (ItemControls.position). */
   readonly position?: { readonly path: VariablePath; readonly value: number }
-  /** The component whose detail draws the item around it: the item itself, or the one that bundles it (a detail display's state names it). */
-  readonly components: ReadonlyArray<string>
-  /** A bundled device: the components at the far ends of the line it sits on (lineEnds), for a detail that draws it on its own symbol. */
-  readonly line?: ReadonlyArray<string>
   readonly offered: ReadonlyArray<ListedControl>
   readonly withheld: ReadonlyArray<WithheldControl>
 }
 
-/**
- * A device its host bundles (a pressurizer's relief or block valve): the
- * components at the far ends of the line it sits on. A detail around its host
- * alone may draw the device inside the host's symbol (HMI review of run 26c,
- * g2); one around the host and these draws the line and the device on it.
- */
-const lineEnds = (graph: CompiledPlantGraph, item: MimicItem): { readonly line?: ReadonlyArray<string> } => {
-  if (item.kind === 'component') return {}
-  const port = graph.components[item.component]!.semantics.embedded.find(device => device.id === item.device)?.port
-  if (port === undefined) return {}
-  const ends = [
-    ...(graph.outgoingLinksByComponent[item.component] ?? []).map(index => graph.links[index]!).filter(link => link.fromPortName === port).map(link => link.toComponentIndex),
-    ...(graph.incomingLinksByComponent[item.component] ?? []).map(index => graph.links[index]!).filter(link => link.toPortName === port).map(link => link.fromComponentIndex),
-  ]
-  const line = [...new Set(ends.filter(index => index !== item.component).map(index => String(graph.components[index]!.id)))].slice(0, PROCESS_DISPLAY_DETAIL_MAX_COMPONENTS - 1)
-  return line.length === 0 ? {} : { line }
-}
-
-/** The Plant's drawn items with their controls where they stand now; only the named items where ids are given, in the derivation's order. */
-export const listedControlsFor = (instance: ProcessPlantRuntimeInstance, itemIds?: ReadonlyArray<string>): ReadonlyArray<ListedItem> => {
+/** The Plant's drawn items with their controls where they stand now; optional exact item or command selection, in the derivation's order. */
+export const listedControlsFor = (instance: ProcessPlantRuntimeInstance, itemIds?: ReadonlyArray<string>, commandPaths?: ReadonlySet<VariablePath>): ReadonlyArray<ListedItem> => {
   const controls = plantControlsFor(instance.plant)
   const snapshot = instance.protection?.snapshot()
   const numberAt = (path: VariablePath): number => {
@@ -198,14 +179,17 @@ export const listedControlsFor = (instance: ProcessPlantRuntimeInstance, itemIds
     rules: snapshot === undefined ? new Map() : ruleStatesFrom(snapshot),
   }
   return controls.items
-    .filter(entry => itemIds === undefined || itemIds.includes(entry.id))
-    .map(entry => ({
+    .filter(entry => (itemIds === undefined || itemIds.includes(entry.id)) && (commandPaths === undefined
+      || entry.offered.some(control => commandPaths.has(control.path)) || entry.withheld.some(control => commandPaths.has(control.path))))
+    .map(entry => {
+      const offered = commandPaths === undefined ? entry.offered : entry.offered.filter(control => commandPaths.has(control.path))
+      const withheld = commandPaths === undefined ? entry.withheld : entry.withheld.filter(control => commandPaths.has(control.path))
+      const automatic = offered.filter(control => control.controller !== undefined && instance.runtime.readVariable(control.controller.automatic) === true)
+      return {
       id: entry.id,
       label: entry.label,
       ...(entry.position === undefined ? {} : { position: { path: entry.position, value: numberAt(entry.position) } }),
-      components: [String(instance.plant.graph.components[entry.item.component]!.id)],
-      ...lineEnds(instance.plant.graph, entry.item),
-      offered: entry.offered.map(control => {
+      offered: offered.map(control => {
         const travel = control.options.flatMap(option => option.travelMs === null ? [] : [option.travelMs])
         const demand = control.demand === undefined ? undefined : numberAt(control.path)
         const under = demand === undefined || snapshot === undefined ? [] : throttledUnder(instance.plant, snapshot, { path: control.path, value: demand })
@@ -217,6 +201,9 @@ export const listedControlsFor = (instance: ProcessPlantRuntimeInstance, itemIds
         })
         return {
           control,
+          ...(automatic.includes(control) ? { unavailable: (() => { const reason = automaticReason(instance.plant.graph, {
+            measured: control.controller!.measured, setpoint: numberAt(control.controller!.setpoint), operator: control.controller!,
+          }); return `${reason.text}. ${reason.manual}` })() } : {}),
           standing: control.options.map(option => optionStanding(instance.plant, control, option, context)),
           travelMs: travel.length === 0 ? null : Math.max(...travel),
           ...(demand === undefined || control.state === undefined ? {} : { now: { demand, position: numberAt(control.state) } }),
@@ -227,6 +214,10 @@ export const listedControlsFor = (instance: ProcessPlantRuntimeInstance, itemIds
           ...(protection === undefined ? {} : { protection }),
         }
       }),
-      withheld: entry.withheld,
-    }))
+      withheld: [...withheld, ...automatic.map(control => ({ path: control.path,
+        ...(control.tagId === undefined ? {} : { tagId: control.tagId }),
+        reason: automaticReason(instance.plant.graph, { measured: control.controller!.measured,
+          setpoint: numberAt(control.controller!.setpoint), operator: control.controller! }),
+      }))],
+    } })
 }

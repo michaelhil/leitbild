@@ -1,8 +1,10 @@
+import { isIncomingFluidForOutlet } from '../fluid-circuits.ts'
 import { componentVariablePath, processLinkVariablePath, type ProcessLinkBehaviorDefinition } from '../behavior-contract.ts'
 import { averageIncomingLinkValue, flowWeightedIncomingLinkValue, hasProcessLinkVariable } from './link-flow-helpers.ts'
 import { pressureDropMPaFromFlow } from '../physics.ts'
 import { physicalNumber } from './process-link-physical.ts'
 import { primarySystemPressurizer } from '../system-topology.ts'
+import { isShutdownCoolingSource } from '../shutdown-cooling.ts'
 
 export const processLinkPressureBehaviorDefinitions: ReadonlyArray<ProcessLinkBehaviorDefinition> = [
   {
@@ -55,7 +57,7 @@ export const processLinkPressureBehaviorDefinitions: ReadonlyArray<ProcessLinkBe
           return
         }
       }
-      if (link.service === 'primaryInjection') {
+      if (link.service === 'primaryInjection' || isShutdownCoolingSource(fromComponent, String(link.fromPortName))) {
         const pressurizer = primarySystemPressurizer(system)
         if (pressurizer !== null && context.has(componentVariablePath(pressurizer, 'pressureMPa'))) {
           context.write(processLinkVariablePath(link, 'pressureMPa'), context.readNumber(componentVariablePath(pressurizer, 'pressureMPa')))
@@ -71,13 +73,13 @@ export const processLinkPressureBehaviorDefinitions: ReadonlyArray<ProcessLinkBe
         link.fromComponentIndex,
         'pressureMPa',
         context,
-        candidate => candidate.service === link.service,
+        candidate => isIncomingFluidForOutlet(system, link, candidate),
       ) ?? averageIncomingLinkValue(
         system,
         link.fromComponentIndex,
         'pressureMPa',
         context,
-        candidate => candidate.service === link.service,
+        candidate => isIncomingFluidForOutlet(system, link, candidate),
       )
       if (sourcePressure !== null) context.write(processLinkVariablePath(link, 'pressureMPa'), sourcePressure)
     },

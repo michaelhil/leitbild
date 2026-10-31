@@ -1,46 +1,31 @@
-import { EMBEDDED_VIEW_MAX_HEIGHT, embeddedViewEnvelopeSchema, embeddedViewFragment, embeddedViewPath, type EmbeddedViewEnvelope } from '@leitbild/contracts'
-import type { ProcedureTag, SimulationRunId } from '../../core/model/index.ts'
-import type { PackProcedureContribution, PackProcedureTagDisplay } from '../../core/packs/protocol.ts'
+import {
+  embeddedViewFragment,
+  embeddedViewPath,
+  type EmbeddedViewEnvelope,
+} from '@leitbild/contracts'
+import type { ProcedureTag } from '../../core/model/index.ts'
 import type { ProcedureTagValidation, ProcedureTagValue } from './procedure-client.ts'
 
 // What a clicked procedure tag's dialog shows, decided before anything is
-// drawn: a tag the unit's model does not hold, or one its Pack names no
-// equipment for, says so; otherwise the Pack's display is drawn first and
-// shown only where it can be.
+// drawn: a tag the unit's model does not hold says so; otherwise World's
+// default display of the element the tag is measured on, as its Pack declares
+// it (plan v5 W3.1: `<unit>#<element>`, the PORV for PORV-456A, never the
+// demand's own default), else, for a tag its Pack measures on no element, of
+// the signal it names (`<unit>#<signal path>`, the exact ref the tag resolved
+// to, else `<unit>#<tag>`), is drawn first and shown only where it can be.
 
 export type ProcedureTagDisplayPlan =
   | { readonly kind: 'unchecked'; readonly message: string }
   | { readonly kind: 'not-in-model'; readonly message: string }
-  | { readonly kind: 'no-display'; readonly message: string; readonly reason: string }
-  | { readonly kind: 'display'; readonly display: PackProcedureTagDisplay }
+  | { readonly kind: 'display'; readonly subject: string }
 
-export const procedureTagDisplayPlan = (
-  scopeId: string,
-  validation: ProcedureTagValidation | undefined,
-  provider: PackProcedureContribution,
-): ProcedureTagDisplayPlan => {
+export const procedureTagDisplayPlan = (scopeId: string, tagId: string, validation: ProcedureTagValidation | undefined): ProcedureTagDisplayPlan => {
   if (validation === undefined) return { kind: 'unchecked', message: "Not checked against this unit's plant model" }
   if (validation.status === 'missing') return { kind: 'not-in-model', message: "Not in this unit's plant model" }
-  const noDisplay = 'No process display can be drawn for this tag'
-  if (provider.tagDisplay === undefined) return { kind: 'no-display', message: noDisplay, reason: "this unit's Pack draws no process displays" }
-  const display = provider.tagDisplay(scopeId, validation)
-  if (display === null) return { kind: 'no-display', message: noDisplay, reason: 'the model names no equipment it is measured on' }
-  return { kind: 'display', display }
+  if (validation.measuredOn !== undefined) return { kind: 'display', subject: `${scopeId}#${validation.measuredOn}` }
+  const path = validation.signal?.path
+  return { kind: 'display', subject: `${scopeId}#${typeof path === 'string' ? path : tagId}` }
 }
-
-/** The display's embedded view, framed read-only: the Run is its subject, as for a display shown below an agent's answer. */
-export const procedureTagDisplayEnvelope = (config: {
-  readonly workspaceId: string
-  readonly simulationRunId: SimulationRunId
-  readonly display: PackProcedureTagDisplay
-}): EmbeddedViewEnvelope => embeddedViewEnvelopeSchema.parse({
-  moduleId: 'world',
-  subject: { workspaceId: config.workspaceId, moduleId: 'world', type: 'world.simulation-run', id: config.simulationRunId },
-  viewType: config.display.viewType,
-  title: config.display.title,
-  height: EMBEDDED_VIEW_MAX_HEIGHT,
-  state: config.display.state,
-})
 
 export const procedureTagDisplaySource = (envelope: EmbeddedViewEnvelope): string =>
   `${embeddedViewPath(envelope)}${embeddedViewFragment(envelope)}`

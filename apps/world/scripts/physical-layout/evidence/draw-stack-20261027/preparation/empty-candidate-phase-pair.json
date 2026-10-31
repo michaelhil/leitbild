@@ -1,0 +1,75 @@
+{
+  "commit": "8935cd0cf05fce32c38ad74fba6565dd7f1e2a2f",
+  "quietInterval": "Root check complete; perf check/build complete; UX functional Chrome closed; all three agents explicitly holding heavy work during serial pairs.",
+  "sourceHashes": {
+    "../../src/ui/map/physical-scene/surface-ownership.ts": "240f6f5c38d71c2d085c4dae742b7746ef2e425219f15e9678a635ab154a1e98",
+    "../../tests/fixtures/physical-layout/surface-ownership-before-empty-fastpath.ts": "145414356be180dfbad8d330a06d2fa79ec4d9acac8c6b73528af3492a14a1f8"
+  },
+  "note": "Two serial AB/BA pairs per admitted R5 family, identical all-layer input. GC outside timed ownership regions; output hashing outside timing. This isolates one CPU phase, not cold browser loading, whole preparation, statistical confidence or frame performance.",
+  "rows": [
+    {
+      "sceneId": "layout:halden-1",
+      "design": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+      "allDeclaredLayers": true,
+      "triangles": 243649,
+      "samples": [
+        {
+          "pair": "AB",
+          "kind": "baseline",
+          "ms": 1917.690583,
+          "sha256": "cbf1415ee57a92c00714cbc632ebca0238692859cf6e051a646ff84e4f0eda04"
+        },
+        {
+          "pair": "AB",
+          "kind": "candidate",
+          "ms": 1724.1137500000004,
+          "sha256": "cbf1415ee57a92c00714cbc632ebca0238692859cf6e051a646ff84e4f0eda04"
+        },
+        {
+          "pair": "BA",
+          "kind": "candidate",
+          "ms": 1680.3372090000003,
+          "sha256": "cbf1415ee57a92c00714cbc632ebca0238692859cf6e051a646ff84e4f0eda04"
+        },
+        {
+          "pair": "BA",
+          "kind": "baseline",
+          "ms": 1778.560625000001,
+          "sha256": "cbf1415ee57a92c00714cbc632ebca0238692859cf6e051a646ff84e4f0eda04"
+        }
+      ]
+    },
+    {
+      "sceneId": "layout:halden-campus",
+      "design": "91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933",
+      "allDeclaredLayers": true,
+      "triangles": 131845,
+      "samples": [
+        {
+          "pair": "AB",
+          "kind": "baseline",
+          "ms": 879.9072500000002,
+          "sha256": "ec106b312039197ed45a0442d5e867fcdf75d0a0f70a37a975a0edcba6cf06e7"
+        },
+        {
+          "pair": "AB",
+          "kind": "candidate",
+          "ms": 855.147500000001,
+          "sha256": "ec106b312039197ed45a0442d5e867fcdf75d0a0f70a37a975a0edcba6cf06e7"
+        },
+        {
+          "pair": "BA",
+          "kind": "candidate",
+          "ms": 862.7182500000017,
+          "sha256": "ec106b312039197ed45a0442d5e867fcdf75d0a0f70a37a975a0edcba6cf06e7"
+        },
+        {
+          "pair": "BA",
+          "kind": "baseline",
+          "ms": 859.7592920000006,
+          "sha256": "ec106b312039197ed45a0442d5e867fcdf75d0a0f70a37a975a0edcba6cf06e7"
+        }
+      ]
+    }
+  ]
+}

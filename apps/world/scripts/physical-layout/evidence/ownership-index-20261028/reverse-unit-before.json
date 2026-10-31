@@ -1,0 +1,69 @@
+{
+  "engine": "before",
+  "design": {
+    "id": "pwr-full-unit",
+    "revision": "pwr-full-unit-20261027-r5",
+    "digest": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9"
+  },
+  "sourceDigest": "ffe382bbba05b0c1d25ed4cd7923fffcfcffb0507a6dcd46a09e538e777ff165",
+  "compiler": {
+    "id": "physical-layout-native-drafting",
+    "digest": "738f7a053a2567552490e2c9147d2960a139dd8a8c06a5bfa4b5505d160d51f0"
+  },
+  "inputMeshes": 910,
+  "inputTriangles": 243649,
+  "ms": 2492.312375,
+  "cpu": {
+    "user": 2683677,
+    "system": 152787
+  },
+  "memoryBefore": {
+    "rss": 434454528,
+    "heapTotal": 77025280,
+    "heapUsed": 99421329,
+    "external": 52148145,
+    "arrayBuffers": 0
+  },
+  "memoryAfter": {
+    "rss": 1086849024,
+    "heapTotal": 722850816,
+    "heapUsed": 349281614,
+    "external": 90868222,
+    "arrayBuffers": 2923788
+  },
+  "process": {
+    "userCPUTime": 5312269,
+    "systemCPUTime": 350820,
+    "maxRSS": 1248528,
+    "sharedMemorySize": 0,
+    "unsharedDataSize": 0,
+    "unsharedStackSize": 0,
+    "minorPageFault": 78203,
+    "majorPageFault": 54,
+    "swappedOut": 0,
+    "fsRead": 0,
+    "fsWrite": 0,
+    "ipcSent": 0,
+    "ipcReceived": 0,
+    "signalsCount": 0,
+    "voluntaryContextSwitches": 1,
+    "involuntaryContextSwitches": 14084
+  },
+  "outputMeshes": 3913,
+  "packedBytes": 29252592,
+  "retainedPickIndexBytes": 19026788,
+  "diagnostics": {
+    "broadPhaseCandidates": 3946353,
+    "coplanarCandidates": 183625,
+    "triangles": 243625,
+    "partitionedTriangles": 23537,
+    "retainedCandidates": 3003,
+    "coincidentPairs": 1611
+  },
+  "fingerprint": "4abb0e38b49baf7c7d546233aa41e91bcfc17cf6904f5e8407681e6a0af894ad",
+  "limits": [
+    "One fresh Bun process and one engine call; compilation, mesh generation, render/pick fingerprint and memory census outside measured interval.",
+    "One explicit test-only GC before the measured call; not a production cache/GC policy.",
+    "Process memory snapshots/peak are not retained product GPU residency. No browser or network latency claim."
+  ]
+}

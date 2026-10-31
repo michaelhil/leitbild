@@ -1,0 +1,213 @@
+{
+  "scope": "Static source, geometry, graph-correspondence and contact audit; not an as-built or engineering validation and not a browser rendering claim.",
+  "retainedUnit": {
+    "design": {
+      "id": "pwr-full-unit",
+      "revision": "pwr-full-unit-20261027-r4",
+      "digest": "b4458fe4ae078623b6b8f426950b34627a49844ca5fc83f2c2bf970aa1a5da82"
+    },
+    "compiler": {
+      "id": "physical-layout-native-drafting",
+      "digest": "738f7a053a2567552490e2c9147d2960a139dd8a8c06a5bfa4b5505d160d51f0"
+    },
+    "sourceDigest": "9cf1c1f1e45fe2b7091619f6657d55e48f264936e236549417da4938714ee042",
+    "bindingDigest": "6f9935ea40d840c805fe2e2f0b2577d047d048aeb561724356819e43a72d7250",
+    "coverageDigest": "14eb837c4ff2a700b999efb0d2366cea9c99f14eac7b369a9342a8195b3056ba",
+    "presentationDigest": "9d42af32414aee52b3d09275a43d915ac426352787d056e6985e7a107b46024a",
+    "modelRequirement": {
+      "modelRef": "process-plant.pwr.reference",
+      "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea"
+    },
+    "physicalApplicability": {
+      "sourceDigest": "591524cbc91c2fb224cc8fa104b5f8f4a3ad220bf6d8e2d0635663a7bf8b3239",
+      "geometryDigest": "6982d3ed25036fc38cf6ca39c129e1fb79ed7175cbc3f79cc311fb9250e4efc4",
+      "digest": "2701e1bbec95fd107f0bd2ae38741392afcac2153502da9a2d5bb7088348cef6"
+    }
+  },
+  "connectedUnit": {
+    "design": {
+      "id": "pwr-full-unit",
+      "revision": "pwr-full-unit-20261027-r5",
+      "digest": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9"
+    },
+    "compiler": {
+      "id": "physical-layout-native-drafting",
+      "digest": "738f7a053a2567552490e2c9147d2960a139dd8a8c06a5bfa4b5505d160d51f0"
+    },
+    "sourceDigest": "ffe382bbba05b0c1d25ed4cd7923fffcfcffb0507a6dcd46a09e538e777ff165",
+    "bindingDigest": "6f9935ea40d840c805fe2e2f0b2577d047d048aeb561724356819e43a72d7250",
+    "coverageDigest": "9f69623c1c572eb248b337224003ea32027d9e157778ef5e65441816bbd7dd0c",
+    "presentationDigest": "af78e5f48bd56adbe5752ece4c9bae1019fa91190673393b2faebfb3e27188e2",
+    "modelRequirement": {
+      "modelRef": "process-plant.pwr.reference",
+      "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea"
+    },
+    "physicalApplicability": {
+      "sourceDigest": "b862f85d1c350dfec684bafe005e101c852b3045131c11825263dbf6fe5d0c5a",
+      "geometryDigest": "b1ba66a75e9d9719f450d48cc620c1af93469fcbe7677b992d463351b1bda707",
+      "digest": "79812310f9f5fb7683c4d76f2e93ad3d4a5de3aa916caa1a44511ee4715e2e67"
+    }
+  },
+  "retainedCampus": {
+    "design": {
+      "id": "pwr-campus",
+      "revision": "pwr-campus-20261027-r4",
+      "digest": "4bc1d405da6a996902a3f799c7af009144fdf617886edfcaed4f72012983cb84"
+    },
+    "compiler": {
+      "id": "physical-layout-native-drafting",
+      "digest": "738f7a053a2567552490e2c9147d2960a139dd8a8c06a5bfa4b5505d160d51f0"
+    },
+    "sourceDigest": "2749beac0d6ab0d279a7ebdb28f46e2aa5a712417aed99ac4b7f78663a5d9303",
+    "bindingDigest": "c5033d344a00722a4cbb6b44d858b13ef64f0a5511a39fdbb49ecb80a812364b",
+    "coverageDigest": "dfe40716a532424de813652434af9c704ade79bc4d17be671b9374ab47011986",
+    "presentationDigest": "0417c967a4b5070c993a6bc39cafc6588238c77b8c001b66527169d28db3aef1",
+    "modelRequirement": {
+      "modelRef": "electric-grid.halden.four-unit",
+      "modelDigest": "3551eb6c70f93b5aa9bc98f1d64a3ce51d5187ce158bc54df4e394cddbaf5173"
+    },
+    "physicalApplicability": {
+      "sourceDigest": "bb9dc6c4804583c07fdc09e4d1d59f7b9e03980ac8b38d10855c72239ed1c9c9",
+      "geometryDigest": "e669c54baefc3c9d73e7bd35540b1dcb5fe079317a8de1d8dad8720578bdd765",
+      "digest": "48b1fe728ab842b29e3292d3ce4df179a781719e5801c5b75543dea75f8c95a5"
+    }
+  },
+  "connectedCampus": {
+    "design": {
+      "id": "pwr-campus",
+      "revision": "pwr-campus-20261027-r5",
+      "digest": "91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933"
+    },
+    "compiler": {
+      "id": "physical-layout-native-drafting",
+      "digest": "738f7a053a2567552490e2c9147d2960a139dd8a8c06a5bfa4b5505d160d51f0"
+    },
+    "sourceDigest": "0c12a17bf7211c2fdfc26bd05139c7eb6088122c182316f89559421d3341807a",
+    "bindingDigest": "c5033d344a00722a4cbb6b44d858b13ef64f0a5511a39fdbb49ecb80a812364b",
+    "coverageDigest": "dfe40716a532424de813652434af9c704ade79bc4d17be671b9374ab47011986",
+    "presentationDigest": "0417c967a4b5070c993a6bc39cafc6588238c77b8c001b66527169d28db3aef1",
+    "modelRequirement": {
+      "modelRef": "electric-grid.halden.four-unit",
+      "modelDigest": "3551eb6c70f93b5aa9bc98f1d64a3ce51d5187ce158bc54df4e394cddbaf5173"
+    },
+    "physicalApplicability": {
+      "sourceDigest": "d2ffb6f9e2408ed831095171ddec0128636344f6c91144f769dbacc9066ace99",
+      "geometryDigest": "e669c54baefc3c9d73e7bd35540b1dcb5fe079317a8de1d8dad8720578bdd765",
+      "digest": "ae314195dfb1c226b99d214e0b3a0cb432f9643d0eef62c215b6026bb959b0f3"
+    }
+  },
+  "retirements": [
+    {
+      "id": "main-steam-route",
+      "reason": "Retired unbound two-room steam preview with an unsupported free end above the HP turbine, bypassing the graph-owned stop valve. Replaced by accepted, exact-port graph connections: main-steam-header-to-turbine-stop-valve, turbine-stop-valve-to-turbine. Its source identity is retained as removed; it carries no operational or live-state claim."
+    },
+    {
+      "id": "feedwater-route",
+      "reason": "Retired unbound two-room feedwater preview duplicating the accepted graph-bound pump-to-header connection with a separate angular path. Replaced by accepted, exact-port graph connections: main-feedwater-pump-a-to-header. Its source identity is retained as removed; it carries no operational or live-state claim."
+    },
+    {
+      "id": "route/hot-leg-A",
+      "reason": "Retired unbound loop A hot-leg illustration superseded by its accepted reactor-to-steam-generator connection. Replaced by accepted, exact-port graph connections: rcs-hot-leg-a. Its source identity is retained as removed; it carries no operational or live-state claim."
+    },
+    {
+      "id": "route/cold-leg-A",
+      "reason": "Retired unbound loop A cold-leg illustration superseded by its accepted steam-generator-to-pump connection. Replaced by accepted, exact-port graph connections: rcs-cold-leg-a. Its source identity is retained as removed; it carries no operational or live-state claim."
+    },
+    {
+      "id": "route/rcp-return-A",
+      "reason": "Retired unbound loop A reactor-coolant-pump return illustration superseded by its accepted pump-to-reactor connection. Replaced by accepted, exact-port graph connections: rcp-a-to-core. Its source identity is retained as removed; it carries no operational or live-state claim."
+    },
+    {
+      "id": "route/steam-riser-A",
+      "reason": "Retired unbound loop A steam illustration superseded by accepted connections through its graph-owned isolation valve. Replaced by accepted, exact-port graph connections: sg-a-steam-to-msiv-a, msiv-a-to-main-steam-header. Its source identity is retained as removed; it carries no operational or live-state claim."
+    },
+    {
+      "id": "route/feedwater-A",
+      "reason": "Retired unbound loop A feedwater illustration superseded by accepted connections through its graph-owned control valve. Replaced by accepted, exact-port graph connections: feedwater-header-to-control-valve-a, feedwater-control-valve-a-to-sg-a. Its source identity is retained as removed; it carries no operational or live-state claim."
+    },
+    {
+      "id": "route/hot-leg-B",
+      "reason": "Retired unbound loop B hot-leg illustration superseded by its accepted reactor-to-steam-generator connection. Replaced by accepted, exact-port graph connections: rcs-hot-leg-b. Its source identity is retained as removed; it carries no operational or live-state claim."
+    },
+    {
+      "id": "route/cold-leg-B",
+      "reason": "Retired unbound loop B cold-leg illustration superseded by its accepted steam-generator-to-pump connection. Replaced by accepted, exact-port graph connections: rcs-cold-leg-b. Its source identity is retained as removed; it carries no operational or live-state claim."
+    },
+    {
+      "id": "route/rcp-return-B",
+      "reason": "Retired unbound loop B reactor-coolant-pump return illustration superseded by its accepted pump-to-reactor connection. Replaced by accepted, exact-port graph connections: rcp-b-to-core. Its source identity is retained as removed; it carries no operational or live-state claim."
+    },
+    {
+      "id": "route/steam-riser-B",
+      "reason": "Retired unbound loop B steam illustration superseded by accepted connections through its graph-owned isolation valve. Replaced by accepted, exact-port graph connections: sg-b-steam-to-msiv-b, msiv-b-to-main-steam-header. Its source identity is retained as removed; it carries no operational or live-state claim."
+    },
+    {
+      "id": "route/feedwater-B",
+      "reason": "Retired unbound loop B feedwater illustration superseded by accepted connections through its graph-owned control valve. Replaced by accepted, exact-port graph connections: feedwater-header-to-control-valve-b, feedwater-control-valve-b-to-sg-b. Its source identity is retained as removed; it carries no operational or live-state claim."
+    },
+    {
+      "id": "route/hot-leg-C",
+      "reason": "Retired unbound loop C hot-leg illustration superseded by its accepted reactor-to-steam-generator connection. Replaced by accepted, exact-port graph connections: rcs-hot-leg-c. Its source identity is retained as removed; it carries no operational or live-state claim."
+    },
+    {
+      "id": "route/cold-leg-C",
+      "reason": "Retired unbound loop C cold-leg illustration superseded by its accepted steam-generator-to-pump connection. Replaced by accepted, exact-port graph connections: rcs-cold-leg-c. Its source identity is retained as removed; it carries no operational or live-state claim."
+    },
+    {
+      "id": "route/rcp-return-C",
+      "reason": "Retired unbound loop C reactor-coolant-pump return illustration superseded by its accepted pump-to-reactor connection. Replaced by accepted, exact-port graph connections: rcp-c-to-core. Its source identity is retained as removed; it carries no operational or live-state claim."
+    },
+    {
+      "id": "route/steam-riser-C",
+      "reason": "Retired unbound loop C steam illustration superseded by accepted connections through its graph-owned isolation valve. Replaced by accepted, exact-port graph connections: sg-c-steam-to-msiv-c, msiv-c-to-main-steam-header. Its source identity is retained as removed; it carries no operational or live-state claim."
+    },
+    {
+      "id": "route/feedwater-C",
+      "reason": "Retired unbound loop C feedwater illustration superseded by accepted connections through its graph-owned control valve. Replaced by accepted, exact-port graph connections: feedwater-header-to-control-valve-c, feedwater-control-valve-c-to-sg-c. Its source identity is retained as removed; it carries no operational or live-state claim."
+    },
+    {
+      "id": "route/hot-leg-D",
+      "reason": "Retired unbound loop D hot-leg illustration superseded by its accepted reactor-to-steam-generator connection. Replaced by accepted, exact-port graph connections: rcs-hot-leg-d. Its source identity is retained as removed; it carries no operational or live-state claim."
+    },
+    {
+      "id": "route/cold-leg-D",
+      "reason": "Retired unbound loop D cold-leg illustration superseded by its accepted steam-generator-to-pump connection. Replaced by accepted, exact-port graph connections: rcs-cold-leg-d. Its source identity is retained as removed; it carries no operational or live-state claim."
+    },
+    {
+      "id": "route/rcp-return-D",
+      "reason": "Retired unbound loop D reactor-coolant-pump return illustration superseded by its accepted pump-to-reactor connection. Replaced by accepted, exact-port graph connections: rcp-d-to-core. Its source identity is retained as removed; it carries no operational or live-state claim."
+    },
+    {
+      "id": "route/steam-riser-D",
+      "reason": "Retired unbound loop D steam illustration superseded by accepted connections through its graph-owned isolation valve. Replaced by accepted, exact-port graph connections: sg-d-steam-to-msiv-d, msiv-d-to-main-steam-header. Its source identity is retained as removed; it carries no operational or live-state claim."
+    },
+    {
+      "id": "route/feedwater-D",
+      "reason": "Retired unbound loop D feedwater illustration superseded by accepted connections through its graph-owned control valve. Replaced by accepted, exact-port graph connections: feedwater-header-to-control-valve-d, feedwater-control-valve-d-to-sg-d. Its source identity is retained as removed; it carries no operational or live-state claim."
+    },
+    {
+      "id": "route/pressurizer-surge",
+      "reason": "Retired unbound pressurizer-surge illustration superseded by its accepted reactor-to-pressurizer connection. Replaced by accepted, exact-port graph connections: pressurizer-surge-line. Its source identity is retained as removed; it carries no operational or live-state claim."
+    },
+    {
+      "id": "route/cooling-water-supply",
+      "reason": "Retired unbound cooling-water supply illustration superseded by accepted source-to-pump-to-condenser connections. Replaced by accepted, exact-port graph connections: ultimate-heat-sink-to-circulating-water-pump, circulating-water-pump-to-condenser. Its source identity is retained as removed; it carries no operational or live-state claim."
+    },
+    {
+      "id": "route/cooling-water-return",
+      "reason": "Retired unbound cooling-water return illustration superseded by its accepted condenser-to-discharge connection. Replaced by accepted, exact-port graph connections: condenser-to-cooling-water-discharge. Its source identity is retained as removed; it carries no operational or live-state claim."
+    }
+  ],
+  "unchangedAcceptedRouting": true,
+  "unchangedBindingBytes": true,
+  "unchangedOwnerDispositions": true,
+  "terminalContacts": {
+    "count": 239,
+    "withinAuthoredMeshTolerance": 224,
+    "interiorHeaderTapsBeyondMeshTolerance": 15,
+    "outsideContactsBeyondMeshTolerance": 0,
+    "maxAcceptedEndpointError": 0
+  },
+  "sourceCommit": "69b60ea18",
+  "ownerSemanticCommit": "e80c19f20"
+}

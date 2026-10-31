@@ -8,7 +8,7 @@ import { balanceOfPlantBehaviorDefinitions } from './balance-of-plant-behaviors.
 import { boundaryBehaviorDefinitions } from './boundary-behaviors.ts'
 import { containmentBehaviorDefinitions } from './containment-behaviors.ts'
 import { electricalBehaviorDefinitions, electricalInitialReconciliationDefinitions, electricalStateBehaviorDefinitions } from './electrical-behaviors.ts'
-import { heatExchangerBehaviorDefinitions } from './heat-exchanger-behaviors.ts'
+import { heatExchangerBehaviorDefinitions, heatExchangerInitialReconciliationDefinitions } from './heat-exchanger-behaviors.ts'
 import { instrumentationBehaviorDefinitions, instrumentationInitialReconciliationDefinitions } from './instrumentation-behaviors.ts'
 import { junctionBehaviorDefinitions, junctionInitialReconciliationDefinitions } from './junction-behaviors.ts'
 import { pressurizerBehaviorDefinitions, pressurizerInitialReconciliationDefinitions } from './pressurizer-behaviors.ts'
@@ -54,6 +54,7 @@ export const componentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefini
   behaviorDefinitionById('turbine-electrical-output'),
   behaviorDefinitionById('centrifugal-pump-flow'),
   behaviorDefinitionById('centrifugal-pump-primary-loop-flow'),
+  behaviorDefinitionById('centrifugal-pump-delivered-flow'),
   behaviorDefinitionById('reactor-core-heat-to-coolant'),
   behaviorDefinitionById('steam-generator-heat-transfer'),
   behaviorDefinitionById('steam-generator-tube-leak-transfer'),
@@ -91,6 +92,7 @@ export const componentInitialReconciliationDefinitions: ReadonlyArray<ComponentI
   ...pressurizerInitialReconciliationDefinitions,
   ...reactorInitialReconciliationDefinitions,
   ...junctionInitialReconciliationDefinitions,
+  ...heatExchangerInitialReconciliationDefinitions,
 ]
 
 /**

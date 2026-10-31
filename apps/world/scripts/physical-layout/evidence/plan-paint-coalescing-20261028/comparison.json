@@ -1,0 +1,86 @@
+{
+  "passed": true,
+  "cases": [
+    {
+      "name": "site-live-off",
+      "ratio": 1,
+      "before": "793743c00e49d7578544bb4164b9077cde8e01d7",
+      "after": "954af6cf2fcf5df924a6935780fde293b4049386",
+      "width": 1080,
+      "height": 958,
+      "comparedBytes": 4138560,
+      "differingBytes": 0,
+      "sameTransforms": true,
+      "sameTexts": true,
+      "sameScope": true,
+      "sameLevel": true,
+      "rgbaSha256": [
+        "98525a204922416c270efa26d7df21820932367c7037d1b284174cc4c65c0516",
+        "98525a204922416c270efa26d7df21820932367c7037d1b284174cc4c65c0516"
+      ],
+      "runnerSha256": "71cbca623bd8cc2b2cc51aafac3838ff2832d8ac64bd1ffc8aa1d7b7c7c5a45e"
+    },
+    {
+      "name": "operating-live-off",
+      "ratio": 1,
+      "before": "793743c00e49d7578544bb4164b9077cde8e01d7",
+      "after": "954af6cf2fcf5df924a6935780fde293b4049386",
+      "width": 1080,
+      "height": 958,
+      "comparedBytes": 4138560,
+      "differingBytes": 0,
+      "sameTransforms": true,
+      "sameTexts": true,
+      "sameScope": true,
+      "sameLevel": true,
+      "rgbaSha256": [
+        "ac9d5fa0d8d9c0842c24d330f44945ebfad6feb8beb22f91e5b00bcd560ad454",
+        "ac9d5fa0d8d9c0842c24d330f44945ebfad6feb8beb22f91e5b00bcd560ad454"
+      ],
+      "runnerSha256": "71cbca623bd8cc2b2cc51aafac3838ff2832d8ac64bd1ffc8aa1d7b7c7c5a45e"
+    },
+    {
+      "name": "site-live-off",
+      "ratio": 2,
+      "before": "793743c00e49d7578544bb4164b9077cde8e01d7",
+      "after": "954af6cf2fcf5df924a6935780fde293b4049386",
+      "width": 2160,
+      "height": 1916,
+      "comparedBytes": 16554240,
+      "differingBytes": 0,
+      "sameTransforms": true,
+      "sameTexts": true,
+      "sameScope": true,
+      "sameLevel": true,
+      "rgbaSha256": [
+        "ccee2419bdd048c033f8b43466b321689029b140fc1a53bab7b042452fc520ce",
+        "ccee2419bdd048c033f8b43466b321689029b140fc1a53bab7b042452fc520ce"
+      ],
+      "runnerSha256": "71cbca623bd8cc2b2cc51aafac3838ff2832d8ac64bd1ffc8aa1d7b7c7c5a45e"
+    },
+    {
+      "name": "operating-live-off",
+      "ratio": 2,
+      "before": "793743c00e49d7578544bb4164b9077cde8e01d7",
+      "after": "954af6cf2fcf5df924a6935780fde293b4049386",
+      "width": 2160,
+      "height": 1916,
+      "comparedBytes": 16554240,
+      "differingBytes": 0,
+      "sameTransforms": true,
+      "sameTexts": true,
+      "sameScope": true,
+      "sameLevel": true,
+      "rgbaSha256": [
+        "ac28aa9236c3461318ac061db79664f500dd69e6887bbdde8fe681bf8c08400b",
+        "ac28aa9236c3461318ac061db79664f500dd69e6887bbdde8fe681bf8c08400b"
+      ],
+      "runnerSha256": "71cbca623bd8cc2b2cc51aafac3838ff2832d8ac64bd1ffc8aa1d7b7c7c5a45e"
+    }
+  ],
+  "limits": [
+    "Real built old and candidate apps on one retained paused local R5 Run, matched viewport and public Home, same settled fonts and all observed Canvas transforms.",
+    "Live is off for exact immutable drawing comparison. Dynamic status/flow and moving-camera performance are separate functional and measurement gates.",
+    "RGBA is byte compared independently. No pixel, native path, AA or content tolerance is used. These four settled views do not certify every possible camera or lifecycle."
+  ]
+}

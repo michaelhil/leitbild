@@ -1,0 +1,54 @@
+{
+  "workspaceId": "a31f9fc6-1961-469c-927c-bb456326dfc1",
+  "definition": {
+    "workspaceId": "a31f9fc6-1961-469c-927c-bb456326dfc1",
+    "moduleId": "world",
+    "type": "world.scenario",
+    "id": "halden-normal-operation",
+    "revisionId": "revision-527c415da38ac48b1fe63e920c77ce74"
+  },
+  "invocationSent": true,
+  "start": {
+    "result": {
+      "id": "run-94c67255-e555-443c-a9db-4f8e7996dbdf",
+      "uiPath": "/workspaces/a31f9fc6-1961-469c-927c-bb456326dfc1/world/runs/run-94c67255-e555-443c-a9db-4f8e7996dbdf"
+    },
+    "createdResources": [
+      {
+        "workspaceId": "a31f9fc6-1961-469c-927c-bb456326dfc1",
+        "moduleId": "world",
+        "type": "world.simulation-run",
+        "id": "run-94c67255-e555-443c-a9db-4f8e7996dbdf"
+      }
+    ]
+  },
+  "resource": {
+    "workspaceId": "a31f9fc6-1961-469c-927c-bb456326dfc1",
+    "moduleId": "world",
+    "type": "world.simulation-run",
+    "id": "run-94c67255-e555-443c-a9db-4f8e7996dbdf"
+  },
+  "runId": "run-94c67255-e555-443c-a9db-4f8e7996dbdf",
+  "url": "http://127.0.0.1:43148/workspaces/a31f9fc6-1961-469c-927c-bb456326dfc1?world=run-94c67255-e555-443c-a9db-4f8e7996dbdf",
+  "execution": {
+    "result": {
+      "playback": "paused",
+      "pace": "realtime",
+      "currentSimulationTime": "2026-07-12T04:00:00.011Z",
+      "updatedAt": "2026-10-27T20:10:05.645Z",
+      "maximumPace": {
+        "available": true
+      },
+      "acceleration": null
+    }
+  },
+  "builtApp": "793743c00e49d7578544bb4164b9077cde8e01d7",
+  "rootBase": "793743c00e49d7578544bb4164b9077cde8e01d7",
+  "boundOwnerFix": "integrated",
+  "expectedUnitDesign": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+  "expectedCampusDesign": "91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933",
+  "qaRepository": "/Users/hilde/Documents/ChatGPT/Leitbild-physical-draw-stack-final-20261027",
+  "note": "Same retained paused R5 Run/source pins. Final supported app793743c00 removes fractional UI controls/pending-opacity messages only; ordinary opaque/cutaway geometry, native4xMSAA, meshlessPlan, stable-roster picking and sourceworking-set retention remain.",
+  "appSourceCommit": "793743c00e49d7578544bb4164b9077cde8e01d7",
+  "runnerCheckout": "793743c00e49d7578544bb4164b9077cde8e01d7"
+}

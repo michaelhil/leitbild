@@ -2,9 +2,10 @@
 // stands (agents/proposal-cards.ts): the action and its target, who proposed
 // it, and its status in World's words, never the agent's prose. A person
 // approves only in the display window, so the card offers no Approve; it
-// offers the display the answer composed, where the proposal waits. Pure:
-// no DOM, no network.
-import type { ProposalCard } from '../../../agents/proposal-cards.ts'
+// offers the default display of the proposal's element on its Run, where the
+// element's pop-over carries the proposal (Q23). Pure: no DOM, no network.
+import type { WorkspaceResourceReference } from '@leitbild/contracts'
+import { actorWords, type ProposalCard } from '../../../agents/proposal-cards.ts'
 import { PROPOSE_OPERATION_ID } from '../../../agents/operation-claims.ts'
 import type { UIMessage } from '../render/render-types.ts'
 
@@ -18,7 +19,7 @@ export type ProposalTone = 'pending' | 'executed' | 'closed' | 'refused' | 'unkn
 export interface ProposalCardView {
   /** What it does, as World words the control: "SHUT MOV-8000A", "RESET Manual safety injection". */
   readonly action: string
-  /** The equipment it is on, as World names the drawn item: "pressurizer.blockValve". */
+  /** The equipment it is on, as World labels the drawn item: "PZR block valve". */
   readonly item?: string
   readonly proposer: string
   readonly tone: ProposalTone
@@ -27,10 +28,11 @@ export interface ProposalCardView {
   readonly review?: string
   /** Still awaiting a person: its status is read again until it closes. */
   readonly live: boolean
+  /** A pending proposal's review: its element's default display on the Run it was proposed on (`<plantId>#<item>`). */
+  readonly reviewAt?: { readonly resource: WorkspaceResourceReference; readonly subject: string; readonly title: string }
 }
 
-/** A person or agent as an actor id names them: "actor:human:hilde" → "hilde". */
-export const actorName = (actorId: string): string => actorId.replace(/^actor:(?:human|ai|system|anonymous):/, '')
+
 
 const valueWords = (value: unknown): string => typeof value === 'number' || typeof value === 'boolean' ? String(value) : JSON.stringify(value)
 
@@ -47,8 +49,8 @@ export const proposalCardView = (card: ProposalCard, proposerName: string): Prop
   }
   const proposal = outcome.proposal
   // A reset's word names its actuation ("RESET Manual safety injection"); a write's names the control's action, so the target follows.
-  const base = { action: card.reset === true ? proposal.word : `${proposal.word} ${card.target}`, item: proposal.item, proposer: proposerName }
-  const by = proposal.closed?.actorId === undefined ? '' : ` by ${actorName(proposal.closed.actorId)}`
+  const base = { action: card.reset === true ? proposal.word : `${proposal.word} ${card.target}`, item: outcome.label, proposer: proposerName }
+  const by = proposal.closed?.actorId === undefined ? '' : ` by ${actorWords(proposal.closed.actorId)}`
   const why = proposal.closed?.reason === undefined ? '' : `: ${proposal.closed.reason}`
   switch (proposal.status) {
     case 'pending': {
@@ -56,7 +58,8 @@ export const proposalCardView = (card: ProposalCard, proposerName: string): Prop
       const allowed = review === undefined ? undefined : review.permitted ? 'I&C allows it now' : `I&C does not allow it now: ${review.refusal ?? 'no reason given'}`
       const changed = review?.changed === true ? 'plant changed since proposed' : undefined
       const words = [allowed, changed].filter((part): part is string => part !== undefined)
-      return { ...base, tone: 'pending', status: 'Awaiting a person\'s approval in the display window', ...(words.length === 0 ? {} : { review: words.join(' · ') }), live: true }
+      const reviewAt = { resource: outcome.resource, subject: `${card.plantId}#${proposal.item}`, title: `Review: ${base.action}`.slice(0, 120) }
+      return { ...base, tone: 'pending', status: 'Awaiting a person\'s approval in the display window', ...(words.length === 0 ? {} : { review: words.join(' · ') }), live: true, reviewAt }
     }
     case 'approved': return { ...base, tone: 'executed', status: `Approved${by} · executed`, live: false }
     case 'rejected': return { ...base, tone: 'closed', status: `Rejected${by}${why}`, live: false }

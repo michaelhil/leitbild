@@ -1,19 +1,24 @@
 import { z } from 'zod'
+import type { IsoTimestamp } from '../../core/model/index.ts'
+import { processPlantEvidenceFrame } from './evidence-frame.ts'
 import { processUnitSchema, type ProcessUnit, type VariablePath } from './graph/index.ts'
-import { processPlantSignalReferenceSchema, findProcessPlantSignalBinding, processPlantSignalView } from './signals.ts'
-import type { ProcessPlantSignalReference, ProcessPlantSignalView } from './signals.ts'
+import { processPlantSignalReferenceSchema, findProcessPlantSignalBinding, processPlantSignalQuality } from './signals.ts'
+import type { ProcessPlantSignalReference, ProcessPlantSignalQuality } from './signals.ts'
+import { processPlantEvidenceSignal, processPlantEvidenceVariable, normalizeProcessPlantProcedureEvidence, type ProcessPlantEvidenceSignal, type ProcessPlantEvidenceVariable } from './procedure-evidence-facts.ts'
 import type { ProcessPlantRuntimeInstance } from './runtime-instance.ts'
 import type { ProcessPlantVariableSnapshot } from './runtime/model.ts'
-import { processPlantIcComparisonOperatorSchema, type ProcessPlantIcComparisonOperator } from './runtime/ic/control-protection-model.ts'
+import { processPlantIcComparisonOperatorSchema, type ProcessPlantIcComparisonOperator, type ProcessPlantIcSnapshot } from './runtime/ic/control-protection-model.ts'
 
 export type ProcedureConditionStatus = 'satisfied' | 'challenged' | 'unknown'
 export type ProcessPlantProcedureCondition =
+  | { readonly type: 'ic-rule-state'; readonly ruleId: string; readonly field: 'active' | 'latched'; readonly value: boolean; readonly source: string }
   | { readonly type: 'comparison'; readonly signal: ProcessPlantSignalReference; readonly operator: ProcessPlantIcComparisonOperator; readonly value: number | boolean; readonly unit: ProcessUnit }
   | { readonly type: 'all' | 'any'; readonly conditions: ReadonlyArray<ProcessPlantProcedureCondition> }
   | { readonly type: 'not'; readonly condition: ProcessPlantProcedureCondition }
   | { readonly type: 'vote'; readonly required: number; readonly conditions: ReadonlyArray<ProcessPlantProcedureCondition> }
 
 const conditionTreeSchema: z.ZodType<ProcessPlantProcedureCondition> = z.lazy(() => z.union([
+  z.object({ type: z.literal('ic-rule-state'), ruleId: z.string().min(1), field: z.enum(['active', 'latched']), value: z.boolean(), source: z.string().min(1) }).strict(),
   z.object({ type: z.literal('comparison'), signal: processPlantSignalReferenceSchema, operator: processPlantIcComparisonOperatorSchema, value: z.union([z.number().finite(), z.boolean()]), unit: processUnitSchema }).strict(),
   z.object({ type: z.enum(['all', 'any']), conditions: z.array(conditionTreeSchema).min(1).max(128) }).strict(),
   z.object({ type: z.literal('not'), condition: conditionTreeSchema }).strict(),
@@ -54,12 +59,23 @@ export type ProcessPlantProcedureBasis = z.infer<typeof processPlantProcedureBas
 
 export interface ProcessPlantProcedureEvidence {
   readonly reference: ProcessPlantSignalReference
-  readonly signal?: ProcessPlantSignalView
-  readonly variable?: ProcessPlantVariableSnapshot
+  readonly signal?: ProcessPlantEvidenceSignal
+  readonly variable?: ProcessPlantEvidenceVariable
+  readonly quality: ProcessPlantSignalQuality
   readonly provenance: 'runtime-model'
   readonly instrumentationValidity: 'not-established'
   readonly rangeValidity: 'within-declared-range' | 'outside-declared-range' | 'no-declared-range' | 'unavailable'
   readonly comparison: { readonly operator: ProcessPlantIcComparisonOperator; readonly value: number | boolean; readonly unit: ProcessUnit }
+  readonly status: ProcedureConditionStatus
+  readonly reason?: string
+}
+export interface ProcessPlantProcedureIcEvidence {
+  readonly type: 'ic-rule-state'
+  readonly ruleId: string
+  readonly field: 'active' | 'latched'
+  readonly expected: boolean
+  readonly value?: boolean
+  readonly source: string
   readonly status: ProcedureConditionStatus
   readonly reason?: string
 }
@@ -79,29 +95,44 @@ export const evaluateProcessPlantProcedureCondition = (config: {
   readonly plant: ProcessPlantRuntimeInstance
   readonly condition: ProcessPlantProcedureCondition
   readonly basis: ProcessPlantProcedureBasis
+  readonly simulationTime?: IsoTimestamp
 }) => {
-  const evidence: ProcessPlantProcedureEvidence[] = []
+  const evidence: Array<ProcessPlantProcedureEvidence | ProcessPlantProcedureIcEvidence> = []
   const plant = config.plant
   const simTimeMs = plant.runtime.elapsedMs()
   const identity = {
-    modelRef: plant.plant.modelRef, modelDigest: plant.plant.modelDigest, simTimeMs,
+    ...processPlantEvidenceFrame(plant, config.simulationTime), simTimeMs,
     basis: { ...config.basis, qualification: 'authored-comparison' as const },
     automaticCsfQualified: false,
   }
   if (config.basis.modelRef !== plant.plant.modelRef || config.basis.modelDigest !== plant.plant.modelDigest) {
-    return { ...identity, status: 'unknown' as const, reason: 'Procedure basis does not match the current Plant model and digest.', evidence }
+    return { ...identity, status: 'unknown' as const, reason: 'Procedure basis does not match the current Plant model and digest.', ...normalizeProcessPlantProcedureEvidence(evidence) }
   }
   const snapshots = new Map<VariablePath, ProcessPlantVariableSnapshot>()
   const unavailableSnapshots = new Map<VariablePath, string>()
   let visited = 0
+  let icSnapshot: ProcessPlantIcSnapshot | undefined
   const evaluate = (condition: ProcessPlantProcedureCondition, depth: number): ProcedureConditionStatus => {
     if (++visited > 512 || depth > 32) throw new Error('Procedure condition exceeds the 512-node or 32-level evaluation limit.')
+    if (condition.type === 'ic-rule-state') {
+      const snapshot = icSnapshot ??= plant.protection?.snapshot()
+      const rule = plant.plant.automation.rules.find(candidate => candidate.id === condition.ruleId)
+      const state = snapshot?.rules.find(candidate => candidate.ruleId === condition.ruleId)
+      const failure = snapshot?.failures.find(candidate => candidate.ruleId === condition.ruleId)
+      const reason = snapshot === undefined ? 'I&C state is unavailable.' : rule === undefined || state === undefined ? 'The exact I&C rule is absent; absence does not establish inactive.'
+        : failure !== undefined ? `I&C rule evidence is unavailable: ${failure.message}` : undefined
+      const actual = state?.[condition.field]
+      const status = reason === undefined && typeof actual === 'boolean' ? actual === condition.value ? 'satisfied' : 'challenged' : 'unknown'
+      evidence.push({ type: 'ic-rule-state', ruleId: condition.ruleId, field: condition.field, expected: condition.value, source: condition.source,
+        ...(actual === undefined ? {} : { value: actual }), status, ...(reason === undefined ? {} : { reason }) })
+      return status
+    }
     if (condition.type === 'comparison') {
       const binding = findProcessPlantSignalBinding(plant.plant.graph, condition.signal)
       const comparison = { operator: condition.operator, value: condition.value, unit: condition.unit }
       const base = { reference: condition.signal, comparison, provenance: 'runtime-model' as const, instrumentationValidity: 'not-established' as const }
       if (binding === undefined) {
-        evidence.push({ ...base, status: 'unknown', rangeValidity: 'unavailable', reason: 'Signal is absent from the current Plant graph.' })
+        evidence.push({ ...base, quality: { status: 'unavailable', reason: 'Signal is absent from the current Plant graph.' }, status: 'unknown', rangeValidity: 'unavailable', reason: 'Signal is absent from the current Plant graph.' })
         return 'unknown'
       }
       let variable = snapshots.get(binding.path)
@@ -115,21 +146,25 @@ export const evaluateProcessPlantProcedureCondition = (config: {
           }
         }
         if (variable === undefined) {
-          evidence.push({ ...base, signal: processPlantSignalView(binding), status: 'unknown', rangeValidity: 'unavailable', reason: unavailableSnapshots.get(binding.path) ?? 'Signal acquisition is unavailable.' })
+          const reason = unavailableSnapshots.get(binding.path) ?? 'Signal acquisition is unavailable.'
+          evidence.push({ ...base, signal: processPlantEvidenceSignal(binding), quality: { status: 'unavailable', reason }, status: 'unknown', rangeValidity: 'unavailable', reason })
           return 'unknown'
         }
       }
       const hardRange = variable.limits?.hardRange
-      const rangeValidity = typeof variable.value === 'number' && hardRange !== undefined
+      const quality = processPlantSignalQuality(variable, { system: plant.plant, runtime: plant.runtime })
+      const rangeValidity = quality.status === 'unavailable' ? 'unavailable' as const : typeof variable.value === 'number' && hardRange !== undefined
         ? variable.value < hardRange.min || variable.value > hardRange.max ? 'outside-declared-range' as const : 'within-declared-range' as const
         : 'no-declared-range' as const
-      const reason = variable.unit !== condition.unit ? `Condition unit ${condition.unit} does not match native signal unit ${variable.unit}.`
+      const reason = quality.status === 'unavailable' ? quality.reason
+        : binding.writable !== false || variable.writable !== false ? 'Writable commands/demands cannot establish physical response; use read-only feedback.'
+        : variable.unit !== condition.unit ? `Condition unit ${condition.unit} does not match native signal unit ${variable.unit}.`
         : typeof variable.value !== typeof condition.value ? 'Condition value type does not match the signal value type.'
           : typeof variable.value === 'number' && !Number.isFinite(variable.value) ? 'Signal value is not finite.'
             : rangeValidity === 'outside-declared-range' ? 'Signal value is outside its declared hard range; no qualified range-bound interpretation is available.'
               : typeof variable.value === 'boolean' && condition.operator !== '==' && condition.operator !== '!=' ? 'Ordered comparisons require numeric values.' : undefined
       const status = reason === undefined ? compare(variable.value, condition.operator, condition.value) ? 'satisfied' : 'challenged' : 'unknown'
-      evidence.push({ ...base, signal: processPlantSignalView(binding), variable, rangeValidity, status, ...(reason === undefined ? {} : { reason }) })
+      evidence.push({ ...base, signal: processPlantEvidenceSignal(binding), variable: processPlantEvidenceVariable(variable), quality, rangeValidity, status, ...(reason === undefined ? {} : { reason }) })
       return status
     }
     if (condition.type === 'not') {
@@ -145,8 +180,8 @@ export const evaluateProcessPlantProcedureCondition = (config: {
   }
   try {
     const status = evaluate(config.condition, 0)
-    return { ...identity, status, ...(status === 'unknown' ? { reason: 'The declared condition cannot be established from the available model evidence.' } : {}), evidence }
+    return { ...identity, status, ...(status === 'unknown' ? { reason: 'The declared condition cannot be established from the available model evidence.' } : {}), ...normalizeProcessPlantProcedureEvidence(evidence) }
   } catch (error) {
-    return { ...identity, status: 'unknown' as const, reason: error instanceof Error ? error.message : String(error), evidence }
+    return { ...identity, status: 'unknown' as const, reason: error instanceof Error ? error.message : String(error), ...normalizeProcessPlantProcedureEvidence(evidence) }
   }
 }

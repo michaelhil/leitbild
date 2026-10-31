@@ -1,0 +1,10 @@
+{
+  "name": "leitbild-native-authoring-trial",
+  "private": true,
+  "type": "module",
+  "packageManager": "bun@1.4.0",
+  "workspaces": [],
+  "scripts": {"trial": "bun run trial.ts", "build": "bun run build.ts", "test": "bun run trial.ts", "check": "tsc --noEmit"},
+  "dependencies": {"web-ifc": "0.0.78"},
+  "devDependencies": {"typescript": "6.0.3", "@types/bun": "1.4.0"}
+}

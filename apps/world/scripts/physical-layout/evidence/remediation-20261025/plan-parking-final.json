@@ -1,0 +1,7916 @@
+{
+  "phases": [
+    {
+      "host": "map",
+      "mode": "2d",
+      "theme": "day",
+      "passed": true,
+      "painted": 84,
+      "correct": 84,
+      "bright": 84,
+      "samples": [
+        {
+          "id": "parking/line-0-0",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-0-0"
+        },
+        {
+          "id": "parking/line-0-1",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-0-1"
+        },
+        {
+          "id": "parking/line-0-2",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-0-2"
+        },
+        {
+          "id": "parking/line-0-3",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-0-3"
+        },
+        {
+          "id": "parking/line-0-4",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-0-4"
+        },
+        {
+          "id": "parking/line-0-5",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-0-5"
+        },
+        {
+          "id": "parking/line-0-6",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-0-6"
+        },
+        {
+          "id": "parking/line-0-7",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-0-7"
+        },
+        {
+          "id": "parking/line-0-8",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-0-8"
+        },
+        {
+          "id": "parking/line-0-9",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-0-9"
+        },
+        {
+          "id": "parking/line-0-10",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-0-10"
+        },
+        {
+          "id": "parking/line-0-11",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-0-11"
+        },
+        {
+          "id": "parking/line-0-12",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-0-12"
+        },
+        {
+          "id": "parking/line-0-13",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-0-13"
+        },
+        {
+          "id": "parking/line-0-14",
+          "pixel": [
+            218,
+            222,
+            211,
+            255
+          ],
+          "hit": "parking/line-0-14"
+        },
+        {
+          "id": "parking/line-0-15",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-0-15"
+        },
+        {
+          "id": "parking/line-0-16",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-0-16"
+        },
+        {
+          "id": "parking/line-0-17",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-0-17"
+        },
+        {
+          "id": "parking/line-0-18",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-0-18"
+        },
+        {
+          "id": "parking/line-0-19",
+          "pixel": [
+            218,
+            222,
+            211,
+            255
+          ],
+          "hit": "parking/line-0-19"
+        },
+        {
+          "id": "parking/line-0-20",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-0-20"
+        },
+        {
+          "id": "parking/line-1-0",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-1-0"
+        },
+        {
+          "id": "parking/line-1-1",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-1-1"
+        },
+        {
+          "id": "parking/line-1-2",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-1-2"
+        },
+        {
+          "id": "parking/line-1-3",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-1-3"
+        },
+        {
+          "id": "parking/line-1-4",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-1-4"
+        },
+        {
+          "id": "parking/line-1-5",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-1-5"
+        },
+        {
+          "id": "parking/line-1-6",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-1-6"
+        },
+        {
+          "id": "parking/line-1-7",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-1-7"
+        },
+        {
+          "id": "parking/line-1-8",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-1-8"
+        },
+        {
+          "id": "parking/line-1-9",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-1-9"
+        },
+        {
+          "id": "parking/line-1-10",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-1-10"
+        },
+        {
+          "id": "parking/line-1-11",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-1-11"
+        },
+        {
+          "id": "parking/line-1-12",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-1-12"
+        },
+        {
+          "id": "parking/line-1-13",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-1-13"
+        },
+        {
+          "id": "parking/line-1-14",
+          "pixel": [
+            218,
+            222,
+            211,
+            255
+          ],
+          "hit": "parking/line-1-14"
+        },
+        {
+          "id": "parking/line-1-15",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-1-15"
+        },
+        {
+          "id": "parking/line-1-16",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-1-16"
+        },
+        {
+          "id": "parking/line-1-17",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-1-17"
+        },
+        {
+          "id": "parking/line-1-18",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-1-18"
+        },
+        {
+          "id": "parking/line-1-19",
+          "pixel": [
+            218,
+            222,
+            211,
+            255
+          ],
+          "hit": "parking/line-1-19"
+        },
+        {
+          "id": "parking/line-1-20",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-1-20"
+        },
+        {
+          "id": "parking/line-2-0",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-2-0"
+        },
+        {
+          "id": "parking/line-2-1",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-2-1"
+        },
+        {
+          "id": "parking/line-2-2",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-2-2"
+        },
+        {
+          "id": "parking/line-2-3",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-2-3"
+        },
+        {
+          "id": "parking/line-2-4",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-2-4"
+        },
+        {
+          "id": "parking/line-2-5",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-2-5"
+        },
+        {
+          "id": "parking/line-2-6",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-2-6"
+        },
+        {
+          "id": "parking/line-2-7",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-2-7"
+        },
+        {
+          "id": "parking/line-2-8",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-2-8"
+        },
+        {
+          "id": "parking/line-2-9",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-2-9"
+        },
+        {
+          "id": "parking/line-2-10",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-2-10"
+        },
+        {
+          "id": "parking/line-2-11",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-2-11"
+        },
+        {
+          "id": "parking/line-2-12",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-2-12"
+        },
+        {
+          "id": "parking/line-2-13",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-2-13"
+        },
+        {
+          "id": "parking/line-2-14",
+          "pixel": [
+            218,
+            222,
+            211,
+            255
+          ],
+          "hit": "parking/line-2-14"
+        },
+        {
+          "id": "parking/line-2-15",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-2-15"
+        },
+        {
+          "id": "parking/line-2-16",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-2-16"
+        },
+        {
+          "id": "parking/line-2-17",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-2-17"
+        },
+        {
+          "id": "parking/line-2-18",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-2-18"
+        },
+        {
+          "id": "parking/line-2-19",
+          "pixel": [
+            218,
+            222,
+            211,
+            255
+          ],
+          "hit": "parking/line-2-19"
+        },
+        {
+          "id": "parking/line-2-20",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-2-20"
+        },
+        {
+          "id": "parking/line-3-0",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-3-0"
+        },
+        {
+          "id": "parking/line-3-1",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-3-1"
+        },
+        {
+          "id": "parking/line-3-2",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-3-2"
+        },
+        {
+          "id": "parking/line-3-3",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-3-3"
+        },
+        {
+          "id": "parking/line-3-4",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-3-4"
+        },
+        {
+          "id": "parking/line-3-5",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-3-5"
+        },
+        {
+          "id": "parking/line-3-6",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-3-6"
+        },
+        {
+          "id": "parking/line-3-7",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-3-7"
+        },
+        {
+          "id": "parking/line-3-8",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-3-8"
+        },
+        {
+          "id": "parking/line-3-9",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-3-9"
+        },
+        {
+          "id": "parking/line-3-10",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-3-10"
+        },
+        {
+          "id": "parking/line-3-11",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-3-11"
+        },
+        {
+          "id": "parking/line-3-12",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-3-12"
+        },
+        {
+          "id": "parking/line-3-13",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-3-13"
+        },
+        {
+          "id": "parking/line-3-14",
+          "pixel": [
+            218,
+            222,
+            211,
+            255
+          ],
+          "hit": "parking/line-3-14"
+        },
+        {
+          "id": "parking/line-3-15",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-3-15"
+        },
+        {
+          "id": "parking/line-3-16",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-3-16"
+        },
+        {
+          "id": "parking/line-3-17",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-3-17"
+        },
+        {
+          "id": "parking/line-3-18",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-3-18"
+        },
+        {
+          "id": "parking/line-3-19",
+          "pixel": [
+            218,
+            222,
+            211,
+            255
+          ],
+          "hit": "parking/line-3-19"
+        },
+        {
+          "id": "parking/line-3-20",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-3-20"
+        }
+      ],
+      "metrics": {
+        "preparation": {
+          "workerAlive": true,
+          "clients": 1,
+          "registeredSources": 1,
+          "registeredBytes": 22970652,
+          "leases": 1,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 1,
+          "viewRequests": 1,
+          "transferredBytes": 22970652
+        },
+        "current": {
+          "geometryUploads": 1,
+          "geometryBytes": 12797136,
+          "draws": 2,
+          "buffers": 3,
+          "programs": 2,
+          "textures": 3,
+          "textureBytes": 5273440,
+          "instanceBytes": 68,
+          "instanceUploads": 1,
+          "statusUploads": 1,
+          "paletteUploads": 1,
+          "evictions": 0,
+          "peakRequiredBytes": 12811764,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null,
+          "liveTexturesAfterDisposal": null,
+          "plan": {
+            "programs": 1,
+            "textures": 1,
+            "framebuffers": 2,
+            "renderbuffers": 2,
+            "bytes": 47329920,
+            "textureBytes": 5258880,
+            "allocations": 1,
+            "composites": 1,
+            "liveTextures": null,
+            "livePrograms": null,
+            "liveFramebuffers": null,
+            "liveRenderbuffers": null
+          }
+        },
+        "disposals": [],
+        "retainedScenes": 1,
+        "loadingScenes": 0
+      },
+      "pose": {
+        "center": [
+          11.4725966844818,
+          59.07760592568923
+        ],
+        "pitch": 0,
+        "bearing": 0,
+        "zoom": 19.68872387894964,
+        "revision": 5,
+        "elevation": 0
+      },
+      "glError": 0
+    },
+    {
+      "host": "map",
+      "mode": "3d",
+      "theme": "day",
+      "passed": true,
+      "painted": 84,
+      "correct": 84,
+      "bright": 10,
+      "samples": [
+        {
+          "id": "parking/line-0-0",
+          "pixel": [
+            199,
+            202,
+            191,
+            255
+          ],
+          "hit": "parking/line-0-0"
+        },
+        {
+          "id": "parking/line-0-1",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-0-1"
+        },
+        {
+          "id": "parking/line-0-2",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-0-2"
+        },
+        {
+          "id": "parking/line-0-3",
+          "pixel": [
+            182,
+            186,
+            178,
+            255
+          ],
+          "hit": "parking/line-0-3"
+        },
+        {
+          "id": "parking/line-0-4",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-0-4"
+        },
+        {
+          "id": "parking/line-0-5",
+          "pixel": [
+            182,
+            186,
+            178,
+            255
+          ],
+          "hit": "parking/line-0-5"
+        },
+        {
+          "id": "parking/line-0-6",
+          "pixel": [
+            183,
+            187,
+            178,
+            255
+          ],
+          "hit": "parking/line-0-6"
+        },
+        {
+          "id": "parking/line-0-7",
+          "pixel": [
+            183,
+            187,
+            178,
+            255
+          ],
+          "hit": "parking/line-0-7"
+        },
+        {
+          "id": "parking/line-0-8",
+          "pixel": [
+            213,
+            216,
+            205,
+            255
+          ],
+          "hit": "parking/line-0-8"
+        },
+        {
+          "id": "parking/line-0-9",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-0-9"
+        },
+        {
+          "id": "parking/line-0-10",
+          "pixel": [
+            199,
+            202,
+            191,
+            255
+          ],
+          "hit": "parking/line-0-10"
+        },
+        {
+          "id": "parking/line-0-11",
+          "pixel": [
+            182,
+            186,
+            177,
+            255
+          ],
+          "hit": "parking/line-0-11"
+        },
+        {
+          "id": "parking/line-0-12",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-0-12"
+        },
+        {
+          "id": "parking/line-0-13",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-0-13"
+        },
+        {
+          "id": "parking/line-0-14",
+          "pixel": [
+            199,
+            202,
+            191,
+            255
+          ],
+          "hit": "parking/line-0-14"
+        },
+        {
+          "id": "parking/line-0-15",
+          "pixel": [
+            183,
+            187,
+            178,
+            255
+          ],
+          "hit": "parking/line-0-15"
+        },
+        {
+          "id": "parking/line-0-16",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-0-16"
+        },
+        {
+          "id": "parking/line-0-17",
+          "pixel": [
+            183,
+            187,
+            178,
+            255
+          ],
+          "hit": "parking/line-0-17"
+        },
+        {
+          "id": "parking/line-0-18",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-0-18"
+        },
+        {
+          "id": "parking/line-0-19",
+          "pixel": [
+            213,
+            216,
+            205,
+            255
+          ],
+          "hit": "parking/line-0-19"
+        },
+        {
+          "id": "parking/line-0-20",
+          "pixel": [
+            213,
+            216,
+            205,
+            255
+          ],
+          "hit": "parking/line-0-20"
+        },
+        {
+          "id": "parking/line-1-0",
+          "pixel": [
+            199,
+            202,
+            191,
+            255
+          ],
+          "hit": "parking/line-1-0"
+        },
+        {
+          "id": "parking/line-1-1",
+          "pixel": [
+            168,
+            172,
+            164,
+            255
+          ],
+          "hit": "parking/line-1-1"
+        },
+        {
+          "id": "parking/line-1-2",
+          "pixel": [
+            199,
+            202,
+            191,
+            255
+          ],
+          "hit": "parking/line-1-2"
+        },
+        {
+          "id": "parking/line-1-3",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-1-3"
+        },
+        {
+          "id": "parking/line-1-4",
+          "pixel": [
+            168,
+            172,
+            164,
+            255
+          ],
+          "hit": "parking/line-1-4"
+        },
+        {
+          "id": "parking/line-1-5",
+          "pixel": [
+            183,
+            187,
+            178,
+            255
+          ],
+          "hit": "parking/line-1-5"
+        },
+        {
+          "id": "parking/line-1-6",
+          "pixel": [
+            182,
+            186,
+            177,
+            255
+          ],
+          "hit": "parking/line-1-6"
+        },
+        {
+          "id": "parking/line-1-7",
+          "pixel": [
+            213,
+            216,
+            205,
+            255
+          ],
+          "hit": "parking/line-1-7"
+        },
+        {
+          "id": "parking/line-1-8",
+          "pixel": [
+            213,
+            216,
+            205,
+            255
+          ],
+          "hit": "parking/line-1-8"
+        },
+        {
+          "id": "parking/line-1-9",
+          "pixel": [
+            199,
+            202,
+            191,
+            255
+          ],
+          "hit": "parking/line-1-9"
+        },
+        {
+          "id": "parking/line-1-10",
+          "pixel": [
+            213,
+            216,
+            205,
+            255
+          ],
+          "hit": "parking/line-1-10"
+        },
+        {
+          "id": "parking/line-1-11",
+          "pixel": [
+            213,
+            216,
+            205,
+            255
+          ],
+          "hit": "parking/line-1-11"
+        },
+        {
+          "id": "parking/line-1-12",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-1-12"
+        },
+        {
+          "id": "parking/line-1-13",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-1-13"
+        },
+        {
+          "id": "parking/line-1-14",
+          "pixel": [
+            182,
+            186,
+            178,
+            255
+          ],
+          "hit": "parking/line-1-14"
+        },
+        {
+          "id": "parking/line-1-15",
+          "pixel": [
+            183,
+            187,
+            178,
+            255
+          ],
+          "hit": "parking/line-1-15"
+        },
+        {
+          "id": "parking/line-1-16",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-1-16"
+        },
+        {
+          "id": "parking/line-1-17",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-1-17"
+        },
+        {
+          "id": "parking/line-1-18",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-1-18"
+        },
+        {
+          "id": "parking/line-1-19",
+          "pixel": [
+            213,
+            216,
+            205,
+            255
+          ],
+          "hit": "parking/line-1-19"
+        },
+        {
+          "id": "parking/line-1-20",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-1-20"
+        },
+        {
+          "id": "parking/line-2-0",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-2-0"
+        },
+        {
+          "id": "parking/line-2-1",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-2-1"
+        },
+        {
+          "id": "parking/line-2-2",
+          "pixel": [
+            167,
+            171,
+            164,
+            255
+          ],
+          "hit": "parking/line-2-2"
+        },
+        {
+          "id": "parking/line-2-3",
+          "pixel": [
+            183,
+            187,
+            178,
+            255
+          ],
+          "hit": "parking/line-2-3"
+        },
+        {
+          "id": "parking/line-2-4",
+          "pixel": [
+            167,
+            171,
+            164,
+            255
+          ],
+          "hit": "parking/line-2-4"
+        },
+        {
+          "id": "parking/line-2-5",
+          "pixel": [
+            182,
+            186,
+            178,
+            255
+          ],
+          "hit": "parking/line-2-5"
+        },
+        {
+          "id": "parking/line-2-6",
+          "pixel": [
+            183,
+            187,
+            178,
+            255
+          ],
+          "hit": "parking/line-2-6"
+        },
+        {
+          "id": "parking/line-2-7",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-2-7"
+        },
+        {
+          "id": "parking/line-2-8",
+          "pixel": [
+            168,
+            172,
+            164,
+            255
+          ],
+          "hit": "parking/line-2-8"
+        },
+        {
+          "id": "parking/line-2-9",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-2-9"
+        },
+        {
+          "id": "parking/line-2-10",
+          "pixel": [
+            199,
+            202,
+            191,
+            255
+          ],
+          "hit": "parking/line-2-10"
+        },
+        {
+          "id": "parking/line-2-11",
+          "pixel": [
+            182,
+            186,
+            178,
+            255
+          ],
+          "hit": "parking/line-2-11"
+        },
+        {
+          "id": "parking/line-2-12",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-2-12"
+        },
+        {
+          "id": "parking/line-2-13",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-2-13"
+        },
+        {
+          "id": "parking/line-2-14",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-2-14"
+        },
+        {
+          "id": "parking/line-2-15",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-2-15"
+        },
+        {
+          "id": "parking/line-2-16",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-2-16"
+        },
+        {
+          "id": "parking/line-2-17",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-2-17"
+        },
+        {
+          "id": "parking/line-2-18",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-2-18"
+        },
+        {
+          "id": "parking/line-2-19",
+          "pixel": [
+            167,
+            171,
+            164,
+            255
+          ],
+          "hit": "parking/line-2-19"
+        },
+        {
+          "id": "parking/line-2-20",
+          "pixel": [
+            213,
+            216,
+            205,
+            255
+          ],
+          "hit": "parking/line-2-20"
+        },
+        {
+          "id": "parking/line-3-0",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-3-0"
+        },
+        {
+          "id": "parking/line-3-1",
+          "pixel": [
+            183,
+            187,
+            178,
+            255
+          ],
+          "hit": "parking/line-3-1"
+        },
+        {
+          "id": "parking/line-3-2",
+          "pixel": [
+            183,
+            187,
+            178,
+            255
+          ],
+          "hit": "parking/line-3-2"
+        },
+        {
+          "id": "parking/line-3-3",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-3-3"
+        },
+        {
+          "id": "parking/line-3-4",
+          "pixel": [
+            199,
+            202,
+            191,
+            255
+          ],
+          "hit": "parking/line-3-4"
+        },
+        {
+          "id": "parking/line-3-5",
+          "pixel": [
+            182,
+            186,
+            178,
+            255
+          ],
+          "hit": "parking/line-3-5"
+        },
+        {
+          "id": "parking/line-3-6",
+          "pixel": [
+            182,
+            186,
+            178,
+            255
+          ],
+          "hit": "parking/line-3-6"
+        },
+        {
+          "id": "parking/line-3-7",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-3-7"
+        },
+        {
+          "id": "parking/line-3-8",
+          "pixel": [
+            199,
+            202,
+            191,
+            255
+          ],
+          "hit": "parking/line-3-8"
+        },
+        {
+          "id": "parking/line-3-9",
+          "pixel": [
+            182,
+            186,
+            177,
+            255
+          ],
+          "hit": "parking/line-3-9"
+        },
+        {
+          "id": "parking/line-3-10",
+          "pixel": [
+            182,
+            186,
+            177,
+            255
+          ],
+          "hit": "parking/line-3-10"
+        },
+        {
+          "id": "parking/line-3-11",
+          "pixel": [
+            167,
+            171,
+            164,
+            255
+          ],
+          "hit": "parking/line-3-11"
+        },
+        {
+          "id": "parking/line-3-12",
+          "pixel": [
+            167,
+            171,
+            164,
+            255
+          ],
+          "hit": "parking/line-3-12"
+        },
+        {
+          "id": "parking/line-3-13",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-3-13"
+        },
+        {
+          "id": "parking/line-3-14",
+          "pixel": [
+            182,
+            186,
+            177,
+            255
+          ],
+          "hit": "parking/line-3-14"
+        },
+        {
+          "id": "parking/line-3-15",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-3-15"
+        },
+        {
+          "id": "parking/line-3-16",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-3-16"
+        },
+        {
+          "id": "parking/line-3-17",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-3-17"
+        },
+        {
+          "id": "parking/line-3-18",
+          "pixel": [
+            182,
+            186,
+            178,
+            255
+          ],
+          "hit": "parking/line-3-18"
+        },
+        {
+          "id": "parking/line-3-19",
+          "pixel": [
+            182,
+            186,
+            178,
+            255
+          ],
+          "hit": "parking/line-3-19"
+        },
+        {
+          "id": "parking/line-3-20",
+          "pixel": [
+            213,
+            216,
+            205,
+            255
+          ],
+          "hit": "parking/line-3-20"
+        }
+      ],
+      "metrics": {
+        "preparation": {
+          "workerAlive": true,
+          "clients": 1,
+          "registeredSources": 1,
+          "registeredBytes": 22970652,
+          "leases": 1,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 1,
+          "viewRequests": 2,
+          "transferredBytes": 22970652
+        },
+        "current": {
+          "geometryUploads": 1,
+          "geometryBytes": 13413072,
+          "draws": 4,
+          "buffers": 3,
+          "programs": 1,
+          "textures": 2,
+          "textureBytes": 16304,
+          "instanceBytes": 68,
+          "instanceUploads": 2,
+          "statusUploads": 1,
+          "paletteUploads": 1,
+          "evictions": 0,
+          "peakRequiredBytes": 13429444,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null,
+          "liveTexturesAfterDisposal": null,
+          "plan": null
+        },
+        "disposals": [
+          {
+            "geometryUploads": 1,
+            "geometryBytes": 0,
+            "draws": 12,
+            "buffers": 0,
+            "programs": 0,
+            "textures": 0,
+            "textureBytes": 0,
+            "instanceBytes": 0,
+            "instanceUploads": 6,
+            "statusUploads": 1,
+            "paletteUploads": 1,
+            "evictions": 0,
+            "peakRequiredBytes": 12811764,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0,
+            "liveTexturesAfterDisposal": 0,
+            "plan": {
+              "programs": 0,
+              "textures": 0,
+              "framebuffers": 0,
+              "renderbuffers": 0,
+              "bytes": 0,
+              "textureBytes": 0,
+              "allocations": 1,
+              "composites": 6,
+              "liveTextures": 0,
+              "livePrograms": 0,
+              "liveFramebuffers": 0,
+              "liveRenderbuffers": 0
+            }
+          }
+        ],
+        "retainedScenes": 1,
+        "loadingScenes": 0
+      },
+      "pose": {
+        "center": [
+          11.4725966844818,
+          59.07760592568923
+        ],
+        "pitch": 50,
+        "bearing": -25,
+        "zoom": 18.832491883552652,
+        "revision": 11,
+        "elevation": 0
+      },
+      "glError": 0
+    },
+    {
+      "host": "map",
+      "mode": "2d",
+      "theme": "dusk",
+      "passed": true,
+      "painted": 84,
+      "correct": 84,
+      "bright": 84,
+      "samples": [
+        {
+          "id": "parking/line-0-0",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-0-0"
+        },
+        {
+          "id": "parking/line-0-1",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-0-1"
+        },
+        {
+          "id": "parking/line-0-2",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-0-2"
+        },
+        {
+          "id": "parking/line-0-3",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-0-3"
+        },
+        {
+          "id": "parking/line-0-4",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-0-4"
+        },
+        {
+          "id": "parking/line-0-5",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-0-5"
+        },
+        {
+          "id": "parking/line-0-6",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-0-6"
+        },
+        {
+          "id": "parking/line-0-7",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-0-7"
+        },
+        {
+          "id": "parking/line-0-8",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-0-8"
+        },
+        {
+          "id": "parking/line-0-9",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-0-9"
+        },
+        {
+          "id": "parking/line-0-10",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-0-10"
+        },
+        {
+          "id": "parking/line-0-11",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-0-11"
+        },
+        {
+          "id": "parking/line-0-12",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-0-12"
+        },
+        {
+          "id": "parking/line-0-13",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-0-13"
+        },
+        {
+          "id": "parking/line-0-14",
+          "pixel": [
+            162,
+            175,
+            161,
+            255
+          ],
+          "hit": "parking/line-0-14"
+        },
+        {
+          "id": "parking/line-0-15",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-0-15"
+        },
+        {
+          "id": "parking/line-0-16",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-0-16"
+        },
+        {
+          "id": "parking/line-0-17",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-0-17"
+        },
+        {
+          "id": "parking/line-0-18",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-0-18"
+        },
+        {
+          "id": "parking/line-0-19",
+          "pixel": [
+            162,
+            175,
+            161,
+            255
+          ],
+          "hit": "parking/line-0-19"
+        },
+        {
+          "id": "parking/line-0-20",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-0-20"
+        },
+        {
+          "id": "parking/line-1-0",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-1-0"
+        },
+        {
+          "id": "parking/line-1-1",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-1-1"
+        },
+        {
+          "id": "parking/line-1-2",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-1-2"
+        },
+        {
+          "id": "parking/line-1-3",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-1-3"
+        },
+        {
+          "id": "parking/line-1-4",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-1-4"
+        },
+        {
+          "id": "parking/line-1-5",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-1-5"
+        },
+        {
+          "id": "parking/line-1-6",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-1-6"
+        },
+        {
+          "id": "parking/line-1-7",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-1-7"
+        },
+        {
+          "id": "parking/line-1-8",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-1-8"
+        },
+        {
+          "id": "parking/line-1-9",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-1-9"
+        },
+        {
+          "id": "parking/line-1-10",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-1-10"
+        },
+        {
+          "id": "parking/line-1-11",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-1-11"
+        },
+        {
+          "id": "parking/line-1-12",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-1-12"
+        },
+        {
+          "id": "parking/line-1-13",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-1-13"
+        },
+        {
+          "id": "parking/line-1-14",
+          "pixel": [
+            162,
+            175,
+            161,
+            255
+          ],
+          "hit": "parking/line-1-14"
+        },
+        {
+          "id": "parking/line-1-15",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-1-15"
+        },
+        {
+          "id": "parking/line-1-16",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-1-16"
+        },
+        {
+          "id": "parking/line-1-17",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-1-17"
+        },
+        {
+          "id": "parking/line-1-18",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-1-18"
+        },
+        {
+          "id": "parking/line-1-19",
+          "pixel": [
+            162,
+            175,
+            161,
+            255
+          ],
+          "hit": "parking/line-1-19"
+        },
+        {
+          "id": "parking/line-1-20",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-1-20"
+        },
+        {
+          "id": "parking/line-2-0",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-2-0"
+        },
+        {
+          "id": "parking/line-2-1",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-2-1"
+        },
+        {
+          "id": "parking/line-2-2",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-2-2"
+        },
+        {
+          "id": "parking/line-2-3",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-2-3"
+        },
+        {
+          "id": "parking/line-2-4",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-2-4"
+        },
+        {
+          "id": "parking/line-2-5",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-2-5"
+        },
+        {
+          "id": "parking/line-2-6",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-2-6"
+        },
+        {
+          "id": "parking/line-2-7",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-2-7"
+        },
+        {
+          "id": "parking/line-2-8",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-2-8"
+        },
+        {
+          "id": "parking/line-2-9",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-2-9"
+        },
+        {
+          "id": "parking/line-2-10",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-2-10"
+        },
+        {
+          "id": "parking/line-2-11",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-2-11"
+        },
+        {
+          "id": "parking/line-2-12",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-2-12"
+        },
+        {
+          "id": "parking/line-2-13",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-2-13"
+        },
+        {
+          "id": "parking/line-2-14",
+          "pixel": [
+            162,
+            175,
+            161,
+            255
+          ],
+          "hit": "parking/line-2-14"
+        },
+        {
+          "id": "parking/line-2-15",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-2-15"
+        },
+        {
+          "id": "parking/line-2-16",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-2-16"
+        },
+        {
+          "id": "parking/line-2-17",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-2-17"
+        },
+        {
+          "id": "parking/line-2-18",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-2-18"
+        },
+        {
+          "id": "parking/line-2-19",
+          "pixel": [
+            162,
+            175,
+            161,
+            255
+          ],
+          "hit": "parking/line-2-19"
+        },
+        {
+          "id": "parking/line-2-20",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-2-20"
+        },
+        {
+          "id": "parking/line-3-0",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-3-0"
+        },
+        {
+          "id": "parking/line-3-1",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-3-1"
+        },
+        {
+          "id": "parking/line-3-2",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-3-2"
+        },
+        {
+          "id": "parking/line-3-3",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-3-3"
+        },
+        {
+          "id": "parking/line-3-4",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-3-4"
+        },
+        {
+          "id": "parking/line-3-5",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-3-5"
+        },
+        {
+          "id": "parking/line-3-6",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-3-6"
+        },
+        {
+          "id": "parking/line-3-7",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-3-7"
+        },
+        {
+          "id": "parking/line-3-8",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-3-8"
+        },
+        {
+          "id": "parking/line-3-9",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-3-9"
+        },
+        {
+          "id": "parking/line-3-10",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-3-10"
+        },
+        {
+          "id": "parking/line-3-11",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-3-11"
+        },
+        {
+          "id": "parking/line-3-12",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-3-12"
+        },
+        {
+          "id": "parking/line-3-13",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-3-13"
+        },
+        {
+          "id": "parking/line-3-14",
+          "pixel": [
+            162,
+            175,
+            161,
+            255
+          ],
+          "hit": "parking/line-3-14"
+        },
+        {
+          "id": "parking/line-3-15",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-3-15"
+        },
+        {
+          "id": "parking/line-3-16",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-3-16"
+        },
+        {
+          "id": "parking/line-3-17",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-3-17"
+        },
+        {
+          "id": "parking/line-3-18",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-3-18"
+        },
+        {
+          "id": "parking/line-3-19",
+          "pixel": [
+            162,
+            175,
+            161,
+            255
+          ],
+          "hit": "parking/line-3-19"
+        },
+        {
+          "id": "parking/line-3-20",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-3-20"
+        }
+      ],
+      "metrics": {
+        "preparation": {
+          "workerAlive": true,
+          "clients": 1,
+          "registeredSources": 1,
+          "registeredBytes": 22970652,
+          "leases": 1,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 1,
+          "viewRequests": 3,
+          "transferredBytes": 22970652
+        },
+        "current": {
+          "geometryUploads": 1,
+          "geometryBytes": 12797136,
+          "draws": 4,
+          "buffers": 3,
+          "programs": 2,
+          "textures": 3,
+          "textureBytes": 5273440,
+          "instanceBytes": 68,
+          "instanceUploads": 2,
+          "statusUploads": 1,
+          "paletteUploads": 1,
+          "evictions": 0,
+          "peakRequiredBytes": 12811764,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null,
+          "liveTexturesAfterDisposal": null,
+          "plan": {
+            "programs": 1,
+            "textures": 1,
+            "framebuffers": 2,
+            "renderbuffers": 2,
+            "bytes": 47329920,
+            "textureBytes": 5258880,
+            "allocations": 1,
+            "composites": 2,
+            "liveTextures": null,
+            "livePrograms": null,
+            "liveFramebuffers": null,
+            "liveRenderbuffers": null
+          }
+        },
+        "disposals": [
+          {
+            "geometryUploads": 1,
+            "geometryBytes": 0,
+            "draws": 12,
+            "buffers": 0,
+            "programs": 0,
+            "textures": 0,
+            "textureBytes": 0,
+            "instanceBytes": 0,
+            "instanceUploads": 6,
+            "statusUploads": 1,
+            "paletteUploads": 1,
+            "evictions": 0,
+            "peakRequiredBytes": 12811764,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0,
+            "liveTexturesAfterDisposal": 0,
+            "plan": {
+              "programs": 0,
+              "textures": 0,
+              "framebuffers": 0,
+              "renderbuffers": 0,
+              "bytes": 0,
+              "textureBytes": 0,
+              "allocations": 1,
+              "composites": 6,
+              "liveTextures": 0,
+              "livePrograms": 0,
+              "liveFramebuffers": 0,
+              "liveRenderbuffers": 0
+            }
+          },
+          {
+            "geometryUploads": 1,
+            "geometryBytes": 0,
+            "draws": 6,
+            "buffers": 0,
+            "programs": 0,
+            "textures": 0,
+            "textureBytes": 0,
+            "instanceBytes": 0,
+            "instanceUploads": 3,
+            "statusUploads": 1,
+            "paletteUploads": 1,
+            "evictions": 0,
+            "peakRequiredBytes": 13429444,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0,
+            "liveTexturesAfterDisposal": 0,
+            "plan": null
+          }
+        ],
+        "retainedScenes": 1,
+        "loadingScenes": 0
+      },
+      "pose": {
+        "center": [
+          11.4725966844818,
+          59.07760592568923
+        ],
+        "pitch": 0,
+        "bearing": 0,
+        "zoom": 19.688723878969128,
+        "revision": 17,
+        "elevation": 0
+      },
+      "glError": 0
+    },
+    {
+      "host": "map",
+      "mode": "3d",
+      "theme": "dusk",
+      "passed": true,
+      "painted": 84,
+      "correct": 84,
+      "bright": 52,
+      "samples": [
+        {
+          "id": "parking/line-0-0",
+          "pixel": [
+            158,
+            170,
+            156,
+            255
+          ],
+          "hit": "parking/line-0-0"
+        },
+        {
+          "id": "parking/line-0-1",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-0-1"
+        },
+        {
+          "id": "parking/line-0-2",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-0-2"
+        },
+        {
+          "id": "parking/line-0-3",
+          "pixel": [
+            125,
+            136,
+            126,
+            255
+          ],
+          "hit": "parking/line-0-3"
+        },
+        {
+          "id": "parking/line-0-4",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-0-4"
+        },
+        {
+          "id": "parking/line-0-5",
+          "pixel": [
+            125,
+            136,
+            126,
+            255
+          ],
+          "hit": "parking/line-0-5"
+        },
+        {
+          "id": "parking/line-0-6",
+          "pixel": [
+            136,
+            147,
+            135,
+            255
+          ],
+          "hit": "parking/line-0-6"
+        },
+        {
+          "id": "parking/line-0-7",
+          "pixel": [
+            136,
+            147,
+            135,
+            255
+          ],
+          "hit": "parking/line-0-7"
+        },
+        {
+          "id": "parking/line-0-8",
+          "pixel": [
+            169,
+            182,
+            167,
+            255
+          ],
+          "hit": "parking/line-0-8"
+        },
+        {
+          "id": "parking/line-0-9",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-0-9"
+        },
+        {
+          "id": "parking/line-0-10",
+          "pixel": [
+            158,
+            170,
+            156,
+            255
+          ],
+          "hit": "parking/line-0-10"
+        },
+        {
+          "id": "parking/line-0-11",
+          "pixel": [
+            125,
+            136,
+            126,
+            255
+          ],
+          "hit": "parking/line-0-11"
+        },
+        {
+          "id": "parking/line-0-12",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-0-12"
+        },
+        {
+          "id": "parking/line-0-13",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-0-13"
+        },
+        {
+          "id": "parking/line-0-14",
+          "pixel": [
+            158,
+            170,
+            156,
+            255
+          ],
+          "hit": "parking/line-0-14"
+        },
+        {
+          "id": "parking/line-0-15",
+          "pixel": [
+            136,
+            147,
+            135,
+            255
+          ],
+          "hit": "parking/line-0-15"
+        },
+        {
+          "id": "parking/line-0-16",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-0-16"
+        },
+        {
+          "id": "parking/line-0-17",
+          "pixel": [
+            136,
+            147,
+            135,
+            255
+          ],
+          "hit": "parking/line-0-17"
+        },
+        {
+          "id": "parking/line-0-18",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-0-18"
+        },
+        {
+          "id": "parking/line-0-19",
+          "pixel": [
+            169,
+            182,
+            167,
+            255
+          ],
+          "hit": "parking/line-0-19"
+        },
+        {
+          "id": "parking/line-0-20",
+          "pixel": [
+            169,
+            182,
+            167,
+            255
+          ],
+          "hit": "parking/line-0-20"
+        },
+        {
+          "id": "parking/line-1-0",
+          "pixel": [
+            158,
+            170,
+            156,
+            255
+          ],
+          "hit": "parking/line-1-0"
+        },
+        {
+          "id": "parking/line-1-1",
+          "pixel": [
+            114,
+            124,
+            115,
+            255
+          ],
+          "hit": "parking/line-1-1"
+        },
+        {
+          "id": "parking/line-1-2",
+          "pixel": [
+            158,
+            170,
+            156,
+            255
+          ],
+          "hit": "parking/line-1-2"
+        },
+        {
+          "id": "parking/line-1-3",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-1-3"
+        },
+        {
+          "id": "parking/line-1-4",
+          "pixel": [
+            114,
+            124,
+            115,
+            255
+          ],
+          "hit": "parking/line-1-4"
+        },
+        {
+          "id": "parking/line-1-5",
+          "pixel": [
+            136,
+            147,
+            135,
+            255
+          ],
+          "hit": "parking/line-1-5"
+        },
+        {
+          "id": "parking/line-1-6",
+          "pixel": [
+            125,
+            136,
+            126,
+            255
+          ],
+          "hit": "parking/line-1-6"
+        },
+        {
+          "id": "parking/line-1-7",
+          "pixel": [
+            169,
+            182,
+            167,
+            255
+          ],
+          "hit": "parking/line-1-7"
+        },
+        {
+          "id": "parking/line-1-8",
+          "pixel": [
+            169,
+            182,
+            167,
+            255
+          ],
+          "hit": "parking/line-1-8"
+        },
+        {
+          "id": "parking/line-1-9",
+          "pixel": [
+            158,
+            170,
+            156,
+            255
+          ],
+          "hit": "parking/line-1-9"
+        },
+        {
+          "id": "parking/line-1-10",
+          "pixel": [
+            169,
+            182,
+            167,
+            255
+          ],
+          "hit": "parking/line-1-10"
+        },
+        {
+          "id": "parking/line-1-11",
+          "pixel": [
+            169,
+            182,
+            167,
+            255
+          ],
+          "hit": "parking/line-1-11"
+        },
+        {
+          "id": "parking/line-1-12",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-1-12"
+        },
+        {
+          "id": "parking/line-1-13",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-1-13"
+        },
+        {
+          "id": "parking/line-1-14",
+          "pixel": [
+            125,
+            136,
+            126,
+            255
+          ],
+          "hit": "parking/line-1-14"
+        },
+        {
+          "id": "parking/line-1-15",
+          "pixel": [
+            136,
+            147,
+            135,
+            255
+          ],
+          "hit": "parking/line-1-15"
+        },
+        {
+          "id": "parking/line-1-16",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-1-16"
+        },
+        {
+          "id": "parking/line-1-17",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-1-17"
+        },
+        {
+          "id": "parking/line-1-18",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-1-18"
+        },
+        {
+          "id": "parking/line-1-19",
+          "pixel": [
+            169,
+            182,
+            167,
+            255
+          ],
+          "hit": "parking/line-1-19"
+        },
+        {
+          "id": "parking/line-1-20",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-1-20"
+        },
+        {
+          "id": "parking/line-2-0",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-2-0"
+        },
+        {
+          "id": "parking/line-2-1",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-2-1"
+        },
+        {
+          "id": "parking/line-2-2",
+          "pixel": [
+            103,
+            113,
+            105,
+            255
+          ],
+          "hit": "parking/line-2-2"
+        },
+        {
+          "id": "parking/line-2-3",
+          "pixel": [
+            136,
+            147,
+            135,
+            255
+          ],
+          "hit": "parking/line-2-3"
+        },
+        {
+          "id": "parking/line-2-4",
+          "pixel": [
+            103,
+            113,
+            105,
+            255
+          ],
+          "hit": "parking/line-2-4"
+        },
+        {
+          "id": "parking/line-2-5",
+          "pixel": [
+            125,
+            136,
+            126,
+            255
+          ],
+          "hit": "parking/line-2-5"
+        },
+        {
+          "id": "parking/line-2-6",
+          "pixel": [
+            136,
+            147,
+            135,
+            255
+          ],
+          "hit": "parking/line-2-6"
+        },
+        {
+          "id": "parking/line-2-7",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-2-7"
+        },
+        {
+          "id": "parking/line-2-8",
+          "pixel": [
+            114,
+            124,
+            115,
+            255
+          ],
+          "hit": "parking/line-2-8"
+        },
+        {
+          "id": "parking/line-2-9",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-2-9"
+        },
+        {
+          "id": "parking/line-2-10",
+          "pixel": [
+            158,
+            170,
+            156,
+            255
+          ],
+          "hit": "parking/line-2-10"
+        },
+        {
+          "id": "parking/line-2-11",
+          "pixel": [
+            125,
+            136,
+            126,
+            255
+          ],
+          "hit": "parking/line-2-11"
+        },
+        {
+          "id": "parking/line-2-12",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-2-12"
+        },
+        {
+          "id": "parking/line-2-13",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-2-13"
+        },
+        {
+          "id": "parking/line-2-14",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-2-14"
+        },
+        {
+          "id": "parking/line-2-15",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-2-15"
+        },
+        {
+          "id": "parking/line-2-16",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-2-16"
+        },
+        {
+          "id": "parking/line-2-17",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-2-17"
+        },
+        {
+          "id": "parking/line-2-18",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-2-18"
+        },
+        {
+          "id": "parking/line-2-19",
+          "pixel": [
+            103,
+            113,
+            105,
+            255
+          ],
+          "hit": "parking/line-2-19"
+        },
+        {
+          "id": "parking/line-2-20",
+          "pixel": [
+            169,
+            182,
+            167,
+            255
+          ],
+          "hit": "parking/line-2-20"
+        },
+        {
+          "id": "parking/line-3-0",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-3-0"
+        },
+        {
+          "id": "parking/line-3-1",
+          "pixel": [
+            136,
+            147,
+            135,
+            255
+          ],
+          "hit": "parking/line-3-1"
+        },
+        {
+          "id": "parking/line-3-2",
+          "pixel": [
+            136,
+            147,
+            135,
+            255
+          ],
+          "hit": "parking/line-3-2"
+        },
+        {
+          "id": "parking/line-3-3",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-3-3"
+        },
+        {
+          "id": "parking/line-3-4",
+          "pixel": [
+            158,
+            170,
+            156,
+            255
+          ],
+          "hit": "parking/line-3-4"
+        },
+        {
+          "id": "parking/line-3-5",
+          "pixel": [
+            125,
+            136,
+            126,
+            255
+          ],
+          "hit": "parking/line-3-5"
+        },
+        {
+          "id": "parking/line-3-6",
+          "pixel": [
+            125,
+            136,
+            126,
+            255
+          ],
+          "hit": "parking/line-3-6"
+        },
+        {
+          "id": "parking/line-3-7",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-3-7"
+        },
+        {
+          "id": "parking/line-3-8",
+          "pixel": [
+            158,
+            170,
+            156,
+            255
+          ],
+          "hit": "parking/line-3-8"
+        },
+        {
+          "id": "parking/line-3-9",
+          "pixel": [
+            125,
+            136,
+            126,
+            255
+          ],
+          "hit": "parking/line-3-9"
+        },
+        {
+          "id": "parking/line-3-10",
+          "pixel": [
+            125,
+            136,
+            126,
+            255
+          ],
+          "hit": "parking/line-3-10"
+        },
+        {
+          "id": "parking/line-3-11",
+          "pixel": [
+            103,
+            113,
+            105,
+            255
+          ],
+          "hit": "parking/line-3-11"
+        },
+        {
+          "id": "parking/line-3-12",
+          "pixel": [
+            103,
+            113,
+            105,
+            255
+          ],
+          "hit": "parking/line-3-12"
+        },
+        {
+          "id": "parking/line-3-13",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-3-13"
+        },
+        {
+          "id": "parking/line-3-14",
+          "pixel": [
+            125,
+            136,
+            126,
+            255
+          ],
+          "hit": "parking/line-3-14"
+        },
+        {
+          "id": "parking/line-3-15",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-3-15"
+        },
+        {
+          "id": "parking/line-3-16",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-3-16"
+        },
+        {
+          "id": "parking/line-3-17",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-3-17"
+        },
+        {
+          "id": "parking/line-3-18",
+          "pixel": [
+            125,
+            136,
+            126,
+            255
+          ],
+          "hit": "parking/line-3-18"
+        },
+        {
+          "id": "parking/line-3-19",
+          "pixel": [
+            125,
+            136,
+            126,
+            255
+          ],
+          "hit": "parking/line-3-19"
+        },
+        {
+          "id": "parking/line-3-20",
+          "pixel": [
+            169,
+            182,
+            167,
+            255
+          ],
+          "hit": "parking/line-3-20"
+        }
+      ],
+      "metrics": {
+        "preparation": {
+          "workerAlive": true,
+          "clients": 1,
+          "registeredSources": 1,
+          "registeredBytes": 22970652,
+          "leases": 1,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 1,
+          "viewRequests": 3,
+          "transferredBytes": 22970652
+        },
+        "current": {
+          "geometryUploads": 1,
+          "geometryBytes": 13413072,
+          "draws": 4,
+          "buffers": 3,
+          "programs": 1,
+          "textures": 2,
+          "textureBytes": 16304,
+          "instanceBytes": 68,
+          "instanceUploads": 2,
+          "statusUploads": 1,
+          "paletteUploads": 1,
+          "evictions": 0,
+          "peakRequiredBytes": 13429444,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null,
+          "liveTexturesAfterDisposal": null,
+          "plan": null
+        },
+        "disposals": [
+          {
+            "geometryUploads": 1,
+            "geometryBytes": 0,
+            "draws": 12,
+            "buffers": 0,
+            "programs": 0,
+            "textures": 0,
+            "textureBytes": 0,
+            "instanceBytes": 0,
+            "instanceUploads": 6,
+            "statusUploads": 1,
+            "paletteUploads": 1,
+            "evictions": 0,
+            "peakRequiredBytes": 12811764,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0,
+            "liveTexturesAfterDisposal": 0,
+            "plan": {
+              "programs": 0,
+              "textures": 0,
+              "framebuffers": 0,
+              "renderbuffers": 0,
+              "bytes": 0,
+              "textureBytes": 0,
+              "allocations": 1,
+              "composites": 6,
+              "liveTextures": 0,
+              "livePrograms": 0,
+              "liveFramebuffers": 0,
+              "liveRenderbuffers": 0
+            }
+          },
+          {
+            "geometryUploads": 1,
+            "geometryBytes": 0,
+            "draws": 6,
+            "buffers": 0,
+            "programs": 0,
+            "textures": 0,
+            "textureBytes": 0,
+            "instanceBytes": 0,
+            "instanceUploads": 3,
+            "statusUploads": 1,
+            "paletteUploads": 1,
+            "evictions": 0,
+            "peakRequiredBytes": 13429444,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0,
+            "liveTexturesAfterDisposal": 0,
+            "plan": null
+          },
+          {
+            "geometryUploads": 1,
+            "geometryBytes": 0,
+            "draws": 10,
+            "buffers": 0,
+            "programs": 0,
+            "textures": 0,
+            "textureBytes": 0,
+            "instanceBytes": 0,
+            "instanceUploads": 5,
+            "statusUploads": 1,
+            "paletteUploads": 1,
+            "evictions": 0,
+            "peakRequiredBytes": 12811764,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0,
+            "liveTexturesAfterDisposal": 0,
+            "plan": {
+              "programs": 0,
+              "textures": 0,
+              "framebuffers": 0,
+              "renderbuffers": 0,
+              "bytes": 0,
+              "textureBytes": 0,
+              "allocations": 1,
+              "composites": 5,
+              "liveTextures": 0,
+              "livePrograms": 0,
+              "liveFramebuffers": 0,
+              "liveRenderbuffers": 0
+            }
+          }
+        ],
+        "retainedScenes": 1,
+        "loadingScenes": 0
+      },
+      "pose": {
+        "center": [
+          11.4725966844818,
+          59.07760592568923
+        ],
+        "pitch": 50,
+        "bearing": -25,
+        "zoom": 18.832491883552652,
+        "revision": 23,
+        "elevation": 0
+      },
+      "glError": 0
+    },
+    {
+      "host": "canvas",
+      "mode": "2d",
+      "theme": "day",
+      "passed": true,
+      "painted": 84,
+      "correct": 84,
+      "bright": 84,
+      "samples": [
+        {
+          "id": "parking/line-0-0",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-0-0"
+        },
+        {
+          "id": "parking/line-0-1",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-0-1"
+        },
+        {
+          "id": "parking/line-0-2",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-0-2"
+        },
+        {
+          "id": "parking/line-0-3",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-0-3"
+        },
+        {
+          "id": "parking/line-0-4",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-0-4"
+        },
+        {
+          "id": "parking/line-0-5",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-0-5"
+        },
+        {
+          "id": "parking/line-0-6",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-0-6"
+        },
+        {
+          "id": "parking/line-0-7",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-0-7"
+        },
+        {
+          "id": "parking/line-0-8",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-0-8"
+        },
+        {
+          "id": "parking/line-0-9",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-0-9"
+        },
+        {
+          "id": "parking/line-0-10",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-0-10"
+        },
+        {
+          "id": "parking/line-0-11",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-0-11"
+        },
+        {
+          "id": "parking/line-0-12",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-0-12"
+        },
+        {
+          "id": "parking/line-0-13",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-0-13"
+        },
+        {
+          "id": "parking/line-0-14",
+          "pixel": [
+            218,
+            222,
+            211,
+            255
+          ],
+          "hit": "parking/line-0-14"
+        },
+        {
+          "id": "parking/line-0-15",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-0-15"
+        },
+        {
+          "id": "parking/line-0-16",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-0-16"
+        },
+        {
+          "id": "parking/line-0-17",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-0-17"
+        },
+        {
+          "id": "parking/line-0-18",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-0-18"
+        },
+        {
+          "id": "parking/line-0-19",
+          "pixel": [
+            218,
+            222,
+            211,
+            255
+          ],
+          "hit": "parking/line-0-19"
+        },
+        {
+          "id": "parking/line-0-20",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-0-20"
+        },
+        {
+          "id": "parking/line-1-0",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-1-0"
+        },
+        {
+          "id": "parking/line-1-1",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-1-1"
+        },
+        {
+          "id": "parking/line-1-2",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-1-2"
+        },
+        {
+          "id": "parking/line-1-3",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-1-3"
+        },
+        {
+          "id": "parking/line-1-4",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-1-4"
+        },
+        {
+          "id": "parking/line-1-5",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-1-5"
+        },
+        {
+          "id": "parking/line-1-6",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-1-6"
+        },
+        {
+          "id": "parking/line-1-7",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-1-7"
+        },
+        {
+          "id": "parking/line-1-8",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-1-8"
+        },
+        {
+          "id": "parking/line-1-9",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-1-9"
+        },
+        {
+          "id": "parking/line-1-10",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-1-10"
+        },
+        {
+          "id": "parking/line-1-11",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-1-11"
+        },
+        {
+          "id": "parking/line-1-12",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-1-12"
+        },
+        {
+          "id": "parking/line-1-13",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-1-13"
+        },
+        {
+          "id": "parking/line-1-14",
+          "pixel": [
+            218,
+            222,
+            211,
+            255
+          ],
+          "hit": "parking/line-1-14"
+        },
+        {
+          "id": "parking/line-1-15",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-1-15"
+        },
+        {
+          "id": "parking/line-1-16",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-1-16"
+        },
+        {
+          "id": "parking/line-1-17",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-1-17"
+        },
+        {
+          "id": "parking/line-1-18",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-1-18"
+        },
+        {
+          "id": "parking/line-1-19",
+          "pixel": [
+            218,
+            222,
+            211,
+            255
+          ],
+          "hit": "parking/line-1-19"
+        },
+        {
+          "id": "parking/line-1-20",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-1-20"
+        },
+        {
+          "id": "parking/line-2-0",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-2-0"
+        },
+        {
+          "id": "parking/line-2-1",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-2-1"
+        },
+        {
+          "id": "parking/line-2-2",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-2-2"
+        },
+        {
+          "id": "parking/line-2-3",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-2-3"
+        },
+        {
+          "id": "parking/line-2-4",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-2-4"
+        },
+        {
+          "id": "parking/line-2-5",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-2-5"
+        },
+        {
+          "id": "parking/line-2-6",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-2-6"
+        },
+        {
+          "id": "parking/line-2-7",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-2-7"
+        },
+        {
+          "id": "parking/line-2-8",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-2-8"
+        },
+        {
+          "id": "parking/line-2-9",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-2-9"
+        },
+        {
+          "id": "parking/line-2-10",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-2-10"
+        },
+        {
+          "id": "parking/line-2-11",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-2-11"
+        },
+        {
+          "id": "parking/line-2-12",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-2-12"
+        },
+        {
+          "id": "parking/line-2-13",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-2-13"
+        },
+        {
+          "id": "parking/line-2-14",
+          "pixel": [
+            218,
+            222,
+            211,
+            255
+          ],
+          "hit": "parking/line-2-14"
+        },
+        {
+          "id": "parking/line-2-15",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-2-15"
+        },
+        {
+          "id": "parking/line-2-16",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-2-16"
+        },
+        {
+          "id": "parking/line-2-17",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-2-17"
+        },
+        {
+          "id": "parking/line-2-18",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-2-18"
+        },
+        {
+          "id": "parking/line-2-19",
+          "pixel": [
+            218,
+            222,
+            211,
+            255
+          ],
+          "hit": "parking/line-2-19"
+        },
+        {
+          "id": "parking/line-2-20",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-2-20"
+        },
+        {
+          "id": "parking/line-3-0",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-3-0"
+        },
+        {
+          "id": "parking/line-3-1",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-3-1"
+        },
+        {
+          "id": "parking/line-3-2",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-3-2"
+        },
+        {
+          "id": "parking/line-3-3",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-3-3"
+        },
+        {
+          "id": "parking/line-3-4",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-3-4"
+        },
+        {
+          "id": "parking/line-3-5",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-3-5"
+        },
+        {
+          "id": "parking/line-3-6",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-3-6"
+        },
+        {
+          "id": "parking/line-3-7",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-3-7"
+        },
+        {
+          "id": "parking/line-3-8",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-3-8"
+        },
+        {
+          "id": "parking/line-3-9",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-3-9"
+        },
+        {
+          "id": "parking/line-3-10",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-3-10"
+        },
+        {
+          "id": "parking/line-3-11",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-3-11"
+        },
+        {
+          "id": "parking/line-3-12",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-3-12"
+        },
+        {
+          "id": "parking/line-3-13",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-3-13"
+        },
+        {
+          "id": "parking/line-3-14",
+          "pixel": [
+            218,
+            222,
+            211,
+            255
+          ],
+          "hit": "parking/line-3-14"
+        },
+        {
+          "id": "parking/line-3-15",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-3-15"
+        },
+        {
+          "id": "parking/line-3-16",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-3-16"
+        },
+        {
+          "id": "parking/line-3-17",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-3-17"
+        },
+        {
+          "id": "parking/line-3-18",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-3-18"
+        },
+        {
+          "id": "parking/line-3-19",
+          "pixel": [
+            218,
+            222,
+            211,
+            255
+          ],
+          "hit": "parking/line-3-19"
+        },
+        {
+          "id": "parking/line-3-20",
+          "pixel": [
+            235,
+            238,
+            226,
+            255
+          ],
+          "hit": "parking/line-3-20"
+        }
+      ],
+      "metrics": {
+        "preparation": {
+          "workerAlive": true,
+          "clients": 2,
+          "registeredSources": 2,
+          "registeredBytes": 22976172,
+          "leases": 4,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 2,
+          "viewRequests": 5,
+          "transferredBytes": 22976172
+        },
+        "current": {
+          "geometryUploads": 1,
+          "geometryBytes": 12797136,
+          "draws": 2,
+          "buffers": 3,
+          "programs": 2,
+          "textures": 3,
+          "textureBytes": 5273440,
+          "instanceBytes": 68,
+          "instanceUploads": 1,
+          "statusUploads": 1,
+          "paletteUploads": 1,
+          "evictions": 0,
+          "peakRequiredBytes": 12811764,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null,
+          "liveTexturesAfterDisposal": null,
+          "plan": {
+            "programs": 1,
+            "textures": 1,
+            "framebuffers": 2,
+            "renderbuffers": 2,
+            "bytes": 47329920,
+            "textureBytes": 5258880,
+            "allocations": 1,
+            "composites": 1,
+            "liveTextures": null,
+            "livePrograms": null,
+            "liveFramebuffers": null,
+            "liveRenderbuffers": null
+          }
+        },
+        "disposals": [],
+        "retainedScenes": 1,
+        "loadingScenes": 0
+      },
+      "pose": {
+        "center": [
+          11.472596684481772,
+          59.07760592568923
+        ],
+        "pitch": 0,
+        "bearing": 0,
+        "zoom": 19.688723878912995,
+        "revision": 8,
+        "elevation": 0
+      },
+      "glError": 0
+    },
+    {
+      "host": "canvas",
+      "mode": "3d",
+      "theme": "day",
+      "passed": true,
+      "painted": 84,
+      "correct": 84,
+      "bright": 11,
+      "samples": [
+        {
+          "id": "parking/line-0-0",
+          "pixel": [
+            174,
+            178,
+            170,
+            255
+          ],
+          "hit": "parking/line-0-0"
+        },
+        {
+          "id": "parking/line-0-1",
+          "pixel": [
+            203,
+            205,
+            195,
+            255
+          ],
+          "hit": "parking/line-0-1"
+        },
+        {
+          "id": "parking/line-0-2",
+          "pixel": [
+            187,
+            190,
+            181,
+            255
+          ],
+          "hit": "parking/line-0-2"
+        },
+        {
+          "id": "parking/line-0-3",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-0-3"
+        },
+        {
+          "id": "parking/line-0-4",
+          "pixel": [
+            187,
+            190,
+            181,
+            255
+          ],
+          "hit": "parking/line-0-4"
+        },
+        {
+          "id": "parking/line-0-5",
+          "pixel": [
+            182,
+            186,
+            178,
+            255
+          ],
+          "hit": "parking/line-0-5"
+        },
+        {
+          "id": "parking/line-0-6",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-0-6"
+        },
+        {
+          "id": "parking/line-0-7",
+          "pixel": [
+            183,
+            187,
+            178,
+            255
+          ],
+          "hit": "parking/line-0-7"
+        },
+        {
+          "id": "parking/line-0-8",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-0-8"
+        },
+        {
+          "id": "parking/line-0-9",
+          "pixel": [
+            199,
+            202,
+            191,
+            255
+          ],
+          "hit": "parking/line-0-9"
+        },
+        {
+          "id": "parking/line-0-10",
+          "pixel": [
+            183,
+            187,
+            178,
+            255
+          ],
+          "hit": "parking/line-0-10"
+        },
+        {
+          "id": "parking/line-0-11",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-0-11"
+        },
+        {
+          "id": "parking/line-0-12",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-0-12"
+        },
+        {
+          "id": "parking/line-0-13",
+          "pixel": [
+            213,
+            216,
+            205,
+            255
+          ],
+          "hit": "parking/line-0-13"
+        },
+        {
+          "id": "parking/line-0-14",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-0-14"
+        },
+        {
+          "id": "parking/line-0-15",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-0-15"
+        },
+        {
+          "id": "parking/line-0-16",
+          "pixel": [
+            199,
+            202,
+            191,
+            255
+          ],
+          "hit": "parking/line-0-16"
+        },
+        {
+          "id": "parking/line-0-17",
+          "pixel": [
+            213,
+            216,
+            205,
+            255
+          ],
+          "hit": "parking/line-0-17"
+        },
+        {
+          "id": "parking/line-0-18",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-0-18"
+        },
+        {
+          "id": "parking/line-0-19",
+          "pixel": [
+            213,
+            216,
+            205,
+            255
+          ],
+          "hit": "parking/line-0-19"
+        },
+        {
+          "id": "parking/line-0-20",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-0-20"
+        },
+        {
+          "id": "parking/line-1-0",
+          "pixel": [
+            177,
+            179,
+            170,
+            255
+          ],
+          "hit": "parking/line-1-0"
+        },
+        {
+          "id": "parking/line-1-1",
+          "pixel": [
+            199,
+            202,
+            191,
+            255
+          ],
+          "hit": "parking/line-1-1"
+        },
+        {
+          "id": "parking/line-1-2",
+          "pixel": [
+            182,
+            186,
+            177,
+            255
+          ],
+          "hit": "parking/line-1-2"
+        },
+        {
+          "id": "parking/line-1-3",
+          "pixel": [
+            182,
+            186,
+            178,
+            255
+          ],
+          "hit": "parking/line-1-3"
+        },
+        {
+          "id": "parking/line-1-4",
+          "pixel": [
+            182,
+            186,
+            177,
+            255
+          ],
+          "hit": "parking/line-1-4"
+        },
+        {
+          "id": "parking/line-1-5",
+          "pixel": [
+            199,
+            202,
+            191,
+            255
+          ],
+          "hit": "parking/line-1-5"
+        },
+        {
+          "id": "parking/line-1-6",
+          "pixel": [
+            213,
+            216,
+            205,
+            255
+          ],
+          "hit": "parking/line-1-6"
+        },
+        {
+          "id": "parking/line-1-7",
+          "pixel": [
+            199,
+            202,
+            191,
+            255
+          ],
+          "hit": "parking/line-1-7"
+        },
+        {
+          "id": "parking/line-1-8",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-1-8"
+        },
+        {
+          "id": "parking/line-1-9",
+          "pixel": [
+            169,
+            172,
+            164,
+            255
+          ],
+          "hit": "parking/line-1-9"
+        },
+        {
+          "id": "parking/line-1-10",
+          "pixel": [
+            182,
+            186,
+            178,
+            255
+          ],
+          "hit": "parking/line-1-10"
+        },
+        {
+          "id": "parking/line-1-11",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-1-11"
+        },
+        {
+          "id": "parking/line-1-12",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-1-12"
+        },
+        {
+          "id": "parking/line-1-13",
+          "pixel": [
+            182,
+            186,
+            177,
+            255
+          ],
+          "hit": "parking/line-1-13"
+        },
+        {
+          "id": "parking/line-1-14",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-1-14"
+        },
+        {
+          "id": "parking/line-1-15",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-1-15"
+        },
+        {
+          "id": "parking/line-1-16",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-1-16"
+        },
+        {
+          "id": "parking/line-1-17",
+          "pixel": [
+            182,
+            186,
+            177,
+            255
+          ],
+          "hit": "parking/line-1-17"
+        },
+        {
+          "id": "parking/line-1-18",
+          "pixel": [
+            213,
+            216,
+            205,
+            255
+          ],
+          "hit": "parking/line-1-18"
+        },
+        {
+          "id": "parking/line-1-19",
+          "pixel": [
+            213,
+            216,
+            205,
+            255
+          ],
+          "hit": "parking/line-1-19"
+        },
+        {
+          "id": "parking/line-1-20",
+          "pixel": [
+            213,
+            216,
+            205,
+            255
+          ],
+          "hit": "parking/line-1-20"
+        },
+        {
+          "id": "parking/line-2-0",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-2-0"
+        },
+        {
+          "id": "parking/line-2-1",
+          "pixel": [
+            182,
+            186,
+            178,
+            255
+          ],
+          "hit": "parking/line-2-1"
+        },
+        {
+          "id": "parking/line-2-2",
+          "pixel": [
+            199,
+            202,
+            191,
+            255
+          ],
+          "hit": "parking/line-2-2"
+        },
+        {
+          "id": "parking/line-2-3",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-2-3"
+        },
+        {
+          "id": "parking/line-2-4",
+          "pixel": [
+            167,
+            171,
+            164,
+            255
+          ],
+          "hit": "parking/line-2-4"
+        },
+        {
+          "id": "parking/line-2-5",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-2-5"
+        },
+        {
+          "id": "parking/line-2-6",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-2-6"
+        },
+        {
+          "id": "parking/line-2-7",
+          "pixel": [
+            167,
+            171,
+            164,
+            255
+          ],
+          "hit": "parking/line-2-7"
+        },
+        {
+          "id": "parking/line-2-8",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-2-8"
+        },
+        {
+          "id": "parking/line-2-9",
+          "pixel": [
+            182,
+            186,
+            178,
+            255
+          ],
+          "hit": "parking/line-2-9"
+        },
+        {
+          "id": "parking/line-2-10",
+          "pixel": [
+            183,
+            187,
+            178,
+            255
+          ],
+          "hit": "parking/line-2-10"
+        },
+        {
+          "id": "parking/line-2-11",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-2-11"
+        },
+        {
+          "id": "parking/line-2-12",
+          "pixel": [
+            167,
+            171,
+            164,
+            255
+          ],
+          "hit": "parking/line-2-12"
+        },
+        {
+          "id": "parking/line-2-13",
+          "pixel": [
+            199,
+            202,
+            191,
+            255
+          ],
+          "hit": "parking/line-2-13"
+        },
+        {
+          "id": "parking/line-2-14",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-2-14"
+        },
+        {
+          "id": "parking/line-2-15",
+          "pixel": [
+            213,
+            216,
+            205,
+            255
+          ],
+          "hit": "parking/line-2-15"
+        },
+        {
+          "id": "parking/line-2-16",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-2-16"
+        },
+        {
+          "id": "parking/line-2-17",
+          "pixel": [
+            213,
+            216,
+            205,
+            255
+          ],
+          "hit": "parking/line-2-17"
+        },
+        {
+          "id": "parking/line-2-18",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-2-18"
+        },
+        {
+          "id": "parking/line-2-19",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-2-19"
+        },
+        {
+          "id": "parking/line-2-20",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-2-20"
+        },
+        {
+          "id": "parking/line-3-0",
+          "pixel": [
+            167,
+            171,
+            164,
+            255
+          ],
+          "hit": "parking/line-3-0"
+        },
+        {
+          "id": "parking/line-3-1",
+          "pixel": [
+            189,
+            193,
+            183,
+            255
+          ],
+          "hit": "parking/line-3-1"
+        },
+        {
+          "id": "parking/line-3-2",
+          "pixel": [
+            182,
+            186,
+            178,
+            255
+          ],
+          "hit": "parking/line-3-2"
+        },
+        {
+          "id": "parking/line-3-3",
+          "pixel": [
+            182,
+            186,
+            177,
+            255
+          ],
+          "hit": "parking/line-3-3"
+        },
+        {
+          "id": "parking/line-3-4",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-3-4"
+        },
+        {
+          "id": "parking/line-3-5",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-3-5"
+        },
+        {
+          "id": "parking/line-3-6",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-3-6"
+        },
+        {
+          "id": "parking/line-3-7",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-3-7"
+        },
+        {
+          "id": "parking/line-3-8",
+          "pixel": [
+            182,
+            186,
+            178,
+            255
+          ],
+          "hit": "parking/line-3-8"
+        },
+        {
+          "id": "parking/line-3-9",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-3-9"
+        },
+        {
+          "id": "parking/line-3-10",
+          "pixel": [
+            182,
+            186,
+            177,
+            255
+          ],
+          "hit": "parking/line-3-10"
+        },
+        {
+          "id": "parking/line-3-11",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-3-11"
+        },
+        {
+          "id": "parking/line-3-12",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-3-12"
+        },
+        {
+          "id": "parking/line-3-13",
+          "pixel": [
+            182,
+            186,
+            177,
+            255
+          ],
+          "hit": "parking/line-3-13"
+        },
+        {
+          "id": "parking/line-3-14",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-3-14"
+        },
+        {
+          "id": "parking/line-3-15",
+          "pixel": [
+            182,
+            186,
+            177,
+            255
+          ],
+          "hit": "parking/line-3-15"
+        },
+        {
+          "id": "parking/line-3-16",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-3-16"
+        },
+        {
+          "id": "parking/line-3-17",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-3-17"
+        },
+        {
+          "id": "parking/line-3-18",
+          "pixel": [
+            213,
+            216,
+            205,
+            255
+          ],
+          "hit": "parking/line-3-18"
+        },
+        {
+          "id": "parking/line-3-19",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-3-19"
+        },
+        {
+          "id": "parking/line-3-20",
+          "pixel": [
+            197,
+            201,
+            191,
+            255
+          ],
+          "hit": "parking/line-3-20"
+        }
+      ],
+      "metrics": {
+        "preparation": {
+          "workerAlive": true,
+          "clients": 2,
+          "registeredSources": 2,
+          "registeredBytes": 22976172,
+          "leases": 4,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 2,
+          "viewRequests": 5,
+          "transferredBytes": 22976172
+        },
+        "current": {
+          "geometryUploads": 1,
+          "geometryBytes": 13413072,
+          "draws": 4,
+          "buffers": 3,
+          "programs": 1,
+          "textures": 2,
+          "textureBytes": 16304,
+          "instanceBytes": 68,
+          "instanceUploads": 2,
+          "statusUploads": 1,
+          "paletteUploads": 1,
+          "evictions": 0,
+          "peakRequiredBytes": 13429444,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null,
+          "liveTexturesAfterDisposal": null,
+          "plan": null
+        },
+        "disposals": [
+          {
+            "geometryUploads": 1,
+            "geometryBytes": 0,
+            "draws": 2,
+            "buffers": 0,
+            "programs": 0,
+            "textures": 0,
+            "textureBytes": 0,
+            "instanceBytes": 0,
+            "instanceUploads": 1,
+            "statusUploads": 1,
+            "paletteUploads": 1,
+            "evictions": 0,
+            "peakRequiredBytes": 12811764,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0,
+            "liveTexturesAfterDisposal": 0,
+            "plan": {
+              "programs": 0,
+              "textures": 0,
+              "framebuffers": 0,
+              "renderbuffers": 0,
+              "bytes": 0,
+              "textureBytes": 0,
+              "allocations": 1,
+              "composites": 1,
+              "liveTextures": 0,
+              "livePrograms": 0,
+              "liveFramebuffers": 0,
+              "liveRenderbuffers": 0
+            }
+          }
+        ],
+        "retainedScenes": 1,
+        "loadingScenes": 0
+      },
+      "pose": {
+        "center": [
+          11.4725966844818,
+          59.07760592568923
+        ],
+        "pitch": 50,
+        "bearing": -25,
+        "zoom": 18.79998994963775,
+        "revision": 16,
+        "elevation": -0.0400027904252268
+      },
+      "glError": 0
+    },
+    {
+      "host": "canvas",
+      "mode": "2d",
+      "theme": "dusk",
+      "passed": true,
+      "painted": 84,
+      "correct": 84,
+      "bright": 84,
+      "samples": [
+        {
+          "id": "parking/line-0-0",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-0-0"
+        },
+        {
+          "id": "parking/line-0-1",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-0-1"
+        },
+        {
+          "id": "parking/line-0-2",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-0-2"
+        },
+        {
+          "id": "parking/line-0-3",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-0-3"
+        },
+        {
+          "id": "parking/line-0-4",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-0-4"
+        },
+        {
+          "id": "parking/line-0-5",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-0-5"
+        },
+        {
+          "id": "parking/line-0-6",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-0-6"
+        },
+        {
+          "id": "parking/line-0-7",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-0-7"
+        },
+        {
+          "id": "parking/line-0-8",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-0-8"
+        },
+        {
+          "id": "parking/line-0-9",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-0-9"
+        },
+        {
+          "id": "parking/line-0-10",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-0-10"
+        },
+        {
+          "id": "parking/line-0-11",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-0-11"
+        },
+        {
+          "id": "parking/line-0-12",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-0-12"
+        },
+        {
+          "id": "parking/line-0-13",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-0-13"
+        },
+        {
+          "id": "parking/line-0-14",
+          "pixel": [
+            162,
+            175,
+            161,
+            255
+          ],
+          "hit": "parking/line-0-14"
+        },
+        {
+          "id": "parking/line-0-15",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-0-15"
+        },
+        {
+          "id": "parking/line-0-16",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-0-16"
+        },
+        {
+          "id": "parking/line-0-17",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-0-17"
+        },
+        {
+          "id": "parking/line-0-18",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-0-18"
+        },
+        {
+          "id": "parking/line-0-19",
+          "pixel": [
+            162,
+            175,
+            161,
+            255
+          ],
+          "hit": "parking/line-0-19"
+        },
+        {
+          "id": "parking/line-0-20",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-0-20"
+        },
+        {
+          "id": "parking/line-1-0",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-1-0"
+        },
+        {
+          "id": "parking/line-1-1",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-1-1"
+        },
+        {
+          "id": "parking/line-1-2",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-1-2"
+        },
+        {
+          "id": "parking/line-1-3",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-1-3"
+        },
+        {
+          "id": "parking/line-1-4",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-1-4"
+        },
+        {
+          "id": "parking/line-1-5",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-1-5"
+        },
+        {
+          "id": "parking/line-1-6",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-1-6"
+        },
+        {
+          "id": "parking/line-1-7",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-1-7"
+        },
+        {
+          "id": "parking/line-1-8",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-1-8"
+        },
+        {
+          "id": "parking/line-1-9",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-1-9"
+        },
+        {
+          "id": "parking/line-1-10",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-1-10"
+        },
+        {
+          "id": "parking/line-1-11",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-1-11"
+        },
+        {
+          "id": "parking/line-1-12",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-1-12"
+        },
+        {
+          "id": "parking/line-1-13",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-1-13"
+        },
+        {
+          "id": "parking/line-1-14",
+          "pixel": [
+            162,
+            175,
+            161,
+            255
+          ],
+          "hit": "parking/line-1-14"
+        },
+        {
+          "id": "parking/line-1-15",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-1-15"
+        },
+        {
+          "id": "parking/line-1-16",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-1-16"
+        },
+        {
+          "id": "parking/line-1-17",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-1-17"
+        },
+        {
+          "id": "parking/line-1-18",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-1-18"
+        },
+        {
+          "id": "parking/line-1-19",
+          "pixel": [
+            162,
+            175,
+            161,
+            255
+          ],
+          "hit": "parking/line-1-19"
+        },
+        {
+          "id": "parking/line-1-20",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-1-20"
+        },
+        {
+          "id": "parking/line-2-0",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-2-0"
+        },
+        {
+          "id": "parking/line-2-1",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-2-1"
+        },
+        {
+          "id": "parking/line-2-2",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-2-2"
+        },
+        {
+          "id": "parking/line-2-3",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-2-3"
+        },
+        {
+          "id": "parking/line-2-4",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-2-4"
+        },
+        {
+          "id": "parking/line-2-5",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-2-5"
+        },
+        {
+          "id": "parking/line-2-6",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-2-6"
+        },
+        {
+          "id": "parking/line-2-7",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-2-7"
+        },
+        {
+          "id": "parking/line-2-8",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-2-8"
+        },
+        {
+          "id": "parking/line-2-9",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-2-9"
+        },
+        {
+          "id": "parking/line-2-10",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-2-10"
+        },
+        {
+          "id": "parking/line-2-11",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-2-11"
+        },
+        {
+          "id": "parking/line-2-12",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-2-12"
+        },
+        {
+          "id": "parking/line-2-13",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-2-13"
+        },
+        {
+          "id": "parking/line-2-14",
+          "pixel": [
+            162,
+            175,
+            161,
+            255
+          ],
+          "hit": "parking/line-2-14"
+        },
+        {
+          "id": "parking/line-2-15",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-2-15"
+        },
+        {
+          "id": "parking/line-2-16",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-2-16"
+        },
+        {
+          "id": "parking/line-2-17",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-2-17"
+        },
+        {
+          "id": "parking/line-2-18",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-2-18"
+        },
+        {
+          "id": "parking/line-2-19",
+          "pixel": [
+            162,
+            175,
+            161,
+            255
+          ],
+          "hit": "parking/line-2-19"
+        },
+        {
+          "id": "parking/line-2-20",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-2-20"
+        },
+        {
+          "id": "parking/line-3-0",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-3-0"
+        },
+        {
+          "id": "parking/line-3-1",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-3-1"
+        },
+        {
+          "id": "parking/line-3-2",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-3-2"
+        },
+        {
+          "id": "parking/line-3-3",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-3-3"
+        },
+        {
+          "id": "parking/line-3-4",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-3-4"
+        },
+        {
+          "id": "parking/line-3-5",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-3-5"
+        },
+        {
+          "id": "parking/line-3-6",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-3-6"
+        },
+        {
+          "id": "parking/line-3-7",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-3-7"
+        },
+        {
+          "id": "parking/line-3-8",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-3-8"
+        },
+        {
+          "id": "parking/line-3-9",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-3-9"
+        },
+        {
+          "id": "parking/line-3-10",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-3-10"
+        },
+        {
+          "id": "parking/line-3-11",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-3-11"
+        },
+        {
+          "id": "parking/line-3-12",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-3-12"
+        },
+        {
+          "id": "parking/line-3-13",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-3-13"
+        },
+        {
+          "id": "parking/line-3-14",
+          "pixel": [
+            162,
+            175,
+            161,
+            255
+          ],
+          "hit": "parking/line-3-14"
+        },
+        {
+          "id": "parking/line-3-15",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-3-15"
+        },
+        {
+          "id": "parking/line-3-16",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-3-16"
+        },
+        {
+          "id": "parking/line-3-17",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-3-17"
+        },
+        {
+          "id": "parking/line-3-18",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-3-18"
+        },
+        {
+          "id": "parking/line-3-19",
+          "pixel": [
+            162,
+            175,
+            161,
+            255
+          ],
+          "hit": "parking/line-3-19"
+        },
+        {
+          "id": "parking/line-3-20",
+          "pixel": [
+            186,
+            200,
+            184,
+            255
+          ],
+          "hit": "parking/line-3-20"
+        }
+      ],
+      "metrics": {
+        "preparation": {
+          "workerAlive": true,
+          "clients": 2,
+          "registeredSources": 2,
+          "registeredBytes": 22976172,
+          "leases": 4,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 2,
+          "viewRequests": 5,
+          "transferredBytes": 22976172
+        },
+        "current": {
+          "geometryUploads": 1,
+          "geometryBytes": 12797136,
+          "draws": 4,
+          "buffers": 3,
+          "programs": 2,
+          "textures": 3,
+          "textureBytes": 5273440,
+          "instanceBytes": 68,
+          "instanceUploads": 2,
+          "statusUploads": 1,
+          "paletteUploads": 1,
+          "evictions": 0,
+          "peakRequiredBytes": 12811764,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null,
+          "liveTexturesAfterDisposal": null,
+          "plan": {
+            "programs": 1,
+            "textures": 1,
+            "framebuffers": 2,
+            "renderbuffers": 2,
+            "bytes": 47329920,
+            "textureBytes": 5258880,
+            "allocations": 1,
+            "composites": 2,
+            "liveTextures": null,
+            "livePrograms": null,
+            "liveFramebuffers": null,
+            "liveRenderbuffers": null
+          }
+        },
+        "disposals": [
+          {
+            "geometryUploads": 1,
+            "geometryBytes": 0,
+            "draws": 2,
+            "buffers": 0,
+            "programs": 0,
+            "textures": 0,
+            "textureBytes": 0,
+            "instanceBytes": 0,
+            "instanceUploads": 1,
+            "statusUploads": 1,
+            "paletteUploads": 1,
+            "evictions": 0,
+            "peakRequiredBytes": 12811764,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0,
+            "liveTexturesAfterDisposal": 0,
+            "plan": {
+              "programs": 0,
+              "textures": 0,
+              "framebuffers": 0,
+              "renderbuffers": 0,
+              "bytes": 0,
+              "textureBytes": 0,
+              "allocations": 1,
+              "composites": 1,
+              "liveTextures": 0,
+              "livePrograms": 0,
+              "liveFramebuffers": 0,
+              "liveRenderbuffers": 0
+            }
+          },
+          {
+            "geometryUploads": 1,
+            "geometryBytes": 0,
+            "draws": 4,
+            "buffers": 0,
+            "programs": 0,
+            "textures": 0,
+            "textureBytes": 0,
+            "instanceBytes": 0,
+            "instanceUploads": 2,
+            "statusUploads": 1,
+            "paletteUploads": 1,
+            "evictions": 0,
+            "peakRequiredBytes": 13429444,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0,
+            "liveTexturesAfterDisposal": 0,
+            "plan": null
+          }
+        ],
+        "retainedScenes": 1,
+        "loadingScenes": 0
+      },
+      "pose": {
+        "center": [
+          11.472596684481772,
+          59.07760592568923
+        ],
+        "pitch": 0,
+        "bearing": 0,
+        "zoom": 19.688723878912995,
+        "revision": 24,
+        "elevation": 0
+      },
+      "glError": 0
+    },
+    {
+      "host": "canvas",
+      "mode": "3d",
+      "theme": "dusk",
+      "passed": true,
+      "painted": 84,
+      "correct": 84,
+      "bright": 60,
+      "samples": [
+        {
+          "id": "parking/line-0-0",
+          "pixel": [
+            119,
+            129,
+            119,
+            255
+          ],
+          "hit": "parking/line-0-0"
+        },
+        {
+          "id": "parking/line-0-1",
+          "pixel": [
+            161,
+            173,
+            159,
+            255
+          ],
+          "hit": "parking/line-0-1"
+        },
+        {
+          "id": "parking/line-0-2",
+          "pixel": [
+            139,
+            150,
+            138,
+            255
+          ],
+          "hit": "parking/line-0-2"
+        },
+        {
+          "id": "parking/line-0-3",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-0-3"
+        },
+        {
+          "id": "parking/line-0-4",
+          "pixel": [
+            139,
+            150,
+            138,
+            255
+          ],
+          "hit": "parking/line-0-4"
+        },
+        {
+          "id": "parking/line-0-5",
+          "pixel": [
+            125,
+            136,
+            126,
+            255
+          ],
+          "hit": "parking/line-0-5"
+        },
+        {
+          "id": "parking/line-0-6",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-0-6"
+        },
+        {
+          "id": "parking/line-0-7",
+          "pixel": [
+            136,
+            147,
+            135,
+            255
+          ],
+          "hit": "parking/line-0-7"
+        },
+        {
+          "id": "parking/line-0-8",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-0-8"
+        },
+        {
+          "id": "parking/line-0-9",
+          "pixel": [
+            158,
+            170,
+            156,
+            255
+          ],
+          "hit": "parking/line-0-9"
+        },
+        {
+          "id": "parking/line-0-10",
+          "pixel": [
+            136,
+            147,
+            135,
+            255
+          ],
+          "hit": "parking/line-0-10"
+        },
+        {
+          "id": "parking/line-0-11",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-0-11"
+        },
+        {
+          "id": "parking/line-0-12",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-0-12"
+        },
+        {
+          "id": "parking/line-0-13",
+          "pixel": [
+            169,
+            182,
+            167,
+            255
+          ],
+          "hit": "parking/line-0-13"
+        },
+        {
+          "id": "parking/line-0-14",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-0-14"
+        },
+        {
+          "id": "parking/line-0-15",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-0-15"
+        },
+        {
+          "id": "parking/line-0-16",
+          "pixel": [
+            158,
+            170,
+            156,
+            255
+          ],
+          "hit": "parking/line-0-16"
+        },
+        {
+          "id": "parking/line-0-17",
+          "pixel": [
+            169,
+            182,
+            167,
+            255
+          ],
+          "hit": "parking/line-0-17"
+        },
+        {
+          "id": "parking/line-0-18",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-0-18"
+        },
+        {
+          "id": "parking/line-0-19",
+          "pixel": [
+            169,
+            182,
+            167,
+            255
+          ],
+          "hit": "parking/line-0-19"
+        },
+        {
+          "id": "parking/line-0-20",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-0-20"
+        },
+        {
+          "id": "parking/line-1-0",
+          "pixel": [
+            140,
+            151,
+            139,
+            255
+          ],
+          "hit": "parking/line-1-0"
+        },
+        {
+          "id": "parking/line-1-1",
+          "pixel": [
+            158,
+            170,
+            156,
+            255
+          ],
+          "hit": "parking/line-1-1"
+        },
+        {
+          "id": "parking/line-1-2",
+          "pixel": [
+            125,
+            136,
+            126,
+            255
+          ],
+          "hit": "parking/line-1-2"
+        },
+        {
+          "id": "parking/line-1-3",
+          "pixel": [
+            125,
+            136,
+            126,
+            255
+          ],
+          "hit": "parking/line-1-3"
+        },
+        {
+          "id": "parking/line-1-4",
+          "pixel": [
+            125,
+            136,
+            126,
+            255
+          ],
+          "hit": "parking/line-1-4"
+        },
+        {
+          "id": "parking/line-1-5",
+          "pixel": [
+            158,
+            170,
+            156,
+            255
+          ],
+          "hit": "parking/line-1-5"
+        },
+        {
+          "id": "parking/line-1-6",
+          "pixel": [
+            169,
+            182,
+            167,
+            255
+          ],
+          "hit": "parking/line-1-6"
+        },
+        {
+          "id": "parking/line-1-7",
+          "pixel": [
+            158,
+            170,
+            156,
+            255
+          ],
+          "hit": "parking/line-1-7"
+        },
+        {
+          "id": "parking/line-1-8",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-1-8"
+        },
+        {
+          "id": "parking/line-1-9",
+          "pixel": [
+            125,
+            135,
+            124,
+            255
+          ],
+          "hit": "parking/line-1-9"
+        },
+        {
+          "id": "parking/line-1-10",
+          "pixel": [
+            125,
+            136,
+            126,
+            255
+          ],
+          "hit": "parking/line-1-10"
+        },
+        {
+          "id": "parking/line-1-11",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-1-11"
+        },
+        {
+          "id": "parking/line-1-12",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-1-12"
+        },
+        {
+          "id": "parking/line-1-13",
+          "pixel": [
+            125,
+            136,
+            126,
+            255
+          ],
+          "hit": "parking/line-1-13"
+        },
+        {
+          "id": "parking/line-1-14",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-1-14"
+        },
+        {
+          "id": "parking/line-1-15",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-1-15"
+        },
+        {
+          "id": "parking/line-1-16",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-1-16"
+        },
+        {
+          "id": "parking/line-1-17",
+          "pixel": [
+            125,
+            136,
+            126,
+            255
+          ],
+          "hit": "parking/line-1-17"
+        },
+        {
+          "id": "parking/line-1-18",
+          "pixel": [
+            169,
+            182,
+            167,
+            255
+          ],
+          "hit": "parking/line-1-18"
+        },
+        {
+          "id": "parking/line-1-19",
+          "pixel": [
+            169,
+            182,
+            167,
+            255
+          ],
+          "hit": "parking/line-1-19"
+        },
+        {
+          "id": "parking/line-1-20",
+          "pixel": [
+            169,
+            182,
+            167,
+            255
+          ],
+          "hit": "parking/line-1-20"
+        },
+        {
+          "id": "parking/line-2-0",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-2-0"
+        },
+        {
+          "id": "parking/line-2-1",
+          "pixel": [
+            125,
+            136,
+            126,
+            255
+          ],
+          "hit": "parking/line-2-1"
+        },
+        {
+          "id": "parking/line-2-2",
+          "pixel": [
+            158,
+            170,
+            156,
+            255
+          ],
+          "hit": "parking/line-2-2"
+        },
+        {
+          "id": "parking/line-2-3",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-2-3"
+        },
+        {
+          "id": "parking/line-2-4",
+          "pixel": [
+            103,
+            113,
+            105,
+            255
+          ],
+          "hit": "parking/line-2-4"
+        },
+        {
+          "id": "parking/line-2-5",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-2-5"
+        },
+        {
+          "id": "parking/line-2-6",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-2-6"
+        },
+        {
+          "id": "parking/line-2-7",
+          "pixel": [
+            103,
+            113,
+            105,
+            255
+          ],
+          "hit": "parking/line-2-7"
+        },
+        {
+          "id": "parking/line-2-8",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-2-8"
+        },
+        {
+          "id": "parking/line-2-9",
+          "pixel": [
+            125,
+            136,
+            126,
+            255
+          ],
+          "hit": "parking/line-2-9"
+        },
+        {
+          "id": "parking/line-2-10",
+          "pixel": [
+            136,
+            147,
+            135,
+            255
+          ],
+          "hit": "parking/line-2-10"
+        },
+        {
+          "id": "parking/line-2-11",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-2-11"
+        },
+        {
+          "id": "parking/line-2-12",
+          "pixel": [
+            103,
+            113,
+            105,
+            255
+          ],
+          "hit": "parking/line-2-12"
+        },
+        {
+          "id": "parking/line-2-13",
+          "pixel": [
+            158,
+            170,
+            156,
+            255
+          ],
+          "hit": "parking/line-2-13"
+        },
+        {
+          "id": "parking/line-2-14",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-2-14"
+        },
+        {
+          "id": "parking/line-2-15",
+          "pixel": [
+            169,
+            182,
+            167,
+            255
+          ],
+          "hit": "parking/line-2-15"
+        },
+        {
+          "id": "parking/line-2-16",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-2-16"
+        },
+        {
+          "id": "parking/line-2-17",
+          "pixel": [
+            169,
+            182,
+            167,
+            255
+          ],
+          "hit": "parking/line-2-17"
+        },
+        {
+          "id": "parking/line-2-18",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-2-18"
+        },
+        {
+          "id": "parking/line-2-19",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-2-19"
+        },
+        {
+          "id": "parking/line-2-20",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-2-20"
+        },
+        {
+          "id": "parking/line-3-0",
+          "pixel": [
+            103,
+            113,
+            105,
+            255
+          ],
+          "hit": "parking/line-3-0"
+        },
+        {
+          "id": "parking/line-3-1",
+          "pixel": [
+            141,
+            152,
+            140,
+            255
+          ],
+          "hit": "parking/line-3-1"
+        },
+        {
+          "id": "parking/line-3-2",
+          "pixel": [
+            125,
+            136,
+            126,
+            255
+          ],
+          "hit": "parking/line-3-2"
+        },
+        {
+          "id": "parking/line-3-3",
+          "pixel": [
+            125,
+            136,
+            126,
+            255
+          ],
+          "hit": "parking/line-3-3"
+        },
+        {
+          "id": "parking/line-3-4",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-3-4"
+        },
+        {
+          "id": "parking/line-3-5",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-3-5"
+        },
+        {
+          "id": "parking/line-3-6",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-3-6"
+        },
+        {
+          "id": "parking/line-3-7",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-3-7"
+        },
+        {
+          "id": "parking/line-3-8",
+          "pixel": [
+            125,
+            136,
+            126,
+            255
+          ],
+          "hit": "parking/line-3-8"
+        },
+        {
+          "id": "parking/line-3-9",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-3-9"
+        },
+        {
+          "id": "parking/line-3-10",
+          "pixel": [
+            125,
+            136,
+            126,
+            255
+          ],
+          "hit": "parking/line-3-10"
+        },
+        {
+          "id": "parking/line-3-11",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-3-11"
+        },
+        {
+          "id": "parking/line-3-12",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-3-12"
+        },
+        {
+          "id": "parking/line-3-13",
+          "pixel": [
+            125,
+            136,
+            126,
+            255
+          ],
+          "hit": "parking/line-3-13"
+        },
+        {
+          "id": "parking/line-3-14",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-3-14"
+        },
+        {
+          "id": "parking/line-3-15",
+          "pixel": [
+            125,
+            136,
+            126,
+            255
+          ],
+          "hit": "parking/line-3-15"
+        },
+        {
+          "id": "parking/line-3-16",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-3-16"
+        },
+        {
+          "id": "parking/line-3-17",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-3-17"
+        },
+        {
+          "id": "parking/line-3-18",
+          "pixel": [
+            169,
+            182,
+            167,
+            255
+          ],
+          "hit": "parking/line-3-18"
+        },
+        {
+          "id": "parking/line-3-19",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-3-19"
+        },
+        {
+          "id": "parking/line-3-20",
+          "pixel": [
+            147,
+            159,
+            146,
+            255
+          ],
+          "hit": "parking/line-3-20"
+        }
+      ],
+      "metrics": {
+        "preparation": {
+          "workerAlive": true,
+          "clients": 2,
+          "registeredSources": 2,
+          "registeredBytes": 22976172,
+          "leases": 4,
+          "inFlightJobs": 0,
+          "pinnedSources": 0,
+          "registrations": 2,
+          "viewRequests": 5,
+          "transferredBytes": 22976172
+        },
+        "current": {
+          "geometryUploads": 1,
+          "geometryBytes": 13413072,
+          "draws": 4,
+          "buffers": 3,
+          "programs": 1,
+          "textures": 2,
+          "textureBytes": 16304,
+          "instanceBytes": 68,
+          "instanceUploads": 2,
+          "statusUploads": 1,
+          "paletteUploads": 1,
+          "evictions": 0,
+          "peakRequiredBytes": 13429444,
+          "liveBuffersAfterDisposal": null,
+          "liveProgramsAfterDisposal": null,
+          "liveTexturesAfterDisposal": null,
+          "plan": null
+        },
+        "disposals": [
+          {
+            "geometryUploads": 1,
+            "geometryBytes": 0,
+            "draws": 2,
+            "buffers": 0,
+            "programs": 0,
+            "textures": 0,
+            "textureBytes": 0,
+            "instanceBytes": 0,
+            "instanceUploads": 1,
+            "statusUploads": 1,
+            "paletteUploads": 1,
+            "evictions": 0,
+            "peakRequiredBytes": 12811764,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0,
+            "liveTexturesAfterDisposal": 0,
+            "plan": {
+              "programs": 0,
+              "textures": 0,
+              "framebuffers": 0,
+              "renderbuffers": 0,
+              "bytes": 0,
+              "textureBytes": 0,
+              "allocations": 1,
+              "composites": 1,
+              "liveTextures": 0,
+              "livePrograms": 0,
+              "liveFramebuffers": 0,
+              "liveRenderbuffers": 0
+            }
+          },
+          {
+            "geometryUploads": 1,
+            "geometryBytes": 0,
+            "draws": 4,
+            "buffers": 0,
+            "programs": 0,
+            "textures": 0,
+            "textureBytes": 0,
+            "instanceBytes": 0,
+            "instanceUploads": 2,
+            "statusUploads": 1,
+            "paletteUploads": 1,
+            "evictions": 0,
+            "peakRequiredBytes": 13429444,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0,
+            "liveTexturesAfterDisposal": 0,
+            "plan": null
+          },
+          {
+            "geometryUploads": 1,
+            "geometryBytes": 0,
+            "draws": 4,
+            "buffers": 0,
+            "programs": 0,
+            "textures": 0,
+            "textureBytes": 0,
+            "instanceBytes": 0,
+            "instanceUploads": 2,
+            "statusUploads": 1,
+            "paletteUploads": 1,
+            "evictions": 0,
+            "peakRequiredBytes": 12811764,
+            "liveBuffersAfterDisposal": 0,
+            "liveProgramsAfterDisposal": 0,
+            "liveTexturesAfterDisposal": 0,
+            "plan": {
+              "programs": 0,
+              "textures": 0,
+              "framebuffers": 0,
+              "renderbuffers": 0,
+              "bytes": 0,
+              "textureBytes": 0,
+              "allocations": 1,
+              "composites": 2,
+              "liveTextures": 0,
+              "livePrograms": 0,
+              "liveFramebuffers": 0,
+              "liveRenderbuffers": 0
+            }
+          }
+        ],
+        "retainedScenes": 1,
+        "loadingScenes": 0
+      },
+      "pose": {
+        "center": [
+          11.4725966844818,
+          59.07760592568923
+        ],
+        "pitch": 50,
+        "bearing": -25,
+        "zoom": 18.79998994963775,
+        "revision": 32,
+        "elevation": -0.0400027904252268
+      },
+      "glError": 0
+    }
+  ],
+  "ended": {
+    "errors": [],
+    "stateErrors": [],
+    "clears": [
+      {
+        "own": true,
+        "mask": 16640
+      },
+      {
+        "own": true,
+        "mask": 16640
+      },
+      {
+        "own": true,
+        "mask": 16640
+      },
+      {
+        "own": true,
+        "mask": 16640
+      },
+      {
+        "own": true,
+        "mask": 16640
+      },
+      {
+        "own": true,
+        "mask": 16640
+      },
+      {
+        "own": true,
+        "mask": 16640
+      },
+      {
+        "own": true,
+        "mask": 16640
+      },
+      {
+        "own": true,
+        "mask": 16640
+      },
+      {
+        "own": true,
+        "mask": 16640
+      },
+      {
+        "own": true,
+        "mask": 16640
+      }
+    ],
+    "diagnostics": [
+      {
+        "host": "map",
+        "diagnostics": {
+          "preparation": {
+            "workerAlive": false,
+            "clients": 0,
+            "registeredSources": 0,
+            "registeredBytes": 0,
+            "leases": 0,
+            "inFlightJobs": 0,
+            "pinnedSources": 0,
+            "registrations": 2,
+            "viewRequests": 5,
+            "transferredBytes": 22976172
+          },
+          "current": null,
+          "disposals": [
+            {
+              "geometryUploads": 1,
+              "geometryBytes": 0,
+              "draws": 12,
+              "buffers": 0,
+              "programs": 0,
+              "textures": 0,
+              "textureBytes": 0,
+              "instanceBytes": 0,
+              "instanceUploads": 6,
+              "statusUploads": 1,
+              "paletteUploads": 1,
+              "evictions": 0,
+              "peakRequiredBytes": 12811764,
+              "liveBuffersAfterDisposal": 0,
+              "liveProgramsAfterDisposal": 0,
+              "liveTexturesAfterDisposal": 0,
+              "plan": {
+                "programs": 0,
+                "textures": 0,
+                "framebuffers": 0,
+                "renderbuffers": 0,
+                "bytes": 0,
+                "textureBytes": 0,
+                "allocations": 1,
+                "composites": 6,
+                "liveTextures": 0,
+                "livePrograms": 0,
+                "liveFramebuffers": 0,
+                "liveRenderbuffers": 0
+              }
+            },
+            {
+              "geometryUploads": 1,
+              "geometryBytes": 0,
+              "draws": 6,
+              "buffers": 0,
+              "programs": 0,
+              "textures": 0,
+              "textureBytes": 0,
+              "instanceBytes": 0,
+              "instanceUploads": 3,
+              "statusUploads": 1,
+              "paletteUploads": 1,
+              "evictions": 0,
+              "peakRequiredBytes": 13429444,
+              "liveBuffersAfterDisposal": 0,
+              "liveProgramsAfterDisposal": 0,
+              "liveTexturesAfterDisposal": 0,
+              "plan": null
+            },
+            {
+              "geometryUploads": 1,
+              "geometryBytes": 0,
+              "draws": 10,
+              "buffers": 0,
+              "programs": 0,
+              "textures": 0,
+              "textureBytes": 0,
+              "instanceBytes": 0,
+              "instanceUploads": 5,
+              "statusUploads": 1,
+              "paletteUploads": 1,
+              "evictions": 0,
+              "peakRequiredBytes": 12811764,
+              "liveBuffersAfterDisposal": 0,
+              "liveProgramsAfterDisposal": 0,
+              "liveTexturesAfterDisposal": 0,
+              "plan": {
+                "programs": 0,
+                "textures": 0,
+                "framebuffers": 0,
+                "renderbuffers": 0,
+                "bytes": 0,
+                "textureBytes": 0,
+                "allocations": 1,
+                "composites": 5,
+                "liveTextures": 0,
+                "livePrograms": 0,
+                "liveFramebuffers": 0,
+                "liveRenderbuffers": 0
+              }
+            },
+            {
+              "geometryUploads": 1,
+              "geometryBytes": 0,
+              "draws": 16,
+              "buffers": 0,
+              "programs": 0,
+              "textures": 0,
+              "textureBytes": 0,
+              "instanceBytes": 0,
+              "instanceUploads": 8,
+              "statusUploads": 1,
+              "paletteUploads": 1,
+              "evictions": 0,
+              "peakRequiredBytes": 13429444,
+              "liveBuffersAfterDisposal": 0,
+              "liveProgramsAfterDisposal": 0,
+              "liveTexturesAfterDisposal": 0,
+              "plan": null
+            }
+          ],
+          "retainedScenes": 0,
+          "loadingScenes": 0
+        }
+      },
+      {
+        "host": "canvas",
+        "diagnostics": {
+          "preparation": {
+            "workerAlive": false,
+            "clients": 0,
+            "registeredSources": 0,
+            "registeredBytes": 0,
+            "leases": 0,
+            "inFlightJobs": 0,
+            "pinnedSources": 0,
+            "registrations": 2,
+            "viewRequests": 5,
+            "transferredBytes": 22976172
+          },
+          "current": null,
+          "disposals": [
+            {
+              "geometryUploads": 1,
+              "geometryBytes": 0,
+              "draws": 2,
+              "buffers": 0,
+              "programs": 0,
+              "textures": 0,
+              "textureBytes": 0,
+              "instanceBytes": 0,
+              "instanceUploads": 1,
+              "statusUploads": 1,
+              "paletteUploads": 1,
+              "evictions": 0,
+              "peakRequiredBytes": 12811764,
+              "liveBuffersAfterDisposal": 0,
+              "liveProgramsAfterDisposal": 0,
+              "liveTexturesAfterDisposal": 0,
+              "plan": {
+                "programs": 0,
+                "textures": 0,
+                "framebuffers": 0,
+                "renderbuffers": 0,
+                "bytes": 0,
+                "textureBytes": 0,
+                "allocations": 1,
+                "composites": 1,
+                "liveTextures": 0,
+                "livePrograms": 0,
+                "liveFramebuffers": 0,
+                "liveRenderbuffers": 0
+              }
+            },
+            {
+              "geometryUploads": 1,
+              "geometryBytes": 0,
+              "draws": 4,
+              "buffers": 0,
+              "programs": 0,
+              "textures": 0,
+              "textureBytes": 0,
+              "instanceBytes": 0,
+              "instanceUploads": 2,
+              "statusUploads": 1,
+              "paletteUploads": 1,
+              "evictions": 0,
+              "peakRequiredBytes": 13429444,
+              "liveBuffersAfterDisposal": 0,
+              "liveProgramsAfterDisposal": 0,
+              "liveTexturesAfterDisposal": 0,
+              "plan": null
+            },
+            {
+              "geometryUploads": 1,
+              "geometryBytes": 0,
+              "draws": 4,
+              "buffers": 0,
+              "programs": 0,
+              "textures": 0,
+              "textureBytes": 0,
+              "instanceBytes": 0,
+              "instanceUploads": 2,
+              "statusUploads": 1,
+              "paletteUploads": 1,
+              "evictions": 0,
+              "peakRequiredBytes": 12811764,
+              "liveBuffersAfterDisposal": 0,
+              "liveProgramsAfterDisposal": 0,
+              "liveTexturesAfterDisposal": 0,
+              "plan": {
+                "programs": 0,
+                "textures": 0,
+                "framebuffers": 0,
+                "renderbuffers": 0,
+                "bytes": 0,
+                "textureBytes": 0,
+                "allocations": 1,
+                "composites": 2,
+                "liveTextures": 0,
+                "livePrograms": 0,
+                "liveFramebuffers": 0,
+                "liveRenderbuffers": 0
+              }
+            },
+            {
+              "geometryUploads": 1,
+              "geometryBytes": 0,
+              "draws": 4,
+              "buffers": 0,
+              "programs": 0,
+              "textures": 0,
+              "textureBytes": 0,
+              "instanceBytes": 0,
+              "instanceUploads": 2,
+              "statusUploads": 1,
+              "paletteUploads": 1,
+              "evictions": 0,
+              "peakRequiredBytes": 13429444,
+              "liveBuffersAfterDisposal": 0,
+              "liveProgramsAfterDisposal": 0,
+              "liveTexturesAfterDisposal": 0,
+              "plan": null
+            }
+          ],
+          "retainedScenes": 0,
+          "loadingScenes": 0
+        }
+      }
+    ]
+  },
+  "passed": true,
+  "provenance": {
+    "rendererRoot": "/Users/hilde/Documents/ChatGPT/Leitbild-layout-remediation-render/apps/world",
+    "sourceRoot": "/Users/hilde/Documents/ChatGPT/Leitbild-campus-integration/apps/world",
+    "rendererCommit": "a0183ba7a8e3e672e6694edb7625709cda18627b",
+    "sourceCommit": "f6f588020459ae620f2eac683534994c0c0c4919",
+    "fixtureDeliveryBytes": 29780801,
+    "fixtureSha256": "194eec67e761e41868afbc2d8e3695f7be1ec3df988a820b3255aa5c23bab200",
+    "definitions": [
+      {
+        "id": "layout:halden-campus",
+        "revision": "8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15",
+        "geometryKey": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15"
+      }
+    ],
+    "sources": {
+      "src/ui/map/physical-scene/backend.ts": "968e40727ae99edcb810485b9ebfa397e05aa21589297907a044257492a4a8fd",
+      "src/ui/map/physical-scene/plan-pass.ts": "608ead36dc5293ab2fb7eb1c7ec2feb60c1ef8c227f987fb095c21460b178fd0",
+      "src/ui/map/physical-scene/plan-projection.ts": "d4bcfd222c282ef7ae3634074876ecfdc09094698f4726dee30d098362ea8087",
+      "src/ui/map/physical-scene/gl-state.ts": "f4798d9485051dcdfd0dc974c6637bf682692f0c6d4398510f58f4b238fff80c",
+      "src/ui/map/physical-scene/visibility.ts": "700e872682267dd2decbc14b534e676b99f8fcde88202ca6772cd24d25264f25",
+      "src/ui/map/physical-scene/map-viewport.ts": "8dc02a2203f18b883451ef22827e5235e9471876a3ef101c4192d57eb855145a",
+      "src/ui/map/physical-scene/scene-controller.ts": "f0cb2f563ad14ea1ddb3e1bc976769e14ad97cd1465e18ab8270ea7f25062706",
+      "src/ui/map/physical-scene/preparation.ts": "f503c49865e1eed29ff6236a137737630a3f6bab3f4e679ab6da1b6eeed87e63",
+      "src/ui/map/physical-scene/renderer.ts": "1674a208094c5197fd3675cfe15e254c0cbbc7dafc7db11af60f523f843eae7f",
+      "src/ui/map/physical-scene/geometry.ts": "a0713f5ee6a5699639c0e361cb402b91a19bd228015561bac6e0208349448b3b",
+      "src/ui/map/physical-scene/canvas-viewport.ts": "9d03f01197c3d4d0472472cbfe00f2ab45fa80dee0b2fcac2f9f8f44123ed857",
+      "tests/browser/physical-scene/plan-parking-app.ts": "b1dff4be9cfa52b2bf3b1e4e1d3d24aa4c5622545a2ec9aa4c0963397484b5f7"
+    }
+  }
+}

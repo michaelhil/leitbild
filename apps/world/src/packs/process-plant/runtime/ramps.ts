@@ -35,6 +35,8 @@ export interface ProcessPlantRampRunner {
 export const createProcessPlantRampRunner = (config: {
   readonly runtime: ProcessPlantRuntime
   readonly restoredSnapshot?: ProcessPlantRampSnapshot
+  /** Ends an ongoing program if another controller or physical hold has taken authority over its path. */
+  readonly canApply?: (path: VariablePath) => boolean
 }): ProcessPlantRampRunner => {
   const restored = processPlantRampSnapshotSchema.parse(config.restoredSnapshot ?? { active: [] })
   const active = new Map<VariablePath, ProcessPlantRamp>()
@@ -58,6 +60,10 @@ export const createProcessPlantRampRunner = (config: {
     },
     apply: nextElapsedMs => {
       for (const [path, ramp] of active) {
+        if (config.canApply?.(path) === false) {
+          active.delete(path)
+          continue
+        }
         const fraction = Math.min(1, Math.max(0, (nextElapsedMs - ramp.startedAtMs) / ramp.durationMs))
         config.runtime.writeCommand({
           type: 'setVariable',

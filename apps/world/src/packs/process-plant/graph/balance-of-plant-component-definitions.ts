@@ -21,6 +21,8 @@ export const balanceOfPlantComponentDefinitions: ReadonlyArray<ComponentDefiniti
       makeupFlowKgPerS: z.number().finite().nonnegative(),
       maxOutletFlowKgPerS: z.number().finite().nonnegative(),
       thermalTimeConstantS: z.number().finite().positive().optional(),
+      /** An insulated, finite well-mixed inventory. No imposed ambient sink at zero flow. */
+      thermalModel: z.literal('inventoryBalance').optional(),
       /**
        * A level controller on what the tank takes in, as a feedwater tank's
        * level control valve throttles the condensate pumps' flow into it: fully
@@ -97,7 +99,7 @@ export const balanceOfPlantComponentDefinitions: ReadonlyArray<ComponentDefiniti
       // A load-weighted 105 to 145 °C, not the saturation temperature of the condenser's back pressure a real
       // low-pressure exhaust stands near: no instrument shows it.
       variable({ path: 'exhaustTemperatureC', label: 'Turbine exhaust temperature', kind: 'derived', discipline: 'thermal', writable: false, publish: 'telemetry', quantity: 'temperature', unit: 'degC', simulatorOnly: true }),
-      variable({ path: 'impulseLoadPercent', label: 'Turbine load (impulse pressure, from steam flow)', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', measurand: 'load', quantity: 'ratio', unit: 'percent' }),
+      variable({ path: 'impulseLoadPercent', label: 'Turbine load (impulse pressure, from steam flow)', description: 'Percent of nominal steam flow: may exceed 100 percent during excess flow. This is a modeled load indication, not a qualified first-stage pressure instrument.', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', measurand: 'load', quantity: 'power', unit: 'percent' }),
       variable({ path: 'speedRpm', label: 'Turbine-generator speed (synchronous)', kind: 'derived', discipline: 'electrical', writable: false, publish: 'telemetry', quantity: 'rotationalSpeed', unit: 'rpm' }),
     ],
   }),

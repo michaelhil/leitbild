@@ -373,6 +373,45 @@ describe('evaluate (tool loop)', () => {
     expect(result.decision.response.action).toBe('error')
     expect(JSON.stringify(result.decision.response)).toContain('incomplete_output')
   })
+  for (const finishReason of ['error', 'content_filter']) {
+    for (const streaming of [false, true]) {
+      test(`${finishReason} ${streaming ? 'stream' : 'chat'} output cannot execute complete-looking tool arguments`, async () => {
+        const toolCalls = [{ id: 'native001', function: { name: 'mutate', arguments: { target: 'plant' } } }]
+        const { provider: chatProvider } = makeScriptedProvider([{ content: 'provisional', finishReason, toolCalls }])
+        const provider: LLMProvider = streaming ? {
+          ...chatProvider,
+          stream: () => asyncIterFromArray([{ delta: 'provisional', done: false }, { delta: '', done: true, finishReason, toolCalls }]),
+        } : chatProvider
+        let executed = 0
+        const result = await evaluate(baseContextResult(), baseConfig, provider, async () => { executed++; return [] }, 5, 'room-1', { toolDefinitions: [] })
+        expect(executed).toBe(0)
+        expect(result.decision.response.action).toBe('error')
+        expect(JSON.stringify(result.decision.response)).toContain(`provider ended the response with ${finishReason}`)
+        await expect(callLLM(chatProvider, { model: 'm', messages: [] })).rejects.toThrow('incomplete_output')
+        await expect(Array.fromAsync(streamLLM(provider, { model: 'm', messages: [] }))).rejects.toThrow('incomplete_output')
+      })
+    }
+  }
+  test('a later unsuccessful completion retains accepted tool history and does not replay or execute another mutation', async () => {
+    const toolCalls = [{ id: 'accepted001', function: { name: 'mutate', arguments: { target: 'plant' } } }]
+    const { provider, calls } = makeScriptedProvider([
+      { toolCalls },
+      { content: 'provisional', finishReason: 'error', toolCalls: [{ ...toolCalls[0]!, id: 'failed002' }] },
+    ])
+    let executed = 0
+    const result = await evaluate(baseContextResult(), baseConfig, provider, async () => {
+      executed++
+      return [{ success: true, data: { receipt: 'accepted-once', achieved: 2.000001 } }]
+    }, 5, 'room-1', { toolDefinitions: [] })
+    expect(executed).toBe(1)
+    expect(calls).toHaveLength(2)
+    expect(result.decision.response.action).toBe('error')
+    const retained = calls[1]!.messages.filter(message => message.role === 'tool')
+    expect(retained).toHaveLength(1)
+    expect(retained[0]!.toolCallId).toBe('accepted001')
+    expect(retained[0]!.content).toContain('accepted-once')
+    expect(retained[0]!.content).toContain('2.000001')
+  })
   test('plain content → respond decision', async () => {
     const provider = makeStaticProvider({ content: 'hello world' })
     const result = await evaluate(
@@ -468,7 +507,7 @@ describe('evaluate (tool loop)', () => {
     expect(result.decision.response.action).toBe('respond')
     expect(calls[1]?.messages.find(message => message.role === 'tool')?.content).toBe(evidence)
     expect(calls[1]?.messages.some(message => message.content.startsWith('old-'))).toBe(false)
-    expect(warnings.some(message => message.includes('Evidence was preserved intact'))).toBe(true)
+    expect(warnings.some(message => message.includes('history replay target and remains intact'))).toBe(true)
   })
 
   test('multi-round tool loop (2 tools then content)', async () => {
@@ -615,12 +654,12 @@ describe('evaluate (tool loop)', () => {
     }
   })
 
-  test("the Assistant's iteration threshold pauses its turn for the person, who may let it finish", async () => {
-    // A cost guard, not a quota: past it the Agent asks the person (Continue / Stop) and keeps its turn.
-    const threshold = getBundledRoomDefinition('leitbild-assistant')!.room.agents[0]!.maxToolIterations!
-    expect(threshold).toBe(40)
+  test('a new Assistant may finish a long procedure without an arbitrary default check-in', async () => {
+    const threshold = getBundledRoomDefinition('leitbild-assistant')!.room.agents[0]!.maxToolIterations
+    expect(threshold).toBeUndefined()
+    const rounds = 43 // Test beyond the previous 40-round default, not a new product limit.
     const { provider, calls } = makeScriptedProvider([
-      ...Array.from({ length: threshold + 2 }, () => ({ toolCalls: [{ function: { name: 'a', arguments: {} } }] })),
+      ...Array.from({ length: rounds }, () => ({ toolCalls: [{ function: { name: 'a', arguments: {} } }] })),
       { content: 'held at step 4 for your judgement' },
     ])
     const exec: ToolExecutor = async toolCalls => toolCalls.map(() => ({ success: true, data: 'k' }))
@@ -629,9 +668,8 @@ describe('evaluate (tool loop)', () => {
       toolDefinitions: [],
       requestToolCheckin: async ({ iterations }) => { checkins.push(iterations); return true },
     })
-    // Asked once, after the round that went past the threshold; the person continued and the turn answered.
-    expect(checkins).toEqual([threshold + 1])
-    expect(calls).toHaveLength(threshold + 3)
+    expect(checkins).toEqual([])
+    expect(calls).toHaveLength(rounds + 1)
     expect(result.decision.response).toEqual({ action: 'respond', content: 'held at step 4 for your judgement' })
   })
 
@@ -674,9 +712,34 @@ describe('evaluate (tool loop)', () => {
     expect(second.messages.some(m => m.content.includes('characters omitted'))).toBe(false)
   })
 
+  test('a replay-target notice is accurate and emitted once while later operation evidence remains intact', async () => {
+    const receipts = ['first-accepted-operation', 'later-accepted-operation'].map(commandId => ({ commandId, facts: 'measured feedback '.repeat(100) }))
+    const { provider, calls } = makeScriptedProvider([
+      { toolCalls: [{ id: 'first', function: { name: 'operate', arguments: {} } }] },
+      { toolCalls: [{ id: 'later', function: { name: 'operate', arguments: {} } }] },
+      { content: 'done' },
+    ])
+    let operation = 0
+    const notices: string[] = []
+    const result = await evaluate(
+      { ...baseContextResult(), tokenBudget: 100 }, baseConfig, provider,
+      async () => [{ success: true, data: receipts[operation++] }], undefined, 'room-1',
+      { toolDefinitions: [], onEvent: event => { if (event.kind === 'warning') notices.push(event.message) } },
+    )
+    expect(result.decision.response.action).toBe('respond')
+    expect(operation).toBe(2)
+    const replayNotices = notices.filter(message => message.includes('history replay target'))
+    expect(replayNotices).toHaveLength(1)
+    expect(replayNotices[0]).toContain("provider's context capacity is checked separately")
+    const finalTools = calls.at(-1)!.messages.filter(message => message.role === 'tool')
+    expect(finalTools.map(message => message.content)).toEqual(receipts.map(receipt => JSON.stringify(receipt)))
+  })
+
   test('progress lines are posted as each round returns, in call order, and the model never reads them', async () => {
     const order: string[] = []
+    const progressCalls: Array<{ content: string; callId?: string; operationKey?: string; callIds: ReadonlyArray<string> }> = []
     const { provider, calls } = makeScriptedProvider([
+      { toolCalls: [{ function: { name: 'read_state', arguments: {} } }] },
       { toolCalls: [
         { function: { name: 'workspace_call', arguments: { calls: [{ key: 'start', operationId: 'world.procedure.run.start', input: {}, say: 'Started E-0 on unit 1' }] } } },
         { function: { name: 'note', arguments: {} } },
@@ -687,20 +750,24 @@ describe('evaluate (tool loop)', () => {
     const counted: LLMProvider = { ...provider, chat: async request => { order.push(`model ${calls.length + 1}`); return provider.chat(request) } }
     // A scripted executor: lines need no execution evidence.
     const exec: ToolExecutor = async toolCalls => toolCalls.map(call => {
-      const said = (call.arguments.calls as ReadonlyArray<{ say?: string }> | undefined)?.flatMap(entry => entry.say === undefined ? [] : [entry.say]) ?? []
+      const said = (call.arguments.calls as ReadonlyArray<{ say?: string; key: string }> | undefined)?.flatMap(entry => entry.say === undefined ? [] : [{ content: entry.say, operationKey: entry.key }]) ?? []
       return { success: true, data: { results: [{ key: 'k', operationId: 'op', success: true, data: { ok: true } }] }, ...(said.length > 0 ? { progress: said } : {}) }
     })
     const result = await evaluate(baseContextResult(), baseConfig, counted, exec, undefined, 'room-1', {
       toolDefinitions: [],
-      onProgress: line => { order.push(`posted ${line}`) },
+      onProgress: progress => { order.push(`posted ${progress.content}`); progressCalls.push(progress) },
     })
     expect(result.decision.response).toEqual({ action: 'respond', content: 'Unit 1 · E-0 step 2 · holding for your judgement' })
     // Each line is posted before the next model pass: live, not with the answer.
-    expect(order).toEqual(['model 1', 'posted Started E-0 on unit 1', 'model 2', 'posted E-0 step 1 · Verified → step 2', 'model 3'])
-    // The tool results the model reads carry no line: it wrote them itself.
+    expect(order).toEqual(['model 1', 'model 2', 'posted Started E-0 on unit 1', 'model 3', 'posted E-0 step 1 · Verified → step 2', 'model 4'])
+    expect(progressCalls).toEqual([
+      { content: 'Started E-0 on unit 1', operationKey: 'start', callId: 'call_1_0', callIds: ['call_0_0', 'call_1_0', 'call_1_1'] },
+      { content: 'E-0 step 1 · Verified → step 2', operationKey: 'step', callId: 'call_2_0', callIds: ['call_2_0'] },
+    ])
+    // The tool results the model reads carry no line or progress metadata.
     const toolEvidence = calls.at(-1)!.messages.filter(message => message.role === 'tool').map(message => message.content)
-    expect(toolEvidence).toHaveLength(3)
-    expect(toolEvidence.some(content => content.includes('Started E-0') || content.includes('Verified → step 2'))).toBe(false)
+    expect(toolEvidence).toHaveLength(4)
+    expect(toolEvidence.some(content => content.includes('Started E-0') || content.includes('Verified → step 2') || content.includes('progress'))).toBe(false)
   })
 
   test('a line of a call that returned is posted even when the turn is cancelled right after it', async () => {
@@ -712,10 +779,10 @@ describe('evaluate (tool loop)', () => {
     ])
     const exec: ToolExecutor = async () => {
       controller.abort()
-      return [{ success: true, data: { results: [] }, progress: ['Proposed the manual reactor trip on unit 1'] }]
+      return [{ success: true, data: { results: [] }, progress: [{ content: 'Proposed the manual reactor trip on unit 1' }] }]
     }
     const result = await evaluate(baseContextResult(), baseConfig, provider, exec, undefined, 'room-1', {
-      toolDefinitions: [], signal: controller.signal, onProgress: line => { posted.push(line) },
+      toolDefinitions: [], signal: controller.signal, onProgress: progress => { posted.push(progress.content) },
     })
     expect(posted).toEqual(['Proposed the manual reactor trip on unit 1'])
     expect(calls).toHaveLength(1)

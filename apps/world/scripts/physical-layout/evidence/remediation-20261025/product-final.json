@@ -1,0 +1,3633 @@
+{
+  "source": "b7fbf04e3e2ac778643675ed08d148a922be5fa0",
+  "run": {
+    "workspaceId": "961a89a6-0c10-451f-91bf-252ccf97b904",
+    "runId": "run-4cf76f65-2f90-4eac-8de2-9c661f9afd76",
+    "url": "http://127.0.0.1:43130/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904?world=run-4cf76f65-2f90-4eac-8de2-9c661f9afd76",
+    "resource": {
+      "workspaceId": "961a89a6-0c10-451f-91bf-252ccf97b904",
+      "moduleId": "world",
+      "type": "world.simulation-run",
+      "id": "run-4cf76f65-2f90-4eac-8de2-9c661f9afd76"
+    },
+    "definition": {
+      "workspaceId": "961a89a6-0c10-451f-91bf-252ccf97b904",
+      "moduleId": "world",
+      "type": "world.scenario",
+      "id": "halden-normal-operation",
+      "revisionId": "revision-cabc73270612df18fb798c431b629b45"
+    }
+  },
+  "cold": {
+    "wallMs": 3000,
+    "world": {
+      "durationMs": 2745.5,
+      "frames": 0,
+      "longTasks": [
+        {
+          "start": 544.2999999523163,
+          "duration": 75
+        },
+        {
+          "start": 2352,
+          "duration": 60
+        },
+        {
+          "start": 2505.2000000476837,
+          "duration": 55
+        },
+        {
+          "start": 2628.0999999046326,
+          "duration": 119
+        }
+      ],
+      "viewport": {
+        "width": 1440,
+        "height": 871,
+        "dpr": 1
+      },
+      "status": "0 layouts ready · 0 loading · 0 unavailable · owner-qualified alarms remain in Run"
+    },
+    "host": [
+      {
+        "start": 787.0999999046326,
+        "duration": 75
+      },
+      {
+        "start": 2594.7999999523163,
+        "duration": 60
+      },
+      {
+        "start": 2748,
+        "duration": 55
+      },
+      {
+        "start": 2870.899999856949,
+        "duration": 119
+      }
+    ],
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36"
+  },
+  "phases": [
+    {
+      "name": "browser-initial-ready",
+      "durationMs": 4067,
+      "frames": 0,
+      "longTasks": [
+        {
+          "start": 544.2999999523163,
+          "duration": 75
+        },
+        {
+          "start": 2352,
+          "duration": 60
+        },
+        {
+          "start": 2505.2000000476837,
+          "duration": 55
+        },
+        {
+          "start": 2628.0999999046326,
+          "duration": 119
+        },
+        {
+          "start": 2861,
+          "duration": 51
+        }
+      ],
+      "viewport": {
+        "width": 1440,
+        "height": 871,
+        "dpr": 1
+      },
+      "status": "5 layouts ready · 0 loading · 0 unavailable · owner-qualified alarms remain in Run"
+    },
+    {
+      "name": "browser-site-paused",
+      "durationMs": 4042.7999999523163,
+      "frames": 242,
+      "rafMedianMs": 16.699999999999818,
+      "rafP95Ms": 16.799999999999272,
+      "rafMaxMs": 16.800000000000182,
+      "longTasks": [],
+      "viewport": {
+        "width": 1440,
+        "height": 871,
+        "dpr": 1
+      },
+      "status": "5 layouts ready · 0 loading · 0 unavailable · owner-qualified alarms remain in Run",
+      "inputMoves": 123,
+      "processWindows": 0
+    },
+    {
+      "name": "browser-site-playing",
+      "durationMs": 4013.5,
+      "frames": 240,
+      "rafMedianMs": 16.69999999999891,
+      "rafP95Ms": 16.700000000000728,
+      "rafMaxMs": 16.80000000000109,
+      "longTasks": [],
+      "viewport": {
+        "width": 1440,
+        "height": 871,
+        "dpr": 1
+      },
+      "status": "5 layouts ready · 0 loading · 0 unavailable · owner-qualified alarms remain in Run",
+      "inputMoves": 126,
+      "processWindows": 0
+    },
+    {
+      "name": "browser-room-paused",
+      "durationMs": 4017.9000000953674,
+      "frames": 240,
+      "rafMedianMs": 16.700000000000728,
+      "rafP95Ms": 16.700000000000728,
+      "rafMaxMs": 16.80000000000291,
+      "longTasks": [],
+      "viewport": {
+        "width": 1440,
+        "height": 871,
+        "dpr": 1
+      },
+      "status": "Paused · fresh · 108 modelled subjects · 0 owner alerts",
+      "inputMoves": 121,
+      "processWindows": 0
+    },
+    {
+      "name": "browser-room-playing",
+      "durationMs": 4032.2999999523163,
+      "frames": 241,
+      "rafMedianMs": 16.700000000000728,
+      "rafP95Ms": 16.700000000000728,
+      "rafMaxMs": 16.80000000000291,
+      "longTasks": [],
+      "viewport": {
+        "width": 1440,
+        "height": 871,
+        "dpr": 1
+      },
+      "status": "Live · 108 modelled subjects · 0 owner alerts",
+      "inputMoves": 122,
+      "processWindows": 0
+    },
+    {
+      "name": "browser-plan-paused",
+      "durationMs": 4036.899999856949,
+      "frames": 242,
+      "rafMedianMs": 16.69999999999709,
+      "rafP95Ms": 16.799999999999272,
+      "rafMaxMs": 16.80000000000291,
+      "longTasks": [],
+      "viewport": {
+        "width": 1440,
+        "height": 871,
+        "dpr": 1
+      },
+      "status": "Paused · fresh · 108 modelled subjects · 0 owner alerts",
+      "inputMoves": 121,
+      "processWindows": 0
+    },
+    {
+      "name": "browser-plan-playing",
+      "durationMs": 4015.9000000953674,
+      "frames": 240,
+      "rafMedianMs": 16.69999999999709,
+      "rafP95Ms": 16.700000000004366,
+      "rafMaxMs": 16.80000000000291,
+      "longTasks": [],
+      "viewport": {
+        "width": 1440,
+        "height": 871,
+        "dpr": 1
+      },
+      "status": "Live · 108 modelled subjects · 0 owner alerts",
+      "inputMoves": 122,
+      "processWindows": 0
+    },
+    {
+      "name": "map-room-paused",
+      "durationMs": 4042.5,
+      "frames": 242,
+      "rafMedianMs": 16.69999999999709,
+      "rafP95Ms": 16.799999999995634,
+      "rafMaxMs": 16.80000000000291,
+      "longTasks": [],
+      "viewport": {
+        "width": 1440,
+        "height": 871,
+        "dpr": 1
+      },
+      "status": "Paused · fresh · 108 modelled subjects · 0 owner alerts",
+      "inputMoves": 121,
+      "processWindows": 0
+    },
+    {
+      "name": "map-room-playing",
+      "durationMs": 4027.2000000476837,
+      "frames": 241,
+      "rafMedianMs": 16.69999999999709,
+      "rafP95Ms": 16.700000000004366,
+      "rafMaxMs": 16.80000000000291,
+      "longTasks": [],
+      "viewport": {
+        "width": 1440,
+        "height": 871,
+        "dpr": 1
+      },
+      "status": "Live · 108 modelled subjects · 0 owner alerts",
+      "inputMoves": 121,
+      "processWindows": 0
+    },
+    {
+      "name": "map-plan-paused",
+      "durationMs": 4020.2000000476837,
+      "frames": 240,
+      "rafMedianMs": 16.69999999999709,
+      "rafP95Ms": 16.80000000000291,
+      "rafMaxMs": 16.80000000000291,
+      "longTasks": [],
+      "viewport": {
+        "width": 1440,
+        "height": 871,
+        "dpr": 1
+      },
+      "status": "Paused · fresh · 108 modelled subjects · 0 owner alerts",
+      "inputMoves": 122,
+      "processWindows": 0
+    }
+  ],
+  "narrow": {
+    "width": 319,
+    "height": 732,
+    "scrollWidth": 319,
+    "buttons": [
+      {
+        "text": "Turbine hallHalden Unit 1 full plant / PWR unit / Turbine hall ▾",
+        "x": 8,
+        "y": 108,
+        "width": 197,
+        "height": 46
+      },
+      {
+        "text": "Plan",
+        "x": 211,
+        "y": 108,
+        "width": 48,
+        "height": 46
+      },
+      {
+        "text": "3D",
+        "x": 263,
+        "y": 108,
+        "width": 48,
+        "height": 46
+      },
+      {
+        "text": "Find",
+        "x": 8,
+        "y": 160,
+        "width": 97,
+        "height": 44
+      },
+      {
+        "text": "View",
+        "x": 111,
+        "y": 160,
+        "width": 97,
+        "height": 44
+      },
+      {
+        "text": "Back to map",
+        "x": 214,
+        "y": 160,
+        "width": 97,
+        "height": 44
+      },
+      {
+        "text": "Pan",
+        "x": 15,
+        "y": 587,
+        "width": 54.59375,
+        "height": 44
+      },
+      {
+        "text": "Orbit",
+        "x": 73.59375,
+        "y": 587,
+        "width": 54.609375,
+        "height": 44
+      },
+      {
+        "text": "Tilt−",
+        "x": 132.203125,
+        "y": 587,
+        "width": 54.59375,
+        "height": 44
+      },
+      {
+        "text": "Tilt+",
+        "x": 190.796875,
+        "y": 587,
+        "width": 54.609375,
+        "height": 44
+      },
+      {
+        "text": "Home",
+        "x": 249.40625,
+        "y": 587,
+        "width": 54.59375,
+        "height": 44
+      },
+      {
+        "text": "Tilt and turn ▾",
+        "x": 15,
+        "y": 635,
+        "width": 289,
+        "height": 44
+      }
+    ],
+    "title": "Turbine hallHalden Unit 1 full plant / PWR unit / Turbine hall ▾"
+  },
+  "messages": [
+    {
+      "kind": "register",
+      "sourceKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/overview",
+      "bytes": 20880,
+      "ms": 0.09999990463256836
+    },
+    {
+      "kind": "register",
+      "sourceKey": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/overview",
+      "bytes": 5520,
+      "ms": 0.09999990463256836
+    },
+    {
+      "kind": "physical-source",
+      "sourceKey": "pwr-full-unit",
+      "bytes": 0,
+      "ms": 0.6000001430511475
+    },
+    {
+      "kind": "physical-source",
+      "sourceKey": "pwr-campus",
+      "bytes": 0,
+      "ms": 1.4000000953674316
+    },
+    {
+      "kind": "prepare",
+      "sourceKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/overview",
+      "key": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/overview/2d",
+      "bytes": 0,
+      "ms": 0
+    },
+    {
+      "kind": "prepare",
+      "sourceKey": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/overview",
+      "key": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/overview/2d",
+      "bytes": 0,
+      "ms": 0
+    },
+    {
+      "kind": "register",
+      "sourceKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/detail",
+      "bytes": 18361536,
+      "ms": 2.9000000953674316
+    },
+    {
+      "kind": "prepare",
+      "sourceKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/detail",
+      "key": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/[\"3d\",\"all\",true,0]",
+      "bytes": 0,
+      "ms": 0
+    },
+    {
+      "kind": "register",
+      "sourceKey": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/detail",
+      "bytes": 22970652,
+      "ms": 3.4000000953674316
+    },
+    {
+      "kind": "prepare",
+      "sourceKey": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/detail",
+      "key": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/[\"3d\",\"all\",true,0]",
+      "bytes": 0,
+      "ms": 0
+    },
+    {
+      "kind": "prepare",
+      "sourceKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/overview",
+      "key": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/overview/3d",
+      "bytes": 0,
+      "ms": 0
+    },
+    {
+      "kind": "prepare",
+      "sourceKey": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/overview",
+      "key": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/overview/3d",
+      "bytes": 0,
+      "ms": 0
+    },
+    {
+      "kind": "prepare",
+      "sourceKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/detail",
+      "key": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/[\"3d\",\"operating\",true,0]",
+      "bytes": 0,
+      "ms": 0.10000014305114746
+    },
+    {
+      "kind": "prepare",
+      "sourceKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/overview",
+      "key": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/overview/2d",
+      "bytes": 0,
+      "ms": 0.09999990463256836
+    },
+    {
+      "kind": "prepare",
+      "sourceKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/detail",
+      "key": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/[\"2d\",\"operating\",true,0]",
+      "bytes": 0,
+      "ms": 0
+    },
+    {
+      "kind": "prepare",
+      "sourceKey": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/overview",
+      "key": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/overview/2d",
+      "bytes": 0,
+      "ms": 0
+    },
+    {
+      "kind": "prepare",
+      "sourceKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/overview",
+      "key": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/overview/2d",
+      "bytes": 0,
+      "ms": 0
+    },
+    {
+      "kind": "prepare",
+      "sourceKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/detail",
+      "key": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/[\"2d\",\"lower\",true,0]",
+      "bytes": 0,
+      "ms": 0
+    },
+    {
+      "kind": "prepare",
+      "sourceKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/overview",
+      "key": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/overview/3d",
+      "bytes": 0,
+      "ms": 0.09999990463256836
+    },
+    {
+      "kind": "prepare",
+      "sourceKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/detail",
+      "key": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/[\"3d\",\"lower\",true,0]",
+      "bytes": 0,
+      "ms": 0
+    },
+    {
+      "kind": "prepare",
+      "sourceKey": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/detail",
+      "key": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/[\"3d\",\"campus-ground\",true,0]",
+      "bytes": 0,
+      "ms": 0
+    },
+    {
+      "kind": "prepare",
+      "sourceKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/detail",
+      "key": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/[\"3d\",\"operating\",true,0]",
+      "bytes": 0,
+      "ms": 0.09999990463256836
+    },
+    {
+      "kind": "prepare",
+      "sourceKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/overview",
+      "key": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/overview/2d",
+      "bytes": 0,
+      "ms": 0
+    },
+    {
+      "kind": "prepare",
+      "sourceKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/detail",
+      "key": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/[\"2d\",\"operating\",true,0]",
+      "bytes": 0,
+      "ms": 0
+    },
+    {
+      "kind": "prepare",
+      "sourceKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/overview",
+      "key": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/overview/2d",
+      "bytes": 0,
+      "ms": 0
+    },
+    {
+      "kind": "prepare",
+      "sourceKey": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/overview",
+      "key": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/overview/2d",
+      "bytes": 0,
+      "ms": 0
+    },
+    {
+      "kind": "prepare",
+      "sourceKey": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/detail",
+      "key": "physical-layout/58dcf1c6917b1bf5c25f2c94328ede5db162752635d5b334bc13128949773c1f/[\"3d\",\"all\",true,0]",
+      "bytes": 0,
+      "ms": 0.09999990463256836
+    },
+    {
+      "kind": "prepare",
+      "sourceKey": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/detail",
+      "key": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/[\"3d\",\"all\",true,0]",
+      "bytes": 0,
+      "ms": 0
+    },
+    {
+      "kind": "prepare",
+      "sourceKey": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/overview",
+      "key": "physical-layout/8b483405aa9e713f1daf2b8da98cc5e2c01c5f066e45b0f042ccb77a7d5e6b15/overview/3d",
+      "bytes": 0,
+      "ms": 0
+    }
+  ],
+  "exceptions": [],
+  "network": [
+    {
+      "url": "http://127.0.0.1:43130/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904?world=run-4cf76f65-2f90-4eac-8de2-9c661f9afd76",
+      "status": 200,
+      "encodedDataLength": 143
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/host/preload-helper-Czpn1I53.js",
+      "status": 200,
+      "encodedDataLength": 243
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/host/index-CHn5z_kq.js",
+      "status": 200,
+      "encodedDataLength": 235
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/host/Icon-KvUnTN2M.js",
+      "status": 200,
+      "encodedDataLength": 233
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/host/launch-workspace-C1iOujes.js",
+      "status": 200,
+      "encodedDataLength": 246
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/host/modal-url-DdwbJkMo.js",
+      "status": 200,
+      "encodedDataLength": 238
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/host/featured-catalogue-DvNhBeF_.js",
+      "status": 200,
+      "encodedDataLength": 247
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/host/Icon-A4EYtCOd.css",
+      "status": 200,
+      "encodedDataLength": 167
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/host/featured-catalogue-DClNjg3b.css",
+      "status": 200,
+      "encodedDataLength": 169
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/host/Modal-BFSnTaOQ.css",
+      "status": 200,
+      "encodedDataLength": 169
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/host/workspace-memory-Cm81XVnM.css",
+      "status": 200,
+      "encodedDataLength": 169
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/host/WorkspaceSwitcher-BfJ5buTk.css",
+      "status": 200,
+      "encodedDataLength": 169
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/host/index-DRn-1pIJ.css",
+      "status": 200,
+      "encodedDataLength": 170
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/host/Modal-C7WQigYL.js",
+      "status": 200,
+      "encodedDataLength": 234
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/host/workspace-memory-B04XuVSE.js",
+      "status": 200,
+      "encodedDataLength": 245
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/host/workspace-switcher-DmpfPmV4.js",
+      "status": 200,
+      "encodedDataLength": 246
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/host/WorkspaceSwitcher-Kjg2raAb.js",
+      "status": 200,
+      "encodedDataLength": 246
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/host/landing-content-CDYr35XQ.js",
+      "status": 200,
+      "encodedDataLength": 245
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/host/workspace-admin-C2BqoD-0.css",
+      "status": 200,
+      "encodedDataLength": 169
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/host/workspace-admin-C3SkcPOz.js",
+      "status": 200,
+      "encodedDataLength": 244
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/host/AssistantLauncher-BE6h3IYK.css",
+      "status": 200,
+      "encodedDataLength": 168
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/host/AssistantLauncher-BWS9e0IV.js",
+      "status": 200,
+      "encodedDataLength": 246
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/host/App-BDSKQM5V.js",
+      "status": 200,
+      "encodedDataLength": 234
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/host/src-CD582ANY.js",
+      "status": 200,
+      "encodedDataLength": 234
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/host/App-DS4h1c_1.css",
+      "status": 200,
+      "encodedDataLength": 175
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/host/workspace-page-C29w8Iqb.js",
+      "status": 200,
+      "encodedDataLength": 243
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/host/favicon-DS68FMbI.svg",
+      "status": 200,
+      "encodedDataLength": 158
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/definitions",
+      "status": 200,
+      "encodedDataLength": 125
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities",
+      "status": 200,
+      "encodedDataLength": 224
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/resources",
+      "status": 200,
+      "encodedDataLength": 124
+    },
+    {
+      "url": "http://127.0.0.1:43130/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76",
+      "status": 200,
+      "encodedDataLength": 177
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/world/main-DmYo0zFQ.css",
+      "status": 200,
+      "encodedDataLength": 209
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/world/main-Bf9Yp-t8.js",
+      "status": 200,
+      "encodedDataLength": 267
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/world/svelte-Dp-C2IIQ.js",
+      "status": 200,
+      "encodedDataLength": 275
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/world/model-HQ9QpGe7.js",
+      "status": 200,
+      "encodedDataLength": 269
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/world/preload-helper-B3OUum4E.js",
+      "status": 200,
+      "encodedDataLength": 283
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/agents.people.join/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/world/rolldown-runtime-Bli68VP1.js",
+      "status": 200,
+      "encodedDataLength": 278
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/world/ControlSurfaceRoute-BbhF0QtZ.css",
+      "status": 200,
+      "encodedDataLength": 204
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/world/simulation-run-client-Btf8U42U.js",
+      "status": 200,
+      "encodedDataLength": 284
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/world/rows-Dka_w6xF.js",
+      "status": 200,
+      "encodedDataLength": 267
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/world/protocol-B6BE6q_E.js",
+      "status": 200,
+      "encodedDataLength": 271
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/world/common-BQnoIXbx.js",
+      "status": 200,
+      "encodedDataLength": 269
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/world/ControlSurfaceRoute-BZSVRRt9.js",
+      "status": 200,
+      "encodedDataLength": 288
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/world/model-Z1FMNFdv.js",
+      "status": 200,
+      "encodedDataLength": 269
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/world/model-CO23xGoW.js",
+      "status": 200,
+      "encodedDataLength": 268
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/world/x-DESeY9_c.js",
+      "status": 200,
+      "encodedDataLength": 264
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/world/StatusDot-D8BBaCHH.js",
+      "status": 200,
+      "encodedDataLength": 271
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/world/ProcedureRunBadges-DxR7UKB9.js",
+      "status": 200,
+      "encodedDataLength": 282
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/world/surface-panel-interaction-sUvyQTSD.js",
+      "status": 200,
+      "encodedDataLength": 288
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/world/clipboard-list-D_xadlpb.js",
+      "status": 200,
+      "encodedDataLength": 276
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/world/pack-loader-C3b7Z5fy.js",
+      "status": 200,
+      "encodedDataLength": 274
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/agents.people.sync/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/world/catalogue-symbol-atlas-Bxws1lv-.js",
+      "status": 200,
+      "encodedDataLength": 285
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/world/workspace-capability-client-D6M_MYBH.js",
+      "status": 200,
+      "encodedDataLength": 289
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/world/maplibre-AjIAKigF.css",
+      "status": 200,
+      "encodedDataLength": 204
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/world/order-CKhiU3qm.js",
+      "status": 200,
+      "encodedDataLength": 268
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/world/OperationalMap-DLXKGcas.css",
+      "status": 200,
+      "encodedDataLength": 203
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/world/map-view-DQii2hKu.js",
+      "status": 200,
+      "encodedDataLength": 270
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/world/OperationalMap-0Fv2ik-A.js",
+      "status": 200,
+      "encodedDataLength": 283
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/world/maplibre-BWHoUTg1.js",
+      "status": 200,
+      "encodedDataLength": 277
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/world/ui-pack-DhpjTz4U.js",
+      "status": 200,
+      "encodedDataLength": 270
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/world/presentation-CVdLW_Xl.js",
+      "status": 200,
+      "encodedDataLength": 274
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/world/ui-pack-0GWMLDs9.js",
+      "status": 200,
+      "encodedDataLength": 276
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/world/scene-C9EwXQAo.js",
+      "status": 200,
+      "encodedDataLength": 268
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/world/ui-pack-DZ5XiajH.js",
+      "status": 200,
+      "encodedDataLength": 271
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/world/pack-D2CqVNUp.js",
+      "status": 200,
+      "encodedDataLength": 273
+    },
+    {
+      "url": "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='29' height='29' fill='%23333' viewBox='0 0 29 29'%3E%3Cpath d='M14.5 8.5c-.75 0-1.5.75-1.5 1.5v3h-3c-.75 0-1.5.75-1.5 1.5S9.25 16 10 16h3v3c0 .75.75 1.5 1.5 1.5S16 19.75 16 19v-3h3c.75 0 1.5-.75 1.5-1.5S19.75 13 19 13h-3v-3c0-.75-.75-1.5-1.5-1.5'/%3E%3C/svg%3E",
+      "status": 200,
+      "encodedDataLength": 0
+    },
+    {
+      "url": "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='29' height='29' fill='%23333' viewBox='0 0 29 29'%3E%3Cpath d='M10 13c-.75 0-1.5.75-1.5 1.5S9.25 16 10 16h9c.75 0 1.5-.75 1.5-1.5S19.75 13 19 13z'/%3E%3C/svg%3E",
+      "status": 200,
+      "encodedDataLength": 0
+    },
+    {
+      "url": "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='29' height='29' fill='%23333' viewBox='0 0 29 29'%3E%3Cpath d='m10.5 14 4-8 4 8z'/%3E%3Cpath fill='%23ccc' d='m10.5 16 4 8 4-8z'/%3E%3C/svg%3E",
+      "status": 200,
+      "encodedDataLength": 0
+    },
+    {
+      "url": "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill-rule='evenodd' viewBox='0 0 20 20'%3E%3Cpath d='M4 10a6 6 0 1 0 12 0 6 6 0 1 0-12 0m5-3a1 1 0 1 0 2 0 1 1 0 1 0-2 0m0 3a1 1 0 1 1 2 0v3a1 1 0 1 1-2 0'/%3E%3C/svg%3E",
+      "status": 200,
+      "encodedDataLength": 0
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/procedure-runs",
+      "status": 200,
+      "encodedDataLength": 157
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/map/style.json?theme=light",
+      "status": 200,
+      "encodedDataLength": 429
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/map/fonts/Noto%20Sans%20Regular/0-255.pbf?build=1788429928000",
+      "status": 200,
+      "encodedDataLength": 508
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.electric-grid.map.geometry/invoke",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.electric-grid.map.state/invoke",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/world/webgl-device-BJoP7C5D.js",
+      "status": 200,
+      "encodedDataLength": 273
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/world/GridOverviewPanel-CiDDNPZ3.css",
+      "status": 200,
+      "encodedDataLength": 204
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/world/PhysicalExplorer-eVN0sScI.css",
+      "status": 200,
+      "encodedDataLength": 204
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/world/PhysicalLayouts-hBaOYJ9b.js",
+      "status": 200,
+      "encodedDataLength": 277
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/world/capabilities-ae6-q4xR.js",
+      "status": 200,
+      "encodedDataLength": 275
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/world/PhysicalExplorer-B0RHGRrg.js",
+      "status": 200,
+      "encodedDataLength": 285
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/world/inspection-BAuK8DWf.js",
+      "status": 200,
+      "encodedDataLength": 279
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/world/earcut-Ct0-hHRg.js",
+      "status": 200,
+      "encodedDataLength": 269
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/world/embedded-frame-host-CGsN1BT1.js",
+      "status": 200,
+      "encodedDataLength": 281
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/world/client-CibyQcq0.js",
+      "status": 200,
+      "encodedDataLength": 269
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/world/chevron-left-CJF1nBXh.js",
+      "status": 200,
+      "encodedDataLength": 274
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/world/locate-fixed-B7ADa2LZ.js",
+      "status": 200,
+      "encodedDataLength": 274
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/world/play-uB9Oy7Dq.js",
+      "status": 200,
+      "encodedDataLength": 266
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/world/refresh-cw-fmKoMEdL.js",
+      "status": 200,
+      "encodedDataLength": 272
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/world/GridOverviewPanel-DmflZZzz.js",
+      "status": 200,
+      "encodedDataLength": 286
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/world/search-BxIgvorj.js",
+      "status": 200,
+      "encodedDataLength": 268
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/world/default-display-BqDdi2Ey.js",
+      "status": 200,
+      "encodedDataLength": 277
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/world/opened-display-BWXbpRt2.js",
+      "status": 200,
+      "encodedDataLength": 278
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/world/DisplayWindow-mEh0TLva.js",
+      "status": 200,
+      "encodedDataLength": 282
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/world/ellipsis-CucqkiKj.js",
+      "status": 200,
+      "encodedDataLength": 270
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/world/maximize-2-B9hU9ZLd.js",
+      "status": 200,
+      "encodedDataLength": 272
+    },
+    {
+      "url": "data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2248%22%20height%3D%2248%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M8%205l8%207-8%207%22%20stroke%3D%22%23ffffff%22%20stroke-width%3D%226%22%2F%3E%3Cpath%20d%3D%22M8%205l8%207-8%207%22%20stroke%3D%22%231f2937%22%20stroke-width%3D%223%22%2F%3E%3C%2Fsvg%3E",
+      "status": 200,
+      "encodedDataLength": 0
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/world/dashboard-z-c_jEEG.js",
+      "status": 200,
+      "encodedDataLength": 272
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/world/window-bounds-Dh6OBfKT.js",
+      "status": 200,
+      "encodedDataLength": 275
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22512%22%20height%3D%22192%22%3E%3Cg%20transform%3D%22translate(8%208)%20scale(2)%22%20fill%3D%22none%22%20stroke%3D%22white%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M10%2010H6%22%2F%3E%3Cpath%20d%3D%22M14%2018V6a2%202%200%200%200-2-2H4a2%202%200%200%200-2%202v11a1%201%200%200%200%201%201h2%22%2F%3E%3Cpath%20d%3D%22M19%2018h2a1%201%200%200%200%201-1v-3.28a1%201%200%200%200-.684-.948l-1.923-.641a1%201%200%200%201-.578-.502l-1.539-3.076A1%201%200%200%200%2016.382%208H14%22%2F%3E%3Cpath%20d%3D%22M8%208v4%22%2F%3E%3Cpath%20d%3D%22M9%2018h6%22%2F%3E%3Ccircle%20cx%3D%2217%22%20cy%3D%2218%22%20r%3D%222%22%2F%3E%3Ccircle%20cx%3D%227%22%20cy%3D%2218%22%20r%3D%222%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate(72%208)%20scale(2)%22%20fill%3D%22none%22%20stroke%3D%22white%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M11%2017v4%22%2F%3E%3Cpath%20d%3D%22M14%203v8a2%202%200%200%200%202%202h5.865%22%2F%3E%3Cpath%20d%3D%22M17%2017v4%22%2F%3E%3Cpath%20d%3D%22M18%2017a4%204%200%200%200%204-4%208%206%200%200%200-8-6%206%205%200%200%200-6%205v3a2%202%200%200%200%202%202z%22%2F%3E%3Cpath%20d%3D%22M2%2010v5%22%2F%3E%3Cpath%20d%3D%22M6%203h16%22%2F%3E%3Cpath%20d%3D%22M7%2021h14%22%2F%3E%3Cpath%20d%3D%22M8%2013H2%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate(136%208)%20scale(2)%22%20fill%3D%22none%22%20stroke%3D%22white%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M%2022%2014%20L%2022%2010%22%2F%3E%3Crect%20x%3D%222%22%20y%3D%226%22%20width%3D%2216%22%20height%3D%2212%22%20rx%3D%222%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate(200%208)%20scale(2)%22%20fill%3D%22none%22%20stroke%3D%22white%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%2212%22%20r%3D%2210%22%2F%3E%3Cpath%20d%3D%22M9.09%209a3%203%200%200%201%205.83%201c0%202-3%203-3%203%22%2F%3E%3Cpath%20d%3D%22M12%2017h.01%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate(264%208)%20scale(2)%22%20fill%3D%22none%22%20stroke%3D%22white%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M4%2014.899A7%207%200%201%201%2015.71%208h1.79a4.5%204.5%200%200%201%202.5%208.242%22%2F%3E%3Cpath%20d%3D%22M16%2014v6%22%2F%3E%3Cpath%20d%3D%22M8%2014v6%22%2F%3E%3Cpath%20d%3D%22M12%2016v6%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate(328%208)%20scale(2)%22%20fill%3D%22none%22%20stroke%3D%22white%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M10%2010%207%207%22%2F%3E%3Cpath%20d%3D%22m10%2014-3%203%22%2F%3E%3Cpath%20d%3D%22m14%2010%203-3%22%2F%3E%3Cpath%20d%3D%22m14%2014%203%203%22%2F%3E%3Cpath%20d%3D%22M14.205%204.139a4%204%200%201%201%205.439%205.863%22%2F%3E%3Cpath%20d%3D%22M19.637%2014a4%204%200%201%201-5.432%205.868%22%2F%3E%3Cpath%20d%3D%22M4.367%2010a4%204%200%201%201%205.438-5.862%22%2F%3E%3Cpath%20d%3D%22M9.795%2019.862a4%204%200%201%201-5.429-5.873%22%2F%3E%3Crect%20x%3D%2210%22%20y%3D%228%22%20width%3D%224%22%20height%3D%228%22%20rx%3D%221%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate(392%208)%20scale(2)%22%20fill%3D%22none%22%20stroke%3D%22white%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M12%2016h.01%22%2F%3E%3Cpath%20d%3D%22M16%2016h.01%22%2F%3E%3Cpath%20d%3D%22M3%2019a2%202%200%200%200%202%202h14a2%202%200%200%200%202-2V8.5a.5.5%200%200%200-.769-.422l-4.462%202.844A.5.5%200%200%201%2015%2010.5v-2a.5.5%200%200%200-.769-.422L9.77%2010.922A.5.5%200%200%201%209%2010.5V5a2%202%200%200%200-2-2H5a2%202%200%200%200-2%202z%22%2F%3E%3Cpath%20d%3D%22M8%2016h.01%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate(456%208)%20scale(2)%22%20fill%3D%22none%22%20stroke%3D%22white%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M6%203v12%22%2F%3E%3Cpath%20d%3D%22M18%209a3%203%200%201%200%200-6%203%203%200%200%200%200%206z%22%2F%3E%3Cpath%20d%3D%22M6%2021a3%203%200%201%200%200-6%203%203%200%200%200%200%206z%22%2F%3E%3Cpath%20d%3D%22M15%206a9%209%200%200%200-9%209%22%2F%3E%3Cpath%20d%3D%22M18%2015v6%22%2F%3E%3Cpath%20d%3D%22M21%2018h-6%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate(8%2072)%20scale(2)%22%20fill%3D%22none%22%20stroke%3D%22white%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M12%207v4%22%2F%3E%3Cpath%20d%3D%22M14%2021v-3a2%202%200%200%200-4%200v3%22%2F%3E%3Cpath%20d%3D%22M14%209h-4%22%2F%3E%3Cpath%20d%3D%22M18%2011h2a2%202%200%200%201%202%202v6a2%202%200%200%201-2%202H4a2%202%200%200%201-2-2v-9a2%202%200%200%201%202-2h2%22%2F%3E%3Cpath%20d%3D%22M18%2021V5a2%202%200%200%200-2-2H8a2%202%200%200%200-2%202v16%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate(72%2072)%20scale(2)%22%20fill%3D%22none%22%20stroke%3D%22white%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M20%2010c0%204.993-5.539%2010.193-7.399%2011.799a1%201%200%200%201-1.202%200C9.539%2020.193%204%2014.993%204%2010a8%208%200%200%201%2016%200%22%2F%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%2210%22%20r%3D%223%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate(136%2072)%20scale(2)%22%20fill%3D%22none%22%20stroke%3D%22white%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Crect%20x%3D%2216%22%20y%3D%2216%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221%22%2F%3E%3Crect%20x%3D%222%22%20y%3D%2216%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221%22%2F%3E%3Crect%20x%3D%229%22%20y%3D%222%22%20width%3D%226%22%20height%3D%226%22%20rx%3D%221%22%2F%3E%3Cpath%20d%3D%22M5%2016v-3a1%201%200%200%201%201-1h12a1%201%200%200%201%201%201v3%22%2F%3E%3Cpath%20d%3D%22M12%2012V8%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate(200%2072)%20scale(2)%22%20fill%3D%22none%22%20stroke%3D%22white%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M12%2022v-5%22%2F%3E%3Cpath%20d%3D%22M15%208V2%22%2F%3E%3Cpath%20d%3D%22M17%208a1%201%200%200%201%201%201v4a4%204%200%200%201-4%204h-4a4%204%200%200%201-4-4V9a1%201%200%200%201%201-1z%22%2F%3E%3Cpath%20d%3D%22M9%208V2%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate(264%2072)%20scale(2)%22%20fill%3D%22none%22%20stroke%3D%22white%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M5%2012h14%22%2F%3E%3Cpath%20d%3D%22M12%205v14%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate(328%2072)%20scale(2)%22%20fill%3D%22none%22%20stroke%3D%22white%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Crect%20width%3D%2218%22%20height%3D%2218%22%20x%3D%223%22%20y%3D%223%22%20rx%3D%222%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate(392%2072)%20scale(2)%22%20fill%3D%22none%22%20stroke%3D%22white%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22m21.73%2018-8-14a2%202%200%200%200-3.48%200l-8%2014A2%202%200%200%200%204%2021h16a2%202%200%200%200%201.73-3%22%2F%3E%3Cpath%20d%3D%22M12%209v4%22%2F%3E%3Cpath%20d%3D%22M12%2017h.01%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate(456%2072)%20scale(2)%22%20fill%3D%22none%22%20stroke%3D%22white%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M12%202v20%22%2F%3E%3Cpath%20d%3D%22M2%205h20%22%2F%3E%3Cpath%20d%3D%22M3%203v2%22%2F%3E%3Cpath%20d%3D%22M7%203v2%22%2F%3E%3Cpath%20d%3D%22M17%203v2%22%2F%3E%3Cpath%20d%3D%22M21%203v2%22%2F%3E%3Cpath%20d%3D%22m19%205-7%207-7-7%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate(8%20136)%20scale(2)%22%20fill%3D%22none%22%20stroke%3D%22white%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M18%206%206%2018%22%2F%3E%3Cpath%20d%3D%22m6%206%2012%2012%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate(72%20136)%20scale(2)%22%20fill%3D%22none%22%20stroke%3D%22white%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M4%2014a1%201%200%200%201-.78-1.63l9.9-10.2a.5.5%200%200%201%20.86.46l-1.92%206.02A1%201%200%200%200%2013%2010h7a1%201%200%200%201%20.78%201.63l-9.9%2010.2a.5.5%200%200%201-.86-.46l1.92-6.02A1%201%200%200%200%2011%2014z%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E",
+      "status": 200,
+      "encodedDataLength": 0
+    },
+    {
+      "url": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1MTIiIGhlaWdodD0iMTkyIj48ZyB0cmFuc2Zvcm09InRyYW5zbGF0ZSg4IDgpIHNjYWxlKDIpIiBmaWxsPSJub25lIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBhdGggZD0iTTEwIDEwSDYiLz48cGF0aCBkPSJNMTQgMThWNmEyIDIgMCAwIDAtMi0ySDRhMiAyIDAgMCAwLTIgMnYxMWExIDEgMCAwIDAgMSAxaDIiLz48cGF0aCBkPSJNMTkgMThoMmExIDEgMCAwIDAgMS0xdi0zLjI4YTEgMSAwIDAgMC0uNjg0LS45NDhsLTEuOTIzLS42NDFhMSAxIDAgMCAxLS41NzgtLjUwMmwtMS41MzktMy4wNzZBMSAxIDAgMCAwIDE2LjM4MiA4SDE0Ii8+PHBhdGggZD0iTTggOHY0Ii8+PHBhdGggZD0iTTkgMThoNiIvPjxjaXJjbGUgY3g9IjE3IiBjeT0iMTgiIHI9IjIiLz48Y2lyY2xlIGN4PSI3IiBjeT0iMTgiIHI9IjIiLz48L2c+PGcgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoNzIgOCkgc2NhbGUoMikiIGZpbGw9Im5vbmUiIHN0cm9rZT0id2hpdGUiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJNMTEgMTd2NCIvPjxwYXRoIGQ9Ik0xNCAzdjhhMiAyIDAgMCAwIDIgMmg1Ljg2NSIvPjxwYXRoIGQ9Ik0xNyAxN3Y0Ii8+PHBhdGggZD0iTTE4IDE3YTQgNCAwIDAgMCA0LTQgOCA2IDAgMCAwLTgtNiA2IDUgMCAwIDAtNiA1djNhMiAyIDAgMCAwIDIgMnoiLz48cGF0aCBkPSJNMiAxMHY1Ii8+PHBhdGggZD0iTTYgM2gxNiIvPjxwYXRoIGQ9Ik03IDIxaDE0Ii8+PHBhdGggZD0iTTggMTNIMiIvPjwvZz48ZyB0cmFuc2Zvcm09InRyYW5zbGF0ZSgxMzYgOCkgc2NhbGUoMikiIGZpbGw9Im5vbmUiIHN0cm9rZT0id2hpdGUiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJNIDIyIDE0IEwgMjIgMTAiLz48cmVjdCB4PSIyIiB5PSI2IiB3aWR0aD0iMTYiIGhlaWdodD0iMTIiIHJ4PSIyIi8+PC9nPjxnIHRyYW5zZm9ybT0idHJhbnNsYXRlKDIwMCA4KSBzY2FsZSgyKSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxjaXJjbGUgY3g9IjEyIiBjeT0iMTIiIHI9IjEwIi8+PHBhdGggZD0iTTkuMDkgOWEzIDMgMCAwIDEgNS44MyAxYzAgMi0zIDMtMyAzIi8+PHBhdGggZD0iTTEyIDE3aC4wMSIvPjwvZz48ZyB0cmFuc2Zvcm09InRyYW5zbGF0ZSgyNjQgOCkgc2NhbGUoMikiIGZpbGw9Im5vbmUiIHN0cm9rZT0id2hpdGUiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJNNCAxNC44OTlBNyA3IDAgMSAxIDE1LjcxIDhoMS43OWE0LjUgNC41IDAgMCAxIDIuNSA4LjI0MiIvPjxwYXRoIGQ9Ik0xNiAxNHY2Ii8+PHBhdGggZD0iTTggMTR2NiIvPjxwYXRoIGQ9Ik0xMiAxNnY2Ii8+PC9nPjxnIHRyYW5zZm9ybT0idHJhbnNsYXRlKDMyOCA4KSBzY2FsZSgyKSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGQ9Ik0xMCAxMCA3IDciLz48cGF0aCBkPSJtMTAgMTQtMyAzIi8+PHBhdGggZD0ibTE0IDEwIDMtMyIvPjxwYXRoIGQ9Im0xNCAxNCAzIDMiLz48cGF0aCBkPSJNMTQuMjA1IDQuMTM5YTQgNCAwIDEgMSA1LjQzOSA1Ljg2MyIvPjxwYXRoIGQ9Ik0xOS42MzcgMTRhNCA0IDAgMSAxLTUuNDMyIDUuODY4Ii8+PHBhdGggZD0iTTQuMzY3IDEwYTQgNCAwIDEgMSA1LjQzOC01Ljg2MiIvPjxwYXRoIGQ9Ik05Ljc5NSAxOS44NjJhNCA0IDAgMSAxLTUuNDI5LTUuODczIi8+PHJlY3QgeD0iMTAiIHk9IjgiIHdpZHRoPSI0IiBoZWlnaHQ9IjgiIHJ4PSIxIi8+PC9nPjxnIHRyYW5zZm9ybT0idHJhbnNsYXRlKDM5MiA4KSBzY2FsZSgyKSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGQ9Ik0xMiAxNmguMDEiLz48cGF0aCBkPSJNMTYgMTZoLjAxIi8+PHBhdGggZD0iTTMgMTlhMiAyIDAgMCAwIDIgMmgxNGEyIDIgMCAwIDAgMi0yVjguNWEuNS41IDAgMCAwLS43NjktLjQyMmwtNC40NjIgMi44NDRBLjUuNSAwIDAgMSAxNSAxMC41di0yYS41LjUgMCAwIDAtLjc2OS0uNDIyTDkuNzcgMTAuOTIyQS41LjUgMCAwIDEgOSAxMC41VjVhMiAyIDAgMCAwLTItMkg1YTIgMiAwIDAgMC0yIDJ6Ii8+PHBhdGggZD0iTTggMTZoLjAxIi8+PC9nPjxnIHRyYW5zZm9ybT0idHJhbnNsYXRlKDQ1NiA4KSBzY2FsZSgyKSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGQ9Ik02IDN2MTIiLz48cGF0aCBkPSJNMTggOWEzIDMgMCAxIDAgMC02IDMgMyAwIDAgMCAwIDZ6Ii8+PHBhdGggZD0iTTYgMjFhMyAzIDAgMSAwIDAtNiAzIDMgMCAwIDAgMCA2eiIvPjxwYXRoIGQ9Ik0xNSA2YTkgOSAwIDAgMC05IDkiLz48cGF0aCBkPSJNMTggMTV2NiIvPjxwYXRoIGQ9Ik0yMSAxOGgtNiIvPjwvZz48ZyB0cmFuc2Zvcm09InRyYW5zbGF0ZSg4IDcyKSBzY2FsZSgyKSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGQ9Ik0xMiA3djQiLz48cGF0aCBkPSJNMTQgMjF2LTNhMiAyIDAgMCAwLTQgMHYzIi8+PHBhdGggZD0iTTE0IDloLTQiLz48cGF0aCBkPSJNMTggMTFoMmEyIDIgMCAwIDEgMiAydjZhMiAyIDAgMCAxLTIgMkg0YTIgMiAwIDAgMS0yLTJ2LTlhMiAyIDAgMCAxIDItMmgyIi8+PHBhdGggZD0iTTE4IDIxVjVhMiAyIDAgMCAwLTItMkg4YTIgMiAwIDAgMC0yIDJ2MTYiLz48L2c+PGcgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoNzIgNzIpIHNjYWxlKDIpIiBmaWxsPSJub25lIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBhdGggZD0iTTIwIDEwYzAgNC45OTMtNS41MzkgMTAuMTkzLTcuMzk5IDExLjc5OWExIDEgMCAwIDEtMS4yMDIgMEM5LjUzOSAyMC4xOTMgNCAxNC45OTMgNCAxMGE4IDggMCAwIDEgMTYgMCIvPjxjaXJjbGUgY3g9IjEyIiBjeT0iMTAiIHI9IjMiLz48L2c+PGcgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoMTM2IDcyKSBzY2FsZSgyKSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxyZWN0IHg9IjE2IiB5PSIxNiIgd2lkdGg9IjYiIGhlaWdodD0iNiIgcng9IjEiLz48cmVjdCB4PSIyIiB5PSIxNiIgd2lkdGg9IjYiIGhlaWdodD0iNiIgcng9IjEiLz48cmVjdCB4PSI5IiB5PSIyIiB3aWR0aD0iNiIgaGVpZ2h0PSI2IiByeD0iMSIvPjxwYXRoIGQ9Ik01IDE2di0zYTEgMSAwIDAgMSAxLTFoMTJhMSAxIDAgMCAxIDEgMXYzIi8+PHBhdGggZD0iTTEyIDEyVjgiLz48L2c+PGcgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoMjAwIDcyKSBzY2FsZSgyKSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGQ9Ik0xMiAyMnYtNSIvPjxwYXRoIGQ9Ik0xNSA4VjIiLz48cGF0aCBkPSJNMTcgOGExIDEgMCAwIDEgMSAxdjRhNCA0IDAgMCAxLTQgNGgtNGE0IDQgMCAwIDEtNC00VjlhMSAxIDAgMCAxIDEtMXoiLz48cGF0aCBkPSJNOSA4VjIiLz48L2c+PGcgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoMjY0IDcyKSBzY2FsZSgyKSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGQ9Ik01IDEyaDE0Ii8+PHBhdGggZD0iTTEyIDV2MTQiLz48L2c+PGcgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoMzI4IDcyKSBzY2FsZSgyKSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxyZWN0IHdpZHRoPSIxOCIgaGVpZ2h0PSIxOCIgeD0iMyIgeT0iMyIgcng9IjIiLz48L2c+PGcgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoMzkyIDcyKSBzY2FsZSgyKSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGQ9Im0yMS43MyAxOC04LTE0YTIgMiAwIDAgMC0zLjQ4IDBsLTggMTRBMiAyIDAgMCAwIDQgMjFoMTZhMiAyIDAgMCAwIDEuNzMtMyIvPjxwYXRoIGQ9Ik0xMiA5djQiLz48cGF0aCBkPSJNMTIgMTdoLjAxIi8+PC9nPjxnIHRyYW5zZm9ybT0idHJhbnNsYXRlKDQ1NiA3Mikgc2NhbGUoMikiIGZpbGw9Im5vbmUiIHN0cm9rZT0id2hpdGUiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJNMTIgMnYyMCIvPjxwYXRoIGQ9Ik0yIDVoMjAiLz48cGF0aCBkPSJNMyAzdjIiLz48cGF0aCBkPSJNNyAzdjIiLz48cGF0aCBkPSJNMTcgM3YyIi8+PHBhdGggZD0iTTIxIDN2MiIvPjxwYXRoIGQ9Im0xOSA1LTcgNy03LTciLz48L2c+PGcgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoOCAxMzYpIHNjYWxlKDIpIiBmaWxsPSJub25lIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBhdGggZD0iTTE4IDYgNiAxOCIvPjxwYXRoIGQ9Im02IDYgMTIgMTIiLz48L2c+PGcgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoNzIgMTM2KSBzY2FsZSgyKSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGQ9Ik00IDE0YTEgMSAwIDAgMS0uNzgtMS42M2w5LjktMTAuMmEuNS41IDAgMCAxIC44Ni40NmwtMS45MiA2LjAyQTEgMSAwIDAgMCAxMyAxMGg3YTEgMSAwIDAgMSAuNzggMS42M2wtOS45IDEwLjJhLjUuNSAwIDAgMS0uODYtLjQ2bDEuOTItNi4wMkExIDEgMCAwIDAgMTEgMTR6Ii8+PC9nPjwvc3ZnPg==",
+      "status": 200,
+      "encodedDataLength": 0
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.electric-grid.grid.summary/invoke",
+      "status": 200,
+      "encodedDataLength": 160
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.electric-grid.islands.list/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/map/capabilities.json",
+      "status": 200,
+      "encodedDataLength": 430
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 161
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 160
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/world/LayoutBrowser-DYFcs9yp.js",
+      "status": 200,
+      "encodedDataLength": 275
+    },
+    {
+      "url": "http://127.0.0.1:43130/assets/world/LayoutBrowser-DNTUdt8o.css",
+      "status": 200,
+      "encodedDataLength": 202
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/presence",
+      "status": 200,
+      "encodedDataLength": 158
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/presence",
+      "status": 200,
+      "encodedDataLength": 158
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/presence",
+      "status": 200,
+      "encodedDataLength": 158
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/presence",
+      "status": 200,
+      "encodedDataLength": 158
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/presence",
+      "status": 200,
+      "encodedDataLength": 158
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 160
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 160
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.electric-grid.map.state/invoke",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 160
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/presence",
+      "status": 200,
+      "encodedDataLength": 158
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/presence",
+      "status": 200,
+      "encodedDataLength": 158
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/presence",
+      "status": 200,
+      "encodedDataLength": 158
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/presence",
+      "status": 200,
+      "encodedDataLength": 158
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/presence",
+      "status": 200,
+      "encodedDataLength": 158
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 160
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 160
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 160
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/presence",
+      "status": 200,
+      "encodedDataLength": 158
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/presence",
+      "status": 200,
+      "encodedDataLength": 158
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 160
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/presence",
+      "status": 200,
+      "encodedDataLength": 158
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 160
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/presence",
+      "status": 200,
+      "encodedDataLength": 158
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 160
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/presence",
+      "status": 200,
+      "encodedDataLength": 158
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/presence",
+      "status": 200,
+      "encodedDataLength": 158
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/agents.people.sync/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/presence",
+      "status": 200,
+      "encodedDataLength": 158
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/presence",
+      "status": 200,
+      "encodedDataLength": 158
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 160
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/presence",
+      "status": 200,
+      "encodedDataLength": 158
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 160
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/presence",
+      "status": 200,
+      "encodedDataLength": 158
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/presence",
+      "status": 200,
+      "encodedDataLength": 158
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/presence",
+      "status": 200,
+      "encodedDataLength": 158
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/presence",
+      "status": 200,
+      "encodedDataLength": 158
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/presence",
+      "status": 200,
+      "encodedDataLength": 158
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/presence",
+      "status": 200,
+      "encodedDataLength": 158
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/agents.people.sync/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/presence",
+      "status": 200,
+      "encodedDataLength": 158
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/presence",
+      "status": 200,
+      "encodedDataLength": 158
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/presence",
+      "status": 200,
+      "encodedDataLength": 158
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 160
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 160
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/presence",
+      "status": 200,
+      "encodedDataLength": 158
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/presence",
+      "status": 200,
+      "encodedDataLength": 158
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/presence",
+      "status": 200,
+      "encodedDataLength": 158
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/presence",
+      "status": 200,
+      "encodedDataLength": 158
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/presence",
+      "status": 200,
+      "encodedDataLength": 158
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/presence",
+      "status": 200,
+      "encodedDataLength": 158
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 160
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/presence",
+      "status": 200,
+      "encodedDataLength": 158
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/capabilities/world.weather.map-features/invoke",
+      "status": 200,
+      "encodedDataLength": 159
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/presence",
+      "status": 200,
+      "encodedDataLength": 158
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/world/simulation-runs/run-4cf76f65-2f90-4eac-8de2-9c661f9afd76/displays/layout",
+      "status": 200,
+      "encodedDataLength": 165
+    },
+    {
+      "url": "http://127.0.0.1:43130/api/workspaces/961a89a6-0c10-451f-91bf-252ccf97b904/capabilities/world.simulation-run.execution.read/invoke",
+      "status": 200,
+      "encodedDataLength": 123
+    }
+  ],
+  "limits": [
+    "Real full built Host/World/MapLibre/PMTiles/ProcessPlant+Grid observations. Read-only production vector/reference asset proxy; isolated local Run/state.",
+    "One Apple M2 / headless Chrome / DPR1 desktop and narrow CSS viewport; not WAN, constrained-device or human-usability qualification.",
+    "RAF intervals include browser scheduling; not GPU execution time. Root observer does not attribute cold long tasks to a specific component. Source transport duplication remains."
+  ]
+}

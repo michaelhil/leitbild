@@ -2,6 +2,8 @@ import { apiFetch } from './api-client.ts'
 import { icon } from './icon.ts'
 import { createModal, createCodeBlock, prettyJson } from './modals/detail-modal.ts'
 import { showGenerationQueryModal, type GenerationQueryInspection } from './modals/context-modal.ts'
+import { showGenerationInspector } from './modals/generation-inspector.ts'
+import type { ExecutionInspection } from './modals/execution-journey.ts'
 import type { ModelCatalogResponse } from './model-select.ts'
 import type { UIMessage } from './render/render-types.ts'
 
@@ -149,25 +151,19 @@ export const mountMessageComparisons = (
 
   const inspect = async (id: string): Promise<void> => {
     try {
-      const detail = await request<Alternative>(`${path}/${encodeURIComponent(id)}`)
+      const detail = await request<Alternative & { execution: ExecutionInspection }>(`${path}/${encodeURIComponent(id)}`)
+      const execution = { ...detail.execution, evidencePath: `${path}/${encodeURIComponent(id)}` }
       if (detail.query) {
-        const { query, calls, startingInput, nestedQueries, ...generation } = detail
+        const { query, calls: _calls, execution: _execution, startingInput, nestedQueries, ...generation } = detail
         showGenerationQueryModal({
           messageId: message.id,
           traceId: detail.id,
           query,
           generation,
-          executionCalls: calls,
           startingInput,
           nestedQueries,
-        })
-      } else {
-        const modal = createModal({ title: 'Comparison execution', width: 'max-w-4xl' })
-        const note = document.createElement('p')
-        note.textContent = 'No final model request is available yet. This record shows the execution information currently retained.'
-        modal.scrollBody.append(note, createCodeBlock(prettyJson(detail), '65vh'))
-        document.body.appendChild(modal.overlay)
-      }
+        }, execution)
+      } else showGenerationInspector({ execution })
     } catch (failure) { report(failure) }
   }
 

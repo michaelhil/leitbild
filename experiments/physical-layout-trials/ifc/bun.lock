@@ -1,0 +1,15 @@
+{
+  "lockfileVersion": 2,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "leitbild-ifc-authoring-comparison",
+      "dependencies": {
+        "web-ifc": "0.0.78",
+      },
+    },
+  },
+  "packages": {
+    "web-ifc": ["web-ifc@0.0.78", "", {}, "sha512-LGKMNYFVNyz9vVERN0iz+zvPQJqT7MEGBxslzcuuhwDDOA116LmJLKkg8sZ5SEvQJSc5NRVMWgpRNkDmuoQoJg=="],
+  }
+}

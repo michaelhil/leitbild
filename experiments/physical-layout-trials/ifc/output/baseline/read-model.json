@@ -1,0 +1,2991 @@
+{
+  "id": "matched-ifc-site",
+  "revision": "physical-1",
+  "sourceSha256": "6c28ed351642cf904d6caf473b05a866bf6d5505207cca1dcae72d8848478a13",
+  "levels": [
+    {
+      "id": "lower",
+      "elevation": 0
+    },
+    {
+      "id": "operating",
+      "elevation": 15
+    },
+    {
+      "id": "edit-cell",
+      "elevation": 0
+    }
+  ],
+  "metadata": {
+    "modelDigest": "16523e5a06e67b517862fd96650bfef2cdd5e4ad05a1dd70c8f27eb2dff9bdff",
+    "bindingDigest": "binding-1",
+    "sourceProfile": "leitbild.ifc-authoring-trial-1",
+    "studyRevision": "study-physical-1"
+  },
+  "types": [
+    {
+      "id": "family-condensate-pump",
+      "family": "pump",
+      "parameters": {
+        "height": 3.2,
+        "length": 5.2,
+        "serviceSide": 0.8,
+        "width": 2.6
+      }
+    },
+    {
+      "id": "family-feed-pump",
+      "family": "pump",
+      "parameters": {
+        "height": 3.4,
+        "length": 12,
+        "serviceSide": 0.8,
+        "width": 2.7
+      }
+    },
+    {
+      "id": "family-hp",
+      "family": "hp",
+      "parameters": {
+        "height": 5.1,
+        "length": 7,
+        "width": 4.8
+      }
+    },
+    {
+      "id": "family-lp",
+      "family": "lp",
+      "parameters": {
+        "height": 6.7,
+        "length": 9,
+        "width": 11.2
+      }
+    },
+    {
+      "id": "family-generator",
+      "family": "generator",
+      "parameters": {
+        "height": 6.5,
+        "length": 12.5,
+        "width": 6
+      }
+    },
+    {
+      "id": "family-exciter",
+      "family": "exciter",
+      "parameters": {
+        "height": 3.8,
+        "length": 4,
+        "width": 3.2
+      }
+    },
+    {
+      "id": "family-msr",
+      "family": "msr",
+      "parameters": {
+        "height": 4.5,
+        "length": 7.4,
+        "width": 3
+      }
+    },
+    {
+      "id": "family-stop-valve",
+      "family": "valve",
+      "parameters": {
+        "height": 3.1,
+        "length": 1.8,
+        "width": 2.1
+      }
+    },
+    {
+      "id": "family-condenser",
+      "family": "condenser",
+      "parameters": {
+        "height": 14.6,
+        "length": 9,
+        "width": 15.8
+      }
+    }
+  ],
+  "elements": [
+    {
+      "id": "hall-north/operating",
+      "globalId": "1bGrodPF_cLw7krmdRcc2R",
+      "kind": "wall",
+      "levelId": "operating",
+      "position": [
+        0,
+        0,
+        15
+      ],
+      "yaw": 0,
+      "parameters": {
+        "height": 16.2,
+        "length": 88.8,
+        "width": 0.4
+      },
+      "bounds": [
+        0,
+        0,
+        15,
+        88.8,
+        0.4,
+        31.2
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "hall-north/lower",
+      "globalId": "3dOiPccAHVA_YNuIe$TRnt",
+      "kind": "wall",
+      "levelId": "lower",
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "yaw": 0,
+      "parameters": {
+        "height": 15,
+        "length": 88.8,
+        "width": 0.4
+      },
+      "bounds": [
+        0,
+        0,
+        0,
+        88.8,
+        0.4,
+        15
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "hall-west/operating",
+      "globalId": "16JE4H51bCHhova87xT1sr",
+      "kind": "wall",
+      "levelId": "operating",
+      "position": [
+        0.4,
+        0.4,
+        15
+      ],
+      "yaw": 1.5707963267948966,
+      "parameters": {
+        "height": 16.2,
+        "length": 36,
+        "width": 0.4
+      },
+      "bounds": [
+        0,
+        0.4,
+        15,
+        0.40000000000000224,
+        36.4,
+        31.2
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "hall-west/lower",
+      "globalId": "19tfxmdh9l2qD9MO7ustbS",
+      "kind": "wall",
+      "levelId": "lower",
+      "position": [
+        0.4,
+        0.4,
+        0
+      ],
+      "yaw": 1.5707963267948966,
+      "parameters": {
+        "height": 15,
+        "length": 36,
+        "width": 0.4
+      },
+      "bounds": [
+        0,
+        0.4,
+        0,
+        0.40000000000000224,
+        36.4,
+        15
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "hall-east/operating",
+      "globalId": "0xAoiw_R9cHyEtIlSUhEuP",
+      "kind": "wall",
+      "levelId": "operating",
+      "position": [
+        88.80000000000001,
+        0.4,
+        15
+      ],
+      "yaw": 1.5707963267948966,
+      "parameters": {
+        "height": 16.2,
+        "length": 36,
+        "width": 0.4
+      },
+      "bounds": [
+        88.4,
+        0.4,
+        15,
+        88.80000000000001,
+        36.4,
+        31.2
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "hall-east/lower",
+      "globalId": "1Smq$TrosK0EY$RyGazRjC",
+      "kind": "wall",
+      "levelId": "lower",
+      "position": [
+        88.80000000000001,
+        0.4,
+        0
+      ],
+      "yaw": 1.5707963267948966,
+      "parameters": {
+        "height": 15,
+        "length": 36,
+        "width": 0.4
+      },
+      "bounds": [
+        88.4,
+        0.4,
+        0,
+        88.80000000000001,
+        36.4,
+        15
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "hall-south/operating",
+      "globalId": "2yFSKR2SbP0ljbeQHJviW8",
+      "kind": "wall",
+      "levelId": "operating",
+      "position": [
+        0,
+        36.4,
+        15
+      ],
+      "yaw": 0,
+      "parameters": {
+        "height": 16.2,
+        "length": 88.8,
+        "width": 0.4
+      },
+      "bounds": [
+        0,
+        36.4,
+        15,
+        88.8,
+        36.8,
+        31.2
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "hall-south/lower",
+      "globalId": "1NwgJu0ULKkMCjLAJr9eyA",
+      "kind": "wall",
+      "levelId": "lower",
+      "position": [
+        0,
+        36.4,
+        0
+      ],
+      "yaw": 0,
+      "parameters": {
+        "height": 15,
+        "length": 88.8,
+        "width": 0.4
+      },
+      "bounds": [
+        0,
+        36.4,
+        0,
+        88.8,
+        36.8,
+        15
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "annex-north/lower",
+      "globalId": "3LpWZoHFUohLUUvKLclZ18",
+      "kind": "wall",
+      "levelId": "lower",
+      "position": [
+        8.4,
+        36.8,
+        0
+      ],
+      "yaw": 0,
+      "parameters": {
+        "height": 6.2,
+        "length": 32.8,
+        "width": 0.4
+      },
+      "bounds": [
+        8.4,
+        36.8,
+        0,
+        41.199999999999996,
+        37.199999999999996,
+        6.2
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "annex-west/lower",
+      "globalId": "2VmoywBWtFosDUFiZhGZ94",
+      "kind": "wall",
+      "levelId": "lower",
+      "position": [
+        8.8,
+        37.2,
+        0
+      ],
+      "yaw": 1.5707963267948966,
+      "parameters": {
+        "height": 6.2,
+        "length": 16,
+        "width": 0.4
+      },
+      "bounds": [
+        8.4,
+        37.2,
+        0,
+        8.800000000000002,
+        53.2,
+        6.2
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "annex-east/lower",
+      "globalId": "2TrZad1KiKxIxbnaR$Vfmj",
+      "kind": "wall",
+      "levelId": "lower",
+      "position": [
+        41.199999999999996,
+        37.2,
+        0
+      ],
+      "yaw": 1.5707963267948966,
+      "parameters": {
+        "height": 6.2,
+        "length": 16,
+        "width": 0.4
+      },
+      "bounds": [
+        40.8,
+        37.2,
+        0,
+        41.199999999999996,
+        53.2,
+        6.2
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "annex-south/lower",
+      "globalId": "1sNGoZ2Eay01TTHYp4Vznj",
+      "kind": "wall",
+      "levelId": "lower",
+      "position": [
+        8.4,
+        53.2,
+        0
+      ],
+      "yaw": 0,
+      "parameters": {
+        "height": 6.2,
+        "length": 32.8,
+        "width": 0.4
+      },
+      "bounds": [
+        8.4,
+        53.2,
+        0,
+        41.199999999999996,
+        53.6,
+        6.2
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "edit-wall",
+      "globalId": "2hFrjN7vN86i05rISazOOf",
+      "kind": "wall",
+      "levelId": "edit-cell",
+      "position": [
+        110,
+        0,
+        0
+      ],
+      "yaw": 0.5235987755982988,
+      "parameters": {
+        "height": 6,
+        "length": 12,
+        "width": 0.3
+      },
+      "bounds": [
+        109.85,
+        0,
+        0,
+        120.39230484541326,
+        6.259807621135331,
+        6
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "floor-lower",
+      "globalId": "3vDaS36cTb4hRYOpeosCu6",
+      "kind": "slab",
+      "levelId": "lower",
+      "position": [
+        0.4,
+        0.4,
+        -0.45
+      ],
+      "yaw": 0,
+      "parameters": {
+        "height": 0.45,
+        "length": 88,
+        "width": 36
+      },
+      "bounds": [
+        0.4,
+        0.4,
+        -0.45,
+        88.4,
+        36.4,
+        0
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "floor-operating",
+      "globalId": "1TNyv1MTiM5_WBw$LOFJmg",
+      "kind": "slab",
+      "levelId": "operating",
+      "position": [
+        0.4,
+        0.4,
+        14.6
+      ],
+      "yaw": 0,
+      "parameters": {
+        "height": 0.4,
+        "length": 88,
+        "width": 36
+      },
+      "bounds": [
+        0.4,
+        0.4,
+        14.6,
+        88.4,
+        36.4,
+        15
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "floor-annex",
+      "globalId": "23NayT9jgpFraPIaEvHv2g",
+      "kind": "slab",
+      "levelId": "lower",
+      "position": [
+        8.8,
+        37.2,
+        -0.45
+      ],
+      "yaw": 0,
+      "parameters": {
+        "height": 0.45,
+        "length": 32,
+        "width": 16
+      },
+      "bounds": [
+        8.8,
+        37.2,
+        -0.45,
+        40.8,
+        53.2,
+        0
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "hall-roof",
+      "globalId": "1AtJ5qFjpc98H55tOGtHiC",
+      "kind": "roof",
+      "levelId": "operating",
+      "position": [
+        0,
+        0,
+        31.2
+      ],
+      "yaw": 0,
+      "parameters": {
+        "height": 0.25,
+        "length": 88.8,
+        "width": 36.8
+      },
+      "bounds": [
+        0,
+        0,
+        31.2,
+        88.8,
+        36.8,
+        31.45
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "pump-roof",
+      "globalId": "2TgvzzPZHFcoRgwwrJOMPN",
+      "kind": "roof",
+      "levelId": "lower",
+      "position": [
+        8.4,
+        36.8,
+        6.2
+      ],
+      "yaw": 0,
+      "parameters": {
+        "height": 0.2,
+        "length": 32.8,
+        "width": 16.8
+      },
+      "bounds": [
+        8.4,
+        36.8,
+        6.2,
+        41.199999999999996,
+        53.599999999999994,
+        6.4
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "edit-roof",
+      "globalId": "3fPZ8hvb8LnWNGtdFDfB_6",
+      "kind": "roof",
+      "levelId": "edit-cell",
+      "position": [
+        110,
+        0,
+        6
+      ],
+      "yaw": 0.5235987755982988,
+      "parameters": {
+        "height": 0.2,
+        "length": 12,
+        "width": 6
+      },
+      "bounds": [
+        107,
+        0,
+        6,
+        120.39230484541326,
+        11.196152422706632,
+        6.2
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "edit-deck",
+      "globalId": "17P3BK6OXI_DrVMqktkCmr",
+      "kind": "slab",
+      "levelId": "edit-cell",
+      "position": [
+        110,
+        0,
+        2.8
+      ],
+      "yaw": 0.5235987755982988,
+      "parameters": {
+        "height": 0.2,
+        "length": 12,
+        "width": 6
+      },
+      "bounds": [
+        107,
+        0,
+        2.8,
+        120.39230484541326,
+        11.196152422706632,
+        3
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "edit-landing",
+      "globalId": "3AkIgvmhth$f7zTZyvFB2f",
+      "kind": "slab",
+      "levelId": "edit-cell",
+      "position": [
+        110,
+        5,
+        2.8
+      ],
+      "yaw": 0.5235987755982988,
+      "parameters": {
+        "height": 0.2,
+        "length": 3,
+        "width": 1
+      },
+      "bounds": [
+        109.5,
+        5,
+        2.8,
+        112.59807621135332,
+        7.366025403784438,
+        3
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "W-1/hall-north/operating",
+      "globalId": "3kShYsIH8HwqCQigFlmFOE",
+      "kind": "opening",
+      "levelId": "operating",
+      "position": [
+        13.4,
+        -0.01,
+        17.2
+      ],
+      "yaw": 0,
+      "parameters": {
+        "height": 3,
+        "length": 7,
+        "width": 0.42000000000000004
+      },
+      "hostId": "hall-north/operating",
+      "spaceIds": [
+        "hall-space-operating"
+      ],
+      "bounds": [
+        13.4,
+        -0.01,
+        17.2,
+        20.4,
+        0.41000000000000003,
+        20.2
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "W-2/hall-north/operating",
+      "globalId": "0tqv5SgUUJMzoAPsb7UH4n",
+      "kind": "opening",
+      "levelId": "operating",
+      "position": [
+        35.4,
+        -0.01,
+        17.2
+      ],
+      "yaw": 0,
+      "parameters": {
+        "height": 3,
+        "length": 7,
+        "width": 0.42000000000000004
+      },
+      "hostId": "hall-north/operating",
+      "spaceIds": [
+        "hall-space-operating"
+      ],
+      "bounds": [
+        35.4,
+        -0.01,
+        17.2,
+        42.4,
+        0.41000000000000003,
+        20.2
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "W-3/hall-north/operating",
+      "globalId": "3KWVNAyBKWw3gb3brkEmED",
+      "kind": "opening",
+      "levelId": "operating",
+      "position": [
+        57.4,
+        -0.01,
+        17.2
+      ],
+      "yaw": 0,
+      "parameters": {
+        "height": 3,
+        "length": 7,
+        "width": 0.42000000000000004
+      },
+      "hostId": "hall-north/operating",
+      "spaceIds": [
+        "hall-space-operating"
+      ],
+      "bounds": [
+        57.4,
+        -0.01,
+        17.2,
+        64.4,
+        0.41000000000000003,
+        20.2
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "D-N1/hall-north/lower",
+      "globalId": "2ik8qazCuE_lGDjGo0EhlV",
+      "kind": "opening",
+      "levelId": "lower",
+      "position": [
+        74,
+        -0.01,
+        0
+      ],
+      "yaw": 0,
+      "parameters": {
+        "height": 2.7,
+        "length": 1.2,
+        "width": 0.42000000000000004
+      },
+      "hostId": "hall-north/lower",
+      "spaceIds": [
+        "hall-space-lower"
+      ],
+      "bounds": [
+        74,
+        -0.01,
+        0,
+        75.2,
+        0.41000000000000003,
+        2.7
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "D-W1/hall-west/lower",
+      "globalId": "0dWZL176smkYxR85XfP$BW",
+      "kind": "opening",
+      "levelId": "lower",
+      "position": [
+        0.4100000000000015,
+        24,
+        0
+      ],
+      "yaw": 1.5707963267948966,
+      "parameters": {
+        "height": 2.7,
+        "length": 2.4,
+        "width": 0.42000000000000004
+      },
+      "hostId": "hall-west/lower",
+      "spaceIds": [
+        "hall-space-lower"
+      ],
+      "bounds": [
+        -0.009999999999998566,
+        24,
+        0,
+        0.41000000000000164,
+        26.4,
+        2.7
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "D-E1/hall-east/lower",
+      "globalId": "04sZWBluw8yFiDt8Msu8i$",
+      "kind": "opening",
+      "levelId": "lower",
+      "position": [
+        88.81000000000002,
+        26,
+        0
+      ],
+      "yaw": 1.5707963267948966,
+      "parameters": {
+        "height": 5.2,
+        "length": 6,
+        "width": 0.42000000000000004
+      },
+      "hostId": "hall-east/lower",
+      "spaceIds": [
+        "hall-space-lower"
+      ],
+      "bounds": [
+        88.39000000000001,
+        26,
+        0,
+        88.81000000000002,
+        32,
+        5.2
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "D-P1/hall-south/lower",
+      "globalId": "2dSBQXsNjZJF1ZRZSZ7AP7",
+      "kind": "opening",
+      "levelId": "lower",
+      "position": [
+        12.4,
+        36.39,
+        0
+      ],
+      "yaw": 0,
+      "parameters": {
+        "height": 2.7,
+        "length": 2.4,
+        "width": 0.42000000000000004
+      },
+      "hostId": "hall-south/lower",
+      "spaceIds": [
+        "hall-space-lower"
+      ],
+      "bounds": [
+        12.4,
+        36.39,
+        0,
+        14.8,
+        36.81,
+        2.7
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "D-P1b/annex-north/lower",
+      "globalId": "2z1bTYvBGh$jw7vipazq9L",
+      "kind": "opening",
+      "levelId": "lower",
+      "position": [
+        12.4,
+        36.79,
+        0
+      ],
+      "yaw": 0,
+      "parameters": {
+        "height": 2.7,
+        "length": 2.4,
+        "width": 0.42000000000000004
+      },
+      "hostId": "annex-north/lower",
+      "spaceIds": [
+        "pump-space",
+        "hall-space-lower"
+      ],
+      "bounds": [
+        12.4,
+        36.79,
+        0,
+        14.8,
+        37.21,
+        2.7
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "D-P2/annex-west/lower",
+      "globalId": "1N$5vT8CMBVfrnEBGeOpOQ",
+      "kind": "opening",
+      "levelId": "lower",
+      "position": [
+        8.81,
+        41.800000000000004,
+        0
+      ],
+      "yaw": 1.5707963267948966,
+      "parameters": {
+        "height": 5.2,
+        "length": 6,
+        "width": 0.42000000000000004
+      },
+      "hostId": "annex-west/lower",
+      "spaceIds": [
+        "pump-space",
+        "hall-space-lower"
+      ],
+      "bounds": [
+        8.39,
+        41.800000000000004,
+        0,
+        8.81,
+        47.800000000000004,
+        5.2
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "D-P3/annex-south/lower",
+      "globalId": "3kNXfMAaJvbWFpnb2kjrh1",
+      "kind": "opening",
+      "levelId": "lower",
+      "position": [
+        35.6,
+        53.190000000000005,
+        0
+      ],
+      "yaw": 0,
+      "parameters": {
+        "height": 2.7,
+        "length": 2.4,
+        "width": 0.42000000000000004
+      },
+      "hostId": "annex-south/lower",
+      "spaceIds": [
+        "pump-space",
+        "hall-space-lower"
+      ],
+      "bounds": [
+        35.6,
+        53.190000000000005,
+        0,
+        38,
+        53.61000000000001,
+        2.7
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "deck-opening-0",
+      "globalId": "0FWM71CPmJ4Xg8u8Xwe4R3",
+      "kind": "opening",
+      "levelId": "operating",
+      "position": [
+        3.6,
+        27.4,
+        14.5
+      ],
+      "yaw": 0,
+      "parameters": {
+        "height": 0.6,
+        "length": 5.2,
+        "width": 7.4
+      },
+      "hostId": "floor-operating",
+      "bounds": [
+        3.6,
+        27.4,
+        14.5,
+        8.8,
+        34.8,
+        15.1
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "deck-opening-1",
+      "globalId": "09shg81p3ggYp$qUkNk1Rh",
+      "kind": "opening",
+      "levelId": "operating",
+      "position": [
+        75.8,
+        26,
+        14.5
+      ],
+      "yaw": 0,
+      "parameters": {
+        "height": 0.6,
+        "length": 8,
+        "width": 4.8
+      },
+      "hostId": "floor-operating",
+      "bounds": [
+        75.8,
+        26,
+        14.5,
+        83.8,
+        30.8,
+        15.1
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "deck-opening-2",
+      "globalId": "1FTkQUbZhesbHFk$$avL0L",
+      "kind": "opening",
+      "levelId": "operating",
+      "position": [
+        21.3,
+        14.1,
+        14.5
+      ],
+      "yaw": 0,
+      "parameters": {
+        "height": 0.6,
+        "length": 6.4,
+        "width": 8.6
+      },
+      "hostId": "floor-operating",
+      "bounds": [
+        21.3,
+        14.1,
+        14.5,
+        27.700000000000003,
+        22.7,
+        15.1
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "deck-opening-3",
+      "globalId": "2mr6dIpy4JNiSXG$cgkqa6",
+      "kind": "opening",
+      "levelId": "operating",
+      "position": [
+        32.3,
+        14.1,
+        14.5
+      ],
+      "yaw": 0,
+      "parameters": {
+        "height": 0.6,
+        "length": 6.4,
+        "width": 8.6
+      },
+      "hostId": "floor-operating",
+      "bounds": [
+        32.3,
+        14.1,
+        14.5,
+        38.699999999999996,
+        22.7,
+        15.1
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "deck-opening-4",
+      "globalId": "1GG$IgsMq8MxA8cfEYawTA",
+      "kind": "opening",
+      "levelId": "operating",
+      "position": [
+        43.3,
+        14.1,
+        14.5
+      ],
+      "yaw": 0,
+      "parameters": {
+        "height": 0.6,
+        "length": 6.4,
+        "width": 8.6
+      },
+      "hostId": "floor-operating",
+      "bounds": [
+        43.3,
+        14.1,
+        14.5,
+        49.699999999999996,
+        22.7,
+        15.1
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "existing-opening",
+      "globalId": "1bu7PP1QegnIzSQlTZFrwK",
+      "kind": "opening",
+      "levelId": "edit-cell",
+      "position": [
+        110.87102540378444,
+        0.49133974596215546,
+        0
+      ],
+      "yaw": 0.5235987755982988,
+      "parameters": {
+        "height": 2.4,
+        "length": 1.2,
+        "width": 0.32
+      },
+      "hostId": "edit-wall",
+      "spaceIds": [
+        "edit-space-a",
+        "edit-space-b"
+      ],
+      "bounds": [
+        110.71102540378445,
+        0.49133974596215546,
+        0,
+        111.91025588832576,
+        1.3684678751731756,
+        2.4
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "D-N1/hall-north/lower/door",
+      "globalId": "0zHG35DDdiULjRztrNXgUE",
+      "kind": "door",
+      "levelId": "lower",
+      "position": [
+        74,
+        -0.01,
+        0
+      ],
+      "yaw": 0,
+      "parameters": {
+        "height": 2.7,
+        "length": 1.2,
+        "width": 0.06
+      },
+      "fillsId": "D-N1/hall-north/lower",
+      "spaceIds": [
+        "hall-space-lower"
+      ],
+      "bounds": [
+        74,
+        -0.01,
+        0,
+        75.2,
+        0.049999999999999996,
+        2.7
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "D-W1/hall-west/lower/door",
+      "globalId": "08n0cAbPtH8XGKmsamL46w",
+      "kind": "door",
+      "levelId": "lower",
+      "position": [
+        0.4100000000000015,
+        24,
+        0
+      ],
+      "yaw": 1.5707963267948966,
+      "parameters": {
+        "height": 2.7,
+        "length": 2.4,
+        "width": 0.06
+      },
+      "fillsId": "D-W1/hall-west/lower",
+      "spaceIds": [
+        "hall-space-lower"
+      ],
+      "bounds": [
+        0.3500000000000015,
+        24,
+        0,
+        0.41000000000000164,
+        26.4,
+        2.7
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "D-E1/hall-east/lower/door",
+      "globalId": "2CZRdh$GXxBcIcE_Hm0Jn$",
+      "kind": "door",
+      "levelId": "lower",
+      "position": [
+        88.81000000000002,
+        26,
+        0
+      ],
+      "yaw": 1.5707963267948966,
+      "parameters": {
+        "height": 5.2,
+        "length": 6,
+        "width": 0.06
+      },
+      "fillsId": "D-E1/hall-east/lower",
+      "spaceIds": [
+        "hall-space-lower"
+      ],
+      "bounds": [
+        88.75000000000001,
+        26,
+        0,
+        88.81000000000002,
+        32,
+        5.2
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "D-P1/hall-south/lower/door",
+      "globalId": "1$KZ1utrF1QqnsxgSS7A5u",
+      "kind": "door",
+      "levelId": "lower",
+      "position": [
+        12.4,
+        36.39,
+        0
+      ],
+      "yaw": 0,
+      "parameters": {
+        "height": 2.7,
+        "length": 2.4,
+        "width": 0.06
+      },
+      "fillsId": "D-P1/hall-south/lower",
+      "spaceIds": [
+        "hall-space-lower"
+      ],
+      "bounds": [
+        12.4,
+        36.39,
+        0,
+        14.8,
+        36.45,
+        2.7
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "D-P1b/annex-north/lower/door",
+      "globalId": "3nLWpqj6M8IRTzNL$mLQ9j",
+      "kind": "door",
+      "levelId": "lower",
+      "position": [
+        12.4,
+        36.79,
+        0
+      ],
+      "yaw": 0,
+      "parameters": {
+        "height": 2.7,
+        "length": 2.4,
+        "width": 0.06
+      },
+      "fillsId": "D-P1b/annex-north/lower",
+      "spaceIds": [
+        "pump-space",
+        "hall-space-lower"
+      ],
+      "bounds": [
+        12.4,
+        36.79,
+        0,
+        14.8,
+        36.85,
+        2.7
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "D-P2/annex-west/lower/door",
+      "globalId": "3DCT0sJMo8Hffn$$B_TpMF",
+      "kind": "door",
+      "levelId": "lower",
+      "position": [
+        8.81,
+        41.800000000000004,
+        0
+      ],
+      "yaw": 1.5707963267948966,
+      "parameters": {
+        "height": 5.2,
+        "length": 6,
+        "width": 0.06
+      },
+      "fillsId": "D-P2/annex-west/lower",
+      "spaceIds": [
+        "pump-space",
+        "hall-space-lower"
+      ],
+      "bounds": [
+        8.75,
+        41.800000000000004,
+        0,
+        8.81,
+        47.800000000000004,
+        5.2
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "D-P3/annex-south/lower/door",
+      "globalId": "240fpD4DPoL$U4Q$KGO14H",
+      "kind": "door",
+      "levelId": "lower",
+      "position": [
+        35.6,
+        53.190000000000005,
+        0
+      ],
+      "yaw": 0,
+      "parameters": {
+        "height": 2.7,
+        "length": 2.4,
+        "width": 0.06
+      },
+      "fillsId": "D-P3/annex-south/lower",
+      "spaceIds": [
+        "pump-space",
+        "hall-space-lower"
+      ],
+      "bounds": [
+        35.6,
+        53.190000000000005,
+        0,
+        38,
+        53.25000000000001,
+        2.7
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "existing-door",
+      "globalId": "1ghcoqvuKcwb9_S5bFz3a6",
+      "kind": "door",
+      "levelId": "edit-cell",
+      "position": [
+        110.87102540378444,
+        0.49133974596215546,
+        0
+      ],
+      "yaw": 0.5235987755982988,
+      "parameters": {
+        "height": 2.4,
+        "length": 1.2,
+        "width": 0.06
+      },
+      "fillsId": "existing-opening",
+      "spaceIds": [
+        "edit-space-a",
+        "edit-space-b"
+      ],
+      "bounds": [
+        110.84102540378444,
+        0.49133974596215546,
+        0,
+        111.91025588832576,
+        1.1433012701892218,
+        2.4
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "cp-a",
+      "globalId": "2IWhCOqWEHv982$yRORkIp",
+      "kind": "pump",
+      "levelId": "lower",
+      "position": [
+        55.5,
+        19.2,
+        0
+      ],
+      "yaw": 0,
+      "typeId": "family-condensate-pump",
+      "parameters": {
+        "height": 3.2,
+        "length": 5.2,
+        "serviceSide": 0.8,
+        "width": 2.6
+      },
+      "componentId": "condensatePumpA",
+      "memberId": "unit-a",
+      "ownerId": "plant:trial-a",
+      "bounds": [
+        55.32,
+        19.05,
+        0,
+        60.88,
+        21.95,
+        2.6854400000000003
+      ],
+      "interfaces": [
+        {
+          "id": "cp-a/inlet",
+          "position": [
+            56.02,
+            19.2,
+            1.6640000000000001
+          ],
+          "direction": [
+            0,
+            -1,
+            0
+          ]
+        },
+        {
+          "id": "cp-a/outlet",
+          "position": [
+            57.268,
+            21.8,
+            1.6640000000000001
+          ],
+          "direction": [
+            0,
+            1,
+            0
+          ]
+        }
+      ],
+      "envelopes": [
+        {
+          "role": "ServiceEnvelope",
+          "task": "illustrative side access",
+          "evidence": "authored allowance, not OEM-qualified",
+          "bounds": [
+            55.5,
+            21.8,
+            0,
+            60.7,
+            22.6,
+            3.2
+          ]
+        },
+        {
+          "role": "RemovalEnvelope",
+          "task": "illustrative axial motor withdrawal",
+          "evidence": "generated proxy; rigging/support facts unknown",
+          "bounds": [
+            60.7,
+            19.2,
+            0,
+            63.82,
+            21.8,
+            3.2
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cp-b",
+      "globalId": "0Z$e9haNVx18JN6fPt1bue",
+      "kind": "pump",
+      "levelId": "lower",
+      "position": [
+        63.5,
+        24.2,
+        0
+      ],
+      "yaw": 0,
+      "typeId": "family-condensate-pump",
+      "parameters": {
+        "height": 3.2,
+        "length": 5.2,
+        "serviceSide": 0.8,
+        "width": 2.6
+      },
+      "componentId": "condensatePumpB",
+      "memberId": "unit-a",
+      "ownerId": "plant:trial-a",
+      "bounds": [
+        63.32,
+        24.05,
+        0,
+        68.88,
+        26.95,
+        2.6854400000000003
+      ],
+      "interfaces": [
+        {
+          "id": "cp-b/inlet",
+          "position": [
+            64.02,
+            24.2,
+            1.6640000000000001
+          ],
+          "direction": [
+            0,
+            -1,
+            0
+          ]
+        },
+        {
+          "id": "cp-b/outlet",
+          "position": [
+            65.268,
+            26.8,
+            1.6640000000000001
+          ],
+          "direction": [
+            0,
+            1,
+            0
+          ]
+        }
+      ],
+      "envelopes": [
+        {
+          "role": "ServiceEnvelope",
+          "task": "illustrative side access",
+          "evidence": "authored allowance, not OEM-qualified",
+          "bounds": [
+            63.5,
+            26.8,
+            0,
+            68.7,
+            27.6,
+            3.2
+          ]
+        },
+        {
+          "role": "RemovalEnvelope",
+          "task": "illustrative axial motor withdrawal",
+          "evidence": "generated proxy; rigging/support facts unknown",
+          "bounds": [
+            68.7,
+            24.2,
+            0,
+            71.82,
+            26.8,
+            3.2
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mfw-a",
+      "globalId": "2cT0mpJOGcBSejIh65tHj9",
+      "kind": "pump",
+      "levelId": "lower",
+      "position": [
+        17,
+        40.4,
+        0
+      ],
+      "yaw": 0,
+      "typeId": "family-feed-pump",
+      "parameters": {
+        "height": 3.4,
+        "length": 12,
+        "serviceSide": 0.8,
+        "width": 2.7
+      },
+      "componentId": "mainFeedwaterPumpA",
+      "memberId": "unit-a",
+      "ownerId": "plant:trial-a",
+      "bounds": [
+        16.82,
+        40.25,
+        0,
+        29.18,
+        43.25,
+        2.85328
+      ],
+      "interfaces": [
+        {
+          "id": "mfw-a/inlet",
+          "position": [
+            18.2,
+            40.4,
+            1.768
+          ],
+          "direction": [
+            0,
+            -1,
+            0
+          ]
+        },
+        {
+          "id": "mfw-a/outlet",
+          "position": [
+            21.08,
+            43.1,
+            1.768
+          ],
+          "direction": [
+            0,
+            1,
+            0
+          ]
+        }
+      ],
+      "envelopes": [
+        {
+          "role": "ServiceEnvelope",
+          "task": "illustrative side access",
+          "evidence": "authored allowance, not OEM-qualified",
+          "bounds": [
+            17,
+            43.1,
+            0,
+            29,
+            43.9,
+            3.4
+          ]
+        },
+        {
+          "role": "RemovalEnvelope",
+          "task": "illustrative axial motor withdrawal",
+          "evidence": "generated proxy; rigging/support facts unknown",
+          "bounds": [
+            29,
+            40.4,
+            0,
+            36.2,
+            43.1,
+            3.4
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mfw-b",
+      "globalId": "2cT5OuNKT2dgBhjwfQz9cw",
+      "kind": "pump",
+      "levelId": "lower",
+      "position": [
+        17,
+        48.1,
+        0
+      ],
+      "yaw": 0,
+      "typeId": "family-feed-pump",
+      "parameters": {
+        "height": 3.4,
+        "length": 12,
+        "serviceSide": 0.8,
+        "width": 2.7
+      },
+      "componentId": "mainFeedwaterPumpB",
+      "memberId": "unit-a",
+      "ownerId": "plant:trial-a",
+      "bounds": [
+        16.82,
+        47.95,
+        0,
+        29.18,
+        50.95,
+        2.85328
+      ],
+      "interfaces": [
+        {
+          "id": "mfw-b/inlet",
+          "position": [
+            18.2,
+            48.1,
+            1.768
+          ],
+          "direction": [
+            0,
+            -1,
+            0
+          ]
+        },
+        {
+          "id": "mfw-b/outlet",
+          "position": [
+            21.08,
+            50.800000000000004,
+            1.768
+          ],
+          "direction": [
+            0,
+            1,
+            0
+          ]
+        }
+      ],
+      "envelopes": [
+        {
+          "role": "ServiceEnvelope",
+          "task": "illustrative side access",
+          "evidence": "authored allowance, not OEM-qualified",
+          "bounds": [
+            17,
+            50.800000000000004,
+            0,
+            29,
+            51.6,
+            3.4
+          ]
+        },
+        {
+          "role": "RemovalEnvelope",
+          "task": "illustrative axial motor withdrawal",
+          "evidence": "generated proxy; rigging/support facts unknown",
+          "bounds": [
+            29,
+            48.1,
+            0,
+            36.2,
+            50.800000000000004,
+            3.4
+          ]
+        }
+      ]
+    },
+    {
+      "id": "hall-space-lower",
+      "globalId": "29YN$PsfLybhNu0eHBiHoD",
+      "kind": "space",
+      "levelId": "lower",
+      "position": [
+        0.4,
+        0.4,
+        0
+      ],
+      "yaw": 0,
+      "parameters": {
+        "height": 15,
+        "length": 88,
+        "width": 36
+      },
+      "bounds": [
+        0.4,
+        0.4,
+        0,
+        88.4,
+        36.4,
+        15
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "hall-space-operating",
+      "globalId": "3zU5ZFqnccEixzb3LKuiA0",
+      "kind": "space",
+      "levelId": "operating",
+      "position": [
+        0.4,
+        0.4,
+        15
+      ],
+      "yaw": 0,
+      "parameters": {
+        "height": 16.2,
+        "length": 88,
+        "width": 36
+      },
+      "bounds": [
+        0.4,
+        0.4,
+        15,
+        88.4,
+        36.4,
+        31.2
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "pump-space",
+      "globalId": "2lywBjVyuIJDcFwxPwWwlS",
+      "kind": "space",
+      "levelId": "lower",
+      "position": [
+        8.8,
+        37.2,
+        0
+      ],
+      "yaw": 0,
+      "parameters": {
+        "height": 6.2,
+        "length": 32,
+        "width": 16
+      },
+      "bounds": [
+        8.8,
+        37.2,
+        0,
+        40.8,
+        53.2,
+        6.2
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "edit-space-a",
+      "globalId": "1YsBWP$$9qWxrEZOalteuM",
+      "kind": "space",
+      "levelId": "edit-cell",
+      "position": [
+        110,
+        0,
+        0
+      ],
+      "yaw": 0.5235987755982988,
+      "parameters": {
+        "height": 6,
+        "length": 12,
+        "width": 6
+      },
+      "bounds": [
+        107,
+        0,
+        0,
+        120.39230484541326,
+        11.196152422706632,
+        6
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "edit-space-b",
+      "globalId": "2tTGdMueWjguKHlSWktOHz",
+      "kind": "space",
+      "levelId": "edit-cell",
+      "position": [
+        110,
+        -6,
+        0
+      ],
+      "yaw": 0.5235987755982988,
+      "parameters": {
+        "height": 6,
+        "length": 12,
+        "width": 6
+      },
+      "bounds": [
+        107,
+        -6,
+        0,
+        120.39230484541326,
+        5.196152422706632,
+        6
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "fixed-vessel",
+      "globalId": "2LRpIcO9hhctj5wKSYK15h",
+      "kind": "vessel",
+      "levelId": "edit-cell",
+      "position": [
+        125,
+        20,
+        0
+      ],
+      "yaw": 0,
+      "parameters": {
+        "height": 10,
+        "length": 4,
+        "width": 4
+      },
+      "bounds": [
+        125,
+        20,
+        0.3,
+        129,
+        24,
+        10
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "main-steam-route",
+      "globalId": "3NFbkyeCWY40SGQf78vIGH",
+      "kind": "pipe",
+      "levelId": "operating",
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "yaw": 0,
+      "parameters": {
+        "height": 1,
+        "length": 1,
+        "path": "[[5.7,0.4,23],[5.7,16.45,23],[11.15,16.45,23],[11.15,18.4,20]]",
+        "radius": 0.38,
+        "width": 1
+      },
+      "bounds": [
+        5.32,
+        0.4,
+        19.79290442677374,
+        11.530000000000001,
+        18.718608574194242,
+        23.38
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "feedwater-route",
+      "globalId": "2k4V4sCh1sEBQjkF2mcUkF",
+      "kind": "pipe",
+      "levelId": "lower",
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "yaw": 0,
+      "parameters": {
+        "height": 1,
+        "length": 1,
+        "path": "[[8.8,39.9,1.65],[15.1,39.9,1.65],[15.1,40.5,1.65],[18.2,40.5,1.65]]",
+        "radius": 0.18,
+        "width": 1
+      },
+      "bounds": [
+        8.8,
+        39.72,
+        1.47,
+        18.2,
+        40.68,
+        1.8299999999999998
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "cable-riser-route",
+      "globalId": "20QN3zIrYjQKrlweN0ZoB2",
+      "kind": "pipe",
+      "levelId": "lower",
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "yaw": 0,
+      "parameters": {
+        "height": 1,
+        "length": 1,
+        "path": "[[82,30,1],[82,30,15],[82,20,15]]",
+        "radius": 0.12,
+        "width": 1
+      },
+      "bounds": [
+        81.88,
+        20,
+        1,
+        82.12,
+        30.12,
+        15.12
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "tg-hp",
+      "globalId": "27gw3I8vxoi_XKX3FUhX22",
+      "kind": "hp",
+      "levelId": "operating",
+      "position": [
+        10,
+        16,
+        15
+      ],
+      "yaw": 0,
+      "typeId": "family-hp",
+      "parameters": {
+        "height": 5.1,
+        "length": 7,
+        "width": 4.8
+      },
+      "componentId": "turbine",
+      "memberId": "unit-a",
+      "ownerId": "plant:trial-a",
+      "bounds": [
+        10,
+        16,
+        15,
+        17,
+        20.8,
+        19.94445
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "tg-lp-1",
+      "globalId": "3ip8GggWeHwuJPZJN8M2Xy",
+      "kind": "lp",
+      "levelId": "operating",
+      "position": [
+        20,
+        12.8,
+        15
+      ],
+      "yaw": 0,
+      "typeId": "family-lp",
+      "parameters": {
+        "height": 6.7,
+        "length": 9,
+        "width": 11.2
+      },
+      "componentId": "turbine",
+      "memberId": "unit-a",
+      "ownerId": "plant:trial-a",
+      "bounds": [
+        20,
+        12.8,
+        15,
+        29,
+        24,
+        21.495649999999998
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "tg-lp-2",
+      "globalId": "14N6lvWtM8GsYF2Jt1f3$b",
+      "kind": "lp",
+      "levelId": "operating",
+      "position": [
+        31,
+        12.8,
+        15
+      ],
+      "yaw": 0,
+      "typeId": "family-lp",
+      "parameters": {
+        "height": 6.7,
+        "length": 9,
+        "width": 11.2
+      },
+      "componentId": "turbine",
+      "memberId": "unit-a",
+      "ownerId": "plant:trial-a",
+      "bounds": [
+        31,
+        12.8,
+        15,
+        40,
+        24,
+        21.495649999999998
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "tg-lp-3",
+      "globalId": "3SA9pkRegGQtWhiHS0N0aE",
+      "kind": "lp",
+      "levelId": "operating",
+      "position": [
+        42,
+        12.8,
+        15
+      ],
+      "yaw": 0,
+      "typeId": "family-lp",
+      "parameters": {
+        "height": 6.7,
+        "length": 9,
+        "width": 11.2
+      },
+      "componentId": "turbine",
+      "memberId": "unit-a",
+      "ownerId": "plant:trial-a",
+      "bounds": [
+        42,
+        12.8,
+        15,
+        51,
+        24,
+        21.495649999999998
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "tg-generator",
+      "globalId": "0gszBULXN4gzhEaLlN6SNu",
+      "kind": "generator",
+      "levelId": "operating",
+      "position": [
+        55,
+        15.4,
+        15
+      ],
+      "yaw": 0,
+      "typeId": "family-generator",
+      "parameters": {
+        "height": 6.5,
+        "length": 12.5,
+        "width": 6
+      },
+      "componentId": "turbine",
+      "memberId": "unit-a",
+      "ownerId": "plant:trial-a",
+      "bounds": [
+        55,
+        15.4,
+        15,
+        67.5,
+        22.4,
+        21.30175
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "tg-exciter",
+      "globalId": "3Z3vRru5agRESYd7Mm19X8",
+      "kind": "exciter",
+      "levelId": "operating",
+      "position": [
+        70,
+        16.8,
+        15
+      ],
+      "yaw": 0,
+      "typeId": "family-exciter",
+      "parameters": {
+        "height": 3.8,
+        "length": 4,
+        "width": 3.2
+      },
+      "componentId": "turbine",
+      "memberId": "unit-a",
+      "ownerId": "plant:trial-a",
+      "bounds": [
+        70,
+        16.8,
+        15,
+        74,
+        20,
+        18.6841
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "msr-1",
+      "globalId": "0ARmIGkqcA$cmYQF408kn9",
+      "kind": "msr",
+      "levelId": "operating",
+      "position": [
+        10.2,
+        5.4,
+        15
+      ],
+      "yaw": 0,
+      "typeId": "family-msr",
+      "parameters": {
+        "height": 4.5,
+        "length": 7.4,
+        "width": 3
+      },
+      "memberId": "unit-a",
+      "ownerId": "plant:trial-a",
+      "bounds": [
+        10.2,
+        5.4,
+        15,
+        17.6,
+        8.4,
+        19.36275
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "msr-2",
+      "globalId": "3ZM_B0wxUb2zBNSpPwZiVH",
+      "kind": "msr",
+      "levelId": "operating",
+      "position": [
+        10.2,
+        27.8,
+        15
+      ],
+      "yaw": 0,
+      "typeId": "family-msr",
+      "parameters": {
+        "height": 4.5,
+        "length": 7.4,
+        "width": 3
+      },
+      "memberId": "unit-a",
+      "ownerId": "plant:trial-a",
+      "bounds": [
+        10.2,
+        27.8,
+        15,
+        17.6,
+        30.8,
+        19.36275
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "stop-valve",
+      "globalId": "1PR7xaVvKejJoFYfhiu7F0",
+      "kind": "valve",
+      "levelId": "operating",
+      "position": [
+        4.8,
+        15.4,
+        15
+      ],
+      "yaw": 0,
+      "typeId": "family-stop-valve",
+      "parameters": {
+        "height": 3.1,
+        "length": 1.8,
+        "width": 2.1
+      },
+      "componentId": "turbineStopValve",
+      "memberId": "unit-a",
+      "ownerId": "plant:trial-a",
+      "bounds": [
+        4.8,
+        15.4,
+        15,
+        6.6,
+        17.5,
+        17.914
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "condenser-1",
+      "globalId": "0Em9taP4Y72$8cvq4OhphC",
+      "kind": "condenser",
+      "levelId": "lower",
+      "position": [
+        20,
+        10.5,
+        0
+      ],
+      "yaw": 0,
+      "typeId": "family-condenser",
+      "parameters": {
+        "height": 14.6,
+        "length": 9,
+        "width": 15.8
+      },
+      "componentId": "condenser",
+      "memberId": "unit-a",
+      "ownerId": "plant:trial-a",
+      "bounds": [
+        20,
+        10.5,
+        0,
+        29,
+        26.3,
+        14.6
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "condenser-2",
+      "globalId": "3qbnPXWUXNXbFWhW6D2gfg",
+      "kind": "condenser",
+      "levelId": "lower",
+      "position": [
+        31,
+        10.5,
+        0
+      ],
+      "yaw": 0,
+      "typeId": "family-condenser",
+      "parameters": {
+        "height": 14.6,
+        "length": 9,
+        "width": 15.8
+      },
+      "componentId": "condenser",
+      "memberId": "unit-a",
+      "ownerId": "plant:trial-a",
+      "bounds": [
+        31,
+        10.5,
+        0,
+        40,
+        26.3,
+        14.6
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "condenser-3",
+      "globalId": "2dsh1HOhs8_Lys2m$urcjC",
+      "kind": "condenser",
+      "levelId": "lower",
+      "position": [
+        42,
+        10.5,
+        0
+      ],
+      "yaw": 0,
+      "typeId": "family-condenser",
+      "parameters": {
+        "height": 14.6,
+        "length": 9,
+        "width": 15.8
+      },
+      "componentId": "condenser",
+      "memberId": "unit-a",
+      "ownerId": "plant:trial-a",
+      "bounds": [
+        42,
+        10.5,
+        0,
+        51,
+        26.3,
+        14.6
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "stair-s1",
+      "globalId": "1R$X1pPF0bkz5awLm9Z5p1",
+      "kind": "stair",
+      "levelId": "lower",
+      "position": [
+        3.6,
+        27.4,
+        0
+      ],
+      "yaw": 0,
+      "parameters": {
+        "height": 15,
+        "length": 5.2,
+        "width": 7.4
+      },
+      "bounds": [
+        3.8000000000000003,
+        27.5,
+        0,
+        8.6,
+        34.699999999999996,
+        15
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "column-0-0",
+      "globalId": "3E4Kwai1aPJXaFrOXApM3a",
+      "kind": "support",
+      "levelId": "lower",
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "yaw": 0,
+      "parameters": {
+        "height": 31,
+        "length": 0.8,
+        "width": 0.8
+      },
+      "bounds": [
+        0,
+        0,
+        0,
+        0.8,
+        0.8,
+        31
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "column-0-36",
+      "globalId": "0fL8779FCP0CGfGHp_XvaZ",
+      "kind": "support",
+      "levelId": "lower",
+      "position": [
+        0,
+        36,
+        0
+      ],
+      "yaw": 0,
+      "parameters": {
+        "height": 31,
+        "length": 0.8,
+        "width": 0.8
+      },
+      "bounds": [
+        0,
+        36,
+        0,
+        0.8,
+        36.8,
+        31
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "column-1-0",
+      "globalId": "1Zx15hfU9gzll29Ta7R2sJ",
+      "kind": "support",
+      "levelId": "lower",
+      "position": [
+        11,
+        0,
+        0
+      ],
+      "yaw": 0,
+      "parameters": {
+        "height": 31,
+        "length": 0.8,
+        "width": 0.8
+      },
+      "bounds": [
+        11,
+        0,
+        0,
+        11.8,
+        0.8,
+        31
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "column-1-36",
+      "globalId": "1YER1d5qJBLYtfiaeRy7CO",
+      "kind": "support",
+      "levelId": "lower",
+      "position": [
+        11,
+        36,
+        0
+      ],
+      "yaw": 0,
+      "parameters": {
+        "height": 31,
+        "length": 0.8,
+        "width": 0.8
+      },
+      "bounds": [
+        11,
+        36,
+        0,
+        11.8,
+        36.8,
+        31
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "column-2-0",
+      "globalId": "28jDCzOyJ7$H7czGpBD4_C",
+      "kind": "support",
+      "levelId": "lower",
+      "position": [
+        22,
+        0,
+        0
+      ],
+      "yaw": 0,
+      "parameters": {
+        "height": 31,
+        "length": 0.8,
+        "width": 0.8
+      },
+      "bounds": [
+        22,
+        0,
+        0,
+        22.8,
+        0.8,
+        31
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "column-2-36",
+      "globalId": "3u5cPQrF_wZAQI8KDeghN6",
+      "kind": "support",
+      "levelId": "lower",
+      "position": [
+        22,
+        36,
+        0
+      ],
+      "yaw": 0,
+      "parameters": {
+        "height": 31,
+        "length": 0.8,
+        "width": 0.8
+      },
+      "bounds": [
+        22,
+        36,
+        0,
+        22.8,
+        36.8,
+        31
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "column-3-0",
+      "globalId": "1ndfYWDv9LO4auoXVya66O",
+      "kind": "support",
+      "levelId": "lower",
+      "position": [
+        33,
+        0,
+        0
+      ],
+      "yaw": 0,
+      "parameters": {
+        "height": 31,
+        "length": 0.8,
+        "width": 0.8
+      },
+      "bounds": [
+        33,
+        0,
+        0,
+        33.8,
+        0.8,
+        31
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "column-3-36",
+      "globalId": "1HO4Rd_Snd1VEF96xgxY0j",
+      "kind": "support",
+      "levelId": "lower",
+      "position": [
+        33,
+        36,
+        0
+      ],
+      "yaw": 0,
+      "parameters": {
+        "height": 31,
+        "length": 0.8,
+        "width": 0.8
+      },
+      "bounds": [
+        33,
+        36,
+        0,
+        33.8,
+        36.8,
+        31
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "column-4-0",
+      "globalId": "0aQZW8DrPxKvp2vTb41lzF",
+      "kind": "support",
+      "levelId": "lower",
+      "position": [
+        44,
+        0,
+        0
+      ],
+      "yaw": 0,
+      "parameters": {
+        "height": 31,
+        "length": 0.8,
+        "width": 0.8
+      },
+      "bounds": [
+        44,
+        0,
+        0,
+        44.8,
+        0.8,
+        31
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "column-4-36",
+      "globalId": "3CpA610f_Sug39eVZ35LdD",
+      "kind": "support",
+      "levelId": "lower",
+      "position": [
+        44,
+        36,
+        0
+      ],
+      "yaw": 0,
+      "parameters": {
+        "height": 31,
+        "length": 0.8,
+        "width": 0.8
+      },
+      "bounds": [
+        44,
+        36,
+        0,
+        44.8,
+        36.8,
+        31
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "column-5-0",
+      "globalId": "2hA_yFJKz2gKPL_a7PqDCp",
+      "kind": "support",
+      "levelId": "lower",
+      "position": [
+        55,
+        0,
+        0
+      ],
+      "yaw": 0,
+      "parameters": {
+        "height": 31,
+        "length": 0.8,
+        "width": 0.8
+      },
+      "bounds": [
+        55,
+        0,
+        0,
+        55.8,
+        0.8,
+        31
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "column-5-36",
+      "globalId": "1mTB$OWpKnvqiR6$Rd07pV",
+      "kind": "support",
+      "levelId": "lower",
+      "position": [
+        55,
+        36,
+        0
+      ],
+      "yaw": 0,
+      "parameters": {
+        "height": 31,
+        "length": 0.8,
+        "width": 0.8
+      },
+      "bounds": [
+        55,
+        36,
+        0,
+        55.8,
+        36.8,
+        31
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "column-6-0",
+      "globalId": "107aTE8NmxC1SCLwxel8b0",
+      "kind": "support",
+      "levelId": "lower",
+      "position": [
+        66,
+        0,
+        0
+      ],
+      "yaw": 0,
+      "parameters": {
+        "height": 31,
+        "length": 0.8,
+        "width": 0.8
+      },
+      "bounds": [
+        66,
+        0,
+        0,
+        66.8,
+        0.8,
+        31
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "column-6-36",
+      "globalId": "1h1qh7RMzkGe4TuNjhoX_Z",
+      "kind": "support",
+      "levelId": "lower",
+      "position": [
+        66,
+        36,
+        0
+      ],
+      "yaw": 0,
+      "parameters": {
+        "height": 31,
+        "length": 0.8,
+        "width": 0.8
+      },
+      "bounds": [
+        66,
+        36,
+        0,
+        66.8,
+        36.8,
+        31
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "column-7-0",
+      "globalId": "0dBeKR5N99BRf4DTZkvGG0",
+      "kind": "support",
+      "levelId": "lower",
+      "position": [
+        77,
+        0,
+        0
+      ],
+      "yaw": 0,
+      "parameters": {
+        "height": 31,
+        "length": 0.8,
+        "width": 0.8
+      },
+      "bounds": [
+        77,
+        0,
+        0,
+        77.8,
+        0.8,
+        31
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "column-7-36",
+      "globalId": "2YcUEQNLHXkREO6HgbClEh",
+      "kind": "support",
+      "levelId": "lower",
+      "position": [
+        77,
+        36,
+        0
+      ],
+      "yaw": 0,
+      "parameters": {
+        "height": 31,
+        "length": 0.8,
+        "width": 0.8
+      },
+      "bounds": [
+        77,
+        36,
+        0,
+        77.8,
+        36.8,
+        31
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "column-8-0",
+      "globalId": "35ZSYy7Fy9J01iGshje5Np",
+      "kind": "support",
+      "levelId": "lower",
+      "position": [
+        88,
+        0,
+        0
+      ],
+      "yaw": 0,
+      "parameters": {
+        "height": 31,
+        "length": 0.8,
+        "width": 0.8
+      },
+      "bounds": [
+        88,
+        0,
+        0,
+        88.8,
+        0.8,
+        31
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "column-8-36",
+      "globalId": "3vUqghwnr06lsE63pcqmGs",
+      "kind": "support",
+      "levelId": "lower",
+      "position": [
+        88,
+        36,
+        0
+      ],
+      "yaw": 0,
+      "parameters": {
+        "height": 31,
+        "length": 0.8,
+        "width": 0.8
+      },
+      "bounds": [
+        88,
+        36,
+        0,
+        88.8,
+        36.8,
+        31
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "edit-stair",
+      "globalId": "0WDmp71Gfx6uVJu9zz6KKM",
+      "kind": "stair",
+      "levelId": "edit-cell",
+      "position": [
+        110,
+        0,
+        0
+      ],
+      "yaw": 0.5235987755982988,
+      "parameters": {
+        "height": 3,
+        "length": 3,
+        "width": 6
+      },
+      "bounds": [
+        107.22320508075688,
+        0.18660254037844387,
+        0,
+        112.37487113059643,
+        6.509549882328187,
+        3
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "edit-riser",
+      "globalId": "05s19MGgzY0ljtL5m48L7Q",
+      "kind": "riser",
+      "levelId": "edit-cell",
+      "position": [
+        119,
+        0,
+        0
+      ],
+      "yaw": 0,
+      "parameters": {
+        "height": 3,
+        "length": 0.3,
+        "width": 0.3
+      },
+      "bounds": [
+        119,
+        0,
+        0,
+        119.3,
+        0.3,
+        3
+      ],
+      "interfaces": [],
+      "envelopes": []
+    },
+    {
+      "id": "edit-support",
+      "globalId": "1wgWenk26hW8DMeV7vLxxu",
+      "kind": "support",
+      "levelId": "edit-cell",
+      "position": [
+        120,
+        0,
+        0
+      ],
+      "yaw": 0,
+      "parameters": {
+        "height": 2.8,
+        "length": 0.4,
+        "width": 0.4
+      },
+      "bounds": [
+        120,
+        0,
+        0,
+        120.4,
+        0.4,
+        2.8
+      ],
+      "interfaces": [],
+      "envelopes": []
+    }
+  ],
+  "nativeEntityCounts": {
+    "IfcProject": 1,
+    "IfcSite": 1,
+    "IfcBuildingStorey": 3,
+    "IfcWall": 13,
+    "IfcPump": 4,
+    "IfcDistributionPort": 8,
+    "IfcRelVoidsElement": 16,
+    "IfcRelFillsElement": 8,
+    "IfcRelSpaceBoundary": 12,
+    "IfcRelDefinesByType": 16,
+    "IfcRelContainedInSpatialStructure": 3,
+    "IfcTriangulatedFaceSet": 100
+  },
+  "nativeTessellation": {
+    "meshes": 71,
+    "triangles": 30277
+  }
+}

@@ -2,6 +2,7 @@ import { mkdir, readFile, readdir, rename, rm, link } from 'node:fs/promises'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { ExecutionGrowth } from './spawn.ts'
+import { createModelEvidenceStore } from '../core/executions/model-evidence.ts'
 
 const identifier = (value: string): string => {
   if (!/^[a-zA-Z0-9_-]+$/.test(value)) throw new Error('Invalid comparison identifier')
@@ -27,6 +28,7 @@ export const createComparisonStorage = (root: string, growth: ExecutionGrowth) =
     })
   }
   return {
+    models: (roomId: string, messageId: string) => createModelEvidenceStore(join(directory(roomId, messageId), 'models')),
     writeSource: (roomId: string, messageId: string, text: string) => write(join(directory(roomId, messageId), 'source.json'), text, true),
     writeAlternative: (roomId: string, messageId: string, id: string, text: string) => write(join(directory(roomId, messageId), 'alternatives', `${identifier(id)}.json`), text),
     read: async (roomId: string, messageId: string): Promise<{ source: unknown; alternatives: unknown[] } | undefined> => {
@@ -44,7 +46,10 @@ export const createComparisonStorage = (root: string, growth: ExecutionGrowth) =
       }))
       return { source, alternatives }
     },
-    removeAlternative: (roomId: string, messageId: string, id: string) => rm(join(directory(roomId, messageId), 'alternatives', `${identifier(id)}.json`), { force: true }),
+    removeAlternative: async (roomId: string, messageId: string, id: string) => {
+      await rm(join(directory(roomId, messageId), 'models', identifier(id)), { force: true, recursive: true })
+      await rm(join(directory(roomId, messageId), 'alternatives', `${identifier(id)}.json`), { force: true })
+    },
     remove: (roomId: string, messageId?: string) => rm(messageId ? directory(roomId, messageId) : join(root, identifier(roomId)), { force: true, recursive: true }),
   }
 }

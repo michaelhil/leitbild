@@ -11,9 +11,14 @@ import { electricGridRecordingProfiles, gridRecordingSeriesCount } from './recor
 import { electricGridPackDataSchema } from './model.ts'
 import { electricGridScenarioSupport } from './scenario.ts'
 import { electricGridPackView } from './ui-pack.ts'
+import { gridObservationDeclarationsQuery } from './observation/declarations.ts'
+import { gridObservationReadQuery } from './observation/read.ts'
+import { gridObservationTopologyQuery } from './observation/topology.ts'
+import { describeElectricGridPhysicalTargets } from './physical-targets.ts'
 
 export const electricGridPack: WorldPack = {
   ...electricGridPackView,
+  physicalTargets: describeElectricGridPhysicalTargets,
   scenarioConfigSchema: electricGridPackConfigSchema,
   referenceData: { builders: [], datasetIds: electricGridPackView.referenceData?.datasetIds ?? [] },
   authoring: {
@@ -51,4 +56,8 @@ export const electricGridPack: WorldPack = {
     return sum + gridRecordingSeriesCount(gridModelCatalogEntry(data.model.ref).assetCounts, profileId)
   }, 0) },
   scenario: electricGridScenarioSupport,
+  observation: {
+    categories: ['electric-grids'], declarations: gridObservationDeclarationsQuery.capability.id, read: gridObservationReadQuery.capability.id,
+    topology: { family: 'network', capability: gridObservationTopologyQuery.capability.id },
+  },
 }

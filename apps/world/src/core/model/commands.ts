@@ -36,6 +36,8 @@ export type CommandResult =
       readonly commandId: CommandId
       readonly rejectedAt: IsoTimestamp
       readonly reason: string
+      readonly code?: string
+      readonly details?: Readonly<Record<string, unknown>>
     }
 
 export const commandEnvelopeSchema = z.object({
@@ -63,5 +65,7 @@ export const commandResultSchema = z.discriminatedUnion('ok', [
     commandId: commandIdSchema,
     rejectedAt: isoTimestampSchema,
     reason: z.string().min(1),
+    code: z.string().min(1).optional(),
+    details: z.record(z.string(), z.unknown()).optional(),
   }),
 ])

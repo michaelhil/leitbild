@@ -1,3 +1,4 @@
+import type { ProcedureInputFocus } from './procedure-input.ts'
 import type { ObjectId, ProcedureId, ProcedureRunId, ProcedureRunState, ProcedureStepId } from '../../core/model/index.ts'
 import type { SimulationRunEventPayload } from '../simulation-run-events.ts'
 import { procedureActorIsAi, procedureRunFor } from './procedure-run-selectors.ts'
@@ -107,6 +108,7 @@ export interface ProcedureSystemWindowEntry {
   readonly objectId: ObjectId
   readonly initialProcedureId?: ProcedureId
   /** Counts how often the unit's procedures were opened again; each raises and focuses the open window. */
+  readonly inputFocus?: ProcedureInputFocus | undefined
   readonly focusRequest?: number
   /** The Run an AI agent last started on the unit: the open window shows it, neither raised nor focused. A new object per start. */
   readonly aiStart?: { readonly runId: ProcedureRunId }

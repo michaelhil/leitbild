@@ -1,0 +1,3713 @@
+{
+  "schema": "IFC4X3_ADD2",
+  "bytes": 3503551,
+  "sha256": "6c9a078866c30af44b227e799b40780105f8c55eec664934d6d27a912ea0b1da",
+  "facts": {
+    "entityCount": 1983,
+    "types": {
+      "IfcCartesianPoint": 133,
+      "IfcDirection": 267,
+      "IfcAxis2Placement3D": 133,
+      "IfcGeometricRepresentationContext": 1,
+      "IfcSIUnit": 1,
+      "IfcUnitAssignment": 1,
+      "IfcProject": 1,
+      "IfcLocalPlacement": 132,
+      "IfcSite": 1,
+      "IfcBuilding": 1,
+      "IfcRelAggregates": 7,
+      "IfcBuildingStorey": 4,
+      "IfcCartesianPointList3D": 88,
+      "IfcTriangulatedFaceSet": 88,
+      "IfcShapeRepresentation": 88,
+      "IfcProductDefinitionShape": 88,
+      "IfcBuildingElementProxy": 55,
+      "IfcPropertySingleValue": 518,
+      "IfcPropertySet": 126,
+      "IfcRelDefinesByProperties": 126,
+      "IfcPump": 4,
+      "IfcWall": 9,
+      "IfcOpeningElement": 12,
+      "IfcDoor": 5,
+      "IfcSlab": 6,
+      "IfcSpace": 3,
+      "IfcDistributionPort": 32,
+      "IfcRelNests": 32,
+      "IfcRelContainedInSpatialStructure": 4,
+      "IfcRelVoidsElement": 12,
+      "IfcRelFillsElement": 5
+    },
+    "unreadable": [],
+    "semanticHash": "e0d7d70fb8b93cfd92c8ef38b842d60512eb059a8d2547392a9de2f1d2c10098",
+    "products": [
+      {
+        "id": 9,
+        "type": "IfcProject",
+        "globalId": "1bSe5ze$PyaK1ZPIpthgrW",
+        "name": "project",
+        "semanticHash": "ca9170b5f2f5d5482481283847b95335124fe6bc7e67a9df56a1f4d11ef7923d"
+      },
+      {
+        "id": 15,
+        "type": "IfcSite",
+        "globalId": "1gYhZpgIgkq6qrW4kH6pbv",
+        "name": "site",
+        "semanticHash": "801f793ae42e0aca5666da2a5d19e7749ffba8d74a34df84df60645b21c95ad7"
+      },
+      {
+        "id": 21,
+        "type": "IfcBuilding",
+        "globalId": "1bIuyFHTa93TJ5Xkw$Xjcs",
+        "name": "building",
+        "semanticHash": "e634b5c8a70bd129dda95b36787101da324200f4b7e641595106a86525e06c7c"
+      },
+      {
+        "id": 22,
+        "type": "IfcRelAggregates",
+        "globalId": "1Z7D0CBxT328TNLUDWav5Q",
+        "name": "project-site",
+        "semanticHash": "f4e59eb9e1f06c036be2c97e1e972658ed7abf9c63bd2096d8d400618a586891"
+      },
+      {
+        "id": 23,
+        "type": "IfcRelAggregates",
+        "globalId": "34FTVp9ouB$CAZ4jTtat2W",
+        "name": "site-building",
+        "semanticHash": "7ebdf548f483ccdcd2d60ce4dc1ad79709390c60c6596c9c6c5b488393a118eb"
+      },
+      {
+        "id": 29,
+        "type": "IfcBuildingStorey",
+        "globalId": "1nYSAnvsyBP$UbIBtwRmTY",
+        "name": "lower",
+        "semanticHash": "f4e4aad0f03aef823a9156dd420cfc0caafa65a1809eda89122305791de66359"
+      },
+      {
+        "id": 35,
+        "type": "IfcBuildingStorey",
+        "globalId": "03$lvralnjrfJ5o0QKbP4F",
+        "name": "operating",
+        "semanticHash": "c0d117d325b09b7c5193c574880257e0b7583c2f5e6a0f8a94f6c31e961bd0cd"
+      },
+      {
+        "id": 41,
+        "type": "IfcBuildingStorey",
+        "globalId": "1fS$tYSfBYw5KFpcD4DyZG",
+        "name": "edit-basement",
+        "semanticHash": "a3bc1df3e26166296f83607cc621578d42354f54ee75fd759b9e95e7c2cb8326"
+      },
+      {
+        "id": 47,
+        "type": "IfcBuildingStorey",
+        "globalId": "3Mp90_A$kXvGRG9PjiIQLi",
+        "name": "level/edit-deck",
+        "semanticHash": "1b9b94d86a4fd781dbce6df2e357b9730499c2b874c9f830c14f5b04cea5193d"
+      },
+      {
+        "id": 48,
+        "type": "IfcRelAggregates",
+        "globalId": "1AVqYhsBmKLzjfq1iNLKzX",
+        "name": "building-levels",
+        "semanticHash": "51c4696751def339363496c4b40956c13ec37bc12b741d29040d7a0db4160f96"
+      },
+      {
+        "id": 58,
+        "type": "IfcBuildingElementProxy",
+        "globalId": "0x0SuWBqDMiD3kKahKDQ07",
+        "name": "High-pressure turbine",
+        "semanticHash": "a311728e61fc01f31301bc03e855c59b5d39580788b07932f773d76e0943abfa"
+      },
+      {
+        "id": 64,
+        "type": "IfcPropertySet",
+        "globalId": "2rOIP24Jz6lnsn2AeoEW4n",
+        "name": "NativeSourceExchange",
+        "semanticHash": "0aacef15de768875bbdabcf88b674c7ac67d9db20466949a5fd4c06ec1f1dcf7"
+      },
+      {
+        "id": 65,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "2BdlizdrBj9KDQ6m5FYY4s",
+        "name": "tg-hp/defines",
+        "semanticHash": "d33c03ab664d393315340fa79aa38c6669dbb4678a6c41f48179671fa27d011b"
+      },
+      {
+        "id": 75,
+        "type": "IfcBuildingElementProxy",
+        "globalId": "10UdCdzqvMDArzvWGpAjxR",
+        "name": "Low-pressure turbine 1",
+        "semanticHash": "78d61f55fe80f968d7a1493d43fec781b3c4bf0e8f051963e6e0003cde5ab2c1"
+      },
+      {
+        "id": 81,
+        "type": "IfcPropertySet",
+        "globalId": "0PyUKwKNsWuAPcqx9Pb$hX",
+        "name": "NativeSourceExchange",
+        "semanticHash": "7aa4c999ca700cc0b947b1f1655341a63f8fcad9ddfef15955f676388b805f7e"
+      },
+      {
+        "id": 82,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "2Is9xmvnlMIx7gsIfjNaxo",
+        "name": "tg-lp-1/defines",
+        "semanticHash": "b6762d68c3800dc016bf49836143e95b1b7c7d9e2e14bf814034623a0b6f944c"
+      },
+      {
+        "id": 92,
+        "type": "IfcBuildingElementProxy",
+        "globalId": "2_2ZF79ZvfMIxG$pwvZyFT",
+        "name": "Low-pressure turbine 2",
+        "semanticHash": "f507b642131309f86bc099fb3be3ea80b202c3e62d1d15029f4b0a89a4b66420"
+      },
+      {
+        "id": 98,
+        "type": "IfcPropertySet",
+        "globalId": "2hw0Yjm01LnLbdFHnoQxlb",
+        "name": "NativeSourceExchange",
+        "semanticHash": "513bb3bbc495b113cba3c731405faede85577a60559d4313fcd52e23948d9ecf"
+      },
+      {
+        "id": 99,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "3S$uCPzuD$ohuptz$GayRv",
+        "name": "tg-lp-2/defines",
+        "semanticHash": "5681130708a48ed5e7edc9c4afa0df15ec4a53c62fa3e85a0efd9942ac4238e5"
+      },
+      {
+        "id": 109,
+        "type": "IfcBuildingElementProxy",
+        "globalId": "2tWjuh5lTuUmKNCtfpPCZx",
+        "name": "Low-pressure turbine 3",
+        "semanticHash": "88443bdb0aad14d44d127560853892883a69189eaf06e417983c712f6210c5d1"
+      },
+      {
+        "id": 115,
+        "type": "IfcPropertySet",
+        "globalId": "0D6f4kZqdeZaH3FLiWunXT",
+        "name": "NativeSourceExchange",
+        "semanticHash": "351505c98141aa96feb6baa15427723bc2cc619e1a0a119b0fb956d769c3b4a3"
+      },
+      {
+        "id": 116,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "2UXRSEY6r_Dhx8Y25hBRP2",
+        "name": "tg-lp-3/defines",
+        "semanticHash": "003e9708e6b5d4557b2ffc104da1b0da5ed793f8acbcb98112e5d1a1a1cb5d77"
+      },
+      {
+        "id": 126,
+        "type": "IfcBuildingElementProxy",
+        "globalId": "2E0bXSY9aM8tdgPxLfcSFB",
+        "name": "Electrical generator",
+        "semanticHash": "ed36b8be35aea93769a3e5adaca8998eaf11a34cb2a3c328fa386daa7f5df260"
+      },
+      {
+        "id": 132,
+        "type": "IfcPropertySet",
+        "globalId": "1fsKhDrWtrCV0zy5AcZiKM",
+        "name": "NativeSourceExchange",
+        "semanticHash": "2ec81b3c6166f488d88306e7a9f55075538a352c510bc4ae2bec8831704386c3"
+      },
+      {
+        "id": 133,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "3Tq0RTZj3d3EUGNXtNB21W",
+        "name": "tg-generator/defines",
+        "semanticHash": "f666650bd6c3d53f644c9a973856803aae692569238122b07d6b396d9327737d"
+      },
+      {
+        "id": 143,
+        "type": "IfcBuildingElementProxy",
+        "globalId": "17p4pgfJZhEZNcV55EThWb",
+        "name": "Exciter & coupling",
+        "semanticHash": "ba96bcb0a250b10366b253710f5e0b6ccef7bbe225f384aeac1f4c49389b0bfd"
+      },
+      {
+        "id": 149,
+        "type": "IfcPropertySet",
+        "globalId": "2i8DaO6PVs4e2YnQtz9rfD",
+        "name": "NativeSourceExchange",
+        "semanticHash": "6467a4b53400890e2eab65ca3aa6d1c4cf15632e55eba564193f0fef4e4705ae"
+      },
+      {
+        "id": 150,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "3ceeeiJNiyIJQ_wE61CEBz",
+        "name": "tg-exciter/defines",
+        "semanticHash": "1df437291e957ea960dabf414fc40408febcd551e4791e501cb3aeabd99781d9"
+      },
+      {
+        "id": 160,
+        "type": "IfcBuildingElementProxy",
+        "globalId": "16wcK7LFEx_DmXZYoB_rvd",
+        "name": "Moisture separator / reheater 1",
+        "semanticHash": "619a3926a48bebc228a7322268507427eb98f299fce03cbb4c3fb731516d4faf"
+      },
+      {
+        "id": 165,
+        "type": "IfcPropertySet",
+        "globalId": "1x_MNEhFjTTMsk2GlSAUeQ",
+        "name": "NativeSourceExchange",
+        "semanticHash": "91a04e014c89e840b0d006894cacece012145c46cc453a8df4fdcc92f3def983"
+      },
+      {
+        "id": 166,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "2NH2asZnEhbe_TtW5zQiZ6",
+        "name": "msr-1/defines",
+        "semanticHash": "0363a897f1d69f093689bc8dc48a57616e614bf7522325459c5a44ad1fae984c"
+      },
+      {
+        "id": 176,
+        "type": "IfcBuildingElementProxy",
+        "globalId": "1ltUe6unT$VMld$RabtcVh",
+        "name": "Moisture separator / reheater 2",
+        "semanticHash": "dc9e5d7b578dc373c53f36c2392dff90135c3ed324d258ec4b108641763df67f"
+      },
+      {
+        "id": 181,
+        "type": "IfcPropertySet",
+        "globalId": "1hRe5Qo3Owd$O2GWBeuIck",
+        "name": "NativeSourceExchange",
+        "semanticHash": "aeacee34873d112e773a77ef1289ee4a471e96f368ae01660d3c0122f2244698"
+      },
+      {
+        "id": 182,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "0EJC3u$3fBtVwBm_q31m$9",
+        "name": "msr-2/defines",
+        "semanticHash": "bf36274459efb463c1bebf9590a6ab5883f377da0383ac67a68225d772d5375c"
+      },
+      {
+        "id": 192,
+        "type": "IfcBuildingElementProxy",
+        "globalId": "3_sAv7E9s14LJoVFJSN6fq",
+        "name": "Turbine stop valve",
+        "semanticHash": "69288794eb4ba5ae478b27ac53583a87c5d390ce0c31edcf6c552d21dc93358b"
+      },
+      {
+        "id": 198,
+        "type": "IfcPropertySet",
+        "globalId": "0qFI11UJ$P5EKVNOXTZi5R",
+        "name": "NativeSourceExchange",
+        "semanticHash": "61a00f1f9d6f5534e87d5008d142db3a95112ac6b26e5ba66f6d233eb2f1ddc5"
+      },
+      {
+        "id": 199,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "1DuxQwYkWHeblrDgUEO2PL",
+        "name": "stop-valve/defines",
+        "semanticHash": "8871ca4da9f2bdcc6d0856f010ae89164f6e647fc4f152b799ba5bb9d898a998"
+      },
+      {
+        "id": 209,
+        "type": "IfcBuildingElementProxy",
+        "globalId": "3OfRTCHh2nMOtRcI1Y6GGn",
+        "name": "Condenser section 1",
+        "semanticHash": "5ccab2943c37f55849db450ebe09a57a242e23d684756d257e91fa96923b4f07"
+      },
+      {
+        "id": 215,
+        "type": "IfcPropertySet",
+        "globalId": "3r7MmOt9vZqohXHBvOiACp",
+        "name": "NativeSourceExchange",
+        "semanticHash": "1ef624f4cf4081fb1eb217147a3041aea34a5117b9a4614de145e2e1056513dd"
+      },
+      {
+        "id": 216,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "0mj2FN$9q7UpDqds49u95z",
+        "name": "condenser-1/defines",
+        "semanticHash": "1b71f8c1ff25966e551cb8b14928993fd7a531e0b440ad7e35b4fb4e72adde20"
+      },
+      {
+        "id": 226,
+        "type": "IfcBuildingElementProxy",
+        "globalId": "3cXQ2EgTtbjqEIh5rrhOgs",
+        "name": "Condenser section 2",
+        "semanticHash": "2186ca960fa34d8d3b752d30fd048bd9b8107da2e6150cec4e25caab105266ea"
+      },
+      {
+        "id": 232,
+        "type": "IfcPropertySet",
+        "globalId": "16GLra0HuVpgUbCbr4s6br",
+        "name": "NativeSourceExchange",
+        "semanticHash": "b7a7192031415a8109feb76e8a7fdbae8014c18e92545299b4388dc24a71387e"
+      },
+      {
+        "id": 233,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "38avsE4ILImcoOFV_267ph",
+        "name": "condenser-2/defines",
+        "semanticHash": "ba77b2b904bdb26253b85226ede68ce5b48dafd3901698e2f91a6d7161a5c49b"
+      },
+      {
+        "id": 243,
+        "type": "IfcBuildingElementProxy",
+        "globalId": "26tG_59d0B4dRZLvL9ARlD",
+        "name": "Condenser section 3",
+        "semanticHash": "dfae2542e4681ba2d05527c6b14b7f9ad2817abcebec5eeba750af692123e1d1"
+      },
+      {
+        "id": 249,
+        "type": "IfcPropertySet",
+        "globalId": "3tBG9paeI1$UkqywAl9thb",
+        "name": "NativeSourceExchange",
+        "semanticHash": "076f6609f59e9f188624033117f7af34034cd1d4b1b7a6e085ebd8c6f9185737"
+      },
+      {
+        "id": 250,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "0VICYM3qghXubYfOejF2M1",
+        "name": "condenser-3/defines",
+        "semanticHash": "5af305ae165832b8e84860b81c8ce5733e4898e64e08dcf2c6573aa938de2d9f"
+      },
+      {
+        "id": 260,
+        "type": "IfcPump",
+        "globalId": "2JWlRttq8LkurqIN11KNWZ",
+        "name": "Condensate pump A",
+        "semanticHash": "4ac46159195eb62e89f2b95960754b2faea72161e6ad72b3c5f3eb626e68a0db"
+      },
+      {
+        "id": 266,
+        "type": "IfcPropertySet",
+        "globalId": "3H1g83F4dWd$ODoZCLBQYy",
+        "name": "NativeSourceExchange",
+        "semanticHash": "13dac4e3f05d857e5e0502f9672b853e470d60b8faf7c569c0f4afcdbca8af0e"
+      },
+      {
+        "id": 267,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "1FC2nog$otU6WETDLBgpaI",
+        "name": "cp-a/defines",
+        "semanticHash": "9579a996f1277c8b48eec6f8c575f6dbd4bf37658548a3f315fda8cbb5dc3fb2"
+      },
+      {
+        "id": 277,
+        "type": "IfcPump",
+        "globalId": "2tkw9Gf$jI__YDFH0TnpBj",
+        "name": "Condensate pump B",
+        "semanticHash": "5d0d46603469afd3523bcf0ad00b96e585b762e6d8d701beb489cc90b98c742a"
+      },
+      {
+        "id": 283,
+        "type": "IfcPropertySet",
+        "globalId": "3TkLQ1agdrK2$vYHFoFwnh",
+        "name": "NativeSourceExchange",
+        "semanticHash": "c8648a8e4bc40da6d921ac94f2db5a038b71d776979325e80943d5ce638b6461"
+      },
+      {
+        "id": 284,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "2zPPPzqrR_Xqg54LavLmIi",
+        "name": "cp-b/defines",
+        "semanticHash": "4ba674d33d9336c9bb3690e33d71a26c02fb64f1983d4147a0f47101308f2511"
+      },
+      {
+        "id": 294,
+        "type": "IfcPump",
+        "globalId": "1FrDw6aAedl0V753mYLd60",
+        "name": "Main feedwater pump A",
+        "semanticHash": "5884ca68fe6fe724622258d38575bb2e83cfd6ab67cd95615b2dc908af8fe7a8"
+      },
+      {
+        "id": 300,
+        "type": "IfcPropertySet",
+        "globalId": "2$qgqlG6R2HzECJ47zUtIE",
+        "name": "NativeSourceExchange",
+        "semanticHash": "f4c278deb06fdfdb523a13205dda2316c54bde8776daa37e3b6c7cb2e9885f82"
+      },
+      {
+        "id": 301,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "0cB8OKZ$8T8VggHvyAGGLt",
+        "name": "mfw-a/defines",
+        "semanticHash": "934d1f90eac9ec73e036273ed26adadd094b75969c0e52c9340a1fa4fbe9e677"
+      },
+      {
+        "id": 311,
+        "type": "IfcPump",
+        "globalId": "29uaPZgi7XGA7MCKFzItON",
+        "name": "Main feedwater pump B",
+        "semanticHash": "c22362c683605ce869979459413ed5766882c5befec7f0a14a564292a1b3a60f"
+      },
+      {
+        "id": 317,
+        "type": "IfcPropertySet",
+        "globalId": "0YdWroRq4QA_A7OqmKEnUz",
+        "name": "NativeSourceExchange",
+        "semanticHash": "e7a85b18721a680e48deed5c079d3658a9eacf35e69524ca8acffd7d747c8d2b"
+      },
+      {
+        "id": 318,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "0EbUV$h$0XybOLmXdE3ALW",
+        "name": "mfw-b/defines",
+        "semanticHash": "97bf7fbf1bb080c6b0eb08db2bea3a88e2fa3a1f8d723631f16b3fca4a7eb161"
+      },
+      {
+        "id": 328,
+        "type": "IfcWall",
+        "globalId": "0XylcRO3zwGVACZgl69YTu",
+        "name": "wall/hall-north",
+        "semanticHash": "fa8f131fc84c61ff631c2847b54415997c979bde31b1198976c035f8d4c3c10f"
+      },
+      {
+        "id": 333,
+        "type": "IfcPropertySet",
+        "globalId": "2ZAa1JsGsHWRu$Rmie5ePt",
+        "name": "NativeSourceExchange",
+        "semanticHash": "ade2f92fe883fda6b9744d4cd808facefb77987b33169e7bf8eb364d36ebdbb8"
+      },
+      {
+        "id": 334,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "0ruF4FetuyDmSvF8JsGT9e",
+        "name": "wall/hall-north/defines",
+        "semanticHash": "319d2d99d4bc57948eb3e2df0ae99a4bb6d2692d8a777505513602a4a7e84db2"
+      },
+      {
+        "id": 344,
+        "type": "IfcOpeningElement",
+        "globalId": "2K3nNF8DTGJfSiDRt3vHGd",
+        "name": "D-N1",
+        "semanticHash": "7d825513e746860aa0b66d1dd37afae1c5011f08160185f6fe5e48f2efd483bb"
+      },
+      {
+        "id": 349,
+        "type": "IfcPropertySet",
+        "globalId": "2gI_OUEP8zHVk$5xjvkwaH",
+        "name": "NativeSourceExchange",
+        "semanticHash": "a1fb353cfe952e6660ae2e1c909474c612e90d078725af1dfd482fc40bec6fc8"
+      },
+      {
+        "id": 350,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "3mq9I8XwxbL8Lc1Iis_5ft",
+        "name": "opening/wall/hall-north/D-N1/lower/defines",
+        "semanticHash": "c1a3a8357ab6cb6fdb5e493781331bf093810388d75721266fd60c6a7034c77c"
+      },
+      {
+        "id": 360,
+        "type": "IfcOpeningElement",
+        "globalId": "1C9i4c0OqrevZVhC3Mm7pU",
+        "name": "W-1",
+        "semanticHash": "780de4fb948a0bd1e4cf57e57f87b97f15232d522c1b767604b807d9cfc6943f"
+      },
+      {
+        "id": 365,
+        "type": "IfcPropertySet",
+        "globalId": "0MUgYcwFsLwDJneZ3lspmf",
+        "name": "NativeSourceExchange",
+        "semanticHash": "4998e9cc502378857dbc64e475d75849e7e08e67b913ab812bb9387cbc9c544d"
+      },
+      {
+        "id": 366,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "1llLeppJp359MU1HsQOWvV",
+        "name": "opening/wall/hall-north/W-1/operating/defines",
+        "semanticHash": "221b0dc23a605fce0e79e22edb7628b365f1170087c61fbac19d6f41c55dce02"
+      },
+      {
+        "id": 376,
+        "type": "IfcOpeningElement",
+        "globalId": "3Y$oFxVENf$lEBGzh4O5vo",
+        "name": "W-2",
+        "semanticHash": "9f18d6bff0ff37d21bcdfe6b1e4f19eb21a0b17535d726ee0fd7ae5a288beda9"
+      },
+      {
+        "id": 381,
+        "type": "IfcPropertySet",
+        "globalId": "3f5vL6cwiyU5a$_PuDtJOy",
+        "name": "NativeSourceExchange",
+        "semanticHash": "b415479c657a8786ed1aec9a4feac64f4770cadcbf3b9e7cd81bb59db22b8134"
+      },
+      {
+        "id": 382,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "1PVqQJ_ljUdVi_9OsQAexs",
+        "name": "opening/wall/hall-north/W-2/operating/defines",
+        "semanticHash": "462a4ddd3dc2b594bfcbc9b9a5276ffe10b8029dff89b0df14ace522f65466fa"
+      },
+      {
+        "id": 392,
+        "type": "IfcOpeningElement",
+        "globalId": "0IaSBPykAtYO6AoCMIdX5K",
+        "name": "W-3",
+        "semanticHash": "482f92d8b97472ec0f4d1f36c8ff2bcad4e68c50ade7693aa3d6e7847bf6001c"
+      },
+      {
+        "id": 397,
+        "type": "IfcPropertySet",
+        "globalId": "0Eb4MdPnYSsT2I2d_hAGdA",
+        "name": "NativeSourceExchange",
+        "semanticHash": "f93f3a26f37ae31ac6970d98a23dacf8f1c5eeb75a4369713ea0a40719cd34a3"
+      },
+      {
+        "id": 398,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "1UdWswtLcPHoallm$DBGKm",
+        "name": "opening/wall/hall-north/W-3/operating/defines",
+        "semanticHash": "ddea796511e0102e48288b153454f6b1a18f9858b99567b43a6c139b21224de1"
+      },
+      {
+        "id": 408,
+        "type": "IfcWall",
+        "globalId": "3C05uZaTuMOVmLnw3zdBc9",
+        "name": "wall/hall-west",
+        "semanticHash": "d8b9d07e044e26eaefdcfc935b4e1024439e44a015bff05ff52b89b9b4a0a641"
+      },
+      {
+        "id": 413,
+        "type": "IfcPropertySet",
+        "globalId": "0l$PnuxZUFmFop9Uvy03$_",
+        "name": "NativeSourceExchange",
+        "semanticHash": "c6a8924e83d8d0eec8c568bf970830400c81f12309c9b343cc79ad768c4ecba1"
+      },
+      {
+        "id": 414,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "3yecqTq4ZOt9YI6EsiHW_s",
+        "name": "wall/hall-west/defines",
+        "semanticHash": "0c951da47a7c432983a0a664864e8b14e5bea2efed17dab6b2cd7058eceabb73"
+      },
+      {
+        "id": 424,
+        "type": "IfcOpeningElement",
+        "globalId": "3csWezqUJNlUnFGuSEvln9",
+        "name": "D-W1",
+        "semanticHash": "95f7b0c6211c46ef2b30413eaa05cc2aab77cfad441a7fe6276eb6745ecb968c"
+      },
+      {
+        "id": 429,
+        "type": "IfcPropertySet",
+        "globalId": "3x$lhKqjux8lUrmbGTiXtO",
+        "name": "NativeSourceExchange",
+        "semanticHash": "77686694d0c774fe99bac485305374b07014ce8517160bdb8ac289a42b1c0f3f"
+      },
+      {
+        "id": 430,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "2UqRF5jQ9SeBdsjKheiBdR",
+        "name": "opening/wall/hall-west/D-W1/lower/defines",
+        "semanticHash": "9ec6dfe339b0459d925128bce4c074df4ac7f51079253880ea69aac9576c511c"
+      },
+      {
+        "id": 440,
+        "type": "IfcWall",
+        "globalId": "2EC2NeR6$VaXdD3$t9dKhh",
+        "name": "wall/hall-east",
+        "semanticHash": "42483d1b18da7fc93abc69ff1d727a0cb80099f5d05641b751d27fdaecb70b33"
+      },
+      {
+        "id": 445,
+        "type": "IfcPropertySet",
+        "globalId": "3Dy2tNjiuf0hQHXH7Yk_gq",
+        "name": "NativeSourceExchange",
+        "semanticHash": "a5b769803b778a6dde2b9947fe1c581ad96abfe31cc0094645d58aa319aea091"
+      },
+      {
+        "id": 446,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "3$5r4n5da9QgcrWcq54Hih",
+        "name": "wall/hall-east/defines",
+        "semanticHash": "234d6fc90c2f5c5a1d954ce2f287ec7dea6d3668c68f3ebce482b99a162a5fb6"
+      },
+      {
+        "id": 456,
+        "type": "IfcOpeningElement",
+        "globalId": "1iRkAWK9ShbyFqxr3qFJ1R",
+        "name": "D-E1",
+        "semanticHash": "2e717b9736c5b75bf08c4380baef0745d6129b0b3a5b85610ba5269ca4b27ba2"
+      },
+      {
+        "id": 461,
+        "type": "IfcPropertySet",
+        "globalId": "3cnOSeXBNwvnKRfdCF80QG",
+        "name": "NativeSourceExchange",
+        "semanticHash": "08ee660385e60728b735f01d207998ef6194dcbe169d4b53a8296c243eda2305"
+      },
+      {
+        "id": 462,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "00HOvgCp7X0$RUOqfd6eqc",
+        "name": "opening/wall/hall-east/D-E1/lower/defines",
+        "semanticHash": "a200f7238cef69d77ae1f83aa65faed7b843d4d77a08ecbd623dcaea7d02f5a0"
+      },
+      {
+        "id": 472,
+        "type": "IfcWall",
+        "globalId": "3X2CrRFgVb$sIXFXCyd5Ma",
+        "name": "wall/hall-south",
+        "semanticHash": "49be0282d37890253dcad40bc9dc5479e74fba749967f93f3fa6b07f9644ced2"
+      },
+      {
+        "id": 477,
+        "type": "IfcPropertySet",
+        "globalId": "1gR4wqUEqIHd$yznnyiP9P",
+        "name": "NativeSourceExchange",
+        "semanticHash": "442935125dcb68eeb1ed5d3323427d033c70722ea2d4387e63cd7d08cd85889c"
+      },
+      {
+        "id": 478,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "0Md6shcsQxqE9TjPTWsiJL",
+        "name": "wall/hall-south/defines",
+        "semanticHash": "0b3e1d0c9d3568012078e49484b1da4ff9390b821bce62a9cb2740b324762116"
+      },
+      {
+        "id": 488,
+        "type": "IfcOpeningElement",
+        "globalId": "2M$f0rFSGtB7YzSAdxufF4",
+        "name": "D-P1",
+        "semanticHash": "afdb9697a7cd30d1e22f68bdd7a9e255e3fd48343d945d01f15444809391b8d7"
+      },
+      {
+        "id": 493,
+        "type": "IfcPropertySet",
+        "globalId": "1497cUC7zcWOU$lSKJBYoX",
+        "name": "NativeSourceExchange",
+        "semanticHash": "bf21134beb0aef2eaf1ffc49e8a8a4b4c3350d2e38ef508a6e5fe39972a309eb"
+      },
+      {
+        "id": 494,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "281yfISR3O5ImVJpHIouqD",
+        "name": "opening/wall/hall-south/D-P1/lower/defines",
+        "semanticHash": "e9de6de75b69cd9304592ede06172edab339ac739f27a0744d29511f00504ede"
+      },
+      {
+        "id": 504,
+        "type": "IfcWall",
+        "globalId": "3c1uw0cBSKHbR4an_kz$a0",
+        "name": "wall/annex-north",
+        "semanticHash": "30958bca1f85885c55e4c7e4a5f40b3497dede07089570a8ab785a3b5ba9ccce"
+      },
+      {
+        "id": 509,
+        "type": "IfcPropertySet",
+        "globalId": "3wvrCV5fOsi6oKweMDslq8",
+        "name": "NativeSourceExchange",
+        "semanticHash": "b147dab1f95143b768813d706fe8d75d418e0808ab40d37a9bb5b99c0def782c"
+      },
+      {
+        "id": 510,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "16SBKPJHjxM18OZ6WNF6Dh",
+        "name": "wall/annex-north/defines",
+        "semanticHash": "025a6fb71ba7d08646c9a9c3a18a43d4184f267407313f9103a1e5877a8c19d6"
+      },
+      {
+        "id": 520,
+        "type": "IfcOpeningElement",
+        "globalId": "1ZboB2b8mSARPLkFfRTO0$",
+        "name": "D-P1b",
+        "semanticHash": "047ba1bd516e5800c341dbdde81792889f2506c64264edf226d404d072516489"
+      },
+      {
+        "id": 525,
+        "type": "IfcPropertySet",
+        "globalId": "3Eew6ukfSjqbAmt6hxNXXG",
+        "name": "NativeSourceExchange",
+        "semanticHash": "8863758bfddcff7eea1a828d55b3e4e59a2c92b32991331f925af5b5aa5f5a9e"
+      },
+      {
+        "id": 526,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "2CIR1NufH6rY8vgEZd4Qpd",
+        "name": "opening/wall/annex-north/D-P1b/lower/defines",
+        "semanticHash": "05b5d95403b4525a62c4dba270252ea6f98f701cb789934a876913a4f46d79f1"
+      },
+      {
+        "id": 536,
+        "type": "IfcWall",
+        "globalId": "012viNo_OYgYLHUWayH6YD",
+        "name": "wall/annex-west",
+        "semanticHash": "c374dfd1f66f9192ea79a6796156c9b408febe11c63b910f42188fb6ccb021a2"
+      },
+      {
+        "id": 541,
+        "type": "IfcPropertySet",
+        "globalId": "0qZjFiqWhs1sWZWX3dQ8wB",
+        "name": "NativeSourceExchange",
+        "semanticHash": "47a5af89ef2d71d1445f211734904d6d673c87727644647173fb02f5130b5803"
+      },
+      {
+        "id": 542,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "3uOJXXMyQwhOlUP5UGBzga",
+        "name": "wall/annex-west/defines",
+        "semanticHash": "26693e29b83aab7fb5765f3f93c68ffebb261585c5c15740dbcff3327d6ef4fa"
+      },
+      {
+        "id": 552,
+        "type": "IfcOpeningElement",
+        "globalId": "3zYTpEy0OEnc9ff7KA5cQu",
+        "name": "D-P2",
+        "semanticHash": "3b4f62ff9b81393ccd136027f87d820aeae1ce8e7b911257272d1b0586b134de"
+      },
+      {
+        "id": 557,
+        "type": "IfcPropertySet",
+        "globalId": "23qwcuRqSp3jtlrAs_2HCP",
+        "name": "NativeSourceExchange",
+        "semanticHash": "682507c032c30c27ddaca40792292d579d79670539079ebd7e47798a55a47800"
+      },
+      {
+        "id": 558,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "3EsFRSsJPWHN5wYKTKUrUd",
+        "name": "opening/wall/annex-west/D-P2/lower/defines",
+        "semanticHash": "8b6f51be1ad06809b0861957dd3dfdca0717965b97e45d3f45ea110150b0eda4"
+      },
+      {
+        "id": 568,
+        "type": "IfcWall",
+        "globalId": "08je11hR9m6GjOPOK0E1LJ",
+        "name": "wall/annex-east",
+        "semanticHash": "7966238d0079491c091bed5a679ab179deab992d906d1f3f41e282fd88a706a7"
+      },
+      {
+        "id": 573,
+        "type": "IfcPropertySet",
+        "globalId": "0yqoXknTxOkVMMGvDhZY7b",
+        "name": "NativeSourceExchange",
+        "semanticHash": "120cc13f79c532f220b6beb791fb0a33c6354b45f30f590bfc196e3f60de8e7f"
+      },
+      {
+        "id": 574,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "18riAPkEwxADU4SHVg44uz",
+        "name": "wall/annex-east/defines",
+        "semanticHash": "d90c49c730820a585a15b88c97c1675ca51ab01e11261f57a720d20c6253244e"
+      },
+      {
+        "id": 584,
+        "type": "IfcWall",
+        "globalId": "1c0ZP$FF8ICRjSJuvu4MGI",
+        "name": "wall/annex-south",
+        "semanticHash": "9f81474470599958398b732a80f914650c19e82a30151762df4025a06c205a50"
+      },
+      {
+        "id": 589,
+        "type": "IfcPropertySet",
+        "globalId": "0fJSJp5nw_6x7GuOzpGA3k",
+        "name": "NativeSourceExchange",
+        "semanticHash": "691669effb6ec33c7e2bf9891015da5dd7efe3ab20bb4813e2d73b39f1b0c02d"
+      },
+      {
+        "id": 590,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "2fg1yknZuxIUOslouO$Iin",
+        "name": "wall/annex-south/defines",
+        "semanticHash": "adf3d48a52f59aa68bea7bd530f63a3ff1d5346a1886954aec7e1bbb55bb3255"
+      },
+      {
+        "id": 600,
+        "type": "IfcOpeningElement",
+        "globalId": "1hZAVEn3vaXBUBzyUCI6Q3",
+        "name": "D-P3",
+        "semanticHash": "36e94437a77562c57acd79361c1324dddf445738a778128aa6fad5de94abac51"
+      },
+      {
+        "id": 605,
+        "type": "IfcPropertySet",
+        "globalId": "3pqF04IK3VtdtG6ZiHevHD",
+        "name": "NativeSourceExchange",
+        "semanticHash": "786ea63ac3f592d43359274d3904b6100b8392f95f665f63c2e06f04e0bd756a"
+      },
+      {
+        "id": 606,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "1r374CzW6mku7R6nYnvl6Z",
+        "name": "opening/wall/annex-south/D-P3/lower/defines",
+        "semanticHash": "74007f90d001589d47e89493597bca3eea6f1d2b75d99a956e0eec35594e0df2"
+      },
+      {
+        "id": 616,
+        "type": "IfcBuildingElementProxy",
+        "globalId": "2MgPnOtTuxqNTsMcDgpaLc",
+        "name": "D-W1a",
+        "semanticHash": "57ffe1bf3fa4bf6592fe898ddbbdcb077225081695fbe7b194a9b00203af5c18"
+      },
+      {
+        "id": 621,
+        "type": "IfcPropertySet",
+        "globalId": "0pf3QfRW45miDf0xbROZ7_",
+        "name": "NativeSourceExchange",
+        "semanticHash": "1b3703d2af009034e9576b8429a531ba2d144011df73c5e2605ea03781b992fe"
+      },
+      {
+        "id": 622,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "03rC5zn_flg6TLM6VbKhy6",
+        "name": "door/D-W1a/defines",
+        "semanticHash": "2e9c4b48cad21d9c93ba8aeaeb4e84c09a9efba098e78458768f72bfad5c75ac"
+      },
+      {
+        "id": 632,
+        "type": "IfcBuildingElementProxy",
+        "globalId": "11BMq1TORVeShuLJj4Aq4V",
+        "name": "D-W1b",
+        "semanticHash": "c0acdff216d0172f6997d53a5f01e59b0997c93815fe3dbcfe03ea7d196c7d0a"
+      },
+      {
+        "id": 637,
+        "type": "IfcPropertySet",
+        "globalId": "35Wx$rm5qJ4jw6Ptbd9P7j",
+        "name": "NativeSourceExchange",
+        "semanticHash": "e84520349bf06c5c9f2aa6fea91643a2e49f50f8fa9e7982b554d572a8a9b59b"
+      },
+      {
+        "id": 638,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "2ze6fs8njxRcdgpI8FOPv6",
+        "name": "door/D-W1b/defines",
+        "semanticHash": "9e50e09b0eee7e9adfee4b5a04fc157d00488e27e39bb4da9e490a562039af6e"
+      },
+      {
+        "id": 648,
+        "type": "IfcDoor",
+        "globalId": "36eVD8QAHYLsgtcTg$V28G",
+        "name": "D-N1",
+        "semanticHash": "93be23757fc60146d66e936ca286cdf7ce78bd08787e359a98b0c9b699ef38d7"
+      },
+      {
+        "id": 653,
+        "type": "IfcPropertySet",
+        "globalId": "0kuVzWvd0RRKtgM_H532Ar",
+        "name": "NativeSourceExchange",
+        "semanticHash": "1fbdc617a45637a118a1f8f2c02203e03c4530866d82baf21ebed59e3148177e"
+      },
+      {
+        "id": 654,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "27w_AxRiKRzTArQYroOv6F",
+        "name": "door/D-N1/defines",
+        "semanticHash": "1a044e946f6ffdd5dbf435cdf40bea2f8d30ff299a44f05dc5dcd109ac1e5735"
+      },
+      {
+        "id": 664,
+        "type": "IfcBuildingElementProxy",
+        "globalId": "14udNTkPDTQxebmghljzGT",
+        "name": "D-P1a",
+        "semanticHash": "016bd74a1e3dc7ff4b47b9ff5030a27cfc6aaae2f18c35f33e484daba86a12bc"
+      },
+      {
+        "id": 669,
+        "type": "IfcPropertySet",
+        "globalId": "1osZPCG60R2PqW6XapBuK4",
+        "name": "NativeSourceExchange",
+        "semanticHash": "65aecb5eaac7e4ccb561c8da8160545ef9c63ce987b51079cdca88d25a0ca692"
+      },
+      {
+        "id": 670,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "1nb_GEnvwtpywEUYgaMb3j",
+        "name": "door/D-P1a/defines",
+        "semanticHash": "952a997e3afc8a9dd2dd0f21d3d974530d435453db0bc7f9faf14bb36c78816f"
+      },
+      {
+        "id": 680,
+        "type": "IfcBuildingElementProxy",
+        "globalId": "2tySmMFepOMmaDEfniensy",
+        "name": "D-P1b",
+        "semanticHash": "8e09974f8ac36b3aa98274140029a5cb9f64b71e1211099afaa09101366bd0ff"
+      },
+      {
+        "id": 685,
+        "type": "IfcPropertySet",
+        "globalId": "1ATiN2bsQNV7DDaH0OhdzC",
+        "name": "NativeSourceExchange",
+        "semanticHash": "31e083a7615620172ef7260fc6122736b3fdbc3fe61cc06093e6cffb5ec8bd2c"
+      },
+      {
+        "id": 686,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "3hGE7JqwQKEBo5KytAhnXI",
+        "name": "door/D-P1b/defines",
+        "semanticHash": "38c6faca5ff5b9c9a80e29aa1ebff543f13e8cef5d2ec590e584e2b327b380d7"
+      },
+      {
+        "id": 696,
+        "type": "IfcBuildingElementProxy",
+        "globalId": "2_9BtDJbLyf1au0hN2tdlc",
+        "name": "D-P3a",
+        "semanticHash": "ad7a333e236b053cb3afe6353cc1e0cebe87d4576837e2fcaa89e9611d699157"
+      },
+      {
+        "id": 701,
+        "type": "IfcPropertySet",
+        "globalId": "063Oc77e9zk_CkjaND$AAA",
+        "name": "NativeSourceExchange",
+        "semanticHash": "54f25da70de8ae3d8d19b8f4070a805904945139939831cc3cfed78459d69900"
+      },
+      {
+        "id": 702,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "0Ln8FSyAiUp96LgZSa06u5",
+        "name": "door/D-P3a/defines",
+        "semanticHash": "b22658df6d9856bf4f9b9135d0728803cb96be81b1836bbf9e15f4b35e00f756"
+      },
+      {
+        "id": 712,
+        "type": "IfcBuildingElementProxy",
+        "globalId": "31Q8dL$kQISpuiFEGbQh6S",
+        "name": "D-P3b",
+        "semanticHash": "37b372d32fc78e2731f8a062f60061f61d004c69266f0bfc19508ec2935dcfc1"
+      },
+      {
+        "id": 717,
+        "type": "IfcPropertySet",
+        "globalId": "0rVGBTRPUZ749rU966_jsm",
+        "name": "NativeSourceExchange",
+        "semanticHash": "74a63b765a42843a657df11356d6536a70abf42b731859c25d70fb60e008a8e8"
+      },
+      {
+        "id": 718,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "37JohaaJ1HSVCBkyNHbf5x",
+        "name": "door/D-P3b/defines",
+        "semanticHash": "835f6ac452fda9bb94cfde47f603404cee1b8d0407685090a039a3bf8fa2c541"
+      },
+      {
+        "id": 724,
+        "type": "IfcDoor",
+        "globalId": "1jq33$VSJx42GCQvLxWhpx",
+        "name": "D-W1 door assembly",
+        "semanticHash": "8e5bd5489608cab49a7c9aab5b4200f9e71f576f4629e63733d5b38c6881ade4"
+      },
+      {
+        "id": 729,
+        "type": "IfcPropertySet",
+        "globalId": "2W9koupgt62dVDz4bnXY5W",
+        "name": "NativeSourceExchange",
+        "semanticHash": "a37370a9ea1c28cdb6572fb2685894f080ca252e8e723b3cb14fd326c4302f76"
+      },
+      {
+        "id": 730,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "2oQpVn$d1OuGGfgUKqr2D2",
+        "name": "door-assembly/opening/wall/hall-west/D-W1/lower/defines",
+        "semanticHash": "2f009b4ef80e3e43d2721f9571d4c8a0f8b3272765863ce9be671fb1cb1fc99e"
+      },
+      {
+        "id": 736,
+        "type": "IfcDoor",
+        "globalId": "1oXrVZY4KOpVjr_UjTR75r",
+        "name": "D-P1 door assembly",
+        "semanticHash": "a9aaff432f3be41ab6355c151a54e60df5463cecd21807ed1e43d419f085bd2b"
+      },
+      {
+        "id": 741,
+        "type": "IfcPropertySet",
+        "globalId": "294RGYj6nVL7S$mca6KgmB",
+        "name": "NativeSourceExchange",
+        "semanticHash": "f1916f8699acf2477b19a38ab98ea99329dfcc8df34f80c0e804dcd9252c4088"
+      },
+      {
+        "id": 742,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "2YsUKorgOf_HTHnCDfz5qJ",
+        "name": "door-assembly/opening/wall/hall-south/D-P1/lower/defines",
+        "semanticHash": "b85930dba70a62ef3c43bad7e4320adf4c3d989cae0ed2e25106ffc2914435cf"
+      },
+      {
+        "id": 748,
+        "type": "IfcDoor",
+        "globalId": "3e7llz7$HVt1a4FG3Ty9Fx",
+        "name": "D-P3 door assembly",
+        "semanticHash": "c08c50485b584d6bbfdd2af2d13767d6c75a90b83888fc4e6ad52296f295928c"
+      },
+      {
+        "id": 753,
+        "type": "IfcPropertySet",
+        "globalId": "3CsSsTYJY3fbux4g4ZHW$y",
+        "name": "NativeSourceExchange",
+        "semanticHash": "1d15271e4fcb7c12d6c08f73f9e1684925abf3f0cf7dc11dd8fde246665f3da8"
+      },
+      {
+        "id": 754,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "3T$NpIR3un5WLWjMIoYAZ_",
+        "name": "door-assembly/opening/wall/annex-south/D-P3/lower/defines",
+        "semanticHash": "99344538b6d07e7542b8d0914f3b40fb1430f672855d83776c15375b7df17f34"
+      },
+      {
+        "id": 764,
+        "type": "IfcSlab",
+        "globalId": "3oNEy2wkZvCTDsKbnOeSyw",
+        "name": "lower floor",
+        "semanticHash": "22e6000d2a993b02b23514b91ec2758e187e5164307257ac9811c2ef976aca6f"
+      },
+      {
+        "id": 769,
+        "type": "IfcPropertySet",
+        "globalId": "1AgO89mClYFygLGTkiFuEQ",
+        "name": "NativeSourceExchange",
+        "semanticHash": "9fab7d52b0068af9257906bdb824212799164edb2bbec1a61388b25d9ace7820"
+      },
+      {
+        "id": 770,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "3soNTKTbiYFYhDOsbHy_O6",
+        "name": "slab/lower/defines",
+        "semanticHash": "e2871e2753bfb7e636bcbb9ec954d1ba36af184c9e9000a28df3a2acf11eaef3"
+      },
+      {
+        "id": 780,
+        "type": "IfcSlab",
+        "globalId": "2nW9Q$VShuDJvJPJd3wA6o",
+        "name": "operating floor",
+        "semanticHash": "1063b48c667caa32d0f3db20a37b8df1805885ef0a8bcc6c006e878e42242e7d"
+      },
+      {
+        "id": 785,
+        "type": "IfcPropertySet",
+        "globalId": "1uf5gPSny1v5AnuYT7NMNb",
+        "name": "NativeSourceExchange",
+        "semanticHash": "c1f3cb00bb024edc9e6a43a77e195a7fdb5836c07a6c8ea80e0a0091f0100e87"
+      },
+      {
+        "id": 786,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "2Ko$8W0hcA1F_0_dZANO7y",
+        "name": "slab/operating/defines",
+        "semanticHash": "51b90753fb5cbf9bf40b82f1d2521830c9f56841aa7d3ad3ce48627ed874888e"
+      },
+      {
+        "id": 796,
+        "type": "IfcSlab",
+        "globalId": "3vs67JVCyCchXGEu_21YMY",
+        "name": "slab/annex",
+        "semanticHash": "3667345ad703f9f657813b3fc92dce362723be5f7cebb55e139a07f41e70c698"
+      },
+      {
+        "id": 801,
+        "type": "IfcPropertySet",
+        "globalId": "3yW5_0O9mWU4tzD9RTl8nh",
+        "name": "NativeSourceExchange",
+        "semanticHash": "42a00450446f20f16a60c5af017f60eb02d67640df389792a904a4586b1b0bcb"
+      },
+      {
+        "id": 802,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "2pSWDwCHDHicA2dXAxqVhW",
+        "name": "slab/annex/defines",
+        "semanticHash": "1ea1298164414d015e11a3a36a577a786c23bab122987e605a92dc43ca7b118a"
+      },
+      {
+        "id": 808,
+        "type": "IfcSpace",
+        "globalId": "2C27Qk6gY899451VBk4nE6",
+        "name": "TURBINE HALL",
+        "semanticHash": "bf8b9e811ddcbff34e554308c1e232c9f7b57eb75b47d0f228de503f010466b4"
+      },
+      {
+        "id": 813,
+        "type": "IfcPropertySet",
+        "globalId": "3r4vvqJwBJmnc4xB1wBkRq",
+        "name": "NativeSourceExchange",
+        "semanticHash": "11018c9e8ff69e9c41525a1e298eba2051204d4baf6c6a29c47d5bcb4e33935d"
+      },
+      {
+        "id": 814,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "0L7BkP$AOMekOtvI2CIcMX",
+        "name": "space/turbine-hall/defines",
+        "semanticHash": "1fc8b932111f7fa52b07afdd10ed0ed0e3085e98e45fc4ec3b254e3c174ace37"
+      },
+      {
+        "id": 820,
+        "type": "IfcSpace",
+        "globalId": "0q_6eyWUVdxGVfouQ5iRGC",
+        "name": "FEEDWATER PUMP ROOM",
+        "semanticHash": "323cdb92bf13cf76dfb479818c0bea554e1c1af20a8d9f9ce8da1aa75393405b"
+      },
+      {
+        "id": 825,
+        "type": "IfcPropertySet",
+        "globalId": "2xPgW$s8kzx65ezZluv4uC",
+        "name": "NativeSourceExchange",
+        "semanticHash": "92531a00d9caaacb774ca62c1256ff4225bb4120a05c7e9d8020e3d2dc537cce"
+      },
+      {
+        "id": 826,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "1mM1LAQpDKl4E9iO8Ii9AR",
+        "name": "space/feedwater-room/defines",
+        "semanticHash": "9c551199ae306b48fe2abad053f43be67a17651790e81d22339ab874e773b7d8"
+      },
+      {
+        "id": 836,
+        "type": "IfcSlab",
+        "globalId": "3wU5gegN5zHOf5oFyzW5b5",
+        "name": "hatch-cover",
+        "semanticHash": "9c13423e408167e9fd2811b9a40e49233b5adf895c9a35bcb400c9869e3d482b"
+      },
+      {
+        "id": 841,
+        "type": "IfcPropertySet",
+        "globalId": "1Io5P3t2zFbWQGY4OJMCla",
+        "name": "NativeSourceExchange",
+        "semanticHash": "f1d85baebe85be4e4f67c25c68615fc32d35d7bf0e51798b1923b13ff3a9d4b2"
+      },
+      {
+        "id": 842,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "0DmCxNphd9puKcGOM4hyv8",
+        "name": "hatch-cover/defines",
+        "semanticHash": "b5a67a161b776f764f6736c5589e814c8292869698753f8d46f4066cdc4e316d"
+      },
+      {
+        "id": 852,
+        "type": "IfcBuildingElementProxy",
+        "globalId": "2SQ_P_TTwrhXVXFq405ASy",
+        "name": "stair/main",
+        "semanticHash": "40e07770a9e5268edc8489b27b8439f39bbe392b62057dfb7f1914b8622fc096"
+      },
+      {
+        "id": 857,
+        "type": "IfcPropertySet",
+        "globalId": "3Z0$O_tZfP_TI4Dk79ZAod",
+        "name": "NativeSourceExchange",
+        "semanticHash": "0ace33e1732adc5a27e080d9bfd863be30378cfd8541bfb42c20a81e1f12733a"
+      },
+      {
+        "id": 858,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "0YicEzic71dJSMkkPGZDoU",
+        "name": "stair/main/defines",
+        "semanticHash": "3396b0c1049689c185f7d70d9e51eb6a789ae38d830205ccfd3e1a93db1a4306"
+      },
+      {
+        "id": 868,
+        "type": "IfcBuildingElementProxy",
+        "globalId": "2yGiAZ8xfmuK835XH41uVA",
+        "name": "column/0/0.4",
+        "semanticHash": "66fe75a69ba1793ac81040e6fd28ec96b4cf7920a87b7c2bf37851b91426d311"
+      },
+      {
+        "id": 873,
+        "type": "IfcPropertySet",
+        "globalId": "2ECDD$rpOEwMqgzHtuV6ut",
+        "name": "NativeSourceExchange",
+        "semanticHash": "010d37cdc78b9f8f5cd11324cf43ccecaba3c51bac26b841f80592b2cd340b60"
+      },
+      {
+        "id": 874,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "1mjktKPoUG6TbFMJIiVyqq",
+        "name": "column/0/0.4/defines",
+        "semanticHash": "170b3d53b648ebcaab5f10a6d1b9c9dff77fd8601db28171547ea8d0f7f221ea"
+      },
+      {
+        "id": 884,
+        "type": "IfcBuildingElementProxy",
+        "globalId": "2sQbuq0VHLLj1gR8y6EJqH",
+        "name": "column/0/36.4",
+        "semanticHash": "5ce99b718ee5b22c5199deb52ce630f3aaf6baaea834d616aa10a921294d45ff"
+      },
+      {
+        "id": 889,
+        "type": "IfcPropertySet",
+        "globalId": "2pNHbFGnG_ds6oOJi2sVI0",
+        "name": "NativeSourceExchange",
+        "semanticHash": "efa054505891d35eccde44810ba63ceba33314c43421a7cc7c58e6cb81932f5f"
+      },
+      {
+        "id": 890,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "0LX_Uo1eWJxRVF_CBrn1au",
+        "name": "column/0/36.4/defines",
+        "semanticHash": "e6654b932b263f2a329d9573d78d5b3c9ec43e43c27262cdc535421a3c982df7"
+      },
+      {
+        "id": 900,
+        "type": "IfcBuildingElementProxy",
+        "globalId": "34s8VpRLALlD4mXYWMgi9X",
+        "name": "column/1/0.4",
+        "semanticHash": "47876c92f725374baf253b5c90f1374a0d514e968055e5f16e7b76560d0e3c7f"
+      },
+      {
+        "id": 905,
+        "type": "IfcPropertySet",
+        "globalId": "27jUG7ENCsrhdgNQoBJXwZ",
+        "name": "NativeSourceExchange",
+        "semanticHash": "bd4a4da6388763dd34f00d06dd7a6c0b12309c6ae3b6f0ebc6247e4334fe279c"
+      },
+      {
+        "id": 906,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "2aSCxOkUq1n1iTMELqWpXc",
+        "name": "column/1/0.4/defines",
+        "semanticHash": "9ecd2138ed92f00a79dadf196ac0d9a65bc493452987a519bdb0faecad3473e4"
+      },
+      {
+        "id": 916,
+        "type": "IfcBuildingElementProxy",
+        "globalId": "18DP4xlD_tzgloyjaD2DlJ",
+        "name": "column/1/36.4",
+        "semanticHash": "c3100480424e89e2575a7b281b9a2ffcdfe38ee3dc611a3775350764536bc9ba"
+      },
+      {
+        "id": 921,
+        "type": "IfcPropertySet",
+        "globalId": "2pB3urdZa_JHuI2iaDCwYY",
+        "name": "NativeSourceExchange",
+        "semanticHash": "216bef3f53dfad44e5f60bb1f79448849b95c462e8b61a01fe16f5f3f8128056"
+      },
+      {
+        "id": 922,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "0aJiApeGVbdENBhR2wqtDz",
+        "name": "column/1/36.4/defines",
+        "semanticHash": "79852b6468c066a0d6b47366d56b4864739aa252df7ebcc82d8ab0ab084f0c64"
+      },
+      {
+        "id": 932,
+        "type": "IfcBuildingElementProxy",
+        "globalId": "2EQsUF3C$FxS8R5pJPnUl6",
+        "name": "column/2/0.4",
+        "semanticHash": "cb7baffde2c3f570480999f34602f58bcc48d3d442cbf8c1a721f284196d4b4c"
+      },
+      {
+        "id": 937,
+        "type": "IfcPropertySet",
+        "globalId": "1bikOmRKHOxAQfIDNY1pym",
+        "name": "NativeSourceExchange",
+        "semanticHash": "b6ad821ed584f26691f31de4c3a25d7a6ddd0eace12608c04fb4c75d7c43a0ba"
+      },
+      {
+        "id": 938,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "1bE0T5x8aHuyX6XFGI6b4u",
+        "name": "column/2/0.4/defines",
+        "semanticHash": "e90441de24529d9e34846e676fe9dbc9a28f4a9984dc1682aa0d7310a7804f99"
+      },
+      {
+        "id": 948,
+        "type": "IfcBuildingElementProxy",
+        "globalId": "3VOg8DkabaZqw6qywJn3sZ",
+        "name": "column/2/36.4",
+        "semanticHash": "db639cf1728e66a27dff1c391e973db4cf542a410fac7b8ae4c7067ad888b2ee"
+      },
+      {
+        "id": 953,
+        "type": "IfcPropertySet",
+        "globalId": "1Oot5Kb5YRWDT6qyeJEKWh",
+        "name": "NativeSourceExchange",
+        "semanticHash": "faa3565ac2d121863ec5db5b21014f8ea49148380a32bfb2c030296397439d82"
+      },
+      {
+        "id": 954,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "1fKIHYSyji$dR0zUUPkjD7",
+        "name": "column/2/36.4/defines",
+        "semanticHash": "839f0e610080b6164dd9f15213c91e0f1ebe7ae1dbeef4f0e91e1cc4dc4931c0"
+      },
+      {
+        "id": 964,
+        "type": "IfcBuildingElementProxy",
+        "globalId": "1aSDKtmxVzvbFzTR1AK9KN",
+        "name": "column/3/0.4",
+        "semanticHash": "88323e77a0a84e4b7bfb67554d27f6b2e8e2bd30e17bca6acfb1dd1601486e0f"
+      },
+      {
+        "id": 969,
+        "type": "IfcPropertySet",
+        "globalId": "09TxrRv_nxiUuV5o5MN2mT",
+        "name": "NativeSourceExchange",
+        "semanticHash": "245b3c227001163006dc06e91f4b6d35e57d71e8c36e7ec6a529e8634cc89763"
+      },
+      {
+        "id": 970,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "39TWtTCABBidPVeiB8d02N",
+        "name": "column/3/0.4/defines",
+        "semanticHash": "ceac9ce680526103eb7ddcd8bdc55dda033cc79a257cc298b521da5e64d0301b"
+      },
+      {
+        "id": 980,
+        "type": "IfcBuildingElementProxy",
+        "globalId": "3aWFOy3shjsOcizj7SjnGm",
+        "name": "column/3/36.4",
+        "semanticHash": "dc572ea7c7bf7a1be1d1351752583ec8168f1f096c9275322f164ce049e54c8b"
+      },
+      {
+        "id": 985,
+        "type": "IfcPropertySet",
+        "globalId": "2Bx4lZHQbczkkpMvy2HJyL",
+        "name": "NativeSourceExchange",
+        "semanticHash": "6b37b06b40ed4d5111a149e88c2e5d79c0647aecb0167f6b3dfda724b9dac6fa"
+      },
+      {
+        "id": 986,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "1O5apb4y66A_TqdmbTl2zz",
+        "name": "column/3/36.4/defines",
+        "semanticHash": "6ad8bff4e2bdba340cbfa985e6bc11842dfa0c19e33be8a8745459dd97074d50"
+      },
+      {
+        "id": 996,
+        "type": "IfcBuildingElementProxy",
+        "globalId": "3xAnnAzCtJHpDJD0IGNphW",
+        "name": "column/4/0.4",
+        "semanticHash": "67c825c410b17ed051623a0e05f35a80b02c4947da0b4fb95028c7795447c5a5"
+      },
+      {
+        "id": 1001,
+        "type": "IfcPropertySet",
+        "globalId": "0kEol1f7YqKB9CJOBbE3ZV",
+        "name": "NativeSourceExchange",
+        "semanticHash": "4f08e909e808f8412d6a15a099898838dadcbc9ff25ba5deb2c1bad282fbb651"
+      },
+      {
+        "id": 1002,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "2t$7NxG8Xo3V2t1Auxas$I",
+        "name": "column/4/0.4/defines",
+        "semanticHash": "1584ce32eaedf979d89da2cdffcbde5ce2672a1ac3abbc1f1dbaf926e12bae34"
+      },
+      {
+        "id": 1012,
+        "type": "IfcBuildingElementProxy",
+        "globalId": "0e1KCFg6usw2VazuXvuGGG",
+        "name": "column/4/36.4",
+        "semanticHash": "2b25c381d4778e9bace9f873c12a46f9335bbac7de1b05f06438b2af14e61b56"
+      },
+      {
+        "id": 1017,
+        "type": "IfcPropertySet",
+        "globalId": "3AEkh2JbEv9YYKRmd5SElB",
+        "name": "NativeSourceExchange",
+        "semanticHash": "54a423a0c157dd1c23d748c10dd9b569c9983313ff37e1d56bf3dea541bce1ae"
+      },
+      {
+        "id": 1018,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "36fKZurNKl459wFCXo2QwW",
+        "name": "column/4/36.4/defines",
+        "semanticHash": "6e610550f4b5798580033dfe255453bd321e9903fc688f84291a8a9f3c957702"
+      },
+      {
+        "id": 1028,
+        "type": "IfcBuildingElementProxy",
+        "globalId": "2_guxlBxKjXmBZjOvJFUni",
+        "name": "column/5/0.4",
+        "semanticHash": "ca86c58d8835c67ac2fe0358fb4cffe2672435811185924beee6516165d5548b"
+      },
+      {
+        "id": 1033,
+        "type": "IfcPropertySet",
+        "globalId": "2HpROgnTPHF4LhGK$O602s",
+        "name": "NativeSourceExchange",
+        "semanticHash": "33c3121cb44184f35b1471548e1c5e1968fdb673bbc9939b2b8bac3ea9a004be"
+      },
+      {
+        "id": 1034,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "2wr1dyk9njjzEnJoWMcW7j",
+        "name": "column/5/0.4/defines",
+        "semanticHash": "62c8c5143d2fdce23bf1d6b9f3a2413c552fea30711c16baf536304dcc1a93b5"
+      },
+      {
+        "id": 1044,
+        "type": "IfcBuildingElementProxy",
+        "globalId": "2twMDRa6$1gDmtYpqxLdmj",
+        "name": "column/5/36.4",
+        "semanticHash": "dfdd43097ca5a3290df782bbf89f9822a288df633afac12e66f5b002a3c1ac67"
+      },
+      {
+        "id": 1049,
+        "type": "IfcPropertySet",
+        "globalId": "0$yY1Btk8yzShZslieIKb4",
+        "name": "NativeSourceExchange",
+        "semanticHash": "860b124aa254edd172d54aabe5f917df2e40c361e32433a39d23dd57adeac22e"
+      },
+      {
+        "id": 1050,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "1XwRs92eLr5Q_4GlhcUD5b",
+        "name": "column/5/36.4/defines",
+        "semanticHash": "927c2aac182a79f66cff3baee210d797d39b857947f54d23891d61c467ffbc22"
+      },
+      {
+        "id": 1060,
+        "type": "IfcBuildingElementProxy",
+        "globalId": "1QB0jtmrjsM1h4QD5LD0Oo",
+        "name": "column/6/0.4",
+        "semanticHash": "25ced39e49c9285da42b84761ab07e78adc01bd14f2e7745a35a9d3e5ae6a042"
+      },
+      {
+        "id": 1065,
+        "type": "IfcPropertySet",
+        "globalId": "22dU9Du1B3n_ay2DCbNUgt",
+        "name": "NativeSourceExchange",
+        "semanticHash": "33738f9285f8c8b26c20dcaed6155a8556dcf13004bc36c33e42a983635afb49"
+      },
+      {
+        "id": 1066,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "0H5urA0HdKMaFpSYW1zRiH",
+        "name": "column/6/0.4/defines",
+        "semanticHash": "9486ab898628ec1c002d6bd26883a76e181d86e2278520997a6f43a99597f838"
+      },
+      {
+        "id": 1076,
+        "type": "IfcBuildingElementProxy",
+        "globalId": "3AzCF7D5Oit4dcncusKLwO",
+        "name": "column/6/36.4",
+        "semanticHash": "e661c4bdb96e75c224417d02d3b249c28cb9002a788104746308056d9d417e82"
+      },
+      {
+        "id": 1081,
+        "type": "IfcPropertySet",
+        "globalId": "1pfteEnJiEjh5A$aIsCoJc",
+        "name": "NativeSourceExchange",
+        "semanticHash": "ab7f4a39272b68db00fdd87ad91a01083c0a0abea3f4da53e27cf7b452e72177"
+      },
+      {
+        "id": 1082,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "1BKTzRIvgLqF_x3r0WKChb",
+        "name": "column/6/36.4/defines",
+        "semanticHash": "0cccc762a28d0f24c8e02e10268edc65492457743a9e2e8f4979bfc48914e096"
+      },
+      {
+        "id": 1092,
+        "type": "IfcBuildingElementProxy",
+        "globalId": "3N7FxW9PzenvUEPCSYnLu5",
+        "name": "column/7/0.4",
+        "semanticHash": "4ae224461b0b4941458b96308197585eb37089e769bbad51ce35f855848414de"
+      },
+      {
+        "id": 1097,
+        "type": "IfcPropertySet",
+        "globalId": "05JAPnq4wzL10xiFwv2n1f",
+        "name": "NativeSourceExchange",
+        "semanticHash": "8c360dff03aebd064501f7d1053fab7c41b1d357b23b164beaefe44fff74d23b"
+      },
+      {
+        "id": 1098,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "2y7ii6ILgA8cVwk23YbwcE",
+        "name": "column/7/0.4/defines",
+        "semanticHash": "22aa940e6ef6ae7bc255143c6b8631590f52034bbb3f973c19020584ee40648c"
+      },
+      {
+        "id": 1108,
+        "type": "IfcBuildingElementProxy",
+        "globalId": "0WqlB6J14s7tBhOpqSCwB$",
+        "name": "column/7/36.4",
+        "semanticHash": "dff806e5a9b581bbf0e22e42093f432fa32433d682e65d7a444b4527a8391815"
+      },
+      {
+        "id": 1113,
+        "type": "IfcPropertySet",
+        "globalId": "1QGdvOhpMHXtsziFsZ20ju",
+        "name": "NativeSourceExchange",
+        "semanticHash": "a5b83077c571203e40f294d62661a080e93625b9d4a720e0f64f0687e40442fe"
+      },
+      {
+        "id": 1114,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "20R7OdBPcv2o9eMY_wHAjA",
+        "name": "column/7/36.4/defines",
+        "semanticHash": "573036c7bab856e8915be252d6e9791b63a987b27c316ec5617adaef2d87ab89"
+      },
+      {
+        "id": 1124,
+        "type": "IfcBuildingElementProxy",
+        "globalId": "2B0N2_lQEe2OSrS2E1T4f0",
+        "name": "column/8/0.4",
+        "semanticHash": "82c4e9df3b95c639f4b847ae7242f778441ca9402d69ca3c2bf06c66030175bc"
+      },
+      {
+        "id": 1129,
+        "type": "IfcPropertySet",
+        "globalId": "1NMu_o15bLawviFD9aAYOc",
+        "name": "NativeSourceExchange",
+        "semanticHash": "c8213428e924246089fa57c735310a47e6b2e06cd6150d4b27e21e0d5822e7e5"
+      },
+      {
+        "id": 1130,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "2Z717ns6wN3g3dxNy4gcj4",
+        "name": "column/8/0.4/defines",
+        "semanticHash": "91bf5f5757d4564270c66fd8e1ac1b7e8e7b4a20c424ccc82a32af3d8d220ac5"
+      },
+      {
+        "id": 1140,
+        "type": "IfcBuildingElementProxy",
+        "globalId": "1lC_8fvJAMkk1bRdvLdhj1",
+        "name": "column/8/36.4",
+        "semanticHash": "bb1995211974c97a9de1aca8b1fc3863e6b5771e86002e28b6e7147d30156573"
+      },
+      {
+        "id": 1145,
+        "type": "IfcPropertySet",
+        "globalId": "1iQzIdJZh5BJOtu4SnSQAb",
+        "name": "NativeSourceExchange",
+        "semanticHash": "4090c73b2bd4136e6c2a8fec23f1ed4c5407af20c18dae2dee537988e8e66f8b"
+      },
+      {
+        "id": 1146,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "011Ep6qVq8_wzMSTHmrxP$",
+        "name": "column/8/36.4/defines",
+        "semanticHash": "8d39f953dc0d0f80a10562f218c9b60f4babe391c7150a9da033c35f8e25e827"
+      },
+      {
+        "id": 1156,
+        "type": "IfcBuildingElementProxy",
+        "globalId": "2cZ$RIRlRUonpPLLU1tlZz",
+        "name": "pier/18.4/8",
+        "semanticHash": "078db440293338c6e878ddca974fb5e3ff28e25529dd6364fe07c4205cd265db"
+      },
+      {
+        "id": 1161,
+        "type": "IfcPropertySet",
+        "globalId": "2HOjoxO47jJXtzRMe34NDM",
+        "name": "NativeSourceExchange",
+        "semanticHash": "71d94bc16f83d275d1785f5f4d008193fd243113494b8f18335b7d91e06dc7a1"
+      },
+      {
+        "id": 1162,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "31XLP$xFlR2ZLeahSXbDDi",
+        "name": "pier/18.4/8/defines",
+        "semanticHash": "72b94f044b710e337fbbac522888ff2927c092f56474f0df88962d3fb6f41561"
+      },
+      {
+        "id": 1172,
+        "type": "IfcBuildingElementProxy",
+        "globalId": "2Ep_O1QvfJCEttisH1EPvR",
+        "name": "pier/18.4/26.7",
+        "semanticHash": "19a9cf556d07c4fb12742abe2c81741ef6d651d0cd09b6db5637ff803ba68348"
+      },
+      {
+        "id": 1177,
+        "type": "IfcPropertySet",
+        "globalId": "03Zb_8R_xkhOgrTt59lBUV",
+        "name": "NativeSourceExchange",
+        "semanticHash": "bef3f44e3392a7023ebfbd39288cc07650bcec9f28e531cf3e7456bec8e34fa9"
+      },
+      {
+        "id": 1178,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "31KVm44BC2oZ4rF7vRNjky",
+        "name": "pier/18.4/26.7/defines",
+        "semanticHash": "709d1ac680f8b58db2ca4f49699f58f6803bbc3bd554288ab6bec29a257f7803"
+      },
+      {
+        "id": 1188,
+        "type": "IfcBuildingElementProxy",
+        "globalId": "1ExvnZ5e5qrCh_ZfSOEne0",
+        "name": "pier/29.4/8",
+        "semanticHash": "47af81e5e2bc71d818af6e0aa74932225ea8fcbefcc8fc7d5065a23698cbbf0b"
+      },
+      {
+        "id": 1193,
+        "type": "IfcPropertySet",
+        "globalId": "1$s1syau8JV4bHgsAMV4hU",
+        "name": "NativeSourceExchange",
+        "semanticHash": "d5bedf4bec0fa5665ee1100ce56ce84d9ecfcc1ce15593516cdc2dca8dcca605"
+      },
+      {
+        "id": 1194,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "06UFL8ukoWlakiq2KgEQzP",
+        "name": "pier/29.4/8/defines",
+        "semanticHash": "0b3d45d94ad05ede462a8681650c1a708fd1220cf8da684eccc1d836c8345d0c"
+      },
+      {
+        "id": 1204,
+        "type": "IfcBuildingElementProxy",
+        "globalId": "06p7VoOMZXG_g$gXKNl2Wi",
+        "name": "pier/29.4/26.7",
+        "semanticHash": "02ef1cf050e5aa545abe0d126f97bb4e350b2caa4c2cf0f84be9cd8806ad8b22"
+      },
+      {
+        "id": 1209,
+        "type": "IfcPropertySet",
+        "globalId": "172K1Wg7744ydvmiDuiROR",
+        "name": "NativeSourceExchange",
+        "semanticHash": "ee8edf436cbc0789f2eeaf75ad132d89e81795f463629ceaeb897d3469ba4b86"
+      },
+      {
+        "id": 1210,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "1giGo4JYpmM7vLku9oGJJe",
+        "name": "pier/29.4/26.7/defines",
+        "semanticHash": "93e4d77ee0c08ab64244c6612a8aecb2d2b449870f3614ca7793f3e3d0fce824"
+      },
+      {
+        "id": 1220,
+        "type": "IfcBuildingElementProxy",
+        "globalId": "2Tc5SF_3OwRRpFQ2l0XK_d",
+        "name": "pier/40.4/8",
+        "semanticHash": "d8dc7a2271143515e113183c8e56dfdeee50374a6dac4241512db32ed6363755"
+      },
+      {
+        "id": 1225,
+        "type": "IfcPropertySet",
+        "globalId": "1hSCZIHmKgp01xaBzymiG1",
+        "name": "NativeSourceExchange",
+        "semanticHash": "09c2179bbc6c96b9590ade625a9b265d6a4fbdfe21c6205b58a1c9e2c252469d"
+      },
+      {
+        "id": 1226,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "1FPujylgPYGWRvVnJgJZX1",
+        "name": "pier/40.4/8/defines",
+        "semanticHash": "5c57156337891b534cc6795302c52f3f2d28562ea297b92e8f301a66b4867467"
+      },
+      {
+        "id": 1236,
+        "type": "IfcBuildingElementProxy",
+        "globalId": "3YaPwgrK9qIfMg1_yXP_5s",
+        "name": "pier/40.4/26.7",
+        "semanticHash": "b4e96bb00b520b2bf243cf55379196eae13d05640b0f1ec858f4fefc80c60171"
+      },
+      {
+        "id": 1241,
+        "type": "IfcPropertySet",
+        "globalId": "17kRWUfmG9buOXxPlyLtyv",
+        "name": "NativeSourceExchange",
+        "semanticHash": "799ee35712f644facafd26c2c2813066a93d36de4e2c3b81616f6d1069e6c898"
+      },
+      {
+        "id": 1242,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "3RUYNgeiGkk$xuVV0brbzQ",
+        "name": "pier/40.4/26.7/defines",
+        "semanticHash": "661a6207976a5459d34ff28927c28e015296674232431d0d27527b0be2a3ea87"
+      },
+      {
+        "id": 1252,
+        "type": "IfcBuildingElementProxy",
+        "globalId": "2MC_s8R6v36dMiD_7Ev$ZL",
+        "name": "pier/51.4/8",
+        "semanticHash": "ba182eebd4eaad8b72d2caf556c8779ddfa3537abeaa0f80f1fe655edb0cd174"
+      },
+      {
+        "id": 1257,
+        "type": "IfcPropertySet",
+        "globalId": "0bV6XVTvUeyg34dc8UiRCW",
+        "name": "NativeSourceExchange",
+        "semanticHash": "4516bd1f0113ded7bb60319998934800f7fb115ceca8f38d86ae803cfa0773f8"
+      },
+      {
+        "id": 1258,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "2qNFRRCdjxdx9J8dXqCARv",
+        "name": "pier/51.4/8/defines",
+        "semanticHash": "533e7f75d976f78dd30d35f7ddc0b25aca589c4f1afc685d8458935c3d7af527"
+      },
+      {
+        "id": 1268,
+        "type": "IfcBuildingElementProxy",
+        "globalId": "3mm2zALzk4CXwn0k8fIo6u",
+        "name": "pier/51.4/26.7",
+        "semanticHash": "a15d386ba44ca02581301f0e300a0a43b36d41d5788f57c58debb7c97989d1fc"
+      },
+      {
+        "id": 1273,
+        "type": "IfcPropertySet",
+        "globalId": "02aSFPqctxSpJcoma2Ce7X",
+        "name": "NativeSourceExchange",
+        "semanticHash": "e8348c16243fa4176040bd802c6fa75ef12e6890c2b738bcd6df8acce4219df9"
+      },
+      {
+        "id": 1274,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "2PL_Nwdu0JiZPTyT58OZgu",
+        "name": "pier/51.4/26.7/defines",
+        "semanticHash": "ec26f7b7954eccdea65d153cac974595fa50b663abdbbd31cc6d596b6391884b"
+      },
+      {
+        "id": 1284,
+        "type": "IfcWall",
+        "globalId": "0F8_aa2RCDN8$uiK5xz5cY",
+        "name": "edit-wall",
+        "semanticHash": "1cfc13fbc101b2e763e280a283553fbafce2605369c33edf62d9fa2b37ebb0e4"
+      },
+      {
+        "id": 1289,
+        "type": "IfcPropertySet",
+        "globalId": "2NGqzli$jRPawFKRdYrna8",
+        "name": "NativeSourceExchange",
+        "semanticHash": "0da6bff4b0126065c19c2a561bd28b06342a98c719fce7fdb17554a6762240f4"
+      },
+      {
+        "id": 1290,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "2xmA2uAsqI6C4On1HOpRB2",
+        "name": "edit-wall/defines",
+        "semanticHash": "3ff4692bfb1acd0676cfca4c88a0fdd9a1b851ee1109c2678e2306c450abcbb0"
+      },
+      {
+        "id": 1300,
+        "type": "IfcOpeningElement",
+        "globalId": "2p8o_yHkI_ogZQwZN9KH9_",
+        "name": "Existing opening",
+        "semanticHash": "1fe71759b44d7bd991e436cdf4d18ce2a4e5fe2df24a2fd484d006110c34aad1"
+      },
+      {
+        "id": 1305,
+        "type": "IfcPropertySet",
+        "globalId": "12mxL$E61PTHrYo9mJvCBu",
+        "name": "NativeSourceExchange",
+        "semanticHash": "a7882313ffe034b2a505d9798d60ca7f199bed3e8fea61c01e2b9dfcb52b7d52"
+      },
+      {
+        "id": 1306,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "05dYoBIdAVvaZHTDDSWWqM",
+        "name": "existing-opening/defines",
+        "semanticHash": "6460b8d70f98f4c44a5d7135f976799612ca506e74d358923eecec67cb1204f0"
+      },
+      {
+        "id": 1316,
+        "type": "IfcBuildingElementProxy",
+        "globalId": "3k7ZhkJpz1uVOFLrVpQHiD",
+        "name": "edit-roof",
+        "semanticHash": "d1f88c59e1e9321092c37e4de43f2a5964167fc974cd2b7538ce4ec6203c3141"
+      },
+      {
+        "id": 1321,
+        "type": "IfcPropertySet",
+        "globalId": "0PhhkMTEw8jhxXtMlmdRcz",
+        "name": "NativeSourceExchange",
+        "semanticHash": "28aabe0c81c2b308ef6e2dae17af32ac171893abd2f7dbf740db9a6351651df6"
+      },
+      {
+        "id": 1322,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "2bqL89SEFyyVOdHDgYwXEV",
+        "name": "edit-roof/defines",
+        "semanticHash": "b3d611f431bbebf4a16339b019940b6880882eed0787961fdff861a7b67ba094"
+      },
+      {
+        "id": 1328,
+        "type": "IfcSpace",
+        "globalId": "11OY9OK93kKioFsrsGPNGi",
+        "name": "edit-space",
+        "semanticHash": "78173099dc6aedb2169d559d6d6ab53d7b7f0815721d99448a4ff9ad3e4dadda"
+      },
+      {
+        "id": 1333,
+        "type": "IfcPropertySet",
+        "globalId": "3jIfEkkFPyVTCTH_c93rxa",
+        "name": "NativeSourceExchange",
+        "semanticHash": "a22194635876042a207b00f25dae5fe1ca32d60eb48bd5ecf26057162ee366b9"
+      },
+      {
+        "id": 1334,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "2uyRDg0eWaH3D5ZV2eGqMP",
+        "name": "edit-space/defines",
+        "semanticHash": "794093fc74c873533e5b62b57c54a4bd75b41dfeff7ccc9d97ba613a534e4d46"
+      },
+      {
+        "id": 1344,
+        "type": "IfcSlab",
+        "globalId": "0MdErSfvY8FRXSjph3bUUk",
+        "name": "edit-deck",
+        "semanticHash": "715e14fb3b6cf002b83008e84bbf16107ba7d6b1ce1353d3b5a41a41d499278d"
+      },
+      {
+        "id": 1349,
+        "type": "IfcPropertySet",
+        "globalId": "0PQsrMiNJ_evqDaLxHaIKP",
+        "name": "NativeSourceExchange",
+        "semanticHash": "3a7c2e31668936800b04318e484c203d6fd122ce28e33018dba48d902d4bd03a"
+      },
+      {
+        "id": 1350,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "1uQvpUGnPsNBNqK6K74Fe4",
+        "name": "edit-deck/defines",
+        "semanticHash": "28445a1a41dd147452df49b614d2fe7896278c22643091afc6d0bcdbad2404d5"
+      },
+      {
+        "id": 1360,
+        "type": "IfcBuildingElementProxy",
+        "globalId": "1fmAseurog$Y0uEUWj2KRi",
+        "name": "edit-stair",
+        "semanticHash": "48d826ccc29b86f68ac23c3c1d5050ed4e25f02b8f960d8d47bae94ea8b6986b"
+      },
+      {
+        "id": 1365,
+        "type": "IfcPropertySet",
+        "globalId": "0fJ0Hbxz7qP5A2WEgViNgX",
+        "name": "NativeSourceExchange",
+        "semanticHash": "d4d429824c35f8e54edce3f0ac126eed11f043638fe459d20b7aa63d60881210"
+      },
+      {
+        "id": 1366,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "1hICE76qqigHcYMSUAG_8Z",
+        "name": "edit-stair/defines",
+        "semanticHash": "2021bfa597d7db56502a8ac72870079b3f981cc9754a269d65df74467922008e"
+      },
+      {
+        "id": 1376,
+        "type": "IfcSlab",
+        "globalId": "0ydJUQALFQBBC2iv9hjDBO",
+        "name": "edit-landing",
+        "semanticHash": "9da2e25284f89a9705f20e9b96e6ddafe854cb6ff20dd2f8b1c89ecba58c517b"
+      },
+      {
+        "id": 1381,
+        "type": "IfcPropertySet",
+        "globalId": "3a2rt$47wD_duveE6VKMjW",
+        "name": "NativeSourceExchange",
+        "semanticHash": "e7607aad4c2deaec88db700bef062c583949799adaf6c7482222de5702223d9e"
+      },
+      {
+        "id": 1382,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "3Uq2loHXkLLNoF_90rIZFz",
+        "name": "edit-landing/defines",
+        "semanticHash": "6b58d98810fdc689b4282963819adbd2251e55497dc915a48e78179c07a4523d"
+      },
+      {
+        "id": 1392,
+        "type": "IfcBuildingElementProxy",
+        "globalId": "0VaaZU1QiXoFlxB18h5QG0",
+        "name": "edit-riser",
+        "semanticHash": "11b7602b701f49c972933fe4c75ffe707980c9a032e067d14cbf4fc5c9b214fb"
+      },
+      {
+        "id": 1397,
+        "type": "IfcPropertySet",
+        "globalId": "2rWw8upIPmp$QbbNy7xW57",
+        "name": "NativeSourceExchange",
+        "semanticHash": "f8491ddb9658ab9f74547fdf74e3dbf70ea3de95d0adf3b47b5bb1dd8f5ad33b"
+      },
+      {
+        "id": 1398,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "2tDdw3PYnhjsZv_eHjFU4U",
+        "name": "edit-riser/defines",
+        "semanticHash": "ec6c0b8d30110ce15476fbbfea48d16f5701a8eac2d0372f593c6dd4d1d06ac3"
+      },
+      {
+        "id": 1408,
+        "type": "IfcBuildingElementProxy",
+        "globalId": "0CfWrEPTH0ynvEz4XY6NK7",
+        "name": "edit-support",
+        "semanticHash": "cd3f727019240cab323d6308454d32033d6a0c6a1581836027b9692b7159ff45"
+      },
+      {
+        "id": 1413,
+        "type": "IfcPropertySet",
+        "globalId": "2KDBtWatYtfmULAcevInl9",
+        "name": "NativeSourceExchange",
+        "semanticHash": "c3feedc84662bc1629680da3c22b6e2839996f820810ac29144312932e4a4d31"
+      },
+      {
+        "id": 1414,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "1ijWYCx2_JBqBpbBBKifd2",
+        "name": "edit-support/defines",
+        "semanticHash": "a1fc44f45d89deb74c59173c9c05619343ccb1dc2fc63c765915a15e4c357ee1"
+      },
+      {
+        "id": 1424,
+        "type": "IfcBuildingElementProxy",
+        "globalId": "3icsfcmF8GjYAfT7CoSMYE",
+        "name": "fixed-vessel",
+        "semanticHash": "807d397f24904ef36de0a655159459ab5d7a7799a83940272aea6dbcdad17851"
+      },
+      {
+        "id": 1429,
+        "type": "IfcPropertySet",
+        "globalId": "3XDVegVw$olE0t1AsFWPPO",
+        "name": "NativeSourceExchange",
+        "semanticHash": "197e3c4118e21deef27a42f73b7a38bba2de20a7c97178d2daa352f48c1cc4af"
+      },
+      {
+        "id": 1430,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "2L4lgoobIxH5SH9jjNbuLA",
+        "name": "fixed-vessel/defines",
+        "semanticHash": "6076c2cddeda2f7b0c761125865cf01eea3e2ac72047156c9e4ea139300b52c2"
+      },
+      {
+        "id": 1440,
+        "type": "IfcBuildingElementProxy",
+        "globalId": "2AsE6c5qpq5Py_rImzrS5E",
+        "name": "shared-yard",
+        "semanticHash": "bda06963eca5024dc6c7b7365f72bec8e85f31423ed5d8f1edab683a53163404"
+      },
+      {
+        "id": 1445,
+        "type": "IfcPropertySet",
+        "globalId": "1owF$ZZFYZkBNn5sWckiBZ",
+        "name": "NativeSourceExchange",
+        "semanticHash": "52190544b6fcea32a61febddd4687f4a99b69763519a3f4732c4bdca97eaef59"
+      },
+      {
+        "id": 1446,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "2HtIsDAEP5lOi4$fvr9AUY",
+        "name": "shared-yard/defines",
+        "semanticHash": "917083fd50eb74908553ba546f33eb444c9ef5a116b9019bd01f3a1697b5ac8b"
+      },
+      {
+        "id": 1456,
+        "type": "IfcBuildingElementProxy",
+        "globalId": "1nDUhLv$Hw3Ln6mQxsoVz2",
+        "name": "shared-transformer",
+        "semanticHash": "4ed0cb2251565e8168d304c01ee32452c84bc1e9da10cb3f2df748d5f7db2298"
+      },
+      {
+        "id": 1461,
+        "type": "IfcPropertySet",
+        "globalId": "3ezshQcZ5idOcIjaKp1VXR",
+        "name": "NativeSourceExchange",
+        "semanticHash": "efd11bdc1d399b68e8b8d38f315578db8133c8d04bc5e1ec0ce6f08c8cdd6d16"
+      },
+      {
+        "id": 1462,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "1w3NVhQNVloA5Pr9jK95m9",
+        "name": "shared-transformer/defines",
+        "semanticHash": "20f4a68e54e713c2f00147553fc360a580fa0395ea8d8ec08a99bbf3903a7882"
+      },
+      {
+        "id": 1472,
+        "type": "IfcBuildingElementProxy",
+        "globalId": "15kDNyjNutiNxfv4iQq7VU",
+        "name": "first-support",
+        "semanticHash": "8ee74569996eb923847849902473221254ddf8ed45db40a5adbb6f4bfe33d684"
+      },
+      {
+        "id": 1477,
+        "type": "IfcPropertySet",
+        "globalId": "2EMnjRirxb9aBEEhCXco6I",
+        "name": "NativeSourceExchange",
+        "semanticHash": "8babbb4cc25ff85fd17868f8d5414202e1a9294c9464bdda705103a35cf3ae24"
+      },
+      {
+        "id": 1478,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "0NTgnJbw5499sjb2gA81Xl",
+        "name": "first-support/defines",
+        "semanticHash": "cec007fa2c2b56669eadecd333e46e474f8d1ef3aeb8bc737cc090fc6a650675"
+      },
+      {
+        "id": 1488,
+        "type": "IfcBuildingElementProxy",
+        "globalId": "3F8o8Oq$r7i0OXfEPM6ud4",
+        "name": "Illustrative main steam route",
+        "semanticHash": "c207c974767234c758f5ad646a1104cee663dfd0f5ab490770c1df0988c2c2ea"
+      },
+      {
+        "id": 1493,
+        "type": "IfcPropertySet",
+        "globalId": "1YqMVjYGR4ro1HGSYYbKpj",
+        "name": "NativeSourceExchange",
+        "semanticHash": "e0d38977bc96ba587d0266501faea1dec62e59833465a9af7e707a104a8660e4"
+      },
+      {
+        "id": 1494,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "29udgw1V67cdVGxnIunweC",
+        "name": "main-steam-route/defines",
+        "semanticHash": "8b82a9a0b8fbc96c2faec9bd0d27e283b602995d22b455e25d23785ed1e69fd1"
+      },
+      {
+        "id": 1504,
+        "type": "IfcBuildingElementProxy",
+        "globalId": "0ni$s_PvcIoas9FFFwwG93",
+        "name": "Illustrative feedwater route",
+        "semanticHash": "2cdb0f075fede3dba723e154f884d61186351b0f58857369e36151ef48185073"
+      },
+      {
+        "id": 1509,
+        "type": "IfcPropertySet",
+        "globalId": "2OsKJl1cXSYGRn67xL2swl",
+        "name": "NativeSourceExchange",
+        "semanticHash": "23f8044bf6038cd35c899f79fcf4acb9fb10859da8f4747c27c225052ac305df"
+      },
+      {
+        "id": 1510,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "2pRx9WE3zUOSnO0lezpKSQ",
+        "name": "feedwater-route/defines",
+        "semanticHash": "a6aa63c6f937f1316ed60041c317b04733e66ef7a1a6b022cc640717329dd79d"
+      },
+      {
+        "id": 1520,
+        "type": "IfcOpeningElement",
+        "globalId": "18axG1qX7O$gbeE5kk_eEH",
+        "name": "Access door opening",
+        "semanticHash": "3316588a62144cfbc70bc67515b778b855fc09613a6761c6c111531f09ef020f"
+      },
+      {
+        "id": 1525,
+        "type": "IfcPropertySet",
+        "globalId": "0AJchkNSxkoK7DsJq_QeD4",
+        "name": "NativeSourceExchange",
+        "semanticHash": "10e6f318a49418a6800dc3e2021b8929b51e53febf1b578dc65719a4ba784c15"
+      },
+      {
+        "id": 1526,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "2qJi23$MPus_jfLLfiFl9s",
+        "name": "access-door-opening/defines",
+        "semanticHash": "1d05ed384f490e5a9627a295a7d26165bf91c16d0e92f235efbb29f69f0de9c2"
+      },
+      {
+        "id": 1536,
+        "type": "IfcDoor",
+        "globalId": "0g9xy8Kr0cTUGITgek$N5D",
+        "name": "Access door",
+        "semanticHash": "4d8541ccc5c3fbc33ece4e5b65e40e31a2ae95304dc131b8556dfba076025ee2"
+      },
+      {
+        "id": 1541,
+        "type": "IfcPropertySet",
+        "globalId": "23Lw$bgOxXD8kRoD3rdh5V",
+        "name": "NativeSourceExchange",
+        "semanticHash": "4d7249dc17ad77c03f21bed1385cf1cbfeca4e359cf36a9e0f1c0e82b326e8bb"
+      },
+      {
+        "id": 1542,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "36yuo1THatOxcOm5NDD8i4",
+        "name": "access-door/defines",
+        "semanticHash": "3b3b6baa03687a318387262ef715d0e4e43e5f03c9c49b647b609dea1cc45741"
+      },
+      {
+        "id": 1548,
+        "type": "IfcDistributionPort",
+        "globalId": "3UUp7r1m_sNjL2vMnt1Ur$",
+        "name": "tg-hp/interface/axisA",
+        "semanticHash": "a4eb60146ac5fd536542f02d8c608f20969289133423e33b38a1bd6c18fb44d8"
+      },
+      {
+        "id": 1549,
+        "type": "IfcRelNests",
+        "globalId": "2IDujt78mq4m0kH6FdK51s",
+        "name": "tg-hp/interface/axisA/owner",
+        "semanticHash": "f61279c7b11a59b4800b13549cc30aa8eb065ec8cd49fbcca870936b442ea99b"
+      },
+      {
+        "id": 1554,
+        "type": "IfcPropertySet",
+        "globalId": "0Ma5fgG0FR4sqWESZCpkLR",
+        "name": "NativeSourceExchange",
+        "semanticHash": "c6e028d49941b58b8ab2be1526b98bf2d488ba230f8e948596141cc1ce8f62d7"
+      },
+      {
+        "id": 1555,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "1wpEHOgQhrWFH3VSH9IYyc",
+        "name": "tg-hp/interface/axisA/defines",
+        "semanticHash": "36fe54b1f60880c36369ccf7e2f794bdb44663652ff610ed1f978b2b2e6b7a43"
+      },
+      {
+        "id": 1561,
+        "type": "IfcDistributionPort",
+        "globalId": "18sPE0EIdx3iu$ulVpUTA0",
+        "name": "tg-hp/interface/axisB",
+        "semanticHash": "81752b4064e37e1f1f7e69f7bf6f7a9f1f51d48fd9f3e406a6188c69de330a86"
+      },
+      {
+        "id": 1562,
+        "type": "IfcRelNests",
+        "globalId": "0asQMKmI$SdeYTUxNKrZFb",
+        "name": "tg-hp/interface/axisB/owner",
+        "semanticHash": "95b06567e4f167507f68a72edcb9bd9c287061a1884ff60895c5d0b842d416f9"
+      },
+      {
+        "id": 1567,
+        "type": "IfcPropertySet",
+        "globalId": "1kOC60hRCrpC$Zqrev4kM_",
+        "name": "NativeSourceExchange",
+        "semanticHash": "11ae733ed452a71075810d54a12810087ae97b152a7139bd20a895299af88d8b"
+      },
+      {
+        "id": 1568,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "07AbWPu3lyK8im$ift6SNR",
+        "name": "tg-hp/interface/axisB/defines",
+        "semanticHash": "89c9eaeb375f3d304f2d334a2025034e675d405fbcf6317c652a544930659c01"
+      },
+      {
+        "id": 1574,
+        "type": "IfcDistributionPort",
+        "globalId": "3tiPK3Q5rDrC_wkB$4RTS5",
+        "name": "tg-lp-1/interface/axisA",
+        "semanticHash": "eb95f450463492e602a83d2ca7dd4618a4814d324c8d7d3bac3acfcc5b6107b1"
+      },
+      {
+        "id": 1575,
+        "type": "IfcRelNests",
+        "globalId": "1lOVg23pkuG9gAVjwBecr6",
+        "name": "tg-lp-1/interface/axisA/owner",
+        "semanticHash": "4cec099462d79c9dbe21f2990ea0f2b8efde90f08bb46ea14e7aa13ab6293f29"
+      },
+      {
+        "id": 1580,
+        "type": "IfcPropertySet",
+        "globalId": "1iP3YHoCjJ98IDRP3eB8dc",
+        "name": "NativeSourceExchange",
+        "semanticHash": "8a8681700d6a6e7b54d96887474d2b21950dcab51f3a964836296e100267c83c"
+      },
+      {
+        "id": 1581,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "0FYR0d2bNduxXq1OYzpyom",
+        "name": "tg-lp-1/interface/axisA/defines",
+        "semanticHash": "36f56d2361fc0c1427400ddf3101b61083f7ba9255a9bf29a7cfab14f4cb49dc"
+      },
+      {
+        "id": 1587,
+        "type": "IfcDistributionPort",
+        "globalId": "2_br6W2umq00C4qODmn6LF",
+        "name": "tg-lp-1/interface/axisB",
+        "semanticHash": "0c48fae04998e26919e557b061fbea85b4d1d53729b56c7d43f523ec6ace3023"
+      },
+      {
+        "id": 1588,
+        "type": "IfcRelNests",
+        "globalId": "0FNtiMt0lns5taBHsw2jLu",
+        "name": "tg-lp-1/interface/axisB/owner",
+        "semanticHash": "2f338bd6339e90a575f2e71825c144d969e68a9854241c59fc52f4b26fb7c30b"
+      },
+      {
+        "id": 1593,
+        "type": "IfcPropertySet",
+        "globalId": "2s92pINnRJokRsbKXo7JMN",
+        "name": "NativeSourceExchange",
+        "semanticHash": "cbb4fb96ddd209ce9a5589fd9a7353f23e55cc6820af1fe150d1c6e3b9abee32"
+      },
+      {
+        "id": 1594,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "3XHunZHdspfY6$JEvDkr2E",
+        "name": "tg-lp-1/interface/axisB/defines",
+        "semanticHash": "d69d862b7b0a8428cd641acce05dba0c6a02a5736fc86418be97abd6ea445584"
+      },
+      {
+        "id": 1600,
+        "type": "IfcDistributionPort",
+        "globalId": "2$FcpFOQvwTMVWoJCH3ASr",
+        "name": "tg-lp-2/interface/axisA",
+        "semanticHash": "b593ea1414e6ee4b509bf81e5b9c1b09f9cf093beb9ca548383fb779894aa38e"
+      },
+      {
+        "id": 1601,
+        "type": "IfcRelNests",
+        "globalId": "0Cfg$wGkmVJZ3VOTK446DX",
+        "name": "tg-lp-2/interface/axisA/owner",
+        "semanticHash": "157cef993d68c4befe78da2bbc42064892c75ff723f20d742e78697a2da46b18"
+      },
+      {
+        "id": 1606,
+        "type": "IfcPropertySet",
+        "globalId": "2N7CtLIhnO7$aalQLxgAMh",
+        "name": "NativeSourceExchange",
+        "semanticHash": "9b7ae6a3a2326fe4f49c6285e5e4b06623c83032a75ff206a79c160a8f9e4fc1"
+      },
+      {
+        "id": 1607,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "08pc8L$PXMBYwJho7U21M4",
+        "name": "tg-lp-2/interface/axisA/defines",
+        "semanticHash": "732f887dddd607d04603f6efe9c8cc28a4bbc4d9fb33af19f6966619d86c55dc"
+      },
+      {
+        "id": 1613,
+        "type": "IfcDistributionPort",
+        "globalId": "1_huYrgIgZJ43G90LiexVu",
+        "name": "tg-lp-2/interface/axisB",
+        "semanticHash": "677d4ab608b497232f43e7f3feb3fb7f994e1f06fb42046075dae222e39b7327"
+      },
+      {
+        "id": 1614,
+        "type": "IfcRelNests",
+        "globalId": "00hgw7Gm_a1jljiuzRCowP",
+        "name": "tg-lp-2/interface/axisB/owner",
+        "semanticHash": "1a17e30dbdce1c29829ff648c3126097f4cd7ff9de2841fd1ad888ac20a0e6f1"
+      },
+      {
+        "id": 1619,
+        "type": "IfcPropertySet",
+        "globalId": "1M34jZl$CaLyXTniFRBY_Y",
+        "name": "NativeSourceExchange",
+        "semanticHash": "637722cc9a54b6b1e5862044b788fabca652b4200c3fec64c8f433daaecc2c1b"
+      },
+      {
+        "id": 1620,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "0iwPvEM6j2zj4V1k9U5nbr",
+        "name": "tg-lp-2/interface/axisB/defines",
+        "semanticHash": "2acefc1a35eab1c9bb1fb6a472a2178738d63287dd85ec1e616e1d3304230610"
+      },
+      {
+        "id": 1626,
+        "type": "IfcDistributionPort",
+        "globalId": "0ZH28Gk16fw3oOV16$BTyq",
+        "name": "tg-lp-3/interface/axisA",
+        "semanticHash": "894ce981a7811a29b0bc9789b9c0c2f9d3d2be29328badc4b5f8ac66b5ae5c4c"
+      },
+      {
+        "id": 1627,
+        "type": "IfcRelNests",
+        "globalId": "3g7URvAu3Hb63xvwkJ1nL1",
+        "name": "tg-lp-3/interface/axisA/owner",
+        "semanticHash": "715479cc6aea065d1f2c470709aba941bd975f9fe53b04b209d1d71fefbbbf19"
+      },
+      {
+        "id": 1632,
+        "type": "IfcPropertySet",
+        "globalId": "1uniHVw_$a3FpwjUjUYVXd",
+        "name": "NativeSourceExchange",
+        "semanticHash": "ec6924e161f651d3b2a605b6b6ddefeb228c55ae30bd8898b16b536c2c54fa0d"
+      },
+      {
+        "id": 1633,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "2cYd9ZWqNodq4E7XxrXBD5",
+        "name": "tg-lp-3/interface/axisA/defines",
+        "semanticHash": "0b120974b1da5d2884a98162d3a33a64adb036c2de099a3ebb5289823c01850a"
+      },
+      {
+        "id": 1639,
+        "type": "IfcDistributionPort",
+        "globalId": "2iDcwRi5Z6qISrSrQcqX9u",
+        "name": "tg-lp-3/interface/axisB",
+        "semanticHash": "f8e7d435c11abbdde90e20f5f23c3e00f875f1d69d58e28ca2872e6ee143655d"
+      },
+      {
+        "id": 1640,
+        "type": "IfcRelNests",
+        "globalId": "3lStaJDi6TzoSctzExC3lq",
+        "name": "tg-lp-3/interface/axisB/owner",
+        "semanticHash": "0afe20f1626eab256fe41cbe09759ec2454d3b08de66a5878436af260ee6dd59"
+      },
+      {
+        "id": 1645,
+        "type": "IfcPropertySet",
+        "globalId": "2znaSOGL_h50o4AP55oymF",
+        "name": "NativeSourceExchange",
+        "semanticHash": "d16e97ad1967655e14aaf3ed661005976ef6c185535d53973ab28f23a55eb5b3"
+      },
+      {
+        "id": 1646,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "0Ui5M7j3RK$dVy0m4SZeqr",
+        "name": "tg-lp-3/interface/axisB/defines",
+        "semanticHash": "594bc049da626c7ac467a3f1a4b22c1ffced45e05d351c7d443438c255683a39"
+      },
+      {
+        "id": 1652,
+        "type": "IfcDistributionPort",
+        "globalId": "34O5Ken$J2z6T37UGIcFOy",
+        "name": "tg-generator/interface/axisA",
+        "semanticHash": "5f0778f3f4150c05d41ee930a161a9bf3103f44418c15c63808e0e40ea745779"
+      },
+      {
+        "id": 1653,
+        "type": "IfcRelNests",
+        "globalId": "02L3NctbolBTai9eyqAGR5",
+        "name": "tg-generator/interface/axisA/owner",
+        "semanticHash": "92e2d52cba3a31e6e19323415335bf7bdb5357f132167bcf887040624d871266"
+      },
+      {
+        "id": 1658,
+        "type": "IfcPropertySet",
+        "globalId": "1cnvyivX2XwCiE6s6yygJe",
+        "name": "NativeSourceExchange",
+        "semanticHash": "71318965798f82ab551c805fc44daf45d28d802721e96e45a0944cd97a1cea10"
+      },
+      {
+        "id": 1659,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "2_CjmiioHnEE9aPv6_vCmT",
+        "name": "tg-generator/interface/axisA/defines",
+        "semanticHash": "d073a024dd70264bdbfe4b7f59160a0757a106c2bd9fea1ef9e8de5306b26358"
+      },
+      {
+        "id": 1665,
+        "type": "IfcDistributionPort",
+        "globalId": "0CUPwzw59Y$MFEcA1uBpFK",
+        "name": "tg-generator/interface/axisB",
+        "semanticHash": "8984d798e774f75920cd26c39b03e4e490eb4f58fd59ec89e80c62260d8f01ca"
+      },
+      {
+        "id": 1666,
+        "type": "IfcRelNests",
+        "globalId": "2mnEyAMEwW6U_G_Jo8m15K",
+        "name": "tg-generator/interface/axisB/owner",
+        "semanticHash": "d6f71e2d32016d0ecc40e24a297b982e93b16951cee85a28e89b75dfdf193448"
+      },
+      {
+        "id": 1671,
+        "type": "IfcPropertySet",
+        "globalId": "3vCxoXxzs9wdbis478raS1",
+        "name": "NativeSourceExchange",
+        "semanticHash": "4ccb7c47c6e52b53a5d5c2f7031e47e937326845c9d7bf4331d43ccc0bcbd0d1"
+      },
+      {
+        "id": 1672,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "0ORxAwZk05803vKyhAuCHy",
+        "name": "tg-generator/interface/axisB/defines",
+        "semanticHash": "dba5d179a59703fbfb117ba7c841feb7d58d0b26ca2c3bb109b1b5b94b941e59"
+      },
+      {
+        "id": 1678,
+        "type": "IfcDistributionPort",
+        "globalId": "3REcZkERza4Zx_rM8_Savy",
+        "name": "tg-exciter/interface/axisA",
+        "semanticHash": "10c1fc9a5726b2d394bd3e6ddb427c7693886b813ef99377867b1e05147bceed"
+      },
+      {
+        "id": 1679,
+        "type": "IfcRelNests",
+        "globalId": "0woeFuWmE0l0xEV6evn7QA",
+        "name": "tg-exciter/interface/axisA/owner",
+        "semanticHash": "ec63ea673f333ad4d5f1687a8a984fddf655a94ac1e9faa591441f9d0671d7af"
+      },
+      {
+        "id": 1684,
+        "type": "IfcPropertySet",
+        "globalId": "08PuDgd65nRVTsiRcT7eTt",
+        "name": "NativeSourceExchange",
+        "semanticHash": "75d94befcad347f34c627dc57ec842be926bf89fcd3d6006d637d2cf4c6f72ef"
+      },
+      {
+        "id": 1685,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "2ZdkqnijZk2J0W6iLrwetN",
+        "name": "tg-exciter/interface/axisA/defines",
+        "semanticHash": "845803bfa2da391d20bc259f9dd4e0e335fd57e1870516f6204386443cf40ce6"
+      },
+      {
+        "id": 1691,
+        "type": "IfcDistributionPort",
+        "globalId": "0mLLdeM2orqv6mz0iKpg2F",
+        "name": "tg-exciter/interface/axisB",
+        "semanticHash": "ccfdbcd3bd1810409c1b40e23674fb6a109db1a5f19d3fcdf5706ce18cb0f5a9"
+      },
+      {
+        "id": 1692,
+        "type": "IfcRelNests",
+        "globalId": "1rGngmZ7VrCyYRxGN3huri",
+        "name": "tg-exciter/interface/axisB/owner",
+        "semanticHash": "d64485220729dd595b4af6166b230d7791f12674e33227cbe432adc3cd9618d9"
+      },
+      {
+        "id": 1697,
+        "type": "IfcPropertySet",
+        "globalId": "0N9vUEpd1DuDJbtd8YPVWT",
+        "name": "NativeSourceExchange",
+        "semanticHash": "5bdf8c0c9daab66ad59c4eea55850eb193bdcf69c8e28814f764838179efcf00"
+      },
+      {
+        "id": 1698,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "0Bc4obx8KXTHSZzvfW3Idy",
+        "name": "tg-exciter/interface/axisB/defines",
+        "semanticHash": "2915feec95de91ac8b28d77d48fa14bdd35495c1f8fe99a47d45013881342c47"
+      },
+      {
+        "id": 1704,
+        "type": "IfcDistributionPort",
+        "globalId": "2ogANoOBmyyOBSmQVZDl1C",
+        "name": "msr-1/interface/axisA",
+        "semanticHash": "ba4c7c2aadef154a630eb43d5e8aeac356a3ef00fd54ad8725b2c5acd646b83c"
+      },
+      {
+        "id": 1705,
+        "type": "IfcRelNests",
+        "globalId": "2mK4fHniQRJ1jr7Mo60rpF",
+        "name": "msr-1/interface/axisA/owner",
+        "semanticHash": "25cf710063bc78c8d85f8ddd7de7ed97ce9ee1dbb5619f75d91c95a44b6cccfc"
+      },
+      {
+        "id": 1710,
+        "type": "IfcPropertySet",
+        "globalId": "2B1L_BXdZ5ZldCVFk131Wp",
+        "name": "NativeSourceExchange",
+        "semanticHash": "30248a6ba2f2d086b2cde834adc8c88a401e48608eea6664bc7198b5cf241c67"
+      },
+      {
+        "id": 1711,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "2jOMeKzlTzf95SBwVWzc5z",
+        "name": "msr-1/interface/axisA/defines",
+        "semanticHash": "d06453a4decea55bdff8c4443bc543ccaa738bb2ed32658075e0660669bf37dd"
+      },
+      {
+        "id": 1717,
+        "type": "IfcDistributionPort",
+        "globalId": "3F6634orrT$QMo9SbOE5ZS",
+        "name": "msr-1/interface/axisB",
+        "semanticHash": "3fa9fae677010a839a8e9aa731bdd9509f966af96aa3d0024c5313e0cc1dc0cd"
+      },
+      {
+        "id": 1718,
+        "type": "IfcRelNests",
+        "globalId": "0jcPnAv7tTomLM1etq7vM8",
+        "name": "msr-1/interface/axisB/owner",
+        "semanticHash": "ed866987b81043fce38b8ab9c7b3f28c7e48d64a472003322d30e3f00ac53d0b"
+      },
+      {
+        "id": 1723,
+        "type": "IfcPropertySet",
+        "globalId": "3WnFi9F8sdohlA4Mgo_h$e",
+        "name": "NativeSourceExchange",
+        "semanticHash": "f1c2e5950fa93e186b67087c65fe64b9ecfbf1b1d9cf6da096e8f8512096755f"
+      },
+      {
+        "id": 1724,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "0rU_uRYvPSDtTqzTpVd59h",
+        "name": "msr-1/interface/axisB/defines",
+        "semanticHash": "23198c1cbabd8614f2b394b4c3949fd5f1bb61a61a07a0adf2aca49a0631b751"
+      },
+      {
+        "id": 1730,
+        "type": "IfcDistributionPort",
+        "globalId": "29Nis_4U0Z2rlXSwJwT5Nz",
+        "name": "msr-2/interface/axisA",
+        "semanticHash": "1a1747507b3e7def2c5e7e728c4886f9ac824d918c608e7a0c2c75eadd3bcc1b"
+      },
+      {
+        "id": 1731,
+        "type": "IfcRelNests",
+        "globalId": "2iNWfUnDZS0FFGf0_VDpIV",
+        "name": "msr-2/interface/axisA/owner",
+        "semanticHash": "9423423b8b746645ba7ab88fadf5428711c2296062ad22ae37baf3118444049c"
+      },
+      {
+        "id": 1736,
+        "type": "IfcPropertySet",
+        "globalId": "0MGyz1tEICCTqvh1GJafuh",
+        "name": "NativeSourceExchange",
+        "semanticHash": "b171a0d641e2accd4ece12fdb4314be6cc1151cb09ba799a5cbef2417523f671"
+      },
+      {
+        "id": 1737,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "0LIbaRHflOrj0qSpbNVG5O",
+        "name": "msr-2/interface/axisA/defines",
+        "semanticHash": "3df477db32bee931d3fb5e854d08ff6f95ccf8fb6a03d879cf2a08d61dc590e4"
+      },
+      {
+        "id": 1743,
+        "type": "IfcDistributionPort",
+        "globalId": "1gV2Q3wFq_rge8pQ4sWU8V",
+        "name": "msr-2/interface/axisB",
+        "semanticHash": "88138851331df54c6b0540e4f13309d57e7d6140a9046f38b6362607528cc7db"
+      },
+      {
+        "id": 1744,
+        "type": "IfcRelNests",
+        "globalId": "1raxn2djfG49hvKo3AA9$H",
+        "name": "msr-2/interface/axisB/owner",
+        "semanticHash": "7dfb8b33e4bb818ae76528d58dc055019af19d53e1304d48adf0f604ac91b959"
+      },
+      {
+        "id": 1749,
+        "type": "IfcPropertySet",
+        "globalId": "1c2JbIOUVR3HDIVjPu_Wgr",
+        "name": "NativeSourceExchange",
+        "semanticHash": "51c5567c38db15d0976d3949b3b089b9e311245e11d6b746f28fffae6c1fbfbb"
+      },
+      {
+        "id": 1750,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "28k_rtE6p6tMfUOBegnjne",
+        "name": "msr-2/interface/axisB/defines",
+        "semanticHash": "808d6a05e575b8ffc72e5d859b2c7e82dbad7d6df723e4b01fdb33f1298a6da4"
+      },
+      {
+        "id": 1756,
+        "type": "IfcDistributionPort",
+        "globalId": "3pESNdKN9eyIK71Y8Ii6DZ",
+        "name": "stop-valve/interface/axisA",
+        "semanticHash": "639876e4872a1d742786ec726bc73bff1c3062a33377c09ca53de4bea026b9da"
+      },
+      {
+        "id": 1757,
+        "type": "IfcRelNests",
+        "globalId": "1JLAjKmM0UDlRsdMhFt8UV",
+        "name": "stop-valve/interface/axisA/owner",
+        "semanticHash": "0323d9fb7425790f44504d77a29871e510724cef7dceb790e5d7af9a37b483e7"
+      },
+      {
+        "id": 1762,
+        "type": "IfcPropertySet",
+        "globalId": "3H89CL349nwFs21HyF5spN",
+        "name": "NativeSourceExchange",
+        "semanticHash": "25dd0d5f49ad0cf7b44ef94f721f578fc380d754d5fd51a7132976ad3dffb802"
+      },
+      {
+        "id": 1763,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "0_irpAlPBcfXwNsWYIBN1S",
+        "name": "stop-valve/interface/axisA/defines",
+        "semanticHash": "24a9815dab80ec9a69a6cbb397e695797fb277f93b219d59e0ca58a458489e8c"
+      },
+      {
+        "id": 1769,
+        "type": "IfcDistributionPort",
+        "globalId": "2yUgy9Sbw6$6kEDfv4NtIE",
+        "name": "stop-valve/interface/axisB",
+        "semanticHash": "fd22ceebd954055b02b9d52f7d057406da231c9d2a0354721de1431c9920857e"
+      },
+      {
+        "id": 1770,
+        "type": "IfcRelNests",
+        "globalId": "1ksTFmUXCGsL_RtjOZSpYc",
+        "name": "stop-valve/interface/axisB/owner",
+        "semanticHash": "3fcd32a183ed1d4417dc2e4922a1c98dad920b3466541bf3c39e09181525a06d"
+      },
+      {
+        "id": 1775,
+        "type": "IfcPropertySet",
+        "globalId": "29eFVEPSOT$G7Vje4T_HUN",
+        "name": "NativeSourceExchange",
+        "semanticHash": "31b25471ba444467a8ad45654ca94e609d2fd7412598b6d3d3124341ce19609f"
+      },
+      {
+        "id": 1776,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "2WWuMs2Ybp2IzIyDv28Tsf",
+        "name": "stop-valve/interface/axisB/defines",
+        "semanticHash": "96356aa3a2657272ec305fb522c518199a974ed26beec8fa987bf6eb54f53313"
+      },
+      {
+        "id": 1782,
+        "type": "IfcDistributionPort",
+        "globalId": "16lvaMIQYlme__D9Ep$7_s",
+        "name": "condenser-1/interface/axisA",
+        "semanticHash": "6bbaf069abecf7f4e47dab28acc61ef57f5ef93c6f10e4dd45c6d988df6b9e11"
+      },
+      {
+        "id": 1783,
+        "type": "IfcRelNests",
+        "globalId": "2Z6wqajkyRGoRURub13LbU",
+        "name": "condenser-1/interface/axisA/owner",
+        "semanticHash": "5ba1f0e8a84677fbdec1813ad030227914771b12e4868af303d44b791a6f0d7a"
+      },
+      {
+        "id": 1788,
+        "type": "IfcPropertySet",
+        "globalId": "3kdx2jyzjYT_dqZ_Sxo4ff",
+        "name": "NativeSourceExchange",
+        "semanticHash": "77b0428cfd4fd80c5ddfefd79d98ad1b08d22e611059505bcc6fb1cd14c8ea28"
+      },
+      {
+        "id": 1789,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "38yptIqjC5doyeqnE$vuF5",
+        "name": "condenser-1/interface/axisA/defines",
+        "semanticHash": "7e9a71731a5dfc2eec66fdfb4ce57e7731c47d22c0b9aa51019583c7e5d2a306"
+      },
+      {
+        "id": 1795,
+        "type": "IfcDistributionPort",
+        "globalId": "2YsaqNNiHD7vaiVTEdfy$d",
+        "name": "condenser-1/interface/axisB",
+        "semanticHash": "80ce24417f33242c3b87664f011371232d43409d28453e32ebe1c565a3b82b51"
+      },
+      {
+        "id": 1796,
+        "type": "IfcRelNests",
+        "globalId": "3zDdRmuTNu$njq42ERA8uT",
+        "name": "condenser-1/interface/axisB/owner",
+        "semanticHash": "1aff56e9e5ff63e77d05a7913f845de43a92a9d138dbd90cb78a8639c418bd9b"
+      },
+      {
+        "id": 1801,
+        "type": "IfcPropertySet",
+        "globalId": "1I6kd$zKzjYmboEPsXRCt1",
+        "name": "NativeSourceExchange",
+        "semanticHash": "d85d09bf1775a7a10fa72e5a2950abe0386edcdd15ea2ecc1039b246eb57093f"
+      },
+      {
+        "id": 1802,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "39_UDH6bPrIIIh4D7lm3dg",
+        "name": "condenser-1/interface/axisB/defines",
+        "semanticHash": "a735fd151683c74e615c661eec81d9f328f34ed0fb3729d03e9d4ff70d048e83"
+      },
+      {
+        "id": 1808,
+        "type": "IfcDistributionPort",
+        "globalId": "2EmF$SATwuter2lofREmmr",
+        "name": "condenser-2/interface/axisA",
+        "semanticHash": "9666599ccef19d31fb0c0aea546de672881ecd19bb3f90428dac5c2e9a1b84e9"
+      },
+      {
+        "id": 1809,
+        "type": "IfcRelNests",
+        "globalId": "349b4F_u1vzfMz0xcAXXkX",
+        "name": "condenser-2/interface/axisA/owner",
+        "semanticHash": "36b33f4ee202ba13045f2e7db9b3c904ea0c033a97373b728e811884671a1409"
+      },
+      {
+        "id": 1814,
+        "type": "IfcPropertySet",
+        "globalId": "3z87jWywFViLRbPHNcWPjJ",
+        "name": "NativeSourceExchange",
+        "semanticHash": "943f275138aeba95522982dfc3b5dbbe8cd3143a944efd5f7c20abfe0fff0dc7"
+      },
+      {
+        "id": 1815,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "1_yvdeyxFP0aVBM459c8yX",
+        "name": "condenser-2/interface/axisA/defines",
+        "semanticHash": "17c3019dc576ba517e04aec035d1d33c6f07c14d9c0e112dc02dccaf0913a754"
+      },
+      {
+        "id": 1821,
+        "type": "IfcDistributionPort",
+        "globalId": "3J5vJE8eDy1x73Ff_zcvkO",
+        "name": "condenser-2/interface/axisB",
+        "semanticHash": "82338c4216e46fd274923ededb6892d39d045257c52ac3eeb665ad9c00105841"
+      },
+      {
+        "id": 1822,
+        "type": "IfcRelNests",
+        "globalId": "38khK9zqTEXnPvdRZWwyST",
+        "name": "condenser-2/interface/axisB/owner",
+        "semanticHash": "079b5164c4b953886b8a309a6cb69b7b9c72d0c44b69f0faee8f02b6ce2d1fc9"
+      },
+      {
+        "id": 1827,
+        "type": "IfcPropertySet",
+        "globalId": "11f5lL0baT26sMjnuT_Vg1",
+        "name": "NativeSourceExchange",
+        "semanticHash": "20bb49925c7065acdc50129ff74d9382a337a295e81123b7a3750fc5c760b722"
+      },
+      {
+        "id": 1828,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "1gDR6y2BPGvurKFxHHopEK",
+        "name": "condenser-2/interface/axisB/defines",
+        "semanticHash": "679d52d1cb4829bfdd3cd57fd4aeb9b466f279efa0e103587c7cfe3a89b99212"
+      },
+      {
+        "id": 1834,
+        "type": "IfcDistributionPort",
+        "globalId": "1OF_l0rBNgDqk56lPHoURW",
+        "name": "condenser-3/interface/axisA",
+        "semanticHash": "0c8a96aa539ff60873e90ab851ac93856fdbc53180c1651017c887b22d9059c2"
+      },
+      {
+        "id": 1835,
+        "type": "IfcRelNests",
+        "globalId": "2DPAZ0hdQ_Bhxb2zKutOxr",
+        "name": "condenser-3/interface/axisA/owner",
+        "semanticHash": "3730b216dbab588f917481d340d685a7a599f9cc5f571bae2435cd592231f4b1"
+      },
+      {
+        "id": 1840,
+        "type": "IfcPropertySet",
+        "globalId": "3rDyXsTqE6avsyxhgGd5em",
+        "name": "NativeSourceExchange",
+        "semanticHash": "31dd6ce2c5465e89d7ba1bb0c67cf7f83446bda52a8749e589b02736cf13bb9f"
+      },
+      {
+        "id": 1841,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "25T$SRhZyw5jj72lp$gTSU",
+        "name": "condenser-3/interface/axisA/defines",
+        "semanticHash": "8712ccc90f515ae118372b6060a62897e1653df230f04cc217c52c6210d208fd"
+      },
+      {
+        "id": 1847,
+        "type": "IfcDistributionPort",
+        "globalId": "3chuo0OYl7PFfSRH8n0lnW",
+        "name": "condenser-3/interface/axisB",
+        "semanticHash": "a1d0442851faa5d75e96d2b1683f5f98e5d8a36062f45a5a3dfa2ba285c0291f"
+      },
+      {
+        "id": 1848,
+        "type": "IfcRelNests",
+        "globalId": "3t4ogmbUCZI41Hteapkdma",
+        "name": "condenser-3/interface/axisB/owner",
+        "semanticHash": "f04691f2555f296d8bf51827c44507cca943c6b471bdba0f01dbff4456f9ef61"
+      },
+      {
+        "id": 1853,
+        "type": "IfcPropertySet",
+        "globalId": "1969JekK6M$zaa$G6duLyN",
+        "name": "NativeSourceExchange",
+        "semanticHash": "546ffe143a2fcc9e77123e561e276323886c58775920f2fa1678e9b2f26dd00d"
+      },
+      {
+        "id": 1854,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "0Ua4f15vSsUdg2uoAXXnpB",
+        "name": "condenser-3/interface/axisB/defines",
+        "semanticHash": "9e0cf5a9add2b9bdcdec371109aa9d6caebfb7d048a1e77abf79609d3cd45e05"
+      },
+      {
+        "id": 1860,
+        "type": "IfcDistributionPort",
+        "globalId": "0MHMIV1HmEuco$cIB2J6Rv",
+        "name": "cp-a/interface/inlet",
+        "semanticHash": "1d4765c56826758c266973b096136f756d258a3dc9c89f35025165a998402f36"
+      },
+      {
+        "id": 1861,
+        "type": "IfcRelNests",
+        "globalId": "0KJbjEH1XfZeWtMamLqT6W",
+        "name": "cp-a/interface/inlet/owner",
+        "semanticHash": "69d89031c5adf84a71737398f73f51f0f263cad656dd0c7a9b2e7111c4c022d7"
+      },
+      {
+        "id": 1866,
+        "type": "IfcPropertySet",
+        "globalId": "2zdTyxNnAaiQ8aYg6X3_pa",
+        "name": "NativeSourceExchange",
+        "semanticHash": "29e32b0c3f9c9eb3955ce80d9909908c8068f34d15564e79e8e1359a44fc3dbc"
+      },
+      {
+        "id": 1867,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "1fLHYxjotQPn70ZsulUGLv",
+        "name": "cp-a/interface/inlet/defines",
+        "semanticHash": "9a5f43416718ed441d98fe076c0c45eaa6a137a0810f6896e1158c7df18cdc56"
+      },
+      {
+        "id": 1873,
+        "type": "IfcDistributionPort",
+        "globalId": "1g46C0SVb45wHxMk0PdWIZ",
+        "name": "cp-a/interface/outlet",
+        "semanticHash": "6e91bfa72779ba2c70037f49a12e32a239e5d1305545689b1775cef3b2ddf788"
+      },
+      {
+        "id": 1874,
+        "type": "IfcRelNests",
+        "globalId": "3St9elGNCv1Xvhrj5ezaGH",
+        "name": "cp-a/interface/outlet/owner",
+        "semanticHash": "681989132d480d2a6bfd7cc91ae8128a19f6365fee39ae8353cb7c50235ba052"
+      },
+      {
+        "id": 1879,
+        "type": "IfcPropertySet",
+        "globalId": "10qd6I5YKiUdIrNVN2SCYF",
+        "name": "NativeSourceExchange",
+        "semanticHash": "825188f94901e19cc202f58b293c794f7bc9a24ca6471bbc6616f5cddfb68f8d"
+      },
+      {
+        "id": 1880,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "2$ZzguQN5Uq_sK3MoXp_Fz",
+        "name": "cp-a/interface/outlet/defines",
+        "semanticHash": "1ec16ab079a4b60283ec02e542df6af56133ace3cd98c931e6dd5602e5cedfd1"
+      },
+      {
+        "id": 1886,
+        "type": "IfcDistributionPort",
+        "globalId": "2hWL$qMP1s_YUqDI2zx98N",
+        "name": "cp-b/interface/inlet",
+        "semanticHash": "3df1415cd4225845f3944ca75a040eb3274817a865c85d87066842b4762347ed"
+      },
+      {
+        "id": 1887,
+        "type": "IfcRelNests",
+        "globalId": "0d1Xevg3i1nHCLYMMrUNsM",
+        "name": "cp-b/interface/inlet/owner",
+        "semanticHash": "2969c0076f6f933514f00cf4be0d90208915d6476a4b33af3cf481aab4c1bcb0"
+      },
+      {
+        "id": 1892,
+        "type": "IfcPropertySet",
+        "globalId": "3tIWzlNsUDfWIBEK81RQT4",
+        "name": "NativeSourceExchange",
+        "semanticHash": "34163318742b687a0d43459ce16042e784949d0a8d6bccdcaf12441c3e67df0a"
+      },
+      {
+        "id": 1893,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "3jeJr8WyZA3JtoQW6b36vi",
+        "name": "cp-b/interface/inlet/defines",
+        "semanticHash": "7427d959b03eedb7593515461ea975502be7ed903d95d63da9f82925e82ac4b4"
+      },
+      {
+        "id": 1899,
+        "type": "IfcDistributionPort",
+        "globalId": "1dzlR9XS2iuGC21fiKHqlb",
+        "name": "cp-b/interface/outlet",
+        "semanticHash": "54626755fec34e66c58ee765188dca055e0d447b979ed41329a3cb0a5cb9928f"
+      },
+      {
+        "id": 1900,
+        "type": "IfcRelNests",
+        "globalId": "3C6vIAkAnkTnUrDDcRK4I4",
+        "name": "cp-b/interface/outlet/owner",
+        "semanticHash": "c89beb79aff335167805cc134080c3e34bcbd5ac4f37b1b700ba22e6a87b403e"
+      },
+      {
+        "id": 1905,
+        "type": "IfcPropertySet",
+        "globalId": "03h21fNmQyNzPhFpoKeahR",
+        "name": "NativeSourceExchange",
+        "semanticHash": "11d23b4cffabc19a51a422531aaf8ee290d083ea9b5dbec9d4dbfd9f16df8eff"
+      },
+      {
+        "id": 1906,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "3cE$pfreDTdGuXNY6Ycu7E",
+        "name": "cp-b/interface/outlet/defines",
+        "semanticHash": "3dc893023b319cca9bf5ae9eecacdc0c282cb0ec10ffcf9819f8f87239b8cfa3"
+      },
+      {
+        "id": 1912,
+        "type": "IfcDistributionPort",
+        "globalId": "2RIqGPYk2583KEfe93CUDN",
+        "name": "mfw-a/interface/inlet",
+        "semanticHash": "f523677e323c58409480d54574af9f4986d15635bd526a0370f975c98f87a976"
+      },
+      {
+        "id": 1913,
+        "type": "IfcRelNests",
+        "globalId": "1wQCUWoguImTsqmJjzlTly",
+        "name": "mfw-a/interface/inlet/owner",
+        "semanticHash": "252fb9362878bc95a8fd73fa13c876e537940c63b1eff1bb9d7099a63f9d77cf"
+      },
+      {
+        "id": 1918,
+        "type": "IfcPropertySet",
+        "globalId": "0runh_fkOdWvRjQ6Q5BO2G",
+        "name": "NativeSourceExchange",
+        "semanticHash": "16fb54c54135b873f4408fa64e3266aea335cd533b09d041ecfe2dc3898a9268"
+      },
+      {
+        "id": 1919,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "2Z5fp66L9KF8FnvrnrjEtG",
+        "name": "mfw-a/interface/inlet/defines",
+        "semanticHash": "160f8a0724a360e1db68e917ceee2ad5ed5c2b48cd38a58e5161a053bd6b3dfd"
+      },
+      {
+        "id": 1925,
+        "type": "IfcDistributionPort",
+        "globalId": "0VQGAlYFEjXMUVcFstMLJ$",
+        "name": "mfw-a/interface/outlet",
+        "semanticHash": "b7dd02faa2cf6291f5be286395912c14315d3b6de1460bf7c2b7e3b916eef630"
+      },
+      {
+        "id": 1926,
+        "type": "IfcRelNests",
+        "globalId": "35SSU$$SIs1GrRP3EvcDKd",
+        "name": "mfw-a/interface/outlet/owner",
+        "semanticHash": "31006af434b4b475cbffc1b5ece6d998e93ad2a9ed33a41fcf3653942c2a17a9"
+      },
+      {
+        "id": 1931,
+        "type": "IfcPropertySet",
+        "globalId": "2tpIQjR34mjFx7tu9NR896",
+        "name": "NativeSourceExchange",
+        "semanticHash": "4a549084b240ef6538c03187fd514ec0d385169411da9bc65dd2d16662ef99f1"
+      },
+      {
+        "id": 1932,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "0zc42BQ0pUv3JuEArPcwjB",
+        "name": "mfw-a/interface/outlet/defines",
+        "semanticHash": "7c239fefcd94204cc3921e1b8d33eefa017798f85bcb38e61f4cad9054776218"
+      },
+      {
+        "id": 1938,
+        "type": "IfcDistributionPort",
+        "globalId": "2QGN6vnaArKd0RdAicvNuP",
+        "name": "mfw-b/interface/inlet",
+        "semanticHash": "ffb6a08af1c841a04e6662de8486c1686e62d6b3aa3c4fc5bc1747aa9dee85a2"
+      },
+      {
+        "id": 1939,
+        "type": "IfcRelNests",
+        "globalId": "0NNZwnbF$UipmWvzfiqaf2",
+        "name": "mfw-b/interface/inlet/owner",
+        "semanticHash": "278f05be93a8e2c5ce00648e960f5f341a8896acfa91c83499bc06b989aa4171"
+      },
+      {
+        "id": 1944,
+        "type": "IfcPropertySet",
+        "globalId": "2PmlyRUjxPKAbk5Gli2tCz",
+        "name": "NativeSourceExchange",
+        "semanticHash": "eeb83190ee566258168926f8d261a7632a9cc31aff84562d0d4610fc3421a05c"
+      },
+      {
+        "id": 1945,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "3g149qbxHVQ$QeGxPtgZHY",
+        "name": "mfw-b/interface/inlet/defines",
+        "semanticHash": "1b4aefac95ee88750d48e650fc2befbd357eacf5b46e5865d86cd8904dc2f8f7"
+      },
+      {
+        "id": 1951,
+        "type": "IfcDistributionPort",
+        "globalId": "1fDvLPHco7axW_$ASMijI_",
+        "name": "mfw-b/interface/outlet",
+        "semanticHash": "f5e76f46a84b4c92c40364da138be895bb8eb53f25698a78e937df13997ba6e6"
+      },
+      {
+        "id": 1952,
+        "type": "IfcRelNests",
+        "globalId": "24GvQVdqXpMj4Hiq3$rTP$",
+        "name": "mfw-b/interface/outlet/owner",
+        "semanticHash": "091829f956addf40436788f2bf7892c8e241031d2a6a78eb8333d2ba84323fa0"
+      },
+      {
+        "id": 1957,
+        "type": "IfcPropertySet",
+        "globalId": "3VBSAaxAjaGe_B1P7GTJug",
+        "name": "NativeSourceExchange",
+        "semanticHash": "1ed67939d7138599e2896becf4aa76d61a8dfe142fc0db1da315650f5b390068"
+      },
+      {
+        "id": 1958,
+        "type": "IfcRelDefinesByProperties",
+        "globalId": "1WiEFnM9CNnperom0g049K",
+        "name": "mfw-b/interface/outlet/defines",
+        "semanticHash": "4bd482f027d5c43420df57b05353ba259e6c806fd39ed9ee98cee40397e4bb54"
+      },
+      {
+        "id": 1959,
+        "type": "IfcRelContainedInSpatialStructure",
+        "globalId": "0m0wkgDtCHUyowJ1b4H$0X",
+        "name": "site/containment",
+        "semanticHash": "1287e6834673bbbab65cbd598bf6c9077de6cf3a94597fda0cf962e44bbf1d8b"
+      },
+      {
+        "id": 1960,
+        "type": "IfcRelContainedInSpatialStructure",
+        "globalId": "3bIfTxCQAVv6Y$y2pJFPdF",
+        "name": "lower/containment",
+        "semanticHash": "79ab97f1f80b46d7050a4ee6238769c490760c517fbe8312e600a0bd1d08c865"
+      },
+      {
+        "id": 1961,
+        "type": "IfcRelAggregates",
+        "globalId": "2oV2opD8Jua88V1BikxAju",
+        "name": "lower/spaces",
+        "semanticHash": "ca509a65e2b68833b1f5ac613a424f52f409c546a91f69e346890d1bb30755f3"
+      },
+      {
+        "id": 1962,
+        "type": "IfcRelContainedInSpatialStructure",
+        "globalId": "3$JIgqhxbKTiHbS7_B8ZeT",
+        "name": "operating/containment",
+        "semanticHash": "029a6d57db2fd13ac04e53ccd452e54b24140b3bfbcded6c7890c3d44d624bd1"
+      },
+      {
+        "id": 1963,
+        "type": "IfcRelContainedInSpatialStructure",
+        "globalId": "36rTBPuMa78lzf8IOYtfBD",
+        "name": "level/edit-deck/containment",
+        "semanticHash": "cc956f7c4b1b710ae81990a6013ba1706bc6e27b1d4329d8f118b3385678fc2d"
+      },
+      {
+        "id": 1964,
+        "type": "IfcRelVoidsElement",
+        "globalId": "0HQ5$cewHqFioHnv6qdFcn",
+        "name": "opening/wall/hall-north/D-N1/lower/void",
+        "semanticHash": "3e4779866bea5ad369872da160211eb9498a04a80065c5d7e4fb1b4f529ed1b2"
+      },
+      {
+        "id": 1965,
+        "type": "IfcRelVoidsElement",
+        "globalId": "1JYo0AFj3h1vg5GEfSjMR6",
+        "name": "opening/wall/hall-north/W-1/operating/void",
+        "semanticHash": "04bfd83ca848b654b7533d3c78dac3214e8774e42086e33f27ce4c06ef048de0"
+      },
+      {
+        "id": 1966,
+        "type": "IfcRelVoidsElement",
+        "globalId": "2_h$$RVm2cufs$DwlYOjbT",
+        "name": "opening/wall/hall-north/W-2/operating/void",
+        "semanticHash": "fac661187a133f03625ba9881978ca63084d604bd256c7c86ec67e0683b86d42"
+      },
+      {
+        "id": 1967,
+        "type": "IfcRelVoidsElement",
+        "globalId": "1l56xKYzZl2ATP5HC$39JK",
+        "name": "opening/wall/hall-north/W-3/operating/void",
+        "semanticHash": "6e648bff4471d97ac3ad91cb8c05f8d26ff09ee2a1737386e1f4f7fc7a6655a7"
+      },
+      {
+        "id": 1968,
+        "type": "IfcRelVoidsElement",
+        "globalId": "3FZsynXsf5XshzbhbpCcfa",
+        "name": "opening/wall/hall-west/D-W1/lower/void",
+        "semanticHash": "f6a2ffb9d10ffab53147cbdf18690cba66a7681457c8fdf8d3635afd98add414"
+      },
+      {
+        "id": 1969,
+        "type": "IfcRelVoidsElement",
+        "globalId": "1aRGVhmKaVDlJ6hBUmkq3g",
+        "name": "opening/wall/hall-east/D-E1/lower/void",
+        "semanticHash": "1e31e233148c06bbf6fe2211c191e717580772e6e6bb0fbeddaff0bcf9454acc"
+      },
+      {
+        "id": 1970,
+        "type": "IfcRelVoidsElement",
+        "globalId": "1muJTwYmbSwhbRbTRes$wN",
+        "name": "opening/wall/hall-south/D-P1/lower/void",
+        "semanticHash": "4be77ca569d9f4aa9cfeeab7c0fa72e301586d6f6b617818375bbf1fc67cc50b"
+      },
+      {
+        "id": 1971,
+        "type": "IfcRelVoidsElement",
+        "globalId": "3mGyCNO7OIliZ8CmZK$9Nx",
+        "name": "opening/wall/annex-north/D-P1b/lower/void",
+        "semanticHash": "3b5a503d76740fcc3c76bb5aedf20fc776434c821f0bf5b35937609b8bb177e4"
+      },
+      {
+        "id": 1972,
+        "type": "IfcRelVoidsElement",
+        "globalId": "2m3dtptLHQpE5PNWUxPPoK",
+        "name": "opening/wall/annex-west/D-P2/lower/void",
+        "semanticHash": "775443592587e878895138f113cb1141886dd2e2a28cb35394f10dfe8df16f80"
+      },
+      {
+        "id": 1973,
+        "type": "IfcRelVoidsElement",
+        "globalId": "3wE86Yuo3CtZpCPyMI6PCo",
+        "name": "opening/wall/annex-south/D-P3/lower/void",
+        "semanticHash": "0915bf7bb481df6a2ff50626e60bed6dff623326e00a43ae7e09ce11f52bb735"
+      },
+      {
+        "id": 1974,
+        "type": "IfcRelFillsElement",
+        "globalId": "1xwhP5T9BRMyZOfWqI$dP0",
+        "name": "door/D-N1/fill",
+        "semanticHash": "eb831091754ef616d7043aa3584959cfbd0a99c50253866d5cd3956ce5a2dec5"
+      },
+      {
+        "id": 1975,
+        "type": "IfcRelFillsElement",
+        "globalId": "2UjElLe7flbdQKRLD0iI$P",
+        "name": "door-assembly/opening/wall/hall-west/D-W1/lower/fill",
+        "semanticHash": "c9c2e1fed97585c32d79d26123862e31260c5cc931aacb82a91234fdad8564a7"
+      },
+      {
+        "id": 1976,
+        "type": "IfcRelFillsElement",
+        "globalId": "2eGBbktQhkvRf2Lco2LzXO",
+        "name": "door-assembly/opening/wall/hall-south/D-P1/lower/fill",
+        "semanticHash": "00a6b5bc52ec79bb52b5e3aea4919c83dae922857d5d565f7e0a32a5274df0ee"
+      },
+      {
+        "id": 1977,
+        "type": "IfcRelFillsElement",
+        "globalId": "2_A_00EWPC_pHvthTpSFbZ",
+        "name": "door-assembly/opening/wall/annex-south/D-P3/lower/fill",
+        "semanticHash": "6eadca2024ba5762adb6aafb8eb845d54de96eedf20446a9417cb360ac1117f5"
+      },
+      {
+        "id": 1978,
+        "type": "IfcRelVoidsElement",
+        "globalId": "2FmnW2ecNEOOCFjP7qyyJR",
+        "name": "existing-opening/void",
+        "semanticHash": "06927e15fb2e0c7cf5b1eef091563a74e7f86f48fa62d2b5400ba893260bac1f"
+      },
+      {
+        "id": 1979,
+        "type": "IfcRelVoidsElement",
+        "globalId": "1kUVYQgkhHGF3lTRT8MzKQ",
+        "name": "access-door-opening/void",
+        "semanticHash": "d9a25d9c6de3eb85536fe27907fa34a7eb1f08332624e2d717e432bfa1d72fc9"
+      },
+      {
+        "id": 1980,
+        "type": "IfcRelFillsElement",
+        "globalId": "1GlL07eLc0DCW9dgBU8vzI",
+        "name": "access-door/fill",
+        "semanticHash": "33a3dbeb6df963ec8680d4fcd4700a85ed53172fe92dfab8453e2c88ec7d43db"
+      },
+      {
+        "id": 1981,
+        "type": "IfcRelAggregates",
+        "globalId": "1A5DEfJnXy56OnoLHRz2yW",
+        "name": "door-assembly/opening/wall/hall-west/D-W1/lower/parts",
+        "semanticHash": "66345ba6b8b33559eaac871c2034d99e177c0fd7102453c7b4717d3a20997494"
+      },
+      {
+        "id": 1982,
+        "type": "IfcRelAggregates",
+        "globalId": "26CHMlhbQboLgwMi5Wwcn0",
+        "name": "door-assembly/opening/wall/hall-south/D-P1/lower/parts",
+        "semanticHash": "d66045a721894cf02009672faf77562529b0ded5b1309988cd88ddc0293fd946"
+      },
+      {
+        "id": 1983,
+        "type": "IfcRelAggregates",
+        "globalId": "0DutxWVnNCdvDLUe4eMNkX",
+        "name": "door-assembly/opening/wall/annex-south/D-P3/lower/parts",
+        "semanticHash": "49058245260266d8309af95eeaf922de7c90c807f3ebb8d5ab576d30e7641794"
+      }
+    ],
+    "openingCount": 12,
+    "voidRelations": 12,
+    "fillRelations": 5,
+    "portCount": 32
+  },
+  "checks": [
+    {
+      "id": "tg-hp",
+      "nativeId": "0x0SuWBqDMiD3kKahKDQ07",
+      "meshPresent": true,
+      "maxBoundErrorM": 6.67572024326546e-8,
+      "pass": true
+    },
+    {
+      "id": "tg-lp-1",
+      "nativeId": "10UdCdzqvMDArzvWGpAjxR",
+      "meshPresent": true,
+      "maxBoundErrorM": 1.716613766689079e-7,
+      "pass": true
+    },
+    {
+      "id": "tg-lp-2",
+      "nativeId": "2_2ZF79ZvfMIxG$pwvZyFT",
+      "meshPresent": true,
+      "maxBoundErrorM": 1.716613766689079e-7,
+      "pass": true
+    },
+    {
+      "id": "tg-lp-3",
+      "nativeId": "2tWjuh5lTuUmKNCtfpPCZx",
+      "meshPresent": true,
+      "maxBoundErrorM": 1.716613766689079e-7,
+      "pass": true
+    },
+    {
+      "id": "tg-generator",
+      "nativeId": "2E0bXSY9aM8tdgPxLfcSFB",
+      "meshPresent": true,
+      "maxBoundErrorM": 1.7166138377433526e-7,
+      "pass": true
+    },
+    {
+      "id": "tg-exciter",
+      "nativeId": "17p4pgfJZhEZNcV55EThWb",
+      "meshPresent": true,
+      "maxBoundErrorM": 6.675719532722724e-8,
+      "pass": true
+    },
+    {
+      "id": "msr-1",
+      "nativeId": "16wcK7LFEx_DmXZYoB_rvd",
+      "meshPresent": true,
+      "maxBoundErrorM": 4.7683714754498396e-8,
+      "pass": true
+    },
+    {
+      "id": "msr-2",
+      "nativeId": "1ltUe6unT$VMld$RabtcVh",
+      "meshPresent": true,
+      "maxBoundErrorM": 4.7683714754498396e-8,
+      "pass": true
+    },
+    {
+      "id": "stop-valve",
+      "nativeId": "3_sAv7E9s14LJoVFJSN6fq",
+      "meshPresent": true,
+      "maxBoundErrorM": 4.7683716530855236e-8,
+      "pass": true
+    },
+    {
+      "id": "condenser-1",
+      "nativeId": "3OfRTCHh2nMOtRcI1Y6GGn",
+      "meshPresent": true,
+      "maxBoundErrorM": 1.907348643470641e-7,
+      "pass": true
+    },
+    {
+      "id": "condenser-2",
+      "nativeId": "3cXQ2EgTtbjqEIh5rrhOgs",
+      "meshPresent": true,
+      "maxBoundErrorM": 1.907348643470641e-7,
+      "pass": true
+    },
+    {
+      "id": "condenser-3",
+      "nativeId": "26tG_59d0B4dRZLvL9ARlD",
+      "meshPresent": true,
+      "maxBoundErrorM": 1.907348643470641e-7,
+      "pass": true
+    },
+    {
+      "id": "cp-a",
+      "nativeId": "2JWlRttq8LkurqIN11KNWZ",
+      "meshPresent": true,
+      "maxBoundErrorM": 4.7683716530855236e-8,
+      "pass": true
+    },
+    {
+      "id": "cp-b",
+      "nativeId": "2tkw9Gf$jI__YDFH0TnpBj",
+      "meshPresent": true,
+      "maxBoundErrorM": 4.7683716530855236e-8,
+      "pass": true
+    },
+    {
+      "id": "mfw-a",
+      "nativeId": "1FrDw6aAedl0V753mYLd60",
+      "meshPresent": true,
+      "maxBoundErrorM": 1.716613766689079e-7,
+      "pass": true
+    },
+    {
+      "id": "mfw-b",
+      "nativeId": "29uaPZgi7XGA7MCKFzItON",
+      "meshPresent": true,
+      "maxBoundErrorM": 1.716613766689079e-7,
+      "pass": true
+    },
+    {
+      "id": "wall/hall-north",
+      "nativeId": "0XylcRO3zwGVACZgl69YTu",
+      "meshPresent": true,
+      "maxBoundErrorM": 0.0000015258789147765128,
+      "pass": true
+    },
+    {
+      "id": "wall/hall-west",
+      "nativeId": "3C05uZaTuMOVmLnw3zdBc9",
+      "meshPresent": true,
+      "maxBoundErrorM": 3.814697286941282e-7,
+      "pass": true
+    },
+    {
+      "id": "wall/hall-east",
+      "nativeId": "2EC2NeR6$VaXdD3$t9dKhh",
+      "meshPresent": true,
+      "maxBoundErrorM": 3.814697286941282e-7,
+      "pass": true
+    },
+    {
+      "id": "wall/hall-south",
+      "nativeId": "3X2CrRFgVb$sIXFXCyd5Ma",
+      "meshPresent": true,
+      "maxBoundErrorM": 0.0000015258789147765128,
+      "pass": true
+    },
+    {
+      "id": "wall/annex-north",
+      "nativeId": "3c1uw0cBSKHbR4an_kz$a0",
+      "meshPresent": true,
+      "maxBoundErrorM": 3.8146972514141453e-7,
+      "pass": true
+    },
+    {
+      "id": "wall/annex-west",
+      "nativeId": "012viNo_OYgYLHUWayH6YD",
+      "meshPresent": true,
+      "maxBoundErrorM": 9.536743217353205e-8,
+      "pass": true
+    },
+    {
+      "id": "wall/annex-east",
+      "nativeId": "08je11hR9m6GjOPOK0E1LJ",
+      "meshPresent": true,
+      "maxBoundErrorM": 9.536743217353205e-8,
+      "pass": true
+    },
+    {
+      "id": "wall/annex-south",
+      "nativeId": "1c0ZP$FF8ICRjSJuvu4MGI",
+      "meshPresent": true,
+      "maxBoundErrorM": 3.8146972514141453e-7,
+      "pass": true
+    },
+    {
+      "id": "door/D-W1a",
+      "nativeId": "2MgPnOtTuxqNTsMcDgpaLc",
+      "meshPresent": true,
+      "maxBoundErrorM": 2.384185793236071e-8,
+      "pass": true
+    },
+    {
+      "id": "door/D-W1b",
+      "nativeId": "11BMq1TORVeShuLJj4Aq4V",
+      "meshPresent": true,
+      "maxBoundErrorM": 2.384185793236071e-8,
+      "pass": true
+    },
+    {
+      "id": "door/D-N1",
+      "nativeId": "36eVD8QAHYLsgtcTg$V28G",
+      "meshPresent": true,
+      "maxBoundErrorM": 2.384185793236071e-8,
+      "pass": true
+    },
+    {
+      "id": "door/D-P1a",
+      "nativeId": "14udNTkPDTQxebmghljzGT",
+      "meshPresent": true,
+      "maxBoundErrorM": 2.3841857821338408e-8,
+      "pass": true
+    },
+    {
+      "id": "door/D-P1b",
+      "nativeId": "2tySmMFepOMmaDEfniensy",
+      "meshPresent": true,
+      "maxBoundErrorM": 2.3841857821338408e-8,
+      "pass": true
+    },
+    {
+      "id": "door/D-P3a",
+      "nativeId": "2_9BtDJbLyf1au0hN2tdlc",
+      "meshPresent": true,
+      "maxBoundErrorM": 2.3841857821338408e-8,
+      "pass": true
+    },
+    {
+      "id": "door/D-P3b",
+      "nativeId": "31Q8dL$kQISpuiFEGbQh6S",
+      "meshPresent": true,
+      "maxBoundErrorM": 2.3841857821338408e-8,
+      "pass": true
+    },
+    {
+      "id": "slab/lower",
+      "nativeId": "3oNEy2wkZvCTDsKbnOeSyw",
+      "meshPresent": true,
+      "maxBoundErrorM": 2.980232227667301e-9,
+      "pass": true
+    },
+    {
+      "id": "slab/operating",
+      "nativeId": "2nW9Q$VShuDJvJPJd3wA6o",
+      "meshPresent": true,
+      "maxBoundErrorM": 2.980232949312267e-9,
+      "pass": true
+    },
+    {
+      "id": "slab/annex",
+      "nativeId": "3vs67JVCyCchXGEu_21YMY",
+      "meshPresent": true,
+      "maxBoundErrorM": 2.980232227667301e-9,
+      "pass": true
+    },
+    {
+      "id": "hatch-cover",
+      "nativeId": "3wU5gegN5zHOf5oFyzW5b5",
+      "meshPresent": true,
+      "maxBoundErrorM": 9.536743306171047e-8,
+      "pass": true
+    },
+    {
+      "id": "stair/main",
+      "nativeId": "2SQ_P_TTwrhXVXFq405ASy",
+      "meshPresent": true,
+      "maxBoundErrorM": 3.7093905369545155e-7,
+      "pass": true
+    },
+    {
+      "id": "column/0/0.4",
+      "nativeId": "2yGiAZ8xfmuK835XH41uVA",
+      "meshPresent": true,
+      "maxBoundErrorM": 3.814697286941282e-7,
+      "pass": true
+    },
+    {
+      "id": "column/0/36.4",
+      "nativeId": "2sQbuq0VHLLj1gR8y6EJqH",
+      "meshPresent": true,
+      "maxBoundErrorM": 3.814697286941282e-7,
+      "pass": true
+    },
+    {
+      "id": "column/1/0.4",
+      "nativeId": "34s8VpRLALlD4mXYWMgi9X",
+      "meshPresent": true,
+      "maxBoundErrorM": 3.814697286941282e-7,
+      "pass": true
+    },
+    {
+      "id": "column/1/36.4",
+      "nativeId": "18DP4xlD_tzgloyjaD2DlJ",
+      "meshPresent": true,
+      "maxBoundErrorM": 3.814697286941282e-7,
+      "pass": true
+    },
+    {
+      "id": "column/2/0.4",
+      "nativeId": "2EQsUF3C$FxS8R5pJPnUl6",
+      "meshPresent": true,
+      "maxBoundErrorM": 3.814697286941282e-7,
+      "pass": true
+    },
+    {
+      "id": "column/2/36.4",
+      "nativeId": "3VOg8DkabaZqw6qywJn3sZ",
+      "meshPresent": true,
+      "maxBoundErrorM": 3.814697286941282e-7,
+      "pass": true
+    },
+    {
+      "id": "column/3/0.4",
+      "nativeId": "1aSDKtmxVzvbFzTR1AK9KN",
+      "meshPresent": true,
+      "maxBoundErrorM": 3.814697286941282e-7,
+      "pass": true
+    },
+    {
+      "id": "column/3/36.4",
+      "nativeId": "3aWFOy3shjsOcizj7SjnGm",
+      "meshPresent": true,
+      "maxBoundErrorM": 3.814697286941282e-7,
+      "pass": true
+    },
+    {
+      "id": "column/4/0.4",
+      "nativeId": "3xAnnAzCtJHpDJD0IGNphW",
+      "meshPresent": true,
+      "maxBoundErrorM": 3.814697286941282e-7,
+      "pass": true
+    },
+    {
+      "id": "column/4/36.4",
+      "nativeId": "0e1KCFg6usw2VazuXvuGGG",
+      "meshPresent": true,
+      "maxBoundErrorM": 3.814697286941282e-7,
+      "pass": true
+    },
+    {
+      "id": "column/5/0.4",
+      "nativeId": "2_guxlBxKjXmBZjOvJFUni",
+      "meshPresent": true,
+      "maxBoundErrorM": 3.814697286941282e-7,
+      "pass": true
+    },
+    {
+      "id": "column/5/36.4",
+      "nativeId": "2twMDRa6$1gDmtYpqxLdmj",
+      "meshPresent": true,
+      "maxBoundErrorM": 3.814697286941282e-7,
+      "pass": true
+    },
+    {
+      "id": "column/6/0.4",
+      "nativeId": "1QB0jtmrjsM1h4QD5LD0Oo",
+      "meshPresent": true,
+      "maxBoundErrorM": 3.814697286941282e-7,
+      "pass": true
+    },
+    {
+      "id": "column/6/36.4",
+      "nativeId": "3AzCF7D5Oit4dcncusKLwO",
+      "meshPresent": true,
+      "maxBoundErrorM": 3.814697286941282e-7,
+      "pass": true
+    },
+    {
+      "id": "column/7/0.4",
+      "nativeId": "3N7FxW9PzenvUEPCSYnLu5",
+      "meshPresent": true,
+      "maxBoundErrorM": 3.814697286941282e-7,
+      "pass": true
+    },
+    {
+      "id": "column/7/36.4",
+      "nativeId": "0WqlB6J14s7tBhOpqSCwB$",
+      "meshPresent": true,
+      "maxBoundErrorM": 3.814697286941282e-7,
+      "pass": true
+    },
+    {
+      "id": "column/8/0.4",
+      "nativeId": "2B0N2_lQEe2OSrS2E1T4f0",
+      "meshPresent": true,
+      "maxBoundErrorM": 3.814697286941282e-7,
+      "pass": true
+    },
+    {
+      "id": "column/8/36.4",
+      "nativeId": "1lC_8fvJAMkk1bRdvLdhj1",
+      "meshPresent": true,
+      "maxBoundErrorM": 3.814697286941282e-7,
+      "pass": true
+    },
+    {
+      "id": "pier/18.4/8",
+      "nativeId": "2cZ$RIRlRUonpPLLU1tlZz",
+      "meshPresent": true,
+      "maxBoundErrorM": 2.3841860041784457e-8,
+      "pass": true
+    },
+    {
+      "id": "pier/18.4/26.7",
+      "nativeId": "2Ep_O1QvfJCEttisH1EPvR",
+      "meshPresent": true,
+      "maxBoundErrorM": 2.3841860041784457e-8,
+      "pass": true
+    },
+    {
+      "id": "pier/29.4/8",
+      "nativeId": "1ExvnZ5e5qrCh_ZfSOEne0",
+      "meshPresent": true,
+      "maxBoundErrorM": 2.3841860041784457e-8,
+      "pass": true
+    },
+    {
+      "id": "pier/29.4/26.7",
+      "nativeId": "06p7VoOMZXG_g$gXKNl2Wi",
+      "meshPresent": true,
+      "maxBoundErrorM": 2.3841860041784457e-8,
+      "pass": true
+    },
+    {
+      "id": "pier/40.4/8",
+      "nativeId": "2Tc5SF_3OwRRpFQ2l0XK_d",
+      "meshPresent": true,
+      "maxBoundErrorM": 2.3841858265427618e-8,
+      "pass": true
+    },
+    {
+      "id": "pier/40.4/26.7",
+      "nativeId": "3YaPwgrK9qIfMg1_yXP_5s",
+      "meshPresent": true,
+      "maxBoundErrorM": 2.3841860041784457e-8,
+      "pass": true
+    },
+    {
+      "id": "pier/51.4/8",
+      "nativeId": "2MC_s8R6v36dMiD_7Ev$ZL",
+      "meshPresent": true,
+      "maxBoundErrorM": 2.3841858265427618e-8,
+      "pass": true
+    },
+    {
+      "id": "pier/51.4/26.7",
+      "nativeId": "3mm2zALzk4CXwn0k8fIo6u",
+      "meshPresent": true,
+      "maxBoundErrorM": 2.3841860041784457e-8,
+      "pass": true
+    },
+    {
+      "id": "edit-wall",
+      "nativeId": "0F8_aa2RCDN8$uiK5xz5cY",
+      "meshPresent": true,
+      "maxBoundErrorM": 7.363125575921003e-8,
+      "pass": true
+    },
+    {
+      "id": "edit-roof",
+      "nativeId": "3k7ZhkJpz1uVOFLrVpQHiD",
+      "meshPresent": true,
+      "maxBoundErrorM": 2.1247103632049402e-7,
+      "pass": true
+    },
+    {
+      "id": "edit-deck",
+      "nativeId": "0MdErSfvY8FRXSjph3bUUk",
+      "meshPresent": true,
+      "maxBoundErrorM": 2.1247103632049402e-7,
+      "pass": true
+    },
+    {
+      "id": "edit-stair",
+      "nativeId": "1fmAseurog$Y0uEUWj2KRi",
+      "meshPresent": true,
+      "maxBoundErrorM": 2.3841863594498136e-8,
+      "pass": true
+    },
+    {
+      "id": "edit-landing",
+      "nativeId": "0ydJUQALFQBBC2iv9hjDBO",
+      "meshPresent": true,
+      "maxBoundErrorM": 1.4901160305669237e-9,
+      "pass": true
+    },
+    {
+      "id": "edit-riser",
+      "nativeId": "0VaaZU1QiXoFlxB18h5QG0",
+      "meshPresent": true,
+      "maxBoundErrorM": 5.960473004051892e-9,
+      "pass": true
+    },
+    {
+      "id": "edit-support",
+      "nativeId": "0CfWrEPTH0ynvEz4XY6NK7",
+      "meshPresent": true,
+      "maxBoundErrorM": 2.3841857821338408e-8,
+      "pass": true
+    },
+    {
+      "id": "fixed-vessel",
+      "nativeId": "3icsfcmF8GjYAfT7CoSMYE",
+      "meshPresent": true,
+      "maxBoundErrorM": 0,
+      "pass": true
+    },
+    {
+      "id": "shared-yard",
+      "nativeId": "2AsE6c5qpq5Py_rImzrS5E",
+      "meshPresent": true,
+      "maxBoundErrorM": 7.450580569168253e-10,
+      "pass": true
+    },
+    {
+      "id": "shared-transformer",
+      "nativeId": "1nDUhLv$Hw3Ln6mQxsoVz2",
+      "meshPresent": true,
+      "maxBoundErrorM": 0,
+      "pass": true
+    },
+    {
+      "id": "first-support",
+      "nativeId": "15kDNyjNutiNxfv4iQq7VU",
+      "meshPresent": true,
+      "maxBoundErrorM": 0,
+      "pass": true
+    },
+    {
+      "id": "main-steam-route",
+      "nativeId": "3F8o8Oq$r7i0OXfEPM6ud4",
+      "meshPresent": true,
+      "maxBoundErrorM": 3.3173832747479537e-7,
+      "pass": true
+    },
+    {
+      "id": "feedwater-route",
+      "nativeId": "0ni$s_PvcIoas9FFFwwG93",
+      "meshPresent": true,
+      "maxBoundErrorM": 3.814697286941282e-7,
+      "pass": true
+    },
+    {
+      "id": "access-door",
+      "nativeId": "0g9xy8Kr0cTUGITgek$N5D",
+      "meshPresent": true,
+      "maxBoundErrorM": 2.3841857821338408e-8,
+      "pass": true
+    }
+  ],
+  "passed": true,
+  "sourceAuthority": "Native JSON; IFC is generated exchange",
+  "preserved": [
+    "unique native GlobalIds",
+    "source IDs and parameter/pose provenance",
+    "actual tessellated machinery/architectural bodies",
+    "wall/void/filling relations",
+    "direct site containment"
+  ],
+  "unsupported": [
+    "recovery of parametric construction history by arbitrary external IFC editor",
+    "export of study semantics as a general scheduling model",
+    "full IFC engineering/conformance certification"
+  ],
+  "notIndependentExporterValidation": true
+}

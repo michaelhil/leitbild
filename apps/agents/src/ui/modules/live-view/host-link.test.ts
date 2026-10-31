@@ -1,12 +1,15 @@
 import { describe, expect, test } from 'bun:test'
-import { embeddedViewOpenMessageSchema, embeddedViewsMessageSchema, newWorkspaceId, type EmbeddedViewListing, type EmbeddedViewsMessage } from '@leitbild/contracts'
+import { embeddedViewOpenMessageSchema, embeddedViewSubjectOpenMessageSchema, embeddedViewsMessageSchema, newWorkspaceId, workspaceResourceReferenceSchema, type EmbeddedViewListing, type EmbeddedViewsMessage } from '@leitbild/contracts'
 import {
   createViewListPublisher,
   createViewListSync,
+  focusedListing,
+  inlineHeightRequest,
   inlineHostAnnouncement,
   inlineOpenRequest,
   isViewHostAnnouncement,
   viewOpenMessage,
+  viewSubjectOpenMessage,
   workspaceRoomHref,
 } from './host-link.ts'
 import type { ViewFence } from './listing.ts'
@@ -54,8 +57,35 @@ describe('messages Agents builds for the Host', () => {
     expect(inlineHostAnnouncement()).toEqual({ type: 'leitbild:view-host' })
   })
 
+  test('an inline display\'s height is heard only from a frame this page made, on this origin, as the contract words it (W7.3)', () => {
+    const frame = { name: 'inline display' }
+    const page = { origin: 'https://leitbild.app', inlineFrames: [frame] }
+    const said = { origin: 'https://leitbild.app', source: frame, data: { type: 'leitbild:view-height', height: 412 } }
+    // A drawing too wide for a 480 px chat gave way to "View drawing ›": the frame takes the 412 px it shows, not 912.
+    expect(inlineHeightRequest(said, page)).toBe(412)
+    expect(inlineHeightRequest({ ...said, source: { name: 'another frame' } }, page)).toBeNull()
+    expect(inlineHeightRequest({ ...said, origin: 'https://evil.example' }, page)).toBeNull()
+    expect(inlineHeightRequest({ ...said, data: { type: 'leitbild:view-height', height: 412.5 } }, page)).toBeNull()
+    expect(inlineHeightRequest({ ...said, data: { type: 'leitbild:view-height', height: 20_000 } }, page)).toBeNull()
+  })
+
+  test('a dashboard a cited line names opens at that line\'s section: its own key and the section as focus, as the contract words it (R4 §2.6)', () => {
+    const board = { ...listing('room-1/tr_1/call_1_0/dashboard'), envelope: { ...listing('x').envelope, viewType: 'display.dashboard', title: 'Whole Run · dashboard', state: '{"scope":"run"}' } } as EmbeddedViewListing
+    const opened = focusedListing(board, 'Halden Unit 1')
+    expect(opened).toMatchObject({ key: 'room-1/tr_1/call_1_0/dashboard#Halden%20Unit%201', focus: 'Halden Unit 1', envelope: board.envelope })
+    expect(embeddedViewOpenMessageSchema.parse(viewOpenMessage(opened)).view.focus).toBe('Halden Unit 1')
+    expect(focusedListing(board, undefined)).toBe(board)
+  })
+
   test('an open request carries the whole listing and passes the contract', () => {
     expect(embeddedViewOpenMessageSchema.parse(viewOpenMessage(listing('room-1/tr_1/call_1_0/a')))).toEqual({ type: 'leitbild:view-open', view: listing('room-1/tr_1/call_1_0/a') })
+  })
+
+  test('a proposal\'s review asks for its element\'s default on its Run, and passes the contract (Q23)', () => {
+    const run = workspaceResourceReferenceSchema.parse({ workspaceId, moduleId: 'world', type: 'world.simulation-run', id: 'run-1' })
+    const message = viewSubjectOpenMessage(run, 'plant:halden-2#auxFeedwaterValveA', 'Review: THROTTLE to 40 % AFW-A-CV')
+    expect(embeddedViewSubjectOpenMessageSchema.parse(message)).toEqual({ type: 'leitbild:view-subject-open', resource: run, subject: 'plant:halden-2#auxFeedwaterValveA', title: 'Review: THROTTLE to 40 % AFW-A-CV' })
+    expect(() => viewSubjectOpenMessage(run, 'plant:halden-2', 'Review')).toThrow()
   })
 
   test('outside the Host a display links to the Workspace page with this room, never a Run', () => {

@@ -6,32 +6,30 @@
   import IconButton from './components/IconButton.svelte'
   import InlineConfirmation from './components/InlineConfirmation.svelte'
   import StatusIndicator from './components/StatusIndicator.svelte'
-  import { processPlantIdForObject } from './process-display/process-display-client.ts'
+  import { processPlantIdForObject } from '../packs/process-plant/model.ts'
   import ProcedureRunBadges from './procedures/ProcedureRunBadges.svelte'
   import type { ProcedureRunSummary, ProcedureRunSummaryGroup } from './procedures/procedure-run-selectors.ts'
 
-  const emptyProcedureRunSummaries: ProcedureRunSummaryGroup = { active: [], completed: [] }
+  const emptyProcedureRunSummaries: ProcedureRunSummaryGroup = { active: [], inactive: [] }
 
   interface Props {
     readonly object: OperationalObject
     readonly presentation: PackObjectPresentation
     readonly statusPresentation: PackObjectStatusPresentation
     readonly selected: boolean
-    /** Its card is open: the row reads as selected and its tooltip stays away from the card. */
-    readonly cardOpen?: boolean
     readonly hasNewInfo: boolean
     readonly visibleFields: ReadonlyArray<PackObjectField>
     readonly markSeen: (object: OperationalObject) => void
     readonly selectObject: (object: OperationalObject) => void
     /** Absent where this screen may not delete: a role Run's operator-class role sets. */
-    readonly deleteObject?: (object: OperationalObject) => Promise<void>
-    readonly detailPresentationFor?: (object: OperationalObject) => PackObjectPresentation | Promise<PackObjectPresentation>
-    readonly openProcessDisplay?: (object: OperationalObject) => void
-    readonly openProcedureSystem?: (object: OperationalObject) => void
-    readonly openProcedureSystemAt?: (object: OperationalObject, summary?: ProcedureRunSummary) => void
-    readonly openDroneControl?: (object: OperationalObject) => void
-    readonly openDroneProfileEditor?: (object: OperationalObject) => void
-    readonly procedureSummaries?: ProcedureRunSummaryGroup
+    readonly deleteObject?: ((object: OperationalObject) => Promise<void>) | undefined
+    readonly detailPresentationFor?: ((object: OperationalObject) => PackObjectPresentation | Promise<PackObjectPresentation>) | undefined
+    readonly openProcessDisplay?: ((object: OperationalObject) => void) | undefined
+    readonly openProcedureSystem?: ((object: OperationalObject) => void) | undefined
+    readonly openProcedureSystemAt?: ((object: OperationalObject, summary?: ProcedureRunSummary) => void) | undefined
+    readonly openDroneControl?: ((object: OperationalObject) => void) | undefined
+    readonly openDroneProfileEditor?: ((object: OperationalObject) => void) | undefined
+    readonly procedureSummaries?: ProcedureRunSummaryGroup | undefined
     readonly proceduresVisible: boolean
   }
 
@@ -40,7 +38,6 @@
     presentation,
     statusPresentation,
     selected,
-    cardOpen = false,
     hasNewInfo,
     visibleFields,
     markSeen,
@@ -152,7 +149,7 @@
 </script>
 
 <div
-  class:selected={selected || cardOpen}
+  class:selected={selected}
   class:has-new-info={hasNewInfo}
   class:muted={presentation.muted === true}
   class="object-row"
@@ -180,12 +177,10 @@
           class="row-title-text"
         >
           <span class="row-label">{object.label}</span>
-          {#if !cardOpen}
-            <span class="row-tooltip">
-              <strong>{object.label}</strong>
-              {#each activeDetailPresentation.fields as field}<span>{field.label}: {field.value}</span>{/each}
-            </span>
-          {/if}
+          <span class="row-tooltip">
+            <strong>{object.label}</strong>
+            {#each activeDetailPresentation.fields as field}<span>{field.label}: {field.value}</span>{/each}
+          </span>
         </span>
         {#if hasNewInfo}
           <button

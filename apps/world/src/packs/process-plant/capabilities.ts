@@ -1,5 +1,7 @@
 import { z } from 'zod'
 import { commandResultSchema, objectIdSchema } from '../../core/model/index.ts'
+import { defineObservationCapability } from '../../core/observation/capabilities.ts'
+import { processPlantObservationCapabilityIds } from './observation/query.ts'
 import {
   defineSimulationCommandCapability,
   defineSimulationQueryCapability,
@@ -24,9 +26,9 @@ import { processPlantIcCatalogQuerySchema, processPlantIcQueryKinds } from './ic
 import { operationRecordSchema, resetRecordSchema } from './operations/plant-operations.ts'
 import { processPlantProposalSchema } from './operations/proposals.ts'
 import { operationConsequenceSchema } from './operations/consequence.ts'
-import { processPlantRampSchema } from './runtime/index.ts'
 import { processPlantQueryKinds } from './query.ts'
 import { processPlantActions } from './actions.ts'
+import { faultActionIds, writesFault } from './operations/fault-acts.ts'
 import { processPlantActionsSearchInputSchema, processPlantCatalogInputSchema } from './queries/catalog-query.ts'
 import {
   assessmentsEvaluateQuerySchema,
@@ -39,23 +41,18 @@ import {
   credibilityListPayloadSchema,
   credibilityReadPayloadSchema,
 } from './queries/credibility-query.ts'
-import { embeddedViewContentSchema, embeddedViewPublicationSchema } from '@leitbild/contracts'
-import {
-  displayComposeQuerySchema,
-  displayOverviewQuerySchema,
-  displaySampleQuerySchema,
-  displayViewQuerySchema,
-} from './queries/composed-display-query.ts'
 import { artifactReadQuerySchema, componentsSearchQuerySchema } from './queries/graph-query.ts'
 import { graphReadQuerySchema, graphReadResultSchema } from './queries/graph-read.ts'
 import { plantQuerySchema } from './queries/common.ts'
 import {
   procedureTagsValidateQuerySchema,
+  signalsReadEvidenceSchema,
   signalsReadQuerySchema,
   signalsResolveQuerySchema,
   signalsSearchQuerySchema,
 } from './queries/signal-query.ts'
 import { variablesReadQuerySchema, variablesSearchQuerySchema } from './queries/variable-query.ts'
+import { processPlantResponseQuerySchema } from './response-evidence.ts'
 
 const recordSchema = z.record(z.string(), z.json())
 const recordArraySchema = z.array(recordSchema)
@@ -150,7 +147,14 @@ const queryOutputById: Readonly<Record<string, z.ZodType>> = {
   'world.process-plant.variables.read': z.object({ variables: recordArraySchema }).strict(),
   'world.process-plant.variables.search': pagedPlantRecordsSchema('variables', 'variable'),
   'world.process-plant.signals.resolve': z.object({ plantId: plantIdSchema, signals: recordArraySchema }).strict(),
-  'world.process-plant.signals.read': z.object({ plantId: plantIdSchema, signals: recordArraySchema }).strict(),
+  'world.process-plant.signals.read': z.object({
+    plantId: plantIdSchema,
+    detail: z.literal('values').optional(),
+    evidence: signalsReadEvidenceSchema.optional(),
+    signals: z.array(z.object({ signal: recordSchema, variable: recordSchema, quality: recordSchema,
+      observed: recordSchema.nullable().optional(), valueView: recordSchema.optional() }).strict()),
+    operations: z.object({ simulationTime: z.string(), plantElapsedMs: z.number(), log: z.array(operationRecordSchema), resets: z.array(resetRecordSchema) }).strict().optional(),
+  }).strict(),
   'world.process-plant.signals.search': pagedPlantRecordsSchema('signals', 'signal'),
   'world.process-plant.procedure-tags.validate': z.object({ plantId: plantIdSchema, tags: recordArraySchema }).strict(),
   'world.process-plant.conditions.evaluate': z.object({ plantId: plantIdSchema, matches: z.boolean(), signalsRead: recordArraySchema }).strict(),
@@ -161,11 +165,33 @@ const queryOutputById: Readonly<Record<string, z.ZodType>> = {
     modelRef: z.string().min(1),
     modelDigest: z.string().regex(/^[a-f0-9]{64}$/),
     simTimeMs: z.number().nonnegative(),
+    simulationTime: z.string().optional(),
+    evidenceKind: z.literal('engineering-diagnostic'),
+    provenance: z.literal('runtime-model'),
+    automationRef: z.string().min(1),
+    automationDigest: z.string().regex(/^[a-f0-9]{64}$/),
     basis: recordSchema,
     automaticCsfQualified: z.literal(false),
+    readings: recordArraySchema,
     evidence: recordArraySchema,
   }).strict(),
-  'world.process-plant.assessments.evaluate': z.object({ plantId: plantIdSchema, assessments: recordArraySchema }).strict(),
+  'world.process-plant.response.evaluate': z.object({
+    targetObjectId: objectIdSchema,
+    status: z.enum(['satisfied', 'challenged', 'unknown']),
+    reason: z.string().optional(),
+    modelRef: z.string().min(1), modelDigest: z.string().regex(/^[a-f0-9]{64}$/),
+    automationRef: z.string().min(1), automationDigest: z.string().regex(/^[a-f0-9]{64}$/),
+    simTimeMs: z.number().nonnegative(), simulationTime: z.string().optional(),
+    evidenceKind: z.literal('engineering-diagnostic'), provenance: z.literal('runtime-model'),
+    basis: recordSchema, automaticCsfQualified: z.literal(false), interpretation: z.string(), current: recordSchema, evidence: recordArraySchema,
+    recordings: recordArraySchema, afterOperations: recordArraySchema,
+  }).strict(),
+  'world.process-plant.assessments.evaluate': z.object({
+    plantId: plantIdSchema, detail: z.enum(['full', 'summary']), assessments: recordArraySchema,
+    inspect: z.object({ capabilityId: z.literal('world.process-plant.assessments.evaluate'), input: z.object({
+      plantId: plantIdSchema, assessmentIds: z.array(z.string().min(1)).min(1).optional(), detail: z.literal('full'),
+    }).strict() }).strict().optional(),
+  }).strict(),
   'world.process-plant.control.validate': z.object({
     accepted: z.boolean(),
     reason: z.string().optional(),
@@ -178,6 +204,8 @@ const queryOutputById: Readonly<Record<string, z.ZodType>> = {
     plantElapsedMs: z.number(),
     proposals: z.array(z.object({
       proposal: processPlantProposalSchema,
+      /** The drawn item's label, as a person reads it there. */
+      label: z.string().min(1),
       review: z.object({
         permitted: z.boolean(),
         refusal: z.string().optional(),
@@ -206,88 +234,6 @@ const queryOutputById: Readonly<Record<string, z.ZodType>> = {
   'world.process-plant.alarms.status': z.object({ plantId: plantIdSchema, alarms: recordArraySchema, trips: recordArraySchema, summary: recordSchema }).strict(),
   'world.process-plant.alarms.summary': z.object({ plantId: plantIdSchema, summary: recordSchema }).strict(),
   'world.process-plant.alarms.history': z.object({ plantId: plantIdSchema, history: recordArraySchema }).strict(),
-  'world.process-plant.display.compose': z.object({
-    plantId: plantIdSchema,
-    issuedAt: z.string(),
-    simulationClock: z.string(),
-    view: embeddedViewPublicationSchema,
-    signals: z.array(z.object({ ref: z.string(), tagId: z.string().optional(), path: z.string(), label: z.string(), name: z.string(), unit: z.string() }).strict()),
-    shows: z.array(z.string()),
-    margins: z.array(z.string()),
-    warnings: z.array(z.string()),
-    equipment: z.array(z.object({ id: z.string(), label: z.string(), state: z.string() }).strict()),
-    viewContent: embeddedViewContentSchema,
-  }).strict(),
-  'world.process-plant.display.overview': z.object({
-    plantId: plantIdSchema,
-    view: embeddedViewPublicationSchema,
-    simulationClock: z.string(),
-    shows: z.array(z.string()),
-    equipment: z.array(z.object({ id: z.string(), label: z.string(), state: z.string() }).strict()),
-  }).strict(),
-  'world.process-plant.display.view': z.discriminatedUnion('kind', [
-    z.object({
-      kind: z.literal('advice'),
-      plantId: plantIdSchema,
-      plantLabel: z.string().nullable(),
-      issuedAt: z.string(),
-      simulationTime: z.string(),
-      modelChanged: z.boolean(),
-      drawingChanged: z.boolean(),
-      display: recordSchema,
-    }).strict(),
-    z.object({
-      kind: z.literal('overview'),
-      plantId: plantIdSchema,
-      plantLabel: z.string().nullable(),
-      simulationTime: z.string(),
-      display: recordSchema,
-    }).strict(),
-    z.object({
-      kind: z.literal('detail'),
-      plantId: plantIdSchema,
-      plantLabel: z.string().nullable(),
-      simulationTime: z.string(),
-      display: recordSchema,
-    }).strict(),
-  ]),
-  'world.process-plant.display.sample': z.object({
-    plantId: plantIdSchema,
-    simulationTime: z.string(),
-    plantElapsedMs: z.number(),
-    mode: z.object({ id: z.string(), label: z.string() }).strict().nullable().optional(),
-    safetyFunctions: z.array(z.object({
-      id: z.string(),
-      label: z.string(),
-      shortLabel: z.string(),
-      status: z.enum(['green', 'yellow', 'orange', 'red', 'unknown', 'not-monitored']),
-      procedure: z.string().optional(),
-      text: z.string(),
-      opens: z.array(z.string()).min(1).optional(),
-    }).strict()).optional(),
-    alarms: z.array(z.object({
-      id: z.string(),
-      ruleId: z.string(),
-      kind: z.enum(['alarm', 'trip']),
-      title: z.string(),
-      severity: z.enum(['info', 'notice', 'warning', 'critical']),
-      active: z.boolean(),
-      acknowledged: z.boolean(),
-      firstOut: z.boolean(),
-      firstActiveElapsedMs: z.number().optional(),
-    }).strict()).optional(),
-    operations: z.object({
-      log: z.array(operationRecordSchema),
-      ramps: z.array(processPlantRampSchema),
-      proposals: z.array(processPlantProposalSchema),
-      resets: z.array(resetRecordSchema),
-    }).strict().optional(),
-    values: z.array(z.object({
-      path: z.string(),
-      value: z.union([z.number(), z.boolean()]),
-      quality: z.enum(['good', 'outside-hard-range']),
-    }).strict()),
-  }).strict(),
 }
 
 const queryInputById: Readonly<Record<string, z.ZodType>> = {
@@ -307,6 +253,7 @@ const queryInputById: Readonly<Record<string, z.ZodType>> = {
   'world.process-plant.procedure-tags.validate': procedureTagsValidateQuerySchema,
   'world.process-plant.conditions.evaluate': conditionsEvaluateQuerySchema,
   'world.process-plant.procedure-condition.evaluate': procedureConditionEvaluateQuerySchema,
+  'world.process-plant.response.evaluate': processPlantResponseQuerySchema,
   'world.process-plant.assessments.evaluate': assessmentsEvaluateQuerySchema,
   'world.process-plant.control.validate': processPlantControlWritePayloadSchema,
   'world.process-plant.control.proposals': controlProposalsQuerySchema,
@@ -314,10 +261,6 @@ const queryInputById: Readonly<Record<string, z.ZodType>> = {
   'world.process-plant.runtime.status': processPlantCatalogInputSchema,
   'world.process-plant.transient.diagnostics': plantQuerySchema,
   ...Object.fromEntries(processPlantIcQueryKinds.map(id => [id, id === 'world.process-plant.ic.catalog' ? processPlantIcCatalogQuerySchema : plantQuerySchema])),
-  'world.process-plant.display.compose': displayComposeQuerySchema,
-  'world.process-plant.display.overview': displayOverviewQuerySchema,
-  'world.process-plant.display.view': displayViewQuerySchema,
-  'world.process-plant.display.sample': displaySampleQuerySchema,
 }
 
 const titleFor = (id: string): string => id
@@ -331,22 +274,23 @@ const queryDescriptionById: Readonly<Record<string, string>> = {
   'world.process-plant.actions.search': 'Search Pack-declared Process Plant actions, including their exact actionId values, descriptions, parameters, and input schemas. The selected Plant validates applicability when an action is invoked.',
   'world.process-plant.credibility.list': 'List engineering credibility evidence available for one Plant.',
   'world.process-plant.credibility.read': 'Read one engineering evidence artifact and its provenance for one Plant.',
-  'world.process-plant.plants.list': 'Discover live active Plant units and their exact plantId values, model library, graph size, variable count, the services and loops a display can name, and elapsed simulation time. Use these identities for Plant-specific reads.',
+  'world.process-plant.plants.list': 'Discover live active Plant units and their exact plantId values, model library, graph size, variable count, the services and loops its equipment serves, and elapsed simulation time. Use these identities for Plant-specific reads.',
   'world.process-plant.graph.read': 'Read how Plant equipment is connected: what feeds or supplies a component (water, steam or power) and where its flow or power goes. Default mode connections returns compact links (kind, service, from and to component ids and ports, loop) and the components at their ends. With componentIds (exact ids from components.search), their own links, direction upstream, downstream or both (default), followed reach links (default 1) the way flow or power travels through each component\'s circuit; continues names where the connection goes on beyond reach and what comes next. Without componentIds, every link of the Plant. services (as plants.list names them, or a link kind such as thermalContact) narrows either; results are paginated. mode full explicitly exports the complete compiled graph with every component\'s parameters, ports and variables: about 200k tokens for a 4-loop PWR, so only for a complete engineering export.',
   'world.process-plant.components.search': 'Discover Plant components by identity, kind, or text. Returns compact summaries by default and parameters only when requested.',
   'world.process-plant.artifact.read': 'Inspect Plant configuration and implementation evidence. Default mode index returns paged component identities and source-file paths, sizes and hashes, without source content. mode component selects one exact componentId and its authored configuration/source links. mode source reads bounded lines from an indexed sourcePath; copy nextRead to continue with the same content hash. mode full explicitly exports the complete authored Plant configuration or compiled graph and existing source bundle (large). The implementation bundle covers behavior files and direct named imports, not the complete Pack or application; absence is not proof of no implementation. Not a live-state read.',
   'world.process-plant.variables.read': 'Read current values and metadata for exact Plant variable paths returned by variables.search or another discovery view; do not guess paths.',
   'world.process-plant.variables.search': 'Search current Plant variables by text, discipline, quantity, publication state, and Plant; results are paginated.',
   'world.process-plant.signals.resolve': 'Resolve exact signal references to canonical Plant signal bindings.',
-  'world.process-plant.signals.read': 'Read live values, metadata, and quality for exact Plant signal references. Optional requestedUnit adds a valueView; native values are unchanged, and unavailable conversions retain actual units with a reason. valueView status describes conversion, not sensor quality. Quality good means only not outside a declared hard range; it does not establish calibrated instrumentation or model validity.',
-  'world.process-plant.signals.search': 'Search Plant signal bindings by tag, equipment, discipline, quantity, writability, procedure relevance, and text; results are paginated. Default summary includes identities, descriptions, units and writability. Request detail full, or use signals.resolve for exact references, to inspect capabilities, limits, ownership and external references. Filtering always uses all metadata. Use signals.read for live values and quality.',
+  'world.process-plant.signals.read': 'Read live values, metadata, and quality for exact Plant signal references. Default full metadata is unchanged. detail: values returns the same ordered acquisition with a result.detail values marker, retaining canonical identities, readable labels, independent binding/snapshot units, writability, publication and limits, simulator-only labels, native/canonical values, quality and evidence. Descriptive graph metadata remains available through signals.resolve; no inferred metadata inheritance is required. Optional requestedUnit adds a valueView; native values are unchanged, and unavailable conversions retain actual units with a reason. valueView status describes conversion, not sensor quality. Quality good means only not outside a declared hard range; it does not establish calibrated instrumentation or model validity. evidence:true adds one result.evidence frame applying to every returned signal in this synchronous same-Plant acquisition: evidenceKind, provenance, simulationTime, modelRef/modelDigest and automationRef/automationDigest. Every row retains its separate value, native/canonical units, metadata and quality. The frame establishes engineering diagnostic acquisition identity, not calibrated instrumentation. operations: true adds the commands people and AI agents issued on these signals and the resets of actuations that held them, with the Run and plant time read at; observed: true adds each signal\'s observation (priority, the limit it is past) and declared limits, null for a signal the Plant does not declare.',
+  'world.process-plant.signals.search': 'Search Plant signal bindings by tag, equipment, discipline, quantity, writability, procedure relevance, and text; results are paginated. Text uses literal AND terms across metadata: every term must occur. Empty results do not establish absent equipment; remove extra qualifiers, broaden equipment/system names or use structural filters, then read relevant offered tags. Default summary includes identities, descriptions, units and writability. Request detail full, or use signals.resolve for exact references, to inspect capabilities, limits, ownership and external references. Filtering always uses all metadata. Use signals.read for live values and quality.',
   'world.process-plant.procedure-tags.validate': 'Validate a set of procedure tags against one Plant and report missing or mismatched bindings.',
   'world.process-plant.conditions.evaluate': 'Evaluate declared operating conditions against current Plant signals. Comparison values must use the resolved signal\'s native unit and value type. Requested-unit views do not change condition thresholds; no procedure-unit conversion is performed.',
-  'world.process-plant.assessments.evaluate': 'Judge each critical safety function the Plant\'s I&C declares by its status tree, now: per function the status (green, yellow, orange, red; unknown where a signal a branch needs is not published or readable; not-monitored where it is judged only after a reactor trip), the function restoration procedure its colour sends operators to, what it means, the branch path with every value read against its threshold, the further checks that apply (such as natural circulation with no coolant pump running, or makeup at its maximum at power) and the trends the tree treats as expected. Omit assessmentIds for every function; catalog.list names them. Judge the plant by these, not by one value off its normal: a trend the tree expects is no challenge. The trees are reference-model criteria after the generic Westinghouse ERG status trees, not qualified plant procedures; values are runtime model evidence that do not establish instrument validity or safety-function adequacy at a real plant.',
-  'world.process-plant.procedure-condition.evaluate': 'Read-only evaluation of an authored, model-digest-pinned condition with explicit native units. Returns satisfied, challenged or unknown and every comparison observation at one simulation time. Values are runtime model evidence, not qualified instrumentation or automatic CSF restoration; authored source citations are retained, not independently verified. No equipment command, protection change or procedure transition is performed.',
+  'world.process-plant.assessments.evaluate': 'Judge each critical safety function the Plant\'s I&C declares by its status tree, now: per function the status (green, yellow, orange, red; unknown where a signal a branch needs is not published or readable; not-monitored where it is judged only after a reactor trip), the function restoration procedure its colour sends operators to, what it means, the branch path with every value read against its threshold, the further checks that apply (such as natural circulation with no coolant pump running, or makeup at its maximum at power) and the trends the tree treats as expected. Omit assessmentIds for every function; catalog.list names them. Use detail: summary for current status, frame, meaning and exceptions without repeated tree paths; inspect supplies a full current-read call. Full detail is the default. A later inspection is newly acquired, not immutable proof of an earlier summary. Judge the plant by these, not by one value off its normal: a trend the tree expects is no challenge. The trees are reference-model criteria after the generic Westinghouse ERG status trees, not qualified plant procedures; values are runtime model evidence that do not establish instrument validity or safety-function adequacy at a real plant.',
+  'world.process-plant.procedure-condition.evaluate': 'Read-only evaluation of an authored, model-digest-pinned condition with explicit native units. Each comparison keeps its reference, threshold, status and reason; readingIndex identifies its complete acquisition in this result\'s readings array. I&C-rule leaves retain their actual state directly. Values are runtime model evidence, not qualified instrumentation or automatic CSF restoration; authored source citations are retained, not independently verified. No equipment command, protection change or procedure transition is performed.',
+  'world.process-plant.response.evaluate': 'Evaluate an explicitly sampled physical response over an authored simulation-time window from this Plant\'s existing retained recording, alongside fresh current prerequisites. Compare stored numeric minimum/maximum or endpoint change in native units; returns exact retained sample timestamps, count, gaps, endpoints and endpoint rate. Missing left-boundary coverage, recording, good quality or advancing time stays unknown. Exception recording has a deadband and silent intervals: this never proves an uninterrupted hold, instrument validity, future capacity or recovery. Uses exact model-digest-pinned source/basis and performs no equipment action or procedure transition. Use only an authored model-scoped response objective; do not invent a reference duration.',
   'world.process-plant.control.validate': 'Validate a proposed Process Plant control write without applying it.',
   'world.process-plant.control.proposals': 'Read a Plant\'s operation proposals: pending ones with World\'s review now (whether the I&C allows the stored write, and how each cited reading moved since it was proposed), and the last closed ones with who closed them, when and why (approved, rejected, expired, superseded, withdrawn). Read it before saying what became of a proposal.',
-  'world.process-plant.controls.list': 'List what a person may operate on a Plant\'s drawn items, derived from its model: each offered control with its options (words, values written, the state each leads to), the trips each option would set going and the automation writing against it, where those stand now (armed; acted; a protection actuation holding it, which refuses the option), and how long the equipment takes to follow; what each option that stops, shuts or disconnects takes away now (the flow, where it goes, its share, the mode, the protection that may actuate); a modulating valve\'s demand with the span and step it is set in (OPEN to or THROTTLE to any setting there), where it stands now, and the floor a standing actuation lets it be throttled to; each valve\'s position; and each withheld command with why (held by its controller as AUTO, a demand or set point, an isolation input, declared not offered); and, under resets, every latched actuation standing with its RESET, offered or why not. Name items by the ids display.compose reports, or omit them for all.',
+  'world.process-plant.controls.list': 'List what a person may operate on a Plant\'s drawn items, derived from its model: each offered control with its options (words, values written, the state each leads to), the trips each option would set going and the automation writing against it, where those stand now (armed; acted; a protection actuation holding it, which refuses the option), and how long the equipment takes to follow; what each option that stops, shuts or disconnects takes away now (the flow, where it goes, its share, the mode, the protection that may actuate); a modulating valve\'s demand with the span and step it is set in (OPEN to or THROTTLE to any setting there), where it stands now, and the floor a standing actuation lets it be throttled to; each valve\'s position; and each withheld command with why (held by its controller as AUTO, a demand or set point, an isolation input, declared not offered); and, under resets, latched actuations standing with their RESET, offered or why not. Use commands:[{tagId}] or commands:[{path}] for exact writable command bindings discovered through signals.search/resolve: returns only those offered or withheld controls on their actual drawn owners, with standing resets related through held command/isolation paths or the controls\' declared I&C rules. A command\'s equipmentId need not be a drawn item id. Read-only, unknown or unrepresented commands are refused explicitly; no nearby command is substituted. Alternatively name items by their exact element ids (a component id, or "<component>.<device>" for a device it bundles). commands and items are mutually exclusive; omit both for all controls and resets.',
   'world.process-plant.runtime.status': 'Summarize active Process Plant runtime health, elapsed time, and variable publication counts.',
   'world.process-plant.transient.diagnostics': 'Read detailed transient, performance, and instrumentation diagnostics for one Plant.',
   'world.process-plant.ic.status': 'Read the complete current I&C snapshot for one Plant, including inactive alarm and trip lifecycle state.',
@@ -354,10 +298,6 @@ const queryDescriptionById: Readonly<Record<string, string>> = {
   'world.process-plant.alarms.status': 'Read active alarms and trips plus a compact current lifecycle summary for one Plant. Use ic.status only when inactive lifecycle records are needed.',
   'world.process-plant.alarms.summary': 'Read a compact current alarm and trip summary for one Plant.',
   'world.process-plant.alarms.history': 'Read alarm and trip lifecycle transitions recorded for one Plant.',
-  'world.process-plant.display.compose': 'Compose a small live operator display for one Plant, presented with your answer. State the operator question, need and subjects (1-4 equipment, signals, services or loops it is about; each must be shown), then choose 1-3 panels: one trend (history of 1-6 numeric signals; each measurement gets its own strip on one time axis, parallel equipment sharing one, at most 4 strips of 4; unrecorded signals show current values), comparison (2-6 parallel signals of one unit, e.g. the loops), mimic (a live equipment drawing World generates from the Plant model: "from" and/or "to" name one component per entry by id, a tag on it or its label, and draw every route between them, or what lies downstream of "from" or upstream of "to" alone; "around" draws both for its items; "reach" (1-3) limits the links one end or around follows; "services" with optional "loops" (as plants.list names them) draws whole systems or narrows a route; "exclude" leaves equipment out; e.g. {"kind":"mimic","to":["<component id>"],"services":["<service>"]}; World picks symbols, state signals and layout, draws actual states, disagreeing commands and unknowns as such, and frames alarms), readouts (1-6 current values or on/off states with margins, not already trended or drawn) and alarms (of the displayed signals and equipment, or the whole Plant). Give every signal a role (primary, context, counter-evidence) and use exact tagIds or paths from your evidence. Most answers need one trend, e.g. {"plantId":"<plantId>","title":"<what it shows>","question":"<the question it answers>","need":"<the decision it supports>","subjects":["<tagId>"],"panels":[{"kind":"trend","horizon":"10m","signals":[{"ref":"<tagId>","role":"primary"}]}]}. Read-only. Returns the view, the display clock, what it shows, each drawn item\'s state (equipment), each value as its legend states it: direction, rate, limit ahead and time to it (margins; the first is the display\'s lead), and warnings; or rejects with every issue, did-you-mean names and fixes known to fit.',
-  'world.process-plant.display.overview': 'Open the live unit overview World generates for one Plant from its model: the principal circuits its heat flows through (drawn with OpenBridge, actual equipment states, alarmed equipment framed, safety and auxiliary services as stubs where they join), a status chip per critical safety function, the values it leads with in the mode it is in (at power, what protection can still trip on, then the energy source and sink; after a trip, subcooling margin, reactor outlet temperature and auxiliary feed flow, then PZR pressure and level), and the active alarms. Use when the operator wants the whole unit at a glance on a display; for a question about part of the Plant, compose a display. Read-only: stores nothing. Returns the view, the display clock, what it shows (each critical safety function\'s status too) and each drawn item with its current state (equipment). Present the view only when the operator wants a display, never for a request for text only: answer that in words from what you read.',
-  'world.process-plant.display.view': 'Compile a display state for a live display view: an agent\'s composed display (kind advice), a Plant\'s unit overview (kind overview), or equipment opened from it (kind detail); the last two are drawn for the view size sent with them. Display views use this; to create a display, use display.compose or display.overview.',
-  'world.process-plant.display.sample': 'Read current values and hard-range quality for up to 256 exact signal paths, the operating mode the Plant is in where it declares modes, the status of each critical safety function it declares with its tree path in words, and optionally the alarms and trips to annunciate (active ones, and cleared ones not yet acknowledged; not shelved, suppressed or out of service) and the operations on those paths (commands people and AI agents issued, running ramps, proposals), at the current Simulation Run time. Live display views use this for polling.',
 }
 
 const processPlantQueryCapabilities = processPlantQueryKinds.map(id => {
@@ -375,7 +315,7 @@ const processPlantQueryCapabilities = processPlantQueryKinds.map(id => {
       ? {}
       : {
           inspectObjectIds: (rawInput: unknown) => {
-            const plantId = id === 'world.process-plant.procedure-condition.evaluate'
+            const plantId = id === 'world.process-plant.procedure-condition.evaluate' || id === 'world.process-plant.response.evaluate'
               ? (rawInput as { targetObjectId?: unknown }).targetObjectId
               : (rawInput as { plantId?: unknown }).plantId
             return typeof plantId === 'string' ? [objectIdSchema.parse(plantId)] : []
@@ -393,6 +333,8 @@ const commandCapability = <T extends { readonly plantId: string }>(config: {
   readonly risk?: 'write' | 'destructive'
   /** A command result that says more than accepted or refused; the core result where absent. */
   readonly output?: z.ZodType
+  /** Whether the command injects a fault the Run's AI agents are not to learn of (operations/fault-acts.ts). */
+  readonly withheldFromAgents?: (payload: unknown) => boolean
 }) => defineSimulationCommandCapability({
   ...config,
   risk: config.risk ?? 'write',
@@ -419,19 +361,21 @@ export const processPlantCapabilities = [
   commandCapability({
     id: processPlantControlWriteCommandKind,
     title: 'Write process control',
-    description: 'Write one validated Process Plant signal or variable. An AI agent proposes instead (world.process-plant.control.propose) unless it drives an active procedure Run on the Plant or the Plant opts into direct AI operation.',
+    description: 'Write one validated Process Plant signal or variable. AI agents use the same validated command as people for authorized operations. Only a Plant explicitly configured with aiOperation propose requires review outside a procedure the AI drives.',
     input: processPlantControlWritePayloadSchema,
+    withheldFromAgents: payload => { const { path } = processPlantControlWritePayloadSchema.parse(payload); return path !== undefined && writesFault(path) },
   }),
   commandCapability({
     id: processPlantControlRampCommandKind,
     title: 'Ramp process control',
-    description: 'Ramp one Process Plant signal or variable to a target over simulation time. An AI agent proposes instead (world.process-plant.control.propose) unless it drives an active procedure Run on the Plant or the Plant opts into direct AI operation.',
+    description: 'Ramp one Process Plant signal or variable to a target over simulation time. AI agents use the same validated command as people for authorized operations. Only a Plant explicitly configured with aiOperation propose requires review outside a procedure the AI drives.',
     input: processPlantControlRampPayloadSchema,
+    withheldFromAgents: payload => { const { path } = processPlantControlRampPayloadSchema.parse(payload); return path !== undefined && writesFault(path) },
   }),
   commandCapability({
     id: processPlantControlProposeCommandKind,
     title: 'Propose an operation',
-    description: 'Propose one operation of a Plant\'s equipment for a person to approve in the display window; an AI agent operates a Plant this way unless it drives an active procedure Run on the Plant or the Plant opts into direct AI operation. Name a control\'s command (path or tagId) and one value it offers, as world.process-plant.controls.list lists them; give the reason in plain words, the procedure step where one applies, and 1-6 published tags it rests on. World records the exact write only if the control is offered, the I&C allows it now and every tag is published; otherwise it refuses with why. Nothing is executed: a person reviews it on the equipment\'s popover, with World\'s own check, the consequences and how the cited readings moved since, and approves (World executes the stored write, validated again, under that person\'s command), rejects, or lets it lapse after 2 plant minutes (a person may extend it once). Or propose a latched actuation\'s reset (reset: its ruleId from controls.list resets), offered once its condition has cleared. A newer proposal of yours for the same equipment or actuation replaces your older one. Accepted, it returns the control\'s word and its consequence: the flow it stops or throttles, where that goes, its share, the mode and the protection that may actuate; tell the person. After proposing, compose a display around the item so the person can review it there. Read world.process-plant.control.proposals before saying anything happened: until it reads approved, the operation is proposed and awaiting a person\'s decision, never done. Each decision is a durable interaction signal (type process-plant.proposal.approved, .rejected or .expired) that world.simulation-run.wait can name.',
+    description: 'Propose one operation of a Plant\'s equipment for a person to approve in the display window; use this for a requested review or a Plant explicitly configured with aiOperation propose; direct authorized operations use control.write. Name a control\'s command (path or tagId) and one value it offers, as world.process-plant.controls.list lists them; give the reason in plain words, the procedure step where one applies, and 1-6 published tags it rests on. World records the exact write only if the control is offered, the I&C allows it now and every tag is published; otherwise it refuses with why. Nothing is executed: a person reviews it in the equipment\'s faceplate, with World\'s own check, the consequences and how the cited readings moved since, and approves (World executes the stored write, validated again, under that person\'s command), rejects, or lets it lapse after 2 plant minutes (a person may extend it once). Or propose a latched actuation\'s reset (reset: its ruleId from controls.list resets), offered once its condition has cleared. A newer proposal of yours for the same equipment or actuation replaces your older one. Accepted, it returns the control\'s word and its consequence: the flow it stops or throttles, where that goes, its share, the mode and the protection that may actuate; tell the person. After proposing, compose a display around the item so the person can review it there. Read world.process-plant.control.proposals before saying anything happened: until it reads approved, the operation is proposed and awaiting a person\'s decision, never done. Each decision is a durable interaction signal (type process-plant.proposal.approved, .rejected or .expired) that world.simulation-run.wait can name.',
     input: processPlantControlProposePayloadSchema,
     output: processPlantControlProposeResultSchema,
   }),
@@ -444,7 +388,7 @@ export const processPlantCapabilities = [
   commandCapability({
     id: processPlantActuationResetCommandKind,
     title: 'Reset an actuation',
-    description: 'A person resets one latched protection actuation (a reactor trip, safety injection, an AFW actuation), as world.process-plant.controls.list lists it under resets: World resets it only once its initiating condition no longer holds and the time its rule declares since it acted has passed, and refuses with why otherwise. The reset clears the latch only; equipment stays as the actuation left it, and its hold on what the actuation wrote lifts. An AI agent proposes a reset (world.process-plant.control.propose) for a person to approve; it resets one itself only while it drives an active procedure Run on the Plant.',
+    description: 'A person resets one latched protection actuation (a reactor trip, safety injection, an AFW actuation), as world.process-plant.controls.list lists it under resets: World resets it only once its initiating condition no longer holds and the time its rule declares since it acted has passed, and refuses with why otherwise. The reset clears the latch only; equipment stays as the actuation left it, and its hold on what the actuation wrote lifts. AI agents use the same validated reset for authorized operations; an explicit aiOperation propose policy requires review outside a procedure the AI drives.',
     input: processPlantActuationResetPayloadSchema,
   }),
   commandCapability({
@@ -460,6 +404,22 @@ export const processPlantCapabilities = [
     searchTerms: processPlantActions.flatMap(action => [action.id, action.title, action.description]),
     input: processPlantActionInvokePayloadSchema,
     risk: 'write',
+    withheldFromAgents: payload => faultActionIds().has(processPlantActionInvokePayloadSchema.parse(payload).actionId),
   }),
   ...processPlantQueryCapabilities,
+  defineObservationCapability('declarations', {
+    id: processPlantObservationCapabilityIds.declarations,
+    title: 'Declare observables',
+    description: 'World\'s observation layer reads what each Plant declares: its published and recorded signals with their limits and series, and its equipment and lines.',
+  }),
+  defineObservationCapability('read', {
+    id: processPlantObservationCapabilityIds.read,
+    title: 'Read observations',
+    description: 'World\'s observation layer reads Plant values with their quality and priority, and in the same call the values a unit leads with in its mode.',
+  }),
+  defineObservationCapability('topology', {
+    id: processPlantObservationCapabilityIds.topology,
+    title: 'Read flow topology',
+    description: 'World\'s observation layer reads a Plant as a flow topology: equipment with its ports and circuits, pipes and cables by service, loops as groups.',
+  }),
 ] as const

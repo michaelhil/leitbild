@@ -3,11 +3,21 @@
 // one with the contract schemas, relays it to the window and reports a
 // rejection itself. Agents frames no World page. Pure apart from injected
 // timers and posting, so it is tested without a DOM.
-import { embeddedViewOpenMessageSchema, type EmbeddedViewHostMessage, type EmbeddedViewListing, type EmbeddedViewOpenMessage, type EmbeddedViewsMessage } from '@leitbild/contracts'
+import {
+  embeddedViewHeightMessageSchema,
+  embeddedViewOpenMessageSchema,
+  embeddedViewSubjectOpenMessageSchema,
+  type EmbeddedViewHostMessage,
+  type EmbeddedViewListing,
+  type EmbeddedViewOpenMessage,
+  type EmbeddedViewSubjectOpenMessage,
+  type EmbeddedViewsMessage,
+  type WorkspaceResourceReference,
+} from '@leitbild/contracts'
 import { viewListings, type ResolvedViewFence, type ViewFence } from './listing.ts'
 import type { ViewResolution } from './resolve.ts'
 
-export type ViewHostMessage = EmbeddedViewsMessage | EmbeddedViewOpenMessage
+export type ViewHostMessage = EmbeddedViewsMessage | EmbeddedViewOpenMessage | EmbeddedViewSubjectOpenMessage
 
 export interface ViewHostEvent {
   readonly origin: string
@@ -36,6 +46,10 @@ export const isViewHostAnnouncement = (event: ViewHostEvent, page: ViewHostPage)
 
 export const viewOpenMessage = (view: EmbeddedViewListing): EmbeddedViewOpenMessage => ({ type: 'leitbild:view-open', view })
 
+/** Asks the window for one subject's default display on its Run (a proposal's element, `<objectId>#<item>`), with Back to what it shows (Q23). */
+export const viewSubjectOpenMessage = (resource: WorkspaceResourceReference, subject: string, title: string): EmbeddedViewSubjectOpenMessage =>
+  embeddedViewSubjectOpenMessageSchema.parse({ type: 'leitbild:view-subject-open', resource, subject, title })
+
 /**
  * A display framed inline in an answer asks for another to be opened in the
  * window (the equipment a safety function chip or a banner label on it
@@ -52,6 +66,27 @@ export const inlineOpenRequest = (
   if (!parsed.success || parsed.data.view.envelope.subject.workspaceId !== page.workspaceId) return null
   return parsed.data
 }
+
+/**
+ * A display framed inline in an answer says how tall its content is (W7.3): an exact contract height message, on this
+ * origin, from one of the inline frames this page made. Its frame takes that height (inline.ts fitInline). Null for
+ * anything else.
+ */
+export const inlineHeightRequest = (
+  event: ViewHostEvent,
+  page: { readonly origin: string; readonly inlineFrames: ReadonlyArray<unknown> },
+): number | null => {
+  if (event.origin !== page.origin || !page.inlineFrames.includes(event.source)) return null
+  const parsed = embeddedViewHeightMessageSchema.safeParse(event.data)
+  return parsed.success ? parsed.data.height : null
+}
+
+/**
+ * A view opened at one of its parts (a dashboard at the section a cited line is drawn in, the line's `at`): its own key
+ * for that part, so the window opens it there, and the part as the listing's focus. Without a part, the view as listed.
+ */
+export const focusedListing = (listing: EmbeddedViewListing, at: string | undefined): EmbeddedViewListing =>
+  at === undefined ? listing : { ...listing, key: `${listing.key}#${encodeURIComponent(at)}`.slice(0, 512), focus: at }
 
 /** What this page tells an inline display once the Host relays for it: what it opens reaches the window. */
 export const inlineHostAnnouncement = (): EmbeddedViewHostMessage => ({ type: 'leitbild:view-host' })

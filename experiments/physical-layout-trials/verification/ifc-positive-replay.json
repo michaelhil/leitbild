@@ -1,0 +1,24 @@
+{
+  "observedAt": "2026-10-24T18:45:25.519285+00:00",
+  "sourceCandidateCommit": "91670729621fecaec85ff0e8a9d99b55b19afbb9",
+  "isolatedCopy": "/var/folders/l9/y_p_xfcj6z15k6g53lds76pw0000gn/T/leitbild-ifc-replay-6l297z9p",
+  "steps": [
+    {
+      "name": "install",
+      "exitCode": 0,
+      "log": "/var/folders/l9/y_p_xfcj6z15k6g53lds76pw0000gn/T/leitbild-ifc-replay-6l297z9p/install.log"
+    },
+    {
+      "name": "trial",
+      "exitCode": 0,
+      "log": "/var/folders/l9/y_p_xfcj6z15k6g53lds76pw0000gn/T/leitbild-ifc-replay-6l297z9p/trial.log"
+    },
+    {
+      "name": "unit",
+      "exitCode": 0,
+      "log": "/var/folders/l9/y_p_xfcj6z15k6g53lds76pw0000gn/T/leitbild-ifc-replay-6l297z9p/unit.log"
+    }
+  ],
+  "frozenOutputsModified": false,
+  "meaning": "Positive selfsuite reproduction only. Independent TV01/TV02 still disqualify IFC admission/preservation."
+}

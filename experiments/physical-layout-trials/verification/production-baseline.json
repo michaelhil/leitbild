@@ -1,0 +1,38 @@
+{
+  "inspectedProductionCommit": "f9ffc3f8a2b1aec6718cadfd42845940af5476a0",
+  "modelDigest": "47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea",
+  "components": 121,
+  "links": 167,
+  "frozenTrialModelDigest": "16523e5a06e67b517862fd96650bfef2cdd5e4ad05a1dd70c8f27eb2dff9bdff",
+  "trialBindings": [
+    {
+      "id": "turbine",
+      "presentInCurrentModel": true
+    },
+    {
+      "id": "turbineStopValve",
+      "presentInCurrentModel": true
+    },
+    {
+      "id": "condenser",
+      "presentInCurrentModel": true
+    },
+    {
+      "id": "condensatePumpA",
+      "presentInCurrentModel": true
+    },
+    {
+      "id": "condensatePumpB",
+      "presentInCurrentModel": true
+    },
+    {
+      "id": "mainFeedwaterPumpA",
+      "presentInCurrentModel": true
+    },
+    {
+      "id": "mainFeedwaterPumpB",
+      "presentInCurrentModel": true
+    }
+  ],
+  "meaning": "Trial remains frozen to its original reference model. Current production model requires fresh binding/coverage admission; presence is not compatibility proof."
+}

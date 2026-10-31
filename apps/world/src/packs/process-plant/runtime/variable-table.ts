@@ -88,10 +88,13 @@ export const createProcessPlantVariableTable = (
     if (variable.owner.type === 'component') {
       const component = system.graph.components[variable.owner.componentIndex]
       if (!component) throw new Error(`variable ${variable.path} references missing component index ${variable.owner.componentIndex}`)
-      values[slot] = initialComponentValueFor(component, variable.path)
+      const initial = initialComponentValueFor(component, variable.path)
+      assertProcessPlantVariableValueValid(variable, initial)
+      values[slot] = initial
       continue
     }
     if (variable.initialValue === undefined) throw new Error(`process link variable ${variable.path} has no initial value`)
+    assertProcessPlantVariableValueValid(variable, variable.initialValue)
     values[slot] = variable.initialValue
   }
 

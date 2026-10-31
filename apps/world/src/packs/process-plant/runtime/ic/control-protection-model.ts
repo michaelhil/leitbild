@@ -389,6 +389,8 @@ export const processPlantIcSafetyFunctionSchema = z.object({
   tree: processPlantIcStatusTreeNodeSchema,
   checks: z.array(z.object({
     label: z.string().min(1),
+    /** How a display names it where room is short, among those not yet met ("SG pressures"). */
+    shortLabel: z.string().min(1).max(24).optional(),
     basis: z.string().min(1),
     when: processPlantIcSafetyFunctionConditionSchema.optional(),
     condition: processPlantIcSafetyFunctionConditionSchema,

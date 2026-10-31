@@ -1,0 +1,226 @@
+{
+  "purpose": "Diagnostic-only causal A/B for repeated Canvas ground projection; not final R3 product qualification",
+  "sourceBaseline": "7590a551d8d77410b4df79fca41a3788cb572cdd",
+  "candidate": "e24d1c216f554945289a39e42405515dc1773d38",
+  "productionDelta": "Only2a02bf586: per-camera/resize ground XY/W projector and focused test; rendering/full camera depth/source/admission unchanged",
+  "sourceIdentities": [
+    {
+      "design": {
+        "id": "pwr-full-unit",
+        "revision": "pwr-full-unit-20261026-r3",
+        "digest": "812180a48a97a1e42a27c9837dc47a3b14e09512cf3554c4925e6f4e5e8fab12"
+      },
+      "compiler": {
+        "id": "physical-layout-native-architecture",
+        "digest": "96e82c37da017162c4f768eb37db11b8e38f513355a2a9ba2052b453baa156f8"
+      },
+      "annotations": 241
+    },
+    {
+      "design": {
+        "id": "pwr-campus",
+        "revision": "pwr-campus-20261026-r3",
+        "digest": "e0987eae580fc873d69cc4b880d2e385cec4878a11bcd3978863fa5d3089e6d6"
+      },
+      "compiler": {
+        "id": "physical-layout-native-architecture",
+        "digest": "96e82c37da017162c4f768eb37db11b8e38f513355a2a9ba2052b453baa156f8"
+      },
+      "annotations": 5
+    }
+  ],
+  "records": [
+    {
+      "name": "before",
+      "profileDurationMs": 4254.475,
+      "groundProjectionInclusiveSampleMs": 3326.95,
+      "measuredPlanWindow": {
+        "name": "browser-site-plan-paused",
+        "moves": 86,
+        "durationMs": 4277.900000095367,
+        "frames": 89,
+        "rafMedianMs": 50,
+        "rafP95Ms": 66.59999999999854,
+        "rafMaxMs": 200.10000000000036,
+        "longTasks": [
+          {
+            "start": 15691.299999952316,
+            "duration": 50
+          }
+        ],
+        "fillTextCalls": 0,
+        "drawnTexts": [],
+        "ownedPhysicalTargets": [
+          {
+            "context": 85,
+            "surface": "layout-canvas svelte-1yhpxpp",
+            "width": 2880,
+            "height": 1742,
+            "samples": 4,
+            "depthBytes": 80271360,
+            "colorBytes": 80271360,
+            "resolveBytes": 20067840
+          }
+        ],
+        "draftingCanvases": [
+          {
+            "width": 0,
+            "height": 0,
+            "rgbaBytesLowerBound": 0
+          },
+          {
+            "width": 2880,
+            "height": 1742,
+            "rgbaBytesLowerBound": 20067840
+          }
+        ],
+        "pending": 0,
+        "errors": [],
+        "viewport": {
+          "width": 1440,
+          "height": 871,
+          "dpr": 2,
+          "reportedLogicalCpus": 8
+        },
+        "status": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run"
+      },
+      "rawEvidence": [
+        {
+          "researchRelativePath": "r3-plan-projection-before-profile/browser-site-plan-paused.cpuprofile",
+          "sha256": "7861145fe948cebe1c7ddc93c99e57065ed9f5f5819d1be37e7da2fad0411946",
+          "bytes": 95918
+        },
+        {
+          "researchRelativePath": "r3-plan-projection-before-profile/failure.json",
+          "sha256": "5a5bbc5c2f1e528d4b91b9934c7e21ed3303763805eca89edc4c1f0793560a42",
+          "bytes": 5179
+        },
+        {
+          "researchRelativePath": "r3-plan-projection-before-profile/attribution.json",
+          "sha256": "d46f7307af4a913fd3c5b355811a89a914157567b9daff198b95f0e341c5916d",
+          "bytes": 12517
+        }
+      ]
+    },
+    {
+      "name": "after",
+      "profileDurationMs": 4369.65,
+      "groundProjectionInclusiveSampleMs": 45.249,
+      "measuredPlanWindow": {
+        "name": "browser-site-plan-paused",
+        "moves": 125,
+        "durationMs": 4388.400000095367,
+        "frames": 244,
+        "rafMedianMs": 16.69999999999891,
+        "rafP95Ms": 16.799999999999272,
+        "rafMaxMs": 316.60000000000036,
+        "longTasks": [],
+        "fillTextCalls": 0,
+        "drawnTexts": [],
+        "ownedPhysicalTargets": [
+          {
+            "context": 89,
+            "surface": "layout-canvas svelte-1yhpxpp",
+            "width": 2880,
+            "height": 1742,
+            "samples": 4,
+            "depthBytes": 80271360,
+            "colorBytes": 80271360,
+            "resolveBytes": 20067840
+          }
+        ],
+        "draftingCanvases": [
+          {
+            "width": 0,
+            "height": 0,
+            "rgbaBytesLowerBound": 0
+          },
+          {
+            "width": 2880,
+            "height": 1742,
+            "rgbaBytesLowerBound": 20067840
+          }
+        ],
+        "pending": 0,
+        "errors": [],
+        "viewport": {
+          "width": 1440,
+          "height": 871,
+          "dpr": 2,
+          "reportedLogicalCpus": 8
+        },
+        "status": "5 layouts ready \u00b7 0 loading \u00b7 0 unavailable \u00b7 owner-qualified alarms remain in Run"
+      },
+      "rawEvidence": [
+        {
+          "researchRelativePath": "r3-plan-projection-after-profile/browser-site-plan-paused.cpuprofile",
+          "sha256": "f22123989624c29e0b5650b76fff027aac36b51ae5f3d1fcb2a876546ae4e9a4",
+          "bytes": 101674
+        },
+        {
+          "researchRelativePath": "r3-plan-projection-after-profile/failure.json",
+          "sha256": "67b8a3124b08a0bf9364a3f51e33c3efad8cfc14f37cb1b21dc6fb61f7eaecbf",
+          "bytes": 5117
+        },
+        {
+          "researchRelativePath": "r3-plan-projection-after-profile/attribution.json",
+          "sha256": "df69a74bd640d848d11aab5ea53eb704497256d272be263aeb6bdbb5b180a473",
+          "bytes": 12385
+        }
+      ]
+    }
+  ],
+  "limits": [
+    "Both runs intentionally stop after a requested diagnostic CPU profile and produce explicit non-qualification failure.json.",
+    "DevTools sampling adds overhead; these RAFs demonstrate the bottleneck removal but are not clean final moving acceptance.",
+    "Same paused/playing test sequence and source geometry on one local retained R3 Run; the simulation advances only through the explicitly exercised local playing windows.",
+    "Whole-site footprint fitting legitimately paints no text in these poses; readable room caption gates remain separate and mandatory.",
+    "Fixed4secondinputworkload is a test window, not a production scheduling cutoff."
+  ],
+  "productionFileHashes": {
+    "before": [
+      {
+        "path": "apps/world/src/ui/map/physical-scene/canvas-viewport.ts",
+        "sha256": "cbd14e6708c3fb773687bcb099be52fdca683d694c085f14b48798d86d137e25"
+      },
+      {
+        "path": "apps/world/src/ui/map/physical-scene/math.ts",
+        "sha256": "fae79036b79cf003b40fcae44c09a44bef3dff7be6ffce0ba3df368227a3d10c"
+      },
+      {
+        "path": "apps/world/src/ui/map/physical-scene/geometry.ts",
+        "sha256": "a1717259667358839ece13ba5a5f830c4752aa4936f7ad21f6beb42d7a3177e9"
+      },
+      {
+        "path": "apps/world/src/ui/map/physical-scene/preparation.ts",
+        "sha256": "168ab7305f3c0c0517bbcd6c840c4c41382325f6ab88d2acd109e5a56969d750"
+      },
+      {
+        "path": "apps/world/src/ui/physical-layout/plan-annotations.ts",
+        "sha256": "73baf7b3c038e1d2800a79b21d712ccdb56450397b61e6714660404f5ed75f5a"
+      }
+    ],
+    "after": [
+      {
+        "path": "apps/world/src/ui/map/physical-scene/canvas-viewport.ts",
+        "sha256": "8af81b828011d8e3839b5a5b2c7644f47d4570e8634c2131d13791ecd55da08b"
+      },
+      {
+        "path": "apps/world/src/ui/map/physical-scene/math.ts",
+        "sha256": "fae79036b79cf003b40fcae44c09a44bef3dff7be6ffce0ba3df368227a3d10c"
+      },
+      {
+        "path": "apps/world/src/ui/map/physical-scene/geometry.ts",
+        "sha256": "a1717259667358839ece13ba5a5f830c4752aa4936f7ad21f6beb42d7a3177e9"
+      },
+      {
+        "path": "apps/world/src/ui/map/physical-scene/preparation.ts",
+        "sha256": "168ab7305f3c0c0517bbcd6c840c4c41382325f6ab88d2acd109e5a56969d750"
+      },
+      {
+        "path": "apps/world/src/ui/physical-layout/plan-annotations.ts",
+        "sha256": "73baf7b3c038e1d2800a79b21d712ccdb56450397b61e6714660404f5ed75f5a"
+      }
+    ]
+  }
+}

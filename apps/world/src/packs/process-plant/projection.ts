@@ -1,9 +1,12 @@
-import type { IsoTimestamp, OperationalObject } from '../../core/model/index.ts'
+import type { AlertState, IsoTimestamp, OperationalObject } from '../../core/model/index.ts'
 import { processPlantElectricalPortsAt } from './electrical-ports.ts'
 import type { PackObjectStatusTone } from '../../core/packs/protocol.ts'
 import type { VariablePath } from './graph/index.ts'
-import { formatQuantity } from './displays/display-text.ts'
-import { overviewKeyValues, plantNowOf } from './displays/overview-key-values.ts'
+import { formatQuantity } from './quantity-text.ts'
+import { overviewKeyValues, plantNowOf } from './ic/key-values.ts'
+import { annunciating, challengePriority, isStanding, pendingActions, plantAlarmPriority, plantAlertSeverity, ruleLimits, ruleWatches } from './ic/alarm-philosophy.ts'
+import { safetyFunctionRef } from './observation/derived.ts'
+import type { CompiledProcessPlant } from './plant-compiler.ts'
 import {
   emptyProcessPlantProjection,
   processPlantField,
@@ -16,7 +19,7 @@ import {
 import { processPlantOperatingMode, type ProcessPlantIcLifecycleState } from './runtime/index.ts'
 import type { ProcessPlantVariableHandle } from './runtime/variable-table.ts'
 import type { ProcessPlantRuntimeInstance } from './runtime-instance.ts'
-import { evaluateSafetyFunctions, worstSafetyFunction } from './safety-functions.ts'
+import { evaluateSafetyFunctions, safetyFunctionText, worstSafetyFunction, type SafetyFunctionEvaluation } from './safety-functions.ts'
 
 const severityRank: Readonly<Record<ProcessPlantIcLifecycleState['severity'], number>> = {
   info: 1,
@@ -40,7 +43,7 @@ const formatRuntimePerformance = (plant: ProcessPlantRuntimeInstance): string =>
 // A Plant's panel leads with what its unit overview leads with in the mode
 // it is in: what its protection can still trip on, what its automatic actions
 // deliver, the key values of the equipment its rules judge, and of its energy
-// source and sink (overview-key-values.ts). Its summary states the energy its
+// source and sink (ic/key-values.ts). Its summary states the energy its
 // sources put in and its sinks take out. Nothing is picked per model.
 interface RailFieldPlan {
   readonly path: VariablePath
@@ -110,8 +113,8 @@ const energyReading = (
 }
 
 // The most challenged critical safety function, where the model declares any.
-const worstSafetyFunctionOf = (plant: ProcessPlantRuntimeInstance): ProcessPlantUnitSafetyFunction | undefined => {
-  const worst = worstSafetyFunction(evaluateSafetyFunctions(plant.plant, plant.runtime))
+const worstSafetyFunctionOf = (evaluations: ReadonlyArray<SafetyFunctionEvaluation>): ProcessPlantUnitSafetyFunction | undefined => {
+  const worst = worstSafetyFunction(evaluations)
   if (worst === undefined) return undefined
   return {
     id: worst.id,
@@ -135,6 +138,103 @@ const reactorTripped = (plant: ProcessPlantRuntimeInstance): boolean => {
     return lifecycle.active && !lifecycle.outOfService && group !== undefined && groups.has(group)
   })
 }
+
+const firstOutMembers = new WeakMap<CompiledProcessPlant['automation'], ReadonlyMap<string, number>>()
+
+// How many alarms and trips each first-out group annunciates: first among one says nothing (R21).
+const membersOf = (plant: CompiledProcessPlant, group: string): number => {
+  const known = firstOutMembers.get(plant.automation) ?? (() => {
+    const counts = new Map<string, number>()
+    for (const rule of plant.automation.rules) {
+      if (!rule.enabled) continue
+      for (const effect of rule.effects) {
+        if (effect.type === 'writeSignal' || effect.annunciator?.firstOutGroup === undefined) continue
+        counts.set(effect.annunciator.firstOutGroup, (counts.get(effect.annunciator.firstOutGroup) ?? 0) + 1)
+      }
+    }
+    return counts
+  })()
+  firstOutMembers.set(plant.automation, known)
+  return known.get(group) ?? 0
+}
+
+// Who an actor id names, by the kind in it: an AI agent, the Run itself (its scenario timeline), or a person.
+const actorKind = (actorId: string): NonNullable<AlertState['acknowledgedBy']> => {
+  const kind = actorId.split(':')[1]
+  return kind === 'ai' ? 'ai' : kind === 'system' || kind === 'scenario-timeline' ? 'system' : 'person'
+}
+
+/**
+ * The unit's alarms and trips in the core alert slot (plan v3.1 §2.2, A2):
+ * those annunciating, and those returned to normal still unacknowledged, with
+ * their facets. Every field is a pure function of the persisted I&C state:
+ * `raisedAt` is the occurrence's plant time (`lastActiveElapsedMs`) at the Run
+ * time the Plant started, so an entry holds while its state does (A3).
+ */
+const alertsOf = (objectId: string, plant: ProcessPlantRuntimeInstance, simulationTime: IsoTimestamp): ReadonlyArray<AlertState> => {
+  const snapshot = plant.protection?.snapshot()
+  if (snapshot === undefined) return []
+  const compiled = plant.plant
+  const origin = Date.parse(simulationTime) - plant.runtime.advancedMs()
+  const elapsedMs = plant.runtime.elapsedMs()
+  const showing = annunciating(snapshot)
+  const pending = pendingActions(compiled, snapshot, elapsedMs)
+  const returned = [...snapshot.alarms, ...snapshot.trips]
+    .filter(lifecycle => !lifecycle.active && !lifecycle.acknowledged && lifecycle.phase === 'clearedUnacknowledged' && !lifecycle.shelved && !lifecycle.suppressed && !lifecycle.outOfService)
+  return [...showing, ...returned].map(lifecycle => {
+    const priority = plantAlarmPriority(lifecycle.severity, lifecycle.annunciator?.priority)
+    const rule = compiled.automation.rules.find(candidate => candidate.id === lifecycle.ruleId)!
+    // The values it colours (ruleLimits, the read's own rule): the one it names, else the one state it watches.
+    const limits = ruleLimits(compiled, rule)
+    const watched = ruleWatches(compiled, rule)
+    const named = limits.length === 1 ? limits[0] : limits.length === 0 && watched.length === 1 && compiled.graph.signalBindingByPath.get(watched[0]!)?.published === true ? watched[0] : undefined
+    const group = lifecycle.annunciator?.firstOutGroup
+    return {
+      id: lifecycle.id,
+      kind: lifecycle.kind,
+      severity: plantAlertSeverity(lifecycle.severity),
+      message: lifecycle.title,
+      // A state saved without the plant time it came in leaves the clock out: "time unknown".
+      raisedAt: new Date(origin + (lifecycle.lastActiveElapsedMs ?? 0)).toISOString() as IsoTimestamp,
+      acknowledged: lifecycle.acknowledged,
+      ...(lifecycle.acknowledged && lifecycle.lastActorId !== undefined ? { acknowledgedBy: actorKind(lifecycle.lastActorId) } : {}),
+      ...(lifecycle.active ? {} : { returned: true as const }),
+      ...(lifecycle.latched ? { latched: true as const } : {}),
+      ...(lifecycle.active && isStanding(compiled, lifecycle, { all: showing, pending, elapsedMs, priority }) ? { standing: true as const } : {}),
+      ...(lifecycle.firstOut && group !== undefined && lifecycle.firstOutRank !== undefined && membersOf(compiled, group) > 1 ? { firstOut: { group, rank: lifecycle.firstOutRank } } : {}),
+      ...(lifecycle.annunciator?.equipmentId === undefined ? {} : { subject: { element: lifecycle.annunciator.equipmentId } }),
+      ...(named === undefined ? {} : { observable: `${objectId}#${named}` }),
+      ...(limits.length === 0 ? {} : { threshold: rule.id }),
+      priority,
+      ...(lifecycle.lastActiveElapsedMs === undefined ? {} : { clock: 'simulation' as const }),
+    }
+  })
+}
+
+/**
+ * One alert per challenged critical safety function (lead ruling Q7): its
+ * path's colour as its priority, its status in words that hold while the
+ * path does (no live value), its function's observable named. Each path is
+ * one occurrence, which keeps the Run time it came in at from the object's
+ * own alerts while the tree ends there. The I&C annunciates no status tree,
+ * so nothing acknowledges one: it reads until the function is no longer
+ * challenged that way.
+ */
+export const safetyFunctionAlerts = (
+  objectId: string,
+  evaluations: ReadonlyArray<SafetyFunctionEvaluation>,
+  previous: ReadonlyArray<AlertState>,
+  simulationTime: IsoTimestamp,
+): ReadonlyArray<AlertState> => evaluations.flatMap(evaluation => {
+  const priority = challengePriority[evaluation.status]
+  if (priority === undefined) return []
+  const id = `csf:${evaluation.id}:${evaluation.path.map(step => step.answer.charAt(0)).join('')}`
+  return [{
+    id, kind: 'safety-function', severity: priority === 'alarm' ? 'critical' : 'warning', message: safetyFunctionText(evaluation),
+    raisedAt: previous.find(alert => alert.id === id)?.raisedAt ?? simulationTime, acknowledged: false,
+    observable: `${objectId}#${safetyFunctionRef(evaluation.id)}`, priority, clock: 'simulation',
+  }]
+})
 
 const statusFor = (
   lifecycles: ReadonlyArray<ProcessPlantIcLifecycleState>,
@@ -184,8 +284,9 @@ export const projectedProcessPlantUnit = (config: {
     processPlantField('runtime-performance', 'Runtime', formatRuntimePerformance(plant)),
   ]
   const headline = rail.headline.map(plan => readField(plant, plan))
-  const worst = worstSafetyFunctionOf(plant)
-  // The operating mode the unit overview names (composed-display-query.ts).
+  const safetyFunctions = evaluateSafetyFunctions(plant.plant, plant.runtime)
+  const worst = worstSafetyFunctionOf(safetyFunctions)
+  // The operating mode, as the unit's mode observable reads it (observation/derived.ts).
   const mode = processPlantOperatingMode({ system: plant.plant, runtime: plant.runtime, modes: plant.plant.automation.operatingModes })
   const projection: ProcessPlantUnitProjection = {
     schemaVersion: 1,
@@ -205,6 +306,7 @@ export const projectedProcessPlantUnit = (config: {
   return {
     ...config.object,
     revision: config.object.revision + 1,
+    alerts: [...alertsOf(String(config.object.id), plant, config.simulationTime), ...safetyFunctionAlerts(String(config.object.id), safetyFunctions, config.object.alerts, config.simulationTime)],
     operational: {
       ...config.object.operational,
       status: status.tone === 'ready' ? 'normal' : status.tone === 'error' ? 'critical' : 'degraded',
@@ -231,6 +333,7 @@ export const processPlantProjectionKey = (object: OperationalObject): string => 
     ? JSON.stringify({
         status: object.operational.status,
         priority: object.operational.priority,
+        alerts: object.alerts,
         projection: projection === undefined
           ? undefined
           : {

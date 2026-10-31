@@ -55,8 +55,10 @@ describe('progress line wiring', () => {
     })
     try {
       const line = 'E-0 step 1 · Verified: RTB-A open, RTB-B open at 10:01:02 → step 2'
+      const nextLine = 'E-0 step 2 · Verified: pumps running at 10:01:03 → step 3'
       const requests: ChatRequest[] = []
       const roomAtSecondPass: Message[][] = []
+      const completedAtSecondPass: unknown[] = []
       let room: ReturnType<typeof system.rooms.createRoom> | undefined
       const gateway = {
         ...makeStubGateway(),
@@ -65,11 +67,19 @@ describe('progress line wiring', () => {
           if (requests.length === 1) {
             yield { delta: '', done: true, finishReason: 'tool_calls', tokensUsed: { prompt: 1, completion: 1 }, toolCalls: [{ id: 'call-1', function: { name: 'workspace_call', arguments: {
               calls: [{ key: 'step', operationId: transition, input: { stepId: '1', branchIndex: 0 }, say: line }],
+            } } }, { id: 'call-2', function: { name: 'workspace_call', arguments: {
+              calls: [{ key: 'next', operationId: transition, input: { stepId: '2', branchIndex: 0 }, say: nextLine }],
             } } }] }
             return
           }
-          if (requests.length === 2) roomAtSecondPass.push([...room!.getRetainedMessages()])
-          yield { delta: requests.length === 2 ? 'Unit 1 · E-0 step 2 · holding for your judgement' : 'Still at step 2.', done: false }
+          if (requests.length === 2) {
+            roomAtSecondPass.push([...room!.getRetainedMessages()])
+            for (const message of room!.getRetainedMessages().filter(message => message.progress)) {
+              const evidence = message.progressEvidence!
+              completedAtSecondPass.push(system.executionStore.getCall(room!.profile.id, evidence.turnId, evidence.callId)?.completedAt)
+            }
+          }
+          yield { delta: requests.length === 2 ? 'Unit 1 · E-0 step 3 · holding for your judgement' : 'Still at step 3.', done: false }
           yield { delta: '', done: true, finishReason: 'stop', tokensUsed: { prompt: 1, completion: 1 } }
         },
       }
@@ -86,19 +96,28 @@ describe('progress line wiring', () => {
 
       // One turn of two passes: neither the line nor the answer started another.
       expect(requests).toHaveLength(2)
-      expect(invoked).toEqual([expect.objectContaining({ resource: run, input: { stepId: '1', branchIndex: 0 } })])
+      expect(invoked).toEqual([
+        expect.objectContaining({ resource: run, input: { stepId: '1', branchIndex: 0 } }),
+        expect.objectContaining({ resource: run, input: { stepId: '2', branchIndex: 0 } }),
+      ])
       expect(JSON.stringify(invoked)).not.toContain('RTB-A')
       // Live: the line was in the Room before the turn's next model pass.
-      expect(roomAtSecondPass[0]!.filter(message => message.progress).map(message => message.content)).toEqual([line])
+      expect(roomAtSecondPass[0]!.filter(message => message.progress).map(message => message.content)).toEqual([line, nextLine])
 
       const said = room.getRetainedMessages().filter(message => message.senderId === assistant.id && message.type === 'chat')
-      expect(said.map(message => message.content)).toEqual([line, 'Unit 1 · E-0 step 2 · holding for your judgement'])
-      const [progress, answer] = said
+      expect(completedAtSecondPass).toEqual([expect.any(Number), expect.any(Number)])
+      expect(said.map(message => message.content)).toEqual([line, nextLine, 'Unit 1 · E-0 step 3 · holding for your judgement'])
+      const [progress, nextProgress, answer] = said
       expect(progress).toMatchObject({ progress: true, senderName: 'Assistant', inReplyTo: [question.id] })
-      // The line is no answer: no generation evidence, telemetry or tool trace.
+      expect(progress!.progressEvidence).toEqual({ turnId: answer!.generationTraceId!, callId: 'call_0_0', callIds: ['call_0_0', 'call_0_1'], operationKey: 'step' })
+      expect(nextProgress!.progressEvidence).toEqual({ turnId: answer!.generationTraceId!, callId: 'call_0_1', callIds: ['call_0_0', 'call_0_1'], operationKey: 'next' })
+      // Progress has exact activity evidence, separate from answer metadata.
       for (const field of ['generationTraceId', 'generationMs', 'toolTrace', 'promptTokens', 'cause']) expect(progress).not.toHaveProperty(field)
       expect(answer!.progress).toBeUndefined()
-      expect(answer!.toolTrace).toEqual([expect.objectContaining({ tool: 'workspace_call', success: true })])
+      expect(answer!.toolTrace).toEqual([
+        expect.objectContaining({ tool: 'workspace_call', success: true }),
+        expect.objectContaining({ tool: 'workspace_call', success: true }),
+      ])
       expect(answer!.generationTraceId).toBeDefined()
 
       // A later turn sees the line as the agent's own earlier message.
@@ -107,13 +126,16 @@ describe('progress line wiring', () => {
       expect(requests).toHaveLength(3)
       const replay = requests[2]!.messages.filter(message => message.role === 'assistant').map(message => message.content)
       expect(replay[0]).toBe(line)
-      expect(replay[1]).toStartWith('Unit 1 · E-0 step 2 · holding for your judgement')
+      expect(replay[1]).toBe(nextLine)
+      expect(replay[2]).toStartWith('Unit 1 · E-0 step 3 · holding for your judgement')
 
-      // The strict Room document keeps the mark.
+      expect(JSON.stringify(requests[2]!.messages)).not.toContain('progressEvidence')
+      // The strict Room document keeps the mark and exact activity provenance.
       const paths = workspaceModulePaths(workspaceId)
       await saveWorkspaceModuleSnapshots(serializeModuleSnapshots(system), paths)
       const stored = (await loadWorkspaceModuleSnapshots(paths)).rooms!.rooms.find(entry => entry.profile.id === room!.profile.id)!
-      expect(stored.messages.filter(message => message.progress === true).map(message => message.content)).toEqual([line])
+      expect(stored.messages.filter(message => message.progress === true).map(message => message.content)).toEqual([line, nextLine])
+      expect(stored.messages.filter(message => message.progress === true).map(message => message.progressEvidence)).toEqual([progress!.progressEvidence, nextProgress!.progressEvidence])
     } finally {
       host.stop(true)
     }

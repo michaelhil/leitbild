@@ -1,0 +1,636 @@
+{
+  "provenance": {
+    "sourceCommit": "020941fcea1ad8079a53f5d0da0c4a6541d72e71",
+    "source": "experiments/pwr-turbine-hall-browser-trial/src/model.ts",
+    "convention": "source millimetres, XY plan, Z elevation; candidates convert to metres Z-up"
+  },
+  "plant": {
+    "id": "plant:halden-1",
+    "name": "Halden 1",
+    "modelRef": "process-plant.pwr.reference",
+    "modelDigest": "16523e5a06e67b517862fd96650bfef2cdd5e4ad05a1dd70c8f27eb2dff9bdff",
+    "units": "mm",
+    "geometryStatus": "illustrative",
+    "nominalTurbineMW": 1100
+  },
+  "equipment": [
+    {
+      "id": "tg-hp",
+      "tag": "HP",
+      "name": "High-pressure turbine",
+      "level": "operating",
+      "kind": "hp",
+      "x": 10000,
+      "y": 16000,
+      "w": 7000,
+      "h": 4800,
+      "componentId": "turbine",
+      "binding": "part-of",
+      "zBase": 15000,
+      "zTop": 20100,
+      "note": "Illustrative double-flow HP casing. One common shaft with the LP bank and generator. This is a visual part of the lumped turbine-generator, not a separate simulation component."
+    },
+    {
+      "id": "tg-lp-1",
+      "tag": "LP 1",
+      "name": "Low-pressure turbine 1",
+      "level": "operating",
+      "kind": "lp",
+      "x": 20000,
+      "y": 12800,
+      "w": 9000,
+      "h": 11200,
+      "componentId": "turbine",
+      "binding": "part-of",
+      "zBase": 15000,
+      "zTop": 21700,
+      "note": "Illustrative double-flow casing and bolted split line, with exhaust neck descending to the condenser below. LP machines share a shaft; their steam admissions are parallel after reheating."
+    },
+    {
+      "id": "tg-lp-2",
+      "tag": "LP 2",
+      "name": "Low-pressure turbine 2",
+      "level": "operating",
+      "kind": "lp",
+      "x": 31000,
+      "y": 12800,
+      "w": 9000,
+      "h": 11200,
+      "componentId": "turbine",
+      "binding": "part-of",
+      "zBase": 15000,
+      "zTop": 21700,
+      "note": "Illustrative double-flow casing and bolted split line, with exhaust neck descending to the condenser below. LP machines share a shaft; their steam admissions are parallel after reheating."
+    },
+    {
+      "id": "tg-lp-3",
+      "tag": "LP 3",
+      "name": "Low-pressure turbine 3",
+      "level": "operating",
+      "kind": "lp",
+      "x": 42000,
+      "y": 12800,
+      "w": 9000,
+      "h": 11200,
+      "componentId": "turbine",
+      "binding": "part-of",
+      "zBase": 15000,
+      "zTop": 21700,
+      "note": "Illustrative double-flow casing and bolted split line, with exhaust neck descending to the condenser below. LP machines share a shaft; their steam admissions are parallel after reheating."
+    },
+    {
+      "id": "tg-generator",
+      "tag": "GEN",
+      "name": "Electrical generator",
+      "level": "operating",
+      "kind": "generator",
+      "x": 55000,
+      "y": 15400,
+      "w": 12500,
+      "h": 6000,
+      "componentId": "turbine",
+      "binding": "part-of",
+      "zBase": 15000,
+      "zTop": 21500,
+      "note": "Stator housing, terminal enclosure, bearing pedestals and cooling ribs drawn as parts of the current turbine-generator. Its existing electrical port is turbine.generatorOutput."
+    },
+    {
+      "id": "tg-exciter",
+      "tag": "EXC",
+      "name": "Exciter & coupling",
+      "level": "operating",
+      "kind": "exciter",
+      "x": 70000,
+      "y": 16800,
+      "w": 4000,
+      "h": 3200,
+      "componentId": "turbine",
+      "binding": "part-of",
+      "zBase": 15000,
+      "zTop": 18800,
+      "note": "Illustrative visual part of the train. The outage overlay reserves this area for generator rotor withdrawal after the exciter is removed."
+    },
+    {
+      "id": "msr-1",
+      "tag": "MSR 1",
+      "name": "Moisture separator / reheater 1",
+      "level": "operating",
+      "kind": "msr",
+      "x": 10200,
+      "y": 5400,
+      "w": 7400,
+      "h": 3000,
+      "binding": "illustrative",
+      "zBase": 15000,
+      "zTop": 19500,
+      "note": "Illustrative balance-of-plant detail. Not an independent asset in the current simulation. The two MSRs serve parallel LP admission branches; the depicted routing is a study assumption."
+    },
+    {
+      "id": "msr-2",
+      "tag": "MSR 2",
+      "name": "Moisture separator / reheater 2",
+      "level": "operating",
+      "kind": "msr",
+      "x": 10200,
+      "y": 27800,
+      "w": 7400,
+      "h": 3000,
+      "binding": "illustrative",
+      "zBase": 15000,
+      "zTop": 19500,
+      "note": "Illustrative balance-of-plant detail. Not an independent asset in the current simulation. The two MSRs serve parallel LP admission branches; the depicted routing is a study assumption."
+    },
+    {
+      "id": "stop-valve",
+      "tag": "TSV",
+      "name": "Turbine stop valve",
+      "level": "operating",
+      "kind": "stop-valve",
+      "x": 4800,
+      "y": 15400,
+      "w": 1800,
+      "h": 2100,
+      "componentId": "turbineStopValve",
+      "binding": "component",
+      "zBase": 15000,
+      "zTop": 18100,
+      "note": "Bound to turbineStopValve. The main-steam continuation enters from off sheet; exact pipe diameters, support and valve geometry are illustrative."
+    },
+    {
+      "id": "condenser-1",
+      "tag": "COND 1",
+      "name": "Condenser section 1",
+      "level": "lower",
+      "kind": "condenser",
+      "x": 20000,
+      "y": 10500,
+      "w": 9000,
+      "h": 15800,
+      "componentId": "condenser",
+      "binding": "part-of",
+      "zBase": 0,
+      "zTop": 14600,
+      "note": "Illustrative section of the single model condenser below an LP exhaust. Shell, tube bundles, water boxes and hotwell are depicted; three visual sections do not create three model assets."
+    },
+    {
+      "id": "condenser-2",
+      "tag": "COND 2",
+      "name": "Condenser section 2",
+      "level": "lower",
+      "kind": "condenser",
+      "x": 31000,
+      "y": 10500,
+      "w": 9000,
+      "h": 15800,
+      "componentId": "condenser",
+      "binding": "part-of",
+      "zBase": 0,
+      "zTop": 14600,
+      "note": "Illustrative section of the single model condenser below an LP exhaust. Shell, tube bundles, water boxes and hotwell are depicted; three visual sections do not create three model assets."
+    },
+    {
+      "id": "condenser-3",
+      "tag": "COND 3",
+      "name": "Condenser section 3",
+      "level": "lower",
+      "kind": "condenser",
+      "x": 42000,
+      "y": 10500,
+      "w": 9000,
+      "h": 15800,
+      "componentId": "condenser",
+      "binding": "part-of",
+      "zBase": 0,
+      "zTop": 14600,
+      "note": "Illustrative section of the single model condenser below an LP exhaust. Shell, tube bundles, water boxes and hotwell are depicted; three visual sections do not create three model assets."
+    },
+    {
+      "id": "cp-a",
+      "tag": "CP A",
+      "name": "Condensate pump A",
+      "level": "lower",
+      "kind": "condensate-pump",
+      "x": 55500,
+      "y": 19200,
+      "w": 5200,
+      "h": 2600,
+      "componentId": "condensatePumpA",
+      "binding": "component",
+      "zBase": 0,
+      "zTop": 3200,
+      "note": "Condenser condensate outlet → pump A → off-sheet feedwaterTank. The motor is part of this visual assembly. Assumed horizontal drawing symbol, not a recovered OEM pump configuration."
+    },
+    {
+      "id": "cp-b",
+      "tag": "CP B",
+      "name": "Condensate pump B",
+      "level": "lower",
+      "kind": "condensate-pump",
+      "x": 63500,
+      "y": 24200,
+      "w": 5200,
+      "h": 2600,
+      "componentId": "condensatePumpB",
+      "binding": "component",
+      "zBase": 0,
+      "zTop": 3200,
+      "note": "Parallel condensate path B from the condenser to feedwaterTank. Location and pump/motor shape are illustrative."
+    },
+    {
+      "id": "mfw-a",
+      "tag": "MFW A",
+      "name": "Main feedwater pump A",
+      "level": "lower",
+      "kind": "feed-pump",
+      "x": 17000,
+      "y": 40400,
+      "w": 12000,
+      "h": 2700,
+      "componentId": "mainFeedwaterPumpA",
+      "binding": "component",
+      "zBase": 0,
+      "zTop": 3400,
+      "note": "Multistage pump, coupling guard and finned motor on a common plinth. Suction comes from off-sheet feedwaterTank; discharge goes to feedwaterHeader. These are the current graph endpoints, not a shortcut from the condensate pumps."
+    },
+    {
+      "id": "mfw-b",
+      "tag": "MFW B",
+      "name": "Main feedwater pump B",
+      "level": "lower",
+      "kind": "feed-pump",
+      "x": 17000,
+      "y": 48100,
+      "w": 12000,
+      "h": 2700,
+      "componentId": "mainFeedwaterPumpB",
+      "binding": "component",
+      "zBase": 0,
+      "zTop": 3400,
+      "note": "Second current-model feedwater pump. Side working aisles and a north-side equipment removal area are drawn as authored spatial allowances; no OEM maintenance clearance is claimed."
+    }
+  ],
+  "walls": [
+    {
+      "id": "hall-north",
+      "x": 0,
+      "y": 0,
+      "w": 88800,
+      "h": 400,
+      "axis": "h",
+      "levels": [
+        "operating",
+        "lower"
+      ],
+      "openings": [
+        {
+          "id": "D-N1",
+          "start": 74000,
+          "end": 75200,
+          "kind": "personnel",
+          "levels": [
+            "lower"
+          ]
+        },
+        {
+          "id": "W-1",
+          "start": 13400,
+          "end": 20400,
+          "kind": "glazing",
+          "levels": [
+            "operating"
+          ]
+        },
+        {
+          "id": "W-2",
+          "start": 35400,
+          "end": 42400,
+          "kind": "glazing",
+          "levels": [
+            "operating"
+          ]
+        },
+        {
+          "id": "W-3",
+          "start": 57400,
+          "end": 64400,
+          "kind": "glazing",
+          "levels": [
+            "operating"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "hall-west",
+      "x": 0,
+      "y": 400,
+      "w": 400,
+      "h": 36000,
+      "axis": "v",
+      "levels": [
+        "operating",
+        "lower"
+      ],
+      "openings": [
+        {
+          "id": "D-W1",
+          "start": 24000,
+          "end": 26400,
+          "kind": "double",
+          "levels": [
+            "lower"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "hall-east",
+      "x": 88400,
+      "y": 400,
+      "w": 400,
+      "h": 36000,
+      "axis": "v",
+      "levels": [
+        "operating",
+        "lower"
+      ],
+      "openings": [
+        {
+          "id": "D-E1",
+          "start": 26000,
+          "end": 32000,
+          "kind": "shutter",
+          "levels": [
+            "lower"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "hall-south",
+      "x": 0,
+      "y": 36400,
+      "w": 88800,
+      "h": 400,
+      "axis": "h",
+      "levels": [
+        "operating",
+        "lower"
+      ],
+      "openings": [
+        {
+          "id": "D-P1",
+          "start": 12400,
+          "end": 14800,
+          "kind": "double",
+          "levels": [
+            "lower"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "annex-north",
+      "x": 8400,
+      "y": 36800,
+      "w": 32800,
+      "h": 400,
+      "axis": "h",
+      "levels": [
+        "lower"
+      ],
+      "openings": [
+        {
+          "id": "D-P1b",
+          "start": 12400,
+          "end": 14800,
+          "kind": "double",
+          "levels": [
+            "lower"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "annex-west",
+      "x": 8400,
+      "y": 37200,
+      "w": 400,
+      "h": 16000,
+      "axis": "v",
+      "levels": [
+        "lower"
+      ],
+      "openings": [
+        {
+          "id": "D-P2",
+          "start": 41800,
+          "end": 47800,
+          "kind": "shutter",
+          "levels": [
+            "lower"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "annex-east",
+      "x": 40800,
+      "y": 37200,
+      "w": 400,
+      "h": 16000,
+      "axis": "v",
+      "levels": [
+        "lower"
+      ],
+      "openings": []
+    },
+    {
+      "id": "annex-south",
+      "x": 8400,
+      "y": 53200,
+      "w": 32800,
+      "h": 400,
+      "axis": "h",
+      "levels": [
+        "lower"
+      ],
+      "openings": [
+        {
+          "id": "D-P3",
+          "start": 35600,
+          "end": 38000,
+          "kind": "double",
+          "levels": [
+            "lower"
+          ]
+        }
+      ]
+    }
+  ],
+  "doors": [
+    {
+      "id": "D-W1a",
+      "level": "lower",
+      "hinge": [
+        400,
+        24000
+      ],
+      "closed": [
+        400,
+        25200
+      ],
+      "open": [
+        1600,
+        24000
+      ]
+    },
+    {
+      "id": "D-W1b",
+      "level": "lower",
+      "hinge": [
+        400,
+        26400
+      ],
+      "closed": [
+        400,
+        25200
+      ],
+      "open": [
+        1600,
+        26400
+      ]
+    },
+    {
+      "id": "D-N1",
+      "level": "lower",
+      "hinge": [
+        74000,
+        400
+      ],
+      "closed": [
+        75200,
+        400
+      ],
+      "open": [
+        74000,
+        1600
+      ]
+    },
+    {
+      "id": "D-P1a",
+      "level": "lower",
+      "hinge": [
+        12400,
+        37200
+      ],
+      "closed": [
+        13600,
+        37200
+      ],
+      "open": [
+        12400,
+        38400
+      ]
+    },
+    {
+      "id": "D-P1b",
+      "level": "lower",
+      "hinge": [
+        14800,
+        37200
+      ],
+      "closed": [
+        13600,
+        37200
+      ],
+      "open": [
+        14800,
+        38400
+      ]
+    },
+    {
+      "id": "D-P3a",
+      "level": "lower",
+      "hinge": [
+        35600,
+        53200
+      ],
+      "closed": [
+        36800,
+        53200
+      ],
+      "open": [
+        35600,
+        52000
+      ]
+    },
+    {
+      "id": "D-P3b",
+      "level": "lower",
+      "hinge": [
+        38000,
+        53200
+      ],
+      "closed": [
+        36800,
+        53200
+      ],
+      "open": [
+        38000,
+        52000
+      ]
+    }
+  ],
+  "levels": {
+    "operating": {
+      "label": "Turbine operating deck",
+      "elevation": 15000,
+      "sheet": "P—101",
+      "note": "HP / LP train, generator and maintenance deck"
+    },
+    "lower": {
+      "label": "Condenser & pump deck",
+      "elevation": 0,
+      "sheet": "P—100",
+      "note": "Condenser below the LP bank; adjacent feedwater-pump room"
+    }
+  },
+  "hall": {
+    "x": 400,
+    "y": 400,
+    "w": 88000,
+    "h": 36000
+  },
+  "pumpRoom": {
+    "x": 8800,
+    "y": 37200,
+    "w": 32000,
+    "h": 16000
+  },
+  "stairs": {
+    "x": 3600,
+    "y": 27400,
+    "w": 5200,
+    "h": 7400
+  },
+  "hatch": {
+    "x": 75800,
+    "y": 26000,
+    "w": 8000,
+    "h": 4800
+  },
+  "crane": {
+    "z": 28000,
+    "runways": [
+      2500,
+      34200
+    ],
+    "bridge": {
+      "x": 80000,
+      "y": 2500,
+      "w": 1400,
+      "h": 31700
+    }
+  }
+}

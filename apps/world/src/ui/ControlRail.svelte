@@ -25,7 +25,7 @@
   const processPlantCategoryId = 'process-plants'
   const proceduresFieldKey = 'procedures'
   const procedureFieldOption = { key: proceduresFieldKey, label: 'Procedures' } as const
-  const emptyProcedureRunSummaries: ProcedureRunSummaryGroup = { active: [], completed: [] }
+  const emptyProcedureRunSummaries: ProcedureRunSummaryGroup = { active: [], inactive: [] }
 
   interface Props {
     readonly status: string
@@ -37,8 +37,6 @@
     readonly railConfig: StartingRailView
     readonly placementMode: PackCreateObjectType | null
     readonly selectedControllerId: string | null
-    /** The object whose card is open (`PlantCard.svelte`). */
-    readonly cardObjectId?: string | null
     readonly categoryMapVisibility?: Readonly<Record<string, boolean>>
     readonly deferObjectRows?: boolean
     readonly presentationFor: (object: OperationalObject) => PackObjectPresentation
@@ -47,7 +45,7 @@
     readonly markSeen: (object: OperationalObject) => void
     readonly selectObject: (object: OperationalObject) => void
     /** Absent where this screen may not delete: a role Run's operator-class role sets. */
-    readonly deleteObject?: (object: OperationalObject) => Promise<void>
+    readonly deleteObject?: ((object: OperationalObject) => Promise<void>) | undefined
     readonly openProcessDisplay?: (object: OperationalObject) => void
     readonly openProcedureSystem?: (object: OperationalObject) => void
     readonly openProcedureSystemAt?: (object: OperationalObject, summary?: ProcedureRunSummary) => void
@@ -77,7 +75,6 @@
     railConfig,
     placementMode,
     selectedControllerId,
-    cardObjectId = null,
     categoryMapVisibility = {},
     deferObjectRows = false,
     presentationFor,
@@ -192,7 +189,6 @@
       fieldOptions={entry.fieldOptions}
       presentedRows={entry.presentedRows}
       {selectedControllerId}
-      {cardObjectId}
       categoryMapVisible={categoryMapVisibility[entry.row.category.id] ?? true}
       isFieldVisible={fieldVisible}
       {toggleField}

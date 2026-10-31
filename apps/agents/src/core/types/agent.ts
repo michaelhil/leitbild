@@ -290,6 +290,7 @@ export type AgentResponseErrorCode =
   | 'empty_response'     // LLM returned no content and no tool calls
   | 'tools_unavailable'  // model emitted tool calls but no executor wired
   | 'request_dropped'    // a requested turn could no longer run (RequestedTurn)
+  | 'response_validation_failed' // answer still conflicts with observed evidence after repair
   | 'unknown'
 
 export type AgentResponse =

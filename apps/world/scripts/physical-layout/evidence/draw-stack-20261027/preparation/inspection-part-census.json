@@ -1,0 +1,49 @@
+{
+  "note": "Diagnostic count only. The exact baseline predicate/partition path still processes all pairs; no skip or geometry change. These counts do not establish saved time or visual equivalence of a proposed exclusion.",
+  "commit": "ef51bf3778709e8a3fd4a19c831fafc6b901af52",
+  "ownershipSourceSha256": "aff4e511e5be7ab94c28dda450cdc0a2ded24d0887321e6dc0da91fab843313b",
+  "rows": [
+    {
+      "sceneId": "layout:halden-1",
+      "design": "95c2f1c11a22e85230f11bd37d1c0c331b8a68e1f23111f1e29baed81beacae9",
+      "meshes": 910,
+      "triangles": 243649,
+      "counters": {
+        "earlier": 43090,
+        "spatial": 14426,
+        "coplanar": 9249,
+        "overlappingApplications": 5664
+      },
+      "diagnostics": {
+        "broadPhaseCandidates": 3946353,
+        "coplanarCandidates": 183625,
+        "triangles": 243625,
+        "partitionedTriangles": 23537,
+        "retainedCandidates": 3003,
+        "coincidentPairs": 1611
+      },
+      "outputFragments": 3913
+    },
+    {
+      "sceneId": "layout:halden-campus",
+      "design": "91f901b8c822e9738554b8e9d9bbfdcf679615efa3dfc05f5b51d7f054a92933",
+      "meshes": 535,
+      "triangles": 131845,
+      "counters": {
+        "earlier": 0,
+        "spatial": 0,
+        "coplanar": 0,
+        "overlappingApplications": 0
+      },
+      "diagnostics": {
+        "broadPhaseCandidates": 3629488,
+        "coplanarCandidates": 110891,
+        "triangles": 131845,
+        "partitionedTriangles": 8096,
+        "retainedCandidates": 1302,
+        "coincidentPairs": 973
+      },
+      "outputFragments": 1837
+    }
+  ]
+}

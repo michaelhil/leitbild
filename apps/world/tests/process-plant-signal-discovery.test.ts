@@ -16,6 +16,13 @@ test('compact search preserves selection and meaning, with exact full metadata a
     return result
   }
   const search = (input: Record<string, unknown> = {}) => query('world.process-plant.signals.search', input)
+  expect(processPlantCapabilities.find(capability => capability.id === 'world.process-plant.signals.search')!.description).toContain('literal AND terms')
+  // "total" is not advertised by the header-flow signal: a narrower literal
+  // query can miss evidence that broader names and structural filters offer.
+  expect(search({ text: 'auxiliary feedwater total flow' }).total).toBe(0)
+  const headerFlow = search({ text: 'auxiliary feedwater', equipmentId: 'auxFeedwaterHeader', quantity: 'flowRate' })
+  expect(headerFlow.signals.map((row: any) => row.signal.tagId)).toContain('AFW-FLOW')
+  expect(query('world.process-plant.signals.read', { signals: [{ tagId: 'AFW-FLOW' }] }).signals[0].variable.value).toBeNumber()
   const summary = search()
   const full = search({ detail: 'full' })
   expect(summary).toMatchObject({ total: full.total, offset: full.offset, returned: full.returned, hasMore: full.hasMore })

@@ -1,0 +1,176 @@
+Browser tab: 8, Title: "Halden: normal operation · Leitbild.ai", URL: "https://leitbild.app/workspaces/36917815-9034-4dfc-98c2-f884237a9b7b?world=run-df150834-7879-49c2-9af6-024ab2f17a92".
+0 AXWebArea Halden: normal operation · Leitbild.ai, URL: leitbild.app/workspaces/36917815-9034-4dfc-98c2-f884237a9b7b?world=run-df150834-7879-49c2-9af6-024ab2f17a92
+	1 container app
+		2 container
+			3 link Description: Leitbild.ai home, Value: leitbild.app/workspaces
+			4 link Description: Halden PWR layout sandbox, Value: leitbild.app/workspaces/36917815-9034-4dfc-98c2-f884237a9b7b
+			7 pop up button (collapsed) Description: People in this simulation: just you, Secondary Actions: Expand
+			8 button (collapsed) Description: View, Secondary Actions: Expand
+			9 text 2 unacknowledged alarms
+			10 container Simulation controls
+				11 text Halden: normal operation
+				12 button Delete this Run
+				13 button Copy this Run
+				14 button Description: Play simulation, Help: Paused — click to play
+				15 checkbox Description: Realtime pace; switch to maximum, Help: Realtime pace — click for maximum, Value: 0
+				16 text 04:00:00 UTC
+				17 button Run at maximum pace for a fixed duration
+				18 button AI restrictions for this Run
+			19 checkbox Description: Open Leitbild Assistant, Help: Open Run Assistant, Value: 0
+			6 link Description: Open Leitbild knowledge wiki, Value: leitbild.app/wiki
+		20 container World simulations
+			21 container World simulations
+				22 AXWebArea Leitbild.ai, URL: leitbild.app/workspaces/36917815-9034-4dfc-98c2-f884237a9b7b/world/runs/run-df150834-7879-49c2-9af6-024ab2f17a92
+					23 container app
+						24 container
+							25 container
+								26 heading PROCESS PLANTS (4), Value: 2
+									27 text PROCESS PLANTS  (4)
+								28 checkbox Description: Hide process plants on map, Value: 1
+								29 button Choose process plants detail fields
+							30 button Collapse process plants
+							31 button Normal Halden Unit 1 Open process display for Halden Unit 1 Open procedures for Halden Unit 1 Delete Halden Unit 1
+								32 container Normal
+								33 text Halden Unit 1
+								34 button Description: Open process display for Halden Unit 1, Help: Open process display
+								35 button Description: Open procedures for Halden Unit 1, Help: Open procedures
+								36 button Delete Halden Unit 1
+							37 button Normal Halden Unit 2 Open process display for Halden Unit 2 Open procedures for Halden Unit 2 Delete Halden Unit 2
+								38 container Normal
+								39 text Halden Unit 2
+								40 button Description: Open process display for Halden Unit 2, Help: Open process display
+								41 button Description: Open procedures for Halden Unit 2, Help: Open procedures
+								42 button Delete Halden Unit 2
+							43 button Normal Halden Unit 3 Open process display for Halden Unit 3 Open procedures for Halden Unit 3 Delete Halden Unit 3
+								44 container Normal
+								45 text Halden Unit 3
+								46 button Description: Open process display for Halden Unit 3, Help: Open process display
+								47 button Description: Open procedures for Halden Unit 3, Help: Open procedures
+								48 button Delete Halden Unit 3
+							49 button Normal Halden Unit 4 Open process display for Halden Unit 4 Open procedures for Halden Unit 4 Delete Halden Unit 4
+								50 container Normal
+								51 text Halden Unit 4
+								52 button Description: Open process display for Halden Unit 4, Help: Open process display
+								53 button Description: Open procedures for Halden Unit 4, Help: Open procedures
+								54 button Delete Halden Unit 4
+							55 container
+								56 heading ELECTRIC GRIDS (1), Value: 2
+									57 text ELECTRIC GRIDS  (1)
+								58 checkbox Description: Hide electric grids on map, Value: 1
+								59 button Choose electric grids detail fields
+							60 button Collapse electric grids
+							61 button 2 active alarms Norway grid · Halden connection Delete Norway grid · Halden connection
+								62 container 2 active alarms
+								63 text Norway grid · Halden connection
+								64 button Delete Norway grid · Halden connection
+							65 container
+								66 image
+								67 heading WEATHER (2), Value: 2
+									68 text WEATHER  (2)
+								69 checkbox Description: Hide weather on map, Value: 1
+								70 button Choose weather detail fields
+								71 button Add weather
+							72 button Collapse weather
+							73 button normal Halden complex ground probe Delete Halden complex ground probe
+								74 container normal
+								75 text Halden complex ground probe
+								76 button Delete Halden complex ground probe
+							77 button notice Rain shower Delete Rain shower
+								78 container notice
+								79 text Rain shower
+								80 button Delete Rain shower
+							81 container Map layers
+								82 text MAP LAYERS
+								83 content list
+									84 container
+										85 checkbox (settable, integer) Description: Power lines, Value: 1
+										86 text Power lines
+									87 container
+										88 checkbox (settable, integer) Description: Power cables, Value: 1
+										89 text Power cables
+									90 container
+										91 checkbox (settable, integer) Description: Substations and transformers, Value: 1
+										92 text Substations and transformers
+									93 container
+										94 checkbox (settable, integer) Description: Power plants and generators, Value: 1
+										95 text Power plants and generators
+									96 container
+										97 checkbox (settable, integer) Description: Live grid state, Value: 1
+										98 text Live grid state
+								99 container Grid voltage
+									100 text GRID VOLTAGE
+									101 content list
+										102 text 420 kV and HVDC
+										103 text 300 kV
+										104 text 220 kV
+										105 text 132 kV
+										106 text 110 kV
+										107 text 66 kV and below
+										108 text Voltage not tagged
+								109 container Live grid state
+									110 text LIVE GRID STATE
+									111 content list
+										112 text Loaded below 70 %
+										113 text 70 % to the loading alarm
+										114 text Loading alarm
+										115 text Overloaded (overload alarm)
+										116 text Tripped by protection
+										117 text Open
+										118 text HVDC link in service (grey: blocked, red: tripped)
+										119 text De-energised
+										120 text Generator (fill: dispatch)
+										121 text Load (fills as demand is shed)
+							122 heading TOOLS, Value: 2
+								123 text TOOLS
+							124 button Grid operations
+							125 button Description: Show Leitbild status, Help: Connected
+								126 container Connected
+							127 text Leitbild.ai v0.6.0
+							128 button Open settings
+						129 button Description: Resize control rail, Help: Drag to resize control rail
+						130 container
+							131 container Map
+							132 container
+								133 container
+									134 image deckgl-overlay
+								135 button Zoom in
+								136 button Zoom out
+								137 button Drag to rotate map, click to reset north
+								138 container
+									139 button (expanded) Description: Toggle attribution, Secondary Actions: Collapse
+									140 text © OpenStreetMap contributors · ODbL 1.0 | © OpenStreetMap contributors © OpenMapTiles |
+									141 link Description: MapLibre, Value: maplibre.org/
+									142 text  | Made with Natural Earth · generalized overview, not street detail | Grid model: © OpenStreetMap contributors (ODbL) · NVE (NLOD 2.0) · Elhub, Kartverket, SSB, Svenska kraftnät, ENTSO-E via Energy-Charts (CC BY 4.0)
+							656 container Halden PWR site: physical layout controls
+								657 button (collapsed) Description: Choose physical scope: Halden PWR site, Help: Halden PWR site, Secondary Actions: Expand
+									658 text Halden PWR site
+									659 text Halden PWR site ▾
+								660 container Layout representation
+									661 checkbox Plan, Value: 0
+									662 checkbox 3D, Value: 1
+								686 button (collapsed) Floors · 2 models ▾, Secondary Actions: Expand
+									687 text Floors
+									688 text · 2 models ▾
+								670 button Find
+								671 button Fit
+								672 button (collapsed) View, Secondary Actions: Expand
+								673 button Close layout controls
+								674 text 5 layouts ready · 0 loading · 0 unavailable · owner-qualified alarms remain in Run
+								675 container 3D navigation
+									676 checkbox Pan, Value: 0
+									677 checkbox Orbit, Value: 1
+									678 button Tilt down
+										679 text Tilt
+										680 text −
+									681 button Tilt up
+										682 text Tilt
+										683 text +
+									684 button Home
+									685 button (collapsed) Description: Tilt and turn, Help: More camera controls, Secondary Actions: Expand
+							689 button Description: Inspect Circulating Water Pump: RUN, Help: Circulating Water Pump: RUN
+							690 button Description: Inspect Circulating Water Pump: RUN, Help: Circulating Water Pump: RUN
+							691 button Description: Inspect Circulating Water Pump: RUN, Help: Circulating Water Pump: RUN
+							143 container Simulated time · 2026-07-12 04:00:00 UTC · paused
+								144 text 04:00:00 UTC PAUSED
+
+The focused UI element is 684 button Home
