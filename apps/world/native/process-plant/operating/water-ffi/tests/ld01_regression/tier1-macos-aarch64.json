@@ -1,26 +1,26 @@
 {
  "kind": "ld01-tier1-expectation",
  "platform": "macos-aarch64",
- "reason": "PERF w 9bcffd259 + archive operating-water-perf-alloc-1 (clang 21, alloc-free adapter; the toolchain step goes in once, lead); also absorbs PERF c2's +1.0 % C2@0 instructions (digests were bitwise)",
- "recorded_from": "/Users/hilde/Documents/ChatGPT/Leitbild-research/reference-designs/property-candidates/operating-joined-spine-s2/resume-2026-10-14/tiers/t1-eb5888c49-20261031T231745Z",
- "app": "eb5888c49",
+ "reason": "X4.2 CVCS join (NUC 0e57512d8 + PHYS FT channels, bank/STOP channels, restarted hook): 16 CVCS coordinates, new IC families; trajectory moves",
+ "recorded_from": "/Users/hilde/Documents/ChatGPT/Leitbild-research/reference-designs/property-candidates/operating-joined-spine-s2/resume-2026-10-14/tiers/t1-34f4af216-20261031T232621Z",
+ "app": "34f4af216",
  "environment": {
-  "packet_sha256": "727557c24e39f5be7c565f497b316cef0d3efd9f77be6859f81b7291de07b0a6",
-  "state_sha256": "35756a523f584c91528a959dbe27f0c9cb2c5ffb903e8bed6dd0a5a84545821b",
+  "packet_sha256": "82a571a94fd74092b2d68b12214476cd0c56f998d505abf7876890f222cdb220",
+  "state_sha256": "2704291201556d0c894a53a7efb9075880833c2281769f9e9ac17e9227cb64d0",
   "elec_packet_sha256": "f91fc8e5929c78ceddbb7355dc12a0785292cae59725794f2d52306d1326e6f7",
-  "wiki_commit": "9e56c7c",
+  "wiki_commit": "eb324ae",
   "water_lib_dir": "/Users/hilde/Documents/ChatGPT/Leitbild-research/reference-designs/property-candidates/operating-water-perf-alloc-1",
   "sundials_prefix": "/Users/hilde/Documents/ChatGPT/Leitbild-research/reference-designs/property-candidates/idas-klu-7.5.0/prefix"
  },
  "instruction_tolerance": 0.01,
  "spans": {
   "C2@0": {
-   "instructions": 6679231024,
+   "instructions": 6749390272,
    "digest": "1edcebb6470c734181cdb1ccd0a2e7b43c1c21c0a0465dd23d7f862f5c8cd62e"
   },
   "C2@2.5": {
-   "instructions": 17158581171,
-   "digest": "0d5cc730644e98aa08c71dcc88436aece88c32622f59ea879987bc262e8a323b"
+   "instructions": 17504694262,
+   "digest": "53370d99e2fbb9fdf2d366e421c91acdee39f8e9de7e21346a71d725c5224a36"
   }
  }
 }
