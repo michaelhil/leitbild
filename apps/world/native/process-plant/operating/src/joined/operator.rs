@@ -324,8 +324,16 @@ impl<P: Properties + WaterProperties> Joined<P> {
         rods: RodPort<P>,
     ) -> Result<Self, Failure> {
         let cells = network.cell_layout.len();
-        let nuclear = Nuclear::new(packet, cells)?;
-        let solids = Solids::new(packet, cells)?;
+        // E-NUC phase B: the solids' replica classes follow the nuclear
+        // groups and keep every rod seat's deposit store single; the nuclear
+        // block's ports are the solids' half classes.
+        let mut nuclear = Nuclear::new(packet, cells)?;
+        let singles = match &rods {
+            RodPort::Owner(b) => b.deposit_stores(),
+            RodPort::Prepared(_) => Vec::new(),
+        };
+        let solids = Solids::new(packet, cells, nuclear.group_of(), &singles)?;
+        nuclear.set_ports(solids.half_members())?;
         let generators = solids.secondaries();
         let clusters = nuclear.feedback().rod_count();
         let secondary_len = match &secondary {
@@ -459,7 +467,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
             rod_rows: vec![s(0.); rods_len],
             pzr_rows: vec![s(0.); pzr_len],
             temperatures: solids::Temperatures::default(),
-            fuel_t: vec![s(0.); nuclear.carriers()],
+            fuel_t: vec![s(0.); nuclear.ports()],
             water: vec![
                 RegionWater {
                     density_kg_m3: s(0.),
@@ -698,7 +706,8 @@ impl<P: Properties + WaterProperties> Joined<P> {
         })
     }
     /// S5 snapshot hook: restore [`Joined::discrete_state`] exactly into a
-    /// freshly composed operator of the same packet; any mismatch refuses.
+    /// composed operator of the same packet (freshly, or from another saved
+    /// state of it); any mismatch refuses.
     pub fn restore_discrete_state(&mut self, state: &serde_json::Value) -> Result<(), Failure> {
         use crate::{
             network::RotorState,
@@ -734,17 +743,21 @@ impl<P: Properties + WaterProperties> Joined<P> {
         let modes: Vec<CellMode> = serde_json::from_value(network["modes"].clone())
             .map_err(|e| fatal(format!("snapshot: cell modes: {e}")))?;
         self.network.set_cell_modes(&modes)?;
+        // HOOK (WORLD `ld01-unit` RESTORE): the locks replace those of an
+        // operator composed from another saved state of the same packet
+        // (the unit's LOAD state, L1 declared there); a snapshot without L1
+        // cannot undeclare it.
         match (&network["unilateral"], self.network.unilateral().is_some()) {
             (serde_json::Value::Null, false) => {}
-            (v, false) if !v.is_null() => {
+            (serde_json::Value::Null, true) => {
+                return Err(fatal(
+                    "snapshot: no L1 locks for an operator with L1 declared",
+                ));
+            }
+            (v, _) => {
                 let locks = serde_json::from_value(v.clone())
                     .map_err(|e| fatal(format!("snapshot: L1 locks: {e}")))?;
                 self.network.restore_unilateral(locks)?;
-            }
-            _ => {
-                return Err(fatal(
-                    "snapshot: restore into an operator with L1 not yet declared",
-                ));
             }
         }
         self.phase_modes = o["phase_modes"]
@@ -1230,6 +1243,36 @@ impl<P: Properties + WaterProperties> Joined<P> {
             }
         }
         Ok(())
+    }
+    /// E-EVT (plan r4): the located `directions` (per root, owners' order)
+    /// widened to the roots of the same event, at the state `y` handed to
+    /// the restart (solver scaling) and the handle's error `weights` there
+    /// (solver scaling). Only the rods declare coincident roots (the bank
+    /// seat, [`super::block::Rods::coincident`]). Returns how many roots
+    /// were added.
+    pub fn coincident(
+        &self,
+        y: &[f64],
+        weights: &[f64],
+        directions: &mut [i32],
+    ) -> Result<usize, Failure> {
+        if directions.len() != self.root_count() || weights.len() != y.len() {
+            return Err(fatal("coincident root layout"));
+        }
+        let o = self.blocks.offsets;
+        let ns = self.secondary().map_or(0, |b| b.root_count());
+        let b = &self.blocks;
+        let RodPort::Owner(owner) = &b.rods else {
+            return Ok(0);
+        };
+        let nr = owner.root_count();
+        let scales = &b.scales[3].coordinates;
+        let x: Vec<f64> = (o.rods..o.pzr).zip(scales).map(|(i, s)| y[i] * s).collect();
+        let w: Vec<f64> = (o.rods..o.pzr)
+            .zip(scales)
+            .map(|(i, s)| weights[i] / s)
+            .collect();
+        owner.coincident(&x, &w, &mut directions[ns..ns + nr])
     }
     /// The owners' transactions at located roots (`directions` per root,
     /// owners' order): each owner may change its own coordinates of `y`
@@ -1739,7 +1782,11 @@ impl<P: Properties + WaterProperties> Joined<P> {
                 .blocks
                 .solids
                 .passive_store(store)
-                .ok_or_else(|| fatal(format!("deposit into unknown passive store {store}")))?;
+                .ok_or_else(|| {
+                    fatal(format!(
+                        "deposit into passive store {store}: unknown or of a replica class (E-NUC)"
+                    ))
+                })?;
             let scale = self.blocks.scales[1].coordinates[i];
             y[o.solids + i] += energy / scale;
         }
@@ -1947,15 +1994,19 @@ impl<P: Properties + WaterProperties> Joined<P> {
         }
         let nuc = &self.blocks.nuclear;
         let sol = &self.blocks.solids;
-        let (regions, carriers) = (nuc.regions(), nuc.carriers());
+        // E-NUC: a "carrier" here is a nuclear port, one per solids half.
+        let (regions, carriers) = (nuc.regions(), nuc.ports());
         let mut regions_of = vec![BTreeSet::new(); carriers];
         let mut carriers_of = vec![BTreeSet::new(); regions];
-        for support in nuc.supports() {
+        for support in nuc.port_supports() {
             regions_of[support.material].insert(support.region);
             carriers_of[support.region].insert(support.material);
         }
         let n_of = |i: usize| o.nuclear + i;
-        let carrier_vars = |a: usize, out: &mut BTreeSet<usize>| {
+        // E-NUC: a port's nuclear state is its replica group's.
+        let group = nuc.port_group();
+        let carrier_vars = |carrier: usize, out: &mut BTreeSet<usize>| {
+            let a = group[carrier];
             for g in 0..6 {
                 out.insert(o.nuclear + nuc.precursor(a, g));
                 out.insert(o.nuclear + nuc.material(a, g));
@@ -1979,7 +2030,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
         // which read the support populations, fissile, fertile, Xe and Sm.
         let events = |a: usize, out: &mut BTreeSet<usize>| {
             for k in [0, 1, 3, 5] {
-                out.insert(o.nuclear + nuc.material(a, k));
+                out.insert(o.nuclear + nuc.material(group[a], k));
             }
             out.extend(regions_of[a].iter().map(|i| n_of(*i)));
         };
@@ -1987,7 +2038,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
         let fuel_heat = |a: usize, out: &mut BTreeSet<usize>| {
             events(a, out);
             for g in 0..nuclear::HISTORIES {
-                out.insert(o.nuclear + nuc.history(a, g));
+                out.insert(o.nuclear + nuc.history(group[a], g));
             }
         };
         let half_vars = |a: usize, out: &mut BTreeSet<usize>| {
@@ -2022,10 +2073,10 @@ impl<P: Properties + WaterProperties> Joined<P> {
             let mut cols: BTreeSet<usize> = (0..regions).map(n_of).collect();
             for a in carriers_i {
                 for g in 0..6 {
-                    cols.insert(o.nuclear + nuc.precursor(*a, g));
+                    cols.insert(o.nuclear + nuc.precursor(group[*a], g));
                 }
                 for k in [0, 1, 3, 5] {
-                    cols.insert(o.nuclear + nuc.material(*a, k));
+                    cols.insert(o.nuclear + nuc.material(group[*a], k));
                 }
                 cols.insert(o.solids + sol.energy(*a, 0));
                 cols.insert(o.solids + sol.energy(*a, 1));
@@ -2296,6 +2347,7 @@ impl<P: Properties + WaterProperties> Blocks<P> {
             *w = region_water(fluid, i, source_water[i])?;
         }
         let xn = view(y, yp, seed, cj, o.nuclear..o.solids, &scales[0].coordinates)?;
+        let cost_scope = crate::cost::scope("nuclear");
         nuclear.rows(
             t,
             xn,
@@ -2313,6 +2365,8 @@ impl<P: Properties + WaterProperties> Blocks<P> {
                 receipts.heat(*cell, q)?;
             }
         }
+        drop(cost_scope);
+        let cost_scope = crate::cost::scope("solids");
         solids.wall_water(properties, fluid)?;
         solids.rows(
             properties,
@@ -2325,7 +2379,9 @@ impl<P: Properties + WaterProperties> Blocks<P> {
             solid_rows,
             &mut heats.solids,
         )?;
+        drop(cost_scope);
         if let RodPort::Owner(b) = rods {
+            let _cost = crate::cost::scope("rods");
             if let Some(done) = self.prepare.as_mut() {
                 done.push(b.prepare(properties, fluid)?);
             }
@@ -2333,6 +2389,7 @@ impl<P: Properties + WaterProperties> Blocks<P> {
             b.rows(properties, t, x, fluid, receipts, rod_rows)?;
         }
         if let SecondaryPort::Owner(b) = secondary {
+            let _cost = crate::cost::scope("secondary");
             let x = view(y, yp, seed, cj, o.secondary..o.rods, &scales[2].coordinates)?;
             b.rows(properties, t, x, &heats.solids.secondary_w, secondary_rows)?;
         }

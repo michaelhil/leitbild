@@ -31,7 +31,13 @@
 //! not the causes): [`SUPPLY_LOSS`], [`OFF_OR_DUMP`],
 //! [`EVIDENCE_UNAVAILABLE`]. The controller's ACT.B supply is not routed
 //! in S3: it stays powered unless a caller removes it.
-use crate::ic::{Frame, acquisition::Delivery};
+use crate::ic::{
+    Frame,
+    acquisition::{
+        Delivery, restored_bool, restored_frame, restored_frame_option, restored_real,
+        snapshot_fields, snapshot_real,
+    },
+};
 use serde_json::{Value, json};
 
 pub const SUPPLY_LOSS: &str = "LD01.TG.GEN.FIELD.SUPPLY_LOSS";
@@ -191,6 +197,69 @@ impl FieldProtection {
             self.connection.acquire(k, connection);
         }
         Ok(initiated.or(self.decide(k + 1)?))
+    }
+    /// S5 snapshot hook (WORLD `ld01-unit`; ELEC reconciles): both report
+    /// channels (delivery and transport hold), the supply, the last decided
+    /// frame and the retained initiation, exact. The timing is the packet's,
+    /// recomposed on restore; the log is a receipt.
+    pub fn snapshot(&self) -> Value {
+        let field = |r: &FieldReport| json!({"converter_supplied": r.converter_supplied, "off_or_dump": r.off_or_dump});
+        let connection =
+            |r: &ConnectionReport| json!({"closed": r.closed, "pending_close": r.pending_close});
+        json!({"field": {"delivery": self.field.delivery.snapshot(field), "hold": self.field.hold},
+            "connection": {"delivery": self.connection.delivery.snapshot(connection), "hold": self.connection.hold},
+            "powered": self.powered, "decided": self.decided,
+            "initiated": self.initiated.as_ref().map(|i| json!([i.cause, i.frame, snapshot_real(i.at_s)]))})
+    }
+    /// Restore [`FieldProtection::snapshot`] exactly; anything else refuses.
+    pub fn restore(&mut self, v: &Value) -> Result<(), String> {
+        let o = snapshot_fields(
+            v,
+            "field controller",
+            &["field", "connection", "powered", "decided", "initiated"],
+        )?;
+        let field = |r: &Value| -> Result<FieldReport, String> {
+            let f = snapshot_fields(r, "field report", &["converter_supplied", "off_or_dump"])?;
+            Ok(FieldReport {
+                converter_supplied: restored_bool(&f["converter_supplied"], "converter supply")?,
+                off_or_dump: restored_bool(&f["off_or_dump"], "field OFF/dump")?,
+            })
+        };
+        let connection = |r: &Value| -> Result<ConnectionReport, String> {
+            let f = snapshot_fields(r, "connection report", &["closed", "pending_close"])?;
+            Ok(ConnectionReport {
+                closed: restored_bool(&f["closed"], "breaker closed")?,
+                pending_close: restored_bool(&f["pending_close"], "pending close")?,
+            })
+        };
+        let f = snapshot_fields(&o["field"], "field channel", &["delivery", "hold"])?;
+        let c = snapshot_fields(
+            &o["connection"],
+            "connection channel",
+            &["delivery", "hold"],
+        )?;
+        let initiated = match o["initiated"].as_array().map(Vec::as_slice) {
+            None if o["initiated"].is_null() => None,
+            Some([cause, frame, at]) => Some(Initiation {
+                cause: [SUPPLY_LOSS, OFF_OR_DUMP, EVIDENCE_UNAVAILABLE]
+                    .into_iter()
+                    .find(|c| cause.as_str() == Some(*c))
+                    .ok_or_else(|| format!("field controller cause {cause}"))?,
+                frame: restored_frame(frame, "initiation frame")?,
+                at_s: restored_real(at, "initiation time")?,
+            }),
+            _ => return Err(format!("field controller initiation {}", o["initiated"])),
+        };
+        self.field.delivery.restore(&f["delivery"], field)?;
+        self.connection
+            .delivery
+            .restore(&c["delivery"], connection)?;
+        self.field.hold = restored_bool(&f["hold"], "field transport hold")?;
+        self.connection.hold = restored_bool(&c["hold"], "connection transport hold")?;
+        self.powered = restored_bool(&o["powered"], "field controller supply")?;
+        self.decided = restored_frame_option(&o["decided"], "field controller decided frame")?;
+        self.initiated = initiated;
+        Ok(())
     }
     fn decide(&mut self, k: u64) -> Result<Option<u64>, String> {
         if self.decided.is_some_and(|d| d >= k) {

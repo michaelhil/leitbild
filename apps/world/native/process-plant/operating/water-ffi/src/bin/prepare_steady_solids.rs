@@ -137,6 +137,38 @@ pub struct SgFlux {
     pub mass_flux_kg_m2_s: f64,
 }
 
+/// E-NUC: refuse when the packet-order records of any replica class's
+/// members (`classes`, packet indices) differ in any bit outside the listed
+/// identity fields.
+fn replica_exact<T: Serialize>(
+    kind: &str,
+    classes: &[Vec<usize>],
+    records: &[T],
+    identities: &[&str],
+) -> Result<(), String> {
+    let strip = |r: &T| -> Result<String, String> {
+        let mut v = serde_json::to_value(r).map_err(|e| e.to_string())?;
+        if let Some(o) = v.as_object_mut() {
+            for k in identities {
+                o.remove(*k);
+            }
+        }
+        Ok(v.to_string())
+    };
+    for members in classes {
+        let first = strip(&records[members[0]])?;
+        for &m in &members[1..] {
+            if strip(&records[m])? != first {
+                return Err(format!(
+                    "{kind} {m} differs from its replica {}: the output is not replica-exact",
+                    members[0]
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // Output schema (`lanes/solids/schema.md`).
 
@@ -582,6 +614,18 @@ impl System for SolidsSystem {
     fn klu_ordering(&self) -> KluOrdering {
         KluOrdering::Amd
     }
+    /// E-NUC phase B: the solids' replica classes keep the unreduced
+    /// stock norm.
+    fn multiplicities(&self) -> Option<Vec<f64>> {
+        Some(
+            self.solids
+                .layout()
+                .multiplicity
+                .iter()
+                .map(|m| *m as f64)
+                .collect(),
+        )
+    }
     fn residual(
         &mut self,
         _time: f64,
@@ -730,6 +774,10 @@ impl PzrSystem {
 }
 
 impl System for PzrSystem {
+    /// Unreduced: every coordinate stands for itself (E-NUC).
+    fn multiplicities(&self) -> Option<Vec<f64>> {
+        None
+    }
     fn dimension(&self) -> usize {
         self.scales.len()
     }
@@ -1260,6 +1308,10 @@ pub fn prepare(raw: &serde_json::Value) -> Result<Prepared, Failure> {
     // nuclear block's own rows, at the packet's own feedback reference
     // conditions, frozen through the run.
     let mut nuclear = Nuclear::new(&packet, cells).map_err(nf)?;
+    // E-NUC phase B: the solids' replica classes (no transaction deposits
+    // here) and the nuclear ports on their halves.
+    let mut solids = Solids::new(&packet, cells, nuclear.group_of(), &[]).map_err(nf)?;
+    nuclear.set_ports(solids.half_members()).map_err(nf)?;
     let nl = nuclear.layout().clone();
     let ny: Vec<f64> = nuclear
         .prepared()
@@ -1283,11 +1335,10 @@ pub fn prepare(raw: &serde_json::Value) -> Result<Prepared, Failure> {
             }
         })
         .collect();
-    let reference_fuel: Vec<Scalar> = packet
-        .feedback_reference
-        .fuel_temperature_k
+    let reference_fuel: Vec<Scalar> = solids
+        .half_members()
         .iter()
-        .map(|t| s(*t))
+        .map(|m| s(packet.feedback_reference.fuel_temperature_k[m[0]]))
         .collect();
     let travel: Vec<Scalar> = packet
         .feedback_reference
@@ -1309,8 +1360,10 @@ pub fn prepare(raw: &serde_json::Value) -> Result<Prepared, Failure> {
         )
         .map_err(nf)?;
     let fuel_w = nheat.fuel_w.clone();
-    let fuel_heat_w: f64 = fuel_w.iter().map(|v| v.value).sum();
-    let coolant_heat_w: f64 = nheat.coolant_w.iter().map(|v| v.value).sum();
+    // Each port's heat is one member's: the totals count every member.
+    let count: Vec<f64> = nuclear.port_count().iter().map(|m| *m as f64).collect();
+    let fuel_heat_w: f64 = fuel_w.iter().zip(&count).map(|(v, m)| v.value * m).sum();
+    let coolant_heat_w: f64 = nheat.coolant_w.iter().zip(&count).map(|(v, m)| v.value * m).sum();
     let total_heat_w = fuel_heat_w + coolant_heat_w;
     let source_total_w = packet.thermal.source_total_w;
     let packet_gap = (total_heat_w - source_total_w).abs();
@@ -1327,7 +1380,6 @@ pub fn prepare(raw: &serde_json::Value) -> Result<Prepared, Failure> {
         )
         .into());
     }
-    let mut solids = Solids::new(&packet, cells).map_err(nf)?;
     // Wall water: every wall cell is a core contact's or an SG primary's,
     // never both, at its declared mass flux.
     let mut flux: Vec<Option<f64>> = vec![None; cells];
@@ -1549,11 +1601,13 @@ pub fn settle(p: Prepared) -> Result<Steady, Failure> {
     ];
     let (mut nodes_checked, mut ordering_checked) = (0, 0);
     let mut carriers = Vec::with_capacity(solids.halves());
-    for (a, band) in packet.thermal.fuel_bands.iter().enumerate() {
+    for (packet_a, band) in packet.thermal.fuel_bands.iter().enumerate() {
+        // E-NUC phase B: a packet half reads its replica class.
+        let a = solids.half_class(packet_a);
         let [inner, outer, clad] = t.fuel[a].map(|v| v.value);
         let surface = [0, 1, 2].map(|k| physical[solids.surface(a, k)]);
         let doppler = thermal::fuel_feedback_temperature(s(inner), s(outer))?.value;
-        let helium_k = t.helium[band.helium].value;
+        let helium_k = t.helium[solids.helium_class(band.helium)].value;
         within(inner, fuel_domain, &format!("{} inner fuel", band.id))?;
         within(outer, fuel_domain, &format!("{} outer fuel", band.id))?;
         within(
@@ -1629,10 +1683,11 @@ pub fn settle(p: Prepared) -> Result<Steady, Failure> {
     }
     // Helium: ordered between its halves' clad inner and fuel surfaces.
     let mut helium = Vec::with_capacity(packet.thermal.helium.len());
-    for (h, record) in packet.thermal.helium.iter().enumerate() {
+    for (packet_h, record) in packet.thermal.helium.iter().enumerate() {
+        let h = solids.helium_class(packet_h);
         let temperature = t.helium[h].value;
         let halves: Vec<usize> = (0..carriers.len())
-            .filter(|a| packet.thermal.fuel_bands[*a].helium == h)
+            .filter(|a| packet.thermal.fuel_bands[*a].helium == packet_h)
             .collect();
         let lo = halves
             .iter()
@@ -1664,7 +1719,8 @@ pub fn settle(p: Prepared) -> Result<Steady, Failure> {
         });
     }
     let mut passive = Vec::with_capacity(packet.thermal.passive_stores.len());
-    for (p, record) in packet.thermal.passive_stores.iter().enumerate() {
+    for (packet_p, record) in packet.thermal.passive_stores.iter().enumerate() {
+        let p = solids.store_class(packet_p);
         let temperature = t.passive[p].value;
         within(
             temperature,
@@ -1680,6 +1736,19 @@ pub fn settle(p: Prepared) -> Result<Steady, Failure> {
             rate_w: o.rates_w[k],
         });
     }
+    // E-NUC: replica-exact by construction. Every output element above is
+    // read from its replica class's one evaluation (the solids' classes, the
+    // nuclear ports), so the members of a class are written bitwise equal
+    // whatever the summation order; a class whose members' records differ
+    // in any bit (their identities aside) is refused.
+    replica_exact(
+        "carrier",
+        solids.half_members(),
+        &carriers,
+        &["id", "fuel_store_ids", "clad_store_id"],
+    )?;
+    replica_exact("helium store", solids.helium_members(), &helium, &["id"])?;
+    replica_exact("passive store", solids.store_members(), &passive, &["id"])?;
     let mut sg_metal = Vec::with_capacity(packet.thermal.sg_segments.len());
     let mut generators: Vec<Generator> = secondaries
         .iter()

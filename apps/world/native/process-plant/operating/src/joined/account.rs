@@ -194,6 +194,11 @@ pub struct Plan {
     precursors: Vec<usize>,
     /// Differential solid energies and history reservoirs (global).
     solid_energy: Vec<usize>,
+    /// E-NUC: per global coordinate, how many unreduced stores its value
+    /// counts for: a solid replica class's coordinate is one member's store
+    /// (its layout multiplicity); every other coordinate, a grouped nuclear
+    /// one included (it holds its members' sum), counts once.
+    weight: Vec<f64>,
     histories: Vec<usize>,
     /// Per SG, its mass and internal energy coordinates (global).
     sg_mass: Vec<usize>,
@@ -226,6 +231,7 @@ impl Plan {
             populations: Vec::new(),
             precursors: Vec::new(),
             solid_energy: Vec::new(),
+            weight: Vec::with_capacity(o.end),
             histories: Vec::new(),
             sg_mass: Vec::new(),
             sg_energy: Vec::new(),
@@ -285,6 +291,9 @@ impl Plan {
             }
             plan.scales.extend(&layout.scales);
             plan.row_scales.extend(&layout.row_scales);
+            plan.weight.extend(layout.multiplicity.iter().map(|m| {
+                if owner == "solids" { *m as f64 } else { 1. }
+            }));
             k += layout.len();
         }
         let generators = joined
@@ -395,7 +404,7 @@ impl Plan {
 
     /// The store rate `(y' - row) scale` of a differential coordinate.
     fn rate(&self, rows: &[Scalar], yp: &[f64], i: usize) -> f64 {
-        (yp[i] - rows[i].value) * self.scales[i]
+        (yp[i] - rows[i].value) * self.scales[i] * self.weight[i]
     }
     fn rates(&self, rows: &[Scalar], yp: &[f64], indices: &[usize]) -> (f64, f64) {
         indices.iter().fold((0., 0.), |(sum, abs), &i| {
@@ -723,9 +732,16 @@ impl Plan {
                 absolute: &atol[..n],
             },
         )?;
-        let unit = |i: usize| rtol * (y[i] * self.scales[i]).abs() + atol[i] * self.scales[i];
+        let unit = |i: usize| {
+            (rtol * (y[i] * self.scales[i]).abs() + atol[i] * self.scales[i]) * self.weight[i]
+        };
         let tol = |indices: &[usize]| indices.iter().map(|&i| unit(i)).sum::<f64>();
-        let sum = |indices: &[usize]| indices.iter().map(|&i| y[i] * self.scales[i]).sum::<f64>();
+        let sum = |indices: &[usize]| {
+            indices
+                .iter()
+                .map(|&i| y[i] * self.scales[i] * self.weight[i])
+                .sum::<f64>()
+        };
         let inertia = joined.network.rotor_inertia();
         // KE = L^2 / 2I: its tolerance is omega times L's.
         let rotor_tol: f64 = self

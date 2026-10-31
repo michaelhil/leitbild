@@ -489,6 +489,10 @@ fn c2s_level_line_is_judged_on_the_sections_recorded_vote() {
 
 // ------------------------------------------------------------ the case run
 
+/// PERF E-PROF: one frame of the cost profile: `t`, the counter reads so
+/// far and per path `[closed calls, exclusive instructions]` so far.
+type ProfileFrame = (f64, u64, Vec<(u64, u64)>);
+
 /// The PZR roof pressure, SG pressures and rod travel range at each frame's
 /// left limit, from the dense output (observation only).
 struct Recorder {
@@ -497,6 +501,17 @@ struct Recorder {
     rods: Vec<(usize, f64)>,
     scratch: Vec<f64>,
     rows: Vec<Value>,
+    /// HOOK (OU-A U5 lag projection): the process's instructions retired
+    /// at each frame, when LD01_OU_FRAME_COST=1 (never in `frames`, whose
+    /// digest the tiers pin).
+    cost: Option<Vec<(f64, u64)>>,
+    /// HOOK (PERF E-PROF): the cost profile's totals at each frame, when
+    /// LD01_PERF_PROFILE=1 (with LD01_OU_FRAME_COST=1).
+    profile: Option<Vec<ProfileFrame>>,
+    /// HOOK (PHYS X1): the protection's observed quantities at each frame
+    /// of a gated run, when LD01_PHYS_OPERATOR_FRAMES=1 (never in `frames`).
+    /// The observed quantities and their references ride along once.
+    operator: Option<(leitbild_operating_water::ic::Readings, Value, Vec<Value>)>,
 }
 impl<S> leitbild_operating_water::frame::Client<S> for Recorder {
     fn name(&self) -> &str {
@@ -516,8 +531,19 @@ impl<S> leitbild_operating_water::frame::Client<S> for Recorder {
         t: f64,
         dense: &dyn leitbild_operating_water::frame::Dense,
     ) -> Result<Vec<leitbild_operating_water::frame::Change<S>>, String> {
+        if let Some(c) = self.cost.as_mut() {
+            c.push((t, s3_harness::counters::instructions()?));
+        }
+        if let Some(p) = self.profile.as_mut() {
+            let (totals, reads) = leitbild_operating_plant::cost::totals()
+                .ok_or("LD01_PERF_PROFILE=1 without an installed cost profile")?;
+            p.push((t, reads, totals));
+        }
         dense.derivative(t, 0, &mut self.scratch)?;
         let y = &self.scratch;
+        if let Some((readings, _, rows)) = self.operator.as_mut() {
+            rows.push(json!({"t_s": t, "values": readings.values(y)?}));
+        }
         let travel: Vec<f64> = self.rods.iter().map(|(i, s)| y[*i] * s).collect();
         self.rows.push(json!({"t_s": t, "pzr_roof_pa": y[self.roof.0] * self.roof.1,
             "sg_pressure_pa": self.sg.iter().map(|(l, i, s)| json!([l, y[*i] * s])).collect::<Vec<_>>(),
@@ -698,6 +724,46 @@ fn kinetics_rule(block: &Block) -> Result<Value, String> {
     kinetics_rule_at(block, "")
 }
 
+/// The case run's kinetics end rule, from one explicit source:
+/// `LD01_OU_PREDICATES` names a wiki page holding the one
+/// `ld01-ou-predicates` block, whose `/predicates/U3/kineticsDomain` the OU
+/// cases (U3, plan r4's C2/C3/C5 floor runs) end under (OU-D r4+: P1);
+/// unset, the case's own block (the S3 blocks: A4, pinned with S3's
+/// results). The value records its source (page and its sha256).
+fn case_kinetics(d: &declaration::Declaration) -> Result<Value, String> {
+    match std::env::var("LD01_OU_PREDICATES") {
+        Ok(page) => {
+            let block = Block::from_page(&page, "ld01-ou-predicates")?;
+            let mut k = kinetics_rule_at(&block, "/predicates/U3")?;
+            k["source"] = json!({"fence": "ld01-ou-predicates", "pointer": "/predicates/U3/kineticsDomain",
+                "page": block.page, "page_sha256": block.page_sha256});
+            Ok(k)
+        }
+        Err(std::env::VarError::NotPresent) => {
+            let mut k = kinetics_rule_at(&d.block, &d.common(""))?;
+            k["source"] = json!({"fence": d.block.fence, "pointer": format!("{}/kineticsDomain", d.common("")),
+                "page": d.block.page, "page_sha256": d.block.page_sha256});
+            Ok(k)
+        }
+        Err(e) => Err(format!("LD01_OU_PREDICATES: {e}")),
+    }
+}
+
+#[test]
+fn the_ou_predicates_u3_kinetics_domain_is_p1_with_b1() {
+    // ld01-ou-predicates r6 (wiki claude/ld01-ou-d-wiki 29fc745), U3's rule.
+    let b = Block::from_json(
+        "ld01-ou-predicates",
+        r#"{"predicates":{"U3":{"kineticsDomain":{"ruleI":"P1 (owner R11, OU-P1): a U3 case runs to its declared end under the hot-standby admission","floor":"B1 (owner-approved, R5-B): HOT-SOURCE-1's pressure floor 8 MPa","marginFactors":[1,1.53,2.24]}}}}"#,
+    )
+    .unwrap();
+    let k = kinetics_rule_at(&b, "/predicates/U3").unwrap();
+    assert_eq!(
+        (k["ruleI"].as_str(), k["floor"].as_str()),
+        (Some("P1"), Some("B1"))
+    );
+}
+
 /// [`kinetics_rule`] under `prefix` (C5's block: `/commonRules`).
 fn kinetics_rule_at(block: &Block, prefix: &str) -> Result<Value, String> {
     let rule_i = block.whole(&format!("{prefix}/kineticsDomain/ruleI"));
@@ -705,14 +771,21 @@ fn kinetics_rule_at(block: &Block, prefix: &str) -> Result<Value, String> {
     let (Some(rule_i), Some(floor)) = (rule_i.as_str(), floor.as_str()) else {
         return Err("the block declares no kineticsDomain.ruleI and floor".into());
     };
-    if !rule_i.starts_with("A4 (owner-approved, R5-A)") {
-        return Err(format!(
-            "rule I {rule_i:?}: the harness implements the owner's A4 (R5-A)"
-        ));
-    }
     if !floor.starts_with("B1 (owner-approved, R5-B)") {
         return Err(format!(
             "kinetics floor {floor:?}: the harness implements the owner's B1 (R5-B)"
+        ));
+    }
+    if rule_i.starts_with("P1 (owner R11") {
+        return Ok(
+            json!({"ruleI": "P1", "floor": "B1", "ruleI_text": rule_i, "floor_text": floor,
+            "exits": ["P1 hot-standby domain exit", "B1 phase-absence exit"],
+            "margin": "reported at the record's factors on every accepted state, never an end"}),
+        );
+    }
+    if !rule_i.starts_with("A4 (owner-approved, R5-A)") {
+        return Err(format!(
+            "rule I {rule_i:?}: the harness implements the owner's A4 (R5-A) and P1 (R11)"
         ));
     }
     Ok(
@@ -1324,9 +1397,9 @@ struct CaseConfig {
 }
 impl CaseConfig {
     /// `LD01_S3_WEIGHTS` (stock | grouped), `LD01_S3_FIRST_STEP` (declared
-    /// | last/<d> | last-unless-roots/<d>), `LD01_S3_MR1` (packet | stock)
-    /// and `LD01_S3_RC1` (on | off); unset: stock, declared, packet, on.
-    /// Any other value refuses.
+    /// | last/<d> | last-unless-roots/<d>), `LD01_S3_MATRIX_REBUILD` (stock |
+    /// packet) and `LD01_S3_RC1` (on | off); unset: stock, declared, stock,
+    /// on (the r4 baseline). Any other value refuses.
     fn from_env() -> Result<Self, String> {
         use leitbild_operating_water::{
             frame::MatrixRebuild,
@@ -1337,10 +1410,12 @@ impl CaseConfig {
             weights: Weights::parse(&var("LD01_S3_WEIGHTS", "stock"))?,
             first_step: parse_first_step(&var("LD01_S3_FIRST_STEP", "declared"))?,
         };
-        let matrix_rebuild = match var("LD01_S3_MR1", "packet").as_str() {
+        // The r4 baseline (BASELINE-r4.md): stock matrix management unless
+        // MR-1 is asked.
+        let matrix_rebuild = match var("LD01_S3_MATRIX_REBUILD", "stock").as_str() {
             "packet" => MatrixRebuild::Packet,
             "stock" => MatrixRebuild::Stock,
-            v => return Err(format!("LD01_S3_MR1={v}: packet or stock")),
+            v => return Err(format!("LD01_S3_MATRIX_REBUILD={v}: stock or packet")),
         };
         let ramp_cap = match var("LD01_S3_RC1", "on").as_str() {
             "on" => true,
@@ -1383,6 +1458,46 @@ struct Ask<'a> {
     config: CaseConfig,
 }
 
+/// HOOK (PERF E-PROF): the profile's counter, the process's instructions
+/// retired; an unreadable counter stops the run (a cost is never zero).
+fn perf_counter() -> u64 {
+    s3_harness::counters::instructions().expect("instructions retired")
+}
+/// HOOK (PERF E-PROF): instructions one counter read costs (the median
+/// of 15 batches of 1,000 back-to-back reads), so a judge can state the
+/// profile's own overhead.
+fn perf_read_instructions() -> u64 {
+    let mut batches: Vec<u64> = (0..15)
+        .map(|_| {
+            let a = perf_counter();
+            for _ in 0..1_000 {
+                std::hint::black_box(perf_counter());
+            }
+            (perf_counter() - a) / 1_001
+        })
+        .collect();
+    batches.sort_unstable();
+    batches[7]
+}
+/// HOOK (PERF E-PROF): LD01_PERF_PROFILE=1 installs the cost profile on
+/// this thread, `pieces` with the block Jacobian's pieces (with
+/// LD01_OU_FRAME_COST=1 only); unset: nothing.
+fn perf_install() {
+    match std::env::var("LD01_PERF_PROFILE").ok().as_deref() {
+        None => {}
+        Some(v @ ("1" | "pieces")) => {
+            assert_eq!(
+                std::env::var("LD01_OU_FRAME_COST").as_deref(),
+                Ok("1"),
+                "LD01_PERF_PROFILE=1 needs LD01_OU_FRAME_COST=1"
+            );
+            leitbild_operating_plant::cost::install(perf_counter, v == "pieces")
+                .unwrap_or_else(|e| panic!("{e}"));
+        }
+        Some(v) => panic!("LD01_PERF_PROFILE={v}: only 1 or pieces (or unset)"),
+    }
+}
+
 #[allow(clippy::too_many_lines, clippy::too_many_arguments)] // One case: composition, run, judgement.
 fn drive(
     case: Case,
@@ -1423,9 +1538,19 @@ fn drive(
     );
     let (zero_after, command) = case_clock(case, spec, declared_frame_s).unwrap();
     let packet_json: Value = inputs.spine.packet_json().expect("packet json");
-    let extension: leitbild_operating_plant::joined::post_trip_domain::Extension =
-        serde_json::from_value(packet_json["post_trip_domain"].clone())
-            .expect("the packet's post_trip_domain section (D3 (a))");
+    // The case's kinetics end rule (P1, owner R11): A4's D3 (a) for the S3
+    // blocks, the hot-standby admission under P1 (`case_kinetics`).
+    let extension = match case_kinetics(d).unwrap_or_else(|e| panic!("{e}"))["ruleI"].as_str() {
+        Some("P1") => observe::KineticsRule::HotStandby(
+            serde_json::from_value(packet_json["hot_standby_kinetics"].clone())
+                .expect("the packet's hot_standby_kinetics section (P1)"),
+        ),
+        Some("A4") => observe::KineticsRule::D3a(
+            serde_json::from_value(packet_json["post_trip_domain"].clone())
+                .expect("the packet's post_trip_domain section (D3 (a))"),
+        ),
+        other => panic!("kinetics rule {other:?}: A4 or P1"),
+    };
     let zero = t0 + zero_after;
     let implemented: Vec<String> = section.functions.iter().map(|f| f.id.clone()).collect();
     // C5 (ICFIELD): the generator page's ACT.B field controller, a client,
@@ -1510,6 +1635,11 @@ fn drive(
             .collect(),
         scratch: vec![0.; y.len()],
         rows: Vec::new(),
+        cost: (std::env::var("LD01_OU_FRAME_COST").as_deref() == Ok("1")).then(Vec::new),
+        profile: leitbild_operating_plant::cost::active().then(Vec::new),
+        operator: (gate.is_some()
+            && std::env::var("LD01_PHYS_OPERATOR_FRAMES").as_deref() == Ok("1"))
+        .then(|| (protection.readings(), protection.observed(), Vec::new())),
     };
     // The gate observation: the ledgers count in the run's own (unscaled)
     // tolerance units for a reference too (DR-P3-GATE-2).
@@ -2571,6 +2701,7 @@ fn drive(
         "ic_section": {"path": inputs.ic_path, "implemented_causes": implemented},
         "configuration": {"span_after_zero_s": span, "zero_after_start_s": zero_after,
             "case_configuration": ask.config.json(),
+            "weights": ida.weight_rule_kind(),
             "command": command.map(|c| format!("{c:?}")), "frame_s": frame.period_s(),
             "max_order": profile::MAX_ORDER, "max_step_s": max_step,
             "matrix_rebuild": {"rule": "MR-1 (owner, request 7 R7-P): stock IDAS check points every `steps` steps force an iteration-matrix setup; freed at restarts and above `held`",
@@ -2597,7 +2728,8 @@ fn drive(
             "note": "samples = stock steps less located-root returns and steps a late change rolled back", "first_extended_s": domain.first_extended, "margin_failures": domain.margin_failures,
             "exit": domain.exit, "exit_after_zero_s": exit_after_zero, "information_from_s": exit_after_zero,
             "verdict_fingerprint": domain.verdicts.hex(), "reuse": {"reused": domain.reused, "crosscheck": domain.crosscheck, "crosschecked": domain.crosschecked,
-                "mismatches": domain.mismatches, "first_mismatch": domain.first_mismatch}},
+                "mismatches": domain.mismatches, "first_mismatch": domain.first_mismatch},
+            "hot_standby_margins": domain.hot_standby},
         "algebraic_residuals": observer.residuals.json(),
         "restart_entries": {"rule": "N4′ (S3-D58, S3-D61): each restart's pre-transaction projection correction of the algebraic rows in the integrator's own units (rtol |y| + atol, atol as stock IDA uses it, from its error weights); with a free vapour path, each free vapour path's drive tolerance by rule F's a_x construction at that state (judge-time cost, not plant work)",
             "judge_cpu_s": observer.entries.iter().filter_map(|e| e["drives"]["judge_cpu_s"].as_f64()).sum::<f64>(),
@@ -2640,6 +2772,13 @@ fn drive(
             "restarts_r": driver.counts.total(Class::R), "s_instants": driver.counts.total(Class::S),
             "label": s3_harness::families::PROVISIONAL},
         "frames": recorder.rows,
+        "phys_operator_frames": recorder.operator.as_ref().map(|(_, observed, rows)| json!({"observed": observed, "frames": rows})),
+        "ou_frame_instructions": recorder.cost.as_ref().map(|c| c.iter().map(|(t, i)| json!([t, i])).collect::<Vec<_>>()),
+        "perf_profile": recorder.profile.as_ref().map(|p| json!({
+            "rule": "HOOK (PERF E-PROF): per frame [t, counter reads so far, per path [closed calls, exclusive instructions] so far]; paths in key order, pieces>* inclusive outside the tree",
+            "paths": leitbild_operating_plant::cost::snapshot().map(|s| s.paths),
+            "read_instructions": perf_read_instructions(),
+            "frames": p.iter().map(|(t, r, v)| json!([t, r, v])).collect::<Vec<_>>()})),
         "repeat_record": repeat_record,
     });
     eprintln!(
@@ -3178,6 +3317,7 @@ fn s3_case_run() {
         !std::path::Path::new(&receipt_path).exists(),
         "receipts are never overwritten"
     );
+    perf_install();
     let process0 = process_cpu_s();
     let d = declaration::Declaration::load_case(case).unwrap_or_else(|e| panic!("{e}"));
     // The r8 wiki: C1–C3 at r3.8; r3.7 (and C4 r2) refused by name.
@@ -3209,7 +3349,7 @@ fn s3_case_run() {
         Err(_) => declared_s,
     };
     // Rule I: the owner's answers A4 and B1 (r3.7).
-    let kinetics = kinetics_rule_at(&d.block, &d.common("")).unwrap_or_else(|e| panic!("{e}"));
+    let kinetics = case_kinetics(&d).unwrap_or_else(|e| panic!("{e}"));
     d.block.text(&d.common("/kineticsDomain/ruleI"));
     let state_path = std::env::var("LD01_S3_STATE").expect("LD01_S3_STATE");
     let state: Value =
@@ -3437,6 +3577,10 @@ fn s3_case_run() {
     });
     if let Some(c) = &cost_drive {
         g_cost["cost_drive_cpu"] = c.record["cpu"].clone();
+        // HOOK (OU-A U5 lag, 3e0d243fd's receipt part): the ungated cost
+        // drive's frame instructions (with LD01_OU_FRAME_COST=1), which
+        // PERF's ld01-cost reads first.
+        g_cost["ou_cost_drive_frames"] = c.record["ou_frame_instructions"].clone();
     }
     families.insert("G_cost".into(), g_cost);
     let mut not_implemented: Vec<&str> = Vec::new();
@@ -3561,6 +3705,26 @@ fn s3_case_run() {
                 ]
             }
         };
+        // HOOK (PHYS X1, R11-3a): with LD01_PHYS_SERIES=1 the event cases'
+        // references are the tolerance-proportionality series rtol/10, /30
+        // and /100 (every atol scaled with it), each over the whole span;
+        // consecutive levels are compared below (`series`).
+        let series_on = std::env::var("LD01_PHYS_SERIES").as_deref() == Ok("1")
+            && matches!(case, Case::C2 | Case::C3 | Case::C5);
+        let asks = if series_on {
+            [10., 30., 100.]
+                .into_iter()
+                .map(|k: f64| {
+                    let s = s3::Scaling {
+                        relative: 1. / k,
+                        absolute: 1. / k,
+                    };
+                    (format!("rtol/{k}"), s, None, 0., end)
+                })
+                .collect()
+        } else {
+            asks
+        };
         let only = std::env::var("LD01_S3_GATES_REFERENCES").ok();
         let mut comparisons = Vec::new();
         for (name, scaling, max_step, from, to) in asks {
@@ -3638,6 +3802,28 @@ fn s3_case_run() {
             );
             references.push((name, r));
         }
+        // R11-3a's series: each completed level against the next looser
+        // completed one, by the same E0 comparison (looser minus tighter).
+        let series = series_on.then(|| {
+            references
+                .windows(2)
+                .map(|w| {
+                    let ((a, ra), (b, rb)) = (&w[0], &w[1]);
+                    let e0 = match (ra.observer.gates.as_ref(), rb.observer.gates.as_ref()) {
+                        (Some(ga), Some(gb))
+                            if ra.failure.is_none()
+                                && rb.failure.is_none()
+                                && ga.credited_error.is_none()
+                                && gb.credited_error.is_none() =>
+                        {
+                            compare::compare(&ga.credited, &gb.credited, run.zero, 0., end, &g.budgets)
+                        }
+                        _ => json!({"evaluable": false, "looser_failure": ra.failure, "tighter_failure": rb.failure}),
+                    };
+                    json!({"looser": a, "tighter": b, "e0": e0})
+                })
+                .collect::<Vec<_>>()
+        });
         // E3/H2: the cap cycle against R1 over the window; S2's rod timing
         // against R1 and R2; H1a: the continuation's convergence failures.
         let mut checks = serde_json::Map::new();
@@ -3724,7 +3910,7 @@ fn s3_case_run() {
             "electrical_band": "S3-D47 (interim, disclosed): E′ reports raw and 2 Hz-filtered differences; the verdict reads decision 0015 E1's 2 Hz band until the owner decides S4-6",
             "threshold_source": "ld01-accuracy-contract + ld01-s2-accuracy (E0), ld01-s2-gates referenceToleranceFactor, ld01-s1-gates eventReference",
             "electrical_extension": "E′ (S3-D23) per comparison (electrical_e0): Ieq = |i_dq|/sqrt(3) against 10 A and terminal power against 1 MW, for the cases accuracyExtension.appliesTo names",
-            "comparisons": comparisons}));
+            "comparisons": comparisons, "series": series}));
         // Rule F (S3-D49) on the run's raw samples over its declared part.
         let f_family = match &run.f_tolerances {
             Some((a, record)) => {

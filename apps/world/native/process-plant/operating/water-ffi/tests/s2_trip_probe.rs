@@ -159,6 +159,9 @@ impl System for RootLedger {
     fn klu_ordering(&self) -> KluOrdering {
         self.inner.klu_ordering()
     }
+    fn multiplicities(&self) -> Option<Vec<f64>> {
+        self.inner.multiplicities()
+    }
     fn quadrature_count(&self) -> usize {
         self.inner.quadrature_count()
     }
@@ -511,6 +514,10 @@ fn trip(duration_s: f64) -> Value {
     assert_eq!(y.len(), joined.dimension(), "settled state layout");
     let o = joined.offsets();
     let clusters = joined.rods().expect("rod owner").clusters();
+    // E-NUC: each cluster's coordinates are its motion class's.
+    let coordinate: Vec<usize> = (0..clusters)
+        .map(|c| joined.rods().expect("rod owner").cluster_coordinate(c))
+        .collect();
     let labels = root_labels(&joined);
     assert_eq!(labels.len(), joined.root_count(), "root labels");
     let layouts = joined.layouts();
@@ -587,8 +594,8 @@ fn trip(duration_s: f64) -> Value {
     // Cluster trajectories grouped by bitwise-equal (travel, speed).
     let groups = |y: &[f64]| -> Vec<Vec<usize>> {
         let mut by: BTreeMap<(u64, u64), Vec<usize>> = BTreeMap::new();
-        for c in 0..clusters {
-            let b = o.rods + leitbild_operating_plant::rods::CLUSTER_COORDINATES * c;
+        for (c, k) in coordinate.iter().enumerate() {
+            let b = o.rods + k;
             by.entry((y[b].to_bits(), y[b + 1].to_bits()))
                 .or_default()
                 .push(c);
@@ -847,16 +854,13 @@ fn trip(duration_s: f64) -> Value {
                     j.evaluate(t, &y, &yp, None, 0., None).unwrap();
                     let travel: Vec<f64> = (0..clusters)
                         .map(|c| {
-                            let b =
-                                o.rods + leitbild_operating_plant::rods::CLUSTER_COORDINATES * c;
+                            let b = o.rods + coordinate[c];
                             y[b] * scales[b]
                         })
                         .collect();
                     let speed: Vec<f64> = (0..clusters)
                         .map(|c| {
-                            let b = o.rods
-                                + leitbild_operating_plant::rods::CLUSTER_COORDINATES * c
-                                + 1;
+                            let b = o.rods + coordinate[c] + 1;
                             y[b] * scales[b]
                         })
                         .collect();

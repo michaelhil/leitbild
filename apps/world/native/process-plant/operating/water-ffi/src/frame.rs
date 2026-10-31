@@ -76,6 +76,7 @@ use crate::{
     joined::{DerivedTolerances, Discrete, JoinedSystem, Restart, Restarted, discrete_restart},
     klu::SparseLu,
 };
+use leitbild_operating_plant::cost;
 use leitbild_operating_plant::joined::block::{Command, Transaction};
 use leitbild_operating_plant::network::phase_events::DonorFlips;
 use serde_json::{Value, json};
@@ -519,6 +520,22 @@ pub struct Driver<S> {
     pub matrix_rebuild: MatrixRebuild,
 }
 
+/// HOOK (WORLD `ld01-unit`, S5 snapshot; KERN to reconcile): the driver's
+/// part of a unit's truth at an accepted stop ([`Driver::state`]): the next
+/// frame to observe, the time observation reached, the declared commands
+/// and the decided commands not yet due (kind and class with them), and
+/// the carried IDAS quadratures at that time. Counts, CPU, logs, segments
+/// and class-O observation are receipts, not truth.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DriverState {
+    pub next_frame: u64,
+    pub observed_to: f64,
+    pub commands: Vec<(f64, Command)>,
+    /// Decided commands: due time, class, counting kind, command.
+    pub pending: Vec<(f64, Class, String, Command)>,
+    pub quadratures: Option<Vec<f64>>,
+}
+
 /// The most IDAS check points held before stock IDAAdjReInit frees them
 /// (≈0.45 MB each on the S3 unit; restarts free them too). A memory bound of
 /// this wrapper only: check points feed no forward computation.
@@ -598,6 +615,84 @@ impl<S: JoinedSystem> Driver<S> {
     pub fn frame(&self) -> Frame {
         self.frame
     }
+    /// HOOK (WORLD `ld01-unit`): the driver's truth at the stop it stands at
+    /// ([`DriverState`]), the carried quadratures read there. Refused while
+    /// a held change is pending (its action is code, not data: the caller
+    /// takes the snapshot at a later stop) or an event window's cap is
+    /// armed.
+    pub fn state(&self, ida: &Ida<S>) -> Result<DriverState, String> {
+        if self.restart_max_step.is_some() {
+            return Err("an event window's step cap is armed: no driver snapshot".into());
+        }
+        let pending = self
+            .pending
+            .iter()
+            .map(|c| match &c.action {
+                Action::Command(command) => Ok((c.due_s, c.class, c.kind.clone(), *command)),
+                Action::Held(_) => Err(format!(
+                    "the held change {} due at {} s is pending: no driver snapshot before it applies",
+                    c.kind, c.due_s
+                )),
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        let quadratures = match &self.quadratures {
+            Some(_) => Some(self.quadratures_at(ida, self.observed_to)?),
+            None => None,
+        };
+        Ok(DriverState {
+            next_frame: self.next_frame,
+            observed_to: self.observed_to,
+            commands: self.commands.clone(),
+            pending,
+            quadratures,
+        })
+    }
+    /// HOOK (WORLD `ld01-unit`): restore [`Driver::state`] into a fresh
+    /// driver of the same frame whose handle `ida` stands at the state's
+    /// time after its consistent restart (nothing observed, decided or
+    /// carried yet); the quadratures start there (stock IDAQuadInit), as the
+    /// source carries them across its restart in place.
+    pub fn restore_state(&mut self, ida: &mut Ida<S>, state: DriverState) -> Result<(), String> {
+        if !(self.pending.is_empty() && self.commands.is_empty() && self.quadratures.is_none()) {
+            return Err("a driver restores only before anything is decided or carried".into());
+        }
+        let t = state.observed_to;
+        let next = self.frame.instant(state.next_frame);
+        let observed = state
+            .next_frame
+            .checked_sub(1)
+            .map(|k| self.frame.instant(k));
+        if next <= t
+            || same_instant(next, t)
+            || observed.is_some_and(|o| o > t && !same_instant(o, t))
+        {
+            return Err(format!(
+                "frame {} is not the first frame after {t} s",
+                state.next_frame
+            ));
+        }
+        let mut pending = Vec::new();
+        for (due, class, kind, command) in state.pending {
+            pending.push(Change {
+                due_s: due,
+                class,
+                kind,
+                action: Action::Command(command),
+            });
+        }
+        self.observed_to = t;
+        self.solver_reached_s = t;
+        self.gate_observed_to = t;
+        self.next_frame = state.next_frame;
+        self.insert(pending, t)?;
+        for (at, command) in state.commands {
+            self.command(at, command)?;
+        }
+        if let Some(q) = state.quadratures {
+            self.start_quadratures(ida, q)?;
+        }
+        Ok(())
+    }
     /// Declare a prospective command at `t` (class R at its exact time).
     pub fn command(&mut self, t: f64, command: Command) -> Result<(), String> {
         if !(t.is_finite() && t >= self.observed_to) {
@@ -663,6 +758,7 @@ impl<S: JoinedSystem> Driver<S> {
         system: &S,
         to: f64,
     ) -> Result<f64, String> {
+        let _cost = cost::scope("observe");
         let started = (self.clock)();
         let mut limit = self.limit(to);
         loop {
@@ -945,6 +1041,7 @@ impl<S: JoinedSystem> Driver<S> {
             }
             if roots.is_none() {
                 // An accepted step's state: C3's donor flips and R3 band.
+                let _cost = cost::scope("step-state");
                 let started = (self.clock)();
                 let joined = &mut ida.system_mut().integrated_mut().joined;
                 let flips = self.donor_flips.total();
@@ -976,6 +1073,7 @@ impl<S: JoinedSystem> Driver<S> {
             if let Some(o) = observer.as_deref_mut() {
                 self.gate_samples(ida, o, observed)?;
                 if roots.is_none() && observed == reached {
+                    let _cost = cost::scope("gate");
                     let started = (self.clock)();
                     let q = match &self.quadratures {
                         Some(_) => self.quadratures_at(ida, reached)?,
@@ -1035,6 +1133,7 @@ impl<S: JoinedSystem> Driver<S> {
         observer: &mut (dyn Observer<S> + '_),
         to: f64,
     ) -> Result<(), String> {
+        let _cost = cost::scope("gate");
         let started = (self.clock)();
         let n = ida.system().dimension();
         let (mut y, mut yp) = (vec![0.; n], vec![0.; n]);
@@ -1068,6 +1167,7 @@ impl<S: JoinedSystem> Driver<S> {
         yp: &[f64],
         side: Side,
     ) -> Result<(), String> {
+        let _cost = cost::scope("gate");
         let started = (self.clock)();
         let q = match &self.quadratures {
             Some(_) => self.quadratures_at(ida, t)?,
@@ -1098,6 +1198,7 @@ impl<S: JoinedSystem> Driver<S> {
         rolled_back_from: Option<f64>,
         mut observer: Option<&mut (dyn Observer<S> + 'o)>,
     ) -> Result<(), String> {
+        let _cost = cost::scope("apply");
         self.attempt_s = Some(t);
         let mut commands: Vec<Command> = Vec::new();
         while self.commands.first().is_some_and(|c| Self::due_at(c.0, t)) {

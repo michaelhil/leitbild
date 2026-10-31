@@ -1,6 +1,7 @@
 //! spec: world/packs/process-plant/reference-designs/ld-01/model/operating-equations.md#6-solver-properties-and-cost-obligations
 //! Owned, opt-in boundary to the explicitly linked stock IDA/KLU build.
 //! No solver implementation, numerical fallback, or physical model lives here.
+use leitbild_operating_plant::cost;
 use std::{
     ffi::{c_int, c_long, c_void},
     panic::{AssertUnwindSafe, catch_unwind},
@@ -55,6 +56,14 @@ pub trait System {
     fn klu_ordering(&self) -> KluOrdering {
         KluOrdering::Colamd
     }
+    /// E-NUC (plan r4): per coordinate, how many identical coordinates of
+    /// the unreduced model it stands for, read once at construction. `None`
+    /// or all ones: the system is unreduced. Otherwise the handle weights
+    /// every coordinate so that stock's WRMS norm of this system equals
+    /// stock's norm of the unreduced one ([`WeightGroups`]). Every system
+    /// states it (no default): a wrapper that dropped its inner system's
+    /// multiplicities would silently change the norm.
+    fn multiplicities(&self) -> Option<Vec<f64>>;
     /// Number of quadratures `q' = fQ(t,y,yp)` (stock IDAS, the
     /// `quadratures` feature). A system without them states nothing.
     fn quadrature_count(&self) -> usize {
@@ -144,6 +153,26 @@ type Roots = unsafe extern "C" fn(*mut c_void, f64, *const f64, *const f64, *mut
 #[cfg(feature = "quadratures")]
 type Quadrature = unsafe extern "C" fn(*mut c_void, f64, *const f64, *const f64, *mut f64) -> c_int;
 type Weights = unsafe extern "C" fn(*mut c_void, *const f64, *mut f64) -> c_int;
+type CostEnter = extern "C" fn(c_int);
+type CostExit = extern "C" fn();
+/// PERF E-PROF: stock KLU's setup (0) and solve (1) inside the cost
+/// profile's scopes, when one is installed at construction.
+extern "C" fn klu_enter(kind: c_int) {
+    cost::enter(if kind == 0 { "klu-setup" } else { "klu-solve" });
+}
+extern "C" fn klu_exit() {
+    cost::exit();
+}
+/// The profile scope of a step `k` steps after its segment start.
+fn step_scope(k: u64) -> &'static str {
+    match k {
+        0 => "step[1]",
+        1..=4 => "step[2-5]",
+        5..=19 => "step[6-20]",
+        20..=99 => "step[21-100]",
+        _ => "step[101+]",
+    }
+}
 const IDA_SUCCESS: c_int = 0;
 const IDA_TSTOP_RETURN: c_int = 1;
 const IDA_ROOT_RETURN: c_int = 2;
@@ -162,6 +191,8 @@ unsafe extern "C" {
         nroots: c_int,
         g: Roots,
         user: *mut c_void,
+        enter: Option<CostEnter>,
+        leave: Option<CostExit>,
         status: *mut c_int,
     ) -> *mut c_void;
     fn operating_ida_free(ida: *mut c_void);
@@ -245,6 +276,8 @@ struct Context<S> {
     last_trial: Option<String>,
     /// N1: the grouped error-weight rule in force, if any.
     grouped: Option<Grouped>,
+    /// E-NUC: the system's multiplicities when any differs from 1.
+    multiplicity: Option<Vec<f64>>,
 }
 /// The grouped rule's per-coordinate factor and the tolerances it divides.
 struct Grouped {
@@ -304,10 +337,32 @@ impl WeightGroups {
     }
     /// `sqrt(N / n_g)` per coordinate.
     pub fn factors(&self) -> Vec<f64> {
+        self.factors_for(None)
+    }
+    /// E-NUC: the factors of a reduced system whose coordinate `i` stands
+    /// for `m_i` identical coordinates of the unreduced one,
+    /// `sqrt(m_i N / M_g)` with `M_g = sum_{j in g} m_j`. A vector whose
+    /// replicas are equal then has the same WRMS norm here as the unreduced
+    /// model's under the unreduced groups (`sqrt(N' / n'_g)`): stock's norm
+    /// when there is one group. With every `m_i = 1` it is [`Self::factors`]
+    /// bit for bit.
+    pub fn factors_for(&self, multiplicity: Option<&[f64]>) -> Vec<f64> {
         let n = self.of.len() as f64;
+        let Some(m) = multiplicity else {
+            return self
+                .of
+                .iter()
+                .map(|g| (n / self.sizes[*g] as f64).sqrt())
+                .collect();
+        };
+        let mut weighted = vec![0.; self.sizes.len()];
+        for (g, mi) in self.of.iter().zip(m) {
+            weighted[*g] += mi;
+        }
         self.of
             .iter()
-            .map(|g| (n / self.sizes[*g] as f64).sqrt())
+            .zip(m)
+            .map(|(g, mi)| (mi * n / weighted[*g]).sqrt())
             .collect()
     }
 }
@@ -422,6 +477,7 @@ unsafe extern "C" fn residual<S: System>(
     if c.fatal.is_some() {
         return -1;
     }
+    let _cost = cost::scope("residual");
     let result = catch_unwind(AssertUnwindSafe(|| unsafe {
         c.system.residual(
             t,
@@ -446,6 +502,7 @@ unsafe extern "C" fn jacobian<S: System>(
     if c.fatal.is_some() {
         return -1;
     }
+    let _cost = cost::scope("jacobian");
     let result = catch_unwind(AssertUnwindSafe(|| unsafe {
         c.system.jacobian(
             t,
@@ -472,6 +529,7 @@ unsafe extern "C" fn roots<S: System>(
         return -1;
     }
     let out = unsafe { std::slice::from_raw_parts_mut(out, c.roots) };
+    let _cost = cost::scope("roots");
     let result = catch_unwind(AssertUnwindSafe(|| unsafe {
         c.system.roots(
             t,
@@ -522,6 +580,7 @@ unsafe extern "C" fn quadrature<S: System>(
     if c.fatal.is_some() {
         return -1;
     }
+    let _cost = cost::scope("quadrature");
     let result = catch_unwind(AssertUnwindSafe(|| unsafe {
         c.system.quadrature(
             t,
@@ -569,6 +628,8 @@ pub struct Ida<S: System> {
     absolute: Vec<f64>,
     /// The relative tolerance last given.
     relative: f64,
+    /// PERF E-PROF: steps since the segment start (the profile's scopes).
+    segment_steps: u64,
 }
 impl<S: System> Ida<S> {
     pub fn new(system: S, initial: Initial<'_>) -> Result<Self> {
@@ -610,6 +671,7 @@ impl<S: System> Ida<S> {
             fatal: None,
             last_trial: None,
             grouped: None,
+            multiplicity: None,
         });
         let mut status = 0;
         let handle = unsafe {
@@ -627,6 +689,8 @@ impl<S: System> Ida<S> {
                 nroots,
                 roots::<S>,
                 (&mut *context as *mut Context<S>).cast(),
+                cost::active().then_some(klu_enter as CostEnter),
+                cost::active().then_some(klu_exit as CostExit),
                 &mut status,
             )
         };
@@ -641,7 +705,8 @@ impl<S: System> Ida<S> {
             unsafe { operating_ida_free(handle.as_ptr()) };
             return Err(format!("stock SUNLinSol_KLUSetOrdering failed ({code})"));
         }
-        Ok(Self {
+        let multiplicity = context.system.multiplicities();
+        let mut ida = Self {
             handle,
             context,
             time: initial.time,
@@ -649,7 +714,24 @@ impl<S: System> Ida<S> {
             started: false,
             absolute: initial.absolute_tolerance.to_vec(),
             relative: initial.relative_tolerance,
-        })
+            segment_steps: 0,
+        };
+        // E-NUC: a reduced system keeps the unreduced model's stock norm
+        // through stock IDAWFtolerances: one group, each coordinate weighted
+        // by its multiplicity ([`WeightGroups::factors_for`]).
+        if let Some(m) = multiplicity {
+            if m.len() != n || m.iter().any(|v| !(v.is_finite() && *v >= 1.)) {
+                return Err(format!(
+                    "{} multiplicities for {n} coordinates, or one below 1",
+                    m.len()
+                ));
+            }
+            if m.iter().any(|v| *v != 1.) {
+                ida.context.multiplicity = Some(m);
+                ida.group_weights(WeightGroups::from_keys(&vec!["stock"; n]))?;
+            }
+        }
+        Ok(ida)
     }
     /// N1: group-normalised error weights ([`WeightGroups`]) through stock
     /// IDAWFtolerances on the tolerances in force, from the next step on: one
@@ -670,7 +752,7 @@ impl<S: System> Ida<S> {
         }
         let first = self.context.grouped.is_none();
         self.context.grouped = Some(Grouped {
-            factor: groups.factors(),
+            factor: groups.factors_for(self.context.multiplicity.as_deref()),
             groups,
             relative: self.relative,
             absolute: self.absolute.clone(),
@@ -683,6 +765,19 @@ impl<S: System> Ida<S> {
             }
         }
         Ok(())
+    }
+    /// The error-weight rule in force, for receipts: stock IDASVtolerances
+    /// (`"stock"`), or stock IDAWFtolerances carrying the coordinates'
+    /// multiplicities under one group (E-NUC: the unreduced model's stock
+    /// norm, `"stock-equivalent multiplicity rule"`), or N1's groups, with
+    /// or without multiplicities.
+    pub fn weight_rule_kind(&self) -> &'static str {
+        match (&self.context.grouped, &self.context.multiplicity) {
+            (None, _) => "stock",
+            (Some(g), Some(_)) if g.groups.sizes().len() == 1 => "stock-equivalent multiplicity rule",
+            (Some(_), Some(_)) => "N1 groups with multiplicities",
+            (Some(_), None) => "N1 groups",
+        }
     }
     /// The weight groups in force, if any (N1).
     pub fn weight_groups(&self) -> Option<&WeightGroups> {
@@ -734,6 +829,7 @@ impl<S: System> Ida<S> {
         if !horizon.is_finite() || horizon <= self.time {
             return Err("IDA initialization horizon must be in the future".into());
         }
+        let _cost = cost::scope("ic");
         let status = unsafe {
             operating_ida_initialize(
                 self.handle.as_ptr(),
@@ -757,6 +853,7 @@ impl<S: System> Ida<S> {
             return Err("IDA target must be in the future".into());
         }
         self.started = true;
+        let _cost = cost::scope("advance");
         let status = unsafe {
             operating_ida_advance(
                 self.handle.as_ptr(),
@@ -801,6 +898,7 @@ impl<S: System> Ida<S> {
         if !time.is_finite() || y.iter().chain(yp).any(|v| !v.is_finite()) {
             return Err("IDA reinitialization requires a finite time and state".into());
         }
+        let _cost = cost::scope("reinit");
         let status = unsafe {
             operating_ida_reinitialize(self.handle.as_ptr(), time, y.as_ptr(), yp.as_ptr())
         };
@@ -809,6 +907,7 @@ impl<S: System> Ida<S> {
         result?;
         self.time = time;
         self.started = false;
+        self.segment_steps = 0;
         Ok(())
     }
     /// IDASetId on this instance after a structural discrete event, such as a
@@ -1096,6 +1195,8 @@ impl<S: System> Ida<S> {
             return Err("IDA target must be in the future".into());
         }
         self.started = true;
+        let _cost = cost::scope(step_scope(self.segment_steps));
+        self.segment_steps += 1;
         let status = unsafe {
             operating_ida_step(
                 self.handle.as_ptr(),

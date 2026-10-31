@@ -376,6 +376,16 @@ impl FieldClient {
             reports: unit.field_reports(),
         })
     }
+    /// S5 snapshot hook (WORLD `ld01-unit`; ELEC reconciles): the
+    /// controller's state ([`FieldProtection::snapshot`]). The equipment
+    /// reports are not truth: every frame samples them before deciding.
+    pub fn snapshot(&self) -> serde_json::Value {
+        self.protection.snapshot()
+    }
+    /// Restore [`FieldClient::snapshot`] exactly.
+    pub fn restore(&mut self, state: &serde_json::Value) -> Result<(), String> {
+        self.protection.restore(state)
+    }
 }
 impl<S: JoinedSystem> Client<Electrified<S>> for FieldClient {
     fn name(&self) -> &str {
@@ -434,6 +444,13 @@ impl<S: JoinedSystem> System for Electrified<S> {
     }
     fn klu_ordering(&self) -> KluOrdering {
         self.inner.klu_ordering()
+    }
+    /// E-NUC: the inner system's multiplicities; the slice is unreduced.
+    fn multiplicities(&self) -> Option<Vec<f64>> {
+        self.inner.multiplicities().map(|mut m| {
+            m.resize(m.len() + N, 1.);
+            m
+        })
     }
     fn root_count(&self) -> usize {
         self.inner.root_count()

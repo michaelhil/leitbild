@@ -574,6 +574,9 @@ impl<S: System> System for Recorder<S> {
     fn klu_ordering(&self) -> KluOrdering {
         self.inner.klu_ordering()
     }
+    fn multiplicities(&self) -> Option<Vec<f64>> {
+        self.inner.multiplicities()
+    }
     fn nonzeros(&self) -> usize {
         self.inner.nonzeros()
     }
@@ -1929,6 +1932,10 @@ fn donor_quiet_cost_probe() {
 /// One scalar decay, y' = -y, for the setter's own checks.
 struct Decay;
 impl System for Decay {
+    /// Unreduced: every coordinate stands for itself (E-NUC).
+    fn multiplicities(&self) -> Option<Vec<f64>> {
+        None
+    }
     fn dimension(&self) -> usize {
         1
     }

@@ -281,9 +281,13 @@ pub fn compare(
     let mut metrics = serde_json::Map::new();
     let mut within = true;
     let mut missing = Vec::new();
+    // HOOK (PHYS X1): the roof's largest |filtered difference|, which the
+    // operator-grade budget judges (reported, not part of `within`).
+    let mut roof_max = Value::Null;
     match filtered(key::PZR_ROOF_PA) {
         Ok(roof) => {
             let roof = &roof[0];
+            roof_max = json!(max_abs(roof));
             let per_output = (b.output_s / dt).round() as usize;
             let at_outputs: Vec<f64> = roof.iter().step_by(per_output).copied().collect();
             let changes: Vec<f64> = at_outputs.windows(2).map(|w| w[1] - w[0]).collect();
@@ -327,7 +331,7 @@ pub fn compare(
     json!({"from_s": from, "to_s": to, "evaluable": evaluable, "missing": missing,
         "observations": ra.len(), "observation_s": dt, "output_s": b.output_s, "cutoff_hz": b.cutoff_hz,
         "filter": DECLARED_FILTER, "rule": COMPARISON_RULE, "metrics": metrics,
-        "within": evaluable && within})
+        "pzr_roof_max_abs_pa": roof_max, "within": evaluable && within})
 }
 
 /// Each cluster's first time (s from `origin`) at which its insertion

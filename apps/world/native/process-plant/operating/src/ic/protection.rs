@@ -348,6 +348,82 @@ impl Protection {
             }
         }
     }
+    /// S5 snapshot hook (WORLD `ld01-unit`; PHYS reconciles): everything a
+    /// later frame reads — every channel's response and delivery, every
+    /// report, the three divisions, the holding chain, the turbine controls'
+    /// trip memory, the interlock's state and the last decided frame —
+    /// exact (real numbers as bits). The compiled section (families,
+    /// functions, timing) is recomposed on restore; the log is a receipt.
+    pub fn snapshot(&self) -> Result<Value, String> {
+        Ok(json!({
+            "families": self.families.iter().map(|f| json!({"id": f.spec.id,
+                "channels": f.channels.iter().map(Analog::snapshot).collect::<Vec<_>>()})).collect::<Vec<_>>(),
+            "reports": self.reports.iter().map(|r| r.channel.snapshot()).collect::<Vec<_>>(),
+            "divisions": self.divisions.iter().map(Division::snapshot).collect::<Result<Vec<_>, _>>()?,
+            "holding": self.holding.snapshot(),
+            "turbine_trip_s": crate::joined::block::snapshot_time(self.turbine_trip_s),
+            "holding_lost_frame": self.holding_lost_frame,
+            "turbine_trip_requested": self.turbine_trip_requested,
+            "decided": self.decided,
+        }))
+    }
+    /// Restore [`Protection::snapshot`] into the protection of the same
+    /// section exactly; any other layout refuses.
+    pub fn restore(&mut self, v: &Value) -> Result<(), String> {
+        use super::acquisition::{restored_frame_option, restored_real_option, snapshot_fields};
+        let o = snapshot_fields(
+            v,
+            "protection",
+            &[
+                "families",
+                "reports",
+                "divisions",
+                "holding",
+                "turbine_trip_s",
+                "holding_lost_frame",
+                "turbine_trip_requested",
+                "decided",
+            ],
+        )?;
+        let families = o["families"]
+            .as_array()
+            .filter(|a| a.len() == self.families.len())
+            .ok_or("protection snapshot: one entry per family")?;
+        for (f, s) in self.families.iter_mut().zip(families) {
+            let s = snapshot_fields(s, "family", &["id", "channels"])?;
+            let channels = s["channels"]
+                .as_array()
+                .filter(|a| {
+                    s["id"].as_str() == Some(f.spec.id.as_str()) && a.len() == f.channels.len()
+                })
+                .ok_or_else(|| format!("protection snapshot: family {} differs", f.spec.id))?;
+            for (c, s) in f.channels.iter_mut().zip(channels) {
+                c.restore(s)?;
+            }
+        }
+        let reports = o["reports"]
+            .as_array()
+            .filter(|a| a.len() == self.reports.len())
+            .ok_or("protection snapshot: one entry per report")?;
+        for (r, s) in self.reports.iter_mut().zip(reports) {
+            r.channel.restore(s)?;
+        }
+        let divisions = o["divisions"]
+            .as_array()
+            .filter(|a| a.len() == 3)
+            .ok_or("protection snapshot: three divisions")?;
+        for (d, s) in self.divisions.iter_mut().zip(divisions) {
+            d.restore(s)?;
+        }
+        self.holding.restore(&o["holding"])?;
+        self.turbine_trip_s = restored_real_option(&o["turbine_trip_s"], "turbine trip memory")?;
+        self.holding_lost_frame =
+            restored_frame_option(&o["holding_lost_frame"], "holding loss frame")?;
+        self.turbine_trip_requested =
+            restored_frame_option(&o["turbine_trip_requested"], "interlock request frame")?;
+        self.decided = restored_frame_option(&o["decided"], "last decided frame")?;
+        Ok(())
+    }
     pub fn channel_mut(&mut self, id: &str) -> Option<&mut Analog> {
         self.families
             .iter_mut()
@@ -600,6 +676,43 @@ mod tests {
             }
         }
         lost
+    }
+
+    #[test]
+    fn a_restored_snapshot_continues_bitwise() {
+        // S5 snapshot hook: low pressure half qualified (lagged channels in
+        // flight), then a copy restored into a fresh protection of the same
+        // section continues exactly as its source.
+        let fresh = || Protection::new(&section(json!([]), json!([])), pressure(12.9e6)).unwrap();
+        let mut source = fresh();
+        assert_eq!(run(&mut source, 5220, 5224, |_| 12.95e6), None);
+        let snapshot = source.snapshot().unwrap();
+        let mut copy = Protection::new(&section(json!([]), json!([])), pressure(15.2e6)).unwrap();
+        copy.restore(&snapshot).unwrap();
+        assert_eq!(copy.snapshot().unwrap(), snapshot);
+        let p = |k: u64| 12.9e6 - 1e3 * (k - 5224) as f64;
+        // Both continue from frame 5224 (5223 was the last observed).
+        let continued = |prot: &mut Protection| {
+            prot.advance(&Quantity::PzrRoofPressure, 0.1, &[p(5224)])
+                .unwrap();
+            run(prot, 5224, 5240, p)
+        };
+        assert_eq!(continued(&mut source), continued(&mut copy));
+        assert_eq!(source.snapshot().unwrap(), copy.snapshot().unwrap());
+        assert!(
+            source.holding.lost_at.is_some(),
+            "the copy point lies before the trip"
+        );
+        // Another section's layout refuses.
+        let mut other = Protection::new(
+            &section(json!([]), json!([{"id": "LD01.SG.A.LT.NR", "quantity": {"sg_collapsed_level": {"sg": "A", "area_m2": 12.}},
+                "channels": [{"id": "N1", "supply": "I1"}, {"id": "N2", "supply": "I2"}, {"id": "N3", "supply": "I3"}],
+                "channel": {"lag_s": 0.2, "min": null, "max": null, "quantum": null, "indeterminate_band": null, "sample_s": 0.1, "transport_s": 0.1},
+                "maximum_age_s": 0.3, "recovery_s": 1.}])),
+            pressure(15.2e6),
+        )
+        .unwrap();
+        assert!(other.restore(&snapshot).is_err());
     }
 
     #[test]

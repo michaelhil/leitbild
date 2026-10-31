@@ -12,10 +12,13 @@ use crate::{
 };
 use leitbild_operating_plant::{
     control::pzr_pressure::{Controller, Demand, Law, Quality, Sample},
+    ic::acquisition::{restored_real, snapshot_fields, snapshot_real},
     joined::operator::Joined,
     network::stratified::{self, Coordinates as PzrCoordinates},
     thermal::Scalar,
 };
+
+use serde_json::{Value, json};
 
 pub type System = Integrated<If97>;
 
@@ -152,6 +155,83 @@ impl PzrClient {
             acquired_s: t,
             quality,
         }
+    }
+    /// HOOK (WORLD `ld01-unit`, S5 snapshot): the client's truth at a stop:
+    /// the channel's lag and its time, the sample in flight, the request in
+    /// force, and the controller's demands in force (its only memory; their
+    /// withdrawal reason is a frame report, not an input of a later frame),
+    /// real numbers as bits. The law, channel block and probe are the
+    /// composition's; the series and schedule are receipts. A replayed
+    /// schedule is refused (a replay is a test of the controller).
+    pub fn snapshot(&self) -> Result<Value, String> {
+        if self.replay.is_some() {
+            return Err("a replayed PZR control schedule has no snapshot".into());
+        }
+        let quality = match self.in_flight.quality {
+            Quality::Usable => "usable",
+            Quality::Unavailable => "unavailable",
+            Quality::BelowRange => "below",
+            Quality::AboveRange => "above",
+        };
+        let d = self.controller.in_force();
+        Ok(
+            json!({"class": self.class.name(), "lag": snapshot_real(self.lag), "lag_at": snapshot_real(self.lag_at),
+            "in_flight": [snapshot_real(self.in_flight.value_pa), snapshot_real(self.in_flight.acquired_s), quality],
+            "in_force_w": snapshot_real(self.in_force_w),
+            "controller": [snapshot_real(d.heater_request_w), snapshot_real(d.spray_target)]}),
+        )
+    }
+    /// Restore [`PzrClient::snapshot`] into the client of the same
+    /// composition exactly.
+    pub fn restore(&mut self, v: &Value) -> Result<(), String> {
+        let o = snapshot_fields(
+            v,
+            "PZR control",
+            &[
+                "class",
+                "lag",
+                "lag_at",
+                "in_flight",
+                "in_force_w",
+                "controller",
+            ],
+        )?;
+        if o["class"].as_str() != Some(self.class.name()) || self.replay.is_some() {
+            return Err(format!(
+                "PZR control of class {} restored into class {}",
+                o["class"],
+                self.class.name()
+            ));
+        }
+        let in_flight = match o["in_flight"].as_array().map(Vec::as_slice) {
+            Some([value, at, Value::String(q)]) => Sample {
+                value_pa: restored_real(value, "PZR channel sample")?,
+                acquired_s: restored_real(at, "PZR channel acquisition")?,
+                quality: match q.as_str() {
+                    "usable" => Quality::Usable,
+                    "unavailable" => Quality::Unavailable,
+                    "below" => Quality::BelowRange,
+                    "above" => Quality::AboveRange,
+                    other => return Err(format!("PZR channel quality {other}")),
+                },
+            },
+            _ => return Err(format!("PZR channel sample {}", o["in_flight"])),
+        };
+        let controller = match o["controller"].as_array().map(Vec::as_slice) {
+            Some([heater, spray]) => Controller::new(
+                self.controller.law().clone(),
+                restored_real(heater, "PZR heater demand")?,
+                restored_real(spray, "PZR spray demand")?,
+            )
+            .map_err(|e| format!("{e:?}"))?,
+            _ => return Err(format!("PZR controller {}", o["controller"])),
+        };
+        self.lag = restored_real(&o["lag"], "PZR channel lag")?;
+        self.lag_at = restored_real(&o["lag_at"], "PZR channel lag time")?;
+        self.in_force_w = restored_real(&o["in_force_w"], "PZR request in force")?;
+        self.in_flight = in_flight;
+        self.controller = controller;
+        Ok(())
     }
     /// `Σ_k (−τ)^k p^(k)(t)` of the roof-pressure polynomial.
     fn particular(&mut self, dense: &dyn Dense, t: f64) -> Result<f64, String> {

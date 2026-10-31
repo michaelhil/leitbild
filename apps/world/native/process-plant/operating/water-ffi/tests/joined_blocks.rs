@@ -125,10 +125,11 @@ fn nuclear_partials_against_seeded_rows() {
     )
     .expect("nuclear partials");
     let entries = rhs_entries(&template, &partials);
-    let (r, a) = (nuclear.regions(), nuclear.carriers());
+    // E-NUC: the nuclear coordinates are the replica groups'.
+    let (r, a) = (nuclear.regions(), nuclear.replica_groups());
     let len = nuclear.layout().len();
     // Coordinate directions: every population, and every coordinate of a
-    // few carriers.
+    // few replica groups.
     let mut columns: Vec<usize> = (0..r).collect();
     for c in [0, a / 2, a - 1] {
         for g in 0..6 {

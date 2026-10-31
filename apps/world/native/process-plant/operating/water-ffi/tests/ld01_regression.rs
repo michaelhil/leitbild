@@ -342,8 +342,20 @@ fn smoke() {
         let joined_packet: packet::Packet = serde_json::from_slice(&bytes).expect("joined packet");
         let (network, prepared) = Network::new(&network_packet, If97, &PZR).expect("network");
         let cells = network.cell_layout.len();
-        let nuclear = Nuclear::new(&joined_packet, cells).expect("nuclear block");
-        let solids = Solids::new(&joined_packet, cells).expect("solids block");
+        let mut nuclear = Nuclear::new(&joined_packet, cells).expect("nuclear block");
+        // E-NUC phase B: each rod seat's fitting stays out of the solids' classes.
+        let raw: serde_json::Value = serde_json::from_slice(&bytes).expect("packet json");
+        let singles: Vec<String> = raw["rods"]["clusters"]
+            .as_array()
+            .map(|c| {
+                c.iter()
+                    .map(|c| format!("{}/top-fitting", c["fuel_assembly"].as_str().unwrap()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let solids =
+            Solids::new(&joined_packet, cells, nuclear.group_of(), &singles).expect("solids block");
+        nuclear.set_ports(solids.half_members()).expect("nuclear ports");
         let network_layout = joined::network_layout(&network);
         let k_ids = nuclear.layout().ids();
         let s_ids = solids.layout().ids();

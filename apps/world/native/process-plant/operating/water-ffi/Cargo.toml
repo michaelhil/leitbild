@@ -23,6 +23,12 @@ serde_json = "=1.0.151"
 name = "prepare_steady_solids"
 required-features = ["ida"]
 
+# The LD-01 unit host (lane WORLD, plan r4): one child process per unit on
+# stdin/stdout, on stock IDAS with its quadratures.
+[[bin]]
+name = "ld01-unit"
+required-features = ["quadratures"]
+
 [dev-dependencies]
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.151"

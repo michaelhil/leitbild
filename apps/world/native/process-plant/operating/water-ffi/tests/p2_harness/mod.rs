@@ -689,6 +689,10 @@ pub struct Segment {
     pub ledger: bool,
 }
 impl System for Segment {
+    /// Unreduced: every coordinate stands for itself (E-NUC).
+    fn multiplicities(&self) -> Option<Vec<f64>> {
+        None
+    }
     fn dimension(&self) -> usize {
         self.system.n()
     }

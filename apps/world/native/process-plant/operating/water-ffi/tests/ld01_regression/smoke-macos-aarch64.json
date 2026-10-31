@@ -2,20 +2,20 @@
   "counts": {
     "census": {
       "composed": [
-        17251,
-        1194,
-        18445
+        1084,
+        90,
+        1174
       ],
-      "histories": 9650,
+      "histories": 450,
       "with_pending": [
-        17335,
-        1362,
-        18697
+        1168,
+        258,
+        1426
       ]
     },
     "composition": {
-      "algebraic": 1366,
-      "dimension": 18708,
+      "algebraic": 102,
+      "dimension": 1205,
       "owner_transactions": 1,
       "s1_settling": {
         "convergence_failures": 4,
@@ -26,16 +26,16 @@
         "steps": 219
       },
       "surface_max_iterations": 2,
-      "surface_sets": 386
+      "surface_sets": 18
     },
     "oracle": {
-      "columns": 198,
+      "columns": 176,
       "outside_pattern": 0,
       "within_1e-9": true
     },
     "release_restart": {
-      "algebraic_after": 1313,
-      "algebraic_before": 1365,
+      "algebraic_after": 100,
+      "algebraic_before": 101,
       "clusters": 52,
       "constraint_rate_within_bound": true,
       "opening_transactions": 1,
@@ -47,31 +47,31 @@
       "trip_transactions": 3
     },
     "settle": {
-      "convergence_failures": 9,
-      "error_failures": 62,
+      "convergence_failures": 10,
+      "error_failures": 61,
       "failure": null,
-      "jacobians": 317,
+      "jacobians": 321,
       "last_order": 2,
-      "linear_setups": 317,
-      "nonlinear_iterations": 2866,
+      "linear_setups": 321,
+      "nonlinear_iterations": 2885,
       "reached": true,
-      "residuals": 2867,
+      "residuals": 2886,
       "root_restarts": 1,
-      "steps": 2333,
-      "system_jacobians": 317,
-      "system_residuals": 5635
+      "steps": 2348,
+      "system_jacobians": 321,
+      "system_residuals": 5673
     },
     "z1": {
       "constraint_rate_within_bound": true,
       "projection_passes": 0,
-      "rate_passes": 2,
+      "rate_passes": 1,
       "residual_within_bound": true
     }
   },
   "environment": {
     "if97_revision": "0be7b51f35c47e59e6f91f4f0f47108bf997e50c",
     "metastable_page_sha256": "f30533c1d9281904abb844180699614638585d69647c2dc5bc9847ec6fec6595",
-    "packet_sha256": "4d95fe9c8f1f0ada0238994c4253f1aed4b2046120d139a0bb1a2abd65af55c2",
+    "packet_sha256": "c7c3c3042d50040585a1394c25db0cde0ae7c6ad49fab64212508dfed9a68f03",
     "s1_gates_sha256": "708aca3b870d6b561a40fa1a6c1c923db8caed40bc5b3a2e72ebf17a86a4c91a",
     "sundials_version": "7.5.0",
     "water_adapter_sha256": "4bc25801537eab9fa8b1835106165c3304deff8d62dc7e3fc547f147333671c9"
