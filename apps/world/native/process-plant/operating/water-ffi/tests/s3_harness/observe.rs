@@ -24,7 +24,7 @@ use leitbild_operating_plant::{
     joined::{
         account::{Held, Plan},
         operator::Joined,
-        post_trip_domain::{self, Domain, Error, Extension},
+        post_trip_domain::{self, Domain, Error, Extension, HotStandby},
     },
     source_feedback as sf,
 };
@@ -35,6 +35,46 @@ use leitbild_operating_water::{
     joined::JoinedSystem,
 };
 use serde_json::{Value, json};
+
+/// The kinetics end rule a case declares: the S3 cases' A4 (D3 (a) with
+/// B1), or the OU cases' P1 (owner R11: the hot-standby admission, the
+/// shutdown margin reported, never a domain gate; B1 stays).
+#[derive(Clone, Copy, Debug)]
+pub enum KineticsRule {
+    D3a(Extension),
+    HotStandby(HotStandby),
+}
+
+/// P1's reported margins over a run: per reported factor, the accepted
+/// states at which the source-free operator was not subcritical or did not
+/// hold the reference margin, and the smallest margin (Δk/k, S2-D13's
+/// pencil) with its time.
+#[derive(Default, Debug, Clone, serde::Serialize)]
+pub struct HotStandbyRecord {
+    pub factors: Vec<f64>,
+    pub reference_margin_dk_k: f64,
+    pub not_subcritical: Vec<u64>,
+    pub below_reference: Vec<u64>,
+    pub smallest_margin_dk_k: Vec<Option<(f64, f64)>>,
+}
+
+/// The smallest real mode of the margin pencil `(M, diag(gain))`: the
+/// margin in Δk/k (S2-D13's stock dggev, Accelerate on macOS).
+fn margin_value(m: &post_trip_domain::Margin) -> Result<f64, String> {
+    let r = m.reactivity_gain.len();
+    let mut g = vec![0.; r * r];
+    for i in 0..r {
+        g[i * r + i] = m.reactivity_gain[i];
+    }
+    leitbild_operating_water::spectrum::decompose(r, &m.operator, &g)
+        .map(|s| {
+            s.modes
+                .iter()
+                .map(|x| x.lambda.re)
+                .fold(f64::INFINITY, f64::min)
+        })
+        .map_err(|e| format!("P1 margin pencil: {e:?}"))
+}
 
 /// Rule I's record: accepted states judged, the first extended state,
 /// margin failures and the first exit with its label.
@@ -61,6 +101,8 @@ pub struct RuleI {
     pub crosschecked: u64,
     pub mismatches: u64,
     pub first_mismatch: Option<Value>,
+    /// P1's reported margins, for a case under [`KineticsRule::HotStandby`].
+    pub hot_standby: Option<HotStandbyRecord>,
 }
 
 /// COST2: rule I's inputs as bits (the nuclear block's feedback inputs, the
@@ -108,18 +150,30 @@ pub fn exit_label(exit: &sf::Error, phase: &[sf::RegionPhase], margin_holds: boo
 }
 
 impl RuleI {
-    /// D3 (a) with B1 at one accepted state `(t, y, y')` of the operator.
+    /// The case's kinetics end rule at one accepted state `(t, y, y')`.
     pub fn judge(
         &mut self,
         joined: &mut Joined<If97>,
-        extension: &Extension,
+        rule: &KineticsRule,
         t: f64,
         y: &[f64],
         yp: &[f64],
     ) -> Result<(), String> {
-        // COST2: the root call at this accepted state already evaluated it
-        // (bitwise the same `(t, y, y')`, nothing evaluated since): judge on
-        // that evaluation; otherwise evaluate the state, as before.
+        match rule {
+            KineticsRule::D3a(extension) => self.judge_d3a(joined, extension, t, y, yp),
+            KineticsRule::HotStandby(record) => self.judge_hot_standby(joined, record, t, y, yp),
+        }
+    }
+
+    /// The operator evaluated at `(t, y, y')`, or the root call's held
+    /// evaluation of the same state (COST2), with the cross-check.
+    fn evaluated(
+        &mut self,
+        joined: &mut Joined<If97>,
+        t: f64,
+        y: &[f64],
+        yp: &[f64],
+    ) -> Result<Vec<sf::RegionPhase>, String> {
         let crosscheck = *self.crosscheck.get_or_insert_with(|| {
             std::env::var("LD01_S3_RULE_I_CROSSCHECK").is_ok_and(|v| v == "1")
         });
@@ -143,14 +197,106 @@ impl RuleI {
                 self.mismatches += 1;
                 if self.first_mismatch.is_none() {
                     let k = before.iter().zip(&after).position(|(a, b)| a != b);
-                    self.first_mismatch = Some(json!({"t_s": t, "index": k, "lengths": [before.len(), after.len()]}));
+                    self.first_mismatch =
+                        Some(json!({"t_s": t, "index": k, "lengths": [before.len(), after.len()]}));
                 }
             }
         }
         self.samples += 1;
-        let phase = joined
+        joined
             .region_phases()
-            .map_err(|e| format!("rule I: region phases at {t} s: {e:?}"))?;
+            .map_err(|e| format!("rule I: region phases at {t} s: {e:?}"))
+    }
+
+    /// P1 (owner R11) with B1 at one accepted state: the hot-standby
+    /// admission; the margin at each reported factor is recorded, never an
+    /// end; only leaving the hot-standby domain or B1's phase absence ends
+    /// the run, labelled.
+    pub fn judge_hot_standby(
+        &mut self,
+        joined: &mut Joined<If97>,
+        record: &HotStandby,
+        t: f64,
+        y: &[f64],
+        yp: &[f64],
+    ) -> Result<(), String> {
+        let phase = self.evaluated(joined, t, y, yp)?;
+        let admitted = post_trip_domain::admit_hot_standby_accepted(
+            joined.nuclear(),
+            &phase,
+            record,
+            joined.travel(),
+            t,
+            0.,
+        );
+        self.verdicts.fold_words(&[t]);
+        for r in &phase {
+            self.verdicts
+                .fold_words(&[r.saturation_departure_k, r.vapor_kg]);
+        }
+        let k = record.reported_water_term_factors.len();
+        let rec = self.hot_standby.get_or_insert_with(|| HotStandbyRecord {
+            factors: record.reported_water_term_factors.to_vec(),
+            reference_margin_dk_k: record.reference_margin_dk_k,
+            not_subcritical: vec![0; k],
+            below_reference: vec![0; k],
+            smallest_margin_dk_k: vec![None; k],
+        });
+        match admitted {
+            Ok(a) => {
+                self.verdicts.fold_words(&[3.]);
+                for (i, m) in a.margins.iter().enumerate() {
+                    let value = margin_value(&m.margin)?;
+                    self.verdicts.fold_words(&[
+                        m.factor,
+                        f64::from(u8::from(m.subcritical)),
+                        f64::from(u8::from(m.margin.holds)),
+                        value,
+                    ]);
+                    rec.not_subcritical[i] += u64::from(!m.subcritical);
+                    rec.below_reference[i] += u64::from(!m.margin.holds);
+                    if rec.smallest_margin_dk_k[i].is_none_or(|(v, _)| value < v) {
+                        rec.smallest_margin_dk_k[i] = Some((value, t));
+                    }
+                }
+                self.margin_failures += u64::from(!a.margins[0].margin.holds);
+                Ok(())
+            }
+            Err(Error::Unsupported {
+                margin_holds, exit, ..
+            }) => {
+                self.verdicts.fold_words(&[4.]);
+                for b in format!("{exit:?}").bytes() {
+                    self.verdicts.fold_words(&[f64::from(b)]);
+                }
+                let label = if sf::phase_absence(&phase).err().as_ref() == Some(&exit) {
+                    "B1 phase-absence exit"
+                } else {
+                    "P1 hot-standby domain exit"
+                };
+                if self.exit.is_none() {
+                    self.exit = Some(json!({"t_s": t, "label": label,
+                        "verdict": format!("unsupported: nominal margin holds {margin_holds}, {exit:?}"),
+                        "evaluated_on": "accepted stock steps"}));
+                }
+                Ok(())
+            }
+            Err(e) => Err(format!("P1 at {t} s: {e}")),
+        }
+    }
+
+    /// D3 (a) with B1 at one accepted state `(t, y, y')` of the operator.
+    pub fn judge_d3a(
+        &mut self,
+        joined: &mut Joined<If97>,
+        extension: &Extension,
+        t: f64,
+        y: &[f64],
+        yp: &[f64],
+    ) -> Result<(), String> {
+        // COST2: judged on the root call's held evaluation of this state
+        // when it is bitwise the same `(t, y, y')`, else on a new one.
+        let phase = self.evaluated(joined, t, y, yp)?;
         let admitted = post_trip_domain::admit_accepted(
             joined.nuclear(),
             &phase,
@@ -161,12 +307,17 @@ impl RuleI {
         );
         self.verdicts.fold_words(&[t]);
         for r in &phase {
-            self.verdicts.fold_words(&[r.saturation_departure_k, r.vapor_kg]);
+            self.verdicts
+                .fold_words(&[r.saturation_departure_k, r.vapor_kg]);
         }
         match &admitted {
             Ok(a) => {
                 let m = &a.margin;
-                self.verdicts.fold_words(&[1., f64::from(u8::from(a.domain == Domain::Original)), f64::from(u8::from(m.holds))]);
+                self.verdicts.fold_words(&[
+                    1.,
+                    f64::from(u8::from(a.domain == Domain::Original)),
+                    f64::from(u8::from(m.holds)),
+                ]);
                 for v in [&m.pivots, &m.operator, &m.reactivity_gain, &m.water_terms] {
                     self.verdicts.fold_words(&[v.len() as f64]);
                     self.verdicts.fold_words(v);
@@ -460,7 +611,8 @@ pub struct Gates {
 /// The run's observer: rule I always, the gate parts when asked.
 pub struct CaseObserver {
     pub n: usize,
-    pub extension: Extension,
+    /// The case's kinetics end rule (A4's D3 (a), or P1 for an OU case).
+    pub extension: KineticsRule,
     pub rule_i: RuleI,
     pub gates: Option<Gates>,
     /// The instructions its own calls retired (the cost family reports

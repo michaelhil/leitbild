@@ -731,6 +731,46 @@ fn kinetics_rule(block: &Block) -> Result<Value, String> {
     kinetics_rule_at(block, "")
 }
 
+/// The case run's kinetics end rule, from one explicit source:
+/// `LD01_OU_PREDICATES` names a wiki page holding the one
+/// `ld01-ou-predicates` block, whose `/predicates/U3/kineticsDomain` the OU
+/// cases (U3, plan r4's C2/C3/C5 floor runs) end under (OU-D r4+: P1);
+/// unset, the case's own block (the S3 blocks: A4, pinned with S3's
+/// results). The value records its source (page and its sha256).
+fn case_kinetics(d: &declaration::Declaration) -> Result<Value, String> {
+    match std::env::var("LD01_OU_PREDICATES") {
+        Ok(page) => {
+            let block = Block::from_page(&page, "ld01-ou-predicates")?;
+            let mut k = kinetics_rule_at(&block, "/predicates/U3")?;
+            k["source"] = json!({"fence": "ld01-ou-predicates", "pointer": "/predicates/U3/kineticsDomain",
+                "page": block.page, "page_sha256": block.page_sha256});
+            Ok(k)
+        }
+        Err(std::env::VarError::NotPresent) => {
+            let mut k = kinetics_rule_at(&d.block, &d.common(""))?;
+            k["source"] = json!({"fence": d.block.fence, "pointer": format!("{}/kineticsDomain", d.common("")),
+                "page": d.block.page, "page_sha256": d.block.page_sha256});
+            Ok(k)
+        }
+        Err(e) => Err(format!("LD01_OU_PREDICATES: {e}")),
+    }
+}
+
+#[test]
+fn the_ou_predicates_u3_kinetics_domain_is_p1_with_b1() {
+    // ld01-ou-predicates r6 (wiki claude/ld01-ou-d-wiki 29fc745), U3's rule.
+    let b = Block::from_json(
+        "ld01-ou-predicates",
+        r#"{"predicates":{"U3":{"kineticsDomain":{"ruleI":"P1 (owner R11, OU-P1): a U3 case runs to its declared end under the hot-standby admission","floor":"B1 (owner-approved, R5-B): HOT-SOURCE-1's pressure floor 8 MPa","marginFactors":[1,1.53,2.24]}}}}"#,
+    )
+    .unwrap();
+    let k = kinetics_rule_at(&b, "/predicates/U3").unwrap();
+    assert_eq!(
+        (k["ruleI"].as_str(), k["floor"].as_str()),
+        (Some("P1"), Some("B1"))
+    );
+}
+
 /// [`kinetics_rule`] under `prefix` (C5's block: `/commonRules`).
 fn kinetics_rule_at(block: &Block, prefix: &str) -> Result<Value, String> {
     let rule_i = block.whole(&format!("{prefix}/kineticsDomain/ruleI"));
@@ -738,14 +778,21 @@ fn kinetics_rule_at(block: &Block, prefix: &str) -> Result<Value, String> {
     let (Some(rule_i), Some(floor)) = (rule_i.as_str(), floor.as_str()) else {
         return Err("the block declares no kineticsDomain.ruleI and floor".into());
     };
-    if !rule_i.starts_with("A4 (owner-approved, R5-A)") {
-        return Err(format!(
-            "rule I {rule_i:?}: the harness implements the owner's A4 (R5-A)"
-        ));
-    }
     if !floor.starts_with("B1 (owner-approved, R5-B)") {
         return Err(format!(
             "kinetics floor {floor:?}: the harness implements the owner's B1 (R5-B)"
+        ));
+    }
+    if rule_i.starts_with("P1 (owner R11") {
+        return Ok(
+            json!({"ruleI": "P1", "floor": "B1", "ruleI_text": rule_i, "floor_text": floor,
+            "exits": ["P1 hot-standby domain exit", "B1 phase-absence exit"],
+            "margin": "reported at the record's factors on every accepted state, never an end"}),
+        );
+    }
+    if !rule_i.starts_with("A4 (owner-approved, R5-A)") {
+        return Err(format!(
+            "rule I {rule_i:?}: the harness implements the owner's A4 (R5-A) and P1 (R11)"
         ));
     }
     Ok(
@@ -1492,9 +1539,19 @@ fn drive(
     );
     let (zero_after, command) = case_clock(case, spec, declared_frame_s).unwrap();
     let packet_json: Value = serde_json::from_slice(&spine::packet_bytes().1).expect("packet json");
-    let extension: leitbild_operating_plant::joined::post_trip_domain::Extension =
-        serde_json::from_value(packet_json["post_trip_domain"].clone())
-            .expect("the packet's post_trip_domain section (D3 (a))");
+    // The case's kinetics end rule (P1, owner R11): A4's D3 (a) for the S3
+    // blocks, the hot-standby admission under P1 (`case_kinetics`).
+    let extension = match case_kinetics(d).unwrap_or_else(|e| panic!("{e}"))["ruleI"].as_str() {
+        Some("P1") => observe::KineticsRule::HotStandby(
+            serde_json::from_value(packet_json["hot_standby_kinetics"].clone())
+                .expect("the packet's hot_standby_kinetics section (P1)"),
+        ),
+        Some("A4") => observe::KineticsRule::D3a(
+            serde_json::from_value(packet_json["post_trip_domain"].clone())
+                .expect("the packet's post_trip_domain section (D3 (a))"),
+        ),
+        other => panic!("kinetics rule {other:?}: A4 or P1"),
+    };
     let zero = t0 + zero_after;
     let joined = &ida.system().integrated().joined;
     let mut protection = ProtectionClient::new(&section, joined, &y[..n], &reference)
@@ -2682,7 +2739,8 @@ fn drive(
             "note": "samples = stock steps less located-root returns and steps a late change rolled back", "first_extended_s": domain.first_extended, "margin_failures": domain.margin_failures,
             "exit": domain.exit, "exit_after_zero_s": exit_after_zero, "information_from_s": exit_after_zero,
             "verdict_fingerprint": domain.verdicts.hex(), "reuse": {"reused": domain.reused, "crosscheck": domain.crosscheck, "crosschecked": domain.crosschecked,
-                "mismatches": domain.mismatches, "first_mismatch": domain.first_mismatch}},
+                "mismatches": domain.mismatches, "first_mismatch": domain.first_mismatch},
+            "hot_standby_margins": domain.hot_standby},
         "algebraic_residuals": observer.residuals.json(),
         "restart_entries": {"rule": "N4′ (S3-D58, S3-D61): each restart's pre-transaction projection correction of the algebraic rows in the integrator's own units (rtol |y| + atol, atol as stock IDA uses it, from its error weights); with a free vapour path, each free vapour path's drive tolerance by rule F's a_x construction at that state (judge-time cost, not plant work)",
             "judge_cpu_s": observer.entries.iter().filter_map(|e| e["drives"]["judge_cpu_s"].as_f64()).sum::<f64>(),
@@ -3300,7 +3358,7 @@ fn s3_case_run() {
         Err(_) => declared_s,
     };
     // Rule I: the owner's answers A4 and B1 (r3.7).
-    let kinetics = kinetics_rule_at(&d.block, &d.common("")).unwrap_or_else(|e| panic!("{e}"));
+    let kinetics = case_kinetics(&d).unwrap_or_else(|e| panic!("{e}"));
     d.block.text(&d.common("/kineticsDomain/ruleI"));
     let state_path = std::env::var("LD01_S3_STATE").expect("LD01_S3_STATE");
     let state: Value =
