@@ -94,6 +94,18 @@ describe('the LD-01 native engine', () => {
     expect(() => engine.runtime.pwrTransientDiagnostics()).toThrow('does not answer them')
   })
 
+  test('exchanges only on I&C frame instants, carrying the remainder: how a Run slices its time changes no frame', async () => {
+    const [whole, sliced] = [await connect(), await connect()]
+    const once = await whole.advance(1_000)
+    expect((await sliced.advance(30)).frame).toBeNull()
+    expect(sliced.runtime.advancedMs()).toBeCloseTo(130, 9)
+    await sliced.advance(320)
+    const last = await sliced.advance(650)
+    expect(Object.is(last.frame!.t, once.frame!.t)).toBe(true)
+    expect(Object.is(last.frame!.t, 1011 * 0.1)).toBe(true)
+    expect([...last.frame!.values]).toEqual([...once.frame!.values])
+  })
+
   test('sends a command at the unit time of the next exchange; writes only true to a command variable', async () => {
     const engine = await connect()
     expect(engine.runtime.readVariable('PROTECTION.tripped' as VariablePath)).toBe(false)
@@ -102,7 +114,7 @@ describe('the LD-01 native engine', () => {
     engine.runtime.writeCommand({ type: 'setVariable', path: 'PROTECTION.manualReactorTrip' as VariablePath, value: true })
     expect(engine.runtime.readVariable('PROTECTION.manualReactorTrip' as VariablePath)).toBe(true)
     const receipt = await engine.advance(500)
-    expect(receipt.frame.events).toEqual({ applied: ['ManualReactorTrip'] })
+    expect(receipt.frame!.events).toEqual({ applied: ['ManualReactorTrip'] })
     expect(engine.runtime.readVariable('PROTECTION.tripped' as VariablePath)).toBe(true)
     expect(engine.runtime.readVariable('PROTECTION.manualReactorTrip' as VariablePath)).toBe(false)
   })
@@ -121,7 +133,7 @@ describe('the LD-01 native engine', () => {
     expect(copy.runtime.elapsedMs()).toBe(source.runtime.elapsedMs())
     expect(copy.runtime.readVariable('PROTECTION.pressure' as VariablePath)).toBe(source.runtime.readVariable('PROTECTION.pressure' as VariablePath))
     const [a, b] = [await source.advance(2_000), await copy.advance(2_000)]
-    expect([...b.frame.values]).toEqual([...a.frame.values])
+    expect([...b.frame!.values]).toEqual([...a.frame!.values])
     expect(copy.runtime.readVariable('PROTECTION.tripped' as VariablePath)).toBe(true)
     const restarted = await connect({}, { load, restored: fresh })
     expect(restarted.runtime.elapsedMs()).toBeCloseTo(100, 9)
@@ -145,7 +157,7 @@ describe('the LD-01 native engine', () => {
 
   test('an ADVANCE the unit refuses fail-stops the engine with the cause', async () => {
     const engine = await connect({ refuseAdvanceAtS: 101 })
-    await expect(engine.advance(1_000)).rejects.toThrow('ld01-unit refused ADVANCE: ADVANCE from 100.1 s to 101.1 s: the test double refuses here')
+    await expect(engine.advance(1_000)).rejects.toThrow(/ld01-unit refused ADVANCE: ADVANCE from 100\.1\d* s to 101\.1\d* s: the test double refuses here/u)
     expect(engine.failure()?.reason).toContain('the test double refuses here')
   })
 

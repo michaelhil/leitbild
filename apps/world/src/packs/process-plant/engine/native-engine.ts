@@ -57,6 +57,8 @@ export const nativeProcessPlantCheckpointSchema = z.object({
   /** The artifact the state belongs to (SHA-256 of its manifest); another artifact refuses it. */
   artifactSha256: z.string().regex(/^[a-f0-9]{64}$/u),
   originBits: z.string().regex(/^[0-9a-f]{16}$/u),
+  /** The unit time the Run has asked for: the snapshot's frame plus the remainder short of the next frame. */
+  requestedBits: z.string().regex(/^[0-9a-f]{16}$/u),
   snapshot: z.record(z.string(), z.unknown()).nullable(),
   frame: z.object({ tBits: z.string().regex(/^[0-9a-f]{16}$/u), valuesBits: z.string() }).strict(),
 }).strict()
@@ -73,9 +75,10 @@ export interface NativeUnitCost {
   readonly cpuS: number
 }
 
+/** One advance: the frame its exchange returned and what the child says it cost; null while the request stays short of the next frame. */
 export interface NativeAdvanceReceipt {
   readonly simulatedMs: number
-  readonly frame: Ld01UnitAdvanceFrame
+  readonly frame: Ld01UnitAdvanceFrame | null
   readonly cost: NativeUnitCost
 }
 
@@ -122,7 +125,22 @@ export const connectNativeProcessPlantEngine = async (config: {
   let failure: NativeEngineFailure | null = null
   let state: { t: number; values: Float64Array } = { t: Number.NaN, values: new Float64Array(0) }
   let originS = Number.NaN
+  let requestedS = Number.NaN
+  let frameS = Number.NaN
   const elapsedMs = (): number => (state.t - originS) * 1_000
+  /**
+   * The I&C frame instants, k · period on the unit's axis, by the same product the driver forms
+   * (operating src/ic/mod.rs `Frame::instant`). The driver stops at every frame, so an exchange that ends on one
+   * adds no stop of its own: however the Run slices its time (wall-paced ticks, maximum pace), the unit makes the
+   * same steps, and a copy continues bit for bit.
+   */
+  const instant = (k: number): number => k * frameS
+  const lastFrameAtOrBefore = (t: number): number => {
+    let k = Math.floor(t / frameS)
+    while (instant(k + 1) <= t) k += 1
+    while (instant(k) > t) k -= 1
+    return k
+  }
   const fail = (reason: string): NativeEngineFailure => {
     if (failure !== null) return failure
     const at = Number.isFinite(state.t) ? elapsedMs() : 0
@@ -147,10 +165,11 @@ export const connectNativeProcessPlantEngine = async (config: {
     if (JSON.stringify(channels) !== JSON.stringify(reply.channels)) throw new Error('CHANNELS differs from the channels LOAD replied')
     binding = bindLd01TagMap(plant.graph, config.tagMap, channels)
     originS = restored === undefined ? reply.t : valuesFromBits(restored.originBits)[0]!
+    frameS = reply.frame_s
     if (restored === undefined || restored.snapshot === null) {
-      // The unit's first observation is its first I&C frame: the driver stops there anyway, so this exchange
-      // adds no stop the trajectory would not make. A restored start state reproduces it bit for bit.
-      const advanced = await child.request(ld01UnitOps.advance, encodeLd01UnitAdvance(reply.t + reply.frame_s))
+      // The unit's first observation is its first I&C frame after its start: the driver stops there anyway, so this
+      // exchange adds no stop the trajectory would not make. A restored start state reproduces it bit for bit.
+      const advanced = await child.request(ld01UnitOps.advance, encodeLd01UnitAdvance(instant(lastFrameAtOrBefore(reply.t) + 1)))
       connectCost = { wallS: connectCost.wallS + advanced.wallS, cpuS: connectCost.cpuS + advanced.cpuS }
       const first = decodeLd01UnitAdvance(advanced.payload)
       if (first.values.length !== binding.channelCount) throw new Error(`the first frame carries ${first.values.length} values for ${binding.channelCount} channels`)
@@ -158,16 +177,20 @@ export const connectNativeProcessPlantEngine = async (config: {
         throw new Error('the restored start state does not reproduce its saved first frame bit for bit')
       }
       state = { t: first.t, values: first.values }
+      requestedS = restored === undefined ? first.t : valuesFromBits(restored.requestedBits)[0]!
     } else {
       if (reply.t_bits !== restored.frame.tBits) throw new Error(`the snapshot stands at ${reply.t_bits}, its saved frame at ${restored.frame.tBits}`)
       const values = valuesFromBits(restored.frame.valuesBits)
       if (values.length !== binding.channelCount) throw new Error(`the saved frame carries ${values.length} values for ${binding.channelCount} channels`)
       state = { t: reply.t, values }
+      requestedS = valuesFromBits(restored.requestedBits)[0]!
     }
+    if (!(requestedS >= state.t && requestedS < state.t + frameS)) throw new Error(`the requested unit time ${requestedS} s is not within the frame from ${state.t} s`)
     persisted = restored ?? {
       engine: ld01EngineCheckpointFormat,
       artifactSha256: config.artifactSha256,
       originBits: timeBits(originS),
+      requestedBits: timeBits(requestedS),
       snapshot: null,
       frame: { tBits: timeBits(state.t), valuesBits: valuesToBits(state.values) },
     }
@@ -231,7 +254,8 @@ export const connectNativeProcessPlantEngine = async (config: {
   const runtime: ProcessPlantRuntime = {
     tick: () => { throw new Error(`LD-01 Plant ${plant.id} advances through its native engine, not tick`) },
     elapsedMs,
-    advancedMs: elapsedMs,
+    // Plant time asked for in all: the frames exchanged and the remainder short of the next, so Run time minus it is fixed.
+    advancedMs: () => (requestedS - originS) * 1_000,
     resolveVariableHandle: resolve,
     readVariable: path => readHandle(resolve(path)),
     readVariableHandle: readHandle,
@@ -260,7 +284,7 @@ export const connectNativeProcessPlantEngine = async (config: {
     try {
       const reply = await child.request(ld01UnitOps.snapshot, new Uint8Array(0))
       const taken = z.record(z.string(), z.unknown()).parse(decodeLd01UnitJson(reply.payload, 'SNAPSHOT'))
-      persisted = { ...persisted, snapshot: taken, frame: { tBits: timeBits(state.t), valuesBits: valuesToBits(state.values) } }
+      persisted = { ...persisted, requestedBits: timeBits(requestedS), snapshot: taken, frame: { tBits: timeBits(state.t), valuesBits: valuesToBits(state.values) } }
       return persisted
     } catch (error) {
       throw failed(error)
@@ -273,9 +297,13 @@ export const connectNativeProcessPlantEngine = async (config: {
     advance: (advanceMs: number) => exclusive(async (): Promise<NativeAdvanceReceipt> => {
       if (!Number.isFinite(advanceMs) || advanceMs <= 0) throw new Error(`LD-01 advance must be a positive number of ms, got ${advanceMs}`)
       try {
+        requestedS += advanceMs / 1_000
+        const t1 = instant(lastFrameAtOrBefore(requestedS))
+        // Short of the next frame: nothing to exchange yet; queued commands wait for the exchange that reaches it.
+        if (!(t1 > state.t)) return { simulatedMs: 0, frame: null, cost: { wallS: 0, cpuS: 0 } }
         const sending = queued.splice(0)
         for (const command of sending) await json(ld01UnitOps.command, { ...command, t_apply: state.t }, 'COMMAND')
-        const advanced = await child.request(ld01UnitOps.advance, encodeLd01UnitAdvance(state.t + advanceMs / 1_000))
+        const advanced = await child.request(ld01UnitOps.advance, encodeLd01UnitAdvance(t1))
         const frame = decodeLd01UnitAdvance(advanced.payload)
         if (frame.values.length !== binding.channelCount) throw new Error(`a frame carries ${frame.values.length} values for ${binding.channelCount} channels`)
         const simulatedMs = (frame.t - state.t) * 1_000

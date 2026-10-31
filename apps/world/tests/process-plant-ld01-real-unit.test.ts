@@ -51,9 +51,9 @@ describe.skipIf(!enabled)('NOT-EVIDENCE: the LD-01 engine on the real ld01-unit'
     const snapshot = engine.runtime.snapshot()
     expect(snapshot.variables.length).toBe(plant().graph.variables.length)
     const frames = await run(engine, 5)
-    for (const frame of frames) expect([...frame.frame.values].every(Number.isFinite)).toBe(true)
+    for (const frame of frames) expect([...frame.frame!.values].every(Number.isFinite)).toBe(true)
     expect(engine.runtime.elapsedMs()).toBeCloseTo(5_100, 6)
-    recorded.load = { connectWallS: wallS, connectCost: engine.connectCost, variables: snapshot.variables.length, channels: frames[0]!.frame.values.length, advance: costOf(frames) }
+    recorded.load = { connectWallS: wallS, connectCost: engine.connectCost, variables: snapshot.variables.length, channels: frames[0]!.frame!.values.length, advance: costOf(frames) }
     recorded.readings = Object.fromEntries(['PZR.pressure', 'PZR.collapsedLevel', 'CORE.releasedPower', 'TG.terminalPower', 'PUMP.A1.speed', 'SG.A.PRIMARY.pressure']
       .map(path => [path, engine.runtime.readVariable(path as VariablePath)]))
   }, 300_000)
@@ -65,10 +65,10 @@ describe.skipIf(!enabled)('NOT-EVIDENCE: the LD-01 engine on the real ld01-unit'
     const before = { terminalPowerMw: engine.runtime.readVariable('TG.terminalPower' as VariablePath), releasedPowerMw: engine.runtime.readVariable('CORE.releasedPower' as VariablePath) }
     engine.runtime.writeCommand({ type: 'setVariable', path: 'TG.turbineTrip' as VariablePath, value: true })
     const frames = await run(engine, 4)
-    const events = frames.map(frame => frame.frame.events as { readonly instants?: ReadonlyArray<readonly [number, string, ReadonlyArray<string>]>; readonly seats?: ReadonlyArray<readonly [string, number]> } | null)
+    const events = frames.map(frame => frame.frame!.events as { readonly instants?: ReadonlyArray<readonly [number, string, ReadonlyArray<string>]>; readonly seats?: ReadonlyArray<readonly [string, number]> } | null)
     const applied = events[0]?.instants?.find(instant => instant[2].includes('command TurbineTrip'))
     // The command's instant is the unit time the exchange started at: the time it was written.
-    expect(applied?.[0]).toBeCloseTo(frames[0]!.frame.t - 1, 9)
+    expect(applied?.[0]).toBeCloseTo(frames[0]!.frame!.t - 1, 9)
     expect(engine.runtime.readVariable('TG.breakerClosed' as VariablePath)).toBe(false)
     // Every rod cluster the graph reads seats.
     expect(events.flatMap(entry => entry?.seats ?? []).length).toBe(plant().graph.variables.filter(variable => String(variable.path).startsWith('CORE.rod.')).length)
@@ -84,11 +84,11 @@ describe.skipIf(!enabled)('NOT-EVIDENCE: the LD-01 engine on the real ld01-unit'
     const { engine: copy, wallS } = await connect(checkpoint)
     expect(copy.runtime.elapsedMs()).toBe(source.runtime.elapsedMs())
     const [a, b] = [await run(source, 30), await run(copy, 30)]
-    const differing = a.flatMap((frame, at) => bits(frame.frame.values) === bits(b[at]!.frame.values) && JSON.stringify(frame.frame.events) === JSON.stringify(b[at]!.frame.events) ? [] : [at])
+    const differing = a.flatMap((frame, at) => bits(frame.frame!.values) === bits(b[at]!.frame!.values) && JSON.stringify(frame.frame!.events) === JSON.stringify(b[at]!.frame!.events) ? [] : [at])
     expect(differing).toEqual([])
     // A copy's later snapshots are the source's too: the futures are one.
     const [late, lateCopy] = [await source.checkpoint(), await copy.checkpoint()]
     expect(JSON.stringify(lateCopy.snapshot)).toBe(JSON.stringify(late.snapshot))
-    recorded.restore = { restoreWallS: wallS, restoreCost: copy.connectCost, snapshotAtMs: copy.runtime.elapsedMs() - 30_000, frames: a.length, differing, sourceAdvance: costOf(a), copyAdvance: costOf(b), lastFrameSha256: new Bun.CryptoHasher('sha256').update(bits(a.at(-1)!.frame.values)).digest('hex') }
+    recorded.restore = { restoreWallS: wallS, restoreCost: copy.connectCost, snapshotAtMs: copy.runtime.elapsedMs() - 30_000, frames: a.length, differing, sourceAdvance: costOf(a), copyAdvance: costOf(b), lastFrameSha256: new Bun.CryptoHasher('sha256').update(bits(a.at(-1)!.frame!.values)).digest('hex') }
   }, 600_000)
 })
