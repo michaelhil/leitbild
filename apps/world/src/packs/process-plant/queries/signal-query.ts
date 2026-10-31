@@ -18,6 +18,7 @@ import { paginateProcessPlantSearch, processPlantSearchPaginationShape, requireP
 import { requestedSignalValueView, resolveRequestedSignalUnit } from './signal-units.ts'
 import { declaredObservable } from '../observation/declarations.ts'
 import { readPlant } from '../observation/read.ts'
+import { processPlantEvidenceSignal, processPlantEvidenceVariable } from '../procedure-evidence-facts.ts'
 
 /** The commands issued on these signals and the resets of actuations that held them, at the Run and plant time read at. */
 const operationsOn = (config: { readonly simulationTime?: IsoTimestamp }, system: ProcessPlantRuntimeInstance, paths: ReadonlySet<string>) => {
@@ -49,6 +50,7 @@ export const signalsReadEvidenceSchema = z.object({
 
 export const signalsReadQuerySchema = z.object({
   plantId: idSchema,
+  detail: z.enum(['full', 'values']).default('full').describe('Full metadata is unchanged by default. Values keeps current deciding facts, independent binding/snapshot units, limits and flags, native/canonical values and quality; use signals.resolve for descriptive graph metadata.'),
   signals: z.array(processPlantSignalReferenceSchema.safeExtend({
     requestedUnit: z.string().trim().min(1).max(128).optional().describe('Optional presentation unit. Raw variable and quality remain unchanged; unsupported conversion returns the actual value/unit with an explicit unavailable reason.'),
   })).min(1),
@@ -204,6 +206,7 @@ export const answerProcessPlantSignalQuery = (config: {
       config.simulationTime ?? rejectCapabilityTarget('signals.read with evidence needs the Run time the Plant stands at')))
     return {
       plantId: payload.plantId,
+      ...(payload.detail === 'values' ? { detail: 'values' as const } : {}),
       ...(evidence === undefined ? {} : { evidence }),
       ...(payload.operations === undefined ? {} : { operations: operationsOn(config, system, new Set(bindings.map(binding => String(binding.path)))) }),
       signals: payload.signals.map((signal, index) => {
@@ -211,8 +214,8 @@ export const answerProcessPlantSignalQuery = (config: {
         const variable = system.runtime.readVariableSnapshot(binding.path)
         const declared = payload.observed === undefined ? undefined : declaredObservable(payload.plantId as ObjectId, system.plant, null, String(binding.path))
         return {
-          signal: processPlantSignalView(binding),
-          variable,
+          signal: payload.detail === 'values' ? processPlantEvidenceSignal(binding) : processPlantSignalView(binding),
+          variable: payload.detail === 'values' ? processPlantEvidenceVariable(variable) : variable,
           quality: processPlantSignalQuality(variable, { system: system.plant, runtime: system.runtime }),
           ...(declared === undefined ? {} : { observed: declared === null ? null : {
             unit: declared.unit, quantity: declared.quantity, thresholds: declared.thresholds,
