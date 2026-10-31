@@ -16,7 +16,8 @@ import { createWorldModuleState } from '../../../apps/world/src/core/workspaces/
 import { createWorldWorkspaceRuntimeRegistry, type WorldWorkspaceRuntimeRegistry } from '../../../apps/world/src/core/workspaces/runtime-registry.ts'
 import { createProcedureSourceService } from '../../../apps/world/src/features/procedures/source.ts'
 import { compileProcessPlant, createPwrReferencePlantDefinition } from '../../../apps/world/src/packs/process-plant/index.ts'
-import { decodeProcessPlantSampleTimeRuns, type ProcessPlantSampleTimeRun } from '../../../apps/world/src/packs/process-plant/procedure-evidence-facts.ts'
+import { decodeProcessPlantSampleTimeRuns, expandProcessPlantProcedureEvidence, readProcessPlantProcedureEvidence,
+  type ProcessPlantProcedureEvidenceFrame, type ProcessPlantSampleTimeRun } from '../../../apps/world/src/packs/process-plant/procedure-evidence-facts.ts'
 import { builtinScenarioDefinitions } from '../../../apps/world/src/scenarios/definitions.ts'
 import { createTestPackRuntimeAdapters, createTestScenarioRuntimeResolver, testScenarioAuthoring } from '../../../apps/world/tests/helpers.ts'
 
@@ -88,6 +89,36 @@ ${decisions([
 
 type Wire = Record<string, any>
 type Message = ChatRequest['messages'][number]
+const expanded = (frame: Wire): ReadonlyArray<Wire> => expandProcessPlantProcedureEvidence(frame as ProcessPlantProcedureEvidenceFrame)
+
+const expectSummaryParity = (summary: Wire, full: Wire) => {
+  expect(summary.detail).toBe('summary')
+  expect(full.detail).toBe('full')
+  expect(summary.assessments.map((row: Wire) => row.id)).toEqual(full.assessments.map((row: Wire) => row.id))
+  for (const current of summary.assessments as Wire[]) {
+    const complete = full.assessments.find((row: Wire) => row.id === current.id)
+    const { path, checks, ...facts } = complete
+    const { checks: summaryChecks, unresolved, ...currentFacts } = current
+    expect(currentFacts).toEqual(facts)
+    expect(current).not.toHaveProperty('path')
+    expect(summaryChecks).toHaveLength(checks.length)
+    for (const [index, check] of checks.entries()) {
+      const projection = summaryChecks[index]
+      if (check.met !== 'yes') expect(projection).toEqual(check)
+      else {
+        const { comparisons, ...metadata } = check
+        const { unresolved: exceptions, ...actualMetadata } = projection
+        expect(actualMetadata).toEqual(metadata)
+        const expected = comparisons.filter((row: Wire) => row.answer === 'unknown' || row.reason !== undefined)
+        expect(exceptions ?? []).toEqual(expected)
+      }
+    }
+    expect(unresolved).toEqual(path.flatMap((step: Wire) => {
+      const comparisons = step.comparisons.filter((row: Wire) => row.answer === 'unknown' || row.reason !== undefined)
+      return comparisons.length === 0 ? [] : [{ ...step, comparisons }]
+    }))
+  }
+}
 
 const setup = async () => {
   const dataDir = await mkdtemp(join(tmpdir(), 'procedure-evidence-context-'))
@@ -123,7 +154,7 @@ const setup = async () => {
   const observedProviderContextMax = 1_050_000
   const budget = computeContextBudget({ contextMax: observedProviderContextMax, toolDefinitions: tools }, text => Math.ceil(text.length / 4))
   let replayTargetOverages = 0
-  const invoke = async (capabilityId: string, input: unknown, retain = true): Promise<Wire> => {
+  const invoke = async (capabilityId: string, input: unknown, retain = true, expectedRefusal?: number): Promise<Wire> => {
     const access = accessContextSchema.parse({ workspaceId, requestId: newRequestId(), actor: { kind: 'ai', id: 'evidence-contract-agent' } })
     const request = new Request(`http://world.test/internal/workspaces/${workspaceId}/capabilities/${capabilityId}/invoke`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workspaceId, capabilityId,
@@ -131,6 +162,11 @@ const setup = async () => {
     })
     const response = (await handleWorldModuleApi(request, new URL(request.url), actualRegistry))!
     const body = await response.json() as Wire
+    if (expectedRefusal !== undefined) {
+      expect(response.status).toBe(expectedRefusal)
+      expect(body).toHaveProperty('error')
+      return body
+    }
     expect(response.status, JSON.stringify(body).slice(0, 1500)).toBeGreaterThanOrEqual(200)
     expect(response.status, JSON.stringify(body).slice(0, 1500)).toBeLessThan(300)
     const result = body.result as Wire
@@ -203,12 +239,15 @@ describe('procedure evidence across World and the Agent protected turn', () => {
       const current = await f.invoke('world.process-plant.procedure-condition.evaluate', guardQuery)
       expect(current.status).toBe('satisfied')
       expect(current.evidence).toHaveLength(49)
-      expect(new Set(current.evidence.map((row: Wire) => row.variable.path)).size).toBe(32)
-      expect(current.evidence.every((row: Wire) => row.quality.status === 'good' && row.comparison && row.variable && row.reference)).toBe(true)
-      const functions = await f.invoke('world.process-plant.assessments.evaluate', { plantId })
+      expect(current.readings).toHaveLength(32)
+      const facts = expanded(current)
+      expect(new Set(facts.map((row: Wire) => row.variable.path)).size).toBe(32)
+      expect(facts.every((row: Wire) => row.quality.status === 'good' && row.comparison && row.variable && row.reference)).toBe(true)
+      const functions = await f.invoke('world.process-plant.assessments.evaluate', { plantId, detail: 'summary' })
       expect(functions.assessments).toHaveLength(6)
       expect(functions.assessments.every((row: Wire) => row.status === 'green' || row.status === 'not-monitored')).toBe(true)
-      const selectedSignal = current.evidence.find((row: Wire) => row.reference.tagId === 'SG-A-LVL-NR').variable.path
+      expectSummaryParity(functions, await f.invoke(functions.inspect.capabilityId, functions.inspect.input, false))
+      const selectedSignal = facts.find((row: Wire) => row.reference.tagId === 'SG-A-LVL-NR')!.variable.path
       const capture = await f.invoke('world.simulation-run.history-series.list', { subjectId: plantId, signalId: selectedSignal })
       // Capture health and this one actual series selection are checked before
       // advancing. This does not establish the complete 25-series window;
@@ -240,7 +279,10 @@ describe('procedure evidence across World and the Agent protected turn', () => {
       expect(current.observation.result.evidence).toHaveLength(30)
       expect(current.observation.result.recordings).toHaveLength(25)
       expect(current.observation.result.current.evidence).toHaveLength(49)
+      expect(current.observation.result.current.readings).toHaveLength(32)
       expect(current.observation.result.current.evidence).toEqual(guardRead.evidence)
+      expect(current.observation.result.current.readings).toEqual(guardRead.readings)
+      expect(expanded(current.observation.result.current)).toEqual(expanded(guardRead))
       for (const recording of current.observation.result.recordings as Wire[]) {
         const offsets = decodeProcessPlantSampleTimeRuns(recording.sampleTimeRuns as ProcessPlantSampleTimeRun[])
         expect(offsets).toHaveLength(recording.storedSampleCount)
@@ -321,17 +363,22 @@ describe('procedure evidence across World and the Agent protected turn', () => {
         add('branch.observation.result', observation)
         add('branch.observation.recordings', observation.recordings)
         add('branch.observation.sampledEvidence', observation.recordings === undefined ? undefined : observation.evidence)
-        const leaves = observation.current?.evidence ?? observation.evidence ?? []
-        add('branch.current.leaves', leaves)
+        const currentFrame = observation.current ?? observation
+        const leaves = expanded(currentFrame)
+        add('branch.current.readings', currentFrame.readings)
+        add('branch.current.comparisonLeaves', currentFrame.evidence)
+        add('expanded.current.leaves', leaves)
+        for (const reading of currentFrame.readings) {
+          add('reading.signal', reading.signal)
+          add('reading.variable', reading.variable)
+          add('reading.quality', reading.quality)
+        }
         for (const leaf of leaves) {
           const facts = JSON.stringify({ reference: leaf.reference, signal: leaf.signal, variable: leaf.variable, quality: leaf.quality,
             provenance: leaf.provenance, instrumentationValidity: leaf.instrumentationValidity, rangeValidity: leaf.rangeValidity })
           currentFactCharacters += facts.length
           uniqueCurrentFacts.add(facts)
-          add('leaf.signal', leaf.signal)
-          add('leaf.variable', leaf.variable)
           add('leaf.comparison', leaf.comparison)
-          add('leaf.quality', leaf.quality)
         }
       }
       uniqueCurrentFactCharacters += [...uniqueCurrentFacts].reduce((sum, facts) => sum + facts.length, 0)
@@ -349,4 +396,56 @@ describe('procedure evidence across World and the Agent protected turn', () => {
       limitation: 'Transparent production size estimate, not provider-tokenizer or physical ES-0.1 qualification; no production quota added.' }))
     expect(size.estimatedInputTokens + OUTPUT_RESERVE + SAFETY_MARGIN).toBeLessThan(f.observedProviderContextMax)
   }, 120_000)
+
+  test('operational CSF status and full inspection agree before and during an actual shutdown transient', async () => {
+    const f = await setup()
+    for (const tripped of [false, true]) {
+      if (tripped) {
+        await f.invoke('world.process-plant.control.write', { plantId, tagId: 'RX-TRIP-MAN', value: true })
+        await f.advance(3)
+      }
+      const summary = await f.invoke('world.process-plant.assessments.evaluate', { plantId, detail: 'summary' })
+      const full = await f.invoke(summary.inspect.capabilityId, summary.inspect.input, false)
+      expectSummaryParity(summary, full)
+      expect(full.assessments.every((row: Wire) => Array.isArray(row.path))).toBe(true)
+      if (tripped) expect(summary.assessments.some((row: Wire) => row.status === 'red')).toBe(true)
+      expect(f.run.snapshot().clock!.paused).toBe(true)
+    }
+  }, 30_000)
+
+  test('current reading references preserve unknown comparisons and actual I&C state without a legacy shape fallback', async () => {
+    const f = await setup()
+    const missing = { tagId: 'MISSING-EVIDENCE-FIXTURE' }
+    const refused = await f.invoke('world.process-plant.procedure-condition.evaluate', { targetObjectId: plantId, basis,
+      condition: { type: 'comparison', signal: missing, operator: '>', value: 0, unit: 'kg/s' } }, false, 404)
+    expect(refused.error.code).toBe('capability_target_not_found')
+    // Admission does not fabricate a reading for a nonexistent tag. A real
+    // existing signal with a wrong requested unit is an explicit unknown leaf.
+    const response = await f.invoke('world.process-plant.procedure-condition.evaluate', { targetObjectId: plantId, basis,
+      condition: { type: 'all', conditions: [guard, { type: 'comparison', signal: { tagId: 'NIS-PR-AVG' }, operator: '>', value: 0, unit: 'kg/s' },
+        { type: 'ic-rule-state', ruleId: 'safety-injection-manual', field: 'latched', value: false, source: basisSource }] } })
+    expect(response.status).toBe('unknown')
+    expect(response.evidence).toHaveLength(51)
+    expect(response.readings).toHaveLength(32)
+    const facts = expanded(response)
+    const unresolved = facts.find(row => row.reference?.tagId === 'NIS-PR-AVG' && row.comparison.unit === 'kg/s')!
+    expect(unresolved.status).toBe('unknown')
+    expect(unresolved.quality.status).toBe('good')
+    expect(unresolved.reason).toBeString()
+    expect(unresolved.variable.unit).toBe('percent')
+    expect(facts.at(-1)).toMatchObject({ type: 'ic-rule-state', ruleId: 'safety-injection-manual', field: 'latched', value: false, status: 'satisfied' })
+    expect(facts.at(-1)).not.toHaveProperty('readingIndex')
+    const first = response.evidence[0]
+    expect(readProcessPlantProcedureEvidence(response as ProcessPlantProcedureEvidenceFrame, first.readingIndex)).toEqual(response.readings[first.readingIndex])
+    expect(() => readProcessPlantProcedureEvidence(response as ProcessPlantProcedureEvidenceFrame, -1)).toThrow()
+    expect(() => expanded({ readings: response.readings, evidence: [{ ...first, readingIndex: response.readings.length }] })).toThrow()
+    expect(() => expanded({ readings: response.readings, evidence: [{ ...first, reference: { tagId: 'SG-A-PRESS' } }] })).toThrow()
+    expect(() => expanded({ readings: response.readings, evidence: [{ ...first, reference: { path: 'sgA.pressureMPa' } }] })).toThrow()
+    expect(() => expanded({ evidence: facts })).toThrow()
+    expect(() => expanded({ readings: [], evidence: response.evidence })).toThrow()
+    const existingExternalReference = await f.invoke('world.process-plant.procedure-condition.evaluate', { targetObjectId: plantId, basis,
+      condition: { type: 'comparison', signal: { tagId: 'nis.power_range.avg' }, operator: '>', value: 0, unit: 'percent' } })
+    expect(existingExternalReference.status).toBe('satisfied')
+    expect(expanded(existingExternalReference)[0]).toMatchObject({ reference: { tagId: 'nis.power_range.avg' }, signal: { tagId: 'NIS-PR-AVG' }, quality: { status: 'good' } })
+  }, 30_000)
 })
