@@ -5,6 +5,7 @@ import { z } from 'zod'
 import type { ChatRequest, ProviderContinuation } from '../types/llm.ts'
 import type { NativeToolCall } from '../types/tool.ts'
 import type { EvalEventCore } from '../types/agent-eval.ts'
+import { contextCheckpointManifestSchema } from '../working-context.ts'
 
 export interface ExecutionModelMetrics {
   readonly promptTokens?: number
@@ -40,6 +41,7 @@ export interface ExecutionModelCallSummary {
   readonly completedAt?: number
   readonly status: 'running' | 'completed' | 'failed' | 'cancelled'
   readonly requestedModel: string
+  readonly contextCheckpointId?: string
   readonly model?: string
   readonly provider?: string
   readonly requestBytes: number
@@ -86,13 +88,14 @@ const hashSchema = z.string().regex(/^[a-f0-9]{64}$/)
 const modelSummarySchema = z.object({
   id: z.string().min(1), ordinal: z.number().int().positive(), phase: z.enum(['initial', 'tool-response', 'correction']), startedAt: z.number().finite(),
   completedAt: z.number().finite().optional(), status: z.enum(['running', 'completed', 'failed', 'cancelled']), requestedModel: z.string(),
-  model: z.string().optional(), provider: z.string().optional(), requestBytes: z.number().int().nonnegative(), responseBytes: z.number().int().nonnegative().optional(),
+  model: z.string().optional(), provider: z.string().optional(), contextCheckpointId: z.string().min(1).optional(), requestBytes: z.number().int().nonnegative(), responseBytes: z.number().int().nonnegative().optional(),
   messageCount: z.number().int().nonnegative(), toolCount: z.number().int().nonnegative(), metrics: z.record(z.string(), z.union([z.string(), z.number()])).optional(),
   requestedTools: z.array(z.object({ executionCallId: z.string().optional(), providerCallId: z.string().optional(), tool: z.string() }).strict()).optional(),
 }).strict()
 const stageEventSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('context_ready'), model: z.string(), toolCount: z.number().int().nonnegative(), messageCount: z.number().int().nonnegative() }).strict(),
   z.object({ kind: z.literal('warning'), message: z.string() }).strict(),
+  z.object({ kind: z.literal('context_checkpoint'), manifest: contextCheckpointManifestSchema }).strict(),
   z.object({ kind: z.literal('model_fallback'), preferred: z.string(), effective: z.string(), reason: z.string() }).strict(),
   z.object({ kind: z.literal('eval_completed'), outcome: z.enum(['respond', 'pass', 'error', 'cancelled']) }).strict(),
   z.object({ kind: z.literal('correction'), causes: z.array(z.enum(['required-view', 'unpresented-view', 'view-fence', 'map-fence', 'contradiction', 'claimed-execution'])), issues: z.array(z.string()) }).strict(),
