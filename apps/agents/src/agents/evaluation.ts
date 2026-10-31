@@ -10,6 +10,8 @@ import type { AgentResponse, AIAgentConfig } from '../core/types/agent.ts'
 import type { ChatRequest, GenerationQuery, LLMCallOptions, LLMProvider, ProviderContinuation } from '../core/types/llm.ts'
 import type { CorrectionCause, EvalEventCore } from '../core/types/agent-eval.ts'
 import type { NativeToolCall, ToolCall, ToolDefinition, ToolExecutor, ToolResult, ToolProgress } from '../core/types/tool.ts'
+import { CONTEXT_CHECKPOINT_TOOL, contextCheckpointInputSchema, prepareWorkingContextCheckpoint, projectWorkingContextMessages, workingContextArchiveFailure,
+  type WorkingContextArchive, type WorkingContextGroup, type PreparedWorkingContext, type WorkingMessage } from '../core/working-context.ts'
 import type { MessageCause, ToolTraceEntry } from '../core/types/messaging.ts'
 import type { ContextResult, FlushInfo } from './context-builder.ts'
 import { classifyLLMError } from './error-classify.ts'
@@ -110,6 +112,10 @@ export const formatToolDataForLLM = (data: unknown): string => {
 // cards, never this text (workspaceCallResultForModel says what it leaves out).
 const formatToolResult = (tool: string, raw: ToolResult, cards: TurnCards): string => {
   const result = tool === 'workspace_call' ? workspaceCallResultForModel(raw, cards) : raw
+  if (raw.recall) return JSON.stringify({ execution: raw.recall,
+    ...(result.success ? (Object.hasOwn(result, 'data') ? { result: result.data } : {})
+      : { result: { success: false, error: result.error ?? 'Tool failed', ...(result.data === undefined ? {} : { details: result.data }) } }),
+  })
   return result.success
     ? formatToolDataForLLM(result.data)
     : JSON.stringify({ success: false, error: result.error ?? 'Tool failed', ...(result.data === undefined ? {} : { details: result.data }) })
@@ -476,6 +482,7 @@ const correctResponse = async (
 
 export interface EvalOptions {
   readonly executionTurnId?: string
+  readonly workingContext?: WorkingContextArchive
   readonly toolDefinitions?: ReadonlyArray<ToolDefinition>
   readonly inReplyTo?: ReadonlyArray<string>
   // The turn must present a live view; see REQUIRED_VIEW_CORRECTION.
@@ -512,6 +519,18 @@ export const evaluate = async (
   options?: EvalOptions,
 ): Promise<EvalResult> => {
   const context: Array<ChatRequest['messages'][number]> = [...contextResult.messages]
+  const allMessages: WorkingMessage[] = [...context]
+  const seenMessages = new Set<WorkingMessage>(context)
+  const retiredHistory = new Set<WorkingMessage>()
+  const groups: WorkingContextGroup[] = []
+  let pendingCheckpoint: { readonly prepared: PreparedWorkingContext; readonly callId: string } | undefined
+  let lastCheckpoint: { readonly manifest: PreparedWorkingContext['manifest']; readonly callId: string } | undefined
+  let archivedGroupIds: ReadonlySet<string> = new Set()
+  let checkpointOrdinal = 0
+  let segmentModel: string | undefined
+  const observeMessages = (): void => {
+    for (const message of context) if (!seenMessages.has(message)) { seenMessages.add(message); allMessages.push(message) }
+  }
   let totalGenerationMs = 0
   let metrics: LLMCallMetrics = { modelCalls: 0 }
   const { toolDefinitions, inReplyTo, requireView, onEvent: externalOnEvent, onProgress, signal, requestToolCheckin } = options ?? {}
@@ -550,11 +569,14 @@ export const evaluate = async (
   }
   let modelOrdinal = 0
   const callModel = async (request: ChatRequest, phase: ExecutionModelCallSummary['phase'], toolRound?: number) => {
+    observeMessages()
     captureRequest(request)
     const ordinal = ++modelOrdinal, id = `model_${ordinal}`
     const actualPhase = pendingCorrection ? 'correction' : phase
     pendingCorrection = false
-    await options?.modelObserver?.start({ id, ordinal, phase: actualPhase, startedAt: Date.now(), status: 'running', requestedModel: request.model }, request)
+    await options?.modelObserver?.start({ id, ordinal, phase: actualPhase, startedAt: Date.now(), status: 'running', requestedModel: request.model,
+      ...(lastCheckpoint ? { contextCheckpointId: lastCheckpoint.manifest.checkpointId } : {}),
+    }, request)
     let result: Awaited<ReturnType<typeof callLLMOnce>>
     try {
       // Input retention may await storage admission. A cancellation during
@@ -643,7 +665,7 @@ export const evaluate = async (
     for (let toolRound = 0; ; toolRound++) {
       signal?.throwIfAborted()
       const request: ChatRequest = {
-        model: continuationModel(context, config.model),
+        model: continuationModel(context, segmentModel ?? config.model),
         messages: context as ReadonlyArray<{ role: 'system' | 'user' | 'assistant'; content: string }>,
         temperature: config.temperature,
         ...(config.seed !== undefined ? { seed: config.seed } : {}),
@@ -688,7 +710,20 @@ export const evaluate = async (
           const call = calls[i]!
           onEvent?.({ kind: 'tool_start', tool: call.tool, callId: call.callId ?? String(i) })
         }
-        const results = await toolExecutor(calls, triggerRoomId, signal, options?.executionTurnId)
+        const archive = options?.workingContext
+        const controls = archive === undefined ? undefined : { checkpoint: async (call: ToolCall, input: unknown) => {
+          if (call.tool !== CONTEXT_CHECKPOINT_TOOL || calls.length !== 1 || !call.callId) throw new Error('context_checkpoint_refused: checkpoint must be the only control call')
+          if (archive.roomId !== triggerRoomId || archive.turnId !== options?.executionTurnId) throw workingContextArchiveFailure('archive does not belong to this active evaluation')
+          if (pendingCheckpoint) throw workingContextArchiveFailure('another checkpoint is already pending')
+          const prepared = prepareWorkingContextCheckpoint({ input: contextCheckpointInputSchema.parse(input), groups, archive,
+            checkpointCallId: call.callId, precedingModelId: `model_${modelOrdinal}`, ordinal: checkpointOrdinal + 1,
+            ...(lastCheckpoint ? { previous: lastCheckpoint } : {}), previouslyArchived: archivedGroupIds,
+          })
+          pendingCheckpoint = { prepared, callId: call.callId }
+          return { kind: 'context-checkpoint', status: 'prepared', manifest: prepared.manifest,
+            meaning: 'Exact outcomes remain archived; this is working-context control, not native or physical qualification.' }
+        } }
+        const results = await toolExecutor(calls, triggerRoomId, signal, options?.executionTurnId, controls)
         // A line says what has already happened, so it is posted even when
         // the turn is cancelled now; posted lines stay.
         if (onProgress) {
@@ -737,8 +772,33 @@ export const evaluate = async (
           toolMessages.push({ role: 'tool', toolCallId: wireCalls[i]!.id, name: call.tool, content: serializedResults[i]! })
         }
         const systemTokens = Math.ceil((contextResult.systemBlocks?.map(block=>block.text).join('\n\n').length ?? 0)/4)
+        const beforeFit = [...context]
         const fit = fitToolEvidence(context, assistantToolMessage, toolMessages, contextResult.tokenBudget, systemTokens, turnStart)
+        for (const old of beforeFit.slice(0, fit.droppedHistory)) retiredHistory.add(old)
         turnStart -= fit.droppedHistory
+        if (archive) {
+          if (results.length !== calls.length || toolMessages.length !== calls.length) throw workingContextArchiveFailure('executor omitted a native tool outcome')
+          groups.push({ groupId: `group_${calls[0]!.callId!}`, calls: calls.map((call, i) => ({ call: call as ToolCall & { callId: string }, result: results[i]! })),
+            messages: [assistantToolMessage, ...toolMessages] })
+          observeMessages()
+        }
+        if (pendingCheckpoint) {
+          const pending = pendingCheckpoint
+          const stored = archive!.readCall(pending.callId)
+          if (!stored?.result || stored.completedAt === undefined || !results[0]?.success || JSON.stringify(stored.result) !== JSON.stringify(results[0])) throw workingContextArchiveFailure('checkpoint outcome is not durably complete')
+          signal?.throwIfAborted()
+          await archive!.commit(pending.prepared.manifest)
+          segmentModel = continuationModel(context, segmentModel ?? config.model)
+          const projected = projectWorkingContextMessages(allMessages.filter(message => !retiredHistory.has(message)), groups, pending.prepared.retainedGroupIds)
+          context.splice(0, context.length, ...projected)
+          for (const message of projected) seenMessages.add(message)
+          turnStart = 0 // The explicit working set remains protected until its next checkpoint.
+          archivedGroupIds = pending.prepared.archivedGroupIds
+          lastCheckpoint = { manifest: pending.prepared.manifest, callId: pending.callId }
+          checkpointOrdinal++
+          pendingCheckpoint = undefined
+          onEvent?.({ kind: 'context_checkpoint', manifest: lastCheckpoint.manifest })
+        }
         if (fit.overBudget && !replayTargetNoticeSent) {
           replayTargetNoticeSent = true
           onEvent?.({ kind: 'warning', message: "Evidence from this turn exceeds the history replay target and remains intact. The provider's context capacity is checked separately." })
@@ -801,7 +861,7 @@ export const evaluate = async (
         turnCards,
         turnOperations,
         context,
-        config,
+        segmentModel === undefined ? config : { ...config, model: segmentModel },
         signal,
         onEvent,
         contextResult.systemBlocks,

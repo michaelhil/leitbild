@@ -58,7 +58,7 @@ import {
   createCreateRoomTool, createDeleteRoomTool, createAddToRoomTool, createRemoveFromRoomTool,
   createListAgentsTool, createGetMyContextTool, createSetDeliveryModeTool,
   createPauseRoomTool, createMuteAgentTool, createSetRoomPromptTool,
-  createPostToRoomTool, createGetRoomHistoryTool, createConversationReadTool,
+  createPostToRoomTool, createGetRoomHistoryTool, createConversationReadTool, createContextCheckpointTool,
   createRecallTool,
   createQueryDocumentsTool,
   createContextPublisherLookup,
@@ -671,6 +671,7 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
       // Utility tools — bound to per-Workspace rooms
       createGetRoomHistoryTool(rooms),
       createConversationReadTool(rooms, executionStore),
+      createContextCheckpointTool(),
       createWikiLookupTool({ getSources: roomId => {
         const room = rooms.getRoom(roomId)
         if (!room) return undefined

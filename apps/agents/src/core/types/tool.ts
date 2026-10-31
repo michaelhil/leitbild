@@ -24,6 +24,8 @@ export interface ToolResult {
   readonly progress?: ReadonlyArray<ToolProgress>
   /** Trusted invocation metadata, never a model declaration or physical proof. */
   readonly effects?: ReadonlyArray<ToolExecutionEffect>
+  /** Runtime-owned selector into this actual execution's immutable outcome. */
+  readonly recall?: { readonly turnId: string; readonly toolCallId: string; readonly part: 'result' }
 }
 
 export interface ToolExecutionEffect {

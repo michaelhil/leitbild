@@ -14,7 +14,7 @@ import type { WorkspaceSettings } from '../core/workspaces/settings.ts'
 import type { LLMProvider } from '../core/types/llm.ts'
 import type { LLMService } from '../llm/llm-service.ts'
 import type { MessageTarget } from '../core/types/messaging.ts'
-import type { Tool, ToolCall, ToolContext, ToolDefinition, ToolExecutor, ToolRegistry, ToolResult } from '../core/types/tool.ts'
+import type { Tool, ToolContext, ToolDefinition, ToolExecutor, ToolRegistry, ToolResult } from '../core/types/tool.ts'
 import { owningPackFor } from '../core/types/tool-pack.ts'
 import { createAIAgent } from './ai-agent.ts'
 import type { AgentProgress, AgentTurnStart, Decision } from './ai-agent.ts'
@@ -25,6 +25,7 @@ import { WORKSPACE_CAPABILITY_TOOL_NAMES } from '../tools/built-in/workspace-cap
 import type { RunContextFetcher } from './run-context.ts'
 import type { WorkspaceSubjectReference } from '@leitbild/contracts'
 import type { ExecutionStore } from '../core/executions/store.ts'
+import { CONTEXT_CHECKPOINT_TOOL, isWorkingContextArchiveFailure } from '../core/working-context.ts'
 
 export type ExecutionGrowth = <T>(bytes: number, work: () => Promise<T>) => Promise<T>
 export type RunToolOperation = <T>(work: () => Promise<T>) => Promise<T>
@@ -53,8 +54,9 @@ export const createToolExecutor = (
 ): ToolExecutor => {
   const allowed = new Set(allowedTools)
 
-  return async (calls: ReadonlyArray<ToolCall>, roomId?: string, signal?: AbortSignal, executionTurnId?: string): Promise<ReadonlyArray<ToolResult>> => {
+  return async (calls, roomId, signal, executionTurnId, controls): Promise<ReadonlyArray<ToolResult>> => {
     const results: ToolResult[] = []
+    const mixedCheckpoint = calls.length !== 1 && calls.some(call => call.tool === CONTEXT_CHECKPOINT_TOOL)
     const callContext: ToolContext = roomId
       ? { ...context, roomId, focusedSubjects: getFocusedSubjects?.(roomId) ?? [] }
       : context
@@ -70,6 +72,7 @@ export const createToolExecutor = (
     // Removed 2026-05-12; see the PR that deletes spawn-allowed-tools.test.ts.
     for (const call of calls) {
       signal?.throwIfAborted()
+      let dispatched = false
       // Standalone/test executors intentionally need no persistent Workspace.
       // Runtime executors must have a turn identity before any dispatch.
       if (executionStore && (!executionTurnId || !call.callId)) throw new Error('Execution turn and call identity are required before dispatch')
@@ -88,8 +91,18 @@ export const createToolExecutor = (
       }
       const retainOutcome = (result: ToolResult): ToolResult => {
         // Never quota-reject known evidence after an action already happened.
-        executionStore?.recordOutcome(executionTurnId!, call.callId!, result)
-        return result
+        if (!executionStore) return result // Standalone results make no archive/recall claim.
+        const kind = registry.getEntry(call.tool)?.tool.contextEffect ?? 'unknown'
+        const retained: ToolResult = { ...result,
+          effects: result.effects ?? [{ kind, outcome: !dispatched ? 'not-dispatched' : !result.success && kind !== 'read' ? 'unknown' : 'returned' }],
+          recall: { turnId: executionTurnId!, toolCallId: call.callId!, part: 'result' },
+        }
+        executionStore.recordOutcome(executionTurnId!, call.callId!, retained)
+        return retained
+      }
+      if (mixedCheckpoint) {
+        results.push(retainOutcome({ success: false, error: 'context_checkpoint_requires_own_response: no calls in this mixed group were dispatched; context is unchanged' }))
+        continue
       }
       // Rejections name the exact dimension that needs changing. The operator's mental
       // model is "I see this tool in the inspector → it should work." When
@@ -104,7 +117,6 @@ export const createToolExecutor = (
       const callSignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal
       const timer = setTimeout(() => controller.abort(new Error(`Tool "${call.tool}" timed out after 30s; inspect state before retrying a command`)), 30_000)
       let rejectAbort: () => void = () => {}
-      let dispatched = false
       try {
         const cancelled = new Promise<never>((_, reject) => {
           rejectAbort = () => reject(callSignal.reason)
@@ -127,8 +139,11 @@ export const createToolExecutor = (
           }
           let result: ToolResult
           dispatched = true
-          try { result = await entry.tool.execute(call.arguments, { ...callContext, signal: callSignal, ...(call.callId === undefined ? {} : { executionCallId: call.callId }) }) }
+          try { result = await entry.tool.execute(call.arguments, { ...callContext, signal: callSignal, ...(call.callId === undefined ? {} : { executionCallId: call.callId }),
+            ...(controls === undefined ? {} : { contextCheckpoint: input => controls.checkpoint(call, input) }),
+          }) }
           catch (err) {
+            if (isWorkingContextArchiveFailure(err)) throw err
             console.error(`[tool] "${call.tool}" execution failed:`, err)
             result = { success: false, error: err instanceof Error ? err.message : 'Tool execution failed' }
           }
@@ -147,6 +162,7 @@ export const createToolExecutor = (
         const result = await Promise.race([execution, cancelled])
         results.push(result)
       } catch (err) {
+        if (isWorkingContextArchiveFailure(err)) throw err
         if (!callSignal.aborted) throw err // Persistence failures must stop dispatch, not pretend to be tool outcomes.
         const reason = `Tool "${call.tool}" interrupted; outcome is unknown. Inspect retained evidence and current state before retrying.`
         executionStore?.finishTurn(executionTurnId!, 'interrupted', reason)
@@ -281,7 +297,7 @@ export const buildToolSupport = async (
 
 export const effectiveAgentToolSelection = (config: AIAgentConfig): ReadonlyArray<string> => {
   const selectedTools = config.tools ?? []
-  return [...new Set([...selectedTools, ...WORKSPACE_CAPABILITY_TOOL_NAMES, 'conversation_read'])]
+  return [...new Set([...selectedTools, ...WORKSPACE_CAPABILITY_TOOL_NAMES, 'conversation_read', CONTEXT_CHECKPOINT_TOOL])]
 }
 
 const resolveAgentTools = async (

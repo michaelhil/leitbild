@@ -72,11 +72,20 @@ export const createWorkingContextArchive = (store: ExecutionStore, config: {
   readonly commit: WorkingContextArchive['commit']
 }): WorkingContextArchive => {
   const active = () => {
-    const turn = store.getTurn(config.roomId, config.turnId)
-    if (!turn || turn.agentId !== config.agentId || turn.status !== 'running') throw workingContextArchiveFailure('current Room/Agent execution is unavailable or no longer running')
+    try {
+      const turn = store.getTurn(config.roomId, config.turnId)
+      if (!turn || turn.agentId !== config.agentId || turn.status !== 'running') throw workingContextArchiveFailure('current Room/Agent execution is unavailable or no longer running')
+    } catch (error) {
+      if (isWorkingContextArchiveFailure(error)) throw error
+      throw workingContextArchiveFailure(`archive access failed: ${error instanceof Error ? error.message : String(error)}`)
+    }
   }
   return { roomId: config.roomId, turnId: config.turnId,
-    readCall: callId => { active(); return store.getCall(config.roomId, config.turnId, callId) },
+    readCall: callId => {
+      active()
+      try { return store.getCall(config.roomId, config.turnId, callId) }
+      catch (error) { throw workingContextArchiveFailure(`call access failed: ${error instanceof Error ? error.message : String(error)}`) }
+    },
     commit: async manifest => { active(); await config.commit(manifest); active() },
   }
 }
@@ -160,8 +169,9 @@ export const prepareWorkingContextCheckpoint = (config: {
   return { manifest, retainedGroupIds, archivedGroupIds }
 }
 
-/** Keep original non-tool roles verbatim and whole selected protocol groups.
- * All opaque provider continuation is removed from copies; archives are untouched. */
+/** Keep original roles and selected protocol groups verbatim, including their
+ * required per-assistant reasoning blocks. Omitted groups leave as a whole;
+ * current ProviderContinuation has no server-prefix/previous-response link. */
 export const projectWorkingContextMessages = (allMessages: ReadonlyArray<WorkingMessage>, groups: ReadonlyArray<WorkingContextGroup>, retained: ReadonlySet<string>): WorkingMessage[] => {
   const owners = new Map<WorkingMessage, string>()
   for (const group of groups) {
@@ -174,5 +184,4 @@ export const projectWorkingContextMessages = (allMessages: ReadonlyArray<Working
     }
   }
   return allMessages.filter(message => message.role === 'system' || message.role === 'user' || !owners.has(message) || retained.has(owners.get(message)!))
-    .map(({ continuation: _protocol, ...message }) => message)
 }

@@ -39,6 +39,7 @@ import type { ModelInfo } from '../core/types/model-info.ts'
 import { messageFocus } from '../core/message-focus.ts'
 import type { WorkspaceSubjectReference } from '@leitbild/contracts'
 import type { ExecutionStore } from '../core/executions/store.ts'
+import { createWorkingContextArchive, workingContextArchiveFailure } from '../core/working-context.ts'
 
 import { computeContextBudget, OUTPUT_RESERVE, SAFETY_MARGIN } from './budget.ts'
 
@@ -564,7 +565,17 @@ export const createAIAgent = (
       pendingStages = pendingStages.then(() => retain(Buffer.byteLength(JSON.stringify(stage)) + 1024, () => store.recordStage(traceId, stage, at)))
       void pendingStages.catch(error => { if (retaining) console.error(`[${config.name}] Could not retain execution stage:`, error) })
     }
-    const captureEvent = (event: EvalEventCore): void => { emit(event); retainEvent(event) }
+    const captureEvent = (event: EvalEventCore): void => {
+      emit(event)
+      if (event.kind !== 'context_checkpoint') retainEvent(event) // Checkpoints await durable admission before publication.
+    }
+    const workingContext = createWorkingContextArchive(store, { roomId: triggerRoomId, turnId: traceId, agentId,
+      commit: async manifest => {
+        await pendingStages
+        if (!retaining) throw workingContextArchiveFailure('execution archive closed before checkpoint admission')
+        await retain(Buffer.byteLength(JSON.stringify(manifest)) + 1024, () => store.recordStage(traceId, { kind: 'context_checkpoint', manifest }))
+      },
+    })
     const modelObserver: NonNullable<EvalOptions['modelObserver']> = {
       start: async (summary, request) => {
         await pendingStages
@@ -586,7 +597,7 @@ export const createAIAgent = (
       const turnProvider = options?.providerForTurn?.(retainEvent) ?? llmProvider // Isolated providers have no service chain to observe.
       const result = await evaluate(
         contextResult, evalConfig, turnProvider, evalToolExec,
-        maxToolIterationsCfg, triggerRoomId, { ...evalOpts, onEvent: captureEvent, modelObserver },
+        maxToolIterationsCfg, triggerRoomId, { ...evalOpts, onEvent: captureEvent, modelObserver, workingContext },
       )
       await pendingStages
       if (retaining) store.finishTurn(traceId, signal.aborted ? 'interrupted' : result.decision.response.action === 'error' ? 'failed' : 'completed',

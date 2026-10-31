@@ -19,6 +19,7 @@ export const conversationReadInputSchema = z.object({
 // conversation. Never accepts another Room or exposes private instructions.
 export const createConversationReadTool = (rooms: RoomDirectory, executions?: ExecutionStore): Tool => ({
   name: 'conversation_read',
+  contextEffect: 'read',
   description: 'Retrieve exact earlier work from this conversation. Follow returned read selectors: execution lists actual calls; modelRequest lists final model-request evidence. Their call IDs are not interchangeable. Add part arguments or result to a call selector. Missing execution outcomes are unknown: inspect current state before retrying. Old observations are historical, not current state.',
   parameters: z.toJSONSchema(conversationReadInputSchema, { io: 'input' }),
   execute: async (params, context) => {
