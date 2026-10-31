@@ -942,6 +942,37 @@ impl WallLaw {
 /// names the endpoint quantity. The wall temperature, material and
 /// emissivity are not read by the turnover.
 #[allow(clippy::too_many_arguments)]
+/// R4-TURNOVER-VALUES: a law input tuple as values.
+fn law_values<N: Number>(l: &WallLawOf<N>) -> WallLawOf<f64> {
+    WallLawOf {
+        diameter_m: l.diameter_m,
+        film: l.film,
+        emissivity: l.emissivity,
+        material: WallMaterialOf {
+            conductivity: l.material.conductivity.value(),
+            density: l.material.density,
+            cp: l.material.cp.value(),
+        },
+    }
+}
+fn point_values<N: Number>(w: &WaterPointOf<N>) -> WaterPointOf<f64> {
+    WaterPointOf {
+        density: w.density.value(),
+        viscosity: w.viscosity.value(),
+        conductivity: w.conductivity.value(),
+        cp: w.cp.value(),
+        expansion: w.expansion.value(),
+        enthalpy: w.enthalpy.value(),
+    }
+}
+fn saturation_values<N: Number>(s: &SaturationOf<N>) -> SaturationOf<f64> {
+    SaturationOf {
+        temperature: s.temperature.value(),
+        liquid: point_values(&s.liquid),
+        vapor: point_values(&s.vapor),
+        surface_tension: s.surface_tension.value(),
+    }
+}
 fn turnover_key<N: Number>(
     quantity: u64,
     pressure: N,
@@ -954,8 +985,17 @@ fn turnover_key<N: Number>(
 ) -> Vec<u64> {
     let mut key = Vec::with_capacity(64);
     key.push(quantity);
+    // PERF2 (R4-TURNOVER-VALUES): the endpoint (quantity 0) is a function
+    // of the inputs' values alone (the bisection runs on the value law), so
+    // its key is the values' exact bits and every seeded column at one state
+    // shares it. The wall derivative (quantity 1) carries the critical-flux
+    // scale's seed, so its key keeps the directions.
+    let directions = quantity != 0;
     let number = |key: &mut Vec<u64>, x: N| {
-        key.extend([x.value().to_bits(), x.direction().to_bits()]);
+        key.push(x.value().to_bits());
+        if directions {
+            key.push(x.direction().to_bits());
+        }
     };
     let point = |key: &mut Vec<u64>, w: &WaterPointOf<N>| {
         for x in [
@@ -966,7 +1006,10 @@ fn turnover_key<N: Number>(
             w.expansion,
             w.enthalpy,
         ] {
-            key.extend([x.value().to_bits(), x.direction().to_bits()]);
+            key.push(x.value().to_bits());
+            if directions {
+                key.push(x.direction().to_bits());
+            }
         }
     };
     number(&mut key, pressure);
@@ -1432,14 +1475,29 @@ pub(crate) fn liquid_wall_current<P: WaterProperties, N: Number>(
             quantity, pressure, bulk_t, mass_flux, &law, &sat, &bulk, bracket,
         )
     };
+    // R4-TURNOVER-VALUES: the bisection reads only the objective's value,
+    // so it runs on the value law at the inputs' values.
+    let values = (
+        pressure.value(),
+        bulk_t.value(),
+        mass_flux.value(),
+        law_values(&law),
+        saturation_values(&sat),
+        point_values(&bulk),
+        qscale.value(),
+    );
+    let value_objective = |tw: f64| -> Result<f64> {
+        let (p, tb, g, l, s, b, q) = values;
+        turnover_objective(props, tw, p, tb, g, l, s, b, q)
+    };
     let root = props.turnover(&key(0), &mut || {
         let [mut lo, mut hi] = bracket;
-        if objective(N::from(lo))?.value() >= 0. || objective(N::from(hi))?.value() <= 0. {
+        if value_objective(lo)? >= 0. || value_objective(hi)? <= 0. {
             return Err("unordered wet/film turnover endpoints");
         }
         for _ in 0..52 {
             let mid = 0.5 * (lo + hi);
-            if objective(N::from(mid))?.value() > 0. {
+            if value_objective(mid)? > 0. {
                 hi = mid;
             } else {
                 lo = mid;
