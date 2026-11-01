@@ -248,7 +248,6 @@ pub fn compose_governed_with<J: JoinedSystem>(
 /// declared stuck must be one). Empty: the bank composition, unchanged.
 /// The state must be of the same layout (a bank-class state is converted
 /// first, `tests/c2s_state.rs`). The receipt records the singles.
-#[allow(clippy::too_many_lines)] // One composition, step by step as KERN's settle.
 pub fn compose_singles_with<J: JoinedSystem>(
     inputs: &Inputs,
     state: &Value,
@@ -256,6 +255,24 @@ pub fn compose_singles_with<J: JoinedSystem>(
     solver: Solver,
     turbine: Option<&super::turbine::Turbine>,
     singles: &[usize],
+    wrap: impl FnOnce(Integrated<If97>) -> Result<J, String>,
+) -> Result<S3Unit<J>, String> {
+    compose_dc_with(inputs, state, scaling, solver, turbine, singles, None, wrap)
+}
+
+/// [`compose_singles_with`] with the five DC supply groups when `dc` is
+/// given (PROC T5, lane ELEC; report-only in LD-01 1.0): composed in the
+/// normal alignment at the start, or restored from a saved state that
+/// carries them. No coordinate is added. The receipt records them.
+#[allow(clippy::too_many_lines, clippy::too_many_arguments)] // One composition, step by step as KERN's settle.
+pub fn compose_dc_with<J: JoinedSystem>(
+    inputs: &Inputs,
+    state: &Value,
+    scaling: Scaling,
+    solver: Solver,
+    turbine: Option<&super::turbine::Turbine>,
+    singles: &[usize],
+    dc: Option<&super::dc::Dc>,
     wrap: impl FnOnce(Integrated<If97>) -> Result<J, String>,
 ) -> Result<S3Unit<J>, String> {
     let packet_path = &inputs.spine.packet_path;
@@ -417,10 +434,15 @@ pub fn compose_singles_with<J: JoinedSystem>(
             held,
         })?;
     }
+    if let Some(d) = dc {
+        unit.declare_dc(d.groups.clone(), t0)?;
+    }
     if saved {
         unit.restore_appended_discrete_state(&state["discrete_state"]["appended"])
             .map_err(|e| format!("restore the slice's discrete state: {e}"))?;
     }
+    // PROC T5: the chargers at the start follow the (restored) routing.
+    unit.follow_dc(t0)?;
     let mut tail_rates = [0.; N];
     let tail_ids = if saved_governor.is_some() {
         // Only the identity is taken here; the saved tail and the exact
@@ -564,7 +586,7 @@ pub fn compose_singles_with<J: JoinedSystem>(
     .map_err(|e| format!("the exact consistent start of the S3 composition: {e}"))?;
     yp_all.clone_from(&initial.yp);
     control.scratch = vec![0.; y_all.len()];
-    let receipt = json!({
+    let mut receipt = json!({
         "composition": "S3-D28 (3): joined + spray closed + SG two-zone + feed gate declared + S2-D24r/S3-D16 + PZR control AUTO (S) + L1 + phase modes + ELEC slice connected",
         "tolerance_scaling": {"relative": scaling.relative, "absolute": scaling.absolute},
         "weights": solver.weights, "first_step": solver.first_step, "stepping": solver.stepping, "weight_groups": ida.weight_groups().map(|g| g.sizes().len()),
@@ -580,6 +602,9 @@ pub fn compose_singles_with<J: JoinedSystem>(
         "start": {"projection_passes": initial.report.projection_passes, "residual": initial.report.residual.value,
             "correction_wrms": initial.report.correction_wrms, "appended": initial.appended},
     });
+    if let Some(d) = dc {
+        receipt["dc"] = d.receipt();
+    }
     Ok(S3Unit {
         ida,
         t0,
