@@ -305,6 +305,9 @@ pub struct Solids {
     /// a network column moves the water of a few cells only, and every
     /// other contact of its scope reads undirected inputs.
     wall_memo: Vec<Option<(WallKey, thermal::WallFlux)>>,
+    /// R4-NCHEAD: per SG segment, its fold conductance share `share u A`
+    /// (W/K) stored with its `wall_memo` entry (the same law's value).
+    segment_conductance: Vec<Option<Scalar>>,
     /// Per wall slot: the version of its water, a fresh `wall_clock` tick
     /// on every write (a local call's restore puts back the water and its
     /// version together), so equal versions mean bit-identical water.
@@ -994,6 +997,7 @@ impl Solids {
             wall,
             fuel_memo: vec![None; half_count],
             wall_memo: Vec::new(),
+            segment_conductance: Vec::new(),
             wall_version: Vec::new(),
             wall_clock: 0,
             wall_undirected: Vec::new(),
@@ -1008,6 +1012,7 @@ impl Solids {
             base += b.contacts.len();
         }
         solids.wall_memo = vec![None; base + solids.segments.len()];
+        solids.segment_conductance = vec![None; solids.segments.len()];
         solids.wall_version = vec![0; solids.wall.len()];
         solids.wall_undirected = vec![false; solids.wall.len()];
         solids.passive_memo = vec![None; solids.passive.len()];
@@ -2037,8 +2042,8 @@ impl Solids {
             }
             let slot = self.wall_memo.len() - self.segments.len() + i;
             let key = wall_key(self.version_at(g.primary), metal_t, s(0.));
-            let q = match &self.wall_memo[slot] {
-                Some((k, q)) if *k == key => *q,
+            let (q, conductance) = match (&self.wall_memo[slot], self.segment_conductance[i]) {
+                (Some((k, q)), Some(c)) if *k == key => (*q, c),
                 _ => {
                     let water = self.wall_at(g.primary)?;
                     let inflow = water
@@ -2081,12 +2086,22 @@ impl Solids {
                         vapor_energy: s(0.),
                         mode: "sensible",
                     };
+                    // R4-NCHEAD: the segment's share of the fold conductance.
+                    let conductance = u * s(g.fold_primary_area * g.share);
                     if undirected_bits(&key[1..]) && undirected_water(&water) {
                         self.wall_memo[slot] = Some((key, q));
+                        self.segment_conductance[i] = Some(conductance);
                     }
-                    q
+                    (q, conductance)
                 }
             };
+            // R4-NCHEAD: the cell's single-pass law for its profiled heads:
+            // the fold conductance by segment shares and the inflow's capacity.
+            let inflow = self
+                .wall_at(g.primary)?
+                .inflow
+                .ok_or_else(|| fatal("SG primary wall water without its inflow"))?;
+            receipts.sg_pass(g.primary, conductance, inflow.capacity_w_k)?;
             if q.vapor_mass.value != 0. || q.vapor_mass.direction != 0. {
                 return Err(trial(
                     "SG primary wall vapor departure needs its transaction",

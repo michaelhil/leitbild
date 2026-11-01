@@ -1323,6 +1323,7 @@ fn assemble<P: Properties + WaterProperties>(
         for (col, heats) in &coolant {
             seed.receipts.clear();
             seed.volumes.clear();
+            seed.passes.clear();
             for (cell, q) in heats {
                 seed.receipts.push((*cell, [[0., *q, 0.], [0.; 3]]));
             }
@@ -1350,6 +1351,8 @@ fn assemble<P: Properties + WaterProperties>(
     }
     let zero = [[Scalar::constant(0.); 3]; 2];
     let mut buffer = vec![zero; regular];
+    // R4-NCHEAD: an owner column's SG pass directions (the solids' metal).
+    let mut passes = vec![None; regular];
     for (name, range, named) in [
         ("solid", o.solids..o.secondary, classes.solids),
         ("secondary", o.secondary..o.rods, classes.secondary),
@@ -1364,10 +1367,11 @@ fn assemble<P: Properties + WaterProperties>(
         for j in range {
             let started = clock.now();
             buffer.fill(zero);
+            passes.fill(None);
             coupler.owner_column(
                 j,
                 &replay.fluid(),
-                &mut Receipts::new(&mut buffer),
+                &mut Receipts::with_passes(&mut buffer, &mut passes),
                 &mut owner,
             )?;
             own.0 += 1;
@@ -1399,7 +1403,16 @@ fn assemble<P: Properties + WaterProperties>(
                         .push((*cell, v.volume_m3.direction, v.rate_m3_s.direction));
                 }
             }
-            if seed.receipts.is_empty() && seed.volumes.is_empty() {
+            seed.passes.clear();
+            for (cell, p) in passes.iter().enumerate() {
+                if let Some(p) = p
+                    && (p.conductance_w_k.direction != 0. || p.capacity_w_k.direction != 0.)
+                {
+                    seed.passes
+                        .push((cell, [p.conductance_w_k.direction, p.capacity_w_k.direction]));
+                }
+            }
+            if seed.receipts.is_empty() && seed.volumes.is_empty() && seed.passes.is_empty() {
                 continue;
             }
             let started = clock.now();
@@ -1461,6 +1474,7 @@ fn assemble<P: Properties + WaterProperties>(
             .ok_or_else(|| fatal("the PZR columns need the base evaluation's column"))?;
         seed.receipts.clear();
         seed.volumes.clear();
+        seed.passes.clear();
         for j in o.pzr..o.cvcs {
             let boundary = coupler.pzr_column(j, cell, &column)?;
             for (row, v) in coupler.last_pzr() {

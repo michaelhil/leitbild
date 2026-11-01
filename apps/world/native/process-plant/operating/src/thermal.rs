@@ -1904,6 +1904,71 @@ impl FoldPath {
             arc: PI * radius,
         })
     }
+    /// The developed length, start and end elevations (m).
+    pub fn length(&self) -> f64 {
+        self.length
+    }
+    pub fn inlet(&self) -> f64 {
+        self.inlet
+    }
+    pub fn outlet(&self) -> f64 {
+        self.crest - self.radius - (self.length - self.rise - self.arc)
+    }
+    /// The same fold run from its end: the path a reversed flow traverses.
+    pub fn reversed(&self) -> Result<Self> {
+        Self::new(self.length, self.outlet(), self.crest, self.inlet)
+    }
+    /// The uniform-density mean elevation `(1/L) ∫ z ds` (m).
+    pub fn centroid(&self) -> f64 {
+        let (r, zc) = (self.radius, self.crest - self.radius);
+        let descent = self.length - self.rise - self.arc;
+        (self.rise * (self.inlet + 0.5 * self.rise)
+            + self.arc * zc
+            + 2. * r * r
+            + descent * (zc - 0.5 * descent))
+            / self.length
+    }
+    /// R4-NCHEAD (`operating-hydraulics.md`, the SG profile's head): the two
+    /// moments `(J0, J1) = (∫ psi z' ds, ∫ (s/L) psi z' ds)` of the
+    /// single-pass profile `psi = phi − mean(phi)`, `phi = (e^(−Ns/L) −
+    /// e^(−N)) / (1 − e^(−N))`, along this path from its start, with
+    /// `eps = 1/N >= 0`. Closed form on the rise, crown and descent; each
+    /// `e^(−l/(eps L))` is exactly zero with a zero direction at `eps = 0`
+    /// (its limit and its derivative's), so `eps = 0` gives `(0, 0)` with
+    /// the finite first-order direction.
+    pub fn profile_moments(&self, eps: Scalar) -> Result<(Scalar, Scalar)> {
+        if !(eps.value.is_finite() && eps.value >= 0. && eps.direction.is_finite()) {
+            return Err("the SG profile needs a finite nonnegative 1/N");
+        }
+        let l = self.length;
+        let decay = |length: f64| {
+            if eps.value == 0. {
+                s(0.)
+            } else {
+                (s(-length / l) / eps).exp()
+            }
+        };
+        let (rise, arc) = (self.rise, self.arc);
+        let s2 = rise + arc;
+        let a = eps * s(l);
+        let (eu, e2, el, ec) = (decay(rise), decay(s2), decay(l), decay(arc));
+        let one = s(1.);
+        let a2 = a * a;
+        let rise0 = a * (one - eu);
+        let rise1 = a2 - eu * (a2 + a * s(rise));
+        let q = a2 / s(self.radius * self.radius);
+        let f = a * (one + ec) / (one + q);
+        let fp = (a2 * (one + ec) * (one + q) - s(arc) * ec * a * (one + q) - s(2.) * a2 * (one + ec))
+            / ((one + q) * (one + q));
+        let crown0 = eu * f;
+        let crown1 = eu * (s(rise) * f - fp);
+        let descent0 = -(a * (e2 - el));
+        let descent1 = -(e2 * (a2 + a * s(s2)) - el * (a2 + a * s(l)));
+        let tail = one - el;
+        let j0 = (rise0 + crown0 + descent0) / tail - s(self.outlet() - self.inlet) * eps;
+        let j1 = (rise1 + crown1 + descent1) / (s(l) * tail) - s(self.outlet() - self.centroid()) * eps;
+        Ok((j0.finite()?, j1.finite()?))
+    }
 }
 
 /// The SG secondary's two-zone contact coordinate (`ld01-sg-exposure`,
@@ -2141,6 +2206,71 @@ pub fn secondary_wall<P: WaterProperties>(
         s(0.)
     };
     (s(area) * (wet * liquid + (s(1.) - wet) * gas)).finite()
+}
+
+#[cfg(test)]
+mod fold_profile {
+    use super::*;
+
+    fn fold() -> FoldPath {
+        FoldPath::new(20., 2.5, 12., 3.).unwrap()
+    }
+    /// An independent midpoint quadrature of the same moments on the
+    /// fold's own z'(s).
+    fn quadrature(f: &FoldPath, n_ntu: f64) -> (f64, f64) {
+        let (l, r) = (f.length, f.radius);
+        let slope = |x: f64| {
+            if x < f.rise {
+                1.
+            } else if x < f.rise + f.arc {
+                ((x - f.rise) / r).cos()
+            } else {
+                -1.
+            }
+        };
+        let k = 400_000;
+        let (mut j0, mut j1) = (0., 0.);
+        for i in 0..k {
+            let x = (i as f64 + 0.5) * l / k as f64;
+            let psi = (-n_ntu * x / l).exp() / (1. - (-n_ntu).exp()) - 1. / n_ntu;
+            j0 += psi * slope(x) * l / k as f64;
+            j1 += x / l * psi * slope(x) * l / k as f64;
+        }
+        (j0, j1)
+    }
+
+    #[test]
+    fn closed_form_matches_quadrature() {
+        let f = fold();
+        assert!((f.centroid() - 7.706527194168041).abs() < 1e-12);
+        assert!((f.reversed().unwrap().centroid() - f.centroid()).abs() < 1e-12);
+        for n in [0.3, 1., 1.7, 3., 5., 11.6, 50.] {
+            let (j0, j1) = f.profile_moments(s(1. / n)).unwrap();
+            let (q0, q1) = quadrature(&f, n);
+            assert!((j0.value - q0).abs() < 1e-8, "N {n}: J0 {} against {q0}", j0.value);
+            assert!((j1.value - q1).abs() < 1e-8, "N {n}: J1 {} against {q1}", j1.value);
+        }
+    }
+
+    #[test]
+    fn stagnant_limit_and_directions() {
+        let f = fold();
+        let (j0, j1) = f.profile_moments(Scalar::new(0., 1.)).unwrap();
+        assert_eq!((j0.value, j1.value), (0., 0.));
+        // First order at eps = 0: J0' = L − (z_out − z_in), J1' = z_ref − z_out.
+        assert!((j0.direction - 19.5).abs() < 1e-12);
+        assert!((j1.direction - (f.centroid() - 3.)).abs() < 1e-12);
+        for eps in [1e-3, 0.08, 0.3, 2.] {
+            let h = 1e-6 * eps;
+            let (a0, a1) = f.profile_moments(Scalar::new(eps, 1.)).unwrap();
+            let (p0, p1) = f.profile_moments(s(eps + h)).unwrap();
+            let (m0, m1) = f.profile_moments(s(eps - h)).unwrap();
+            let (d0, d1) = ((p0.value - m0.value) / (2. * h), (p1.value - m1.value) / (2. * h));
+            assert!((a0.direction - d0).abs() <= 1e-6 * d0.abs().max(1.), "eps {eps}");
+            assert!((a1.direction - d1).abs() <= 1e-6 * d1.abs().max(1.), "eps {eps}");
+        }
+        assert!(f.profile_moments(s(-1e-3)).is_err());
+    }
 }
 
 #[cfg(test)]

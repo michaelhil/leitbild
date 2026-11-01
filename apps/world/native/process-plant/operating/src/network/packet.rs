@@ -22,6 +22,28 @@ pub struct Packet {
     /// in a packet that composes the path (`reference-design-operating-spray-path.ts`).
     #[serde(rename = "pzrSpray", default)]
     pub pzr_spray: Option<crate::control::spray_valve::Section>,
+    /// R4-NCHEAD: the SG secondary section's fold, read for the SG primary
+    /// cells' profiled heads; required with `thermal.sg_segments`.
+    #[serde(default)]
+    pub secondary: Option<Secondary>,
+}
+#[derive(Debug, Deserialize)]
+pub struct Secondary {
+    pub exposure: Exposure,
+}
+#[derive(Debug, Deserialize)]
+pub struct Exposure {
+    pub fold: Fold,
+}
+/// The folded SG tube path (`ld01-sg-exposure`; the same four values the
+/// SG owner's contact map reads).
+#[derive(Clone, Copy, Debug, Deserialize)]
+pub struct Fold {
+    #[serde(rename = "developedLength_m")]
+    pub developed_length_m: f64,
+    pub inlet_m: f64,
+    pub crest_m: f64,
+    pub outlet_m: f64,
 }
 #[derive(Debug, Deserialize)]
 pub struct Preparation {
@@ -82,6 +104,13 @@ pub struct SectionProjection {
 #[derive(Debug, Deserialize)]
 pub struct Thermal {
     pub water: Vec<WaterOwner>,
+    /// The SG tube segments; the network reads only their primary cells.
+    #[serde(default)]
+    pub sg_segments: Vec<SgSegment>,
+}
+#[derive(Debug, Deserialize)]
+pub struct SgSegment {
+    pub primary: usize,
 }
 #[derive(Debug, Deserialize)]
 pub struct WaterOwner {

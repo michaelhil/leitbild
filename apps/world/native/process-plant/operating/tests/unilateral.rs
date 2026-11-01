@@ -314,6 +314,7 @@ fn packet() -> Packet {
     ];
     Packet {
         pzr_spray: None,
+        secondary: None,
         mechanics: Mechanics {
             regions,
             faces,
@@ -324,7 +325,10 @@ fn packet() -> Packet {
                 coefficient: 1.,
             }],
         },
-        thermal: Thermal { water },
+        thermal: Thermal {
+            water,
+            sg_segments: Vec::new(),
+        },
         water_boron_amount_kg_eq: boron,
         external_ports: ExternalPorts {
             surge_stock: SurgeStock {

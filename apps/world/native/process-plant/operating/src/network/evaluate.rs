@@ -255,6 +255,9 @@ impl<P: Properties> Network<P> {
                 self.receipts[f.to][pt][k] = self.receipts[f.to][pt][k] + q;
             }
         }
+        // R4-NCHEAD: the SG profiles' drives, from a coupled owner's passes.
+        self.profile_drive.fill(s(0.));
+        self.coupled_passes.fill(None);
         if let Some(coupling) = coupling.as_deref_mut() {
             self.couple(coupling, y, seed, &points, &phase_mass)?;
         }
@@ -648,6 +651,8 @@ impl<P: Properties> Network<P> {
                     }
                 }
             }
+            // R4-NCHEAD: an SG port face's profiled head, beside its sections.
+            force = force + self.profile_drive[li];
             // ProvenRest is the prepared all-zero-current case ONLY. This
             // network is not a generic disappearance/reappearance handler.
             // Cold I' uses assembled physical receipts, not an off-row yp.
