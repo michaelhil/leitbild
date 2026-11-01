@@ -212,12 +212,17 @@ export const createProcedureSourceService = (config: {
       }
       const retained = createKnowledge(JSON.parse(raw) as unknown)
       if (retained.revision !== request.sourceRevision) throw new Error('Retained procedure publication revision does not match its pin')
-      return retained.read(request.sourcePath, {
-        revision: request.sourceRevision,
-        ...(request.section === undefined ? {} : { section: request.section }),
-        ...(request.startLine === undefined ? {} : { startLine: request.startLine }),
-        ...(request.lineCount === undefined ? {} : { lineCount: request.lineCount }),
-      })
+      // A path, section or line range the retained publication does not hold is the caller's input, not a fault.
+      try {
+        return retained.read(request.sourcePath, {
+          revision: request.sourceRevision,
+          ...(request.section === undefined ? {} : { section: request.section }),
+          ...(request.startLine === undefined ? {} : { startLine: request.startLine }),
+          ...(request.lineCount === undefined ? {} : { lineCount: request.lineCount }),
+        })
+      } catch (error) {
+        return rejectCapabilityInput(error instanceof Error ? error.message : String(error))
+      }
     },
     readDocument: async (request): Promise<ProcedureDocument> => {
       const source = sourceFor(request.sourceId)
