@@ -535,3 +535,169 @@ impl SgProfile {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod sg_profile {
+    use super::*;
+    use crate::local_flow::{MomentumSupport, Phase, PressureSegment};
+
+    const Z_REF: f64 = 7.706527194168041;
+    fn fold() -> FoldPath {
+        FoldPath::new(20., 2.5, 12., 3.).unwrap()
+    }
+    fn face(from: usize, to: usize, segments: [(usize, f64, f64); 2]) -> Face {
+        Face {
+            from,
+            to,
+            flow_area_m2: 1.,
+            supports: vec![MomentumSupport {
+                region: 1,
+                path_length_m: 10.,
+                inverse_area_length_per_m: 1.,
+                volume_m3: 1.,
+            }],
+            pressure_segments: segments
+                .map(|(region, path_length_m, elevation_change_m)| PressureSegment {
+                    region,
+                    path_length_m,
+                    elevation_change_m,
+                })
+                .to_vec(),
+        }
+    }
+    /// HOT (0) → SG (1) → PUMP (2), the compiled SG segments' geometry.
+    fn faces() -> Vec<Face> {
+        vec![
+            face(0, 1, [(0, 1., 0.), (1, 10., Z_REF - 2.5)]),
+            face(1, 2, [(1, 10., 3. - Z_REF), (2, 2., 0.)]),
+        ]
+    }
+    fn water(h: f64) -> (Water, Water) {
+        let w = Water {
+            pressure_pa: 15.5e6,
+            temperature_k: 580.,
+            density_kg_m3: 720.,
+            internal_energy_j_kg: h - 2e4,
+            enthalpy_j_kg: h,
+            cp_j_kg_k: 5400.,
+            expansion_per_k: 2.9e-3,
+            compressibility_per_pa: 1e-9,
+            viscosity_pa_s: 9e-5,
+            conductivity_w_m_k: 0.56,
+        };
+        let zero = Water {
+            pressure_pa: 0.,
+            temperature_k: 0.,
+            density_kg_m3: 0.,
+            internal_energy_j_kg: 0.,
+            enthalpy_j_kg: 0.,
+            cp_j_kg_k: 0.,
+            expansion_per_k: 0.,
+            compressibility_per_pa: 0.,
+            viscosity_pa_s: 0.,
+            conductivity_w_m_k: 0.,
+        };
+        (w, zero)
+    }
+    fn cell() -> Cell {
+        Cell {
+            pressure: s(15.5e6),
+            phase: [
+                Some(Phase {
+                    fraction: s(1.),
+                    density: s(720.),
+                    enthalpy: s(1.3e6),
+                    boron_concentration: s(0.),
+                }),
+                None,
+            ],
+        }
+    }
+    fn chart(m: f64) -> Chart {
+        Chart {
+            inertance_kg_m4: s(1.),
+            volume_flow_m3_s: s(m / 720.),
+            mass_flow_kg_s: s(m),
+            enthalpy_flow_w: s(0.),
+            boron_flow_kg_s: s(0.),
+            pressure_gravity_pa: s(0.),
+            kinetic_j: s(0.),
+            donor: None,
+            blocked_absent_donor: false,
+            selected_branch_direction: false,
+        }
+    }
+    /// The two faces' liquid head corrections at `m` (kg/s, the loop's
+    /// flow) with HOT at `h_hot`, PUMP at `h_pump`, the SG at 1.3 MJ/kg.
+    fn heads(m: f64, h_hot: f64, h_pump: f64, pass: SgPass) -> [f64; 2] {
+        let f = faces();
+        let q = SgProfile::compile(1, fold(), &f, &[2.5, Z_REF, 3.], 3).unwrap();
+        let cells = [cell(), cell(), cell()];
+        let points = [
+            [Some(water(h_hot)), None],
+            [Some(water(1.3e6)), None],
+            [Some(water(h_pump)), None],
+        ];
+        let charts = [[Some(chart(m)), None], [Some(chart(m)), None]];
+        let mut out = vec![s(0.); 4];
+        q.drives(&f, &cells, &points, &charts, pass, &mut out).unwrap();
+        assert_eq!((out[1].value, out[3].value), (0., 0.), "no vapor drive");
+        // Head = −drive / share; the liquid share of each face is 1.
+        [-out[0].value, -out[2].value]
+    }
+    fn pass(ua: f64, c: f64) -> SgPass {
+        SgPass {
+            conductance_w_k: s(ua),
+            capacity_w_k: s(c),
+        }
+    }
+
+    #[test]
+    fn static_loop_and_uniform_enthalpy_give_no_head() {
+        assert_eq!(heads(0., 1.4e6, 1.25e6, pass(2e7, 0.)), [0., 0.]);
+        assert_eq!(heads(500., 1.3e6, 1.25e6, pass(2e7, 2.7e6)), [0., 0.]);
+        assert_eq!(heads(-500., 1.4e6, 1.3e6, pass(2e7, 2.7e6)), [0., 0.]);
+    }
+
+    #[test]
+    fn forward_heads_sum_to_the_loop_moment() {
+        let (dh, c, ua) = (1.4e6 - 1.3e6, 5.4e7, 9.2e7);
+        let [inlet, outlet] = heads(1e4, 1.4e6, 1.2e6, pass(ua, c));
+        let rho_h = -720. * 2.9e-3 / 5400.;
+        let (j0, j1) = fold().profile_moments(s(c / ua)).unwrap();
+        let k = G * rho_h * dh;
+        assert!((inlet - k * (j0.value - j1.value)).abs() < 1e-9 * k.abs());
+        assert!((outlet - k * j1.value).abs() < 1e-9 * k.abs());
+        // Lighter fluid in the rise: the SG's net head falls, so the loop's
+        // buoyancy drive rises.
+        assert!(inlet + outlet < 0.);
+    }
+
+    #[test]
+    fn reversal_is_continuous_through_zero_flow() {
+        let at = |m: f64| heads(m, 1.4e6, 1.35e6, pass(2e7, 5400. * m.abs()));
+        // The heads vanish linearly with the flow on either side of zero.
+        for sign in [1., -1.] {
+            let (a, b) = (at(sign * 1e-6), at(sign * 1e-9));
+            for k in 0..2 {
+                assert!(a[k].abs() < 1e-5, "{a:?}");
+                assert!((b[k] - 1e-3 * a[k]).abs() <= 1e-6 * a[k].abs(), "{a:?} {b:?}");
+            }
+        }
+        // Reversed, the outlet end leads: its port takes the start deviation.
+        let [inlet, outlet] = at(-2e3);
+        let (j0, j1) = fold().reversed().unwrap().profile_moments(s(5400. * 2e3 / 2e7)).unwrap();
+        let k = G * (-720. * 2.9e-3 / 5400.) * (1.35e6 - 1.3e6);
+        // The outlet face leaves the cell, so its head is minus the deviation.
+        assert!((outlet + k * (j0.value - j1.value)).abs() < 1e-9 * k.abs());
+        assert!((inlet + k * j1.value).abs() < 1e-9 * k.abs());
+    }
+
+    #[test]
+    fn compile_refuses_a_port_off_the_fold() {
+        let mut f = faces();
+        f[1].pressure_segments[0].elevation_change_m = 2.9 - Z_REF;
+        assert!(SgProfile::compile(1, fold(), &f, &[2.5, Z_REF, 3.], 3).is_err());
+        assert!(SgProfile::compile(1, fold(), &faces(), &[2.5, 7.7, 3.], 3).is_err());
+    }
+}
