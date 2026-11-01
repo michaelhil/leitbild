@@ -4,7 +4,7 @@ import { decide, parseCriticalBoron, priorSlope, toleranceK } from './reference-
 const block = parseCriticalBoron('# x\n\n```ld01-critical-boron\n' + JSON.stringify({
   target: 'rodControlTavgMeasurandAtPreparedHotReference', measurand: 'rodControlTavgMeasurandAtSettledS3State',
   tolerance: { budgetFraction: 0.25, uncertaintyFractionOfSpan: 0.00806226, span_K: 400 },
-  prior: 'packetFeedbackCoefficientsUniformShift', update: 'secantOfTheLastTwo', rounding_ppmEq: 0.001, maximumIterates: 5,
+  prior: 'packetFeedbackCoefficientsUniformShift', update: 'secantOfTheLastTwo', rounding_ppmEq: 0.001, trefAgreementFractionOfTolerance: 0.001, maximumIterates: 5,
 }) + '\n```\n')
 const packet = {
   feedback_metadata: { parameters: { water_worth: 0.15, boron_per_ppm_eq: -8e-5, doppler_per_sqrt_k: -1.15e-3,
@@ -50,6 +50,10 @@ test('iterate 0 is never accepted; iterate 1 steps on the prior; then the secant
 })
 
 test('refusals: wrong start, inconsistent error, moved Tref, exhausted iterates', () => {
+  // A Tref within the consistent start's convergence is the same reference.
+  const near = decide(block, 1538, packet, [{ boron_ppmEq: 1538, measurement: m(tref - 1) },
+    { boron_ppmEq: 1537, measurement: { tref_full_power_k: tref + 2e-7, settled_tavg_k: tref + 2e-7 - 0.01, error_k: (tref + 2e-7 - 0.01) - (tref + 2e-7) } }]) as { accepted: { iterate: number } }
+  expect(near.accepted.iterate).toBe(1)
   expect(() => decide(block, 1538, packet, [])).toThrow()
   expect(() => decide(block, 1538, packet, [{ boron_ppmEq: 1500, measurement: m(tref) }])).toThrow()
   expect(() => decide(block, 1538, packet, [{ boron_ppmEq: 1538, measurement: { ...m(tref - 1), error_k: 0 } }])).toThrow()

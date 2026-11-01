@@ -19,6 +19,9 @@
  *   regions of the feedback reference);
  * - every later iterate is the secant of the last two;
  * - each iterate's boron is rounded to the block's `rounding_ppmEq`;
+ * - every iterate's Tref agrees with iterate 0's within
+ *   `trefAgreementFractionOfTolerance` of the tolerance (the consistent
+ *   start's convergence), or the search refuses;
  * - the search accepts the first iterate k >= 1 with |Tavg - Tref| within
  *   the block's tolerance (the operator-grade Tavg budget) and refuses after
  *   `maximumIterates` without one. Nothing is clipped or defaulted.
@@ -39,6 +42,7 @@ export const criticalBoronSchema = z.object({
   prior: z.literal('packetFeedbackCoefficientsUniformShift'),
   update: z.literal('secantOfTheLastTwo'),
   rounding_ppmEq: positive,
+  trefAgreementFractionOfTolerance: positive,
   maximumIterates: z.number().int().min(2),
 }).strict()
 export type CriticalBoron = z.infer<typeof criticalBoronSchema>
@@ -100,7 +104,11 @@ export function decide(block: CriticalBoron, start_ppmEq: number, packet: unknow
     if (m.error_k !== m.settled_tavg_k - m.tref_full_power_k) throw Error(`iterate ${k}: error is not Tavg - Tref`)
     return { k, c: it.boron_ppmEq, e: m.error_k, tref: m.tref_full_power_k, tavg: m.settled_tavg_k }
   })
-  if (new Set(points.map(p => p.tref)).size !== 1) throw Error("the iterates' Tref differ: the prepared hot reference moved")
+  // Each iterate's Tref is its own packet's prepared hot reference after the
+  // composition's consistent start, so it agrees with iterate 0's only to the
+  // start's convergence; a larger spread means the hot reference moved.
+  const spread = Math.max(...points.map(p => Math.abs(p.tref - points[0]!.tref)))
+  if (!(spread <= block.trefAgreementFractionOfTolerance * tol)) throw Error(`the iterates' Tref differ by ${spread} K: the prepared hot reference moved`)
   const accepted = points.find(p => p.k >= 1 && Math.abs(p.e) <= tol)
   if (accepted) return { accepted: { iterate: accepted.k, preparedBoron_ppmEq: accepted.c, settledTavg_K: accepted.tavg, tref_K: accepted.tref, error_K: accepted.e, tolerance_K: tol }, points }
   if (points.length >= block.maximumIterates) throw Error(`no iterate within ${tol} K after ${points.length} iterates: the search refuses`)
