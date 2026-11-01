@@ -345,6 +345,8 @@ fn channels(plant: &Plant, inputs: &Inputs) -> Result<Vec<Channel>, String> {
                 ("1", "mean rod stem travel over the normal stroke (0 seated)")
             }
             Quantity::StopValvePosition { .. } => ("%", "turbine stop valve stroke (100 open)"),
+            // PHYS2 (lead ruling 1 Nov): only in a section declaring the governor.
+            Quantity::AdmissionPosition => ("%", "turbine admission valve stroke (100 open)"),
             // PHYS2's X4 channels (ld01-sg-normal-pressure-channel,
             // ld01-sg-flow-channels, ld01-vessel-dp-channels,
             // ld01-core-exit-channels), in the units the section compiles.
