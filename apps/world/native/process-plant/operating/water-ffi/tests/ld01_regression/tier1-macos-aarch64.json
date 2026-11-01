@@ -1,9 +1,9 @@
 {
  "kind": "ld01-tier1-expectation",
  "platform": "macos-aarch64",
- "reason": "X4.5 geometry refit (FEED f4de13a45, wiki 54a078e): refit packets and states; trajectory moves",
- "recorded_from": "/Users/hilde/Documents/ChatGPT/Leitbild-research/reference-designs/property-candidates/operating-joined-spine-s2/resume-2026-10-14/tiers/t1-71241de84-20261101T004351Z",
- "app": "71241de84",
+ "reason": "PERF2 pow 7f945ac64 (R4-JAC-BASE, R4-TURNOVER-VALUES, R4-ENDPOINT-ASSEMBLY bitwise; R4-WALL-POWERS moves C2@2.5 rounding)",
+ "recorded_from": "/Users/hilde/Documents/ChatGPT/Leitbild-research/reference-designs/property-candidates/operating-joined-spine-s2/resume-2026-10-14/tiers/t1-015784cc1-20261101T014211Z",
+ "app": "015784cc1",
  "environment": {
   "packet_sha256": "78ef4201bec262c0c52ec79e7f1fabee9e2791629a2f09a3070c100dbe874785",
   "state_sha256": "8f9ea6d37de65babcb63cffb5189ff7ff0c0bf948572cd1d08e85cd284d19c3b",
@@ -15,12 +15,12 @@
  "instruction_tolerance": 0.01,
  "spans": {
   "C2@0": {
-   "instructions": 6753833975,
+   "instructions": 6584249721,
    "digest": "c042f79094e7d0efba4a23ea7b6e20e5838255de616f947d94ac982ebe25b7d9"
   },
   "C2@2.5": {
-   "instructions": 21450423597,
-   "digest": "9f8703a3704027c4bd93a9cd5b553f526b02764107669cd0c7e76c6c9bf8514d"
+   "instructions": 19257315951,
+   "digest": "0d252960fab8e3204ccf509d861d31f60d3a7f162e1047332df06a8896583361"
   }
  }
 }

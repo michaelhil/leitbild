@@ -889,7 +889,10 @@ mod integrated {
     use leitbild_operating_plant::{
         joined::{
             block::{Command, Transaction},
-            blocks::{Classes, JoinedJacobian, Profile, jacobian_blocks, jacobian_blocks_profiled},
+            blocks::{
+                Classes, JoinedJacobian, Profile, jacobian_blocks, jacobian_blocks_on_base,
+                jacobian_blocks_profiled,
+            },
             operator::Joined,
             presence::{PatternCache, PresenceKey, VaporPresence, pattern_cells},
         },
@@ -1636,6 +1639,46 @@ mod integrated {
         presence: Option<Following>,
         /// N3: the first step a discrete restart sets ([`FirstStep`]).
         first_step: FirstStep,
+        /// PERF2 (E-LIN, R4-JAC-BASE): the last residual's evaluation, which
+        /// stock's next linear setup at the same state repeats.
+        base: Base,
+    }
+
+    /// PERF2 (E-LIN, R4-JAC-BASE): the state of the last residual call.
+    /// Stock IDA sets up its linear system
+    /// right after a residual at the same `(t, y, y')` (SUNNonlinSol_Newton
+    /// evaluates the residual, then calls lsetup on the same iterate), and
+    /// the block assembly starts with exactly that evaluation. The base is
+    /// taken only when the state is bitwise the residual's and the operator
+    /// has evaluated nothing since (its residual counter); any other
+    /// callback or mutable access releases it.
+    struct Base {
+        held: bool,
+        t: f64,
+        y: Vec<f64>,
+        yp: Vec<f64>,
+        evaluations: usize,
+    }
+    impl Base {
+        fn new() -> Self {
+            Self {
+                held: false,
+                t: 0.,
+                y: Vec::new(),
+                yp: Vec::new(),
+                evaluations: 0,
+            }
+        }
+        fn matches(&self, t: f64, y: &[f64], yp: &[f64], evaluations: usize) -> bool {
+            let same = |a: &[f64], b: &[f64]| {
+                a.len() == b.len() && a.iter().zip(b).all(|(x, y)| x.to_bits() == y.to_bits())
+            };
+            self.held
+                && self.evaluations == evaluations
+                && self.t.to_bits() == t.to_bits()
+                && same(&self.y, y)
+                && same(&self.yp, yp)
+        }
     }
 
     /// N3 (Operable Unit plan, R1 S4): the first step stock IDA takes after
@@ -1686,6 +1729,7 @@ mod integrated {
                 analyses: Analyses::default(),
                 presence: None,
                 first_step: FirstStep::Declared,
+                base: Base::new(),
             })
         }
         /// On the block assembly, compiled at the value state `(t, y, 0)`;
@@ -1726,6 +1770,7 @@ mod integrated {
                 analyses,
                 presence: None,
                 first_step: FirstStep::Declared,
+                base: Base::new(),
             })
         }
         /// On the block assembly that follows the vapor presence its
@@ -1783,6 +1828,7 @@ mod integrated {
                 assembly: Assembly::Blocks(Box::new(structure)),
                 analyses,
                 first_step: FirstStep::Declared,
+                base: Base::new(),
                 presence: Some(Following {
                     cache,
                     key,
@@ -1810,11 +1856,13 @@ mod integrated {
                 assembly,
                 analyses,
                 presence: following,
+                base,
                 ..
             } = self;
             let Some(f) = following else {
                 return Ok(false);
             };
+            base.held = false;
             let key = f.cache.key(presence);
             if key == f.key {
                 return Ok(false);
@@ -1917,6 +1965,7 @@ mod integrated {
             yp: &[f64],
             out: &mut [f64],
         ) -> Result<(), Failure> {
+            self.base.held = false;
             self.joined.roots(time, y, yp, out).map_err(failure)
         }
         fn residual(
@@ -1926,11 +1975,22 @@ mod integrated {
             yp: &[f64],
             out: &mut [f64],
         ) -> Result<(), Failure> {
+            self.base.held = false;
             self.joined
                 .evaluate(time, y, yp, None, 0., None)
                 .map_err(failure)?;
             for (r, v) in out.iter_mut().zip(self.joined.rows()) {
                 *r = v.value;
+            }
+            if matches!(self.assembly, Assembly::Blocks(_)) {
+                let b = &mut self.base;
+                b.t = time;
+                b.y.clear();
+                b.y.extend_from_slice(y);
+                b.yp.clear();
+                b.yp.extend_from_slice(yp);
+                b.evaluations = self.joined.counters.residuals;
+                b.held = true;
             }
             Ok(())
         }
@@ -1958,8 +2018,38 @@ mod integrated {
                     let started = std::time::Instant::now();
                     // R4-WATER-PARTIALS: the water basis store for this assembly.
                     crate::basis_assembly(true);
-                    // PERF E-PROF: the pieces in instructions, when profiled.
-                    let result = if leitbild_operating_plant::cost::pieces() {
+                    // R4-ENDPOINT-ASSEMBLY: the heater endpoints of this assembly.
+                    leitbild_operating_plant::network::heaters::hold_endpoints(true);
+                    // R4-JAC-BASE: the residual's evaluation at this very
+                    // state stands; with the relief shut its rows are those
+                    // of the assembly's reuse evaluation bit for bit (only a
+                    // lifted relief's restriction is held with partials).
+                    let on_base = self.base.matches(time, y, yp, self.joined.counters.residuals)
+                        && self.joined.network.pzr_boundary().is_none_or(|(b, _)| {
+                            b.relief.as_ref().is_none_or(|r| r.lift.value == 0.)
+                        });
+                    self.base.held = false;
+                    let result = if on_base {
+                        let reuse = self.joined.network.reuse();
+                        let mut profile = leitbild_operating_plant::cost::pieces()
+                            .then(|| Profile::new(leitbild_operating_plant::cost::now_f64));
+                        let result = jacobian_blocks_on_base(
+                            &mut self.joined,
+                            structure,
+                            time,
+                            cj,
+                            y,
+                            yp,
+                            data,
+                            Classes::ALL,
+                            reuse,
+                            profile.as_mut(),
+                        );
+                        for (piece, (calls, spent)) in profile.into_iter().flat_map(|p| p.pieces) {
+                            leitbild_operating_plant::cost::book(piece, calls, spent as u64);
+                        }
+                        result
+                    } else if leitbild_operating_plant::cost::pieces() {
                         let mut profile = Profile::new(leitbild_operating_plant::cost::now_f64);
                         let result = jacobian_blocks_profiled(
                             &mut self.joined,
@@ -1989,6 +2079,7 @@ mod integrated {
                         )
                     };
                     crate::basis_assembly(false);
+                    leitbild_operating_plant::network::heaters::hold_endpoints(false);
                     self.joined.counters.jacobians += 1;
                     self.joined.counters.jacobian_wall_s += started.elapsed().as_secs_f64();
                     result
