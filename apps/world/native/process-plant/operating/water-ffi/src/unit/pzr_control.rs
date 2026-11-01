@@ -84,11 +84,13 @@ impl PzrClient {
         [d.value, m.heater_request(d).value, u]
     }
     /// The reduction's loud end: the lag outside the channel's span.
-    pub fn within_span(&self, t: f64, y: &[f64]) -> Result<(), String> {
+    /// `t` is the frame instant, `None` at commissioning.
+    pub fn within_span(&self, t: Option<f64>, y: &[f64]) -> Result<(), String> {
         let lag = y[self.lag.0] * self.lag.1;
         if !(lag.is_finite() && self.span[0] <= lag && lag <= self.span[1]) {
+            let at = t.map_or("at commissioning".to_string(), |t| format!("at {t} s"));
             return Err(format!(
-                "at {t} s the PT1 channel lag {lag} Pa left its span [{}, {}] Pa: the continuous master models no AUTO withdrawal (R4-PZR-PI reduction); the case ends",
+                "{at} the PT1 channel lag {lag} Pa left its span [{}, {}] Pa: the continuous master models no AUTO withdrawal (R4-PZR-PI reduction); the case ends",
                 self.span[0], self.span[1]
             ));
         }
@@ -131,7 +133,7 @@ impl<S: JoinedSystem> Client<S> for PzrClient {
     }
     fn frame(&mut self, _k: u64, t: f64, dense: &dyn Dense) -> Result<Vec<Change<S>>, String> {
         dense.derivative(t, 0, &mut self.scratch)?;
-        self.within_span(t, &self.scratch)?;
+        self.within_span(Some(t), &self.scratch)?;
         [self.demand_pa, self.in_force_w, self.spray_demand] = self.outputs(&self.scratch);
         Ok(Vec::new())
     }
@@ -261,7 +263,7 @@ pub fn commission(
         spray_demand: 0.,
         scratch: vec![0.; y.len()],
     };
-    client.within_span(f64::NAN, y)?;
+    client.within_span(None, y)?;
     [client.demand_pa, client.in_force_w, client.spray_demand] = client.outputs(y);
     let w = client.in_force_w;
     Ok((client, carried, w))
