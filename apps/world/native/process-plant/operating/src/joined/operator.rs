@@ -763,6 +763,26 @@ impl<P: Properties + WaterProperties> Joined<P> {
             RodPort::Prepared(_) => None,
         }
     }
+    /// R4-RESTART-EQUATION-CHANGE (lead 1 Nov 2026, on S3-D41's principle):
+    /// the owners that report which equation an algebraic row carries, each
+    /// with its mode key, in a fixed composition order. A restart at which a
+    /// key changes (a mode transition that changes a row's equation) takes
+    /// the transaction class's passes. Only owners that declare it report:
+    /// today the spray path, whose valve restriction row is the lock row
+    /// while the valve or its inlet check is closed (`closed`,
+    /// `check_closed`; the stem and the port's L1 locks are not keys here).
+    pub fn equation_modes(&self) -> Vec<(&'static str, serde_json::Value)> {
+        self.network
+            .spray_discrete_state()
+            .map(|s| {
+                (
+                    "network/spray path",
+                    serde_json::json!({"closed": s.closed, "check_closed": s.check_closed}),
+                )
+            })
+            .into_iter()
+            .collect()
+    }
     /// The PZR metal and relief owner (G6).
     pub fn pzr(&self) -> &Pzr {
         &self.blocks.pzr
