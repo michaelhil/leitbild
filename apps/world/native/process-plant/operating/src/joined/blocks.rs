@@ -1490,16 +1490,19 @@ fn assemble<P: Properties + WaterProperties>(
         seed.passes.clear();
         // R4-PZR-PI (S-b): the valve's restriction row in the PZR owner's
         // stem, at the base evaluation's drive (zero while locked).
-        let opening = network.spray_row_opening_partial();
+        let opening = network
+            .spray_row_opening_partial()
+            .zip(stem)
+            .map(|((row, d), j)| (row, j, d * scales[j]));
         for j in o.pzr..o.cvcs {
             let boundary = coupler.pzr_column(j, cell, &column)?;
             for (row, v) in coupler.last_pzr() {
                 sink.add(*row, j, v.direction)?;
             }
-            if Some(j) == stem
-                && let Some((row, d)) = opening
+            if let Some((row, k, v)) = opening
+                && k == j
             {
-                sink.add(row, j, d * scales[j])?;
+                sink.add(row, j, v)?;
             }
             seed.pzr_boundary = Some(boundary);
             response.clear();
