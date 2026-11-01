@@ -7,6 +7,11 @@ import {join, resolve} from 'node:path'
 import {nativeIf97HeaderSha256, nativeIf97LicenseSha256, nativeIf97Revision, nativeIf97Source} from './reference-design-if97-primitives'
 import {metastableSchema, ownedBlock, pzrOwners} from './reference-design-operating-pzr'
 import {wikiProvenance} from './reference-design-wiki-provenance'
+import {sbtlCheckerMain,sbtlCommon,sbtlEvaluator,sbtlGeneratorMain,sbtlGrids,sbtlTableAssembly} from './reference-design-operating-water-sbtl'
+
+/** Points per branch of the build's SBTL check (G13-15 uses 10-100 million
+ * for its RMS values; this build's check is a bounded subset, recorded). */
+export const sbtlCheckPoints=2_000_000
 
 const hash=(v:Uint8Array|string)=>createHash('sha256').update(v).digest('hex')
 
@@ -55,8 +60,8 @@ ${nativeIf97Source(true)}
 // mirrors its full counterpart above: the same checks in the same order and the
 // same member calls on the same arguments, without entropy, cv, sound speed,
 // compressibility, transport or the p-only saturation slope. Its values are
-// therefore bit-identical to ld01_water_point's. R3, R5 and dilute states, all
-// refused by this R1/R2 boundary, take the full path.
+// therefore bit-identical to ld01_water_point's. Region-3 states (dense_side)
+// and R5/dilute states, the latter refused by this boundary, take the full path.
 // One pass over a region's residual terms. upstream's members evaluate each
 // Gibbs derivative as its own loop, and the tuple's fields call them again and
 // again (umass, hmass, rhomass and alpha re-evaluate dgammar_dPI and
@@ -176,14 +181,24 @@ template<class R> struct FusedGibbs : R {
 };
 static const FusedGibbs<IF97::Region1> c1;
 static const FusedGibbs<IF97::Region2> c2;
-// Complete the requested fields of an admitted (region 1 or 2) caloric state,
+// Complete the requested fields of an admitted (region 1, 2 or 3) caloric state,
 // refusing a non-finite one as gibbs()'s tuple check does; the saturation
 // slope is water_point_at's, with its check. Unrequested fields stay NaN.
 double complete_state(State& q,int fields) {
  switch(q.region){
   case 1:c1.complete(q,fields);break;
   case 2:c2.complete(q,fields);break;
-  default:throw std::invalid_argument("Completion of a non-R1/R2 state");
+  case 3:{
+   // A region-3 state's tuple at its own (T,rho): bit for bit the fields
+   // dense_side evaluated for the same state.
+   const State d=dense(q.T,q.rho);
+   if(fields&FIELD_CV) q.cv=d.cv;
+   if(fields&FIELD_KAPPA) q.kappa=d.kappa;
+   if(fields&FIELD_MU) q.mu=d.mu;
+   if(fields&FIELD_K) q.conductivity=d.conductivity;
+   break;
+  }
+  default:throw std::invalid_argument("Completion of a non-R1/R2/R3 state");
  }
  const std::array<std::pair<int,double>,4> added{{{FIELD_CV,q.cv},{FIELD_KAPPA,q.kappa},{FIELD_MU,q.mu},{FIELD_K,q.conductivity}}};
  require(std::all_of(added.begin(),added.end(),[&](const auto& f){return !(fields&f.first)||std::isfinite(f.second);}),
@@ -220,7 +235,26 @@ State endpoint_caloric(double p,bool is_liquid) {
  require(p>=IF97::Pmin&&p<IF97::Pcrit,"Unsupported saturation endpoint domain");
  const double T=r4.T_p(p);
  if(T<=IF97::T23min) return is_liquid?c1.caloric(1,T,p):c2.caloric(2,T,p);
- return endpoint(p,is_liquid);
+ // Above 16.529 MPa (Tsat > 623.15 K) the endpoint is region 3 on its side of
+ // saturation; it is the forward point at the requested p (defect <= 1 Pa).
+ State q=endpoint(p,is_liquid);q.p=p;return q;
+}
+// spec: world/packs/process-plant/reference-designs/ld-01/model/operating-phase-properties.md#pressure-ceilings
+// IF97 region 3 near saturation (owner decision, 1 Nov 2026: the water domain
+// to 20 MPa on both branches). A stable state above 623.15 K on the liquid
+// branch, or between saturation and the region-2/3 boundary B23 on the vapor
+// branch, is region 3 on the requested side of saturation: IF97.h's density
+// from the backward v(T,p) equations of that side (Region3::output with the
+// branch's saturation side), iterated on the basic equation (REGION3_ITERATE),
+// then the full tuple at (T,rho). The returned p is the requested p; the
+// forward pressure defect is checked against 1 Pa as point()'s region-3 path.
+// IF97's own region-1/3 (623.15 K) and region-2/3 (B23) boundaries are not
+// continuous: each branch keeps the region IF97 assigns, without smoothing.
+State dense_side(double T,double p,bool liquid) {
+ State q=dense(T,r3.output(IF97_DMASS,T,p,liquid?LIQUID:VAPOR));
+ max_forward_p=std::max(max_forward_p,std::abs(q.p-p));
+ require(std::abs(q.p-p)<=1,"Region3 PT forward pressure defect exceeds 1 Pa");
+ q.p=p;return q;
 }
 // Bounded metastable admission: the parsed ld01-metastable-band block, recorded
 // with its page hash in the build receipt.
@@ -257,6 +291,8 @@ struct CaloricTuple {
  static State stable_liquid(double T,double p){return liquid_caloric(T,p);}
  static State stable_vapor(double T,double p){return vapor_caloric(T,p);}
  static State saturated(double p,bool is_liquid){return endpoint_caloric(p,is_liquid);}
+ static State dense_liquid(double T,double p){return dense_side(T,p,true);}
+ static State dense_vapor(double T,double p){return dense_side(T,p,false);}
 };
 // The explicitly requested branch at (p,T); ts is Tsat(p). An exact saturation
 // boundary has two physical branches: honour the caller's branch instead of
@@ -284,18 +320,28 @@ template<class Tuple> int branch_state(int branch,double p,double T,State& q,dou
  }else switch(branch) {
   case 0:
    if(T==ts){q=Tuple::saturated(p,true);break;}
-   require(!(T>liquid_temperature_max_k),"Liquid above the region-1 temperature limit");
+   // Stable liquid above region 1's 623.15 K lies only above 16.529 MPa
+   // (Tsat > 623.15 K), subcooled, in region 3.
+   if(T>liquid_temperature_max_k){
+    require(T<ts,"Liquid above the region-1 temperature limit and not subcooled");
+    q=Tuple::dense_liquid(T,p);break;
+   }
    if(T<ts&&!(p>r4.p_T(T))){q=Tuple::liquid_equation(T,p);break;}
    q=Tuple::stable_liquid(T,p);break;
   case 1:
    if(T==ts){q=Tuple::saturated(p,false);break;}
    if(T>ts&&T<=IF97::T23min&&!(p<r4.p_T(T))){q=Tuple::vapor_equation(T,p);break;}
+   // Above 16.529 MPa the vapor between saturation and B23 is region 3.
+   if(T>IF97::T23min&&p>IF97::Region23_T(T)){
+    require(T>ts,"Vapor in region 3 below saturation");
+    q=Tuple::dense_vapor(T,p);break;
+   }
    q=Tuple::stable_vapor(T,p);break;
   case 2:q=Tuple::saturated(p,true);break;
   case 3:q=Tuple::saturated(p,false);break;
   default:return 2;
  }
- require(q.region==1||q.region==2,"Operating water admits R1/R2 only");
+ require(q.region>=1&&q.region<=3,"Operating water admits R1/R2/R3 only");
  return 0;
 }
 extern "C" {
@@ -359,7 +405,7 @@ int ld01_water_caloric(int branch,double p,double T,OperatingWaterPoint* out) no
 // for bit, so only the requested cv, kappa, viscosity, conductivity and
 // saturation slope are added (complete_state); unrequested fields are NaN.
 int ld01_water_complete(const OperatingWaterPoint* caloric,int fields,OperatingWaterPoint* out) noexcept {
- if(!caloric||!out||fields<0||fields>FIELDS_ALL||(caloric->region!=1&&caloric->region!=2))return 2;
+ if(!caloric||!out||fields<0||fields>FIELDS_ALL||caloric->region<1||caloric->region>3)return 2;
  try {
   const OperatingWaterPoint& c=*caloric;
   const double none=std::numeric_limits<double>::quiet_NaN();
@@ -465,8 +511,8 @@ int ld01_water_direction_exact(int branch,const OperatingWaterPoint* held,double
  *direction=d;return 0;
 }
 // The caloric inverse's branch ends at p: the stable end (branch code and
-// temperature: the saturated endpoint, or region 1 at its temperature limit
-// where saturation lies above it) and the trial end of the metastable band,
+// temperature: the saturated endpoint, region 1 or region 3) and the trial end
+// of the metastable band,
 // NaN where the branch has no band at p. Branches 0 and 1 only.
 int ld01_water_bracket(int branch,double p,int* stable_branch,double* stable_T,double* trial_T) noexcept {
  if(!stable_branch||!stable_T||!trial_T||(branch!=0&&branch!=1))return 2;
@@ -475,8 +521,9 @@ int ld01_water_bracket(int branch,double p,int* stable_branch,double* stable_T,d
    "Operating water pressure domain");
   const double ts=r4.T_p(p),none=std::numeric_limits<double>::quiet_NaN();
   if(branch==0){
-   const bool saturated=ts<=IF97::T23min;
-   *stable_branch=saturated?2:0;*stable_T=saturated?0.:liquid_temperature_max_k;
+   // The stable liquid ends at its saturated endpoint at every admitted
+   // pressure: region 1 up to 16.529 MPa, region 3 above (no 623.15 K end).
+   *stable_branch=2;*stable_T=0.;
    *trial_T=in_band(p)&&ts<liquid_temperature_max_k?std::min(ts+trial_max_k,liquid_temperature_max_k):none;
   }else{
    *stable_branch=3;*stable_T=0.;
@@ -586,8 +633,21 @@ export function waterToolchain(platform:string=process.platform){
       flags:['-std=c++17','-O2','-fPIC']},
     archiver:platform==='darwin'?'libtool -static -D (ZERO_AR_DATE=1)':'ar rcsD'}
 }
-const archiveCommand=(platform:string,library:string,object:string)=>
-  platform==='darwin'?['libtool','-static','-D','-o',library,object]:['ar','rcsD',library,object]
+const archiveCommand=(platform:string,library:string,objects:string[])=>
+  platform==='darwin'?['libtool','-static','-D','-o',library,...objects]:['ar','rcsD',library,...objects]
+
+/** The archive's source: the reference adapter and the SBTL evaluator. */
+export const operatingWaterSource=(band:MetastableBand)=>operatingWaterBridge(band)+sbtlCommon+sbtlEvaluator
+/** The SBTL generator's source: the same reference adapter and the shared
+ * SBTL part, with the generator's main. */
+export const operatingWaterGenerator=(band:MetastableBand)=>operatingWaterBridge(band)+sbtlCommon+sbtlGeneratorMain(sbtlGrids)
+
+async function run(args:string[],options:{stdin?:Blob,env?:Record<string,string|undefined>}={}){
+  const p=Bun.spawn(args,{stdin:options.stdin??'ignore',stdout:'pipe',stderr:'pipe',env:options.env??Bun.env})
+  const [out,error,code]=await Promise.all([new Response(p.stdout).text(),new Response(p.stderr).text(),p.exited])
+  if(code!==0)throw Error(`${args[0]}: ${error||out||'failed'}`)
+  return out
+}
 
 export async function buildOperatingWater(if97Directory:string,wikiRoot:string,outputDirectory:string){
   const directory=resolve(if97Directory),output=resolve(outputDirectory),wiki=resolve(wikiRoot)
@@ -598,20 +658,30 @@ export async function buildOperatingWater(if97Directory:string,wikiRoot:string,o
   const band=parseMetastableBand(ownedBlock(new TextDecoder().decode(page),pzrOwners.metastable.heading,pzrOwners.metastable.fence))
   const wikiSource=await wikiProvenance(wiki)
   const toolchain=waterToolchain()
-  const source=operatingWaterBridge(band)
+  const source=operatingWaterSource(band),generatorSource=operatingWaterGenerator(band)
   await mkdir(output,{recursive:true})
   const work=await mkdtemp(join(tmpdir(),'ld01-water-build-'))
   try{
     const object=join(work,'water.o'),library=join(output,'libld01_operating_water.a')
-    const compile=Bun.spawn(['c++',...toolchain.compiler.flags,'-I',directory,'-x','c++','-c','-o',object,'-'],
-      {stdin:new Blob([source]),stdout:'pipe',stderr:'pipe'})
-    const [compileError,code]=await Promise.all([new Response(compile.stderr).text(),compile.exited])
-    if(code!==0)throw Error(compileError||'Operating water bridge compilation failed')
+    // spec: world/packs/process-plant/reference-designs/ld-01/model/operating-phase-properties.md#sbtl-water-properties
+    // The SBTL tables from this reference, by a generator compiled with the
+    // archive's own compiler and flags from the same adapter source, so every
+    // admitted node is the reference path's value bit for bit.
+    const generator=join(work,'sbtl-generator'),tables=join(output,'sbtl-tables.bin')
+    await run(['c++',...toolchain.compiler.flags,'-I',directory,'-x','c++','-o',generator,'-'],{stdin:new Blob([generatorSource])})
+    await rm(tables,{force:true})
+    await run([generator,tables])
+    const tableObject=join(work,'sbtl-tables.o'),assembly=join(work,'sbtl-tables.s')
+    await Bun.write(assembly,sbtlTableAssembly(tables,process.platform))
+    await run(['c++','-c','-x','assembler',assembly,'-o',tableObject])
+    await run(['c++',...toolchain.compiler.flags,'-I',directory,'-x','c++','-c','-o',object,'-'],{stdin:new Blob([source])})
     await rm(library,{force:true})
-    const archive=Bun.spawn(archiveCommand(process.platform,library,object),
-      {stdout:'pipe',stderr:'pipe',env:{...Bun.env,ZERO_AR_DATE:'1'}})
-    const [archiveError,status]=await Promise.all([new Response(archive.stderr).text(),archive.exited])
-    if(status!==0)throw Error(archiveError||'Operating water archive failed')
+    await run(archiveCommand(process.platform,library,[object,tableObject]),{env:{...Bun.env,ZERO_AR_DATE:'1'}})
+    // The tables' check against this reference, linked with the archive's
+    // objects; the build refuses a table that fails a consistency check.
+    const checker=join(work,'sbtl-check'),checkSource=sbtlCheckerMain(sbtlCheckPoints)
+    await run(['c++',...toolchain.compiler.flags,'-x','c++','-o',checker,'-','-x','none',object,tableObject],{stdin:new Blob([checkSource])})
+    const check=JSON.parse(await run([checker]))
     // Written by this hash-verified build for inspection. Cargo links the
     // explicitly supplied artifact directory; it is a trusted local build
     // input, not a separate cryptographic artifact-admission service.
@@ -620,7 +690,10 @@ export async function buildOperatingWater(if97Directory:string,wikiRoot:string,o
       librarySha256:hash(await Bun.file(library).bytes()),platform:process.platform,architecture:process.arch,
       toolchain,wiki:{tree:wikiSource.tree,commit:wikiSource.commit,basis:wikiSource.basis},
       metastableBand:{page:metastableBandPage,pageSha256:hash(page),heading:pzrOwners.metastable.heading,
-        fence:pzrOwners.metastable.fence,band}}
+        fence:pzrOwners.metastable.fence,band},
+      sbtl:{guideline:'IAPWS G13-15 (2015), Secs. 3.2 and 10',generatorSha256:hash(generatorSource),
+        tableSha256:hash(await Bun.file(tables).bytes()),tableBytes:Bun.file(tables).size,grids:sbtlGrids,
+        checkSha256:hash(checkSource),check}}
     await Bun.write(join(output,'water-build.json'),JSON.stringify(receipt,null,2)+'\n')
     return {directory:output,...receipt}
   }finally{await rm(work,{recursive:true,force:true})}

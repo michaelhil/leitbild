@@ -926,6 +926,10 @@ impl<S: JoinedSystem> JoinedSystem for Electrified<S> {
     fn routing(&self) -> Option<&Distribution> {
         Some(&self.routing)
     }
+    /// PROC T5: the DC groups, for the IC client's own copy.
+    fn dc_groups(&self) -> Option<&Groups> {
+        self.dc.as_ref()
+    }
     fn admission_probe(&self, t: f64) -> Option<(usize, Vec<(usize, f64)>)> {
         self.governor.as_ref()?;
         let c = self.coefficients(t).ok()?;

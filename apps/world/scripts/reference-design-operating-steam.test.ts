@@ -105,7 +105,7 @@ const texts={turbine:`# T\n\n## Compact operating allocation (15 October 2026)\n
   shaft:`# S\n\n## Rotor and loss connection\n\n${fence('ld01-shaft-drag',{dragPowerAtReference_W:500000,referenceSpeed_rpm:1500})}\n`,
   casing:fence('reference-turbine-preparation',{hpCapacity_J_K:30000000,lpCapacity_J_K:150000000,hpContact_W_K:50000,lpContact_W_K:100000,roomContact_W_K:100,
     drainCdA_m2:0.0005,drainStroke_s:2,drainMotion_W:100,warmDifference_K:30,warmDuration_s:30,maximumLiquidFraction:0.01}),
-  hot:fence('reference-operating-hot',{primaryPressure_Pa:15200000,achievedRodTravel_m:2.8,boronReference_ppmEq:1000,
+  hot:fence('reference-operating-hot',{primaryPressure_Pa:15200000,achievedRodTravel_m:2.8,boronReference_ppmEq:1000,preparedBoron_ppmEq:1000,
     gapAccommodationReferenceTemperature_K:650,sgSecondaryPressure_Pa:6363140,initialLoopMassflow_kg_s:0,sgMetalSegments:4}),
   generator:fence('reference-generator',{lineVoltage_V:10000,frequency_Hz:50,polePairs:2,base_VA:1100000000,referenceShaft_W:1025508905.915,
     sizingConversion:0.985,reactance_pu:1.5,fieldCurrent_A:2000,fieldCopper_W:500000,inductanceMargin:2,fieldDump_Ohm:2,shaftInertia_s:5})}

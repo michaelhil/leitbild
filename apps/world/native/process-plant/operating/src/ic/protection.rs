@@ -752,6 +752,7 @@ mod tests {
             "holding": {"interface": "LD01.TRIP.HOLD", "supply": "LD01.DC.ACT.A", "manual_interrupt": "LD01.TRIP.MANUAL",
                 "divisions": ["I1", "I2", "I3"], "contacts": ["LD01.TRIP.PERM.I1", "LD01.TRIP.PERM.I2", "LD01.TRIP.PERM.I3"]},
             "turbine_trip_on_reactor_trip": {"cause": "LD01.TG.REACTOR_TRIP", "delay_s": 5., "basis": "test"},
+            "governor": {"declared": false, "basis": "test"}, "dc": {"declared": false, "basis": "test"}, "engineering": [],
             "missing": [], "provenance": []
         }))
         .unwrap()
