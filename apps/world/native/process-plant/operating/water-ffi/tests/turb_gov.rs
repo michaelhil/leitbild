@@ -17,14 +17,18 @@
 //! `LD01_TURB_OUT`, `LD01_TURB_STATE_OUT` (optional: the end state, in the
 //! saved S3 state's form, governed; written once, only after a full run).
 #![cfg(all(feature = "ida", target_os = "macos"))]
+mod common;
 #[allow(dead_code)]
 #[path = "s3_harness/counters.rs"]
 mod counters;
+mod s2_harness;
+use s2_harness::{compare, gates, outputs};
 
 use leitbild_operating_plant::electrical::slice;
 use leitbild_operating_water::{
     electrical::{self, Electrified},
-    frame::{Change, Class, Client, Dense, Diagnostic, MatrixRebuild},
+    frame::{Change, Class, Client, Dense, Diagnostic, MatrixRebuild, Observer, Side},
+    ida::System,
     joined::{Integrated, JoinedSystem},
     unit::{
         clock::process_cpu_s,
@@ -96,14 +100,108 @@ impl Client<Unit> for Recorder {
     }
 }
 
-#[test]
-#[ignore = "one X4.3 run per invocation (LD01_TURB_SPAN_S, LD01_TURB_STEPS, LD01_TURB_OUT)"]
-fn turb_gov_run() {
-    let started = process_cpu_s();
-    let instructions0 = counters::instructions().unwrap();
-    let inputs = Inputs::from_env().unwrap_or_else(|e| panic!("{e}"));
-    let state_path = env("LD01_S3_STATE");
-    let state: Value = serde_json::from_slice(&std::fs::read(&state_path).unwrap()).unwrap();
+/// PHYS2's X4 judge inputs (record only), at every sample of the S1 gates'
+/// observation grid: the credited outputs (S2's reader, for R11-3a's E0),
+/// and at every 0.1 s frame `x4_frames` (PZR roof pressure and collapsed
+/// level, as PZR.PT/LT acquire, and each SG's NR measurand, the apparent
+/// level `(V_l + V_sub)/A`). Each sample evaluates the unit at its state.
+struct Observe {
+    n: usize,
+    origin: f64,
+    frame_s: f64,
+    obs_s: f64,
+    reader: outputs::Reader,
+    sg: Vec<[(usize, f64); 2]>,
+    area_m2: f64,
+    credited: compare::Credited,
+    error: Option<String>,
+    frames: Vec<Value>,
+    scratch: Vec<f64>,
+}
+fn on_grid(origin: f64, dt: f64, t: f64) -> bool {
+    let k = ((t - origin) / dt).round();
+    (origin + k * dt - t).abs() <= 1e-9 * dt.max(1.)
+}
+impl Observer<Unit> for Observe {
+    fn next_after(&self, t: f64) -> Option<f64> {
+        let mut k = ((t - self.origin) / self.obs_s).floor() + 1.;
+        while self.origin + k * self.obs_s <= t {
+            k += 1.;
+        }
+        Some(self.origin + k * self.obs_s)
+    }
+    fn sample(
+        &mut self,
+        u: &mut Unit,
+        t: f64,
+        y: &[f64],
+        yp: &[f64],
+        _: &[f64],
+        side: Side,
+    ) -> Result<(), String> {
+        if side != Side::Step || self.error.is_some() {
+            return Ok(());
+        }
+        if let Err(e) = u.residual(t, y, yp, &mut self.scratch) {
+            self.error = Some(format!("evaluation at {t} s: {e:?}"));
+            return Ok(());
+        }
+        let out = match self.reader.read(&u.integrated().joined, &y[..self.n], true) {
+            Ok(o) => o,
+            Err(e) => {
+                self.error = Some(format!("credited outputs at {t} s: {e}"));
+                return Ok(());
+            }
+        };
+        if on_grid(self.origin, self.frame_s, t) {
+            let get = |k: &str| out.iter().find(|(n, _)| *n == k).map(|(_, v)| v[0]);
+            let level: Vec<f64> = self
+                .sg
+                .iter()
+                .map(|[vl, vs]| (y[vl.0] * vl.1 + y[vs.0] * vs.1) / self.area_m2)
+                .collect();
+            self.frames.push(json!({"t_s": t, "pzr_roof_pa": get("pzr_roof_pa"), "pzr_level_m": get("pzr_level_m"), "sg_level_m": level}));
+        }
+        if let Err(e) = self.credited.push(t, &out) {
+            self.error = Some(e);
+        }
+        Ok(())
+    }
+}
+
+/// The gate observation's declared settings (S2's blocks, as s3_cases).
+struct GateSetup {
+    budgets: compare::Budgets,
+    network_packet: leitbild_operating_plant::network::packet::Packet,
+    reference_travel_m: f64,
+    area_m2: f64,
+}
+impl GateSetup {
+    fn load() -> Self {
+        let s2 = gates::Declaration::load().unwrap_or_else(|e| panic!("the S2 blocks: {e}"));
+        let budgets = compare::Budgets::from(&s2).unwrap_or_else(|e| panic!("{e}"));
+        let bytes = common::packet_bytes().1;
+        let raw: Value = serde_json::from_slice(&bytes).unwrap();
+        Self {
+            budgets,
+            network_packet: serde_json::from_slice(&bytes).expect("network packet"),
+            reference_travel_m: raw["rods"]["reference_travel_m"]
+                .as_f64()
+                .expect("reference travel"),
+            area_m2: raw["secondary"]["apparentLevel"]["indication"]["indicatedLevelArea_m2"]
+                .as_f64()
+                .expect("the NR indicated-level area"),
+        }
+    }
+}
+
+/// The case's drive: steps, the R1 staircase (`LD01_TURB_RAMP`) and span.
+struct Drive {
+    span: f64,
+    steps: Vec<(f64, f64)>,
+    ramp: Option<Value>,
+}
+fn case_drive() -> Drive {
     let span: f64 = env("LD01_TURB_SPAN_S").parse().unwrap();
     let mut steps: Vec<(f64, f64)> = std::env::var("LD01_TURB_STEPS").map_or(Vec::new(), |s| {
         s.split(',')
@@ -115,8 +213,7 @@ fn turb_gov_run() {
             })
             .collect()
     });
-    let ramp = std::env::var("LD01_TURB_RAMP").ok();
-    if let Some(r) = &ramp {
+    let ramp = std::env::var("LD01_TURB_RAMP").ok().map(|r| {
         let (to, rest) = r
             .split_once('@')
             .expect("LD01_TURB_RAMP=<to>@<from s>/<per min>");
@@ -134,17 +231,20 @@ fn turb_gov_run() {
         );
         let f0 = steps.iter().rev().find(|s| s.1 <= from).map_or(1., |s| s.0);
         let (total, per_s) = ((to - f0).abs(), per_min / 60.);
-        let mut k = 1.;
-        loop {
-            let moved = (k * per_s).min(total);
-            steps.push((f0 + (to - f0).signum() * moved, from + k));
-            if moved >= total {
-                break;
-            }
-            k += 1.;
+        // One Grid request per 1 s exchange; the last lands exactly on `to`.
+        let count = (total / per_s - 1e-9).ceil() as usize;
+        for k in 1..=count {
+            let f = if k == count {
+                to
+            } else {
+                f0 + (to - f0).signum() * k as f64 * per_s
+            };
+            steps.push((f, from + k as f64));
         }
         steps.sort_by(|a, b| a.1.total_cmp(&b.1));
-    }
+        json!({"spec": r, "kind": "staircase: one Grid request per 1 s exchange", "from_fraction": f0, "to_fraction": to,
+            "from_s": from, "per_min": per_min, "requests": count})
+    });
     assert!(
         steps.windows(2).all(|w| w[0].1 < w[1].1)
             && steps
@@ -152,36 +252,95 @@ fn turb_gov_run() {
                 .all(|s| s.1 > 0. && s.1 < span && s.1.fract() == 0.),
         "steps on whole seconds (Grid exchanges), in time order inside the span"
     );
-    let turbine = Turbine::from_wiki(&env("LD01_TURB_WIKI")).unwrap_or_else(|e| panic!("{e}"));
-    let section =
-        rod_control::section(&env("LD01_ROD_CONTROL_WIKI")).unwrap_or_else(|e| panic!("{e}"));
-    let packet = inputs.spine.packet_json().unwrap();
-    let ids: Vec<String> = packet["mechanics"]["regions"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|r| r["id"].as_str().unwrap().to_string())
-        .collect();
-    let mut unit = s3::compose_governed(&inputs, &state, Solver::STOCK, &turbine)
-        .unwrap_or_else(|e| panic!("{e}"));
+    Drive { span, steps, ramp }
+}
+
+/// One composed run of the drive at `scaling`, observed when `gates` is given.
+struct Driven {
+    plant: Plant,
+    rods: rod_control::RodClient,
+    rec: Recorder,
+    rod_receipt: Value,
+    decisions: Vec<Value>,
+    failure: Option<String>,
+    request0: f64,
+    t0: f64,
+    n: usize,
+    observe: Option<Observe>,
+    cpu: f64,
+    instructions: u64,
+    composed: u64,
+}
+#[allow(clippy::too_many_arguments)]
+fn drive(
+    inputs: &Inputs,
+    state: &Value,
+    turbine: &Turbine,
+    section: &leitbild_operating_plant::control::rods::Section,
+    ids: &[String],
+    d: &Drive,
+    scaling: s3::Scaling,
+    gates: Option<&GateSetup>,
+) -> Driven {
+    let started = process_cpu_s();
+    let instructions0 = counters::instructions().unwrap();
+    let mut unit =
+        s3::compose_governed_with(inputs, state, scaling, Solver::STOCK, Some(turbine), Ok)
+            .unwrap_or_else(|e| panic!("{e}"));
     let (t0, y, reference, n) = (unit.t0, unit.y.clone(), unit.reference.clone(), unit.n);
     let request0 = unit.ida.system().governor.as_ref().unwrap().held.to_w;
-    let pressures: Vec<(usize, f64)> = {
+    type Scaled = (usize, f64);
+    let (pressures, sg): (Vec<Scaled>, Vec<[Scaled; 2]>) = {
         let j = &unit.ida.system().integrated().joined;
         let o = j.offsets().secondary;
         let scales = j.scales();
-        j.secondary()
-            .unwrap()
-            .admission_terms(t0)
-            .unwrap()
+        let sec = j.secondary().unwrap();
+        let labels = &sec.layout().labels;
+        let at = |l: &str| {
+            let i = o + labels
+                .iter()
+                .position(|x| x == l)
+                .unwrap_or_else(|| panic!("no {l}"));
+            (i, scales[i])
+        };
+        let ids: Vec<String> = labels
             .iter()
-            .map(|(i, _)| (o + i, scales[o + i]))
-            .collect()
+            .filter_map(|l| l.strip_prefix("SG.").and_then(|r| r.strip_suffix(".V_l")))
+            .map(str::to_string)
+            .collect();
+        (
+            sec.admission_terms(t0)
+                .unwrap()
+                .iter()
+                .map(|(i, _)| (o + i, scales[o + i]))
+                .collect(),
+            ids.iter()
+                .map(|id| [at(&format!("SG.{id}.V_l")), at(&format!("SG.{id}.V_sub"))])
+                .collect(),
+        )
     };
+    let observe = gates.map(|g| Observe {
+        n,
+        origin: t0,
+        frame_s: inputs.ic.frame_s,
+        obs_s: g.budgets.observation_s,
+        reader: outputs::Reader::new(
+            &unit.ida.system().integrated().joined,
+            &g.network_packet,
+            g.reference_travel_m,
+        )
+        .unwrap_or_else(|e| panic!("{e}")),
+        sg,
+        area_m2: g.area_m2,
+        credited: compare::Credited::default(),
+        error: None,
+        frames: Vec::new(),
+        scratch: vec![0.; y.len()],
+    });
     let (mut rods, rod_receipt) = rod_control::commission(
         unit.ida.system_mut(),
-        &section,
-        &ids,
+        section,
+        ids,
         Class::S,
         t0,
         &y,
@@ -218,22 +377,24 @@ fn turb_gov_run() {
         cost: Vec::new(),
         series: Vec::new(),
     };
-    let composed_instructions = counters::instructions().unwrap();
+    let mut observe = observe;
+    let composed = counters::instructions().unwrap();
     {
         let mut extra: [&mut dyn Client<_>; 2] = [&mut rods, &mut rec];
         plant.start(&mut extra).unwrap_or_else(|e| panic!("{e}"));
     }
-    let end = t0 + span;
+    let end = t0 + d.span;
     let mut failure: Option<String> = None;
     let mut decisions = Vec::new();
     let mut t = t0;
     let mut legs: Vec<(f64, Option<f64>)> =
-        steps.iter().map(|(f, at)| (t0 + at, Some(*f))).collect();
+        d.steps.iter().map(|(f, at)| (t0 + at, Some(*f))).collect();
     legs.push((end, None));
     for (b, fraction) in &legs {
         let r = {
             let mut extra: [&mut dyn Client<_>; 2] = [&mut rods, &mut rec];
-            plant.run(t, *b, &mut extra, None)
+            let obs = observe.as_mut().map(|o| o as &mut dyn Observer<Unit>);
+            plant.run(t, *b, &mut extra, obs)
         };
         if let Err(e) = r {
             failure = Some(format!("at {} s: {e}", plant.driver.solver_reached_s));
@@ -242,8 +403,8 @@ fn turb_gov_run() {
         t = *b;
         if let Some(f) = *fraction {
             let request = f * request0;
-            let d = turbine::grid_request(&mut plant.driver, plant.ida.system(), t, request);
-            let r = d.and_then(|what| {
+            let dd = turbine::grid_request(&mut plant.driver, plant.ida.system(), t, request);
+            let r = dd.and_then(|what| {
                 decisions.push(json!({"t_s": t, "request_W": request, "decision": what}));
                 let mut extra: [&mut dyn Client<_>; 2] = [&mut rods, &mut rec];
                 plant.apply_due(&mut extra)
@@ -254,11 +415,135 @@ fn turb_gov_run() {
             }
         }
     }
-    let cpu = process_cpu_s() - started;
-    let instructions = counters::instructions().unwrap();
+    Driven {
+        plant,
+        rods,
+        rec,
+        rod_receipt,
+        decisions,
+        failure,
+        request0,
+        t0,
+        n,
+        observe,
+        cpu: process_cpu_s() - started,
+        instructions: counters::instructions().unwrap() - instructions0,
+        composed: composed - instructions0,
+    }
+}
+
+#[test]
+#[ignore = "one X4.3 run per invocation (LD01_TURB_SPAN_S, LD01_TURB_STEPS, LD01_TURB_OUT)"]
+fn turb_gov_run() {
+    let inputs = Inputs::from_env().unwrap_or_else(|e| panic!("{e}"));
+    let state_path = env("LD01_S3_STATE");
+    let state: Value = serde_json::from_slice(&std::fs::read(&state_path).unwrap()).unwrap();
+    let d = case_drive();
+    let (span, steps) = (d.span, d.steps.clone());
+    let turbine = Turbine::from_wiki(&env("LD01_TURB_WIKI")).unwrap_or_else(|e| panic!("{e}"));
+    let section =
+        rod_control::section(&env("LD01_ROD_CONTROL_WIKI")).unwrap_or_else(|e| panic!("{e}"));
+    let packet = inputs.spine.packet_json().unwrap();
+    let ids: Vec<String> = packet["mechanics"]["regions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["id"].as_str().unwrap().to_string())
+        .collect();
+    // PHYS2's X4 inputs (record only): LD01_TURB_GATES=1 adds the observed
+    // run (x4_frames, credited outputs) after the cost drive, and
+    // LD01_TURB_SERIES=1 R11-3a's references rtol/10, /30, /100 (every atol
+    // scaled with it), each over the whole span, as the X1 cases.
+    let gates_on = std::env::var("LD01_TURB_GATES").as_deref() == Ok("1");
+    let series_on = std::env::var("LD01_TURB_SERIES").as_deref() == Ok("1");
+    assert!(
+        !series_on || gates_on,
+        "LD01_TURB_SERIES=1 needs LD01_TURB_GATES=1"
+    );
+    let gates = gates_on.then(GateSetup::load);
+    let cost = drive(
+        &inputs,
+        &state,
+        &turbine,
+        &section,
+        &ids,
+        &d,
+        s3::Scaling::NONE,
+        None,
+    );
+    let observed = gates.as_ref().map(|g| {
+        drive(
+            &inputs,
+            &state,
+            &turbine,
+            &section,
+            &ids,
+            &d,
+            s3::Scaling::NONE,
+            Some(g),
+        )
+    });
+    let mut families = serde_json::Map::new();
+    let mut x4_frames = Value::Null;
+    if let (Some(g), Some(o)) = (gates.as_ref(), observed.as_ref()) {
+        let ob = o.observe.as_ref().unwrap();
+        x4_frames = json!(ob.frames);
+        families.insert("G_cost".into(), json!({"family": "G cost", "ou_cost_drive_frames":
+            cost.rec.cost.iter().map(|(t, i)| json!([t, i])).collect::<Vec<_>>(),
+            "basis": "the unobserved drive's frame instructions (the observed run evaluates the unit at every sample)",
+            "trajectory_equal": cost.rec.series == o.rec.series && cost.rods.series == o.rods.series}));
+        if series_on {
+            let refs: Vec<(String, Driven)> = [10., 30., 100.]
+                .into_iter()
+                .map(|k: f64| {
+                    let sc = s3::Scaling {
+                        relative: 1. / k,
+                        absolute: 1. / k,
+                    };
+                    (
+                        format!("rtol/{k}"),
+                        drive(&inputs, &state, &turbine, &section, &ids, &d, sc, Some(g)),
+                    )
+                })
+                .collect();
+            let e0 = |a: &Driven, b: &Driven| match (a.observe.as_ref(), b.observe.as_ref()) {
+                (Some(x), Some(y))
+                    if x.error.is_none()
+                        && y.error.is_none()
+                        && a.failure.is_none()
+                        && b.failure.is_none() =>
+                {
+                    compare::compare(&x.credited, &y.credited, a.t0, 0., span, &g.budgets)
+                }
+                _ => {
+                    json!({"evaluable": false, "looser_failure": a.failure, "tighter_failure": b.failure,
+                    "looser_observation": a.observe.as_ref().and_then(|x| x.error.clone()),
+                    "tighter_observation": b.observe.as_ref().and_then(|x| x.error.clone())})
+                }
+            };
+            let comparisons: Vec<Value> = refs
+                .iter()
+                .map(|(name, r)| {
+                    json!({"reference": name, "span_after_zero_s": [0., span],
+                    "reference_failure": r.failure, "reference_cpu": r.cpu, "e0": e0(o, r)})
+                })
+                .collect();
+            let series: Vec<Value> = refs
+                .windows(2)
+                .map(|w| json!({"looser": w[0].0, "tighter": w[1].0, "e0": e0(&w[0].1, &w[1].1)}))
+                .collect();
+            families.insert("E_refinement".into(), json!({"family": "E refinement",
+                "rule": "R11-3a: rtol/10, /30, /100 with every atol scaled, each over the whole span; E0 run - reference and looser - tighter (s2_harness compare)",
+                "comparison_rule": compare::COMPARISON_RULE, "comparisons": comparisons, "series": series}));
+        }
+    }
+    let main = observed.as_ref().unwrap_or(&cost);
+    let (plant, failure, t0, n, request0) =
+        (&main.plant, &main.failure, main.t0, main.n, main.request0);
+    let end = t0 + span;
     let reached = plant.driver.solver_reached_s;
     let state_out = std::env::var("LD01_TURB_STATE_OUT").ok();
-    let state_written = match (&state_out, &failure) {
+    let state_written = match (&state_out, failure) {
         (Some(path), None) => {
             assert!(
                 !std::path::Path::new(path).exists(),
@@ -280,21 +565,26 @@ fn turb_gov_run() {
     };
     let receipt = json!({
         "case": if steps.is_empty() { "X4.3 LOAD hold" } else { "X4.3 Grid request steps" },
-        "ramp": ramp, "state_written": state_written,
+        "ramp": d.ramp, "drive": {"steps": steps.len(), "ramp": d.ramp, "grid_decisions": main.decisions.len()},
+        "state_written": state_written,
         "state": state_path, "t0_s": t0, "span_s": span, "request0_W": request0,
         "steps": steps.iter().map(|(f, a)| json!({"fraction": f, "at_s": a})).collect::<Vec<_>>(),
-        "grid_decisions": decisions, "reached_s": reached, "failure": failure,
-        "composition": plant.composition, "rod_control": rod_receipt,
+        "grid_decisions": main.decisions, "reached_s": reached, "failure": failure,
+        "composition": plant.composition, "rod_control": main.rod_receipt,
         "timeline": {"zero_s": steps.first().map_or(t0, |(_, a)| t0 + a)},
         "run": {
-            "ou_frame_instructions": rec.cost.iter().map(|(t, i)| json!([t, i])).collect::<Vec<_>>(),
+            "ou_frame_instructions": main.rec.cost.iter().map(|(t, i)| json!([t, i])).collect::<Vec<_>>(),
             "instants": plant.driver.log, "counts": plant.driver.counts.json(),
             "counts_r": plant.driver.counts.total(Class::R), "counts_s": plant.driver.counts.total(Class::S),
-            "cpu_s": cpu, "instructions": instructions - instructions0,
-            "instructions_after_composition": instructions - composed_instructions,
+            "cpu_s": main.cpu, "instructions": main.instructions,
+            "instructions_after_composition": main.instructions - main.composed,
+            "cost_drive": {"cpu_s": cost.cpu, "instructions": cost.instructions, "failure": cost.failure},
         },
+        "observation": main.observe.as_ref().map(|o| json!({"observation_s": o.obs_s, "frame_s": o.frame_s,
+            "samples": o.credited.t.len(), "error": o.error, "sg_level": "(V_l + V_sub)/A, A = the NR indicated-level area"})),
+        "x4_frames": x4_frames, "families": families,
         "elec_log": plant.ida.system().log,
-        "rod_schedule": rods.schedule, "rod_series": rods.series, "series": rec.series,
+        "rod_schedule": main.rods.schedule, "rod_series": main.rods.series, "series": main.rec.series,
     });
     let out = env("LD01_TURB_OUT");
     std::fs::write(&out, serde_json::to_vec(&receipt).unwrap()).unwrap();
@@ -302,10 +592,13 @@ fn turb_gov_run() {
         "turb_gov: reached {reached} s of {end} s, {} R / {} S, {:.1} CPU-s, receipt {out}",
         plant.driver.counts.total(Class::R),
         plant.driver.counts.total(Class::S),
-        cpu
+        main.cpu
     );
     if let Some(f) = receipt["failure"].as_str() {
         panic!("{f}");
+    }
+    if let Some(e) = main.observe.as_ref().and_then(|o| o.error.as_ref()) {
+        panic!("the observation: {e}");
     }
 }
 
