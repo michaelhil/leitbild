@@ -39,6 +39,13 @@ fn entries(pointers: &[usize], indices: &[usize], values: &[f64]) -> BTreeMap<(u
 #[test]
 #[ignore = "R4-DUMP zero-time check: requires the joined CVCS packet, a saved state (LD01_S3_STATE), the wiki, IF97 and stock IDA/KLU; writes LD01_DUMP_JAC_RECEIPT"]
 fn tavg_mode_partials_at_the_reactor_trip() {
+    // The water method the state was prepared on: LD01_S3_WATER, unset SBTL,
+    // selected before any water call (as critical_boron.rs).
+    let water = leitbild_operating_water::WaterMethod::parse(
+        &std::env::var("LD01_S3_WATER").unwrap_or_else(|_| "sbtl".into()),
+    )
+    .unwrap_or_else(|e| panic!("{e}"));
+    leitbild_operating_water::select_water_method(water).unwrap_or_else(|e| panic!("{e}"));
     let state_path = std::env::var("LD01_S3_STATE").expect("LD01_S3_STATE");
     let out = std::env::var("LD01_DUMP_JAC_RECEIPT").expect("LD01_DUMP_JAC_RECEIPT");
     assert!(!std::path::Path::new(&out).exists(), "never overwritten");
@@ -133,6 +140,7 @@ fn tavg_mode_partials_at_the_reactor_trip() {
         "state": state_path,
         "packet": packet_path,
         "t_s": t0,
+        "water": format!("{water:?}"),
         "arming": receipts.iter().map(|r| r.receipt.clone()).collect::<Vec<_>>(),
         "loop_average_column": tavg,
         "block_vs_colored_worst_relative": worst.0,
