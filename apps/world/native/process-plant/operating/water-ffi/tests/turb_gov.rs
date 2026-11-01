@@ -27,7 +27,7 @@ use s2_harness::{compare, gates, outputs};
 use leitbild_operating_plant::electrical::slice;
 use leitbild_operating_water::{
     electrical::{self, Electrified},
-    frame::{Change, Class, Client, Dense, Diagnostic, MatrixRebuild, Observer, Side},
+    frame::{Change, Class, Client, Dense, Diagnostic, MatrixRebuild, Observer, Side, Stepping},
     ida::System,
     joined::{Integrated, JoinedSystem},
     unit::{
@@ -396,6 +396,17 @@ fn drive(
     let mut legs: Vec<(f64, Option<f64>)> =
         d.steps.iter().map(|(f, at)| (t0 + at, Some(*f))).collect();
     legs.push((end, None));
+    // R4-FREE-STEPS: under free stepping a run's bound is only an
+    // observation mark, so every Grid request instant and the run's end are
+    // declared exact stops (as s3_cases declares its exchanges' ends).
+    if plant.driver.stepping == Stepping::Free {
+        for (b, _) in &legs {
+            plant
+                .driver
+                .declare_stop(*b)
+                .unwrap_or_else(|e| panic!("the drive's stops: {e}"));
+        }
+    }
     for (b, fraction) in &legs {
         let r = {
             let mut extra: [&mut dyn Client<_>; 2] = [&mut rods, &mut rec];
@@ -570,6 +581,7 @@ fn turb_gov_run() {
         _ => None,
     };
     let receipt = json!({
+        "stepping": format!("{:?}", plant.driver.stepping),
         "case": if steps.is_empty() { "X4.3 LOAD hold" } else { "X4.3 Grid request steps" },
         "ramp": d.ramp, "drive": {"steps": steps.len(), "ramp": d.ramp, "grid_decisions": main.decisions.len()},
         "state_written": state_written,
