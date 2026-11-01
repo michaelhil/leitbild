@@ -129,6 +129,37 @@ pub enum Quantity {
     /// mixture density on its EOS row). Linear; a moving cell is refused by
     /// the compiler.
     VesselDp { taps: Vec<DpTap> },
+    /// `LD01.UPPER.DP<n>` (ld01-vessel-dp-channels): the moving upper
+    /// plenum's mixture head `rho g (upper_m − lower_m)`, Pa, with `rho` the
+    /// liquid density at the cell's pressure and specific internal energy
+    /// through the property boundary (its mass over its current volume on
+    /// the network's EOS row). Vapor in the cell is refused. Nonlinear.
+    PlenumDp {
+        region: usize,
+        region_id: String,
+        lower_m: f64,
+        upper_m: f64,
+    },
+    /// `LD01.CORE.CET<n>` (ld01-core-exit-channels, labelled judgement on the
+    /// page): the core outlet's liquid temperature, °C, of the upper sector
+    /// cells `cells` taken as one mixed liquid (summed liquid internal energy
+    /// over summed liquid mass, at the mass-weighted pressure, through the
+    /// property boundary). The family's lag is the selected probe body's
+    /// liquid time constant. Vapor in a cell, or a temperature outside the
+    /// body's domain `body_c`, leaves the reduction and is refused.
+    /// Nonlinear.
+    CoreExitTemperature {
+        cells: Vec<Region>,
+        body_c: [f64; 2],
+    },
+}
+
+/// A network region by index and id.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Region {
+    pub region: usize,
+    pub region_id: String,
 }
 
 /// Which SG owner lag an [`Quantity::SgFlowLag`] reads.

@@ -26,6 +26,9 @@ const sgFlowBlock = '{"supply":{"A":"I1","B":"I2"}}'
 const inventoryBlock = '{"coreBottom_m":-2,"coreTop_m":2,"headTop_m":4,"coreArea_m2":4.679531,"gravity_m_s2":9.80665,"referencePressure_Pa":2000000,'
   + '"calibrationTemperature_K":313.15,"dpLag_s":0.5,"dpQuantum_Pa":100,"dpUncertainty_Pa":200,"heaterResistance_ohm":28800,"heaterVoltage_V":120,'
   + '"temperatureUncertainty_K":0.2,"temperatureQuantum_K":0.1,"powerUncertainty_W":0.02,"powerQuantum_W":0.01,"minimumTestPower_W":0.47,"maximumTestPower_W":0.53}'
+const cetBasisBlock = '{"diameter_m":0.003,"length_m":0.03,"density_kg_m3":8000,"heatCapacity_J_kgK":500,"conductivity_W_mK":15,"leadDiameter_m":0.0002,'
+  + '"leadLength_m":0.1,"liquidFilm_W_m2K":1000,"gasFilm_W_m2K":30,"effectiveRadiationFactor":0.03,"minimumBody_C":20,"maximumBody_C":800}'
+const cetBlock = '{"supplies":["I1","I2"],"span_C":[0,800],"quantum_C":0.1,"sample_s":0.1}'
 const dpBlock = '{"coreSpan_Pa":[-50000,250000],"upperSpan_Pa":[-25000,50000],"supplies":["I1","I2"]}'
 const taps = '### PZR electronic differential level\n\n' + fence('ld01-pzr-taps', '{"pt1Elevation_m":18.5,"ltLowElevation_m":6.5,"ltHighElevation_m":18.5}')
 const pages = (over: Partial<Record<(typeof OPERATING_IC_PAGES)[number], string>> = {}) => ({
@@ -35,7 +38,8 @@ const pages = (over: Partial<Record<(typeof OPERATING_IC_PAGES)[number], string>
     + fence('ld01-loop-flow-channel', flowChannel) + fence('ld01-power-proxy-protective-paths', proxyPaths)
     + fence('ld01-bank-channels', bankChannels) + fence('ld01-steam-valve-position-channels', valveChannels)
     + fence('ld01-sg-flow-channels', sgFlowBlock),
-  'systems/instrumentation/phase-dependent-measurements.md': taps + fence('ld01-pzr-level-channels', levelChannelsBlock),
+  'systems/instrumentation/phase-dependent-measurements.md': taps + fence('ld01-pzr-level-channels', levelChannelsBlock)
+    + fence('reference-cet-basis', cetBasisBlock) + fence('ld01-core-exit-channels', cetBlock),
   'safety/reactor-trip-and-hold.md': fence('ld01-s2-holding-circuit', '{"turbineTripToOpening_s":0.2}')
     + fence('ld01-turbine-state-report', '{"sample_s":0.1,"transport_s":0.1,"maximumAge_s":0.3,"recovery_s":1}'),
   'safety/steam-generator-protection.md': fence('ld01-sg-level-protection', sgProtection)
@@ -75,7 +79,7 @@ test('the section carries only strict-block values and the packet identities', (
   const s = compileOperatingIcFrom(pages(), packet)
   expect(s.frame_s).toBe(0.1)
   expect(s.families.map(f => f.id)).toEqual(['LD01.PZR.PT', 'LD01.PZR.LT', 'LD01.SG.A.LT.NR', 'LD01.SG.B.LT.NR', 'LD01.RCS.A.FT', 'LD01.RCS.B.FT', 'LD01.CORE.POWER.P',
-    'LD01.RCP.A1.SPEED', 'LD01.RCP.A2.SPEED', 'LD01.RCP.B1.SPEED', 'LD01.RCP.B2.SPEED', 'LD01.SG.A.PT', 'LD01.SG.B.PT', 'LD01.CORE.DP'])
+    'LD01.RCP.A1.SPEED', 'LD01.RCP.A2.SPEED', 'LD01.RCP.B1.SPEED', 'LD01.RCP.B2.SPEED', 'LD01.SG.A.PT', 'LD01.SG.B.PT', 'LD01.CORE.DP', 'LD01.UPPER.DP', 'LD01.CORE.CET'])
   // R12-D2: one speed channel per RCP, in rotor order, on its loop's supply.
   expect(s.families[9]!.quantity).toEqual({ pump_speed: { rotor: 2, rotor_id: 'PUMP.B1' } })
   expect(s.families[9]!.channels).toEqual([{ id: 'LD01.RCP.B1.SPEED', supply: 'I2' }])
@@ -223,6 +227,14 @@ test('plan r4 X4 channels: the normal SG PTs, the core-span DP over the sector c
   expect(dp.quantity).toEqual({ vessel_dp: { taps: [
     { lower: { region: 0, region_id: 'CORE.NE.1', elevation_m: -2 }, upper: { region: 1, region_id: 'CORE.NE.2', elevation_m: 2 } },
     { lower: { region: 2, region_id: 'CORE.NW.1', elevation_m: -2 }, upper: { region: 3, region_id: 'CORE.NW.2', elevation_m: 2 } }] } })
+  expect(family('LD01.UPPER.DP').quantity).toEqual({ plenum_dp: { region: 5, region_id: 'UPPER', lower_m: 2, upper_m: 4 } })
+  expect(family('LD01.UPPER.DP').channel).toMatchObject({ lag_s: 0.5, min: -25000, max: 50000, quantum: 100 })
+  const cet = family('LD01.CORE.CET')
+  expect(cet.quantity).toEqual({ core_exit_temperature: { cells: [{ region: 1, region_id: 'CORE.NE.2' }, { region: 3, region_id: 'CORE.NW.2' }], body_c: [20, 800] } })
+  expect(cet.channels).toEqual([{ id: 'LD01.CORE.CET1', supply: 'I1' }, { id: 'LD01.CORE.CET2', supply: 'I2' }])
+  // The page's liquid time constant, about 2.94 s.
+  expect(cet.channel.lag_s).toBeCloseTo(2.9418, 3)
+  expect(cet.channel).toMatchObject({ min: 0, max: 800, quantum: 0.1, sample_s: 0.1 })
   expect(s.families.map(f => f.id)).not.toContain('LD01.SG.A.FT.STEAM')
   const train = { nominalFlow_kg_s: 800, cascade: { steamFlowLag_s: 0.25, steamFlowSpan: [0, 1.5], feedFlowLag_s: 0.25, feedFlowSpan: [0, 1.5] } }
   const fed = compileOperatingIcFrom(pages(), { ...packet, secondary: { ...packet.secondary, feedTrain: train } })
