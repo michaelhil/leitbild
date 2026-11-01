@@ -448,11 +448,14 @@ fn drive(
         // not stops, under free stepping).
         let mut marks: Vec<f64> = Vec::new();
         if tags_on {
-            let mut m = t.floor() + 1.;
-            while m < *b - 1e-9 {
-                marks.push(m);
-                m += 1.;
-            }
+            // Whole seconds are exact in f64 here, so first + k equals the
+            // repeated + 1 bit for bit.
+            let first = t.floor() + 1.;
+            marks.extend(
+                (0u32..)
+                    .map(|k| first + f64::from(k))
+                    .take_while(|m| *m < *b - 1e-9),
+            );
         }
         marks.push(*b);
         for m in marks {
