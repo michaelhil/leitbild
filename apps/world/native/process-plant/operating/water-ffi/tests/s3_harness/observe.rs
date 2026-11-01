@@ -959,7 +959,10 @@ impl AlgebraicResiduals {
 impl CaseObserver {
     fn count(&mut self, i0: Result<u64, String>) {
         match (i0, super::counters::instructions()) {
-            (Ok(a), Ok(b)) => self.instructions += b.saturating_sub(a),
+            (Ok(a), Ok(b)) => {
+                self.instructions += b.saturating_sub(a);
+                super::counters::exclude_case_observer(b.saturating_sub(a));
+            }
             (Err(e), _) | (_, Err(e)) => {
                 self.instructions_error.get_or_insert(e);
             }

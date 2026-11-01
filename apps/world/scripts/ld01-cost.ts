@@ -24,6 +24,13 @@
  *   "before R4-COST-UNIT" (not recorded: a receipt from before the change,
  *   which ran it). A gate refuses sides of different measures. Past
  *   readings stay as they were.
+ * - R4-COST-UNIT r2 (PERF3, lead 1 Nov; prospective): the cost drive also
+ *   excludes the case observer's own instructions (rule I, the algebraic-
+ *   residual record, the 2 ms observation and ledgers), which the unit host
+ *   never runs: it drives the plant without an observer. A receipt that
+ *   records it (case_configuration.cost_excludes_case_observer) is measured
+ *   "R4-COST-UNIT r2"; `--with-case-observer` reads the same receipt's frames
+ *   with the observer, measured "R4-COST-UNIT" (the before of one receipt).
  * - steady (R4-STEADY, lead 1 Nov): on a trace reaching +600 s after the
  *   event, the mean rate over its last 300 s; on a shorter trace, the mean
  *   over its last 10 s with every frame interval within 5 s after an R
@@ -69,13 +76,15 @@
  *   C3 0.27 %, C5 0.40 %), so one run per side decides only outside 2 %;
  *   within it, each side takes 3 runs.
  *
- * Usage: bun scripts/ld01-cost.ts [--quiet-ratio r] [--budgets page.md] [--table] <receipt.json>...
- *        bun scripts/ld01-cost.ts [--quiet-ratio r] --gate <base.json,...> <change.json,...>
+ * Usage: bun scripts/ld01-cost.ts [--quiet-ratio r] [--with-case-observer] [--budgets page.md] [--table] <receipt.json>...
+ *        bun scripts/ld01-cost.ts [--quiet-ratio r] [--with-case-observer] --gate <base.json,...> <change.json,...>
  * Prints one JSON object per receipt (with --table, a short text table). */
 import {readFileSync} from 'node:fs'
 import {basename} from 'node:path'
 
 export const QUIET_RATIO=14.32e9
+/** `--with-case-observer`: read the frames that include the case observer. */
+let WITH_CASE_OBSERVER=false
 export const BUDGET={dedicated:{worst:0.7,steady:0.1},prod:{worst:0.25,steady:0.05}} as const
 
 export type Frames=[number,number][]
@@ -95,8 +104,9 @@ const iOf=(f:Frames,k:number)=>get(f,k)[1]
 /** The frame trace, event time, R instants and profile of a receipt. */
 export function traceOf(receipt:any){
  const run=receipt.run??receipt
- const costDrive:Frames|undefined=receipt.families?.G_cost?.ou_cost_drive_frames
- const frames:Frames|undefined=costDrive??run.ou_frame_instructions
+ const g=receipt.families?.G_cost
+ const costDrive:Frames|undefined=WITH_CASE_OBSERVER?g?.ou_cost_drive_frames_with_case_observer:g?.ou_cost_drive_frames
+ const frames:Frames|undefined=costDrive??(WITH_CASE_OBSERVER?run.ou_frame_instructions_with_case_observer:run.ou_frame_instructions)
  const source=costDrive?'gated cost drive':'run drive'
  if(!frames||frames.length<2)throw new Error('the receipt has no frame instructions (LD01_OU_FRAME_COST=1)')
  const restarts:number[]=(run.instants??[]).filter((e:any)=>e.class==='R').map((e:any)=>e.t_s)
@@ -288,8 +298,10 @@ export function judge(receipt:any,ratio=QUIET_RATIO){
  const restartsPerS=tEnd>after10?late/(tEnd-after10):null
  let lag=0,peak=0,peakAt:number|null=null
  for(let k=1;k<frames.length;k++){lag=Math.max(0,lag+(get(r,k-1)-1)*(tOf(frames,k)-tOf(frames,k-1)));if(lag>peak){peak=lag;peakAt=tOf(frames,k)-event}}
- const jd=(receipt.run??receipt).configuration?.case_configuration?.jump_diagnostic
- const measure=jd===false?'R4-COST-UNIT':jd===true?'with the jump diagnostic':'before R4-COST-UNIT'
+ const cc=(receipt.run??receipt).configuration?.case_configuration
+ const jd=cc?.jump_diagnostic
+ const unit2=cc?.cost_excludes_case_observer===true&&!WITH_CASE_OBSERVER
+ const measure=jd===false?(unit2?'R4-COST-UNIT r2':'R4-COST-UNIT'):jd===true?'with the jump diagnostic':'before R4-COST-UNIT'
  const out:any={case:c,measure,quiet_ratio:ratio,event_s:event,span_after_event_s:tEnd-event,
   drive:{frames:source,from_after_event_s:t0-event,to_after_event_s:tEnd-event},
   worst_0_5_s:w5,worst_frame:win(1),worst_2_5_s:win(5*5),steady,pre_event:preEvent,
@@ -330,6 +342,8 @@ if(import.meta.main){
  let ratio=QUIET_RATIO,asTable=false,block:any=null
  const i=args.indexOf('--quiet-ratio')
  if(i>=0){ratio=Number(args[i+1]);args.splice(i,2)}
+ const wo=args.indexOf('--with-case-observer')
+ if(wo>=0){WITH_CASE_OBSERVER=true;args.splice(wo,1)}
  const gi=args.indexOf('--gate')
  if(gi>=0){
   const load=(list:string)=>list.split(',').map(f=>JSON.parse(readFileSync(f,'utf8')))
@@ -340,7 +354,7 @@ if(import.meta.main){
  if(bi>=0){block=operatorBudgets(readFileSync(get(args,bi+1),'utf8'));args.splice(bi,2)}
  const t=args.indexOf('--table')
  if(t>=0){asTable=true;args.splice(t,1)}
- if(!args.length||!(ratio>0)){console.error('usage: bun scripts/ld01-cost.ts [--quiet-ratio r] [--budgets page.md] [--table] <receipt.json>...');process.exit(2)}
+ if(!args.length||!(ratio>0)){console.error('usage: bun scripts/ld01-cost.ts [--quiet-ratio r] [--with-case-observer] [--budgets page.md] [--table] <receipt.json>...');process.exit(2)}
  for(const file of args){
   const receipt=JSON.parse(readFileSync(file,'utf8'))
   const j:any=judge(receipt,ratio)

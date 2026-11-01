@@ -503,8 +503,9 @@ struct Recorder {
     rows: Vec<Value>,
     /// HOOK (OU-A U5 lag projection): the process's instructions retired
     /// at each frame, when LD01_OU_FRAME_COST=1 (never in `frames`, whose
-    /// digest the tiers pin).
-    cost: Option<Vec<(f64, u64)>>,
+    /// digest the tiers pin): R4-COST-UNIT r2, without the case observer's
+    /// own (the unit host runs none), and the same with it.
+    cost: Option<Vec<(f64, u64, u64)>>,
     /// HOOK (PERF E-PROF): the cost profile's totals at each frame, when
     /// LD01_PERF_PROFILE=1 (with LD01_OU_FRAME_COST=1).
     profile: Option<Vec<ProfileFrame>>,
@@ -589,7 +590,8 @@ impl<S: leitbild_operating_water::joined::JoinedSystem> leitbild_operating_water
         dense: &dyn leitbild_operating_water::frame::Dense,
     ) -> Result<Vec<leitbild_operating_water::frame::Change<S>>, String> {
         if let Some(c) = self.cost.as_mut() {
-            c.push((t, s3_harness::counters::instructions()?));
+            let all = s3_harness::counters::instructions()?;
+            c.push((t, all - s3_harness::counters::case_observer(), all));
         }
         if let Some(p) = self.profile.as_mut() {
             let (totals, reads) = leitbild_operating_plant::cost::totals()
@@ -1565,7 +1567,8 @@ impl CaseConfig {
         })
     }
     fn json(&self) -> Value {
-        json!({"weights": self.solver.weights, "first_step": self.solver.first_step, "matrix_rebuild": format!("{:?}", self.matrix_rebuild), "ramp_cap": self.ramp_cap, "rod_auto": self.rod_auto, "turbine_governor": self.turbine_governor, "single": self.single, "stuck": self.stuck, "stepping": self.solver.stepping, "jump_diagnostic": self.jump_diagnostic})
+        json!({"weights": self.solver.weights, "first_step": self.solver.first_step, "matrix_rebuild": format!("{:?}", self.matrix_rebuild), "ramp_cap": self.ramp_cap, "rod_auto": self.rod_auto, "turbine_governor": self.turbine_governor, "single": self.single, "stuck": self.stuck, "stepping": self.solver.stepping, "jump_diagnostic": self.jump_diagnostic,
+            "cost_excludes_case_observer": true})
     }
 }
 
@@ -3113,7 +3116,8 @@ fn drive(
             "label": s3_harness::families::PROVISIONAL},
         "frames": recorder.rows,
         "phys_operator_frames": recorder.operator.as_ref().map(|(_, observed, rows)| json!({"observed": observed, "frames": rows})),
-        "ou_frame_instructions": recorder.cost.as_ref().map(|c| c.iter().map(|(t, i)| json!([t, i])).collect::<Vec<_>>()),
+        "ou_frame_instructions": recorder.cost.as_ref().map(|c| c.iter().map(|(t, i, _)| json!([t, i])).collect::<Vec<_>>()),
+        "ou_frame_instructions_with_case_observer": recorder.cost.as_ref().map(|c| c.iter().map(|(t, _, i)| json!([t, i])).collect::<Vec<_>>()),
         "perf_profile": recorder.profile.as_ref().map(|p| json!({
             "rule": "HOOK (PERF E-PROF): per frame [t, counter reads so far, per path [closed calls, exclusive instructions] so far]; paths in key order, pieces>* inclusive outside the tree",
             "paths": leitbild_operating_plant::cost::snapshot().map(|s| s.paths),
@@ -3929,6 +3933,8 @@ fn s3_case_run() {
         // drive's frame instructions (with LD01_OU_FRAME_COST=1), which
         // PERF's ld01-cost reads first.
         g_cost["ou_cost_drive_frames"] = c.record["ou_frame_instructions"].clone();
+        g_cost["ou_cost_drive_frames_with_case_observer"] =
+            c.record["ou_frame_instructions_with_case_observer"].clone();
     }
     families.insert("G_cost".into(), g_cost);
     let mut not_implemented: Vec<&str> = Vec::new();
