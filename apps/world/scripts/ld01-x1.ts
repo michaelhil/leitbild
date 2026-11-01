@@ -71,8 +71,14 @@ export function judge(receipt: J, budgets: J, cases: J, plant: {pzrSetpoint: num
  lines.push({id: 'held', verdict: held ? 'pass' : 'fail', evidence: {failure: run.failure, labelled_end: run.labelled_end, rule_i_exit: run.rule_i?.exit ?? null, end_after_zero_s: tl.end_s, held_s: cases.held_s}})
  // Numerical (R11-3a): the converged level of the tolerance-proportionality series.
  const nb = budgets.numerical, op = run.phys_operator_frames, ref = cases.references
- const loopNominals: number[] = op ? Object.values(op.observed?.references ?? {}).map((r: J) => r?.nominal_kg_s).filter((x: J) => typeof x === 'number') : []
- const loopBudget = loopNominals.length ? nb.loopFlowFractionOfNominal.budget * Math.min(...loopNominals) : NaN
+ // The loop-flow budget is a fraction of the loop FT's nominal (ld01-loop-flow-channel): the
+ // LoopFlow quantities' own nominal_kg_s only. Other families' references also carry a
+ // nominal_kg_s (since PHYS2's X4 channels, FW.FT and FT.STEAM the one-SG 819.8 kg/s), which
+ // is not a loop flow (PHYS3's fix of 95e11e8c8). A LoopFlow without its nominal leaves the
+ // budget NaN, so the line fails.
+ const loopNominals: number[] = op ? ((op.observed?.quantities ?? []) as J[]).map(x => String(x?.quantity)).filter(q => q.startsWith('LoopFlow'))
+  .map(q => Number(q.match(/nominal_kg_s: Some\(([^)]+)\)/)?.[1])) : []
+ const loopBudget = loopNominals.length && loopNominals.every(Number.isFinite) ? nb.loopFlowFractionOfNominal.budget * Math.min(...loopNominals) : NaN
  const budgetRows = (e0: J, fraction: number) => {
   const m = e0?.metrics, v = (k: string) => m?.[k]?.value
   const checks: [string, number | undefined, number][] = [
@@ -96,7 +102,7 @@ export function judge(receipt: J, budgets: J, cases: J, plant: {pzrSetpoint: num
   const pair = (receipt.families.E_refinement.series ?? []).find((x: J) => x.looser === looser && x.tighter === converged)
   const convergence = budgetRows(pair?.e0, ref.convergenceFraction), run_vs = budgetRows(byName(converged)?.e0, 1)
   numerical = {id: 'numerical', verdict: convergence.every(r => r.pass) && run_vs.every(r => r.pass) ? 'pass' : 'fail',
-   evidence: {levels: status, converged, against: looser, convergence, run_vs_converged: run_vs}}
+   evidence: {levels: status, converged, against: looser, loop_nominals_kg_s: loopNominals, convergence, run_vs_converged: run_vs}}
  }
  lines.push(numerical)
  // Steady over the last window.
