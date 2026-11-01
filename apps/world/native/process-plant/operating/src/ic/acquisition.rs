@@ -111,9 +111,32 @@ pub fn lag_continuation(
     Ok(result)
 }
 
+/// The quantity itself at the end of `dt` under its polynomial (raw
+/// derivatives at the interval start): the response of a channel with no
+/// electronic lag of its own.
+pub fn polynomial_at(dt: f64, derivatives: &[f64]) -> Result<f64, String> {
+    if !(dt.is_finite() && dt >= 0.)
+        || derivatives.is_empty()
+        || derivatives.iter().any(|v| !v.is_finite())
+    {
+        return Err(format!(
+            "polynomial value: dt {dt} s, {} derivatives",
+            derivatives.len()
+        ));
+    }
+    let (mut result, mut power) = (derivatives[0], 1.);
+    for (k, d) in derivatives.iter().enumerate().skip(1) {
+        power *= dt / k as f64;
+        result += d * power;
+    }
+    Ok(result)
+}
+
 /// Selected analog channel: response lag, indicated span, quantum, the
 /// band that establishes no sign, sampling and transport (units of its
-/// quantity). `None` (an explicit `null` in the packet) is a channel the
+/// quantity). `lag_s` zero is a channel whose response the plant owner
+/// already holds as its own coordinate (the SG owner's continuous FT lags):
+/// the acquisition adds no second lag. `None` (an explicit `null` in the packet) is a channel the
 /// owners give no span, quantization or band in these units (the current
 /// proxy's ratio form has no absolute span; SG NR has no quantization).
 #[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
@@ -132,7 +155,7 @@ impl AnalogConfig {
     pub fn validate(&self) -> Result<(), String> {
         let optional = [self.min, self.max, self.quantum, self.indeterminate_band];
         let bad = !(self.lag_s.is_finite()
-            && self.lag_s > 0.
+            && self.lag_s >= 0.
             && self.sample_s.is_finite()
             && self.sample_s > 0.
             && self.transport_s.is_finite()
@@ -373,8 +396,12 @@ impl Analog {
     /// polynomial (raw derivatives at the interval start). Frozen unpowered.
     pub fn advance(&mut self, dt: f64, derivatives: &[f64]) -> Result<(), String> {
         if self.powered {
-            self.response = lag_continuation(self.response, self.config.lag_s, dt, derivatives)
-                .map_err(|e| format!("{}: {e}", self.id))?;
+            self.response = if self.config.lag_s == 0. {
+                polynomial_at(dt, derivatives)
+            } else {
+                lag_continuation(self.response, self.config.lag_s, dt, derivatives)
+            }
+            .map_err(|e| format!("{}: {e}", self.id))?;
         }
         Ok(())
     }
@@ -588,6 +615,29 @@ mod tests {
         assert!((whole - split).abs() < 1e-14);
         assert!(lag_continuation(0., 0., 0.1, &[1.]).is_err());
         assert!(lag_continuation(0., 0.2, 0.1, &[]).is_err());
+    }
+
+    /// A channel without a lag of its own reads the quantity's polynomial
+    /// at the interval end; a negative lag is still refused.
+    #[test]
+    fn a_zero_lag_channel_reads_the_quantity_itself() {
+        let config = AnalogConfig {
+            lag_s: 0.,
+            ..pt()
+        };
+        let mut a = Analog::new("FT", "I1", config, 0.1, 1.).unwrap();
+        // q(s) = 1 + 0.5 s - 3 s^2 over 0.2 s.
+        a.advance(0.2, &[1., 0.5, -6.]).unwrap();
+        assert!((a.response() - (1. + 0.1 - 0.12)).abs() < 1e-15);
+        assert!(polynomial_at(0.1, &[]).is_err());
+        assert!(
+            AnalogConfig {
+                lag_s: -0.1,
+                ..pt()
+            }
+            .validate()
+            .is_err()
+        );
     }
 
     fn pt() -> AnalogConfig {

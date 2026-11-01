@@ -21,19 +21,28 @@ const bankChannels = '{"position":{"lag_s":0.1,"span":[0,1],"quantum":null,"supp
 const valveChannels = '{"lag_s":0.1,"span_percent":[0,100],"quantum_percent":1,"sample_s":0.1,"transport_s":0.1,"supply":"I1","compiled":["LD01.TG.STOP.POS"]}'
 const observationWindow = '{"window_s":60,"alpha":0.01,"theta":0.1,"minimumExcessCount":400,"backgroundRange_s":[0,2],"deadtime_s":0.000001,"maximumOccupancy":0.1,"sample_s":0.1,"noiseBound_A":0.000000000001,"commissionOffsetBound_A":0.000000000001,"saturation_A":0.01}'
 const sourcePulse = '{"rrefEventsPerS":null,"darkPerS":1,"supply":"I2","seed":1,"maximumAge_s":60.2}'
+const sgPressureBlock = '{"lag_s":0.2,"span_Pa":[0,10000000],"quantum_Pa":1000}'
+const sgFlowBlock = '{"supply":{"A":"I1","B":"I2"}}'
+const inventoryBlock = '{"coreBottom_m":-2,"coreTop_m":2,"headTop_m":4,"coreArea_m2":4.679531,"gravity_m_s2":9.80665,"referencePressure_Pa":2000000,'
+  + '"calibrationTemperature_K":313.15,"dpLag_s":0.5,"dpQuantum_Pa":100,"dpUncertainty_Pa":200,"heaterResistance_ohm":28800,"heaterVoltage_V":120,'
+  + '"temperatureUncertainty_K":0.2,"temperatureQuantum_K":0.1,"powerUncertainty_W":0.02,"powerQuantum_W":0.01,"minimumTestPower_W":0.47,"maximumTestPower_W":0.53}'
+const dpBlock = '{"coreSpan_Pa":[-50000,250000],"upperSpan_Pa":[-25000,50000],"supplies":["I1","I2"]}'
 const taps = '### PZR electronic differential level\n\n' + fence('ld01-pzr-taps', '{"pt1Elevation_m":18.5,"ltLowElevation_m":6.5,"ltHighElevation_m":18.5}')
 const pages = (over: Partial<Record<(typeof OPERATING_IC_PAGES)[number], string>> = {}) => ({
   'safety/source-and-primary-protection.md': fence('reference-pzr-pressure-protection', protection) + fence('ld01-loop-low-flow-protection', lowFlow)
     + fence('ld01-pzr-level-protection', levelProtectionBlock) + fence('ld01-rcp-underspeed-protection', underspeed) + fence('ld01-cmt-actuation', cmtBlock),
   'systems/instrumentation/operational-observations.md': fence('reference-pzr-pressure-channel', channel)
     + fence('ld01-loop-flow-channel', flowChannel) + fence('ld01-power-proxy-protective-paths', proxyPaths)
-    + fence('ld01-bank-channels', bankChannels) + fence('ld01-steam-valve-position-channels', valveChannels),
+    + fence('ld01-bank-channels', bankChannels) + fence('ld01-steam-valve-position-channels', valveChannels)
+    + fence('ld01-sg-flow-channels', sgFlowBlock),
   'systems/instrumentation/phase-dependent-measurements.md': taps + fence('ld01-pzr-level-channels', levelChannelsBlock),
   'safety/reactor-trip-and-hold.md': fence('ld01-s2-holding-circuit', '{"turbineTripToOpening_s":0.2}')
     + fence('ld01-turbine-state-report', '{"sample_s":0.1,"transport_s":0.1,"maximumAge_s":0.3,"recovery_s":1}'),
   'safety/steam-generator-protection.md': fence('ld01-sg-level-protection', sgProtection)
     + fence('ld01-sg-level-protective-acquisition', '{"sample_s":0.1,"transport_s":0.1,"maximumAge_s":0.3}'),
-  'systems/steam-generation/instrumentation.md': fence('ld01-sg-level-channels', '{"nrLag_s":0.5,"nrSpan_m":[4,9],"indicatedLevelArea_m2":12}'),
+  'systems/steam-generation/instrumentation.md': fence('ld01-sg-level-channels', '{"nrLag_s":0.5,"nrSpan_m":[4,9],"indicatedLevelArea_m2":12}')
+    + fence('ld01-sg-normal-pressure-channel', sgPressureBlock),
+  'systems/instrumentation/core-inventory-observation.md': fence('reference-core-inventory', inventoryBlock) + fence('ld01-vessel-dp-channels', dpBlock),
   'systems/instrumentation/nuclear-observation-apparatus.md': fence('ld01-regional-current-reference', reference)
     + fence('reference-nuclear-observation-window', observationWindow) + fence('ld01-source-range-pulse', sourcePulse),
   'safety/engineered-safety-actuation.md': fence('ld01-prhr-actuation', prhrActuation),
@@ -42,8 +51,12 @@ const pages = (over: Partial<Record<(typeof OPERATING_IC_PAGES)[number], string>
 })
 // Four sectors of six axial bands over -2..2 m, as the packet's source regions.
 const bands = [-2, -4 / 3, -2 / 3, 0, 2 / 3, 4 / 3, 2]
+const sectors = ['NE', 'NW']
 const packet = {
-  mechanics: { faces: [{ id: 'SG.A.PRIMARY->PUMP.A1' }, { id: 'RETURN.A->DOWN' }, { id: 'RETURN.B->DOWN' }] },
+  mechanics: { faces: [{ id: 'SG.A.PRIMARY->PUMP.A1' }, { id: 'RETURN.A->DOWN' }, { id: 'RETURN.B->DOWN' },
+    ...sectors.flatMap(s => [{ id: `LOWER->CORE.${s}.1` }, { id: `CORE.${s}.2->UPPER` }])],
+    regions: [...sectors.flatMap(s => [{ id: `CORE.${s}.1`, elevation_m: -1 }, { id: `CORE.${s}.2`, elevation_m: 1 }]),
+      { id: 'LOWER', elevation_m: -3 }, { id: 'UPPER', elevation_m: 3 }] },
   hydraulics: { sections: ['DOWN', 'PUMP.A1', 'PUMP.A2', 'COLD.A', 'PUMP.B1', 'PUMP.B2'].map(id => ({ id, parameters: { pump: id.startsWith('PUMP') ? {} : null } })) },
   secondary: { steamGenerators: [{ id: 'A' }, { id: 'B' }] },
   feedback_metadata: { regions: Array.from({ length: 24 }, (_, i) => ({ z0_m: bands[i % 6]!, z1_m: bands[i % 6 + 1]! })) },
@@ -62,7 +75,7 @@ test('the section carries only strict-block values and the packet identities', (
   const s = compileOperatingIcFrom(pages(), packet)
   expect(s.frame_s).toBe(0.1)
   expect(s.families.map(f => f.id)).toEqual(['LD01.PZR.PT', 'LD01.PZR.LT', 'LD01.SG.A.LT.NR', 'LD01.SG.B.LT.NR', 'LD01.RCS.A.FT', 'LD01.RCS.B.FT', 'LD01.CORE.POWER.P',
-    'LD01.RCP.A1.SPEED', 'LD01.RCP.A2.SPEED', 'LD01.RCP.B1.SPEED', 'LD01.RCP.B2.SPEED'])
+    'LD01.RCP.A1.SPEED', 'LD01.RCP.A2.SPEED', 'LD01.RCP.B1.SPEED', 'LD01.RCP.B2.SPEED', 'LD01.SG.A.PT', 'LD01.SG.B.PT', 'LD01.CORE.DP'])
   // R12-D2: one speed channel per RCP, in rotor order, on its loop's supply.
   expect(s.families[9]!.quantity).toEqual({ pump_speed: { rotor: 2, rotor_id: 'PUMP.B1' } })
   expect(s.families[9]!.channels).toEqual([{ id: 'LD01.RCP.B1.SPEED', supply: 'I2' }])
@@ -112,7 +125,7 @@ test('refusals: a duration off the frame, a missing face, a wrong Fref, a missin
     fence('reference-pzr-pressure-protection', protection) + fence('ld01-loop-low-flow-protection', lowFlow.replace('"lowFlowQualification_s":0.5', '"lowFlowQualification_s":0.55'))
       + fence('ld01-pzr-level-protection', levelProtectionBlock) + fence('ld01-rcp-underspeed-protection', underspeed) + fence('ld01-cmt-actuation', cmtBlock) }), packet))
     .toThrow('not whole')
-  expect(() => compileOperatingIcFrom(pages(), { ...packet, mechanics: { faces: [{ id: 'RETURN.A->DOWN' }] } })).toThrow('No face RETURN.B->DOWN')
+  expect(() => compileOperatingIcFrom(pages(), { ...packet, mechanics: { ...packet.mechanics, faces: [{ id: 'RETURN.A->DOWN' }] } })).toThrow('No face RETURN.B->DOWN')
   expect(() => compileOperatingIcFrom(pages({ 'systems/instrumentation/nuclear-observation-apparatus.md':
     fence('ld01-regional-current-reference', reference.replace('9.36226e19', '9.4e19'))
     + fence('reference-nuclear-observation-window', observationWindow) + fence('ld01-source-range-pulse', sourcePulse) }), packet)).toThrow('Fref')
@@ -197,4 +210,27 @@ test('LD01.CORE.NI.SHUTDOWN: no SOURCE path while the regional Rref is open, and
   expect(filled.source_range).toEqual({ id: 'LD01.CORE.NI.SHUTDOWN', supply: 'I2', rref_events_per_s: 3e10, dark_per_s: 1, deadtime_s: 1e-6,
     window_s: 60, alpha: 0.01, theta: 0.1, minimum_excess_count: 400, background_per_s: [0, 2], maximum_occupancy: 0.1,
     sample_s: 0.1, transport_s: 0.1, maximum_age_s: 60.2, seed: 1 })
+})
+
+test('plan r4 X4 channels: the normal SG PTs, the core-span DP over the sector channels, and with the feed train the SG owner\'s FT lags', () => {
+  const s = compileOperatingIcFrom(pages(), packet)
+  const family = (id: string) => s.families.find(f => f.id === id)!
+  expect(family('LD01.SG.B.PT')).toEqual({ id: 'LD01.SG.B.PT', quantity: { sg_pressure: { sg: 'B' } }, channels: [{ id: 'LD01.SG.B.PT', supply: 'unselected' }],
+    channel: { lag_s: 0.2, min: 0, max: 1e7, quantum: 1000, indeterminate_band: null, sample_s: 0.1, transport_s: 0.1 }, maximum_age_s: 0.3, recovery_s: 1 })
+  const dp = family('LD01.CORE.DP')
+  expect(dp.channels).toEqual([{ id: 'LD01.CORE.DP1', supply: 'I1' }, { id: 'LD01.CORE.DP2', supply: 'I2' }])
+  expect(dp.channel).toMatchObject({ lag_s: 0.5, min: -50000, max: 250000, quantum: 100 })
+  expect(dp.quantity).toEqual({ vessel_dp: { taps: [
+    { lower: { region: 0, region_id: 'CORE.NE.1', elevation_m: -2 }, upper: { region: 1, region_id: 'CORE.NE.2', elevation_m: 2 } },
+    { lower: { region: 2, region_id: 'CORE.NW.1', elevation_m: -2 }, upper: { region: 3, region_id: 'CORE.NW.2', elevation_m: 2 } }] } })
+  expect(s.families.map(f => f.id)).not.toContain('LD01.SG.A.FT.STEAM')
+  const train = { nominalFlow_kg_s: 800, cascade: { steamFlowLag_s: 0.25, steamFlowSpan: [0, 1.5], feedFlowLag_s: 0.25, feedFlowSpan: [0, 1.5] } }
+  const fed = compileOperatingIcFrom(pages(), { ...packet, secondary: { ...packet.secondary, feedTrain: train } })
+  const flows = fed.families.filter(f => /FT\.STEAM$|^LD01\.FW\./.test(f.id))
+  expect(flows.map(f => [f.id, f.channels[0]!.supply])).toEqual([['LD01.SG.A.FT.STEAM', 'I1'], ['LD01.FW.A.FT', 'I1'], ['LD01.SG.B.FT.STEAM', 'I2'], ['LD01.FW.B.FT', 'I2']])
+  expect(flows[3]!.quantity).toEqual({ sg_flow_lag: { sg: 'B', flow: 'feed', nominal_kg_s: 800 } })
+  expect(flows[0]!.channel).toMatchObject({ lag_s: 0, min: 0, max: 1.5, quantum: null })
+  // A tap in a moving plenum is refused.
+  const rods = { normal_travel_m: 4, cells: { upper: { region: 'CORE.NE.2' }, housing_main: { region: 'HOUSING.MAIN' } } }
+  expect(() => compileOperatingIcFrom(pages(), { ...packet, rods })).toThrow('moving cell')
 })

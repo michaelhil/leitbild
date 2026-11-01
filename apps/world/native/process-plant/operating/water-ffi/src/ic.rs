@@ -33,7 +33,7 @@ use crate::joined::JoinedSystem;
 use leitbild_operating_plant::{
     ic::{
         acquisition::Overrange,
-        packet::{Quantity, ReportSource, Section},
+        packet::{Quantity, ReportSource, Section, SgFlow},
         protection::Protection,
     },
     joined::{block::Command, operator::Joined},
@@ -573,6 +573,74 @@ impl ProtectionClient {
                             })
                             .collect(),
                     )
+                }
+                // Plan r4 X4 channels (PROC's requests): linear readings of
+                // owner coordinates.
+                Quantity::SgPressure { sg } => {
+                    let label = format!("SG.{sg}.p_s");
+                    let i = labels
+                        .iter()
+                        .position(|l| *l == label)
+                        .ok_or_else(|| format!("no coordinate {label}"))?;
+                    references.insert(f.id.clone(), json!({"coordinate": label,
+                        "basis": "the SG owner's total secondary pressure (ld01-sg-normal-pressure-channel)"}));
+                    Observation::Linear(vec![(i, scales[i])])
+                }
+                Quantity::SgFlowLag {
+                    sg,
+                    flow,
+                    nominal_kg_s,
+                } => {
+                    let label = match flow {
+                        SgFlow::Steam => format!("FW.{sg}.FT.STEAM.lag"),
+                        SgFlow::Feed => format!("FW.{sg}.FW.FT.lag"),
+                    };
+                    let i = labels
+                        .iter()
+                        .position(|l| *l == label)
+                        .ok_or_else(|| format!("no coordinate {label} (the joined packet composes no feed train)"))?;
+                    if !(nominal_kg_s.is_finite() && *nominal_kg_s > 0.) {
+                        return Err(format!("{}: nominal flow {nominal_kg_s} kg/s", f.id));
+                    }
+                    if f.channel.lag_s != 0. {
+                        return Err(format!(
+                            "{}: the SG owner's lag is the channel's response; no second lag",
+                            f.id
+                        ));
+                    }
+                    references.insert(f.id.clone(), json!({"coordinate": label, "nominal_kg_s": nominal_kg_s,
+                        "basis": "the SG owner's continuous channel lag over the one-SG nominal feed flow m0 (ld01-sg-flow-channels, ld01-feed-cascade)"}));
+                    Observation::Linear(vec![(i, scales[i] / nominal_kg_s)])
+                }
+                Quantity::VesselDp { taps } => {
+                    if taps.is_empty() {
+                        return Err(format!("{}: no interfaces", f.id));
+                    }
+                    let weight = 1. / taps.len() as f64;
+                    let mut terms: Vec<(usize, f64)> = Vec::new();
+                    // p + (M_l + M_v) g (z_ref - z) / V at one interface, signed.
+                    let mut interface = |at: &leitbild_operating_plant::ic::packet::DpInterface,
+                                         sign: f64|
+                     -> Result<(), String> {
+                        let layout = net.cell_layout.get(at.region).ok_or_else(|| {
+                            format!("{}: {} is not a regular cell", f.id, at.region_id)
+                        })?;
+                        let head = G * (net.elevations()[at.region] - at.elevation_m)
+                            / net.volume(at.region);
+                        terms.push((layout.base, sign * weight * scales[layout.base]));
+                        for m in layout.mass {
+                            terms.push((m, sign * weight * scales[m] * head));
+                        }
+                        Ok(())
+                    };
+                    for t in taps {
+                        interface(&t.lower, 1.)?;
+                        interface(&t.upper, -1.)?;
+                    }
+                    references.insert(f.id.clone(), json!({"interfaces": taps.iter().map(|t| json!([
+                        [t.lower.region_id, t.lower.elevation_m], [t.upper.region_id, t.upper.elevation_m]])).collect::<Vec<_>>(),
+                        "basis": "the mean over the sector channels of each cell's local static pressure p + rho_mix g (z_ref - z), rho_mix = M / V (ld01-vessel-dp-channels)"}));
+                    Observation::Linear(terms)
                 }
                 Quantity::StopValvePosition { stop_travel_s } => {
                     let secondary = joined
