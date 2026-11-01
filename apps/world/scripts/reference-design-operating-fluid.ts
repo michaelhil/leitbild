@@ -11,7 +11,7 @@ import {parseFuelConstruction} from './reference-design-fuel-construction'
 import {parseFuelHandling, fuelHandlingChecks, fuelAssemblyPositions, fuelLatticeSites} from './reference-design-fuel-handling'
 import {parseControlAbsorber, controlAbsorberGeometry} from './reference-design-control-absorber'
 import {nativeIf97Primitives, nativeIf97Revision, nativeIf97HeaderSha256, nativeIf97LicenseSha256} from './reference-design-if97-primitives'
-import {parseSgContact,sgContactOwner} from './reference-design-sg-contact-law'
+import {parseSgContact,sgContactOwner,sgTubeBundle} from './reference-design-sg-contact-law'
 
 export type WaterPoint={region:number,p:number,T:number,rho:number,u:number,h:number,cp:number,cv:number,
   w:number,alpha:number,kappa:number,mu:number,conductivity:number,saturationSlope:number}
@@ -454,7 +454,7 @@ export async function prepareOperatingFluid(directory:string,if97Directory:strin
     surge=resolveSurgeRoute(parseSurgeRoute(documents[7]!)),
     // The contact law's area per SG, uniform over the developed fold, on the
     // compiler's four equal metal segments.
-    sgContact=parseSgContact(documents[8]!),sgSegment_m=mechanics.sgDevelopedLength_m/4,
+    sgContact=parseSgContact(documents[8]!),sgBundle=sgTubeBundle(sgContact,mechanics.sgDevelopedLength_m),sgSegment_m=mechanics.sgDevelopedLength_m/4,
     physical:Physical={downVolume_m3:volumes[0]!,hotVolume_m3:volumes[5]!,sgPrimaryVolume_m3:volumes[7]!,
       pumpVolume_m3:mechanics.pumpPassageVolume_m3,coldHeaderVolume_m3:mechanics.coldHeaderVolume_m3,
       pumpDiameter_m:mechanics.pumpPassageInsideDiameter_m,hotDiameter_m:mechanics.hotInsideDiameter_m,
@@ -491,7 +491,8 @@ export async function prepareOperatingFluid(directory:string,if97Directory:strin
       steamGenerators=['A','B'].map(id=>({id,...sg,metal:Array.from({length:4},(_,i)=>{
         const capacity_J_K=balance.wallCapacity_MJ_K*1e6/4,segment=`SG.${id}.METAL.${i}`
         return {id:segment,developedStart_m:sgSegment_m*i,developedEnd_m:sgSegment_m*(i+1),capacity_J_K,...metal(segment,capacity_J_K),
-          exchangeArea_m2:sgContact.exchangeArea_m2*sgSegment_m/mechanics.sgDevelopedLength_m}}),
+          exchangeArea_m2:sgBundle.exchangeArea_m2*sgSegment_m/mechanics.sgDevelopedLength_m,
+          thermalDiameter_m:sgBundle.thermalDiameter_m,primaryFlowArea_m2:sgBundle.filmFlowArea_m2}}),
         liquidDensity_kg_m3:endpoints[0]!.rho,steamDensity_kg_m3:endpoints[1]!.rho,airMass_kg:0,nitrogenMass_kg:0,absorberTracer_kgEq:0}))
     steadyMetal?.covered()
     if(!Number.isFinite(A)||A===0)throw Error('Singular connected primary inventory pressure')

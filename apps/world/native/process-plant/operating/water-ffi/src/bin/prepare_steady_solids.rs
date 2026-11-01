@@ -36,7 +36,7 @@ use leitbild_operating_plant::{
         nuclear::{self, Nuclear, RegionWater},
         packet::Packet,
         pzr::{Pzr, SteelPreparation},
-        solids::{self, Closed, Solids, WallWater},
+        solids::{self, Closed, Inflow, Solids, WallWater},
     },
     network::{
         self, Network, Properties, PzrPreparation, Water, heaters::Caloric304,
@@ -135,6 +135,10 @@ pub struct SgFlux {
     pub id: String,
     #[serde(rename = "massFlux_kg_m2_s")]
     pub mass_flux_kg_m2_s: f64,
+    /// X4.5 (lead ruling d): the single-pass law's inlet, the prepared water
+    /// of the region whose edge enters the SG primary.
+    #[serde(rename = "inflowTemperature_K")]
+    pub inflow_temperature_k: f64,
 }
 
 /// E-NUC: refuse when the packet-order records of any replica class's
@@ -1388,11 +1392,16 @@ pub fn prepare(raw: &serde_json::Value) -> Result<Prepared, Failure> {
             flux[c] = Some(core_flux);
         }
     }
+    let mut inflow_k: Vec<Option<f64>> = vec![None; cells];
     for &(c, k) in &solids.incidence().segments {
         if flux[c].is_some_and(|f| f != sg_flux[k]) {
             return Err(format!("wall cell {} is both core and SG primary", water[c].id).into());
         }
         flux[c] = Some(sg_flux[k]);
+        inflow_k[c] = Some(positive(
+            steady.sg_primary_mass_flux[k].inflow_temperature_k,
+            "an SG inflow temperature",
+        )?);
     }
     let wall_cells = solids.wall_cells().to_vec();
     let mut wall_water = Vec::with_capacity(wall_cells.len());
@@ -1400,15 +1409,30 @@ pub fn prepare(raw: &serde_json::Value) -> Result<Prepared, Failure> {
         let w = &water[c];
         let m = flux[c].ok_or_else(|| format!("wall cell {} has no declared mass flux", w.id))?;
         let p = s(w.pressure_pa);
+        let bulk = WaterProperties::liquid(&If97, p, s(w.temperature_k))?;
+        // X4.5: an SG primary's inflow at its declared flux over the cell's
+        // wall flow area, capacity by the joined solids' rule.
+        let inflow = match inflow_k[c] {
+            Some(t_in) => {
+                let donor = WaterProperties::liquid(&If97, p, s(t_in))?;
+                let rate = m * packet.water_flow_area_m2[c];
+                Some(Inflow {
+                    temperature: s(t_in),
+                    capacity_w_k: s(rate) * s(0.5) * (donor.cp + bulk.cp),
+                })
+            }
+            None => None,
+        };
         solids
             .set_wall_water(
                 c,
                 WallWater {
                     pressure: p,
                     temperature: s(w.temperature_k),
-                    bulk: WaterProperties::liquid(&If97, p, s(w.temperature_k))?,
+                    bulk,
                     saturation: WaterProperties::saturation(&If97, p)?,
                     mass_flux: s(m),
+                    inflow,
                 },
             )
             .map_err(nf)?;

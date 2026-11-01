@@ -322,10 +322,21 @@ pub enum BypassMode {
     NoLoadPressureAfterTurbineTrip,
 }
 
-/// The SG contact law's exchange area per SG and its wall constants.
+/// The SG contact law (`ld01-sg-contact`): the equivalent tube bundle, its
+/// fouling and the tube steel. `exchangeArea_m2` is the compiler's derived
+/// outer (secondary) area `N pi OD L` over the fold's developed length; the
+/// primary face is `ID/OD` of it (X4.5 R2.1-R2.9).
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Contact {
+    #[serde(rename = "tubeCount")]
+    pub tube_count: f64,
+    #[serde(rename = "tubeOutsideDiameter_m")]
+    pub tube_outside_diameter_m: f64,
+    #[serde(rename = "tubeInsideDiameter_m")]
+    pub tube_inside_diameter_m: f64,
+    #[serde(rename = "foulingResistance_m2K_W")]
+    pub fouling_resistance_m2k_w: f64,
     #[serde(rename = "exchangeArea_m2")]
     pub exchange_area_m2: f64,
     pub emissivity: f64,
@@ -335,6 +346,45 @@ pub struct Contact {
     pub steel_density_kg_m3: f64,
     #[serde(rename = "steelCp_J_kgK")]
     pub steel_cp_j_kgk: f64,
+}
+
+impl Contact {
+    /// The bundle's checks: whole tubes, `0 < ID < OD`, nonnegative fouling,
+    /// and the derived outer area equal to `N pi OD L` over `developed_m`.
+    pub fn check(&self, developed_m: f64) -> Result<(), String> {
+        let (n, od, id) = (
+            self.tube_count,
+            self.tube_outside_diameter_m,
+            self.tube_inside_diameter_m,
+        );
+        if !(n.is_finite() && n >= 1. && n.fract() == 0.)
+            || !(id.is_finite() && od.is_finite() && 0. < id && id < od)
+            || !(self.fouling_resistance_m2k_w.is_finite() && self.fouling_resistance_m2k_w >= 0.)
+            || !(developed_m.is_finite() && developed_m > 0.)
+        {
+            return Err("SG tube bundle: whole tubes, 0 < ID < OD, nonnegative fouling".into());
+        }
+        let area = n * std::f64::consts::PI * od * developed_m;
+        if (area - self.exchange_area_m2).abs() > 1e-12 * area {
+            return Err(format!(
+                "SG exchange area {} m2 is not N pi OD L = {area} m2",
+                self.exchange_area_m2
+            ));
+        }
+        Ok(())
+    }
+    /// Primary (inner) over secondary (outer) area, `ID/OD`.
+    pub fn inner_fraction(&self) -> f64 {
+        self.tube_inside_diameter_m / self.tube_outside_diameter_m
+    }
+    /// Wall conduction plus fouling per primary (inner) area, m2 K/W: the
+    /// outer-referenced `(OD/2) ln(OD/ID)/k + R_f` times `ID/OD`, with `k` the
+    /// block's steel conductivity (X4.5 R2.7, R2.8).
+    pub fn primary_series_m2k_w(&self) -> f64 {
+        let (od, id) = (self.tube_outside_diameter_m, self.tube_inside_diameter_m);
+        let wall = 0.5 * od * (od / id).ln() / self.steel_conductivity_w_mk;
+        (wall + self.fouling_resistance_m2k_w) * id / od
+    }
 }
 
 /// Inputs of zero-time receipts and isolated probes only, never of the
@@ -372,6 +422,10 @@ pub struct Primary {
     pub pressure_pa: f64,
     #[serde(rename = "temperature_K")]
     pub temperature_k: f64,
+    /// X4.5: the inflow's temperature, the thermal balance input's core
+    /// outlet (the single-pass law's inlet).
+    #[serde(rename = "inletTemperature_K")]
+    pub inlet_temperature_k: f64,
     #[serde(rename = "flowArea_m2")]
     pub flow_area_m2: f64,
     /// Per SG, in the section's order.

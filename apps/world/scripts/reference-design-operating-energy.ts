@@ -7,13 +7,14 @@ import { operatingReferenceFissions, operatingSourceFreshFuelAtoms, type Operati
 
 const positive = z.number().finite().positive(), nonnegative = z.number().finite().nonnegative()
 const schema = z.object({
-  identity: z.literal('LD01-HOT-ENERGY-1'), preparationDuration_s: positive,
+  identity: z.literal('LD01-HOT-ENERGY-1'), preparationDuration_s: positive, decayHistoryDuration_s: positive,
   fertileCapture_barn: positive, fertileBinding_MeV: positive, xenonBinding_MeV: positive,
   samariumBinding_MeV: positive, bindingCoolantFraction: nonnegative.max(1),
   bindingCoolantSensitivity: z.tuple([nonnegative.max(1), nonnegative.max(1), nonnegative.max(1)]),
   promptFissionCoolantFraction: nonnegative.max(1),
   promptFissionCoolantSensitivity: z.tuple([nonnegative.max(1), nonnegative.max(1), nonnegative.max(1)]),
-}).strict()
+}).strict().refine(v => v.decayHistoryDuration_s >= v.preparationDuration_s,
+  'The decay-heat history must contain the depletion preparation')
 export type OperatingEnergyCoefficients = z.infer<typeof schema>
 export function parseOperatingEnergy(document: string): OperatingEnergyCoefficients {
   const blocks = [...document.matchAll(/^```reference-operating-energy\s*\n([\s\S]*?)^```\s*$/gm)]
@@ -74,8 +75,19 @@ export function prepareOperatingEnergy(mapping: ReturnType<typeof compileOperati
       fissions = sigmaF * exposure * fissile, captures = sigmaC * exposure * fertile,
       spentFissions = fresh.fissile[a]! * -Math.expm1(-x),
       captureProduct = fresh.fertile[a]! * -Math.expm1(-muC * seconds),
-      stores = kernel.groups.map(g => g.energy_J_per_event * (g.feed === 'fission' ? f0 : c0) *
-        exponentialConvolution(g.lambda_s_inv, g.feed === 'fission' ? muF : muC, seconds)),
+      // R4-NUC-DECAY-HISTORY: the 25 delayed-energy stores alone take the
+      // longer operating history. Before the depletion preparation the unit
+      // ran for `extension` seconds at that preparation's first event rates
+      // (f0, c0; no depletion or poison change is claimed for it), whose
+      // stores then decay through the preparation. With the two durations
+      // equal the extension is empty and the stores are the preparation's.
+      extension = coefficients.decayHistoryDuration_s - seconds,
+      stores = kernel.groups.map(g => {
+        const rate = g.feed === 'fission' ? f0 : c0,
+          prepared = g.energy_J_per_event * rate * exponentialConvolution(g.lambda_s_inv, g.feed === 'fission' ? muF : muC, seconds)
+        return extension === 0 ? prepared : prepared +
+          g.energy_J_per_event * rate * -Math.expm1(-g.lambda_s_inv * extension) / g.lambda_s_inv * Math.exp(-g.lambda_s_inv * seconds)
+      }),
       precursors = nuDelayed.map((nu, g) => nu * f0 * exponentialConvolution(precursorLambda[g]!, muF, seconds)),
       [iodine, xenon] = finitePoisonPair(f0, muF, seconds, source.directIodine_per_fission,
         source.directXenon_per_fission, lambda[0]!, lambda[1]! + source.effectiveXeCapture_barn * 1e-28 * exposure),
@@ -96,9 +108,12 @@ export function prepareOperatingEnergy(mapping: ReturnType<typeof compileOperati
       // These are original-event receipts, not an extra state or retained heat.
       fissionEnergyCreated_J = history.fissionEnergy_MeV * MeV_J * spentFissions,
       fertileEnergyCreated_J = MeV_J * (coefficients.fertileBinding_MeV + sum(history.effectiveCaptureEnergy_MeV)) * captureProduct,
+      // The extension's own events, once (its prompt and binding heat already released).
+      extensionEnergyCreated_J = extension === 0 ? 0 : MeV_J * extension * (history.fissionEnergy_MeV * f0 +
+        (coefficients.fertileBinding_MeV + sum(history.effectiveCaptureEnergy_MeV)) * c0),
       poisonBindingCreated_J = MeV_J * (coefficients.xenonBinding_MeV * xenonCaptureProductAtoms +
         coefficients.samariumBinding_MeV * samariumCaptureProductAtoms),
-      preparationReleased_J = fissionEnergyCreated_J + fertileEnergyCreated_J + poisonBindingCreated_J - sum(stores)
+      preparationReleased_J = fissionEnergyCreated_J + fertileEnergyCreated_J + poisonBindingCreated_J + extensionEnergyCreated_J - sum(stores)
     if (![fissile, fertile, ...stores, ...precursors, fuel_W, coolant_W, xenonCaptureProductAtoms,
       samariumCaptureProductAtoms, preparationReleased_J].every(v => Number.isFinite(v) && v >= 0))
       throw Error('Invalid finite hot material preparation')

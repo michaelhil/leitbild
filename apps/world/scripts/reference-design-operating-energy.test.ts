@@ -13,7 +13,7 @@ test('finite exponential preparation convolution handles equal, tiny and long ag
 })
 
 test('one explicit energy record rejects duplicates, extras and missing selections', () => {
-  const record = { identity: 'LD01-HOT-ENERGY-1', preparationDuration_s: 2592000,
+  const record = { identity: 'LD01-HOT-ENERGY-1', preparationDuration_s: 2592000, decayHistoryDuration_s: 2592000,
     fertileCapture_barn: 4, fertileBinding_MeV: 4.8, xenonBinding_MeV: 8.1, samariumBinding_MeV: 8,
     bindingCoolantFraction: .1, bindingCoolantSensitivity: [0, .1, .2],
     promptFissionCoolantFraction: .02, promptFissionCoolantSensitivity: [0, .02, .05] }
@@ -24,4 +24,9 @@ test('one explicit energy record rejects duplicates, extras and missing selectio
   expect(() => parseOperatingEnergy(doc({ ...record, fertileCapture_barn: 0 }))).toThrow()
   const { preparationDuration_s: _omitted, ...incomplete } = record
   expect(() => parseOperatingEnergy(doc(incomplete))).toThrow()
+  // R4-NUC-DECAY-HISTORY: the decay-heat history is required and contains the preparation.
+  const { decayHistoryDuration_s: _history, ...noHistory } = record
+  expect(() => parseOperatingEnergy(doc(noHistory))).toThrow()
+  expect(() => parseOperatingEnergy(doc({ ...record, decayHistoryDuration_s: 2591999 }))).toThrow()
+  expect(parseOperatingEnergy(doc({ ...record, decayHistoryDuration_s: 4.7e7 })).decayHistoryDuration_s).toBe(4.7e7)
 })

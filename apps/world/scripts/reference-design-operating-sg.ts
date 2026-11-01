@@ -16,12 +16,10 @@ import {parseBalanceBasis} from './reference-design-balance'
 import {parseBypassControl,parseBypassNoLoad} from './reference-design-bypass'
 import {parseCycleBasis} from './reference-design-cycle'
 import {parseHydraulicBasis} from './reference-design-hydraulics'
-import {parseInitializationBasis} from './reference-design-initialization'
 import {parseOperatingHotReference} from './reference-design-operating-fluid'
 import {ownedBlock} from './reference-design-operating-pzr'
-import {parseOperatingThermal} from './reference-design-operating-thermal'
 import {foldedGeometry,parsePrimaryMechanics} from './reference-design-primary-mechanics'
-import {parseSgContact,sgContactOwner} from './reference-design-sg-contact-law'
+import {parseSgContact,sgContactOwner,sgContactSection,sgTubeBundle} from './reference-design-sg-contact-law'
 
 const positive=z.number().finite().positive()
 const exposureSchema=z.object({bottom_m:positive,top_m:positive,crownTop_m:positive,upperZoneArea_m2:positive}).strict()
@@ -66,9 +64,9 @@ export const sectionPages=['systems/steam-generation/thermodynamics.md','systems
   'numerical-basis.md','systems/steam-power/cycle-basis.md','model/primary-hydraulic-basis.md',
   'systems/primary-coolant/mechanical-energy-and-geometry.md'] as const
 export const probePages=['systems/steam-generation/thermodynamics.md','numerical-basis.md','model/operating-hot-reference.md',
-  'model/operating-thermal.md','systems/primary-coolant/mechanical-energy-and-geometry.md','model/connected-primary-initialization.md'] as const
+  'systems/primary-coolant/mechanical-energy-and-geometry.md'] as const
 export type SectionSources={thermodynamics:string,admission:string,balance:string,cycle:string,hydraulics:string,mechanics:string}
-export type ProbeSources={thermodynamics:string,balance:string,hot:string,thermal:string,mechanics:string,initialization:string}
+export type ProbeSources={thermodynamics:string,balance:string,hot:string,mechanics:string}
 const SGS=['A','B'] as const
 
 export const parseSgRelief=(admission:string)=>reliefSchema.parse(ownedBlock(admission,sgOwners.relief.heading,sgOwners.relief.fence))
@@ -147,7 +145,7 @@ export function compileOperatingSecondary(d:SectionSources){
     feed:{rule:boundaries.feedRule,pressure_Pa:feedPressure,temperature_K:cycle.feedInlet_C+273.15},
     steamAdmission:{stopTravel_s:travel.turbineStop_s},
     bypass,
-    contact:parseSgContact(d.thermodynamics),
+    contact:sgContactSection(d.thermodynamics,parsePrimaryMechanics(d.mechanics).sgDevelopedLength_m),
     exposure:{fold:sgFold(d.hydraulics,d.mechanics,g.exposure),bundleZoneVolume_m3:g.exposure.bundleZoneVolume_m3,
       upperZoneArea_m2:g.exposure.upperZoneArea_m2}}
 }
@@ -158,18 +156,18 @@ export function compileOperatingSecondary(d:SectionSources){
  * constants are the section's `contact`. */
 export function compileSgProbe(d:ProbeSources,primaryMassFlow_kg_s:{A:number,B:number}){
   if(![primaryMassFlow_kg_s.A,primaryMassFlow_kg_s.B].every(m=>Number.isFinite(m)&&m>0))throw Error('Positive primary flows required')
-  const balance=parseBalanceBasis(d.balance),hot=parseOperatingHotReference(d.hot),thermal=parseOperatingThermal(d.thermal),
-    mechanics=parsePrimaryMechanics(d.mechanics),initialization=parseInitializationBasis(d.initialization),contact=parseSgContact(d.thermodynamics),
-    n=hot.sgMetalSegments,L=mechanics.sgDevelopedLength_m
+  const balance=parseBalanceBasis(d.balance),hot=parseOperatingHotReference(d.hot),
+    mechanics=parsePrimaryMechanics(d.mechanics),contact=parseSgContact(d.thermodynamics),
+    n=hot.sgMetalSegments,L=mechanics.sgDevelopedLength_m,bundle=sgTubeBundle(contact,L)
   return {preparation:{secondaryPressure_Pa:balance.secondaryPressure_MPaAbs*1e6,liquidVolume_m3:balance.secondaryLiquidVolume_m3,
       metalColdTemperature_K:balance.coreInlet_C+273.15},
     // The SG primary cell: the hot reference's pressure, its 290 °C start
-    // and the folded channel's flow area (volume over developed length).
+    // and the tube film's flow area (X4.5, `ld01-sg-contact`).
     primary:{pressure_Pa:hot.primaryPressure_Pa,temperature_K:balance.coreInlet_C+273.15,
-      flowArea_m2:initialization.volumes_m3[7]!/L,massFlow_kg_s:SGS.map(id=>primaryMassFlow_kg_s[id])},
-    tube:{thermalDiameter_m:thermal.sgThermalDiameter_m},
+      inletTemperature_K:balance.coreOutlet_C+273.15,flowArea_m2:bundle.filmFlowArea_m2,massFlow_kg_s:SGS.map(id=>primaryMassFlow_kg_s[id])},
+    tube:{thermalDiameter_m:bundle.thermalDiameter_m},
     segments:Array.from({length:n},(_,i)=>({developedStart_m:i*L/n,developedEnd_m:(i+1)*L/n,
-      exchangeArea_m2:contact.exchangeArea_m2/n,capacity_J_K:balance.wallCapacity_MJ_K*1e6/n}))}
+      exchangeArea_m2:bundle.exchangeArea_m2/n,capacity_J_K:balance.wallCapacity_MJ_K*1e6/n}))}
 }
 
 const hash=(s:string)=>createHash('sha256').update(s).digest('hex')
@@ -189,8 +187,8 @@ export async function prepareOperatingSecondary(wikiRoot:string){
 /** The probe section, read from a wiki checkout, with declared flows. */
 export async function prepareSgProbe(wikiRoot:string,primaryMassFlow_kg_s:{A:number,B:number}){
   const {docs,provenance}=await read(wikiRoot,probePages),
-    [thermodynamics,balance,hot,thermal,mechanics,initialization]=docs as [string,string,string,string,string,string]
-  return {...compileSgProbe({thermodynamics,balance,hot,thermal,mechanics,initialization},primaryMassFlow_kg_s),provenance}
+    [thermodynamics,balance,hot,mechanics]=docs as [string,string,string,string]
+  return {...compileSgProbe({thermodynamics,balance,hot,mechanics},primaryMassFlow_kg_s),provenance}
 }
 
 if(import.meta.main){
