@@ -844,6 +844,10 @@ impl<S: JoinedSystem> JoinedSystem for Electrified<S> {
     fn appended_operator_state(&mut self, y: &[f64]) {
         self.read_pressures(y);
     }
+    /// PROC T1–T3: the routing's reports at its processed time.
+    fn routing_reports(&self) -> Option<bus::Reports> {
+        Some(self.routing.reports())
+    }
     fn admission_probe(&self, t: f64) -> Option<(usize, Vec<(usize, f64)>)> {
         self.governor.as_ref()?;
         let c = self.coefficients(t).ok()?;

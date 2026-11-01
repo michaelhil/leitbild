@@ -33,7 +33,7 @@ use crate::joined::JoinedSystem;
 use leitbild_operating_plant::{
     ic::{
         acquisition::Overrange,
-        packet::{Quantity, ReportSource, Section, SgFlow},
+        packet::{ElectricalSource, Quantity, ReportSource, Section, SgFlow},
         protection::Protection,
     },
     joined::{block::Command, operator::Joined},
@@ -407,6 +407,9 @@ pub struct ProtectionClient {
     nonlinear_read: Vec<usize>,
     /// The section declares the bank inserted report (read after restarts).
     bank_report: bool,
+    /// PROC T1–T3: the section has electrical reports (read from the
+    /// routing at the start and after every restart).
+    electrical: bool,
     /// The current proxy's place in `observed` (the SOURCE path's rate).
     proxy_index: Option<usize>,
     derivatives: Vec<Vec<f64>>,
@@ -804,6 +807,7 @@ impl ProtectionClient {
             return Err("the SOURCE-pulse path needs the current proxy family".into());
         }
         let mut protection = protection;
+        let electrical = protection.electrical_reports();
         let bank_report = section
             .reports
             .iter()
@@ -829,6 +833,7 @@ impl ProtectionClient {
             taylor: Vec::new(),
             nonlinear_read,
             bank_report,
+            electrical,
             proxy_index,
         })
     }
@@ -845,6 +850,38 @@ impl ProtectionClient {
         }
         self.scratch = vec![0.; dimension];
         Ok(self)
+    }
+    /// [`ProtectionClient::with_system_dimension`] for the composed system,
+    /// and PROC T1–T3's electrical reports read from its routing at the
+    /// start. A section with electrical reports needs a system that routes AC.
+    pub fn with_system<S: JoinedSystem>(
+        self,
+        system: &S,
+        dimension: usize,
+    ) -> Result<Self, String> {
+        let mut c = self.with_system_dimension(dimension)?;
+        c.read_routing(system)?;
+        Ok(c)
+    }
+    /// The electrical reports' plant states from the routing, by report id.
+    fn read_routing<S: JoinedSystem>(&mut self, system: &S) -> Result<(), String> {
+        if !self.electrical {
+            return Ok(());
+        }
+        let reports = system
+            .routing_reports()
+            .ok_or("the section's electrical reports need the electrical routing")?;
+        let states: Vec<(String, bool)> = self
+            .protection
+            .report_specs()
+            .iter()
+            .filter(|r| r.source.electrical())
+            .map(|r| Ok((r.id.clone(), routing_state(&reports, &r.source)?)))
+            .collect::<Result<_, String>>()?;
+        for (id, state) in states {
+            self.protection.set_report_state(&id, state)?;
+        }
+        Ok(())
     }
     /// The observed quantities, how they are read and their references.
     pub fn observed(&self) -> Value {
@@ -1020,8 +1057,51 @@ impl<S: JoinedSystem> Client<S> for ProtectionClient {
         if self.bank_report {
             self.protection.set_bank_seated(bank_seated(joined)?);
         }
-        Ok(())
+        // PROC T1–T3: every routing change is an exact routing event and a
+        // restart where delivered support changes.
+        self.read_routing(system)
     }
+}
+
+/// One electrical report's plant state from the routing's reports.
+fn routing_state(
+    reports: &leitbild_operating_plant::electrical::bus::Reports,
+    source: &ReportSource,
+) -> Result<bool, String> {
+    use leitbild_operating_plant::electrical::bus::{Contact, Source};
+    let of = |s: &ElectricalSource| match s {
+        ElectricalSource::Unit => Source::Unit,
+        ElectricalSource::Reserve => Source::Reserve,
+    };
+    let bus = |name: &str| {
+        reports
+            .buses
+            .iter()
+            .find(|b| b.name == name)
+            .ok_or_else(|| format!("the routing has no bus {name}"))
+    };
+    let incoming = |name: &str, s: &ElectricalSource| {
+        reports
+            .incoming
+            .iter()
+            .find(|d| d.bus == name && d.source == of(s))
+            .ok_or_else(|| format!("the routing has no {name} incoming from {s:?}"))
+    };
+    let src = |s: &ElectricalSource| reports.sources[of(s) as usize];
+    Ok(match source {
+        ReportSource::BusAvailable { bus: b } => bus(b)?.available,
+        ReportSource::SourceAvailable { source } => src(source).energized,
+        ReportSource::SourceQualified { source } => src(source).qualified,
+        ReportSource::IncomingClosed { bus: b, source } => {
+            incoming(b, source)?.contact == Contact::Closed
+        }
+        ReportSource::IncomingTravelComplete { bus: b, source } => {
+            incoming(b, source)?.travel_complete
+        }
+        ReportSource::TurbineRetainedTrip | ReportSource::BankInserted => {
+            return Err("not an electrical report".into());
+        }
+    })
 }
 
 /// Every cluster seated, from the rods owner's discrete modes.
@@ -1039,6 +1119,73 @@ fn bank_seated<P: Properties + WaterProperties>(joined: &Joined<P>) -> Result<bo
 #[cfg(test)]
 mod tests {
     use super::derivatives_at_start;
+
+    /// PROC T1–T3: each electrical report reads its own field of the
+    /// routing's reports (AC.B on reserve after a transfer, the unit source
+    /// lost, AC.A's reserve incoming still travelling).
+    #[test]
+    fn electrical_reports_read_the_routing() {
+        use super::routing_state;
+        use leitbild_operating_plant::electrical::bus::{
+            BusReport, Contact, IncomingReport, Reports, Source, SourceReport,
+        };
+        use leitbild_operating_plant::ic::packet::{ElectricalSource as E, ReportSource as R};
+        let source = |s, energized, qualified| SourceReport {
+            source: s,
+            energized,
+            voltage_pu: 1.,
+            frequency_hz: 50.,
+            qualified,
+        };
+        let incoming = |bus: &str, s, contact, travel_complete| IncomingReport {
+            bus: bus.into(),
+            source: s,
+            contact,
+            travel_complete,
+        };
+        let r = Reports {
+            buses: vec![
+                BusReport {
+                    name: "AC.A".into(),
+                    available: false,
+                    fed_from: None,
+                },
+                BusReport {
+                    name: "AC.B".into(),
+                    available: true,
+                    fed_from: Some(Source::Reserve),
+                },
+            ],
+            sources: [
+                source(Source::Unit, false, false),
+                source(Source::Reserve, true, true),
+            ],
+            incoming: vec![
+                incoming("AC.A", Source::Unit, Contact::Open, true),
+                incoming("AC.A", Source::Reserve, Contact::Open, false),
+                incoming("AC.B", Source::Unit, Contact::Open, true),
+                incoming("AC.B", Source::Reserve, Contact::Closed, true),
+            ],
+        };
+        let bus = |b: &str| R::BusAvailable { bus: b.into() };
+        assert!(!routing_state(&r, &bus("AC.A")).unwrap());
+        assert!(routing_state(&r, &bus("AC.B")).unwrap());
+        assert!(!routing_state(&r, &R::SourceAvailable { source: E::Unit }).unwrap());
+        assert!(routing_state(&r, &R::SourceQualified { source: E::Reserve }).unwrap());
+        let closed = |b: &str, s| R::IncomingClosed {
+            bus: b.into(),
+            source: s,
+        };
+        assert!(routing_state(&r, &closed("AC.B", E::Reserve)).unwrap());
+        assert!(!routing_state(&r, &closed("AC.A", E::Unit)).unwrap());
+        let done = R::IncomingTravelComplete {
+            bus: "AC.A".into(),
+            source: E::Reserve,
+        };
+        assert!(!routing_state(&r, &done).unwrap());
+        assert!(routing_state(&r, &bus("AC.C")).is_err());
+        assert!(routing_state(&r, &R::BankInserted).is_err());
+    }
 
     #[test]
     fn an_interface_outside_its_span_gives_the_bound_direction() {
