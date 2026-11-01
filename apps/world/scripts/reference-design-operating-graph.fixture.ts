@@ -36,6 +36,7 @@ export const ic = {
     { id: 'LD01.RCP.A1.SPEED', quantity: { pump_speed: { rotor: 0, rotor_id: 'PUMP.A1' } }, channels: [{ id: 'LD01.RCP.A1.SPEED', supply: 'I1' }], channel: { ...channelSpec, min: 0, max: 1.5 } },
     { id: 'LD01.RCP.B1.SPEED', quantity: { pump_speed: { rotor: 1, rotor_id: 'PUMP.B1' } }, channels: [{ id: 'LD01.RCP.B1.SPEED', supply: 'I2' }], channel: { ...channelSpec, min: 0, max: 1.5 } },
   ],
+  reports: [{ id: 'LD01.TG.TRIP.REPORT', source: 'turbine_retained_trip', supply: 'ACT.B' }],
   functions: [
     { id: 'LD01.PROT.PZR.HIGH_PRESSURE', rule: { voted: { family: 'LD01.PZR.PT', side: { at_or_above: 15_898_400 }, qualification_s: 0.2 } }, effects: { reactor_trip: true, cmt_injection: false, heater_isolation: true, prhr: false } },
     { id: 'LD01.PROT.PZR.LOW_PRESSURE', rule: { voted: { family: 'LD01.PZR.PT', side: { at_or_below: 13_000_000 }, qualification_s: 0.5 } }, effects: { reactor_trip: true, cmt_injection: false, heater_isolation: false, prhr: false } },
@@ -54,6 +55,7 @@ export const unitOf = (channel: string): string => {
   if (channel.endsWith('RELEASED_POWER') || channel.endsWith('.WT') || channel.endsWith('HEATER.REQUEST')) return 'W'
   if (channel.endsWith('.QUALITY') || channel.endsWith('.LATCHED') || channel.endsWith('.REQUEST') || channel.includes('.FT') || channel.includes('.SPEED') || channel.includes('POWER.P')) return '1'
   if (/\.(TRIP|POWERED|CLOSED|AVAILABLE|INITIATED|OFFSITE_LOST)$/u.test(channel)) return '1'
+  if (channel.endsWith('.REPORT') || channel.endsWith('.INSERTED')) return '1'
   if (channel.includes('PT') || channel.endsWith('PRESSURE')) return 'Pa'
   if (channel.endsWith('.FLOW')) return 'kg/s'
   if (channel.endsWith('OMEGA')) return 'rad/s'

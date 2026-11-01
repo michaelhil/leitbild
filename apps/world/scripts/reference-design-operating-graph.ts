@@ -74,6 +74,7 @@ const icSchema = z.object({
     channels: z.array(z.object({ id: z.string().min(1), supply: z.string().min(1) }).strict()).min(1),
     channel: z.object({ min: finite.nullable(), max: finite.nullable() }).passthrough(),
   }).passthrough()).min(1),
+  reports: z.array(z.object({ id: z.string().min(1), source: z.enum(['turbine_retained_trip', 'bank_inserted']), supply: z.string().min(1) }).passthrough()),
   functions: z.array(z.object({
     id: z.string().min(1),
     rule: z.record(z.string(), z.object({ family: z.string().min(1).optional(), side: side.optional() }).passthrough()),
@@ -109,6 +110,8 @@ type Reading = {
   /** Read in percent of this declared span (a level over its instrument's range), not by unit conversion. */
   readonly span?: { readonly min: number; readonly max: number; readonly declaredBy: string }
   readonly tagId?: string
+  /** Other tag ids this reading answers for (a procedure's single tag read on one declared channel). */
+  readonly externalRefs?: ReadonlyArray<string>
   readonly limits?: Record<string, unknown>
 }
 type Command = { readonly path: string; readonly label: string; readonly actuation: 'command' | 'faultInjection'; readonly command: Ld01Command; readonly momentary: boolean }
@@ -169,7 +172,10 @@ const familyReadings = (ic: Ic, family: Family): ReadonlyArray<Reading> => {
     const suffix = typeof family.quantity === 'object' && 'cvcs_flow' in family.quantity ? channel.id.split('.').at(-2)! : lastSegment(channel.id)
     const { label, ...rest } = shape
     return [
-      { ...rest, path: suffix, label: label(suffix), channel: channel.id, tagId: channel.id, ...(limits === undefined ? {} : { limits }) },
+      { ...rest, path: suffix, label: label(suffix), channel: channel.id, tagId: channel.id, ...(limits === undefined ? {} : { limits }),
+        // LD01-E0's single «LD01.CORE.POWER.NUCLEAR» reads the power proxy's division I1 channel (WORLD's declaration;
+        // PHYS's tag map leaves the choice to WORLD: no range switching exists, each channel is shown as well).
+        ...(typeof family.quantity === 'object' && 'current_proxy' in family.quantity && channel.supply === 'I1' ? { externalRefs: ['LD01.CORE.POWER.NUCLEAR'] } : {}) },
       { path: `${suffix}.quality`, label: `${label(suffix)} sample quality`, kind: 'discrete', discipline: 'control', quantity: 'count', unit: 'count', channel: `${channel.id}.QUALITY`, channelUnit: '1' },
     ] satisfies ReadonlyArray<Reading>
   })
@@ -405,6 +411,17 @@ export const compileOperatingGraph = (input: { readonly packet: unknown; readonl
     if (typeof family.quantity === 'object' && 'stop_valve_position' in family.quantity) turbine.readings.push(...familyReadings(ic, family))
   }
   equipment.set(turbine.id, turbine)
+  // The IC section's state reports (ld01-unit.rs reads each as a 0/1 channel and its quality): the turbine's
+  // retained-trip report on the turbine-generator, the complete-bank inserted report on the core.
+  for (const report of ic.reports) {
+    const owner = report.source === 'turbine_retained_trip' ? turbine : coreEquipment
+    const suffix = report.id.split('.').slice(-2).join('-')
+    const label = report.source === 'turbine_retained_trip' ? 'Turbine tripped state report' : 'Control bank inserted report (every cluster seated)'
+    owner.readings.push(
+      { ...reading(suffix, `${label} (supply ${report.supply})`, 'discrete', 'control', 'boolean', 'boolean', report.id, '1'), tagId: report.id },
+      reading(`${suffix}.quality`, `${label} sample quality`, 'discrete', 'control', 'count', 'count', `${report.id}.QUALITY`, '1'),
+    )
+  }
 
   // The protection: each function's latch, each division's trip and supply, the permissive contacts, the holding voltage, the requests.
   const protection: Equipment = {
@@ -477,7 +494,7 @@ export const compileOperatingGraph = (input: { readonly packet: unknown; readonl
       label: item.label,
       parameters: {
         ...item.parameters,
-        readings: item.readings.map(({ channel: _channel, channelUnit: _unit, tagId: _tag, limits: _limits, span: _span, ...rest }) => rest),
+        readings: item.readings.map(({ channel: _channel, channelUnit: _unit, tagId: _tag, externalRefs: _refs, limits: _limits, span: _span, ...rest }) => rest),
         commands: item.commands.map(({ command: _command, momentary: _momentary, ...rest }) => rest),
         keyValues: item.keyValues,
       },
@@ -489,7 +506,8 @@ export const compileOperatingGraph = (input: { readonly packet: unknown; readonl
         },
       }),
       variables: item.readings.flatMap(entry => entry.tagId === undefined && entry.limits === undefined ? [] : [{
-        path: entry.path, ...(entry.tagId === undefined ? {} : { tagId: entry.tagId }), ...(entry.limits === undefined ? {} : { limits: entry.limits }),
+        path: entry.path, ...(entry.tagId === undefined ? {} : { tagId: entry.tagId }), ...(entry.externalRefs === undefined ? {} : { externalRefs: [...entry.externalRefs] }),
+        ...(entry.limits === undefined ? {} : { limits: entry.limits }),
       }]),
     })) as PlantGraphSpec['components'],
     connections: [

@@ -217,6 +217,11 @@ enum Reading {
     /// `Protection::delivered`): its value, or its quality code.
     IcValue(usize),
     IcQuality(usize),
+    /// An IC state report's delivered sample (position in
+    /// `Protection::delivered_reports`): 1 reported, 0 not, NaN before the
+    /// first delivery; or its quality code (0 none, 1 value).
+    IcReport(usize),
+    IcReportQuality(usize),
     /// Divisions with the function's cause latched.
     Latched(String),
     DivisionTrip(usize),
@@ -353,6 +358,23 @@ fn channels(plant: &Plant, inputs: &Inputs) -> Result<Vec<Channel>, String> {
     }
     if k != delivered.len() {
         return Err("the protection acquires channels the section does not list".into());
+    }
+    let reports = plant.protection.protection.delivered_reports();
+    if reports.len() != section.reports.len()
+        || reports.iter().zip(&section.reports).any(|(d, r)| d.0 != r.id)
+    {
+        return Err("the protection's reports are not the section's".into());
+    }
+    for (i, r) in section.reports.iter().enumerate() {
+        let source = format!("{}: delivered state report (supply {})", r.id, r.supply);
+        out.push(channel(&r.id, "1", "state report: 1 reported, 0 not", &source, Reading::IcReport(i)));
+        out.push(channel(
+            format!("{}.QUALITY", r.id),
+            "1",
+            "delivered report quality: 0 none, 1 value",
+            &source,
+            Reading::IcReportQuality(i),
+        ));
     }
     for f in &section.functions {
         out.push(channel(
@@ -984,6 +1006,7 @@ impl Unit {
         let net = &unit.integrated().joined.network;
         let p = &protection.protection;
         let delivered = p.delivered();
+        let reports = p.delivered_reports();
         let divisions = &p.divisions;
         let flag = |b: bool| f64::from(u8::from(b));
         self.channels
@@ -1005,6 +1028,11 @@ impl Unit {
                         Some((_, Quality::AboveRange(_))) => 3.,
                         Some((_, Quality::Indeterminate(_))) => 4.,
                     },
+                    Reading::IcReport(i) => match reports[*i].1 {
+                        None => f64::NAN,
+                        Some((_, v)) => flag(v),
+                    },
+                    Reading::IcReportQuality(i) => flag(reports[*i].1.is_some()),
                     Reading::Latched(f) => divisions.iter().filter(|d| d.latched(f)).count() as f64,
                     Reading::DivisionTrip(d) => flag(divisions[*d].trip.is_some()),
                     Reading::DivisionPowered(d) => flag(divisions[*d].powered),
