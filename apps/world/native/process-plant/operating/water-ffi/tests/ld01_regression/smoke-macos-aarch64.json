@@ -48,18 +48,18 @@
     },
     "settle": {
       "convergence_failures": 17,
-      "error_failures": 57,
+      "error_failures": 76,
       "failure": null,
-      "jacobians": 297,
+      "jacobians": 339,
       "last_order": 1,
-      "linear_setups": 297,
-      "nonlinear_iterations": 2752,
+      "linear_setups": 339,
+      "nonlinear_iterations": 2832,
       "reached": true,
-      "residuals": 2754,
+      "residuals": 2834,
       "root_restarts": 2,
-      "steps": 2237,
-      "system_jacobians": 297,
-      "system_residuals": 5478
+      "steps": 2254,
+      "system_jacobians": 339,
+      "system_residuals": 5273
     },
     "z1": {
       "constraint_rate_within_bound": true,
