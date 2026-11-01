@@ -1,6 +1,6 @@
 /** TEST-ONLY LD-01 analysis (lane PHYS3, plan r4 X4): the judge of the trip
- * cases T1-T5 held 3,600 s at hot standby, as `ld01-r4-x4-cases` r4
- * (RP-pin-x4-r4) states them. Nothing here is registered in a Pack, the
+ * cases T1-T5 held 3,600 s at hot standby, as `ld01-r4-x4-cases` r5
+ * (RP-pin-x4-r5; r5 changes T5 only, owner 1 Nov R4-X4-T5-NC) states them. Nothing here is registered in a Pack, the
  * Runtime Hub or the deployer.
  *
  * Refuses unless the X4 lines, X1's case lines (RP-pin-x1-r6), the operator
@@ -22,6 +22,12 @@
  * - U3: the hot-standby bands (Tavg per loop and their mean, SG pressure,
  *   PZR pressure, PZR level) at every frame from +600 s to the end, and the
  *   always-limits at every frame of the receipt;
+ * - T5 (r5): U3's Tavg and PZR level bands are replaced by T5.N4 (the
+ *   loop-average Tavg's least-squares slope over [+150, +600] s below zero),
+ *   T5.N6 (per loop over [+150, +600] s: hot leg falls; cold-leg change no
+ *   larger than the hot leg's, hot minus cold shrinks; hot-leg maximum after
+ *   zero before +150 s), as nc-judge-1's N4/N6, and T5.L1 (PZR level within
+ *   0.2 m of ld01-pzr-level-program at the frame's loop-average Tavg, from +600 s);
  * - T4: subcritical at every frame-judged admission after the last seat
  *   (rule I's last_not_subcritical_s before it, every P1 factor; OU-D's U3
  *   reading), the counts recorded;
@@ -36,7 +42,9 @@ import {readFileSync, readdirSync, statSync} from 'node:fs'
 import {join} from 'node:path'
 import {BUDGETS_PIN, CASES_PIN, canonical, fenced, judge as judgeX1, sha256} from './ld01-x1'
 import {C2S_PIN, judge as judgeC2S} from './ld01-c2s'
-import {X4_PIN} from './ld01-x4'
+import {programLevel, type Plant} from './ld01-x4'
+
+export const X4T_PIN = {fence: 'ld01-r4-x4-cases', pin: 'RP-pin-x4-r5', sha256: 'b25bf2c554ecd0d3e63b288d1921851bdb2ef2c36d3a899b21f3228edb567ac1'}
 
 type J = any
 type Line = {id: string, verdict: 'pass' | 'fail' | 'recorded' | 'not evaluable', evidence?: J}
@@ -59,7 +67,7 @@ function wikiBlock(root: string, fence: string): J {
 const range = (v: number[]) => v.length ? [Math.min(...v), Math.max(...v)] : null
 
 /** U3's hot-standby bands from zero + `after` to the end, and its always-limits at every frame. */
-export function u3Lines(receipt: J, u3: J, after = BANDS_AFTER_S): Line[] {
+export function u3Lines(receipt: J, u3: J, after = BANDS_AFTER_S, replaced: string[] = []): Line[] {
  const run = receipt.run, zero = receipt.timeline.zero_s as number, from = zero + after, b = u3.hotStandbyBands
  const frames = (run.frames ?? []) as J[], settled = frames.filter(f => f.t_s >= from - 1e-9)
  const legs = run.feed_leg_temperatures_k, col = (n: string) => (legs?.columns ?? []).indexOf(n)
@@ -99,6 +107,48 @@ export function u3Lines(receipt: J, u3: J, after = BANDS_AFTER_S): Line[] {
   const all = (op.frames as J[]).map(f => f.values[lq] as number)
   lines.push({id: 'U3.always.pzrLevel', verdict: all.length && Math.min(...all) > b.pzrLevel.alwaysAbove_m ? 'pass' : 'fail', evidence: {min_m: all.length ? Math.min(...all) : null, above_m: b.pzrLevel.alwaysAbove_m}})
  }
+ return lines.filter(l => !replaced.includes(l.id))
+}
+
+const lsSlope = (pts: [number, number][]) => {
+ if (pts.length < 2) return null
+ const mt = pts.reduce((a, p) => a + p[0], 0) / pts.length, my = pts.reduce((a, p) => a + p[1], 0) / pts.length
+ const den = pts.reduce((a, p) => a + (p[0] - mt) ** 2, 0)
+ return den > 0 ? pts.reduce((a, p) => a + (p[0] - mt) * (p[1] - my), 0) / den : null
+}
+/** T5's natural-circulation Tavg checks and its level-program line (r5, R4-X4-T5-NC). */
+export function t5Lines(receipt: J, level: Plant['level'], after = BANDS_AFTER_S): Line[] {
+ const run = receipt.run, zero = receipt.timeline.zero_s as number, legs = run.feed_leg_temperatures_k
+ const col = (n: string) => (legs?.columns ?? []).indexOf(n)
+ if (legs == null || ['HOT.A', 'HOT.B', 'COLD.A', 'COLD.B'].some(n => col(n) < 0))
+  return ['T5.N4', 'T5.N6', 'T5.L1'].map(id => ({id, verdict: 'not evaluable' as const, evidence: {missing: 'run.feed_leg_temperatures_k HOT/COLD A/B'}}))
+ const rows = (legs.rows ?? []) as [number, number[]][], v = (x: number[], n: string) => x[col(n)]!
+ const tavg = (x: number[]) => ((v(x, 'HOT.A') + v(x, 'COLD.A')) / 2 + (v(x, 'HOT.B') + v(x, 'COLD.B')) / 2) / 2
+ const win = rows.filter(([t]) => t >= zero + 150 - 1e-9 && t <= zero + 600 + 1e-9)
+ const n4 = lsSlope(win.map(([t, x]) => [t, tavg(x)]))
+ const lines: Line[] = [{id: 'T5.N4', verdict: n4 != null && n4 < 0 ? 'pass' : 'fail', evidence: {slope_K_s: n4, window_s: [150, 600], frames: win.length, reading: 'loop-average Tavg (tavgDefinition) from the leg temperatures'}}]
+ const loops = Object.fromEntries(['A', 'B'].map(k => {
+  const hot = win.map(([t, x]) => [t, v(x, `HOT.${k}`)] as [number, number]), cold = win.map(([t, x]) => [t, v(x, `COLD.${k}`)] as [number, number])
+  const sh = lsSlope(hot), dh = hot.length ? hot.at(-1)![1] - hot[0]![1] : null, dc = cold.length ? cold.at(-1)![1] - cold[0]![1] : null
+  const gap0 = hot.length ? hot[0]![1] - cold[0]![1] : null, gap1 = hot.length ? hot.at(-1)![1] - cold.at(-1)![1] : null
+  const peak = rows.filter(([t]) => t > zero).reduce<[number, number] | null>((b, [t, x]) => b == null || v(x, `HOT.${k}`) > b[1] ? [t, v(x, `HOT.${k}`)] : b, null)
+  const a = sh != null && sh < 0, bb = dh != null && dc != null && gap0 != null && gap1 != null && Math.abs(dc) <= Math.abs(dh) && gap1 < gap0, c = peak != null && peak[0] - zero < 150
+  return [k, {hotSlope_K_s: sh, hotChange_K: dh, coldChange_K: dc, hotMinusCold_K: [gap0, gap1], hotPeakAfterZero_s: peak ? peak[0] - zero : null, a, b: bb, c}]
+ }))
+ lines.push({id: 'T5.N6', verdict: win.length && Object.values(loops).every((l: J) => l.a && l.b && l.c) ? 'pass' : 'fail',
+  evidence: {loops, comparator: 'AP1000 Fig 15.2.6-6 (loop without PRHR): hot 599 -> 588 F, cold 572 -> 572 F over DCD 222-672 s'}})
+ const op = run.phys_operator_frames, lq = op ? Object.keys(op.frames?.[0]?.values ?? {}).find(q => q.startsWith('PzrLevel')) : undefined
+ if (!lq) lines.push({id: 'T5.L1', verdict: 'not evaluable', evidence: {missing: 'PzrLevel operator frames'}})
+ else {
+  // Nearest leg row by bisection (both series are time-ordered).
+  const near = (t: number) => { let lo = 0, hi = rows.length - 1
+   while (hi - lo > 1) { const m = (lo + hi) >> 1; if (rows[m]![0] <= t) lo = m; else hi = m }
+   return Math.abs(rows[hi]![0] - t) < Math.abs(rows[lo]![0] - t) ? rows[hi]! : rows[lo]! }
+  const dev = (op.frames as J[]).filter(f => f.t_s >= zero + after - 1e-9).map(f => { const T = tavg(near(f.t_s)[1]); return {t: f.t_s - zero, d: f.values[lq] - programLevel(level, T)} })
+  const worst = dev.reduce<{t: number, d: number} | null>((b, x) => b == null || Math.abs(x.d) > Math.abs(b.d) ? x : b, null)
+  lines.push({id: 'T5.L1', verdict: dev.length && dev.every(x => Math.abs(x.d) <= 0.2) ? 'pass' : 'fail',
+   evidence: {band_m: 0.2, frames: dev.length, deviation_m: dev.length ? [Math.min(...dev.map(x => x.d)), Math.max(...dev.map(x => x.d))] : null, worst_after_zero: worst, about: 'ld01-pzr-level-program at the frame\'s loop-average Tavg', quantity: lq}})
+ }
  return lines
 }
 
@@ -126,7 +176,7 @@ function rodTripLines(receipt: J, x1Lines: Line[], c2: J): Line[] {
   ...x1Lines.filter(l => l.id !== 'direction.sgPressure')]
 }
 
-export function judge(key: string, receipt: J, cost: J, x4: J, x1: J, budgets: J, predicates: J, plant: J, c2s?: J, worth?: J): J {
+export function judge(key: string, receipt: J, cost: J, x4: J, x1: J, budgets: J, predicates: J, plant: J, c2s?: J, worth?: J, level?: Plant['level']): J {
  const spec = x4.cases?.[key], base = BASE[key]
  if (!spec || !base) throw new Error(`case ${key} is not an X4 trip case (T1-T5)`)
  const span = spec.span_s as number, held = {...x1, held_s: span}, run = receipt.run
@@ -149,19 +199,22 @@ export function judge(key: string, receipt: J, cost: J, x4: J, x1: J, budgets: J
   const c2 = x1.cases.C2, without = {...held, cases: {C2: {...c2, sequence: (c2.sequence as J[]).filter(l => !['X2.S1', 'X2.S2', 'X2.S3'].includes(l.id))}}}
   lines.push(...rodTripLines(receipt, judgeX1({...receipt, case: 'C2'}, budgets, without, plant).lines as Line[], c2))
  } else lines.push(...(judgeX1(receipt, budgets, held, plant).lines as Line[]))
- lines.push(...u3Lines(receipt, predicates.predicates.U3))
+ if (key === 'T5') {
+  if (!level) throw new Error('T5 needs ld01-pzr-level-program')
+  lines.push(...u3Lines(receipt, predicates.predicates.U3, BANDS_AFTER_S, ['U3.Tavg', 'U3.pzrLevel']), ...t5Lines(receipt, level))
+ } else lines.push(...u3Lines(receipt, predicates.predicates.U3))
  const worst = cost?.worst_0_5_s?.rate, steady = cost?.steady
  lines.push({id: 'cost', verdict: typeof worst === 'number' && typeof steady === 'number' ? (worst <= 0.7 && steady <= 0.1 ? 'pass' : 'fail') : 'not evaluable',
   evidence: {worst_0_5_s: worst ?? null, steady: steady ?? null, b_prod: typeof worst === 'number' ? worst <= 0.25 && steady <= 0.05 : null, cost_receipt: cost?.receipt ?? null}})
  const verdict = lines.every(l => l.verdict === 'pass' || l.verdict === 'recorded') ? 'X4 pass' : 'X4 fail'
- return {case: key, verdict, cases: X4_PIN, x1: CASES_PIN, budgets: BUDGETS_PIN, ...(key === 'T4' ? {c2s: C2S_PIN} : {}),
+ return {case: key, verdict, cases: X4T_PIN, x1: CASES_PIN, budgets: BUDGETS_PIN, ...(key === 'T4' ? {c2s: C2S_PIN} : {}),
   predicates: {revision: predicates.revision, sha256: sha256(canonical(predicates))}, lines}
 }
 
 if (import.meta.main) {
  const a = process.argv.slice(2), opt = (k: string): string => { const i = a.indexOf(k), v = a[i + 1]; if (i < 0 || v == null) throw new Error(`${k} required`); a.splice(i, 2); return v }
  const page = readFileSync(opt('--page'), 'utf8'), predRoot = opt('--predicates'), root = opt('--wiki'), key = opt('--case'), costPath = opt('--cost')
- const x4 = pinned(page, X4_PIN), x1 = pinned(page, CASES_PIN), budgets = pinned(page, BUDGETS_PIN), predicates = wikiBlock(predRoot, 'ld01-ou-predicates')
+ const x4 = pinned(page, X4T_PIN), x1 = pinned(page, CASES_PIN), budgets = pinned(page, BUDGETS_PIN), predicates = wikiBlock(predRoot, 'ld01-ou-predicates')
  if (String(predicates.revision) !== String(x4.bands.revision).replace(/^r/, '')) throw new Error(`ld01-ou-predicates revision ${predicates.revision}, the lines read ${x4.bands.revision}`)
  const relief = (wikiBlock(root, 'ld01-sg-relief').valves as J[]).find(v => v.role === 'relief')
  const plant = {pzrSetpoint: wikiBlock(root, 'ld01-pzr-pressure-control').setpoint_Pa, noLoad: wikiBlock(root, 'ld01-bypass-no-load').noLoadPressure_Pa,
@@ -171,5 +224,6 @@ if (import.meta.main) {
  if (!receiptPath || rest.length) throw new Error('one receipt')
  const text = readFileSync(receiptPath, 'utf8')
  console.log(JSON.stringify({receipt: receiptPath, receipt_sha256: sha256(text), cost: costPath,
-  ...judge(key, JSON.parse(text), JSON.parse(readFileSync(costPath, 'utf8')), x4, x1, budgets, predicates, plant, t4.c2s, t4.worth)}))
+  ...judge(key, JSON.parse(text), JSON.parse(readFileSync(costPath, 'utf8')), x4, x1, budgets, predicates, plant, t4.c2s, t4.worth,
+   key === 'T5' ? wikiBlock(root, 'ld01-pzr-level-program') : undefined)}))
 }

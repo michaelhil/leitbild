@@ -657,6 +657,30 @@ fn transacted_owners(
         .collect()
 }
 
+/// R4-RESTART-EQUATION-CHANGE (lead 1 Nov 2026, on S3-D41's principle):
+/// the owners whose reported row-equation mode changed between `before`
+/// and `after` ([`leitbild_operating_plant::joined::operator::Joined::equation_modes`]).
+/// The reporting owners are the composition's, so both lists name the same
+/// owners in the same order; anything else refuses.
+fn equation_changes(
+    before: &[(&'static str, serde_json::Value)],
+    after: &[(&'static str, serde_json::Value)],
+) -> Result<Vec<&'static str>, String> {
+    if before.len() != after.len() || before.iter().zip(after).any(|(b, a)| b.0 != a.0) {
+        return Err(format!(
+            "the equation-mode owners changed within a restart: {:?} against {:?}",
+            before.iter().map(|b| b.0).collect::<Vec<_>>(),
+            after.iter().map(|a| a.0).collect::<Vec<_>>()
+        ));
+    }
+    Ok(before
+        .iter()
+        .zip(after)
+        .filter(|(b, a)| b.1 != a.1)
+        .map(|(b, _)| b.0)
+        .collect())
+}
+
 /// The derived absolute-tolerance classes on the composition's own rows
 /// (lead decisions S2-D24r and S3-D16, the default in every S3 run path,
 /// never an opt-in), as `owner/Class` of the joined layouts: an algebraic
@@ -884,7 +908,7 @@ pub use integrated::{
 };
 
 mod integrated {
-    use super::{Analyses, Matrices, Report, transacted_owners};
+    use super::{Analyses, Matrices, Report, equation_changes, transacted_owners};
     use crate::ida::{Failure, Ida, KluOrdering, System, WeightGroups};
     use leitbild_operating_plant::{
         joined::{
@@ -939,9 +963,12 @@ mod integrated {
         /// from the start's WRMS guard ([`Report::exempt`]).
         pub transacted: Vec<&'static str>,
         /// The start's pass bound: `transaction_passes` after an owner
-        /// transaction or a birth (DR-C3-BIRTH05), `start_passes`
-        /// otherwise.
+        /// transaction, a birth (DR-C3-BIRTH05) or a reported row-equation
+        /// change (R4-RESTART-EQUATION-CHANGE), `start_passes` otherwise.
         pub passes_allowed: usize,
+        /// R4-RESTART-EQUATION-CHANGE: the owners whose reported
+        /// row-equation mode changed at this restart (empty when none).
+        pub equation_changes: Vec<&'static str>,
         /// The declared vapor presence's key changed, so the restart
         /// switched the block structure (S3-D-P3; never without
         /// [`Integrated::following_presence`]).
@@ -1124,6 +1151,7 @@ mod integrated {
         let before = y.to_vec();
         let identity_before = joined.differential(network_ids);
         let modes_before = joined.network.cell_modes().to_vec();
+        let equations_before = joined.equation_modes();
         // HOOK (BIRTH05, DR-C3-BIRTH05; KERN to reconcile): the constraint
         // of the state handed to the restart, before any transaction: the
         // largest algebraic row of one value evaluation at `(t, y, 0)` under
@@ -1231,6 +1259,7 @@ mod integrated {
                     placements: Vec::new(),
                     transacted: Vec::new(),
                     passes_allowed: 0,
+                    equation_changes: Vec::new(),
                     presence_changed,
                     modes_changed: false,
                     equilibrium_classes: Vec::new(),
@@ -1314,11 +1343,16 @@ mod integrated {
                 })
                 .collect()
         };
-        let passes_allowed = if transacted.is_empty() && born.is_empty() {
-            restart.start_passes
-        } else {
-            restart.transaction_passes
-        };
+        // R4-RESTART-EQUATION-CHANGE (S3-D41's principle): a restart at
+        // which an owner reports that an algebraic row changes equation
+        // takes the transaction class's passes, as a birth does.
+        let equation_changes = equation_changes(&equations_before, &joined.equation_modes())?;
+        let passes_allowed =
+            if transacted.is_empty() && born.is_empty() && equation_changes.is_empty() {
+                restart.start_passes
+            } else {
+                restart.transaction_passes
+            };
         let matrices = match assembly {
             Assembly::Blocks(structure) => Matrices::Blocks {
                 structure,
@@ -1404,6 +1438,7 @@ mod integrated {
             placements,
             transacted,
             passes_allowed,
+            equation_changes,
             presence_changed,
             modes_changed,
             equilibrium_classes,
@@ -2218,8 +2253,8 @@ mod integrated {
 #[cfg(test)]
 mod tests {
     use super::{
-        CREDITED_GROUP_MAX, ROUNDOFF_FACTOR, correction_wrms, owner_ranges, row_bound,
-        split_credited_groups, transacted_owners,
+        CREDITED_GROUP_MAX, ROUNDOFF_FACTOR, correction_wrms, equation_changes, owner_ranges,
+        row_bound, split_credited_groups, transacted_owners,
     };
     use crate::ida::WeightGroups;
 
@@ -2352,6 +2387,24 @@ mod tests {
         let (same, nothing) = correction_wrms(&y, &start, &weights, &[false; 4]);
         assert_eq!(same.to_bits(), all.to_bits());
         assert_eq!(nothing, None);
+    }
+
+    #[test]
+    fn a_reported_row_equation_change_names_its_owner() {
+        use serde_json::json;
+        let path = "network/spray path";
+        let closed = [(path, json!({"closed": true, "check_closed": false}))];
+        let open = [(path, json!({"closed": false, "check_closed": false}))];
+        let check = [(path, json!({"closed": false, "check_closed": true}))];
+        // No reporting owner, or nothing changed: none.
+        assert!(equation_changes(&[], &[]).unwrap().is_empty());
+        assert!(equation_changes(&closed, &closed).unwrap().is_empty());
+        // The valve's release and the check's release each change the row's equation.
+        assert_eq!(equation_changes(&closed, &open).unwrap(), vec![path]);
+        assert_eq!(equation_changes(&check, &open).unwrap(), vec![path]);
+        // A changed owner list within one restart refuses.
+        assert!(equation_changes(&closed, &[]).is_err());
+        assert!(equation_changes(&closed, &[("rods", json!(null))]).is_err());
     }
 
     #[test]

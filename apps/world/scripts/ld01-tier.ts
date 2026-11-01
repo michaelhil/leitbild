@@ -9,7 +9,11 @@
  *   C2's ungated preview from the saved S3 state at spans 0 s and 2.5 s
  *   after zero (the trip's burst), each against the committed T1
  *   expectation: instructions retired within +-1 % and the trajectory digest
- *   bitwise.
+ *   bitwise. R4-COST-RESOLUTION applied to T1 (lead, 1 Nov: C2@0 failed
+ *   +1.2..1.3 % under load with equal digests): a span whose first run is
+ *   within 2 % of its pin, digest equal, runs twice more and its median of
+ *   3 is judged against the +-1 % band; outside 2 % the one run decides.
+ *   The digest stays decisive on every run.
  * - T2, the affected case (<= 10 quiet CPU-min): one case's ungated preview
  *   from the saved S3 state at its declared duration (or a shorter span),
  *   against its golden baseline when one is committed (same two checks).
@@ -60,6 +64,10 @@ export const INSTRUCTION_TOLERANCE=0.01
 export const T1_BUDGET_QUIET_S=120
 export const T2_BUDGET_QUIET_S=600
 export const T1_SPANS=[0,2.5] as const
+/** R4-COST-RESOLUTION on T1 (lead, 1 Nov): within this band of the pin a
+ * span is judged on the median of T1_REPEATS runs. */
+export const RESOLUTION_BAND=0.02
+export const T1_REPEATS=3
 
 const REQUIRED=['LD01_OPERATING_WATER_LIB_DIR','LD01_OPERATING_SUNDIALS_PREFIX','LD01_OPERATING_HOT_SPINE_PACKET','LD01_WIKI_ROOT',
  'LD01_S3_STATE','LD01_S3_DECLARATION','LD01_S3_DECISION_LOG','ELEC_PACKET','CARGO_TARGET_DIR','LD01_RECEIPTS'] as const
@@ -127,10 +135,26 @@ function run(out:string,step:Step):StepResult{
 }
 
 const spanKey=(c:string,s:number|null)=>`${c}@${s===null?'declared':s}`
-function spanStep(out:string,c:string,span:number|null):Step{
- const env:Record<string,string>={LD01_S3_CASE:c,LD01_S3_PREVIEW:'1',LD01_S3_CASE_RECEIPT:join(out,`${spanKey(c,span)}.json`)}
+function spanStep(out:string,c:string,span:number|null,repeat=1):Step{
+ const file=repeat===1?spanKey(c,span):`${spanKey(c,span)}-r${repeat}`
+ const env:Record<string,string>={LD01_S3_CASE:c,LD01_S3_PREVIEW:'1',LD01_S3_CASE_RECEIPT:join(out,`${file}.json`)}
  if(span!==null)env.LD01_S3_PREVIEW_SPAN_S=String(span)
- return {name:`span-${spanKey(c,span)}`,...water('--test','s3_cases','s3_case_run','--','--ignored','--exact','--nocapture'),env,budgeted:true}
+ return {name:repeat===1?`span-${file}`:`repeat-${file}`,...water('--test','s3_cases','s3_case_run','--','--ignored','--exact','--nocapture'),env,budgeted:true}
+}
+
+/** A completed span step's measurement: instructions retired and the
+ * trajectory digest of its receipt (null when the step failed). */
+function measureSpan(r:StepResult):{measured:SpanPin,receipt:{verdict?:string}}|null{
+ const path=r.env.LD01_S3_CASE_RECEIPT
+ if(r.exit!==0||path===undefined||!existsSync(path))return null
+ const receipt=JSON.parse(readFileSync(path,'utf8')) as {run:Record<string,unknown>,verdict?:string}
+ return {measured:{instructions:r.time.instructions,digest:digest(receipt.run,TRAJECTORY_SECTIONS)},receipt}
+}
+
+/** The median of an odd number of values. */
+export function median(xs:number[]){
+ const s=[...xs].sort((a,b)=>a-b)
+ return s[(s.length-1)/2] as number
 }
 
 /** A span's measurement against its pin. */
@@ -207,11 +231,30 @@ function main(argv:string[]){
  const spans:Record<string,unknown>={},measuredPins:Record<string,SpanPin>={}
  for(const r of results.filter(x=>x.name.startsWith('span-'))){
   const key=r.name.slice(5),path=join(out,`${key}.json`)
-  if(r.exit!==0||!existsSync(path)){spans[key]={verdict:'fail',reason:`the span did not complete (exit ${r.exit})`};continue}
-  const receipt=JSON.parse(readFileSync(path,'utf8')) as {run:Record<string,unknown>,verdict?:string,lines?:unknown}
-  const measured={instructions:r.time.instructions,digest:digest(receipt.run,TRAJECTORY_SECTIONS)}
+  const first=measureSpan(r)
+  if(first===null){spans[key]={verdict:'fail',reason:`the span did not complete (exit ${r.exit})`};continue}
+  const {measured,receipt}=first
   measuredPins[key]=measured
-  spans[key]={...(mismatch.length?{verdict:'not judged',reason:'the pin was recorded on another tuple',mismatch}:judgeSpan(expectation?.spans[key],measured)),
+  const pin=expectation?.spans[key]
+  // R4-COST-RESOLUTION on T1: within 2 % of the pin, digest equal, the
+  // median of 3 runs is judged; every repeat's digest must equal the pin.
+  if(tier==='t1'&&!mismatch.length&&pin&&measured.digest===pin.digest&&Math.abs(relativeDifference(measured.instructions,pin.instructions))<=RESOLUTION_BAND){
+   const span=r.env.LD01_S3_PREVIEW_SPAN_S===undefined?null:Number(r.env.LD01_S3_PREVIEW_SPAN_S)
+   const runs:SpanPin[]=[measured]
+   let failed:string|null=null
+   for(let i=2;i<=T1_REPEATS&&failed===null;i++){
+    const rr=run(out,spanStep(out,r.env.LD01_S3_CASE??'',span,i));results.push(rr)
+    const m=measureSpan(rr)
+    if(m===null)failed=`repeat ${i} did not complete (exit ${rr.exit})`
+    else runs.push(m.measured)
+   }
+   if(failed!==null){spans[key]={verdict:'fail',reason:failed,receipt:path,receipt_verdict:receipt.verdict??null};continue}
+   const judged=judgeSpan(pin,{instructions:median(runs.map(x=>x.instructions)),digest:runs.every(x=>x.digest===pin.digest)?pin.digest:'a repeat differs'})
+   spans[key]={...judged,resolution:{rule:'R4-COST-RESOLUTION (T1, lead 1 Nov)',band:RESOLUTION_BAND,runs:runs.map(x=>({instructions:x.instructions,digest:x.digest,relative_difference:relativeDifference(x.instructions,pin.instructions)}))},
+    receipt:path,receipt_verdict:receipt.verdict??null}
+   continue
+  }
+  spans[key]={...(mismatch.length?{verdict:'not judged',reason:'the pin was recorded on another tuple',mismatch}:judgeSpan(pin,measured)),
    receipt:path,receipt_verdict:receipt.verdict??null}
  }
  const budgetedQuiet=results.filter(r=>r.budgeted).reduce((s,r)=>s+r.quiet_cpu_s,0)
