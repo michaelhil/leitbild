@@ -251,6 +251,43 @@ impl<S: JoinedSystem> Electrified<S> {
         self.log
             .push((t, "GCB OPEN requested by the operator".into()));
     }
+    /// PROC T4: the operator's OPEN or CLOSE of `bus`'s incoming device
+    /// from `source` at `t` (the routing's guards; `false`: rejected and
+    /// recorded). Apply it as a class-R change: the contact changes at the
+    /// end of the travel, an owner time event of the routing.
+    pub fn operator_incoming(
+        &mut self,
+        t: f64,
+        bus: &str,
+        source: Source,
+        target: bus::Contact,
+    ) -> Result<bool, String> {
+        let done = self.routing.request_incoming(t, bus, source, target)?;
+        self.log.push((
+            t,
+            format!(
+                "operator {bus} {source:?} incoming {target:?}: {}",
+                if done { "accepted" } else { "rejected" }
+            ),
+        ));
+        self.apply_supply()?;
+        Ok(done)
+    }
+    /// PROC T11: the operator's START of `consumer` after its contactor
+    /// dropped out (`false`: rejected and recorded). A class-R change: the
+    /// consumer's delivered support changes at once.
+    pub fn operator_start_consumer(&mut self, t: f64, consumer: &str) -> Result<bool, String> {
+        let done = self.routing.start_consumer(t, consumer)?;
+        self.log.push((
+            t,
+            format!(
+                "operator START {consumer}: {}",
+                if done { "accepted" } else { "rejected" }
+            ),
+        ));
+        self.apply_supply()?;
+        Ok(done)
+    }
     /// X4.3: the operator's ADM CLOSE at `t`: LOAD intent withdrawn, ADM to
     /// closed at its own travel.
     pub fn operator_close_admission(&mut self, t: f64) -> Result<(), String> {
