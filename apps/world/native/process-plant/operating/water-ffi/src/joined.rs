@@ -1561,9 +1561,11 @@ mod integrated {
             None
         }
         /// PROC T1–T3 hook (lane PHYS2, for the IC client): the electrical
-        /// routing's reports at its processed time, when an appended owner
-        /// routes AC. The default routes none.
-        fn routing_reports(&self) -> Option<leitbild_operating_plant::electrical::bus::Reports> {
+        /// routing, when an appended owner routes AC. The client advances its
+        /// own copy to each frame instant, so a routing instant that is not a
+        /// restart (a qualification timer, a contact end that leaves support
+        /// unchanged) is reported at its frame. The default routes none.
+        fn routing(&self) -> Option<&leitbild_operating_plant::electrical::bus::Distribution> {
             None
         }
         /// The appended owners' earliest due time strictly after `t`.

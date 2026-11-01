@@ -407,9 +407,11 @@ pub struct ProtectionClient {
     nonlinear_read: Vec<usize>,
     /// The section declares the bank inserted report (read after restarts).
     bank_report: bool,
-    /// PROC T1–T3: the section has electrical reports (read from the
-    /// routing at the start and after every restart).
+    /// PROC T1–T3: the section has electrical reports, read from `routing`,
+    /// a copy of the system's routing taken at the start and after every
+    /// restart and advanced to each frame instant.
     electrical: bool,
+    routing: Option<Box<leitbild_operating_plant::electrical::bus::Distribution>>,
     /// The current proxy's place in `observed` (the SOURCE path's rate).
     proxy_index: Option<usize>,
     derivatives: Vec<Vec<f64>>,
@@ -834,6 +836,7 @@ impl ProtectionClient {
             nonlinear_read,
             bank_report,
             electrical,
+            routing: None,
             proxy_index,
         })
     }
@@ -863,14 +866,28 @@ impl ProtectionClient {
         c.read_routing(system)?;
         Ok(c)
     }
-    /// The electrical reports' plant states from the routing, by report id.
+    /// A fresh copy of the system's routing, and the reports' states from it.
     fn read_routing<S: JoinedSystem>(&mut self, system: &S) -> Result<(), String> {
         if !self.electrical {
             return Ok(());
         }
-        let reports = system
-            .routing_reports()
+        let routing = system
+            .routing()
             .ok_or("the section's electrical reports need the electrical routing")?;
+        self.routing = Some(Box::new(routing.clone()));
+        self.report_routing(None)
+    }
+    /// The electrical reports' plant states from the copy, advanced to `t`
+    /// first when given (a frame instant): every due routing event is
+    /// processed exactly, with no stop added to the integration.
+    fn report_routing(&mut self, t: Option<f64>) -> Result<(), String> {
+        let Some(routing) = self.routing.as_mut() else {
+            return Ok(());
+        };
+        if let Some(t) = t {
+            routing.advance(t)?;
+        }
+        let reports = routing.reports();
         let states: Vec<(String, bool)> = self
             .protection
             .report_specs()
@@ -985,6 +1002,8 @@ impl<S: JoinedSystem> Client<S> for ProtectionClient {
         Ok(())
     }
     fn frame(&mut self, k: u64, t: f64, dense: &dyn Dense) -> Result<Vec<Change<S>>, String> {
+        // PROC T1–T3: the routing's state at the frame instant.
+        self.report_routing(Some(t))?;
         // Input-stage status at the acquisition's left limit.
         if self
             .observed
