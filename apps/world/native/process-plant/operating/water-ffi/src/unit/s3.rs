@@ -412,10 +412,11 @@ pub fn compose_governed_with<J: JoinedSystem>(
                 tb.parameters(omega0),
                 t0,
                 export,
+                export,
             )?;
             let opening = 1.;
             let integral = g.tracking_integral(t0, export, tail[slice::OMEGA], opening);
-            unit.declare_governor(g, tb.band_start_pa, tb.band_full_pa, tb.main_steam_loss_pa)?;
+            unit.declare_governor(g)?;
             slice_atol.extend([1e-8 * tb.governor.base_w, 1e-8, 1e-8]);
             let mut tail = tail;
             tail.extend([export, integral, opening]);

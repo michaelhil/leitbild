@@ -211,16 +211,9 @@ impl<S: JoinedSystem> Electrified<S> {
         N + if self.governor.is_some() { G } else { 0 }
     }
     /// X4.3 (lane TURB): compose the governor, ADM and GEN.WT in LOAD after
-    /// the slice, with the SG owner's valve law and at-power bypass band
-    /// (`band_start_pa`, `band_full_pa` on the header stand-in `p_SG -
-    /// main_steam_loss_pa`). Before the integrator is built.
-    pub fn declare_governor(
-        &mut self,
-        governor: Governor,
-        band_start_pa: f64,
-        band_full_pa: f64,
-        main_steam_loss_pa: f64,
-    ) -> Result<(), String> {
+    /// the slice, with the SG owner's valve law. Before the integrator is
+    /// built.
+    pub fn declare_governor(&mut self, governor: Governor) -> Result<(), String> {
         if self.governor.is_some() {
             return Err("the governor is composed once".into());
         }
@@ -231,7 +224,7 @@ impl<S: JoinedSystem> Electrified<S> {
             .secondary_mut()
             .ok_or("the governor needs the SG owner")?;
         secondary
-            .declare_valve_admission(band_start_pa, band_full_pa, main_steam_loss_pa)
+            .declare_valve_admission()
             .map_err(|f| format!("{f:?}"))?;
         let terms = secondary
             .admission_terms(0.)

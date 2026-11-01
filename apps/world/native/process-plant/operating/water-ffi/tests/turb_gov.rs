@@ -45,9 +45,9 @@ fn env(name: &str) -> String {
 struct Recorder {
     n: usize,
     pressures: Vec<(usize, f64)>,
-    band: [f64; 3],
     setpoint_w: f64,
     mode: String,
+    bypass_kg_s: f64,
     scratch: Vec<f64>,
     cost: Vec<(f64, u64)>,
     series: Vec<Value>,
@@ -63,6 +63,20 @@ impl Client<Unit> for Recorder {
         let g = u.governor.as_ref().ok_or("no governor")?;
         self.setpoint_w = g.setpoint_w(t);
         self.mode = g.held.mode.to_string();
+        // The bypass part of the pickup steam of the last evaluation: the
+        // SG steam ports' outflow less the turbine's admitted steam.
+        let steam: f64 = u
+            .integrated()
+            .joined
+            .secondary()
+            .ok_or("no SG owner")?
+            .account()
+            .crossings
+            .iter()
+            .filter(|c| c.port.ends_with(".steam"))
+            .map(|c| -c.mass_kg_s)
+            .sum();
+        self.bypass_kg_s = steam - u.slice.inputs.admitted_kg_s;
         Ok(())
     }
     fn frame(&mut self, k: u64, t: f64, dense: &dyn Dense) -> Result<Vec<Change<Unit>>, String> {
@@ -71,14 +85,9 @@ impl Client<Unit> for Recorder {
         let y = &self.scratch;
         let (n, e) = (self.n, electrical::N);
         let p: Vec<f64> = self.pressures.iter().map(|(i, s)| y[*i] * s).collect();
-        let [lo, hi, loss] = self.band;
-        let band: Vec<f64> = p
-            .iter()
-            .map(|p| ((p - loss - lo) / (hi - lo)).clamp(0., 1.))
-            .collect();
         self.series.push(json!({"k": k, "t_s": t, "watt_W": y[n + e], "integral": y[n + e + 1], "opening": y[n + e + 2],
             "setpoint_W": self.setpoint_w, "mode": self.mode, "omega_rad_s": y[n + slice::OMEGA],
-            "sg_pressure_Pa": p, "bypass_band_opening": band}));
+            "sg_pressure_Pa": p, "bypass_kg_s": self.bypass_kg_s}));
         Ok(Vec::new())
     }
 }
@@ -159,14 +168,18 @@ fn turb_gov_run() {
     let mut rec = Recorder {
         n,
         pressures,
-        band: [
-            turbine.band_start_pa,
-            turbine.band_full_pa,
-            turbine.main_steam_loss_pa,
-        ],
+        bypass_kg_s: 0.,
         setpoint_w: request0,
         // The start frame precedes any sample: the composed mode.
-        mode: plant.ida.system().governor.as_ref().unwrap().held.mode.to_string(),
+        mode: plant
+            .ida
+            .system()
+            .governor
+            .as_ref()
+            .unwrap()
+            .held
+            .mode
+            .to_string(),
         scratch: vec![0.; y.len()],
         cost: Vec::new(),
         series: Vec::new(),

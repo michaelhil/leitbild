@@ -7,11 +7,15 @@
 //!
 //! - `w' = (P_export - w) / tau_WT` (GEN.WT's 0.1 s lag; its 1 MW rounding,
 //!   0.1 s sampling and transport omitted in the continuous law, labelled);
-//! - `e = (P_set(t) - w)/B - (omega/omega0 - 1)/droop`, `u* = Kp e + I`,
-//!   `u = clamp(u*, 0, 1)`;
-//! - `I' = Ki e + (u - u*) Ki/Kp`: back-calculation anti-windup with the
-//!   tracking time `Kp/Ki` (labelled judgement for the wiki's "directional";
-//!   the rule the owner chose for FEED's level control, 31 Oct);
+//! - **x43-5 (lead ruling, 1 Nov; design row): the standard large-turbine
+//!   structure.** x43-4's fast power loop (`u* = 0.5 e + I` on GEN.WT)
+//!   destabilised the 1 Hz swing mode. Now `u* = P_set/scale + I -
+//!   (omega/omega0 - 1)/droop`: the wiki's 5 % droop on shaft speed about the
+//!   load reference (the request over the start's full-open export,
+//!   judgement), `u = clamp(u*, 0, 1)`;
+//! - `I' = Ki (P_set - w)/B + (u - u*) Ki/Kp`: GEN.WT only as the slow trim
+//!   (Ki = the wiki's 0.2/s: a 5 s time constant, far below the swing band),
+//!   with back-calculation anti-windup, tracking time `Kp/Ki` (judgement);
 //! - `a' = clamp((u - a)/tau_a, -1/T_ADM, +1/T_ADM)`: ADM's 1 s full travel
 //!   as a rate bound; `tau_a` the governor's 0.1 s sampling as the position
 //!   loop's time constant (labelled judgement). The corners are continuous
@@ -113,6 +117,10 @@ pub struct Held {
     pub to_w: f64,
     #[serde(with = "crate::joined::block::snapshot_bits")]
     pub from_s: f64,
+    /// The load reference's valve scale: the start's terminal export at
+    /// ADM full open (W per unit opening; judgement, x43-5).
+    #[serde(with = "crate::joined::block::snapshot_bits")]
+    pub scale_w: f64,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -124,13 +132,17 @@ pub struct Governor {
 /// The law's values and partials at one state.
 #[derive(Clone, Copy, Debug)]
 pub struct Law {
-    pub error: f64,
+    /// The slow GEN.WT trim's integrand `Ki (P_set - w)/B` (1/s).
+    pub trim: f64,
+    /// `u* = P_set/scale + I - (omega/omega0 - 1)/droop`.
     pub raw: f64,
     pub demand: f64,
     /// `du/du*` (1 inside the bounds, 0 on a bound).
     pub demand_slope: f64,
-    pub de_dw: f64,
-    pub de_domega: f64,
+    pub raw_w: f64,
+    pub raw_omega: f64,
+    pub trim_w: f64,
+    pub trim_omega: f64,
 }
 
 impl fmt::Display for Mode {
@@ -140,10 +152,16 @@ impl fmt::Display for Mode {
 }
 
 impl Governor {
-    /// LOAD at `t0` with the setpoint at `request_w` (no ramp in force).
-    pub fn new(parameters: Parameters, t0: f64, request_w: f64) -> Result<Self, String> {
+    /// LOAD at `t0` with the setpoint at `request_w` (no ramp in force)
+    /// and the load reference's valve scale `scale_w`.
+    pub fn new(
+        parameters: Parameters,
+        t0: f64,
+        request_w: f64,
+        scale_w: f64,
+    ) -> Result<Self, String> {
         parameters.validate()?;
-        if !(request_w.is_finite() && t0.is_finite()) {
+        if !(request_w.is_finite() && t0.is_finite() && scale_w.is_finite() && scale_w > 0.) {
             return Err(format!("governor request {request_w} W at {t0} s"));
         }
         Ok(Self {
@@ -153,6 +171,7 @@ impl Governor {
                 from_w: request_w,
                 to_w: request_w,
                 from_s: t0,
+                scale_w,
             },
         })
     }
@@ -189,6 +208,7 @@ impl Governor {
             from_w: now,
             to_w: request_w,
             from_s: t,
+            scale_w: self.held.scale_w,
         };
         Ok(true)
     }
@@ -198,14 +218,15 @@ impl Governor {
         self.held.mode = Mode::Closed;
         changed
     }
-    /// The law at `(t, w, omega, I)`.
+    /// The law at `(t, w, omega, I)` (x43-5, lead ruling 1 Nov): speed droop
+    /// on the shaft speed about the load reference `P_set/scale + I`; the
+    /// GEN.WT error enters only the slow trim `I' = Ki (P_set - w)/B`.
     pub fn law(&self, t: f64, w: f64, omega: f64, integral: f64) -> Law {
         let p = &self.parameters;
         let g = p.governor;
-        let de_dw = -1. / g.base_w;
-        let de_domega = -1. / (g.droop * p.omega0_rad_s);
-        let error = (self.setpoint_w(t) - w) / g.base_w - (omega / p.omega0_rad_s - 1.) / g.droop;
-        let raw = g.proportional * error + integral;
+        let set = self.setpoint_w(t);
+        let trim = g.integral_per_s * (set - w) / g.base_w;
+        let raw = set / self.held.scale_w + integral - (omega / p.omega0_rad_s - 1.) / g.droop;
         let (demand, demand_slope) = match self.held.mode {
             Mode::Closed => (0., 0.),
             Mode::Load if raw <= 0. => (0., 0.),
@@ -213,12 +234,14 @@ impl Governor {
             Mode::Load => (raw, 1.),
         };
         Law {
-            error,
+            trim,
             raw,
             demand,
             demand_slope,
-            de_dw,
-            de_domega,
+            raw_w: 0.,
+            raw_omega: -1. / (g.droop * p.omega0_rad_s),
+            trim_w: -g.integral_per_s / g.base_w,
+            trim_omega: 0.,
         }
     }
     /// The position rate bound's value and slope at `v = (u - a)/tau_a`.
@@ -239,11 +262,7 @@ impl Governor {
         let l = self.law(t, x[W], omega, x[I]);
         out[W] = xp[W] - (export_w - x[W]) / p.continuous.watt_lag_s;
         out[I] = match self.held.mode {
-            Mode::Load => {
-                xp[I]
-                    - (p.governor.integral_per_s * l.error
-                        + p.tracking_per_s() * (l.demand - l.raw))
-            }
+            Mode::Load => xp[I] - (l.trim + p.tracking_per_s() * (l.demand - l.raw)),
             Mode::Closed => xp[I],
         };
         let (rate, _) = self.travel((l.demand - x[A]) / p.continuous.position_lag_s);
@@ -269,19 +288,18 @@ impl Governor {
         let l = self.law(t, x[W], omega, x[I]);
         let tau_w = p.continuous.watt_lag_s;
         let tau_a = p.continuous.position_lag_s;
-        let kp = p.governor.proportional;
         let mut g = [[0.; N]; N];
         let mut d_export = [0.; N];
         let mut d_omega = [0.; N];
         g[W][W] = cj + 1. / tau_w;
         d_export[W] = -1. / tau_w;
         // u* partials: w, omega, I.
-        let (rw, ro, ri) = (kp * l.de_dw, kp * l.de_domega, 1.);
+        let (rw, ro, ri) = (l.raw_w, l.raw_omega, 1.);
         let du = l.demand_slope;
         if self.held.mode == Mode::Load {
-            let (ki, kb) = (p.governor.integral_per_s, p.tracking_per_s());
-            g[I][W] = -(ki * l.de_dw + kb * (du - 1.) * rw);
-            d_omega[I] = -(ki * l.de_domega + kb * (du - 1.) * ro);
+            let kb = p.tracking_per_s();
+            g[I][W] = -(l.trim_w + kb * (du - 1.) * rw);
+            d_omega[I] = -(l.trim_omega + kb * (du - 1.) * ro);
             g[I][I] = cj - kb * (du - 1.) * ri;
         } else {
             g[I][I] = cj;
@@ -293,10 +311,9 @@ impl Governor {
         g[A][I] = -dr * du * ri / tau_a;
         (g, d_export, d_omega)
     }
-    /// The owner's tracking transfer into LOAD: `I = a - Kp e` at the state.
+    /// The tracking transfer into LOAD: `I` such that `u* = a` at the state.
     pub fn tracking_integral(&self, t: f64, w: f64, omega: f64, opening: f64) -> f64 {
-        let l = self.law(t, w, omega, 0.);
-        opening - self.parameters.governor.proportional * l.error
+        opening - self.law(t, w, omega, 0.).raw
     }
 }
 
@@ -321,7 +338,7 @@ mod tests {
             admission_travel_s: 1.,
             omega0_rad_s: 50. * std::f64::consts::PI,
         };
-        Governor::new(p, 0., 1.0e9).unwrap()
+        Governor::new(p, 0., 1.0e9, 1.02e9).unwrap()
     }
     #[test]
     fn ramp_holds_ten_percent_per_second_and_continues_from_the_setpoint() {

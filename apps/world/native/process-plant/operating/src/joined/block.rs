@@ -581,14 +581,9 @@ pub trait Secondary<P> {
     }
     /// X4.3 hook (lane TURB): declare the turbine admission valve's choked
     /// law (admission proportional to the slice's valve opening and the SG
-    /// pressure) and the at-power bypass band on the header stand-in, before
-    /// any structure is compiled. An owner without the law refuses.
-    fn declare_valve_admission(
-        &mut self,
-        _band_start_pa: f64,
-        _band_full_pa: f64,
-        _main_steam_loss_pa: f64,
-    ) -> Result<(), Failure> {
+    /// pressure; the rows already read the pressure, so the structure is
+    /// unchanged). An owner without the law refuses.
+    fn declare_valve_admission(&mut self) -> Result<(), Failure> {
         Err(Failure::Fatal(
             "this secondary owner has no turbine valve law".into(),
         ))

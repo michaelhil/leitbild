@@ -1,8 +1,8 @@
 //! spec: world/packs/process-plant/reference-designs/ld-01/systems/steam-power/turbine-and-regeneration-dynamics.md#turbine-valve-governor-and-dump-x43
 //! X4.3 (plan r4, lane TURB): the governor, ADM and GEN.WT composition's
 //! inputs, read from their strict wiki blocks — `ld01-governor`,
-//! `ld01-governor-x43` and `ld01-steam-preparation` (turbine page),
-//! `ld01-steam-valve-travel` and `ld01-bypass-control` (admission page) —
+//! `ld01-governor-x43` (turbine page),
+//! `ld01-steam-valve-travel` (admission page) —
 //! and the Grid's power request decided at a Grid exchange.
 use crate::{
     electrical::Electrified,
@@ -21,9 +21,6 @@ pub struct Turbine {
     pub governor: GovernorBlock,
     pub continuous: ContinuousBlock,
     pub admission_travel_s: f64,
-    pub band_start_pa: f64,
-    pub band_full_pa: f64,
-    pub main_steam_loss_pa: f64,
 }
 
 fn block(wiki: &str, page: &str, fence: &str) -> Result<Value, String> {
@@ -45,15 +42,10 @@ impl Turbine {
         let continuous = serde_json::from_value(block(wiki, TURBINE_PAGE, "ld01-governor-x43")?)
             .map_err(|e| format!("ld01-governor-x43: {e}"))?;
         let travel = block(wiki, ADMISSION_PAGE, "ld01-steam-valve-travel")?;
-        let bypass = block(wiki, ADMISSION_PAGE, "ld01-bypass-control")?;
-        let preparation = block(wiki, TURBINE_PAGE, "ld01-steam-preparation")?;
         Ok(Self {
             governor,
             continuous,
             admission_travel_s: number(&travel, "admission_s", "ld01-steam-valve-travel")?,
-            band_start_pa: number(&bypass, "bandStart_Pa", "ld01-bypass-control")?,
-            band_full_pa: number(&bypass, "bandFull_Pa", "ld01-bypass-control")?,
-            main_steam_loss_pa: number(&preparation, "mainSteamLoss_Pa", "ld01-steam-preparation")?,
         })
     }
     /// The governor's parameters at the rated mechanical speed `omega0`.
@@ -67,9 +59,9 @@ impl Turbine {
     }
     pub fn receipt(&self) -> Value {
         json!({"governor": self.governor, "continuous": self.continuous, "admission_travel_s": self.admission_travel_s,
-            "at_power_bypass_band_Pa": [self.band_start_pa, self.band_full_pa], "main_steam_loss_Pa": self.main_steam_loss_pa,
             "judgements": ["admission proportional to opening x SG dome pressure (the header/HP inlet stand-in until C10's header store joins; lead 1 Nov)",
-                "the at-power bypass band on p_SG - mainSteamLoss (no header store)",
+                "no at-power dump: the Tavg-mode load-rejection dump is not in 1.0 (CRED I14; lead ruling x43-5)",
+                "governor: 5 % speed droop about the load reference (request over the start's full-open export); GEN.WT only as the slow Ki trim (x43-5, the fast power loop destabilised the swing mode in x43-4)",
                 "GEN.WT continuous: 0.1 s lag, rounding/sampling/transport omitted",
                 "back-calculation anti-windup, tracking time proportional/integral",
                 "ADM position loop lag = the 0.1 s governor sampling; 1 s full travel as a rate bound"]})

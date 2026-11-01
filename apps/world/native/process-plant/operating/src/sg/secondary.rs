@@ -456,31 +456,15 @@ pub struct Secondaries {
 ///   prepared demand there.
 /// - The opening is a trial input: the slice sets it from its coordinate
 ///   before every evaluation (`direction` 1 only for the admission column).
-/// - Before the TRIP the bypass opening follows the at-power band on the
-///   header stand-in `p_SG - mainSteamLoss` (labelled reduction: no header
-///   store, valve travel, 0.1 s sampling or condenser interlock), with the
-///   same located kinks and side memory as the no-load mode; from the TRIP
-///   on the no-load mode as before.
+/// - At power the bypass stays closed (lead ruling, x43-5: a PWR's at-power
+///   dump is the Tavg-mode load-rejection dump, armed only on a load
+///   rejection beyond the rods, which 1.0 does not have, CRED I14); from the
+///   TRIP on the no-load pressure mode as before.
 #[derive(Clone, Debug)]
 pub struct ValveAdmission {
     reference_pa: Vec<f64>,
     opening: f64,
     direction: f64,
-    band_start_pa: f64,
-    band_full_pa: f64,
-    main_steam_loss_pa: f64,
-}
-
-/// The linear band opening of `x` between `lo` (0) and `hi` (1), clamped.
-fn band(x: Scalar, lo: f64, hi: f64) -> Scalar {
-    let u = (x - s(lo)) / s(hi - lo);
-    if u.value <= 0. {
-        s(0.)
-    } else if u.value >= 1. {
-        s(1.)
-    } else {
-        u
-    }
 }
 
 /// Steam admission fraction at `t` after a TRIP latched at `trip_s`: 1 at
@@ -816,22 +800,6 @@ impl Secondaries {
                 / v.reference_pa[k]
         })
     }
-    /// The SG-pressure edges of the bypass band whose kinks are armed now:
-    /// the no-load mode's from the TRIP on, the at-power band's before it
-    /// when the valve law is declared.
-    fn armed_band(&self) -> Option<(f64, f64)> {
-        if self.trip_s.is_some() {
-            let (p0, w) = (self.bypass.no_load_pressure_pa, self.bypass.band_width_pa);
-            Some((p0, p0 + w))
-        } else {
-            self.valve.as_ref().map(|v| {
-                (
-                    v.main_steam_loss_pa + v.band_start_pa,
-                    v.main_steam_loss_pa + v.band_full_pa,
-                )
-            })
-        }
-    }
 
     /// Prepared stocks on the runtime chart at a pressure and liquid volume,
     /// in the section's order: the selected hot preparation for isolated
@@ -925,13 +893,7 @@ impl Secondaries {
     /// The bypass stand-in's opening at `t` and SG pressure `p` (R12-B1):
     /// zero before the TRIP, then linear from the no-load pressure over one
     /// band width, closed below and fully open above.
-    /// X4.3: before the TRIP with the valve law, the at-power band on the
-    /// header stand-in.
     pub fn bypass_opening(&self, t: f64, p: Scalar) -> Scalar {
-        let tripped = self.trip_s.is_some_and(|t0| t >= t0);
-        if let (Some(v), false) = (&self.valve, tripped) {
-            return band(p - s(v.main_steam_loss_pa), v.band_start_pa, v.band_full_pa);
-        }
         bypass_opening(&self.bypass, self.trip_s, t, p)
     }
     /// The bypass parameters (R12-B1).
@@ -1080,25 +1042,11 @@ impl<P: Properties> Secondary<P> for Secondaries {
     fn turbine_trip_time(&self) -> Option<f64> {
         self.trip_s
     }
-    fn declare_valve_admission(
-        &mut self,
-        band_start_pa: f64,
-        band_full_pa: f64,
-        main_steam_loss_pa: f64,
-    ) -> Result<(), Failure> {
+    fn declare_valve_admission(&mut self) -> Result<(), Failure> {
         if self.trip_s.is_some() || self.turbine_load != 1. || self.valve.is_some() {
             return Err(fatal(
                 "X4.3: the valve law is declared once, at power, without the X4.4 load stand-in",
             ));
-        }
-        if !(band_start_pa.is_finite()
-            && band_full_pa > band_start_pa
-            && main_steam_loss_pa.is_finite()
-            && main_steam_loss_pa >= 0.)
-        {
-            return Err(fatal(format!(
-                "X4.3 at-power bypass band {band_start_pa}..{band_full_pa} Pa, loss {main_steam_loss_pa} Pa"
-            )));
         }
         let reference_pa: Vec<f64> = self
             .sgs
@@ -1112,9 +1060,6 @@ impl<P: Properties> Secondary<P> for Secondaries {
             reference_pa,
             opening: 1.,
             direction: 0.,
-            band_start_pa,
-            band_full_pa,
-            main_steam_loss_pa,
         });
         Ok(())
     }
@@ -1248,9 +1193,8 @@ impl<P: Properties> Secondary<P> for Secondaries {
         if self.turbine_load != 1. {
             state["turbine_load"] = json!(format!("{:016x}", self.turbine_load.to_bits()));
         }
-        // The bypass kinks' sides, only once the TRIP (or, X4.3, the valve
-        // law's at-power band) has armed them.
-        if self.trip_s.is_some() || self.valve.is_some() {
+        // The bypass kinks' sides, only once the TRIP has armed them.
+        if self.trip_s.is_some() {
             state["bypass_side"] = json!(self.bypass_side);
         }
         // The controllers' modes, only with the feed train.
@@ -1266,9 +1210,7 @@ impl<P: Properties> Secondary<P> for Secondaries {
         if loaded {
             keys.push("turbine_load");
         }
-        // X4.3: with the valve law the at-power kinks are armed before the
-        // TRIP; a state saved before any located crossing has no sides.
-        let sided = tripped || (self.valve.is_some() && state.get("bypass_side").is_some());
+        let sided = tripped;
         if sided {
             keys.push("bypass_side");
         }
@@ -1721,18 +1663,11 @@ impl<P: Properties> Secondary<P> for Secondaries {
             out[i] = vl - g.crown_liquid_volume_m3;
             out[i + 1] = vl - g.pickup_liquid_volume_m3;
             i += 2;
-            // R12-B1: the bypass band's kinks, armed from the TRIP on;
-            // X4.3: the at-power band's before it.
-            match self.armed_band() {
-                Some((lo, hi)) => {
-                    out[i] = p - lo;
-                    out[i + 1] = p - hi;
-                }
-                None => {
-                    out[i] = DISARMED;
-                    out[i + 1] = DISARMED;
-                }
-            }
+            // R12-B1: the bypass band's kinks, armed from the TRIP on.
+            let armed = self.trip_s.is_some();
+            let (p0, w) = (self.bypass.no_load_pressure_pa, self.bypass.band_width_pa);
+            out[i] = if armed { p - p0 } else { DISARMED };
+            out[i + 1] = if armed { p - (p0 + w) } else { DISARMED };
             i += BYPASS_ROOTS;
         }
         // The NR1 lag's span edges, armed in AUTO: leaving the span
