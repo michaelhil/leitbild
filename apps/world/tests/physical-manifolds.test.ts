@@ -1,4 +1,4 @@
-import {test,expect} from 'bun:test'
+import {afterAll,beforeAll,describe,test,expect} from 'bun:test'
 import {resolvePhysicalDesign,pwrConnectedUnitPhysicalDesignRef,pwrConnectedCampusPhysicalDesignRef,pwrManifoldUnitPhysicalDesignRef,pwrManifoldCampusPhysicalDesignRef} from '../src/packs/physical-layout/design.ts'
 import {pwrManifoldInstallations,pwrTurbinePhysicalFittings,createPwrManifoldUnitArtifacts,createPwrManifoldCampusArtifacts} from '../src/packs/physical-layout/authoring/pwr-manifolds.ts'
 import {compilePhysicalObjects,compilePhysicalScene} from '../src/packs/physical-layout/native/drafting/compile-scene.ts'
@@ -77,15 +77,22 @@ test('campus civil correction retains unrelated geometry and both exact sources 
  expect(JSON.stringify(createPwrManifoldCampusArtifacts().source)).toBe(JSON.stringify(site.source))
 },30_000)
 
-test('every actual R6 unit floor and turbine inspection scope prepares its full utility geometry without invalid cut topology',()=>{
- const scene=compilePhysicalScene('inspection-proof',{...current,owner:{objectId:'owner'},placement:{anchor:[0,0],bearing:0}}),base={...defaultPhysicalSceneView(scene.levels),mode:'3d' as const,hiddenLayerIds:[]}
- for(const levelId of['all',...scene.levels.map(level=>level.id)]){
-  const prepared=preparePhysicalGeometry(scene,{...base,levelId},`unit/${levelId}`)
+describe('actual R6 unit floors and turbine scopes prepare full utility geometry without invalid cut topology',()=>{
+ let scene:ReturnType<typeof compilePhysicalScene>|undefined
+ beforeAll(()=>{
+  scene=compilePhysicalScene('inspection-proof',{...current,owner:{objectId:'owner'},placement:{anchor:[0,0],bearing:0}})
+  expect(scene.levels.map(level=>level.id)).toEqual(source.levels.map(level=>level.id))
+ },30_000)
+ afterAll(()=>{scene=undefined})
+ for(const levelId of['all',...source.levels.map(level=>level.id)])test(`unit floor ${levelId}`,()=>{
+  if(!scene)throw Error('Expected prepared exact R6 scene')
+  const prepared=preparePhysicalGeometry(scene,{...defaultPhysicalSceneView(scene.levels),mode:'3d',hiddenLayerIds:[],levelId},`unit/${levelId}`)
   expect(prepared.meshes.some(mesh=>mesh.object.kind==='equipment')).toBe(true)
   for(const mesh of prepared.meshes.filter(mesh=>mesh.object.id.startsWith('connection/')))expect(mesh.object.subjectIds).toHaveLength(1)
- }
- for(const levelId of['all','lower','operating']){
-  const prepared=preparePhysicalGeometry(scene,{...base,levelId,scopeId:'area/turbine-island'},`turbine/${levelId}`)
+ },30_000)
+ for(const levelId of['all','lower','operating'])test(`turbine-island scope floor ${levelId}`,()=>{
+  if(!scene)throw Error('Expected prepared exact R6 scene')
+  const prepared=preparePhysicalGeometry(scene,{...defaultPhysicalSceneView(scene.levels),mode:'3d',hiddenLayerIds:[],levelId,scopeId:'area/turbine-island'},`turbine/${levelId}`)
   expect(prepared.meshes.some(mesh=>mesh.object.kind==='equipment')).toBe(true)
- }
-},30_000)
+ },30_000)
+})
