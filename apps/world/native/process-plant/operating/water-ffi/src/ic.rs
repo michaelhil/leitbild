@@ -1120,6 +1120,73 @@ fn bank_seated<P: Properties + WaterProperties>(joined: &Joined<P>) -> Result<bo
 mod tests {
     use super::derivatives_at_start;
 
+    /// PROC T1–T3: each electrical report reads its own field of the
+    /// routing's reports (AC.B on reserve after a transfer, the unit source
+    /// lost, AC.A's reserve incoming still travelling).
+    #[test]
+    fn electrical_reports_read_the_routing() {
+        use super::routing_state;
+        use leitbild_operating_plant::electrical::bus::{
+            BusReport, Contact, IncomingReport, Reports, Source, SourceReport,
+        };
+        use leitbild_operating_plant::ic::packet::{ElectricalSource as E, ReportSource as R};
+        let source = |s, energized, qualified| SourceReport {
+            source: s,
+            energized,
+            voltage_pu: 1.,
+            frequency_hz: 50.,
+            qualified,
+        };
+        let incoming = |bus: &str, s, contact, travel_complete| IncomingReport {
+            bus: bus.into(),
+            source: s,
+            contact,
+            travel_complete,
+        };
+        let r = Reports {
+            buses: vec![
+                BusReport {
+                    name: "AC.A".into(),
+                    available: false,
+                    fed_from: None,
+                },
+                BusReport {
+                    name: "AC.B".into(),
+                    available: true,
+                    fed_from: Some(Source::Reserve),
+                },
+            ],
+            sources: [
+                source(Source::Unit, false, false),
+                source(Source::Reserve, true, true),
+            ],
+            incoming: vec![
+                incoming("AC.A", Source::Unit, Contact::Open, true),
+                incoming("AC.A", Source::Reserve, Contact::Open, false),
+                incoming("AC.B", Source::Unit, Contact::Open, true),
+                incoming("AC.B", Source::Reserve, Contact::Closed, true),
+            ],
+        };
+        let bus = |b: &str| R::BusAvailable { bus: b.into() };
+        assert!(!routing_state(&r, &bus("AC.A")).unwrap());
+        assert!(routing_state(&r, &bus("AC.B")).unwrap());
+        assert!(!routing_state(&r, &R::SourceAvailable { source: E::Unit }).unwrap());
+        assert!(routing_state(&r, &R::SourceQualified { source: E::Reserve }).unwrap());
+        let closed = |b: &str, s| R::IncomingClosed {
+            bus: b.into(),
+            source: s,
+        };
+        assert!(routing_state(&r, &closed("AC.B", E::Reserve)).unwrap());
+        assert!(!routing_state(&r, &closed("AC.A", E::Unit)).unwrap());
+        let done = R::IncomingTravelComplete {
+            bus: "AC.A".into(),
+            source: E::Reserve,
+        };
+        assert!(!routing_state(&r, &done).unwrap());
+        assert!(routing_state(&r, &bus("AC.C")).is_err());
+        assert!(routing_state(&r, &R::BankInserted).is_err());
+    }
+
     #[test]
     fn an_interface_outside_its_span_gives_the_bound_direction() {
         use super::{Overrange, overrange_of};
