@@ -186,6 +186,9 @@ pub struct RodClient {
     /// decides nothing and the drive is held at rest until released.
     pub hold: bool,
     pub in_force_m_s: f64,
+    /// R4-ROD-DELAY (judgement, lead 1 Nov): the rate decided at the last
+    /// frame, which acts one frame later (sample at k, act at k + 1).
+    pub decided_m_s: Option<f64>,
     pub scratch: Vec<f64>,
     /// Per frame: the delivered evidence and the decision.
     pub series: Vec<Value>,
@@ -275,12 +278,17 @@ impl<S: JoinedSystem> Client<S> for RodClient {
             }
         }
         let decision: Option<Decision> = if self.engaged && !self.hold {
+            // R4-ROD-DELAY (judgement, lead 1 Nov: rod control's signal
+            // processing lags far more than one 0.1 s frame): the rate
+            // decided at frame k-1 acts now; this frame's decision acts at
+            // k+1, so the integrator knows one frame ahead where it changes.
+            let acting = self.decided_m_s;
             let d = self
                 .controller
                 .frame(h, &evidence)
                 .map_err(|e| format!("{e:?}"))?;
-            if d.rate_m_s != self.in_force_m_s {
-                let rate = d.rate_m_s;
+            self.decided_m_s = Some(d.rate_m_s);
+            if let Some(rate) = acting.filter(|r| *r != self.in_force_m_s) {
                 out.push(Change {
                     due_s: t,
                     class: self.class,
@@ -301,6 +309,7 @@ impl<S: JoinedSystem> Client<S> for RodClient {
             Some(d)
         } else {
             self.in_force_m_s = 0.;
+            self.decided_m_s = None;
             None
         };
         self.series.push(
@@ -310,6 +319,16 @@ impl<S: JoinedSystem> Client<S> for RodClient {
         Ok(out)
     }
     fn stop_at_frame(&self, _k: u64) -> bool {
+        // R4-ROD-DELAY: frame k's rate is the one decided at k-1.
+        // TURB's fold: the bank HOLD zeroes a rate in force at its own
+        // frame (an operator command, not delayed).
+        self.engaged
+            && self.class == Class::S
+            && (self.decided_m_s.is_some_and(|r| r != self.in_force_m_s)
+                || (self.hold && self.in_force_m_s != 0.))
+    }
+    fn stop_by_next_frame(&self, _k: u64) -> bool {
+        // The decision at frame k acts at k+1.
         self.engaged && self.class == Class::S
     }
 }
@@ -328,6 +347,8 @@ impl RodClient {
     /// acted on at the next frame.
     pub fn set_hold(&mut self, hold: bool) {
         self.hold = hold;
+        // TURB's fold of R4-ROD-DELAY: a stale AUTO rate never acts at release.
+        self.decided_m_s = None;
     }
 }
 
@@ -381,6 +402,7 @@ pub fn commission<S: JoinedSystem<Properties = If97>>(
         engaged: true,
         hold: false,
         in_force_m_s: 0.,
+        decided_m_s: None,
         scratch: vec![0.; y.len()],
         series: Vec::new(),
         schedule: Vec::new(),

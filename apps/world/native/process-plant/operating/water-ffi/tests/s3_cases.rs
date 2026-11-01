@@ -1493,6 +1493,11 @@ struct CaseConfig {
     /// (`LD01_ROD_CONTROL_WIKI`). C2 with both is the stuck-cluster case
     /// C2S (`ld01-r4-c2-stuck-case`).
     stuck: bool,
+    /// R4-COST-UNIT (PERF2, lead 1 Nov): the driver's residual-jump
+    /// diagnostic at class-S stops (`LD01_S3_JUMP_DIAGNOSTIC` on | off,
+    /// unset off). It assembles a Jacobian and an LU at every S stop, which
+    /// the unit never does, so a cost drive runs without it.
+    jump_diagnostic: bool,
 }
 impl CaseConfig {
     /// `LD01_S3_WEIGHTS` (stock | grouped), `LD01_S3_FIRST_STEP` (declared
@@ -1502,12 +1507,15 @@ impl CaseConfig {
     fn from_env() -> Result<Self, String> {
         use leitbild_operating_water::{
             frame::MatrixRebuild,
-            unit::profile::{Solver, Weights, parse_first_step},
+            unit::profile::{Solver, Weights, parse_first_step, parse_stepping},
         };
         let var = |name: &str, unset: &str| std::env::var(name).unwrap_or_else(|_| unset.into());
         let solver = Solver {
             weights: Weights::parse(&var("LD01_S3_WEIGHTS", "stock"))?,
             first_step: parse_first_step(&var("LD01_S3_FIRST_STEP", "declared"))?,
+            // R4-FREE-STEPS: the composition's stepping (unset: free, the
+            // unit's default).
+            stepping: parse_stepping(&var("LD01_S3_STEPPING", "free"))?,
         };
         // The r4 baseline (BASELINE-r4.md): stock matrix management unless
         // MR-1 is asked.
@@ -1520,6 +1528,11 @@ impl CaseConfig {
             "on" => true,
             "off" => false,
             v => return Err(format!("LD01_S3_RC1={v}: on or off")),
+        };
+        let jump_diagnostic = match var("LD01_S3_JUMP_DIAGNOSTIC", "off").as_str() {
+            "on" => true,
+            "off" => false,
+            v => return Err(format!("LD01_S3_JUMP_DIAGNOSTIC={v}: on or off")),
         };
         let rod_auto = match var("LD01_ROD_AUTO", "off").as_str() {
             "on" => true,
@@ -1548,10 +1561,11 @@ impl CaseConfig {
             turbine_governor,
             single,
             stuck,
+            jump_diagnostic,
         })
     }
     fn json(&self) -> Value {
-        json!({"weights": self.solver.weights, "first_step": self.solver.first_step, "matrix_rebuild": format!("{:?}", self.matrix_rebuild), "ramp_cap": self.ramp_cap, "rod_auto": self.rod_auto, "turbine_governor": self.turbine_governor, "single": self.single, "stuck": self.stuck})
+        json!({"weights": self.solver.weights, "first_step": self.solver.first_step, "matrix_rebuild": format!("{:?}", self.matrix_rebuild), "ramp_cap": self.ramp_cap, "rod_auto": self.rod_auto, "turbine_governor": self.turbine_governor, "single": self.single, "stuck": self.stuck, "stepping": self.solver.stepping, "jump_diagnostic": self.jump_diagnostic})
     }
 }
 
@@ -1782,7 +1796,11 @@ fn drive(
         &section,
         plant::Config {
             field: field_parameters.as_ref(),
-            diagnostic: Diagnostic::Jump,
+            diagnostic: if ask.config.jump_diagnostic {
+                Diagnostic::Jump
+            } else {
+                Diagnostic::None
+            },
             matrix_rebuild: ask.config.matrix_rebuild,
             clock: process_cpu_s,
         },
@@ -2131,6 +2149,22 @@ fn drive(
         Vec::new()
     };
     bounds.extend(exchanges.iter().map(|(b, _)| *b));
+    // R4-FREE-STEPS: under free stepping only these bounds (the event, the
+    // window's end, the exchanges' interval ends and the run's end) are
+    // exact stops; the frame chunks below are observation marks.
+    if ask.config.solver.stepping == leitbild_operating_water::frame::Stepping::Free {
+        // C4 serves no 1.0 case and reads its frames at exact chunk stops.
+        assert!(
+            case != Case::C4,
+            "C4 refuses free stepping: compose it with LD01_S3_STEPPING=frame-stops"
+        );
+        assert_eq!(driver.stepping, leitbild_operating_water::frame::Stepping::Free);
+        for b in bounds.iter().filter(|b| **b > t0 && **b <= until) {
+            driver
+                .declare_stop(*b)
+                .unwrap_or_else(|e| panic!("the case's stops: {e}"));
+        }
+    }
     let period = frame.period_s();
     let first = (t0 / period).floor() as i64 + 1;
     let last = (until / period).ceil() as i64;

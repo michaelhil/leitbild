@@ -1512,6 +1512,153 @@ fn an_owner_time_event_on_a_frame_instant_is_one_instant() {
     }
 }
 
+/// TEST-ONLY: reads every frame and never asks a stop (R4-FREE-STEPS).
+struct FreeProbe {
+    n: usize,
+    seen: Vec<(u64, f64)>,
+}
+impl leitbild_operating_water::frame::Client<Integrated<If97>> for FreeProbe {
+    fn name(&self) -> &str {
+        "TEST-ONLY free frame probe"
+    }
+    fn advance(
+        &mut self,
+        _: &dyn leitbild_operating_water::frame::Dense,
+        _: f64,
+        _: f64,
+    ) -> Result<(), String> {
+        Ok(())
+    }
+    fn frame(
+        &mut self,
+        k: u64,
+        t: f64,
+        dense: &dyn leitbild_operating_water::frame::Dense,
+    ) -> Result<Vec<leitbild_operating_water::frame::Change<Integrated<If97>>>, String> {
+        let mut y = vec![0.; self.n];
+        dense.derivative(t, 0, &mut y)?;
+        self.seen.push((k, t));
+        Ok(Vec::new())
+    }
+}
+
+/// R4-FREE-STEPS (lead 1 Nov, input latency): under free stepping a run
+/// ends with the integrator possibly past its bound. An operator trip
+/// declared at that bound (the next frame boundary when it arrives) acts at
+/// exactly that boundary: the driver restarts there from the last step's
+/// dense output, and the R instant names the command and the integrator's
+/// time it rolled back from.
+#[test]
+#[ignore = "requires the joined packet, the wiki, IF97 and stock IDA/KLU"]
+fn an_operator_trip_behind_a_free_step_acts_at_its_frame_boundary() {
+    use leitbild_operating_plant::joined::block::Command;
+    use leitbild_operating_water::frame::{
+        Class, Client, Diagnostic, Driver, Frame, Setup, Stepping,
+    };
+    let (
+        Started {
+            joined,
+            mut y,
+            mut yp,
+            ids,
+            network_ids,
+            atol,
+            rtol,
+            structure,
+            analyses,
+            ..
+        },
+        derived,
+    ) = started_s3_composition(&common::spine()).expect("the S3 composition");
+    let restart = Restart {
+        newton_coefficient: NEWTON_COEFFICIENT,
+        delta_cj_lsetup: DELTA_CJ_LSETUP,
+        first_step_s: FIRST_STEP_S,
+        start_bound: 1e-12,
+        start_passes: 2,
+        transaction_passes: 12,
+        bound_placement: 1e-12,
+    };
+    let nonnegative = joined.network.nonnegative_stocks();
+    let mut ida = Ida::new(
+        Integrated::from_blocks(joined, structure, analyses).expect("integrable"),
+        Initial {
+            time: 0.,
+            y: &y,
+            yp: &yp,
+            differential: &ids,
+            absolute_tolerance: &atol,
+            relative_tolerance: rtol,
+        },
+    )
+    .expect("stock IDA");
+    ida.set_max_order(2).unwrap();
+    ida.constrain_nonnegative(&nonnegative).unwrap();
+    restart.configure(&mut ida).unwrap();
+    let frame = Frame::new(0.1).unwrap();
+    let mut driver = Driver::new(frame, Diagnostic::None, process_cpu_s, 0.).unwrap();
+    driver.matrix_rebuild = leitbild_operating_water::frame::MatrixRebuild::Stock;
+    driver.stepping = Stepping::Free;
+    let last = 40;
+    driver.declare_stop(frame.instant(last)).unwrap();
+    let setup = Setup {
+        network_ids: &network_ids,
+        absolute: &atol,
+        relative: rtol,
+        restart,
+        derived: &derived,
+    };
+    let mut probe = FreeProbe {
+        n: y.len(),
+        seen: Vec::new(),
+    };
+    {
+        let mut clients: Vec<&mut dyn Client<Integrated<If97>>> = vec![&mut probe];
+        driver.start(&mut clients, 0., &y, &yp).unwrap();
+    }
+    let mut t = 0.;
+    let mut boundary: Option<(f64, f64)> = None;
+    for k in 1..=last {
+        let bound = frame.instant(k);
+        let mut clients: Vec<&mut dyn Client<Integrated<If97>>> = vec![&mut probe];
+        driver
+            .run(&mut ida, t, bound, &mut y, &mut yp, &mut clients, &setup)
+            .unwrap_or_else(|e| panic!("run to {bound} s: {e}"));
+        t = bound;
+        if boundary.is_none() && driver.integrator_s() > bound {
+            // The trip arrives now: it acts at this frame boundary, which
+            // the integrator has already passed.
+            boundary = Some((bound, driver.integrator_s()));
+            driver.command(bound, Command::TurbineTripAcquired).unwrap();
+        }
+    }
+    let (at, integrator) = boundary.expect("a free step ran past a frame boundary");
+    let trip: Vec<&Value> = driver
+        .log
+        .iter()
+        .filter(|e| e["kinds"].to_string().contains("TurbineTripAcquired"))
+        .collect();
+    println!(
+        "{}",
+        serde_json::json!({"boundary_s": at, "integrator_s": integrator, "trip": trip,
+            "r": driver.counts.total(Class::R), "frames": probe.seen.len()})
+    );
+    assert_eq!(trip.len(), 1, "one trip instant: {trip:?}");
+    assert_eq!(trip[0]["class"], "R");
+    assert_eq!(
+        trip[0]["t_s"].as_f64().map(f64::to_bits),
+        Some(at.to_bits()),
+        "the trip acts at exactly its frame boundary"
+    );
+    assert_eq!(
+        trip[0]["rolled_back_from_s"].as_f64().map(f64::to_bits),
+        Some(integrator.to_bits()),
+        "from the last step's dense output, behind the integrator"
+    );
+    let ks: Vec<u64> = probe.seen.iter().map(|(k, _)| *k).collect();
+    assert_eq!(ks, (0..=last).collect::<Vec<u64>>(), "every frame observed exactly once");
+}
+
 /// The block Jacobian at `(0, y, 0)` against the colored one: the worst
 /// entry difference over its column's scale (a colored entry outside the
 /// block pattern counts whole), where it is, and the block structure with
