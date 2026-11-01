@@ -22,7 +22,7 @@ const sum=(v:readonly number[])=>v.reduce((a,b)=>a+b,0)
 const overlap=(a:number,b:number,c:number,d:number)=>Math.max(0,Math.min(b,d)-Math.max(a,c))
 const hash=(s:string|Uint8Array)=>createHash('sha256').update(s).digest('hex')
 const hotSchema=z.object({primaryPressure_Pa:z.number().min(1e5).max(16e6),achievedRodTravel_m:z.number().finite().nonnegative(),
-  boronReference_ppmEq:z.number().finite().nonnegative(),gapAccommodationReferenceTemperature_K:z.number().positive(),
+  boronReference_ppmEq:z.number().finite().nonnegative(),preparedBoron_ppmEq:z.number().finite().nonnegative(),gapAccommodationReferenceTemperature_K:z.number().positive(),
   sgSecondaryPressure_Pa:z.number().min(1e5).max(16e6),initialLoopMassflow_kg_s:z.literal(0),sgMetalSegments:z.literal(4)}).strict()
 const positiveNumber=z.number().finite().positive(),finiteNumber=z.number().finite()
 const record=z.record(z.string(),z.unknown())
@@ -471,7 +471,9 @@ export async function prepareOperatingFluid(directory:string,if97Directory:strin
       endpoints=await query([{branch:'sat-liquid',p:reference.sgSecondaryPressure_Pa,T:0},{branch:'sat-vapor',p:reference.sgSecondaryPressure_Pa,T:0}]),
       regions=geometry.regions.map(r=>{const q=points.find(q=>q.T===r.temperature_K)!,chart=fixedVolumeChart(r.volume_m3,q);return {...r,pressure_Pa:q.p,water:q,...chart,
         liquidMass_kg:chart.mass_kg,steamMass_kg:0,airMass_kg:0,nitrogenMass_kg:0,
-        absorberTracer_kgEq:chart.mass_kg*reference.boronReference_ppmEq/1e6}}),
+        // R4-NUC-CRITICAL-BORON: the coolant carries the prepared (critical)
+        // boron; the feedback reference keeps boronReference_ppmEq.
+        absorberTracer_kgEq:chart.mass_kg*reference.preparedBoron_ppmEq/1e6}}),
       sg=saturatedVolumeChart(balance.secondaryVolume_m3,balance.secondaryLiquidVolume_m3,endpoints[0]!,endpoints[1]!),
       referenceFlow=sourceHeat_W/(points[2]!.h-points[0]!.h),A=sum(regions.map(r=>r.massPAtEnergy_kg_Pa)),
       resolved:ResolvedSolids=solids.kind==='steady'?solids:{kind:'provisional',coreSeed_K:physical.outlet_K,sgMetalSeed_K:(physical.inlet_K+sg.temperature_K)/2},
