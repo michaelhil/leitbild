@@ -1013,8 +1013,19 @@ fn trip_release_seat_and_the_stuck_cluster_follow_the_modes() {
         "seat reaction root {}",
         roots[0]
     );
-    // A second trip command is refused.
-    assert!(Rods::<Liquid>::command(&mut b, 2., Command::TurbineTrip).is_err());
+    // WORLD2's E0 (lead, 1 Nov): a further trip command with the circuit
+    // open or opening is acknowledged and changes nothing.
+    let before = Rods::<Liquid>::discrete_state(&b);
+    for (t, c) in [
+        (2., Command::TurbineTrip),
+        (2.1, Command::ManualReactorTrip),
+        (2.2, Command::HoldingLoss),
+    ] {
+        let tx = Rods::<Liquid>::command(&mut b, t, c).unwrap();
+        assert_eq!(tx.receipt["acknowledged"], true, "{c:?}");
+        assert!(tx.deposits.is_empty());
+        assert_eq!(Rods::<Liquid>::discrete_state(&b), before, "{c:?} changes no state");
+    }
 }
 
 #[test]
