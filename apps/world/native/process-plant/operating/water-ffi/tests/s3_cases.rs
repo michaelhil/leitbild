@@ -1446,6 +1446,10 @@ struct Driven {
     /// window's end or rule I's end, whichever first: `(path, sha256,
     /// which)`.
     declared_end_state: Option<(String, String, &'static str)>,
+    /// R4-NUC-SOURCE-ATOL's basis (record only): the state at the first
+    /// frame stop at or after `LD01_S3_STATE_AT_AFTER_ZERO_S`, written to
+    /// `LD01_S3_STATE_AT_OUT` (never overwritten), as (path, sha256, t_s).
+    state_at: Option<(String, String, f64)>,
     end_after_zero: f64,
     /// C4: rule K's states (1 s after each phase change, the declared end)
     /// and the first birth after zero.
@@ -1531,6 +1535,9 @@ impl CaseConfig {
             // configuration value as stepping is (unset: the IF97
             // reference), selected by the composition and recorded.
             water: leitbild_operating_water::WaterMethod::parse(&var("LD01_S3_WATER", "sbtl"))?,
+            // R4-NUC-SOURCE-ATOL: derived (the composition of record) or
+            // stock (unset: derived).
+            source_atol: leitbild_operating_water::unit::profile::SourceAtol::parse(&var("LD01_S3_SOURCE_ATOL", "derived"))?,
         };
         // The r4 baseline (BASELINE-r4.md): stock matrix management unless
         // MR-1 is asked.
@@ -2217,6 +2224,11 @@ fn drive(
     let operator_trip = operator_trip_delay(case, spec).unwrap();
     let mut operator_trip_record = Value::Null;
     let mut declared_end_state: Option<(String, String, &'static str)> = None;
+    let state_at_request: Option<(f64, String)> = std::env::var("LD01_S3_STATE_AT_AFTER_ZERO_S").ok().map(|v| {
+        (v.parse::<f64>().expect("LD01_S3_STATE_AT_AFTER_ZERO_S"),
+            std::env::var("LD01_S3_STATE_AT_OUT").expect("LD01_S3_STATE_AT_AFTER_ZERO_S needs LD01_S3_STATE_AT_OUT"))
+    });
+    let mut state_at: Option<(String, String, f64)> = None;
     // S3-D52: the last frame stop that rule I admits, kept while the window
     // runs, for a rule-I end before the window's end (A4 admits no state
     // after rule I's exit).
@@ -2642,6 +2654,25 @@ fn drive(
                     last["removed_at_s"] = json!(b);
                     last["removed_after_zero_s"] = json!(b - zero);
                 }
+            }
+            // R4-NUC-SOURCE-ATOL's basis state (record only): the solver's
+            // own state at the first frame stop at or after the request.
+            if r.is_ok()
+                && state_at.is_none()
+                && let Some((after, path)) = state_at_request.as_ref()
+                && *b >= zero + after - 1e-9
+            {
+                let snapshot = ida.system().system_discrete_state();
+                let s = json!({"t_s": *b, "packet": state["packet"], "packet_sha256": state["packet_sha256"],
+                    "y": &y[..n], "yp": &yp[..n], "y_bits": y[..n].iter().map(|x| format!("{:016x}", x.to_bits())).collect::<Vec<_>>(),
+                    "appended": {"owner": "electrical slice (ELEC)", "y": &y[n..], "yp": &yp[n..]},
+                    "discrete_state": snapshot, "pzr_control": {"in_force_w": control.in_force_w},
+                    "composition": composition["composition"],
+                    "from": format!("{} at {} s after zero (R4-NUC-SOURCE-ATOL basis, record only)", case.key(), *b - zero)});
+                let bytes = serde_json::to_vec(&s).unwrap();
+                assert!(!std::path::Path::new(path).exists(), "states are never overwritten");
+                std::fs::write(path, &bytes).unwrap();
+                state_at = Some((path.clone(), leitbild_operating_plant::digest::sha256(&bytes), *b));
             }
             // Rule K's post-event state (S3-D52): the declared part's end,
             // the window's end or rule I's end, whichever first, the
@@ -3162,6 +3193,7 @@ fn drive(
             "frames": p.iter().map(|(t, r, v)| json!([t, r, v])).collect::<Vec<_>>()})),
         "feed_leg_temperatures_k": recorder.legs.as_ref().map(|l| json!({"columns": ["HOT.A", "HOT.B", "COLD.A", "COLD.B"], "rule": "mass-weighted cells per leg, at every frame's left limit", "rows": l.rows})),
         "repeat_record": repeat_record,
+        "state_at": state_at,
         "nc_record": recorder.nc.as_ref().map(|n| n.receipt()),
         "stuck_cluster": stuck_record,
     });
@@ -3243,6 +3275,7 @@ fn drive(
             .collect(),
         repeat_record,
         declared_end_state,
+        state_at,
         end_after_zero: end - zero,
         c4_states: c4.states,
         first_birth_after_zero: c4.first_birth.map(|t| t - zero),
@@ -4490,6 +4523,7 @@ fn s3_case_run() {
             );
         }
         k["declared_end_state"] = json!(run.declared_end_state);
+        k["state_at"] = json!(run.state_at);
         k["post_event"] = json!(match case {
             Case::C1 => "not applicable: C1 has no event",
             Case::C2 | Case::C3 | Case::C5 =>

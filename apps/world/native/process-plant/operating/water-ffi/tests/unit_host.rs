@@ -199,7 +199,9 @@ fn a_restored_copy_continues_bitwise_and_the_protocol_refuses_explicitly() {
             "elec": env("ELEC_PACKET"),
         },
         "state": env("LD01_S3_STATE"),
-        "solver": {"weights": "stock", "first_step": "declared", "stepping": stepping, "water": water},
+        "solver": {"weights": "stock", "first_step": "declared", "stepping": stepping, "water": water,
+            // R4-NUC-SOURCE-ATOL: LD01_S3_SOURCE_ATOL (unset: derived), a required LOAD key.
+            "source_atol": std::env::var("LD01_S3_SOURCE_ATOL").unwrap_or_else(|_| "derived".into())},
     });
     let started = Instant::now();
     let mut refusals = serde_json::Map::new();
