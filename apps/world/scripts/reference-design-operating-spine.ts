@@ -10,7 +10,7 @@ import { parseTransferThermal } from './reference-design-fuel-transfer-thermal'
 import { parseOperatingFuelGap } from './reference-design-fuel-cooling'
 import { prepareOperatingHot } from './reference-design-operating-hot'
 import { compileOperatingThermal, parseOperatingThermal } from './reference-design-operating-thermal'
-import { fluidTree, preparePressureContinuity, steadySolidsSchema, type SolidPreparation, type SteadySolids } from './reference-design-operating-fluid'
+import { fluidTree, if97Preparation, parsePreparationWater, preparePressureContinuity, steadySolidsSchema, type PreparationWater, type SolidPreparation, type SteadySolids } from './reference-design-operating-fluid'
 import { loadOperatingHydraulics, operatingMainInertance, type Section } from './reference-design-operating-hydraulics'
 import { prepareOperatingPzr, type compileOperatingPzr } from './reference-design-operating-pzr'
 import { prepareOperatingSecondary } from './reference-design-operating-sg'
@@ -539,10 +539,10 @@ export function compileOperatingPowerBasis(docs: Readonly<Record<string, string>
 /** One compile of the spine at the given solid preparation. Only
  * `prepareOperatingSpine` calls it: once at the stock-IDA settle's seed and
  * once at the steady solid state the settle returns. */
-async function compileOperatingSpinePass(wiki: string, if97: string, solids: SolidPreparation) {
+async function compileOperatingSpinePass(wiki: string, if97: string, solids: SolidPreparation, water: PreparationWater) {
   const base = join(wiki, 'world/packs/process-plant/reference-designs/ld-01'), read = (p: string) => Bun.file(join(base, p)).text()
   const [hot, fuelDoc, handlingDoc, controlDoc, thermalDoc, gapDoc, historyDoc, kineticsDoc] = await Promise.all([
-    prepareOperatingHot(wiki, if97, solids), read('systems/reactor/fuel-construction.md'), read('systems/reactor/fuel-handling-and-pool.md'),
+    prepareOperatingHot(wiki, if97, solids, water), read('systems/reactor/fuel-construction.md'), read('systems/reactor/fuel-handling-and-pool.md'),
     read('systems/reactor/control-absorber-and-guide-water.md'), read('model/operating-thermal.md'), read('systems/reactor/phase-dependent-heat-transfer.md'),
     read(powerBasisSources.basis.page), read(powerBasisSources.check.page)])
   const originalThermal = compileOperatingThermal(parseFuelConstruction(fuelDoc), parseFuelHandling(handlingDoc), parseControlAbsorber(controlDoc),
@@ -683,10 +683,10 @@ export function settleInputChanges(seed: unknown, steady: unknown, owned: readon
 /** Two passes (G18): the seed compile is the stock-IDA settle's input, the
  * steady compile is emitted with the settle's provenance. A changed settle
  * input between the passes refuses; the seed packet is never returned. */
-export async function prepareOperatingSpine(wiki: string, if97: string, settle: SteadySolidsSettle) {
-  const seed = await compileOperatingSpinePass(wiki, if97, { kind: 'provisional' }),
+export async function prepareOperatingSpine(wiki: string, if97: string, settle: SteadySolidsSettle, water: PreparationWater = if97Preparation) {
+  const seed = await compileOperatingSpinePass(wiki, if97, { kind: 'provisional' }, water),
     { steady, provenance } = await settle(seed),
-    { packet } = await compileOperatingSpinePass(wiki, if97, { kind: 'steady', steady }),
+    { packet } = await compileOperatingSpinePass(wiki, if97, { kind: 'steady', steady }, water),
     changed = settleInputChanges(seed.packet, packet)
   if (changed.length) throw Error(`The steady solid state was settled at different inputs (${changed.length}): ` + changed.slice(0, 8).join(', '))
   return { ...packet, provenance: { ...packet.provenance, steadySolids: provenance } }
@@ -699,10 +699,11 @@ export async function prepareOperatingSpine(wiki: string, if97: string, settle: 
 export async function steadySolidsInput(seed: OperatingSpineSeed, wiki: string, sections: Readonly<Record<string, unknown>> = {}) {
   return JSON.stringify({ ...seed.packet, ...sections, secondary: await prepareOperatingSecondary(wiki), steady: seed.settleBasis })
 }
-export function nativeSteadySolids(executable: string, wiki: string): SteadySolidsSettle {
+export function nativeSteadySolids(executable: string, wiki: string, water: PreparationWater = if97Preparation): SteadySolidsSettle {
   return async (seed, sections) => {
     const input = await steadySolidsInput(seed, wiki, sections),
-      child = Bun.spawn([executable], { stdin: new Blob([input]), stdout: 'pipe', stderr: 'pipe' }),
+      // The settle runs on the preparation's water method (lead, 1 Nov).
+      child = Bun.spawn([executable, `--water=${water.method}`], { stdin: new Blob([input]), stdout: 'pipe', stderr: 'pipe' }),
       [output, error, status] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited])
     if (status !== 0) throw Error('The steady solids settle refused: ' + error.trim())
     const steady = steadySolidsSchema.parse(JSON.parse(output)), hash = (s: string | Uint8Array) => createHash('sha256').update(s).digest('hex')
@@ -716,7 +717,8 @@ export function nativeSteadySolids(executable: string, wiki: string): SteadySoli
 }
 
 if (import.meta.main) {
-  const [wiki, if97, settle] = Bun.argv.slice(2)
-  if (!wiki || !if97 || !settle || Bun.argv.length !== 5) throw Error('Usage: operating-spine <wiki root> <pinned IF97 directory> <prepare_steady_solids executable>')
-  console.log(JSON.stringify(await prepareOperatingSpine(wiki, if97, nativeSteadySolids(settle, wiki))))
+  const [wiki, if97, settle, waterArg] = Bun.argv.slice(2)
+  if (!wiki || !if97 || !settle || ![5, 6].includes(Bun.argv.length)) throw Error('Usage: operating-spine <wiki root> <pinned IF97 directory> <prepare_steady_solids executable> [--water=if97|--water=sbtl:<archive dir>]')
+  const water = waterArg ? parsePreparationWater(waterArg) : if97Preparation
+  console.log(JSON.stringify(await prepareOperatingSpine(wiki, if97, nativeSteadySolids(settle, wiki, water), water)))
 }

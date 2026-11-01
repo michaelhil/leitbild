@@ -1243,6 +1243,19 @@ fn ordered(hi: f64, lo: f64, what: &str) -> Result<(), Failure> {
 
 fn run() -> Result<Steady, Failure> {
     let started = cpu_seconds();
+    // The preparation's water method (lead, 1 Nov: a state is prepared on
+    // the method it runs on): `--water=if97` or `--water=sbtl`, passed by
+    // the packet compiler; without an argument, the IF97 reference.
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let water = match args.as_slice() {
+        [] => leitbild_operating_water::WaterMethod::If97,
+        [a] => match a.strip_prefix("--water=") {
+            Some(m) => leitbild_operating_water::WaterMethod::parse(m).map_err(Failure::from)?,
+            None => return Err(Failure::from(format!("prepare_steady_solids: unknown argument {a}"))),
+        },
+        _ => return Err(Failure::from("prepare_steady_solids: at most one argument, --water=<method>".to_string())),
+    };
+    leitbild_operating_water::select_water_method(water).map_err(Failure::from)?;
     let mut input = String::new();
     io::stdin().read_to_string(&mut input)?;
     let raw: serde_json::Value = serde_json::from_str(&input)?;
