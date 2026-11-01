@@ -1,26 +1,26 @@
 {
  "kind": "ld01-tier1-expectation",
  "platform": "macos-aarch64",
- "reason": "R4-NUC-RREF (PHYS/NUC, wiki d900991): the IC section recompiled with the SOURCE-range path for LD01.CORE.NI.SHUTDOWN (observation only)",
- "recorded_from": "/Users/hilde/Documents/ChatGPT/Leitbild-research/reference-designs/property-candidates/operating-joined-spine-s2/resume-2026-10-14/tiers/t1-343fd2d87-20261101T003158Z",
- "app": "343fd2d87",
+ "reason": "X4.5 geometry refit (FEED f4de13a45, wiki 54a078e): refit packets and states; trajectory moves",
+ "recorded_from": "/Users/hilde/Documents/ChatGPT/Leitbild-research/reference-designs/property-candidates/operating-joined-spine-s2/resume-2026-10-14/tiers/t1-71241de84-20261101T004351Z",
+ "app": "71241de84",
  "environment": {
-  "packet_sha256": "82a571a94fd74092b2d68b12214476cd0c56f998d505abf7876890f222cdb220",
-  "state_sha256": "2704291201556d0c894a53a7efb9075880833c2281769f9e9ac17e9227cb64d0",
+  "packet_sha256": "78ef4201bec262c0c52ec79e7f1fabee9e2791629a2f09a3070c100dbe874785",
+  "state_sha256": "8f9ea6d37de65babcb63cffb5189ff7ff0c0bf948572cd1d08e85cd284d19c3b",
   "elec_packet_sha256": "f91fc8e5929c78ceddbb7355dc12a0785292cae59725794f2d52306d1326e6f7",
-  "wiki_commit": "c5febc8",
+  "wiki_commit": "f9e6c0c",
   "water_lib_dir": "/Users/hilde/Documents/ChatGPT/Leitbild-research/reference-designs/property-candidates/operating-water-perf-alloc-1",
   "sundials_prefix": "/Users/hilde/Documents/ChatGPT/Leitbild-research/reference-designs/property-candidates/idas-klu-7.5.0/prefix"
  },
  "instruction_tolerance": 0.01,
  "spans": {
   "C2@0": {
-   "instructions": 6682942361,
-   "digest": "1edcebb6470c734181cdb1ccd0a2e7b43c1c21c0a0465dd23d7f862f5c8cd62e"
+   "instructions": 6753833975,
+   "digest": "c042f79094e7d0efba4a23ea7b6e20e5838255de616f947d94ac982ebe25b7d9"
   },
   "C2@2.5": {
-   "instructions": 17412716543,
-   "digest": "53370d99e2fbb9fdf2d366e421c91acdee39f8e9de7e21346a71d725c5224a36"
+   "instructions": 21450423597,
+   "digest": "9f8703a3704027c4bd93a9cd5b553f526b02764107669cd0c7e76c6c9bf8514d"
   }
  }
 }
