@@ -1445,6 +1445,11 @@ struct CaseConfig {
     /// (`LD01_ROD_AUTO` on | off, unset off; the block from
     /// `LD01_ROD_CONTROL_WIKI`).
     rod_auto: bool,
+    /// R4-COST-UNIT (PERF2, lead 1 Nov): the driver's residual-jump
+    /// diagnostic at class-S stops (`LD01_S3_JUMP_DIAGNOSTIC` on | off,
+    /// unset off). It assembles a Jacobian and an LU at every S stop, which
+    /// the unit never does, so a cost drive runs without it.
+    jump_diagnostic: bool,
 }
 impl CaseConfig {
     /// `LD01_S3_WEIGHTS` (stock | grouped), `LD01_S3_FIRST_STEP` (declared
@@ -1476,6 +1481,11 @@ impl CaseConfig {
             "off" => false,
             v => return Err(format!("LD01_S3_RC1={v}: on or off")),
         };
+        let jump_diagnostic = match var("LD01_S3_JUMP_DIAGNOSTIC", "off").as_str() {
+            "on" => true,
+            "off" => false,
+            v => return Err(format!("LD01_S3_JUMP_DIAGNOSTIC={v}: on or off")),
+        };
         let rod_auto = match var("LD01_ROD_AUTO", "off").as_str() {
             "on" => true,
             "off" => false,
@@ -1486,10 +1496,11 @@ impl CaseConfig {
             matrix_rebuild,
             ramp_cap,
             rod_auto,
+            jump_diagnostic,
         })
     }
     fn json(&self) -> Value {
-        json!({"weights": self.solver.weights, "first_step": self.solver.first_step, "matrix_rebuild": format!("{:?}", self.matrix_rebuild), "ramp_cap": self.ramp_cap, "rod_auto": self.rod_auto, "stepping": self.solver.stepping})
+        json!({"weights": self.solver.weights, "first_step": self.solver.first_step, "matrix_rebuild": format!("{:?}", self.matrix_rebuild), "ramp_cap": self.ramp_cap, "rod_auto": self.rod_auto, "stepping": self.solver.stepping, "jump_diagnostic": self.jump_diagnostic})
     }
 }
 
@@ -1672,7 +1683,11 @@ fn drive(
         &section,
         plant::Config {
             field: field_parameters.as_ref(),
-            diagnostic: Diagnostic::Jump,
+            diagnostic: if ask.config.jump_diagnostic {
+                Diagnostic::Jump
+            } else {
+                Diagnostic::None
+            },
             matrix_rebuild: ask.config.matrix_rebuild,
             clock: process_cpu_s,
         },

@@ -15,6 +15,15 @@
  *   else the first frame). Times are reported after it.
  * - worst_0_5_s: the highest mean rate over 5 consecutive frame intervals
  *   anywhere in the trace (also worst frame and worst 2.5 s).
+ * - drive (R4-COST-UNIT, PERF2, lead 1 Nov; prospective): a cost reading
+ *   measures what the unit does. The case drive's residual-jump diagnostic
+ *   at class-S stops assembles a Jacobian and an LU at every S stop, which
+ *   the unit host never runs, so cost drives run without it
+ *   (case_configuration.jump_diagnostic false). Each reading states its
+ *   `measure`: R4-COST-UNIT (false), "with the jump diagnostic" (true) or
+ *   "before R4-COST-UNIT" (not recorded: a receipt from before the change,
+ *   which ran it). A gate refuses sides of different measures. Past
+ *   readings stay as they were.
  * - steady (R4-STEADY, lead 1 Nov): on a trace reaching +600 s after the
  *   event, the mean rate over its last 300 s; on a shorter trace, the mean
  *   over its last 10 s with every frame interval within 5 s after an R
@@ -236,11 +245,13 @@ const median=(xs:number[])=>{
 }
 /** The gate between two sets of repeated runs (R4-COST-RESOLUTION). */
 export function gate(base:any[],change:any[],ratio=QUIET_RATIO){
- const measures=(rs:any[])=>rs.map(r=>{const j=judge(r,ratio);return {worst_0_5_s:j.worst_0_5_s.rate,worst_2_5_s:j.worst_2_5_s.rate,steady:j.steady}})
+ const measures=(rs:any[])=>rs.map(r=>{const j=judge(r,ratio);return {measure:j.measure as string,worst_0_5_s:j.worst_0_5_s.rate,worst_2_5_s:j.worst_2_5_s.rate,steady:j.steady}})
  const b=measures(base),c=measures(change)
+ const kinds=new Set([...b,...c].map(x=>x.measure))
+ if(kinds.size!==1)throw new Error(`R4-COST-UNIT: the gate's runs are of different measures (${[...kinds].join(', ')})`)
  const out:any={resolution:RESOLUTION,base_runs:b.length,change_runs:c.length}
  for(const k of ['worst_0_5_s','worst_2_5_s','steady'] as const){
-  const val=(x:{[m:string]:number|null})=>{const v=x[k];if(v===null||v===undefined)throw new Error(`${k} is unmeasured on a gate run`);return v}
+  const val=(x:{[m:string]:number|string|null})=>{const v=x[k];if(typeof v==='string')throw new Error(`${k} is not a number`);if(v===null||v===undefined)throw new Error(`${k} is unmeasured on a gate run`);return v}
   const mb=median(b.map(val)),mc=median(c.map(val)),rel=mc/mb-1
   const decided=Math.abs(rel)>2*RESOLUTION||(b.length>=3&&c.length>=3)
   out[k]={base:mb,change:mc,relative:rel,verdict:!decided?'undecided: 3 runs each needed within 2 %':rel>RESOLUTION?'rises':rel< -RESOLUTION?'falls':'keeps'}
@@ -277,7 +288,9 @@ export function judge(receipt:any,ratio=QUIET_RATIO){
  const restartsPerS=tEnd>after10?late/(tEnd-after10):null
  let lag=0,peak=0,peakAt:number|null=null
  for(let k=1;k<frames.length;k++){lag=Math.max(0,lag+(get(r,k-1)-1)*(tOf(frames,k)-tOf(frames,k-1)));if(lag>peak){peak=lag;peakAt=tOf(frames,k)-event}}
- const out:any={case:c,quiet_ratio:ratio,event_s:event,span_after_event_s:tEnd-event,
+ const jd=(receipt.run??receipt).configuration?.case_configuration?.jump_diagnostic
+ const measure=jd===false?'R4-COST-UNIT':jd===true?'with the jump diagnostic':'before R4-COST-UNIT'
+ const out:any={case:c,measure,quiet_ratio:ratio,event_s:event,span_after_event_s:tEnd-event,
   drive:{frames:source,from_after_event_s:t0-event,to_after_event_s:tEnd-event},
   worst_0_5_s:w5,worst_frame:win(1),worst_2_5_s:win(5*5),steady,pre_event:preEvent,
   seat_window:lastSeat===null?null:(()=>{const a=firstAtOrAfter(frames,event),b=Math.max(a+1,firstAtOrAfter(frames,event+lastSeat));return {last_seat_after_event_s:lastSeat,to_after_event_s:tOf(frames,b)-event,rate:meanRate(frames,a,b,ratio)}})(),
