@@ -119,6 +119,16 @@ fn rod_auto_run() {
     let mut legs: Vec<(f64, Option<f64>)> =
         steps.iter().map(|(l, at)| (t0 + at, Some(*l))).collect();
     legs.push((end, None));
+    // R4-FREE-STEPS: under free stepping every load step instant and the
+    // run's end are declared exact stops.
+    if plant.driver.stepping == leitbild_operating_water::frame::Stepping::Free {
+        for (b, _) in &legs {
+            plant
+                .driver
+                .declare_stop(*b)
+                .unwrap_or_else(|e| panic!("the drive's stops: {e}"));
+        }
+    }
     for (b, load) in &legs {
         let r = {
             let mut extra: [&mut dyn Client<_>; 2] = [&mut rods, &mut cost];
@@ -159,6 +169,7 @@ fn rod_auto_run() {
     let reached = plant.driver.solver_reached_s;
     let receipt = json!({
         "case": if steps.is_empty() { "X4.4 AUTO hold" } else { "X4.4 load steps (preview)" },
+        "stepping": format!("{:?}", plant.driver.stepping),
         "state": state_path, "t0_s": t0, "span_s": span, "steps": steps.iter().map(|(l, a)| json!({"load": l, "at_s": a})).collect::<Vec<_>>(),
         "reached_s": reached, "failure": failure,
         "composition": plant.composition, "rod_control": rod_receipt,

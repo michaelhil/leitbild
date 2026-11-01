@@ -1560,6 +1560,14 @@ mod integrated {
         fn admission_probe(&self, _t: f64) -> Option<(usize, Vec<(usize, f64)>)> {
             None
         }
+        /// PROC T1–T3 hook (lane PHYS2, for the IC client): the electrical
+        /// routing, when an appended owner routes AC. The client advances its
+        /// own copy to each frame instant, so a routing instant that is not a
+        /// restart (a qualification timer, a contact end that leaves support
+        /// unchanged) is reported at its frame. The default routes none.
+        fn routing(&self) -> Option<&leitbild_operating_plant::electrical::bus::Distribution> {
+            None
+        }
         /// The appended owners' earliest due time strictly after `t`.
         fn appended_next_event(&self, _t: f64) -> Option<f64> {
             None

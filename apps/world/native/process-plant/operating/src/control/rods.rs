@@ -10,8 +10,7 @@
 //! ```text
 //! Tref   = T_nl + (T_fp − T_nl) clamp(L, 0, 1)
 //! e      = (Tavg − Tref) + K_pm (x − z),   x = P_n − L,   z' = (x − z)/τ_pm
-//! speed  = 0 inside the dead band (lock-up hysteresis), else
-//!          s_min + (s_max − s_min) clamp((|e| − b)/(e_max − b), 0, 1) steps/min
+//! speed  = s_max clamp((|e| − b)/(e_max − b), 0, 1) steps/min
 //! rate   = −sign(e) min(speed · stroke/steps/60, v_max), bounded so the
 //!          acquired position stays inside the travel limits after one frame
 //! ```
@@ -27,7 +26,18 @@
 //! Every value comes from the strict wiki block `ld01-rod-control`; the
 //! full-power Tavg is measured on the composing client's Tavg channel at the
 //! packet's prepared hot reference. AP1000-typical speeds, dead band and
-//! lock-up are scaled to LD-01's stroke and labelled judgement in the block.
+//! the speed program are scaled to LD-01's stroke and labelled judgement in
+//! the block.
+//!
+//! **Continuous law (lead, 1 Nov; reason: X4 x4-1 S1).** The rate is
+//! continuous (Lipschitz) in the error: zero inside the dead band, rising
+//! linearly from zero at its edge, with no lock-up hysteresis and no
+//! rounding of the Tavg input. Judgement: the rate drive is a continuous
+//! stand-in for the stepping mechanism, at its time-averaged rate, so the
+//! stepping drive's 8 steps/min minimum has no continuous counterpart. The
+//! stepping law moved in bursts against xenon's slow drift (S1: P_n to
+//! 0.922, PZR insurges to +393 kPa) and its discontinuities kept R11-3a's
+//! tolerance series from converging.
 use crate::network::Failure;
 use serde::{Deserialize, Serialize};
 
@@ -44,16 +54,11 @@ pub struct Section {
     /// Designed no-load Tavg (owner R12-B1).
     #[serde(rename = "noLoadTavg_K")]
     pub no_load_tavg_k: f64,
-    /// Dead band and lock-up on |e|: motion starts at the dead band and
-    /// stops below the lock-up.
+    /// Dead band on |e|: no motion inside it.
     #[serde(rename = "deadBand_K")]
     pub dead_band_k: f64,
-    #[serde(rename = "lockUp_K")]
-    pub lock_up_k: f64,
-    /// Speed program: `minimum` steps/min at the dead band rising linearly
-    /// to `maximum` at `maximumSpeedError_K`.
-    #[serde(rename = "minimumSpeed_steps_min")]
-    pub minimum_speed_steps_min: f64,
+    /// Speed program: zero at the dead band's edge rising linearly to
+    /// `maximum` steps/min at `maximumSpeedError_K`.
     #[serde(rename = "maximumSpeed_steps_min")]
     pub maximum_speed_steps_min: f64,
     #[serde(rename = "maximumSpeedError_K")]
@@ -75,12 +80,10 @@ pub struct Section {
     /// AUTO's travel limits (acquired bank position), m.
     #[serde(rename = "travelLimits_m")]
     pub travel_limits_m: [f64; 2],
-    /// Channels: Tavg (loop RTD lag and quantum), turbine load (steam-flow
-    /// channel lag), bank position (BANK.POS lag).
+    /// Channels: Tavg (loop RTD lag), turbine load (steam-flow channel
+    /// lag), bank position (BANK.POS lag).
     #[serde(rename = "tavgLag_s")]
     pub tavg_lag_s: f64,
-    #[serde(rename = "tavgQuantum_K")]
-    pub tavg_quantum_k: f64,
     #[serde(rename = "loadLag_s")]
     pub load_lag_s: f64,
     #[serde(rename = "positionLag_s")]
@@ -130,22 +133,21 @@ pub struct Law {
 
 impl Law {
     /// Admits the block and the measured full-power Tavg: positive frame,
-    /// lags, speeds, stroke and limit; a lock-up below the dead band below
-    /// the maximum-speed error; the full-power Tavg above the no-load one;
+    /// lags, speeds, stroke and limit; the dead band below the maximum-speed
+    /// error; the full-power Tavg above the no-load one;
     /// ordered travel limits. Nothing is defaulted.
     pub fn new(section: &Section, full_power_tavg_k: f64) -> Result<Self, Failure> {
         let s = section;
         for (name, v) in [
             ("sample_s", s.sample_s),
             ("noLoadTavg_K", s.no_load_tavg_k),
-            ("lockUp_K", s.lock_up_k),
-            ("minimumSpeed_steps_min", s.minimum_speed_steps_min),
+            ("deadBand_K", s.dead_band_k),
+            ("maximumSpeed_steps_min", s.maximum_speed_steps_min),
             ("stepsPerStroke", s.steps_per_stroke),
             ("stroke_m", s.stroke_m),
             ("ordinarySpeedLimit_m_s", s.ordinary_speed_limit_m_s),
             ("mismatchRateLag_s", s.mismatch_rate_lag_s),
             ("tavgLag_s", s.tavg_lag_s),
-            ("tavgQuantum_K", s.tavg_quantum_k),
             ("loadLag_s", s.load_lag_s),
             ("positionLag_s", s.position_lag_s),
         ] {
@@ -155,15 +157,8 @@ impl Law {
                 )));
             }
         }
-        if !(s.lock_up_k < s.dead_band_k && s.dead_band_k < s.maximum_speed_error_k) {
-            return Err(fatal(
-                "lock-up < dead band < maximum-speed error is required",
-            ));
-        }
-        if !(s.maximum_speed_steps_min.is_finite()
-            && s.minimum_speed_steps_min < s.maximum_speed_steps_min)
-        {
-            return Err(fatal("the minimum speed must lie below the maximum"));
+        if !(s.dead_band_k < s.maximum_speed_error_k) {
+            return Err(fatal("dead band < maximum-speed error is required"));
         }
         if !(s.mismatch_gain_k.is_finite() && s.mismatch_gain_k >= 0.) {
             return Err(fatal("the mismatch gain must be finite and nonnegative"));
@@ -197,23 +192,22 @@ impl Law {
         self.s.no_load_tavg_k
             + (self.full_power_tavg_k - self.s.no_load_tavg_k) * load.clamp(0., 1.)
     }
-    /// The speed program's rate magnitude (m/s) at |e| while moving.
+    /// The speed program's rate magnitude (m/s) at |e|: zero inside the
+    /// dead band, linear from zero at its edge, capped by the drive's limit.
     pub fn speed_m_s(&self, error_k: f64) -> f64 {
         let s = &self.s;
         let u = ((error_k.abs() - s.dead_band_k) / (s.maximum_speed_error_k - s.dead_band_k))
             .clamp(0., 1.);
-        let steps =
-            s.minimum_speed_steps_min + (s.maximum_speed_steps_min - s.minimum_speed_steps_min) * u;
-        (steps / 60. * s.stroke_m / s.steps_per_stroke).min(s.ordinary_speed_limit_m_s)
+        (s.maximum_speed_steps_min * u / 60. * s.stroke_m / s.steps_per_stroke)
+            .min(s.ordinary_speed_limit_m_s)
     }
 }
 
-/// The AUTO controller: the law, its hysteresis state, the mismatch
-/// rate-lag and the rate in force.
+/// The AUTO controller: the law, the mismatch rate-lag and the rate in
+/// force.
 #[derive(Clone, Debug)]
 pub struct Controller {
     law: Law,
-    moving: bool,
     /// The rate-lag's state and its input at the last frame.
     lag: f64,
     input: f64,
@@ -230,7 +224,6 @@ impl Controller {
         }
         Ok(Self {
             law,
-            moving: false,
             lag: x,
             input: x,
             rate: 0.,
@@ -260,13 +253,9 @@ impl Controller {
         let tref = self.law.tref_k(e.load);
         let temperature = e.tavg_k - tref;
         let error = temperature + mismatch;
-        self.moving = if self.moving {
-            error.abs() >= s.lock_up_k
-        } else {
-            error.abs() >= s.dead_band_k
-        };
-        let mut rate = if self.moving {
-            -error.signum() * self.law.speed_m_s(error)
+        let speed = self.law.speed_m_s(error);
+        let mut rate = if speed > 0. {
+            -error.signum() * speed
         } else {
             0.
         };
@@ -283,7 +272,7 @@ impl Controller {
             temperature_error_k: temperature,
             mismatch_k: mismatch,
             error_k: error,
-            moving: self.moving,
+            moving: rate != 0.,
             rate_m_s: rate,
         })
     }
@@ -298,8 +287,6 @@ mod tests {
             sample_s: 0.1,
             no_load_tavg_k: 564.82,
             dead_band_k: 1.5 / 1.8,
-            lock_up_k: 1. / 1.8,
-            minimum_speed_steps_min: 8.,
             maximum_speed_steps_min: 72.,
             maximum_speed_error_k: 3. / 1.8,
             steps_per_stroke: 228.,
@@ -309,7 +296,6 @@ mod tests {
             mismatch_rate_lag_s: 30.,
             travel_limits_m: [0., 4.],
             tavg_lag_s: 1.,
-            tavg_quantum_k: 0.1,
             load_lag_s: 0.25,
             position_lag_s: 0.1,
         }
@@ -329,28 +315,40 @@ mod tests {
         assert_eq!(law.tref_k(0.), 564.82);
         assert_eq!(law.tref_k(1.), 573.);
         assert_eq!(law.tref_k(1.2), 573.);
-        // 8 steps/min of 4 m/228 at the dead band; the 8 mm/s cap binds
+        // Zero at the dead band's edge; 72 steps/min of 4 m/228 at the
+        // maximum-speed error would be 21 mm/s, so the 8 mm/s cap binds
         // above 27.36 steps/min.
-        assert!((law.speed_m_s(1.5 / 1.8) - 8. / 60. * 4. / 228.).abs() < 1e-15);
+        assert_eq!(law.speed_m_s(1.5 / 1.8), 0.);
         assert_eq!(law.speed_m_s(3. / 1.8), 0.008);
         assert_eq!(law.speed_m_s(10.), 0.008);
     }
 
     #[test]
-    fn dead_band_lock_up_and_direction() {
+    fn the_rate_is_continuous_in_the_error_with_no_hysteresis() {
         let law = Law::new(&section(), 573.).unwrap();
-        let mut c = Controller::new(law, &at(573., 1., 1., 3.48)).unwrap();
-        // Inside the dead band: no motion.
+        let mut c = Controller::new(law.clone(), &at(573., 1., 1., 3.48)).unwrap();
+        // Inside the dead band: no motion; just past its edge: a small rate.
         assert_eq!(c.frame(0.1, &at(573.8, 1., 1., 3.48)).unwrap().rate_m_s, 0.);
-        // Above it: insert.
-        let d = c.frame(0.1, &at(574., 1., 1., 3.48)).unwrap();
-        assert!(d.moving && d.rate_m_s < 0.);
-        // Between lock-up and dead band: keeps moving.
-        assert!(c.frame(0.1, &at(573.6, 1., 1., 3.48)).unwrap().rate_m_s < 0.);
-        // Below the lock-up: stops.
-        assert_eq!(c.frame(0.1, &at(573.5, 1., 1., 3.48)).unwrap().rate_m_s, 0.);
+        let d = c.frame(0.1, &at(573. + 1.5 / 1.8 + 1e-6, 1., 1., 3.48)).unwrap();
+        assert!(d.rate_m_s < 0. && d.rate_m_s > -1e-7, "{}", d.rate_m_s);
         // Too cold: withdraw.
         assert!(c.frame(0.1, &at(572., 1., 1., 3.48)).unwrap().rate_m_s > 0.);
+        // No hysteresis: the same error gives the same rate whatever came before.
+        let a = c.frame(0.1, &at(573.9, 1., 1., 3.48)).unwrap().rate_m_s;
+        c.frame(0.1, &at(575., 1., 1., 3.48)).unwrap();
+        let b = c.frame(0.1, &at(573.9, 1., 1., 3.48)).unwrap().rate_m_s;
+        assert_eq!(a, b);
+        // Lipschitz in the error: |d rate/d e| <= s_max/60 stroke/steps/(e_max - b).
+        let bound = 72. / 60. * 4. / 228. / (3. / 1.8 - 1.5 / 1.8);
+        let mut last: Option<(f64, f64)> = None;
+        for k in -4000..=4000 {
+            let e = k as f64 * 1e-3;
+            let r = -e.signum() * law.speed_m_s(e);
+            if let Some((e0, r0)) = last {
+                assert!((r - r0).abs() <= bound * (e - e0) * (1. + 1e-12), "at {e}");
+            }
+            last = Some((e, r));
+        }
     }
 
     #[test]
@@ -391,7 +389,7 @@ mod tests {
     #[test]
     fn inadmissible_blocks_refuse() {
         let mut s = section();
-        s.lock_up_k = 1.;
+        s.dead_band_k = 2.;
         assert!(Law::new(&s, 573.).is_err());
         assert!(Law::new(&section(), 560.).is_err());
         let mut s = section();

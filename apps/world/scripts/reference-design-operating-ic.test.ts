@@ -29,6 +29,7 @@ const inventoryBlock = '{"coreBottom_m":-2,"coreTop_m":2,"headTop_m":4,"coreArea
 const cetBasisBlock = '{"diameter_m":0.003,"length_m":0.03,"density_kg_m3":8000,"heatCapacity_J_kgK":500,"conductivity_W_mK":15,"leadDiameter_m":0.0002,'
   + '"leadLength_m":0.1,"liquidFilm_W_m2K":1000,"gasFilm_W_m2K":30,"effectiveRadiationFactor":0.03,"minimumBody_C":20,"maximumBody_C":800}'
 const cetBlock = '{"supplies":["I1","I2"],"span_C":[0,800],"quantum_C":0.1,"sample_s":0.1}'
+const elecBlock = '{"buses":["AC.A","AC.B"],"sources":["UNIT","RESERVE"],"supply":"I1","sample_s":0.1,"transport_s":0.1}'
 const dpBlock = '{"coreSpan_Pa":[-50000,250000],"upperSpan_Pa":[-25000,50000],"supplies":["I1","I2"]}'
 const taps = '### PZR electronic differential level\n\n' + fence('ld01-pzr-taps', '{"pt1Elevation_m":18.5,"ltLowElevation_m":6.5,"ltHighElevation_m":18.5}')
 const pages = (over: Partial<Record<(typeof OPERATING_IC_PAGES)[number], string>> = {}) => ({
@@ -37,7 +38,7 @@ const pages = (over: Partial<Record<(typeof OPERATING_IC_PAGES)[number], string>
   'systems/instrumentation/operational-observations.md': fence('reference-pzr-pressure-channel', channel)
     + fence('ld01-loop-flow-channel', flowChannel) + fence('ld01-power-proxy-protective-paths', proxyPaths)
     + fence('ld01-bank-channels', bankChannels) + fence('ld01-steam-valve-position-channels', valveChannels)
-    + fence('ld01-sg-flow-channels', sgFlowBlock),
+    + fence('ld01-sg-flow-channels', sgFlowBlock) + fence('ld01-electrical-reports', elecBlock),
   'systems/instrumentation/phase-dependent-measurements.md': taps + fence('ld01-pzr-level-channels', levelChannelsBlock)
     + fence('reference-cet-basis', cetBasisBlock) + fence('ld01-core-exit-channels', cetBlock),
   'safety/reactor-trip-and-hold.md': fence('ld01-s2-holding-circuit', '{"turbineTripToOpening_s":0.2}')
@@ -196,12 +197,12 @@ test('with the packet\'s rods and steam admission (plan r4 tag map) the bank pos
   expect(s.families.at(-2)!.quantity).toEqual({ bank_position: { normal_travel_m: 4 } })
   expect(s.families.at(-1)!.quantity).toEqual({ stop_valve_position: { stop_travel_s: 0.3 } })
   expect(s.families.at(-1)!.channel).toMatchObject({ lag_s: 0.1, min: 0, max: 100, quantum: 1, sample_s: 0.1, transport_s: 0.1 })
-  expect(s.reports.map(r => [r.id, r.source, r.supply])).toEqual([['LD01.TG.TRIP.REPORT', 'turbine_retained_trip', 'ACT.B'],
+  expect(s.reports.slice(0, 2).map(r => [r.id, r.source, r.supply])).toEqual([['LD01.TG.TRIP.REPORT', 'turbine_retained_trip', 'ACT.B'],
     ['LD01.CORE.BANK.INSERTED', 'bank_inserted', 'I1']])
   // Without them the section is unchanged.
   const plain = compileOperatingIcFrom(pages(), packet)
   expect(plain.families.map(f => f.id)).not.toContain('LD01.CORE.BANK.POS')
-  expect(plain.reports).toHaveLength(1)
+  expect(plain.reports.filter(r => !r.id.startsWith('LD01.AC.') && !r.id.startsWith('LD01.ELEC.'))).toHaveLength(1)
 })
 
 test('LD01.CORE.NI.SHUTDOWN: no SOURCE path while the regional Rref is open, and the window selections once it is filled', () => {
@@ -245,4 +246,15 @@ test('plan r4 X4 channels: the normal SG PTs, the core-span DP over the sector c
   // A tap in a moving plenum is refused.
   const rods = { normal_travel_m: 4, cells: { upper: { region: 'CORE.NE.2' }, housing_main: { region: 'HOUSING.MAIN' } } }
   expect(() => compileOperatingIcFrom(pages(), { ...packet, rods })).toThrow('moving cell')
+})
+
+test('PROC T1–T3: the AC routing reports, one per bus, per source (available, qualified) and per incoming device (closed, travel complete), on I1', () => {
+  const s = compileOperatingIcFrom(pages(), packet)
+  const e = s.reports.filter(r => r.id.startsWith('LD01.AC.') || r.id.startsWith('LD01.ELEC.'))
+  expect(e.map(r => r.id)).toEqual(['LD01.AC.A.AVAILABLE', 'LD01.AC.B.AVAILABLE', 'LD01.ELEC.UNIT_SOURCE.AVAILABLE', 'LD01.ELEC.UNIT_SOURCE.QUALIFIED',
+    'LD01.ELEC.RESERVE_SOURCE.AVAILABLE', 'LD01.ELEC.RESERVE_SOURCE.QUALIFIED', 'LD01.AC.A.INCOMING.UNIT.CLOSED', 'LD01.AC.A.INCOMING.UNIT.TRAVEL_COMPLETE',
+    'LD01.AC.A.INCOMING.RESERVE.CLOSED', 'LD01.AC.A.INCOMING.RESERVE.TRAVEL_COMPLETE', 'LD01.AC.B.INCOMING.UNIT.CLOSED', 'LD01.AC.B.INCOMING.UNIT.TRAVEL_COMPLETE',
+    'LD01.AC.B.INCOMING.RESERVE.CLOSED', 'LD01.AC.B.INCOMING.RESERVE.TRAVEL_COMPLETE'])
+  expect(e[3]).toMatchObject({ source: { source_qualified: { source: 'unit' } }, supply: 'I1', sample_s: 0.1, transport_s: 0.1, maximum_age_s: 0.3, recovery_s: 1 })
+  expect(e[13]!.source).toEqual({ incoming_travel_complete: { bus: 'AC.B', source: 'reserve' } })
 })

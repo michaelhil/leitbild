@@ -39,6 +39,8 @@ use leitbild_operating_plant::{
     electrical::{
         breaker::{self, Breaker, Contact},
         bus::{self, Distribution, Source, SourceState},
+        dc::{self, Groups},
+        dc_supply,
         field::{self, ConnectionReport, FieldProtection, FieldReport},
         slice::{self, QUADRATURES, Slice},
     },
@@ -111,6 +113,9 @@ pub struct Electrified<S: JoinedSystem> {
     /// X4.3: the SG pressures (Pa) of the operator state last seen.
     pressures_pa: Vec<f64>,
     column: Vec<(usize, f64)>,
+    /// PROC T5 (lane ELEC): the five DC supply groups, when composed
+    /// ([`Electrified::declare_dc`]); report-only in LD-01 1.0.
+    pub dc: Option<Groups>,
 }
 
 fn plant_failure(f: leitbild_operating_plant::network::Failure) -> Failure {
@@ -118,6 +123,11 @@ fn plant_failure(f: leitbild_operating_plant::network::Failure) -> Failure {
         leitbild_operating_plant::network::Failure::Recoverable(r) => Failure::Recoverable(r),
         leitbild_operating_plant::network::Failure::Fatal(r) => Failure::Fatal(r),
     }
+}
+
+/// Each AC bus's routed availability, by name (`None`: no such bus).
+fn bus_live(r: &Distribution) -> impl Fn(&str) -> Option<bool> + '_ {
+    |name| r.bus_index(name).map(|b| r.bus_energized(b).is_some())
 }
 
 fn live(frequency_hz: f64) -> SourceState {
@@ -145,6 +155,9 @@ struct State {
     /// X4.3: the governor's held inputs, when composed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     governor: Option<governor::Held>,
+    /// PROC T5: the DC groups' state, when composed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    dc: Option<dc::State>,
     #[serde(with = "snapshot_bits")]
     arc_heat_j: f64,
     #[serde(with = "snapshot_bits")]
@@ -199,6 +212,7 @@ impl<S: JoinedSystem> Electrified<S> {
             admission_rows: Vec::new(),
             pressures_pa: Vec::new(),
             column: Vec::new(),
+            dc: None,
         };
         e.apply_supply()?;
         Ok(e)
@@ -234,6 +248,70 @@ impl<S: JoinedSystem> Electrified<S> {
         self.governor = Some(governor);
         Ok(())
     }
+    /// PROC T5 (lane ELEC, lead 1 Nov): compose the five DC supply groups
+    /// at `t` in the normal alignment, each charger on its normal bus as
+    /// the routing feeds it. Report-only: no coordinate, no row, no stop;
+    /// the chargers follow the routing at every restart, where AC bus
+    /// support changes.
+    pub fn declare_dc(&mut self, groups: Vec<dc::GroupParameters>, t: f64) -> Result<(), String> {
+        if self.dc.is_some() {
+            return Err("the DC groups are composed once".into());
+        }
+        self.dc = Some(Groups::prepared(groups, t, &bus_live(&self.routing))?);
+        Ok(())
+    }
+    /// PROC T5: each DC charger follows its selected bus's routed
+    /// availability at `t` (a restart, or a composed or restored start).
+    pub fn follow_dc(&mut self, t: f64) -> Result<(), String> {
+        match self.dc.as_mut() {
+            Some(dc) => dc.follow(t, &bus_live(&self.routing)),
+            None => Ok(()),
+        }
+    }
+    /// PROC T5: every DC group's report at `t` (a frame's left limit).
+    pub fn dc_reports(&self, t: f64) -> Result<Vec<dc::Report>, String> {
+        self.dc.as_ref().ok_or("no DC groups composed")?.reports(t)
+    }
+    /// PROC T5: the local manual OPEN, RESET or CLOSE of DC group `group`'s
+    /// distribution at `t` (`false`: refused by its guards, recorded).
+    /// Report-only, so it changes no row; the host applies it at a stop
+    /// as T4's commands.
+    pub fn operator_dc(
+        &mut self,
+        t: f64,
+        group: &str,
+        command: dc_supply::Command,
+    ) -> Result<bool, String> {
+        let dc = self.dc.as_mut().ok_or("no DC groups composed")?;
+        let done = dc.command(t, group, command)?;
+        self.log.push((
+            t,
+            format!(
+                "operator {group} {command:?}: {}",
+                if done { "accepted" } else { "refused" }
+            ),
+        ));
+        Ok(done)
+    }
+    /// PROC T5: the local manual charger input selection of `group` (I3)
+    /// onto `bus` at `t` (`false`: already selected).
+    pub fn operator_dc_charger_input(
+        &mut self,
+        t: f64,
+        group: &str,
+        bus: &str,
+    ) -> Result<bool, String> {
+        let dc = self.dc.as_mut().ok_or("no DC groups composed")?;
+        let done = dc.select_charger(t, group, bus, &bus_live(&self.routing))?;
+        self.log.push((
+            t,
+            format!(
+                "operator {group} charger input {bus}: {}",
+                if done { "selected" } else { "already selected" }
+            ),
+        ));
+        Ok(done)
+    }
     /// X4.3: a Grid request at `t` (a Grid exchange): the setpoint ramps
     /// from its value in force. `false` when it changes nothing.
     pub fn request_power(&mut self, t: f64, request_w: f64) -> Result<bool, String> {
@@ -250,6 +328,43 @@ impl<S: JoinedSystem> Electrified<S> {
         self.breaker.request(Contact::Open, t);
         self.log
             .push((t, "GCB OPEN requested by the operator".into()));
+    }
+    /// PROC T4: the operator's OPEN or CLOSE of `bus`'s incoming device
+    /// from `source` at `t` (the routing's guards; `false`: rejected and
+    /// recorded). Apply it as a class-R change: the contact changes at the
+    /// end of the travel, an owner time event of the routing.
+    pub fn operator_incoming(
+        &mut self,
+        t: f64,
+        bus: &str,
+        source: Source,
+        target: bus::Contact,
+    ) -> Result<bool, String> {
+        let done = self.routing.request_incoming(t, bus, source, target)?;
+        self.log.push((
+            t,
+            format!(
+                "operator {bus} {source:?} incoming {target:?}: {}",
+                if done { "accepted" } else { "rejected" }
+            ),
+        ));
+        self.apply_supply()?;
+        Ok(done)
+    }
+    /// PROC T11: the operator's START of `consumer` after its contactor
+    /// dropped out (`false`: rejected and recorded). A class-R change: the
+    /// consumer's delivered support changes at once.
+    pub fn operator_start_consumer(&mut self, t: f64, consumer: &str) -> Result<bool, String> {
+        let done = self.routing.start_consumer(t, consumer)?;
+        self.log.push((
+            t,
+            format!(
+                "operator START {consumer}: {}",
+                if done { "accepted" } else { "rejected" }
+            ),
+        ));
+        self.apply_supply()?;
+        Ok(done)
     }
     /// X4.3: the operator's ADM CLOSE at `t`: LOAD intent withdrawn, ADM to
     /// closed at its own travel.
@@ -807,6 +922,10 @@ impl<S: JoinedSystem> JoinedSystem for Electrified<S> {
     fn appended_operator_state(&mut self, y: &[f64]) {
         self.read_pressures(y);
     }
+    /// PROC T1–T3: the routing, for the IC client's own copy.
+    fn routing(&self) -> Option<&Distribution> {
+        Some(&self.routing)
+    }
     fn admission_probe(&self, t: f64) -> Option<(usize, Vec<(usize, f64)>)> {
         self.governor.as_ref()?;
         let c = self.coefficients(t).ok()?;
@@ -936,6 +1055,8 @@ impl<S: JoinedSystem> JoinedSystem for Electrified<S> {
                 .map(|r| r.what.clone()),
         );
         self.apply_supply()?;
+        // PROC T5: each DC charger follows its bus at this restart.
+        self.follow_dc(t)?;
         for d in &done {
             self.log.push((t, d.clone()));
         }
@@ -980,6 +1101,7 @@ impl<S: JoinedSystem> JoinedSystem for Electrified<S> {
             offsite_lost: self.offsite_lost,
             trip_requested: self.trip_requested,
             governor: self.governor.as_ref().map(|g| g.held),
+            dc: self.dc.as_ref().map(Groups::discrete_state),
             arc_heat_j: self.arc_heat_j,
             mechanism_j: self.mechanism_j,
         };
@@ -1004,6 +1126,13 @@ impl<S: JoinedSystem> JoinedSystem for Electrified<S> {
         match (self.governor.as_mut(), s.governor) {
             (Some(g), Some(h)) => g.held = h,
             (None, Some(_)) => return Err("the snapshot has a governor; this unit has none".into()),
+            _ => {}
+        }
+        // PROC T5: a unit with DC groups restores theirs; a state saved
+        // without them leaves the composed normal alignment at its start.
+        match (self.dc.as_mut(), s.dc) {
+            (Some(d), Some(state)) => d.restore_discrete_state(state)?,
+            (None, Some(_)) => return Err("the snapshot has DC groups; this unit has none".into()),
             _ => {}
         }
         self.arc_heat_j = s.arc_heat_j;

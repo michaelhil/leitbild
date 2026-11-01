@@ -1484,6 +1484,9 @@ struct CaseConfig {
     /// the SG owner's valve law (`LD01_TURB_GOV` on | off, unset off; the
     /// blocks from `LD01_TURB_WIKI`).
     turbine_governor: bool,
+    /// PROC T5 (lane ELEC): the five DC supply groups, report-only
+    /// (`LD01_DC` on | off, unset off; the blocks from `LD01_DC_WIKI`).
+    dc: bool,
     /// Stuck-cluster C2 (lead ruling (a)): a rod cluster composed singly
     /// (`LD01_S3_SINGLE=<cluster id>`, unset none: the bank composition), its
     /// own motion class and bore water; the start state must be of that
@@ -1550,6 +1553,11 @@ impl CaseConfig {
             "off" => false,
             v => return Err(format!("LD01_TURB_GOV={v}: on or off")),
         };
+        let dc = match var("LD01_DC", "off").as_str() {
+            "on" => true,
+            "off" => false,
+            v => return Err(format!("LD01_DC={v}: on or off")),
+        };
         let single: Option<&'static str> = std::env::var("LD01_S3_SINGLE")
             .ok()
             .map(|id| &*Box::leak(id.into_boxed_str()));
@@ -1565,13 +1573,14 @@ impl CaseConfig {
             ramp_cap,
             rod_auto,
             turbine_governor,
+            dc,
             single,
             stuck,
             jump_diagnostic,
         })
     }
     fn json(&self) -> Value {
-        json!({"weights": self.solver.weights, "first_step": self.solver.first_step, "matrix_rebuild": format!("{:?}", self.matrix_rebuild), "ramp_cap": self.ramp_cap, "rod_auto": self.rod_auto, "turbine_governor": self.turbine_governor, "single": self.single, "stuck": self.stuck, "stepping": self.solver.stepping, "water": self.solver.water, "jump_diagnostic": self.jump_diagnostic,
+        json!({"weights": self.solver.weights, "first_step": self.solver.first_step, "matrix_rebuild": format!("{:?}", self.matrix_rebuild), "ramp_cap": self.ramp_cap, "rod_auto": self.rod_auto, "turbine_governor": self.turbine_governor, "dc": self.dc, "single": self.single, "stuck": self.stuck, "stepping": self.solver.stepping, "water": self.solver.water, "jump_diagnostic": self.jump_diagnostic,
             "cost_excludes_case_observer": true})
     }
 }
@@ -1685,13 +1694,18 @@ fn drive(
             .unwrap_or_else(|| panic!("LD01_S3_SINGLE={id}: no such rod cluster"));
         (id, index)
     });
-    let mut unit = s3::compose_singles_with(
+    let dc = ask.config.dc.then(|| {
+        let wiki = std::env::var("LD01_DC_WIKI").expect("LD01_DC=on needs LD01_DC_WIKI");
+        leitbild_operating_water::unit::dc::Dc::from_wiki(&wiki).unwrap_or_else(|e| panic!("{e}"))
+    });
+    let mut unit = s3::compose_dc_with(
         inputs,
         state,
         ask.scaling,
         ask.config.solver,
         turbine.as_ref(),
         &single.iter().map(|(_, i)| *i).collect::<Vec<_>>(),
+        dc.as_ref(),
         wrap,
     )
     .unwrap_or_else(|e| panic!("{e}"));
@@ -3136,6 +3150,12 @@ fn drive(
     if let (Some(section), Some((_, _, rows))) = (cvcs_section, recorder.cvcs.as_ref()) {
         record["cvcs_frames"] = json!({"section": section, "frames": rows,
             "rule": "per frame [t, the CVCS block's physical coordinates in the labels' order] at the frame's state"});
+    }
+    // PROC T5 (lane ELEC): only a run with the DC groups has the key.
+    if let Some(dc) = ida.system().dc.as_ref() {
+        record["dc"] = json!({"end_s": end, "reports_at_end": dc.reports(end).unwrap_or_else(|e| panic!("DC reports: {e}")),
+            "records": dc.records.iter().map(|r| json!([r.time, r.what])).collect::<Vec<_>>(),
+            "rule": "report-only (lead ruling 2): the groups' transitions and storage events, not in the trajectory digest"});
     }
     eprintln!(
         "{} [{}]: R {} S {}; run CPU {run_cpu_s:.2} s (gate obs {:.2}) over {simulated:.2} s; failure {failure:?}; rule I exit {exit_after_zero:?}",

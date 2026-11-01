@@ -144,7 +144,7 @@ describe('native local procedure publication', () => {
       expect(exact.revision).toBe(revisionA)
       await expect(offline.readEvidence({ sourceRevision: revisionA, sourcePath: 'packs/process-plant/engineering/not-retained.md' })).rejects.toThrow('not found')
       await expect(offline.readEvidence({ sourceRevision: revisionB, sourcePath: basisPath })).rejects.toThrow('has no retained publication at revision')
-      await expect(offline.readEvidence({ sourceRevision: revisionA, sourcePath: basisPath, section: 'missing' })).rejects.toThrow('Unknown section')
+      await expect(offline.readEvidence({ sourceRevision: revisionA, sourcePath: basisPath, section: 'missing' })).rejects.toMatchObject({ code: 'capability_input_rejected' })
       // With two sources, evidence names its source: never the first one by default (an LD01-E0 run found an HTTP 500 here).
       const two = createProcedureSourceService({ ...options, sources: [localSource, { ...localSource, sourceId: 'second' }], loadKnowledge: async () => { throw new Error('Offline') } })
       await expect(two.readEvidence({ sourceRevision: revisionA, sourcePath: basisPath })).rejects.toThrow('name sourceId with sourceRevision')

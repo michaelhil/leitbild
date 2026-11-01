@@ -89,6 +89,11 @@ export const parseVesselDpChannels = (text: string) => z.object({
 export const parseCoreExitChannels = (text: string) => z.object({
   supplies: z.tuple([z.string(), z.string()]), span_C: band, quantum_C: positive, sample_s: positive,
 }).strict().parse(configurationBlock(text, 'ld01-core-exit-channels'))
+// PROC T1–T3 (lead ruling 1 Nov): the AC routing's state reports.
+export const parseElectricalReports = (text: string) => z.object({
+  buses: z.array(z.string()).min(1), sources: z.tuple([z.literal('UNIT'), z.literal('RESERVE')]),
+  supply: z.string(), sample_s: positive, transport_s: positive,
+}).strict().parse(configurationBlock(text, 'ld01-electrical-reports'))
 export const parseTurbineStateReport = (text: string) => z.object({
   sample_s: positive, transport_s: positive, maximumAge_s: positive, recovery_s: positive,
 }).strict().parse(configurationBlock(text, 'ld01-turbine-state-report'))
@@ -225,6 +230,26 @@ function wholeFrames(name: string, v: number, frame: number) {
   if (Math.abs(n - Math.round(n)) > 1e-9 * Math.max(1, n)) throw Error(`${name} ${v} s is not whole ${frame} s frames`)
 }
 
+/** PROC T1–T3: one boolean report per bus, per source (available,
+ * qualified) and per incoming device (closed, travel complete), on the
+ * block's supply and timing with the page-wide protective age and recovery. */
+function electricalReports(e: ReturnType<typeof parseElectricalReports>, p: { maximum_age_s: number, recovery_s: number }) {
+  const source = (s: 'UNIT' | 'RESERVE') => s === 'UNIT' ? 'unit' : 'reserve'
+  const timing = { supply: e.supply, sample_s: e.sample_s, transport_s: e.transport_s, maximum_age_s: p.maximum_age_s, recovery_s: p.recovery_s,
+    basis: 'ld01-electrical-reports (operational-observations.md): supply and timing are the lead\'s labelled judgement (1 Nov); the page-wide protective age and recovery; observed only' }
+  return [
+    ...e.buses.map(bus => ({ id: `LD01.${bus}.AVAILABLE`, source: { bus_available: { bus } }, ...timing })),
+    ...e.sources.flatMap(s => [
+      { id: `LD01.ELEC.${s}_SOURCE.AVAILABLE`, source: { source_available: { source: source(s) } }, ...timing },
+      { id: `LD01.ELEC.${s}_SOURCE.QUALIFIED`, source: { source_qualified: { source: source(s) } }, ...timing },
+    ]),
+    ...e.buses.flatMap(bus => e.sources.flatMap(s => [
+      { id: `LD01.${bus}.INCOMING.${s}.CLOSED`, source: { incoming_closed: { bus, source: source(s) } }, ...timing },
+      { id: `LD01.${bus}.INCOMING.${s}.TRAVEL_COMPLETE`, source: { incoming_travel_complete: { bus, source: source(s) } }, ...timing },
+    ])),
+  ]
+}
+
 /** Compile the `ic` section from page texts keyed as `OPERATING_IC_PAGES`
  * and the joined packet. */
 export function compileOperatingIcFrom(texts: Pages, packetValue: unknown) {
@@ -260,6 +285,7 @@ export function compileOperatingIcFrom(texts: Pages, packetValue: unknown) {
   const valves = parseSteamValvePositionChannels(texts['systems/instrumentation/operational-observations.md'])
   const sgPressure = parseSgNormalPressureChannel(texts['systems/steam-generation/instrumentation.md'])
   const sgFlows = parseSgFlowChannels(texts['systems/instrumentation/operational-observations.md'])
+  const elec = parseElectricalReports(texts['systems/instrumentation/operational-observations.md'])
   const dpChannels = parseVesselDpChannels(texts['systems/instrumentation/core-inventory-observation.md'])
   const inventory = parseCoreInventory(texts['systems/instrumentation/core-inventory-observation.md'])
   const cetChannels = parseCoreExitChannels(texts['systems/instrumentation/phase-dependent-measurements.md'])
@@ -282,7 +308,8 @@ export function compileOperatingIcFrom(texts: Pages, packetValue: unknown) {
     ['underspeed reset', underspeed.resetDuration_s], ['S pressure', cmt.sQualification_s],
     ['low-2 level', cmt.low2Qualification_s], ['high-3 PRHR timer', prhrActuation.high3Timer_s],
     ['bank sampling', bank.sample_s], ['bank transport', bank.transport_s],
-    ['valve sampling', valves.sample_s], ['valve transport', valves.transport_s], ['CET sampling', cetChannels.sample_s]] as const) wholeFrames(name, v, frame_s)
+    ['valve sampling', valves.sample_s], ['valve transport', valves.transport_s], ['CET sampling', cetChannels.sample_s],
+    ['electrical report sampling', elec.sample_s], ['electrical report transport', elec.transport_s]] as const) wholeFrames(name, v, frame_s)
   if (inventory.gravity_m_s2 !== 9.80665) throw Error('reference-core-inventory gravity is not the network\'s 9.80665 m/s2')
   // R12-D2: the chain reproduces AP1000's total delay exactly.
   if (Math.abs(underspeed.speedLag_s + channel.sample_s + channel.transport_s + underspeed.qualification_s - underspeed.totalDelay_s) > 1e-12)
@@ -536,7 +563,7 @@ export function compileOperatingIcFrom(texts: Pages, packetValue: unknown) {
       id: 'LD01.CORE.BANK.INSERTED', source: 'bank_inserted', supply: bank.inserted.supply,
       sample_s: bank.sample_s, transport_s: bank.transport_s, maximum_age_s: protection.maximum_age_s, recovery_s: protection.recovery_s,
       basis: 'ld01-bank-channels (operational-observations.md); the page-wide protective age and recovery; observed only',
-    }] : [])],
+    }] : []), ...electricalReports(elec, protection)],
     functions,
     monitors: pzrLevel.monitors,
     holding: {
