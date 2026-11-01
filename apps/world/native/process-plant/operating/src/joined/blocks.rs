@@ -1212,6 +1212,8 @@ fn assemble<P: Properties + WaterProperties>(
             .map(|a| [0, 1].map(|k| o.solids + solids.energy(a, k)))
             .collect()
     };
+    // R4-PZR-PI (S-b): the PZR owner's spray stem column, if composed.
+    let stem = joined.pzr().stem_coordinate().map(|k| o.pzr + k);
     let (network, mut coupler) = joined.local_parts(t, y, yp, cj);
     let regular = network.pzr.cell;
     let pzr_coordinates = network.pzr.coordinates();
@@ -1486,10 +1488,18 @@ fn assemble<P: Properties + WaterProperties>(
         seed.receipts.clear();
         seed.volumes.clear();
         seed.passes.clear();
+        // R4-PZR-PI (S-b): the valve's restriction row in the PZR owner's
+        // stem, at the base evaluation's drive (zero while locked).
+        let opening = network.spray_row_opening_partial();
         for j in o.pzr..o.cvcs {
             let boundary = coupler.pzr_column(j, cell, &column)?;
             for (row, v) in coupler.last_pzr() {
                 sink.add(*row, j, v.direction)?;
+            }
+            if Some(j) == stem
+                && let Some((row, d)) = opening
+            {
+                sink.add(row, j, d * scales[j])?;
             }
             seed.pzr_boundary = Some(boundary);
             response.clear();
