@@ -331,6 +331,20 @@ impl Protection {
     pub fn turbine_trip(&mut self, t: f64) {
         self.turbine_trip_s.get_or_insert(t);
     }
+    /// X4 T2 (PHYS3's case definition, lead 1 Nov): the operator's manual
+    /// trip switch `LD01.TRIP.MANUAL` INITIATE opens the holding chain's
+    /// series interrupt at `t` (safety/reactor-trip-and-hold.md, "Manual
+    /// initiation"). The next frame's chain update then decides the holding
+    /// loss, as for every loss (labelled judgement: the mechanical interrupt
+    /// is evaluated on the protection's frame). Opening an open interrupt
+    /// changes nothing.
+    pub fn manual_interrupt_open(&mut self, t: f64) {
+        if self.holding.manual_closed {
+            self.holding.manual_closed = false;
+            self.log
+                .push(json!({"t_s": t, "event": "manual interrupt opened", "operation": "LD01.TRIP.MANUAL INITIATE"}));
+        }
+    }
     /// R12-A2: whether the interlock requests the turbine trip at frame `k`
     /// (the frame after the one just observed): the holding loss was
     /// decided `delay` frames before `k` and the turbine controls retain no
