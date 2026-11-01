@@ -27,9 +27,12 @@
 //! | 7 STATUS | — | JSON counts and cost |
 //! | 8 CLOSE | — | empty; exit 0 |
 //!
-//! **Advance.** The frame driver stops at every I&C frame instant (the PZR
-//! control's held heater changes are class S) and at `t1`, so every ADVANCE
-//! ends at an accepted stop. The counts are the exchange's own: stock steps,
+//! **Advance.** Under the LOAD solver's `stepping` (R4-FREE-STEPS): `free`
+//! (the default of record) observes to `t1` from stock's dense output, the
+//! integrator possibly inside its last step past `t1`, and stops exactly
+//! only at scheduled changes, commands, roots and a client's changed frame;
+//! `frame-stops` stops at every I&C frame instant and at `t1`, so every
+//! ADVANCE ends at an accepted stop. The counts are the exchange's own: stock steps,
 //! residuals, Jacobians, error-test and convergence failures, R and S
 //! instants and frames. The events are the exchange's driver instants (with
 //! the rod seats, SG relief crossings, PZR relief openings and the STOP ramp
@@ -64,14 +67,14 @@ use leitbild_operating_water::{
     If97,
     frame::{
         Action, COUNTER_NAMES, Change, Class, Client, Diagnostic, DriverState, MatrixRebuild,
-        same_instant,
+        Stepping, same_instant,
     },
     joined::{Discrete, JoinedSystem, discrete_restart},
     unit::{
         clock,
         inputs::{Inputs, MODEL, Spine},
         plant::{self, Boundary, Plant},
-        profile::{Solver, Weights, parse_first_step},
+        profile::{Solver, Weights, parse_first_step, parse_stepping},
         s3, timeline,
     },
 };
@@ -851,10 +854,11 @@ fn parse_load(load: &Value) -> Result<(Inputs, String, Solver), String> {
         text(i, "pzr_control_wiki", "LOAD inputs")?,
         text(i, "elec", "LOAD inputs")?,
     )?;
-    exactly(&o["solver"], "LOAD solver", &["weights", "first_step"])?;
+    exactly(&o["solver"], "LOAD solver", &["weights", "first_step", "stepping"])?;
     let solver = Solver {
         weights: Weights::parse(text(&o["solver"], "weights", "LOAD solver")?)?,
         first_step: parse_first_step(text(&o["solver"], "first_step", "LOAD solver")?)?,
+        stepping: parse_stepping(text(&o["solver"], "stepping", "LOAD solver")?)?,
     };
     Ok((inputs, text(load, "state", "LOAD")?.to_string(), solver))
 }
@@ -903,11 +907,15 @@ impl Unit {
                 clock: clock::thread_cpu_s,
             },
         )?;
+        // R4-FREE-STEPS: the LOAD request's stepping (its solver, part of the
+        // identity a restore checks); the plant's driver took it.
+        let stepping = solver.stepping;
         let composition = json!({
             "t0": bits(plant.t0), "dimension": plant.y.len(), "operator": plant.n,
             "rtol": bits(plant.rtol), "atol_sha256": sha256(vector_bits(&plant.atol).as_bytes()),
             "derived_rows": plant.derived.rows.len(), "frame_s": bits(plant.frame.period_s()),
             "matrix_rebuild": "stock (r4 baseline: MR-1 off)",
+            "stepping": format!("{stepping:?}"),
         });
         let mut identity = files;
         identity["composition"] = composition;
@@ -1282,10 +1290,15 @@ impl Unit {
     fn snapshot(&mut self) -> Result<Value, String> {
         let t = self.t;
         let p = &self.plant;
-        if p.driver.solver_reached_s != t {
+        // R4-FREE-STEPS: under free stepping the integrator may stand past
+        // the unit's time within its last step; the snapshot is then that
+        // step's dense output at t (the plant's y, y'), and the source's
+        // restart in place below starts from exactly those bits.
+        let integrator = p.driver.integrator_s();
+        let behind_ok = p.driver.stepping == Stepping::Free && integrator > t;
+        if integrator != t && !behind_ok {
             return Err(format!(
-                "the integrator stands at {} s, not at the unit's {t} s",
-                p.driver.solver_reached_s
+                "the integrator stands at {integrator} s, not at the unit's {t} s"
             ));
         }
         let driver = p.driver.state(&p.ida)?;
@@ -1442,7 +1455,7 @@ impl Unit {
         let counters = self.counters()?;
         let cpu = &self.plant.driver.cpu;
         Ok(
-            json!({"t": self.t, "t_bits": bits(self.t), "failed": self.failed, "exchanges": self.exchanges,
+            json!({"t": self.t, "t_bits": bits(self.t), "integrator_t_bits": bits(self.plant.driver.integrator_s()), "failed": self.failed, "exchanges": self.exchanges,
             "counts": COUNTS.iter().zip(counters).map(|(k, v)| (k.to_string(), json!(v))).collect::<Map<_, _>>(),
             "stock_counter_names": COUNTER_NAMES,
             "counts_by_class": self.plant.driver.counts.json(),

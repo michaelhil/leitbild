@@ -177,6 +177,11 @@ fn a_restored_copy_continues_bitwise_and_the_protocol_refuses_explicitly() {
         .expect("LD01_UNIT_HOST_COPY_EXCHANGE: a whole number of exchanges after t0");
     let end = copy_at + 300;
     std::fs::create_dir_all(&receipts).expect("receipt directory");
+    // R4-FREE-STEPS: the LOAD request's stepping (free, the unit's default,
+    // unless LD01_UNIT_HOST_STEPPING names frame-stops for the control run).
+    let stepping =
+        std::env::var("LD01_UNIT_HOST_STEPPING").unwrap_or_else(|_| "free".into());
+    let free = stepping == "free";
     let load = json!({
         "inputs": {
             "packet": env("LD01_OPERATING_HOT_SPINE_PACKET"),
@@ -189,7 +194,7 @@ fn a_restored_copy_continues_bitwise_and_the_protocol_refuses_explicitly() {
             "elec": env("ELEC_PACKET"),
         },
         "state": env("LD01_S3_STATE"),
-        "solver": {"weights": "stock", "first_step": "declared"},
+        "solver": {"weights": "stock", "first_step": "declared", "stepping": stepping},
     });
     let started = Instant::now();
     let mut refusals = serde_json::Map::new();
@@ -248,6 +253,11 @@ fn a_restored_copy_continues_bitwise_and_the_protocol_refuses_explicitly() {
                 "counts": f.counts, "events": f.events}));
         }
     }
+    // R4-FREE-STEPS: under free stepping the copy point lies inside the
+    // integrator's last step (the snapshot is its dense output there).
+    let before_copy = a.json(STATUS, &[]);
+    let copy_t = bits_of(&before_copy["t_bits"]);
+    let copy_integrator = bits_of(&before_copy["integrator_t_bits"]);
     let copy = a.ok(SNAPSHOT, &[]);
     let copy_cpu = copy.cpu_s;
     let copy = copy.payload;
@@ -341,6 +351,8 @@ fn a_restored_copy_continues_bitwise_and_the_protocol_refuses_explicitly() {
         "a_failed": a_failed.as_ref().map(|(k, c)| json!({"exchange": k, "t1": instant(*k), "cause": c})),
         "b_failed": b_failed.as_ref().map(|(k, c)| json!({"exchange": k, "t1": instant(*k), "cause": c})),
         "failures_identical": a_failed == b_failed,
+        "stepping": if free { "free" } else { "frame-stops" },
+        "copy_integrator_s": copy_integrator, "copy_mid_step": copy_integrator > copy_t,
         "exchanges_compared": a_frames.len(), "frames_equal": first_difference.is_none(),
         "first_difference": first_difference,
         "final_snapshots_equal": snapshots_equal,
@@ -359,6 +371,12 @@ fn a_restored_copy_continues_bitwise_and_the_protocol_refuses_explicitly() {
     .unwrap();
     std::fs::write(receipts.join("snapshot-a-final.json"), &a_final).unwrap();
     std::fs::write(receipts.join("snapshot-b-final.json"), &b_final).unwrap();
+    if free {
+        assert!(
+            copy_integrator > copy_t,
+            "the copy point {copy_t} s is not inside a free step (integrator at {copy_integrator} s)"
+        );
+    }
     assert_eq!(a_failed, b_failed, "the copy does not refuse as its source");
     assert_eq!(a_frames.len(), b_frames.len(), "exchange counts");
     assert!(
