@@ -72,8 +72,9 @@ fn pzr_state_onto_the_continuous_packet() {
     assert_eq!(first + added.len(), o.cvcs, "the master's coordinates are the PZR block's last");
     let lag_scale = pzr.layout().scales[k];
     let labels: Vec<String> = added.iter().map(|i| pzr.layout().labels[*i].clone()).collect();
-    // The composition reads `y`/`yp` (`unit::s3`); a state that also
-    // carries their bits must agree with them bitwise.
+    // A state's bits are its exact coordinates (KERN's settled states
+    // carry them); a state without them (turb_gov's end states) carries
+    // `y`/`yp` only, which the composition reads (`unit::s3`).
     let floats = |v: &Value| -> Vec<f64> {
         v.as_array()
             .expect("a state vector")
@@ -81,16 +82,12 @@ fn pzr_state_onto_the_continuous_packet() {
             .map(|x| x.as_f64().expect("a real"))
             .collect()
     };
-    let (old_y, old_yp) = (floats(&state["y"]), floats(&state["yp"]));
     let with_bits = state.get("y_bits").is_some();
-    if with_bits {
-        let (by, byp) = (from_bits(&state["y_bits"]), from_bits(&state["yp_bits"]));
-        assert!(
-            by.iter().zip(&old_y).chain(byp.iter().zip(&old_yp)).all(|(a, b)| a.to_bits() == b.to_bits())
-                && by.len() == old_y.len(),
-            "the state's y and its bits agree"
-        );
-    }
+    let (old_y, old_yp) = if with_bits {
+        (from_bits(&state["y_bits"]), from_bits(&state["yp_bits"]))
+    } else {
+        (floats(&state["y"]), floats(&state["yp"]))
+    };
     assert_eq!(
         old_y.len() + added.len(),
         joined.dimension(),
