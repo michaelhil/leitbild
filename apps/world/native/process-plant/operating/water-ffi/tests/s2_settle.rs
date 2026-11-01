@@ -408,78 +408,6 @@ fn s2_07_resettle_to_the_declared_settling_thresholds() {
         match outcome {
             Ok(Advance::Reached(time)) => {
                 t = time;
-                if (t - next_output).abs() <= 1e-9 * next_output.max(1.) {
-                    k += 1;
-                    let timer = process_cpu_s();
-                    let (c, cells) = observe(
-                        &mut ida.system_mut().joined,
-                        &network_packet,
-                        &loops,
-                        t,
-                        &y,
-                        &yp,
-                    );
-                    window.push_back(c.clone());
-                    while window.len() > samples_per_window + 1 {
-                        window.pop_front();
-                    }
-                    let st = ida.stats().unwrap();
-                    let mut cumulative = totals;
-                    add(&mut cumulative, &st);
-                    if k == (1. / output_s).round() as usize {
-                        first_second = Some(named(&cumulative));
-                    }
-                    let full = window.len() == samples_per_window + 1;
-                    if k.is_multiple_of(LOG_EVERY) {
-                        let rs = if full {
-                            let w: Vec<Vec<Vec<f64>>> = window.iter().cloned().collect();
-                            ranges(&w, output_s, &thresholds)
-                        } else {
-                            Vec::new()
-                        };
-                        let line = json!({"t_s": t, "credited": CREDITED.iter().zip(&c).map(|(q, v)| (q.name.to_string(), json!(v))).collect::<Map<String, Value>>(),
-                            "ranges_20s": CREDITED.iter().zip(&rs).map(|(q, r)| (q.name.to_string(), json!([r.0, r.1, r.2]))).collect::<Map<String, Value>>(),
-                            "cells_k": cells, "ida": named(&cumulative), "last_step_s": st.last_step, "order": st.last_order,
-                            "cpu_s": process_cpu_s() - started});
-                        writeln!(log, "{}", serde_json::to_string(&line).unwrap()).unwrap();
-                        log.flush().unwrap();
-                        if k.is_multiple_of(LOG_EVERY * 10) {
-                            history.push(line);
-                        }
-                        eprintln!(
-                            "settle t = {t:.1} s: P = {:.6e} W, p_s = {:?}, steps {}, CPU {:.1} s",
-                            c[0][0],
-                            c[4],
-                            cumulative[0],
-                            process_cpu_s() - started
-                        );
-                        if full {
-                            last_ranges = rs.clone();
-                            if rs.iter().all(|r| r.2) {
-                                verdict = json!({"settled_at_s": t, "window_s": window_s,
-                                    "ranges": CREDITED.iter().zip(&rs).map(|(q, r)| (q.name.to_string(), json!({"range": r.0, "threshold": r.1, "holds": r.2}))).collect::<Map<String, Value>>()});
-                            }
-                        }
-                    }
-                    if k.is_multiple_of(checkpoint_every) {
-                        checkpoints.push(write_state(
-                            &format!("checkpoint-{:05}s.json", t.round() as i64),
-                            t,
-                            &y,
-                            &yp,
-                        ));
-                    }
-                    observation_cpu_s += process_cpu_s() - timer;
-                    if !verdict.is_null() {
-                        break;
-                    }
-                }
-                if t >= cap_s {
-                    failure = Some(format!(
-                        "simulated cap {cap_s} s reached before the thresholds held"
-                    ));
-                    break;
-                }
                 if event.is_some_and(|e| (e - t).abs() <= 1e-12 * t.max(1.)) {
                     // Settling declares no time event; one that occurs
                     // restarts exactly (S2-D21) and is reported.
@@ -548,6 +476,82 @@ fn s2_07_resettle_to_the_declared_settling_thresholds() {
                 failure = Some(format!("stock IDA at {t} s: {e}"));
                 break;
             }
+        }
+        // An output reached by a step end or by a root located exactly at it
+        // (stock returns the root at the tstop, HYD 1 Nov: SBTL iterate 0 at
+        // 506.1 s): the sample is the state at the output time, after its
+        // restart, so the next stop always lies after t.
+        if (t - next_output).abs() <= 1e-9 * next_output.max(1.) {
+            k += 1;
+            let timer = process_cpu_s();
+            let (c, cells) = observe(
+                &mut ida.system_mut().joined,
+                &network_packet,
+                &loops,
+                t,
+                &y,
+                &yp,
+            );
+            window.push_back(c.clone());
+            while window.len() > samples_per_window + 1 {
+                window.pop_front();
+            }
+            let st = ida.stats().unwrap();
+            let mut cumulative = totals;
+            add(&mut cumulative, &st);
+            if k == (1. / output_s).round() as usize {
+                first_second = Some(named(&cumulative));
+            }
+            let full = window.len() == samples_per_window + 1;
+            if k.is_multiple_of(LOG_EVERY) {
+                let rs = if full {
+                    let w: Vec<Vec<Vec<f64>>> = window.iter().cloned().collect();
+                    ranges(&w, output_s, &thresholds)
+                } else {
+                    Vec::new()
+                };
+                let line = json!({"t_s": t, "credited": CREDITED.iter().zip(&c).map(|(q, v)| (q.name.to_string(), json!(v))).collect::<Map<String, Value>>(),
+                    "ranges_20s": CREDITED.iter().zip(&rs).map(|(q, r)| (q.name.to_string(), json!([r.0, r.1, r.2]))).collect::<Map<String, Value>>(),
+                    "cells_k": cells, "ida": named(&cumulative), "last_step_s": st.last_step, "order": st.last_order,
+                    "cpu_s": process_cpu_s() - started});
+                writeln!(log, "{}", serde_json::to_string(&line).unwrap()).unwrap();
+                log.flush().unwrap();
+                if k.is_multiple_of(LOG_EVERY * 10) {
+                    history.push(line);
+                }
+                eprintln!(
+                    "settle t = {t:.1} s: P = {:.6e} W, p_s = {:?}, steps {}, CPU {:.1} s",
+                    c[0][0],
+                    c[4],
+                    cumulative[0],
+                    process_cpu_s() - started
+                );
+                if full {
+                    last_ranges = rs.clone();
+                    if rs.iter().all(|r| r.2) {
+                        verdict = json!({"settled_at_s": t, "window_s": window_s,
+                            "ranges": CREDITED.iter().zip(&rs).map(|(q, r)| (q.name.to_string(), json!({"range": r.0, "threshold": r.1, "holds": r.2}))).collect::<Map<String, Value>>()});
+                    }
+                }
+            }
+            if k.is_multiple_of(checkpoint_every) {
+                checkpoints.push(write_state(
+                    &format!("checkpoint-{:05}s.json", t.round() as i64),
+                    t,
+                    &y,
+                    &yp,
+                ));
+            }
+            observation_cpu_s += process_cpu_s() - timer;
+            if !verdict.is_null() {
+                break;
+            }
+        }
+        if t >= cap_s {
+            failure = Some(format!(
+                "simulated cap {cap_s} s reached before the thresholds held"
+            ));
+            break;
         }
     }
     let st = ida.stats().unwrap();
