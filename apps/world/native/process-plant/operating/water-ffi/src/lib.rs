@@ -1400,14 +1400,6 @@ fn directional_basis(
 macro_rules! thermal_water_properties {
     ($water:ty, $domain:expr) => {
         impl leitbild_operating_plant::thermal::WaterProperties for $water {
-            /// IF97: the same formulation prepared the packet (1e-9). SBTL:
-            /// the tables reproduce that IF97 preparation within IAPWS
-            /// G13-15's permissible deviation in specific volume (Table 9,
-            /// 0.001 %, which the build's check verifies), so a prepared
-            /// stock may differ from the SBTL chart by up to 1e-5.
-            fn preparation_tolerance(&self) -> f64 {
-                if sbtl() { 1e-5 } else { 1e-9 }
-            }
             fn liquid(
                 &self,
                 p: leitbild_operating_plant::thermal::Scalar,
