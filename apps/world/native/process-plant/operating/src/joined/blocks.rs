@@ -670,12 +670,23 @@ pub fn joined_pattern<P: Properties + WaterProperties>(
         }
         columns[row].extend(receipt_rows(c));
     }
+    // R4-NCHEAD: a profiled SG primary's port heads read its fold
+    // conductance, whose film reads each segment's metal.
+    let profiles = network.profile_faces();
     for (i, &(c, _)) in incidence.segments.iter().enumerate() {
         let row = o.solids + solids.metal(i);
         for col in water_reads(c).into_iter().chain(flux_reads(c)) {
             columns[col].insert(row);
         }
         columns[row].extend(receipt_rows(c));
+        for (_, faces) in profiles.iter().filter(|(cell, _)| *cell == c) {
+            for f in faces {
+                columns[row].extend([
+                    network.face_layout[2 * f].index,
+                    network.face_layout[2 * f + 1].index,
+                ]);
+            }
+        }
     }
     for (c, rows) in columns.iter_mut().enumerate() {
         rows.insert(c);
