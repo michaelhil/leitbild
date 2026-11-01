@@ -1656,6 +1656,50 @@ impl RodBlock {
         })
     }
 
+    /// R4-ROD2-SEAT: the seated net force of cluster `c` (upward
+    /// positive) on the bores' mouth balances, the lift-off root's
+    /// function. A seated body's tips are at the lower mouth and its
+    /// annulus spans the bores (no clear segment), at rest. On a state that
+    /// satisfies both mouth rows and the bores' EOS row this is exactly
+    /// [`Forces::net`]: the tip pressure is LOWER's at the mouth less the
+    /// lower mouth's loss, and at rest the annulus wall traction is its
+    /// Couette factor times the annulus loss (`F = B dP`, both segments),
+    /// which the two rows give as the plena's difference less the bores'
+    /// column (on `M/V`) and the two mouth losses. Unlike `net` it does not
+    /// read the bores' pressure coordinate or the annulus law at the
+    /// currents, so the interpolated states on which stock's root finding
+    /// evaluates it (the algebraic currents and pressure swing within the
+    /// sub-millisecond refill after a seat, with the mouth rows off by up
+    /// to 0.1 MPa) cannot cross zero where every consistent state is
+    /// seated.
+    pub fn seated_net(
+        &self,
+        c: usize,
+        x: &Coordinates<'_>,
+        fluid: &Fluid<'_>,
+        bore: &Bore,
+    ) -> Result<Scalar, Failure> {
+        let f = self.forces(c, x, fluid, bore)?;
+        let g = s(self.gravity);
+        let base = Self::base(self.clusters[c].group);
+        let (m_lo, m_up) = (x.value(base + LOWER_CURRENT), x.value(base + UPPER_CURRENT));
+        let lower_mouth = fluid.cells[self.lower].pressure
+            + fluid.mixture_density(self.lower) * g * s(self.z_lower - self.guide_bottom);
+        let upper_mouth = fluid.cells[self.upper].pressure
+            + fluid.mixture_density(self.upper) * g * s(self.z_upper - self.guide_top);
+        let lower_loss = self.passage.lower_mouth(m_lo, f.lower_mouth_density);
+        let (upper_loss, _) = self.passage.upper_mouth(m_up, f.upper_mouth_density);
+        let column = bore.mass / bore.volume * g * s(self.guide_top - self.guide_bottom);
+        let annulus = lower_mouth - upper_mouth - column - lower_loss - upper_loss;
+        let tip = lower_mouth - lower_loss;
+        Ok(s(self.body_area) * (tip - f.top_pressure)
+            + s(self.passage.annulus.couette) * annulus
+            + f.stem_end
+            + f.spider_buoyancy
+            + f.spider_drag
+            - s(self.mass) * g)
+    }
+
     /// Cluster `c`'s mouth transport into the network, `(cell, [mass,
     /// enthalpy, tracer])` entering the cell, each mouth's stream from its
     /// donor by its sign: LOWER loses `m_lo`, UPPER receives `m_up`.
@@ -2365,12 +2409,12 @@ impl<P: Properties> Rods<P> for RodBlock {
                 },
                 // Seat at zero travel.
                 Mode::Free => x.value(Self::base(c) + TRAVEL).value,
-                // Lift-off when the seat would have to pull.
+                // Lift-off when the seat would have to pull, on the seated
+                // balance the mouth rows give (R4-ROD2-SEAT, [`Self::seated_net`]).
                 Mode::Seated => {
                     let bore = self.bore(properties, c, &x)?;
                     -self
-                        .forces(self.groups[c].members[0], &x, fluid, &bore)?
-                        .net
+                        .seated_net(self.groups[c].members[0], &x, fluid, &bore)?
                         .value
                 }
             };

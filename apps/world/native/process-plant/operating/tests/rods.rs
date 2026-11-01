@@ -1060,6 +1060,79 @@ fn trip_release_seat_and_the_stuck_cluster_follow_the_modes() {
 /// the command's instant; the scheduled opening then finds it open, and any
 /// later trip is acknowledged with no change.
 #[test]
+fn the_seated_lift_off_root_is_the_net_force_on_the_mouth_rows() {
+    // R4-ROD2-SEAT: the lift-off root's seated balance differs from `net`
+    // by exactly the mouth rows' and the EOS row's residuals:
+    //   seated - net = A_b r_lo + B (r_lo + r_up) + B g H (rho(p) - M/V),
+    // so it equals `net` on every consistent state and does not follow the
+    // currents or the bores' pressure where those rows are off.
+    let water = z4_field(0.);
+    let mut b = block(SpiderDrag::EnvelopeDisk { coefficient: 1.28 });
+    let base = held(&mut b, &water, 0., 0.816464);
+    for c in 0..N {
+        b.set_mode(c, Mode::Seated);
+    }
+    let d = fluid_data(&water);
+    let f = fluid(&d);
+    let scales = layout(&b).scales.clone();
+    let area = 24. * std::f64::consts::PI * 0.00475 * 0.00475;
+    let couette = {
+        // The exact concentric moving-inner-wall factor of the 24 bores.
+        let (o, i) = (0.0055_f64, 0.00475_f64);
+        let eta = (o / i).ln();
+        24. * std::f64::consts::PI * ((o * o - i * i) / (2. * eta) - i * i)
+    };
+    let height = 2.4 - -2.25;
+    for (shift_lo, shift_up, shift_p) in [
+        (0., 0., 0.),
+        (0.7, -0.4, 0.),
+        (-1.9, 1.3, 2.0e4),
+        (2.3, 0.2, -3.5e4),
+    ] {
+        let mut physical = base.clone();
+        for c in 0..N {
+            physical[ci(&b, c, LOWER_CURRENT)] += shift_lo;
+            physical[ci(&b, c, UPPER_CURRENT)] += shift_up;
+        }
+        for g in 0..b.bore_groups().len() {
+            physical[b.group_index(g, BORE_PRESSURE)] += shift_p;
+        }
+        let y = solver(&b, &physical);
+        let yp = vec![0.; y.len()];
+        let x = Coordinates::new(&y, &yp, None, 0., &scales).unwrap();
+        for c in [0, 13, 51] {
+            let bore = b.bore(&Liquid, b.group_of(c), &x).unwrap();
+            let forces = b.forces(c, &x, &f, &bore).unwrap();
+            let seated = b.seated_net(c, &x, &f, &bore).unwrap().value;
+            let eos = bore.density.value - bore.mass.value / bore.volume.value;
+            let expected = forces.net.value
+                + area * forces.lower_residual.value
+                + couette * (forces.lower_residual.value + forces.upper_residual.value)
+                + couette * G * height * eos;
+            assert!(
+                (seated - expected).abs() < 1e-9 * (1. + forces.end_face.value.abs()),
+                "{c} {shift_lo} {shift_up} {shift_p}: seated {seated} expected {expected}"
+            );
+            if shift_lo == 0. && shift_p == 0. {
+                // The held steady state at the 0.1 m current: the upper row
+                // is off by Z4's small current mismatch only.
+                assert!(
+                    (seated - forces.net.value).abs()
+                        < couette * forces.upper_residual.value.abs() + 1e-6
+                );
+            } else {
+                // Off the rows, `net` follows the currents and the bores'
+                // pressure; the seated balance reads neither.
+                assert!(
+                    (seated - forces.net.value).abs() > 1e-3,
+                    "{c}: rows off yet equal"
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn a_manual_trip_during_a_scheduled_opening_opens_the_circuit_at_once() {
     let water = z4_field(0.);
     let mut b = block(SpiderDrag::Omitted);
