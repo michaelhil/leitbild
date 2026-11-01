@@ -566,7 +566,9 @@ pub enum Stepping {
     /// exact stops are the scheduled changes and commands, owner time
     /// events, located roots, the declared stops ([`Driver::declare_stop`])
     /// and a sampled client's frame where its output changes
-    /// ([`Client::stop_at_frame`], bounded by [`Client::stop_by_next_frame`]).
+    /// ([`Client::stop_at_frame`]); a free step never passes the frame
+    /// after the next unobserved one (R4-PZR-CONTINUOUS: formerly the
+    /// sampled PZR client's [`Client::stop_by_next_frame`]).
     /// A change or command due behind the integrator restarts at its exact
     /// time from the last step's dense output (the late-discovery rule).
     Free,
@@ -1344,7 +1346,13 @@ impl<S: JoinedSystem> Driver<S> {
             );
             if next > t && clients.iter().any(|c| c.stop_at_frame(self.next_frame)) {
                 candidates.push(next);
-            } else if next > t && clients.iter().any(|c| c.stop_by_next_frame(self.next_frame)) {
+            } else if next > t {
+                // R4-PZR-CONTINUOUS (PERF3): a free step runs at most to the
+                // frame after the next unobserved one. A sampled client's
+                // decision at k + 1 is known only after k
+                // ([`Client::stop_by_next_frame`]); without one it is the
+                // driver's own bound, the one the sampled PZR client set on
+                // every run before its law became continuous.
                 candidates.push(self.frame.instant(self.next_frame + 1));
             }
             let first = candidates.iter().copied().fold(f64::INFINITY, f64::min);
