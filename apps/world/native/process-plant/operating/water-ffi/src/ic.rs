@@ -1162,6 +1162,12 @@ impl<S: JoinedSystem> Client<S> for ProtectionClient {
         if command == Command::TurbineTripAcquired {
             self.protection.turbine_trip(t);
         }
+        // X4 T2: the manual trip opens the protection's own holding chain
+        // (LD01.TRIP.MANUAL), so the holding loss and R12-A2's turbine trip
+        // follow as for an automatic trip; the rods open at the command.
+        if command == Command::ManualReactorTrip {
+            self.protection.manual_interrupt_open(t);
+        }
         Ok(Vec::new())
     }
     /// The owners' discrete state a reading depends on, after the restart

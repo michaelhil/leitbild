@@ -40,6 +40,7 @@
 use super::{
     CellMode, Failure, Fluid, Network, PZR_COORDINATES, Properties, Receipts,
     phase_modes::{saturated_with, view_slots},
+    ports::{SgPass, profile_drives},
     properties::{self as props, BandReport, MetastableBand, Reuse, Water},
     rec, s, selected_phase, stratified,
 };
@@ -255,6 +256,10 @@ struct Pass {
     volume_rate: Vec<Option<Scalar>>,
     /// Regular cells: the liquid tracer amount, as the coupling reads it.
     tracer: Vec<Scalar>,
+    /// R4-NCHEAD: regular cells' coupled SG passes and each face layout's
+    /// SG profile drive, as the residual's.
+    passes: Vec<Option<SgPass>>,
+    profile_drive: Vec<Scalar>,
 }
 impl Pass {
     fn chart(&self, li: usize) -> Chart {
@@ -649,6 +654,8 @@ impl<P: Properties> Blocks<'_, P> {
                 force = force + s(*w) * pass.section_gas_drive[*section];
             }
         }
+        // R4-NCHEAD: an SG port face's profiled head, as the residual's.
+        force = force + pass.profile_drive[li];
         // L1 (decision 0014): as the residual, a locked path's
         // row is `Pi/s`; it reads no onset.
         if net.path_locked(li) {
@@ -1098,6 +1105,9 @@ pub struct NetworkSeed {
     /// column of the coupled owner of the PZR metal and relief; the cell's
     /// column itself does not move.
     pub pzr_boundary: Option<stratified::Boundary>,
+    /// R4-NCHEAD: `(SG primary cell, [d conductance, d capacity])` of the
+    /// cell's single-pass law ([`SgPass`]).
+    pub passes: Vec<(usize, [f64; 2])>,
 }
 
 /// The network's element replay at one base evaluation, for the network's
@@ -1128,6 +1138,10 @@ struct Work {
     stocks: Vec<usize>,
     volumes: Vec<usize>,
     coupled: Vec<[[Scalar; 3]; 2]>,
+    /// The coupled owners' SG pass directions of this column, and the SG
+    /// profiles it recomputed.
+    passes: Vec<Option<SgPass>>,
+    profiles: Vec<usize>,
 }
 
 impl<'a, P: Properties> Replay<'a, P> {
@@ -1188,6 +1202,7 @@ impl<'a, P: Properties> Replay<'a, P> {
             signs: net.column_signs(y),
             work: Work {
                 coupled: vec![[[s(0.); 3]; 2]; net.pzr.cell],
+                passes: vec![None; net.pzr.cell],
                 ..Work::default()
             },
             boundary,
@@ -1276,6 +1291,7 @@ impl<'a, P: Properties> Replay<'a, P> {
         w.impulses.clear();
         w.stocks.clear();
         w.volumes.clear();
+        w.profiles.clear();
         let mut pzr_seeded = false;
         let moved = |a: Scalar| a.direction != 0.;
         let owner = seed.map(|s| structure.owner[s.column]);
@@ -1452,12 +1468,19 @@ impl<'a, P: Properties> Replay<'a, P> {
                     current_volumes: &pass.volume,
                 };
                 w.coupled.fill([[s(0.); 3]; 2]);
+                w.passes.fill(None);
                 hook.local(
                     &w.cells,
                     &w.faces,
                     &fluid,
-                    &mut Receipts::new(&mut w.coupled),
+                    &mut Receipts::with_passes(&mut w.coupled, &mut w.passes),
                 )?;
+                // R4-NCHEAD: the coupled SG passes' directions of this column.
+                for (node, p) in w.passes.iter().enumerate() {
+                    if let Some(p) = p {
+                        add_pass(pass, base, node, p.conductance_w_k.direction, p.capacity_w_k.direction)?;
+                    }
+                }
                 for (node, r) in w.coupled.iter().enumerate() {
                     if r.iter().flatten().any(|q| moved(*q)) {
                         for (target, r) in pass.receipts[node].iter_mut().zip(r) {
@@ -1466,6 +1489,50 @@ impl<'a, P: Properties> Replay<'a, P> {
                             }
                         }
                         w.receipts.push(node);
+                    }
+                }
+            }
+        }
+        // R4-NCHEAD: an owner column's SG pass directions.
+        if let Some(external) = external {
+            for &(node, [dc, dk]) in &external.passes {
+                add_pass(pass, base, node, dc, dk)?;
+            }
+        }
+        // R4-NCHEAD: an SG profile reads its cell and port cells, its port
+        // faces' liquid charts and its coupled pass, after the coupled owners.
+        w.cells.sort_unstable();
+        w.cells.dedup();
+        w.faces.sort_unstable();
+        w.faces.dedup();
+        for (qi, q) in net.profiles.iter().enumerate() {
+            let Some(p) = pass.passes[q.cell] else {
+                continue;
+            };
+            let read = p.conductance_w_k.direction != 0.
+                || p.capacity_w_k.direction != 0.
+                || w.cells.binary_search(&q.cell).is_ok()
+                || q.faces().any(|f| {
+                    w.faces.binary_search(&f).is_ok()
+                        || w.cells.binary_search(&net.faces[f].from).is_ok()
+                        || w.cells.binary_search(&net.faces[f].to).is_ok()
+                });
+            if !read {
+                continue;
+            }
+            q.drives(
+                &net.faces,
+                &pass.cells,
+                &pass.points,
+                &pass.charts,
+                p,
+                &mut pass.profile_drive,
+            )?;
+            w.profiles.push(qi);
+            for f in q.faces() {
+                for li in [2 * f, 2 * f + 1] {
+                    if moved(pass.profile_drive[li]) {
+                        w.impulses.push(li);
                     }
                 }
             }
@@ -1609,8 +1676,36 @@ impl<'a, P: Properties> Replay<'a, P> {
                 }
             }
         }
+        for &qi in &w.profiles {
+            let q = &net.profiles[qi];
+            for f in q.faces() {
+                for li in [2 * f, 2 * f + 1] {
+                    pass.profile_drive[li] = base.profile_drive[li];
+                }
+            }
+        }
+        for (node, p) in pass.passes.iter_mut().enumerate() {
+            *p = base.passes[node];
+        }
         Ok(())
     }
+}
+
+/// R4-NCHEAD: one column's direction of an SG primary cell's pass on the
+/// base pass's value. A pass where the base evaluation reported none refuses.
+fn add_pass(pass: &mut Pass, base: &Pass, node: usize, dc: f64, dk: f64) -> Result<(), Failure> {
+    let b = base
+        .passes
+        .get(node)
+        .copied()
+        .flatten()
+        .ok_or_else(|| fatal(format!("an SG pass direction for cell {node}, whose base reported none")))?;
+    let p = pass.passes[node].unwrap_or(b);
+    pass.passes[node] = Some(SgPass {
+        conductance_w_k: Scalar::new(b.conductance_w_k.value, p.conductance_w_k.direction + dc),
+        capacity_w_k: Scalar::new(b.capacity_w_k.value, p.capacity_w_k.direction + dk),
+    });
+    Ok(())
 }
 
 impl<P: Properties> Blocks<'_, P> {
@@ -1681,6 +1776,8 @@ impl<P: Properties> Blocks<'_, P> {
             volume,
             volume_rate,
             tracer,
+            passes: vec![None; n],
+            profile_drive: vec![s(0.); layouts],
         };
         for li in 0..layouts {
             let chart = self.chart(li, &pass, None)?;
@@ -1718,6 +1815,27 @@ impl<P: Properties> Blocks<'_, P> {
                     }
                 }
             }
+            // R4-NCHEAD: the coupled SG passes and the profiles' drives of the
+            // same evaluation, as Network::couple composes them.
+            for (node, p) in net.coupled_passes.iter().enumerate() {
+                if let Some(p) = p {
+                    if p.conductance_w_k.direction != 0. || p.capacity_w_k.direction != 0. {
+                        return Err(fatal(
+                            "the base evaluation's coupled SG passes carry a direction",
+                        ));
+                    }
+                    pass.passes[node] = Some(*p);
+                }
+            }
+            profile_drives(
+                &net.profiles,
+                &net.faces,
+                &pass.cells,
+                &pass.points,
+                &pass.charts,
+                &pass.passes,
+                &mut pass.profile_drive,
+            )?;
         }
         for j in 0..net.sections.len() {
             let (drive, gas, rotor) = self.section(j, &pass, None, &projection.profile[j])?;

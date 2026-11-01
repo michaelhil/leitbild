@@ -18,12 +18,12 @@
       "dimension": 1246,
       "owner_transactions": 1,
       "s1_settling": {
-        "convergence_failures": 4,
-        "error_failures": 8,
-        "jacobians": 43,
-        "residuals": 322,
+        "convergence_failures": 1,
+        "error_failures": 7,
+        "jacobians": 34,
+        "residuals": 310,
         "settled": true,
-        "steps": 237
+        "steps": 235
       },
       "surface_max_iterations": 2,
       "surface_sets": 18
@@ -47,34 +47,34 @@
       "trip_transactions": 3
     },
     "settle": {
-      "convergence_failures": 17,
-      "error_failures": 56,
+      "convergence_failures": 8,
+      "error_failures": 40,
       "failure": null,
-      "jacobians": 303,
-      "last_order": 2,
-      "linear_setups": 303,
-      "nonlinear_iterations": 2634,
+      "jacobians": 198,
+      "last_order": 1,
+      "linear_setups": 198,
+      "nonlinear_iterations": 1588,
       "reached": true,
-      "residuals": 2636,
-      "root_restarts": 1,
-      "steps": 2102,
-      "system_jacobians": 303,
-      "system_residuals": 4909
+      "residuals": 1589,
+      "root_restarts": 0,
+      "steps": 1259,
+      "system_jacobians": 198,
+      "system_residuals": 2949
     },
     "z1": {
       "constraint_rate_within_bound": true,
       "projection_passes": 0,
-      "rate_passes": 1,
+      "rate_passes": 2,
       "residual_within_bound": true
     }
   },
   "environment": {
     "if97_revision": "0be7b51f35c47e59e6f91f4f0f47108bf997e50c",
-    "metastable_page_sha256": "f30533c1d9281904abb844180699614638585d69647c2dc5bc9847ec6fec6595",
-    "packet_sha256": "6defd761370009b496fcea18cd0a5037fccf4314c78e52853fa5b184d6893034",
+    "metastable_page_sha256": "a5372c930399eae3535e2924e2e6c51001d51f1578f77456df6c3679eb51ff6c",
+    "packet_sha256": "32e1c545f7180f9289833cd8b93aa7b12e65a88eeaa448c5077ae7a280e78cce",
     "s1_gates_sha256": "708aca3b870d6b561a40fa1a6c1c923db8caed40bc5b3a2e72ebf17a86a4c91a",
     "sundials_version": "7.5.0",
-    "water_adapter_sha256": "a98cdb8a5f73d2588a2757778f1e0d54ab4df2c723e1d6c4295040632c1597ab"
+    "water_adapter_sha256": "a10b1fd75e8b9ce58d060193e1e8330bc5abdc7e3bfd1205cc562840688e5dd0"
   },
   "kind": "ld01-smoke",
   "oracle_columns": 200,

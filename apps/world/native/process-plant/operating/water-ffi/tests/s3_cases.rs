@@ -1157,8 +1157,9 @@ fn window_cap(case: Case, spec: &Value, ramp: Option<Ramp>) -> Option<WindowCap>
     let (window_s, starts): (Option<f64>, fn(&Value) -> bool) = match case {
         // C5's cap is set by the case after the offsite loss's restart.
         Case::C1 | Case::C5 => return None,
+        // X4 T2: the rod trip's command starts the same window.
         Case::C2 => (spec["window_s"].as_f64(), |r| {
-            r["command"] == "TurbineTripAcquired"
+            r["command"] == "TurbineTripAcquired" || r["command"] == "ManualReactorTrip"
         }),
         Case::C3 => (spec["window_s"].as_f64(), |r| r["command"] == "SupplyLoss"),
         // C4 (r1 `windows`): one window from each of the relief malfunction,
@@ -1498,6 +1499,11 @@ struct CaseConfig {
     /// (`LD01_ROD_CONTROL_WIKI`). C2 with both is the stuck-cluster case
     /// C2S (`ld01-r4-c2-stuck-case`).
     stuck: bool,
+    /// X4 T2 (lead 1 Nov; lines PHYS3's): C2's event is the operator's
+    /// manual reactor trip in place of the turbine trip (`LD01_S3_TRIP`
+    /// turbine | rod, unset turbine; rod only on C2). The turbine trip then
+    /// follows by the I&C's own reactor-trip turbine trip (R12-A2).
+    rod_trip: bool,
     /// R4-COST-UNIT (PERF2, lead 1 Nov): the driver's residual-jump
     /// diagnostic at class-S stops (`LD01_S3_JUMP_DIAGNOSTIC` on | off,
     /// unset off). It assembles a Jacobian and an LU at every S stop, which
@@ -1567,6 +1573,11 @@ impl CaseConfig {
             "off" => false,
             v => return Err(format!("LD01_S3_STUCK={v}: on or off")),
         };
+        let rod_trip = match var("LD01_S3_TRIP", "turbine").as_str() {
+            "turbine" => false,
+            "rod" => true,
+            v => return Err(format!("LD01_S3_TRIP={v}: turbine or rod")),
+        };
         Ok(Self {
             solver,
             matrix_rebuild,
@@ -1576,11 +1587,12 @@ impl CaseConfig {
             dc,
             single,
             stuck,
+            rod_trip,
             jump_diagnostic,
         })
     }
     fn json(&self) -> Value {
-        json!({"weights": self.solver.weights, "first_step": self.solver.first_step, "matrix_rebuild": format!("{:?}", self.matrix_rebuild), "ramp_cap": self.ramp_cap, "rod_auto": self.rod_auto, "turbine_governor": self.turbine_governor, "dc": self.dc, "single": self.single, "stuck": self.stuck, "stepping": self.solver.stepping, "water": self.solver.water, "jump_diagnostic": self.jump_diagnostic,
+        json!({"weights": self.solver.weights, "first_step": self.solver.first_step, "matrix_rebuild": format!("{:?}", self.matrix_rebuild), "ramp_cap": self.ramp_cap, "rod_auto": self.rod_auto, "turbine_governor": self.turbine_governor, "dc": self.dc, "single": self.single, "stuck": self.stuck, "trip": if self.rod_trip { "rod" } else { "turbine" }, "stepping": self.solver.stepping, "water": self.solver.water, "jump_diagnostic": self.jump_diagnostic,
             "cost_excludes_case_observer": true})
     }
 }
@@ -1769,6 +1781,13 @@ fn drive(
         "the block's frame is the I&C frame"
     );
     let (zero_after, command) = case_clock(case, spec, declared_frame_s).unwrap();
+    // X4 T2: the rod trip at C2's trip instant, by the operator's command.
+    let command = if ask.config.rod_trip {
+        assert!(case == Case::C2, "LD01_S3_TRIP=rod is C2's (X4 T2)");
+        Some(Command::ManualReactorTrip)
+    } else {
+        command
+    };
     let packet_json: Value = inputs.spine.packet_json().expect("packet json");
     // Plan r4 X4.1 (FEED): the SG owner's continuous feed control, recorded
     // per frame by an observation client (class O), with a feed train.
