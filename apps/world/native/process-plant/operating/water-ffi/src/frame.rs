@@ -229,6 +229,13 @@ pub trait Client<S> {
     fn stop_at_frame(&self, _k: u64) -> bool {
         false
     }
+    /// PERF2 (R4-FRAME-STOPS): whether the integrator must not pass frame
+    /// `k + 1` before frame `k` is observed, when it need not stop at `k`
+    /// itself: a sampled client whose class-S decision at `k + 1` is known
+    /// only once it samples frame `k`.
+    fn stop_by_next_frame(&self, _k: u64) -> bool {
+        false
+    }
     /// A declared command applied by the plant's owners at `t` (after the
     /// frames up to `t`): the client's own retained part (for example the
     /// turbine controls' trip memory). It may decide changes.
@@ -531,6 +538,38 @@ pub struct Driver<S> {
     /// [`MatrixRebuild::Stock`] keeps stock matrix management (a mechanics
     /// test on plain IDA) and refuses a handle that has MR-1 on.
     pub matrix_rebuild: MatrixRebuild,
+    /// R4-FREE-STEPS (PERF2, lead 1 Nov): how a run bounds stock's steps.
+    pub stepping: Stepping,
+    /// R4-FREE-STEPS: the caller's declared exact stops (a Grid exchange's
+    /// interval end, a case window's bound, the run's end), sorted.
+    hard_stops: Vec<f64>,
+    /// R4-FREE-STEPS: the integrator's time; ahead of `observed_to` by at
+    /// most the part of its last step not observed yet.
+    integrator_s: f64,
+    /// R4-FREE-STEPS: the last step's own state at `integrator_s` (stock's
+    /// returned `y`, `y'`), its located roots and whether its accepted state
+    /// is still to be sampled, kept while observation catches up.
+    step_y: Vec<f64>,
+    step_yp: Vec<f64>,
+    held_roots: Option<Vec<i32>>,
+    accepted_pending: bool,
+}
+
+/// R4-FREE-STEPS (PERF2, lead 1 Nov): how [`Driver::run`] bounds stock's
+/// steps.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Stepping {
+    /// Every run's bound `until` is an exact stop (the S3 drives chunk at
+    /// every frame instant, so every frame is one).
+    FrameStops,
+    /// Stock steps freely and frames are served from its dense output; the
+    /// exact stops are the scheduled changes and commands, owner time
+    /// events, located roots, the declared stops ([`Driver::declare_stop`])
+    /// and a sampled client's frame where its output changes
+    /// ([`Client::stop_at_frame`], bounded by [`Client::stop_by_next_frame`]).
+    /// A change or command due behind the integrator restarts at its exact
+    /// time from the last step's dense output (the late-discovery rule).
+    Free,
 }
 
 /// The most IDAS check points held before stock IDAAdjReInit frees them
@@ -608,10 +647,34 @@ impl<S: JoinedSystem> Driver<S> {
             gate_observed_to: t0,
             restart_max_step: None,
             matrix_rebuild: MatrixRebuild::Packet,
+            stepping: Stepping::FrameStops,
+            hard_stops: Vec::new(),
+            integrator_s: t0,
+            step_y: Vec::new(),
+            step_yp: Vec::new(),
+            held_roots: None,
+            accepted_pending: false,
         })
     }
     pub fn frame(&self) -> Frame {
         self.frame
+    }
+    /// R4-FREE-STEPS: declare an exact stop at `t` (prospective): under
+    /// [`Stepping::Free`] the integrator stands at `t` when a run reaches it.
+    pub fn declare_stop(&mut self, t: f64) -> Result<(), String> {
+        if !(t.is_finite() && t >= self.observed_to) {
+            return Err(format!("a stop at {t} s is not prospective"));
+        }
+        if !self.hard_stops.iter().any(|s| same_instant(*s, t)) {
+            self.hard_stops.push(t);
+            self.hard_stops.sort_by(f64::total_cmp);
+        }
+        Ok(())
+    }
+    /// R4-FREE-STEPS: the integrator's time (equal to the observed time
+    /// except while a free step's end is ahead of it).
+    pub fn integrator_s(&self) -> f64 {
+        self.integrator_s
     }
     /// Declare a prospective command at `t` (class R at its exact time).
     pub fn command(&mut self, t: f64, command: Command) -> Result<(), String> {
@@ -650,7 +713,17 @@ impl<S: JoinedSystem> Driver<S> {
         let due = self.earliest_due().is_some_and(|d| Self::due_at(d, t))
             || self.commands.first().is_some_and(|c| Self::due_at(c.0, t));
         if due {
-            self.apply(ida, t, None, y, yp, clients, setup, None, None)?;
+            // R4-FREE-STEPS: behind a free step's end, the instant restarts
+            // from that step's dense output at t (the caller's y, y', which
+            // a free run leaves at the time it reached).
+            let ahead = self.integrator_s > t && !same_instant(self.integrator_s, t);
+            let rolled_back_from = ahead.then_some(self.integrator_s);
+            self.held_roots = None;
+            self.accepted_pending = false;
+            self.apply(ida, t, None, y, yp, clients, setup, rolled_back_from, None)?;
+            self.integrator_s = t;
+            self.step_y.clear();
+            self.step_yp.clear();
         }
         Ok(())
     }
@@ -724,8 +797,16 @@ impl<S: JoinedSystem> Driver<S> {
     /// Where observation of a step ending at `to` stops: the earliest due
     /// change inside the step, or `to` when that change is `to`'s instant.
     fn limit(&self, to: f64) -> f64 {
-        self.earliest_due()
-            .map_or(to, |d| if same_instant(d, to) { to } else { d.min(to) })
+        // R4-FREE-STEPS: a free step may pass a declared command too.
+        let command = match self.stepping {
+            Stepping::Free => self.commands.first().map(|c| c.0),
+            Stepping::FrameStops => None,
+        };
+        let due = match (self.earliest_due(), command) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        };
+        due.map_or(to, |d| if same_instant(d, to) { to } else { d.min(to) })
     }
     /// Whether a due time is due at the instant `t`.
     fn due_at(due: f64, t: f64) -> bool {
@@ -898,6 +979,9 @@ impl<S: JoinedSystem> Driver<S> {
             }
             t = self.observed_to;
         }
+        if self.stepping == Stepping::Free {
+            return self.run_free(ida, until, y, yp, clients, setup, observer);
+        }
         let n = y.len();
         let mut scratch = vec![0.; n];
         while t < until && !same_instant(t, until) {
@@ -939,6 +1023,8 @@ impl<S: JoinedSystem> Driver<S> {
             candidates.extend(event);
             if next > t && clients.iter().any(|c| c.stop_at_frame(self.next_frame)) {
                 candidates.push(next);
+            } else if next > t && clients.iter().any(|c| c.stop_by_next_frame(self.next_frame)) {
+                candidates.push(self.frame.instant(self.next_frame + 1));
             }
             let first = candidates.iter().copied().fold(f64::INFINITY, f64::min);
             // One instant: at an owner's event among them, its own time.
@@ -1042,7 +1128,220 @@ impl<S: JoinedSystem> Driver<S> {
                 )?;
             }
         }
+        self.integrator_s = t;
         Ok(Reached::Until(t))
+    }
+
+    /// R4-FREE-STEPS: [`Driver::run_observed`] under [`Stepping::Free`]. On
+    /// return `y`, `y'` are the state at the time reached (the last step's
+    /// dense output there when the integrator is ahead).
+    #[allow(clippy::too_many_arguments)] // One driven span: handle, state, clients, setup, observer.
+    fn run_free<'o>(
+        &mut self,
+        ida: &mut Ida<S>,
+        until: f64,
+        y: &mut [f64],
+        yp: &mut [f64],
+        clients: &mut [&mut dyn Client<S>],
+        setup: &Setup<'_>,
+        mut observer: Option<&mut (dyn Observer<S> + 'o)>,
+    ) -> Result<Reached, String> {
+        let n = y.len();
+        let mut scratch = vec![0.; n];
+        loop {
+            let t = self.observed_to;
+            if !(t < until && !same_instant(t, until)) {
+                break;
+            }
+            let ahead = self.integrator_s > t && !same_instant(self.integrator_s, t);
+            let due_now = self.earliest_due().is_some_and(|d| Self::due_at(d, t))
+                || self.commands.first().is_some_and(|c| Self::due_at(c.0, t));
+            if due_now {
+                let rolled_back_from = if ahead {
+                    // Due behind the integrator: restart at its exact time
+                    // from the last step's dense output.
+                    ida.dense(t, 0, &mut scratch)?;
+                    y.copy_from_slice(&scratch);
+                    ida.dense(t, 1, &mut scratch)?;
+                    yp.copy_from_slice(&scratch);
+                    self.held_roots = None;
+                    self.accepted_pending = false;
+                    Some(self.integrator_s)
+                } else {
+                    None
+                };
+                let roots = self.held_roots.take();
+                self.apply(
+                    ida,
+                    t,
+                    roots,
+                    y,
+                    yp,
+                    clients,
+                    setup,
+                    rolled_back_from,
+                    observer.as_deref_mut(),
+                )?;
+                self.integrator_s = t;
+                self.step_y.clear();
+                self.step_yp.clear();
+                continue;
+            }
+            if ahead {
+                // Serve the observation from the last step's dense output.
+                let to = if same_instant(self.integrator_s, until) {
+                    self.integrator_s
+                } else {
+                    self.integrator_s.min(until)
+                };
+                let order = usize::try_from(ida.stats()?.last_order.max(0)).unwrap_or(0);
+                let observed = {
+                    let dense = StepDense {
+                        ida,
+                        order,
+                        from: self.observed_to,
+                        to: self.integrator_s,
+                    };
+                    self.observe(clients, &dense, ida.system(), to)?
+                };
+                if let Some(o) = observer.as_deref_mut() {
+                    self.gate_samples(ida, o, observed)?;
+                }
+                if observed == self.integrator_s {
+                    self.at_integrator(ida, y, yp, clients, setup, observer.as_deref_mut())?;
+                }
+                continue;
+            }
+            // The integrator stands at t: one free step.
+            let event = ida.system().next_time_event(t);
+            let next = self.frame.instant(self.next_frame);
+            if let Some(e) = event.filter(|e| same_instant(*e, t)) {
+                return Err(format!(
+                    "an owner time event at {e} s lies within stock's resolution of the integrator's {t} s, which no step reaches"
+                ));
+            }
+            if next > t && same_instant(next, t) {
+                return Err(format!(
+                    "frame {} at {next} s lies within stock's resolution of the integrator's {t} s and was not observed",
+                    self.next_frame
+                ));
+            }
+            let mut candidates: Vec<f64> = Vec::new();
+            candidates.extend(self.earliest_due());
+            candidates.extend(self.commands.first().map(|c| c.0));
+            candidates.extend(event);
+            candidates.extend(
+                self.hard_stops
+                    .iter()
+                    .copied()
+                    .find(|s| *s > t && !same_instant(*s, t)),
+            );
+            if next > t && clients.iter().any(|c| c.stop_at_frame(self.next_frame)) {
+                candidates.push(next);
+            } else if next > t && clients.iter().any(|c| c.stop_by_next_frame(self.next_frame)) {
+                candidates.push(self.frame.instant(self.next_frame + 1));
+            }
+            let first = candidates.iter().copied().fold(f64::INFINITY, f64::min);
+            if !first.is_finite() {
+                return Err(format!(
+                    "free stepping from {t} s has no bound: declare the run's end as a stop"
+                ));
+            }
+            let stop = match event {
+                Some(e) if same_instant(e, first) => e,
+                _ => first,
+            };
+            ida.stop_at(stop)?;
+            let started = (self.clock)();
+            let outcome = ida.step(stop, y, yp);
+            let step_s = (self.clock)() - started;
+            self.cpu.solver_s += step_s;
+            let (reached, roots) = match outcome? {
+                Advance::Reached(time) => (time, None),
+                Advance::Root { time, directions } => (time, Some(directions)),
+            };
+            self.solver_reached_s = reached;
+            if step_s > self.cpu.worst_step.0 {
+                self.cpu.worst_step = (step_s, reached);
+            }
+            if roots.is_none() {
+                // An accepted step's state: C3's donor flips and R3 band.
+                let _cost = cost::scope("step-state");
+                let started = (self.clock)();
+                let joined = &mut ida.system_mut().integrated_mut().joined;
+                let flips = self.donor_flips.total();
+                self.donor_flips.observe(&joined.network, reached, y);
+                for _ in flips..self.donor_flips.total() {
+                    self.counts.record(Class::O, "donor flip");
+                }
+                let in_band = joined
+                    .r3_band_clusters(y, yp)
+                    .map_err(|e| format!("R3 band at {reached} s: {e:?}"))?;
+                if in_band > 0 {
+                    self.r3_band_states += 1;
+                    self.counts.record(Class::O, "R3 band state");
+                }
+                self.observed_states += 1;
+                self.cpu.observation_s += (self.clock)() - started;
+            }
+            self.integrator_s = reached;
+            self.step_y.clear();
+            self.step_y.extend_from_slice(y);
+            self.step_yp.clear();
+            self.step_yp.extend_from_slice(yp);
+            self.accepted_pending = roots.is_none();
+            self.held_roots = roots;
+        }
+        if self.integrator_s > self.observed_to && !same_instant(self.integrator_s, self.observed_to)
+        {
+            ida.dense(self.observed_to, 0, &mut scratch)?;
+            y.copy_from_slice(&scratch);
+            ida.dense(self.observed_to, 1, &mut scratch)?;
+            yp.copy_from_slice(&scratch);
+        }
+        Ok(Reached::Until(self.observed_to))
+    }
+
+    /// R4-FREE-STEPS: observation has reached the integrator's time: the
+    /// accepted state's gate sample, then the located roots, owner time
+    /// events and changes due there, applied at that exact stop.
+    #[allow(clippy::too_many_arguments)] // One instant: handle, state, clients, setup, observer.
+    fn at_integrator<'o>(
+        &mut self,
+        ida: &mut Ida<S>,
+        y: &mut [f64],
+        yp: &mut [f64],
+        clients: &mut [&mut dyn Client<S>],
+        setup: &Setup<'_>,
+        mut observer: Option<&mut (dyn Observer<S> + 'o)>,
+    ) -> Result<(), String> {
+        let t = self.integrator_s;
+        y.copy_from_slice(&self.step_y);
+        yp.copy_from_slice(&self.step_yp);
+        if self.accepted_pending {
+            self.accepted_pending = false;
+            if let Some(o) = observer.as_deref_mut() {
+                let _cost = cost::scope("gate");
+                let started = (self.clock)();
+                let q = match &self.quadratures {
+                    Some(_) => self.quadratures_at(ida, t)?,
+                    None => Vec::new(),
+                };
+                o.accepted(ida.system_mut(), t, y, yp, &q)?;
+                self.cpu.gate_s += (self.clock)() - started;
+            }
+        }
+        let event = due_owner_event(ida, t);
+        let due = self.earliest_due().is_some_and(|d| Self::due_at(d, t))
+            || self.commands.first().is_some_and(|c| Self::due_at(c.0, t));
+        let roots = self.held_roots.take();
+        if roots.is_some() || event || due {
+            self.apply(ida, t, roots, y, yp, clients, setup, None, observer)?;
+            self.integrator_s = t;
+            self.step_y.clear();
+            self.step_yp.clear();
+        }
+        Ok(())
     }
 
     /// HOOK (S3GATES): sample the gate observer on its grid up to `to`
@@ -1195,7 +1494,10 @@ impl<S: JoinedSystem> Driver<S> {
             // The restart's left side, before any change of the instant.
             self.gate_point(ida, o, t, y, yp, Side::BeforeRestart)?;
         }
-        self.client_change_at_restart = !held.is_empty();
+        // R4-FREE-STEPS: a rolled-back instant has discarded stock's history,
+        // so it restarts even when the owners change nothing.
+        self.client_change_at_restart = !held.is_empty()
+            || (rolled_back_from.is_some() && self.stepping == Stepping::Free);
         for f in held {
             f(ida.system_mut())?;
         }

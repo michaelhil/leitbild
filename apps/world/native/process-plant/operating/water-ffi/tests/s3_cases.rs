@@ -1445,6 +1445,9 @@ struct CaseConfig {
     /// (`LD01_ROD_AUTO` on | off, unset off; the block from
     /// `LD01_ROD_CONTROL_WIKI`).
     rod_auto: bool,
+    /// R4-FREE-STEPS (PERF2): `LD01_S3_STEPPING` frame-stops | free (unset
+    /// frame-stops): how the frame driver bounds stock's steps.
+    stepping: leitbild_operating_water::frame::Stepping,
 }
 impl CaseConfig {
     /// `LD01_S3_WEIGHTS` (stock | grouped), `LD01_S3_FIRST_STEP` (declared
@@ -1478,15 +1481,21 @@ impl CaseConfig {
             "off" => false,
             v => return Err(format!("LD01_ROD_AUTO={v}: on or off")),
         };
+        let stepping = match var("LD01_S3_STEPPING", "frame-stops").as_str() {
+            "frame-stops" => leitbild_operating_water::frame::Stepping::FrameStops,
+            "free" => leitbild_operating_water::frame::Stepping::Free,
+            v => return Err(format!("LD01_S3_STEPPING={v}: frame-stops or free")),
+        };
         Ok(Self {
             solver,
             matrix_rebuild,
             ramp_cap,
             rod_auto,
+            stepping,
         })
     }
     fn json(&self) -> Value {
-        json!({"weights": self.solver.weights, "first_step": self.solver.first_step, "matrix_rebuild": format!("{:?}", self.matrix_rebuild), "ramp_cap": self.ramp_cap, "rod_auto": self.rod_auto})
+        json!({"weights": self.solver.weights, "first_step": self.solver.first_step, "matrix_rebuild": format!("{:?}", self.matrix_rebuild), "ramp_cap": self.ramp_cap, "rod_auto": self.rod_auto, "stepping": format!("{:?}", self.stepping)})
     }
 }
 
@@ -1998,6 +2007,21 @@ fn drive(
         Vec::new()
     };
     bounds.extend(exchanges.iter().map(|(b, _)| *b));
+    // R4-FREE-STEPS: under free stepping only these bounds (the event, the
+    // window's end, the exchanges' interval ends and the run's end) are
+    // exact stops; the frame chunks below are observation marks.
+    if ask.config.stepping == leitbild_operating_water::frame::Stepping::Free {
+        assert!(
+            case != Case::C4,
+            "C4 reads its frames at exact chunk stops: run it with LD01_S3_STEPPING=frame-stops"
+        );
+        driver.stepping = leitbild_operating_water::frame::Stepping::Free;
+        for b in bounds.iter().filter(|b| **b > t0 && **b <= until) {
+            driver
+                .declare_stop(*b)
+                .unwrap_or_else(|e| panic!("the case's stops: {e}"));
+        }
+    }
     let period = frame.period_s();
     let first = (t0 / period).floor() as i64 + 1;
     let last = (until / period).ceil() as i64;
