@@ -236,7 +236,7 @@ pub struct SourceRangeSpec {
 }
 
 /// The source of a discrete state report.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ReportSource {
     /// The ACT.B turbine controls' retained trip memory (`LD01.TG` TRIP).
@@ -245,6 +245,41 @@ pub enum ReportSource {
     /// chain, closed only when every cluster is seated (the rods owner's
     /// modes, read live after each restart).
     BankInserted,
+    /// PROC T1 (ld01-electrical-reports): AC bus `bus` energized through a
+    /// closed incoming device from an energized source (the routing's
+    /// reports, read after each restart).
+    BusAvailable { bus: String },
+    /// PROC T2: a source energized.
+    SourceAvailable { source: ElectricalSource },
+    /// PROC T2: a source qualified (the distribution block's band and timers).
+    SourceQualified { source: ElectricalSource },
+    /// PROC T3: an incoming device's contact closed.
+    IncomingClosed {
+        bus: String,
+        source: ElectricalSource,
+    },
+    /// PROC T3: an incoming device's travel complete (false during its stroke).
+    IncomingTravelComplete {
+        bus: String,
+        source: ElectricalSource,
+    },
+}
+impl ReportSource {
+    /// Read from the electrical routing's reports.
+    pub fn electrical(&self) -> bool {
+        !matches!(
+            self,
+            ReportSource::TurbineRetainedTrip | ReportSource::BankInserted
+        )
+    }
+}
+
+/// An electrical source as the reports name it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ElectricalSource {
+    Unit,
+    Reserve,
 }
 
 #[derive(Clone, Debug, Deserialize)]

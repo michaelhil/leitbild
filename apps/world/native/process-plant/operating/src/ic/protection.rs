@@ -81,6 +81,9 @@ pub struct Protection {
     /// Every cluster seated (the `BankInserted` report's contact chain), as
     /// the client last read the rods owner.
     bank_seated: bool,
+    /// PROC T1–T3: each electrical report's plant state by report id, as
+    /// the client last read the routing (empty without electrical reports).
+    report_states: std::collections::BTreeMap<String, bool>,
     /// `LD01.CORE.NI.SHUTDOWN`'s SOURCE-pulse path, when the section has it.
     pub source: Option<SourceRange>,
     /// The last decided frame.
@@ -258,6 +261,7 @@ impl Protection {
             holding_lost_frame: None,
             turbine_trip_requested: None,
             bank_seated: false,
+            report_states: std::collections::BTreeMap::new(),
             source: section
                 .source_range
                 .as_ref()
@@ -303,6 +307,26 @@ impl Protection {
     /// The rods owner's all-seated state, for the `BankInserted` report.
     pub fn set_bank_seated(&mut self, seated: bool) {
         self.bank_seated = seated;
+    }
+    /// PROC T1–T3: the plant state of electrical report `id`.
+    pub fn set_report_state(&mut self, id: &str, state: bool) -> Result<(), String> {
+        if !self
+            .reports
+            .iter()
+            .any(|r| r.spec.id == id && r.spec.source.electrical())
+        {
+            return Err(format!("{id} is not an electrical report of the section"));
+        }
+        self.report_states.insert(id.to_string(), state);
+        Ok(())
+    }
+    /// The section's report specifications.
+    pub fn report_specs(&self) -> Vec<&ReportSpec> {
+        self.reports.iter().map(|r| &r.spec).collect()
+    }
+    /// Whether the section has electrical reports.
+    pub fn electrical_reports(&self) -> bool {
+        self.reports.iter().any(|r| r.spec.source.electrical())
     }
     pub fn turbine_trip(&mut self, t: f64) {
         self.turbine_trip_s.get_or_insert(t);
@@ -362,7 +386,10 @@ impl Protection {
             .map(|r| {
                 (
                     r.spec.id.clone(),
-                    r.channel.delivery.delivered().map(|s| (s.acquired, s.value)),
+                    r.channel
+                        .delivery
+                        .delivered()
+                        .map(|s| (s.acquired, s.value)),
                 )
             })
             .collect()
@@ -387,7 +414,7 @@ impl Protection {
     /// exact (real numbers as bits). The compiled section (families,
     /// functions, timing) is recomposed on restore; the log is a receipt.
     pub fn snapshot(&self) -> Result<Value, String> {
-        Ok(json!({
+        let mut v = json!({
             "families": self.families.iter().map(|f| json!({"id": f.spec.id,
                 "channels": f.channels.iter().map(Analog::snapshot).collect::<Vec<_>>()})).collect::<Vec<_>>(),
             "reports": self.reports.iter().map(|r| r.channel.snapshot()).collect::<Vec<_>>(),
@@ -399,28 +426,33 @@ impl Protection {
             "bank_seated": self.bank_seated,
             "source": self.source.as_ref().map(SourceRange::snapshot),
             "decided": self.decided,
-        }))
+        });
+        // Only a section with electrical reports carries their states.
+        if self.electrical_reports() {
+            v["report_states"] = json!(self.report_states);
+        }
+        Ok(v)
     }
     /// Restore [`Protection::snapshot`] into the protection of the same
     /// section exactly; any other layout refuses.
     pub fn restore(&mut self, v: &Value) -> Result<(), String> {
         use super::acquisition::{restored_frame_option, restored_real_option, snapshot_fields};
-        let o = snapshot_fields(
-            v,
-            "protection",
-            &[
-                "families",
-                "reports",
-                "divisions",
-                "holding",
-                "turbine_trip_s",
-                "holding_lost_frame",
-                "turbine_trip_requested",
-                "bank_seated",
-                "source",
-                "decided",
-            ],
-        )?;
+        let mut keys = vec![
+            "families",
+            "reports",
+            "divisions",
+            "holding",
+            "turbine_trip_s",
+            "holding_lost_frame",
+            "turbine_trip_requested",
+            "bank_seated",
+            "source",
+            "decided",
+        ];
+        if self.electrical_reports() {
+            keys.push("report_states");
+        }
+        let o = snapshot_fields(v, "protection", &keys)?;
         let families = o["families"]
             .as_array()
             .filter(|a| a.len() == self.families.len())
@@ -467,6 +499,21 @@ impl Protection {
             }
         }
         self.decided = restored_frame_option(&o["decided"], "last decided frame")?;
+        if self.electrical_reports() {
+            let states: std::collections::BTreeMap<String, bool> =
+                serde_json::from_value(o["report_states"].clone())
+                    .map_err(|e| format!("protection snapshot: report states: {e}"))?;
+            if states.len()
+                != self
+                    .reports
+                    .iter()
+                    .filter(|r| r.spec.source.electrical())
+                    .count()
+            {
+                return Err("protection snapshot: one state per electrical report".into());
+            }
+            self.report_states = states;
+        }
         Ok(())
     }
     pub fn channel_mut(&mut self, id: &str) -> Option<&mut Analog> {
@@ -490,9 +537,15 @@ impl Protection {
             }
         }
         for r in &mut self.reports {
-            match r.spec.source {
+            match &r.spec.source {
                 ReportSource::TurbineRetainedTrip => r.channel.acquire(k, tripped),
                 ReportSource::BankInserted => r.channel.acquire(k, self.bank_seated),
+                _ => {
+                    let state = self.report_states.get(&r.spec.id).ok_or_else(|| {
+                        format!("{}: the routing's report was never read", r.spec.id)
+                    })?;
+                    r.channel.acquire(k, *state)
+                }
             }
         }
         if let Some(s) = self.source.as_mut() {
