@@ -12,11 +12,13 @@ import { compileOperatingThermal, parseOperatingThermal } from './reference-desi
 
 test('thermal selection is explicit, singular and strict; no legacy coefficients', () => {
   const block = (value: unknown) => '```reference-operating-thermal\n' + JSON.stringify(value) + '\n```'
-  const coefficients = { identity: 'LD01-HOT-THERMAL-1' as const, guideEmissivity: .7, sgThermalDiameter_m: .019 }
+  // X4.5: the SG thermal diameter is the tube bundle's inside diameter (ld01-sg-contact), no longer a coefficient here.
+  const coefficients = { identity: 'LD01-HOT-THERMAL-1' as const, guideEmissivity: .7 }
   expect(parseOperatingThermal(block(coefficients))).toEqual(coefficients)
   expect(() => parseOperatingThermal(block(coefficients) + '\n' + block(coefficients))).toThrow()
   expect(() => parseOperatingThermal(block({ ...coefficients, guideEmissivity: 2 }))).toThrow()
   expect(() => parseOperatingThermal(block({ ...coefficients, fuelEmissivity: .8 }))).toThrow()
+  expect(() => parseOperatingThermal(block({ ...coefficients, sgThermalDiameter_m: .019 }))).toThrow()
   expect(() => parseOperatingThermal('')).toThrow()
 })
 
