@@ -70,8 +70,11 @@ export const parseProcedureAssessment = (value: unknown): ProcedureAssessment =>
     }
     if (node.type === 'not' || node.type === 'held') {
       record(node, node.type === 'held' ? ['type', 'condition', 'durationSeconds'] : ['type', 'condition'])
-      return node.type === 'held' ? { type: 'held', condition: condition(node.condition, depth + 1), durationSeconds: seconds(node.durationSeconds, 'durationSeconds', true) }
-        : { type: 'not', condition: condition(node.condition, depth + 1) }
+      const child = condition(node.condition, depth + 1)
+      // Absence is evidence only for its own unknown route: negated, it would read any acquired value as support.
+      if (assessmentLeaves(child).some(leaf => leaf.type === 'not-acquired')) throw new Error(`not-acquired cannot be placed under ${node.type}`)
+      return node.type === 'held' ? { type: 'held', condition: child, durationSeconds: seconds(node.durationSeconds, 'durationSeconds', true) }
+        : { type: 'not', condition: child }
     }
     if (node.type === 'manual' || node.type === 'not-acquired') {
       record(node, ['type', 'description', 'tagIds', 'source'])

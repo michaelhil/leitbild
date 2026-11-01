@@ -15,7 +15,10 @@ test('a not-acquired leaf names its tags, reason and source, and joins the step 
 
 test('not-acquired is refused outside an unknown-outcome branch and without explicit tags or reason', () => {
   expect(() => parseProcedure(source([{ branchIndex: 0, condition: notAcquired }]))).toThrow('[outcome: unknown]')
-  expect(() => parseProcedure(source([{ branchIndex: 1, condition: { type: 'not', condition: notAcquired } }], 'rno'))).toThrow('[outcome: unknown]')
+  expect(() => parseProcedure(source([{ branchIndex: 1, condition: { type: 'any', conditions: [notAcquired] } }], 'rno'))).toThrow('[outcome: unknown]')
+  // On its own unknown route too: negated or held, absence would turn any acquired value into support.
+  for (const wrapped of [{ type: 'not', condition: notAcquired }, { type: 'held', durationSeconds: 1, condition: notAcquired },
+    { type: 'not', condition: { type: 'any', conditions: [notAcquired] } }]) expect(() => parseProcedure(source([{ branchIndex: 1, condition: wrapped }]))).toThrow('cannot be placed under')
   expect(() => parseProcedure(source([{ branchIndex: 1, condition: notAcquired }], 'normal'))).toThrow('[outcome: unknown]')
   expect(() => parseProcedure(source([{ branchIndex: 1, condition: notAcquired }], 'unknown', { condition: notAcquired }))).toThrow('not step assessment')
   for (const invalid of [{ ...notAcquired, tagIds: [] }, { ...notAcquired, tagIds: ['PRHR-FT', 'PRHR-FT'] }, { ...notAcquired, description: '' },
