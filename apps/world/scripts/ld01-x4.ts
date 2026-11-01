@@ -3,7 +3,9 @@
  * (tests/turb_gov.rs). Nothing here is registered in a Pack, the Runtime Hub
  * or the deployer.
  *
- * Reads the pinned `ld01-r4-x4-cases` (RP-pin-x4-r4) and
+ * Reads the pinned `ld01-r4-x4-cases` (RP-pin-x4-r5; PHYS3 moved the pin from
+ * RP-pin-x4-r4: r5 changes T5 only, so the H1, S1, S2 and R1 lines this judge
+ * reads are unchanged from r4) and
  * `ld01-operator-budgets` (RP-pin-ogb-r2) blocks, refusing unless their
  * canonical-JSON sha256 equals the pin; `ld01-ou-predicates` r6 from its wiki root and
  * the plant blocks from the head's wiki root; one case receipt and its
@@ -36,7 +38,7 @@ import {canonical, fenced, sha256, BUDGETS_PIN} from './ld01-x1'
 import {readdirSync, statSync} from 'node:fs'
 import {join} from 'node:path'
 
-export const X4_PIN = {fence: 'ld01-r4-x4-cases', pin: 'RP-pin-x4-r4', sha256: 'd8ab0dc634f5cf3b2d957ffccdbf9ff1b8a7c24c3eb8cf824482804cbef45ee9'}
+export const X4_PIN = {fence: 'ld01-r4-x4-cases', pin: 'RP-pin-x4-r5', sha256: 'b25bf2c554ecd0d3e63b288d1921851bdb2ef2c36d3a899b21f3228edb567ac1'}
 type J = any
 type Line = {id: string, verdict: 'pass' | 'fail' | 'recorded' | 'not evaluable', evidence?: J}
 
