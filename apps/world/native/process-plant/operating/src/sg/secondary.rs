@@ -1210,15 +1210,14 @@ impl<P: Properties> Secondary<P> for Secondaries {
         if loaded {
             keys.push("turbine_load");
         }
-        let sided = tripped;
-        if sided {
+        if tripped {
             keys.push("bypass_side");
         }
         if self.feed.is_some() {
             keys.push("feed_modes");
         }
         let o = snapshot_object(state, "secondary", &keys)?;
-        let bypass_side: Vec<[Option<bool>; 2]> = if sided {
+        let bypass_side: Vec<[Option<bool>; 2]> = if tripped {
             serde_json::from_value(o["bypass_side"].clone())
                 .ok()
                 .filter(|v: &Vec<[Option<bool>; 2]>| v.len() == self.sgs.len())

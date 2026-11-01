@@ -402,3 +402,28 @@ pub fn commission<S: JoinedSystem<Properties = If97>>(
             "position": "the bank's travel (BANK.POS)"}});
     Ok((client, receipt))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::admitted_fraction;
+    /// X4.3 + X4.4: Tref's load channel reads the turbine's actual admitted
+    /// steam `a * sum c_k p_k` from the state, so it follows a governor
+    /// load change (the valve opening and the SG pressures), not the SG
+    /// owner's time-only nominal admission.
+    #[test]
+    fn the_load_channel_follows_the_governor_valve_and_the_sg_pressures() {
+        // y = [p_A, p_B, a] in solver units; c_k per solver unit.
+        let probe = (2, vec![(0, 1.0e-4), (1, 1.2e-4)]);
+        let nominal = 1.0e-4 * 6.36e6 + 1.2e-4 * 6.36e6;
+        let full = admitted_fraction(Some(&probe), &[6.36e6, 6.36e6, 1.], nominal).unwrap();
+        assert!((full - 1.).abs() < 1e-12);
+        // The governor closes ADM to 0.9: the channel reads 0.9 at equal pressure.
+        let cut = admitted_fraction(Some(&probe), &[6.36e6, 6.36e6, 0.9], nominal).unwrap();
+        assert!((cut - 0.9).abs() < 1e-12);
+        // The SG pressures rise 1 %: the choked flow, and the channel, rise 1 %.
+        let up = admitted_fraction(Some(&probe), &[6.4236e6, 6.4236e6, 0.9], nominal).unwrap();
+        assert!((up - 0.909).abs() < 1e-12);
+        // Without the valve probe the channel keeps the time-only admission.
+        assert!(admitted_fraction(None, &[0.; 3], nominal).is_none());
+    }
+}
