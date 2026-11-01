@@ -305,9 +305,31 @@ impl<S: JoinedSystem> Client<S> for PzrClient {
             .push((k, [o[0], o[1], o[2], o[3], o[4], o[5], self.in_force_w]));
         Ok(out)
     }
-    fn stop_at_frame(&self, _k: u64) -> bool {
-        // An S change can only be applied at an exact stop; with a 0.1 s
-        // transport the decision at frame k+1 is known only after frame k.
+    fn stop_at_frame(&self, k: u64) -> bool {
+        // An S change can only be applied at an exact stop. PERF2
+        // (R4-FRAME-STOPS): the decision at frame k is the law on the sample
+        // in flight since frame k-1 (or the replay's entry for k), so the
+        // integrator stops at k exactly when the request in force changes
+        // there; the law reads the frame instant only through the sample's
+        // age, which one transport after acquisition decides as at k itself.
+        if self.class != Class::S {
+            return false;
+        }
+        let target = match &self.replay {
+            Some(s) => s.iter().find(|e| e.0 == k).map_or(self.in_force_w, |e| e.1),
+            None => {
+                let due = self.in_flight.acquired_s + self.channel.transport_s;
+                self.controller
+                    .law()
+                    .auto(Some(&self.in_flight), due)
+                    .heater_request_w
+            }
+        };
+        target != self.in_force_w
+    }
+    fn stop_by_next_frame(&self, _k: u64) -> bool {
+        // With a 0.1 s transport the decision at frame k+1 is known only
+        // after frame k.
         self.class == Class::S
     }
 }

@@ -20,7 +20,7 @@ use crate::{
     kinetics,
     network::{
         BlockJacobian, Failure, Fluid, Held, LocalCoupling, NetworkSeed, Properties, Receipts,
-        Replay, stratified,
+        Replay, Reuse, stratified,
     },
     poisons, source_feedback as sf,
     sparse::Pattern,
@@ -1061,7 +1061,39 @@ pub fn jacobian_blocks<P: Properties + WaterProperties>(
         yp,
         values,
         classes,
+        None,
         Clock(None),
+    )
+}
+
+/// [`jacobian_blocks`] on a base evaluation already made (PERF2, E-LIN
+/// R4-JAC-BASE): `joined`'s last evaluation is `evaluate(t, y, yp, None, 0.,
+/// Some(reuse))` at exactly this state, with nothing evaluated or changed
+/// since, so the assembly's own base evaluation would repeat it bit for bit.
+#[allow(clippy::too_many_arguments)] // The stage inputs, the structure, the classes and the base.
+pub fn jacobian_blocks_on_base<P: Properties + WaterProperties>(
+    joined: &mut Joined<P>,
+    structure: &JoinedJacobian,
+    t: f64,
+    cj: f64,
+    y: &[f64],
+    yp: &[f64],
+    values: &mut [f64],
+    classes: Classes,
+    reuse: Reuse<P::Caloric>,
+    profile: Option<&mut Profile>,
+) -> Result<(), Failure> {
+    assemble(
+        joined,
+        structure,
+        t,
+        cj,
+        y,
+        yp,
+        values,
+        classes,
+        Some(reuse),
+        Clock(profile),
     )
 }
 
@@ -1087,6 +1119,7 @@ pub fn jacobian_blocks_profiled<P: Properties + WaterProperties>(
         yp,
         values,
         classes,
+        None,
         Clock(Some(profile)),
     )
 }
@@ -1101,6 +1134,7 @@ fn assemble<P: Properties + WaterProperties>(
     yp: &[f64],
     values: &mut [f64],
     classes: Classes,
+    base: Option<Reuse<P::Caloric>>,
     mut clock: Clock<'_>,
 ) -> Result<(), Failure> {
     let o = joined.offsets();
@@ -1108,8 +1142,14 @@ fn assemble<P: Properties + WaterProperties>(
         return Err(fatal("joined block Jacobian layout"));
     }
     let started = clock.now();
-    let mut reuse = joined.network.reuse();
-    joined.evaluate(t, y, yp, None, 0., Some(&mut reuse))?;
+    let reuse = match base {
+        Some(reuse) => reuse,
+        None => {
+            let mut reuse = joined.network.reuse();
+            joined.evaluate(t, y, yp, None, 0., Some(&mut reuse))?;
+            reuse
+        }
+    };
     clock.book("base: joined evaluation", started, 0.);
     let started = clock.now();
     let scales = &structure.scales;

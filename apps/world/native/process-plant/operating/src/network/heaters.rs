@@ -447,6 +447,71 @@ pub(crate) fn material_304(
     }
 }
 
+/// PERF2 (E-LIN, R4-ENDPOINT-ASSEMBLY): the self-consistent endpoint's
+/// value root and implicit slope, a pure function of the exact bits of the
+/// values it reads ([`endpoint_key`]), held only inside one block Jacobian
+/// assembly ([`hold_endpoints`]): there every seeded column at one state
+/// reads the same values, and each re-ran the same bisection. Outside an
+/// assembly nothing is held.
+type EndpointKey = [u64; 28];
+thread_local! {
+    static ENDPOINTS: std::cell::RefCell<Option<Vec<(EndpointKey, f64, f64)>>> =
+        const { std::cell::RefCell::new(None) };
+}
+/// Start (`on`, empty) or end holding the endpoints of one assembly.
+pub fn hold_endpoints(on: bool) {
+    ENDPOINTS.with(|e| *e.borrow_mut() = on.then(Vec::new));
+}
+/// Everything [`minimum_film_endpoint`]'s root and slope read: the 304
+/// records, the law's film selector at the bracket, the liquid state's
+/// pressure and temperature and its saturation, as exact value bits.
+fn endpoint_key(
+    caloric: &Caloric304,
+    contact: &ContactBlock,
+    law: &WallLaw,
+    p: f64,
+    t: f64,
+    sat: &Saturation,
+) -> EndpointKey {
+    let (selector, bounds) = match law.film {
+        thermal::Film::Heater(f) => (1, f.minimum_film_bounds_k),
+        _ => (0, [0., 0.]),
+    };
+    let w = |x: &thermal::WaterPoint| {
+        [
+            x.density.value,
+            x.viscosity.value,
+            x.conductivity.value,
+            x.cp.value,
+            x.expansion.value,
+            x.enthalpy.value,
+        ]
+    };
+    let mut k = [0u64; 28];
+    let values = [
+        caloric.density_kg_m3,
+        caloric.cp_constant,
+        caloric.cp_linear,
+        contact.conductivity_304.constant_w_m_k,
+        contact.conductivity_304.linear_w_m_k2,
+        contact.wet.minimum_film_bounds_k[0],
+        contact.wet.minimum_film_bounds_k[1],
+        bounds[0],
+        bounds[1],
+        law.diameter_m,
+        law.emissivity,
+        p,
+        t,
+        sat.temperature.value,
+        sat.surface_tension.value,
+    ];
+    k[0] = selector;
+    for (slot, v) in k[1..].iter_mut().zip(values.iter().chain(&w(&sat.liquid)).chain(&w(&sat.vapor))) {
+        *slot = v.to_bits();
+    }
+    k
+}
+
 /// The self-consistent minimum-film endpoint `Tm = Tmin(304 at Tm)` at
 /// one liquid state. `Tm − Tmin` increases on the selector's bounds,
 /// which bracket it; values are bisected to machine precision and the
@@ -465,26 +530,50 @@ fn minimum_film_endpoint(
         thermal::minimum_film(p, tl, law(material_304(caloric, contact, t)), sat).map_err(failed)
     };
     let (pv, tv, sv) = (s(pressure.value), s(bulk_t.value), saturation_values(sat));
-    let residual = |t: f64| at(s(t), pv, tv, sv).map(|f| t - f.value);
-    let [mut low, mut high] = contact.wet.minimum_film_bounds_k;
-    if !(residual(low)? <= 0. && residual(high)? >= 0.) {
-        return Err(failed("the selector bounds do not bracket Tm"));
-    }
-    for _ in 0..64 {
-        let mid = 0.5 * (low + high);
-        if mid <= low || mid >= high {
-            break;
+    let key = ENDPOINTS.with(|e| e.borrow().is_some()).then(|| {
+        let probe = law(material_304(caloric, contact, s(contact.wet.minimum_film_bounds_k[0])));
+        endpoint_key(caloric, contact, &probe, pressure.value, bulk_t.value, &sv)
+    });
+    let held = key.and_then(|k| {
+        ENDPOINTS.with(|e| {
+            e.borrow()
+                .as_ref()
+                .and_then(|v| v.iter().find(|(x, _, _)| *x == k).map(|(_, r, d)| (*r, *d)))
+        })
+    });
+    let (root, seeded) = match held {
+        Some(h) => h,
+        None => {
+            let residual = |t: f64| at(s(t), pv, tv, sv).map(|f| t - f.value);
+            let [mut low, mut high] = contact.wet.minimum_film_bounds_k;
+            if !(residual(low)? <= 0. && residual(high)? >= 0.) {
+                return Err(failed("the selector bounds do not bracket Tm"));
+            }
+            for _ in 0..64 {
+                let mid = 0.5 * (low + high);
+                if mid <= low || mid >= high {
+                    break;
+                }
+                if residual(mid)? > 0. {
+                    high = mid;
+                } else {
+                    low = mid;
+                }
+            }
+            let root = 0.5 * (low + high);
+            let seeded = at(Scalar::new(root, 1.), pv, tv, sv)?.direction;
+            if let Some(k) = key {
+                ENDPOINTS.with(|e| {
+                    if let Some(v) = e.borrow_mut().as_mut() {
+                        v.push((k, root, seeded));
+                    }
+                });
+            }
+            (root, seeded)
         }
-        if residual(mid)? > 0. {
-            high = mid;
-        } else {
-            low = mid;
-        }
-    }
-    let root = 0.5 * (low + high);
+    };
     let fixed = at(s(root), pressure, bulk_t, sat)?;
-    let seeded = at(Scalar::new(root, 1.), pv, tv, sv)?;
-    let slope = 1. - seeded.direction;
+    let slope = 1. - seeded;
     if !(slope.is_finite() && slope > 0.) {
         return Err(failed("singular self-consistent endpoint"));
     }

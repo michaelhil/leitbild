@@ -33,6 +33,18 @@ pub fn instructions() -> Result<u64, String> {
     read().map(|(i, _)| i)
 }
 
+/// R4-COST-UNIT r2 (PERF3, lead 1 Nov): instructions the case drive's own
+/// observer retired so far (rule I, the algebraic-residual record, the 2 ms
+/// observation and ledgers: work the unit host never runs, since it drives
+/// the plant without an observer). The frame cost record subtracts them.
+static CASE_OBSERVER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+pub fn exclude_case_observer(instructions: u64) {
+    CASE_OBSERVER.fetch_add(instructions, std::sync::atomic::Ordering::Relaxed);
+}
+pub fn case_observer() -> u64 {
+    CASE_OBSERVER.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -503,8 +503,9 @@ struct Recorder {
     rows: Vec<Value>,
     /// HOOK (OU-A U5 lag projection): the process's instructions retired
     /// at each frame, when LD01_OU_FRAME_COST=1 (never in `frames`, whose
-    /// digest the tiers pin).
-    cost: Option<Vec<(f64, u64)>>,
+    /// digest the tiers pin): R4-COST-UNIT r2, without the case observer's
+    /// own (the unit host runs none), and the same with it.
+    cost: Option<Vec<(f64, u64, u64)>>,
     /// HOOK (PERF E-PROF): the cost profile's totals at each frame, when
     /// LD01_PERF_PROFILE=1 (with LD01_OU_FRAME_COST=1).
     profile: Option<Vec<ProfileFrame>>,
@@ -521,6 +522,15 @@ struct Recorder {
     /// physical coordinates at every frame (first index, scales, rows);
     /// never in `frames`.
     cvcs: Option<(usize, Vec<f64>, Vec<Value>)>,
+    /// HOOK (FEED, plan r4 X4.6): with the leg record and
+    /// LD01_FEED_NC_RECORD=1, the natural-circulation record
+    /// (`common::nc_record`) from the same left-limit state; never in
+    /// `frames`.
+    nc: Option<common::nc_record::NcRecord>,
+    /// Stuck-cluster C2: the declared single's travel (m) at every frame
+    /// (its cluster index in `rods`, the rows `[t, travel]`); never in
+    /// `frames`.
+    single: Option<(usize, Vec<Value>)>,
 }
 /// HOT.A, HOT.B, COLD.A, COLD.B cells, the left-limit state and the rows.
 struct Legs {
@@ -566,6 +576,11 @@ impl<S: leitbild_operating_water::joined::JoinedSystem> leitbild_operating_water
             out[j] = mt / m;
         }
         l.rows.push(json!([t, out]));
+        if let Some(nc) = self.nc.as_mut() {
+            nc.sample(net, &l.y, t, out, |n, y, c| {
+                outputs::cell_temperature(n, y, c)
+            })?;
+        }
         Ok(())
     }
     fn frame(
@@ -575,7 +590,8 @@ impl<S: leitbild_operating_water::joined::JoinedSystem> leitbild_operating_water
         dense: &dyn leitbild_operating_water::frame::Dense,
     ) -> Result<Vec<leitbild_operating_water::frame::Change<S>>, String> {
         if let Some(c) = self.cost.as_mut() {
-            c.push((t, s3_harness::counters::instructions()?));
+            let all = s3_harness::counters::instructions()?;
+            c.push((t, all - s3_harness::counters::case_observer(), all));
         }
         if let Some(p) = self.profile.as_mut() {
             let (totals, reads) = leitbild_operating_plant::cost::totals()
@@ -592,11 +608,30 @@ impl<S: leitbild_operating_water::joined::JoinedSystem> leitbild_operating_water
             rows.push(json!([t, x]));
         }
         let travel: Vec<f64> = self.rods.iter().map(|(i, s)| y[*i] * s).collect();
+        if let Some((c, rows)) = self.single.as_mut() {
+            rows.push(json!([t, travel[*c]]));
+        }
         self.rows.push(json!({"t_s": t, "pzr_roof_pa": y[self.roof.0] * self.roof.1,
             "sg_pressure_pa": self.sg.iter().map(|(l, i, s)| json!([l, y[*i] * s])).collect::<Vec<_>>(),
             "rod_travel_m": [travel.iter().copied().fold(f64::INFINITY, f64::min),
                 travel.iter().copied().fold(f64::NEG_INFINITY, f64::max)]}));
         Ok(Vec::new())
+    }
+}
+
+/// Every object in `v` (depth first) for which `pick` holds.
+fn collect_objects(v: &Value, pick: &mut dyn FnMut(&Value) -> bool, out: &mut Vec<Value>) {
+    match v {
+        Value::Object(m) => {
+            if pick(v) {
+                out.push(v.clone());
+            }
+            for x in m.values() {
+                collect_objects(x, pick, out);
+            }
+        }
+        Value::Array(a) => a.iter().for_each(|x| collect_objects(x, pick, out)),
+        _ => {}
     }
 }
 
@@ -1445,6 +1480,26 @@ struct CaseConfig {
     /// (`LD01_ROD_AUTO` on | off, unset off; the block from
     /// `LD01_ROD_CONTROL_WIKI`).
     rod_auto: bool,
+    /// X4.3 (lane TURB): the LOAD governor, ADM and GEN.WT composed with
+    /// the SG owner's valve law (`LD01_TURB_GOV` on | off, unset off; the
+    /// blocks from `LD01_TURB_WIKI`).
+    turbine_governor: bool,
+    /// Stuck-cluster C2 (lead ruling (a)): a rod cluster composed singly
+    /// (`LD01_S3_SINGLE=<cluster id>`, unset none: the bank composition), its
+    /// own motion class and bore water; the start state must be of that
+    /// layout (`tests/c2s_state.rs` converts a bank state).
+    single: Option<&'static str>,
+    /// With `single`: that cluster declared stuck (`LD01_S3_STUCK` on | off,
+    /// unset off): `Command::StuckCluster` at the case start, before the
+    /// case's event, and B1's term declared from `ld01-stuck-worth`
+    /// (`LD01_ROD_CONTROL_WIKI`). C2 with both is the stuck-cluster case
+    /// C2S (`ld01-r4-c2-stuck-case`).
+    stuck: bool,
+    /// R4-COST-UNIT (PERF2, lead 1 Nov): the driver's residual-jump
+    /// diagnostic at class-S stops (`LD01_S3_JUMP_DIAGNOSTIC` on | off,
+    /// unset off). It assembles a Jacobian and an LU at every S stop, which
+    /// the unit never does, so a cost drive runs without it.
+    jump_diagnostic: bool,
 }
 impl CaseConfig {
     /// `LD01_S3_WEIGHTS` (stock | grouped), `LD01_S3_FIRST_STEP` (declared
@@ -1454,12 +1509,15 @@ impl CaseConfig {
     fn from_env() -> Result<Self, String> {
         use leitbild_operating_water::{
             frame::MatrixRebuild,
-            unit::profile::{Solver, Weights, parse_first_step},
+            unit::profile::{Solver, Weights, parse_first_step, parse_stepping},
         };
         let var = |name: &str, unset: &str| std::env::var(name).unwrap_or_else(|_| unset.into());
         let solver = Solver {
             weights: Weights::parse(&var("LD01_S3_WEIGHTS", "stock"))?,
             first_step: parse_first_step(&var("LD01_S3_FIRST_STEP", "declared"))?,
+            // R4-FREE-STEPS: the composition's stepping (unset: free, the
+            // unit's default).
+            stepping: parse_stepping(&var("LD01_S3_STEPPING", "free"))?,
         };
         // The r4 baseline (BASELINE-r4.md): stock matrix management unless
         // MR-1 is asked.
@@ -1473,20 +1531,44 @@ impl CaseConfig {
             "off" => false,
             v => return Err(format!("LD01_S3_RC1={v}: on or off")),
         };
+        let jump_diagnostic = match var("LD01_S3_JUMP_DIAGNOSTIC", "off").as_str() {
+            "on" => true,
+            "off" => false,
+            v => return Err(format!("LD01_S3_JUMP_DIAGNOSTIC={v}: on or off")),
+        };
         let rod_auto = match var("LD01_ROD_AUTO", "off").as_str() {
             "on" => true,
             "off" => false,
             v => return Err(format!("LD01_ROD_AUTO={v}: on or off")),
+        };
+        let turbine_governor = match var("LD01_TURB_GOV", "off").as_str() {
+            "on" => true,
+            "off" => false,
+            v => return Err(format!("LD01_TURB_GOV={v}: on or off")),
+        };
+        let single: Option<&'static str> = std::env::var("LD01_S3_SINGLE")
+            .ok()
+            .map(|id| &*Box::leak(id.into_boxed_str()));
+        let stuck = match var("LD01_S3_STUCK", "off").as_str() {
+            "on" if single.is_some() => true,
+            "on" => return Err("LD01_S3_STUCK=on needs LD01_S3_SINGLE (a stuck cluster is composed singly)".into()),
+            "off" => false,
+            v => return Err(format!("LD01_S3_STUCK={v}: on or off")),
         };
         Ok(Self {
             solver,
             matrix_rebuild,
             ramp_cap,
             rod_auto,
+            turbine_governor,
+            single,
+            stuck,
+            jump_diagnostic,
         })
     }
     fn json(&self) -> Value {
-        json!({"weights": self.solver.weights, "first_step": self.solver.first_step, "matrix_rebuild": format!("{:?}", self.matrix_rebuild), "ramp_cap": self.ramp_cap, "rod_auto": self.rod_auto})
+        json!({"weights": self.solver.weights, "first_step": self.solver.first_step, "matrix_rebuild": format!("{:?}", self.matrix_rebuild), "ramp_cap": self.ramp_cap, "rod_auto": self.rod_auto, "turbine_governor": self.turbine_governor, "single": self.single, "stuck": self.stuck, "stepping": self.solver.stepping, "jump_diagnostic": self.jump_diagnostic,
+            "cost_excludes_case_observer": true})
     }
 }
 
@@ -1583,8 +1665,56 @@ fn drive(
     let exchanging = c5 || case == Case::C1;
     let started = process_cpu_s();
     let section = inputs.ic.clone();
-    let mut unit = s3::compose_with(inputs, state, ask.scaling, ask.config.solver, wrap)
-        .unwrap_or_else(|e| panic!("{e}"));
+    let turbine = ask.config.turbine_governor.then(|| {
+        let wiki = std::env::var("LD01_TURB_WIKI").expect("LD01_TURB_GOV=on needs LD01_TURB_WIKI");
+        leitbild_operating_water::unit::turbine::Turbine::from_wiki(&wiki)
+            .unwrap_or_else(|e| panic!("{e}"))
+    });
+    // Stuck-cluster C2: the declared single's packet index.
+    let single = ask.config.single.map(|id| {
+        let packet = inputs.spine.packet_json().expect("packet json");
+        let index = packet["rods"]["clusters"]
+            .as_array()
+            .expect("the packet's rod clusters")
+            .iter()
+            .position(|c| c["id"] == id)
+            .unwrap_or_else(|| panic!("LD01_S3_SINGLE={id}: no such rod cluster"));
+        (id, index)
+    });
+    let mut unit = s3::compose_singles_with(
+        inputs,
+        state,
+        ask.scaling,
+        ask.config.solver,
+        turbine.as_ref(),
+        &single.iter().map(|(_, i)| *i).collect::<Vec<_>>(),
+        wrap,
+    )
+    .unwrap_or_else(|e| panic!("{e}"));
+    // B1 (owner request 14): the declared stuck-cluster term, before any
+    // transaction, from the wiki's ld01-stuck-worth.
+    let stuck_worth = ask.config.stuck.then(|| {
+        let wiki = std::env::var("LD01_ROD_CONTROL_WIKI")
+            .expect("LD01_S3_STUCK=on needs LD01_ROD_CONTROL_WIKI (ld01-stuck-worth)");
+        let page_path = format!(
+            "{wiki}/world/packs/process-plant/reference-designs/ld-01/systems/reactor/control-and-verification.md"
+        );
+        let page = std::fs::read_to_string(&page_path).unwrap_or_else(|e| panic!("{page_path}: {e}"));
+        let open = "```ld01-stuck-worth\n";
+        let mut found = page.match_indices(open).map(|(i, _)| i + open.len());
+        let start = found.next().expect("no ld01-stuck-worth block");
+        assert!(found.next().is_none(), "more than one ld01-stuck-worth block");
+        let text = &page[start..start + page[start..].find("\n```").expect("an unterminated ld01-stuck-worth block")];
+        let block: Value = serde_json::from_str(text).expect("ld01-stuck-worth json");
+        let dk = block["term_dk"].as_f64().expect("ld01-stuck-worth term_dk");
+        unit.ida
+            .system_mut()
+            .integrated_mut()
+            .joined
+            .declare_stuck_worth(dk)
+            .unwrap_or_else(|e| panic!("B1: {e:?}"));
+        json!({"page": page_path, "block": block, "block_sha256": leitbild_operating_plant::digest::sha256(text.as_bytes()), "term_dk": dk})
+    });
     let (t0, n, rtol, frame) = (unit.t0, unit.n, unit.rtol, unit.frame);
     // X4.4 (lane ROD): automatic rod control in AUTO when asked.
     let (mut rods, rod_receipt) = if ask.config.rod_auto {
@@ -1669,7 +1799,11 @@ fn drive(
         &section,
         plant::Config {
             field: field_parameters.as_ref(),
-            diagnostic: Diagnostic::Jump,
+            diagnostic: if ask.config.jump_diagnostic {
+                Diagnostic::Jump
+            } else {
+                Diagnostic::None
+            },
             matrix_rebuild: ask.config.matrix_rebuild,
             clock: process_cpu_s,
         },
@@ -1762,6 +1896,19 @@ fn drive(
         cvcs: joined
             .cvcs()
             .map(|b| (o.cvcs, b.layout().scales.clone(), Vec::new())),
+        nc: (packet_json["secondary"]["feedTrain"].is_object()
+            && std::env::var("LD01_FEED_NC_RECORD").as_deref() == Ok("1"))
+        .then(|| {
+            let ids: Vec<String> = packet_json["mechanics"]["regions"]
+                .as_array()
+                .expect("the packet's regions")
+                .iter()
+                .map(|r| r["id"].as_str().expect("a region id").to_string())
+                .collect();
+            common::nc_record::NcRecord::new(&ids, protection.readings())
+                .unwrap_or_else(|e| panic!("nc record: {e}"))
+        }),
+        single: single.map(|(_, c)| (c, Vec::new())),
     };
     let cvcs_section = joined.cvcs().map(|b| {
         json!({"labels": b.layout().labels, "program": b.section().program, "controller": b.section().controller})
@@ -1920,6 +2067,13 @@ fn drive(
             .start_quadratures(ida, vec![0.; count])
             .unwrap_or_else(|e| panic!("the ledgers' quadratures: {e}"));
     }
+    // Stuck-cluster C2: the single's grip declared stuck at the case start,
+    // before the case's event (G7's StuckCluster).
+    if let Some((_, cluster)) = single.filter(|_| ask.config.stuck) {
+        driver
+            .command(t0, Command::StuckCluster { cluster })
+            .unwrap();
+    }
     if let Some(c) = command {
         driver.command(zero, c).unwrap();
     }
@@ -1998,6 +2152,22 @@ fn drive(
         Vec::new()
     };
     bounds.extend(exchanges.iter().map(|(b, _)| *b));
+    // R4-FREE-STEPS: under free stepping only these bounds (the event, the
+    // window's end, the exchanges' interval ends and the run's end) are
+    // exact stops; the frame chunks below are observation marks.
+    if ask.config.solver.stepping == leitbild_operating_water::frame::Stepping::Free {
+        // C4 serves no 1.0 case and reads its frames at exact chunk stops.
+        assert!(
+            case != Case::C4,
+            "C4 refuses free stepping: compose it with LD01_S3_STEPPING=frame-stops"
+        );
+        assert_eq!(driver.stepping, leitbild_operating_water::frame::Stepping::Free);
+        for b in bounds.iter().filter(|b| **b > t0 && **b <= until) {
+            driver
+                .declare_stop(*b)
+                .unwrap_or_else(|e| panic!("the case's stops: {e}"));
+        }
+    }
     let period = frame.period_s();
     let first = (t0 / period).floor() as i64 + 1;
     let last = (until / period).ceil() as i64;
@@ -2831,6 +3001,33 @@ fn drive(
     // MR-1 (R7-P): the handle's counts and the packet's section, for the receipt.
     let rebuild_counts = ida.rebuild();
     let rebuild_section = ida.system().integrated().joined.matrix_rebuild().map(|m| json!({"rebuildEverySteps": m.rebuild_every_steps, "appliesFrom": m.applies_from, "decision": m.decision}));
+    // Stuck-cluster C2 (record only, never in a digested section): what the
+    // stuck case's judge reads, beside the run's own records.
+    let stuck_record = single.map(|(id, index)| {
+        let mut seated: std::collections::BTreeMap<&str, (usize, f64)> = Default::default();
+        for (c, t) in &tl.seats {
+            let e = seated.entry(c.as_str()).or_insert((0, f64::INFINITY));
+            e.0 += 1;
+            e.1 = e.1.min(*t);
+        }
+        let others: Vec<f64> = seated.iter().filter(|(c, _)| **c != id).map(|(_, (_, t))| *t).collect();
+        let mut found = Vec::new();
+        for e in &driver.log {
+            collect_objects(e, &mut |v| v.get("B1").is_some() || v["command"] == "StuckCluster", &mut found);
+        }
+        let b1: Vec<&Value> = found.iter().filter(|v| v.get("B1").is_some()).collect();
+        let command: Vec<&Value> = found.iter().filter(|v| v["command"] == "StuckCluster").collect();
+        json!({"cluster": id, "index": index, "stuck": ask.config.stuck, "stuck_worth": stuck_worth,
+            "stuck_cluster_command": command, "b1": b1,
+            "seats": {"rule": "per cluster from the timeline's seat records (s after zero): count and first seat; 'others' are the clusters other than the single; holding_lost_s is absolute",
+                "per_cluster": seated.iter().map(|(c, (n, t))| json!({"cluster": c, "count": n, "first_seat_s": t})).collect::<Vec<_>>(),
+                "single_seated": seated.contains_key(id), "others_seated": others.len(),
+                "others_last_seat_s": others.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+                "holding_lost_s": p.holding.lost_at},
+            "travel_m": {"rule": "the single's travel (m) at every frame's state, [t_s, travel]", "start_m": recorder.single.as_ref().and_then(|(_, r)| r.first().and_then(|x| x[1].as_f64())),
+                "frames": recorder.single.as_ref().map(|(_, r)| r.clone())},
+            "hot_standby": "rule_i.hot_standby_margins (not_subcritical, margin_evaluations, last_not_subcritical_s per factor)"})
+    });
     let mut record = json!({
         "label": ask.label,
         "failure": failure,
@@ -2919,7 +3116,8 @@ fn drive(
             "label": s3_harness::families::PROVISIONAL},
         "frames": recorder.rows,
         "phys_operator_frames": recorder.operator.as_ref().map(|(_, observed, rows)| json!({"observed": observed, "frames": rows})),
-        "ou_frame_instructions": recorder.cost.as_ref().map(|c| c.iter().map(|(t, i)| json!([t, i])).collect::<Vec<_>>()),
+        "ou_frame_instructions": recorder.cost.as_ref().map(|c| c.iter().map(|(t, i, _)| json!([t, i])).collect::<Vec<_>>()),
+        "ou_frame_instructions_with_case_observer": recorder.cost.as_ref().map(|c| c.iter().map(|(t, _, i)| json!([t, i])).collect::<Vec<_>>()),
         "perf_profile": recorder.profile.as_ref().map(|p| json!({
             "rule": "HOOK (PERF E-PROF): per frame [t, counter reads so far, per path [closed calls, exclusive instructions] so far]; paths in key order, pieces>* inclusive outside the tree",
             "paths": leitbild_operating_plant::cost::snapshot().map(|s| s.paths),
@@ -2927,6 +3125,8 @@ fn drive(
             "frames": p.iter().map(|(t, r, v)| json!([t, r, v])).collect::<Vec<_>>()})),
         "feed_leg_temperatures_k": recorder.legs.as_ref().map(|l| json!({"columns": ["HOT.A", "HOT.B", "COLD.A", "COLD.B"], "rule": "mass-weighted cells per leg, at every frame's left limit", "rows": l.rows})),
         "repeat_record": repeat_record,
+        "nc_record": recorder.nc.as_ref().map(|n| n.receipt()),
+        "stuck_cluster": stuck_record,
     });
     // HOOK (NUC, plan r4 X4.2): only a CVCS packet's record has the key.
     if let (Some(section), Some((_, _, rows))) = (cvcs_section, recorder.cvcs.as_ref()) {
@@ -3733,6 +3933,8 @@ fn s3_case_run() {
         // drive's frame instructions (with LD01_OU_FRAME_COST=1), which
         // PERF's ld01-cost reads first.
         g_cost["ou_cost_drive_frames"] = c.record["ou_frame_instructions"].clone();
+        g_cost["ou_cost_drive_frames_with_case_observer"] =
+            c.record["ou_frame_instructions_with_case_observer"].clone();
     }
     families.insert("G_cost".into(), g_cost);
     let mut not_implemented: Vec<&str> = Vec::new();

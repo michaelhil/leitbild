@@ -189,8 +189,9 @@ impl Tube {
         wall_k: Scalar,
         segment: &Segment,
     ) -> Result<(Scalar, Scalar), Failure> {
-        // X4.5 (lead ruling d): the exact single-pass law of the one mixed
-        // cell, the segment carrying its area share of the whole fold's.
+        // X4.6 item 1: the mixed cell's law (the single-pass heat at steady
+        // flow, the cell's own exchange with no inflow), the segment carrying
+        // its area share of the whole fold's.
         let u = thermal::tube_series_conductance(
             props,
             port.pressure,
@@ -203,13 +204,14 @@ impl Tube {
             self.series_m2k_w,
         )
         .map_err(|e| recoverable(format!("SG tube primary film: {e}")))?;
-        let whole = thermal::single_pass_heat(
+        let whole = thermal::cell_pass_heat(
             u * s(self.exchange_area_m2 * self.inner_fraction),
             port.inflow_capacity_w_k,
             port.inflow_temperature,
+            port.temperature,
             wall_k,
         )
-        .map_err(|e| recoverable(format!("SG tube single pass: {e}")))?;
+        .map_err(|e| recoverable(format!("SG tube cell pass: {e}")))?;
         let secondary = thermal::secondary_wall(
             props,
             view.pressure,

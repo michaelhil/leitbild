@@ -59,6 +59,32 @@ impl Scalar {
         };
         Self::new(self.value.powf(exponent), d)
     }
+    // PERF2 (R4-WALL-POWERS): the wall laws' fixed powers without libm pow.
+    // Each is the power's value to within an ulp or two of `powf`, and its
+    // tangent the power rule's `exponent * value^(exponent - 1) * direction`
+    // on that value, with `pow`'s zero-seed rule.
+    fn sqrt(self) -> Self {
+        let v = self.value.sqrt();
+        let d = if self.direction == 0. && (self.value == 0. || v.is_finite()) {
+            0.5 * self.direction
+        } else {
+            0.5 / v * self.direction
+        };
+        Self::new(v, d)
+    }
+    fn cube(self) -> Self {
+        let x = self.value;
+        Self::new(x * x * x, 3. * (x * x) * self.direction)
+    }
+    fn cbrt(self) -> Self {
+        let c = self.value.cbrt();
+        let d = if self.direction == 0. && (self.value == 0. || c.is_finite()) {
+            self.direction / 3.
+        } else {
+            self.direction / (3. * (c * c))
+        };
+        Self::new(c, d)
+    }
     fn abs(self) -> Self {
         if self.value < 0. {
             -self
@@ -170,6 +196,11 @@ pub trait Number:
     fn exp(self) -> Self;
     fn ln(self) -> Self;
     fn pow(self, exponent: f64) -> Self;
+    /// PERF2 (R4-WALL-POWERS): `pow(0.5)`, `pow(3.)` and `pow(1. / 3.)`
+    /// without libm pow.
+    fn sqrt(self) -> Self;
+    fn cube(self) -> Self;
+    fn cbrt(self) -> Self;
     fn abs(self) -> Self;
     fn max(self, other: Self) -> Self;
     fn min(self, other: Self) -> Self;
@@ -202,6 +233,15 @@ impl Number for Scalar {
     #[inline(always)]
     fn pow(self, exponent: f64) -> Self {
         Scalar::pow(self, exponent)
+    }
+    fn sqrt(self) -> Self {
+        Scalar::sqrt(self)
+    }
+    fn cube(self) -> Self {
+        Scalar::cube(self)
+    }
+    fn cbrt(self) -> Self {
+        Scalar::cbrt(self)
     }
     fn abs(self) -> Self {
         Scalar::abs(self)
@@ -246,6 +286,15 @@ impl Number for f64 {
     #[inline(always)]
     fn pow(self, exponent: f64) -> Self {
         self.powf(exponent)
+    }
+    fn sqrt(self) -> Self {
+        f64::sqrt(self)
+    }
+    fn cube(self) -> Self {
+        self * self * self
+    }
+    fn cbrt(self) -> Self {
+        f64::cbrt(self)
     }
     fn abs(self) -> Self {
         if self < 0. {
@@ -942,6 +991,37 @@ impl WallLaw {
 /// names the endpoint quantity. The wall temperature, material and
 /// emissivity are not read by the turnover.
 #[allow(clippy::too_many_arguments)]
+/// R4-TURNOVER-VALUES: a law input tuple as values.
+fn law_values<N: Number>(l: &WallLawOf<N>) -> WallLawOf<f64> {
+    WallLawOf {
+        diameter_m: l.diameter_m,
+        film: l.film,
+        emissivity: l.emissivity,
+        material: WallMaterialOf {
+            conductivity: l.material.conductivity.value(),
+            density: l.material.density,
+            cp: l.material.cp.value(),
+        },
+    }
+}
+fn point_values<N: Number>(w: &WaterPointOf<N>) -> WaterPointOf<f64> {
+    WaterPointOf {
+        density: w.density.value(),
+        viscosity: w.viscosity.value(),
+        conductivity: w.conductivity.value(),
+        cp: w.cp.value(),
+        expansion: w.expansion.value(),
+        enthalpy: w.enthalpy.value(),
+    }
+}
+fn saturation_values<N: Number>(s: &SaturationOf<N>) -> SaturationOf<f64> {
+    SaturationOf {
+        temperature: s.temperature.value(),
+        liquid: point_values(&s.liquid),
+        vapor: point_values(&s.vapor),
+        surface_tension: s.surface_tension.value(),
+    }
+}
 fn turnover_key<N: Number>(
     quantity: u64,
     pressure: N,
@@ -954,8 +1034,17 @@ fn turnover_key<N: Number>(
 ) -> Vec<u64> {
     let mut key = Vec::with_capacity(64);
     key.push(quantity);
+    // PERF2 (R4-TURNOVER-VALUES): the endpoint (quantity 0) is a function
+    // of the inputs' values alone (the bisection runs on the value law), so
+    // its key is the values' exact bits and every seeded column at one state
+    // shares it. The wall derivative (quantity 1) carries the critical-flux
+    // scale's seed, so its key keeps the directions.
+    let directions = quantity != 0;
     let number = |key: &mut Vec<u64>, x: N| {
-        key.extend([x.value().to_bits(), x.direction().to_bits()]);
+        key.push(x.value().to_bits());
+        if directions {
+            key.push(x.direction().to_bits());
+        }
     };
     let point = |key: &mut Vec<u64>, w: &WaterPointOf<N>| {
         for x in [
@@ -966,7 +1055,10 @@ fn turnover_key<N: Number>(
             w.expansion,
             w.enthalpy,
         ] {
-            key.extend([x.value().to_bits(), x.direction().to_bits()]);
+            key.push(x.value().to_bits());
+            if directions {
+                key.push(x.direction().to_bits());
+            }
         }
     };
     number(&mut key, pressure);
@@ -1119,21 +1211,37 @@ fn liquid_film<P: WaterProperties, N: Number>(
     Ok(N::from(3.66).max(natural).max(turbulent) * bulk.conductivity / N::from(d))
 }
 fn pool<N: Number>(pressure: N, superheat: N, core: bool) -> N {
+    pool_at(&PoolFactors::new(pressure, core), superheat)
+}
+/// PERF2 (R4-WALL-POWERS): the pool law's pressure factors, computed once
+/// for the law's two superheats at one pressure (the same operations on
+/// the same inputs, so each call's value is unchanged).
+struct PoolFactors<N> {
+    n: N,
+    fp: N,
+    scale: N,
+}
+impl<N: Number> PoolFactors<N> {
+    fn new(pressure: N, core: bool) -> Self {
+        let r = pressure / N::from(22.064e6);
+        let n = N::from(0.9) - N::from(0.3) * r.pow(0.15);
+        let denom = if core {
+            N::from(1.) - r * r
+        } else {
+            N::from(1.) - r
+        };
+        let fp =
+            N::from(1.73) * r.pow(0.27) + N::from(6.1) * r * r + N::from(0.68) * r * r / denom;
+        let scale = (n * N::from(20000_f64.ln())).exp();
+        Self { n, fp, scale }
+    }
+}
+fn pool_at<N: Number>(f: &PoolFactors<N>, superheat: N) -> N {
     if superheat.value() <= 0. {
         return N::from(0.);
     }
-    let r = pressure / N::from(22.064e6);
-    let n = N::from(0.9) - N::from(0.3) * r.pow(0.15);
-    let denom = if core {
-        N::from(1.) - r * r
-    } else {
-        N::from(1.) - r
-    };
-    let fp = N::from(1.73) * r.pow(0.27) + N::from(6.1) * r * r + N::from(0.68) * r * r / denom;
     // Variable exponent, so use exp(log(x)/(1-n)), not a fixed exponent.
-    ((N::from(5600.) * fp * superheat / (n * N::from(20000_f64.ln())).exp()).ln()
-        / (N::from(1.) - n))
-        .exp()
+    ((N::from(5600.) * f.fp * superheat / f.scale).ln() / (N::from(1.) - f.n)).exp()
 }
 // Local wet law deliberately receives the same explicit physical/property
 // coordinates as liquid_film, not an independently prepared correlation state.
@@ -1163,8 +1271,7 @@ fn wet<P: WaterProperties, N: Number>(
         }
         let superheat = wall_t - sat.temperature;
         let wall_sensible = h * superheat;
-        let boiling = (wall_sensible.pow(3.) + pool(pressure, superheat, true).pow(3.))
-            .pow(1. / 3.)
+        let boiling = (wall_sensible.cube() + pool(pressure, superheat, true).cube()).cbrt()
             - wall_sensible;
         let gamma = N::from(f.wall_birth_fraction) * boiling / (sat.vapor.enthalpy - bulk.enthalpy);
         return Ok((sensible + boiling, gamma, onset, sensible));
@@ -1196,18 +1303,19 @@ fn wet<P: WaterProperties, N: Number>(
         // Its step from the saturated combination at h_L = h_f,sat is the
         // heater page's declared discontinuity.
         Film::Core | Film::Heater(_) => {
-            sat.temperature + N::from(0.5) * (d0 + (d0 * d0 + N::from(4.) * d0 * sub).pow(0.5))
+            sat.temperature + N::from(0.5) * (d0 + (d0 * d0 + N::from(4.) * d0 * sub).sqrt())
         }
         Film::Tube | Film::External => {
-            bulk_t + N::from(0.25) * (d0.pow(0.5) + (d0 + N::from(4.) * sub).pow(0.5)).pow(2.)
+            bulk_t + N::from(0.25) * (d0.sqrt() + (d0 + N::from(4.) * sub).sqrt()).pow(2.)
         }
     };
     if wall_t.value() <= onset.value() {
         return Ok((sensible, N::from(0.), onset, sensible));
     }
-    let enhancement = pool(pressure, wall_t - sat.temperature, ctf)
-        - pool(pressure, onset - sat.temperature, ctf);
-    let q = (sensible.pow(3.) + enhancement.pow(3.)).pow(1. / 3.);
+    let factors = PoolFactors::new(pressure, ctf);
+    let enhancement = pool_at(&factors, wall_t - sat.temperature)
+        - pool_at(&factors, onset - sat.temperature);
+    let q = (sensible.cube() + enhancement.cube()).cbrt();
     let qb = q - sensible;
     if let Film::Heater(f) = law.film {
         // Wall birth pays the actual liquid subcooling (or superheat).
@@ -1251,7 +1359,7 @@ pub fn minimum_film<N: Number>(
     let latent = v.enthalpy - l.enthalpy;
     let eff = (l.conductivity * l.density * l.cp
         / (law.material.conductivity * N::from(law.material.density) * law.material.cp))
-        .pow(0.5);
+        .sqrt();
     let x = N::from(3203.6) - pressure / N::from(6894.757293168);
     let hn = (N::from(705.44) - N::from(0.04722) * x + N::from(2.3907e-5) * x * x
         - N::from(5.8193e-9) * x * x * x
@@ -1261,9 +1369,11 @@ pub fn minimum_film<N: Number>(
     let hnc = hn + (hn - bulk_t) * eff;
     let tb = sat.temperature
         + N::from(0.127) * v.density * latent / v.conductivity
-            * (N::from(G) * (l.density - v.density) / (l.density + v.density)).pow(2. / 3.)
-            * (sat.surface_tension / (N::from(G) * (l.density - v.density))).pow(0.5)
-            * (v.viscosity / (N::from(G) * (l.density - v.density))).pow(1. / 3.);
+            * (N::from(G) * (l.density - v.density) / (l.density + v.density))
+                .cbrt()
+                .pow(2.)
+            * (sat.surface_tension / (N::from(G) * (l.density - v.density))).sqrt()
+            * (v.viscosity / (N::from(G) * (l.density - v.density))).cbrt();
     let henry = tb
         + N::from(0.42)
             * (tb - bulk_t)
@@ -1322,13 +1432,14 @@ fn film_heat<P: WaterProperties, N: Number>(
         ),
     };
     let h = N::from(coefficient)
-        * (vapor.conductivity.pow(3.)
+        * (vapor.conductivity.cube()
             * vapor.density
             * (sat.liquid.density - vapor.density)
             * N::from(G)
             * latent
             / (N::from(length) * vapor.viscosity * (wall_t - sat.temperature)))
-            .pow(0.25);
+            .sqrt()
+            .sqrt();
     let convection = match factor {
         Some(f) => N::from(f) * h * (wall_t - sat.temperature),
         None => h * (wall_t - sat.temperature),
@@ -1415,32 +1526,36 @@ pub(crate) fn tube_series_conductance<P: WaterProperties, N: Number>(
     (h / (N::from(1.) + h * N::from(series_m2k_w))).finite()
 }
 
-/// X4.5 (lead ruling d): the exact single-pass heat of a plug-flow stream
-/// over a wall at one temperature, the standard effectiveness-NTU relation
-/// for a constant-temperature side: `Q = C (T_in - T_wall) (1 - exp(-UA/C))`
-/// into the wall, with `C` the stream's capacity rate (W/K) and `UA` the
-/// conductance (W/K). As `C` falls the effectiveness tends to 1 and
-/// `Q -> C (T_in - T_wall)`, so no flow carries no heat. Where `exp(-UA/C)`
-/// is zero in f64 (`UA/C` above about 745, and `C = 0`) the relation's value
-/// is `C (T_in - T_wall)` exactly; that form is evaluated there, so the
+/// X4.6 item 1 (lead, after ruling d): the heat from a mixed cell into its
+/// wall, `Q = UA (T_cell - T_wall) + C [1 - (1 + x) exp(-x)] (T_in - T_wall)`
+/// with `x = UA/C`, `C` the inflow's capacity rate (W/K) and `UA` the
+/// conductance (W/K). Basis: at steady plug flow the cell's temperature is
+/// its outlet's, `T_cell - T_wall = exp(-x) (T_in - T_wall)`, so any
+/// `a (T_in - T_wall) + b (T_cell - T_wall)` with `a + b exp(-x) =
+/// C (1 - exp(-x))` is the exact single-pass (effectiveness-NTU) heat; the
+/// cell's own conductance-limited exchange `b = UA` fixes `a`. With no inflow
+/// `Q = UA (T_cell - T_wall)`; as the flow rises `a` grows from 0 to `C`
+/// (`0 <= a <= C` since `exp(x) >= 1 + x`). Where `exp(-x)` is zero in f64
+/// (`x` above about 745, and `C = 0`) `a = C` exactly is evaluated, so the
 /// seeded direction stays finite.
-pub fn single_pass_heat<N: Number>(
+pub fn cell_pass_heat<N: Number>(
     conductance_w_k: N,
     capacity_w_k: N,
     inflow_t: N,
+    cell_t: N,
     wall_t: N,
 ) -> Result<N> {
     if !(conductance_w_k.value() > 0. && capacity_w_k.value() >= 0.) {
-        return Err(
-            "single-pass heat needs a positive conductance and a nonnegative capacity rate",
-        );
+        return Err("cell-pass heat needs a positive conductance and a nonnegative capacity rate");
     }
-    let drive = inflow_t - wall_t;
-    if (-conductance_w_k.value() / capacity_w_k.value()).exp() == 0. {
-        return (capacity_w_k * drive).finite();
-    }
-    let e = (-(conductance_w_k / capacity_w_k)).exp();
-    (capacity_w_k * (N::from(1.) - e) * drive).finite()
+    let cell = conductance_w_k * (cell_t - wall_t);
+    let a = if (-conductance_w_k.value() / capacity_w_k.value()).exp() == 0. {
+        capacity_w_k
+    } else {
+        let x = conductance_w_k / capacity_w_k;
+        capacity_w_k * (N::from(1.) - (N::from(1.) + x) * (-x).exp())
+    };
+    (cell + a * (inflow_t - wall_t)).finite()
 }
 
 /// Sibling composition may supply the SAME current saturation and bulk tuple
@@ -1490,9 +1605,11 @@ pub(crate) fn liquid_wall_current<P: WaterProperties, N: Number>(
     }
     let qscale = N::from(0.131)
         * (sat.vapor.enthalpy - sat.liquid.enthalpy)
-        * sat.vapor.density.pow(0.5)
-        * (N::from(G) * sat.surface_tension * (sat.liquid.density - sat.vapor.density)).pow(0.25)
-        * (sat.liquid.density / (sat.liquid.density + sat.vapor.density)).pow(0.5);
+        * sat.vapor.density.sqrt()
+        * (N::from(G) * sat.surface_tension * (sat.liquid.density - sat.vapor.density))
+            .sqrt()
+            .sqrt()
+        * (sat.liquid.density / (sat.liquid.density + sat.vapor.density)).sqrt();
     let minimum = minimum_film(pressure, bulk_t, law, sat)?;
     let objective = |tw: N| -> Result<N> {
         turnover_objective(
@@ -1505,14 +1622,29 @@ pub(crate) fn liquid_wall_current<P: WaterProperties, N: Number>(
             quantity, pressure, bulk_t, mass_flux, &law, &sat, &bulk, bracket,
         )
     };
+    // R4-TURNOVER-VALUES: the bisection reads only the objective's value,
+    // so it runs on the value law at the inputs' values.
+    let values = (
+        pressure.value(),
+        bulk_t.value(),
+        mass_flux.value(),
+        law_values(&law),
+        saturation_values(&sat),
+        point_values(&bulk),
+        qscale.value(),
+    );
+    let value_objective = |tw: f64| -> Result<f64> {
+        let (p, tb, g, l, s, b, q) = values;
+        turnover_objective(props, tw, p, tb, g, l, s, b, q)
+    };
     let root = props.turnover(&key(0), &mut || {
         let [mut lo, mut hi] = bracket;
-        if objective(N::from(lo))?.value() >= 0. || objective(N::from(hi))?.value() <= 0. {
+        if value_objective(lo)? >= 0. || value_objective(hi)? <= 0. {
             return Err("unordered wet/film turnover endpoints");
         }
         for _ in 0..52 {
             let mid = 0.5 * (lo + hi);
-            if objective(N::from(mid))?.value() > 0. {
+            if value_objective(mid)? > 0. {
                 hi = mid;
             } else {
                 lo = mid;
@@ -2012,36 +2144,63 @@ pub fn secondary_wall<P: WaterProperties>(
 }
 
 #[cfg(test)]
-mod single_pass {
+mod cell_pass {
     use super::*;
 
-    /// X4.5 (lead ruling d): the single-pass law is finite in value and
-    /// direction from full flow to no flow, with effectiveness rising to 1.
+    const UA: f64 = 2.6e8;
+    const T_IN: f64 = 593.15;
+    const T_WALL: f64 = 557.5;
+
+    /// At the steady outlet `T_cell = T_wall + exp(-x) (T_in - T_wall)` the
+    /// law is the exact single-pass heat `C (1 - exp(-x)) (T_in - T_wall)`.
     #[test]
-    fn single_pass_heat_is_finite_down_to_no_inflow() {
-        let (ua, tin, tw) = (2.6e8, 593.15, 557.5);
+    fn steady_outlet_gives_the_single_pass_heat() {
+        for c in [5.0e9, 5.0e8, 1.5e8, 5.0e7, 5.0e6, 5.0e5] {
+            let x = UA / c;
+            let cell = T_WALL + (-x).exp() * (T_IN - T_WALL);
+            let q = cell_pass_heat(s(UA), s(c), s(T_IN), s(cell), s(T_WALL))
+                .unwrap()
+                .value;
+            let exact = c * (1. - (-x).exp()) * (T_IN - T_WALL);
+            assert!((q - exact).abs() <= 1e-9 * exact, "C = {c}: {q} vs {exact}");
+        }
+    }
+
+    /// With no inflow the cell exchanges at its own conductance; the value and
+    /// every seeded direction stay finite from full flow down to none, and
+    /// the inflow coefficient rises monotonically from 0 to C.
+    #[test]
+    fn stagnant_limit_and_finite_directions() {
+        let cell = 570.;
         let mut last = 0.;
-        for c in [5.0e7, 5.0e6, 5.0e5, 5.0e4, 1.0e3, 1.0, 1e-200, 0.] {
-            let q = single_pass_heat(s(ua), Scalar::new(c, 1.), s(tin), s(tw)).unwrap();
+        for c in [5.0e9, 5.0e7, 5.0e6, 5.0e5, 5.0e4, 1.0e3, 1.0, 1e-200, 0.] {
+            let q = cell_pass_heat(s(UA), Scalar::new(c, 1.), s(T_IN), s(cell), s(T_WALL)).unwrap();
             assert!(q.value.is_finite() && q.direction.is_finite(), "C = {c}");
-            let eps = if c > 0. {
-                q.value / (c * (tin - tw))
-            } else {
-                1.
-            };
-            assert!(eps >= last - 1e-15 && eps <= 1. + 1e-15, "C = {c}: {eps}");
-            last = eps;
-            // dQ/dC tends to the inlet drive as C falls (effectiveness 1).
-            if c <= 1e3 {
-                assert!(
-                    (q.direction - (tin - tw)).abs() <= 1e-9 * (tin - tw),
-                    "C = {c}"
-                );
+            let a = (q.value - UA * (cell - T_WALL)) / (T_IN - T_WALL);
+            assert!(
+                a >= -1e-6 && a <= c * (1. + 1e-12) + 1e-6,
+                "C = {c}: a = {a}"
+            );
+            // a/C is resolved against the cell term's rounding down to C = 1e3.
+            if c >= 1e3 {
+                let share = a / c;
+                assert!(share >= last - 1e-9, "C = {c}: a/C = {share}");
+                last = share;
             }
         }
-        let wall =
-            single_pass_heat(Scalar::new(ua, 0.), s(5e7), s(tin), Scalar::new(tw, 1.)).unwrap();
-        assert!(wall.direction < 0. && wall.direction.is_finite());
+        let stagnant = cell_pass_heat(s(UA), s(0.), s(T_IN), s(cell), s(T_WALL)).unwrap();
+        assert_eq!(stagnant.value, UA * (cell - T_WALL));
+        for (seed, expect) in [(0, UA), (1, -UA)] {
+            let (tc, tw) = if seed == 0 {
+                (Scalar::new(cell, 1.), s(T_WALL))
+            } else {
+                (s(cell), Scalar::new(T_WALL, 1.))
+            };
+            let d = cell_pass_heat(s(UA), s(0.), s(T_IN), tc, tw)
+                .unwrap()
+                .direction;
+            assert!((d - expect).abs() <= 1e-9 * UA, "seed {seed}: {d}");
+        }
     }
 }
 

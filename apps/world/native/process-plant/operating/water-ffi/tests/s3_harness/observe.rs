@@ -54,6 +54,9 @@ pub struct HotStandbyRecord {
     pub factors: Vec<f64>,
     pub reference_margin_dk_k: f64,
     pub not_subcritical: Vec<u64>,
+    /// Stuck-cluster C2 (record only): per factor, the last accepted state's
+    /// time at which the operator was not subcritical (`None`: never).
+    pub last_not_subcritical_s: Vec<Option<f64>>,
     pub below_reference: Vec<u64>,
     pub smallest_margin_dk_k: Vec<Option<(f64, f64)>>,
     /// R4-P1-FRAMES (plan r4, lead 1 Nov): the whole judgment at the first
@@ -276,6 +279,7 @@ impl RuleI {
             factors: record.reported_water_term_factors.to_vec(),
             reference_margin_dk_k: record.reference_margin_dk_k,
             not_subcritical: vec![0; k],
+            last_not_subcritical_s: vec![None; k],
             below_reference: vec![0; k],
             smallest_margin_dk_k: vec![None; k],
             margin_rule: "R4-P1-FRAMES (lead 1 Nov: P1 is a judge, off in the unit): the domain exits (B1's phase absence, the pressure floor and P1's domain bounds) at every accepted state; the hot-standby admission's margins (subcritical and reference-margin counts, the margin value) at the first accepted state of each 0.1 s frame interval and at an exit",
@@ -304,6 +308,9 @@ impl RuleI {
                         }
                     }
                     rec.not_subcritical[i] += u64::from(!m.subcritical);
+                    if !m.subcritical {
+                        rec.last_not_subcritical_s[i] = Some(t);
+                    }
                     rec.below_reference[i] += u64::from(!m.margin.holds);
                 }
                 self.margin_failures += u64::from(!a.margins[0].margin.holds);
@@ -952,7 +959,10 @@ impl AlgebraicResiduals {
 impl CaseObserver {
     fn count(&mut self, i0: Result<u64, String>) {
         match (i0, super::counters::instructions()) {
-            (Ok(a), Ok(b)) => self.instructions += b.saturating_sub(a),
+            (Ok(a), Ok(b)) => {
+                self.instructions += b.saturating_sub(a);
+                super::counters::exclude_case_observer(b.saturating_sub(a));
+            }
             (Err(e), _) | (_, Err(e)) => {
                 self.instructions_error.get_or_insert(e);
             }
