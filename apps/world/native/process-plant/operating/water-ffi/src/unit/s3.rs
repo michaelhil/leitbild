@@ -27,7 +27,9 @@ use super::{
     inputs::Inputs,
     profile::{GUIDE_CURRENT_BASIS_PA, MAX_ORDER, RESTART, Solver},
     pzr_control::{self, PzrClient},
-    spine::{Started, credited_outputs, started_full_composition},
+    spine::{
+        Started, credited_outputs, started_full_composition, started_full_composition_with_singles,
+    },
 };
 use crate::{
     If97,
@@ -234,6 +236,25 @@ pub fn compose_governed_with<J: JoinedSystem>(
     turbine: Option<&super::turbine::Turbine>,
     wrap: impl FnOnce(Integrated<If97>) -> Result<J, String>,
 ) -> Result<S3Unit<J>, String> {
+    compose_singles_with(inputs, state, scaling, solver, turbine, &[], wrap)
+}
+
+/// [`compose_governed_with`] with the rod clusters `singles` (packet
+/// indices) composed singly: each its own motion class and bore water
+/// ([`super::spine::started_full_composition_with_singles`]; a cluster
+/// declared stuck must be one). Empty: the bank composition, unchanged.
+/// The state must be of the same layout (a bank-class state is converted
+/// first, `tests/c2s_state.rs`). The receipt records the singles.
+#[allow(clippy::too_many_lines)] // One composition, step by step as KERN's settle.
+pub fn compose_singles_with<J: JoinedSystem>(
+    inputs: &Inputs,
+    state: &Value,
+    scaling: Scaling,
+    solver: Solver,
+    turbine: Option<&super::turbine::Turbine>,
+    singles: &[usize],
+    wrap: impl FnOnce(Integrated<If97>) -> Result<J, String>,
+) -> Result<S3Unit<J>, String> {
     let packet_path = &inputs.spine.packet_path;
     if state["packet"].as_str() != Some(packet_path.as_str()) {
         return Err(format!(
@@ -257,7 +278,25 @@ pub fn compose_governed_with<J: JoinedSystem>(
         rtol,
         y: reference,
         ..
-    } = started_full_composition(&inputs.spine)?;
+    } = if singles.is_empty() {
+        started_full_composition(&inputs.spine)?
+    } else {
+        started_full_composition_with_singles(&inputs.spine, singles)?
+    };
+    let single_ids: Vec<Value> = if singles.is_empty() {
+        Vec::new()
+    } else {
+        let packet = inputs.spine.packet_json()?;
+        singles
+            .iter()
+            .map(|c| {
+                packet["rods"]["clusters"][*c]["id"]
+                    .as_str()
+                    .map(|id| json!({"index": c, "id": id}))
+                    .ok_or_else(|| format!("singles: no rod cluster {c} in the packet"))
+            })
+            .collect::<Result<_, _>>()?
+    };
     if y.len() != joined.dimension() {
         return Err(format!(
             "{} coordinates against {}",
@@ -534,6 +573,7 @@ pub fn compose_governed_with<J: JoinedSystem>(
             "commissioned": if saved { "after restoring the saved discrete state" } else { "before L1 is armed (KERN's settle order)" }},
         "stator_rows": stator, "stator_budget": "S3-D23: 10 A, 1 MW",
         "governor": governor_receipt,
+        "singles": single_ids,
         "start": {"projection_passes": initial.report.projection_passes, "residual": initial.report.residual.value,
             "correction_wrms": initial.report.correction_wrms, "appended": initial.appended},
     });
