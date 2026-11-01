@@ -359,7 +359,11 @@ fn pressure_ceilings_admit_liquid_and_vapor_to_20_mpa_with_region_3_near_saturat
         Error::TrialBand
     );
     for branch in [Branch::Liquid, Branch::Vapor] {
-        let t = if matches!(branch, Branch::Liquid) { 600. } else { 700. };
+        let t = if matches!(branch, Branch::Liquid) {
+            600.
+        } else {
+            700.
+        };
         assert!(point(branch, 20e6, t).is_ok());
         assert_eq!(
             point(branch, 20e6f64.next_up(), t).unwrap_err(),
@@ -394,7 +398,11 @@ fn pressure_ceilings_admit_liquid_and_vapor_to_20_mpa_with_region_3_near_saturat
             }
             let c =
                 CaloricLinearization::internal_energy(branch, p, q.internal_energy_j_kg).unwrap();
-            assert!(fields(c.directional(1e4, 1e3).unwrap()).iter().all(|v| v.is_finite()));
+            assert!(
+                fields(c.directional(1e4, 1e3).unwrap())
+                    .iter()
+                    .all(|v| v.is_finite())
+            );
         }
         // IF97's region-1/3 boundary at 623.15 K is not continuous: a target
         // between its two sides has no state on the branch and is refused.
@@ -404,7 +412,10 @@ fn pressure_ceilings_admit_liquid_and_vapor_to_20_mpa_with_region_3_near_saturat
         let gap = 0.5 * (below.internal_energy_j_kg + above.internal_energy_j_kg);
         assert!((above.internal_energy_j_kg - below.internal_energy_j_kg).abs() > 1.);
         assert!(point_pu(Branch::Liquid, p, gap).is_err());
-        assert_eq!(point(Branch::Liquid, p, ts + 0.1).unwrap_err(), Error::TrialBand);
+        assert_eq!(
+            point(Branch::Liquid, p, ts + 0.1).unwrap_err(),
+            Error::TrialBand
+        );
     }
 }
 

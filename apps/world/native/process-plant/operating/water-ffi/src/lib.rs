@@ -105,7 +105,9 @@ impl WaterMethod {
         match text {
             "if97" => Ok(Self::If97),
             "sbtl" => Ok(Self::Sbtl),
-            other => Err(format!("water method {other:?}: expected \"if97\" or \"sbtl\"")),
+            other => Err(format!(
+                "water method {other:?}: expected \"if97\" or \"sbtl\""
+            )),
         }
     }
     pub fn as_str(self) -> &'static str {
@@ -410,7 +412,8 @@ fn point_fields(branch: Branch, p: f64, t: f64, fields: i32) -> Result<WaterPoin
 /// and h bit for bit, every other field NaN; no coefficient probe.
 fn exact_held(branch: Branch, held: &WaterPoint, dp: f64, dt: f64) -> Result<WaterPoint, Error> {
     if sbtl() {
-        return sbtl_direction(branch, held.pressure_pa, held.temperature_k, dp, dt).map(|(_, d)| d);
+        return sbtl_direction(branch, held.pressure_pa, held.temperature_k, dp, dt)
+            .map(|(_, d)| d);
     }
     let mut direction = WaterPoint::default();
     // SAFETY: `held` is a live shared C-layout tuple that C only reads;
@@ -532,7 +535,8 @@ fn directional_held(
     dt: f64,
 ) -> Result<WaterPoint, Error> {
     if sbtl() {
-        return sbtl_direction(branch, held.pressure_pa, held.temperature_k, dp, dt).map(|(_, d)| d);
+        return sbtl_direction(branch, held.pressure_pa, held.temperature_k, dp, dt)
+            .map(|(_, d)| d);
     }
     let mut direction = WaterPoint::default();
     // SAFETY: `held` is a live shared C-layout tuple that C only reads during

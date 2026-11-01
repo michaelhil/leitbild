@@ -118,7 +118,10 @@ fn sbtl_caloric_inverse_recovers_its_points_and_its_directions_are_implicit() {
             } else {
                 d.internal_energy_j_kg
             };
-            assert!(held.abs() <= 1e-8 / q.density_kg_m3, "{branch:?} {p} {t}: {held}");
+            assert!(
+                held.abs() <= 1e-8 / q.density_kg_m3,
+                "{branch:?} {p} {t}: {held}"
+            );
             let [dt, ..] = c.exact_directional(0., 1.).unwrap();
             assert_eq!(dt, c.directional(0., 1.).unwrap().temperature_k);
         }
@@ -130,14 +133,29 @@ fn sbtl_keeps_the_reference_refusals() {
     sbtl();
     let ts = |p: f64| point(Branch::SaturatedLiquid, p, 0.).unwrap().temperature_k;
     // Above the band's top pressure only stable states; beyond the ceilings none.
-    assert_eq!(point(Branch::Liquid, 18e6, ts(18e6) + 0.1).unwrap_err(), Error::TrialBand);
-    assert_eq!(point(Branch::Vapor, 18e6, ts(18e6) - 0.1).unwrap_err(), Error::TrialBand);
-    assert_eq!(point(Branch::Liquid, 20e6f64.next_up(), 600.).unwrap_err(), Error::Domain);
-    assert_eq!(point(Branch::Vapor, 20e6f64.next_up(), 700.).unwrap_err(), Error::Domain);
+    assert_eq!(
+        point(Branch::Liquid, 18e6, ts(18e6) + 0.1).unwrap_err(),
+        Error::TrialBand
+    );
+    assert_eq!(
+        point(Branch::Vapor, 18e6, ts(18e6) - 0.1).unwrap_err(),
+        Error::TrialBand
+    );
+    assert_eq!(
+        point(Branch::Liquid, 20e6f64.next_up(), 600.).unwrap_err(),
+        Error::Domain
+    );
+    assert_eq!(
+        point(Branch::Vapor, 20e6f64.next_up(), 700.).unwrap_err(),
+        Error::Domain
+    );
     // The band's trial end, by value and through the inverse.
     let p = 10e6;
     let top = point(Branch::Liquid, p, ts(p) + 3.).unwrap();
-    assert_eq!(point(Branch::Liquid, p, ts(p) + 3.01).unwrap_err(), Error::TrialBand);
+    assert_eq!(
+        point(Branch::Liquid, p, ts(p) + 3.01).unwrap_err(),
+        Error::TrialBand
+    );
     assert_eq!(
         point_pu(Branch::Liquid, p, top.internal_energy_j_kg + 1.).unwrap_err(),
         Error::TrialBand
@@ -150,7 +168,10 @@ fn sbtl_keeps_the_reference_refusals() {
     );
     // The vapor table ends at region 2's 1073.15 K.
     assert!(point(Branch::Vapor, 1e6, 1073.15).is_ok());
-    assert_eq!(point(Branch::Vapor, 1e6, 1073.2).unwrap_err(), Error::Domain);
+    assert_eq!(
+        point(Branch::Vapor, 1e6, 1073.2).unwrap_err(),
+        Error::Domain
+    );
     // The saturated endpoints are the branch tables at (p, Tsat).
     for p in [1e5, 7e6, 16e6, 18e6, 20e6] {
         let t = ts(p);
