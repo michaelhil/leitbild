@@ -12,6 +12,13 @@
 //! exactly into the integral (`Pzr::integral_for_request`). The frame client
 //! is a class-O record of the master's demand, heater request and spray
 //! demand at each frame, for the case receipts and the unit's readings.
+//!
+//! Reduction (R4-PZR-PI): the sampled law's AUTO withdrawal on an unusable
+//! PT1 sample is not modelled. The continuous master reads the channel's
+//! lag; a lag outside the channel's span (`reference-pzr-pressure-channel`
+//! min/max) ends the case loudly at that frame, never a silent continuation
+//! (the coverage rule). Sensor faults (stuck, biased, unavailable PT1) are
+//! not composed in the operating unit.
 use crate::{
     If97,
     frame::{Change, Client, Dense},
@@ -49,6 +56,8 @@ pub struct PzrClient {
     /// The lag's and the integral's global indices and solver scales.
     pub lag: (usize, f64),
     pub integral: (usize, f64),
+    /// The PT1 channel's span, Pa: the lag leaving it ends the case.
+    pub span: [f64; 2],
     /// The master's demand (Pa), heater request (W) and spray demand at
     /// the last frame.
     pub demand_pa: f64,
@@ -73,6 +82,17 @@ impl PzrClient {
             0.
         };
         [d.value, m.heater_request(d).value, u]
+    }
+    /// The reduction's loud end: the lag outside the channel's span.
+    pub fn within_span(&self, t: f64, y: &[f64]) -> Result<(), String> {
+        let lag = y[self.lag.0] * self.lag.1;
+        if !(lag.is_finite() && self.span[0] <= lag && lag <= self.span[1]) {
+            return Err(format!(
+                "at {t} s the PT1 channel lag {lag} Pa left its span [{}, {}] Pa: the continuous master models no AUTO withdrawal (R4-PZR-PI reduction); the case ends",
+                self.span[0], self.span[1]
+            ));
+        }
+        Ok(())
     }
     /// HOOK (WORLD `ld01-unit`, S5 snapshot): the client holds no state of
     /// the controller (the lag, the integral and the stem are coordinates,
@@ -111,6 +131,7 @@ impl<S: JoinedSystem> Client<S> for PzrClient {
     }
     fn frame(&mut self, _k: u64, t: f64, dense: &dyn Dense) -> Result<Vec<Change<S>>, String> {
         dense.derivative(t, 0, &mut self.scratch)?;
+        self.within_span(t, &self.scratch)?;
         [self.demand_pa, self.in_force_w, self.spray_demand] = self.outputs(&self.scratch);
         Ok(Vec::new())
     }
@@ -234,11 +255,13 @@ pub fn commission(
         control,
         lag: (offset + kl, scales[kl]),
         integral: (offset + ki, scales[ki]),
+        span: [channel.min_pa, channel.max_pa],
         demand_pa: 0.,
         in_force_w: 0.,
         spray_demand: 0.,
         scratch: vec![0.; y.len()],
     };
+    client.within_span(f64::NAN, y)?;
     [client.demand_pa, client.in_force_w, client.spray_demand] = client.outputs(y);
     let w = client.in_force_w;
     Ok((client, carried, w))
