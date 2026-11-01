@@ -139,7 +139,9 @@ impl Observer<Unit> for Observe {
         _: &[f64],
         side: Side,
     ) -> Result<(), String> {
-        if side != Side::Step || self.error.is_some() {
+        // The grid includes its origin: the start's consistent state.
+        let start = self.credited.t.is_empty() && (t - self.origin).abs() <= 1e-9;
+        if (side != Side::Step && !start) || self.error.is_some() {
             return Ok(());
         }
         if let Err(e) = u.residual(t, y, yp, &mut self.scratch) {
