@@ -16,7 +16,7 @@
 //! consistent. The conversion claims nothing beyond these rules.
 //!
 //! Environment: `LD01_OPERATING_HOT_SPINE_PACKET` (the composed packet),
-//! `LD01_PZR_FROM_STATE` (the saved state), `LD01_PZR_STATE_OUT`.
+//! `LD01_PZR_FROM_STATE` (the saved state), `LD01_PZR_STATE_OUT`, `LD01_S3_WATER`.
 #![cfg(all(feature = "ida", target_os = "macos"))]
 mod common;
 
@@ -40,6 +40,13 @@ fn from_bits(v: &Value) -> Vec<f64> {
 #[test]
 #[ignore = "one conversion per tuple: LD01_PZR_FROM_STATE onto the composed packet with continuousControl"]
 fn pzr_state_onto_the_continuous_packet() {
+    // The water method the state was prepared on (lead, 1 Nov): LD01_S3_WATER,
+    // unset SBTL, selected before any water call, as the other harnesses.
+    let water = leitbild_operating_water::WaterMethod::parse(
+        &std::env::var("LD01_S3_WATER").unwrap_or_else(|_| "sbtl".into()),
+    )
+    .unwrap_or_else(|e| panic!("{e}"));
+    leitbild_operating_water::select_water_method(water).unwrap_or_else(|e| panic!("{e}"));
     let (packet_path, _) = common::packet_bytes();
     let sha256 = |path: &str| common::provenance::sha256_file(path).expect("sha256");
     let from_path = env("LD01_PZR_FROM_STATE");
@@ -65,7 +72,25 @@ fn pzr_state_onto_the_continuous_packet() {
     assert_eq!(first + added.len(), o.cvcs, "the master's coordinates are the PZR block's last");
     let lag_scale = pzr.layout().scales[k];
     let labels: Vec<String> = added.iter().map(|i| pzr.layout().labels[*i].clone()).collect();
-    let (old_y, old_yp) = (from_bits(&state["y_bits"]), from_bits(&state["yp_bits"]));
+    // The composition reads `y`/`yp` (`unit::s3`); a state that also
+    // carries their bits must agree with them bitwise.
+    let floats = |v: &Value| -> Vec<f64> {
+        v.as_array()
+            .expect("a state vector")
+            .iter()
+            .map(|x| x.as_f64().expect("a real"))
+            .collect()
+    };
+    let (old_y, old_yp) = (floats(&state["y"]), floats(&state["yp"]));
+    let with_bits = state.get("y_bits").is_some();
+    if with_bits {
+        let (by, byp) = (from_bits(&state["y_bits"]), from_bits(&state["yp_bits"]));
+        assert!(
+            by.iter().zip(&old_y).chain(byp.iter().zip(&old_yp)).all(|(a, b)| a.to_bits() == b.to_bits())
+                && by.len() == old_y.len(),
+            "the state's y and its bits agree"
+        );
+    }
     assert_eq!(
         old_y.len() + added.len(),
         joined.dimension(),
@@ -101,8 +126,10 @@ fn pzr_state_onto_the_continuous_packet() {
     );
     state["y"] = json!(y);
     state["yp"] = json!(yp);
-    state["y_bits"] = json!(bits(&y));
-    state["yp_bits"] = json!(bits(&yp));
+    if with_bits {
+        state["y_bits"] = json!(bits(&y));
+        state["yp_bits"] = json!(bits(&yp));
+    }
     state["packet_sha256"] = json!(sha256(&packet_path));
     state["packet"] = json!(packet_path);
     state["converted_pzr"] = json!({"from": from_path, "from_sha256": from_sha256,
