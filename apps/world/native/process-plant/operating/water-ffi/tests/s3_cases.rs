@@ -2656,9 +2656,12 @@ fn drive(
                 }
             }
             // R4-NUC-SOURCE-ATOL's basis state (record only): the solver's
-            // own state at the first frame stop at or after the request.
+            // own state at the first frame stop at or after the request, in
+            // the run's drive only (the one that writes states; the cost
+            // drive writes none).
             if r.is_ok()
                 && state_at.is_none()
+                && ask.window_state.is_some()
                 && let Some((after, path)) = state_at_request.as_ref()
                 && *b >= zero + after - 1e-9
             {
