@@ -58,7 +58,10 @@
 use leitbild_operating_plant::{
     digest::sha256,
     electrical::{breaker::Contact, field, slice},
-    ic::{acquisition::Quality, packet::Quantity},
+    ic::{
+        acquisition::Quality,
+        packet::{Quantity, SgFlow},
+    },
     joined::block::Command,
     network::{CellMode, Network, Properties},
     thermal::Scalar,
@@ -342,6 +345,19 @@ fn channels(plant: &Plant, inputs: &Inputs) -> Result<Vec<Channel>, String> {
                 ("1", "mean rod stem travel over the normal stroke (0 seated)")
             }
             Quantity::StopValvePosition { .. } => ("%", "turbine stop valve stroke (100 open)"),
+            // PHYS2's X4 channels (ld01-sg-normal-pressure-channel,
+            // ld01-sg-flow-channels, ld01-vessel-dp-channels,
+            // ld01-core-exit-channels), in the units the section compiles.
+            Quantity::SgPressure { .. } => ("Pa", "SG total secondary pressure (absolute)"),
+            Quantity::SgFlowLag { flow: SgFlow::Steam, .. } => {
+                ("1", "SG pickup steam flow over the one-SG nominal feed flow m0")
+            }
+            Quantity::SgFlowLag { flow: SgFlow::Feed, .. } => {
+                ("1", "SG branch feed flow over the one-SG nominal feed flow m0")
+            }
+            Quantity::VesselDp { .. } => ("Pa", "core differential pressure (lower minus upper interface)"),
+            Quantity::PlenumDp { .. } => ("Pa", "upper plenum mixture head"),
+            Quantity::CoreExitTemperature { .. } => ("degC", "core-exit liquid temperature"),
         };
         for c in &f.channels {
             if delivered.get(k).map(|d| d.0.as_str()) != Some(c.id.as_str()) {
