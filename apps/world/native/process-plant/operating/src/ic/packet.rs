@@ -104,6 +104,90 @@ pub enum Quantity {
     /// to 0 over `stop_travel_s` (the secondary's steam-admission law). A
     /// function of time and the latched TRIP, read from the live secondary.
     StopValvePosition { stop_travel_s: f64 },
+    /// `LD01.SG.<sg>.PT` (ld01-sg-normal-pressure-channel): the SG's total
+    /// secondary pressure, Pa, the owner's algebraic pressure `SG.<sg>.p_s`.
+    /// Linear.
+    SgPressure { sg: String },
+    /// `LD01.SG.<sg>.FT.STEAM` and `LD01.FW.<sg>.FT` (ld01-sg-flow-channels):
+    /// the SG owner's continuous channel lag of the pickup steam or the
+    /// branch feed flow (`FW.<sg>.FT.STEAM.lag`, `FW.<sg>.FW.FT.lag`;
+    /// control-and-faults.md, continuous realization) over the one-SG
+    /// nominal feed flow `nominal_kg_s` (the packet's feed train `m0`). The
+    /// owner's coordinate is the channel's selected 0.25 s response, so the
+    /// family adds no second lag (`lag_s` 0). Linear; the packet must compose
+    /// the compact feed train.
+    SgFlowLag {
+        sg: String,
+        flow: SgFlow,
+        nominal_kg_s: f64,
+    },
+    /// `LD01.CORE.DP<n>` (ld01-vessel-dp-channels): `p_lower − p_upper` at
+    /// the span's interfaces, Pa, the mean over `taps` (the core's parallel
+    /// sector channels). Each interface reads the network's own local
+    /// static pressure of its cell, `p + rho_mix g (z_ref − z)`, with
+    /// `rho_mix` the cell's total mass over its fixed volume (the network's
+    /// mixture density on its EOS row). Linear; a moving cell is refused by
+    /// the compiler.
+    VesselDp { taps: Vec<DpTap> },
+    /// `LD01.UPPER.DP<n>` (ld01-vessel-dp-channels): the moving upper
+    /// plenum's mixture head `rho g (upper_m − lower_m)`, Pa, with `rho` the
+    /// liquid density at the cell's pressure and specific internal energy
+    /// through the property boundary (its mass over its current volume on
+    /// the network's EOS row). Vapor in the cell is refused. Nonlinear.
+    PlenumDp {
+        region: usize,
+        region_id: String,
+        lower_m: f64,
+        upper_m: f64,
+    },
+    /// `LD01.CORE.CET<n>` (ld01-core-exit-channels, labelled judgement on the
+    /// page): the core outlet's liquid temperature, °C, of the upper sector
+    /// cells `cells` taken as one mixed liquid (summed liquid internal energy
+    /// over summed liquid mass, at the mass-weighted pressure, through the
+    /// property boundary). The family's lag is the selected probe body's
+    /// liquid time constant. Vapor in a cell, or a temperature outside the
+    /// body's domain `body_c`, leaves the reduction and is refused.
+    /// Nonlinear.
+    CoreExitTemperature {
+        cells: Vec<Region>,
+        body_c: [f64; 2],
+    },
+}
+
+/// A network region by index and id.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Region {
+    pub region: usize,
+    pub region_id: String,
+}
+
+/// Which SG owner lag an [`Quantity::SgFlowLag`] reads.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SgFlow {
+    /// `FT.STEAM.lag`: the pickup steam.
+    Steam,
+    /// `FW.FT.lag`: the branch feed flow.
+    Feed,
+}
+
+/// One differential device's pair of interfaces.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DpTap {
+    pub lower: DpInterface,
+    pub upper: DpInterface,
+}
+
+/// A pressure interface: the network region (index and id) whose local
+/// static pressure it reads, at `elevation_m`.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DpInterface {
+    pub region: usize,
+    pub region_id: String,
+    pub elevation_m: f64,
 }
 
 #[derive(Clone, Debug, Deserialize)]

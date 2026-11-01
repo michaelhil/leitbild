@@ -11,6 +11,8 @@ import { z } from 'zod'
 import { parsePressureChannel, parsePressureProtection } from './reference-design-pressure-observation'
 import { parsePzrTaps } from './reference-design-operating-pzr'
 import { parseS2Holding } from './reference-design-operating-rods'
+import { parseCoreInventory } from './reference-design-core-inventory'
+import { cetGeometry, parseCetBasis } from './reference-design-cet'
 import { configurationBlock } from './reference-design-source-laws'
 
 /** Pages consumed, relative to the LD-01 design root. */
@@ -24,6 +26,7 @@ export const OPERATING_IC_PAGES = [
   'systems/instrumentation/nuclear-observation-apparatus.md',
   'safety/engineered-safety-actuation.md',
   'safety/protection-and-command-precedence.md',
+  'systems/instrumentation/core-inventory-observation.md',
 ] as const
 type Page = (typeof OPERATING_IC_PAGES)[number]
 type Pages = Readonly<Record<Page, string>>
@@ -72,6 +75,20 @@ export const parseObservationWindow = (text: string) => z.object({
 export const parseSourceRangePulse = (text: string) => z.object({
   rrefEventsPerS: positive.nullable(), darkPerS: nonnegative, supply: z.string(), seed: z.number().int().nonnegative(), maximumAge_s: positive,
 }).strict().parse(configurationBlock(text, 'ld01-source-range-pulse'))
+// Plan r4 X4 channels (PROC's requests): the normal SG pressure, the SG
+// owner's steam and feed flow lags, the core-span differential pressure.
+export const parseSgNormalPressureChannel = (text: string) => z.object({
+  lag_s: positive, span_Pa: band, quantum_Pa: positive,
+}).strict().parse(configurationBlock(text, 'ld01-sg-normal-pressure-channel'))
+export const parseSgFlowChannels = (text: string) => z.object({
+  supply: z.object({ A: z.string(), B: z.string() }).strict(),
+}).strict().parse(configurationBlock(text, 'ld01-sg-flow-channels'))
+export const parseVesselDpChannels = (text: string) => z.object({
+  coreSpan_Pa: band, upperSpan_Pa: band, supplies: z.tuple([z.string(), z.string()]),
+}).strict().parse(configurationBlock(text, 'ld01-vessel-dp-channels'))
+export const parseCoreExitChannels = (text: string) => z.object({
+  supplies: z.tuple([z.string(), z.string()]), span_C: band, quantum_C: positive, sample_s: positive,
+}).strict().parse(configurationBlock(text, 'ld01-core-exit-channels'))
 export const parseTurbineStateReport = (text: string) => z.object({
   sample_s: positive, transport_s: positive, maximumAge_s: positive, recovery_s: positive,
 }).strict().parse(configurationBlock(text, 'ld01-turbine-state-report'))
@@ -169,17 +186,22 @@ export function compilePzrLevelFrom(texts: { measurements: string, observations:
 
 /** What the section reads from the joined packet it is compiled against. */
 export const packetSchema = z.object({
-  mechanics: z.object({ faces: z.array(z.object({ id: z.string() }).passthrough()) }).passthrough(),
+  mechanics: z.object({ faces: z.array(z.object({ id: z.string() }).passthrough()),
+    regions: z.array(z.object({ id: z.string(), elevation_m: finite }).passthrough()) }).passthrough(),
   hydraulics: z.object({ sections: z.array(z.object({ id: z.string(), parameters: z.object({ pump: z.unknown() }).passthrough() }).passthrough()) }).passthrough(),
   secondary: z.object({ steamGenerators: z.array(z.object({ id: z.string() }).passthrough()),
     apparentLevel: z.object({ indication: z.object({ indicatedLevelArea_m2: finite }).passthrough() }).passthrough().optional(),
-    steamAdmission: z.object({ stopTravel_s: positive }).passthrough().optional() }).passthrough(),
+    steamAdmission: z.object({ stopTravel_s: positive }).passthrough().optional(),
+    // Plan r4 X4.1: the compact feed train (reference-design-operating-feed.ts).
+    feedTrain: z.object({ nominalFlow_kg_s: positive, cascade: z.object({ steamFlowLag_s: positive, steamFlowSpan: band,
+      feedFlowLag_s: positive, feedFlowSpan: band }).passthrough() }).passthrough().optional() }).passthrough(),
   feedback_metadata: z.object({ regions: z.array(z.object({ z0_m: finite, z1_m: finite }).passthrough()) }).passthrough(),
   // Plan r4 X4.2: a packet composing the CVCS (reference-design-operating-cvcs.ts).
   cvcs: z.object({ controller: z.object({ flowLag_s: finite, flowSpan_kg_s: z.tuple([finite, finite]) }).passthrough() }).passthrough().optional(),
   // Plan r4 tag map: the bank's normal stroke and the STOP's travel, when the
   // packet composes the rods and the steam admission.
-  rods: z.object({ normal_travel_m: positive }).passthrough().optional(),
+  rods: z.object({ normal_travel_m: positive, cells: z.object({ upper: z.object({ region: z.string() }).passthrough(),
+    housing_main: z.object({ region: z.string() }).passthrough() }).passthrough().optional() }).passthrough().optional(),
 }).passthrough()
 type Packet = z.infer<typeof packetSchema>
 
@@ -193,6 +215,8 @@ export const OPEN_ITEMS = [
   { item: 'RCP speed evidence-unavailable cause (R12-D2)', note: 'no unavailable cause or qualification is selected for the single LD01.RCP.*.SPEED channels; an unusable channel votes nothing' },
   { item: 'RCP underspeed on bus frequency (R12-D2)', note: 'the S3/G1 RCP drive does not follow bus frequency (Supported(Nominal) or Unsupported), so underspeed sees coastdowns only; the drive-frequency wiring is phase 2 (J-CTRL, GRID)' },
   { item: 'PRHR on low SG wide-range level (R12-A1)', note: 'selected by ld01-prhr-actuation\'s page; LD01.SG.*.LT.WR has no protective acquisition and no setting is selected (AP1000: 55,000 lbm, T15.0-4a): Phase 2 (SG-LEVEL, J-CTRL)' },
+  { item: 'LD01.SG.A.PT / LD01.SG.B.PT instrument supply groups', note: 'no group is selected for the normal SG pressure channels; they carry the label "unselected" (observed only)' },
+  { item: 'LD01.CORE.CET1/CET2 retained probe body', note: 'compiled on the liquid-contact reduction (ld01-core-exit-channels, labelled judgement): a lag of the mixed outlet liquid at the body\'s liquid time constant; no gas contact, radiation or reciprocal heat, refused with vapor in the outlet cells; the lead to accept' },
   { item: 'PRHR on low SG narrow-range level with low feed flow (R12-A1)', note: 'selected by ld01-prhr-actuation\'s page; no low-feed-flow setting is selected and feed is a recorded boundary until J-FEED: Phase 2 (J-FEED, J-CTRL)' },
 ] as const
 
@@ -234,6 +258,12 @@ export function compileOperatingIcFrom(texts: Pages, packetValue: unknown) {
     sample_s: window.sample_s, transport_s: channel.transport_s, maximum_age_s: pulse.maximumAge_s, seed: pulse.seed,
   }
   const valves = parseSteamValvePositionChannels(texts['systems/instrumentation/operational-observations.md'])
+  const sgPressure = parseSgNormalPressureChannel(texts['systems/steam-generation/instrumentation.md'])
+  const sgFlows = parseSgFlowChannels(texts['systems/instrumentation/operational-observations.md'])
+  const dpChannels = parseVesselDpChannels(texts['systems/instrumentation/core-inventory-observation.md'])
+  const inventory = parseCoreInventory(texts['systems/instrumentation/core-inventory-observation.md'])
+  const cetChannels = parseCoreExitChannels(texts['systems/instrumentation/phase-dependent-measurements.md'])
+  const cetBasis = parseCetBasis(texts['systems/instrumentation/phase-dependent-measurements.md'])
   if (!(cmt.sPressure_Pa < protection.low_pa)) throw Error('The "S" pressure must lie below the low-pressure trip (R12-B3)')
   const pt1 = taps.find(t => t.id === 'PT1')
   if (!pt1) throw Error('No PT1 tap')
@@ -252,7 +282,8 @@ export function compileOperatingIcFrom(texts: Pages, packetValue: unknown) {
     ['underspeed reset', underspeed.resetDuration_s], ['S pressure', cmt.sQualification_s],
     ['low-2 level', cmt.low2Qualification_s], ['high-3 PRHR timer', prhrActuation.high3Timer_s],
     ['bank sampling', bank.sample_s], ['bank transport', bank.transport_s],
-    ['valve sampling', valves.sample_s], ['valve transport', valves.transport_s]] as const) wholeFrames(name, v, frame_s)
+    ['valve sampling', valves.sample_s], ['valve transport', valves.transport_s], ['CET sampling', cetChannels.sample_s]] as const) wholeFrames(name, v, frame_s)
+  if (inventory.gravity_m_s2 !== 9.80665) throw Error('reference-core-inventory gravity is not the network\'s 9.80665 m/s2')
   // R12-D2: the chain reproduces AP1000's total delay exactly.
   if (Math.abs(underspeed.speedLag_s + channel.sample_s + channel.transport_s + underspeed.qualification_s - underspeed.totalDelay_s) > 1e-12)
     throw Error('RCP underspeed chain (lag + sample + transport + qualification) disagrees with its total delay')
@@ -343,6 +374,75 @@ export function compileOperatingIcFrom(texts: Pages, packetValue: unknown) {
       indeterminate_band: null, sample_s: valves.sample_s, transport_s: valves.transport_s },
     maximum_age_s: protection.maximum_age_s, recovery_s: protection.recovery_s,
   }] : []
+  // Plan r4 X4 channels (PROC's requests), observed only (no function reads
+  // them); the page-wide sampling, transport, protective age and recovery,
+  // as the loop FTs take them.
+  const timing = { sample_s: channel.sample_s, transport_s: channel.transport_s }
+  const sgPressureFamilies = sgs.map(sg => ({
+    id: `LD01.SG.${sg}.PT`, quantity: { sg_pressure: { sg } },
+    channels: [{ id: `LD01.SG.${sg}.PT`, supply: 'unselected' }],
+    channel: { lag_s: sgPressure.lag_s, min: sgPressure.span_Pa[0], max: sgPressure.span_Pa[1], quantum: sgPressure.quantum_Pa,
+      indeterminate_band: null, ...timing },
+    maximum_age_s: protection.maximum_age_s, recovery_s: protection.recovery_s,
+  }))
+  // The SG owner's FT lags are the channels' response (lag_s 0 here); span
+  // and lag in nominal flows from the packet's ld01-feed-cascade.
+  const train = packet.secondary.feedTrain
+  const flowLagFamilies = train ? sgs.flatMap(sg => ([
+    ['steam', `LD01.SG.${sg}.FT.STEAM`, train.cascade.steamFlowSpan],
+    ['feed', `LD01.FW.${sg}.FT`, train.cascade.feedFlowSpan],
+  ] as const).map(([flow, id, span]) => ({
+    id, quantity: { sg_flow_lag: { sg, flow, nominal_kg_s: train.nominalFlow_kg_s } },
+    channels: [{ id, supply: sgFlows.supply[sg as 'A' | 'B'] }],
+    channel: { lag_s: 0, min: span[0], max: span[1], quantum: null, indeterminate_band: null, ...timing },
+    maximum_age_s: protection.maximum_age_s, recovery_s: protection.recovery_s,
+  }))) : []
+  // LD01.CORE.DP1/DP2: the static channel faces at the core bottom and top,
+  // read in each sector's own channel cells (the upper one before the
+  // outlet loss), averaged over the parallel sector channels.
+  const region = (id: string) => {
+    const i = packet.mechanics.regions.findIndex(r => r.id === id)
+    if (i < 0) throw Error(`No region ${id}`)
+    return i
+  }
+  const moving = packet.rods?.cells ? [packet.rods.cells.upper.region, packet.rods.cells.housing_main.region] : []
+  const sectors = packet.mechanics.faces.map(f => /^CORE\.([A-Z]+)\.2->UPPER$/.exec(f.id)?.[1]).filter((s): s is string => s !== undefined)
+  if (sectors.length === 0) throw Error('No core sector channels')
+  const coreTaps = sectors.map(sector => {
+    faceIndex(`LOWER->CORE.${sector}.1`)
+    const lower = `CORE.${sector}.1`, upper = `CORE.${sector}.2`
+    for (const id of [lower, upper]) if (moving.includes(id)) throw Error(`${id} is a moving cell`)
+    return { lower: { region: region(lower), region_id: lower, elevation_m: inventory.coreBottom_m },
+      upper: { region: region(upper), region_id: upper, elevation_m: inventory.coreTop_m } }
+  })
+  const dpFamily = {
+    id: 'LD01.CORE.DP', quantity: { vessel_dp: { taps: coreTaps } },
+    channels: dpChannels.supplies.map((supply, i) => ({ id: `LD01.CORE.DP${i + 1}`, supply })),
+    channel: { lag_s: inventory.dpLag_s, min: dpChannels.coreSpan_Pa[0], max: dpChannels.coreSpan_Pa[1], quantum: inventory.dpQuantum_Pa,
+      indeterminate_band: null, ...timing },
+    maximum_age_s: protection.maximum_age_s, recovery_s: protection.recovery_s,
+  }
+  // LD01.UPPER.DP1/DP2: the upper plenum, the outlet faces' one receiving
+  // cell, from the core top to the head top.
+  const plena = [...new Set(packet.mechanics.faces.map(f => /^CORE\.[A-Z]+\.2->(.+)$/.exec(f.id)?.[1]).filter((r): r is string => r !== undefined))]
+  if (plena.length !== 1) throw Error(`Expected one upper plenum, found ${plena}`)
+  const upperFamily = {
+    id: 'LD01.UPPER.DP', quantity: { plenum_dp: { region: region(plena[0]!), region_id: plena[0]!, lower_m: inventory.coreTop_m, upper_m: inventory.headTop_m } },
+    channels: dpChannels.supplies.map((supply, i) => ({ id: `LD01.UPPER.DP${i + 1}`, supply })),
+    channel: { lag_s: inventory.dpLag_s, min: dpChannels.upperSpan_Pa[0], max: dpChannels.upperSpan_Pa[1], quantum: inventory.dpQuantum_Pa,
+      indeterminate_band: null, ...timing },
+    maximum_age_s: protection.maximum_age_s, recovery_s: protection.recovery_s,
+  }
+  // LD01.CORE.CET1/CET2 (judgement on the page): the probe body in liquid
+  // contact is a lag of the mixed outlet liquid at its liquid time constant.
+  const cetFamily = {
+    id: 'LD01.CORE.CET', quantity: { core_exit_temperature: { cells: coreTaps.map(t => ({ region: t.upper.region, region_id: t.upper.region_id })),
+      body_c: [cetBasis.minimumBody_C, cetBasis.maximumBody_C] } },
+    channels: cetChannels.supplies.map((supply, i) => ({ id: `LD01.CORE.CET${i + 1}`, supply })),
+    channel: { lag_s: cetGeometry(cetBasis).liquidTimeConstant_s, min: cetChannels.span_C[0], max: cetChannels.span_C[1], quantum: cetChannels.quantum_C,
+      indeterminate_band: null, sample_s: cetChannels.sample_s, transport_s: channel.transport_s },
+    maximum_age_s: protection.maximum_age_s, recovery_s: protection.recovery_s,
+  }
   const proxyFamily = {
     id: 'LD01.CORE.POWER.P',
     quantity: { current_proxy: { weights, fref_events_per_s: reference.Fref_events_per_s } },
@@ -426,7 +526,8 @@ export function compileOperatingIcFrom(texts: Pages, packetValue: unknown) {
       channel: { lag_s: channel.lag_s, min: channel.min_pa, max: channel.max_pa, quantum: channel.quantum_pa,
         indeterminate_band: null, sample_s: channel.sample_s, transport_s: channel.transport_s },
       maximum_age_s: protection.maximum_age_s, recovery_s: protection.recovery_s,
-    }, pzrLevel.family, ...sgFamilies, ...flowFamilies, proxyFamily, ...speedFamilies, ...bankFamilies, ...valveFamilies, ...cvcsFamilies],
+    }, pzrLevel.family, ...sgFamilies, ...flowFamilies, proxyFamily, ...speedFamilies, ...sgPressureFamilies, dpFamily, upperFamily, cetFamily, ...flowLagFamilies,
+      ...bankFamilies, ...valveFamilies, ...cvcsFamilies],
     reports: [{
       id: 'LD01.TG.TRIP.REPORT', source: 'turbine_retained_trip', supply: 'ACT.B',
       sample_s: report.sample_s, transport_s: report.transport_s, maximum_age_s: report.maximumAge_s, recovery_s: report.recovery_s,

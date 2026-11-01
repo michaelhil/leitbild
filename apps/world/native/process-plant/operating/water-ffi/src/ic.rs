@@ -33,7 +33,7 @@ use crate::joined::JoinedSystem;
 use leitbild_operating_plant::{
     ic::{
         acquisition::Overrange,
-        packet::{Quantity, ReportSource, Section},
+        packet::{Quantity, ReportSource, Section, SgFlow},
         protection::Protection,
     },
     joined::{block::Command, operator::Joined},
@@ -96,6 +96,57 @@ enum Observation {
     /// and the latched TRIP (`trip_s`, refreshed after every restart), never
     /// of a coordinate.
     StopPosition { trip_s: Option<f64>, travel_s: f64 },
+    /// Plan r4 X4 (`LD01.CORE.CET`, `LD01.UPPER.DP`): liquid read through
+    /// the property boundary at the step's nodes. Each cell is (pressure,
+    /// liquid mass, liquid energy, vapor mass) as (coordinate, scale).
+    Liquid {
+        cells: Vec<[(usize, f64); 4]>,
+        ids: Vec<String>,
+        reading: LiquidReading,
+    },
+}
+/// What a [`Observation::Liquid`] reports.
+#[derive(Clone, Copy, Debug)]
+enum LiquidReading {
+    /// The mixed liquid's temperature, °C, inside the body domain.
+    Temperature { body_c: [f64; 2] },
+    /// One cell's liquid head `rho g height`, Pa.
+    Head { height_m: f64 },
+}
+/// The mixed liquid of `cells` at `y`: mass-weighted pressure and summed
+/// liquid energy over summed liquid mass, through the property boundary
+/// (thermodynamic fields only). Vapor in a cell leaves the liquid-contact
+/// reduction and is refused.
+fn liquid_point(
+    y: &[f64],
+    cells: &[[(usize, f64); 4]],
+    ids: &[String],
+) -> Result<leitbild_operating_plant::network::properties::Water, String> {
+    let (mut mass, mut energy, mut pm) = (0., 0., 0.);
+    for (c, id) in cells.iter().zip(ids) {
+        let v = |k: usize| y[c[k].0] * c[k].1;
+        if v(3) != 0. {
+            return Err(format!(
+                "{id}: vapor {} kg leaves the liquid-contact reading",
+                v(3)
+            ));
+        }
+        mass += v(1);
+        energy += v(2);
+        pm += v(1) * v(0);
+    }
+    if !(mass > 0. && mass.is_finite()) {
+        return Err(format!("liquid reading: mass {mass} kg"));
+    }
+    let point = Properties::caloric_for(
+        &crate::If97,
+        false,
+        pm / mass,
+        energy / mass,
+        false,
+        leitbild_operating_plant::network::properties::Need::Thermodynamic,
+    )?;
+    Ok(Properties::values(&crate::If97, &point))
 }
 impl Observation {
     /// The STOP's stroke at `t`, percent.
@@ -131,6 +182,25 @@ impl Observation {
             Observation::StopPosition { trip_s: None, .. } => Ok(100.),
             Observation::StopPosition { .. } => {
                 Err("the STOP position after the TRIP is read at a time, not a state".into())
+            }
+            Observation::Liquid {
+                cells,
+                ids,
+                reading,
+            } => {
+                let w = liquid_point(y, cells, ids)?;
+                match reading {
+                    LiquidReading::Temperature { body_c } => {
+                        let c = w.temperature_k - 273.15;
+                        if !(c >= body_c[0] && c <= body_c[1]) {
+                            return Err(format!(
+                                "core-exit liquid {c} °C leaves the probe body's {body_c:?} °C domain"
+                            ));
+                        }
+                        Ok(c)
+                    }
+                    LiquidReading::Head { height_m } => Ok(w.density_kg_m3 * G * height_m),
+                }
             }
         }
     }
@@ -195,10 +265,12 @@ impl Observation {
                 })
                 .collect(),
             Observation::PzrLevel { base, scales, .. } => (*base..base + scales.len()).collect(),
-            Observation::CvcsFlow {
-                stem, pressure, ..
-            } => vec![stem.0, pressure.0],
+            Observation::CvcsFlow { stem, pressure, .. } => vec![stem.0, pressure.0],
             Observation::StopPosition { .. } => Vec::new(),
+            Observation::Liquid { cells, .. } => cells
+                .iter()
+                .flat_map(|c| c.iter().map(|(i, _)| *i))
+                .collect(),
         }
     }
 }
@@ -219,6 +291,21 @@ fn overrange_of(low: f64, high: f64, span: [f64; 2]) -> Result<Option<Overrange>
             "PZR LT interfaces at {low} and {high} Pa leave their {span:?} Pa spans in opposite senses (outside the property domain)"
         )),
     }
+}
+
+/// A regular cell's (pressure, liquid mass, liquid energy, vapor mass)
+/// coordinates with their scales.
+fn liquid_cell<P: Properties>(
+    net: &leitbild_operating_plant::network::Network<P>,
+    scales: &[f64],
+    region: usize,
+    id: &str,
+) -> Result<[(usize, f64); 4], String> {
+    let l = net
+        .cell_layout
+        .get(region)
+        .ok_or_else(|| format!("{id} is not a regular cell"))?;
+    Ok([l.base, l.mass[0], l.energy[0], l.mass[1]].map(|i| (i, scales[i])))
 }
 
 fn mass_flow(
@@ -573,6 +660,115 @@ impl ProtectionClient {
                             })
                             .collect(),
                     )
+                }
+                // Plan r4 X4 channels (PROC's requests): linear readings of
+                // owner coordinates.
+                Quantity::SgPressure { sg } => {
+                    let label = format!("SG.{sg}.p_s");
+                    let i = labels
+                        .iter()
+                        .position(|l| *l == label)
+                        .ok_or_else(|| format!("no coordinate {label}"))?;
+                    references.insert(f.id.clone(), json!({"coordinate": label,
+                        "basis": "the SG owner's total secondary pressure (ld01-sg-normal-pressure-channel)"}));
+                    Observation::Linear(vec![(i, scales[i])])
+                }
+                Quantity::SgFlowLag {
+                    sg,
+                    flow,
+                    nominal_kg_s,
+                } => {
+                    let label = match flow {
+                        SgFlow::Steam => format!("FW.{sg}.FT.STEAM.lag"),
+                        SgFlow::Feed => format!("FW.{sg}.FW.FT.lag"),
+                    };
+                    let i = labels.iter().position(|l| *l == label).ok_or_else(|| {
+                        format!("no coordinate {label} (the joined packet composes no feed train)")
+                    })?;
+                    if !(nominal_kg_s.is_finite() && *nominal_kg_s > 0.) {
+                        return Err(format!("{}: nominal flow {nominal_kg_s} kg/s", f.id));
+                    }
+                    if f.channel.lag_s != 0. {
+                        return Err(format!(
+                            "{}: the SG owner's lag is the channel's response; no second lag",
+                            f.id
+                        ));
+                    }
+                    references.insert(f.id.clone(), json!({"coordinate": label, "nominal_kg_s": nominal_kg_s,
+                        "basis": "the SG owner's continuous channel lag over the one-SG nominal feed flow m0 (ld01-sg-flow-channels, ld01-feed-cascade)"}));
+                    Observation::Linear(vec![(i, scales[i] / nominal_kg_s)])
+                }
+                Quantity::VesselDp { taps } => {
+                    if taps.is_empty() {
+                        return Err(format!("{}: no interfaces", f.id));
+                    }
+                    let weight = 1. / taps.len() as f64;
+                    let mut terms: Vec<(usize, f64)> = Vec::new();
+                    // p + (M_l + M_v) g (z_ref - z) / V at one interface, signed.
+                    let mut interface = |at: &leitbild_operating_plant::ic::packet::DpInterface,
+                                         sign: f64|
+                     -> Result<(), String> {
+                        let layout = net.cell_layout.get(at.region).ok_or_else(|| {
+                            format!("{}: {} is not a regular cell", f.id, at.region_id)
+                        })?;
+                        let head = G * (net.elevations()[at.region] - at.elevation_m)
+                            / net.volume(at.region);
+                        terms.push((layout.base, sign * weight * scales[layout.base]));
+                        for m in layout.mass {
+                            terms.push((m, sign * weight * scales[m] * head));
+                        }
+                        Ok(())
+                    };
+                    for t in taps {
+                        interface(&t.lower, 1.)?;
+                        interface(&t.upper, -1.)?;
+                    }
+                    references.insert(f.id.clone(), json!({"interfaces": taps.iter().map(|t| json!([
+                        [t.lower.region_id, t.lower.elevation_m], [t.upper.region_id, t.upper.elevation_m]])).collect::<Vec<_>>(),
+                        "basis": "the mean over the sector channels of each cell's local static pressure p + rho_mix g (z_ref - z), rho_mix = M / V (ld01-vessel-dp-channels)"}));
+                    Observation::Linear(terms)
+                }
+                Quantity::PlenumDp {
+                    region,
+                    region_id,
+                    lower_m,
+                    upper_m,
+                } => {
+                    let cell = liquid_cell(net, &scales, *region, region_id)?;
+                    if !((upper_m - lower_m).is_finite() && upper_m - lower_m > 0.) {
+                        return Err(format!("{}: interfaces {lower_m} and {upper_m} m", f.id));
+                    }
+                    references.insert(f.id.clone(), json!({"region": region_id, "interfaces_m": [lower_m, upper_m],
+                        "basis": "the moving cell's liquid density at its pressure and specific internal energy times g and the span (ld01-vessel-dp-channels)"}));
+                    Observation::Liquid {
+                        cells: vec![cell],
+                        ids: vec![region_id.clone()],
+                        reading: LiquidReading::Head {
+                            height_m: upper_m - lower_m,
+                        },
+                    }
+                }
+                Quantity::CoreExitTemperature { cells, body_c } => {
+                    if cells.is_empty()
+                        || !((body_c[1] - body_c[0]).is_finite() && body_c[1] - body_c[0] > 0.)
+                    {
+                        return Err(format!(
+                            "{}: {} cells, body {body_c:?} °C",
+                            f.id,
+                            cells.len()
+                        ));
+                    }
+                    let read = cells
+                        .iter()
+                        .map(|c| liquid_cell(net, &scales, c.region, &c.region_id))
+                        .collect::<Result<Vec<_>, _>>()?;
+                    references.insert(f.id.clone(), json!({"cells": cells.iter().map(|c| &c.region_id).collect::<Vec<_>>(),
+                        "lag_s": f.channel.lag_s, "basis": "the mixed outlet liquid's temperature through the property boundary, lagged by the probe body's liquid time constant (ld01-core-exit-channels, labelled judgement)"}));
+                    Observation::Liquid {
+                        cells: read,
+                        ids: cells.iter().map(|c| c.region_id.clone()).collect(),
+                        reading: LiquidReading::Temperature { body_c: *body_c },
+                    }
                 }
                 Quantity::StopValvePosition { stop_travel_s } => {
                     let secondary = joined
