@@ -4160,6 +4160,55 @@ fn s3_case_run() {
             );
             references.push((name, r));
         }
+        // SBTL lane (lead, 1 Nov): the water methods against each other under
+        // the same E0. LD01_S3_CREDITED_OUT writes this run's credited
+        // outputs; LD01_S3_E0_AGAINST names another run's (the other water
+        // method, the same case and composition otherwise), compared over
+        // each refined comparison's own span as reference "method:<water>:<R>".
+        // SBTL states inside IF97's region-boundary bands, which these
+        // comparisons exclude by ruling, are counted in the receipt.
+        if let Ok(path) = std::env::var("LD01_S3_CREDITED_OUT") {
+            let out = json!({"zero": run.zero, "water": config.solver.water,
+                "t": og.credited.t, "outputs": og.credited.outputs});
+            std::fs::write(&path, serde_json::to_vec(&out).unwrap()).expect("LD01_S3_CREDITED_OUT");
+        }
+        if let Ok(path) = std::env::var("LD01_S3_E0_AGAINST") {
+            let v: Value = serde_json::from_slice(&std::fs::read(&path).expect("LD01_S3_E0_AGAINST"))
+                .expect("LD01_S3_E0_AGAINST: credited outputs");
+            assert_eq!(v["zero"].as_f64(), Some(run.zero), "LD01_S3_E0_AGAINST: another event zero");
+            let other = compare::Credited {
+                t: serde_json::from_value(v["t"].clone()).expect("credited t"),
+                outputs: serde_json::from_value(v["outputs"].clone()).expect("credited outputs"),
+            };
+            let water = v["water"].as_str().unwrap_or("unknown").to_string();
+            let spans: Vec<(String, f64, f64)> = comparisons
+                .iter()
+                .filter_map(|c| {
+                    Some((
+                        c["reference"].as_str()?.to_string(),
+                        c["span_after_zero_s"][0].as_f64()?,
+                        c["span_after_zero_s"][1].as_f64()?,
+                    ))
+                })
+                .collect();
+            for (name, from, to) in spans {
+                let e0 = match &og.credited_error {
+                    None => compare::compare(&og.credited, &other, run.zero, from, to, &g.budgets),
+                    Some(e) => json!({"evaluable": false, "run": e, "within": false}),
+                };
+                let verdict = if e0["evaluable"] == json!(false) {
+                    "unevaluable"
+                } else if e0["within"] == json!(true) {
+                    "pass"
+                } else {
+                    "fail"
+                };
+                comparisons.push(json!({"reference": format!("method:{water}:{name}"),
+                    "span_after_zero_s": [from, to], "verdict": verdict, "reference_failure": Value::Null,
+                    "e0": e0, "against": path,
+                    "boundary_band_states": leitbild_operating_water::boundary_band_states()}));
+            }
+        }
         // R11-3a's series: each completed level against the next looser
         // completed one, by the same E0 comparison (looser minus tighter).
         let series = series_on.then(|| {

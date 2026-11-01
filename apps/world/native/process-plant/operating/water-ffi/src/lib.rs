@@ -157,6 +157,27 @@ fn native_status(code: i32) -> Result<(), Error> {
         _ => Err(Error::NativeFailure),
     }
 }
+/// SBTL states returned inside IF97's region-boundary bands: within 0.5 K
+/// of 623.15 K (region 1/3), or above 16.529 MPa within 0.5 K of B23 (region
+/// 2/3). There the tables smooth IF97's own gap, so the methods differ by
+/// design and E0's SBTL-against-IF97 comparisons exclude these states (lead,
+/// 1 Nov); a case receipt records the count.
+static BOUNDARY_BAND_STATES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+/// The count of [`BOUNDARY_BAND_STATES`] so far in this process.
+pub fn boundary_band_states() -> u64 {
+    BOUNDARY_BAND_STATES.load(std::sync::atomic::Ordering::Relaxed)
+}
+fn note_band(q: &WaterPoint) {
+    let (p, t) = (q.pressure_pa, q.temperature_k);
+    // IF97 Eq. (6): the B23 temperature at p (n3, n4, n5 of its Table 1).
+    let b23 = || {
+        0.572_544_598_627_46e3
+            + ((p * 1e-6 - 0.139_188_397_788_70e2) / 0.101_929_700_393_26e-2).sqrt()
+    };
+    if (t - 623.15).abs() < 0.5 || (p > 16.529e6 && (t - b23()).abs() < 0.5) {
+        BOUNDARY_BAND_STATES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+}
 /// The SBTL point: every field but cv (NaN, not tabulated).
 fn sbtl_point(branch: Branch, p: f64, t: f64) -> Result<WaterPoint, Error> {
     let mut output = WaterPoint::default();
@@ -164,6 +185,7 @@ fn sbtl_point(branch: Branch, p: f64, t: f64) -> Result<WaterPoint, Error> {
     // allocation, completely written on success and retained nowhere; the
     // native function catches every C++ exception.
     native_status(unsafe { ld01_sbtl_point(branch as i32, p, t, &mut output) })?;
+    note_band(&output);
     Ok(output)
 }
 /// The SBTL point and its analytic direction along (dp, dt) (a saturated
@@ -181,6 +203,7 @@ fn sbtl_direction(
     native_status(unsafe {
         ld01_sbtl_direction(branch as i32, p, t, dp, dt, &mut value, &mut direction)
     })?;
+    note_band(&value);
     Ok((value, direction))
 }
 
@@ -841,6 +864,7 @@ fn sbtl_inverse(branch: Branch, p: f64, target: f64, kind: Caloric) -> Result<Wa
     let enthalpy = matches!(kind, Caloric::Enthalpy) as i32;
     // SAFETY: as `sbtl_point`.
     native_status(unsafe { ld01_sbtl_inverse(branch as i32, p, target, enthalpy, &mut output) })?;
+    note_band(&output);
     Ok(output)
 }
 
