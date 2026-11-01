@@ -1,10 +1,12 @@
 //! spec: world/packs/process-plant/reference-designs/ld-01/systems/electrical/dc-storage.md#energy-equations-and-power-flow
 //! spec: world/packs/process-plant/reference-designs/ld-01/systems/electrical/dc-storage.md#output-capacity-and-equipment-demand
 //! spec: world/packs/process-plant/reference-designs/ld-01/systems/electrical/dc-storage.md#coincident-supply-and-energy-events
-//! The page's native DC provider (`src/dc_supply.rs` of the research crate),
-//! carried into the operating crate unchanged: operating/AGENTS.md keeps
-//! the research crate as evidence and forbids importing it (PROC T5, lane
-//! ELEC, lead 1 Nov).
+//! The page's native DC provider, carried into the operating crate
+//! unchanged from `src/dc_supply.rs` of the research crate (PROC T5, lane
+//! ELEC): operating/AGENTS.md keeps the research crate as evidence and
+//! forbids importing it. **This operating copy is the maintained one from
+//! 1 Nov 2026 (lead); the research crate's file stays retained evidence and
+//! is not kept in step.**
 //!
 //! Finite regulated DC supply between actual load/path/command/storage events.
 //! Exact constant-duty continuation; no battery electrochemistry or voltage curve.

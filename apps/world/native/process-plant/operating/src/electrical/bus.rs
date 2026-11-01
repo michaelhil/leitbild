@@ -859,6 +859,64 @@ mod tests {
         voltage_pu: 1.,
         frequency_hz: 50.,
     };
+    /// ELEC (lead 1 Nov, PHYS2's frame-time reports): a copy advanced to a
+    /// frame instant reports the routing's own instants that change no
+    /// delivered support, so no stop is needed for them. Between the unit
+    /// loss (a restart) and the reserve closure (the next support change):
+    /// the unit incoming's OPEN end and the unit's lost qualification; and
+    /// after its return (a restart), its requalification. A CLOSE always
+    /// energizes its bus (break before make, a usable qualified source), so
+    /// it is never such an instant. The copy leaves the routing untouched.
+    #[test]
+    fn a_copy_advanced_to_a_frame_reports_the_instants_between_restarts() {
+        let mut d = Distribution::prepared(params(), [LIVE, LIVE], [true, true], 0.).unwrap();
+        d.set_source(1., Source::Unit, SourceState::DEAD).unwrap();
+        let at = |d: &Distribution, t: f64| {
+            let mut c = d.clone();
+            c.advance(t).unwrap();
+            c.reports()
+        };
+        let unit_a = |r: &Reports| r.incoming[0].clone();
+        let held = d.discrete_state();
+        // +0.15 s: the unit incoming is open, its travel complete; the
+        // routing itself still holds the restart's state.
+        let r = at(&d, 1.15);
+        assert_eq!(
+            (unit_a(&r).contact, unit_a(&r).travel_complete),
+            (Contact::Open, true)
+        );
+        assert_eq!(
+            (
+                unit_a(&d.reports()).contact,
+                unit_a(&d.reports()).travel_complete
+            ),
+            (Contact::Closed, false)
+        );
+        assert!(!r.buses[0].available);
+        // +0.25 s: the unit's qualification is lost (0.2 s), the bus still dead.
+        let r = at(&d, 1.25);
+        assert!(!r.sources[0].qualified && d.reports().sources[0].qualified);
+        assert!(!r.buses[0].available);
+        assert_eq!(d.discrete_state(), held, "a report copy changes nothing");
+        // No support change before the reserve closes at +0.5 s.
+        let mut probe = d.clone();
+        let mut first_change = None;
+        while let Some(n) = probe.next_event().filter(|n| *n < 2.) {
+            let before = probe.supports();
+            probe.advance(n).unwrap();
+            if probe.supports() != before {
+                first_change = Some(n);
+                break;
+            }
+        }
+        assert!((first_change.unwrap() - 1.5).abs() < 1e-9);
+        // The unit returns at 2 s (a restart); it requalifies at 3 s, between restarts.
+        d.advance(1.5).unwrap();
+        d.set_source(2., Source::Unit, LIVE).unwrap();
+        assert!(!d.reports().sources[0].qualified);
+        assert!(at(&d, 3.05).sources[0].qualified);
+        assert!(!at(&d, 2.95).sources[0].qualified);
+    }
     #[test]
     fn unit_loss_transfers_to_reserve_in_half_a_second_with_ride_through() {
         let mut d = Distribution::prepared(params(), [LIVE, LIVE], [true, true], 0.).unwrap();
