@@ -114,7 +114,8 @@ pub struct WallWater {
 /// The liquid entering an SG primary cell: its capacity-weighted
 /// temperature and its capacity rate `sum(m_in (cp_donor + cp_cell)/2)`, W/K,
 /// over the faces whose liquid flows into the cell. With no inflow the rate
-/// is zero and the temperature is the cell's (the law's heat is then zero).
+/// is zero and the temperature is the cell's (the law then reads the cell's
+/// own exchange only, X4.6 item 1).
 #[derive(Clone, Copy, Debug)]
 pub struct Inflow {
     pub temperature: Scalar,
@@ -2043,8 +2044,9 @@ impl Solids {
                     let inflow = water
                         .inflow
                         .ok_or_else(|| fatal("SG primary wall water without its inflow"))?;
-                    // X4.5 (lead ruling d): the fold's exact single-pass law
-                    // from the inflow onto this metal, the segment's share.
+                    // X4.6 item 1: the mixed cell's law (single-pass at steady
+                    // flow, the cell's own exchange with no inflow), the
+                    // segment's share at its own metal.
                     let u = thermal::tube_series_conductance(
                         properties,
                         water.pressure,
@@ -2062,10 +2064,11 @@ impl Solids {
                         g.series_m2k_w,
                     )
                     .map_err(trial)?;
-                    let whole = thermal::single_pass_heat(
+                    let whole = thermal::cell_pass_heat(
                         u * s(g.fold_primary_area),
                         inflow.capacity_w_k,
                         inflow.temperature,
+                        water.temperature,
                         metal_t,
                     )
                     .map_err(trial)?;

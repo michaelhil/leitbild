@@ -12,6 +12,8 @@ pub mod cpu;
 pub mod feed_control;
 pub mod filter;
 #[cfg(feature = "ida")]
+pub mod nc_record;
+#[cfg(feature = "ida")]
 pub mod observe;
 pub mod provenance;
 

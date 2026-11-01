@@ -521,6 +521,11 @@ struct Recorder {
     /// physical coordinates at every frame (first index, scales, rows);
     /// never in `frames`.
     cvcs: Option<(usize, Vec<f64>, Vec<Value>)>,
+    /// HOOK (FEED, plan r4 X4.6): with the leg record and
+    /// LD01_FEED_NC_RECORD=1, the natural-circulation record
+    /// (`common::nc_record`) from the same left-limit state; never in
+    /// `frames`.
+    nc: Option<common::nc_record::NcRecord>,
 }
 /// HOT.A, HOT.B, COLD.A, COLD.B cells, the left-limit state and the rows.
 struct Legs {
@@ -566,6 +571,11 @@ impl<S: leitbild_operating_water::joined::JoinedSystem> leitbild_operating_water
             out[j] = mt / m;
         }
         l.rows.push(json!([t, out]));
+        if let Some(nc) = self.nc.as_mut() {
+            nc.sample(net, &l.y, t, out, |n, y, c| {
+                outputs::cell_temperature(n, y, c)
+            })?;
+        }
         Ok(())
     }
     fn frame(
@@ -1784,6 +1794,18 @@ fn drive(
         cvcs: joined
             .cvcs()
             .map(|b| (o.cvcs, b.layout().scales.clone(), Vec::new())),
+        nc: (packet_json["secondary"]["feedTrain"].is_object()
+            && std::env::var("LD01_FEED_NC_RECORD").as_deref() == Ok("1"))
+        .then(|| {
+            let ids: Vec<String> = packet_json["mechanics"]["regions"]
+                .as_array()
+                .expect("the packet's regions")
+                .iter()
+                .map(|r| r["id"].as_str().expect("a region id").to_string())
+                .collect();
+            common::nc_record::NcRecord::new(&ids, protection.readings())
+                .unwrap_or_else(|e| panic!("nc record: {e}"))
+        }),
     };
     let cvcs_section = joined.cvcs().map(|b| {
         json!({"labels": b.layout().labels, "program": b.section().program, "controller": b.section().controller})
@@ -2949,6 +2971,7 @@ fn drive(
             "frames": p.iter().map(|(t, r, v)| json!([t, r, v])).collect::<Vec<_>>()})),
         "feed_leg_temperatures_k": recorder.legs.as_ref().map(|l| json!({"columns": ["HOT.A", "HOT.B", "COLD.A", "COLD.B"], "rule": "mass-weighted cells per leg, at every frame's left limit", "rows": l.rows})),
         "repeat_record": repeat_record,
+        "nc_record": recorder.nc.as_ref().map(|n| n.receipt()),
     });
     // HOOK (NUC, plan r4 X4.2): only a CVCS packet's record has the key.
     if let (Some(section), Some((_, _, rows))) = (cvcs_section, recorder.cvcs.as_ref()) {
