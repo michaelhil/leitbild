@@ -1,12 +1,18 @@
 //! spec: world/packs/process-plant/reference-designs/ld-01/model/build-readiness.md#s3-declaration-a3-pilot
 //! The S3 composition (lead decision S3-D28 (3)) as one builder, the same
 //! steps in the same order as KERN's settle-state probe (`s3_settle.rs`):
-//! - the joined operator of the S3 packet (spray line composed closed,
-//!   S3-D25; SG two-zone contact map, S3-D26), the S3-D12 feed gate declared
-//!   (S3-D27) before any structure;
+//! - the joined operator of the S3 packet (spray line composed, its stem
+//!   the PZR owner's under R4-PZR-PI S-b, at rest locked at the start;
+//!   S3-D25's closed composition is lifted by that lead decision; SG
+//!   two-zone contact map, S3-D26), the S3-D12 feed gate declared (S3-D27)
+//!   before any structure;
 //! - the derived tolerance classes of S2-D24r/S3-D16 at the start state;
-//! - IC-CTRL's normal PZR pressure control in AUTO, heater changes class S
-//!   (S3-D4), spray demand zero;
+//! - IC-CTRL's normal PZR pressure control in AUTO: the continuous pressure
+//!   master in the PZR owner on the PT1 channel lag and its integral
+//!   (R4-PZR-PI, class C; the lag at its operator-grade tolerance
+//!   [`super::profile::PZR_LAG_TOLERANCE_PA`], the integral and the stem at
+//!   the stock floor, as FEED's), heaters and the controlled spray from one
+//!   demand; a held demand carried into the integral exactly;
 //! - L1 and the regular cells' phase modes armed;
 //! - ELEC's slice appended (generator, shaft, turbine on the SG owner's
 //!   admitted steam, GCB closed, AC routing), connected at full load, its
@@ -18,14 +24,13 @@
 //! composition is the same, the slice's coordinates are the saved ones, the
 //! system's discrete state is restored exactly before the consistent start,
 //! and the controller is re-commissioned at the start after the restore (the
-//! heater demand in force is the PZR block's discrete state; the settle
-//! state says so).
+//! continuous law reads the state's own channel lag).
 //!
 //! Inputs: [`super::inputs::Inputs`] (the spine, the I&C and PZR control
 //! sections, ELEC's packet).
 use super::{
     inputs::Inputs,
-    profile::{GUIDE_CURRENT_BASIS_PA, MAX_ORDER, RESTART, Solver},
+    profile::{GUIDE_CURRENT_BASIS_PA, MAX_ORDER, PZR_LAG_TOLERANCE_PA, RESTART, Solver},
     pzr_control::{self, PzrClient},
     spine::{
         Started, credited_outputs, started_full_composition, started_full_composition_with_singles,
@@ -34,7 +39,7 @@ use super::{
 use crate::{
     If97,
     electrical::{Configuration, CreditedBudget, Electrified, G, N},
-    frame::{Class, Frame},
+    frame::Frame,
     ida::{Ida, Initial},
     joined::{
         DerivedTolerances, Discrete, Integrated, JoinedSystem, Restart, derived_tolerances,
@@ -285,7 +290,7 @@ pub fn compose_dc_with<J: JoinedSystem>(
             state["packet"]
         ));
     }
-    let (y, yp) = (vector(&state["y"])?, vector(&state["yp"])?);
+    let (mut y, yp) = (vector(&state["y"])?, vector(&state["yp"])?);
     let t0 = state["t_s"].as_f64().ok_or("the start state has no t_s")?;
     let saved = !state["discrete_state"].is_null();
     let frame = Frame::new(inputs.ic.frame_s)?;
@@ -363,7 +368,7 @@ pub fn compose_dc_with<J: JoinedSystem>(
     if law.frame_s() != inputs.ic.frame_s {
         return Err("the control frame is not the I&C frame".into());
     }
-    let channel = pzr_control::channel_block(&inputs.control_wiki, &law)?;
+    let channel = pzr_control::channel_block(&inputs.control_wiki)?;
     // From the S2 state (KERN's settle): commissioned, then L1 and the
     // phase modes armed. From a saved S3 state: the operator's discrete
     // state restored (it declares L1 from its locks and sets the phase
@@ -373,12 +378,10 @@ pub fn compose_dc_with<J: JoinedSystem>(
         joined
             .restore_discrete_state(&state["discrete_state"]["operator"])
             .map_err(|e| format!("restore the operator's discrete state: {e:?}"))?;
-        let (c, p, s) =
-            pzr_control::commission(&mut joined, &law, channel, Class::S, None, t0, &y, &yp)?;
+        let (c, p, s) = pzr_control::commission(&mut joined, &law, channel, &mut y)?;
         (c, p, s, None)
     } else {
-        let (c, p, s) =
-            pzr_control::commission(&mut joined, &law, channel, Class::S, None, t0, &y, &yp)?;
+        let (c, p, s) = pzr_control::commission(&mut joined, &law, channel, &mut y)?;
         let l1 = joined
             .activate_unilateral(t0, &y)
             .map_err(|e| format!("L1: {e:?}"))?;
@@ -388,6 +391,8 @@ pub fn compose_dc_with<J: JoinedSystem>(
         (c, p, s, Some(l1.changes.len()))
     };
     let mut control = control;
+    // R4-PZR-PI (S-b): the spray stem's mode at the start, for the receipt.
+    let joined_spray_mode = joined.pzr().spray_mode().map(|m| format!("{m:?}"));
     // Plan r4 X4.1: the SG owner's continuous feed control (it decides no
     // change; its AUTO point is the state's own).
     let sg_section: leitbild_operating_plant::sg::packet::Section =
@@ -403,6 +408,17 @@ pub fn compose_dc_with<J: JoinedSystem>(
             atol[base + i] = a / scales[i];
         }
     }
+    // R4-PZR-CONTINUOUS: the PT1 channel lag's operator-grade absolute
+    // tolerance (commissioning refused a packet without it).
+    let lag_atol = {
+        let pzr = joined.pzr();
+        let k = pzr
+            .lag_coordinate()
+            .ok_or("the PZR owner composes no channel lag")?;
+        let scaled = PZR_LAG_TOLERANCE_PA / pzr.layout().scales[k];
+        atol[joined.offsets().pzr + k] = scaled;
+        scaled
+    };
     let ids = joined.differential(&network_ids);
     let n = joined.dimension();
     let nonnegative = joined.network.nonnegative_stocks();
@@ -590,14 +606,17 @@ pub fn compose_dc_with<J: JoinedSystem>(
     yp_all.clone_from(&initial.yp);
     control.scratch = vec![0.; y_all.len()];
     let mut receipt = json!({
-        "composition": "S3-D28 (3): joined + spray closed + SG two-zone + feed gate declared + S2-D24r/S3-D16 + PZR control AUTO (S) + L1 + phase modes + ELEC slice connected",
+        "composition": "S3-D28 (3): joined + spray path (continuous stem, R4-PZR-PI S-b) + SG two-zone + feed gate declared + S2-D24r/S3-D16 + PZR pressure master AUTO (C, R4-PZR-PI) + L1 + phase modes + ELEC slice connected",
         "tolerance_scaling": {"relative": scaling.relative, "absolute": scaling.absolute},
         "weights": solver.weights, "first_step": solver.first_step, "stepping": solver.stepping, "water": solver.water, "weight_groups": ida.weight_groups().map(|g| g.sizes().len()),
         "from_saved_s3_state": saved, "t0_s": t0, "spray_path": spray_path,
         "sections": {"ic": inputs.ic_path, "pzr_control": inputs.control_path, "control_wiki": inputs.control_wiki, "electrical": inputs.elec_path},
         "l1_activation_changes": l1_changes,
         "feed_control": feed_train.then(|| json!({"class": "C (continuous, in the SG owner; owner 31 Oct 2026)", "start": "AUTO at the state's tracked point (the composed or carried state)"})),
-        "pzr_control": {"class": "S (S3-D4)", "prepared_request_w": prepared_w, "start_request_w": start_w,
+        "pzr_control": {"class": "C (continuous pressure master in the PZR owner on the PT1 channel lag and its integral; R4-PZR-PI, lead 1 Nov)",
+            "master": control.control, "spray": joined_spray_mode,
+            "held_request_carried_w": prepared_w, "start_request_w": start_w, "start_demand_pa": control.demand_pa,
+            "lag_tolerance": {"absolute_pa": PZR_LAG_TOLERANCE_PA, "scaled": lag_atol, "basis": "ld01-operator-budgets r2 pzrPressure_Pa.budget_Pa (RP-pin-ogb-r2)"},
             "commissioned": if saved { "after restoring the saved discrete state" } else { "before L1 is armed (KERN's settle order)" }},
         "stator_rows": stator, "stator_budget": "S3-D23: 10 A, 1 MW",
         "governor": governor_receipt,

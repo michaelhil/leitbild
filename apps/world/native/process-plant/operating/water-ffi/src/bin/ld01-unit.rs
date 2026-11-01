@@ -1186,10 +1186,6 @@ impl Unit {
         let leitbild_operating_water::frame::Reached::Until(t) = reached;
         self.t = t;
         self.exchanges += 1;
-        // The PZR client's per-frame series and schedule are receipts that
-        // grow with the run; the host reports frames instead.
-        self.plant.control.series.clear();
-        self.plant.control.schedule.clear();
         let after = self.counters()?;
         let values = self.values()?;
         let events = self.events()?;
