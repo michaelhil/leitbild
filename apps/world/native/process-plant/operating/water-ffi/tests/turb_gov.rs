@@ -647,6 +647,12 @@ fn turb_gov_run() {
         "composition": plant.composition, "rod_control": main.rod_receipt,
         "timeline": {"zero_s": steps.first().map_or(t0, |(_, a)| t0 + a)},
         "run": {
+            // R4-COST-UNIT r2's record (ld01-cost's measure label), as this
+            // harness runs: no residual-jump diagnostic (Diagnostic::None),
+            // and the frames ld01-cost reads come from the drive without an
+            // observer (the unobserved cost drive under LD01_TURB_GATES=1,
+            // else the one drive, which is unobserved).
+            "configuration": {"case_configuration": {"jump_diagnostic": false, "cost_excludes_case_observer": true}},
             "ou_frame_instructions": main.rec.cost.iter().map(|(t, i)| json!([t, i])).collect::<Vec<_>>(),
             "instants": plant.driver.log, "counts": plant.driver.counts.json(),
             "counts_r": plant.driver.counts.total(Class::R), "counts_s": plant.driver.counts.total(Class::S),
