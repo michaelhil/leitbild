@@ -75,7 +75,7 @@ const artifactWith = async (fixture: Record<string, unknown>, compiled: { readon
       format: 'ld01-unit-artifact', binary: 'bin/ld01-unit', libraries: ['lib/libtest.dylib'], graph: 'ld01-graph.json',
       load: {
         inputs: { packet: 'packets/joined.json', wiki_root: 'wiki', wiki_commit: null, wiki_repository: null, ic: 'packets/ic.json', pzr_control: 'packets/pzr-control.json', pzr_control_wiki: 'wiki', elec: 'packets/elec.json' },
-        state: 'packets/s3-state.json', solver: { weights: 'declared', first_step: 'declared', stepping: 'free' },
+        state: 'packets/s3-state.json', solver: { weights: 'declared', first_step: 'declared', stepping: 'free', water: 'if97' },
       },
     }),
   }

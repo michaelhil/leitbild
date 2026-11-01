@@ -1,26 +1,26 @@
 {
  "kind": "ld01-tier1-expectation",
  "platform": "macos-aarch64",
- "reason": "R4-FREE-STEPS (PERF2 1d7727a54): free stepping by default moves C2@2.5's trajectory; C2@0 bitwise",
- "recorded_from": "/Users/hilde/Documents/ChatGPT/Leitbild-research/reference-designs/property-candidates/operating-joined-spine-s2/resume-2026-10-14/tiers/t1-0d77c7636-20261101T044101Z",
- "app": "0d77c7636",
+ "reason": "combined re-pin of record (REPIN 8a0d8abc6 = 5f0a41e61, wiki 620186f, water SBTL): R3, ROD2 stem + seat, NCHEAD, critical boron 1,536.824; trajectory moves",
+ "recorded_from": "/Users/hilde/Documents/ChatGPT/Leitbild-research/reference-designs/property-candidates/operating-joined-spine-s2/resume-2026-10-14/tiers/t1-71c6af901-20261101T163031Z",
+ "app": "71c6af901",
  "environment": {
-  "packet_sha256": "6defd761370009b496fcea18cd0a5037fccf4314c78e52853fa5b184d6893034",
-  "state_sha256": "219cf355c69cc79a9156a44047968e4bf2eab37225d9fe2c414c92ae6fc346e8",
+  "packet_sha256": "32e1c545f7180f9289833cd8b93aa7b12e65a88eeaa448c5077ae7a280e78cce",
+  "state_sha256": "6295c9a0e8d85fb482ef6478972ae1ae63c12dd9f5e7e857611487449c4ae79f",
   "elec_packet_sha256": "f91fc8e5929c78ceddbb7355dc12a0785292cae59725794f2d52306d1326e6f7",
-  "wiki_commit": "fb3756a",
-  "water_lib_dir": "/Users/hilde/Documents/ChatGPT/Leitbild-research/reference-designs/property-candidates/operating-water-perf-alloc-1",
+  "wiki_commit": "620186f",
+  "water_lib_dir": "/Users/hilde/Documents/ChatGPT/Leitbild-research/reference-designs/property-candidates/operating-water-sbtl-repin-97ad4d5",
   "sundials_prefix": "/Users/hilde/Documents/ChatGPT/Leitbild-research/reference-designs/property-candidates/idas-klu-7.5.0/prefix"
  },
  "instruction_tolerance": 0.01,
  "spans": {
   "C2@0": {
-   "instructions": 6556892164,
-   "digest": "37bd7b3df8226e6837e6a99a04ff0f9ef0af0f0c16abe8e8b6bf2d9d642f3302"
+   "instructions": 4931369954,
+   "digest": "95b970b28fe75741a2590e69c318695764486857f211741d22233cda6911f132"
   },
   "C2@2.5": {
-   "instructions": 16452205757,
-   "digest": "a9d47d8adda6abca6e54f31e36a151667da521544d53e871fa6fba243dc21ee0"
+   "instructions": 10446135811,
+   "digest": "349b81fe6bc997a6d5ac419bd6dad7db2733912f46f78db40b2deb51537f88c0"
   }
  }
 }

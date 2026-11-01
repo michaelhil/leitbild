@@ -337,39 +337,86 @@ fn saturated_vapor_at_8_to_9_mpa_is_representable_by_the_inverse() {
 }
 
 #[test]
-fn pressure_ceilings_admit_stable_liquid_to_17_mpa_and_vapor_to_16_mpa() {
+fn pressure_ceilings_admit_liquid_and_vapor_to_20_mpa_with_region_3_near_saturation() {
+    // spec: world/packs/process-plant/reference-designs/ld-01/model/operating-phase-properties.md#pressure-ceilings
+    // Owner decision 1 Nov (R4-WATER-20MPA): both ceilings 20 MPa; region 3
+    // near saturation above 16.529 MPa; the band unchanged at 2 < p <= 16 MPa.
     let p = 16.24e6;
     let ts = saturation(p);
     let liquid = point(Branch::Liquid, p, 600.).unwrap();
     assert_eq!(liquid.region, 1);
     let recovered = point_pu(Branch::Liquid, p, liquid.internal_energy_j_kg).unwrap();
     assert!((recovered.temperature_k - 600.).abs() < 2e-8);
-    assert_eq!(point(Branch::Vapor, p, 650.).unwrap_err(), Error::Domain);
-    assert_eq!(
-        point(Branch::SaturatedVapor, p, 0.).unwrap_err(),
-        Error::Domain
-    );
-    // Above the band's pressure range a liquid is admitted only stable.
+    assert_eq!(point(Branch::Vapor, p, 650.).unwrap().region, 2);
+    assert_eq!(point(Branch::SaturatedVapor, p, 0.).unwrap().region, 2);
+    // Above the band's pressure range a state is admitted only stable.
     assert_eq!(
         point(Branch::Liquid, p, ts + 0.1).unwrap_err(),
         Error::TrialBand
     );
-    assert!(point(Branch::Liquid, 17e6, 600.).is_ok());
     assert_eq!(
-        point(Branch::Liquid, 17e6f64.next_up(), 600.).unwrap_err(),
-        Error::Domain
-    );
-    // Where saturation lies above the region-1 limit, the liquid inverse's
-    // stable end is region 1 at 623.15 K and nothing above it is admitted.
-    let p = 16.9e6;
-    let u = point(Branch::Liquid, p, 620.).unwrap().internal_energy_j_kg;
-    assert!((point_pu(Branch::Liquid, p, u).unwrap().temperature_k - 620.).abs() < 2e-8);
-    let limit = point(Branch::Liquid, p, 623.15).unwrap();
-    assert_eq!(
-        point_pu(Branch::Liquid, p, limit.internal_energy_j_kg + 1.).unwrap_err(),
+        point(Branch::Vapor, p, ts - 0.1).unwrap_err(),
         Error::TrialBand
     );
-    assert_eq!(point(Branch::Liquid, p, 623.2).unwrap_err(), Error::Domain);
+    for branch in [Branch::Liquid, Branch::Vapor] {
+        let t = if matches!(branch, Branch::Liquid) {
+            600.
+        } else {
+            700.
+        };
+        assert!(point(branch, 20e6, t).is_ok());
+        assert_eq!(
+            point(branch, 20e6f64.next_up(), t).unwrap_err(),
+            Error::Domain
+        );
+    }
+    // Above 16.529 MPa saturation lies above 623.15 K: subcooled liquid above
+    // it, both endpoints and the vapor below B23 are region 3, each recovered
+    // by the caloric inverse on its own branch.
+    for p in [16.9e6, 18e6, 20e6] {
+        let ts = saturation(p);
+        let l = point(Branch::SaturatedLiquid, p, 0.).unwrap();
+        let g = point(Branch::SaturatedVapor, p, 0.).unwrap();
+        assert_eq!((l.region, g.region), (3, 3));
+        assert_eq!(l.pressure_pa, p);
+        assert!(l.density_kg_m3 > g.density_kg_m3);
+        for (branch, t) in [
+            (Branch::Liquid, 623.15 + 0.5 * (ts - 623.15)),
+            (Branch::Liquid, ts - 0.01),
+            (Branch::Vapor, ts + 0.01),
+        ] {
+            let q = point(branch, p, t).unwrap();
+            assert_eq!(q.region, 3, "{branch:?} {p} {t}");
+            for enthalpy in [false, true] {
+                let r = if enthalpy {
+                    point_ph(branch, p, q.enthalpy_j_kg)
+                } else {
+                    point_pu(branch, p, q.internal_energy_j_kg)
+                }
+                .unwrap();
+                assert!((r.temperature_k - t).abs() < 2e-8, "{branch:?} {p} {t}");
+            }
+            let c =
+                CaloricLinearization::internal_energy(branch, p, q.internal_energy_j_kg).unwrap();
+            assert!(
+                fields(c.directional(1e4, 1e3).unwrap())
+                    .iter()
+                    .all(|v| v.is_finite())
+            );
+        }
+        // IF97's region-1/3 boundary at 623.15 K is not continuous: a target
+        // between its two sides has no state on the branch and is refused.
+        let below = point(Branch::Liquid, p, 623.15).unwrap();
+        let above = point(Branch::Liquid, p, 623.15f64.next_up()).unwrap();
+        assert_eq!((below.region, above.region), (1, 3));
+        let gap = 0.5 * (below.internal_energy_j_kg + above.internal_energy_j_kg);
+        assert!((above.internal_energy_j_kg - below.internal_energy_j_kg).abs() > 1.);
+        assert!(point_pu(Branch::Liquid, p, gap).is_err());
+        assert_eq!(
+            point(Branch::Liquid, p, ts + 0.1).unwrap_err(),
+            Error::TrialBand
+        );
+    }
 }
 
 #[test]

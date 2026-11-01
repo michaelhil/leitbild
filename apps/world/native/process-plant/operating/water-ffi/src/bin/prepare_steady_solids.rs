@@ -483,6 +483,8 @@ pub struct SolidsSystem {
     rows: Vec<Scalar>,
     local: Vec<(usize, Scalar)>,
     sink: Vec<[[Scalar; 3]; 2]>,
+    /// R4-NCHEAD: the SG cells' single-pass reports, which no row here reads.
+    passes: Vec<Option<leitbild_operating_plant::network::ports::SgPass>>,
     heat: solids::Heat,
     seed: Vec<f64>,
     columns: Vec<Column>,
@@ -537,6 +539,7 @@ impl SolidsSystem {
             rows: vec![s(0.); n],
             local: Vec::new(),
             sink: vec![[[s(0.); 3]; 2]; cells],
+            passes: vec![None; cells],
             heat: solids::Heat::default(),
             seed: vec![0.; n],
             columns,
@@ -551,6 +554,7 @@ impl SolidsSystem {
         let x = Coordinates::new(y, yp, None, 0., &self.scales)?;
         self.solids.temperatures(x, &mut self.temperatures)?;
         self.sink.fill([[s(0.); 3]; 2]);
+        self.passes.fill(None);
         let fluid = frozen_fluid(&self.points);
         self.solids.rows(
             &If97,
@@ -559,7 +563,7 @@ impl SolidsSystem {
             &self.fuel_w,
             &fluid,
             &self.views,
-            &mut Receipts::new(&mut self.sink),
+            &mut Receipts::with_passes(&mut self.sink, &mut self.passes),
             &mut self.rows,
             &mut self.heat,
         )
@@ -669,6 +673,7 @@ impl System for SolidsSystem {
                 self.solids
                     .temperatures_local(x, &column.stores, &mut self.temperatures)?;
                 self.sink.fill([[s(0.); 3]; 2]);
+                self.passes.fill(None);
                 self.solids.rows_local(
                     &If97,
                     x,
@@ -677,7 +682,7 @@ impl System for SolidsSystem {
                     &fluid,
                     &self.views,
                     &column.closed,
-                    &mut Receipts::new(&mut self.sink),
+                    &mut Receipts::with_passes(&mut self.sink, &mut self.passes),
                     &mut self.local,
                     &mut self.heat,
                 )
@@ -1243,6 +1248,19 @@ fn ordered(hi: f64, lo: f64, what: &str) -> Result<(), Failure> {
 
 fn run() -> Result<Steady, Failure> {
     let started = cpu_seconds();
+    // The preparation's water method (lead, 1 Nov: a state is prepared on
+    // the method it runs on): `--water=if97` or `--water=sbtl`, passed by
+    // the packet compiler; without an argument, the IF97 reference.
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let water = match args.as_slice() {
+        [] => leitbild_operating_water::WaterMethod::If97,
+        [a] => match a.strip_prefix("--water=") {
+            Some(m) => leitbild_operating_water::WaterMethod::parse(m).map_err(Failure::from)?,
+            None => return Err(Failure::from(format!("prepare_steady_solids: unknown argument {a}"))),
+        },
+        _ => return Err(Failure::from("prepare_steady_solids: at most one argument, --water=<method>".to_string())),
+    };
+    leitbild_operating_water::select_water_method(water).map_err(Failure::from)?;
     let mut input = String::new();
     io::stdin().read_to_string(&mut input)?;
     let raw: serde_json::Value = serde_json::from_str(&input)?;
@@ -2130,6 +2148,7 @@ mod tests {
         let mut temperatures = solids::Temperatures::default();
         let mut full = vec![s(0.); n];
         let mut sink = vec![[[s(0.); 3]; 2]; system.points.len()];
+        let mut passes = vec![None; system.points.len()];
         let mut heat = solids::Heat::default();
         let (mut inside, mut outside) = (0usize, 0usize);
         for j in 0..n {
@@ -2146,7 +2165,7 @@ mod tests {
                     &system.fuel_w,
                     &fluid,
                     &system.views,
-                    &mut Receipts::new(&mut sink),
+                    &mut Receipts::with_passes(&mut sink, &mut passes),
                     &mut full,
                     &mut heat,
                 )

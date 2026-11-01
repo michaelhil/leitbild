@@ -113,21 +113,25 @@ pub enum Weights {
 /// A unit's solver configuration beyond the fixed profile: the error-weight
 /// rule (N1), the first step of every discrete restart (N3,
 /// [`FirstStep`]) and how the frame driver bounds stock's steps
-/// (R4-FREE-STEPS, [`Stepping`]). An explicit value of every composition;
-/// its receipt records all three.
+/// (R4-FREE-STEPS, [`Stepping`]), and the water method (IF97 reference or
+/// SBTL tables, [`crate::WaterMethod`]; owner decision 1 Nov). An explicit
+/// value of every composition; its receipt records all four.
 #[derive(Clone, Copy, Debug, PartialEq, serde::Serialize)]
 pub struct Solver {
     pub weights: Weights,
     pub first_step: FirstStep,
     pub stepping: Stepping,
+    pub water: crate::WaterMethod,
 }
 impl Solver {
-    /// Stock weights, the declared G13 first step and free stepping
-    /// (R4-FREE-STEPS, lead 1 Nov): the composition of record.
+    /// Stock weights, the declared G13 first step, free stepping
+    /// (R4-FREE-STEPS, lead 1 Nov) and the IF97 reference water (until the
+    /// SBTL gates pass): the composition of record.
     pub const STOCK: Self = Self {
         weights: Weights::Stock,
         first_step: FirstStep::Declared,
         stepping: Stepping::Free,
+        water: crate::WaterMethod::If97,
     };
 }
 

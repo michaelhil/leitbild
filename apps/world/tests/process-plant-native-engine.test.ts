@@ -61,7 +61,7 @@ const fixtureLoad = async (fixture: Record<string, unknown>) => {
   return {
     inputs: { packet, wiki_root: directory, wiki_commit: null, wiki_repository: null, ic: packet, pzr_control: packet, pzr_control_wiki: directory, elec: packet },
     state: packet,
-    solver: { weights: 'declared', first_step: 'declared', stepping: 'free' },
+    solver: { weights: 'declared', first_step: 'declared', stepping: 'free', water: 'if97' },
   } as const
 }
 
@@ -183,7 +183,7 @@ describe('the LD-01 native artifact', () => {
         format: 'ld01-unit-artifact', binary: 'bin/ld01-unit', libraries: ['lib/libtest.dylib'], graph: 'ld01-graph.json',
         load: {
           inputs: { packet: 'packets/joined.json', wiki_root: 'wiki', wiki_commit: null, wiki_repository: null, ic: 'packets/ic.json', pzr_control: 'packets/pzr-control.json', pzr_control_wiki: 'wiki', elec: 'packets/elec.json' },
-          state: 'packets/s3-state.json', solver: { weights: 'declared', first_step: 'declared', stepping: 'free' },
+          state: 'packets/s3-state.json', solver: { weights: 'declared', first_step: 'declared', stepping: 'free', water: 'if97' },
         },
       }),
     }

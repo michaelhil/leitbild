@@ -301,6 +301,14 @@ fn oracle(
 #[test]
 #[ignore = "LD-01 smoke (scripts/ld01-smoke.sh): requires the joined packet, the wiki, IF97 and stock IDA/KLU"]
 fn smoke() {
+    // The water method the tuple's packets were prepared on (SBTL's lead
+    // ruling, 1 Nov: a state is prepared and run on one method):
+    // LD01_S3_WATER, unset the IF97 reference, selected before any water call.
+    let water = leitbild_operating_water::WaterMethod::parse(
+        &std::env::var("LD01_S3_WATER").unwrap_or_else(|_| "if97".into()),
+    )
+    .unwrap_or_else(|e| panic!("{e}"));
+    leitbild_operating_water::select_water_method(water).unwrap_or_else(|e| panic!("{e}"));
     let started = cpu::process_cpu_s();
     let load_start = cpu::load_average();
     let mut phase_cpu = Map::new();

@@ -318,6 +318,14 @@ fn electrical(
 #[ignore = "S3 settle state (S3-D28, NOT evidence): requires the S3 packets, the S2 settled state, the wiki, IF97 and stock IDA/KLU"]
 #[allow(clippy::too_many_lines)] // One settle: composition, run, criterion, state and receipt.
 fn s3_settle_state_for_c1() {
+    // The water method this harness composes on (lead, 1 Nov: a state is
+    // prepared on the method it runs): LD01_S3_WATER, unset the IF97
+    // reference; selected before any water call and recorded.
+    let water = leitbild_operating_water::WaterMethod::parse(
+        &std::env::var("LD01_S3_WATER").unwrap_or_else(|_| "if97".into()),
+    )
+    .unwrap_or_else(|e| panic!("{e}"));
+    leitbild_operating_water::select_water_method(water).unwrap_or_else(|e| panic!("{e}"));
     let started = process_cpu_s();
     let gates_path = env("LD01_S2_GATES_SOURCE");
     let gates_text = std::fs::read_to_string(&gates_path).expect("gates source");
@@ -624,7 +632,7 @@ fn s3_settle_state_for_c1() {
         );
     }
     let snapshot = ida.system().system_discrete_state();
-    let state = json!({"t_s": t, "packet": packet_path, "packet_sha256": packet_sha256,
+    let state = json!({"t_s": t, "water": water, "packet": packet_path, "packet_sha256": packet_sha256,
         "y": &y_all[..n], "yp": &yp_all[..n], "y_bits": bits(&y_all[..n]), "yp_bits": bits(&yp_all[..n]),
         "appended": {"owner": "electrical slice (ELEC)", "y": &y_all[n..], "yp": &yp_all[n..],
             "y_bits": bits(&y_all[n..]), "yp_bits": bits(&yp_all[n..])},
@@ -670,6 +678,7 @@ fn s3_settle_state_for_c1() {
         "electrical_log": ida.system().log,
         "history_every_10_s": history,
         "restart_instants": driver.log.iter().filter(|e| e["class"] == "R").cloned().collect::<Vec<_>>(),
+        "water": water,
     });
     std::fs::write(
         dir.join("receipt.json"),
@@ -682,4 +691,260 @@ fn s3_settle_state_for_c1() {
             "classes": receipt["counts_by_class"], "cpu": total_cpu_s})
     );
     assert!(failure.is_none(), "the S3 settle failed: {failure:?}");
+}
+
+/// R4-HYD-SETTLE-FEED (lead 1 Nov, option 2 of HYD's SG-drift diagnosis):
+/// the hold-check bound on feed minus steam per SG, a quarter of the FW.FT /
+/// FT.STEAM channel uncertainty: ld01-operator-budgets r2 `channelRule`
+/// 0.00806226 of span, budgetFraction 0.25, span 0–1.5 m0 (ld01-feed-cascade
+/// `feedFlowSpan`), m0 819.818983 kg/s (ld01-feed-train).
+const FEED_MINUS_STEAM_KG_S: f64 = 0.25 * 0.00806226 * 1.5 * 819.818983;
+
+/// R4-HYD-SETTLE-FEED: the S3 state settled with the compact feed train
+/// composed, so the three-element SG level control (continuous, in the SG
+/// owner) finds its own equilibrium. Run from the feed and CVCS carried
+/// state of the CVCS packet (`LD01_S3_STATE`), with the unit library's S3
+/// composition of record (`s3::compose`, the frame-driven [`Plant`]: acquired
+/// protection, PZR control AUTO, ELEC slice) and the rods held (no AUTO).
+/// It stops when, over one settling window:
+/// - every credited output holds its `ld01-s2-gates` settling threshold, as
+///   `s3_settle_state_for_c1`;
+/// - per SG, every frame's |FW.FT lag − FT.STEAM lag| ≤ [`FEED_MINUS_STEAM_KG_S`];
+/// - per SG, the unfiltered SG pressure range ≤ the settling block's
+///   `sgPressure_Pa`, A and B judged and reported separately.
+///
+/// Environment: the S3 unit's (`LD01_OPERATING_HOT_SPINE_PACKET` = the
+/// CVCS packet, `LD01_WIKI_ROOT`, `LD01_IC_SECTION`,
+/// `LD01_PZR_CONTROL_SECTION`, `LD01_PZR_CONTROL_WIKI`, `ELEC_PACKET`),
+/// `LD01_S3_STATE`, `LD01_S2_GATES_SOURCE`, `LD01_S3_SETTLE_CAP_S`,
+/// `LD01_S3_SETTLE_CPU_CAP_S`, `LD01_S3_SETTLE_DIR` (a new directory). The
+/// settled state is written in the case-state format (`s3-settled-state.json`).
+#[test]
+#[ignore = "one settle per tuple: the feed-carried S3 state settled with the feed train composed"]
+fn s3_settle_with_the_feed_train() {
+    use leitbild_operating_water::{
+        frame::MatrixRebuild,
+        unit::{
+            plant::{self, Plant},
+            profile::Solver,
+        },
+    };
+    let started = process_cpu_s();
+    let gates_path = env("LD01_S2_GATES_SOURCE");
+    let gates_text = std::fs::read_to_string(&gates_path).expect("gates source");
+    let gates = gates_block(&gates_text);
+    let settling = &gates["settling"];
+    let window_s = settling["window_s"].as_f64().expect("settling window");
+    let output_s = gates["outputInterval_s"].as_f64().expect("output interval");
+    let thresholds: Vec<f64> = CREDITED
+        .iter()
+        .map(|c| {
+            settling[c.key]
+                .as_f64()
+                .unwrap_or_else(|| panic!("settling.{}", c.key))
+        })
+        .collect();
+    let sg_threshold = settling["sgPressure_Pa"].as_f64().expect("settling.sgPressure_Pa");
+    let cap_s = env_f64("LD01_S3_SETTLE_CAP_S");
+    let cpu_cap_s = env_f64("LD01_S3_SETTLE_CPU_CAP_S");
+    let dir = PathBuf::from(env("LD01_S3_SETTLE_DIR"));
+    assert!(!dir.exists(), "never overwritten: {}", dir.display());
+    std::fs::create_dir_all(&dir).unwrap();
+    let samples_per_window = (window_s / output_s).round() as usize;
+    let inputs = common::inputs();
+    let (packet_path, packet_bytes) = common::packet_bytes();
+    let packet_sha256 = leitbild_operating_plant::digest::sha256(&packet_bytes);
+    let network_packet: NetworkPacket =
+        serde_json::from_slice(&packet_bytes).expect("network packet");
+    let face = |id: &str| {
+        network_packet
+            .mechanics
+            .faces
+            .iter()
+            .position(|f| f.id == id)
+            .unwrap_or_else(|| panic!("face {id}"))
+    };
+    let loops = [face("RETURN.A->DOWN"), face("RETURN.B->DOWN")];
+    let state_path = env("LD01_S3_STATE");
+    let state: Value = read_json(&state_path);
+    // Frame stops (R4-FREE-STEPS): the state handed on is the solver's own
+    // at the settled sample, never a dense-output state inside a step.
+    // The water method this settle composes on (lead, 1 Nov: a state is
+    // prepared on the method it runs): LD01_S3_WATER, unset the IF97
+    // reference, as the S3 settle and the cases; recorded in the state.
+    let water = leitbild_operating_water::WaterMethod::parse(
+        &std::env::var("LD01_S3_WATER").unwrap_or_else(|_| "if97".into()),
+    )
+    .unwrap_or_else(|e| panic!("{e}"));
+    let solver = Solver {
+        stepping: leitbild_operating_water::frame::Stepping::FrameStops,
+        water,
+        ..Solver::STOCK
+    };
+    let unit = s3::compose(&inputs, &state, solver).unwrap_or_else(|e| panic!("{e}"));
+    assert!(unit.feed_train, "the packet composes the feed train");
+    let (t0, n) = (unit.t0, unit.n);
+    let packet_json: Value = inputs.spine.packet_json().expect("packet json");
+    let section: leitbild_operating_plant::sg::packet::Section =
+        serde_json::from_value(packet_json["secondary"].clone()).expect("the secondary section");
+    let mut feed = common::feed_control::FeedClient::commission(
+        &unit.ida.system().integrated().joined,
+        &section,
+        unit.y.len(),
+    )
+    .unwrap_or_else(|e| panic!("{e}"))
+    .expect("the feed train's control record");
+    let mut plant = Plant::new(
+        unit,
+        &inputs.ic,
+        plant::Config {
+            field: None,
+            diagnostic: Diagnostic::None,
+            matrix_rebuild: MatrixRebuild::Stock,
+            clock: process_cpu_s,
+        },
+    )
+    .unwrap_or_else(|e| panic!("{e}"));
+    let composition = plant.composition.clone();
+    let preparation_cpu_s = process_cpu_s() - started;
+    let mut failure: Option<String> = None;
+    {
+        let mut extra: [&mut dyn Client<_>; 1] = [&mut feed];
+        if let Err(e) = plant.start(&mut extra) {
+            failure = Some(format!("start: {e}"));
+        }
+    }
+    let first = observe(
+        &mut plant.ida.system_mut().integrated_mut().joined,
+        &network_packet,
+        &loops,
+        t0,
+        &plant.y[..n],
+        &plant.yp[..n],
+    );
+    let mut window: std::collections::VecDeque<Vec<Vec<f64>>> = std::collections::VecDeque::from([first]);
+    let checks_every = (1. / output_s).round() as u64;
+    let (mut t, mut k) = (t0, 0_u64);
+    let mut verdict = Value::Null;
+    let mut last = Value::Null;
+    let mut history: Vec<Value> = Vec::new();
+    while failure.is_none() {
+        if process_cpu_s() - started > cpu_cap_s {
+            failure = Some(format!("CPU cap {cpu_cap_s} s reached at t = {t} s"));
+            break;
+        }
+        if t - t0 >= cap_s {
+            failure = Some(format!("simulated cap {cap_s} s reached before the thresholds held"));
+            break;
+        }
+        k += 1;
+        let next = t0 + k as f64 * output_s;
+        let r = {
+            let mut extra: [&mut dyn Client<_>; 1] = [&mut feed];
+            plant.run(t, next, &mut extra, None)
+        };
+        if let Err(e) = r {
+            failure = Some(format!("from {t} s to {next} s: {e}"));
+            break;
+        }
+        t = next;
+        let c = observe(
+            &mut plant.ida.system_mut().integrated_mut().joined,
+            &network_packet,
+            &loops,
+            t,
+            &plant.y[..n],
+            &plant.yp[..n],
+        );
+        window.push_back(c.clone());
+        while window.len() > samples_per_window + 1 {
+            window.pop_front();
+        }
+        if !(k.is_multiple_of(checks_every) && window.len() == samples_per_window + 1) {
+            continue;
+        }
+        let w: Vec<Vec<Vec<f64>>> = window.iter().cloned().collect();
+        let rs = ranges(&w, output_s, &thresholds);
+        // Per SG over the window: the unfiltered SG pressure range and the
+        // largest |FW.FT − FT.STEAM| among the feed record's frames.
+        let frames: Vec<&Vec<[f64; 9]>> = feed
+            .series
+            .iter()
+            .filter(|(_, ft, _)| *ft >= t - window_s - 1e-9)
+            .map(|(_, _, v)| v)
+            .collect();
+        let sgs = w[0][4].len();
+        let per_sg: Vec<Value> = (0..sgs)
+            .map(|i| {
+                let p: Vec<f64> = w.iter().map(|s| s[4][i]).collect();
+                let range = p.iter().cloned().fold(f64::NEG_INFINITY, f64::max)
+                    - p.iter().cloned().fold(f64::INFINITY, f64::min);
+                let excess = frames
+                    .iter()
+                    .map(|v| (v[i][3] - v[i][2]).abs())
+                    .fold(0., f64::max);
+                json!({"sg_pressure_range_pa": range, "sg_pressure_threshold_pa": sg_threshold,
+                    "sg_pressure_holds": range <= sg_threshold,
+                    "feed_minus_steam_max_kg_s": excess, "feed_minus_steam_bound_kg_s": FEED_MINUS_STEAM_KG_S,
+                    "feed_minus_steam_holds": excess <= FEED_MINUS_STEAM_KG_S})
+            })
+            .collect();
+        let feed_holds = !frames.is_empty()
+            && per_sg
+                .iter()
+                .all(|s| s["sg_pressure_holds"] == true && s["feed_minus_steam_holds"] == true);
+        last = json!({"t_s": t,
+            "ranges": CREDITED.iter().zip(&rs).map(|(q, r)| (q.name.to_string(), json!({"range": r.0, "threshold": r.1, "holds": r.2}))).collect::<Map<String, Value>>(),
+            "per_sg": per_sg});
+        if k.is_multiple_of(checks_every * 10) {
+            history.push(last.clone());
+            eprintln!(
+                "S3 feed settle t = {t:.1} s: SG ranges {:?}, feed - steam {:?}, CPU {:.1} s",
+                last["per_sg"].as_array().unwrap().iter().map(|s| s["sg_pressure_range_pa"].as_f64().unwrap()).collect::<Vec<_>>(),
+                last["per_sg"].as_array().unwrap().iter().map(|s| s["feed_minus_steam_max_kg_s"].as_f64().unwrap()).collect::<Vec<_>>(),
+                process_cpu_s() - started
+            );
+        }
+        if rs.iter().all(|r| r.2) && feed_holds {
+            verdict = json!({"settled_at_s": t, "settled_after_s": t - t0, "window_s": window_s, "checks": last});
+            break;
+        }
+    }
+    // The state handed on is the solver's own at the settled sample.
+    if failure.is_none() {
+        assert!(
+            (plant.driver.solver_reached_s - t).abs() <= 1e-9 * t.abs().max(1.),
+            "the settle's state at {t} s is not the solver's (it reached {} s)",
+            plant.driver.solver_reached_s
+        );
+    }
+    let total_cpu_s = process_cpu_s() - started;
+    let (y, yp) = (&plant.y, &plant.yp);
+    let snapshot = plant.ida.system().system_discrete_state();
+    let settled = json!({"t_s": t, "water": water, "packet": packet_path, "packet_sha256": packet_sha256,
+        "y": &y[..n], "yp": &yp[..n], "y_bits": bits(&y[..n]), "yp_bits": bits(&yp[..n]),
+        "appended": {"owner": "electrical slice (ELEC)", "y": &y[n..], "yp": &yp[n..]},
+        "discrete_state": snapshot, "pzr_control": {"in_force_w": plant.control.in_force_w},
+        "composition": composition["composition"], "from": state_path});
+    let state_bytes = serde_json::to_vec(&settled).unwrap();
+    std::fs::write(dir.join("s3-settled-state.json"), &state_bytes).unwrap();
+    let receipt = json!({
+        "kind": "s3-settle-with-feed-train", "water": water,
+        "rule": "R4-HYD-SETTLE-FEED (lead 1 Nov, option 2): the credited outputs' settling thresholds, plus per SG over the window |FW.FT lag - FT.STEAM lag| <= a quarter of the channel (ogb r2 channelRule x 1.5 m0) and the unfiltered SG pressure range <= settling.sgPressure_Pa, A and B separately",
+        "status": "NOT evidence: C1's initial condition",
+        "provenance": common::spine_provenance(),
+        "packet": packet_path, "packet_sha256": packet_sha256,
+        "from": {"path": state_path, "t_s": t0},
+        "gates": {"source": gates_path, "sha256": leitbild_operating_plant::digest::sha256(gates_text.as_bytes()), "settling": settling, "outputInterval_s": output_s},
+        "composition": composition,
+        "verdict": verdict, "failure": failure, "reached_s": t, "last": last,
+        "state": {"file": "s3-settled-state.json", "sha256": leitbild_operating_plant::digest::sha256(&state_bytes)},
+        "counts_by_class": plant.driver.counts.json(),
+        "cpu": {"process_total_s": total_cpu_s, "preparation_s": preparation_cpu_s},
+        "history_every_10_s": history,
+        "feed_control_first_and_last": [feed.series.first().map(|(k, t, v)| json!([k, t, v])), feed.series.last().map(|(k, t, v)| json!([k, t, v]))],
+    });
+    std::fs::write(dir.join("receipt.json"), serde_json::to_vec_pretty(&receipt).unwrap()).unwrap();
+    println!("{}", json!({"verdict": receipt["verdict"], "failure": receipt["failure"], "reached_s": t, "cpu": total_cpu_s}));
+    assert!(receipt["failure"].is_null(), "the S3 feed settle failed: {:?}", receipt["failure"]);
 }
