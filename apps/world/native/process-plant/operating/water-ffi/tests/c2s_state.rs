@@ -75,6 +75,14 @@ fn rods_quantity(label: &str) -> Result<(String, bool), String> {
 #[test]
 #[ignore = "one conversion per tuple: LD01_C2S_FROM_STATE (bank) to LD01_C2S_STATE_OUT (singles LD01_C2S_SINGLES)"]
 fn convert_a_bank_state_to_the_singles_layout() {
+    // The water method the state was prepared on (lead, 1 Nov): LD01_S3_WATER,
+    // unset SBTL (the default since the combined re-pin; if97 names the
+    // reference), selected before any water call, as the other harnesses.
+    let water = leitbild_operating_water::WaterMethod::parse(
+        &std::env::var("LD01_S3_WATER").unwrap_or_else(|_| "sbtl".into()),
+    )
+    .unwrap_or_else(|e| panic!("{e}"));
+    leitbild_operating_water::select_water_method(water).unwrap_or_else(|e| panic!("{e}"));
     let (packet_path, packet_bytes) = common::packet_bytes();
     let from_path = env("LD01_C2S_FROM_STATE");
     let out = env("LD01_C2S_STATE_OUT");
