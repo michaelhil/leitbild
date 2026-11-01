@@ -127,7 +127,9 @@ export async function prepareOperatingJoined(wiki: string, if97: string, settle:
 
 if (import.meta.main) {
   const [wiki, if97, settle, waterArg] = Bun.argv.slice(2)
-  if (!wiki || !if97 || !settle || ![5, 6].includes(Bun.argv.length)) throw Error('Usage: operating-joined <wiki root> <pinned IF97 directory> <prepare_steady_solids executable> [--water=if97|--water=sbtl:<archive dir>]')
-  const water = waterArg ? parsePreparationWater(waterArg) : if97Preparation
+  // The water method is named on every compile (lead 1 Nov: SBTL is the method of record since the combined re-pin; its
+  // archive has no default, so the CLI takes no silent method): --water=sbtl:<archive dir>, or --water=if97 for the reference.
+  if (!wiki || !if97 || !settle || !waterArg || Bun.argv.length !== 6) throw Error('Usage: operating-joined <wiki root> <pinned IF97 directory> <prepare_steady_solids executable> --water=sbtl:<archive dir>|--water=if97')
+  const water = parsePreparationWater(waterArg)
   console.log(JSON.stringify(await prepareOperatingJoined(wiki, if97, nativeSteadySolids(settle, wiki, water), water)))
 }

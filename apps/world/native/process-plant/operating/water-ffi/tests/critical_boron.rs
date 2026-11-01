@@ -30,10 +30,10 @@ fn env(name: &str) -> String {
 #[ignore = "one measurement per settled state: LD01_BORON_STATE to LD01_BORON_OUT"]
 fn measure_the_settled_loop_tavg_against_tref() {
     // The water method this harness composes on (lead, 1 Nov: a state is
-    // prepared on the method it runs): LD01_S3_WATER, unset the IF97
-    // reference; selected before any water call and recorded.
+    // prepared on the method it runs): LD01_S3_WATER, unset SBTL (the default
+    // since the combined re-pin, lead 1 Nov; if97 names the reference); selected before any water call and recorded.
     let water = leitbild_operating_water::WaterMethod::parse(
-        &std::env::var("LD01_S3_WATER").unwrap_or_else(|_| "if97".into()),
+        &std::env::var("LD01_S3_WATER").unwrap_or_else(|_| "sbtl".into()),
     )
     .unwrap_or_else(|e| panic!("{e}"));
     leitbild_operating_water::select_water_method(water).unwrap_or_else(|e| panic!("{e}"));

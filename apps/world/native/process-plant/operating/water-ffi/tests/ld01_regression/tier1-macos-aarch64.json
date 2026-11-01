@@ -1,9 +1,9 @@
 {
  "kind": "ld01-tier1-expectation",
  "platform": "macos-aarch64",
- "reason": "combined re-pin of record (REPIN 8a0d8abc6 = 5f0a41e61, wiki 620186f, water SBTL): R3, ROD2 stem + seat, NCHEAD, critical boron 1,536.824; trajectory moves",
- "recorded_from": "/Users/hilde/Documents/ChatGPT/Leitbild-research/reference-designs/property-candidates/operating-joined-spine-s2/resume-2026-10-14/tiers/t1-71c6af901-20261101T163031Z",
- "app": "71c6af901",
+ "reason": "combined re-pin: R3 + stem + seat + NCHEAD + boron + feed-train settle + SBTL",
+ "recorded_from": "/Users/hilde/Documents/ChatGPT/Leitbild-research/reference-designs/property-candidates/operating-joined-spine-s2/resume-2026-10-14/tiers/t1-69d513b3a-20261101T164541Z",
+ "app": "69d513b3a",
  "environment": {
   "packet_sha256": "32e1c545f7180f9289833cd8b93aa7b12e65a88eeaa448c5077ae7a280e78cce",
   "state_sha256": "6295c9a0e8d85fb482ef6478972ae1ae63c12dd9f5e7e857611487449c4ae79f",
@@ -15,11 +15,11 @@
  "instruction_tolerance": 0.01,
  "spans": {
   "C2@0": {
-   "instructions": 4931369954,
+   "instructions": 4894346043,
    "digest": "95b970b28fe75741a2590e69c318695764486857f211741d22233cda6911f132"
   },
   "C2@2.5": {
-   "instructions": 10446135811,
+   "instructions": 10450357265,
    "digest": "349b81fe6bc997a6d5ac419bd6dad7db2733912f46f78db40b2deb51537f88c0"
   }
  }

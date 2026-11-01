@@ -1249,11 +1249,12 @@ fn ordered(hi: f64, lo: f64, what: &str) -> Result<(), Failure> {
 fn run() -> Result<Steady, Failure> {
     let started = cpu_seconds();
     // The preparation's water method (lead, 1 Nov: a state is prepared on
-    // the method it runs on): `--water=if97` or `--water=sbtl`, passed by
-    // the packet compiler; without an argument, the IF97 reference.
+    // the method it runs on): `--water=sbtl` (the method of record since
+    // the combined re-pin, lead 1 Nov) or `--water=if97`, always passed by
+    // the packet compiler; no argument refuses (no silent method).
     let args: Vec<String> = std::env::args().skip(1).collect();
     let water = match args.as_slice() {
-        [] => leitbild_operating_water::WaterMethod::If97,
+        [] => return Err(Failure::from("prepare_steady_solids: name the water method, --water=sbtl or --water=if97".to_string())),
         [a] => match a.strip_prefix("--water=") {
             Some(m) => leitbild_operating_water::WaterMethod::parse(m).map_err(Failure::from)?,
             None => return Err(Failure::from(format!("prepare_steady_solids: unknown argument {a}"))),

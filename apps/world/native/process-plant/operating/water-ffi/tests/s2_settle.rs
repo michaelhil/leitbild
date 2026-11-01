@@ -255,10 +255,10 @@ fn bits(v: &[f64]) -> Vec<String> {
 #[ignore = "S2-07 re-settle (PREVIEW, NOT evidence): requires the joined packet, the wiki, IF97, stock IDA/KLU and the run's environment"]
 fn s2_07_resettle_to_the_declared_settling_thresholds() {
     // The water method this harness composes on (lead, 1 Nov: a state is
-    // prepared on the method it runs): LD01_S3_WATER, unset the IF97
-    // reference; selected before any water call and recorded.
+    // prepared on the method it runs): LD01_S3_WATER, unset SBTL (the default
+    // since the combined re-pin, lead 1 Nov; if97 names the reference); selected before any water call and recorded.
     let water = leitbild_operating_water::WaterMethod::parse(
-        &std::env::var("LD01_S3_WATER").unwrap_or_else(|_| "if97".into()),
+        &std::env::var("LD01_S3_WATER").unwrap_or_else(|_| "sbtl".into()),
     )
     .unwrap_or_else(|e| panic!("{e}"));
     leitbild_operating_water::select_water_method(water).unwrap_or_else(|e| panic!("{e}"));
