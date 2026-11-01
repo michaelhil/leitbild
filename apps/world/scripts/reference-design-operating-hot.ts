@@ -9,7 +9,7 @@ import { parseDecayHistory } from './reference-design-decay-history'
 import { compileOperatingMapping, type OperatingPartition } from './reference-design-operating-mapping'
 import { compileOperatingSource, evaluateOperatingSource, parseOperatingSource } from './reference-design-operating-source'
 import { parseOperatingEnergy, prepareOperatingEnergy } from './reference-design-operating-energy'
-import { admitSolidNode, prepareOperatingFluid, preparePressureContinuity, steadySolidsSchema, type SolidPreparation } from './reference-design-operating-fluid'
+import { admitSolidNode, if97Preparation, prepareOperatingFluid, preparePressureContinuity, steadySolidsSchema, type PreparationWater, type SolidPreparation } from './reference-design-operating-fluid'
 
 const hash = (s: string) => createHash('sha256').update(s).digest('hex')
 const MeV_J = 1.602176634e-13
@@ -19,7 +19,7 @@ const close = (a: number, b: number) => Number.isFinite(a) && Number.isFinite(b)
 /** `solids` is the steady solid state (G18) or, only for the spine
  * compiler's settle input and for checks that do not read solid
  * temperatures, the explicit seed of that settle. */
-export async function prepareOperatingHot(wiki: string, if97: string, solids: SolidPreparation) {
+export async function prepareOperatingHot(wiki: string, if97: string, solids: SolidPreparation, water: PreparationWater = if97Preparation) {
   const root = 'world/packs/process-plant/reference-designs/ld-01/',
     names = ['systems/reactor/fuel-construction.md', 'systems/reactor/fuel-handling-and-pool.md',
       'systems/reactor/control-absorber-and-guide-water.md', 'systems/reactor/kinetics.md', 'systems/reactor/heat-and-history.md'],
@@ -43,7 +43,7 @@ export async function prepareOperatingHot(wiki: string, if97: string, solids: So
     energy = prepareOperatingEnergy(mapping, sourceCoefficients, energyCoefficients, history),
     // Q normalizes only a diagnostic eventual-enthalpy flow. It is NOT injected
     // into current fluid Udot: finite fuel receives most of this current heat.
-    fluid = await prepareOperatingFluid(wiki, if97, energy.totalDeposited_W, solids),
+    fluid = await prepareOperatingFluid(wiki, if97, energy.totalDeposited_W, solids, water),
     // Each carrier's Doppler reference is its own steady nodes' law measure
     // (G18 role 2), matched by identity, never a material-level scalar.
     reference = new Map(fluid.materials.preparedCarriers.map(c => [c.id, c] as const)),

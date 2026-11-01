@@ -28,7 +28,7 @@ import { caseSetSections, equipmentOwners, parsePzrHeaterBanks, parsePzrRelief, 
 import { compileOperatingRods } from './reference-design-operating-rods'
 import { prepareOperatingSecondary } from './reference-design-operating-sg'
 import { compileOperatingHotStandby, compileOperatingPostTripDomain } from './reference-design-operating-source'
-import type { SteadySolids } from './reference-design-operating-fluid'
+import { if97Preparation, parsePreparationWater, type PreparationWater, type SteadySolids } from './reference-design-operating-fluid'
 import { nativeSteadySolids, prepareOperatingSpine, type SteadySolidsSettle } from './reference-design-operating-spine'
 
 /** The owners' pages G6 reads, under the LD-01 design root. */
@@ -92,7 +92,7 @@ export function pzrSteelSection(pzr: NonNullable<SteadySolids['pzr']>) {
         toFluid_W: to_fluid_w, storedEnergyChange_J: stored_energy_change_j, steady, ida } } }
 }
 
-export async function prepareOperatingJoined(wiki: string, if97: string, settle: SteadySolidsSettle) {
+export async function prepareOperatingJoined(wiki: string, if97: string, settle: SteadySolidsSettle, water: PreparationWater = if97Preparation) {
   const base = join(wiki, 'world/packs/process-plant/reference-designs/ld-01'), names = Object.entries(pzrMetalPages)
   const pages = Object.fromEntries(await Promise.all(names.map(async ([k, p]) => [k, await Bun.file(join(base, p)).text()]))) as Record<keyof typeof pzrMetalPages, string>
   let steel: ReturnType<typeof pzrSteelSection> | undefined
@@ -102,7 +102,7 @@ export async function prepareOperatingJoined(wiki: string, if97: string, settle:
     if (!settled.steady.pzr) throw Error('The steady solids settle returned no PZR steel for the PZR owner\'s section')
     steel = pzrSteelSection(settled.steady.pzr)
     return settled
-  })
+  }, water)
   if (!steel) throw Error('The spine compile did not run the steady solids settle')
   const secondary = await prepareOperatingSecondary(wiki)
   const rods = await compileOperatingRods(wiki)
@@ -126,7 +126,8 @@ export async function prepareOperatingJoined(wiki: string, if97: string, settle:
 }
 
 if (import.meta.main) {
-  const [wiki, if97, settle] = Bun.argv.slice(2)
-  if (!wiki || !if97 || !settle || Bun.argv.length !== 5) throw Error('Usage: operating-joined <wiki root> <pinned IF97 directory> <prepare_steady_solids executable>')
-  console.log(JSON.stringify(await prepareOperatingJoined(wiki, if97, nativeSteadySolids(settle, wiki))))
+  const [wiki, if97, settle, waterArg] = Bun.argv.slice(2)
+  if (!wiki || !if97 || !settle || ![5, 6].includes(Bun.argv.length)) throw Error('Usage: operating-joined <wiki root> <pinned IF97 directory> <prepare_steady_solids executable> [--water=if97|--water=sbtl:<archive dir>]')
+  const water = waterArg ? parsePreparationWater(waterArg) : if97Preparation
+  console.log(JSON.stringify(await prepareOperatingJoined(wiki, if97, nativeSteadySolids(settle, wiki, water), water)))
 }

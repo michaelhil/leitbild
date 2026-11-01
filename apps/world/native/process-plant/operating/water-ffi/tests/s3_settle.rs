@@ -318,6 +318,14 @@ fn electrical(
 #[ignore = "S3 settle state (S3-D28, NOT evidence): requires the S3 packets, the S2 settled state, the wiki, IF97 and stock IDA/KLU"]
 #[allow(clippy::too_many_lines)] // One settle: composition, run, criterion, state and receipt.
 fn s3_settle_state_for_c1() {
+    // The water method this harness composes on (lead, 1 Nov: a state is
+    // prepared on the method it runs): LD01_S3_WATER, unset the IF97
+    // reference; selected before any water call and recorded.
+    let water = leitbild_operating_water::WaterMethod::parse(
+        &std::env::var("LD01_S3_WATER").unwrap_or_else(|_| "if97".into()),
+    )
+    .unwrap_or_else(|e| panic!("{e}"));
+    leitbild_operating_water::select_water_method(water).unwrap_or_else(|e| panic!("{e}"));
     let started = process_cpu_s();
     let gates_path = env("LD01_S2_GATES_SOURCE");
     let gates_text = std::fs::read_to_string(&gates_path).expect("gates source");
@@ -624,7 +632,7 @@ fn s3_settle_state_for_c1() {
         );
     }
     let snapshot = ida.system().system_discrete_state();
-    let state = json!({"t_s": t, "packet": packet_path, "packet_sha256": packet_sha256,
+    let state = json!({"t_s": t, "water": water, "packet": packet_path, "packet_sha256": packet_sha256,
         "y": &y_all[..n], "yp": &yp_all[..n], "y_bits": bits(&y_all[..n]), "yp_bits": bits(&yp_all[..n]),
         "appended": {"owner": "electrical slice (ELEC)", "y": &y_all[n..], "yp": &yp_all[n..],
             "y_bits": bits(&y_all[n..]), "yp_bits": bits(&yp_all[n..])},
@@ -670,6 +678,7 @@ fn s3_settle_state_for_c1() {
         "electrical_log": ida.system().log,
         "history_every_10_s": history,
         "restart_instants": driver.log.iter().filter(|e| e["class"] == "R").cloned().collect::<Vec<_>>(),
+        "water": water,
     });
     std::fs::write(
         dir.join("receipt.json"),

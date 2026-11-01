@@ -254,6 +254,14 @@ fn bits(v: &[f64]) -> Vec<String> {
 #[test]
 #[ignore = "S2-07 re-settle (PREVIEW, NOT evidence): requires the joined packet, the wiki, IF97, stock IDA/KLU and the run's environment"]
 fn s2_07_resettle_to_the_declared_settling_thresholds() {
+    // The water method this harness composes on (lead, 1 Nov: a state is
+    // prepared on the method it runs): LD01_S3_WATER, unset the IF97
+    // reference; selected before any water call and recorded.
+    let water = leitbild_operating_water::WaterMethod::parse(
+        &std::env::var("LD01_S3_WATER").unwrap_or_else(|_| "if97".into()),
+    )
+    .unwrap_or_else(|e| panic!("{e}"));
+    leitbild_operating_water::select_water_method(water).unwrap_or_else(|e| panic!("{e}"));
     let started = process_cpu_s();
     let gates_path = env("LD01_S2_GATES_SOURCE");
     let gates_text = std::fs::read_to_string(&gates_path).expect("declaration draft");
@@ -606,6 +614,7 @@ fn s2_07_resettle_to_the_declared_settling_thresholds() {
             "jacobian_wall_s_per_call": c.jacobian_wall_s / c.jacobians.max(1) as f64,
             "load_average_end": String::from_utf8_lossy(&std::process::Command::new("sysctl").args(["-n","vm.loadavg"]).output().unwrap().stdout).trim().to_string()},
         "history_every_10_s": history,
+        "water": water,
     });
     std::fs::write(
         dir.join("receipt.json"),

@@ -39,6 +39,14 @@ fn from_bits(v: &Value) -> Vec<f64> {
 #[test]
 #[ignore = "one conversion per tuple: LD01_CVCS_FROM_STATE onto the composed CVCS packet"]
 fn cvcs_state_onto_the_cvcs_packet() {
+    // The water method this harness composes on (lead, 1 Nov: a state is
+    // prepared on the method it runs): LD01_S3_WATER, unset the IF97
+    // reference; selected before any water call and recorded.
+    let water = leitbild_operating_water::WaterMethod::parse(
+        &std::env::var("LD01_S3_WATER").unwrap_or_else(|_| "if97".into()),
+    )
+    .unwrap_or_else(|e| panic!("{e}"));
+    leitbild_operating_water::select_water_method(water).unwrap_or_else(|e| panic!("{e}"));
     let (packet_path, _) = common::packet_bytes();
     let sha256 = |path: &str| common::provenance::sha256_file(path).expect("sha256");
     let from_path = env("LD01_CVCS_FROM_STATE");
@@ -96,6 +104,7 @@ fn cvcs_state_onto_the_cvcs_packet() {
     state["converted_cvcs"] = json!({"from": from_path, "from_sha256": from_sha256,
         "rule": "plan r4 X4.2: existing coordinates bitwise; the CVCS block appended: tank stocks at their original preparation, the controller at its tracked AUTO point of the saved state (Joined::prepare_cvcs); CVCS modes AUTO, no stop, no transfer, AC.B supplying; rates of the new coordinates zero",
         "cvcs": report});
+    state["water"] = json!(water);
     std::fs::write(&out, serde_json::to_vec(&state).expect("state json")).expect("write");
     println!(
         "{}",

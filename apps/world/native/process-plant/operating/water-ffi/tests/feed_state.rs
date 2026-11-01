@@ -42,6 +42,14 @@ fn sha256(bytes: &[u8]) -> String {
 #[test]
 #[ignore = "one conversion per tuple: LD01_FEED_FROM_STATE onto the composed packet"]
 fn feed_state_onto_the_feed_packet() {
+    // The water method this harness composes on (lead, 1 Nov: a state is
+    // prepared on the method it runs): LD01_S3_WATER, unset the IF97
+    // reference; selected before any water call and recorded.
+    let water = leitbild_operating_water::WaterMethod::parse(
+        &std::env::var("LD01_S3_WATER").unwrap_or_else(|_| "if97".into()),
+    )
+    .unwrap_or_else(|e| panic!("{e}"));
+    leitbild_operating_water::select_water_method(water).unwrap_or_else(|e| panic!("{e}"));
     let (packet_path, bytes) = common::packet_bytes();
     let raw: Value = serde_json::from_slice(&bytes).unwrap();
     let packet: Packet = serde_json::from_slice(&bytes).unwrap();
@@ -190,6 +198,7 @@ fn feed_state_onto_the_feed_packet() {
     state["converted"] = json!({"from": from_path, "from_sha256": sha256(&std::fs::read(&from_path).unwrap()),
         "rule": "plan r4 X4.1: existing coordinates bitwise by label; C08 at beta_eq with M_v' = 0; feed at the branch flows equal to the steam demand, header on the pump curve, FCV at the opening that passes it; the continuous control at the tracked AUTO point (lags at their inputs, IL and IF by the tracking law)",
         "header_Pa": header, "sgs": report});
+    state["water"] = json!(water);
     let out = env("LD01_FEED_STATE_OUT");
     std::fs::write(&out, serde_json::to_vec(&state).unwrap()).unwrap();
     println!(
