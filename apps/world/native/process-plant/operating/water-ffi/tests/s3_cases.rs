@@ -526,6 +526,10 @@ struct Recorder {
     /// (`common::nc_record`) from the same left-limit state; never in
     /// `frames`.
     nc: Option<common::nc_record::NcRecord>,
+    /// Stuck-cluster C2: the declared single's travel (m) at every frame
+    /// (its cluster index in `rods`, the rows `[t, travel]`); never in
+    /// `frames`.
+    single: Option<(usize, Vec<Value>)>,
 }
 /// HOT.A, HOT.B, COLD.A, COLD.B cells, the left-limit state and the rows.
 struct Legs {
@@ -602,11 +606,30 @@ impl<S: leitbild_operating_water::joined::JoinedSystem> leitbild_operating_water
             rows.push(json!([t, x]));
         }
         let travel: Vec<f64> = self.rods.iter().map(|(i, s)| y[*i] * s).collect();
+        if let Some((c, rows)) = self.single.as_mut() {
+            rows.push(json!([t, travel[*c]]));
+        }
         self.rows.push(json!({"t_s": t, "pzr_roof_pa": y[self.roof.0] * self.roof.1,
             "sg_pressure_pa": self.sg.iter().map(|(l, i, s)| json!([l, y[*i] * s])).collect::<Vec<_>>(),
             "rod_travel_m": [travel.iter().copied().fold(f64::INFINITY, f64::min),
                 travel.iter().copied().fold(f64::NEG_INFINITY, f64::max)]}));
         Ok(Vec::new())
+    }
+}
+
+/// Every object in `v` (depth first) for which `pick` holds.
+fn collect_objects(v: &Value, pick: &mut dyn FnMut(&Value) -> bool, out: &mut Vec<Value>) {
+    match v {
+        Value::Object(m) => {
+            if pick(v) {
+                out.push(v.clone());
+            }
+            for x in m.values() {
+                collect_objects(x, pick, out);
+            }
+        }
+        Value::Array(a) => a.iter().for_each(|x| collect_objects(x, pick, out)),
+        _ => {}
     }
 }
 
@@ -1459,6 +1482,17 @@ struct CaseConfig {
     /// the SG owner's valve law (`LD01_TURB_GOV` on | off, unset off; the
     /// blocks from `LD01_TURB_WIKI`).
     turbine_governor: bool,
+    /// Stuck-cluster C2 (lead ruling (a)): a rod cluster composed singly
+    /// (`LD01_S3_SINGLE=<cluster id>`, unset none: the bank composition), its
+    /// own motion class and bore water; the start state must be of that
+    /// layout (`tests/c2s_state.rs` converts a bank state).
+    single: Option<&'static str>,
+    /// With `single`: that cluster declared stuck (`LD01_S3_STUCK` on | off,
+    /// unset off): `Command::StuckCluster` at the case start, before the
+    /// case's event, and B1's term declared from `ld01-stuck-worth`
+    /// (`LD01_ROD_CONTROL_WIKI`). C2 with both is the stuck-cluster case
+    /// C2S (`ld01-r4-c2-stuck-case`).
+    stuck: bool,
 }
 impl CaseConfig {
     /// `LD01_S3_WEIGHTS` (stock | grouped), `LD01_S3_FIRST_STEP` (declared
@@ -1497,16 +1531,27 @@ impl CaseConfig {
             "off" => false,
             v => return Err(format!("LD01_TURB_GOV={v}: on or off")),
         };
+        let single: Option<&'static str> = std::env::var("LD01_S3_SINGLE")
+            .ok()
+            .map(|id| &*Box::leak(id.into_boxed_str()));
+        let stuck = match var("LD01_S3_STUCK", "off").as_str() {
+            "on" if single.is_some() => true,
+            "on" => return Err("LD01_S3_STUCK=on needs LD01_S3_SINGLE (a stuck cluster is composed singly)".into()),
+            "off" => false,
+            v => return Err(format!("LD01_S3_STUCK={v}: on or off")),
+        };
         Ok(Self {
             solver,
             matrix_rebuild,
             ramp_cap,
             rod_auto,
             turbine_governor,
+            single,
+            stuck,
         })
     }
     fn json(&self) -> Value {
-        json!({"weights": self.solver.weights, "first_step": self.solver.first_step, "matrix_rebuild": format!("{:?}", self.matrix_rebuild), "ramp_cap": self.ramp_cap, "rod_auto": self.rod_auto, "turbine_governor": self.turbine_governor})
+        json!({"weights": self.solver.weights, "first_step": self.solver.first_step, "matrix_rebuild": format!("{:?}", self.matrix_rebuild), "ramp_cap": self.ramp_cap, "rod_auto": self.rod_auto, "turbine_governor": self.turbine_governor, "single": self.single, "stuck": self.stuck})
     }
 }
 
@@ -1608,15 +1653,51 @@ fn drive(
         leitbild_operating_water::unit::turbine::Turbine::from_wiki(&wiki)
             .unwrap_or_else(|e| panic!("{e}"))
     });
-    let mut unit = s3::compose_governed_with(
+    // Stuck-cluster C2: the declared single's packet index.
+    let single = ask.config.single.map(|id| {
+        let packet = inputs.spine.packet_json().expect("packet json");
+        let index = packet["rods"]["clusters"]
+            .as_array()
+            .expect("the packet's rod clusters")
+            .iter()
+            .position(|c| c["id"] == id)
+            .unwrap_or_else(|| panic!("LD01_S3_SINGLE={id}: no such rod cluster"));
+        (id, index)
+    });
+    let mut unit = s3::compose_singles_with(
         inputs,
         state,
         ask.scaling,
         ask.config.solver,
         turbine.as_ref(),
+        &single.iter().map(|(_, i)| *i).collect::<Vec<_>>(),
         wrap,
     )
     .unwrap_or_else(|e| panic!("{e}"));
+    // B1 (owner request 14): the declared stuck-cluster term, before any
+    // transaction, from the wiki's ld01-stuck-worth.
+    let stuck_worth = ask.config.stuck.then(|| {
+        let wiki = std::env::var("LD01_ROD_CONTROL_WIKI")
+            .expect("LD01_S3_STUCK=on needs LD01_ROD_CONTROL_WIKI (ld01-stuck-worth)");
+        let page_path = format!(
+            "{wiki}/world/packs/process-plant/reference-designs/ld-01/systems/reactor/control-and-verification.md"
+        );
+        let page = std::fs::read_to_string(&page_path).unwrap_or_else(|e| panic!("{page_path}: {e}"));
+        let open = "```ld01-stuck-worth\n";
+        let mut found = page.match_indices(open).map(|(i, _)| i + open.len());
+        let start = found.next().expect("no ld01-stuck-worth block");
+        assert!(found.next().is_none(), "more than one ld01-stuck-worth block");
+        let text = &page[start..start + page[start..].find("\n```").expect("an unterminated ld01-stuck-worth block")];
+        let block: Value = serde_json::from_str(text).expect("ld01-stuck-worth json");
+        let dk = block["term_dk"].as_f64().expect("ld01-stuck-worth term_dk");
+        unit.ida
+            .system_mut()
+            .integrated_mut()
+            .joined
+            .declare_stuck_worth(dk)
+            .unwrap_or_else(|e| panic!("B1: {e:?}"));
+        json!({"page": page_path, "block": block, "block_sha256": leitbild_operating_plant::digest::sha256(text.as_bytes()), "term_dk": dk})
+    });
     let (t0, n, rtol, frame) = (unit.t0, unit.n, unit.rtol, unit.frame);
     // X4.4 (lane ROD): automatic rod control in AUTO when asked.
     let (mut rods, rod_receipt) = if ask.config.rod_auto {
@@ -1806,6 +1887,7 @@ fn drive(
             common::nc_record::NcRecord::new(&ids, protection.readings())
                 .unwrap_or_else(|e| panic!("nc record: {e}"))
         }),
+        single: single.map(|(_, c)| (c, Vec::new())),
     };
     let cvcs_section = joined.cvcs().map(|b| {
         json!({"labels": b.layout().labels, "program": b.section().program, "controller": b.section().controller})
@@ -1963,6 +2045,13 @@ fn drive(
         driver
             .start_quadratures(ida, vec![0.; count])
             .unwrap_or_else(|e| panic!("the ledgers' quadratures: {e}"));
+    }
+    // Stuck-cluster C2: the single's grip declared stuck at the case start,
+    // before the case's event (G7's StuckCluster).
+    if let Some((_, cluster)) = single.filter(|_| ask.config.stuck) {
+        driver
+            .command(t0, Command::StuckCluster { cluster })
+            .unwrap();
     }
     if let Some(c) = command {
         driver.command(zero, c).unwrap();
@@ -2875,6 +2964,33 @@ fn drive(
     // MR-1 (R7-P): the handle's counts and the packet's section, for the receipt.
     let rebuild_counts = ida.rebuild();
     let rebuild_section = ida.system().integrated().joined.matrix_rebuild().map(|m| json!({"rebuildEverySteps": m.rebuild_every_steps, "appliesFrom": m.applies_from, "decision": m.decision}));
+    // Stuck-cluster C2 (record only, never in a digested section): what the
+    // stuck case's judge reads, beside the run's own records.
+    let stuck_record = single.map(|(id, index)| {
+        let mut seated: std::collections::BTreeMap<&str, (usize, f64)> = Default::default();
+        for (c, t) in &tl.seats {
+            let e = seated.entry(c.as_str()).or_insert((0, f64::INFINITY));
+            e.0 += 1;
+            e.1 = e.1.min(*t);
+        }
+        let others: Vec<f64> = seated.iter().filter(|(c, _)| **c != id).map(|(_, (_, t))| *t).collect();
+        let mut found = Vec::new();
+        for e in &driver.log {
+            collect_objects(e, &mut |v| v.get("B1").is_some() || v["command"] == "StuckCluster", &mut found);
+        }
+        let b1: Vec<&Value> = found.iter().filter(|v| v.get("B1").is_some()).collect();
+        let command: Vec<&Value> = found.iter().filter(|v| v["command"] == "StuckCluster").collect();
+        json!({"cluster": id, "index": index, "stuck": ask.config.stuck, "stuck_worth": stuck_worth,
+            "stuck_cluster_command": command, "b1": b1,
+            "seats": {"rule": "per cluster from the timeline's seat records (s after zero): count and first seat; 'others' are the clusters other than the single; holding_lost_s is absolute",
+                "per_cluster": seated.iter().map(|(c, (n, t))| json!({"cluster": c, "count": n, "first_seat_s": t})).collect::<Vec<_>>(),
+                "single_seated": seated.contains_key(id), "others_seated": others.len(),
+                "others_last_seat_s": others.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+                "holding_lost_s": p.holding.lost_at},
+            "travel_m": {"rule": "the single's travel (m) at every frame's state, [t_s, travel]", "start_m": recorder.single.as_ref().and_then(|(_, r)| r.first().and_then(|x| x[1].as_f64())),
+                "frames": recorder.single.as_ref().map(|(_, r)| r.clone())},
+            "hot_standby": "rule_i.hot_standby_margins (not_subcritical, margin_evaluations, last_not_subcritical_s per factor)"})
+    });
     let mut record = json!({
         "label": ask.label,
         "failure": failure,
@@ -2972,6 +3088,7 @@ fn drive(
         "feed_leg_temperatures_k": recorder.legs.as_ref().map(|l| json!({"columns": ["HOT.A", "HOT.B", "COLD.A", "COLD.B"], "rule": "mass-weighted cells per leg, at every frame's left limit", "rows": l.rows})),
         "repeat_record": repeat_record,
         "nc_record": recorder.nc.as_ref().map(|n| n.receipt()),
+        "stuck_cluster": stuck_record,
     });
     // HOOK (NUC, plan r4 X4.2): only a CVCS packet's record has the key.
     if let (Some(section), Some((_, _, rows))) = (cvcs_section, recorder.cvcs.as_ref()) {
