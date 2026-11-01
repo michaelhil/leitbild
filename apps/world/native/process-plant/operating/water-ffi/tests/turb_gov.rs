@@ -22,6 +22,7 @@ mod common;
 #[path = "s3_harness/counters.rs"]
 mod counters;
 mod s2_harness;
+use leitbild_operating_plant::ic::acquisition::Quality;
 use s2_harness::{compare, gates, outputs};
 
 use leitbild_operating_plant::electrical::slice;
@@ -267,6 +268,7 @@ struct Driven {
     t0: f64,
     n: usize,
     observe: Option<Observe>,
+    tags: Vec<Value>,
     cpu: f64,
     instructions: u64,
     composed: u64,
@@ -407,17 +409,67 @@ fn drive(
                 .unwrap_or_else(|e| panic!("the drive's stops: {e}"));
         }
     }
-    for (b, fraction) in &legs {
-        let r = {
-            let mut extra: [&mut dyn Client<_>; 2] = [&mut rods, &mut rec];
-            let obs = observe.as_mut().map(|o| o as &mut dyn Observer<Unit>);
-            plant.run(t, *b, &mut extra, obs)
+    // PROC's dry evaluation (record only): LD01_TURB_TAGS=1 reads every IC
+    // channel's and state report's delivered sample at each whole second,
+    // as the unit host does (`ld01-unit`'s channel list: value and quality,
+    // in the units the IC section delivers).
+    let tags_on = std::env::var("LD01_TURB_TAGS").as_deref() == Ok("1");
+    let mut tags: Vec<Value> = Vec::new();
+    let mut record_tags = |plant: &Plant, t: f64| {
+        let q = |x: &Option<(u64, Quality)>| match x {
+            None => (Value::Null, 0),
+            Some((_, Quality::Value(v))) => (json!(v), 1),
+            Some((_, Quality::BelowRange(v))) => (json!(v), 2),
+            Some((_, Quality::AboveRange(v))) => (json!(v), 3),
+            Some((_, Quality::Indeterminate(v))) => (json!(v), 4),
         };
-        if let Err(e) = r {
-            failure = Some(format!("at {} s: {e}", plant.driver.solver_reached_s));
-            break;
+        let p = &plant.protection.protection;
+        let mut row = serde_json::Map::new();
+        for (id, d) in p.delivered() {
+            let (v, k) = q(&d);
+            row.insert(id, json!([v, k]));
         }
-        t = *b;
+        for (id, d) in p.delivered_reports() {
+            row.insert(
+                id,
+                json!([
+                    d.map(|(_, r)| if r { 1 } else { 0 }),
+                    i32::from(d.is_some())
+                ]),
+            );
+        }
+        tags.push(json!({"t_s": t, "tags": row}));
+    };
+    if tags_on {
+        record_tags(&plant, t0);
+    }
+    'legs: for (b, fraction) in &legs {
+        // With the tags, the run is observed at every whole second (marks,
+        // not stops, under free stepping).
+        let mut marks: Vec<f64> = Vec::new();
+        if tags_on {
+            let mut m = t.floor() + 1.;
+            while m < *b - 1e-9 {
+                marks.push(m);
+                m += 1.;
+            }
+        }
+        marks.push(*b);
+        for m in marks {
+            let r = {
+                let mut extra: [&mut dyn Client<_>; 2] = [&mut rods, &mut rec];
+                let obs = observe.as_mut().map(|o| o as &mut dyn Observer<Unit>);
+                plant.run(t, m, &mut extra, obs)
+            };
+            if let Err(e) = r {
+                failure = Some(format!("at {} s: {e}", plant.driver.solver_reached_s));
+                break 'legs;
+            }
+            t = m;
+            if tags_on {
+                record_tags(&plant, m);
+            }
+        }
         if let Some(f) = *fraction {
             let request = f * request0;
             let dd = turbine::grid_request(&mut plant.driver, plant.ida.system(), t, request);
@@ -428,7 +480,7 @@ fn drive(
             });
             if let Err(e) = r {
                 failure = Some(format!("the Grid request at {t} s: {e}"));
-                break;
+                break 'legs;
             }
         }
     }
@@ -443,6 +495,7 @@ fn drive(
         t0,
         n,
         observe,
+        tags,
         cpu: process_cpu_s() - started,
         instructions: counters::instructions().unwrap() - instructions0,
         composed: composed - instructions0,
@@ -601,6 +654,8 @@ fn turb_gov_run() {
         "observation": main.observe.as_ref().map(|o| json!({"observation_s": o.obs_s, "frame_s": o.frame_s,
             "samples": o.credited.t.len(), "error": o.error, "sg_level": "(V_l + V_sub)/A, A = the NR indicated-level area"})),
         "x4_frames": x4_frames, "families": families,
+        "ic_tags": (!main.tags.is_empty()).then(|| json!({"every_s": 1, "values": "[value, quality]: quality 0 none, 1 value, 2 below range, 3 above range, 4 indeterminate (value = band); state reports [1 reported | 0 not, 0 none | 1 value]",
+            "units": "as the IC section delivers each channel (ld01-unit's channel list names them)", "section": std::env::var("LD01_IC_SECTION").ok(), "samples": main.tags})),
         "elec_log": plant.ida.system().log,
         "rod_schedule": main.rods.schedule, "rod_series": main.rods.series, "series": main.rec.series,
     });
