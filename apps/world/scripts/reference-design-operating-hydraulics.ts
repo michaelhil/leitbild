@@ -129,6 +129,8 @@ export function compileOperatingHydraulics(g:CirculationGeometry,documents:{sele
     hotBranchLoss=z.object({dividingTurnLoss:nonnegative}).strict().parse(block(documents.losses,'reference-hot-a-branch-loss')),
     downBudget=lossBudget(documents.losses,'Downcomer / LOWER entry'),
     hot=lossBudget(documents.losses,'HOT path'),sg=lossBudget(documents.losses,'Folded SG primary'),passage=lossBudget(documents.losses,'Each pump passage / COLD entry'),
+    // R3 (R4-HYD-R3): the cold-leg nozzle mouth, on the RETURN area, in the owned table.
+    mouth=lossBudget(documents.losses,'Cold-leg nozzle mouth (RETURN)'),
     sections:Section[]=[],gravity:{edge:number,region:number,delta_z_m:number}[]=[],
     region=(id:string)=>{const i=g.regions.findIndex(r=>r.id===id);if(i<0)throw Error('Missing actual water owner '+id);return i},
     edge=(a:string,b:string)=>{const i=g.edges.findIndex(e=>e.from===region(a)&&e.to===region(b));if(i<0)throw Error('Missing actual port');return i},
@@ -174,7 +176,7 @@ export function compileOperatingHydraulics(g:CirculationGeometry,documents:{sele
     add(s,[[h,s]],[[s,`PUMP.${side}1`],[s,`PUMP.${side}2`]],physical.sgDevelopedLength_m,0,2.5,3,'none',sg.total)
     for(const p of [1,2])add(`PUMP.${side}${p}`,[[s,`PUMP.${side}${p}`]],[[`PUMP.${side}${p}`,cold]],
       pumpRegion.volume_m3/pumpRegion.mainFlowArea_m2,pumpD,3,3,'none',passage.total,0,true)
-    add(ret,[[cold,ret]],[[ret,'DOWN']],returnRegion.volume_m3/returnRegion.mainFlowArea_m2,returnD,3,3,'smooth_pipe',0)
+    add(ret,[[cold,ret]],[[ret,'DOWN']],returnRegion.volume_m3/returnRegion.mainFlowArea_m2,returnD,3,3,'smooth_pipe',mouth.total)
     head([['UPPER',h]],'UPPER',-.5)
   }
   const forceIncidence=sections.flatMap((s,section)=>s.force.map(t=>({...t,section}))),covered=new Set(forceIncidence.map(t=>t.edge)),
