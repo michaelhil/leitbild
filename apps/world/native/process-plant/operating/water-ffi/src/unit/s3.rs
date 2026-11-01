@@ -258,6 +258,9 @@ pub fn compose_singles_with<J: JoinedSystem>(
     singles: &[usize],
     wrap: impl FnOnce(Integrated<If97>) -> Result<J, String>,
 ) -> Result<S3Unit<J>, String> {
+    // The composition's water method, selected before its first water call;
+    // a process composes one method (a different second selection refuses).
+    crate::select_water_method(solver.water)?;
     let packet_path = &inputs.spine.packet_path;
     if state["packet"].as_str() != Some(packet_path.as_str()) {
         return Err(format!(
@@ -567,7 +570,7 @@ pub fn compose_singles_with<J: JoinedSystem>(
     let receipt = json!({
         "composition": "S3-D28 (3): joined + spray closed + SG two-zone + feed gate declared + S2-D24r/S3-D16 + PZR control AUTO (S) + L1 + phase modes + ELEC slice connected",
         "tolerance_scaling": {"relative": scaling.relative, "absolute": scaling.absolute},
-        "weights": solver.weights, "first_step": solver.first_step, "stepping": solver.stepping, "weight_groups": ida.weight_groups().map(|g| g.sizes().len()),
+        "weights": solver.weights, "first_step": solver.first_step, "stepping": solver.stepping, "water": solver.water, "weight_groups": ida.weight_groups().map(|g| g.sizes().len()),
         "from_saved_s3_state": saved, "t0_s": t0, "spray_path": spray_path,
         "sections": {"ic": inputs.ic_path, "pzr_control": inputs.control_path, "control_wiki": inputs.control_wiki, "electrical": inputs.elec_path},
         "l1_activation_changes": l1_changes,

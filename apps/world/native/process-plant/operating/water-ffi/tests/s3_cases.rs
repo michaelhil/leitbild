@@ -1518,6 +1518,10 @@ impl CaseConfig {
             // R4-FREE-STEPS: the composition's stepping (unset: free, the
             // unit's default).
             stepping: parse_stepping(&var("LD01_S3_STEPPING", "free"))?,
+            // The composition's water method (owner decision 1 Nov): a case
+            // configuration value as stepping is (unset: the IF97
+            // reference), selected by the composition and recorded.
+            water: leitbild_operating_water::WaterMethod::parse(&var("LD01_S3_WATER", "if97"))?,
         };
         // The r4 baseline (BASELINE-r4.md): stock matrix management unless
         // MR-1 is asked.
@@ -1567,7 +1571,7 @@ impl CaseConfig {
         })
     }
     fn json(&self) -> Value {
-        json!({"weights": self.solver.weights, "first_step": self.solver.first_step, "matrix_rebuild": format!("{:?}", self.matrix_rebuild), "ramp_cap": self.ramp_cap, "rod_auto": self.rod_auto, "turbine_governor": self.turbine_governor, "single": self.single, "stuck": self.stuck, "stepping": self.solver.stepping, "jump_diagnostic": self.jump_diagnostic,
+        json!({"weights": self.solver.weights, "first_step": self.solver.first_step, "matrix_rebuild": format!("{:?}", self.matrix_rebuild), "ramp_cap": self.ramp_cap, "rod_auto": self.rod_auto, "turbine_governor": self.turbine_governor, "single": self.single, "stuck": self.stuck, "stepping": self.solver.stepping, "water": self.solver.water, "jump_diagnostic": self.jump_diagnostic,
             "cost_excludes_case_observer": true})
     }
 }
