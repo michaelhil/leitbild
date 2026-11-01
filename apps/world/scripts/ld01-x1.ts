@@ -21,7 +21,7 @@ import {join} from 'node:path'
 import {createHash} from 'node:crypto'
 
 export const BUDGETS_PIN = {fence: 'ld01-operator-budgets', pin: 'RP-pin-ogb-r2', sha256: '9def9c2b5bf7d90ea565a8e8d18c077bdb57acda82aa3a997dfc6f4857c736bf'}
-export const CASES_PIN = {fence: 'ld01-r4-x1-cases', pin: 'RP-pin-x1-r2', sha256: '527de3aeaee308c8e6626d4e344811e6869bc205c9affef4b1e8ecafe131a993'}
+export const CASES_PIN = {fence: 'ld01-r4-x1-cases', pin: 'RP-pin-x1-r6', sha256: 'a5acbbfcae0e2576fb18cfd7f57821b13d4c070af166f3a5b38fb3fd6758cb1b'}
 
 type J = any
 /** The harness's canonical JSON (s2_harness::guards::canonical): sorted keys, no spaces. */
@@ -33,7 +33,7 @@ export function canonical(v: J): string {
 export const sha256 = (s: string) => createHash('sha256').update(s).digest('hex')
 export function fenced(text: string, fence: string): J {
  const m = text.match(new RegExp('```' + fence + '\\n([\\s\\S]*?)\\n```'))
- if (!m) throw new Error(`no ${fence} block`)
+ if (!m?.[1]) throw new Error(`no ${fence} block`)
  return JSON.parse(m[1])
 }
 function pinned(text: string, pin: {fence: string, pin: string, sha256: string}): J {
@@ -44,8 +44,9 @@ function pinned(text: string, pin: {fence: string, pin: string, sha256: string})
 function wikiBlock(root: string, fence: string): J {
  const walk = (d: string): string[] => readdirSync(d).flatMap(n => { const p = join(d, n); return statSync(p).isDirectory() ? walk(p) : p.endsWith('.md') ? [p] : [] })
  const hits = walk(root).filter(p => readFileSync(p, 'utf8').includes('```' + fence + '\n'))
- if (hits.length !== 1) throw new Error(`${fence}: ${hits.length} pages hold it`)
- return fenced(readFileSync(hits[0], 'utf8'), fence)
+ const [page] = hits
+ if (hits.length !== 1 || page == null) throw new Error(`${fence}: ${hits.length} pages hold it`)
+ return fenced(readFileSync(page, 'utf8'), fence)
 }
 
 type Line = {id: string, verdict: 'pass' | 'fail' | 'recorded' | 'not evaluable', evidence?: J}
@@ -53,13 +54,20 @@ const mean = (v: number[]) => v.reduce((a, b) => a + b, 0) / v.length
 const within = (t: number | null | undefined, w: [number, number], tol = 1e-6) => t != null && t >= w[0] - tol && t <= w[1] + tol
 
 /** One receipt's X1 verdict. */
-export function judge(receipt: J, budgets: J, cases: J, plant: {pzrSetpoint: number, noLoad: number, reliefMid: number}): J {
+export function judge(receipt: J, budgets: J, cases: J, plant: {pzrSetpoint: number, noLoad: number, reliefMid: number, pzrReliefOpening: number}): J {
  const key = receipt.case as string, spec = cases.cases?.[key]
  if (!spec) throw new Error(`case ${key} is not an X1 case`)
  const tl = receipt.timeline, run = receipt.run, zero = tl.zero_s as number
  const lines: Line[] = []
  // Held.
  const held = run.failure == null && run.labelled_end == null && run.rule_i?.exit == null && tl.end_s >= cases.held_s - 1e-9
+ // The admission split the receipt ran (marginReporting, R4-P1-FRAMES): domain
+ // exits per step, margins and counts at frames, read "at or before" their frame.
+ const margins = run.rule_i?.hot_standby_margins
+ lines.push({id: 'marginRule', verdict: typeof margins?.margin_rule === 'string' && margins.margin_rule.startsWith('R4-P1-FRAMES')
+   && margins.margin_rule.includes('at every accepted state') ? 'pass' : 'fail',
+  evidence: {margin_rule: margins?.margin_rule ?? null, margin_evaluations: margins?.margin_evaluations ?? null,
+   reading: 'margins, counts and the smallest margin at or before their frame; domain exits exact per step'}})
  lines.push({id: 'held', verdict: held ? 'pass' : 'fail', evidence: {failure: run.failure, labelled_end: run.labelled_end, rule_i_exit: run.rule_i?.exit ?? null, end_after_zero_s: tl.end_s, held_s: cases.held_s}})
  // Numerical (R11-3a): the converged level of the tolerance-proportionality series.
  const nb = budgets.numerical, op = run.phys_operator_frames, ref = cases.references
@@ -81,14 +89,14 @@ export function judge(receipt: J, budgets: J, cases: J, plant: {pzrSetpoint: num
  const byName = (n: string) => comparisons.find(c => c.reference === n)
  const done = (n: string) => { const c = byName(n); return c != null && c.reference_failure == null && c.e0?.evaluable === true && c.e0?.to_s >= cases.held_s - 1e-9 }
  const status = levels.map(n => ({level: n, completed: done(n), failure: byName(n)?.reference_failure ?? (byName(n) ? null : 'not run'), to_s: byName(n)?.e0?.to_s ?? null}))
- const i = levels.map(done).lastIndexOf(true)
+ const i = levels.map(done).lastIndexOf(true), converged = levels[i], looser = levels[i - 1]
  let numerical: Line
- if (i < 1 || !done(levels[i - 1])) numerical = {id: 'numerical', verdict: 'fail', evidence: {rule: ref.noPair, levels: status}}
+ if (converged == null || looser == null || !done(looser)) numerical = {id: 'numerical', verdict: 'fail', evidence: {rule: ref.noPair, levels: status}}
  else {
-  const pair = (receipt.families.E_refinement.series ?? []).find((x: J) => x.looser === levels[i - 1] && x.tighter === levels[i])
-  const convergence = budgetRows(pair?.e0, ref.convergenceFraction), run_vs = budgetRows(byName(levels[i]).e0, 1)
+  const pair = (receipt.families.E_refinement.series ?? []).find((x: J) => x.looser === looser && x.tighter === converged)
+  const convergence = budgetRows(pair?.e0, ref.convergenceFraction), run_vs = budgetRows(byName(converged)?.e0, 1)
   numerical = {id: 'numerical', verdict: convergence.every(r => r.pass) && run_vs.every(r => r.pass) ? 'pass' : 'fail',
-   evidence: {levels: status, converged: levels[i], against: levels[i - 1], convergence, run_vs_converged: run_vs}}
+   evidence: {levels: status, converged, against: looser, convergence, run_vs_converged: run_vs}}
  }
  lines.push(numerical)
  // Steady over the last window.
@@ -98,16 +106,49 @@ export function judge(receipt: J, budgets: J, cases: J, plant: {pzrSetpoint: num
  const sgRef = sgNamed?.startsWith('ld01-bypass-no-load') ? plant.noLoad : sgNamed?.startsWith('ld01-sg-relief') ? plant.reliefMid : NaN
  const pt = mean(frames.map(r => r.pzr_roof_pa))
  const sg = (run.frames[0].sg_pressure_pa as J[]).map((_: J, i: number) => mean(frames.map(r => r.sg_pressure_pa[i][1])))
- lines.push({id: 'steady.pzrPressure', verdict: Math.abs(pt - plant.pzrSetpoint) <= f * plant.pzrSetpoint ? 'pass' : 'fail', evidence: {mean_pa: pt, reference_pa: plant.pzrSetpoint}})
+ if (!spec.replacesSteady?.pzrPressure_Pa)
+  lines.push({id: 'steady.pzrPressure', verdict: Math.abs(pt - plant.pzrSetpoint) <= f * plant.pzrSetpoint ? 'pass' : 'fail', evidence: {mean_pa: pt, reference_pa: plant.pzrSetpoint}})
+ else {
+  // r6, C5 (owner 1 Nov): direction, timing and the relief opening in place of the steady line.
+  const after = (run.frames as J[]).filter(r => r.t_s >= zero - 1e-9).map(r => [r.t_s - zero, r.pzr_roof_pa as number] as [number, number])
+  const peak = after.reduce((a, b) => b[1] > a[1] ? b : a)
+  const firstMax = after.find((x, i) => i > 0 && i + 1 < after.length && x[1] > after[i - 1]![1] && x[1] >= after[i + 1]![1]) ?? null
+  const ids = new Set((spec.pzrPressure as J[]).map(l => l.id))
+  if (ids.has('X5.P1')) lines.push({id: 'X5.P1', verdict: peak[1] < plant.pzrReliefOpening && pt < plant.pzrReliefOpening ? 'pass' : 'fail',
+   evidence: {peak_after_zero: peak, last_300_s_mean_pa: pt, relief_opening_pa: plant.pzrReliefOpening}})
+  const rose = firstMax != null && after[0] != null && firstMax[1] > after[0][1]
+  const levelled = Math.abs(mean(frames.filter(r => r.t_s >= end - 60 - 1e-9).map(r => r.pzr_roof_pa)) - mean(frames.filter(r => r.t_s <= frames[0].t_s + 60 + 1e-9).map(r => r.pzr_roof_pa)))
+  if (ids.has('X5.P2')) lines.push({id: 'X5.P2', verdict: rose && levelled <= f * plant.pzrSetpoint && tl.pzr_relief_openings.length === 0 ? 'pass' : 'fail',
+   evidence: {at_zero_pa: after[0]?.[1] ?? null, first_maximum: firstMax, last_300_s_change_pa: levelled, bound_pa: f * plant.pzrSetpoint, relief_openings: tl.pzr_relief_openings}})
+  if (ids.has('X5.P3')) lines.push({id: 'X5.P3', verdict: firstMax != null && firstMax[0] >= 2.6 - 1e-9 && firstMax[0] <= 17.6 + 1e-9 ? 'pass' : 'fail',
+   evidence: {first_maximum_after_zero_s: firstMax?.[0] ?? null, window_s: [2.6, 17.6], kind: 'judgement (r6)'}})
+ }
  lines.push({id: 'steady.sgPressure', verdict: sg.every(p => Math.abs(p - sgRef) <= f * sgRef) ? 'pass' : 'fail', evidence: {mean_pa: sg, reference_pa: sgRef, reference: sgNamed}})
  if (!op) lines.push({id: 'steady.settled', verdict: 'not evaluable', evidence: 'no phys_operator_frames (LD01_PHYS_OPERATOR_FRAMES=1)'})
  else {
   const of = (op.frames as J[]).filter(r => r.t_s >= end - w - 1e-9), first = of.filter(r => r.t_s <= of[0].t_s + 60 + 1e-9), last = of.filter(r => r.t_s >= end - 60 - 1e-9)
-  const scale = (q: string) => q.startsWith('PzrLevel') ? 14 : q.startsWith('SgCollapsedLevel') ? 5 : q.startsWith('LoopFlow') || q.startsWith('CurrentProxy') ? 1 : null
-  for (const q of Object.keys(of[0]?.values ?? {})) {
-   const s = scale(q); if (s == null) continue
-   const d = mean(last.map(r => r.values[q])) - mean(first.map(r => r.values[q]))
-   lines.push({id: `steady.settled ${q}`, verdict: Math.abs(d) <= f * s ? 'pass' : 'fail', evidence: {change: d, bound: f * s}})
+  // The budgets block's `settled` list, each read from the channel family that
+  // acquires it: PZR LT; SG NR (collapsed or, since X4.1, apparent level);
+  // loop FT; the current proxy. A listed quantity with no observed reading is
+  // not evaluable, never skipped.
+  const settledQuantities: Record<string, {prefixes: string[], scale: number}> = {
+   pzrLevel_m: {prefixes: ['PzrLevel'], scale: 14},
+   sgNrLevel_m: {prefixes: ['SgCollapsedLevel', 'SgApparentLevel'], scale: 5},
+   loopFlowFractionOfNominal: {prefixes: ['LoopFlow'], scale: 1},
+   corePowerRelative: {prefixes: ['CurrentProxy'], scale: 1},
+  }
+  const observed = Object.keys(of[0]?.values ?? {})
+  for (const name of budgets.steady.settled as string[]) {
+   const spec = settledQuantities[name]
+   const qs = spec ? observed.filter(q => spec.prefixes.some(p => q.startsWith(p))) : []
+   if (!spec || !qs.length) {
+    lines.push({id: `steady.settled ${name}`, verdict: 'not evaluable', evidence: {observed}})
+    continue
+   }
+   for (const q of qs) {
+    const d = mean(last.map(r => r.values[q])) - mean(first.map(r => r.values[q]))
+    lines.push({id: `steady.settled ${q}`, verdict: Math.abs(d) <= f * spec.scale ? 'pass' : 'fail', evidence: {criterion: name, change: d, bound: f * spec.scale}})
+   }
   }
  }
  // Directions (budgets block `transient.cases`), on the case clock.
@@ -121,15 +162,16 @@ export function judge(receipt: J, budgets: J, cases: J, plant: {pzrSetpoint: num
   sgPressure_Pa: () => { const after = (run.frames as J[]).filter(r => r.t_s >= zero), max = Math.max(...after.flatMap(r => r.sg_pressure_pa.map((x: J) => x[1])))
    const rose = sgAt(zero + 5).every((p: number, i: number) => p > sgAt(zero)[i]); return {id: 'direction.sgPressure', verdict: rose && max < 7947559 ? 'pass' : 'fail', evidence: {at_zero: sgAt(zero), at_5_s: sgAt(zero + 5), max_after: max, below: 7947559}} },
   pzrLevel_m: () => { const q = keys('PzrLevel')[0]; if (!q) return {id: 'direction.pzrLevel', verdict: 'not evaluable'}
-   const after = (op.frames as J[]).filter(r => r.t_s >= zero).map(r => r.values[q] as number)
-   return {id: 'direction.pzrLevel', verdict: after[after.length - 1] < after[0] && Math.min(...after) > 3.0 ? 'pass' : 'fail', evidence: {at_zero: after[0], at_end: after[after.length - 1], min: Math.min(...after)}} },
+   const after = (op.frames as J[]).filter(r => r.t_s >= zero).map(r => r.values[q] as number), first = after[0], last = after[after.length - 1]
+   const fell = first != null && last != null && last < first
+   return {id: 'direction.pzrLevel', verdict: fell && Math.min(...after) > 3.0 ? 'pass' : 'fail', evidence: {at_zero: first ?? null, at_end: last ?? null, min: Math.min(...after)}} },
   loopFlowFractionOfNominal: () => { const qs = key === 'C3' ? keys('LoopFlow { loop_id: "A"') : keys('LoopFlow'), t1 = key === 'C3' ? holdAbs : zero + 10
    if (!qs.length || t1 == null) return {id: 'direction.loopFlow', verdict: 'not evaluable'}
    const e = qs.map(q => ({q, at_zero: val(zero, q), at: val(t1, q)})); return {id: 'direction.loopFlow', verdict: e.every(x => x.at < x.at_zero) ? 'pass' : 'fail', evidence: {t_s: t1 - zero, loops: e}} },
   corePowerRelative: () => { const q = keys('CurrentProxy')[0]; if (!q || holdAbs == null) return {id: 'direction.corePower', verdict: 'not evaluable'}
    const a = val(holdAbs, q), b = val(holdAbs + 10, q); return {id: 'direction.corePower', verdict: b < a ? 'pass' : 'fail', evidence: {at_holding_loss: a, at_10_s_after: b}} },
  }
- for (const d of Object.keys(dirs)) lines.push(direction[d] ? direction[d]() : {id: `direction.${d}`, verdict: 'not evaluable', evidence: 'no evaluator'})
+ for (const d of Object.keys(dirs)) { const f = direction[d]; lines.push(f ? f() : {id: `direction.${d}`, verdict: 'not evaluable', evidence: 'no evaluator'}) }
  // Sequence, may and must-not lines.
  const causes = (tl.causes as [number, string, number][]), hold = tl.holding_lost_s as number | null
  const accepted = (fn: string) => [0, 1, 2].map(d => causes.find(c => c[0] === d && c[1] === fn)?.[2] ?? null)
@@ -173,11 +215,12 @@ export function judge(receipt: J, budgets: J, cases: J, plant: {pzrSetpoint: num
   'X5.M1': 'rec', 'X5.M2': 'rec', 'X5.M3': 'rec', 'X5.M4': 'rec'}
  for (const l of [...(spec.sequence ?? []), ...(spec.may ?? []), ...(spec.mustNot ?? [])]) {
   const alias = same[l.id]
-  if (ev[l.id]) lines.push(ev[l.id](l))
+  const own = ev[l.id]
+  if (own) lines.push(own(l))
   else if (alias === 'seat') lines.push({id: l.id, verdict: seated(l.afterHoldingLoss_s) ? 'pass' : 'fail', evidence: seats})
   else if (alias === 'pzrRelief') lines.push({id: l.id, verdict: tl.pzr_relief_openings.length ? 'fail' : 'pass', evidence: tl.pzr_relief_openings})
   else if (alias === 'rec') lines.push({id: l.id, verdict: 'recorded', evidence: {causes: causes.filter(c => c[2] > (hold ?? Infinity)), requests, reliefs, pzr_relief_openings: tl.pzr_relief_openings}})
-  else if (alias && ev[alias]) lines.push({...ev[alias](l), id: l.id})
+  else if (alias && ev[alias]) lines.push({...(ev[alias] as (l: J) => Line)(l), id: l.id})
   else lines.push({id: l.id, verdict: 'not evaluable', evidence: 'no evaluator'})
  }
  const verdict = lines.every(l => l.verdict === 'pass' || l.verdict === 'recorded') ? 'X1 pass' : 'X1 fail'
@@ -185,11 +228,11 @@ export function judge(receipt: J, budgets: J, cases: J, plant: {pzrSetpoint: num
 }
 
 if (import.meta.main) {
- const a = process.argv.slice(2), opt = (k: string) => { const i = a.indexOf(k); if (i < 0) throw new Error(`${k} required`); const v = a[i + 1]; a.splice(i, 2); return v }
+ const a = process.argv.slice(2), opt = (k: string): string => { const i = a.indexOf(k), v = a[i + 1]; if (i < 0 || v == null) throw new Error(`${k} required`); a.splice(i, 2); return v }
  const page = readFileSync(opt('--page'), 'utf8'), root = opt('--wiki')
  const budgets = pinned(page, BUDGETS_PIN), cases = pinned(page, CASES_PIN)
  const relief = (wikiBlock(root, 'ld01-sg-relief').valves as J[]).find(v => v.role === 'relief')
  const plant = {pzrSetpoint: wikiBlock(root, 'ld01-pzr-pressure-control').setpoint_Pa, noLoad: wikiBlock(root, 'ld01-bypass-no-load').noLoadPressure_Pa,
-  reliefMid: (relief.reseatPressure_Pa + relief.crackPressure_Pa) / 2}
+  reliefMid: (relief.reseatPressure_Pa + relief.crackPressure_Pa) / 2, pzrReliefOpening: wikiBlock(root, 'ld01-pzr-relief-device').openingPressure_Pa}
  for (const r of a) console.log(JSON.stringify({receipt: r, receipt_sha256: sha256(readFileSync(r, 'utf8')), ...judge(JSON.parse(readFileSync(r, 'utf8')), budgets, cases, plant)}))
 }
