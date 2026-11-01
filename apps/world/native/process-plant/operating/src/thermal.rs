@@ -376,6 +376,14 @@ pub trait WaterProperties {
         let _ = key;
         solve()
     }
+    /// The largest relative defect an owner admits between a packet's
+    /// prepared stocks and this boundary's own chart. A prepared stock is the
+    /// same formulation's (1e-9); a boundary evaluating a declared
+    /// approximation of that formulation (the SBTL tables of IF97) states its
+    /// own admitted deviation.
+    fn preparation_tolerance(&self) -> f64 {
+        1e-9
+    }
 }
 /// One evaluation's property boundary for the thermal laws: every query at
 /// bit-identical inputs (value and direction) is answered once, from the
@@ -455,6 +463,9 @@ fn held<K: PartialEq + Copy, V: Copy>(
     Ok(v)
 }
 impl<P: WaterProperties> WaterProperties for Shared<'_, P> {
+    fn preparation_tolerance(&self) -> f64 {
+        self.inner.preparation_tolerance()
+    }
     fn liquid(&self, pressure: Scalar, temperature: Scalar) -> Result<WaterPoint> {
         let [a, b] = bits2(pressure);
         let [c, d] = bits2(temperature);

@@ -711,8 +711,10 @@ impl Secondaries {
             }
         };
         // The same formulation must have prepared these stocks: IF97 against
-        // IAPWS-95 already differs by about 7e-6 in mass at 6 MPa.
-        if defect.is_nan() || defect > 1e-9 {
+        // IAPWS-95 already differs by about 7e-6 in mass at 6 MPa. A boundary
+        // evaluating a declared approximation of the preparing formulation
+        // (SBTL, lane SBTL) admits its own stated deviation instead.
+        if defect.is_nan() || defect > WaterProperties::preparation_tolerance(props) {
             return Err(fatal(format!(
                 "prepared SG stocks are off the runtime chart by {defect} (relative)"
             )));
