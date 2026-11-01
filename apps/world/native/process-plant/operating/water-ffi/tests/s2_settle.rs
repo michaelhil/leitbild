@@ -397,8 +397,13 @@ fn s2_07_resettle_to_the_declared_settling_thresholds() {
         let next_output = (k + 1) as f64 * output_s;
         let event = ida.system().joined.next_time_event(t);
         let stop = event.map_or(cap_s, |e| e.min(cap_s));
-        ida.stop_at(stop).unwrap();
         let target = next_output.min(stop);
+        // Lead ruling 1 Nov (HYD's combined re-pin, option (a)): stock stops
+        // exactly at every output time (tstop), so the state handed on is a
+        // step end, as the S3 frame driver's, never IDA's interpolant (which
+        // could dip a bound-held coordinate below its bound: PZR spray-drop
+        // mass -3.08e-9 against the S3 start's 1e-12 bound placement).
+        ida.stop_at(target).unwrap();
         let outcome = ida.advance(target, &mut y, &mut yp);
         match outcome {
             Ok(Advance::Reached(time)) => {
