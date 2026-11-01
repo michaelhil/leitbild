@@ -2,14 +2,18 @@
 //! spec: world/packs/process-plant/reference-designs/ld-01/systems/reactor/control-absorber-and-guide-water.md#rod-bore-water-state
 //! spec: world/packs/process-plant/reference-designs/ld-01/systems/reactor/control-absorber-and-guide-water.md#grip-manual-disconnect-and-achieved-motion
 //! spec: world/packs/process-plant/reference-designs/ld-01/safety/reactor-trip-and-hold.md#s2-holding-circuit-boundary
-//! The rod block: 52 moving spider-and-bodies (H7), the water of their guide
+//! The rod block: 52 moving clusters of bodies, spider and drive stem
+//! (R4-ROD2-STEM, which reverses H7's held stem), the water of their guide
 //! bores as its own state (P2), the bores' two open mouths and the network
-//! cell volumes the bodies displace above the bores.
+//! cell volumes the bodies, spiders and stems displace above the bores.
 //!
 //! Per cluster, in this order: achieved travel `y` (m), body velocity `v`
 //! (m/s, upward positive), the lower mouth's upward mass current `m_lo` and
 //! the upper mouth's `m_up` (kg/s). `y' = v` always. A FREE body obeys
-//! `M v' = F_end + F_wall + B_spider + F_drag - M g`; a HELD or SEATED body
+//! `M v' = F_end + F_stem + F_wall + B_spider + F_drag - M g` with `M` the
+//! bodies', spider's and stem's mass and `F_stem` the stem's end faces (the
+//! column at the spider top less HOUSING.NECK at the stem top); a HELD or
+//! SEATED body
 //! has the algebraic row `v = 0`. The two mouth rows are steady, each over
 //! its own path to the bores' reference height where its hydrostatics end
 //! (P2-FIX-1, [`RodBlock::mouth_paths`]): LOWER's mouth pressure less the
@@ -33,9 +37,12 @@
 //! The bodies' wall work and the boundary work `-p V'` enter the bores'
 //! energy; the spider's drag work enters the plena it occupies through the
 //! single heat port, and the network pays `-p V'` of the plena volumes the
-//! bodies and spider displace above the bores. The bores' water is not in
-//! the sector inventory: [`carve`] removes it from the network packet once,
-//! before the network is compiled. The stem stays with the drive line (H7).
+//! bodies, spider and stem displace above the bores (UPPER, HOUSING.MAIN
+//! and HOUSING.NECK). The bores' water is not in the sector inventory:
+//! [`carve`] removes it from the network packet once, before the network is
+//! compiled. The stem moves with its cluster in every mode (R4-ROD2-STEM);
+//! its wall traction in the cap bore and collars is omitted (declared: the
+//! housing losses there are below 4 Pa at 1 m/s).
 //! The holding circuit opens at the declared delay after the manual turbine
 //! TRIP (H6); grip release is then immediate (G3).
 //!
@@ -84,6 +91,8 @@ pub struct Section {
     pub clusters: Vec<ClusterSection>,
     pub bodies: Bodies,
     pub spider: Spider,
+    /// R4-ROD2-STEM: the drive stem, which falls with its cluster.
+    pub stem: Stem,
     pub guide: Guide,
     pub cells: Cells,
     pub gravity_m_s2: f64,
@@ -123,6 +132,18 @@ pub struct Spider {
     pub height_m: f64,
     pub radius_m: f64,
 }
+/// R4-ROD2-STEM (owner, 1 November): the drive stem moves with its cluster
+/// in every mode, as AP1000's drive rod falls with its rod cluster (DCD Rev.
+/// 19 §3.9.4.1.4). It starts at the spider top and ends inside
+/// HOUSING.NECK at every admitted travel.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Stem {
+    /// The stem's moving mass (the named drive-rod input), kg.
+    pub mass_kg: f64,
+    pub radius_m: f64,
+    pub length_m: f64,
+}
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Guide {
@@ -152,6 +173,8 @@ pub struct Cells {
     pub core: [[Span; 2]; 4],
     pub upper: Span,
     pub housing_main: Span,
+    /// The dead-end neck holding the stem's top (R4-ROD2-STEM).
+    pub housing_neck: Span,
 }
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -289,10 +312,13 @@ pub struct Forces {
     pub tip_pressure: Scalar,
     pub top_pressure: Scalar,
     pub end_face: Scalar,
+    /// R4-ROD2-STEM: the stem's end faces, `A_s (p(spider top) - p_neck(stem
+    /// top))`.
+    pub stem_end: Scalar,
     pub wall: Scalar,
     pub spider_buoyancy: Scalar,
     pub spider_drag: Scalar,
-    /// `F_end + F_wall + B_spider + F_drag - M g`.
+    /// `F_end + F_stem + F_wall + B_spider + F_drag - M g`.
     pub net: Scalar,
     /// The lower and the upper mouth's steady balances (Pa).
     pub lower_residual: Scalar,
@@ -423,16 +449,20 @@ pub struct RodBlock {
     clusters: Vec<Cluster>,
     groups: Vec<Group>,
     regular: usize,
-    /// The plena the bodies' upper parts and the spiders move through:
-    /// UPPER above the bores, then HOUSING.MAIN.
-    plena: [Plenum; 2],
+    /// The plena the bodies' upper parts, the spiders and the stems move
+    /// through: UPPER above the bores, HOUSING.MAIN, then HOUSING.NECK
+    /// (the stems only, R4-ROD2-STEM).
+    plena: [Plenum; 3],
     lower: usize,
     upper: usize,
     main: usize,
-    /// Pressure-reference elevations of LOWER, UPPER and HOUSING.MAIN.
+    neck: usize,
+    /// Pressure-reference elevations of LOWER, UPPER, HOUSING.MAIN and
+    /// HOUSING.NECK.
     z_lower: f64,
     z_upper: f64,
     z_main: f64,
+    z_neck: f64,
     /// The UPPER/HOUSING.MAIN plane.
     z_interface: f64,
     /// The bores' reference elevation: the guides' mid-height.
@@ -444,6 +474,8 @@ pub struct RodBlock {
     spider_height: f64,
     spider_volume: f64,
     spider_area: f64,
+    /// The stem's cross-section, m2.
+    stem_area: f64,
     /// The assembly's C1 displaced-area profile above the guide top
     /// (E-EVT lever (b), [`Profile`]).
     profile: Profile,
@@ -462,7 +494,7 @@ pub struct RodBlock {
     holding_delay: f64,
     /// Displaced volume of each cluster in each plenum at the prepared
     /// travel, which the compiled cell volumes already exclude.
-    reference_displacement: [Vec<f64>; 2],
+    reference_displacement: [Vec<f64>; 3],
     layout: Layout,
     prepared: Vec<f64>,
     modes: Vec<Mode>,
@@ -588,6 +620,9 @@ impl RodBlock {
             ("spider volume", sp.volume_m3),
             ("spider height", sp.height_m),
             ("spider radius", sp.radius_m),
+            ("stem mass", section.stem.mass_kg),
+            ("stem radius", section.stem.radius_m),
+            ("stem length", section.stem.length_m),
             ("bore radius", g.bore_radius_m),
             ("gravity", section.gravity_m_s2),
             ("reference travel", section.reference_travel_m),
@@ -703,6 +738,8 @@ impl RodBlock {
             })
             && core[1].top_m == cl.upper.bottom_m
             && cl.upper.top_m == cl.housing_main.bottom_m
+            && cl.housing_main.top_m <= cl.housing_neck.bottom_m
+            && cl.housing_neck.bottom_m < cl.housing_neck.top_m
             && cl.lower.bottom_m <= g.lower_mouth_m
             && cl.upper.bottom_m <= g.upper_mouth_m
             && cl.upper.top_m > g.upper_mouth_m)
@@ -711,16 +748,26 @@ impl RodBlock {
         }
         let mut seen: Vec<usize> = std::iter::once(&cl.lower)
             .chain(cl.core.iter().flatten())
-            .chain([&cl.upper, &cl.housing_main])
+            .chain([&cl.upper, &cl.housing_main, &cl.housing_neck])
             .map(|s| index(&s.region))
             .collect::<Result<_, _>>()?;
         seen.sort_unstable();
         seen.dedup();
-        if seen.len() != 11 || seen.iter().any(|c| *c >= regular) {
+        if seen.len() != 12 || seen.iter().any(|c| *c >= regular) {
             return Err(fatal("rods: swept cells must be distinct regular cells"));
         }
-        let plena = [plenum(&cl.upper)?, plenum(&cl.housing_main)?];
-        let (lower, upper, main) = (index(&cl.lower.region)?, plena[0].index, plena[1].index);
+        let plena = [
+            plenum(&cl.upper)?,
+            plenum(&cl.housing_main)?,
+            plenum(&cl.housing_neck)?,
+        ];
+        let (lower, upper, main, neck) = (
+            index(&cl.lower.region)?,
+            plena[0].index,
+            plena[1].index,
+            plena[2].index,
+        );
+        let stem_area = PI * section.stem.radius_m * section.stem.radius_m;
         let elevation = |i: usize| regions[i].elevation_m;
         let annulus = Annulus::new(g.bore_radius_m, b.radius_m, b.count as f64).map_err(fatal)?;
         let head =
@@ -820,9 +867,11 @@ impl RodBlock {
             lower,
             upper,
             main,
+            neck,
             z_lower: elevation(lower),
             z_upper: elevation(upper),
             z_main: elevation(main),
+            z_neck: elevation(neck),
             z_interface: cl.upper.top_m,
             z_bore,
             body_area,
@@ -832,9 +881,17 @@ impl RodBlock {
             spider_height: sp.height_m,
             spider_volume: sp.volume_m3,
             spider_area: PI * sp.radius_m * sp.radius_m,
-            profile: Profile::new(body_area, sp.seated_bottom_m, sp.height_m, sp.volume_m3)
-                .map_err(fatal)?,
-            mass: b.mass_kg + sp.mass_kg,
+            stem_area,
+            profile: Profile::new(
+                body_area,
+                sp.seated_bottom_m,
+                sp.height_m,
+                sp.volume_m3,
+                stem_area,
+                section.stem.length_m,
+            )
+            .map_err(fatal)?,
+            mass: b.mass_kg + sp.mass_kg + section.stem.mass_kg,
             guide_bottom: g.lower_mouth_m,
             guide_top: g.upper_mouth_m,
             bore_volume,
@@ -852,7 +909,7 @@ impl RodBlock {
             span: (cl.lower.bottom_m, cl.housing_main.top_m),
             spider_drag: section.spider_drag,
             holding_delay: section.holding.turbine_trip_to_opening_s,
-            reference_displacement: [Vec::new(), Vec::new()],
+            reference_displacement: [Vec::new(), Vec::new(), Vec::new()],
             plena,
             layout,
             prepared,
@@ -868,7 +925,17 @@ impl RodBlock {
                 "rods: HOUSING.MAIN's reference lies below its bottom plane",
             ));
         }
-        block.reference_displacement = [0, 1].map(|k| {
+        // The stem's top stays inside the neck over the whole admitted
+        // travel, [0, normal travel], so its step never meets a cell plane.
+        let stem_top = |y: f64| block.profile.stem_top() + y;
+        if !(stem_top(0.) > cl.housing_neck.bottom_m
+            && stem_top(section.normal_travel_m) < cl.housing_neck.top_m)
+        {
+            return Err(fatal(
+                "rods: the stem's top must stay inside HOUSING.NECK over the normal travel",
+            ));
+        }
+        block.reference_displacement = [0, 1, 2].map(|k| {
             (0..block.groups.len())
                 .map(|_| {
                     block
@@ -907,9 +974,13 @@ impl RodBlock {
 
     fn admit_travel(&self, id: &str, y: f64) -> Result<(), Failure> {
         let top = self.spider_bottom + self.spider_height + y;
+        let stem_top = self.profile.stem_top() + y;
+        let neck = &self.plena[2];
         if !y.is_finite()
             || self.body_bottom + y < self.span.0
             || top > self.span.1
+            || stem_top <= neck.bottom
+            || stem_top >= neck.top
             || self.guide_top - (self.body_bottom + y) <= 0.
         {
             return Err(recoverable(format!(
@@ -1090,7 +1161,7 @@ impl RodBlock {
     pub fn plena(&self) -> [usize; 3] {
         [self.lower, self.upper, self.main]
     }
-    /// Moving mass of one cluster (bodies and spider), kg.
+    /// Moving mass of one cluster (bodies, spider and stem), kg.
     pub fn moving_mass(&self) -> f64 {
         self.mass
     }
@@ -1098,8 +1169,8 @@ impl RodBlock {
     pub fn reference_travel(&self) -> f64 {
         self.reference_travel
     }
-    /// Network cell indices whose volume the bodies and spiders move: UPPER
-    /// and HOUSING.MAIN.
+    /// Network cell indices whose volume the bodies, spiders and stems move:
+    /// UPPER, HOUSING.MAIN and HOUSING.NECK.
     pub fn swept_cells(&self) -> Vec<usize> {
         self.plena.iter().map(|c| c.index).collect()
     }
@@ -1449,6 +1520,13 @@ impl RodBlock {
         }
     }
 
+    /// HOUSING.NECK's static pressure at elevation `z`, with its own
+    /// well-balanced head about its reference (R4-ROD2-STEM: the stem top).
+    fn neck_pressure(&self, fluid: &Fluid<'_>, z: Scalar) -> Scalar {
+        fluid.cells[self.neck].pressure
+            + fluid.mixture_density(self.neck) * s(self.gravity) * (s(self.z_neck) - z)
+    }
+
     /// Each plenum's mixture density and share of the spider's volume on
     /// the assembly's profile.
     fn spider_cells(&self, fluid: &Fluid<'_>, y: Scalar) -> [(usize, Scalar, Scalar); 2] {
@@ -1537,6 +1615,11 @@ impl RodBlock {
         let tip_pressure = self.bore_pressure_at(bore, tip) + ann_lo.loss - clear_up;
         let top_pressure = self.column_pressure(fluid, s(self.body_top) + y);
         let end_face = s(self.body_area) * (tip_pressure - top_pressure);
+        // R4-ROD2-STEM: the stem is a constant-section cylinder from the
+        // spider top, on the column, to its top in the neck.
+        let stem_end = s(self.stem_area)
+            * (self.column_pressure(fluid, s(self.spider_bottom + self.spider_height) + y)
+                - self.neck_pressure(fluid, s(self.profile.stem_top()) + y));
         // Mixture density over the spider's height, cell by cell.
         let mut spider_density = s(0.);
         for (_, density, fraction) in self.spider_cells(fluid, y) {
@@ -1549,11 +1632,12 @@ impl RodBlock {
             }
             SpiderDrag::Omitted | SpiderDrag::Pending => s(0.),
         };
-        let net = end_face + wall + spider_buoyancy + spider_drag - s(self.mass) * g;
+        let net = end_face + stem_end + wall + spider_buoyancy + spider_drag - s(self.mass) * g;
         Ok(Forces {
             tip_pressure,
             top_pressure,
             end_face,
+            stem_end,
             wall,
             spider_buoyancy,
             spider_drag,
@@ -2181,7 +2265,7 @@ impl<P: Properties> Rods<P> for RodBlock {
     }
     fn structure(&self) -> Structure {
         let n = self.groups.len();
-        let plena = vec![self.lower, self.upper, self.main];
+        let plena = vec![self.lower, self.upper, self.main, self.neck];
         let rows = self.layout.len();
         let mut st = Structure {
             own: Vec::with_capacity(rows),
