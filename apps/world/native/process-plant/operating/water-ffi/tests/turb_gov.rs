@@ -139,9 +139,7 @@ impl Observer<Unit> for Observe {
         _: &[f64],
         side: Side,
     ) -> Result<(), String> {
-        // The grid includes its origin: the start's consistent state.
-        let start = self.credited.t.is_empty() && (t - self.origin).abs() <= 1e-9;
-        if (side != Side::Step && !start) || self.error.is_some() {
+        if side != Side::Step || self.error.is_some() {
             return Ok(());
         }
         if let Err(e) = u.residual(t, y, yp, &mut self.scratch) {
@@ -384,6 +382,12 @@ fn drive(
     {
         let mut extra: [&mut dyn Client<_>; 2] = [&mut rods, &mut rec];
         plant.start(&mut extra).unwrap_or_else(|e| panic!("{e}"));
+    }
+    // The observation grid's origin: the composed consistent start.
+    if let Some(o) = observe.as_mut() {
+        let (y0, yp0) = (plant.y.clone(), plant.yp.clone());
+        o.sample(plant.ida.system_mut(), t0, &y0, &yp0, &[], Side::Step)
+            .unwrap_or_else(|e| panic!("{e}"));
     }
     let end = t0 + d.span;
     let mut failure: Option<String> = None;
