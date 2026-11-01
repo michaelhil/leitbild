@@ -1506,6 +1506,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
         }
         let (mut pzr_x, roof) = self.pzr_state(y);
         let mut done = Vec::new();
+        let mut spray_lock = None;
         let b = &mut self.blocks;
         if let SecondaryPort::Owner(owner) = &mut b.secondary
             && directions[..ns].iter().any(|d| *d != 0)
@@ -1553,15 +1554,11 @@ impl<P: Properties + WaterProperties> Joined<P> {
             for ((i, v), s) in (o.pzr..o.cvcs).zip(&pzr_x).zip(&b.scales[4].coordinates) {
                 y[i] = v / s;
             }
-            // R4-PZR-PI (S-b): the located spray lock change, in the
-            // network's valve path.
-            if let Some(closed) = b.pzr.take_spray_lock_change() {
-                let receipt = self.network.set_spray_lock(t, closed)?;
-                done.push(super::block::Transaction {
-                    deposits: Vec::new(),
-                    receipt,
-                });
-            }
+            // R4-PZR-PI (S-b): the located spray lock change, put in the
+            // network's valve path after the inlet check's transaction
+            // below (the stem's arrival at 0 ends the valve's flow, so the
+            // check's contact root can be located at the same instant).
+            spray_lock = b.pzr.take_spray_lock_change();
         }
         // Plan r4 X4.2: the CVCS stops and AUTO withdrawals (no coordinate
         // moves).
@@ -1642,6 +1639,13 @@ impl<P: Properties + WaterProperties> Joined<P> {
                     receipt,
                 });
             }
+            if let Some(closed) = spray_lock.take() {
+                let receipt = self.network.set_spray_lock(t, closed)?;
+                done.push(super::block::Transaction {
+                    deposits: Vec::new(),
+                    receipt,
+                });
+            }
             // Every root transaction decides the port's paths, as L1 decides
             // all of its own (found at the transaction or at a located root).
             let tip = [directions[check + 1], directions[check + 2]];
@@ -1656,6 +1660,11 @@ impl<P: Properties + WaterProperties> Joined<P> {
                     });
                 }
             }
+        }
+        if spray_lock.is_some() {
+            return Err(fatal(
+                "a located spray lock change without the spray path's root slots",
+            ));
         }
         Ok(done)
     }
