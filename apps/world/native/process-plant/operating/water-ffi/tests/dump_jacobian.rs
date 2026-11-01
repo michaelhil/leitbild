@@ -66,10 +66,14 @@ fn tavg_mode_partials_at_the_reactor_trip() {
     let (mut y, yp) = (from_bits(&state["y_bits"]), from_bits(&state["yp_bits"]));
     let t0 = state["t_s"].as_f64().expect("t_s");
     assert_eq!(y.len(), joined.dimension(), "state layout");
-    // The reactor trip arms the Tavg mode at the state.
-    let receipts = joined
-        .command(t0, &mut y, Command::HoldingLoss)
-        .expect("the reactor trip");
+    // The reactor trip arms the Tavg mode at the state. Only the SG owner
+    // takes it here, so the rods stay held and every other block is the
+    // state's: the whole matrix then isolates this change.
+    let receipts = vec![joined
+        .secondary_mut()
+        .expect("the SG owner")
+        .command(t0, Command::HoldingLoss)
+        .expect("the reactor trip")];
     let secondary = joined.secondary().expect("the SG owner");
     assert_eq!(secondary.reactor_trip_time(), Some(t0), "armed");
     let o = joined.offsets();
