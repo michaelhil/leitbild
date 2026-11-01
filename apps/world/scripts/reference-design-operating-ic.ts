@@ -89,6 +89,10 @@ export const parseVesselDpChannels = (text: string) => z.object({
 export const parseCoreExitChannels = (text: string) => z.object({
   supplies: z.tuple([z.string(), z.string()]), span_C: band, quantum_C: positive, sample_s: positive,
 }).strict().parse(configurationBlock(text, 'ld01-core-exit-channels'))
+// PROC T5 (lead ruling 1 Nov): the DC groups' reports, each on its own group.
+export const parseDcReports = (text: string) => z.object({
+  groups: z.array(z.string().regex(/^LD01\.DC\./)).min(1), sample_s: positive, transport_s: positive,
+}).strict().parse(configurationBlock(text, 'ld01-dc-reports'))
 // PROC T1–T3 (lead ruling 1 Nov): the AC routing's state reports.
 export const parseElectricalReports = (text: string) => z.object({
   buses: z.array(z.string()).min(1), sources: z.tuple([z.literal('UNIT'), z.literal('RESERVE')]),
@@ -250,13 +254,46 @@ function electricalReports(e: ReturnType<typeof parseElectricalReports>, p: { ma
   ]
 }
 
+/** PROC T5: per DC group its output, charger and battery reports and one
+ * boolean per retained cause (lead ruling), each powered by its own group
+ * ("A local DC panel indicator requires the group it observes"). */
+function dcReports(b: ReturnType<typeof parseDcReports>, p: { maximum_age_s: number, recovery_s: number }) {
+  const causes = [['OVERLOAD', 'Overload'], ['INSUFFICIENT_SUPPLY', 'InsufficientSupply'], ['OUTPUT_FAILURE', 'OutputFailure']] as const
+  return b.groups.flatMap(group => {
+    const timing = { supply: group.slice('LD01.DC.'.length), sample_s: b.sample_s, transport_s: b.transport_s, maximum_age_s: p.maximum_age_s, recovery_s: p.recovery_s,
+      basis: 'ld01-dc-reports (operational-observations.md): the group\'s own supply (cited); BANK.INSERTED\'s timing and the page-wide protective age and recovery (judgement); observed only' }
+    return [
+      { id: `${group}.OUTPUT`, source: { dc_output: { group } }, ...timing },
+      { id: `${group}.CHARGER`, source: { dc_charger: { group } }, ...timing },
+      { id: `${group}.BATTERY`, source: { dc_battery: { group } }, ...timing },
+      ...causes.map(([tag, cause]) => ({ id: `${group}.CAUSE.${tag}`, source: { dc_cause: { group, cause } }, ...timing })),
+    ]
+  })
+}
+/** PROC T5's engineering values (lead ruling: labelled, for a person's judgement; no criterion reads them). */
+function dcEngineering(b: ReturnType<typeof parseDcReports>) {
+  return b.groups.flatMap(group => [
+    { id: `${group}.LOAD.REQUESTED`, group, field: 'requested_w', unit: 'W', label: 'present requested duty (indication; no span selected)' },
+    { id: `${group}.LOAD.DELIVERED`, group, field: 'delivered_w', unit: 'W', label: 'present delivered duty (indication; no span selected)' },
+    { id: `${group}.ENERGY`, group, field: 'energy_j', unit: 'J', label: 'estimate: usable stored energy (dc-storage.md)' },
+    { id: `${group}.DEPLETION`, group, field: 'depletion_s', unit: 's', label: 'estimate: time at which the usable energy reaches its limit at the present duty, only while discharging (dc-storage.md)' },
+  ])
+}
+
 /** Compile the `ic` section from page texts keyed as `OPERATING_IC_PAGES`
  * and the joined packet. */
 /** The compile's explicit governor declaration (lead 1 Nov): ADM.POS is
  * compiled only when it is declared; composition refuses a mismatch. */
 export type GovernorDeclaration = { declared: boolean, basis: string }
-export function compileOperatingIcFrom(texts: Pages, packetValue: unknown, governor: GovernorDeclaration) {
-  if (typeof governor?.declared !== 'boolean' || !governor.basis) throw Error('The IC compile needs an explicit governor declaration')
+/** The compile's explicit declarations of the per-run compositions: the
+ * governor (ADM.POS) and the report-only DC groups (PROC T5). */
+export type Declarations = { governor: GovernorDeclaration, dc: GovernorDeclaration }
+export function compileOperatingIcFrom(texts: Pages, packetValue: unknown, declarations: Declarations) {
+  for (const k of ['governor', 'dc'] as const) {
+    const d = declarations?.[k]
+    if (typeof d?.declared !== 'boolean' || !d.basis) throw Error(`The IC compile needs an explicit ${k} declaration`)
+  }
+  const { governor, dc } = declarations
   const packet: Packet = packetSchema.parse(packetValue)
   const channel = parsePressureChannel(texts['systems/instrumentation/operational-observations.md'])
   const protection = parsePressureProtection(texts['safety/source-and-primary-protection.md'])
@@ -290,6 +327,7 @@ export function compileOperatingIcFrom(texts: Pages, packetValue: unknown, gover
   const sgPressure = parseSgNormalPressureChannel(texts['systems/steam-generation/instrumentation.md'])
   const sgFlows = parseSgFlowChannels(texts['systems/instrumentation/operational-observations.md'])
   const elec = parseElectricalReports(texts['systems/instrumentation/operational-observations.md'])
+  const dcBlock = parseDcReports(texts['systems/instrumentation/operational-observations.md'])
   const dpChannels = parseVesselDpChannels(texts['systems/instrumentation/core-inventory-observation.md'])
   const inventory = parseCoreInventory(texts['systems/instrumentation/core-inventory-observation.md'])
   const cetChannels = parseCoreExitChannels(texts['systems/instrumentation/phase-dependent-measurements.md'])
@@ -313,7 +351,8 @@ export function compileOperatingIcFrom(texts: Pages, packetValue: unknown, gover
     ['low-2 level', cmt.low2Qualification_s], ['high-3 PRHR timer', prhrActuation.high3Timer_s],
     ['bank sampling', bank.sample_s], ['bank transport', bank.transport_s],
     ['valve sampling', valves.sample_s], ['valve transport', valves.transport_s], ['CET sampling', cetChannels.sample_s],
-    ['electrical report sampling', elec.sample_s], ['electrical report transport', elec.transport_s]] as const) wholeFrames(name, v, frame_s)
+    ['electrical report sampling', elec.sample_s], ['electrical report transport', elec.transport_s],
+    ['DC report sampling', dcBlock.sample_s], ['DC report transport', dcBlock.transport_s]] as const) wholeFrames(name, v, frame_s)
   if (inventory.gravity_m_s2 !== 9.80665) throw Error('reference-core-inventory gravity is not the network\'s 9.80665 m/s2')
   // R12-D2: the chain reproduces AP1000's total delay exactly.
   if (Math.abs(underspeed.speedLag_s + channel.sample_s + channel.transport_s + underspeed.qualification_s - underspeed.totalDelay_s) > 1e-12)
@@ -576,7 +615,7 @@ export function compileOperatingIcFrom(texts: Pages, packetValue: unknown, gover
       id: 'LD01.CORE.BANK.INSERTED', source: 'bank_inserted', supply: bank.inserted.supply,
       sample_s: bank.sample_s, transport_s: bank.transport_s, maximum_age_s: protection.maximum_age_s, recovery_s: protection.recovery_s,
       basis: 'ld01-bank-channels (operational-observations.md); the page-wide protective age and recovery; observed only',
-    }] : []), ...electricalReports(elec, protection)],
+    }] : []), ...electricalReports(elec, protection), ...(dc.declared ? dcReports(dcBlock, protection) : [])],
     functions,
     monitors: pzrLevel.monitors,
     holding: {
@@ -587,6 +626,8 @@ export function compileOperatingIcFrom(texts: Pages, packetValue: unknown, gover
       basis: 'ld01-reactor-trip-turbine-trip (protection-and-command-precedence.md, R12-A2): LD01.TRIP.HOLD loss requests LD01.TG TRIP after delay_s; AP1000 DCD Rev. 19 Tier 2 15.0.14' },
     ...(sourceRange ? { source_range: sourceRange } : {}),
     governor,
+    dc,
+    engineering: dc.declared ? dcEngineering(dcBlock) : [],
     missing: sourceRange ? OPEN_ITEMS : [...OPEN_ITEMS, { item: 'LD01.CORE.NI.SHUTDOWN regional Rref',
       note: 'ld01-source-range-pulse rrefEventsPerS is open: the regional collected-event intensity at the original reference field (NUC); no SOURCE path is compiled until it is filled' }],
     provenance: [{ pt1_tap_elevation_m: pt1.elevation_m, pt1_reads: 'the stratified cell roof pressure (operational-observations.md)',
@@ -598,22 +639,23 @@ export function compileOperatingIcFrom(texts: Pages, packetValue: unknown, gover
 
 /** Read the owners' pages from the wiki root and the joined packet, and
  * return the section with page and packet provenance appended. */
-export async function compileOperatingIc(wikiRoot: string, packetPath: string, governor: GovernorDeclaration) {
+export async function compileOperatingIc(wikiRoot: string, packetPath: string, declarations: Declarations) {
   const root = join(wikiRoot, 'world/packs/process-plant/reference-designs/ld-01')
   const texts = Object.fromEntries(await Promise.all(OPERATING_IC_PAGES.map(async page =>
     [page, await Bun.file(join(root, page)).text()] as const))) as Record<Page, string>
   const packetText = await Bun.file(packetPath).text()
-  const section = compileOperatingIcFrom(texts, JSON.parse(packetText), governor)
+  const section = compileOperatingIcFrom(texts, JSON.parse(packetText), declarations)
   return { ...section, provenance: [...section.provenance,
     ...OPERATING_IC_PAGES.map(name => ({ name, sha256: createHash('sha256').update(texts[name]).digest('hex') })),
     { packet: packetPath, sha256: createHash('sha256').update(packetText).digest('hex') }] }
 }
 
 if (import.meta.main) {
-  const [wiki, packet, flag, value, ...rest] = Bun.argv.slice(2)
-  if (!wiki || !packet || flag !== '--governor' || (value !== 'declared' && value !== 'undeclared') || rest.length)
-    throw Error('Usage: reference-design-operating-ic <wiki root> <joined packet> --governor declared|undeclared')
-  const governor = { declared: value === 'declared',
-    basis: value === 'declared' ? 'declared at compile (--governor declared): a governed run (X4.3)' : 'not declared at compile (--governor undeclared): an ungoverned run' }
-  console.log(JSON.stringify(await compileOperatingIc(wiki, packet, governor), null, 1))
+  const [wiki, packet, f1, v1, f2, v2, ...rest] = Bun.argv.slice(2)
+  const ok = (v?: string) => v === 'declared' || v === 'undeclared'
+  if (!wiki || !packet || f1 !== '--governor' || !ok(v1) || f2 !== '--dc' || !ok(v2) || rest.length)
+    throw Error('Usage: reference-design-operating-ic <wiki root> <joined packet> --governor declared|undeclared --dc declared|undeclared')
+  const decl = (flag: string, v: string, what: string) => ({ declared: v === 'declared', basis: `${v} at compile (${flag} ${v}): ${v === 'declared' ? 'a run composing ' : 'a run without '}${what}` })
+  console.log(JSON.stringify(await compileOperatingIc(wiki, packet,
+    { governor: decl('--governor', v1!, 'the governor (X4.3)'), dc: decl('--dc', v2!, 'the DC groups (PROC T5)') }), null, 1))
 }

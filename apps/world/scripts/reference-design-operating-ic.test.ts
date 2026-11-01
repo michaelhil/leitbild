@@ -19,7 +19,7 @@ const cmtBlock = '{"sPressure_Pa":12477415,"sQualification_s":0.5,"low2Level_m":
 const interlock = '{"cause":"LD01.TG.REACTOR_TRIP","delay_s":5,"initiation":"LD01.TRIP.HOLD loss"}'
 const bankChannels = '{"position":{"lag_s":0.1,"span":[0,1],"quantum":null,"supply":"I1"},"inserted":{"supply":"I1"},"sample_s":0.1,"transport_s":0.1}'
 const valveChannels = '{"lag_s":0.1,"span_percent":[0,100],"quantum_percent":1,"sample_s":0.1,"transport_s":0.1,"supply":"I1","compiled":["LD01.TG.STOP.POS","LD01.TG.ADM.POS"]}'
-const ungoverned = { declared: false, basis: 'test: ungoverned' }
+const ungoverned = { governor: { declared: false, basis: 'test: ungoverned' }, dc: { declared: false, basis: 'test: no DC' } }
 const observationWindow = '{"window_s":60,"alpha":0.01,"theta":0.1,"minimumExcessCount":400,"backgroundRange_s":[0,2],"deadtime_s":0.000001,"maximumOccupancy":0.1,"sample_s":0.1,"noiseBound_A":0.000000000001,"commissionOffsetBound_A":0.000000000001,"saturation_A":0.01}'
 const sourcePulse = '{"rrefEventsPerS":null,"darkPerS":1,"supply":"I2","seed":1,"maximumAge_s":60.2}'
 const sgPressureBlock = '{"lag_s":0.2,"span_Pa":[0,10000000],"quantum_Pa":1000}'
@@ -30,6 +30,7 @@ const inventoryBlock = '{"coreBottom_m":-2,"coreTop_m":2,"headTop_m":4,"coreArea
 const cetBasisBlock = '{"diameter_m":0.003,"length_m":0.03,"density_kg_m3":8000,"heatCapacity_J_kgK":500,"conductivity_W_mK":15,"leadDiameter_m":0.0002,'
   + '"leadLength_m":0.1,"liquidFilm_W_m2K":1000,"gasFilm_W_m2K":30,"effectiveRadiationFactor":0.03,"minimumBody_C":20,"maximumBody_C":800}'
 const cetBlock = '{"supplies":["I1","I2"],"span_C":[0,800],"quantum_C":0.1,"sample_s":0.1}'
+const dcBlock = '{"groups":["LD01.DC.I1","LD01.DC.I2","LD01.DC.I3","LD01.DC.ACT.A","LD01.DC.ACT.B"],"sample_s":0.1,"transport_s":0.1}'
 const elecBlock = '{"buses":["AC.A","AC.B"],"sources":["UNIT","RESERVE"],"supply":"I1","sample_s":0.1,"transport_s":0.1}'
 const dpBlock = '{"coreSpan_Pa":[-50000,250000],"upperSpan_Pa":[-25000,50000],"supplies":["I1","I2"]}'
 const taps = '### PZR electronic differential level\n\n' + fence('ld01-pzr-taps', '{"pt1Elevation_m":18.5,"ltLowElevation_m":6.5,"ltHighElevation_m":18.5}')
@@ -39,7 +40,7 @@ const pages = (over: Partial<Record<(typeof OPERATING_IC_PAGES)[number], string>
   'systems/instrumentation/operational-observations.md': fence('reference-pzr-pressure-channel', channel)
     + fence('ld01-loop-flow-channel', flowChannel) + fence('ld01-power-proxy-protective-paths', proxyPaths)
     + fence('ld01-bank-channels', bankChannels) + fence('ld01-steam-valve-position-channels', valveChannels)
-    + fence('ld01-sg-flow-channels', sgFlowBlock) + fence('ld01-electrical-reports', elecBlock),
+    + fence('ld01-sg-flow-channels', sgFlowBlock) + fence('ld01-electrical-reports', elecBlock) + fence('ld01-dc-reports', dcBlock),
   'systems/instrumentation/phase-dependent-measurements.md': taps + fence('ld01-pzr-level-channels', levelChannelsBlock)
     + fence('reference-cet-basis', cetBasisBlock) + fence('ld01-core-exit-channels', cetBlock),
   'safety/reactor-trip-and-hold.md': fence('ld01-s2-holding-circuit', '{"turbineTripToOpening_s":0.2}')
@@ -262,12 +263,28 @@ test('PROC T1–T3: the AC routing reports, one per bus, per source (available, 
 
 test('LD01.TG.ADM.POS only when the compile declares the governor, recorded in the section; no default', () => {
   const plain = compileOperatingIcFrom(pages(), packet, ungoverned)
-  expect(plain.governor).toEqual(ungoverned)
+  expect(plain.governor).toEqual(ungoverned.governor)
   expect(plain.families.map(f => f.id)).not.toContain('LD01.TG.ADM.POS')
-  const governed = compileOperatingIcFrom(pages(), packet, { declared: true, basis: 'test: governed' })
+  const governed = compileOperatingIcFrom(pages(), packet, { ...ungoverned, governor: { declared: true, basis: 'test: governed' } })
   const adm = governed.families.find(f => f.id === 'LD01.TG.ADM.POS')!
   expect(adm.quantity).toBe('admission_position')
   expect(adm.channel).toMatchObject({ lag_s: 0.1, min: 0, max: 100, quantum: 1 })
   expect(adm.channels).toEqual([{ id: 'LD01.TG.ADM.POS', supply: 'I1' }])
   expect(() => compileOperatingIcFrom(pages(), packet, undefined as never)).toThrow('explicit governor declaration')
+  expect(() => compileOperatingIcFrom(pages(), packet, { governor: ungoverned.governor } as never)).toThrow('explicit dc declaration')
+})
+
+test('PROC T5: with the DC declared, per group output, charger, battery and one boolean per cause on its own supply, and the labelled engineering values', () => {
+  const plain = compileOperatingIcFrom(pages(), packet, ungoverned)
+  expect(plain.reports.some(r => r.id.startsWith('LD01.DC.'))).toBe(false)
+  expect(plain.engineering).toEqual([])
+  const s = compileOperatingIcFrom(pages(), packet, { ...ungoverned, dc: { declared: true, basis: 'test: DC' } })
+  const dc = s.reports.filter(r => r.id.startsWith('LD01.DC.'))
+  expect(dc).toHaveLength(30)
+  expect(dc.slice(0, 6).map(r => r.id)).toEqual(['LD01.DC.I1.OUTPUT', 'LD01.DC.I1.CHARGER', 'LD01.DC.I1.BATTERY', 'LD01.DC.I1.CAUSE.OVERLOAD',
+    'LD01.DC.I1.CAUSE.INSUFFICIENT_SUPPLY', 'LD01.DC.I1.CAUSE.OUTPUT_FAILURE'])
+  expect(dc.find(r => r.id === 'LD01.DC.ACT.B.CAUSE.OUTPUT_FAILURE')).toMatchObject({ source: { dc_cause: { group: 'LD01.DC.ACT.B', cause: 'OutputFailure' } }, supply: 'ACT.B' })
+  expect(s.engineering).toHaveLength(20)
+  expect(s.engineering[3]).toMatchObject({ id: 'LD01.DC.I1.DEPLETION', field: 'depletion_s', unit: 's' })
+  expect(s.dc).toEqual({ declared: true, basis: 'test: DC' })
 })

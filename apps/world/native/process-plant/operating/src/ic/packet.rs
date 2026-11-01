@@ -33,6 +33,12 @@ pub struct Section {
     /// Whether the compile declared the governor (`LD01.TG.ADM.POS` is
     /// compiled only then); composition refuses a mismatch either way.
     pub governor: GovernorDeclaration,
+    /// Whether the compile declared the DC groups (PROC T5's reports are
+    /// compiled only then); composition refuses a mismatch either way.
+    pub dc: GovernorDeclaration,
+    /// PROC T5's engineering values (labelled estimates, for a person's
+    /// judgement; no criterion reads them), read from the DC groups' copy.
+    pub engineering: Vec<EngineeringSpec>,
     /// Needed values without a strict block (compiler's list; not consumed).
     pub missing: Vec<Value>,
     pub provenance: Vec<Value>,
@@ -280,13 +286,49 @@ pub enum ReportSource {
         bus: String,
         source: ElectricalSource,
     },
+    /// PROC T5 (ld01-dc-reports): DC group `group`'s output available.
+    DcOutput { group: String },
+    /// PROC T5: its charger delivering.
+    DcCharger { group: String },
+    /// PROC T5: its battery path available.
+    DcBattery { group: String },
+    /// PROC T5: its retained opening cause is `cause`.
+    DcCause { group: String, cause: DcCause },
+}
+/// A DC group's retained opening cause, as the DC owner names it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, serde::Serialize)]
+pub enum DcCause {
+    Overload,
+    InsufficientSupply,
+    OutputFailure,
+}
+/// One PROC T5 engineering value: `group`'s report field `field`
+/// (requested_w, delivered_w, energy_j, depletion_s), labelled.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EngineeringSpec {
+    pub id: String,
+    pub group: String,
+    pub field: String,
+    pub unit: String,
+    pub label: String,
 }
 impl ReportSource {
-    /// Read from the electrical routing's reports.
+    /// Read from an electrical owner (the AC routing or the DC groups).
     pub fn electrical(&self) -> bool {
         !matches!(
             self,
             ReportSource::TurbineRetainedTrip | ReportSource::BankInserted
+        )
+    }
+    /// Read from the DC groups.
+    pub fn dc(&self) -> bool {
+        matches!(
+            self,
+            ReportSource::DcOutput { .. }
+                | ReportSource::DcCharger { .. }
+                | ReportSource::DcBattery { .. }
+                | ReportSource::DcCause { .. }
         )
     }
 }
