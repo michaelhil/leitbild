@@ -55,6 +55,7 @@ struct Basis {
     state: String,
     sha256: String,
     case: String,
+    #[serde(rename = "afterZero_s")]
     after_zero_s: f64,
 }
 
