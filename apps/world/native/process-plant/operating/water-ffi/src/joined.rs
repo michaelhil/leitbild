@@ -1560,6 +1560,12 @@ mod integrated {
         fn admission_probe(&self, _t: f64) -> Option<(usize, Vec<(usize, f64)>)> {
             None
         }
+        /// PROC T1–T3 hook (lane PHYS2, for the IC client): the electrical
+        /// routing's reports at its processed time, when an appended owner
+        /// routes AC. The default routes none.
+        fn routing_reports(&self) -> Option<leitbild_operating_plant::electrical::bus::Reports> {
+            None
+        }
         /// The appended owners' earliest due time strictly after `t`.
         fn appended_next_event(&self, _t: f64) -> Option<f64> {
             None

@@ -109,7 +109,7 @@ impl<J: JoinedSystem> Plant<J> {
             &y[..n],
             &reference,
         )
-        .and_then(|p| p.with_system_dimension(y.len()))?;
+        .and_then(|p| p.with_system(ida.system(), y.len()))?;
         let field = config
             .field
             .map(|p| FieldClient::new(p, frame, ida.system()))
