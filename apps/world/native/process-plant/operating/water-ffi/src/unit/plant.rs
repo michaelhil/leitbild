@@ -103,13 +103,7 @@ impl<J: JoinedSystem> Plant<J> {
             receipt,
             reference,
         } = unit;
-        let protection = ProtectionClient::new(
-            section,
-            &ida.system().integrated().joined,
-            &y[..n],
-            &reference,
-        )
-        .and_then(|p| p.with_system(ida.system(), y.len()))?;
+        let protection = ProtectionClient::for_system(section, ida.system(), &y, &reference, t0)?;
         let field = config
             .field
             .map(|p| FieldClient::new(p, frame, ida.system()))
