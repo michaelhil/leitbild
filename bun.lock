@@ -88,6 +88,7 @@
         "@oicl/connector-diagram": "1.0.0",
         "@oicl/openbridge-webcomponents": "2.1.0",
         "@types/bun": "1.4.0",
+        "ajv": "8.20.0",
         "harfbuzzjs": "1.6.1",
         "polygon-clipping": "0.15.7",
         "subset-font": "2.9.0",

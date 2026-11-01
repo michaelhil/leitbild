@@ -20,11 +20,12 @@ import { readProductRevision } from '@leitbild/knowledge/source'
 import { resolve } from 'node:path'
 import { conversationReadInputSchema } from '../tools/built-in/conversation-read.ts'
 import { createModelEvidenceStore, executionStageEvent } from '../core/executions/model-evidence.ts'
-import type { ExecutionCallSummary, ExecutionTurn } from '../core/executions/store.ts'
+import type { ExecutionCall, ExecutionCallSummary, ExecutionTurn } from '../core/executions/store.ts'
+import { CONTEXT_CHECKPOINT_TOOL, workingContextArchiveFailure, type WorkingContextArchive } from '../core/working-context.ts'
 
 // These built-ins were reviewed for conversation isolation, not merely reads.
 // Unrestricted web/recall/room tools are deliberately not comparison-safe.
-const supportedTools = new Set(['workspace_explore', 'workspace_call', 'conversation_read', 'product_search', 'product_read', 'pass'])
+const supportedTools = new Set(['workspace_explore', 'workspace_call', 'conversation_read', 'product_search', 'product_read', 'pass', CONTEXT_CHECKPOINT_TOOL])
 const guidance = 'This is an independent read-only retry of an earlier task against CURRENT data, not a historical simulation replay. Make your own tool choices. You cannot change the simulation or Workspace. Conversation evidence ends before the original task. Do not claim actions were performed. Explain material missing evidence. Other models and their answers are not available.'
 const safeId = (id: string) => { if (!/^[a-zA-Z0-9_-]+$/.test(id)) throw new Error('Invalid comparison identifier'); return id }
 
@@ -34,7 +35,7 @@ interface StartingInput extends Omit<AgentTurnStart, 'context'> {
   readonly sourceRevision: string
   readonly boundary: NonNullable<ToolContext['comparison']>
 }
-interface CallEvidence { id: string; tool: string; arguments: unknown; startedAt: number; result?: ToolResult; completedAt?: number }
+interface CallEvidence { id: string; tool: string; arguments: unknown; providerCallId?: string; startedAt: number; result?: ToolResult; completedAt?: number }
 export interface Comparison {
   id: string; model: string; status: 'running'|'completed'|'failed'|'interrupted'; startedAt: number
   finishedAt?: number; content?: string; error?: string; metrics?: LLMCallMetrics
@@ -200,7 +201,7 @@ export const createComparisons = (deps: Dependencies) => {
     const provider = deps.llm.bound({source:'comparison',fallbackChain:[]})
     const info = await provider.modelInfo?.(model)
     if (!info || info.contextMax <= 0) throw new Error('Model context capacity is unavailable')
-    if (source.context.messages.some(m=>m.images?.length) && !modelSupportsImages(model)) throw new Error('Selected model cannot consume the captured images')
+    if (source.context.messages.some(m=>m.images?.length) && !modelSupportsImages(model, info)) throw new Error('Selected model cannot consume the captured images')
     if (source.context.messages.some(m=>m.continuation)) throw new Error('Starting input contains model-specific continuation; cross-model task replay is unavailable')
     const tools = source.toolDefinitions.filter(t=>supportedTools.has(t.function.name))
     const systemBlocks = [...(source.context.systemBlocks ?? source.context.messages.filter(m=>m.role==='system').map(m=>({text:m.content,cacheable:true}))),{text:guidance,cacheable:false}]
@@ -226,7 +227,7 @@ export const createComparisons = (deps: Dependencies) => {
         let stages = Promise.resolve()
         const onEvent: NonNullable<EvalOptions['onEvent']> = event => {
           const stage = executionStageEvent(event)
-          if (!stage) return
+          if (!stage || event.kind === 'context_checkpoint') return // Checkpoints await durable admission before prompt projection.
           const at = Date.now()
           stages = stages.then(() => retainModel(Buffer.byteLength(JSON.stringify(stage)) + 1024, () => modelEvidence.stage(alternative.id, stage, at)))
           void stages.catch(error => { if (records.get(key) === record) console.error('[comparisons] Could not retain model stage:', error) })
@@ -254,27 +255,66 @@ export const createComparisons = (deps: Dependencies) => {
           llmStream:request=>streamLLM(nestedProvider,{...request,...nestedSettings}),
         }
         const executor = createToolExecutor(deps.registry,tools.map(t=>t.function.name),context,id=>deps.rooms.getRoom(id),()=>source.focusedSubjects,undefined,undefined,deps.runOperation)
-        const tracked:typeof executor = async (calls,trigger,signal,turn) => {
+        const assertActive = () => {
+          controller.signal.throwIfAborted()
+          assertSource()
+          if (alternative.status !== 'running') throw workingContextArchiveFailure('comparison is no longer running')
+        }
+        // This message-owned experiment already archives exact outcomes and
+        // model stages. Keep its working-context admission in that same owner,
+        // never in the original Agent's normal execution history.
+        const workingContext: WorkingContextArchive = { roomId, turnId: alternative.id,
+          readCall: callId => {
+            assertActive()
+            const call = alternative.calls.find(entry => entry.id === callId)
+            return call === undefined ? undefined : { ...call, argumentBytes: Buffer.byteLength(JSON.stringify(call.arguments)),
+              ...(call.result === undefined ? {} : { resultBytes: Buffer.byteLength(JSON.stringify(call.result)) }) } satisfies ExecutionCall
+          },
+          commit: async manifest => {
+            await stages
+            assertActive()
+            await retainModel(Buffer.byteLength(JSON.stringify(manifest)) + 1024, () => {
+              assertActive()
+              modelEvidence.stage(alternative.id, { kind: 'context_checkpoint', manifest })
+            })
+            assertActive()
+          },
+        }
+        const tracked:typeof executor = async (calls,trigger,signal,turn,controls) => {
           if (!deps.rooms.getRoom(roomId)?.hasMember(source.agentId)) throw new Error('Comparison access changed: Agent removed from Room')
           const results:ToolResult[]=[]
+          const mixedCheckpoint = calls.length !== 1 && calls.some(call => call.tool === CONTEXT_CHECKPOINT_TOOL)
           for (const call of calls) {
             signal?.throwIfAborted()
-            const evidence:CallEvidence = {id:call.callId ?? randomUUID(),tool:call.tool,arguments:call.arguments,startedAt:Date.now()}
+            const evidence:CallEvidence = {id:call.callId ?? randomUUID(),tool:call.tool,arguments:call.arguments,...(call.providerCallId === undefined ? {} : {providerCallId:call.providerCallId}),startedAt:Date.now()}
             alternative.calls.push(evidence)
             await persist(record, alternative)
             let result:ToolResult
             const ownRead=call.tool==='conversation_read' && call.arguments.turnId===alternative.id
             const parsedOwn=ownRead?conversationReadInputSchema.safeParse(call.arguments):undefined
-            if(ownRead && (!tools.some(t=>t.function.name==='conversation_read') || !parsedOwn?.success || call.arguments.messageId || call.arguments.callIndex!==undefined)) {
+            if(mixedCheckpoint) {
+              result={success:false,error:'context_checkpoint_requires_own_response: no calls in this mixed group were dispatched; context is unchanged'}
+            } else if(ownRead && (!tools.some(t=>t.function.name==='conversation_read') || !parsedOwn?.success || call.arguments.messageId || call.arguments.callIndex!==undefined)) {
               result={success:false,error:'Invalid or unavailable conversation_read request'}
             } else if(ownRead) {
               const own=alternative.calls.find(c=>c.id===call.arguments.toolCallId)
-              result=call.arguments.toolCallId
-                ? own ? {success:true,data:{evidenceKind:'execution',turnId:alternative.id,toolCallId:own.id,...(call.arguments.part==='result'?{result:own.result ?? {success:false,error:'Outcome not yet available'}}:{arguments:own.arguments})}} : {success:false,error:'Comparison call not found'}
-                : {success:true,data:{evidenceKind:'execution',turn:{id:alternative.id,status:alternative.status},calls:alternative.calls.map(c=>({toolCallId:c.id,tool:c.tool,startedAt:c.startedAt,completedAt:c.completedAt}))}}
+              if (!call.arguments.toolCallId) {
+                result={success:true,data:{evidenceKind:'execution',turn:{id:alternative.id,status:alternative.status},calls:alternative.calls.map(c=>({toolCallId:c.id,tool:c.tool,startedAt:c.startedAt,completedAt:c.completedAt}))}}
+              } else if (!own) {
+                result={success:false,error:'Comparison call not found'}
+              } else if (call.arguments.part==='result' && own.result===undefined) {
+                result={success:false,error:'conversation_outcome_unknown: no durable outcome; inspect current state before retrying',data:{evidenceKind:'execution',turn:{id:alternative.id,status:alternative.status},toolCallId:own.id}}
+              } else {
+                result={success:true,data:{evidenceKind:'execution',turnId:alternative.id,toolCallId:own.id,...(call.arguments.part==='result'?{result:own.result}:{arguments:own.arguments})}}
+              }
             } else {
-              result=(await executor([call],trigger,signal,turn))[0]!
+              result=(await executor([call],trigger,signal,turn,controls))[0]!
               if(call.tool==='conversation_read' && result.success && result.data && typeof result.data==='object') result={...result,data:{...result.data,ownExecutionTurnId:alternative.id}}
+            }
+            const kind = deps.registry.getEntry(call.tool)?.tool.contextEffect ?? 'unknown'
+            result={...result,
+              effects:result.effects ?? [{kind,outcome:mixedCheckpoint || !tools.some(tool=>tool.function.name===call.tool) ? 'not-dispatched' : !result.success && kind !== 'read' ? 'unknown' : 'returned'}],
+              recall:{turnId:alternative.id,toolCallId:evidence.id,part:'result'},
             }
             evidence.result=result;evidence.completedAt=Date.now()
             await persist(record, alternative)
@@ -282,7 +322,7 @@ export const createComparisons = (deps: Dependencies) => {
           }
           return results
         }
-        const result=await evaluate({...source.context,messages,systemBlocks,tokenBudget,flushInfo:{ids:new Set(),triggerRoomId:roomId}},config,provider,tracked,undefined,roomId,{executionTurnId:alternative.id,toolDefinitions:tools,signal:controller.signal,onEvent,modelObserver,...(source.requireView?{requireView:true}:{})})
+        const result=await evaluate({...source.context,messages,systemBlocks,tokenBudget,flushInfo:{ids:new Set(),triggerRoomId:roomId}},config,provider,tracked,undefined,roomId,{executionTurnId:alternative.id,toolDefinitions:tools,signal:controller.signal,onEvent,modelObserver,workingContext,...(source.requireView?{requireView:true}:{})})
         await stages
         const response=result.decision.response
         if(response.action==='respond') alternative.content=response.content

@@ -5,6 +5,8 @@ export interface ModelInfo {
   readonly contextMax: number // 0 = unknown, never unlimited
   readonly source: string
   readonly maxOutputTokens?: number
+  /** Provider-advertised input modalities. Omitted means unknown, not text-only. */
+  readonly inputModalities?: ReadonlyArray<string>
   readonly supportedParameters?: ReadonlyArray<string>
   readonly reasoning?: {
     /** Omitted = no advertised selector; null = all gateway effort values. */
