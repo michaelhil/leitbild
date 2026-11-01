@@ -621,10 +621,7 @@ mod tests {
     /// at the interval end; a negative lag is still refused.
     #[test]
     fn a_zero_lag_channel_reads_the_quantity_itself() {
-        let config = AnalogConfig {
-            lag_s: 0.,
-            ..pt()
-        };
+        let config = AnalogConfig { lag_s: 0., ..pt() };
         let mut a = Analog::new("FT", "I1", config, 0.1, 1.).unwrap();
         // q(s) = 1 + 0.5 s - 3 s^2 over 0.2 s.
         a.advance(0.2, &[1., 0.5, -6.]).unwrap();

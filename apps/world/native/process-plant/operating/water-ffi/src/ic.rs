@@ -265,13 +265,12 @@ impl Observation {
                 })
                 .collect(),
             Observation::PzrLevel { base, scales, .. } => (*base..base + scales.len()).collect(),
-            Observation::CvcsFlow {
-                stem, pressure, ..
-            } => vec![stem.0, pressure.0],
+            Observation::CvcsFlow { stem, pressure, .. } => vec![stem.0, pressure.0],
             Observation::StopPosition { .. } => Vec::new(),
-            Observation::Liquid { cells, .. } => {
-                cells.iter().flat_map(|c| c.iter().map(|(i, _)| *i)).collect()
-            }
+            Observation::Liquid { cells, .. } => cells
+                .iter()
+                .flat_map(|c| c.iter().map(|(i, _)| *i))
+                .collect(),
         }
     }
 }
@@ -683,10 +682,9 @@ impl ProtectionClient {
                         SgFlow::Steam => format!("FW.{sg}.FT.STEAM.lag"),
                         SgFlow::Feed => format!("FW.{sg}.FW.FT.lag"),
                     };
-                    let i = labels
-                        .iter()
-                        .position(|l| *l == label)
-                        .ok_or_else(|| format!("no coordinate {label} (the joined packet composes no feed train)"))?;
+                    let i = labels.iter().position(|l| *l == label).ok_or_else(|| {
+                        format!("no coordinate {label} (the joined packet composes no feed train)")
+                    })?;
                     if !(nominal_kg_s.is_finite() && *nominal_kg_s > 0.) {
                         return Err(format!("{}: nominal flow {nominal_kg_s} kg/s", f.id));
                     }
@@ -737,7 +735,7 @@ impl ProtectionClient {
                     upper_m,
                 } => {
                     let cell = liquid_cell(net, &scales, *region, region_id)?;
-                    if !(upper_m > lower_m) {
+                    if !((upper_m - lower_m).is_finite() && upper_m - lower_m > 0.) {
                         return Err(format!("{}: interfaces {lower_m} and {upper_m} m", f.id));
                     }
                     references.insert(f.id.clone(), json!({"region": region_id, "interfaces_m": [lower_m, upper_m],
@@ -751,8 +749,14 @@ impl ProtectionClient {
                     }
                 }
                 Quantity::CoreExitTemperature { cells, body_c } => {
-                    if cells.is_empty() || !(body_c[1] > body_c[0]) {
-                        return Err(format!("{}: {} cells, body {body_c:?} °C", f.id, cells.len()));
+                    if cells.is_empty()
+                        || !((body_c[1] - body_c[0]).is_finite() && body_c[1] - body_c[0] > 0.)
+                    {
+                        return Err(format!(
+                            "{}: {} cells, body {body_c:?} °C",
+                            f.id,
+                            cells.len()
+                        ));
                     }
                     let read = cells
                         .iter()
