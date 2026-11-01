@@ -30,7 +30,9 @@
 //! non-finite or non-positive result refuses. Nothing is clipped: there is
 //! no positivity constraint.
 use super::inputs::{MODEL, strict_block};
-use leitbild_operating_plant::{joined::operator::Joined, network::Properties};
+use leitbild_operating_plant::{
+    joined::operator::Joined, network::Properties, thermal::WaterProperties,
+};
 use serde_json::{Value, json};
 
 /// The page holding `ld01-source-atol`.
@@ -85,7 +87,7 @@ pub fn relative_uncertainty(wiki: &str) -> Result<(f64, Value), String> {
 
 /// Apply the derived tolerances to `atol` (scaled units, the joined
 /// layout's order) and return the receipt.
-pub fn apply<P: Properties>(
+pub fn apply<P: Properties + WaterProperties>(
     joined: &Joined<P>,
     wiki: &str,
     atol: &mut [f64],
@@ -158,7 +160,11 @@ fn strict_text(text: &str) -> Result<&str, String> {
 /// The basis values a declared state gives: every coordinate of `classes`
 /// in the joined layout, by label, physical (`y × scale`). Used once, to
 /// write the block from the named basis state.
-pub fn basis_values<P: Properties>(joined: &Joined<P>, y: &[f64], classes: &[&str]) -> Value {
+pub fn basis_values<P: Properties + WaterProperties>(
+    joined: &Joined<P>,
+    y: &[f64],
+    classes: &[&str],
+) -> Value {
     let layout = joined.nuclear().layout();
     let base = joined.offsets().nuclear;
     let mut out = serde_json::Map::new();
