@@ -243,7 +243,31 @@ fn a_restored_copy_continues_bitwise_and_the_protocol_refuses_explicitly() {
         "ADVANCE behind the unit".into(),
         json!(a.refused(ADVANCE, &t0.to_le_bytes())),
     );
-    let trip = json!({"kind": "TurbineTripAcquired", "t_apply": instant(10)});
+    // R4-DUMP (WORLD4's review 2): LD01_UNIT_HOST_COMMAND=<kind>@<exchange>
+    // names the trip before the copy point, TurbineTripAcquired or
+    // ManualReactorTrip; unset, the acquired turbine trip at exchange 10.
+    // Any other form refuses.
+    let (trip_kind, trip_at) = match std::env::var("LD01_UNIT_HOST_COMMAND") {
+        Err(_) => ("TurbineTripAcquired".to_string(), 10_u64),
+        Ok(v) => {
+            let (kind, at) = v
+                .split_once('@')
+                .unwrap_or_else(|| panic!("LD01_UNIT_HOST_COMMAND={v}: <kind>@<exchange>"));
+            assert!(
+                ["TurbineTripAcquired", "ManualReactorTrip"].contains(&kind),
+                "LD01_UNIT_HOST_COMMAND={v}: TurbineTripAcquired or ManualReactorTrip"
+            );
+            let at: u64 = at
+                .parse()
+                .unwrap_or_else(|_| panic!("LD01_UNIT_HOST_COMMAND={v}: a whole exchange"));
+            assert!(
+                at >= 1 && at < copy_at,
+                "LD01_UNIT_HOST_COMMAND={v}: the trip lies before the copy point"
+            );
+            (kind.to_string(), at)
+        }
+    };
+    let trip = json!({"kind": trip_kind, "t_apply": instant(trip_at)});
     let applied = a.json(COMMAND, &serde_json::to_vec(&trip).unwrap());
     let mut trace = Vec::new();
     let mut a_cpu = 0.;
@@ -358,7 +382,7 @@ fn a_restored_copy_continues_bitwise_and_the_protocol_refuses_explicitly() {
     let sha = |b: &[u8]| leitbild_operating_plant::digest::sha256(b);
     let receipt = json!({
         "gate": "ld01-unit bitwise copy and protocol conformance (NOT-EVIDENCE)",
-        "t0": t0, "copy_exchange": copy_at, "copy_point": instant(copy_at), "end": instant(end), "trip": applied,
+        "t0": t0, "copy_exchange": copy_at, "copy_point": instant(copy_at), "end": instant(end), "trip": applied, "trip_command": {"kind": trip_kind, "exchange": trip_at},
         "a_failed": a_failed.as_ref().map(|(k, c)| json!({"exchange": k, "t1": instant(*k), "cause": c})),
         "b_failed": b_failed.as_ref().map(|(k, c)| json!({"exchange": k, "t1": instant(*k), "cause": c})),
         "failures_identical": a_failed == b_failed,
