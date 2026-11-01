@@ -10,7 +10,7 @@
 //! - **Tavg:** per loop the mean of the HOT and COLD bulk-liquid temperature
 //!   (HOT.A.UPSTREAM / HOT.B and COLD.A / COLD.B, IF97 at each cell's
 //!   pressure and specific internal energy), the loops' mean, lagged and
-//!   rounded to its quantum;
+//!   unrounded (the continuous law, lead 1 Nov);
 //! - **turbine load:** the turbine's admitted steam (the SG owner's
 //!   admission boundary, which excludes the bypass) over its prepared value,
 //!   lagged: the main-steam-flow channel Tref reads (X4.4 (a); AP1000 reads
@@ -198,9 +198,9 @@ pub struct RodClient {
 
 impl RodClient {
     fn deliver(&self) -> Evidence {
-        let q = self.controller.law().section().tavg_quantum_k;
+        // The continuous law (lead, 1 Nov): no rounding of the Tavg input.
         Evidence {
-            tavg_k: (self.lagged[0] / q).round() * q,
+            tavg_k: self.lagged[0],
             load: self.lagged[1],
             nuclear: self.inputs[2],
             position_m: self.lagged[2],

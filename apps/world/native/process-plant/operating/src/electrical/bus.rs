@@ -182,6 +182,41 @@ pub struct Distribution {
     pub records: Vec<Record>,
 }
 
+/// PROC T1–T3 (lane TURB, 1 Nov): the routing's reportable plant state at
+/// the processed time, read-only, for the IC channels and the unit host:
+/// each bus's routed availability (and the source feeding it), each
+/// source's actual state with its qualification, and each incoming device's
+/// actual contact with whether its travel is complete.
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+pub struct Reports {
+    pub buses: Vec<BusReport>,
+    pub sources: [SourceReport; 2],
+    pub incoming: Vec<IncomingReport>,
+}
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+pub struct BusReport {
+    pub name: String,
+    pub available: bool,
+    pub fed_from: Option<Source>,
+}
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize)]
+pub struct SourceReport {
+    pub source: Source,
+    pub energized: bool,
+    pub voltage_pu: f64,
+    pub frequency_hz: f64,
+    /// The qualification (voltage and frequency within the band, held for
+    /// its qualify time).
+    pub qualified: bool,
+}
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+pub struct IncomingReport {
+    pub bus: String,
+    pub source: Source,
+    pub contact: Contact,
+    pub travel_complete: bool,
+}
+
 /// S3-D19: the routing's discrete state (sources, qualification runs,
 /// buses with their devices, transfers and control, motor contactors and
 /// dropout timers, the processed time), exact. The records are receipts,
@@ -338,6 +373,49 @@ impl Distribution {
             bus.devices[*s as usize].contact == Contact::Closed
                 && self.sources[*s as usize].energized
         })
+    }
+    /// PROC T1–T3: the reportable plant state at the processed time.
+    pub fn reports(&self) -> Reports {
+        let sources = [Source::Unit, Source::Reserve].map(|s| {
+            let st = self.sources[s as usize];
+            SourceReport {
+                source: s,
+                energized: st.energized,
+                voltage_pu: st.voltage_pu,
+                frequency_hz: st.frequency_hz,
+                qualified: self.qual[s as usize].qualified,
+            }
+        });
+        let buses = (0..self.buses.len())
+            .map(|b| {
+                let fed = self.bus_energized(b);
+                BusReport {
+                    name: self.buses[b].name.clone(),
+                    available: fed.is_some(),
+                    fed_from: fed,
+                }
+            })
+            .collect();
+        let incoming = self
+            .buses
+            .iter()
+            .flat_map(|bus| {
+                [Source::Unit, Source::Reserve].map(|s| {
+                    let d = bus.devices[s as usize];
+                    IncomingReport {
+                        bus: bus.name.clone(),
+                        source: s,
+                        contact: d.contact,
+                        travel_complete: d.travel.is_none(),
+                    }
+                })
+            })
+            .collect();
+        Reports {
+            buses,
+            sources,
+            incoming,
+        }
     }
     pub fn bus_index(&self, name: &str) -> Option<usize> {
         self.buses.iter().position(|b| b.name == name)
@@ -769,5 +847,38 @@ mod tests {
         assert!(!d.support("LD01.P.A1").unwrap().contactor_closed);
         assert!(d.lose_consumer_supply(61., "LD01.P.A1").is_err());
         assert!(d.lose_consumer_supply(61., "LD01.P.X9").is_err());
+    }
+    #[test]
+    fn the_reports_follow_the_routing() {
+        let mut d = Distribution::prepared(params(), [LIVE, LIVE], [true, true], 0.).unwrap();
+        let r = d.reports();
+        assert!(r.buses.iter().all(|b| b.available));
+        assert!(r.sources.iter().all(|s| s.energized && s.qualified));
+        assert_eq!(r.incoming.len(), 2 * r.buses.len());
+        assert!(r.incoming.iter().all(|i| i.travel_complete));
+        // The unit source dies: its report follows at once; the buses it fed
+        // are unavailable until the transfer closes the reserve.
+        d.set_source(1., Source::Unit, SourceState::DEAD).unwrap();
+        let r = d.reports();
+        assert!(!r.sources[0].energized);
+        let fed_by_unit_before: Vec<bool> = r
+            .buses
+            .iter()
+            .map(|b| b.fed_from == Some(Source::Reserve))
+            .collect();
+        while let Some(t) = d.next_event() {
+            if t > 3. {
+                break;
+            }
+            d.advance(t).unwrap();
+        }
+        let r = d.reports();
+        assert!(
+            r.buses
+                .iter()
+                .all(|b| b.available && b.fed_from == Some(Source::Reserve)),
+            "{r:?} {fed_by_unit_before:?}"
+        );
+        assert!(r.incoming.iter().all(|i| i.travel_complete));
     }
 }
