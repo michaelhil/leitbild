@@ -133,7 +133,8 @@ serve: for await (const chunk of Bun.stdin.stream()) {
       closed = true
       break serve
     }
-    if (op === 3 && unit?.fixture.advanceDelayMs !== undefined) await Bun.sleep(unit.fixture.advanceDelayMs)
+    const delayMs = op === 3 ? (unit as { fixture: Fixture } | null)?.fixture.advanceDelayMs : undefined
+    if (delayMs !== undefined) await Bun.sleep(delayMs)
     process.stdout.write(frame(0, seq, outcome))
   }
 }
