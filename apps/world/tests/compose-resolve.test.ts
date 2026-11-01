@@ -67,3 +67,14 @@ describe('compose resolution, in rule order', () => {
     expect(await resolveSubject(run, { of: { category: 'tasks', near: 'unit:one#speed', closed: false } }, 's')).toMatchObject({ code: 'unknown_name', path: 's.of.near' })
   })
 })
+
+test('equal free-name matches require owner qualification rather than choosing the first subject', async () => {
+  for (const within of [['unit:one', 'unit:two'], ['unit:two', 'unit:one'], []]) {
+    const outcome = await resolveSubject(run, 'SPD', 'views.0.signals.0', within as ObjectId[])
+    expect(outcome).toMatchObject({ code: 'unknown_name', path: 'views.0.signals.0', message: expect.stringContaining('objectId#tag-or-label'),
+      didYouMean: [{ pack: 'fixture', suggestions: expect.arrayContaining(['unit:one#speed', 'unit:two#speed']) }] })
+  }
+  expect(await resolveSubject(run, 'unit:two#SPD', 's', ['unit:one' as ObjectId, 'unit:two' as ObjectId])).toEqual({ kind: 'observable', objectId: 'unit:two', ref: 'unit:two#speed' })
+  const allowed = await resolveSubject({ ...run, denied: new Set(['unit:one']) }, 'SPD', 's', ['unit:one' as ObjectId, 'unit:two' as ObjectId])
+  expect(allowed).toEqual({ kind: 'observable', objectId: 'unit:two', ref: 'unit:two#speed' })
+})

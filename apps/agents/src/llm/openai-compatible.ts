@@ -162,6 +162,7 @@ interface OAIModelsResponse {
     id: string
     context_length?: number | null
     top_provider?: { max_completion_tokens?: number | null } | null
+    architecture?: { input_modalities?: ReadonlyArray<string> } | null
     supported_parameters?: ReadonlyArray<string>
     reasoning?: { supported_efforts?: ReadonlyArray<string> | null; mandatory?: boolean; default_effort?: string }
   }>
@@ -804,14 +805,17 @@ export const createOpenAICompatibleProvider = (config: OpenAICompatConfig): LLMP
       const capacity = Number.isSafeInteger(row.context_length) && row.context_length! > 0 ? row.context_length! : undefined
       const output = Number.isSafeInteger(row.top_provider?.max_completion_tokens) && row.top_provider!.max_completion_tokens! > 0 ? row.top_provider!.max_completion_tokens! : undefined
       const parameters = Array.isArray(row.supported_parameters) && row.supported_parameters.every(value => typeof value === 'string') ? row.supported_parameters : undefined
+      const rawModalities = row.architecture?.input_modalities
+      const modalities = Array.isArray(rawModalities) && rawModalities.every(value => typeof value === 'string' && value.length > 0) ? rawModalities : undefined
       const rawEfforts = row.reasoning?.supported_efforts
       const efforts = rawEfforts === null || (Array.isArray(rawEfforts) && rawEfforts.every(value => typeof value === 'string')) ? rawEfforts : undefined
-      if ((row.context_length != null && capacity === undefined) || (row.top_provider?.max_completion_tokens != null && output === undefined) || (row.supported_parameters !== undefined && parameters === undefined) || (rawEfforts !== undefined && efforts === undefined)) {
+      if ((row.context_length != null && capacity === undefined) || (row.top_provider?.max_completion_tokens != null && output === undefined) || (row.supported_parameters !== undefined && parameters === undefined) || (rawEfforts !== undefined && efforts === undefined) || (rawModalities !== undefined && modalities === undefined)) {
         console.warn(`[${config.name}] Invalid capability metadata for ${id}; unrecognized fields remain unknown, model availability is unchanged`)
       }
       info.set(id, {
         id, provider: config.name, contextMax: capacity ?? 0, source: `${config.name}_api`,
         ...(output != null ? { maxOutputTokens: output } : {}),
+        ...(modalities !== undefined ? { inputModalities: modalities } : {}),
         ...(parameters ? { supportedParameters: parameters } : {}),
         ...(row.reasoning ? { reasoning: {
           ...(efforts !== undefined ? { supportedEfforts: efforts } : {}),

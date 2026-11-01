@@ -168,7 +168,9 @@ test('cancelled Agent keeps completed call and unknown attempt without a message
   const turn = store.listTurns(room.profile.id)[0]!
   expect(turn.status).toBe('interrupted')
   expect(turn.messageId).toBeUndefined()
-  expect(store.getCall(room.profile.id, turn.id, 'call_0_0')?.result).toEqual(firstResult)
+  expect(store.getCall(room.profile.id, turn.id, 'call_0_0')?.result).toEqual({ ...firstResult,
+    effects: [{ kind: 'unknown', outcome: 'returned' }], recall: { turnId: turn.id, toolCallId: 'call_0_0', part: 'result' },
+  })
   expect(store.getCall(room.profile.id, turn.id, 'call_0_1')?.result).toBeUndefined()
   const reader = createConversationReadTool(rooms, store)
   const context = { callerId: agent.id, callerName: agent.name, roomId: room.profile.id }

@@ -8,12 +8,19 @@ import type {
 } from './config.ts'
 import type { CompiledPlantGraph,PlantGraphSpec } from './graph/index.ts'
 import { pwrFullPowerParameters } from './assembly/pwr-operating-point.ts'
-import type { ProcessPlantProtectionConfig } from './runtime/ic/control-protection-model.ts'
+import { processPlantIcConfigSchema, type ProcessPlantProtectionConfig } from './runtime/ic/control-protection-model.ts'
+import { resolveLd01UnitArtifact } from './engine/artifact.ts'
 import { pressurizedWaterReactorReferenceIcForGraph } from './specs/reference-ic.ts'
 
 export const processPlantPwrReferenceModelRef = 'process-plant.pwr.reference'
 export const processPlantPwrFullPowerOperatingPointRef = 'process-plant.pwr.full-power'
 export const processPlantPwrReferenceAutomationRef = 'process-plant.pwr.standard'
+/** The LD-01 unit, run by its native engine from the artifact LD01_UNIT_ARTIFACT names (engine/artifact.ts). */
+export const processPlantLd01ModelRef = 'process-plant.ld01'
+/** The unit at the S3 settled state its artifact holds. */
+export const processPlantLd01SettledOperatingPointRef = 'process-plant.ld01.s3-settled'
+/** The unit's own protection, which runs in its kernel (platform design §3 interpretation 1). */
+export const processPlantLd01KernelAutomationRef = 'process-plant.ld01.kernel'
 
 export interface ResolvedProcessPlantOperatingPoint {
   readonly parameterOverrides: Readonly<Record<string, unknown>>
@@ -64,7 +71,19 @@ export const createPwrReferencePlantDefinition = (config: {
   automation: { ref: processPlantPwrReferenceAutomationRef },
 })
 
+/**
+ * The LD-01 unit's graph, from the native artifact this World runs it on. Without a usable artifact an LD-01
+ * Plant is refused, explicitly: it never runs on the TS PWR or anything else instead.
+ */
+const resolveLd01Model = (selection: ProcessPlantModelSelection): PlantGraphSpec => {
+  if (Object.keys(selection.parameters).length > 0) throw new Error(`process plant model ${processPlantLd01ModelRef} takes no parameters: the unit is its artifact`)
+  const resolution = resolveLd01UnitArtifact()
+  if (!resolution.ok) throw new Error(`an LD-01 Plant is refused: ${resolution.reason}`)
+  return resolution.artifact.graph
+}
+
 export const resolveProcessPlantModel = (selection: ProcessPlantModelSelection): PlantGraphSpec => {
+  if (selection.ref === processPlantLd01ModelRef) return resolveLd01Model(selection)
   if (selection.ref !== processPlantPwrReferenceModelRef) {
     throw new Error(`unknown process plant model: ${selection.ref}`)
   }
@@ -76,6 +95,12 @@ export const resolveProcessPlantOperatingPoint = (
   modelRef: string,
   graph: PlantGraphSpec,
 ): ResolvedProcessPlantOperatingPoint => {
+  if (selection.ref === processPlantLd01SettledOperatingPointRef) {
+    if (modelRef !== processPlantLd01ModelRef) throw new Error(`operating point ${selection.ref} is not compatible with process plant model ${modelRef}`)
+    // The unit starts from its artifact's settled state, whole: nothing overrides a parameter or a value of it.
+    if (selection.parameterOverrides !== undefined || selection.valueOverrides !== undefined) throw new Error(`operating point ${selection.ref} takes no overrides: the unit starts from its artifact's S3 settled state`)
+    return { parameterOverrides: {}, valueOverrides: {} }
+  }
   if (selection.ref !== processPlantPwrFullPowerOperatingPointRef) {
     throw new Error(`unknown process plant operating point: ${selection.ref}`)
   }
@@ -96,6 +121,14 @@ export const resolveProcessPlantAutomation = (
   modelRef: string,
   graph: CompiledPlantGraph,
 ): ProcessPlantProtectionConfig => {
+  if (selection.ref === processPlantLd01KernelAutomationRef) {
+    if (modelRef !== processPlantLd01ModelRef) throw new Error(`automation ${selection.ref} is not compatible with process plant model ${modelRef}`)
+    // The unit's protection acts in its kernel, in exact event order with the physics. Its artifact declares the kernel's
+    // latches as alarm and trip rules that read only the kernel's latch channels: they annunciate, never decide or act.
+    const resolution = resolveLd01UnitArtifact()
+    if (!resolution.ok) throw new Error(`an LD-01 Plant is refused: ${resolution.reason}`)
+    return resolution.artifact.automation
+  }
   if (selection.ref !== processPlantPwrReferenceAutomationRef) {
     throw new Error(`unknown process plant automation: ${selection.ref}`)
   }

@@ -17,6 +17,7 @@
 // records by traceId so a single eval's events all roll up into one
 // record, and so /api/diagnostics/evals/:traceId can fetch the assembled
 // trace.
+import type { ContextCheckpointManifest } from '../working-context.ts'
 
 // Why a turn's answer was sent back to the model for one more pass
 // (evaluation.ts): the turn had to present a display and presented none; it
@@ -37,6 +38,7 @@ export type EvalEventCore =
   | { readonly kind: 'tool_result'; readonly tool: string; readonly callId: string; readonly success: boolean; readonly preview?: string }
   | { readonly kind: 'context_ready'; readonly messages: ReadonlyArray<{ readonly role: string; readonly content: string }>; readonly model: string; readonly temperature?: number; readonly toolCount: number }
   | { readonly kind: 'warning'; readonly message: string }
+  | { readonly kind: 'context_checkpoint'; readonly manifest: ContextCheckpointManifest }
   | { readonly kind: 'model_fallback'; readonly preferred: string; readonly effective: string; readonly reason: string }
   | { readonly kind: 'eval_completed'; readonly outcome: 'respond' | 'pass' | 'error' | 'cancelled' }
   // Emitted before every correction pass, with each cause and the issues the

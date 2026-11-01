@@ -31,7 +31,7 @@ test('real executor enforces selection and returns explicit input errors without
   expect(JSON.stringify(invalid)).toContain('strictly increasing')
 })
 
-test('default Assistant in a World-only Room exposes and executes nine tools, with ordinary profile inspection', async () => {
+test('default Assistant in a World-only Room exposes its tools and executes calculations, with ordinary profile inspection', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'leitbild-sample-changes-'))
   const previousHome = process.env.LEITBILD_HOME
   process.env.LEITBILD_HOME = directory
@@ -74,7 +74,7 @@ test('default Assistant in a World-only Room exposes and executes nine tools, wi
     const support = await buildToolSupport(effectiveAgentToolSelection(assistant.getConfig()), runtime.toolRegistry, assistant, runtime.llm,
       roomId => roomId === room.profile.id ? room : undefined)
     expect(support.resolveToolDefinitions!(room.profile.id)!.map(tool => tool.function.name).sort()).toEqual([
-      'conversation_read', 'pass', 'place_resolve', 'product_read', 'product_search', 'sample_changes', 'wiki_lookup', 'workspace_call', 'workspace_explore',
+      'context_checkpoint', 'conversation_read', 'pass', 'place_resolve', 'product_read', 'product_search', 'sample_changes', 'wiki_lookup', 'workspace_call', 'workspace_explore',
     ])
     const before = { messages: room.getRecent(100), scope: structuredClone(room.profile.scope), agents: runtime.team.listAgents().map(agent => agent.id) }
     const calculated = await support.toolExecutor!([{ tool: 'sample_changes', arguments: input }], room.profile.id)

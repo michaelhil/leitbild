@@ -84,6 +84,8 @@ export interface Message {
   readonly cacheCreation?: number
   readonly cacheRead?: number
   readonly cacheMiss?: number
+  readonly reportedCostUsd?: number
+  readonly costReportedCalls?: number
   readonly modelCalls?: number
   readonly contextMax?: number        // bound provider's context window for this call
   readonly provider?: string          // bound provider name (e.g. 'gemini', 'ollama')

@@ -3,8 +3,9 @@
 //! strict blocks the composition reads (`ld01-s1-gates`,
 //! `ld01-accuracy-contract`) and, for the S3 composition, the compiled
 //! sections (I&C, PZR pressure control, ELEC's packet). The environment is
-//! read here only, by the `from_env` constructors the tests and the host
-//! call; the composition itself never reads it.
+//! read here only, by the `from_env` constructors the tests call; the unit
+//! host names every path explicitly (`from_paths`), and the composition
+//! itself never reads it.
 use leitbild_operating_plant::ic::packet::Section as IcSection;
 use serde_json::Value;
 
@@ -66,6 +67,22 @@ impl Spine {
             wiki_repository: std::env::var("LD01_WIKI_REPOSITORY").ok(),
         })
     }
+    /// The same inputs at explicit paths (the unit host's LOAD).
+    pub fn from_paths(
+        packet_path: &str,
+        wiki_root: &str,
+        wiki_commit: Option<String>,
+        wiki_repository: Option<String>,
+    ) -> Result<Self, String> {
+        let packet = std::fs::read(packet_path).map_err(|e| format!("{packet_path}: {e}"))?;
+        Ok(Self {
+            packet_path: packet_path.into(),
+            packet,
+            wiki_root: wiki_root.into(),
+            wiki_commit,
+            wiki_repository,
+        })
+    }
     /// A model page of the wiki, e.g. `build-readiness.md`.
     pub fn model_page(&self, page: &str) -> String {
         format!("{}/{MODEL}/{page}", self.wiki_root)
@@ -118,6 +135,25 @@ impl Inputs {
             control_path: env("LD01_PZR_CONTROL_SECTION")?,
             control_wiki: env("LD01_PZR_CONTROL_WIKI")?,
             elec_path: env("ELEC_PACKET")?,
+        })
+    }
+    /// The same inputs at explicit paths (the unit host's LOAD).
+    pub fn from_paths(
+        spine: Spine,
+        ic_path: &str,
+        control_path: &str,
+        control_wiki: &str,
+        elec_path: &str,
+    ) -> Result<Self, String> {
+        let ic: IcSection = serde_json::from_value(read_json(ic_path)?)
+            .map_err(|e| format!("ic section {ic_path}: {e}"))?;
+        Ok(Self {
+            spine,
+            ic,
+            ic_path: ic_path.into(),
+            control_path: control_path.into(),
+            control_wiki: control_wiki.into(),
+            elec_path: elec_path.into(),
         })
     }
 }

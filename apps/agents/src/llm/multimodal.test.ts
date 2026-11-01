@@ -53,6 +53,22 @@ describe('modelSupportsImages — catalog tier', () => {
   })
 })
 
+describe('provider-advertised input modalities', () => {
+  test('new models use provider metadata without a name-list release', () => {
+    expect(modelSupportsImages('openrouter:future/new-model', { inputModalities: ['text', 'image'] })).toBe(true)
+    expect(modelSupportsImages('openrouter:deepseek/deepseek-v4.1-flash-1017', { inputModalities: ['text', 'image'] })).toBe(true)
+  })
+  test('explicit provider verdict overrides every curated and name hint', () => {
+    expect(modelSupportsImages('openrouter:gpt-6-sol', { inputModalities: ['text'] })).toBe(false)
+    expect(modelSupportsImages('openrouter:gpt-6-sol', { inputModalities: [] })).toBe(false)
+    expect(modelSupportsImages('openrouter:deepseek/deepseek-chat', { inputModalities: ['text', 'image'] })).toBe(true)
+  })
+  test('omitted modalities remain unknown and use the existing local policy', () => {
+    expect(modelSupportsImages('openrouter:future/new-model', {})).toBe(false)
+    expect(modelSupportsImages('openai:gpt-6-sol', {})).toBe(true)
+  })
+})
+
 describe('warnImageDroppedOnce', () => {
   const orig = console.warn
   let captured: string[] = []

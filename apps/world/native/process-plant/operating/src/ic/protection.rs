@@ -354,6 +354,19 @@ impl Protection {
             })
             .collect()
     }
+    /// Every state report's delivered sample: id, acquisition frame and the
+    /// reported state (WORLD's unit host reads them as channels).
+    pub fn delivered_reports(&self) -> Vec<(String, Option<(u64, bool)>)> {
+        self.reports
+            .iter()
+            .map(|r| {
+                (
+                    r.spec.id.clone(),
+                    r.channel.delivery.delivered().map(|s| (s.acquired, s.value)),
+                )
+            })
+            .collect()
+    }
     /// The input-stage status of every channel observing `quantity`, for
     /// the next acquisition (see [`Analog::input_overrange`]).
     pub fn set_input_overrange(&mut self, quantity: &Quantity, status: Option<Overrange>) {

@@ -82,22 +82,37 @@ const runOf = async (scenarioId: string, seconds: number): Promise<ViewRun> => {
 
 test('a four-unit PWR and grid default compares every owner instead of taking the first unit drawing and values', async () => {
   const subjects = ['plant:halden-1', 'plant:halden-2', 'plant:halden-3', 'plant:halden-4', 'grid:halden-four-unit']
-  const outcome = await composeVignette(run, displaySpecSchema.parse({ title: 'Whole-site comparison', question: 'How are all four units and their grid?', subjects, views: [] }))
+  for (const views of [[], [{ kind: 'values' }, { kind: 'alerts', scope: 'run' }]]) {
+    const outcome = await composeVignette(run, displaySpecSchema.parse({ title: 'Whole-site comparison', question: 'How are all four units and their grid?', subjects, views }))
+    if (!outcome.ok) throw Error(JSON.stringify(outcome.issues))
+    const refs = outcome.state.views.flatMap(view => view.kind === 'values' ? view.refs ?? [] : [])
+    for (const subject of subjects) {
+      const lead = await leadRefs(run, subject as ObjectId)
+      expect(refs).toContain(lead[0]!)
+      expect(refs.filter(ref => ref.startsWith(`${subject}#`)).length).toBeGreaterThan(0)
+    }
+    expect(outcome.rows).toBeLessThanOrEqual(40)
+    expect(outcome.state.views.some(view => view.kind === 'topology')).toBe(false)
+    if (views.length === 0) expect(outcome.card.adjusted).toContainEqual({ kind: 'scope', text: 'Topologies of 5 owners not shown; request separate views with objectId#element anchors' })
+    const view = await compileVignette(run, outcome.state)
+    const shown = view.sections.flatMap(section => section.kind === 'values' ? section.values.map(value => value.ref) : section.kind === 'grouped' ? section.lines.flatMap(line => line.values.flatMap(value => value?.ref ?? [])) : [])
+    expect(new Set(shown)).toEqual(new Set(refs))
+    const cardOwners = new Set(outcome.card.items.flatMap(item => item.subject !== undefined && 'ref' in item.subject ? item.subject.ref.split('#')[0]! : []))
+    expect(cardOwners).toEqual(new Set(subjects))
+  }
+})
+
+test('owner-qualified repeated PWR tags keep all four units beside shared grid alerts', async () => {
+  const plants = ['plant:halden-1', 'plant:halden-2', 'plant:halden-3', 'plant:halden-4']
+  const outcome = await composeVignette(run, displaySpecSchema.parse({ title: 'All four units and grid', question: 'Compare each unit’s power and electrical output with grid alarms.',
+    subjects: [...plants, 'grid:halden-four-unit'], views: [
+      { kind: 'values', signals: plants.flatMap(id => [`${id}#NIS-PR-AVG`, `${id}#GEN-MW`]) }, { kind: 'alerts', scope: 'run' },
+    ] }))
   if (!outcome.ok) throw Error(JSON.stringify(outcome.issues))
   const refs = outcome.state.views.flatMap(view => view.kind === 'values' ? view.refs ?? [] : [])
-  for (const subject of subjects) {
-    const lead = await leadRefs(run, subject as ObjectId)
-    expect(refs).toContain(lead[0]!)
-    expect(refs.filter(ref => ref.startsWith(`${subject}#`)).length).toBeGreaterThan(0)
-  }
-  expect(outcome.rows).toBeLessThanOrEqual(40)
-  expect(outcome.state.views.some(view => view.kind === 'topology')).toBe(false)
-  expect(outcome.card.adjusted).toContainEqual({ kind: 'scope', text: 'Topologies of 5 owners not shown; request separate views with objectId#element anchors' })
-  const view = await compileVignette(run, outcome.state)
-  const shown = view.sections.flatMap(section => section.kind === 'values' ? section.values.map(value => value.ref) : section.kind === 'grouped' ? section.lines.flatMap(line => line.values.flatMap(value => value?.ref ?? [])) : [])
-  expect(new Set(shown)).toEqual(new Set(refs))
-  const cardOwners = new Set(outcome.card.items.flatMap(item => item.subject !== undefined && 'ref' in item.subject ? item.subject.ref.split('#')[0]! : []))
-  expect(cardOwners).toEqual(new Set(subjects))
+  expect(refs).toEqual(plants.flatMap(id => [`${id}#core.powerRangePercent`, `${id}#turbine.electricMw`]))
+  for (const owner of plants) expect(outcome.card.items.filter(item => item.subject && 'ref' in item.subject && item.subject.ref.startsWith(`${owner}#`))).toHaveLength(2)
+  expect(outcome.card.items.some(item => item.subject && 'objectId' in item.subject && item.subject.objectId === 'grid:halden-four-unit')).toBe(true)
 })
 
 test('an explicit grid drawing accompanies measured values of all four PWR units, regardless of subject order', async () => {

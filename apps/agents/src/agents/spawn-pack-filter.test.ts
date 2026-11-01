@@ -33,6 +33,7 @@ describe('pack-aware tool surface filter', () => {
       'workspace_explore',
       'workspace_call',
       'conversation_read',
+      'context_checkpoint',
     ])
   })
 

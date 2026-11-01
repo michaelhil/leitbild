@@ -155,8 +155,8 @@ export interface ChatResponse {
 
 // OpenRouter's own record of one generation, as its response reports it: the
 // generation id, the upstream provider that served it and the cost it billed
-// (usage.cost, USD). Written to the per-call log line for evaluation; never
-// stored with a message or execution.
+// (usage.cost, USD). Retained with its exact execution call and in per-call
+// logs. Message telemetry separately aggregates only reported amounts.
 export interface GenerationBilling {
   readonly generationId?: string
   readonly upstreamProvider?: string

@@ -200,8 +200,16 @@ export const createProcedureSourceService = (config: {
     listSources: () => [...sources],
     readCatalog: async (request = {}) => bundleFor(sourceFor(request.sourceId), await load()).catalog,
     readEvidence: async request => {
+      // Evidence is pinned to one source's retained publication: with several sources, which one is never guessed.
+      if (request.sourceId === undefined && sources.length > 1) {
+        return rejectCapabilityInput(`This World has ${sources.length} procedure sources (${sources.map(source => source.sourceId).join(', ')}): name sourceId with sourceRevision.`)
+      }
       const source = sourceFor(request.sourceId)
-      const raw = await readFile(publicationPath(source, request.sourceRevision), 'utf8')
+      let raw: string
+      try { raw = await readFile(publicationPath(source, request.sourceRevision), 'utf8') } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+        return rejectCapabilityInput(`Procedure source ${source.sourceId} has no retained publication at revision ${request.sourceRevision}: read evidence at a revision a procedure run of this source pinned.`)
+      }
       const retained = createKnowledge(JSON.parse(raw) as unknown)
       if (retained.revision !== request.sourceRevision) throw new Error('Retained procedure publication revision does not match its pin')
       return retained.read(request.sourcePath, {

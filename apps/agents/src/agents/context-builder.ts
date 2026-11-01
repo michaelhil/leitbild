@@ -80,9 +80,9 @@ export const formatMessage = (
     ? '\n' + attachments.map(a => imagePlaceholder(a)).join('\n')
     : ''
   // Warn-once when we're swapping image bytes for a text placeholder. The
-  // warn helps an operator notice when a model not in the catalog allowlist
-  // is silently losing image content (e.g. a freshly-launched flagship the
-  // catalog doesn't know about yet). See src/llm/multimodal.ts.
+  // warn makes unsupported or unknown image admission visible to operators.
+  // Provider-advertised modalities take precedence over local model hints.
+  // See src/llm/multimodal.ts.
   if (droppingImages && modelForWarn) {
     const desc = attachments.map(a => `${a.mimeType} ${a.width}×${a.height}`).join(', ')
     warnImageDroppedOnce(modelForWarn, agentId, attachments.length, desc, metricsSink)
