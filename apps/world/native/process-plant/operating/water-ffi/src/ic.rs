@@ -426,8 +426,57 @@ impl ProtectionClient {
         y: &[f64],
         reference: &[f64],
     ) -> Result<Self, String> {
+        if section.governor.declared {
+            return Err("a section declaring the governor needs its composed system (ProtectionClient::for_system)".into());
+        }
+        Self::build(section, joined, y, reference, None)
+    }
+    /// The protection of `section` for the composed `system` at its start
+    /// `t0` (`y` the whole system's state): the governor's presence must
+    /// match the section's declaration either way, and the electrical
+    /// reports are read from its routing.
+    pub fn for_system<S: JoinedSystem>(
+        section: &Section,
+        system: &S,
+        y: &[f64],
+        reference: &[f64],
+        t0: f64,
+    ) -> Result<Self, String> {
+        let admission = system.admission_probe(t0).map(|(i, _)| i);
+        match (section.governor.declared, admission.is_some()) {
+            (true, false) => {
+                return Err(
+                    "the section declares the governor (LD01.TG.ADM.POS) but the run composes none"
+                        .into(),
+                );
+            }
+            (false, true) => {
+                return Err("the run composes the governor but the section was compiled without declaring it".into());
+            }
+            _ => {}
+        }
+        let mut c = Self::build(
+            section,
+            &system.integrated().joined,
+            y,
+            reference,
+            admission,
+        )?
+        .with_system_dimension(y.len())?;
+        c.read_routing(system)?;
+        Ok(c)
+    }
+    /// `y` holds the operator's coordinates first (and any appended owner's
+    /// after them); `admission` is the governor's opening coordinate.
+    fn build<P: Properties + WaterProperties>(
+        section: &Section,
+        joined: &Joined<P>,
+        y: &[f64],
+        reference: &[f64],
+        admission: Option<usize>,
+    ) -> Result<Self, String> {
         let scales = joined.scales();
-        if scales.len() != y.len() || reference.len() != y.len() {
+        if scales.len() > y.len() || reference.len() != scales.len() {
             return Err("state layout".into());
         }
         let labels: Vec<String> = joined
@@ -775,6 +824,13 @@ impl ProtectionClient {
                         reading: LiquidReading::Temperature { body_c: *body_c },
                     }
                 }
+                Quantity::AdmissionPosition => {
+                    let i =
+                        admission.ok_or("LD01.TG.ADM.POS needs the composed governor's opening")?;
+                    references.insert(f.id.clone(), json!({"coordinate": i,
+                        "basis": "100 x the governor slice's admission opening (ld01-steam-valve-position-channels; judgement: the stroke is the opening)"}));
+                    Observation::Linear(vec![(i, 100.)])
+                }
                 Quantity::StopValvePosition { stop_travel_s } => {
                     let secondary = joined
                         .secondary()
@@ -853,18 +909,6 @@ impl ProtectionClient {
         }
         self.scratch = vec![0.; dimension];
         Ok(self)
-    }
-    /// [`ProtectionClient::with_system_dimension`] for the composed system,
-    /// and PROC T1–T3's electrical reports read from its routing at the
-    /// start. A section with electrical reports needs a system that routes AC.
-    pub fn with_system<S: JoinedSystem>(
-        self,
-        system: &S,
-        dimension: usize,
-    ) -> Result<Self, String> {
-        let mut c = self.with_system_dimension(dimension)?;
-        c.read_routing(system)?;
-        Ok(c)
     }
     /// A fresh copy of the system's routing, and the reports' states from it.
     fn read_routing<S: JoinedSystem>(&mut self, system: &S) -> Result<(), String> {
