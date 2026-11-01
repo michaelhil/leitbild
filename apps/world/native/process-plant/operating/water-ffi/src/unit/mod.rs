@@ -19,10 +19,12 @@
 //! - [`rod_control`]: automatic rod control (X4.4) as a frame client;
 //! - [`plant`]: the frame-driven unit (protection, PZR control and field
 //!   clients; the Grid stand-in's boundary) the S3 cases and the host drive;
+//! - [`dc`]: the DC groups' inputs from their strict wiki blocks (PROC T5);
 //! - [`timeline`]: a frame-driven run's events on the case clock;
 //! - [`clock`], [`provenance`]: receipt support (CPU clocks, app and wiki
 //!   provenance).
 pub mod clock;
+pub mod dc;
 pub mod inputs;
 pub mod plant;
 pub mod profile;

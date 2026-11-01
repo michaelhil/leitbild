@@ -151,6 +151,10 @@ struct Motor {
     contactor: bool,
     #[serde(with = "crate::joined::block::snapshot_bits_option")]
     lost_since: Option<f64>,
+    /// PROC T11: the consumer's own supply is lost (a declared malfunction,
+    /// [`Distribution::lose_consumer_supply`]); a START cannot restore it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    supply_lost: bool,
 }
 
 /// What a consumer's own law receives.
@@ -321,6 +325,7 @@ impl Distribution {
                     bus: b,
                     contactor: true,
                     lost_since: None,
+                    supply_lost: false,
                 },
             );
         }
@@ -480,6 +485,7 @@ impl Distribution {
         }
         m.contactor = false;
         m.lost_since = None;
+        m.supply_lost = true;
         let changed = before != self.supports();
         self.records.push(Record {
             time: t,
@@ -487,6 +493,104 @@ impl Distribution {
             support_changed: changed,
         });
         Ok(())
+    }
+    /// PROC T4 (lane TURB, 1 Nov): an operator's OPEN or CLOSE request for
+    /// `bus`'s incoming device from `source` at `t`, with the page's guards
+    /// ("a deliberate manual retransfer follows the same guards"): the bus
+    /// controller has upstream control power; the device is at rest (no
+    /// unfinished stroke; reversing a partial stroke is not modelled here);
+    /// a CLOSE needs the other incoming actually open at its open end
+    /// (break-before-make, no parallel connection) and this source both
+    /// usable and qualified, and makes it the held selection; the contact
+    /// changes at the end of the ordinary 0.10 s travel, where the logic
+    /// rechecks as for an automatic stroke. A request the guards refuse is
+    /// rejected and recorded, not queued (`Ok(false)`).
+    pub fn request_incoming(
+        &mut self,
+        t: f64,
+        bus: &str,
+        source: Source,
+        target: Contact,
+    ) -> Result<bool, String> {
+        self.advance(t)?;
+        let b = self
+            .bus_index(bus)
+            .ok_or_else(|| format!("unknown bus {bus}"))?;
+        let travel_s = self.parameters.incoming_travel_s;
+        let me = self.buses[b].devices[source as usize];
+        let other = self.buses[b].devices[source.other() as usize];
+        let refusal = if self.buses[b].control.is_none() {
+            Some("no upstream control power")
+        } else if me.travel.is_some() {
+            Some("the device has an unfinished stroke")
+        } else if me.contact == target {
+            Some("the device is already there")
+        } else if self.buses[b].transfer != Transfer::Idle {
+            Some("an automatic transfer is in progress")
+        } else if target == Contact::Closed
+            && !(other.contact == Contact::Open && other.travel.is_none())
+        {
+            Some("the other incoming is not at its open end (no parallel connection)")
+        } else if target == Contact::Closed
+            && !(self.usable(source) && self.qual[source as usize].qualified)
+        {
+            Some("the source is not usable and qualified")
+        } else {
+            None
+        };
+        if let Some(why) = refusal {
+            self.record(
+                t,
+                format!("{bus} {source:?} incoming {target:?} request rejected: {why}"),
+            );
+            return Ok(false);
+        }
+        self.buses[b].devices[source as usize].travel = Some((target, t + travel_s));
+        if target == Contact::Closed {
+            self.buses[b].selected = source;
+        }
+        self.record(
+            t,
+            format!("{bus} {source:?} incoming {target:?} requested (operator)"),
+        );
+        Ok(true)
+    }
+    /// PROC T11 (lane TURB, 1 Nov): an explicit START of `consumer` at `t`
+    /// after its contactor dropped out ("a new explicit START request,
+    /// checked against the motor's actual support and permissives"): the
+    /// contactor recloses when its bus is energized and its own supply is
+    /// not lost; the equipment's own permissives are the motor owner's and
+    /// are not modelled here. A refused START is recorded (`Ok(false)`).
+    pub fn start_consumer(&mut self, t: f64, consumer: &str) -> Result<bool, String> {
+        self.advance(t)?;
+        let before = self.supports();
+        let m = self
+            .motors
+            .get(consumer)
+            .ok_or_else(|| format!("unknown consumer {consumer}"))?;
+        let refusal = if m.contactor {
+            Some("its contactor is closed")
+        } else if m.supply_lost {
+            Some("its own supply is lost")
+        } else if self.bus_energized(m.bus).is_none() {
+            Some("its bus is not energized")
+        } else {
+            None
+        };
+        if let Some(why) = refusal {
+            self.record(t, format!("{consumer} START rejected: {why}"));
+            return Ok(false);
+        }
+        let m = self.motors.get_mut(consumer).expect("checked above");
+        m.contactor = true;
+        m.lost_since = None;
+        let changed = before != self.supports();
+        self.records.push(Record {
+            time: t,
+            what: format!("{consumer} START (contactor closed)"),
+            support_changed: changed,
+        });
+        Ok(true)
     }
     /// The earliest internal due time after the present one, if any.
     pub fn next_event(&self) -> Option<f64> {
@@ -755,6 +859,64 @@ mod tests {
         voltage_pu: 1.,
         frequency_hz: 50.,
     };
+    /// ELEC (lead 1 Nov, PHYS2's frame-time reports): a copy advanced to a
+    /// frame instant reports the routing's own instants that change no
+    /// delivered support, so no stop is needed for them. Between the unit
+    /// loss (a restart) and the reserve closure (the next support change):
+    /// the unit incoming's OPEN end and the unit's lost qualification; and
+    /// after its return (a restart), its requalification. A CLOSE always
+    /// energizes its bus (break before make, a usable qualified source), so
+    /// it is never such an instant. The copy leaves the routing untouched.
+    #[test]
+    fn a_copy_advanced_to_a_frame_reports_the_instants_between_restarts() {
+        let mut d = Distribution::prepared(params(), [LIVE, LIVE], [true, true], 0.).unwrap();
+        d.set_source(1., Source::Unit, SourceState::DEAD).unwrap();
+        let at = |d: &Distribution, t: f64| {
+            let mut c = d.clone();
+            c.advance(t).unwrap();
+            c.reports()
+        };
+        let unit_a = |r: &Reports| r.incoming[0].clone();
+        let held = d.discrete_state();
+        // +0.15 s: the unit incoming is open, its travel complete; the
+        // routing itself still holds the restart's state.
+        let r = at(&d, 1.15);
+        assert_eq!(
+            (unit_a(&r).contact, unit_a(&r).travel_complete),
+            (Contact::Open, true)
+        );
+        assert_eq!(
+            (
+                unit_a(&d.reports()).contact,
+                unit_a(&d.reports()).travel_complete
+            ),
+            (Contact::Closed, false)
+        );
+        assert!(!r.buses[0].available);
+        // +0.25 s: the unit's qualification is lost (0.2 s), the bus still dead.
+        let r = at(&d, 1.25);
+        assert!(!r.sources[0].qualified && d.reports().sources[0].qualified);
+        assert!(!r.buses[0].available);
+        assert_eq!(d.discrete_state(), held, "a report copy changes nothing");
+        // No support change before the reserve closes at +0.5 s.
+        let mut probe = d.clone();
+        let mut first_change = None;
+        while let Some(n) = probe.next_event().filter(|n| *n < 2.) {
+            let before = probe.supports();
+            probe.advance(n).unwrap();
+            if probe.supports() != before {
+                first_change = Some(n);
+                break;
+            }
+        }
+        assert!((first_change.unwrap() - 1.5).abs() < 1e-9);
+        // The unit returns at 2 s (a restart); it requalifies at 3 s, between restarts.
+        d.advance(1.5).unwrap();
+        d.set_source(2., Source::Unit, LIVE).unwrap();
+        assert!(!d.reports().sources[0].qualified);
+        assert!(at(&d, 3.05).sources[0].qualified);
+        assert!(!at(&d, 2.95).sources[0].qualified);
+    }
     #[test]
     fn unit_loss_transfers_to_reserve_in_half_a_second_with_ride_through() {
         let mut d = Distribution::prepared(params(), [LIVE, LIVE], [true, true], 0.).unwrap();
@@ -880,5 +1042,80 @@ mod tests {
             "{r:?} {fed_by_unit_before:?}"
         );
         assert!(r.incoming.iter().all(|i| i.travel_complete));
+    }
+    #[test]
+    fn an_operator_retransfer_follows_the_guards() {
+        let mut d = Distribution::prepared(params(), [LIVE, LIVE], [true, true], 0.).unwrap();
+        let bus = d.reports().buses[0].name.clone();
+        // CLOSE of the reserve while the unit incoming is closed: rejected (no parallel).
+        assert!(
+            !d.request_incoming(1., &bus, Source::Reserve, Contact::Closed)
+                .unwrap()
+        );
+        // OPEN the unit incoming: the bus is isolated at the end of its 0.10 s travel.
+        assert!(
+            d.request_incoming(1., &bus, Source::Unit, Contact::Open)
+                .unwrap()
+        );
+        assert!(
+            !d.request_incoming(1.05, &bus, Source::Unit, Contact::Open)
+                .unwrap(),
+            "mid-stroke"
+        );
+        d.advance(1.2).unwrap();
+        assert!(!d.reports().buses[0].available);
+        // No automatic transfer back: the selected source is still usable.
+        d.advance(3.).unwrap();
+        assert!(!d.reports().buses[0].available);
+        // CLOSE the reserve: the bus is fed from it after the travel, and it is held.
+        assert!(
+            d.request_incoming(3., &bus, Source::Reserve, Contact::Closed)
+                .unwrap()
+        );
+        d.advance(3.2).unwrap();
+        let r = d.reports();
+        assert!(r.buses[0].available && r.buses[0].fed_from == Some(Source::Reserve));
+        // A dead source cannot be closed onto.
+        d.set_source(4., Source::Unit, SourceState::DEAD).unwrap();
+        assert!(
+            !d.request_incoming(4., &bus, Source::Unit, Contact::Closed)
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn a_start_after_dropout_recloses_the_contactor_and_not_otherwise() {
+        let mut d = Distribution::prepared(params(), [LIVE, LIVE], [true, true], 0.).unwrap();
+        // Both sources lost: every motor drops out at 1.00 s.
+        d.set_source(1., Source::Unit, SourceState::DEAD).unwrap();
+        d.set_source(1., Source::Reserve, SourceState::DEAD)
+            .unwrap();
+        d.advance(2.5).unwrap();
+        assert!(!d.support("LD01.P.A1").unwrap().contactor_closed);
+        // START on a dead bus is rejected.
+        assert!(!d.start_consumer(2.5, "LD01.P.A1").unwrap());
+        // Restoration does not reclose it ...
+        d.set_source(3., Source::Unit, LIVE).unwrap();
+        d.advance(5.).unwrap();
+        assert!(d.support("LD01.P.A1").unwrap().energized);
+        assert!(!d.support("LD01.P.A1").unwrap().contactor_closed);
+        // ... a START does.
+        assert!(d.start_consumer(5., "LD01.P.A1").unwrap());
+        assert!(d.support("LD01.P.A1").unwrap().contactor_closed);
+        assert!(
+            !d.start_consumer(5.1, "LD01.P.A1").unwrap(),
+            "already closed"
+        );
+        // A consumer whose own supply is lost (declared malfunction) cannot be started.
+        assert!(d.start_consumer(5.5, "LD01.P.A2").unwrap());
+        d.lose_consumer_supply(6., "LD01.P.A2").unwrap();
+        assert!(!d.start_consumer(6.5, "LD01.P.A2").unwrap());
+        // The snapshot of a state with no lost supply serializes as before.
+        let e = Distribution::prepared(params(), [LIVE, LIVE], [true, true], 0.).unwrap();
+        assert!(
+            !serde_json::to_string(&e.discrete_state())
+                .unwrap()
+                .contains("supply_lost")
+        );
     }
 }
