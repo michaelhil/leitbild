@@ -85,7 +85,135 @@ impl Domain {
     }
 }
 
+/// spec: world/packs/process-plant/reference-designs/ld-01/model/operating-phase-properties.md#sbtl-water-properties
+/// The water method of this process's composition (owner decision, 1 Nov
+/// 2026): the maintained IF97 reference, or the IAPWS G13-15 SBTL tables of
+/// that reference compiled into the same water archive. An explicit
+/// composition setting: the unit host's LOAD solver block and the case drive
+/// select it once, before the composition's first water call, and record it
+/// in the composition identity and every receipt. Without a selection the
+/// boundary is the IF97 reference. There is no fallback between methods: a
+/// state the selected method refuses is refused.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum WaterMethod {
+    If97,
+    Sbtl,
+}
+impl WaterMethod {
+    pub fn parse(text: &str) -> Result<Self, String> {
+        match text {
+            "if97" => Ok(Self::If97),
+            "sbtl" => Ok(Self::Sbtl),
+            other => Err(format!("water method {other:?}: expected \"if97\" or \"sbtl\"")),
+        }
+    }
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::If97 => "if97",
+            Self::Sbtl => "sbtl",
+        }
+    }
+}
+/// 0: none selected (IF97); 1: IF97; 2: SBTL.
+static WATER_METHOD: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+/// Select the process's water method. A second selection of the same method
+/// is accepted; a different one is refused (one composition per process).
+pub fn select_water_method(method: WaterMethod) -> Result<(), String> {
+    use std::sync::atomic::Ordering::SeqCst;
+    let code = match method {
+        WaterMethod::If97 => 1,
+        WaterMethod::Sbtl => 2,
+    };
+    match WATER_METHOD.compare_exchange(0, code, SeqCst, SeqCst) {
+        Ok(_) => Ok(()),
+        Err(held) if held == code => Ok(()),
+        Err(_) => Err(format!(
+            "water method already selected as {}; refusing {}",
+            water_method().as_str(),
+            method.as_str()
+        )),
+    }
+}
+/// The process's water method (IF97 until a composition selects one).
+pub fn water_method() -> WaterMethod {
+    if sbtl() {
+        WaterMethod::Sbtl
+    } else {
+        WaterMethod::If97
+    }
+}
+fn sbtl() -> bool {
+    WATER_METHOD.load(std::sync::atomic::Ordering::Relaxed) == 2
+}
+fn native_status(code: i32) -> Result<(), Error> {
+    match code {
+        0 => Ok(()),
+        1 => Err(Error::Domain),
+        2 => Err(Error::AbiArgument),
+        4 => Err(Error::TrialBand),
+        _ => Err(Error::NativeFailure),
+    }
+}
+/// The SBTL point: every field but cv (NaN, not tabulated).
+fn sbtl_point(branch: Branch, p: f64, t: f64) -> Result<WaterPoint, Error> {
+    let mut output = WaterPoint::default();
+    // SAFETY: the same C-layout contract as `point`: a unique live stack
+    // allocation, completely written on success and retained nowhere; the
+    // native function catches every C++ exception.
+    native_status(unsafe { ld01_sbtl_point(branch as i32, p, t, &mut output) })?;
+    Ok(output)
+}
+/// The SBTL point and its analytic direction along (dp, dt) (a saturated
+/// branch moves along saturation).
+fn sbtl_direction(
+    branch: Branch,
+    p: f64,
+    t: f64,
+    dp: f64,
+    dt: f64,
+) -> Result<(WaterPoint, WaterPoint), Error> {
+    let mut value = WaterPoint::default();
+    let mut direction = WaterPoint::default();
+    // SAFETY: as `sbtl_point`; two distinct live unique stack outputs.
+    native_status(unsafe {
+        ld01_sbtl_direction(branch as i32, p, t, dp, dt, &mut value, &mut direction)
+    })?;
+    Ok((value, direction))
+}
+
 unsafe extern "C" {
+    // SBTL entries (IAPWS G13-15 tables of the reference, same archive).
+    fn ld01_sbtl_point(
+        branch: i32,
+        pressure_pa: f64,
+        temperature_k: f64,
+        output: *mut WaterPoint,
+    ) -> i32;
+    fn ld01_sbtl_direction(
+        branch: i32,
+        pressure_pa: f64,
+        temperature_k: f64,
+        pressure_direction: f64,
+        temperature_direction: f64,
+        output: *mut WaterPoint,
+        direction: *mut WaterPoint,
+    ) -> i32;
+    fn ld01_sbtl_inverse(
+        branch: i32,
+        pressure_pa: f64,
+        target: f64,
+        enthalpy: i32,
+        output: *mut WaterPoint,
+    ) -> i32;
+    fn ld01_sbtl_inverse_direction(
+        branch: i32,
+        held: *const WaterPoint,
+        enthalpy: i32,
+        pressure_direction: f64,
+        target_direction: f64,
+        direction: *mut WaterPoint,
+    ) -> i32;
     fn ld01_water_point(
         branch: i32,
         pressure_pa: f64,
@@ -180,6 +308,9 @@ pub fn point_in(
     temperature_k: f64,
 ) -> Result<WaterPoint, Error> {
     domain.admit(pressure_pa)?;
+    if sbtl() {
+        return sbtl_point(branch, pressure_pa, temperature_k);
+    }
     let mut output = WaterPoint::default();
     // SAFETY: repr(C) contains only C int/doubles in declared order. Pointer
     // refers to a unique live stack allocation; C writes its complete tuple on
@@ -258,6 +389,9 @@ fn complete_fields(caloric: &WaterPoint, fields: i32) -> Result<WaterPoint, Erro
 /// `point(branch, p, T)` with only `fields` evaluated beyond the caloric
 /// state: the same branch, domain and region checks and status codes.
 fn point_fields(branch: Branch, p: f64, t: f64, fields: i32) -> Result<WaterPoint, Error> {
+    if sbtl() {
+        return sbtl_point(branch, p, t);
+    }
     let mut output = WaterPoint::default();
     // SAFETY: the same C-layout contract as `point`: a unique live stack
     // allocation, completely written on success and retained nowhere; the
@@ -275,6 +409,9 @@ fn point_fields(branch: Branch, p: f64, t: f64, fields: i32) -> Result<WaterPoin
 /// The exact part of `directional_held(branch, held, dp, dt)`: p, T, rho, u
 /// and h bit for bit, every other field NaN; no coefficient probe.
 fn exact_held(branch: Branch, held: &WaterPoint, dp: f64, dt: f64) -> Result<WaterPoint, Error> {
+    if sbtl() {
+        return sbtl_direction(branch, held.pressure_pa, held.temperature_k, dp, dt).map(|(_, d)| d);
+    }
     let mut direction = WaterPoint::default();
     // SAFETY: `held` is a live shared C-layout tuple that C only reads;
     // `direction` is a unique live stack allocation written on success.
@@ -364,6 +501,12 @@ pub fn directional_in(
     dt: f64,
 ) -> Result<(WaterPoint, WaterPoint), Error> {
     domain.admit(p)?;
+    if sbtl() {
+        if !dp.is_finite() || !dt.is_finite() {
+            return Err(Error::AbiArgument);
+        }
+        return sbtl_direction(branch, p, t, dp, dt);
+    }
     let mut value = WaterPoint::default();
     let mut direction = WaterPoint::default();
     // SAFETY: same C-layout contract as point; outputs are distinct live unique
@@ -388,6 +531,9 @@ fn directional_held(
     dp: f64,
     dt: f64,
 ) -> Result<WaterPoint, Error> {
+    if sbtl() {
+        return sbtl_direction(branch, held.pressure_pa, held.temperature_k, dp, dt).map(|(_, d)| d);
+    }
     let mut direction = WaterPoint::default();
     // SAFETY: `held` is a live shared C-layout tuple that C only reads during
     // the call; `direction` is a unique live stack allocation written on
@@ -498,6 +644,14 @@ impl CaloricLinearization {
         fields: i32,
     ) -> Result<Self, Error> {
         domain.admit(p)?;
+        if sbtl() {
+            return Ok(Self {
+                branch,
+                kind,
+                point: sbtl_inverse(branch, p, target, kind)?,
+                fields: FIELDS_ALL,
+            });
+        }
         Ok(Self {
             branch,
             kind,
@@ -539,6 +693,15 @@ impl CaloricLinearization {
         if dp == 0. && dtarget == 0. {
             return Ok([0.; 4]);
         }
+        if sbtl() {
+            let d = self.sbtl_directional(dp, dtarget)?;
+            return Ok([
+                d.temperature_k,
+                d.density_kg_m3,
+                d.internal_energy_j_kg,
+                d.enthalpy_j_kg,
+            ]);
+        }
         let (up, ut) = self.kind.partials(self.point);
         if !ut.is_finite() || ut <= 0. {
             return Err(Error::NativeFailure);
@@ -562,6 +725,9 @@ impl CaloricLinearization {
         if dp == 0. && dtarget == 0. {
             return Ok(WaterPoint::default());
         }
+        if sbtl() {
+            return self.sbtl_directional(dp, dtarget);
+        }
         // The coefficient probes may read the held point's every field.
         let held = self.completed()?;
         let (up, ut) = held.kind.partials(held.point);
@@ -571,6 +737,26 @@ impl CaloricLinearization {
         // The held point is the forward point at exactly (branch, its p, its
         // T), the saturated-endpoint bracket included, so it is not repeated.
         directional_held(held.branch, &held.point, dp, (dtarget - up * dp) / ut)
+    }
+
+    /// SBTL: the implicit derivative of the spline inverse at this point,
+    /// then every field's analytic direction (no Gibbs identity, no probe).
+    fn sbtl_directional(self, dp: f64, dtarget: f64) -> Result<WaterPoint, Error> {
+        let mut direction = WaterPoint::default();
+        let enthalpy = matches!(self.kind, Caloric::Enthalpy) as i32;
+        // SAFETY: `point` is a live shared C-layout tuple that C only reads;
+        // `direction` is a unique live stack output written on success.
+        native_status(unsafe {
+            ld01_sbtl_inverse_direction(
+                self.branch as i32,
+                &self.point,
+                enthalpy,
+                dp,
+                dtarget,
+                &mut direction,
+            )
+        })?;
+        Ok(direction)
     }
 
     /// The accepted point's band report on its requested branch.
@@ -606,9 +792,10 @@ impl Caloric {
 /// One end of an inverse bracket: the branch and temperature it is evaluated at.
 type End = (Branch, f64);
 
-/// The native branch ends at `p`: the stable end (the saturated endpoint, or
-/// region 1 at its temperature limit where saturation lies above it) and the
-/// trial end of the bounded metastable band, if the branch has one at `p`.
+/// The native branch ends at `p`: the stable end (the saturated endpoint;
+/// the adapter no longer returns region 1's 623.15 K end, since region 3 near
+/// saturation is admitted) and the trial end of the bounded metastable band,
+/// if the branch has one at `p`.
 fn branch_ends(branch: Branch, p: f64) -> Result<(End, Option<f64>), Error> {
     let (mut stable_branch, mut stable_t, mut trial_t) = (0, 0., 0.);
     // SAFETY: three unique live scalar outputs, written on success and
@@ -635,6 +822,22 @@ fn branch_ends(branch: Branch, p: f64) -> Result<(End, Option<f64>), Error> {
         _ => return Err(Error::NativeFailure),
     };
     Ok(((stable, stable_t), (!trial_t.is_nan()).then_some(trial_t)))
+}
+
+/// The SBTL caloric inverse: the reference inverse's brackets and refusals
+/// with an exact root of the table's cell polynomial (water archive).
+fn sbtl_inverse(branch: Branch, p: f64, target: f64, kind: Caloric) -> Result<WaterPoint, Error> {
+    if !target.is_finite() {
+        return Err(Error::Domain);
+    }
+    if !matches!(branch, Branch::Liquid | Branch::Vapor) {
+        return Err(Error::AbiArgument);
+    }
+    let mut output = WaterPoint::default();
+    let enthalpy = matches!(kind, Caloric::Enthalpy) as i32;
+    // SAFETY: as `sbtl_point`.
+    native_status(unsafe { ld01_sbtl_inverse(branch as i32, p, target, enthalpy, &mut output) })?;
+    Ok(output)
 }
 
 fn invert_caloric(
@@ -1017,6 +1220,10 @@ pub fn saturation_pressure(t: f64, dt: f64) -> Result<(f64, f64), Error> {
 /// enthalpy at `t` on the saturation endpoint, outside the operating 0.1 MPa
 /// floor; value only (the containment's 25°C vapor caloric anchor).
 pub fn saturated_vapor_enthalpy(t: f64) -> Result<f64, Error> {
+    if sbtl() {
+        let (p, _) = saturation_pressure(t, 0.)?;
+        return sbtl_point(Branch::SaturatedVapor, p, 0.).map(|q| q.enthalpy_j_kg);
+    }
     let mut value = 0.;
     // SAFETY: one unique live scalar output; C keeps no pointer/catches errors.
     let status = unsafe { ld01_water_saturated_vapor_enthalpy(t, &mut value) };
@@ -1032,6 +1239,12 @@ pub fn saturated_vapor_enthalpy(t: f64) -> Result<f64, Error> {
 /// dynamic viscosity at `t` on the endpoint below the operating 0.1 MPa
 /// floor, with the adapter's disclosed central-difference direction.
 pub fn saturated_vapor_viscosity(t: f64, dt: f64) -> Result<(f64, f64), Error> {
+    if sbtl() {
+        // Along saturation: dp = (dp_sat/dT) dt, the spline's analytic direction.
+        let (p, dp) = saturation_pressure(t, dt)?;
+        return sbtl_direction(Branch::SaturatedVapor, p, 0., dp, 0.)
+            .map(|(q, d)| (q.viscosity_pa_s, d.viscosity_pa_s));
+    }
     let mut value = 0.;
     let mut direction = 0.;
     // SAFETY: two unique live scalar outputs; C keeps no pointers/catches errors.
@@ -1058,7 +1271,10 @@ pub fn surface_tension(t: f64, dt: f64) -> Result<(f64, f64), Error> {
 }
 
 /// Actual property adapter consumed by the native thermal residual/JVP: the
-/// operating domain (`p >= 0.1 MPa`).
+/// operating domain (`p >= 0.1 MPa`). It serves the process's selected water
+/// method ([`water_method`]): the IF97 reference or its SBTL tables. The name
+/// stays `If97` at WORLD's sites for now (lead, 1 Nov); under SBTL it is the
+/// tables'.
 pub struct If97;
 /// The same adapter for an owner that declares a low-pressure domain
 /// (S4-D2, owner decision F5): `p >= 611.657 Pa` ([`Domain::LowPressure`]).
@@ -1107,7 +1323,9 @@ fn directional_basis(
     dp: f64,
     dt: f64,
 ) -> Result<(WaterPoint, WaterPoint), Error> {
-    if !BASIS_ON.with(|b| b.get()) {
+    // SBTL directions are the analytic spline derivative, linear in the seed:
+    // no basis is held.
+    if sbtl() || !BASIS_ON.with(|b| b.get()) {
         return directional_in(domain, branch, p, t, dp, dt);
     }
     let key = (domain as u8, branch as i32, p.to_bits(), t.to_bits());
@@ -1197,6 +1415,16 @@ macro_rules! thermal_water_properties {
                 &self,
                 t: leitbild_operating_plant::thermal::Scalar,
             ) -> leitbild_operating_plant::thermal::Result<leitbild_operating_plant::thermal::Scalar> {
+                if sbtl() {
+                    let (p, dp) = saturation_pressure(t.value, t.direction)
+                        .map_err(|_| "SBTL wall saturation pressure")?;
+                    let (q, d) = sbtl_direction(Branch::SaturatedVapor, p, 0., dp, 0.)
+                        .map_err(|_| "SBTL wall saturation density")?;
+                    return Ok(leitbild_operating_plant::thermal::Scalar::new(
+                        q.density_kg_m3,
+                        d.density_kg_m3,
+                    ));
+                }
                 let mut value = 0.;
                 let mut direction = 0.;
                 // SAFETY: unique scalar outputs, no retained pointer; checked native
