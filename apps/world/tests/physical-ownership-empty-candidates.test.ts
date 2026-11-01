@@ -1,4 +1,5 @@
-import { expect, test } from 'bun:test'
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
+import type { PackPhysicalScene } from '../src/core/packs/scene.ts'
 import { createHash } from 'node:crypto'
 import { compileScenarioDefinition } from '../src/core/scenarios/compiler.ts'
 import { scenarioDefinitionSchema } from '../src/core/scenarios/definition.ts'
@@ -53,14 +54,36 @@ test('empty-candidate append preserves holes, material/normal/line bytes, degene
   const result = preparePhysicalSurfaceOwnership([degenerate]); expect(result.meshes[0]!.vertices.length).toBe(0); expect(result.meshes[0]!.lines).toBe(degenerate.lines)
 })
 
-test('actual admitted R5 all-layer unit and campus retain exact ordered geometry, ownership, render buffers and picking arrays', async () => {
-  const scenario = await compileScenarioDefinition(scenarioDefinitionSchema.parse(definitionSource), [processPlantPack, electricGridPack, weatherPack, physicalLayoutPack], { routing: createDirectRoutingAdapter() }), seen = new Set<string>()
-  for (const object of scenario.initialObjects) {
-    const descriptor = describePhysicalLayoutScene(object, scenario.initialObjects)
-    if (!descriptor?.geometryKey || seen.has(descriptor.geometryKey)) continue
-    seen.add(descriptor.geometryKey)
-    const scene = await loadPhysicalLayoutScene(object), view = { ...defaultPhysicalSceneView(scene.levels), mode: '3d' as const, levelId: 'all', hiddenLayerIds: [] }, demand = physicalMeshDemandScene(scene, view)
+const admittedDesigns = [...new Map(definitionSource.packs
+  .filter(pack => pack.id === 'physical-layout')
+  .flatMap(pack => pack.items.flatMap(item => 'design' in item && item.design
+    ? [[item.design.digest, item.design] as const] : []))).values()]
+
+describe('actual admitted all-layer geometry retains the frozen ownership, rendering and picking result', () => {
+  const scenes = new Map<string, PackPhysicalScene>(), seen = new Set<string>()
+  beforeAll(async () => {
+    const scenario = await compileScenarioDefinition(scenarioDefinitionSchema.parse(definitionSource), [processPlantPack, electricGridPack, weatherPack, physicalLayoutPack], { routing: createDirectRoutingAdapter() })
+    for (const object of scenario.initialObjects) {
+      const descriptor = describePhysicalLayoutScene(object, scenario.initialObjects)
+      if (!descriptor?.geometryKey || seen.has(descriptor.geometryKey)) continue
+      seen.add(descriptor.geometryKey)
+      scenes.set(descriptor.revision, await loadPhysicalLayoutScene(object))
+    }
+  }, 30_000)
+  afterAll(() => { scenes.clear(); seen.clear() })
+
+  test('the actual scenario admits exactly its two declared distinct physical sources', () => {
+    expect(seen.size).toBe(2)
+    expect(scenes.size).toBe(seen.size)
+    expect([...scenes.keys()].sort()).toEqual(admittedDesigns.map(design => design.digest).sort())
+  })
+
+  // Every source still gets a complete fresh comparison against the retained
+  // oracle. The timeout belongs to one correctness case, not their sum.
+  for (const design of admittedDesigns) test(`${design.id} @ ${design.revision}`, () => {
+    const scene = scenes.get(design.digest)
+    if (!scene) throw Error(`Expected admitted physical source ${design.id} @ ${design.revision}`)
+    const view = { ...defaultPhysicalSceneView(scene.levels), mode: '3d' as const, levelId: 'all', hiddenLayerIds: [] }, demand = physicalMeshDemandScene(scene, view)
     compare(physicalSurfaceAnnotations(demand, view, clipPhysicalMeshesToScope(demand, view, buildVisibleMeshes(demand, view))), beforeTwoLevel)
-  }
-  expect(seen.size).toBe(2)
-}, 30_000)
+  }, 30_000)
+})
