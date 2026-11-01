@@ -2018,6 +2018,8 @@ mod integrated {
                     let started = std::time::Instant::now();
                     // R4-WATER-PARTIALS: the water basis store for this assembly.
                     crate::basis_assembly(true);
+                    // R4-ENDPOINT-ASSEMBLY: the heater endpoints of this assembly.
+                    leitbild_operating_plant::network::heaters::hold_endpoints(true);
                     // R4-JAC-BASE: the residual's evaluation at this very
                     // state stands; with the relief shut its rows are those
                     // of the assembly's reuse evaluation bit for bit (only a
@@ -2077,6 +2079,7 @@ mod integrated {
                         )
                     };
                     crate::basis_assembly(false);
+                    leitbild_operating_plant::network::heaters::hold_endpoints(false);
                     self.joined.counters.jacobians += 1;
                     self.joined.counters.jacobian_wall_s += started.elapsed().as_secs_f64();
                     result
