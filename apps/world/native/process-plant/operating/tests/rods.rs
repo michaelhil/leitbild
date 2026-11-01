@@ -12,7 +12,7 @@ use leitbild_operating_plant::{
     rods::{
         BORE_BORON, BORE_ENERGY, BORE_MASS, BORE_PRESSURE, Bodies, CLUSTER_COORDINATES, Cells,
         ClusterSection, Guide, Holding, LOWER_CURRENT, LowerWater, Mode, Region, RodBlock, Section,
-        Span, Spider, SpiderDrag, TRAVEL, UPPER_CURRENT, VELOCITY, geometry::Branch,
+        Span, Spider, SpiderDrag, Stem, TRAVEL, UPPER_CURRENT, VELOCITY, geometry::Branch,
     },
     sparse::{Coloring, Pattern, compare_with_dense, scatter},
     thermal::{Saturation, Scalar},
@@ -20,7 +20,7 @@ use leitbild_operating_plant::{
 use std::time::Instant;
 
 const G: f64 = 9.80665;
-const REGIONS: [(&str, f64); 12] = [
+const REGIONS: [(&str, f64); 13] = [
     ("LOWER", -3.),
     ("CORE.NE.1", -1.),
     ("CORE.NE.2", 1.),
@@ -32,13 +32,21 @@ const REGIONS: [(&str, f64); 12] = [
     ("CORE.SE.2", 1.),
     ("UPPER", 3.),
     ("HOUSING.MAIN", 6.),
+    ("HOUSING.NECK", 10.825),
     ("PZR", 18.5),
 ];
-const REGULAR: usize = 11;
-const VOLUMES: [f64; 11] = [
+const REGULAR: usize = 12;
+const VOLUMES: [f64; 12] = [
     28.1789708, 2.5690191, 2.5369520, 2.5690191, 2.5369520, 2.5690191, 2.5369520, 2.5690191,
-    2.5369520, 32.0833548, 10.0618815,
+    2.5369520, 32.0833548, 10.0618815, 0.5445115,
 ];
+/// R4-ROD2-STEM: the record's 12 mm, 6 m stainless stem (7920 kg/m3) as the
+/// fixture's named stem mass; the drive-rod mass of record is the packet's.
+const STEM_RADIUS: f64 = 0.006;
+const STEM_LENGTH: f64 = 6.;
+fn stem_mass() -> f64 {
+    std::f64::consts::PI * STEM_RADIUS * STEM_RADIUS * STEM_LENGTH * 7920.
+}
 const N: usize = 52;
 
 // Z4's LOWER water (connected-primary-initialization.md :308): 15.2 MPa at
@@ -176,6 +184,11 @@ fn section(drag: SpiderDrag) -> Section {
             height_m: 0.1,
             radius_m: 0.115,
         },
+        stem: Stem {
+            mass_kg: stem_mass(),
+            radius_m: STEM_RADIUS,
+            length_m: STEM_LENGTH,
+        },
         guide: Guide {
             bore_radius_m: 0.0055,
             lower_mouth_m: -2.25,
@@ -190,6 +203,7 @@ fn section(drag: SpiderDrag) -> Section {
             core,
             upper: span("UPPER", 2., 4.),
             housing_main: span("HOUSING.MAIN", 4., 8.),
+            housing_neck: span("HOUSING.NECK", 8.05, 13.6),
         },
         gravity_m_s2: G,
         reference_travel_m: 2.8,
@@ -254,12 +268,13 @@ struct Water1 {
     c: Scalar,
 }
 /// The retained at-power field of Z4: LOWER 15.2 MPa at -2 m (563.15 K),
-/// UPPER 15,056,166 Pa at +2 m (593.15 K); HOUSING.MAIN shares UPPER's
-/// water at rest. Densities and viscosities are Z4's IF97 values as printed.
+/// UPPER 15,056,166 Pa at +2 m (593.15 K); HOUSING.MAIN and HOUSING.NECK
+/// share UPPER's water at rest. Densities and viscosities are Z4's IF97 values as printed.
 fn z4_field(upper_shift_pa: f64) -> Vec<Water1> {
     let (ru, mu) = (678.920757, 8.023731e-05);
     let pu = 15_056_166. - upper_shift_pa - ru * G * (3. - 2.);
     let pm = 15_056_166. - upper_shift_pa - ru * G * (6. - 2.);
+    let pn = 15_056_166. - upper_shift_pa - ru * G * (10.825 - 2.);
     let w = |p: f64, rho: f64, mu: f64, h: f64| Water1 {
         p: Scalar::constant(p),
         rho: Scalar::constant(rho),
@@ -272,6 +287,7 @@ fn z4_field(upper_shift_pa: f64) -> Vec<Water1> {
     cells.extend([core; 8]);
     cells.push(w(pu, ru, mu, 1.4545e6));
     cells.push(w(pm, ru, mu, 1.4545e6));
+    cells.push(w(pn, ru, mu, 1.4545e6));
     cells
 }
 struct FluidData {
@@ -562,11 +578,17 @@ fn z4_force_balance_and_insertion_margins_are_reproduced() {
             assert!((forces.top_pressure.value - top).abs() < 0.2);
             assert!((forces.end_face.value - end).abs() < 0.01, "{travel}: end");
             assert!((forces.wall.value - wall).abs() < 5e-3, "{travel}: wall");
-            assert!((-forces.net.value - net_down).abs() < 0.01, "{travel}: net");
+            // Z4's receipt predates R4-ROD2-STEM: its net is the bodies' and
+            // spider's alone. The stem adds its weight less its end faces,
+            // which at rest is its weight less its buoyancy in UPPER's water.
+            let stem = forces.stem_end.value - stem_mass() * G;
+            let buoyancy = 678.920757 * G * std::f64::consts::PI * STEM_RADIUS * STEM_RADIUS * STEM_LENGTH;
+            assert!((forces.stem_end.value - buoyancy).abs() < 1e-6, "{travel}: stem end");
+            assert!((-(forces.net.value - stem) - net_down).abs() < 0.01, "{travel}: net");
             // The bores' EOS row holds at the prepared water.
             let eos = rows[b.group_index(b.group_of(c), BORE_PRESSURE)].value;
             assert!(eos.abs() < 1e-12, "EOS {eos}");
-            minimum = minimum.min(-forces.net.value);
+            minimum = minimum.min(-(forces.net.value - stem));
         }
     }
     // The H7 margins: 62 N at release, 56 N at the minimum over the travels.
@@ -757,8 +779,9 @@ fn fluid_directions_enter_rows_and_receipts_exactly() {
     let base = z4_field(0.);
     let (y, yp) = mixed(&mut b, &base);
     // Seed each plenum's and two core cells' pressure, density, viscosity,
-    // enthalpy and tracer (the bores no longer read the core cells).
-    for cell in [0, 1, 4, 9, 10] {
+    // enthalpy and tracer (the bores no longer read the core cells), and
+    // HOUSING.NECK's, which the stem's top reads (R4-ROD2-STEM).
+    for cell in [0, 1, 4, 9, 10, 11] {
         for field in 0..5 {
             let seeded = |sign: f64, direction: f64| {
                 let mut w = base.clone();
@@ -1008,8 +1031,12 @@ fn trip_release_seat_and_the_stuck_cluster_follow_the_modes() {
     let y = solver(&b, &seated);
     let x = Coordinates::new(&y, &yp, None, 0., &scales).unwrap();
     Rods::<Liquid>::roots(&mut b, &Liquid, 3., x, &f, &mut roots).unwrap();
+    // R4-ROD2-STEM: the stem adds its weight less its buoyancy in UPPER's
+    // water, 48.2 N, to the bodies' 56.5 N of Z4.
+    let stem = stem_mass() * G
+        - 678.920757 * G * std::f64::consts::PI * STEM_RADIUS * STEM_RADIUS * STEM_LENGTH;
     assert!(
-        roots[0] > 55. && roots[0] < 57.,
+        roots[0] > 55. + stem && roots[0] < 57. + stem,
         "seat reaction root {}",
         roots[0]
     );
@@ -1315,6 +1342,8 @@ fn hydrostatic() -> Vec<Water1> {
     water[9].rho = Scalar::constant(ru);
     water[10].p = Scalar::constant(pu - 3. * ru * G);
     water[10].rho = Scalar::constant(ru);
+    water[11].p = Scalar::constant(pu - 7.825 * ru * G);
+    water[11].rho = Scalar::constant(ru);
     water
 }
 

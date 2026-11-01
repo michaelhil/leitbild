@@ -1,5 +1,5 @@
 /** The S2 `rods` section of the spine packet: the 52 moving spider-and-bodies
- * (H7), their steady guide passages (F1 (a), H4), the network cells they sweep
+ * with their drive stems (R4-ROD2-STEM, reversing H7), their steady guide passages (F1 (a), H4), the network cells they sweep
  * and the declared holding-circuit boundary (H6). Values come only from the
  * owners' strict blocks; Rust owns every residual law. */
 import { createHash } from 'node:crypto'
@@ -15,6 +15,9 @@ const positive = z.number().finite().positive()
 const rodSchema = z.object({ spiderDrag: z.enum(['pending', 'envelope-disk', 'omitted']),
   passageBlendSpeed_m_s: positive }).strict()
 const holdingSchema = z.object({ turbineTripToOpening_s: positive }).strict()
+/** R4-ROD2-STEM (owner, 1 November): the drive stem falls with its cluster, as
+ * AP1000's drive rod does; its moving mass is the named drive-rod input. */
+const stemSchema = z.object({ driveRodMass_kg: positive, source: z.string().min(1) }).strict()
 function strictBlock(text: string, fence: string): unknown {
   const rows = [...text.matchAll(new RegExp('^```' + fence + '\\s*\\n([\\s\\S]*?)^```\\s*$', 'gm'))]
   if (rows.length !== 1) throw Error(`Expected one ${fence} block`)
@@ -22,6 +25,7 @@ function strictBlock(text: string, fence: string): unknown {
 }
 export const parseS2Rods = (text: string) => rodSchema.parse(strictBlock(text, 'ld01-s2-rods'))
 export const parseS2Holding = (text: string) => holdingSchema.parse(strictBlock(text, 'ld01-s2-holding-circuit'))
+export const parseDriveStem = (text: string) => stemSchema.parse(strictBlock(text, 'ld01-rod-drive-stem'))
 /** The page's one broad-body law (the cold release record's `broadDrag`):
  * the envelope-disk coefficient its label names, not a new number. */
 export function envelopeDiskCoefficient(text: string) {
@@ -57,6 +61,7 @@ export function compileOperatingRodsFrom(texts: Readonly<Record<(typeof OPERATIN
   const hot = parseOperatingHotReference(texts['model/operating-hot-reference.md'])
   const s2 = parseS2Rods(texts['systems/reactor/control-absorber-and-guide-water.md'])
   const holding = parseS2Holding(texts['safety/reactor-trip-and-hold.md'])
+  const stem = parseDriveStem(texts['systems/reactor/control-absorber-and-guide-water.md'])
   const geometry = controlAbsorberGeometry(control, fuel, handling)
   const assemblies = fuelAssemblyPositions(handling, fuel)
   const pitch = fuel.latticeSide * fuel.pitch_m
@@ -82,6 +87,12 @@ export function compileOperatingRodsFrom(texts: Readonly<Record<(typeof OPERATIN
   if (control.insertedBodyBottom_m !== handling.seatedBottom_m || Math.abs(control.insertedBodyBottom_m + control.bodyLength_m - faTop) > 1e-12
     || control.spiderBottom_m !== faTop || control.headBottom_m <= coreTop || control.housingTop_m <= control.headBottom_m)
     throw Error('Seated bodies must span the guide from its lower mouth to the FA top below the head')
+  // The stem starts at the spider top; its top stays in the neck, above the
+  // housing cap, over the normal travel.
+  const neckBottom = control.housingTop_m + control.housingCapHeight_m
+  const stemTop = control.spiderBottom_m + control.spiderHeight_m + control.stemLength_m
+  if (!(stemTop > neckBottom && stemTop + control.normalTravel_m < control.neckTop_m))
+    throw Error('The stem top must stay inside HOUSING.NECK over the normal travel')
   return {
     identity: 'ld01-s2-rods',
     clusters,
@@ -89,6 +100,7 @@ export function compileOperatingRodsFrom(texts: Readonly<Record<(typeof OPERATIN
       seated_bottom_m: control.insertedBodyBottom_m, mass_kg: perCluster(geometry.moving.b4c_kg + geometry.moving.bodySteel_kg) },
     spider: { mass_kg: control.spiderMass_kg, volume_m3: control.spiderMass_kg / control.steelDensity_kg_m3,
       seated_bottom_m: control.spiderBottom_m, height_m: control.spiderHeight_m, radius_m: control.spiderRadius_m },
+    stem: { mass_kg: stem.driveRodMass_kg, radius_m: control.stemDiameter_m / 2, length_m: control.stemLength_m },
     guide: { bore_radius_m: handling.guideInnerDiameter_m / 2, lower_mouth_m: handling.seatedBottom_m, upper_mouth_m: faTop,
       roughness_m: control.guideRoughness_m, lower_mouth_loss: control.endLossEach, upper_mouth_loss: control.endLossEach,
       blend_speed_m_s: s2.passageBlendSpeed_m_s },
@@ -102,6 +114,7 @@ export function compileOperatingRodsFrom(texts: Readonly<Record<(typeof OPERATIN
       ]),
       upper: { region: 'UPPER', bottom_m: coreTop, top_m: control.headBottom_m },
       housing_main: { region: 'HOUSING.MAIN', bottom_m: control.headBottom_m, top_m: control.housingTop_m },
+      housing_neck: { region: 'HOUSING.NECK', bottom_m: neckBottom, top_m: control.neckTop_m },
     },
     gravity_m_s2: control.gravity_m_s2,
     reference_travel_m: hot.achievedRodTravel_m,
