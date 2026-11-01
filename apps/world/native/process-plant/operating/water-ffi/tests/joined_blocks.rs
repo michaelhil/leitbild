@@ -414,6 +414,13 @@ fn joined_blocks_against_colored() {
             .and_then(|mut f| std::io::Write::write_all(&mut f, &bytes))
             .unwrap_or_else(|e| panic!("values {path} must be new: {e}"));
     }
+    // The spray path's locks and the valve row's partial in the stem at the
+    // last (block) evaluation.
+    let spray_check = joined.pzr().stem_coordinate().map(|k| {
+        let sp = joined.network.spray_discrete_state();
+        json!({"stem": y[o.pzr + k], "closed": sp.map(|s| s.closed), "check_closed": sp.map(|s| s.check_closed),
+            "row_partial_in_opening": joined.network.spray_row_opening_partial()})
+    });
     let mut worst = 0_f64;
     let mut worst_at = json!(null);
     let mut differing = Vec::new();
@@ -478,6 +485,7 @@ fn joined_blocks_against_colored() {
     let receipt = json!({
         "kind": "s2-joined-blocks-against-colored-NOT-EVIDENCE",
         "relative_state_perturbation": perturb, "pzr_relief_lift": lift, "stuck_worth_dk": stuck_worth,
+        "pzr_spray": spray_check,
         "block_assembly_refused": refused,
         "klu_block_pattern": klu_blocks, "klu_structural_pattern": klu_structural,
         "composition": {"dimension": n, "offsets": o, "full_owners": full},
