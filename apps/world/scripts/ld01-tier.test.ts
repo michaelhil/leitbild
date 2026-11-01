@@ -1,6 +1,6 @@
 import {describe,expect,test} from 'bun:test'
 import {canonical,digest,parseTimeL,quietCpuS,relativeDifference} from './ld01-receipts'
-import {TRAJECTORY_SECTIONS,environmentMismatch,judgeSpan} from './ld01-tier'
+import {TRAJECTORY_SECTIONS,environmentMismatch,judgeSpan,median} from './ld01-tier'
 
 const TIME_L=`       17.52 real        16.70 user         0.48 sys
            396132352  maximum resident set size
@@ -12,6 +12,12 @@ const TIME_L=`       17.52 real        16.70 user         0.48 sys
 `
 
 describe('LD-01 receipt tooling',()=>{
+ test('R4-COST-RESOLUTION on T1: the median of three runs is judged against the 1 % band',()=>{
+  expect(median([4.948e9,4.918e9,4.919e9])).toBe(4.919e9)
+  const pin={instructions:4.919e9,digest:'d'}
+  expect(judgeSpan(pin,{instructions:median([4.98e9,4.92e9,4.93e9]),digest:'d'}).verdict).toBe('pass')
+  expect(judgeSpan(pin,{instructions:median([4.98e9,4.92e9,4.93e9]),digest:'a repeat differs'}).verdict).toBe('fail')
+ })
  test('time -l reports are summed over the test binaries of one cargo invocation',()=>{
   const r=parseTimeL(TIME_L)
   expect(r.processes).toBe(2)
