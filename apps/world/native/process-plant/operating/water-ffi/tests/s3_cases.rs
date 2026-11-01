@@ -1445,6 +1445,10 @@ struct CaseConfig {
     /// (`LD01_ROD_AUTO` on | off, unset off; the block from
     /// `LD01_ROD_CONTROL_WIKI`).
     rod_auto: bool,
+    /// X4.3 (lane TURB): the LOAD governor, ADM and GEN.WT composed with
+    /// the SG owner's valve law (`LD01_TURB_GOV` on | off, unset off; the
+    /// blocks from `LD01_TURB_WIKI`).
+    turbine_governor: bool,
 }
 impl CaseConfig {
     /// `LD01_S3_WEIGHTS` (stock | grouped), `LD01_S3_FIRST_STEP` (declared
@@ -1478,15 +1482,21 @@ impl CaseConfig {
             "off" => false,
             v => return Err(format!("LD01_ROD_AUTO={v}: on or off")),
         };
+        let turbine_governor = match var("LD01_TURB_GOV", "off").as_str() {
+            "on" => true,
+            "off" => false,
+            v => return Err(format!("LD01_TURB_GOV={v}: on or off")),
+        };
         Ok(Self {
             solver,
             matrix_rebuild,
             ramp_cap,
             rod_auto,
+            turbine_governor,
         })
     }
     fn json(&self) -> Value {
-        json!({"weights": self.solver.weights, "first_step": self.solver.first_step, "matrix_rebuild": format!("{:?}", self.matrix_rebuild), "ramp_cap": self.ramp_cap, "rod_auto": self.rod_auto})
+        json!({"weights": self.solver.weights, "first_step": self.solver.first_step, "matrix_rebuild": format!("{:?}", self.matrix_rebuild), "ramp_cap": self.ramp_cap, "rod_auto": self.rod_auto, "turbine_governor": self.turbine_governor})
     }
 }
 
@@ -1583,8 +1593,20 @@ fn drive(
     let exchanging = c5 || case == Case::C1;
     let started = process_cpu_s();
     let section = inputs.ic.clone();
-    let mut unit = s3::compose_with(inputs, state, ask.scaling, ask.config.solver, wrap)
-        .unwrap_or_else(|e| panic!("{e}"));
+    let turbine = ask.config.turbine_governor.then(|| {
+        let wiki = std::env::var("LD01_TURB_WIKI").expect("LD01_TURB_GOV=on needs LD01_TURB_WIKI");
+        leitbild_operating_water::unit::turbine::Turbine::from_wiki(&wiki)
+            .unwrap_or_else(|e| panic!("{e}"))
+    });
+    let mut unit = s3::compose_governed_with(
+        inputs,
+        state,
+        ask.scaling,
+        ask.config.solver,
+        turbine.as_ref(),
+        wrap,
+    )
+    .unwrap_or_else(|e| panic!("{e}"));
     let (t0, n, rtol, frame) = (unit.t0, unit.n, unit.rtol, unit.frame);
     // X4.4 (lane ROD): automatic rod control in AUTO when asked.
     let (mut rods, rod_receipt) = if ask.config.rod_auto {

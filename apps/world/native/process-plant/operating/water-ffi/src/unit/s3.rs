@@ -31,7 +31,7 @@ use super::{
 };
 use crate::{
     If97,
-    electrical::{Configuration, CreditedBudget, Electrified, N},
+    electrical::{Configuration, CreditedBudget, Electrified, G, N},
     frame::{Class, Frame},
     ida::{Ida, Initial},
     joined::{
@@ -39,6 +39,7 @@ use crate::{
         discrete_restart, root_directions,
     },
 };
+use leitbild_operating_plant::turbine::governor;
 use leitbild_operating_plant::{
     control::pzr_pressure::{Law, Section as ControlSection},
     electrical::{
@@ -206,6 +207,33 @@ pub fn compose_with<J: JoinedSystem>(
     solver: Solver,
     wrap: impl FnOnce(Integrated<If97>) -> Result<J, String>,
 ) -> Result<S3Unit<J>, String> {
+    compose_governed_with(inputs, state, scaling, solver, None, wrap)
+}
+
+/// X4.3 (lane TURB): [`compose`] with the LOAD governor, ADM and GEN.WT
+/// after the slice ([`super::turbine::Turbine`]).
+pub fn compose_governed(
+    inputs: &Inputs,
+    state: &Value,
+    solver: Solver,
+    turbine: &super::turbine::Turbine,
+) -> Result<S3Unit, String> {
+    compose_governed_with(inputs, state, Scaling::NONE, solver, Some(turbine), Ok)
+}
+
+/// [`compose_with`] with the X4.3 governor when `turbine` is given: in LOAD
+/// from the start with the request at the start's terminal export (the
+/// settled GEN.WT, wiki), ADM at its prepared full opening and the owner's
+/// tracking transfer `I = ADM - Kp e`.
+#[allow(clippy::too_many_lines)] // One composition, step by step as KERN's settle.
+pub fn compose_governed_with<J: JoinedSystem>(
+    inputs: &Inputs,
+    state: &Value,
+    scaling: Scaling,
+    solver: Solver,
+    turbine: Option<&super::turbine::Turbine>,
+    wrap: impl FnOnce(Integrated<If97>) -> Result<J, String>,
+) -> Result<S3Unit<J>, String> {
     let packet_path = &inputs.spine.packet_path;
     if state["packet"].as_str() != Some(packet_path.as_str()) {
         return Err(format!(
@@ -326,16 +354,51 @@ pub fn compose_with<J: JoinedSystem>(
     let (slice, breaker, routing, configuration, mut tail) = electrical(&e, rotors, t0)?;
     let mut unit = Electrified::new(integrated, slice, breaker, routing, configuration)
         .map_err(|e| format!("the electrical slice: {e:?}"))?;
+    let v_line = f(&e, &["boundary", "lineVoltage_V"])?;
+    let f0 = f(&e, &["boundary", "frequency_Hz"])?;
+    let omega0 = slice::prepared_carrier(f0) / unit.slice.parameters.generator.pole_pairs;
+    // X4.3: a governed saved state (TURB's state writer) carries the
+    // governor's held inputs and its three coordinates after the slice's;
+    // the governor is composed from them before the snapshot is restored.
+    let saved_governor: Option<governor::Held> = state
+        .pointer("/discrete_state/appended/electrical/governor")
+        .filter(|v| saved && !v.is_null())
+        .map(|v| serde_json::from_value(v.clone()))
+        .transpose()
+        .map_err(|e| format!("the saved governor: {e}"))?;
+    if let Some(held) = saved_governor {
+        let tb = turbine.ok_or(
+            "the saved state is governed (X4.3): compose it with the turbine (compose_governed)",
+        )?;
+        unit.declare_governor(governor::Governor {
+            parameters: tb.parameters(omega0),
+            held,
+        })?;
+    }
     if saved {
         unit.restore_appended_discrete_state(&state["discrete_state"]["appended"])
             .map_err(|e| format!("restore the slice's discrete state: {e}"))?;
     }
     let mut tail_rates = [0.; N];
-    let tail_ids = unit
-        .appended_start(t0, &mut tail, &mut tail_rates)
-        .map_err(|e| format!("the slice's prepared start: {e:?}"))?;
-    let v_line = f(&e, &["boundary", "lineVoltage_V"])?;
-    let f0 = f(&e, &["boundary", "frequency_Hz"])?;
+    let tail_ids = if saved_governor.is_some() {
+        // Only the identity is taken here; the saved tail and the exact
+        // consistent start below set the values.
+        let mut probe = vector(&state["appended"]["y"])?;
+        let mut rates = vec![0.; probe.len()];
+        if probe.len() != N + G {
+            return Err(format!(
+                "the saved governed tail has {} coordinates, not {}",
+                probe.len(),
+                N + G
+            ));
+        }
+        unit.appended_operator_state(&y);
+        unit.appended_start(t0, &mut probe, &mut rates)
+            .map_err(|e| format!("the governed slice's saved start: {e:?}"))?
+    } else {
+        unit.appended_start(t0, &mut tail, &mut tail_rates)
+            .map_err(|e| format!("the slice's prepared start: {e:?}"))?
+    };
     let s_flux = v_line / (2. * std::f64::consts::PI * f0);
     let s_cur = f(&e, &["boundary", "base_VA"])? / v_line;
     let mut slice_atol = vec![
@@ -364,9 +427,10 @@ pub fn compose_with<J: JoinedSystem>(
             vector(&state["appended"]["y"])?,
             vector(&state["appended"]["yp"])?,
         );
-        if a.len() != N || b.len() != N {
+        let want = N + if saved_governor.is_some() { G } else { 0 };
+        if a.len() != want || b.len() != want {
             return Err(format!(
-                "the saved slice has {} coordinates, not {N}",
+                "the saved slice has {} coordinates, not {want}",
                 a.len()
             ));
         }
@@ -374,8 +438,43 @@ pub fn compose_with<J: JoinedSystem>(
     } else {
         (tail.to_vec(), tail_rates.to_vec())
     };
+    // X4.3: the governor after the slice, in LOAD at the start's export.
+    let (tail, tail_rates, governor_receipt) = match (turbine, saved_governor) {
+        (None, _) => (tail, tail_rates, Value::Null),
+        (Some(tb), Some(held)) => {
+            slice_atol.extend([1e-8 * tb.governor.base_w, 1e-8, 1e-8]);
+            let receipt = json!({"inputs": tb.receipt(), "omega0_rad_s": omega0,
+                "start": {"restored": held, "watt_W": tail[N + governor::W], "integral": tail[N + governor::I],
+                    "opening": tail[N + governor::A], "mode": "as saved (the state's own held inputs and coordinates)"}});
+            (tail, tail_rates, receipt)
+        }
+        (Some(tb), None) => {
+            let export = unit.slice.export_w(&tail);
+            let g = leitbild_operating_plant::turbine::governor::Governor::new(
+                tb.parameters(omega0),
+                t0,
+                export,
+                export,
+            )?;
+            let opening = 1.;
+            let integral = g.tracking_integral(t0, export, tail[slice::OMEGA], opening);
+            unit.declare_governor(g)?;
+            slice_atol.extend([1e-8 * tb.governor.base_w, 1e-8, 1e-8]);
+            let mut tail = tail;
+            tail.extend([export, integral, opening]);
+            let mut rates = tail_rates;
+            rates.extend([0.; 3]);
+            let receipt = json!({"inputs": tb.receipt(), "omega0_rad_s": omega0, "start": {"request_W": export,
+                "watt_W": export, "integral": integral, "opening": opening, "mode": "LOAD (tracking transfer at the start)"}});
+            (tail, rates, receipt)
+        }
+    };
     let mut y_all = [y.as_slice(), &tail].concat();
     let mut yp_all = [yp.as_slice(), &tail_rates].concat();
+    let mut tail_ids = tail_ids;
+    if turbine.is_some() && saved_governor.is_none() {
+        tail_ids.extend([1.; 3]);
+    }
     let ids_all = [ids.as_slice(), &tail_ids].concat();
     // A reference scales every tolerance, derived classes included (the
     // record the frame driver checks is scaled the same way).
@@ -434,6 +533,7 @@ pub fn compose_with<J: JoinedSystem>(
         "pzr_control": {"class": "S (S3-D4)", "prepared_request_w": prepared_w, "start_request_w": start_w,
             "commissioned": if saved { "after restoring the saved discrete state" } else { "before L1 is armed (KERN's settle order)" }},
         "stator_rows": stator, "stator_budget": "S3-D23: 10 A, 1 MW",
+        "governor": governor_receipt,
         "start": {"projection_passes": initial.report.projection_passes, "residual": initial.report.residual.value,
             "correction_wrms": initial.report.correction_wrms, "appended": initial.appended},
     });

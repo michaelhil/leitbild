@@ -418,6 +418,9 @@ pub struct Secondaries {
     /// X4.4 preview (lane ROD): the turbine load demand, a fraction of the
     /// prepared steam demand (1 as prepared; the turbine valve is X4.3's).
     turbine_load: f64,
+    /// X4.3 (lane TURB): the turbine admission valve's choked law and the
+    /// at-power bypass band, when the electrical slice's governor is composed.
+    valve: Option<ValveAdmission>,
     /// Per SG, the side of each bypass kink its last located crossing left
     /// (`true` above), unset from the TRIP until the first crossing. A set
     /// side arms only the reverse crossing, so a restart that puts the
@@ -438,6 +441,30 @@ pub struct Secondaries {
     apparent: Option<Apparent>,
     /// The compact feed train, when the packet composes it.
     feed: Option<FeedOwner>,
+}
+
+/// X4.3 (lane TURB; spec admission-and-protection.md `ld01-bypass-control`,
+/// turbine-and-regeneration-dynamics.md X4.3): the turbine admission valve's
+/// choked law and the at-power bypass band, declared by the composition with
+/// the electrical slice's governor.
+/// - Admission per SG: `m_k = a * c_k(t) * p_k`, `c_k = D_k * f_STOP(t) /
+///   p_ref,k`: proportional to the valve opening `a` (the slice's coordinate,
+///   1 = full open, the prepared MANUAL position) and to the inlet pressure.
+///   **Judgement (lead, 1 Nov):** the SG dome pressure stands in for the
+///   header/HP inlet until C10's header store joins; the law is sized at the
+///   prepared SG pressure `p_ref,k`, so the prepared opening passes the
+///   prepared demand there.
+/// - The opening is a trial input: the slice sets it from its coordinate
+///   before every evaluation (`direction` 1 only for the admission column).
+/// - At power the bypass stays closed (lead ruling, x43-5: a PWR's at-power
+///   dump is the Tavg-mode load-rejection dump, armed only on a load
+///   rejection beyond the rods, which 1.0 does not have, CRED I14); from the
+///   TRIP on the no-load pressure mode as before.
+#[derive(Clone, Debug)]
+pub struct ValveAdmission {
+    reference_pa: Vec<f64>,
+    opening: f64,
+    direction: f64,
 }
 
 /// Steam admission fraction at `t` after a TRIP latched at `trip_s`: 1 at
@@ -719,6 +746,7 @@ impl Secondaries {
             prepared,
             trip_s: None,
             turbine_load: 1.,
+            valve: None,
             bypass_side: vec![[None; 2]; n],
             feed_supported: true,
             feed_gate_declared: false,
@@ -746,6 +774,13 @@ impl Secondaries {
     /// The pickup steam of SG `k` at `t` and pressure `p`: the STOP-ramped
     /// turbine admission plus the bypass stand-in (R12-B1).
     fn pickup_steam(&self, k: usize, t: f64, p: Scalar) -> (Scalar, Scalar) {
+        if let Some(v) = &self.valve {
+            let by = s(self.bypass.fraction_of_nominal_steam * self.sgs[k].steam_demand_kg_s)
+                * self.bypass_opening(t, p);
+            let turbine =
+                Scalar::new(v.opening, v.direction) * s(self.admission_coefficient(k, t)) * p;
+            return (turbine + by, by);
+        }
         pickup_steam(
             self.sgs[k].steam_demand_kg_s,
             self.stop_travel_s,
@@ -755,6 +790,15 @@ impl Secondaries {
             t,
             p,
         )
+    }
+
+    /// X4.3: SG `k`'s admission coefficient `c_k(t) = D_k f_STOP(t) / p_ref,k`
+    /// (kg/s per Pa at full opening); zero without the valve law.
+    fn admission_coefficient(&self, k: usize, t: f64) -> f64 {
+        self.valve.as_ref().map_or(0., |v| {
+            self.sgs[k].steam_demand_kg_s * steam_fraction(self.trip_s, self.stop_travel_s, t)
+                / v.reference_pa[k]
+        })
     }
 
     /// Prepared stocks on the runtime chart at a pressure and liquid volume,
@@ -998,7 +1042,72 @@ impl<P: Properties> Secondary<P> for Secondaries {
     fn turbine_trip_time(&self) -> Option<f64> {
         self.trip_s
     }
+    fn declare_valve_admission(&mut self) -> Result<(), Failure> {
+        if self.trip_s.is_some() || self.turbine_load != 1. || self.valve.is_some() {
+            return Err(fatal(
+                "X4.3: the valve law is declared once, at power, without the X4.4 load stand-in",
+            ));
+        }
+        let reference_pa: Vec<f64> = self
+            .sgs
+            .iter()
+            .map(|g| self.prepared[g.base + PRESSURE])
+            .collect();
+        if reference_pa.iter().any(|p| !(p.is_finite() && *p > 0.)) {
+            return Err(fatal("X4.3: a prepared SG pressure"));
+        }
+        self.valve = Some(ValveAdmission {
+            reference_pa,
+            opening: 1.,
+            direction: 0.,
+        });
+        Ok(())
+    }
+    fn set_admission_opening(&mut self, opening: f64, direction: f64) -> Result<(), Failure> {
+        let v = self
+            .valve
+            .as_mut()
+            .ok_or_else(|| fatal("X4.3: no valve law declared"))?;
+        if !opening.is_finite() {
+            return Err(recoverable(format!("admission opening trial {opening}")));
+        }
+        v.opening = opening;
+        v.direction = direction;
+        Ok(())
+    }
+    fn admission_terms(&self, t: f64) -> Option<Vec<(usize, f64)>> {
+        self.valve.as_ref()?;
+        Some(
+            self.sgs
+                .iter()
+                .enumerate()
+                .map(|(k, g)| (g.base + PRESSURE, self.admission_coefficient(k, t)))
+                .collect(),
+        )
+    }
+    fn admission_rows(&self) -> Vec<usize> {
+        if self.valve.is_none() {
+            return Vec::new();
+        }
+        let mut rows = Vec::new();
+        for (k, g) in self.sgs.iter().enumerate() {
+            rows.extend([g.base + MASS, g.base + ENERGY]);
+            if self.apparent.is_some() {
+                rows.push(g.base + LIFTS + g.valves.len() + DISTRIBUTION);
+            }
+            if let Some(f) = &self.feed {
+                rows.push(f.control(k) + STEAM_LAG);
+            }
+        }
+        rows.sort_unstable();
+        rows
+    }
     fn set_turbine_load(&mut self, t: f64, load: f64) -> Result<Transaction, Failure> {
+        if self.valve.is_some() {
+            return Err(fatal(
+                "X4.3: the turbine valve sets the admission; no load stand-in",
+            ));
+        }
         if !(load.is_finite() && load >= 0.) {
             return Err(fatal(format!("turbine load demand {load}")));
         }
