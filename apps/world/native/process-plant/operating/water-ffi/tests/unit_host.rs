@@ -182,9 +182,10 @@ fn a_restored_copy_continues_bitwise_and_the_protocol_refuses_explicitly() {
     let stepping =
         std::env::var("LD01_UNIT_HOST_STEPPING").unwrap_or_else(|_| "free".into());
     let free = stepping == "free";
-    // The water method (owner decision 1 Nov): the IF97 reference unless
-    // LD01_UNIT_HOST_WATER names sbtl.
-    let water = std::env::var("LD01_UNIT_HOST_WATER").unwrap_or_else(|_| "if97".into());
+    // The water method (owner decision 1 Nov): SBTL, the default since the
+    // combined re-pin's gates passed (lead 1 Nov), unless
+    // LD01_UNIT_HOST_WATER names the IF97 reference.
+    let water = std::env::var("LD01_UNIT_HOST_WATER").unwrap_or_else(|_| "sbtl".into());
     let other_water = if water == "sbtl" { "if97" } else { "sbtl" };
     let load = json!({
         "inputs": {

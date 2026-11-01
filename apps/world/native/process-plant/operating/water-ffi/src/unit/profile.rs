@@ -125,13 +125,14 @@ pub struct Solver {
 }
 impl Solver {
     /// Stock weights, the declared G13 first step, free stepping
-    /// (R4-FREE-STEPS, lead 1 Nov) and the IF97 reference water (until the
-    /// SBTL gates pass): the composition of record.
+    /// (R4-FREE-STEPS, lead 1 Nov) and the SBTL water (R4-SBTL; the default
+    /// since the combined re-pin's gates of record passed, lead 1 Nov): the
+    /// composition of record. IF97 stays the named reference.
     pub const STOCK: Self = Self {
         weights: Weights::Stock,
         first_step: FirstStep::Declared,
         stepping: Stepping::Free,
-        water: crate::WaterMethod::If97,
+        water: crate::WaterMethod::Sbtl,
     };
 }
 

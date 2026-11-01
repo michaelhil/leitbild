@@ -303,9 +303,9 @@ fn oracle(
 fn smoke() {
     // The water method the tuple's packets were prepared on (SBTL's lead
     // ruling, 1 Nov: a state is prepared and run on one method):
-    // LD01_S3_WATER, unset the IF97 reference, selected before any water call.
+    // LD01_S3_WATER, unset SBTL (the default since the combined re-pin, lead 1 Nov), selected before any water call.
     let water = leitbild_operating_water::WaterMethod::parse(
-        &std::env::var("LD01_S3_WATER").unwrap_or_else(|_| "if97".into()),
+        &std::env::var("LD01_S3_WATER").unwrap_or_else(|_| "sbtl".into()),
     )
     .unwrap_or_else(|e| panic!("{e}"));
     leitbild_operating_water::select_water_method(water).unwrap_or_else(|e| panic!("{e}"));

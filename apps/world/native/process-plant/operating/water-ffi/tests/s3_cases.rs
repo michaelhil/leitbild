@@ -1530,7 +1530,7 @@ impl CaseConfig {
             // The composition's water method (owner decision 1 Nov): a case
             // configuration value as stepping is (unset: the IF97
             // reference), selected by the composition and recorded.
-            water: leitbild_operating_water::WaterMethod::parse(&var("LD01_S3_WATER", "if97"))?,
+            water: leitbild_operating_water::WaterMethod::parse(&var("LD01_S3_WATER", "sbtl"))?,
         };
         // The r4 baseline (BASELINE-r4.md): stock matrix management unless
         // MR-1 is asked.
