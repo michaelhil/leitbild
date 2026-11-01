@@ -49,21 +49,22 @@ test('relief, travel and S2 boundaries parse from their owners only, strictly',(
 })
 
 const wiki=process.env.LD01_WIKI_ROOT
+// X4.5 geometry refit (wiki 54a078e, steam-generation/index.md's refit table): the compiled values at rt-integ-wiki fb3756a.
 test.skipIf(!wiki)('actual secondary and probe sections compile once; corrupted owners fail',async()=>{
   const section=await prepareOperatingSecondary(wiki!),probe=await prepareSgProbe(wiki!,{A:9167.294305,B:9167.309151})
   expect(section.steamGenerators.map(g=>[g.id,g.steamDemand_kg_s,g.crownLiquidVolume_m3,g.pickupLiquidVolume_m3,g.reliefs.length]))
-    .toEqual([['A',819.9495,42,102,2],['B',819.9455,42,102,2]])
+    .toEqual([['A',819.9495,54.01939830602499,127.37427330602499,2],['B',819.9455,54.01939830602499,127.37427330602499,2]])
   expect(section.feed).toEqual({rule:'inventoryHolding',pressure_Pa:7200000,temperature_K:493.15})
   expect(section.steamAdmission).toEqual({stopTravel_s:.3})
   expect(section.relief.seatLagTimeConstants).toBe(10)
-  expect(section.contact).toEqual({exchangeArea_m2:5000,emissivity:.3,steelConductivity_W_mK:15,steelDensity_kg_m3:8000,steelCp_J_kgK:500})
-  expect(section.exposure).toEqual({fold:{developedLength_m:20,inlet_m:2.5,crest_m:12,outlet_m:3},bundleZoneVolume_m3:42,upperZoneArea_m2:12})
-  expect(probe.tube).toEqual({thermalDiameter_m:.02})
+  expect(section.contact).toEqual({tubeCount:8807,tubeOutsideDiameter_m:.0174752,tubeInsideDiameter_m:.0154432,foulingResistance_m2K_W:.0000158499,emissivity:.3,steelConductivity_W_mK:15,steelDensity_kg_m3:8000,steelCp_J_kgK:500,exchangeArea_m2:9670.078943833776})
+  expect(section.exposure).toEqual({fold:{developedLength_m:20,inlet_m:2.5,crest_m:12,outlet_m:3},bundleZoneVolume_m3:54.01939830602498,upperZoneArea_m2:14.670975})
+  expect(probe.tube).toEqual({thermalDiameter_m:.0154432})
   expect(section.relief.rating.massFlow_kg_s).toBeCloseTo(561.1185020,6)
   expect(section.provenance.consumed.map(c=>c.name.split('ld-01/')[1])).toEqual([...sectionPages])
-  expect(probe.primary).toEqual({pressure_Pa:15200000,temperature_K:563.15,flowArea_m2:1.25,massFlow_kg_s:[9167.294305,9167.309151]})
+  expect(probe.primary).toEqual({pressure_Pa:15200000,temperature_K:563.15,inletTemperature_K:593.15,flowArea_m2:1.649652499862129,massFlow_kg_s:[9167.294305,9167.309151]})
   expect(probe.segments.map(g=>[g.developedStart_m,g.developedEnd_m,g.exchangeArea_m2,g.capacity_J_K]))
-    .toEqual([[0,5,1250,37.5e6],[5,10,1250,37.5e6],[10,15,1250,37.5e6],[15,20,1250,37.5e6]])
+    .toEqual([[0,5,2417.519735958444,37.5e6],[5,10,2417.519735958444,37.5e6],[10,15,2417.519735958444,37.5e6],[15,20,2417.519735958444,37.5e6]])
   expect(probe.provenance.consumed.map(c=>c.name.split('ld-01/')[1])).toEqual([...probePages])
   const base=join(wiki!,'world/packs/process-plant/reference-designs/ld-01'),
     read=(p:string)=>Bun.file(join(base,p)).text(),
@@ -71,8 +72,8 @@ test.skipIf(!wiki)('actual secondary and probe sections compile once; corrupted 
   const sources={thermodynamics:thermodynamics!,admission:admissionDoc!,balance:balance!,cycle:cycle!,hydraulics:hydraulics!,mechanics:mechanics!}
   expect(compileOperatingSecondary(sources)).toEqual({...section,provenance:undefined} as never)
   for(const [key,from,to] of [
-    ['thermodynamics','"upperZoneArea_m2":12','"upperZoneArea_m2":20'],
-    ['thermodynamics','"upperZoneArea_m2":12','"upperZoneArea_m2":12,"horizontalArea_m2":7.5'],
+    ['thermodynamics','"upperZoneArea_m2":14.670975','"upperZoneArea_m2":20'],
+    ['thermodynamics','"upperZoneArea_m2":14.670975','"upperZoneArea_m2":14.670975,"horizontalArea_m2":7.5'],
     ['thermodynamics','"pickupBottom_m":17','"pickupBottom_m":19'],
     ['thermodynamics','"crownTop_m":12','"crownTop_m":16.5'],
     ['thermodynamics','"feedRule":"inventoryHolding"','"feedRule":"inventoryHolding","extra":1'],
