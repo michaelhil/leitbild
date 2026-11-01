@@ -1247,12 +1247,21 @@ impl<S: JoinedSystem> Driver<S> {
         let mut scratch = vec![0.; n];
         loop {
             let t = self.observed_to;
-            if !(t < until && !same_instant(t, until)) {
+            // One instant has one time: stock may stand at a stop within the
+            // instant tolerance of the observed time but not on it (an owner
+            // event or a declared stop beside the frame instant computed from
+            // the frame grid). Observation then moves to stock's own time
+            // first, so nothing applies, and no step starts, from a time the
+            // next step's dense output does not hold (IDAGetDky -26 at
+            // rtol/100: frame 438.99999999998676 s, stock at 439.0 s).
+            let sliver = self.integrator_s > t && same_instant(self.integrator_s, t);
+            if !(t < until && !same_instant(t, until)) && !sliver {
                 break;
             }
-            let ahead = self.integrator_s > t && !same_instant(self.integrator_s, t);
-            let due_now = self.earliest_due().is_some_and(|d| Self::due_at(d, t))
-                || self.commands.first().is_some_and(|c| Self::due_at(c.0, t));
+            let ahead = self.integrator_s > t && !sliver;
+            let due_now = !sliver
+                && (self.earliest_due().is_some_and(|d| Self::due_at(d, t))
+                    || self.commands.first().is_some_and(|c| Self::due_at(c.0, t)));
             if due_now {
                 let rolled_back_from = if ahead {
                     // Due behind the integrator: restart at its exact time
@@ -1284,9 +1293,9 @@ impl<S: JoinedSystem> Driver<S> {
                 self.step_yp.clear();
                 continue;
             }
-            if ahead {
+            if ahead || sliver {
                 // Serve the observation from the last step's dense output.
-                let to = if same_instant(self.integrator_s, until) {
+                let to = if sliver || same_instant(self.integrator_s, until) {
                     self.integrator_s
                 } else {
                     self.integrator_s.min(until)
