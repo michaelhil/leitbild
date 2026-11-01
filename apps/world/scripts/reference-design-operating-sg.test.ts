@@ -105,5 +105,5 @@ test.skipIf(!wiki)('actual secondary and probe sections compile once; corrupted 
 },600000)
 
 test('probe compile refuses nonpositive flows',()=>{
-  expect(()=>compileSgProbe({thermodynamics:'',balance:'',hot:'',thermal:'',mechanics:'',initialization:''},{A:0,B:1})).toThrow('Positive primary flows')
+  expect(()=>compileSgProbe({thermodynamics:'',balance:'',hot:'',mechanics:''},{A:0,B:1})).toThrow('Positive primary flows')
 })

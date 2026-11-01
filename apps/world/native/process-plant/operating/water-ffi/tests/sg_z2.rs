@@ -114,10 +114,20 @@ fn z2_sg_duty_sweep_on_the_native_laws() {
         feed_j_kg: derived.feed_enthalpy_j_kg,
         props: &props,
     };
-    let pressures: Vec<f64> = (0..=12).map(|k| 6.0e6 + 0.05e6 * k as f64).collect();
+    // X4.5: the refit's emergent pressure lies below 6 MPa; the sweep spans
+    // 4.8-6.6 MPa.
+    let pressures: Vec<f64> = (0..=36).map(|k| 4.8e6 + 0.05e6 * k as f64).collect();
     let q = &probe.primary;
     let port_at = |t_k: f64, m: f64| {
-        PrimaryPort::held(&props, q.pressure_pa, t_k, m / q.flow_area_m2).unwrap()
+        PrimaryPort::held(
+            &props,
+            q.pressure_pa,
+            t_k,
+            q.inlet_temperature_k,
+            m,
+            q.flow_area_m2,
+        )
+        .unwrap()
     };
     let duty = |port: &PrimaryPort, p: f64| sweep.at(port, p, 0.)["dutyPerSG_W"].as_f64().unwrap();
     let mut cases = Vec::new();
@@ -136,16 +146,35 @@ fn z2_sg_duty_sweep_on_the_native_laws() {
                     .as_f64()
                     .unwrap()
             },
-            6.0e6,
+            4.8e6,
             6.6e6,
         );
-        let (station_root, it2) = sweep.root(|p| duty(&port, p) - station[k], 6.0e6, 6.6e6);
+        let (station_root, it2) = sweep.root(|p| duty(&port, p) - station[k], 4.8e6, 6.6e6);
         cases.push(json!({"sg":g.id,"primary":{"pressure_Pa":q.pressure_pa,"temperature_K":q.temperature_k,
-                "massFlow_kg_s":q.mass_flow_kg_s[k],"massFlux_kg_m2_s":q.mass_flow_kg_s[k] / q.flow_area_m2},
+                "inletTemperature_K":q.inlet_temperature_k,"massFlow_kg_s":q.mass_flow_kg_s[k],"massFlux_kg_m2_s":q.mass_flow_kg_s[k] / q.flow_area_m2},
             "sweep":rows,
             "emergentAtDemand":{"bisections":it1,"state":sweep.at(&port, emergent, g.steam_demand_kg_s)},
             "atStationDuty":{"stationDuty_W":station[k],"bisections":it2,"state":sweep.at(&port, station_root, g.steam_demand_kg_s)}}));
     }
+    // X4.5 (lead ruling d): the single-pass law at the low-flow end, SG.A at
+    // its emergent pressure, the primary flow scaled down to zero: duty,
+    // stationary wall and effectiveness Q / (C (T_in - T_wall)).
+    let emergent_a = cases[0]["emergentAtDemand"]["state"]["secondaryPressure_Pa"]
+        .as_f64()
+        .unwrap();
+    let low_flow: Vec<Value> = [1., 0.3, 0.1, 0.03, 0.01, 0.003, 0.001, 1e-4, 0.]
+        .iter()
+        .map(|f| {
+            let port = port_at(q.temperature_k, f * q.mass_flow_kg_s[0]);
+            let state = sweep.at(&port, emergent_a, 0.);
+            let duty = state["dutyPerSG_W"].as_f64().unwrap();
+            let wall = state["wall_K"].as_f64().unwrap();
+            let c = port.inflow_capacity_w_k.value;
+            let drive = c * (port.inflow_temperature.value - wall);
+            json!({"flowFraction":f,"capacity_W_K":c,"dutyPerSG_W":duty,"wall_K":wall,
+                "effectiveness":if drive > 0. { Value::from(duty / drive) } else { Value::Null }})
+        })
+        .collect();
     // Sensitivity: the primary at the cycle-sizing outlet (thermodynamics.md,
     // distributed primary heat-transfer sizing), SG.A flow and demand.
     let sizing_outlet = 289.764953 + 273.15;
@@ -157,7 +186,7 @@ fn z2_sg_duty_sweep_on_the_native_laws() {
                 .as_f64()
                 .unwrap()
         },
-        5.9e6,
+        4.8e6,
         6.6e6,
     );
     // Formulation comparisons with the wiki's HEOS figures (not checks of IF97).
@@ -188,8 +217,9 @@ fn z2_sg_duty_sweep_on_the_native_laws() {
     let conductance = film.heat.value / (sizing_wall - (320. + 273.15)) * 5000.;
     let out = json!({
         "probe":"Z2 SG duty versus secondary pressure at 100% power on the native laws (zero time, stationary local wall balance per segment)",
-        "laws":"sg::tube::Tube::segment_heat (thermal::liquid_wall_current, Film::Tube; thermal::secondary_wall) with maintained IF97 (water-ffi If97); demand duty with the block's IF97 feed enthalpy",
+        "laws":"sg::tube::Tube::segment_heat (X4.5 ruling d: thermal::tube_series_conductance and thermal::single_pass_heat from the inflow, Film::Tube; thermal::secondary_wall) with maintained IF97 (water-ffi If97); demand duty with the block's IF97 feed enthalpy",
         "derived":derived,"heldInventory_kg":sweep.mass_kg,"cases":cases,
+        "lowFlow":{"sg":"A","secondaryPressure_Pa":emergent_a,"rows":low_flow},
         "temperatureSensitivity":{"primaryTemperature_K":sizing_outlet,"sg":"A",
             "emergentAtDemand":sweep.at(&port, sens, g.steam_demand_kg_s)},
         "formulation":{"if97Saturation6MPa_C":sat6.temperature.value - 273.15,"wikiHeosSaturation6MPa_C":275.584989992,
