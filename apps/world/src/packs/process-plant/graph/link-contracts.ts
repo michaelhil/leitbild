@@ -4,7 +4,8 @@ import type { RatioMeasurand, VariableActuation } from './semantics.ts'
 interface FluidLinkContract {
   readonly solverModel: FluidSolverModel
   readonly allowedFluids: ReadonlySet<FluidKind>
-  readonly requiredDesignPhase: DesignPhase
+  /** null: any phase, as the solver that owns the link declares it. */
+  readonly requiredDesignPhase: DesignPhase | null
   readonly requiredVariables: ReadonlySet<string>
   readonly optionalVariables: ReadonlySet<string>
 }
@@ -48,6 +49,14 @@ const fluidLinkContracts: Readonly<Record<FluidSolverModel, FluidLinkContract>> 
       'enthalpyKJPerKg',
       'radiationMSvPerH',
     ]),
+  },
+  // A native unit solves the flow of its own network: the link carries no TS solver variables and reads none.
+  nativeUnit: {
+    solverModel: 'nativeUnit',
+    allowedFluids: setOf(['water', 'steam']),
+    requiredDesignPhase: null,
+    requiredVariables: setOf([]),
+    optionalVariables: setOf([]),
   },
   twoPhaseApprox: {
     solverModel: 'twoPhaseApprox',
@@ -128,7 +137,7 @@ export const validateProcessLinkContract = (link: CompiledProcessLink): void => 
   if (!contract.allowedFluids.has(nominalFluid)) {
     throw new Error(`fluid connection ${link.id} solverModel ${solverModel} does not support nominalFluid ${nominalFluid}`)
   }
-  if (designPhase !== contract.requiredDesignPhase) {
+  if (contract.requiredDesignPhase !== null && designPhase !== contract.requiredDesignPhase) {
     throw new Error(`fluid connection ${link.id} solverModel ${solverModel} requires designPhase ${contract.requiredDesignPhase}`)
   }
 

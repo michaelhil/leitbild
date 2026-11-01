@@ -92,7 +92,7 @@ describe('T03: saved Runs restore', () => {
     const before = await Bun.file(path).text()
     const historical = processPlantRuntimeStateSchema.parse(JSON.parse(before).state)
     expect(meta.commit).toBe('37e4431bb')
-    expect(new Set(historical.plants.map(plant => plant.runtime.modelDigest))).toEqual(new Set(['47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea']))
+    expect(new Set(historical.plants.map(plant => 'modelDigest' in plant.runtime ? plant.runtime.modelDigest : plant.runtime.engine))).toEqual(new Set(['47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea']))
     await expect(registry.load(meta.runId as SimulationRunId)).rejects.toThrow('restored process plant model 47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea does not match Plant model')
     expect(await Bun.file(path).text()).toBe(before)
   })

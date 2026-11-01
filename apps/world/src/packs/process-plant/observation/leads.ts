@@ -2,6 +2,7 @@ import { equipmentKeyValues, readsAsMeasured, stopCommands, stopReadings } from 
 import type { VariablePath } from '../graph/index.ts'
 import type { CompiledProcessPlant } from '../plant-compiler.ts'
 import { createProcessPlantRuntime } from '../runtime/index.ts'
+import { runsOnNativeEngine } from '../engine/port.ts'
 
 // What each element's detail leads with (ruling Q22): its equipment key
 // values, as the old detail display ranked them (equipmentKeyValues), other
@@ -58,8 +59,13 @@ export const elementLeads = (plant: CompiledProcessPlant, mode: string | null): 
   const key = mode ?? ''
   const cached = known.get(key)
   if (cached !== undefined) return cached
-  const values = nominal(plant)
-  const now = { mode, read: (path: VariablePath) => values.get(String(path)) }
+  // An LD-01 Plant's lists read no state: its kinds declare no meaningful-while flag and its kernel's protection no
+  // TS rule, so no TS runtime of its model is made (none could run it); a read would be a fault, said so.
+  const values = runsOnNativeEngine(plant.modelRef) ? null : nominal(plant)
+  const now = { mode, read: (path: VariablePath) => {
+    if (values === null) throw new Error(`${plant.id}'s lead lists read no state, yet read ${path}`)
+    return values.get(String(path))
+  } }
   const leads = new Map(plant.graph.components.flatMap(component => {
     const lead = equipmentKeyValues(plant, [component.index], now)
     return lead.length === 0 ? [] : [[String(component.id), lead] as const]

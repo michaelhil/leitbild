@@ -33,7 +33,7 @@ export type PlantRecording = { readonly seriesIds: ReadonlySet<string>; readonly
 /** The one table from the Plant's unit strings to core's unit codes (core/observation/model.ts quantityUnits, R26). */
 export const unitCodes: Readonly<Record<ProcessUnit, string>> = {
   boolean: '', amps: 'A', count: '1', cps: 'cps', degC: 'degC', DPM: 'DPM', 'degC/s': 'degC/s', fraction: '1', Hz: 'Hz',
-  kg: 'kg', 'kJ/kg': 'kJ/kg', 'kg/s': 'kg/s', kV: 'kV', kW: 'kW', MJ: 'MJ', MPa: 'MPa', 'mSv/h': 'mSv/h', m3: 'm3', MW: 'MW',
+  kg: 'kg', 'kJ/kg': 'kJ/kg', 'kg/s': 'kg/s', kV: 'kV', kW: 'kW', m: 'm', MJ: 'MJ', MPa: 'MPa', 'mSv/h': 'mSv/h', m3: 'm3', MW: 'MW',
   Pa: 'Pa', pcm: 'pcm', percent: '%', ppm: 'ppm', rpm: 'rpm', s: 's', volts_dc: 'V',
 }
 

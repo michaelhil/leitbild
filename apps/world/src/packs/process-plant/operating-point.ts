@@ -1,6 +1,7 @@
 import type { VariablePath } from './graph/index.ts'
 import type { CompiledProcessPlant } from './plant-compiler.ts'
 import { createProcessPlantRuntime, type ProcessPlantRuntime } from './runtime/index.ts'
+import { runsOnNativeEngine } from './engine/port.ts'
 
 // The Plant at the operating point its model declares, before anything has
 // run: what a signal reads nominally. A display sizes the step it shows a
@@ -11,6 +12,7 @@ const atOperatingPoint = new WeakMap<CompiledProcessPlant, ProcessPlantRuntime>(
 
 /** What a signal reads at the Plant's declared operating point: a number or an on/off state (a breaker closed, the grid available). */
 export const operatingPointReading = (plant: CompiledProcessPlant, path: VariablePath): unknown => {
+  if (runsOnNativeEngine(plant.modelRef)) throw new Error(`${plant.id} runs in its native unit: no TS runtime holds its operating point (${path})`)
   let runtime = atOperatingPoint.get(plant)
   if (runtime === undefined) {
     runtime = createProcessPlantRuntime({ system: plant })

@@ -1,4 +1,79 @@
-use std::{env, path::PathBuf, process::Command};
+use std::{
+    env,
+    path::{Path, PathBuf},
+    process::Command,
+};
+
+// The operating crate's one SHA-256 (dependency-free), for the identities
+// below; the build script cannot depend on the crate it links.
+#[path = "../src/digest.rs"]
+mod digest;
+
+fn sources(directory: &Path, out: &mut Vec<PathBuf>) {
+    let mut entries: Vec<PathBuf> = std::fs::read_dir(directory)
+        .unwrap_or_else(|e| panic!("{}: {e}", directory.display()))
+        .map(|e| e.expect("directory entry").path())
+        .collect();
+    entries.sort();
+    for path in entries {
+        if path.is_dir() {
+            sources(&path, out);
+        } else if matches!(
+            path.extension().and_then(|e| e.to_str()),
+            Some("rs" | "c" | "toml" | "lock")
+        ) {
+            out.push(path);
+        }
+    }
+}
+
+/// The identities the unit host (`ld01-unit`) binds a snapshot to:
+/// `LD01_KERNEL_SOURCE_SHA256`, the SHA-256 over the kernel's own sources
+/// (the operating crate and this crate's library and binaries, with their
+/// manifests and lock files; not the tests), since native builds are not
+/// byte-reproducible; and `LD01_WATER_LIBRARY_SHA256`, the linked IF97
+/// archive's.
+fn identities(library: &Path) {
+    let root = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").expect("manifest dir"));
+    let mut files = Vec::new();
+    for entry in [
+        "../src",
+        "../Cargo.toml",
+        "../Cargo.lock",
+        "src",
+        "build.rs",
+        "Cargo.toml",
+        "Cargo.lock",
+    ] {
+        let path = root.join(entry);
+        println!("cargo:rerun-if-changed={}", path.display());
+        if path.is_dir() {
+            sources(&path, &mut files);
+        } else {
+            files.push(path);
+        }
+    }
+    let mut input = Vec::new();
+    for file in files {
+        let relative = file
+            .strip_prefix(&root)
+            .unwrap_or(&file)
+            .display()
+            .to_string();
+        input.extend_from_slice(relative.as_bytes());
+        input.push(0);
+        input.extend_from_slice(digest::sha256(&std::fs::read(&file).expect("source")).as_bytes());
+        input.push(b'\n');
+    }
+    println!(
+        "cargo:rustc-env=LD01_KERNEL_SOURCE_SHA256={}",
+        digest::sha256(&input)
+    );
+    println!(
+        "cargo:rustc-env=LD01_WATER_LIBRARY_SHA256={}",
+        digest::sha256(&std::fs::read(library).expect("water archive"))
+    );
+}
 
 fn main() {
     println!("cargo:rerun-if-env-changed=LD01_OPERATING_WATER_LIB_DIR");
@@ -18,6 +93,7 @@ fn main() {
     );
     println!("cargo:rerun-if-changed={}", library.display());
     println!("cargo:rerun-if-changed={}", receipt.display());
+    identities(&library);
     println!("cargo:rustc-link-search=native={}", directory.display());
     println!("cargo:rustc-link-lib=static=ld01_operating_water");
     let target = env::var("CARGO_CFG_TARGET_OS").expect("target OS");
