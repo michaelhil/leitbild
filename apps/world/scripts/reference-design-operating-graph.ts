@@ -79,7 +79,14 @@ const icSchema = z.object({
     channels: z.array(z.object({ id: z.string().min(1), supply: z.string().min(1) }).strict()).min(1),
     channel: z.object({ min: finite.nullable(), max: finite.nullable() }).passthrough(),
   }).passthrough()).min(1),
-  reports: z.array(z.object({ id: z.string().min(1), source: z.enum(['turbine_retained_trip', 'bank_inserted']), supply: z.string().min(1) }).passthrough()),
+  reports: z.array(z.object({ id: z.string().min(1), source: z.union([z.enum(['turbine_retained_trip', 'bank_inserted']),
+    // PHYS2's electrical reports (ld01-electrical-reports, PROC T1-T3): the AC routing's state.
+    z.object({ bus_available: z.object({ bus: z.string().min(1) }).strict() }).strict(),
+    z.object({ source_available: z.object({ source: z.enum(['unit', 'reserve']) }).strict() }).strict(),
+    z.object({ source_qualified: z.object({ source: z.enum(['unit', 'reserve']) }).strict() }).strict(),
+    z.object({ incoming_closed: z.object({ bus: z.string().min(1), source: z.enum(['unit', 'reserve']) }).strict() }).strict(),
+    z.object({ incoming_travel_complete: z.object({ bus: z.string().min(1), source: z.enum(['unit', 'reserve']) }).strict() }).strict()]),
+    supply: z.string().min(1) }).passthrough()),
   functions: z.array(z.object({
     id: z.string().min(1),
     rule: z.record(z.string(), z.object({ family: z.string().min(1).optional(), side: side.optional() }).passthrough()),
@@ -432,12 +439,22 @@ export const compileOperatingGraph = (input: { readonly packet: unknown; readonl
   equipment.set(turbine.id, turbine)
   // The IC section's state reports (ld01-unit.rs reads each as a 0/1 channel and its quality): the turbine's
   // retained-trip report on the turbine-generator, the complete-bank inserted report on the core.
+  // PHYS2's electrical reports (the AC routing's state) read on the turbine-generator, beside its offsite-connection
+  // reading: the graph has no distribution equipment; each keeps its own tag id.
+  const electricalLabel = (source: Exclude<Ic['reports'][number]['source'], string>): string =>
+    'bus_available' in source ? `Bus ${source.bus_available.bus} available report`
+      : 'source_available' in source ? `${source.source_available.source === 'unit' ? 'Unit' : 'Reserve'} source available report`
+        : 'source_qualified' in source ? `${source.source_qualified.source === 'unit' ? 'Unit' : 'Reserve'} source qualified report`
+          : 'incoming_closed' in source ? `Bus ${source.incoming_closed.bus} ${source.incoming_closed.source} incoming breaker closed report`
+            : `Bus ${source.incoming_travel_complete.bus} ${source.incoming_travel_complete.source} incoming breaker travel complete report`
   for (const report of ic.reports) {
-    const owner = report.source === 'turbine_retained_trip' ? turbine : coreEquipment
-    const suffix = report.id.split('.').slice(-2).join('-')
-    const label = report.source === 'turbine_retained_trip' ? 'Turbine tripped state report' : 'Control bank inserted report (every cluster seated)'
+    const electrical = typeof report.source === 'object'
+    const owner = report.source === 'turbine_retained_trip' || electrical ? turbine : coreEquipment
+    const suffix = electrical ? report.id.replace(/^LD01\./, '').split('.').join('-') : report.id.split('.').slice(-2).join('-')
+    const label = typeof report.source === 'object' ? electricalLabel(report.source)
+      : report.source === 'turbine_retained_trip' ? 'Turbine tripped state report' : 'Control bank inserted report (every cluster seated)'
     owner.readings.push(
-      { ...reading(suffix, `${label} (supply ${report.supply})`, 'discrete', 'control', 'boolean', 'boolean', report.id, '1'), tagId: report.id },
+      { ...reading(suffix, `${label} (supply ${report.supply})`, 'discrete', electrical ? 'electrical' : 'control', 'boolean', 'boolean', report.id, '1'), tagId: report.id },
       reading(`${suffix}.quality`, `${label} sample quality`, 'discrete', 'control', 'count', 'count', `${report.id}.QUALITY`, '1'),
     )
   }
