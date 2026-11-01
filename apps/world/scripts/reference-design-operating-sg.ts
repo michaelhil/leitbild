@@ -111,13 +111,16 @@ function guards(thermodynamics:string,volume_m3:number){
   return {crown_m3:contactLiquid(exposure,exposure.crownTop_m),pickup_m3:contactLiquid(exposure,pickup.pickupBottom_m),exposure}
 }
 
-/** R12-B1's G1 stand-in: the bypass's no-load pressure mode after the
- * turbine trip, with the selected band width and rating fraction of
- * `ld01-bypass-control` (one numeric owner each). */
+/** The G1 stand-in's post-trip modes: R4-DUMP's Tavg mode after the reactor
+ * trip with forced circulation, and R12-B1's no-load pressure mode after the
+ * turbine trip without it, with the selected band width and rating fraction
+ * of `ld01-bypass-control` (one numeric owner each). */
 export function bypassNoLoad(admission:string){
   const noLoad=parseBypassNoLoad(admission),control=parseBypassControl(admission)
   return {mode:noLoad.mode,noLoadAverageTemperature_K:noLoad.noLoadAverageTemperature_K,noLoadPressure_Pa:noLoad.noLoadPressure_Pa,
-    bandWidth_Pa:control.bandFull_Pa-control.bandStart_Pa,fractionOfNominalSteam:control.rating.fractionOfTotalSteam}
+    bandWidth_Pa:control.bandFull_Pa-control.bandStart_Pa,fractionOfNominalSteam:control.rating.fractionOfTotalSteam,
+    tavgInput:noLoad.tavgInput,tavgDeadBand_K:noLoad.tavgDeadBand_K,tavgBandWidth_K:noLoad.tavgBandWidth_K,
+    withoutForcedCirculation:noLoad.withoutForcedCirculation}
 }
 
 /** The joined packet's `secondary` section: per SG (the thermal
@@ -134,7 +137,7 @@ export function compileOperatingSecondary(d:SectionSources){
   const bypass=bypassNoLoad(d.admission)
   if(!(bypass.noLoadPressure_Pa+bypass.bandWidth_Pa<relief.valves[0]!.crackPressure_Pa))
     throw Error('The bypass must open fully below the SG relief crack (R12-B1, R12-B2)')
-  return {scope:'S2 SG secondaries: one bulk-equilibrium volume per SG with the constant A/B demand and its STOP ramp, the inventory-holding feed and a spring relief and a spring safety valve per SG (R12-B2), and after the turbine trip the bypass no-load pressure mode (R12-B1 stand-in); Rust owns the laws and derivations, the joined solids the metal and films',
+  return {scope:'S2 SG secondaries: one bulk-equilibrium volume per SG with the constant A/B demand and its STOP ramp, the inventory-holding feed and a spring relief and a spring safety valve per SG (R12-B2), and after the trip the bypass post-trip modes (R4-DUMP Tavg mode with forced circulation, R12-B1 no-load pressure mode without; G1 stand-in); Rust owns the laws and derivations, the joined solids the metal and films',
     steamGenerators:SGS.map(id=>({id,volume_m3:balance.secondaryVolume_m3,steamDemand_kg_s:boundaries.steamDemand_kg_s[id],
       crownLiquidVolume_m3:g.crown_m3,pickupLiquidVolume_m3:g.pickup_m3,
       reliefs:relief.valves.map((_,i)=>({id:`SG.${id}.RELIEF.${i+1}`}))})),

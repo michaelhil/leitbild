@@ -476,6 +476,18 @@ impl<S: JoinedSystem> Electrified<S> {
             .ok_or("the feed gate needs the SG owner")?
             .set_feed_supported(feed)
             .map_err(|f| format!("{f:?}"))?;
+        // R4-DUMP: the post-trip bypass follows whether any RCP is supplied.
+        let forced = c
+            .rotor_consumers
+            .iter()
+            .any(|id| supplied(&self.routing, id));
+        self.inner
+            .integrated_mut()
+            .joined
+            .secondary_mut()
+            .ok_or("the RCP supply needs the SG owner")?
+            .set_forced_circulation(forced)
+            .map_err(|f| format!("{f:?}"))?;
         let field = self.routing.bus_energized(self.field_bus).is_some();
         self.slice.inputs.field_v = if field {
             self.configuration.field_demand_v

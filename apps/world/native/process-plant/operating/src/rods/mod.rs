@@ -2549,6 +2549,9 @@ impl<P: Properties> Rods<P> for RodBlock {
             receipt: json!({"rods": events}),
         })
     }
+    fn holding_opens_at(&self) -> Option<f64> {
+        self.holding_open_at
+    }
     fn command(&mut self, t: f64, command: Command) -> Result<Transaction, Failure> {
         match command {
             Command::StuckCluster { cluster } => self.stick(t, cluster),

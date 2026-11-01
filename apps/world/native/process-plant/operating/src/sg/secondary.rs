@@ -16,11 +16,16 @@
 //!
 //! The steam leaves at the constant A/B demand through the pickup gas at
 //! `h_g(p)`; after the manual turbine TRIP the demand ramps linearly to zero
-//! over the stop valve's travel (G2). From the TRIP on, the bypass's no-load
-//! pressure mode (owner R12-B1, the G1 stand-in) also passes
-//! `fraction × demand × u(p)` per SG at `h_g(p)`, `u` linear from 0 at the
-//! no-load pressure to 1 one band width above it; it is not turbine
-//! admission, and the account counts it in the SG's steam port. The reliefs discharge the same gas
+//! over the stop valve's travel (G2). After the trip the bypass (the G1
+//! stand-in) also passes `fraction × demand × u` per SG at `h_g(p)`; it is
+//! not turbine admission, and the account counts it in the SG's steam port.
+//! With forced circulation (R4-DUMP, owner 1 Nov) `u` is the Tavg mode's
+//! demand from the reactor trip on, common to every SG: `u = clamp((T_lag -
+//! T_nl - b) / w, 0, 1)` on the CVCS's loop-average lag `T_lag`, a trial
+//! input the joined operator sets before every evaluation. With no RCP
+//! supplied (a held input the routing sets at its restarts) `u` is R12-B1's
+//! no-load pressure mode from the turbine trip on, linear from 0 at the
+//! no-load pressure to 1 one band width above it. The reliefs discharge the same gas
 //! through the existing equilibrium-nozzle restriction, `lift x area x G`,
 //! with the area derived once from the rating by that same law. The feed
 //! equals steam plus relief outflow at the recorded state's IF97 enthalpy
@@ -60,8 +65,11 @@
 //! Roots: each valve's crack, full-lift, reseat and seat thresholds, armed
 //! only by the valve state that owns them and otherwise a constant +1 (a
 //! disarmed root never crosses), so the root count never changes. After the
-//! guards, the bypass band's two kinks (no-load pressure and full opening),
-//! armed from the TRIP on: a crossing changes no state. A closing
+//! guards, the pressure mode's two kinks (no-load pressure and full
+//! opening), armed from the TRIP on without forced circulation: a crossing
+//! changes no state. After the feed roots, the Tavg mode's two common kinks
+//! (opening start and full opening), armed from the reactor trip on with
+//! forced circulation, likewise. A closing
 //! disc seats at its declared seat lift: the transaction sets the lift to
 //! exactly zero and the seated valve has neither flow nor nozzle evaluation
 //! until crack reopens it. Then the crown's first
@@ -135,6 +143,9 @@ pub const SEATED: Valve = Valve::SEATED;
 pub const DISARMED: f64 = 1.;
 /// Per SG, after the guards: the bypass band's start and full opening.
 pub const BYPASS_ROOTS: usize = 2;
+/// R4-DUMP: after every other root, the Tavg mode's opening start and full
+/// opening (common to every SG).
+pub const TAVG_ROOTS: usize = 2;
 
 fn s(v: f64) -> Scalar {
     Scalar::constant(v)
@@ -426,6 +437,24 @@ pub struct Secondaries {
     /// side arms only the reverse crossing, so a restart that puts the
     /// pressure back a hair across the kink does not fire it again.
     bypass_side: Vec<[Option<bool>; 2]>,
+    /// R4-DUMP: the reactor trip (the holding circuit's opening) that arms
+    /// the Tavg mode, once received.
+    reactor_trip_s: Option<f64>,
+    /// R4-DUMP: whether any RCP is supplied (the routing's held input;
+    /// `true` as prepared). Without it the bypass is in R12-B1's pressure
+    /// mode.
+    forced_circulation: bool,
+    /// R4-DUMP: the CVCS's loop-average channel is composed (the joined
+    /// operator declares it); the Tavg mode refuses at the reactor trip
+    /// without it.
+    loop_average_declared: bool,
+    /// R4-DUMP: the loop-average lag of the evaluation that follows (K) and
+    /// its seed direction, set by the joined operator before every
+    /// evaluation that reads it.
+    loop_average: Option<(f64, f64)>,
+    /// R4-DUMP: the side of each Tavg kink its last located crossing left
+    /// (`true` above), unset from the arming until the first crossing.
+    tavg_side: [Option<bool>; 2],
     /// S3-D12 (ELEC hook): the recorded feed flows only while the feed
     /// pumps are supplied; `true` in the prepared state (S1/S2 unchanged).
     feed_supported: bool,
@@ -458,8 +487,8 @@ pub struct Secondaries {
 ///   before every evaluation (`direction` 1 only for the admission column).
 /// - At power the bypass stays closed (lead ruling, x43-5: a PWR's at-power
 ///   dump is the Tavg-mode load-rejection dump, armed only on a load
-///   rejection beyond the rods, which 1.0 does not have, CRED I14); from the
-///   TRIP on the no-load pressure mode as before.
+///   rejection beyond the rods, which 1.0 does not have, CRED I14); after
+///   the trip the post-trip modes (R4-DUMP / R12-B1).
 #[derive(Clone, Debug)]
 pub struct ValveAdmission {
     reference_pa: Vec<f64>,
@@ -476,9 +505,10 @@ pub fn steam_fraction(trip_s: Option<f64>, travel_s: f64, t: f64) -> f64 {
         Some(t0) => (1. - (t - t0) / travel_s).max(0.),
     }
 }
-/// The bypass stand-in's opening (R12-B1): zero before the TRIP, then
-/// linear from the no-load pressure over one band width.
-pub fn bypass_opening(b: &packet::Bypass, trip_s: Option<f64>, t: f64, p: Scalar) -> Scalar {
+/// The pressure mode's opening (R12-B1, without forced circulation): zero
+/// before the TRIP, then linear from the no-load pressure over one band
+/// width.
+pub fn pressure_opening(b: &packet::Bypass, trip_s: Option<f64>, t: f64, p: Scalar) -> Scalar {
     if !trip_s.is_some_and(|t0| t >= t0) {
         return s(0.);
     }
@@ -491,21 +521,34 @@ pub fn bypass_opening(b: &packet::Bypass, trip_s: Option<f64>, t: f64, p: Scalar
         u
     }
 }
+/// R4-DUMP: the Tavg mode's opening at loop-average lag `tavg` (K),
+/// `clamp((tavg - T_nl - b) / w, 0, 1)`; both corners are located kinks.
+pub fn tavg_opening(b: &packet::Bypass, tavg: Scalar) -> Scalar {
+    let u = (tavg - s(b.no_load_average_temperature_k + b.tavg_dead_band_k))
+        / s(b.tavg_band_width_k);
+    if u.value <= 0. {
+        s(0.)
+    } else if u.value >= 1. {
+        s(1.)
+    } else {
+        u
+    }
+}
 /// One SG's pickup steam (turbine admission plus bypass) and the bypass's
-/// part: the owner's withdrawal law, also the source of `FT.STEAM`. `load`
-/// (X4.4 preview, the turbine load demand) scales the turbine admission
-/// only; the bypass stays sized on the nominal demand (R12-B1).
+/// part at bypass opening `opening`: the owner's withdrawal law, also the
+/// source of `FT.STEAM`. `load` (X4.4 preview, the turbine load demand)
+/// scales the turbine admission only; the bypass stays sized on the nominal
+/// demand (R12-B1).
 pub fn pickup_steam(
     demand_kg_s: f64,
     travel_s: f64,
-    bypass: &packet::Bypass,
+    fraction_of_nominal_steam: f64,
+    opening: Scalar,
     trip_s: Option<f64>,
     load: f64,
     t: f64,
-    p: Scalar,
 ) -> (Scalar, Scalar) {
-    let by =
-        s(bypass.fraction_of_nominal_steam * demand_kg_s) * bypass_opening(bypass, trip_s, t, p);
+    let by = s(fraction_of_nominal_steam * demand_kg_s) * opening;
     (
         s(demand_kg_s * steam_fraction(trip_s, travel_s, t) * load) + by,
         by,
@@ -748,6 +791,11 @@ impl Secondaries {
             turbine_load: 1.,
             valve: None,
             bypass_side: vec![[None; 2]; n],
+            reactor_trip_s: None,
+            forced_circulation: true,
+            loop_average_declared: false,
+            loop_average: None,
+            tavg_side: [None; 2],
             feed_supported: true,
             feed_gate_declared: false,
             preparation_defect: defect,
@@ -772,24 +820,40 @@ impl Secondaries {
         self.feed.as_ref()
     }
     /// The pickup steam of SG `k` at `t` and pressure `p`: the STOP-ramped
-    /// turbine admission plus the bypass stand-in (R12-B1).
-    fn pickup_steam(&self, k: usize, t: f64, p: Scalar) -> (Scalar, Scalar) {
+    /// turbine admission plus the bypass stand-in (R4-DUMP / R12-B1).
+    fn pickup_steam(&self, k: usize, t: f64, p: Scalar) -> Result<(Scalar, Scalar), Failure> {
+        let opening = self.bypass_opening(t, p)?;
         if let Some(v) = &self.valve {
             let by = s(self.bypass.fraction_of_nominal_steam * self.sgs[k].steam_demand_kg_s)
-                * self.bypass_opening(t, p);
+                * opening;
             let turbine =
                 Scalar::new(v.opening, v.direction) * s(self.admission_coefficient(k, t)) * p;
-            return (turbine + by, by);
+            return Ok((turbine + by, by));
         }
-        pickup_steam(
+        Ok(pickup_steam(
             self.sgs[k].steam_demand_kg_s,
             self.stop_travel_s,
-            &self.bypass,
+            self.bypass.fraction_of_nominal_steam,
+            opening,
             self.trip_s,
             self.turbine_load,
             t,
-            p,
-        )
+        ))
+    }
+    /// R4-DUMP: whether the Tavg mode is armed at `t` (forced circulation
+    /// and the reactor trip received).
+    fn tavg_armed(&self, t: f64) -> bool {
+        self.forced_circulation && self.reactor_trip_s.is_some_and(|t0| t >= t0)
+    }
+    /// R4-DUMP: the loop-average input of this evaluation.
+    fn loop_average_input(&self) -> Result<Scalar, Failure> {
+        let (v, d) = self.loop_average.ok_or_else(|| {
+            fatal("R4-DUMP: the Tavg mode is armed but no loop-average input was set")
+        })?;
+        if !v.is_finite() {
+            return Err(recoverable(format!("loop-average trial {v} K")));
+        }
+        Ok(Scalar::new(v, d))
     }
 
     /// X4.3: SG `k`'s admission coefficient `c_k(t) = D_k f_STOP(t) / p_ref,k`
@@ -890,11 +954,25 @@ impl Secondaries {
     pub fn turbine_load(&self) -> f64 {
         self.turbine_load
     }
-    /// The bypass stand-in's opening at `t` and SG pressure `p` (R12-B1):
-    /// zero before the TRIP, then linear from the no-load pressure over one
-    /// band width, closed below and fully open above.
-    pub fn bypass_opening(&self, t: f64, p: Scalar) -> Scalar {
-        bypass_opening(&self.bypass, self.trip_s, t, p)
+    /// The bypass stand-in's opening at `t` and SG pressure `p`: with forced
+    /// circulation the Tavg mode from the reactor trip on (R4-DUMP), zero
+    /// before it; without, the pressure mode from the TRIP on (R12-B1).
+    pub fn bypass_opening(&self, t: f64, p: Scalar) -> Result<Scalar, Failure> {
+        if self.forced_circulation {
+            if self.tavg_armed(t) {
+                return Ok(tavg_opening(&self.bypass, self.loop_average_input()?));
+            }
+            return Ok(s(0.));
+        }
+        Ok(pressure_opening(&self.bypass, self.trip_s, t, p))
+    }
+    /// R4-DUMP: the reactor trip that armed the Tavg mode, if received.
+    pub fn reactor_trip(&self) -> Option<f64> {
+        self.reactor_trip_s
+    }
+    /// R4-DUMP: whether any RCP is supplied.
+    pub fn forced_circulation(&self) -> bool {
+        self.forced_circulation
     }
     /// The bypass parameters (R12-B1).
     pub fn bypass(&self) -> &packet::Bypass {
@@ -1102,6 +1180,42 @@ impl<P: Properties> Secondary<P> for Secondaries {
         rows.sort_unstable();
         rows
     }
+    // R4-DUMP hooks: the Tavg mode's loop-average input and the routing's
+    // RCP supply.
+    fn loop_average_rows(&self) -> Vec<usize> {
+        let mut rows = Vec::new();
+        for (k, g) in self.sgs.iter().enumerate() {
+            rows.extend([g.base + MASS, g.base + ENERGY]);
+            if self.apparent.is_some() {
+                rows.push(g.base + LIFTS + g.valves.len() + DISTRIBUTION);
+            }
+            if let Some(f) = &self.feed {
+                rows.push(f.control(k) + STEAM_LAG);
+            }
+        }
+        rows.sort_unstable();
+        rows
+    }
+    fn declare_loop_average(&mut self) -> Result<(), Failure> {
+        self.loop_average_declared = true;
+        Ok(())
+    }
+    fn set_loop_average(&mut self, value_k: f64, direction: f64) -> Result<(), Failure> {
+        if !self.loop_average_declared {
+            return Err(fatal(
+                "R4-DUMP: a loop-average input into an owner whose channel is not declared",
+            ));
+        }
+        self.loop_average = Some((value_k, direction));
+        Ok(())
+    }
+    fn set_forced_circulation(&mut self, forced: bool) -> Result<(), Failure> {
+        self.forced_circulation = forced;
+        Ok(())
+    }
+    fn reactor_trip_time(&self) -> Option<f64> {
+        self.reactor_trip_s
+    }
     fn set_turbine_load(&mut self, t: f64, load: f64) -> Result<Transaction, Failure> {
         if self.valve.is_some() {
             return Err(fatal(
@@ -1197,6 +1311,15 @@ impl<P: Properties> Secondary<P> for Secondaries {
         if self.trip_s.is_some() {
             state["bypass_side"] = json!(self.bypass_side);
         }
+        // R4-DUMP: the reactor trip and the Tavg kinks' sides, once
+        // received; the RCP supply only when none is supplied.
+        if self.reactor_trip_s.is_some() {
+            state["reactor_trip_s"] = json!(snapshot_time(self.reactor_trip_s));
+            state["tavg_side"] = json!(self.tavg_side);
+        }
+        if !self.forced_circulation {
+            state["forced_circulation"] = json!(false);
+        }
         // The controllers' modes, only with the feed train.
         if let Some(f) = &self.feed {
             state["feed_modes"] = json!(f.modes);
@@ -1206,12 +1329,20 @@ impl<P: Properties> Secondary<P> for Secondaries {
     fn restore_discrete_state(&mut self, state: &serde_json::Value) -> Result<(), Failure> {
         let tripped = !state["trip_s"].is_null();
         let loaded = state.get("turbine_load").is_some();
+        let reactor_tripped = state.get("reactor_trip_s").is_some();
+        let unforced = state.get("forced_circulation").is_some();
         let mut keys = vec!["trip_s", "feed_supported", "valves"];
         if loaded {
             keys.push("turbine_load");
         }
         if tripped {
             keys.push("bypass_side");
+        }
+        if reactor_tripped {
+            keys.extend(["reactor_trip_s", "tavg_side"]);
+        }
+        if unforced {
+            keys.push("forced_circulation");
         }
         if self.feed.is_some() {
             keys.push("feed_modes");
@@ -1241,6 +1372,18 @@ impl<P: Properties> Secondary<P> for Secondaries {
             }
         };
         let trip_s = restored_time(&o["trip_s"])?;
+        let (reactor_trip_s, tavg_side) = if reactor_tripped {
+            let at = restored_time(&o["reactor_trip_s"])?
+                .ok_or_else(|| fatal("secondary snapshot: reactor_trip_s"))?;
+            let side: [Option<bool>; 2] = serde_json::from_value(o["tavg_side"].clone())
+                .map_err(|e| fatal(format!("secondary snapshot: tavg_side: {e}")))?;
+            (Some(at), side)
+        } else {
+            (None, [None; 2])
+        };
+        if unforced && o["forced_circulation"] != json!(false) {
+            return Err(fatal("secondary snapshot: forced_circulation is recorded only when false"));
+        }
         let feed_supported = o["feed_supported"]
             .as_bool()
             .ok_or_else(|| fatal("secondary snapshot: feed_supported"))?;
@@ -1293,6 +1436,9 @@ impl<P: Properties> Secondary<P> for Secondaries {
         self.trip_s = trip_s;
         self.turbine_load = turbine_load;
         self.bypass_side = bypass_side;
+        self.reactor_trip_s = reactor_trip_s;
+        self.tavg_side = tavg_side;
+        self.forced_circulation = !unforced;
         self.feed_supported = feed_supported;
         self.valves = valves;
         if let (Some(f), Some(modes)) = (self.feed.as_mut(), modes) {
@@ -1383,8 +1529,8 @@ impl<P: Properties> Secondary<P> for Secondaries {
             let hg = sat.vapor.enthalpy;
             rows[b + PRESSURE] = mass - chart_mass;
             rows[b + LIQUID_VOLUME] = energy - chart_energy;
-            // R12-B1: the bypass stand-in joins the turbine admission.
-            let (steam, bypass) = self.pickup_steam(k, t, p);
+            // R4-DUMP / R12-B1: the bypass stand-in joins the turbine admission.
+            let (steam, bypass) = self.pickup_steam(k, t, p)?;
             let lifts: Vec<Scalar> = (0..g.valves.len())
                 .map(|j| x.value(b + LIFTS + j))
                 .collect();
@@ -1494,7 +1640,7 @@ impl<P: Properties> Secondary<P> for Secondaries {
                     None => return Err(fatal("the feed train needs the apparent level")),
                 };
                 let p_sg = x.value(self.sgs[k].base + PRESSURE);
-                let (steam, _) = self.pickup_steam(k, t, p_sg);
+                let (steam, _) = self.pickup_steam(k, t, p_sg)?;
                 let lags: [Scalar; 5] =
                     [NR_LAG, STEAM_LAG, FEED_LAG, OUTER, INNER].map(|o| x.value(c + o));
                 let l = f.law(k, lags);
@@ -1631,6 +1777,7 @@ impl<P: Properties> Secondary<P> for Secondaries {
                 .feed
                 .as_ref()
                 .map_or(0, |_| FEED_ROOTS * self.sgs.len())
+            + TAVG_ROOTS
     }
 
     fn roots(
@@ -1644,6 +1791,8 @@ impl<P: Properties> Secondary<P> for Secondaries {
             return Err(fatal("secondary root layout"));
         }
         let mut i = 0;
+        // R4-DUMP: the pressure mode only without forced circulation.
+        let pressure_armed = self.trip_s.is_some() && !self.forced_circulation;
         for (k, g) in self.sgs.iter().enumerate() {
             let p = x.value(g.base + PRESSURE).value;
             let vl = x.value(g.base + LIQUID_VOLUME).value;
@@ -1662,11 +1811,11 @@ impl<P: Properties> Secondary<P> for Secondaries {
             out[i] = vl - g.crown_liquid_volume_m3;
             out[i + 1] = vl - g.pickup_liquid_volume_m3;
             i += 2;
-            // R12-B1: the bypass band's kinks, armed from the TRIP on.
-            let armed = self.trip_s.is_some();
+            // R12-B1: the pressure mode's kinks, armed from the TRIP on
+            // without forced circulation.
             let (p0, w) = (self.bypass.no_load_pressure_pa, self.bypass.band_width_pa);
-            out[i] = if armed { p - p0 } else { DISARMED };
-            out[i + 1] = if armed { p - (p0 + w) } else { DISARMED };
+            out[i] = if pressure_armed { p - p0 } else { DISARMED };
+            out[i + 1] = if pressure_armed { p - (p0 + w) } else { DISARMED };
             i += BYPASS_ROOTS;
         }
         // The NR1 lag's span edges, armed in AUTO: leaving the span
@@ -1692,6 +1841,18 @@ impl<P: Properties> Secondary<P> for Secondaries {
                 };
                 i += FEED_ROOTS;
             }
+        }
+        // R4-DUMP: the Tavg mode's kinks, armed from the reactor trip on
+        // with forced circulation (the accepted state is after the arming).
+        if self.forced_circulation && self.reactor_trip_s.is_some() {
+            let tavg = self.loop_average_input()?.value;
+            let b = &self.bypass;
+            let start = b.no_load_average_temperature_k + b.tavg_dead_band_k;
+            out[i] = tavg - start;
+            out[i + 1] = tavg - (start + b.tavg_band_width_k);
+        } else {
+            out[i] = DISARMED;
+            out[i + 1] = DISARMED;
         }
         if out.iter().any(|v| !v.is_finite()) {
             return Err(fatal("nonfinite SG root"));
@@ -1731,6 +1892,14 @@ impl<P: Properties> Secondary<P> for Secondaries {
                 out[i..i + FEED_ROOTS].fill(-1);
                 i += FEED_ROOTS;
             }
+        }
+        // R4-DUMP: a set side arms only the reverse crossing.
+        for (b, side) in self.tavg_side.iter().enumerate() {
+            out[i + b] = match side {
+                None => 0,
+                Some(true) => -1,
+                Some(false) => 1,
+            };
         }
         Ok(())
     }
@@ -1851,11 +2020,25 @@ impl<P: Properties> Secondary<P> for Secondaries {
                     "nr1_lag_m": y[c + NR_LAG], "reason": "the selected NR1 channel left its span"}));
             }
         }
+        // R4-DUMP: a Tavg kink is a located crossing with no state change.
+        let last = directions.len() - TAVG_ROOTS;
+        let mut dump = Vec::new();
+        for (offset, name) in [(0, "Tavg opening start"), (1, "Tavg full opening")] {
+            let d = directions[last + offset];
+            if d != 0 {
+                if !(self.forced_circulation && self.reactor_trip_s.is_some()) {
+                    return Err(fatal(format!("R4-DUMP: the {name} root crossed while disarmed")));
+                }
+                self.tavg_side[offset] = Some(d > 0);
+                dump.push(json!({"bypass": "Tavg mode", "threshold": name, "direction": d,
+                    "loopAverage_K": self.loop_average.map(|(v, _)| v)}));
+            }
+        }
         let changed = seats > 0 || !withdrawn.is_empty();
         Ok(Transaction {
             deposits: Vec::new(),
             receipt: json!({"owner":"secondary","t_s":t,"relief":events,"seats":seats,
-                "feedWithdrawn":withdrawn,"stateChanged":changed}),
+                "feedWithdrawn":withdrawn,"tavgDump":dump,"stateChanged":changed}),
         })
     }
 
@@ -1882,19 +2065,43 @@ impl<P: Properties> Secondary<P> for Secondaries {
                 receipt: json!({"owner":"secondary","command":"ReliefStuckOpen","t_s":t,
                     "steamDemand":"unchanged (a PZR relief malfunction)"}),
             }),
-            // G7: the steam demand stays at its constant A/B values.
+            // G7: the steam demand stays at its constant A/B values; the
+            // holding circuit's opening it causes reaches this owner as the
+            // holding loss (R4-DUMP).
             Command::ManualReactorTrip => Ok(Transaction {
                 deposits: Vec::new(),
                 receipt: json!({"owner":"secondary","command":"ManualReactorTrip","t_s":t,
                     "steamDemand":"held at the constant A/B values (G7, declared boundary)"}),
             }),
-            // S3 (C16): the holding loss is not the
-            // steam owner's; the steam demand is unchanged by it.
-            Command::HoldingLoss => Ok(Transaction {
-                deposits: Vec::new(),
-                receipt: json!({"owner":"secondary","command":"HoldingLoss","t_s":t,
-                    "steamDemand":"unchanged (the holding circuit is not the steam owner's)"}),
-            }),
+            // R4-DUMP: the reactor trip (the holding circuit's opening, one
+            // event for every owner) arms the Tavg mode; the steam demand is
+            // unchanged by it. A second report is acknowledged unchanged.
+            Command::HoldingLoss => {
+                if let Some(t0) = self.reactor_trip_s {
+                    return Ok(Transaction {
+                        deposits: Vec::new(),
+                        receipt: json!({"owner":"secondary","command":"HoldingLoss","t_s":t,
+                            "armedSince_s":t0,"bypass":"unchanged (the Tavg mode is already armed)"}),
+                    });
+                }
+                if !t.is_finite() {
+                    return Err(fatal("reactor trip time"));
+                }
+                if !self.loop_average_declared {
+                    return Err(fatal(
+                        "R4-DUMP: the post-trip Tavg mode reads the CVCS's loop-average channel; this composition has no CVCS",
+                    ));
+                }
+                self.reactor_trip_s = Some(t);
+                self.tavg_side = [None; 2];
+                Ok(Transaction {
+                    deposits: Vec::new(),
+                    receipt: json!({"owner":"secondary","command":"HoldingLoss","t_s":t,
+                        "steamDemand":"unchanged (the holding circuit is not the steam owner's)",
+                        "bypass": if self.forced_circulation { "Tavg mode armed (R4-DUMP)" }
+                            else { "no RCP supplied: the no-load pressure mode (R12-B1)" }}),
+                })
+            }
             Command::TurbineTrip | Command::TurbineTripAcquired => {
                 // R12-A2: with the reactor-trip interlock a second trip
                 // demand (an operator's, the field controller's) can reach a
@@ -1992,17 +2199,21 @@ fn compile(
         return Err(fatal("SG feed boundary or steam admission travel"));
     }
     let b = &section.bypass;
-    if b.mode != packet::BypassMode::NoLoadPressureAfterTurbineTrip
+    if b.mode != packet::BypassMode::NoLoadTavgAfterReactorTrip
+        || b.tavg_input != packet::TavgInput::CvcsLoopAverageLag
+        || b.without_forced_circulation != packet::PressureMode::NoLoadPressureAfterTurbineTrip
         || ![
             b.no_load_average_temperature_k,
             b.no_load_pressure_pa,
             b.band_width_pa,
+            b.tavg_band_width_k,
         ]
         .into_iter()
         .all(positive)
+        || !(b.tavg_dead_band_k.is_finite() && b.tavg_dead_band_k >= 0.)
         || !(b.fraction_of_nominal_steam > 0. && b.fraction_of_nominal_steam <= 1.)
     {
-        return Err(fatal("SG bypass no-load mode"));
+        return Err(fatal("SG bypass post-trip modes (R4-DUMP Tavg, R12-B1 pressure)"));
     }
     let c = &section.contact;
     if ![
