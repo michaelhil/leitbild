@@ -382,6 +382,14 @@ const SOLVER_API: &[&str] = &[
     "ld01_water_saturated_vapor_enthalpy",
     "ld01_water_saturated_vapor_viscosity",
     "ld01_water_saturation_pressure",
+    // The SBTL entries of the same water archive (IAPWS G13-15 tables of the
+    // IF97 reference; owner decision 1 Nov 2026; reviewed and approved by the
+    // lead, 1 Nov): point, analytic direction, caloric inverse and its
+    // direction. Property evaluations, not solver controls.
+    "ld01_sbtl_direction",
+    "ld01_sbtl_inverse",
+    "ld01_sbtl_inverse_direction",
+    "ld01_sbtl_point",
     // LAPACK's generalized eigenproblem for the zero-time spectrum (spectrum.rs;
     // Accelerate on macOS). Not a solver of F(y) = 0.
     "dggev",

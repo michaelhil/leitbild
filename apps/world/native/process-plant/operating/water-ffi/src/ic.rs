@@ -412,6 +412,12 @@ pub struct ProtectionClient {
     /// restart and advanced to each frame instant.
     electrical: bool,
     routing: Option<Box<leitbild_operating_plant::electrical::bus::Distribution>>,
+    /// PROC T5: a copy of the system's DC groups (taken at the start and
+    /// after every restart; their reports are exact at any time), when the
+    /// section declares them.
+    dc: Option<Box<leitbild_operating_plant::electrical::dc::Groups>>,
+    /// PROC T5's engineering values the section names.
+    engineering: Vec<leitbild_operating_plant::ic::packet::EngineeringSpec>,
     /// The current proxy's place in `observed` (the SOURCE path's rate).
     proxy_index: Option<usize>,
     derivatives: Vec<Vec<f64>>,
@@ -426,8 +432,68 @@ impl ProtectionClient {
         y: &[f64],
         reference: &[f64],
     ) -> Result<Self, String> {
+        if section.governor.declared {
+            return Err("a section declaring the governor needs its composed system (ProtectionClient::for_system)".into());
+        }
+        Self::build(section, joined, y, reference, None)
+    }
+    /// The protection of `section` for the composed `system` at its start
+    /// `t0` (`y` the whole system's state): the governor's presence must
+    /// match the section's declaration either way, and the electrical
+    /// reports are read from its routing.
+    pub fn for_system<S: JoinedSystem>(
+        section: &Section,
+        system: &S,
+        y: &[f64],
+        reference: &[f64],
+        t0: f64,
+    ) -> Result<Self, String> {
+        let admission = system.admission_probe(t0).map(|(i, _)| i);
+        match (section.governor.declared, admission.is_some()) {
+            (true, false) => {
+                return Err(
+                    "the section declares the governor (LD01.TG.ADM.POS) but the run composes none"
+                        .into(),
+                );
+            }
+            (false, true) => {
+                return Err("the run composes the governor but the section was compiled without declaring it".into());
+            }
+            _ => {}
+        }
+        match (section.dc.declared, system.dc_groups().is_some()) {
+            (true, false) => {
+                return Err(
+                    "the section declares the DC groups (PROC T5) but the run composes none".into(),
+                );
+            }
+            (false, true) => {
+                return Err("the run composes the DC groups but the section was compiled without declaring them".into());
+            }
+            _ => {}
+        }
+        let mut c = Self::build(
+            section,
+            &system.integrated().joined,
+            y,
+            reference,
+            admission,
+        )?
+        .with_system_dimension(y.len())?;
+        c.read_routing(system, t0)?;
+        Ok(c)
+    }
+    /// `y` holds the operator's coordinates first (and any appended owner's
+    /// after them); `admission` is the governor's opening coordinate.
+    fn build<P: Properties + WaterProperties>(
+        section: &Section,
+        joined: &Joined<P>,
+        y: &[f64],
+        reference: &[f64],
+        admission: Option<usize>,
+    ) -> Result<Self, String> {
         let scales = joined.scales();
-        if scales.len() != y.len() || reference.len() != y.len() {
+        if scales.len() > y.len() || reference.len() != scales.len() {
             return Err("state layout".into());
         }
         let labels: Vec<String> = joined
@@ -775,6 +841,13 @@ impl ProtectionClient {
                         reading: LiquidReading::Temperature { body_c: *body_c },
                     }
                 }
+                Quantity::AdmissionPosition => {
+                    let i =
+                        admission.ok_or("LD01.TG.ADM.POS needs the composed governor's opening")?;
+                    references.insert(f.id.clone(), json!({"coordinate": i,
+                        "basis": "100 x the governor slice's admission opening (ld01-steam-valve-position-channels; judgement: the stroke is the opening)"}));
+                    Observation::Linear(vec![(i, 100.)])
+                }
                 Quantity::StopValvePosition { stop_travel_s } => {
                     let secondary = joined
                         .secondary()
@@ -809,7 +882,13 @@ impl ProtectionClient {
             return Err("the SOURCE-pulse path needs the current proxy family".into());
         }
         let mut protection = protection;
-        let electrical = protection.electrical_reports();
+        let electrical = section
+            .reports
+            .iter()
+            .any(|r| r.source.electrical() && !r.source.dc());
+        if section.dc.declared != section.reports.iter().any(|r| r.source.dc()) {
+            return Err("the section's DC reports and its DC declaration disagree".into());
+        }
         let bank_report = section
             .reports
             .iter()
@@ -837,6 +916,8 @@ impl ProtectionClient {
             bank_report,
             electrical,
             routing: None,
+            dc: None,
+            engineering: section.engineering.clone(),
             proxy_index,
         })
     }
@@ -854,28 +935,62 @@ impl ProtectionClient {
         self.scratch = vec![0.; dimension];
         Ok(self)
     }
-    /// [`ProtectionClient::with_system_dimension`] for the composed system,
-    /// and PROC T1–T3's electrical reports read from its routing at the
-    /// start. A section with electrical reports needs a system that routes AC.
-    pub fn with_system<S: JoinedSystem>(
-        self,
-        system: &S,
-        dimension: usize,
-    ) -> Result<Self, String> {
-        let mut c = self.with_system_dimension(dimension)?;
-        c.read_routing(system)?;
-        Ok(c)
-    }
     /// A fresh copy of the system's routing, and the reports' states from it.
-    fn read_routing<S: JoinedSystem>(&mut self, system: &S) -> Result<(), String> {
-        if !self.electrical {
-            return Ok(());
+    fn read_routing<S: JoinedSystem>(&mut self, system: &S, t: f64) -> Result<(), String> {
+        if self.electrical {
+            let routing = system
+                .routing()
+                .ok_or("the section's electrical reports need the electrical routing")?;
+            self.routing = Some(Box::new(routing.clone()));
         }
-        let routing = system
-            .routing()
-            .ok_or("the section's electrical reports need the electrical routing")?;
-        self.routing = Some(Box::new(routing.clone()));
-        self.report_routing(None)
+        if let Some(groups) = system.dc_groups() {
+            self.dc = Some(Box::new(groups.clone()));
+        }
+        self.report_routing(None)?;
+        self.report_dc(t)
+    }
+    /// PROC T5: the DC reports' plant states from the copy at `t`.
+    fn report_dc(&mut self, t: f64) -> Result<(), String> {
+        let Some(groups) = self.dc.as_ref() else {
+            return Ok(());
+        };
+        let reports = groups.reports(t)?;
+        let states: Vec<(String, bool)> = self
+            .protection
+            .report_specs()
+            .iter()
+            .filter(|r| r.source.dc())
+            .map(|r| Ok((r.id.clone(), dc_state(&reports, &r.source)?)))
+            .collect::<Result<_, String>>()?;
+        for (id, state) in states {
+            self.protection.set_report_state(&id, state)?;
+        }
+        Ok(())
+    }
+    /// PROC T5's engineering values at `t` (labelled estimates; no
+    /// criterion reads them), by id: `null` where the owner gives none (the
+    /// depletion estimate while not discharging).
+    pub fn engineering_values(&self, t: f64) -> Result<Value, String> {
+        let Some(groups) = self.dc.as_ref() else {
+            return Ok(json!({}));
+        };
+        let reports = groups.reports(t)?;
+        let mut out = serde_json::Map::new();
+        for e in &self.engineering {
+            let r = reports
+                .iter()
+                .find(|r| r.group == e.group)
+                .ok_or_else(|| format!("{}: no DC group {}", e.id, e.group))?;
+            let v = match e.field.as_str() {
+                "requested_w" => json!(r.requested_w),
+                "delivered_w" => json!(r.delivered_w),
+                "energy_j" => json!(r.energy_j),
+                "depletion_s" => json!(r.depletion_s),
+                other => return Err(format!("{}: unknown DC field {other}", e.id)),
+            };
+            out.insert(e.id.clone(), v);
+        }
+        Ok(Value::Object(out))
     }
     /// The electrical reports' plant states from the copy, advanced to `t`
     /// first when given (a frame instant): every due routing event is
@@ -892,7 +1007,7 @@ impl ProtectionClient {
             .protection
             .report_specs()
             .iter()
-            .filter(|r| r.source.electrical())
+            .filter(|r| r.source.electrical() && !r.source.dc())
             .map(|r| Ok((r.id.clone(), routing_state(&reports, &r.source)?)))
             .collect::<Result<_, String>>()?;
         for (id, state) in states {
@@ -1004,6 +1119,7 @@ impl<S: JoinedSystem> Client<S> for ProtectionClient {
     fn frame(&mut self, k: u64, t: f64, dense: &dyn Dense) -> Result<Vec<Change<S>>, String> {
         // PROC T1–T3: the routing's state at the frame instant.
         self.report_routing(Some(t))?;
+        self.report_dc(t)?;
         // Input-stage status at the acquisition's left limit.
         if self
             .observed
@@ -1057,7 +1173,7 @@ impl<S: JoinedSystem> Client<S> for ProtectionClient {
     /// The owners' discrete state a reading depends on, after the restart
     /// at `t`: the latched TRIP (STOP position), the seated chain and the
     /// CVCS branches' modes.
-    fn restarted(&mut self, _t: f64, system: &S) -> Result<(), String> {
+    fn restarted(&mut self, t: f64, system: &S) -> Result<(), String> {
         let joined = &system.integrated().joined;
         for (_, o) in &mut self.observed {
             match o {
@@ -1083,9 +1199,38 @@ impl<S: JoinedSystem> Client<S> for ProtectionClient {
             self.protection.set_bank_seated(bank_seated(joined)?);
         }
         // PROC T1–T3: every routing change is an exact routing event and a
-        // restart where delivered support changes.
-        self.read_routing(system)
+        // restart where delivered support changes; T5's DC commands and
+        // charger follows are restarts too.
+        self.read_routing(system, t)
     }
+}
+
+/// One DC report's plant state from the groups' reports.
+fn dc_state(
+    reports: &[leitbild_operating_plant::electrical::dc::Report],
+    source: &ReportSource,
+) -> Result<bool, String> {
+    use leitbild_operating_plant::ic::packet::DcCause;
+    let group = |g: &str| {
+        reports
+            .iter()
+            .find(|r| r.group == g)
+            .ok_or_else(|| format!("no DC group {g}"))
+    };
+    Ok(match source {
+        ReportSource::DcOutput { group: g } => group(g)?.output_available,
+        ReportSource::DcCharger { group: g } => group(g)?.charger_delivering,
+        ReportSource::DcBattery { group: g } => group(g)?.battery_available,
+        ReportSource::DcCause { group: g, cause } => {
+            let name = match cause {
+                DcCause::Overload => "Overload",
+                DcCause::InsufficientSupply => "InsufficientSupply",
+                DcCause::OutputFailure => "OutputFailure",
+            };
+            group(g)?.cause == Some(name)
+        }
+        _ => return Err("not a DC report".into()),
+    })
 }
 
 /// One electrical report's plant state from the routing's reports.
@@ -1123,7 +1268,7 @@ fn routing_state(
         ReportSource::IncomingTravelComplete { bus: b, source } => {
             incoming(b, source)?.travel_complete
         }
-        ReportSource::TurbineRetainedTrip | ReportSource::BankInserted => {
+        _ => {
             return Err("not an electrical report".into());
         }
     })
@@ -1210,6 +1355,85 @@ mod tests {
         assert!(!routing_state(&r, &done).unwrap());
         assert!(routing_state(&r, &bus("AC.C")).is_err());
         assert!(routing_state(&r, &R::BankInserted).is_err());
+    }
+
+    /// PROC T5: each DC report reads its own group's field, and a cause
+    /// report is true only for the retained cause it names.
+    #[test]
+    fn dc_reports_read_their_group() {
+        use super::dc_state;
+        use leitbild_operating_plant::electrical::dc::Report;
+        use leitbild_operating_plant::ic::packet::{DcCause, ReportSource as R};
+        let report = |group: &str, output: bool, cause| Report {
+            group: group.into(),
+            output_available: output,
+            charger_bus: "AC.A".into(),
+            charger_delivering: false,
+            battery_available: true,
+            energy_j: 1e7,
+            requested_w: 3000.,
+            delivered_w: 3000.,
+            output_limit_w: 10000.,
+            cause,
+            depletion_s: Some(3600.),
+        };
+        let r = [
+            report("LD01.DC.I1", true, None),
+            report("LD01.DC.ACT.B", false, Some("Overload")),
+        ];
+        let g = |s: &str| s.to_string();
+        assert!(
+            dc_state(
+                &r,
+                &R::DcOutput {
+                    group: g("LD01.DC.I1")
+                }
+            )
+            .unwrap()
+        );
+        assert!(
+            !dc_state(
+                &r,
+                &R::DcOutput {
+                    group: g("LD01.DC.ACT.B")
+                }
+            )
+            .unwrap()
+        );
+        assert!(
+            !dc_state(
+                &r,
+                &R::DcCharger {
+                    group: g("LD01.DC.I1")
+                }
+            )
+            .unwrap()
+        );
+        assert!(
+            dc_state(
+                &r,
+                &R::DcBattery {
+                    group: g("LD01.DC.I1")
+                }
+            )
+            .unwrap()
+        );
+        let cause = |c| R::DcCause {
+            group: g("LD01.DC.ACT.B"),
+            cause: c,
+        };
+        assert!(dc_state(&r, &cause(DcCause::Overload)).unwrap());
+        assert!(!dc_state(&r, &cause(DcCause::OutputFailure)).unwrap());
+        assert!(
+            dc_state(
+                &r,
+                &R::DcOutput {
+                    group: g("LD01.DC.I2")
+                }
+            )
+            .is_err()
+        );
+        assert!(dc_state(&r, &R::BankInserted).is_err());
     }
 
     #[test]

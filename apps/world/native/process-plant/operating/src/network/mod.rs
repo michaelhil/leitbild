@@ -277,6 +277,12 @@ pub struct Network<P: Properties> {
     /// The valve's opening at the last evaluation's time (the block replay
     /// reuses it: it reads no coordinate).
     spray_x: Option<f64>,
+    /// R4-NCHEAD: the SG primary cells' profiled heads ([`ports::SgProfile`]),
+    /// the passes a coupled owner reported in the last evaluation (regular
+    /// cells), and each face layout's profile drive of that evaluation.
+    profiles: Vec<ports::SgProfile>,
+    coupled_passes: Vec<Option<ports::SgPass>>,
+    profile_drive: Vec<Scalar>,
 }
 
 fn s(v: f64) -> Scalar {
@@ -669,8 +675,33 @@ impl<P: Properties> Network<P> {
         let y: Vec<f64> = physical.iter().zip(&scales).map(|(v, s)| v / s).collect();
         let face_count = faces.len();
         let section_count = sections.len();
-        let elevations = geometry.regions.iter().map(|r| r.elevation_m).collect();
+        let elevations: Vec<f64> = geometry.regions.iter().map(|r| r.elevation_m).collect();
         let endpoints = faces.iter().map(|f| (f.from, f.to)).collect();
+        // R4-NCHEAD: each SG primary cell's profile on the secondary's fold.
+        let sg_cells: std::collections::BTreeSet<usize> =
+            packet.thermal.sg_segments.iter().map(|g| g.primary).collect();
+        let profiles = if sg_cells.is_empty() {
+            Vec::new()
+        } else {
+            let f = packet
+                .secondary
+                .as_ref()
+                .ok_or_else(|| bad("the SG segments' primary cells need the secondary's fold"))?
+                .exposure
+                .fold;
+            let fold = crate::thermal::FoldPath::new(
+                f.developed_length_m,
+                f.inlet_m,
+                f.crest_m,
+                f.outlet_m,
+            )
+            .map_err(bad)?;
+            sg_cells
+                .iter()
+                .map(|c| ports::SgProfile::compile(*c, fold, &faces, &elevations, pzr))
+                .collect::<Result<Vec<_>, _>>()?
+        };
+        let layouts = face_layout.len();
         Ok((
             Self {
                 properties,
@@ -717,6 +748,9 @@ impl<P: Properties> Network<P> {
                 unilateral: None,
                 spray,
                 spray_x: None,
+                profiles,
+                coupled_passes: vec![None; pzr],
+                profile_drive: vec![s(0.); layouts],
             },
             Prepared {
                 y,

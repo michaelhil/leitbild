@@ -1568,6 +1568,12 @@ mod integrated {
         fn routing(&self) -> Option<&leitbild_operating_plant::electrical::bus::Distribution> {
             None
         }
+        /// PROC T5 hook (lane PHYS2): the DC groups, when an appended owner
+        /// composes them (report-only). The client keeps a copy taken at the
+        /// start and after every restart; their reports are exact at any time.
+        fn dc_groups(&self) -> Option<&leitbild_operating_plant::electrical::dc::Groups> {
+            None
+        }
         /// The appended owners' earliest due time strictly after `t`.
         fn appended_next_event(&self, _t: f64) -> Option<f64> {
             None

@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
-import { compileOperatingRods, parseS2Holding, parseS2Rods, OPERATING_RODS_PAGES } from './reference-design-operating-rods'
+import { compileOperatingRods, parseDriveStem, parseS2Holding, parseS2Rods, OPERATING_RODS_PAGES } from './reference-design-operating-rods'
 
 const fence = (name: string, body: string) => '```' + name + '\n' + body + '\n```\n'
 
@@ -14,6 +14,9 @@ test('S2 rod and holding blocks are strict and single', () => {
   expect(() => parseS2Rods('no block')).toThrow('Expected one ld01-s2-rods block')
   expect(parseS2Holding(fence('ld01-s2-holding-circuit', '{"turbineTripToOpening_s":0.2}'))).toEqual({ turbineTripToOpening_s: 0.2 })
   expect(() => parseS2Holding(fence('ld01-s2-holding-circuit', '{"turbineTripToOpening_s":0}'))).toThrow()
+  expect(parseDriveStem(fence('ld01-rod-drive-stem', '{"driveRodMass_kg":40,"source":"x"}'))).toEqual({ driveRodMass_kg: 40, source: 'x' })
+  expect(() => parseDriveStem(fence('ld01-rod-drive-stem', '{"driveRodMass_kg":0,"source":"x"}'))).toThrow()
+  expect(() => parseDriveStem(fence('ld01-rod-drive-stem', '{"driveRodMass_kg":40}'))).toThrow()
 })
 
 const wiki = process.env.LD01_WIKI_ROOT
@@ -39,6 +42,10 @@ test.skipIf(!wiki)('the actual rods section is the footprint, its record and the
   expect(s.cells.lower.top_m).toBe(s.cells.core[0]![0]!.bottom_m)
   expect(s.cells.core[0]![1]!.top_m).toBe(s.cells.upper.bottom_m)
   expect(s.cells.upper.top_m).toBe(s.cells.housing_main.bottom_m)
+  // R4-ROD2-STEM: the 12 mm, 6 m stem; the neck above the 0.05 m housing cap.
+  expect(s.stem.radius_m).toBe(0.006)
+  expect(s.stem.length_m).toBe(6)
+  expect(s.cells.housing_neck).toEqual({ region: 'HOUSING.NECK', bottom_m: 8.05, top_m: 13.6 })
   expect(s.guide.upper_mouth_m - s.guide.lower_mouth_m).toBeCloseTo(s.bodies.length_m, 12)
   expect(s.holding.turbine_trip_to_opening_s).toBe(0.2)
   expect(s.reference_travel_m).toBe(3.4839)

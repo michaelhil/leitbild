@@ -190,7 +190,7 @@ fn pu_does_not_flash_clamp_or_query_an_undefined_phase() {
         Error::Domain
     );
     assert_eq!(
-        point_pu(Branch::Liquid, 17.5e6, l.internal_energy_j_kg).unwrap_err(),
+        point_pu(Branch::Liquid, 20.5e6, l.internal_energy_j_kg).unwrap_err(),
         Error::Domain
     );
     assert_eq!(

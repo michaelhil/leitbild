@@ -182,6 +182,10 @@ fn a_restored_copy_continues_bitwise_and_the_protocol_refuses_explicitly() {
     let stepping =
         std::env::var("LD01_UNIT_HOST_STEPPING").unwrap_or_else(|_| "free".into());
     let free = stepping == "free";
+    // The water method (owner decision 1 Nov): the IF97 reference unless
+    // LD01_UNIT_HOST_WATER names sbtl.
+    let water = std::env::var("LD01_UNIT_HOST_WATER").unwrap_or_else(|_| "if97".into());
+    let other_water = if water == "sbtl" { "if97" } else { "sbtl" };
     let load = json!({
         "inputs": {
             "packet": env("LD01_OPERATING_HOT_SPINE_PACKET"),
@@ -194,7 +198,7 @@ fn a_restored_copy_continues_bitwise_and_the_protocol_refuses_explicitly() {
             "elec": env("ELEC_PACKET"),
         },
         "state": env("LD01_S3_STATE"),
-        "solver": {"weights": "stock", "first_step": "declared", "stepping": stepping},
+        "solver": {"weights": "stock", "first_step": "declared", "stepping": stepping, "water": water},
     });
     let started = Instant::now();
     let mut refusals = serde_json::Map::new();
@@ -324,6 +328,12 @@ fn a_restored_copy_continues_bitwise_and_the_protocol_refuses_explicitly() {
     let cause = c.refused(RESTORE, &serde_json::to_vec(&tampered).unwrap());
     assert!(cause.contains("identity state differs"), "{cause}");
     refusals.insert("restore, another start state".into(), json!(cause));
+    // A snapshot of one water method never restores as the other.
+    let mut tampered: Value = serde_json::from_slice(&copy).unwrap();
+    tampered["load"]["solver"]["water"] = json!(other_water);
+    let cause = c.refused(RESTORE, &serde_json::to_vec(&tampered).unwrap());
+    assert!(cause.contains("identity solver differs"), "{cause}");
+    refusals.insert("restore, another water method".into(), json!(cause));
     c.close();
 
     // The comparison: every exchange payload, then the final snapshots.
@@ -352,6 +362,7 @@ fn a_restored_copy_continues_bitwise_and_the_protocol_refuses_explicitly() {
         "b_failed": b_failed.as_ref().map(|(k, c)| json!({"exchange": k, "t1": instant(*k), "cause": c})),
         "failures_identical": a_failed == b_failed,
         "stepping": if free { "free" } else { "frame-stops" },
+        "water": water,
         "copy_integrator_s": copy_integrator, "copy_mid_step": copy_integrator > copy_t,
         "exchanges_compared": a_frames.len(), "frames_equal": first_difference.is_none(),
         "first_difference": first_difference,

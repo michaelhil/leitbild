@@ -345,6 +345,8 @@ fn channels(plant: &Plant, inputs: &Inputs) -> Result<Vec<Channel>, String> {
                 ("1", "mean rod stem travel over the normal stroke (0 seated)")
             }
             Quantity::StopValvePosition { .. } => ("%", "turbine stop valve stroke (100 open)"),
+            // PHYS2 (lead ruling 1 Nov): only in a section declaring the governor.
+            Quantity::AdmissionPosition => ("%", "turbine admission valve stroke (100 open)"),
             // PHYS2's X4 channels (ld01-sg-normal-pressure-channel,
             // ld01-sg-flow-channels, ld01-vessel-dp-channels,
             // ld01-core-exit-channels), in the units the section compiles.
@@ -870,11 +872,14 @@ fn parse_load(load: &Value) -> Result<(Inputs, String, Solver), String> {
         text(i, "pzr_control_wiki", "LOAD inputs")?,
         text(i, "elec", "LOAD inputs")?,
     )?;
-    exactly(&o["solver"], "LOAD solver", &["weights", "first_step", "stepping"])?;
+    exactly(&o["solver"], "LOAD solver", &["weights", "first_step", "stepping", "water"])?;
     let solver = Solver {
         weights: Weights::parse(text(&o["solver"], "weights", "LOAD solver")?)?,
         first_step: parse_first_step(text(&o["solver"], "first_step", "LOAD solver")?)?,
         stepping: parse_stepping(text(&o["solver"], "stepping", "LOAD solver")?)?,
+        // The water method (owner decision 1 Nov): a required LOAD key, in
+        // the identity a restore checks.
+        water: leitbild_operating_water::WaterMethod::parse(text(&o["solver"], "water", "LOAD solver")?)?,
     };
     Ok((inputs, text(load, "state", "LOAD")?.to_string(), solver))
 }
@@ -932,6 +937,7 @@ impl Unit {
             "derived_rows": plant.derived.rows.len(), "frame_s": bits(plant.frame.period_s()),
             "matrix_rebuild": "stock (r4 baseline: MR-1 off)",
             "stepping": format!("{stepping:?}"),
+            "water": solver.water.as_str(),
         });
         let mut identity = files;
         identity["composition"] = composition;

@@ -2439,6 +2439,22 @@ impl<P: Properties + WaterProperties> Joined<P> {
             }
             add(&mut columns, &rows, &cols);
         }
+        // R4-NCHEAD: an SG primary's profiled port heads read its single-pass
+        // law: the wall water and its faces' charts, and each segment's metal.
+        for (c, faces) in self.network.profile_faces() {
+            let mut rows = BTreeSet::new();
+            for f in faces {
+                rows.extend(self.impulses(f));
+            }
+            let mut cols = BTreeSet::new();
+            self.wall(c, &mut cols);
+            for (i, (primary, _)) in incidence.segments.iter().enumerate() {
+                if *primary == c {
+                    cols.insert(o.solids + sol.metal(i));
+                }
+            }
+            add(&mut columns, &rows, &cols);
+        }
         // 4. The owners' rows and receipts.
         if let RodPort::Owner(b) = &self.blocks.rods {
             let st = b.structure();

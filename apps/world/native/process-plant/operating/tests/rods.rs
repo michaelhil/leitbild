@@ -12,7 +12,7 @@ use leitbild_operating_plant::{
     rods::{
         BORE_BORON, BORE_ENERGY, BORE_MASS, BORE_PRESSURE, Bodies, CLUSTER_COORDINATES, Cells,
         ClusterSection, Guide, Holding, LOWER_CURRENT, LowerWater, Mode, Region, RodBlock, Section,
-        Span, Spider, SpiderDrag, TRAVEL, UPPER_CURRENT, VELOCITY, geometry::Branch,
+        Span, Spider, SpiderDrag, Stem, TRAVEL, UPPER_CURRENT, VELOCITY, geometry::Branch,
     },
     sparse::{Coloring, Pattern, compare_with_dense, scatter},
     thermal::{Saturation, Scalar},
@@ -20,7 +20,7 @@ use leitbild_operating_plant::{
 use std::time::Instant;
 
 const G: f64 = 9.80665;
-const REGIONS: [(&str, f64); 12] = [
+const REGIONS: [(&str, f64); 13] = [
     ("LOWER", -3.),
     ("CORE.NE.1", -1.),
     ("CORE.NE.2", 1.),
@@ -32,13 +32,21 @@ const REGIONS: [(&str, f64); 12] = [
     ("CORE.SE.2", 1.),
     ("UPPER", 3.),
     ("HOUSING.MAIN", 6.),
+    ("HOUSING.NECK", 10.825),
     ("PZR", 18.5),
 ];
-const REGULAR: usize = 11;
-const VOLUMES: [f64; 11] = [
+const REGULAR: usize = 12;
+const VOLUMES: [f64; 12] = [
     28.1789708, 2.5690191, 2.5369520, 2.5690191, 2.5369520, 2.5690191, 2.5369520, 2.5690191,
-    2.5369520, 32.0833548, 10.0618815,
+    2.5369520, 32.0833548, 10.0618815, 0.5445115,
 ];
+/// R4-ROD2-STEM: the record's 12 mm, 6 m stainless stem (7920 kg/m3) as the
+/// fixture's named stem mass; the drive-rod mass of record is the packet's.
+const STEM_RADIUS: f64 = 0.006;
+const STEM_LENGTH: f64 = 6.;
+fn stem_mass() -> f64 {
+    std::f64::consts::PI * STEM_RADIUS * STEM_RADIUS * STEM_LENGTH * 7920.
+}
 const N: usize = 52;
 
 // Z4's LOWER water (connected-primary-initialization.md :308): 15.2 MPa at
@@ -176,6 +184,11 @@ fn section(drag: SpiderDrag) -> Section {
             height_m: 0.1,
             radius_m: 0.115,
         },
+        stem: Stem {
+            mass_kg: stem_mass(),
+            radius_m: STEM_RADIUS,
+            length_m: STEM_LENGTH,
+        },
         guide: Guide {
             bore_radius_m: 0.0055,
             lower_mouth_m: -2.25,
@@ -190,6 +203,7 @@ fn section(drag: SpiderDrag) -> Section {
             core,
             upper: span("UPPER", 2., 4.),
             housing_main: span("HOUSING.MAIN", 4., 8.),
+            housing_neck: span("HOUSING.NECK", 8.05, 13.6),
         },
         gravity_m_s2: G,
         reference_travel_m: 2.8,
@@ -254,12 +268,13 @@ struct Water1 {
     c: Scalar,
 }
 /// The retained at-power field of Z4: LOWER 15.2 MPa at -2 m (563.15 K),
-/// UPPER 15,056,166 Pa at +2 m (593.15 K); HOUSING.MAIN shares UPPER's
-/// water at rest. Densities and viscosities are Z4's IF97 values as printed.
+/// UPPER 15,056,166 Pa at +2 m (593.15 K); HOUSING.MAIN and HOUSING.NECK
+/// share UPPER's water at rest. Densities and viscosities are Z4's IF97 values as printed.
 fn z4_field(upper_shift_pa: f64) -> Vec<Water1> {
     let (ru, mu) = (678.920757, 8.023731e-05);
     let pu = 15_056_166. - upper_shift_pa - ru * G * (3. - 2.);
     let pm = 15_056_166. - upper_shift_pa - ru * G * (6. - 2.);
+    let pn = 15_056_166. - upper_shift_pa - ru * G * (10.825 - 2.);
     let w = |p: f64, rho: f64, mu: f64, h: f64| Water1 {
         p: Scalar::constant(p),
         rho: Scalar::constant(rho),
@@ -272,6 +287,7 @@ fn z4_field(upper_shift_pa: f64) -> Vec<Water1> {
     cells.extend([core; 8]);
     cells.push(w(pu, ru, mu, 1.4545e6));
     cells.push(w(pm, ru, mu, 1.4545e6));
+    cells.push(w(pn, ru, mu, 1.4545e6));
     cells
 }
 struct FluidData {
@@ -562,11 +578,17 @@ fn z4_force_balance_and_insertion_margins_are_reproduced() {
             assert!((forces.top_pressure.value - top).abs() < 0.2);
             assert!((forces.end_face.value - end).abs() < 0.01, "{travel}: end");
             assert!((forces.wall.value - wall).abs() < 5e-3, "{travel}: wall");
-            assert!((-forces.net.value - net_down).abs() < 0.01, "{travel}: net");
+            // Z4's receipt predates R4-ROD2-STEM: its net is the bodies' and
+            // spider's alone. The stem adds its weight less its end faces,
+            // which at rest is its weight less its buoyancy in UPPER's water.
+            let stem = forces.stem_end.value - stem_mass() * G;
+            let buoyancy = 678.920757 * G * std::f64::consts::PI * STEM_RADIUS * STEM_RADIUS * STEM_LENGTH;
+            assert!((forces.stem_end.value - buoyancy).abs() < 1e-6, "{travel}: stem end");
+            assert!((-(forces.net.value - stem) - net_down).abs() < 0.01, "{travel}: net");
             // The bores' EOS row holds at the prepared water.
             let eos = rows[b.group_index(b.group_of(c), BORE_PRESSURE)].value;
             assert!(eos.abs() < 1e-12, "EOS {eos}");
-            minimum = minimum.min(-forces.net.value);
+            minimum = minimum.min(-(forces.net.value - stem));
         }
     }
     // The H7 margins: 62 N at release, 56 N at the minimum over the travels.
@@ -757,8 +779,9 @@ fn fluid_directions_enter_rows_and_receipts_exactly() {
     let base = z4_field(0.);
     let (y, yp) = mixed(&mut b, &base);
     // Seed each plenum's and two core cells' pressure, density, viscosity,
-    // enthalpy and tracer (the bores no longer read the core cells).
-    for cell in [0, 1, 4, 9, 10] {
+    // enthalpy and tracer (the bores no longer read the core cells), and
+    // HOUSING.NECK's, which the stem's top reads (R4-ROD2-STEM).
+    for cell in [0, 1, 4, 9, 10, 11] {
         for field in 0..5 {
             let seeded = |sign: f64, direction: f64| {
                 let mut w = base.clone();
@@ -1008,8 +1031,12 @@ fn trip_release_seat_and_the_stuck_cluster_follow_the_modes() {
     let y = solver(&b, &seated);
     let x = Coordinates::new(&y, &yp, None, 0., &scales).unwrap();
     Rods::<Liquid>::roots(&mut b, &Liquid, 3., x, &f, &mut roots).unwrap();
+    // R4-ROD2-STEM: the stem adds its weight less its buoyancy in UPPER's
+    // water, 48.2 N, to the bodies' 56.5 N of Z4.
+    let stem = stem_mass() * G
+        - 678.920757 * G * std::f64::consts::PI * STEM_RADIUS * STEM_RADIUS * STEM_LENGTH;
     assert!(
-        roots[0] > 55. && roots[0] < 57.,
+        roots[0] > 55. + stem && roots[0] < 57. + stem,
         "seat reaction root {}",
         roots[0]
     );
@@ -1032,6 +1059,79 @@ fn trip_release_seat_and_the_stuck_cluster_follow_the_modes() {
 /// while the turbine trip's opening is still scheduled opens the circuit at
 /// the command's instant; the scheduled opening then finds it open, and any
 /// later trip is acknowledged with no change.
+#[test]
+fn the_seated_lift_off_root_is_the_net_force_on_the_mouth_rows() {
+    // R4-ROD2-SEAT: the lift-off root's seated balance differs from `net`
+    // by exactly the mouth rows' and the EOS row's residuals:
+    //   seated - net = A_b r_lo + B (r_lo + r_up) + B g H (rho(p) - M/V),
+    // so it equals `net` on every consistent state and does not follow the
+    // currents or the bores' pressure where those rows are off.
+    let water = z4_field(0.);
+    let mut b = block(SpiderDrag::EnvelopeDisk { coefficient: 1.28 });
+    let base = held(&mut b, &water, 0., 0.816464);
+    for c in 0..N {
+        b.set_mode(c, Mode::Seated);
+    }
+    let d = fluid_data(&water);
+    let f = fluid(&d);
+    let scales = layout(&b).scales.clone();
+    let area = 24. * std::f64::consts::PI * 0.00475 * 0.00475;
+    let couette = {
+        // The exact concentric moving-inner-wall factor of the 24 bores.
+        let (o, i) = (0.0055_f64, 0.00475_f64);
+        let eta = (o / i).ln();
+        24. * std::f64::consts::PI * ((o * o - i * i) / (2. * eta) - i * i)
+    };
+    let height = 2.4 - -2.25;
+    for (shift_lo, shift_up, shift_p) in [
+        (0., 0., 0.),
+        (0.7, -0.4, 0.),
+        (-1.9, 1.3, 2.0e4),
+        (2.3, 0.2, -3.5e4),
+    ] {
+        let mut physical = base.clone();
+        for c in 0..N {
+            physical[ci(&b, c, LOWER_CURRENT)] += shift_lo;
+            physical[ci(&b, c, UPPER_CURRENT)] += shift_up;
+        }
+        for g in 0..b.bore_groups().len() {
+            physical[b.group_index(g, BORE_PRESSURE)] += shift_p;
+        }
+        let y = solver(&b, &physical);
+        let yp = vec![0.; y.len()];
+        let x = Coordinates::new(&y, &yp, None, 0., &scales).unwrap();
+        for c in [0, 13, 51] {
+            let bore = b.bore(&Liquid, b.group_of(c), &x).unwrap();
+            let forces = b.forces(c, &x, &f, &bore).unwrap();
+            let seated = b.seated_net(c, &x, &f, &bore).unwrap().value;
+            let eos = bore.density.value - bore.mass.value / bore.volume.value;
+            let expected = forces.net.value
+                + area * forces.lower_residual.value
+                + couette * (forces.lower_residual.value + forces.upper_residual.value)
+                + couette * G * height * eos;
+            assert!(
+                (seated - expected).abs() < 1e-9 * (1. + forces.end_face.value.abs()),
+                "{c} {shift_lo} {shift_up} {shift_p}: seated {seated} expected {expected}"
+            );
+            if shift_lo == 0. && shift_p == 0. {
+                // The held steady state at the 0.1 m current: the upper row
+                // is off by Z4's small current mismatch only.
+                assert!(
+                    (seated - forces.net.value).abs()
+                        < couette * forces.upper_residual.value.abs() + 1e-6
+                );
+            } else {
+                // Off the rows, `net` follows the currents and the bores'
+                // pressure; the seated balance reads neither.
+                assert!(
+                    (seated - forces.net.value).abs() > 1e-3,
+                    "{c}: rows off yet equal"
+                );
+            }
+        }
+    }
+}
+
 #[test]
 fn a_manual_trip_during_a_scheduled_opening_opens_the_circuit_at_once() {
     let water = z4_field(0.);
@@ -1315,6 +1415,8 @@ fn hydrostatic() -> Vec<Water1> {
     water[9].rho = Scalar::constant(ru);
     water[10].p = Scalar::constant(pu - 3. * ru * G);
     water[10].rho = Scalar::constant(ru);
+    water[11].p = Scalar::constant(pu - 7.825 * ru * G);
+    water[11].rho = Scalar::constant(ru);
     water
 }
 
