@@ -1,9 +1,9 @@
 {
  "kind": "ld01-tier1-expectation",
  "platform": "macos-aarch64",
- "reason": "X4.6 item 1 mixed cell's law (FEED 8e24a1e52, wiki 7c173df; r4h tuple, wiki fb3756a): refit packets and states; trajectory moves",
- "recorded_from": "/Users/hilde/Documents/ChatGPT/Leitbild-research/reference-designs/property-candidates/operating-joined-spine-s2/resume-2026-10-14/tiers/t1-f6d1b20a0-20261101T042804Z",
- "app": "f6d1b20a0",
+ "reason": "R4-FREE-STEPS (PERF2 1d7727a54): free stepping by default moves C2@2.5's trajectory; C2@0 bitwise",
+ "recorded_from": "/Users/hilde/Documents/ChatGPT/Leitbild-research/reference-designs/property-candidates/operating-joined-spine-s2/resume-2026-10-14/tiers/t1-0d77c7636-20261101T044101Z",
+ "app": "0d77c7636",
  "environment": {
   "packet_sha256": "6defd761370009b496fcea18cd0a5037fccf4314c78e52853fa5b184d6893034",
   "state_sha256": "219cf355c69cc79a9156a44047968e4bf2eab37225d9fe2c414c92ae6fc346e8",
@@ -15,12 +15,12 @@
  "instruction_tolerance": 0.01,
  "spans": {
   "C2@0": {
-   "instructions": 6650645680,
+   "instructions": 6556892164,
    "digest": "37bd7b3df8226e6837e6a99a04ff0f9ef0af0f0c16abe8e8b6bf2d9d642f3302"
   },
   "C2@2.5": {
-   "instructions": 19015122511,
-   "digest": "49892a3a13e6a5d6df25b4ad68e43adc62ae3dd3953460f519e8d972e941f42b"
+   "instructions": 16452205757,
+   "digest": "a9d47d8adda6abca6e54f31e36a151667da521544d53e871fa6fba243dc21ee0"
   }
  }
 }
