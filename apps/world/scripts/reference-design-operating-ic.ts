@@ -64,7 +64,7 @@ export const parseBankChannels = (text: string) => z.object({
 }).strict().parse(configurationBlock(text, 'ld01-bank-channels'))
 export const parseSteamValvePositionChannels = (text: string) => z.object({
   lag_s: positive, span_percent: band, quantum_percent: positive, sample_s: positive, transport_s: positive,
-  supply: z.string(), compiled: z.tuple([z.literal('LD01.TG.STOP.POS'), z.literal('LD01.TG.ADM.POS')]),
+  supply: z.string(), compiled: z.array(z.literal('LD01.TG.STOP.POS')),
 }).strict().parse(configurationBlock(text, 'ld01-steam-valve-position-channels'))
 // Plan r4 tag map: LD01.CORE.NI.SHUTDOWN's SOURCE-pulse path
 // (nuclear-observation-apparatus.md).
@@ -252,11 +252,7 @@ function electricalReports(e: ReturnType<typeof parseElectricalReports>, p: { ma
 
 /** Compile the `ic` section from page texts keyed as `OPERATING_IC_PAGES`
  * and the joined packet. */
-/** The compile's explicit governor declaration (lead 1 Nov): ADM.POS is
- * compiled only when it is declared; composition refuses a mismatch. */
-export type GovernorDeclaration = { declared: boolean, basis: string }
-export function compileOperatingIcFrom(texts: Pages, packetValue: unknown, governor: GovernorDeclaration) {
-  if (typeof governor?.declared !== 'boolean' || !governor.basis) throw Error('The IC compile needs an explicit governor declaration')
+export function compileOperatingIcFrom(texts: Pages, packetValue: unknown) {
   const packet: Packet = packetSchema.parse(packetValue)
   const channel = parsePressureChannel(texts['systems/instrumentation/operational-observations.md'])
   const protection = parsePressureProtection(texts['safety/source-and-primary-protection.md'])
@@ -474,15 +470,6 @@ export function compileOperatingIcFrom(texts: Pages, packetValue: unknown, gover
       indeterminate_band: null, sample_s: cetChannels.sample_s, transport_s: channel.transport_s },
     maximum_age_s: protection.maximum_age_s, recovery_s: protection.recovery_s,
   }
-  // LD01.TG.ADM.POS: the valve convention, only when the compile declares
-  // the governor (its opening is the governor slice's coordinate).
-  const admissionFamilies = governor.declared ? [{
-    id: 'LD01.TG.ADM.POS', quantity: 'admission_position',
-    channels: [{ id: 'LD01.TG.ADM.POS', supply: valves.supply }],
-    channel: { lag_s: valves.lag_s, min: valves.span_percent[0], max: valves.span_percent[1], quantum: valves.quantum_percent,
-      indeterminate_band: null, sample_s: valves.sample_s, transport_s: valves.transport_s },
-    maximum_age_s: protection.maximum_age_s, recovery_s: protection.recovery_s,
-  }] : []
   const proxyFamily = {
     id: 'LD01.CORE.POWER.P',
     quantity: { current_proxy: { weights, fref_events_per_s: reference.Fref_events_per_s } },
@@ -567,7 +554,7 @@ export function compileOperatingIcFrom(texts: Pages, packetValue: unknown, gover
         indeterminate_band: null, sample_s: channel.sample_s, transport_s: channel.transport_s },
       maximum_age_s: protection.maximum_age_s, recovery_s: protection.recovery_s,
     }, pzrLevel.family, ...sgFamilies, ...flowFamilies, proxyFamily, ...speedFamilies, ...sgPressureFamilies, dpFamily, upperFamily, cetFamily, ...flowLagFamilies,
-      ...bankFamilies, ...valveFamilies, ...admissionFamilies, ...cvcsFamilies],
+      ...bankFamilies, ...valveFamilies, ...cvcsFamilies],
     reports: [{
       id: 'LD01.TG.TRIP.REPORT', source: 'turbine_retained_trip', supply: 'ACT.B',
       sample_s: report.sample_s, transport_s: report.transport_s, maximum_age_s: report.maximumAge_s, recovery_s: report.recovery_s,
@@ -586,7 +573,6 @@ export function compileOperatingIcFrom(texts: Pages, packetValue: unknown, gover
     turbine_trip_on_reactor_trip: { cause: interlock.cause, delay_s: interlock.delay_s,
       basis: 'ld01-reactor-trip-turbine-trip (protection-and-command-precedence.md, R12-A2): LD01.TRIP.HOLD loss requests LD01.TG TRIP after delay_s; AP1000 DCD Rev. 19 Tier 2 15.0.14' },
     ...(sourceRange ? { source_range: sourceRange } : {}),
-    governor,
     missing: sourceRange ? OPEN_ITEMS : [...OPEN_ITEMS, { item: 'LD01.CORE.NI.SHUTDOWN regional Rref',
       note: 'ld01-source-range-pulse rrefEventsPerS is open: the regional collected-event intensity at the original reference field (NUC); no SOURCE path is compiled until it is filled' }],
     provenance: [{ pt1_tap_elevation_m: pt1.elevation_m, pt1_reads: 'the stratified cell roof pressure (operational-observations.md)',
@@ -598,22 +584,19 @@ export function compileOperatingIcFrom(texts: Pages, packetValue: unknown, gover
 
 /** Read the owners' pages from the wiki root and the joined packet, and
  * return the section with page and packet provenance appended. */
-export async function compileOperatingIc(wikiRoot: string, packetPath: string, governor: GovernorDeclaration) {
+export async function compileOperatingIc(wikiRoot: string, packetPath: string) {
   const root = join(wikiRoot, 'world/packs/process-plant/reference-designs/ld-01')
   const texts = Object.fromEntries(await Promise.all(OPERATING_IC_PAGES.map(async page =>
     [page, await Bun.file(join(root, page)).text()] as const))) as Record<Page, string>
   const packetText = await Bun.file(packetPath).text()
-  const section = compileOperatingIcFrom(texts, JSON.parse(packetText), governor)
+  const section = compileOperatingIcFrom(texts, JSON.parse(packetText))
   return { ...section, provenance: [...section.provenance,
     ...OPERATING_IC_PAGES.map(name => ({ name, sha256: createHash('sha256').update(texts[name]).digest('hex') })),
     { packet: packetPath, sha256: createHash('sha256').update(packetText).digest('hex') }] }
 }
 
 if (import.meta.main) {
-  const [wiki, packet, flag, value, ...rest] = Bun.argv.slice(2)
-  if (!wiki || !packet || flag !== '--governor' || (value !== 'declared' && value !== 'undeclared') || rest.length)
-    throw Error('Usage: reference-design-operating-ic <wiki root> <joined packet> --governor declared|undeclared')
-  const governor = { declared: value === 'declared',
-    basis: value === 'declared' ? 'declared at compile (--governor declared): a governed run (X4.3)' : 'not declared at compile (--governor undeclared): an ungoverned run' }
-  console.log(JSON.stringify(await compileOperatingIc(wiki, packet, governor), null, 1))
+  const [wiki, packet, ...rest] = Bun.argv.slice(2)
+  if (!wiki || !packet || rest.length) throw Error('Usage: reference-design-operating-ic <wiki root> <joined packet>')
+  console.log(JSON.stringify(await compileOperatingIc(wiki, packet), null, 1))
 }

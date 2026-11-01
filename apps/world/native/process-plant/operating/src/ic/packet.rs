@@ -30,9 +30,6 @@ pub struct Section {
     /// the regional reference intensity is selected.
     #[serde(default)]
     pub source_range: Option<SourceRangeSpec>,
-    /// Whether the compile declared the governor (`LD01.TG.ADM.POS` is
-    /// compiled only then); composition refuses a mismatch either way.
-    pub governor: GovernorDeclaration,
     /// Needed values without a strict block (compiler's list; not consumed).
     pub missing: Vec<Value>,
     pub provenance: Vec<Value>,
@@ -132,11 +129,6 @@ pub enum Quantity {
     /// mixture density on its EOS row). Linear; a moving cell is refused by
     /// the compiler.
     VesselDp { taps: Vec<DpTap> },
-    /// `LD01.TG.ADM.POS` (ld01-steam-valve-position-channels): the admission
-    /// valve's opening in percent, `100 a`, the governor slice's coordinate
-    /// (judgement: the stroke is the opening). Linear; only in a section
-    /// whose compile declared the governor.
-    AdmissionPosition,
     /// `LD01.UPPER.DP<n>` (ld01-vessel-dp-channels): the moving upper
     /// plenum's mixture head `rho g (upper_m − lower_m)`, Pa, with `rho` the
     /// liquid density at the cell's pressure and specific internal energy
@@ -168,15 +160,6 @@ pub enum Quantity {
 pub struct Region {
     pub region: usize,
     pub region_id: String,
-}
-
-/// The IC compile's governor declaration, recorded in the section.
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct GovernorDeclaration {
-    pub declared: bool,
-    /// What the declaration rests on (the compile's input).
-    pub basis: String,
 }
 
 /// Which SG owner lag an [`Quantity::SgFlowLag`] reads.

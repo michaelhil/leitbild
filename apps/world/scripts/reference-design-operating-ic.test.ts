@@ -18,8 +18,7 @@ const underspeed = '{"underspeedFractionOfNominal":0.9,"qualification_s":0.5,"sp
 const cmtBlock = '{"sPressure_Pa":12477415,"sQualification_s":0.5,"low2Level_m":0.0,"low2Qualification_s":0.5}'
 const interlock = '{"cause":"LD01.TG.REACTOR_TRIP","delay_s":5,"initiation":"LD01.TRIP.HOLD loss"}'
 const bankChannels = '{"position":{"lag_s":0.1,"span":[0,1],"quantum":null,"supply":"I1"},"inserted":{"supply":"I1"},"sample_s":0.1,"transport_s":0.1}'
-const valveChannels = '{"lag_s":0.1,"span_percent":[0,100],"quantum_percent":1,"sample_s":0.1,"transport_s":0.1,"supply":"I1","compiled":["LD01.TG.STOP.POS","LD01.TG.ADM.POS"]}'
-const ungoverned = { declared: false, basis: 'test: ungoverned' }
+const valveChannels = '{"lag_s":0.1,"span_percent":[0,100],"quantum_percent":1,"sample_s":0.1,"transport_s":0.1,"supply":"I1","compiled":["LD01.TG.STOP.POS"]}'
 const observationWindow = '{"window_s":60,"alpha":0.01,"theta":0.1,"minimumExcessCount":400,"backgroundRange_s":[0,2],"deadtime_s":0.000001,"maximumOccupancy":0.1,"sample_s":0.1,"noiseBound_A":0.000000000001,"commissionOffsetBound_A":0.000000000001,"saturation_A":0.01}'
 const sourcePulse = '{"rrefEventsPerS":null,"darkPerS":1,"supply":"I2","seed":1,"maximumAge_s":60.2}'
 const sgPressureBlock = '{"lag_s":0.2,"span_Pa":[0,10000000],"quantum_Pa":1000}'
@@ -70,15 +69,15 @@ const packet = {
 
 test('with the packet\'s apparent level (C08, S5) the NR channels read it; one indicated-level area', () => {
   const apparent = { ...packet, secondary: { ...packet.secondary, apparentLevel: { indication: { indicatedLevelArea_m2: 12 } } } }
-  const s = compileOperatingIcFrom(pages(), apparent, ungoverned)
+  const s = compileOperatingIcFrom(pages(), apparent)
   expect(s.families[2]!.quantity).toEqual({ sg_apparent_level: { sg: 'A', area_m2: 12 } })
   expect(s.families[3]!.quantity).toEqual({ sg_apparent_level: { sg: 'B', area_m2: 12 } })
   const other = { ...packet, secondary: { ...packet.secondary, apparentLevel: { indication: { indicatedLevelArea_m2: 10 } } } }
-  expect(() => compileOperatingIcFrom(pages(), other, ungoverned)).toThrow('one indicated-level area')
+  expect(() => compileOperatingIcFrom(pages(), other)).toThrow('one indicated-level area')
 })
 
 test('the section carries only strict-block values and the packet identities', () => {
-  const s = compileOperatingIcFrom(pages(), packet, ungoverned)
+  const s = compileOperatingIcFrom(pages(), packet)
   expect(s.frame_s).toBe(0.1)
   expect(s.families.map(f => f.id)).toEqual(['LD01.PZR.PT', 'LD01.PZR.LT', 'LD01.SG.A.LT.NR', 'LD01.SG.B.LT.NR', 'LD01.RCS.A.FT', 'LD01.RCS.B.FT', 'LD01.CORE.POWER.P',
     'LD01.RCP.A1.SPEED', 'LD01.RCP.A2.SPEED', 'LD01.RCP.B1.SPEED', 'LD01.RCP.B2.SPEED', 'LD01.SG.A.PT', 'LD01.SG.B.PT', 'LD01.CORE.DP', 'LD01.UPPER.DP', 'LD01.CORE.CET'])
@@ -129,28 +128,28 @@ test('the section carries only strict-block values and the packet identities', (
 test('refusals: a duration off the frame, a missing face, a wrong Fref, a missing block', () => {
   expect(() => compileOperatingIcFrom(pages({ 'safety/source-and-primary-protection.md':
     fence('reference-pzr-pressure-protection', protection) + fence('ld01-loop-low-flow-protection', lowFlow.replace('"lowFlowQualification_s":0.5', '"lowFlowQualification_s":0.55'))
-      + fence('ld01-pzr-level-protection', levelProtectionBlock) + fence('ld01-rcp-underspeed-protection', underspeed) + fence('ld01-cmt-actuation', cmtBlock) }), packet, ungoverned))
+      + fence('ld01-pzr-level-protection', levelProtectionBlock) + fence('ld01-rcp-underspeed-protection', underspeed) + fence('ld01-cmt-actuation', cmtBlock) }), packet))
     .toThrow('not whole')
-  expect(() => compileOperatingIcFrom(pages(), { ...packet, mechanics: { ...packet.mechanics, faces: [{ id: 'RETURN.A->DOWN' }] } }, ungoverned)).toThrow('No face RETURN.B->DOWN')
+  expect(() => compileOperatingIcFrom(pages(), { ...packet, mechanics: { ...packet.mechanics, faces: [{ id: 'RETURN.A->DOWN' }] } })).toThrow('No face RETURN.B->DOWN')
   expect(() => compileOperatingIcFrom(pages({ 'systems/instrumentation/nuclear-observation-apparatus.md':
     fence('ld01-regional-current-reference', reference.replace('9.36226e19', '9.4e19'))
-    + fence('reference-nuclear-observation-window', observationWindow) + fence('ld01-source-range-pulse', sourcePulse) }), packet, ungoverned)).toThrow('Fref')
-  expect(() => compileOperatingIcFrom(pages({ 'systems/steam-generation/instrumentation.md': 'no block' }), packet, ungoverned))
+    + fence('reference-nuclear-observation-window', observationWindow) + fence('ld01-source-range-pulse', sourcePulse) }), packet)).toThrow('Fref')
+  expect(() => compileOperatingIcFrom(pages({ 'systems/steam-generation/instrumentation.md': 'no block' }), packet))
     .toThrow('Expected one ld01-sg-level-channels block')
   expect(() => compileOperatingIcFrom(pages({ 'safety/engineered-safety-actuation.md':
-    fence('ld01-prhr-actuation', prhrActuation.replace('"onAcceptedReactorTrip":false', '"onAcceptedReactorTrip":true')) }), packet, ungoverned)).toThrow()
+    fence('ld01-prhr-actuation', prhrActuation.replace('"onAcceptedReactorTrip":false', '"onAcceptedReactorTrip":true')) }), packet)).toThrow()
   expect(() => compileOperatingIcFrom(pages({ 'safety/engineered-safety-actuation.md':
-    fence('ld01-prhr-actuation', prhrActuation.replace('PZR.HIGH_3_PRHR', 'SG.A.WR_LOW')) }), packet, ungoverned)).toThrow('not compiled')
+    fence('ld01-prhr-actuation', prhrActuation.replace('PZR.HIGH_3_PRHR', 'SG.A.WR_LOW')) }), packet)).toThrow('not compiled')
   expect(() => compileOperatingIcFrom(pages({ 'safety/protection-and-command-precedence.md':
-    fence('ld01-reactor-trip-turbine-trip', interlock.replace('"delay_s":5', '"delay_s":5.05')) }), packet, ungoverned)).toThrow('not whole')
+    fence('ld01-reactor-trip-turbine-trip', interlock.replace('"delay_s":5', '"delay_s":5.05')) }), packet)).toThrow('not whole')
   expect(() => compileOperatingIcFrom(pages({ 'safety/source-and-primary-protection.md': fence('reference-pzr-pressure-protection', protection)
     + fence('ld01-loop-low-flow-protection', lowFlow) + fence('ld01-pzr-level-protection', levelProtectionBlock)
-    + fence('ld01-rcp-underspeed-protection', underspeed.replace('"totalDelay_s":0.767', '"totalDelay_s":0.8')) + fence('ld01-cmt-actuation', cmtBlock) }), packet, ungoverned)).toThrow('total delay')
+    + fence('ld01-rcp-underspeed-protection', underspeed.replace('"totalDelay_s":0.767', '"totalDelay_s":0.8')) + fence('ld01-cmt-actuation', cmtBlock) }), packet)).toThrow('total delay')
 })
 
 const wiki = process.env.LD01_WIKI_ROOT, joined = process.env.LD01_OPERATING_HOT_SPINE_PACKET
 test.skipIf(!wiki || !joined)('the actual section from the wiki and the packet', async () => {
-  const s = await compileOperatingIc(wiki!, joined!, ungoverned)
+  const s = await compileOperatingIc(wiki!, joined!)
   expect(s.functions).toHaveLength(20)
   const root = join(wiki!, 'world/packs/process-plant/reference-designs/ld-01')
   for (const [i, name] of OPERATING_IC_PAGES.entries()) {
@@ -171,28 +170,28 @@ test('the PZR LT family and C2.N3 vote compile from their blocks, and refuse wit
   expect(family.channel).toEqual({ lag_s: 0.5, min: -1, max: 13, quantum: 0.01, indeterminate_band: null, sample_s: 0.1, transport_s: 0.1 })
   expect(family.channels.map(c => c.id)).toEqual(['LD01.PZR.LT1', 'LD01.PZR.LT2', 'LD01.PZR.LT3'])
   expect(monitors[0]!.rule).toEqual({ voted: { family: 'LD01.PZR.LT', side: { at_or_below: 3 }, qualification_s: 0.5 } })
-  const s = compileOperatingIcFrom(p, packet, ungoverned)
+  const s = compileOperatingIcFrom(p, packet)
   expect(s.families[1]).toEqual(family)
   expect(s.monitors).toEqual(monitors)
   expect(() => compilePzrLevelFrom({ ...texts, measurements: taps })).toThrow('Expected one ld01-pzr-level-channels block')
-  expect(() => compileOperatingIcFrom(pages({ 'systems/instrumentation/phase-dependent-measurements.md': taps }), packet, ungoverned))
+  expect(() => compileOperatingIcFrom(pages({ 'systems/instrumentation/phase-dependent-measurements.md': taps }), packet))
     .toThrow('Expected one ld01-pzr-level-channels block')
 })
 
 test('with the packet\'s CVCS (plan r4 X4.2) the two normal-inventory FTs are observed on I2 at the CVCS controller\'s lag and span', () => {
-  const s = compileOperatingIcFrom(pages(), { ...packet, cvcs: { controller: { flowLag_s: 0.25, flowSpan_kg_s: [-7.5, 7.5] } } }, ungoverned)
+  const s = compileOperatingIcFrom(pages(), { ...packet, cvcs: { controller: { flowLag_s: 0.25, flowSpan_kg_s: [-7.5, 7.5] } } })
   const ft = s.families.slice(-2)
   expect(ft.map(f => f.id)).toEqual(['LD01.INV.CHARGE.FT', 'LD01.INV.LETDOWN.FT'])
   expect(ft[0]!.quantity).toEqual({ cvcs_flow: { branch: 'Charging' } })
   expect(ft[1]!.channels).toEqual([{ id: 'LD01.INV.LETDOWN.FT', supply: 'I2' }])
   expect(ft[1]!.channel).toMatchObject({ lag_s: 0.25, min: -7.5, max: 7.5, quantum: null, sample_s: 0.1 })
   // Without the CVCS the section is unchanged.
-  expect(compileOperatingIcFrom(pages(), packet, ungoverned).families.map(f => f.id)).not.toContain('LD01.INV.CHARGE.FT')
+  expect(compileOperatingIcFrom(pages(), packet).families.map(f => f.id)).not.toContain('LD01.INV.CHARGE.FT')
 })
 
 test('with the packet\'s rods and steam admission (plan r4 tag map) the bank position, STOP position and bank inserted report are observed on I1', () => {
   const s = compileOperatingIcFrom(pages(), { ...packet, rods: { normal_travel_m: 4 },
-    secondary: { ...packet.secondary, steamAdmission: { stopTravel_s: 0.3 } } }, ungoverned)
+    secondary: { ...packet.secondary, steamAdmission: { stopTravel_s: 0.3 } } })
   const ids = s.families.map(f => f.id)
   expect(ids.slice(-2)).toEqual(['LD01.CORE.BANK.POS', 'LD01.TG.STOP.POS'])
   expect(s.families.at(-2)!.quantity).toEqual({ bank_position: { normal_travel_m: 4 } })
@@ -201,25 +200,25 @@ test('with the packet\'s rods and steam admission (plan r4 tag map) the bank pos
   expect(s.reports.slice(0, 2).map(r => [r.id, r.source, r.supply])).toEqual([['LD01.TG.TRIP.REPORT', 'turbine_retained_trip', 'ACT.B'],
     ['LD01.CORE.BANK.INSERTED', 'bank_inserted', 'I1']])
   // Without them the section is unchanged.
-  const plain = compileOperatingIcFrom(pages(), packet, ungoverned)
+  const plain = compileOperatingIcFrom(pages(), packet)
   expect(plain.families.map(f => f.id)).not.toContain('LD01.CORE.BANK.POS')
   expect(plain.reports.filter(r => !r.id.startsWith('LD01.AC.') && !r.id.startsWith('LD01.ELEC.'))).toHaveLength(1)
 })
 
 test('LD01.CORE.NI.SHUTDOWN: no SOURCE path while the regional Rref is open, and the window selections once it is filled', () => {
-  const open = compileOperatingIcFrom(pages(), packet, ungoverned)
+  const open = compileOperatingIcFrom(pages(), packet)
   expect('source_range' in open).toBe(false)
   expect(open.missing.at(-1)!.item).toBe('LD01.CORE.NI.SHUTDOWN regional Rref')
   const filled = compileOperatingIcFrom(pages({ 'systems/instrumentation/nuclear-observation-apparatus.md': fence('ld01-regional-current-reference', reference)
     + fence('reference-nuclear-observation-window', observationWindow)
-    + fence('ld01-source-range-pulse', sourcePulse.replace('"rrefEventsPerS":null', '"rrefEventsPerS":3e10')) }), packet, ungoverned)
+    + fence('ld01-source-range-pulse', sourcePulse.replace('"rrefEventsPerS":null', '"rrefEventsPerS":3e10')) }), packet)
   expect(filled.source_range).toEqual({ id: 'LD01.CORE.NI.SHUTDOWN', supply: 'I2', rref_events_per_s: 3e10, dark_per_s: 1, deadtime_s: 1e-6,
     window_s: 60, alpha: 0.01, theta: 0.1, minimum_excess_count: 400, background_per_s: [0, 2], maximum_occupancy: 0.1,
     sample_s: 0.1, transport_s: 0.1, maximum_age_s: 60.2, seed: 1 })
 })
 
 test('plan r4 X4 channels: the normal SG PTs, the core-span DP over the sector channels, and with the feed train the SG owner\'s FT lags', () => {
-  const s = compileOperatingIcFrom(pages(), packet, ungoverned)
+  const s = compileOperatingIcFrom(pages(), packet)
   const family = (id: string) => s.families.find(f => f.id === id)!
   expect(family('LD01.SG.B.PT')).toEqual({ id: 'LD01.SG.B.PT', quantity: { sg_pressure: { sg: 'B' } }, channels: [{ id: 'LD01.SG.B.PT', supply: 'unselected' }],
     channel: { lag_s: 0.2, min: 0, max: 1e7, quantum: 1000, indeterminate_band: null, sample_s: 0.1, transport_s: 0.1 }, maximum_age_s: 0.3, recovery_s: 1 })
@@ -239,18 +238,18 @@ test('plan r4 X4 channels: the normal SG PTs, the core-span DP over the sector c
   expect(cet.channel).toMatchObject({ min: 0, max: 800, quantum: 0.1, sample_s: 0.1 })
   expect(s.families.map(f => f.id)).not.toContain('LD01.SG.A.FT.STEAM')
   const train = { nominalFlow_kg_s: 800, cascade: { steamFlowLag_s: 0.25, steamFlowSpan: [0, 1.5], feedFlowLag_s: 0.25, feedFlowSpan: [0, 1.5] } }
-  const fed = compileOperatingIcFrom(pages(), { ...packet, secondary: { ...packet.secondary, feedTrain: train } }, ungoverned)
+  const fed = compileOperatingIcFrom(pages(), { ...packet, secondary: { ...packet.secondary, feedTrain: train } })
   const flows = fed.families.filter(f => /FT\.STEAM$|^LD01\.FW\./.test(f.id))
   expect(flows.map(f => [f.id, f.channels[0]!.supply])).toEqual([['LD01.SG.A.FT.STEAM', 'I1'], ['LD01.FW.A.FT', 'I1'], ['LD01.SG.B.FT.STEAM', 'I2'], ['LD01.FW.B.FT', 'I2']])
   expect(flows[3]!.quantity).toEqual({ sg_flow_lag: { sg: 'B', flow: 'feed', nominal_kg_s: 800 } })
   expect(flows[0]!.channel).toMatchObject({ lag_s: 0, min: 0, max: 1.5, quantum: null })
   // A tap in a moving plenum is refused.
   const rods = { normal_travel_m: 4, cells: { upper: { region: 'CORE.NE.2' }, housing_main: { region: 'HOUSING.MAIN' } } }
-  expect(() => compileOperatingIcFrom(pages(), { ...packet, rods }, ungoverned)).toThrow('moving cell')
+  expect(() => compileOperatingIcFrom(pages(), { ...packet, rods })).toThrow('moving cell')
 })
 
 test('PROC T1–T3: the AC routing reports, one per bus, per source (available, qualified) and per incoming device (closed, travel complete), on I1', () => {
-  const s = compileOperatingIcFrom(pages(), packet, ungoverned)
+  const s = compileOperatingIcFrom(pages(), packet)
   const e = s.reports.filter(r => r.id.startsWith('LD01.AC.') || r.id.startsWith('LD01.ELEC.'))
   expect(e.map(r => r.id)).toEqual(['LD01.AC.A.AVAILABLE', 'LD01.AC.B.AVAILABLE', 'LD01.ELEC.UNIT_SOURCE.AVAILABLE', 'LD01.ELEC.UNIT_SOURCE.QUALIFIED',
     'LD01.ELEC.RESERVE_SOURCE.AVAILABLE', 'LD01.ELEC.RESERVE_SOURCE.QUALIFIED', 'LD01.AC.A.INCOMING.UNIT.CLOSED', 'LD01.AC.A.INCOMING.UNIT.TRAVEL_COMPLETE',
@@ -258,16 +257,4 @@ test('PROC T1–T3: the AC routing reports, one per bus, per source (available, 
     'LD01.AC.B.INCOMING.RESERVE.CLOSED', 'LD01.AC.B.INCOMING.RESERVE.TRAVEL_COMPLETE'])
   expect(e[3]).toMatchObject({ source: { source_qualified: { source: 'unit' } }, supply: 'I1', sample_s: 0.1, transport_s: 0.1, maximum_age_s: 0.3, recovery_s: 1 })
   expect(e[13]!.source).toEqual({ incoming_travel_complete: { bus: 'AC.B', source: 'reserve' } })
-})
-
-test('LD01.TG.ADM.POS only when the compile declares the governor, recorded in the section; no default', () => {
-  const plain = compileOperatingIcFrom(pages(), packet, ungoverned)
-  expect(plain.governor).toEqual(ungoverned)
-  expect(plain.families.map(f => f.id)).not.toContain('LD01.TG.ADM.POS')
-  const governed = compileOperatingIcFrom(pages(), packet, { declared: true, basis: 'test: governed' })
-  const adm = governed.families.find(f => f.id === 'LD01.TG.ADM.POS')!
-  expect(adm.quantity).toBe('admission_position')
-  expect(adm.channel).toMatchObject({ lag_s: 0.1, min: 0, max: 100, quantum: 1 })
-  expect(adm.channels).toEqual([{ id: 'LD01.TG.ADM.POS', supply: 'I1' }])
-  expect(() => compileOperatingIcFrom(pages(), packet, undefined as never)).toThrow('explicit governor declaration')
 })
