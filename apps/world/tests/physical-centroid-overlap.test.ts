@@ -1,4 +1,4 @@
-import {test,expect} from 'bun:test'
+import {test,expect,describe,beforeAll,afterAll} from 'bun:test'
 import {createHash} from 'node:crypto'
 import type {PhysicalSceneBounds} from '../src/core/packs/scene.ts'
 import {createPhysicalSpatialIndex,visitPhysicalSpatialBounds,physicalSpatialBoundsOverlap} from '../src/ui/map/physical-scene/spatial-index.ts'
@@ -39,11 +39,28 @@ const fingerprint=(owned:ReturnType<typeof current>):string=>{
  const{broadPhaseCandidates:_work,...truth}=owned.diagnostics;hash.update(JSON.stringify(truth));return hash.digest('hex')
 }
 const compare=(meshes:readonly PhysicalMesh[])=>{const a=before(meshes),b=current(meshes);expect(fingerprint(b)).toBe(fingerprint(a));expect(b.meshes.map(m=>m.object)).toEqual(a.meshes.map(m=>m.object))}
-test('actual R6 unit/campus, every source floor and scoped cut geometry preserve frozen ownership, render and picking bytes',async()=>{
- for(const ref of[pwrManifoldUnitPhysicalDesignRef,pwrManifoldCampusPhysicalDesignRef]){
-  const data=await resolvePhysicalDesign(ref);if(data.profile!=='drafting')throw Error('Expected exact R6 drafting source')
-  const scene=compilePhysicalScene('equivalence',{...data,owner:{objectId:'owner'},placement:{anchor:[0,0],bearing:0}}),base={...defaultPhysicalSceneView(scene.levels),mode:'3d' as const,hiddenLayerIds:[]}
-  const cases=[...['all',...scene.levels.map(l=>l.id)].map(levelId=>({...base,levelId})),{...base,levelId:'all',cutaway:false},{...base,levelId:'all',separation:1},...(ref.id==='pwr-full-unit'?['all','lower','operating'].map(levelId=>({...base,levelId,scopeId:'area/turbine-island'})):[])]
-  for(const view of cases)compare(physicalSurfaceAnnotations(scene,view,clipPhysicalMeshesToScope(scene,view,buildVisibleMeshes(scene,view))))
- }
-},120_000)
+// Register the source-derived view matrix as individual native cases. Scene
+// preparation is shared per Design, while each complete byte comparison has the
+// existing timeout and reports its own ref/floor/cut/scope on failure.
+for(const ref of[pwrManifoldUnitPhysicalDesignRef,pwrManifoldCampusPhysicalDesignRef]){
+ const data=await resolvePhysicalDesign(ref);if(data.profile!=='drafting')throw Error('Expected exact R6 drafting source')
+ describe(`actual R6 ${ref.id} preserves frozen ownership, render and picking bytes`,()=>{
+  let scene:ReturnType<typeof compilePhysicalScene>|undefined
+  beforeAll(()=>{
+   scene=compilePhysicalScene('equivalence',{...data,owner:{objectId:'owner'},placement:{anchor:[0,0],bearing:0}})
+   expect(scene.levels.map(level=>level.id)).toEqual(data.source.levels.map(level=>level.id))
+  },120_000)
+  afterAll(()=>{scene=undefined})
+  const cases=[
+   ...['all',...data.source.levels.map(level=>level.id)].map(levelId=>({name:`source floor ${levelId}`,view:{levelId}})),
+   {name:'all floors without cutaway',view:{levelId:'all',cutaway:false}},
+   {name:'all floors separated',view:{levelId:'all',separation:1}},
+   ...(ref.id==='pwr-full-unit'?['all','lower','operating'].map(levelId=>({name:`turbine-island scope floor ${levelId}`,view:{levelId,scopeId:'area/turbine-island'}})):[]),
+  ]
+  for(const{name,view:selection}of cases)test(name,()=>{
+   if(!scene)throw Error('Expected prepared exact R6 scene')
+   const view={...defaultPhysicalSceneView(scene.levels),mode:'3d' as const,hiddenLayerIds:[],...selection}
+   compare(physicalSurfaceAnnotations(scene,view,clipPhysicalMeshesToScope(scene,view,buildVisibleMeshes(scene,view))))
+  },120_000)
+ })
+}

@@ -162,6 +162,9 @@ export const rejectsTemperature = isNewOpenAIFamily
 // === Body builder ===
 
 export const buildOAIBody = (request: ChatRequest, stream: boolean, providerName: string, modelInfo?: ModelInfo): Record<string, unknown> => {
+  if (request.messages.some(message => message.images?.length) && modelInfo?.inputModalities !== undefined && !modelInfo.inputModalities.includes('image')) {
+    throw createLLMRequestError('unsupported_provider_transport', `unsupported_provider_transport: ${providerName}/${request.model} advertises no image input; attached images were not dropped or dispatched`)
+  }
   // Documented direct OpenAI Chat Completions limits, not a model allowlist
   // or an OpenRouter restriction. Do not silently drop tools/change effort.
   // https://developers.openai.com/api/docs/guides/reasoning

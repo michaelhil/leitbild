@@ -40,6 +40,7 @@ export const createPlaceResolveTool = (
   searchPlaces: typeof searchNominatimPlaces = searchNominatimPlaces,
 ): Tool => ({
   name: 'place_resolve',
+  contextEffect: 'read',
   description: 'Resolve an arbitrary named place to sourced coordinates without requiring an imported geodata category.',
   usage: 'Use for map centres and named locations. Pass a countryCode when known. Treat multiple matches as ambiguity and refine the query instead of guessing. The first match is provider-ranked, not a confidence score.',
   returns: '{ query, source: "nominatim", matches: [{ name, displayName, lat, lng, countryCode?, kind?, importance?, osmId? }] }. An empty matches array means the place was not resolved.',

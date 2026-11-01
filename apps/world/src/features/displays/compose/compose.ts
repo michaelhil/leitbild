@@ -55,6 +55,15 @@ const signalRefs = async (run: ComposeRun, names: ReadonlyArray<string>, path: s
   return [...new Set(refs)]
 }
 
+/** Fit unnamed lead values fairly across their owners, preserving each owner's own order. */
+const interleaveOwners = (refs: ReadonlyArray<string>): string[] => {
+  const owners = new Map<string, string[]>()
+  for (const ref of refs) { const own = owners.get(refObjectId(ref)) ?? []; own.push(ref); owners.set(refObjectId(ref), own) }
+  const result: string[] = [], lists = [...owners.values()]
+  for (let at = 0; lists.some(list => at < list.length); at++) for (const list of lists) if (list[at] !== undefined) result.push(list[at]!)
+  return result
+}
+
 /**
  * The nodes a name stands for in a request: a node by id, element or label; else what it resolves to, a node's element
  * or a value a node binds; else a line (an edge by its element or a value it binds), which a route from starts where
@@ -157,7 +166,7 @@ const resolveView = async (run: ComposeRun, view: View, path: string, subjects: 
       return entity === undefined ? notObserved(path, 'the subjects declare no values; name signals') : { kind: 'slots', objectId: entity.objectId }
     }
     const refs = await signalRefs(run, names, `${path}.signals`, within, kept, false)
-    return isIssue(refs) ? refs : { kind: 'values', refs: [...refs] }
+    return isIssue(refs) ? refs : { kind: 'values', refs: view.signals === undefined ? interleaveOwners(refs) : [...refs] }
   }
   if (view.kind === 'alerts') {
     if (view.scope === 'run') return { kind: 'alerts', objectIds: 'run' }
@@ -213,11 +222,7 @@ const mergeDefaults = (lists: ReadonlyArray<ReadonlyArray<DraftView>>, quiet: (v
   }
   const values = merged.find(view => view.kind === 'values')
   if (values?.kind === 'values') {
-    const owners = new Map<string, string[]>()
-    for (const ref of values.refs ?? []) { const own = owners.get(refObjectId(ref)) ?? []; own.push(ref); owners.set(refObjectId(ref), own) }
-    const refs: string[] = [], lists = [...owners.values()]
-    for (let at = 0; lists.some(list => at < list.length); at++) for (const list of lists) if (list[at] !== undefined) refs.push(list[at]!)
-    merged[merged.indexOf(values)] = { ...values, refs }
+    merged[merged.indexOf(values)] = { ...values, refs: interleaveOwners(values.refs ?? []) }
   }
   const graphOwners = new Set(lists.flat().flatMap(view => view.kind === 'topology' ? [view.objectId] : []))
   const adjusted: DisplayCardAdjustment[] = graphOwners.size > 1 ? [{ kind: 'scope', text: `Topologies of ${graphOwners.size} owners not shown; request separate views with objectId#element anchors` }] : []
@@ -229,9 +234,11 @@ const mergeDefaults = (lists: ReadonlyArray<ReadonlyArray<DraftView>>, quiet: (v
   return { views: sorted.filter(view => !giving.has(view)).slice(0, 4), adjusted }
 }
 
-const covers = (views: ReadonlyArray<ResolvedView>, subject: Subject): boolean => views.some(view => {
-  // The Run's alerts are every subject's alerts too.
-  if (view.kind === 'alerts' && view.objectIds === 'run') return true
+const covers = (views: ReadonlyArray<ResolvedView>, subject: Subject, alertsOnly: boolean, runAlertOwners: ReadonlySet<string>): boolean => views.some(view => {
+  // A pure Run-alert request deliberately needs no subject values. In a
+  // mixed display, its global scope must not hide a quietly missing owner.
+  if (view.kind === 'alerts' && view.objectIds === 'run') return alertsOnly
+    || (subject.kind === 'object' && runAlertOwners.has(subject.objectId))
   if (subject.kind === 'collection') return (view.kind === 'collection' || view.kind === 'map') && JSON.stringify(view.of) === JSON.stringify(subject.of)
   if (subject.kind === 'observable' && (view.kind === 'values' || view.kind === 'trend')) return view.refs?.includes(subject.ref) === true
   const objects: ReadonlyArray<string> = view.kind === 'values' ? [...(view.refs ?? []).map(refObjectId), ...view.lead === undefined ? [] : [view.lead.objectId]]
@@ -490,7 +497,9 @@ const finish = async (run: ComposeRun, title: string, by: 'assistant' | undefine
     if (!requestedDocument) return refuse([unfit('views', `the views need ${total()} rows; one vignette holds ${VIGNETTE_MAX_ROWS}`)])
     countAdjustment(adjusted, { kind: 'layout', text: 'Display continues vertically; scroll to see every requested view' })
   }
-  const uncovered = subjects.findIndex(subject => !covers(fitted, subject))
+  const alertsOnly = drafts.every(view => view.kind === 'alerts')
+  const runAlertOwners = new Set(fitted.flatMap(view => view.kind === 'alerts' && view.objectIds === 'run' ? alertsOf(run, view).map(row => row.objectId) : []))
+  const uncovered = subjects.findIndex(subject => !covers(fitted, subject, alertsOnly, runAlertOwners))
   if (fitted.length === 0 || uncovered >= 0) return refuse([unfit(uncovered >= 0 ? `subjects.${uncovered}` : 'views', 'nothing this vignette can show is about this subject')])
 
   const at = run.clock === undefined ? { at: new Date().toISOString(), clock: 'wall' as const } : { at: run.clock.currentTime, clock: 'simulation' as const }

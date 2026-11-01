@@ -158,6 +158,8 @@ export const roomRoutes: RouteEntry[] = [
           ...(message.cacheCreation !== undefined ? { cacheCreation: message.cacheCreation } : {}),
           ...(message.cacheRead !== undefined ? { cacheRead: message.cacheRead } : {}),
           ...(message.cacheMiss !== undefined ? { cacheMiss: message.cacheMiss } : {}),
+          ...(message.reportedCostUsd !== undefined ? { reportedCostUsd: message.reportedCostUsd } : {}),
+          ...(message.costReportedCalls !== undefined ? { costReportedCalls: message.costReportedCalls } : {}),
           ...(message.toolTrace ? { toolTrace: message.toolTrace } : {}),
         },
       })

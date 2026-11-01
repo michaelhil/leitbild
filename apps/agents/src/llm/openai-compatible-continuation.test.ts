@@ -178,3 +178,35 @@ test('unknown model metadata is retried instead of permanently negative cached',
     expect(await provider.modelInfo!('qwen/new')).toMatchObject({ contextMax: 100_000 })
   } finally { fx.stop(); Date.now = originalNow }
 })
+
+
+test('provider modalities survive inventory refresh and malformed reports remain visibly unknown', async () => {
+  let modalities: unknown = ['text', 'image']
+  const fx = fixture(() => Response.json({ data: [{ id: 'future/new-model', context_length: 100_000, architecture: { input_modalities: modalities } }] }))
+  const warnings: unknown[][] = []
+  const warn = console.warn
+  console.warn = (...values) => { warnings.push(values) }
+  try {
+    const provider = createOpenAICompatibleProvider({ name: 'openrouter', getBaseUrl: () => fx.url, getApiKey: () => 'fixture' })
+    expect(await provider.modelInfo!('future/new-model')).toMatchObject({ inputModalities: ['text', 'image'] })
+    modalities = ['text']
+    await provider.models()
+    expect(await provider.modelInfo!('future/new-model')).toMatchObject({ inputModalities: ['text'] })
+    modalities = 'text,image'
+    await provider.models()
+    expect(await provider.modelInfo!('future/new-model')).not.toHaveProperty('inputModalities')
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0]!.join(' ')).toContain('Invalid capability metadata')
+  } finally { console.warn = warn; fx.stop() }
+})
+
+for (const streaming of [false, true]) test(`${streaming ? 'stream' : 'chat'} refuses image input on an explicitly text-only route before paid dispatch`, async () => {
+  const fx = fixture(() => Response.json({ data: [{ id: 'openai/gpt-6-sol', context_length: 100_000, architecture: { input_modalities: ['text'] } }] }))
+  try {
+    const provider = createOpenAICompatibleProvider({ name: 'openrouter', getBaseUrl: () => fx.url, getApiKey: () => 'fixture' })
+    await provider.models()
+    const input: ChatRequest = { model: 'gpt-6-sol', messages: [{ role: 'user', content: 'Inspect', images: [{ dataUrl: 'data:image/png;base64,c2NyZWVu', mimeType: 'image/png' }] }] }
+    await expect(streaming ? Array.fromAsync(provider.stream!(input)) : provider.chat(input)).rejects.toMatchObject({ code: 'unsupported_provider_transport' })
+    expect(fx.bodies).toHaveLength(1) // Only the catalog GET; no inference request.
+  } finally { fx.stop() }
+})

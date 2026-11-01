@@ -53,7 +53,7 @@ export const signalsReadQuerySchema = z.object({
   detail: z.enum(['full', 'values']).default('full').describe('Full metadata is unchanged by default. Values keeps current deciding facts, independent binding/snapshot units, limits and flags, native/canonical values and quality; use signals.resolve for descriptive graph metadata.'),
   signals: z.array(processPlantSignalReferenceSchema.safeExtend({
     requestedUnit: z.string().trim().min(1).max(128).optional().describe('Optional presentation unit. Raw variable and quality remain unchanged; unsupported conversion returns the actual value/unit with an explicit unavailable reason.'),
-  })).min(1),
+  }).meta(processPlantSignalReferenceSchema.meta()!)).min(1),
   evidence: z.literal(true).optional().describe('Adds one result.evidence frame for this entire synchronous Plant batch: engineering provenance, simulationTime and model/I&C identities; does not qualify instrumentation.'),
   operations: z.literal(true).optional().describe('Adds the commands issued on these signals and the resets of actuations that held them, with the Run and plant time read at.'),
   observed: z.literal(true).optional().describe('Adds each signal\'s observation as World reads it (priority, the limit it is past) and its declared limits.'),

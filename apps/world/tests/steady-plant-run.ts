@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ActorId, IsoTimestamp, ObjectId, OperationalObject } from '../src/core/model/index.ts'
 import type { Actor } from '../src/core/simulation-runs/actors.ts'
-import { createSimulationRunRegistry } from '../src/core/simulation-runs/registry.ts'
+import { createSimulationRunRegistry, type IdleRuntimeCloseTimer } from '../src/core/simulation-runs/registry.ts'
 import type { SimulationRunRuntime } from '../src/core/simulation-runs/runtime.ts'
 import { testScenarioDefinitions } from './fixtures/scenarios.ts'
 import { createTestPackRuntimeAdapters, createTestScenarioRuntimeResolver, testScenarioAuthoring } from './helpers.ts'
@@ -40,35 +40,50 @@ export interface SteadyPlantRun {
   readonly remove: () => Promise<void>
 }
 
-export const createSteadyPlantRun = async (): Promise<SteadyPlantRun> => {
+export const createSteadyPlantRun = async (options: { readonly idleRuntimeCloseTimer?: IdleRuntimeCloseTimer } = {}): Promise<SteadyPlantRun> => {
   const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-steady-plant-'))
   const authoring = testScenarioAuthoring()
   const registry = createSimulationRunRegistry({
     dataDir, workspaceId: newWorkspaceId(), ...authoring, scenarioDefinitions: [...authoring.scenarioDefinitions, steadyPlantScenario],
     runtimeAdapters: createTestPackRuntimeAdapters(), scenarioRuntimeResolver: createTestScenarioRuntimeResolver(),
+    ...(options.idleRuntimeCloseTimer === undefined ? {} : { idleRuntimeCloseTimer: options.idleRuntimeCloseTimer }),
   })
-  const run = await registry.create({ scenarioId: steadyPlantScenario.id })
-  await run.setClock({ paused: true })
-  const plantId = run.snapshot().objects.find(object => object.packId === 'process-plant')!.id
-  // A new Run plays until it is paused; times count from the Scenario's start, so a reach is exact however long that took.
-  const start = Date.parse(steadyPlantScenario.world.startsAt)
+  // The fixture borrows the runtime for runTo, unit and invoke, not just one
+  // maximum-pace job. Own that lifetime through the same registry API lease as
+  // a real request; an unleased runtime may correctly idle-close after 30 s.
+  let releaseLease: (() => void) | undefined
   let down = false
   const shutdown = async (): Promise<void> => {
     if (down) return
     down = true
-    await registry.shutdown()
+    try { await registry.shutdown() }
+    finally { releaseLease?.() } // Setup can fail before any lease is acquired.
   }
-  return {
-    run,
-    plantId,
-    dataDir,
-    runTo: offsetMs => run.runMaximumPace(new Date(start + offsetMs).toISOString() as IsoTimestamp, { shouldStop: () => false }),
-    unit: () => run.snapshot().objects.find(object => object.id === plantId)!,
-    invoke: async (actor, capabilityId, input) => (await run.invokeCapability(actor, { capabilityId, input: { plantId, ...input } })).result,
-    shutdown,
-    remove: async () => {
-      await shutdown()
-      await rm(dataDir, { recursive: true, force: true })
-    },
+  try {
+    const run = await registry.create({ scenarioId: steadyPlantScenario.id })
+    releaseLease = registry.acquireLease(run.id, 'api')
+    await run.setClock({ paused: true })
+    const plantId = run.snapshot().objects.find(object => object.packId === 'process-plant')!.id
+    // Times count from the Scenario's start, so a reach is exact however long construction took.
+    const start = Date.parse(steadyPlantScenario.world.startsAt)
+    return {
+      run,
+      plantId,
+      dataDir,
+      runTo: offsetMs => run.runMaximumPace(new Date(start + offsetMs).toISOString() as IsoTimestamp, { shouldStop: () => false }),
+      unit: () => run.snapshot().objects.find(object => object.id === plantId)!,
+      invoke: async (actor, capabilityId, input) => (await run.invokeCapability(actor, { capabilityId, input: { plantId, ...input } })).result,
+      shutdown,
+      remove: async () => {
+        try { await shutdown() }
+        finally { await rm(dataDir, { recursive: true, force: true }) }
+      },
+    }
+  } catch (error) {
+    const failures = [error]
+    try { await shutdown() } catch (cleanupError) { failures.push(cleanupError) }
+    try { await rm(dataDir, { recursive: true, force: true }) } catch (cleanupError) { failures.push(cleanupError) }
+    if (failures.length > 1) throw new AggregateError(failures, 'Steady Plant fixture setup and cleanup failed')
+    throw error
   }
 }

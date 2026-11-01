@@ -62,6 +62,24 @@ export interface ExecutionInspection {
   readonly stages: ReadonlyArray<ExecutionStage>
 }
 
+/** A sum of actual reported charges, not an estimate or a complete bill when
+ * an attempted call has no charge record. Failed/partial calls can report a
+ * real charge; a reported zero is different from missing billing. */
+export const recordedExecutionCosts = (models: ReadonlyArray<ExecutionModelCallSummary>): {
+  readonly attempts: number
+  readonly costReportedCalls: number
+  readonly unknownCalls: number
+  readonly reportedCostUsd?: number
+} => {
+  const reported = models.flatMap(model => model.metrics?.costUsd === undefined ? [] : [model.metrics.costUsd])
+  return {
+    attempts: models.length,
+    costReportedCalls: reported.length,
+    unknownCalls: models.length - reported.length,
+    ...(reported.length ? { reportedCostUsd: reported.reduce((sum, cost) => sum + cost, 0) } : {}),
+  }
+}
+
 export interface PromptInspectionSection {
   readonly key: string
   readonly label: string
@@ -117,6 +135,7 @@ const stageDescription = (stage: ExecutionStage): { title: string; description: 
   const event = stage.event
   switch (event.kind) {
     case 'context_ready': return { title: 'Context ready', description: `${event.messageCount} messages · ${event.toolCount} available tools`, state: 'recorded', actor: 'context' }
+    case 'context_checkpoint': return { title: 'Context checkpoint', description: `${event.manifest.counts.retainedGroups} group${event.manifest.counts.retainedGroups === 1 ? '' : 's'} kept · ${event.manifest.counts.archivedGroups} group${event.manifest.counts.archivedGroups === 1 ? '' : 's'} archived now`, state: 'recorded', actor: 'context' }
     case 'warning': return { title: 'Warning', description: event.message, state: 'warning', actor: 'system' }
     case 'correction': return { title: 'Correction requested', description: event.causes.join(' · '), state: 'warning', actor: 'system' }
     case 'model_fallback': return { title: 'Model changed', description: `${event.preferred} → ${event.effective}`, state: 'warning', actor: 'system' }

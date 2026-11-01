@@ -108,7 +108,7 @@ The owner adopted this policy on 21 Oct 2026 for every operator display, in the 
 
 ## Commands
 
-- `bun test` runs tests.
+- `bun run test` runs World tests with a fresh global and module registry per file. Use this entry point so fixture state and handles cannot leak across files.
 - `bun run check` runs TypeScript checking.
 - `bun run health` runs World checks, tests and UI build.
 - From the repository root, `bun run deploy -- --yes` validates all modules, packages, and deploys one immutable code-only release. `--dry-run` validates and packages without contacting production. It never publishes map/reference/OSRM artifacts.
