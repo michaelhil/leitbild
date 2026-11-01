@@ -70,6 +70,11 @@ const icSchema = z.object({
       z.object({ cvcs_flow: z.object({ branch: z.string().min(1) }).strict() }).strict(),
       z.object({ bank_position: z.object({ normal_travel_m: finite.positive() }).strict() }).strict(),
       z.object({ stop_valve_position: z.object({ stop_travel_s: finite.positive() }).strict() }).strict(),
+      z.object({ sg_pressure: z.object({ sg: z.string().min(1) }).strict() }).strict(),
+      z.object({ sg_flow_lag: z.object({ sg: z.string().min(1), flow: z.enum(['steam', 'feed']), nominal_kg_s: finite.positive() }).strict() }).strict(),
+      z.object({ vessel_dp: z.object({ taps: z.array(z.object({}).passthrough()).min(1) }).strict() }).strict(),
+      z.object({ plenum_dp: z.object({ region: index, region_id: z.string().min(1), lower_m: finite, upper_m: finite }).strict() }).strict(),
+      z.object({ core_exit_temperature: z.object({ cells: z.array(z.object({ region: index, region_id: z.string().min(1) }).strict()).min(1), body_c: z.tuple([finite, finite]) }).strict() }).strict(),
     ]),
     channels: z.array(z.object({ id: z.string().min(1), supply: z.string().min(1) }).strict()).min(1),
     channel: z.object({ min: finite.nullable(), max: finite.nullable() }).passthrough(),
@@ -159,6 +164,13 @@ const familyReading = (family: Family): Omit<Reading, 'path' | 'channel' | 'tagI
   if ('cvcs_flow' in quantity) return { kind: 'derived', discipline: 'hydraulic', quantity: 'flowRate', unit: 'kg/s', channelUnit: 'kg/s', label: () => `CVCS ${quantity.cvcs_flow.branch.toLowerCase()} flow channel` }
   if ('bank_position' in quantity) return { kind: 'derived', discipline: 'nuclear', quantity: 'ratio', unit: 'fraction', measurand: 'position', channelUnit: '1', label: () => 'Control bank position channel (of the normal stroke)' }
   if ('stop_valve_position' in quantity) return { kind: 'derived', discipline: 'control', quantity: 'ratio', unit: 'percent', measurand: 'position', channelUnit: '%', label: () => 'Turbine stop valve position channel' }
+  // PHYS2's X4 channels, in the units the IC section compiles (SG PT Pa absolute; the FTs fractions of the one-SG nominal feed flow m0).
+  if ('sg_pressure' in quantity) return { kind: 'derived', discipline: 'thermal', quantity: 'pressure', unit: 'MPa', channelUnit: 'Pa', label: () => `SG ${quantity.sg_pressure.sg} pressure channel` }
+  if ('sg_flow_lag' in quantity) return { kind: 'derived', discipline: 'hydraulic', quantity: 'ratio', unit: 'fraction', measurand: 'flow', channelUnit: '1',
+    label: () => quantity.sg_flow_lag.flow === 'steam' ? `SG ${quantity.sg_flow_lag.sg} steam flow channel (of nominal feed flow)` : `SG ${quantity.sg_flow_lag.sg} feed flow channel (of nominal feed flow)` }
+  if ('vessel_dp' in quantity) return { kind: 'derived', discipline: 'hydraulic', quantity: 'pressureDelta', unit: 'Pa', channelUnit: 'Pa', label: suffix => `Core differential pressure channel ${suffix}` }
+  if ('plenum_dp' in quantity) return { kind: 'derived', discipline: 'hydraulic', quantity: 'pressureDelta', unit: 'Pa', channelUnit: 'Pa', label: suffix => `Upper plenum differential pressure channel ${suffix}` }
+  if ('core_exit_temperature' in quantity) return { kind: 'derived', discipline: 'thermal', quantity: 'temperature', unit: 'degC', channelUnit: 'degC', label: suffix => `Core-exit temperature channel ${suffix}` }
   if (!('pump_speed' in quantity)) throw new Error(`IC family ${family.id} has a quantity this compiler does not read`)
   return { kind: 'derived', discipline: 'hydraulic', quantity: 'ratio', unit: 'fraction', measurand: 'speed', channelUnit: '1', label: () => `RCP ${lastSegment(quantity.pump_speed.rotor_id)} speed channel (of reference)` }
 }
@@ -169,7 +181,10 @@ const familyReadings = (ic: Ic, family: Family): ReadonlyArray<Reading> => {
   const limits = familyLimits(ic, family, shape.channelUnit, shape.unit)
   return family.channels.flatMap(channel => {
     // The two CVCS FTs (LD01.INV.CHARGE.FT, LD01.INV.LETDOWN.FT) share their last segment: each reads by its branch.
-    const suffix = typeof family.quantity === 'object' && 'cvcs_flow' in family.quantity ? channel.id.split('.').at(-2)! : lastSegment(channel.id)
+    const suffix = typeof family.quantity === 'object' && 'cvcs_flow' in family.quantity ? channel.id.split('.').at(-2)!
+      // An SG's steam and feed FTs (LD01.SG.A.FT.STEAM, LD01.FW.A.FT) read on the SG by flow.
+      : typeof family.quantity === 'object' && 'sg_flow_lag' in family.quantity ? (family.quantity.sg_flow_lag.flow === 'steam' ? 'FT_STEAM' : 'FW_FT')
+        : lastSegment(channel.id)
     const { label, ...rest } = shape
     return [
       { ...rest, path: suffix, label: label(suffix), channel: channel.id, tagId: channel.id, ...(limits === undefined ? {} : { limits }),
@@ -309,6 +324,10 @@ export const compileOperatingGraph = (input: { readonly packet: unknown; readonl
             : 'pump_speed' in quantity ? at(quantity.pump_speed.rotor_id)
               : 'bank_position' in quantity ? at('CORE')
                 : 'cvcs_flow' in quantity ? (packet.cvcs === undefined ? null : at(componentOf(packet.cvcs.port.region)))
+                  : 'sg_pressure' in quantity ? at(regionId(sgBySecondary.get(quantity.sg_pressure.sg) ?? Number.NaN))
+                    : 'sg_flow_lag' in quantity ? at(regionId(sgBySecondary.get(quantity.sg_flow_lag.sg) ?? Number.NaN))
+                      : 'vessel_dp' in quantity || 'core_exit_temperature' in quantity ? at('CORE')
+                        : 'plenum_dp' in quantity ? at(componentOf(quantity.plenum_dp.region))
                   : null
     if (owner === null) throw new Error(`IC family ${family.id} measures a quantity the graph places on no equipment`)
     owner.readings.push(...familyReadings(ic, family))

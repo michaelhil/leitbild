@@ -135,7 +135,10 @@ export const parseProcedureTagValue = (tag: ProcedureTag, raw: unknown): Procedu
   const first = assertRecord(listed, 'procedure signal query returned malformed signal')
   const signal = assertRecord(first.signal, 'procedure tag read row requires signal')
   const variable = assertRecord(first.variable, 'procedure tag read row requires variable')
-  if (typeof signal.tagId === 'string' && signal.tagId !== tag.id) throw new Error(`procedure signal identity ${signal.tagId} does not match requested tag ${tag.id}`)
+  // A canonical tag can resolve through the signal's declared external reference (one channel read as a named tag).
+  const externalRefs = Array.isArray(signal.externalRefs) ? signal.externalRefs.filter((ref): ref is string => typeof ref === 'string') : []
+  const identified = typeof signal.tagId === 'string' && (signal.tagId === tag.id || externalRefs.includes(tag.id))
+  if (typeof signal.tagId === 'string' && !identified) throw new Error(`procedure signal identity ${signal.tagId} does not match requested tag ${tag.id}`)
   if (typeof signal.path === 'string' && typeof variable.path === 'string' && signal.path !== variable.path) throw new Error('procedure signal and variable paths disagree')
   let unit = assertString(signal.unit, 'procedure signal requires unit')
   if (variable.unit !== undefined && variable.unit !== unit) throw new Error('procedure signal and variable native units disagree')
@@ -173,7 +176,7 @@ export const parseProcedureTagValue = (tag: ProcedureTag, raw: unknown): Procedu
   return {
     tagId: tag.id,
     ...(typeof result.plantId === 'string' ? { scopeId: result.plantId } : {}),
-    ...(typeof signal.tagId === 'string' ? { signalTagId: signal.tagId } : {}),
+    ...(typeof signal.tagId === 'string' ? { signalTagId: identified ? tag.id : signal.tagId } : {}),
     ...(evidence === undefined ? {} : { evidence }),
     label: typeof signal.label === 'string' ? signal.label : tag.id,
     value,
@@ -267,8 +270,10 @@ export const createProcedureObservationPort = (config: {
     for (const row of rows) {
       const signal = assertRecord(row.signal, 'procedure signal row requires signal')
       const id = assertString(signal.tagId, 'procedure signal row requires canonical tagId')
-      if (!requested.has(id) || keyed.has(id)) throw new Error(`procedure signal query returned unexpected or duplicated identity ${id}`)
-      keyed.set(id, row)
+      const externalRefs = Array.isArray(signal.externalRefs) ? signal.externalRefs.filter((ref): ref is string => typeof ref === 'string') : []
+      const identity = [id, ...externalRefs].find(candidate => requested.has(candidate) && !keyed.has(candidate))
+      if (identity === undefined) throw new Error(`procedure signal query returned unexpected or duplicated identity ${id}`)
+      keyed.set(identity, row)
     }
     return new Map<string, ProcedureTagValue | Error>(tags.map(tag => {
       try {

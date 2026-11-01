@@ -56,6 +56,7 @@ const conversions: Readonly<Record<string, Conversion>> = {
   'm->m': scale(1),
   'kg/s->kg/s': scale(1),
   'K->degC': scale(1, 1, -273.15),
+  'degC->degC': scale(1),
   's->s': scale(1),
   '1->fraction': scale(1),
   '1->percent': scale(100),
