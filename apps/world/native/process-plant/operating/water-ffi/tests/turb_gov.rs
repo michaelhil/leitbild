@@ -11,7 +11,11 @@
 //! `LD01_ROD_CONTROL_WIKI` (`ld01-rod-control`), `LD01_TURB_WIKI` (the
 //! turbine and admission pages' blocks), `LD01_TURB_SPAN_S`,
 //! `LD01_TURB_STEPS` (optional: `<fraction of the start request>@<seconds
-//! after the start>,...`, each on a whole second), `LD01_TURB_OUT`.
+//! after the start>,...`, each on a whole second), `LD01_TURB_RAMP` (optional:
+//! `<to fraction>@<from s>/<fraction per minute>`, a 1 s staircase of Grid
+//! requests from the fraction in force at `from`, merged with the steps),
+//! `LD01_TURB_OUT`, `LD01_TURB_STATE_OUT` (optional: the end state, in the
+//! saved S3 state's form, governed; written once, only after a full run).
 #![cfg(all(feature = "ida", target_os = "macos"))]
 #[allow(dead_code)]
 #[path = "s3_harness/counters.rs"]
@@ -101,7 +105,7 @@ fn turb_gov_run() {
     let state_path = env("LD01_S3_STATE");
     let state: Value = serde_json::from_slice(&std::fs::read(&state_path).unwrap()).unwrap();
     let span: f64 = env("LD01_TURB_SPAN_S").parse().unwrap();
-    let steps: Vec<(f64, f64)> = std::env::var("LD01_TURB_STEPS").map_or(Vec::new(), |s| {
+    let mut steps: Vec<(f64, f64)> = std::env::var("LD01_TURB_STEPS").map_or(Vec::new(), |s| {
         s.split(',')
             .map(|e| {
                 let (f, at) = e
@@ -111,6 +115,36 @@ fn turb_gov_run() {
             })
             .collect()
     });
+    let ramp = std::env::var("LD01_TURB_RAMP").ok();
+    if let Some(r) = &ramp {
+        let (to, rest) = r
+            .split_once('@')
+            .expect("LD01_TURB_RAMP=<to>@<from s>/<per min>");
+        let (from, per_min) = rest
+            .split_once('/')
+            .expect("LD01_TURB_RAMP=<to>@<from s>/<per min>");
+        let (to, from, per_min): (f64, f64, f64) = (
+            to.parse().unwrap(),
+            from.parse().unwrap(),
+            per_min.parse().unwrap(),
+        );
+        assert!(
+            per_min > 0. && from.fract() == 0.,
+            "a positive rate from a whole second"
+        );
+        let f0 = steps.iter().rev().find(|s| s.1 <= from).map_or(1., |s| s.0);
+        let (total, per_s) = ((to - f0).abs(), per_min / 60.);
+        let mut k = 1.;
+        loop {
+            let moved = (k * per_s).min(total);
+            steps.push((f0 + (to - f0).signum() * moved, from + k));
+            if moved >= total {
+                break;
+            }
+            k += 1.;
+        }
+        steps.sort_by(|a, b| a.1.total_cmp(&b.1));
+    }
     assert!(
         steps.windows(2).all(|w| w[0].1 < w[1].1)
             && steps
@@ -223,8 +257,30 @@ fn turb_gov_run() {
     let cpu = process_cpu_s() - started;
     let instructions = counters::instructions().unwrap();
     let reached = plant.driver.solver_reached_s;
+    let state_out = std::env::var("LD01_TURB_STATE_OUT").ok();
+    let state_written = match (&state_out, &failure) {
+        (Some(path), None) => {
+            assert!(
+                !std::path::Path::new(path).exists(),
+                "states are never overwritten"
+            );
+            let (y, yp) = (&plant.y, &plant.yp);
+            let s = json!({"t_s": end, "packet": state["packet"], "packet_sha256": state["packet_sha256"],
+                "y": &y[..n], "yp": &yp[..n],
+                "appended": {"owner": "electrical slice (ELEC) + X4.3 governor (TURB)", "y": &y[n..], "yp": &yp[n..]},
+                "discrete_state": plant.ida.system().system_discrete_state(),
+                "pzr_control": {"in_force_w": plant.control.in_force_w},
+                "composition": plant.composition["composition"],
+                "from": format!("turb_gov_run from {state_path}, span {span} s, steps {steps:?}")});
+            let bytes = serde_json::to_vec(&s).unwrap();
+            std::fs::write(path, &bytes).unwrap();
+            Some(json!({"path": path, "sha256": leitbild_operating_plant::digest::sha256(&bytes)}))
+        }
+        _ => None,
+    };
     let receipt = json!({
         "case": if steps.is_empty() { "X4.3 LOAD hold" } else { "X4.3 Grid request steps" },
+        "ramp": ramp, "state_written": state_written,
         "state": state_path, "t0_s": t0, "span_s": span, "request0_W": request0,
         "steps": steps.iter().map(|(f, a)| json!({"fraction": f, "at_s": a})).collect::<Vec<_>>(),
         "grid_decisions": decisions, "reached_s": reached, "failure": failure,
