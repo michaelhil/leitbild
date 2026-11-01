@@ -287,6 +287,8 @@ pub struct Network<P: Properties> {
     spray_continuous: bool,
     spray_input: Option<Scalar>,
     spray_row_x: Option<(usize, f64)>,
+    /// R4-PZR-SPRAY-LAMINAR: the line liquid's viscosity of this evaluation.
+    spray_mu: Option<Scalar>,
     /// R4-NCHEAD: the SG primary cells' profiled heads ([`ports::SgProfile`]),
     /// the passes a coupled owner reported in the last evaluation (regular
     /// cells), and each face layout's profile drive of that evaluation.
@@ -761,6 +763,7 @@ impl<P: Properties> Network<P> {
                 spray_continuous: false,
                 spray_input: None,
                 spray_row_x: None,
+                spray_mu: None,
                 profiles,
                 coupled_passes: vec![None; pzr],
                 profile_drive: vec![s(0.); layouts],

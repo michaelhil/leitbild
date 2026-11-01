@@ -4,7 +4,7 @@ import { compileOperatingPzrSpray, type PzrSprayPages } from './reference-design
 // Test-only owner texts in the shapes the compiler reads; not plant evidence.
 const fence = (name: string, body: unknown) => '```' + name + '\n' + JSON.stringify(body) + '\n```\n'
 const line = { sourceRegion: 'COLD.A', inletElevation_m: 3, outletElevation_m: 18.5, developedLength_m: 25, insideDiameter_m: .1,
-  wallThickness_m: .01, roughness_m: 1.5e-6, valveStrokesPerSecond: .5, inletCheck: 'ideal-one-way' }
+  wallThickness_m: .01, roughness_m: 1.5e-6, valveStrokesPerSecond: .5, inletCheck: 'ideal-one-way', valveLowReynoldsTransition: 2300 }
 const port = { elevation_m: 18.5, exitCount: 16, exitBore_m: .012, ringRadius_m: .6, effectiveAreaPerExit_m2: .0000625, aggregateEffectiveArea_m2: .001 }
 const sizing = { sprayReferenceFlow_kg_s: 20, sprayReferenceDifferential_Pa: 200000, sprayLength_m: 25, sprayInsideDiameter_m: .1, sprayWallThickness_m: .01, ambient_K: 313.15 }
 const density = { sourcePressure_Pa: 15202734.919352943, sourceDensity_kg_m3: 745.1482932491854 }

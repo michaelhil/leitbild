@@ -85,36 +85,66 @@ pub enum CheckRoot {
     Release,
 }
 
-/// The valve's capacity `x·C·sgn(Δp)·sqrt(2|Δp|/ρ)` with its direction. A
-/// zero opening at rest has zero capacity; a zero differential with a
-/// moving direction has no derivative and refuses the trial. R4-PZR-PI:
-/// the opening may carry a direction (the PZR owner's stem coordinate).
-pub(super) fn capacity(x: Scalar, c: f64, dp: Scalar, rho: Scalar) -> Result<Scalar, Failure> {
-    let (x, dx) = (x.value, x.direction);
-    if x == 0. && dx == 0. {
-        return Ok(Scalar::constant(0.));
-    }
-    let (v, dv, r, dr) = (dp.value, dp.direction, rho.value, rho.direction);
-    if !(r.is_finite() && r > 0. && v.is_finite()) {
+/// The valve's capacity with its direction (R4-PZR-SPRAY-LAMINAR, lead
+/// 1 Nov: S4-D13's low-Reynolds branch). The passage's loss is the sum of a
+/// laminar and the selected turbulent term on its effective area
+/// `A = x·C` and equivalent bore `d = sqrt(4A/π)`:
+///
+/// ```text
+/// Δp = a Q + b Q|Q|,  a = Re_t μ/(2 A d) = Re_t μ sqrt(π)/(4 A^1.5),  b = ρ/(2A²)
+/// Q  = 2Δp/(a + sqrt(a² + 4b|Δp|)) = 2Δp A^1.5/(α + sqrt(α² + 2ρA|Δp|)),  α = Re_t μ sqrt(π)/4
+/// ```
+///
+/// The right-hand form is finite at every opening: `Q = 0` at `x = 0` with
+/// every partial zero (its own branch; `Q ∝ x^1.5` there), and the slope in
+/// the drive is at most `1/a`, so the restriction row has no unbounded
+/// slope at zero drive. Away from zero flow it is the turbulent
+/// `x·C·sgn(Δp)·sqrt(2|Δp|/ρ)` to within the laminar share `Re_t/Re`. The
+/// opening, drive, density and viscosity may all carry directions. An
+/// opening below zero (a trial past the closing stem's root) takes the
+/// odd extension `A sqrt(|A|)`.
+pub(super) fn capacity(
+    x: Scalar,
+    c: f64,
+    dp: Scalar,
+    rho: Scalar,
+    mu: Scalar,
+    re_t: f64,
+) -> Result<Scalar, Failure> {
+    let (v, dv, r, dr, m, dm) = (
+        dp.value,
+        dp.direction,
+        rho.value,
+        rho.direction,
+        mu.value,
+        mu.direction,
+    );
+    if !(r.is_finite() && r > 0. && v.is_finite() && m.is_finite() && m > 0.)
+        || !(re_t.is_finite() && re_t > 0. && c.is_finite() && c > 0.)
+        || !(x.value.is_finite() && x.direction.is_finite() && dv.is_finite())
+    {
         return Err(Failure::Recoverable(format!(
-            "spray valve capacity at differential {v} Pa, density {r}"
+            "spray valve capacity at opening {}, differential {v} Pa, density {r}, viscosity {m}",
+            x.value
         )));
     }
-    if v == 0. {
-        return if dv == 0. {
-            Ok(Scalar::constant(0.))
-        } else {
-            Err(Failure::Recoverable(
-                "spray valve capacity at a zero differential has no derivative".into(),
-            ))
-        };
+    // x = 0: its own branch, Q = 0 and every partial zero.
+    if x.value == 0. {
+        return Ok(Scalar::constant(0.));
     }
-    let g = (2. * v.abs() / r).sqrt();
-    let s = v.signum();
-    Ok(Scalar::new(
-        x * c * s * g,
-        x * c * (dv / (r * g) - s * g * dr / (2. * r)) + dx * c * s * g,
-    ))
+    let k = re_t * std::f64::consts::PI.sqrt() / 4.;
+    let (a_v, da) = (x.value * c, x.direction * c);
+    let root = a_v.abs().sqrt();
+    let (p, dp_a) = (a_v * root, 1.5 * root * da);
+    let (alpha, dalpha) = (k * m, k * dm);
+    let u = v.abs();
+    let sv = v.signum();
+    let big = (alpha * alpha + 2. * r * a_v.abs() * u).sqrt();
+    let dbig = (alpha * dalpha + dr * a_v.abs() * u + r * a_v.signum() * da * u + r * a_v.abs() * sv * dv) / big;
+    let (den, dden) = (alpha + big, dalpha + dbig);
+    let (num, dnum) = (2. * v * p, 2. * dv * p + 2. * v * dp_a);
+    let q = num / den;
+    Ok(Scalar::new(q, (dnum - q * dden) / den))
 }
 
 impl<P: Properties> Network<P> {
@@ -431,8 +461,8 @@ impl<P: Properties> Network<P> {
     /// The open valve's restriction row on path `li` at the opening of the
     /// last evaluation, or `None` for any other path: `(Q − capacity)/q_ref`
     /// with `drive` the path's pressure–gravity plus section force and `rho`
-    /// the line's liquid density. With it, the row's partial in the opening
-    /// (`−C sgn(Δp) sqrt(2|Δp|/ρ)/q_ref`, R4-PZR-PI). `seeded_opening`
+    /// the line's liquid density and `mu` its viscosity. With it, the row's
+    /// partial in the opening (`−∂Q/∂x / q_ref`, R4-PZR-PI). `seeded_opening`
     /// keeps the opening's direction (the evaluation the operator handed it
     /// to); the network's own column replays read the opening at rest.
     pub(super) fn spray_restriction_row(
@@ -441,6 +471,7 @@ impl<P: Properties> Network<P> {
         volume_flow: Scalar,
         drive: Scalar,
         rho: Scalar,
+        mu: Scalar,
         seeded_opening: bool,
     ) -> Result<Option<(Scalar, f64)>, Failure> {
         let Some(s) = self.spray else {
@@ -453,14 +484,18 @@ impl<P: Properties> Network<P> {
             .spray_x
             .ok_or_else(|| Failure::Fatal("spray valve opening not evaluated".into()))?;
         let x = if seeded_opening { x } else { Scalar::constant(x.value) };
-        let cap = capacity(x, s.valve.full_area_m2(), drive, rho)?;
+        let (c, re_t) = (s.valve.full_area_m2(), s.valve.low_reynolds_transition());
+        let cap = capacity(x, c, drive, rho, mu, re_t)?;
+        // The row's partial in the opening at this evaluation's values.
         let per_x = capacity(
-            Scalar::constant(1.),
-            s.valve.full_area_m2(),
+            Scalar::new(x.value, 1.),
+            c,
             Scalar::constant(drive.value),
             Scalar::constant(rho.value),
+            Scalar::constant(mu.value),
+            re_t,
         )?
-        .value;
+        .direction;
         Ok(Some((
             (volume_flow - cap) / Scalar::constant(s.q_ref_m3_s),
             -per_x / s.q_ref_m3_s,
@@ -685,24 +720,67 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_capacity_is_the_restriction_law_with_its_direction() {
+    fn the_capacity_is_the_restriction_law_with_its_low_reynolds_branch() {
+        // R4-PZR-SPRAY-LAMINAR: Re_t 2,300, water at the sizing density.
         let c = 0.001_158_453_602_592_212_7;
         let rho = Scalar::constant(745.148_293_249_185_4);
-        // Full open at the sizing point: 20 kg/s.
-        let q = capacity(Scalar::constant(1.), c, Scalar::new(2e5, 1.), rho).unwrap();
-        assert!((q.value * rho.value - 20.).abs() < 1e-12);
-        // d/dΔp of x C sqrt(2Δp/ρ) = x C / (ρ g).
-        let g = (2. * 2e5 / rho.value).sqrt();
-        assert!((q.direction - c / (rho.value * g)).abs() < 1e-18);
-        // Reverse differential gives reverse capacity; zero opening none.
-        let r = capacity(Scalar::constant(0.5), c, Scalar::constant(-2e5), rho).unwrap();
-        assert!((r.value + 0.5 * q.value).abs() < 1e-15);
-        let z = capacity(Scalar::constant(0.), c, Scalar::new(2e5, 3.), rho).unwrap();
+        let mu = Scalar::constant(9.2e-5);
+        let re_t = 2300.;
+        let cap = |x: f64, dp: f64| {
+            capacity(Scalar::constant(x), c, Scalar::constant(dp), rho, mu, re_t)
+                .unwrap()
+                .value
+        };
+        // Full open at the sizing point: 20 kg/s to within the laminar share.
+        let q = cap(1., 2e5);
+        let turbulent = c * (2. * 2e5 / rho.value).sqrt();
+        assert!((q / turbulent - 1.).abs() < 1e-3, "{}", q / turbulent);
+        // Odd in the drive; zero at zero drive and at zero opening.
+        assert_eq!(cap(0.5, -2e5), -cap(0.5, 2e5));
+        assert_eq!(cap(0.5, 0.), 0.);
+        assert_eq!(cap(0., 2e5), 0.);
+        // x = 0 is its own branch: every partial is zero.
+        let z = capacity(Scalar::new(0., 1.), c, Scalar::new(2e5, 3.), rho, mu, re_t).unwrap();
         assert_eq!((z.value, z.direction), (0., 0.));
-        assert!(capacity(Scalar::constant(0.5), c, Scalar::new(0., 1.), rho).is_err());
-        // R4-PZR-PI: an opening with a direction, at zero opening too.
-        let x = capacity(Scalar::new(0., 2.), c, Scalar::constant(2e5), rho).unwrap();
-        assert_eq!(x.value, 0.);
-        assert!((x.direction - 2. * q.value).abs() < 1e-15);
+        // Laminar at a vanishing drive: Q = Δp/a, a bounded slope.
+        let a_v = 0.3 * c;
+        let a = re_t * mu.value * std::f64::consts::PI.sqrt() / (4. * a_v.powf(1.5));
+        let tiny = capacity(Scalar::constant(0.3), c, Scalar::new(1e-9, 1.), rho, mu, re_t).unwrap();
+        assert!((tiny.direction * a - 1.).abs() < 1e-6, "{}", tiny.direction * a);
+        // The directions agree with central differences in every input.
+        let base = (0.3, 5e3, rho.value, mu.value);
+        let f = |x: f64, dp: f64, r: f64, m: f64| {
+            capacity(
+                Scalar::constant(x),
+                c,
+                Scalar::constant(dp),
+                Scalar::constant(r),
+                Scalar::constant(m),
+                re_t,
+            )
+            .unwrap()
+            .value
+        };
+        for k in 0..4 {
+            let mut d = [0.; 4];
+            d[k] = 1.;
+            let at = capacity(
+                Scalar::new(base.0, d[0]),
+                c,
+                Scalar::new(base.1, d[1]),
+                Scalar::new(base.2, d[2]),
+                Scalar::new(base.3, d[3]),
+                re_t,
+            )
+            .unwrap()
+            .direction;
+            let h = [1e-7, 1e-3, 1e-4, 1e-9][k];
+            let mut lo = [base.0, base.1, base.2, base.3];
+            let mut hi = lo;
+            lo[k] -= h;
+            hi[k] += h;
+            let fd = (f(hi[0], hi[1], hi[2], hi[3]) - f(lo[0], lo[1], lo[2], lo[3])) / (2. * h);
+            assert!((at - fd).abs() <= 1e-6 * fd.abs().max(1e-12), "input {k}: {at} vs {fd}");
+        }
     }
 }

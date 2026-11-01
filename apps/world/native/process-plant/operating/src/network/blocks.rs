@@ -669,12 +669,16 @@ impl<P: Properties> Blocks<'_, P> {
                     let rho = pass.cells[sp.region].phase[0]
                         .map(|p| p.density)
                         .ok_or_else(|| recoverable("spray line without liquid"))?;
+                    let (q, dq) = pass.points[sp.region][0]
+                        .ok_or_else(|| recoverable("spray line without its liquid point"))?;
+                    let mu = Scalar::new(q.viscosity_pa_s, dq.viscosity_pa_s);
                     Ok(net
                         .spray_restriction_row(
                             li,
                             chart.volume_flow_m3_s,
                             force + chart.pressure_gravity_pa,
                             rho,
+                            mu,
                             false,
                         )?
                         .map(|(row, _)| row))

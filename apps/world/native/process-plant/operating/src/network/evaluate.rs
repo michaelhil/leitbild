@@ -263,6 +263,11 @@ impl<P: Properties> Network<P> {
         }
         // IC-CTRL (S3 spray path, S3-D25): the valve opening of this time.
         self.spray_opening_at(t)?;
+        // R4-PZR-SPRAY-LAMINAR: the line liquid's viscosity with its
+        // direction, for the valve's low-Reynolds branch.
+        self.spray_mu = self.spray.and_then(|sp| points[sp.region][0]).map(|(q, dq)| {
+            thermal::Scalar::new(q.viscosity_pa_s, dq.viscosity_pa_s)
+        });
         self.compose_sections(y, yp, seed, cj, &points)?;
         self.compose_momentum(t, y, yp, seed, cj, &phase_mass)?;
         self.compose_stocks(y, yp, seed, cj, &points, reuse)?;
@@ -689,11 +694,15 @@ impl<P: Properties> Network<P> {
                     let rho = self.cells[sp.region].phase[0]
                         .map(|p| p.density)
                         .ok_or_else(|| Failure::Recoverable("spray line without liquid".into()))?;
+                    let mu = self.spray_mu.ok_or_else(|| {
+                        Failure::Recoverable("spray line without its liquid viscosity".into())
+                    })?;
                     let row = self.spray_restriction_row(
                         li,
                         chart.volume_flow_m3_s,
                         force + chart.pressure_gravity_pa,
                         rho,
+                        mu,
                         true,
                     )?;
                     if let Some((_, per_x)) = row {
