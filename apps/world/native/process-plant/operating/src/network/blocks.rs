@@ -669,12 +669,15 @@ impl<P: Properties> Blocks<'_, P> {
                     let rho = pass.cells[sp.region].phase[0]
                         .map(|p| p.density)
                         .ok_or_else(|| recoverable("spray line without liquid"))?;
-                    net.spray_restriction_row(
-                        li,
-                        chart.volume_flow_m3_s,
-                        force + chart.pressure_gravity_pa,
-                        rho,
-                    )
+                    Ok(net
+                        .spray_restriction_row(
+                            li,
+                            chart.volume_flow_m3_s,
+                            force + chart.pressure_gravity_pa,
+                            rho,
+                            false,
+                        )?
+                        .map(|(row, _)| row))
                 }
                 _ => Ok(None),
             }

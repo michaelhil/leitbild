@@ -689,12 +689,17 @@ impl<P: Properties> Network<P> {
                     let rho = self.cells[sp.region].phase[0]
                         .map(|p| p.density)
                         .ok_or_else(|| Failure::Recoverable("spray line without liquid".into()))?;
-                    self.spray_restriction_row(
+                    let row = self.spray_restriction_row(
                         li,
                         chart.volume_flow_m3_s,
                         force + chart.pressure_gravity_pa,
                         rho,
-                    )?
+                        true,
+                    )?;
+                    if let Some((_, per_x)) = row {
+                        self.spray_row_x = Some((l.index, per_x));
+                    }
+                    row.map(|(r, _)| r)
                 }
                 _ => None,
             };

@@ -86,10 +86,12 @@ pub enum CheckRoot {
 }
 
 /// The valve's capacity `x·C·sgn(Δp)·sqrt(2|Δp|/ρ)` with its direction. A
-/// zero opening has zero capacity; a zero differential with a moving
-/// direction has no derivative and refuses the trial.
-pub(super) fn capacity(x: f64, c: f64, dp: Scalar, rho: Scalar) -> Result<Scalar, Failure> {
-    if x == 0. {
+/// zero opening at rest has zero capacity; a zero differential with a
+/// moving direction has no derivative and refuses the trial. R4-PZR-PI:
+/// the opening may carry a direction (the PZR owner's stem coordinate).
+pub(super) fn capacity(x: Scalar, c: f64, dp: Scalar, rho: Scalar) -> Result<Scalar, Failure> {
+    let (x, dx) = (x.value, x.direction);
+    if x == 0. && dx == 0. {
         return Ok(Scalar::constant(0.));
     }
     let (v, dv, r, dr) = (dp.value, dp.direction, rho.value, rho.direction);
@@ -111,7 +113,7 @@ pub(super) fn capacity(x: f64, c: f64, dp: Scalar, rho: Scalar) -> Result<Scalar
     let s = v.signum();
     Ok(Scalar::new(
         x * c * s * g,
-        x * c * (dv / (r * g) - s * g * dr / (2. * r)),
+        x * c * (dv / (r * g) - s * g * dr / (2. * r)) + dx * c * s * g,
     ))
 }
 
@@ -429,14 +431,18 @@ impl<P: Properties> Network<P> {
     /// The open valve's restriction row on path `li` at the opening of the
     /// last evaluation, or `None` for any other path: `(Q − capacity)/q_ref`
     /// with `drive` the path's pressure–gravity plus section force and `rho`
-    /// the line's liquid density.
+    /// the line's liquid density. With it, the row's partial in the opening
+    /// (`−C sgn(Δp) sqrt(2|Δp|/ρ)/q_ref`, R4-PZR-PI). `seeded_opening`
+    /// keeps the opening's direction (the evaluation the operator handed it
+    /// to); the network's own column replays read the opening at rest.
     pub(super) fn spray_restriction_row(
         &self,
         li: usize,
         volume_flow: Scalar,
         drive: Scalar,
         rho: Scalar,
-    ) -> Result<Option<Scalar>, Failure> {
+        seeded_opening: bool,
+    ) -> Result<Option<(Scalar, f64)>, Failure> {
         let Some(s) = self.spray else {
             return Ok(None);
         };
@@ -446,23 +452,106 @@ impl<P: Properties> Network<P> {
         let x = self
             .spray_x
             .ok_or_else(|| Failure::Fatal("spray valve opening not evaluated".into()))?;
+        let x = if seeded_opening { x } else { Scalar::constant(x.value) };
         let cap = capacity(x, s.valve.full_area_m2(), drive, rho)?;
-        Ok(Some((volume_flow - cap) / Scalar::constant(s.q_ref_m3_s)))
+        let per_x = capacity(
+            Scalar::constant(1.),
+            s.valve.full_area_m2(),
+            Scalar::constant(drive.value),
+            Scalar::constant(rho.value),
+        )?
+        .value;
+        Ok(Some((
+            (volume_flow - cap) / Scalar::constant(s.q_ref_m3_s),
+            -per_x / s.q_ref_m3_s,
+        )))
+    }
+    /// R4-PZR-PI (S-b): drive the stem from the PZR owner's coordinate: no
+    /// held trajectory, issue or owner time event from here on; the
+    /// operator hands every evaluation its opening
+    /// ([`Network::set_spray_opening`]) and puts the owner's located lock
+    /// changes in force ([`Network::set_spray_lock`]). Refused without a
+    /// spray path, or with its held stem not at rest on its closed lock.
+    pub fn set_spray_continuous(&mut self) -> Result<(), Failure> {
+        let s = self
+            .spray
+            .ok_or_else(|| Failure::Fatal("the continuous spray stem needs a spray path".into()))?;
+        if !self.spray_continuous && !(s.closed && s.stem.closing() && s.stem.closed_at(s.stem.arrival())?)
+        {
+            return Err(Failure::Fatal(
+                "the continuous spray stem starts from the held stem at rest on its closed lock".into(),
+            ));
+        }
+        self.spray_continuous = true;
+        Ok(())
+    }
+    /// Whether the stem is the PZR owner's coordinate (R4-PZR-PI, S-b).
+    pub fn spray_continuous(&self) -> bool {
+        self.spray_continuous
+    }
+    /// R4-PZR-PI (S-b): the stem opening for the next evaluation, with the
+    /// direction of that evaluation's seed.
+    pub fn set_spray_opening(&mut self, x: Scalar) {
+        self.spray_input = Some(x);
+    }
+    /// R4-PZR-PI (S-b): the restriction row's index and its partial in the
+    /// opening at the last evaluation, `None` while the path is locked.
+    pub fn spray_row_opening_partial(&self) -> Option<(usize, f64)> {
+        self.spray_row_x
+    }
+    /// R4-PZR-PI (S-b): the valve-path lock change the PZR owner located
+    /// (`closed`: the stem reached 0; released: the master's demand rose
+    /// through the spray start), class R. Returns the receipt.
+    pub fn set_spray_lock(&mut self, t: f64, closed: bool) -> Result<Value, Failure> {
+        if !self.spray_continuous {
+            return Err(Failure::Fatal("a located spray lock change needs the continuous stem".into()));
+        }
+        let s = self
+            .spray
+            .as_mut()
+            .ok_or_else(|| Failure::Fatal("no spray path is composed".into()))?;
+        if s.closed == closed {
+            return Err(Failure::Fatal(format!(
+                "spray valve lock change to closed={closed} at {t} s from the same state"
+            )));
+        }
+        s.closed = closed;
+        Ok(json!({"owner":"spray valve","t_s":t,"stem":"continuous (PZR owner, R4-PZR-PI)",
+            "event": if closed { "stem reached 0: valve path locked" } else { "master demand above the spray start: valve path released" },
+            "closed":s.closed,"check_closed":s.check_closed}))
     }
     /// The stem's opening at `t`, kept for this evaluation's restriction
     /// row (and the block replay of it).
     pub(super) fn spray_opening_at(&mut self, t: f64) -> Result<(), Failure> {
+        let input = self.spray_input.take();
         self.spray_x = match self.spray {
             None => None,
-            Some(s) if s.closed => Some(0.),
-            Some(s) => Some(s.stem.position(t)?),
+            Some(s) if s.closed => Some(Scalar::constant(0.)),
+            Some(_) if self.spray_continuous => Some(match (input, self.spray_x) {
+                (Some(x), _) => x,
+                // An evaluation the operator did not hand an opening (the
+                // network's own column passes) reads the last one at rest.
+                (None, Some(x)) => Scalar::constant(x.value),
+                (None, None) => {
+                    return Err(Failure::Fatal(
+                        "the continuous spray stem's opening was not handed to the network".into(),
+                    ));
+                }
+            }),
+            Some(s) => Some(Scalar::constant(s.stem.position(t)?)),
         };
+        self.spray_row_x = None;
         Ok(())
     }
     /// Issue the stem a new fraction at `t` (a control frame). Opening a
     /// closed valve releases its lock here: the caller restarts (class R).
     /// A slope change needs only an exact stop (class S, S3-D4).
     pub fn issue_spray(&mut self, t: f64, target: f64) -> Result<(StemChange, Value), Failure> {
+        if self.spray_continuous {
+            return Err(Failure::Fatal(format!(
+                "a held spray issue at {t} s, but the stem is the continuous master's (R4-PZR-PI)"
+            )));
+        }
         let s = self
             .spray
             .as_mut()
@@ -481,11 +570,17 @@ impl<P: Properties> Network<P> {
     /// The stem's next instant after `t`: its arrival, R when it closes the
     /// valve (an owner time event), S otherwise.
     pub fn spray_next_instant(&self, t: f64) -> Option<(f64, StemChange)> {
+        if self.spray_continuous {
+            return None;
+        }
         self.spray.and_then(|s| s.stem.next_instant(t))
     }
     /// The owner time event at `t`: the stem's arrival at 0 locks the valve
     /// path. Returns its receipt, or `None` when no spray event is due.
     pub fn spray_event(&mut self, t: f64) -> Result<Option<Value>, Failure> {
+        if self.spray_continuous {
+            return Ok(None);
+        }
         let Some(s) = self.spray.as_mut() else {
             return Ok(None);
         };
@@ -578,16 +673,20 @@ mod tests {
         let c = 0.001_158_453_602_592_212_7;
         let rho = Scalar::constant(745.148_293_249_185_4);
         // Full open at the sizing point: 20 kg/s.
-        let q = capacity(1., c, Scalar::new(2e5, 1.), rho).unwrap();
+        let q = capacity(Scalar::constant(1.), c, Scalar::new(2e5, 1.), rho).unwrap();
         assert!((q.value * rho.value - 20.).abs() < 1e-12);
         // d/dΔp of x C sqrt(2Δp/ρ) = x C / (ρ g).
         let g = (2. * 2e5 / rho.value).sqrt();
         assert!((q.direction - c / (rho.value * g)).abs() < 1e-18);
         // Reverse differential gives reverse capacity; zero opening none.
-        let r = capacity(0.5, c, Scalar::constant(-2e5), rho).unwrap();
+        let r = capacity(Scalar::constant(0.5), c, Scalar::constant(-2e5), rho).unwrap();
         assert!((r.value + 0.5 * q.value).abs() < 1e-15);
-        let z = capacity(0., c, Scalar::new(2e5, 3.), rho).unwrap();
+        let z = capacity(Scalar::constant(0.), c, Scalar::new(2e5, 3.), rho).unwrap();
         assert_eq!((z.value, z.direction), (0., 0.));
-        assert!(capacity(0.5, c, Scalar::new(0., 1.), rho).is_err());
+        assert!(capacity(Scalar::constant(0.5), c, Scalar::new(0., 1.), rho).is_err());
+        // R4-PZR-PI: an opening with a direction, at zero opening too.
+        let x = capacity(Scalar::new(0., 2.), c, Scalar::constant(2e5), rho).unwrap();
+        assert_eq!(x.value, 0.);
+        assert!((x.direction - 2. * q.value).abs() < 1e-15);
     }
 }
