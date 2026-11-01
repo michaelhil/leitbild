@@ -502,10 +502,19 @@ impl<P: Properties> Network<P> {
     /// R4-PZR-PI (S-b): the valve-path lock change the PZR owner located
     /// (`closed`: the stem reached 0; released: the master's demand rose
     /// through the spray start), class R. Returns the receipt.
+    ///
+    /// On release the inlet check is decided by the valve path's forward
+    /// drive of the last value evaluation (the located instant's): a check
+    /// that closed while the valve was locked (its contact root falls with
+    /// the stem's last flow) opens under a forward drive, since its release
+    /// root watches the drive rising through zero and a drive already
+    /// forward never crosses it; under a reverse or zero drive it stays
+    /// closed, its release root armed.
     pub fn set_spray_lock(&mut self, t: f64, closed: bool) -> Result<Value, Failure> {
         if !self.spray_continuous {
             return Err(Failure::Fatal("a located spray lock change needs the continuous stem".into()));
         }
+        let drive = self.spray.map(|s| self.face_drive[s.valve_face][0].value);
         let s = self
             .spray
             .as_mut()
@@ -515,10 +524,17 @@ impl<P: Properties> Network<P> {
                 "spray valve lock change to closed={closed} at {t} s from the same state"
             )));
         }
+        let drive = drive.filter(|d| d.is_finite()).ok_or_else(|| {
+            Failure::Fatal(format!("spray valve lock change at {t} s without the path's drive"))
+        })?;
+        let check_before = s.check_closed;
         s.closed = closed;
+        if !closed && s.check_closed && drive > 0. {
+            s.check_closed = false;
+        }
         Ok(json!({"owner":"spray valve","t_s":t,"stem":"continuous (PZR owner, R4-PZR-PI)",
             "event": if closed { "stem reached 0: valve path locked" } else { "master demand above the spray start: valve path released" },
-            "closed":s.closed,"check_closed":s.check_closed}))
+            "closed":s.closed,"check_closed_before":check_before,"check_closed":s.check_closed,"forward_drive_pa":drive}))
     }
     /// The stem's opening at `t`, kept for this evaluation's restriction
     /// row (and the block replay of it).
