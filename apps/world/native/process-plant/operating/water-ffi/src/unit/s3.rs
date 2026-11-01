@@ -116,6 +116,9 @@ pub struct S3Unit<J: JoinedSystem = Integrated<If97>> {
     /// SG owner; a case harness may record it (class O).
     pub feed_train: bool,
     pub frame: Frame,
+    /// R4-FREE-STEPS: the composition's stepping ([`super::profile::Solver`]),
+    /// which the unit's frame driver takes.
+    pub stepping: crate::frame::Stepping,
     pub receipt: Value,
     /// The operator at the packet's prepared hot reference (the composed
     /// state): the acquired protection's references (IC-PROT, 5a4f3228).
@@ -426,7 +429,7 @@ pub fn compose_with<J: JoinedSystem>(
     let receipt = json!({
         "composition": "S3-D28 (3): joined + spray closed + SG two-zone + feed gate declared + S2-D24r/S3-D16 + PZR control AUTO (S) + L1 + phase modes + ELEC slice connected",
         "tolerance_scaling": {"relative": scaling.relative, "absolute": scaling.absolute},
-        "weights": solver.weights, "first_step": solver.first_step, "weight_groups": ida.weight_groups().map(|g| g.sizes().len()),
+        "weights": solver.weights, "first_step": solver.first_step, "stepping": solver.stepping, "weight_groups": ida.weight_groups().map(|g| g.sizes().len()),
         "from_saved_s3_state": saved, "t0_s": t0, "spray_path": spray_path,
         "sections": {"ic": inputs.ic_path, "pzr_control": inputs.control_path, "control_wiki": inputs.control_wiki, "electrical": inputs.elec_path},
         "l1_activation_changes": l1_changes,
@@ -451,6 +454,7 @@ pub fn compose_with<J: JoinedSystem>(
         control,
         feed_train,
         frame,
+        stepping: solver.stepping,
         receipt,
         reference,
     })

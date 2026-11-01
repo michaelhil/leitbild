@@ -4,6 +4,7 @@
 //! declared, each in one place. S1's tolerance classes are read from
 //! `ld01-s1-gates`, never written here.
 use crate::{
+    frame::Stepping,
     ida::{Ida, System},
     joined::{FirstStep, JoinedSystem, Restart, census_groups},
 };
@@ -110,21 +111,33 @@ pub enum Weights {
     Grouped,
 }
 /// A unit's solver configuration beyond the fixed profile: the error-weight
-/// rule (N1) and the first step of every discrete restart (N3,
-/// [`FirstStep`]). An explicit value of every composition; its receipt
-/// records both.
+/// rule (N1), the first step of every discrete restart (N3,
+/// [`FirstStep`]) and how the frame driver bounds stock's steps
+/// (R4-FREE-STEPS, [`Stepping`]). An explicit value of every composition;
+/// its receipt records all three.
 #[derive(Clone, Copy, Debug, PartialEq, serde::Serialize)]
 pub struct Solver {
     pub weights: Weights,
     pub first_step: FirstStep,
+    pub stepping: Stepping,
 }
 impl Solver {
-    /// Stock weights and the declared G13 first step: the composition of
-    /// record.
+    /// Stock weights, the declared G13 first step and free stepping
+    /// (R4-FREE-STEPS, lead 1 Nov): the composition of record.
     pub const STOCK: Self = Self {
         weights: Weights::Stock,
         first_step: FirstStep::Declared,
+        stepping: Stepping::Free,
     };
+}
+
+/// A stepping by name: `free` or `frame-stops`; anything else refuses.
+pub fn parse_stepping(name: &str) -> Result<Stepping, String> {
+    match name {
+        "free" => Ok(Stepping::Free),
+        "frame-stops" => Ok(Stepping::FrameStops),
+        other => Err(format!("stepping {other}: free or frame-stops")),
+    }
 }
 
 /// A first-step policy by name: `declared`, `last/<divisor>` or

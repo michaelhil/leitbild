@@ -99,6 +99,7 @@ impl<J: JoinedSystem> Plant<J> {
             // (its receipt is the composition's).
             feed_train: _,
             frame,
+            stepping,
             receipt,
             reference,
         } = unit;
@@ -115,6 +116,8 @@ impl<J: JoinedSystem> Plant<J> {
             .transpose()?;
         let mut driver = Driver::new(frame, config.diagnostic, config.clock, t0)?;
         driver.matrix_rebuild = config.matrix_rebuild;
+        // R4-FREE-STEPS: the composition's own stepping.
+        driver.stepping = stepping;
         Ok(Self {
             ida,
             t0,

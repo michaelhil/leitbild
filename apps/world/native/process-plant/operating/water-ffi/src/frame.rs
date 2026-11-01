@@ -557,7 +557,7 @@ pub struct Driver<S> {
 
 /// R4-FREE-STEPS (PERF2, lead 1 Nov): how [`Driver::run`] bounds stock's
 /// steps.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
 pub enum Stepping {
     /// Every run's bound `until` is an exact stop (the S3 drives chunk at
     /// every frame instant, so every frame is one).
