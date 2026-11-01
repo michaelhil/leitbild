@@ -1115,7 +1115,6 @@ fn every_owners_discrete_state_survives_a_snapshot() {
             &Demand {
                 heater_request_w: request,
                 spray_target: 0.,
-                withdrawn: None,
             },
         )
         .expect("a heater control frame");
