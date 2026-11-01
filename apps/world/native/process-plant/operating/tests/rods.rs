@@ -1013,8 +1013,52 @@ fn trip_release_seat_and_the_stuck_cluster_follow_the_modes() {
         "seat reaction root {}",
         roots[0]
     );
-    // A second trip command is refused.
-    assert!(Rods::<Liquid>::command(&mut b, 2., Command::TurbineTrip).is_err());
+    // WORLD2's E0 (lead, 1 Nov): a further trip command with the circuit
+    // open or opening is acknowledged and changes nothing.
+    let before = Rods::<Liquid>::discrete_state(&b);
+    for (t, c) in [
+        (2., Command::TurbineTrip),
+        (2.1, Command::ManualReactorTrip),
+        (2.2, Command::HoldingLoss),
+    ] {
+        let tx = Rods::<Liquid>::command(&mut b, t, c).unwrap();
+        assert_eq!(tx.receipt["acknowledged"], true, "{c:?}");
+        assert!(tx.deposits.is_empty());
+        assert_eq!(Rods::<Liquid>::discrete_state(&b), before, "{c:?} changes no state");
+    }
+}
+
+/// WORLD2's E0, the real plant's way (lead, 1 Nov): a manual reactor trip
+/// while the turbine trip's opening is still scheduled opens the circuit at
+/// the command's instant; the scheduled opening then finds it open, and any
+/// later trip is acknowledged with no change.
+#[test]
+fn a_manual_trip_during_a_scheduled_opening_opens_the_circuit_at_once() {
+    let water = z4_field(0.);
+    let mut b = block(SpiderDrag::Omitted);
+    let _ = held(&mut b, &water, 2.8, 1.3157);
+    let trip = Rods::<Liquid>::command(&mut b, 1.5, Command::TurbineTrip).unwrap();
+    let delay = trip.receipt["declared_delay_s"].as_f64().unwrap();
+    assert!(delay > 0.);
+    assert_eq!(b.holding_open_at(), Some(1.5 + delay));
+    assert_eq!(Rods::<Liquid>::next_time_event(&b, 1.5), Some(1.5 + delay));
+    // The manual trip inside the delay: open now, earlier than scheduled.
+    let t = 1.5 + 0.5 * delay;
+    let tx = Rods::<Liquid>::command(&mut b, t, Command::ManualReactorTrip).unwrap();
+    assert!(tx.receipt.get("acknowledged").is_none(), "{}", tx.receipt);
+    assert_eq!(b.holding_open_at(), Some(t));
+    // The scheduled opening is no longer an event: the circuit is open.
+    assert_eq!(Rods::<Liquid>::next_time_event(&b, t), None);
+    let before = Rods::<Liquid>::discrete_state(&b);
+    for (at, c) in [
+        (1.5 + delay, Command::TurbineTrip),
+        (1.5 + delay, Command::ManualReactorTrip),
+        (1.5 + 2. * delay, Command::HoldingLoss),
+    ] {
+        let tx = Rods::<Liquid>::command(&mut b, at, c).unwrap();
+        assert_eq!(tx.receipt["acknowledged"], true, "{c:?}");
+        assert_eq!(Rods::<Liquid>::discrete_state(&b), before, "{c:?} changes no state");
+    }
 }
 
 #[test]

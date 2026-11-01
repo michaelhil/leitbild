@@ -1,26 +1,26 @@
 {
  "kind": "ld01-tier1-expectation",
  "platform": "macos-aarch64",
- "reason": "X4.2 CVCS join (NUC 0e57512d8 + PHYS FT channels, bank/STOP channels, restarted hook): 16 CVCS coordinates, new IC families; trajectory moves",
- "recorded_from": "/Users/hilde/Documents/ChatGPT/Leitbild-research/reference-designs/property-candidates/operating-joined-spine-s2/resume-2026-10-14/tiers/t1-34f4af216-20261031T232621Z",
- "app": "34f4af216",
+ "reason": "PERF2 pow 7f945ac64 (R4-JAC-BASE, R4-TURNOVER-VALUES, R4-ENDPOINT-ASSEMBLY bitwise; R4-WALL-POWERS moves C2@2.5 rounding)",
+ "recorded_from": "/Users/hilde/Documents/ChatGPT/Leitbild-research/reference-designs/property-candidates/operating-joined-spine-s2/resume-2026-10-14/tiers/t1-015784cc1-20261101T014211Z",
+ "app": "015784cc1",
  "environment": {
-  "packet_sha256": "82a571a94fd74092b2d68b12214476cd0c56f998d505abf7876890f222cdb220",
-  "state_sha256": "2704291201556d0c894a53a7efb9075880833c2281769f9e9ac17e9227cb64d0",
+  "packet_sha256": "78ef4201bec262c0c52ec79e7f1fabee9e2791629a2f09a3070c100dbe874785",
+  "state_sha256": "8f9ea6d37de65babcb63cffb5189ff7ff0c0bf948572cd1d08e85cd284d19c3b",
   "elec_packet_sha256": "f91fc8e5929c78ceddbb7355dc12a0785292cae59725794f2d52306d1326e6f7",
-  "wiki_commit": "eb324ae",
+  "wiki_commit": "f9e6c0c",
   "water_lib_dir": "/Users/hilde/Documents/ChatGPT/Leitbild-research/reference-designs/property-candidates/operating-water-perf-alloc-1",
   "sundials_prefix": "/Users/hilde/Documents/ChatGPT/Leitbild-research/reference-designs/property-candidates/idas-klu-7.5.0/prefix"
  },
  "instruction_tolerance": 0.01,
  "spans": {
   "C2@0": {
-   "instructions": 6749390272,
-   "digest": "1edcebb6470c734181cdb1ccd0a2e7b43c1c21c0a0465dd23d7f862f5c8cd62e"
+   "instructions": 6584249721,
+   "digest": "c042f79094e7d0efba4a23ea7b6e20e5838255de616f947d94ac982ebe25b7d9"
   },
   "C2@2.5": {
-   "instructions": 17504694262,
-   "digest": "53370d99e2fbb9fdf2d366e421c91acdee39f8e9de7e21346a71d725c5224a36"
+   "instructions": 19257315951,
+   "digest": "0d252960fab8e3204ccf509d861d31f60d3a7f162e1047332df06a8896583361"
   }
  }
 }

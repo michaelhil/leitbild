@@ -185,3 +185,68 @@ fn rod_auto_run() {
         panic!("{f}");
     }
 }
+
+/// WORLD2's E0 (lead, 1 Nov): the unit with acquired protection takes a
+/// turbine trip (the holding circuit opens through the protection), then a
+/// manual reactor trip with the circuit already open, then advances. The
+/// second trip is acknowledged with no change; the unit must not fail-stop.
+/// Ignored by default (needs the S3 unit's environment).
+#[test]
+#[ignore = "needs the S3 unit's environment"]
+fn rod_trip_then_trip_again_then_advance() {
+    use leitbild_operating_plant::joined::block::Command;
+    let inputs = Inputs::from_env().unwrap_or_else(|e| panic!("{e}"));
+    let state: Value =
+        serde_json::from_slice(&std::fs::read(env("LD01_S3_STATE")).unwrap()).unwrap();
+    let unit = s3::compose(&inputs, &state, Solver::STOCK).unwrap_or_else(|e| panic!("{e}"));
+    let t0 = unit.t0;
+    let mut plant = Plant::new(
+        unit,
+        &inputs.ic,
+        plant::Config {
+            field: None,
+            diagnostic: Diagnostic::None,
+            matrix_rebuild: MatrixRebuild::Stock,
+            clock: process_cpu_s,
+        },
+    )
+    .unwrap_or_else(|e| panic!("{e}"));
+    plant.start(&mut []).unwrap();
+    plant.run(t0, t0 + 1., &mut [], None).unwrap();
+    plant
+        .driver
+        .command(t0 + 1., Command::TurbineTripAcquired)
+        .unwrap();
+    plant.run(t0 + 1., t0 + 4., &mut [], None).unwrap();
+    let rods = |p: &Plant<_>| {
+        p.ida
+            .system()
+            .integrated()
+            .joined
+            .rods()
+            .unwrap()
+            .discrete_state()
+    };
+    let opened = rods(&plant);
+    assert!(
+        !opened["holding_open_at"].is_null(),
+        "the turbine trip opened the holding circuit ({})",
+        opened["holding_open_at"]
+    );
+    plant
+        .driver
+        .command(t0 + 4., Command::ManualReactorTrip)
+        .unwrap();
+    plant
+        .run(t0 + 4., t0 + 6., &mut [], None)
+        .unwrap_or_else(|e| panic!("the second trip fail-stopped the unit: {e}"));
+    assert_eq!(
+        rods(&plant)["holding_open_at"],
+        opened["holding_open_at"],
+        "the second trip changes nothing"
+    );
+    eprintln!(
+        "rod_trip_then_trip_again_then_advance: holding opened at {}, reached {} s",
+        opened["holding_open_at"], plant.driver.solver_reached_s
+    );
+}

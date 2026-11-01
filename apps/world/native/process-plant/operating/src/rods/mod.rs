@@ -998,17 +998,36 @@ impl RodBlock {
     /// The holding circuit opens at `t`: the manual reactor-trip interrupt
     /// of G7's no-turbine-trip case. The turbine TRIP opens it after the
     /// declared delay instead ([`Command::TurbineTrip`]).
+    /// With an opening already scheduled later, the circuit opens at `t`
+    /// instead; already open (or opening no later), the command is
+    /// acknowledged with no change ([`Self::trip_acknowledged`]).
     pub fn open_holding_circuit(&mut self, t: f64) -> Result<Transaction, Failure> {
-        if self.holding_open_at.is_some() {
-            return Err(fatal(
-                "rods: the holding circuit is already open or opening",
-            ));
+        if let Some(tx) = self.trip_acknowledged(t, t, "holding circuit opening") {
+            return Ok(tx);
         }
         self.holding_open_at = Some(t);
         Ok(Transaction {
             deposits: Vec::new(),
             receipt: json!({"holding_circuit_opens_s": t, "grip_release": "at the opening (armature omitted, G3)"}),
         })
+    }
+    /// WORLD2's E0 (lead, 1 Nov), the real plant's way: a trip command
+    /// (manual reactor trip, holding loss, turbine trip) whose opening `opens`
+    /// is due no earlier than the one already in force (the circuit open, or
+    /// opening at or before `opens`) is acknowledged with no change, as
+    /// pressing trip with the breakers open does nothing. `None`: the caller
+    /// opens at `opens` — first, or earlier than a scheduled opening, which
+    /// then finds the breakers open.
+    fn trip_acknowledged(&self, t: f64, opens: f64, command: &str) -> Option<Transaction> {
+        self.holding_open_at
+            .filter(|scheduled| *scheduled <= opens)
+            .map(|scheduled| Transaction {
+                deposits: Vec::new(),
+                receipt: json!({"owner": "rods", "t_s": t, "command": command, "acknowledged": true,
+                    "holding_circuit_opens_s": scheduled, "stateChanged": false,
+                    "basis": if scheduled <= t { "the holding circuit is already open: no change" }
+                        else { "the holding circuit opens no later already: no change" }}),
+            })
     }
     pub fn holding_open_at(&self) -> Option<f64> {
         self.holding_open_at
@@ -2428,10 +2447,8 @@ impl<P: Properties> Rods<P> for RodBlock {
             }),
             Command::TurbineTrip => {
                 let open = t + self.holding_delay;
-                if self.holding_open_at.is_some() {
-                    return Err(fatal(
-                        "rods: the holding circuit is already open or opening",
-                    ));
+                if let Some(tx) = self.trip_acknowledged(t, open, "turbine trip") {
+                    return Ok(tx);
                 }
                 self.holding_open_at = Some(open);
                 Ok(Transaction {
