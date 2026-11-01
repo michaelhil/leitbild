@@ -2085,7 +2085,8 @@ impl<P: Properties + WaterProperties> Joined<P> {
         let mut reported = vec![b.command(t, command)?];
         reported.push(self.pzr_mut().command(t, command)?);
         for r in &mut reported {
-            r.receipt["reportedBy"] = serde_json::json!("joined: the holding circuit's opening (R4-DUMP)");
+            r.receipt["reportedBy"] =
+                serde_json::json!("joined: the holding circuit's opening (R4-DUMP)");
         }
         done.extend(reported);
         Ok(())
@@ -2624,7 +2625,11 @@ impl<P: Properties + WaterProperties> Joined<P> {
         // R4-DUMP: the secondary rows reading the CVCS's loop-average lag.
         if let (SecondaryPort::Owner(b), Some(_)) = (&self.blocks.secondary, &self.blocks.cvcs) {
             let tavg = BTreeSet::from([o.cvcs + cvcs::TAVG]);
-            let rows: BTreeSet<usize> = b.loop_average_rows().iter().map(|r| o.secondary + r).collect();
+            let rows: BTreeSet<usize> = b
+                .loop_average_rows()
+                .iter()
+                .map(|r| o.secondary + r)
+                .collect();
             add(&mut columns, &rows, &tavg);
         }
         if let SecondaryPort::Owner(b) = &self.blocks.secondary {
@@ -3469,9 +3474,11 @@ impl<P: Properties + WaterProperties> LocalCoupler<'_, P> {
                 let result = sb.rows(properties, t, xs, heat_w, rows);
                 set_loop_average(secondary, cvcs, o, scales, self.y, None)?;
                 result?;
-                out.rows.extend(reads.iter().map(|r| {
-                    (o.secondary + r, rows[*r] / s(scales[2].rows[*r]))
-                }));
+                out.rows.extend(
+                    reads
+                        .iter()
+                        .map(|r| (o.secondary + r, rows[*r] / s(scales[2].rows[*r]))),
+                );
             }
         }
         Ok(())

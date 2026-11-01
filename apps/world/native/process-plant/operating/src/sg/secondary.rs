@@ -524,8 +524,8 @@ pub fn pressure_opening(b: &packet::Bypass, trip_s: Option<f64>, t: f64, p: Scal
 /// R4-DUMP: the Tavg mode's opening at loop-average lag `tavg` (K),
 /// `clamp((tavg - T_nl - b) / w, 0, 1)`; both corners are located kinks.
 pub fn tavg_opening(b: &packet::Bypass, tavg: Scalar) -> Scalar {
-    let u = (tavg - s(b.no_load_average_temperature_k + b.tavg_dead_band_k))
-        / s(b.tavg_band_width_k);
+    let u =
+        (tavg - s(b.no_load_average_temperature_k + b.tavg_dead_band_k)) / s(b.tavg_band_width_k);
     if u.value <= 0. {
         s(0.)
     } else if u.value >= 1. {
@@ -824,8 +824,8 @@ impl Secondaries {
     fn pickup_steam(&self, k: usize, t: f64, p: Scalar) -> Result<(Scalar, Scalar), Failure> {
         let opening = self.bypass_opening(t, p)?;
         if let Some(v) = &self.valve {
-            let by = s(self.bypass.fraction_of_nominal_steam * self.sgs[k].steam_demand_kg_s)
-                * opening;
+            let by =
+                s(self.bypass.fraction_of_nominal_steam * self.sgs[k].steam_demand_kg_s) * opening;
             let turbine =
                 Scalar::new(v.opening, v.direction) * s(self.admission_coefficient(k, t)) * p;
             return Ok((turbine + by, by));
@@ -1382,7 +1382,9 @@ impl<P: Properties> Secondary<P> for Secondaries {
             (None, [None; 2])
         };
         if unforced && o["forced_circulation"] != json!(false) {
-            return Err(fatal("secondary snapshot: forced_circulation is recorded only when false"));
+            return Err(fatal(
+                "secondary snapshot: forced_circulation is recorded only when false",
+            ));
         }
         let feed_supported = o["feed_supported"]
             .as_bool()
@@ -1815,7 +1817,11 @@ impl<P: Properties> Secondary<P> for Secondaries {
             // without forced circulation.
             let (p0, w) = (self.bypass.no_load_pressure_pa, self.bypass.band_width_pa);
             out[i] = if pressure_armed { p - p0 } else { DISARMED };
-            out[i + 1] = if pressure_armed { p - (p0 + w) } else { DISARMED };
+            out[i + 1] = if pressure_armed {
+                p - (p0 + w)
+            } else {
+                DISARMED
+            };
             i += BYPASS_ROOTS;
         }
         // The NR1 lag's span edges, armed in AUTO: leaving the span
@@ -2027,11 +2033,15 @@ impl<P: Properties> Secondary<P> for Secondaries {
             let d = directions[last + offset];
             if d != 0 {
                 if !(self.forced_circulation && self.reactor_trip_s.is_some()) {
-                    return Err(fatal(format!("R4-DUMP: the {name} root crossed while disarmed")));
+                    return Err(fatal(format!(
+                        "R4-DUMP: the {name} root crossed while disarmed"
+                    )));
                 }
                 self.tavg_side[offset] = Some(d > 0);
-                dump.push(json!({"bypass": "Tavg mode", "threshold": name, "direction": d,
-                    "loopAverage_K": self.loop_average.map(|(v, _)| v)}));
+                dump.push(
+                    json!({"bypass": "Tavg mode", "threshold": name, "direction": d,
+                    "loopAverage_K": self.loop_average.map(|(v, _)| v)}),
+                );
             }
         }
         let changed = seats > 0 || !withdrawn.is_empty();
@@ -2213,7 +2223,9 @@ fn compile(
         || !(b.tavg_dead_band_k.is_finite() && b.tavg_dead_band_k >= 0.)
         || !(b.fraction_of_nominal_steam > 0. && b.fraction_of_nominal_steam <= 1.)
     {
-        return Err(fatal("SG bypass post-trip modes (R4-DUMP Tavg, R12-B1 pressure)"));
+        return Err(fatal(
+            "SG bypass post-trip modes (R4-DUMP Tavg, R12-B1 pressure)",
+        ));
     }
     let c = &section.contact;
     if ![
