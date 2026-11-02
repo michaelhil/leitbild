@@ -98,6 +98,10 @@ export const roomRoutes: RouteEntry[] = [
     pattern: /^\/rooms$/,
     handler: async (req, _match, { system }) => {
       const body = await parseBody(req)
+      if (Object.hasOwn(body, 'scope')) return json({
+        error: 'This creation route does not accept scope. Use published Room creation operations for supported scopes; Perspective Rooms require owner preparation.',
+        code: 'room_scope_unsupported',
+      }, 400)
       if (!body.name || typeof body.name !== 'string') return errorResponse('name is required')
       try {
         const result = await system.createRoom({
