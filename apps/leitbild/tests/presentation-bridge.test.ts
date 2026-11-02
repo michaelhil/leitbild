@@ -124,3 +124,26 @@ test('capacity refuses a new request while every retained delivery is unconfirme
   expect(state.agents.filter(message => message.type === 'leitbild:presentation-draft')).toHaveLength(64)
   expect(state.agents.some(message => message.request?.id === 'capacity-0')).toBe(true)
 })
+
+test('Assistant reveal waits for exact current Room ready and never inserts a draft', async () => {
+  const { bridge, state } = harness()
+  const request = { ...draft('reveal-assistant'), target: { subject, type: 'world.control', id: 'assistant' }, action: { kind: 'reveal' } }
+  bridge.fromWorld({ type: 'leitbild:presentation-assistant-open', request })
+  await settle()
+  expect(state.world).toHaveLength(0)
+  bridge.fromAgents({ type: 'leitbild:presentation-ready', room: roomB })
+  expect(state.world).toHaveLength(0)
+  bridge.fromAgents({ type: 'leitbild:presentation-ready', room: roomA })
+  expect(state.world.at(-1).receipt).toMatchObject({ requestId: request.id, documentId: recipient.documentId, status: 'applied' })
+  expect(state.agents.filter(message => message.type === 'leitbild:presentation-draft')).toHaveLength(0)
+})
+
+test('an expired unresolved Assistant request never delivers on a later readiness event', async () => {
+  const { bridge, state } = harness()
+  bridge.fromWorld({ type: 'leitbild:presentation-compose', request: draft() })
+  await settle()
+  state.timers[0]?.()
+  bridge.fromAgents({ type: 'leitbild:presentation-ready', room: roomA })
+  expect(state.world.at(-1).receipt.status).toBe('expired')
+  expect(state.agents.filter(message => message.type === 'leitbild:presentation-draft')).toHaveLength(0)
+})

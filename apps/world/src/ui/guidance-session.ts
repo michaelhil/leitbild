@@ -1,6 +1,6 @@
 import {
   presentationOfferMessageSchema, presentationReceiptMessageSchema, presentationEvidenceMessageSchema,
-  presentationComposerRequestMessageSchema, type PresentationRequest, type PresentationRecipient, type PresentationReceipt,
+  presentationComposerRequestMessageSchema, presentationAssistantOpenMessageSchema, type PresentationRequest, type PresentationRecipient, type PresentationReceipt,
 } from '@leitbild/contracts'
 import { guideReadingSchema, presentationOutputs, type GuideReading } from '../core/guides/wire.ts'
 import { withActiveRoleSet } from './roles/role-session.ts'
@@ -87,7 +87,7 @@ export const createGuidanceSession = (config: {
   }
   const clear = (): void => {
     if (screen.cue) config.clear(screen.cue)
-    for (const draft of pendingDrafts.values()) config.post({ type: 'leitbild:presentation-clear', recipient: draft.recipient, requestId: draft.id })
+    for (const draft of pendingDrafts.values()) if (draft.action.kind === 'draft') config.post({ type: 'leitbild:presentation-clear', recipient: draft.recipient, requestId: draft.id })
     pendingDrafts.clear()
     update({ cue: null })
   }
@@ -107,6 +107,11 @@ export const createGuidanceSession = (config: {
     }
     if (request.mode === 'guide' && (screen.guide?.status !== 'active' || screen.restored || request.source.id !== screen.guide.attemptId || request.source.executionId !== screen.guide.stepAttemptId)) return finish(request, { status: 'unavailable', reason: 'This guide step is no longer active in this document; use Show to request it here' })
     if (request.action.kind === 'focus' && cameraHeld) return finish(request, { status: 'superseded', reason: 'Your map gesture took priority; use Show to request guidance again' })
+    if (request.action.kind === 'reveal' && request.target.type === 'world.control' && request.target.id === 'assistant') {
+      pendingDrafts.set(request.id, request)
+      config.post(presentationAssistantOpenMessageSchema.parse({ type: 'leitbild:presentation-assistant-open', request }))
+      return
+    }
     if (request.action.kind === 'draft') {
       pendingDrafts.set(request.id, request)
       config.post(presentationComposerRequestMessageSchema.parse({ type: 'leitbild:presentation-compose', request }))
@@ -176,7 +181,7 @@ export const createGuidanceSession = (config: {
       if (!parsed.success) { update({ error: 'Host sent an invalid prompt evidence hint' }); return }
       const request = pendingDrafts.get(parsed.data.requestId), guide = screen.guide
       const effect = guide?.step?.effects.find(effect => effect.requestId === parsed.data.requestId)
-      if (!request || !owned(request) || parsed.data.recipient.leaseId !== request.recipient.leaseId || !guide?.attemptId || !guide.stepAttemptId || !effect) return
+      if (!request || request.action.kind !== 'draft' || !owned(request) || parsed.data.recipient.leaseId !== request.recipient.leaseId || !guide?.attemptId || !guide.stepAttemptId || !effect) return
       void call('guide', 'prompt', { attemptId: guide.attemptId, stepAttemptId: guide.stepAttemptId, effectId: effect.id, recipient: screen.recipient, room: parsed.data.room, requestId: parsed.data.requestId, messageId: parsed.data.messageId })
         .then(result => update({ guide: guideReadingSchema.parse(result), error: null })).catch(error => update({ error: errorText(error) }))
     }

@@ -1,5 +1,5 @@
 import {
-  presentationComposerRequestMessageSchema, presentationDraftMessageSchema, presentationEvidenceMessageSchema,
+  presentationComposerRequestMessageSchema, presentationAssistantOpenMessageSchema, presentationDraftMessageSchema, presentationEvidenceMessageSchema,
   presentationOfferMessageSchema, presentationReceiptMessageSchema, presentationReadyMessageSchema, presentationCleanupRequestMessageSchema,
   type PresentationRecipient, type PresentationRequest, type WorkspaceResourceReference,
 } from '@leitbild/contracts'
@@ -40,22 +40,27 @@ export const createPresentationBridge = (config: {
       if (delivery.sent || !current(delivery.request) || !readyRoom || !sameResource(readyRoom, delivery.room)) continue
       const room = config.room()
       if (!room || !sameResource(room, delivery.room)) continue
+      if (Date.parse(delivery.request.expiresAt) <= Date.now()) { delivery.sent = true; delivery.acknowledged = true; delivery.stop(); receipt(delivery.request, 'expired', 'The presentation request expired before its Room became ready'); continue }
       delivery.sent = true
       delivery.sentGeneration = agentsGeneration
-      config.postToAgents(presentationDraftMessageSchema.parse({ type: 'leitbild:presentation-draft', request: delivery.request, room }))
+      if (delivery.request.action.kind === 'reveal') {
+        delivery.acknowledged = true; delivery.stop()
+        config.postToWorld(presentationReceiptMessageSchema.parse({ type: 'leitbild:presentation-receipt', receipt: { requestId: delivery.request.id, documentId: delivery.request.recipient.documentId, status: 'applied', reason: 'The exact Run Assistant Room is shown and its current composer document is ready', at: new Date().toISOString() } }))
+      } else config.postToAgents(presentationDraftMessageSchema.parse({ type: 'leitbild:presentation-draft', request: delivery.request, room }))
     }
   }
   const compose = async (request: PresentationRequest): Promise<void> => {
     if (!current(request) || deliveries.has(request.id)) return
-    if (request.target.type !== 'world.composer' || request.target.id !== 'assistant') return receipt(request, 'unavailable', 'This is not the Run Assistant composer')
+    const reveal = request.action.kind === 'reveal' && request.target.type === 'world.control' && request.target.id === 'assistant'
+    if (!reveal && (request.target.type !== 'world.composer' || request.target.id !== 'assistant' || request.action.kind !== 'draft')) return receipt(request, 'unavailable', 'This is not the Run Assistant or its composer')
     const expectedGeneration = generation
     try {
       let room: WorkspaceResourceReference
-      if (request.source.kind === 'guide') room = await config.openAssistant()
+      if (request.source.kind === 'guide' || request.source.kind === 'person') room = await config.openAssistant()
       else {
         const selected = config.room()
         if (!request.source.initiatingRoom || !selected || !sameResource(selected, request.source.initiatingRoom)) throw new Error('The originating Room is not currently shown')
-        room = selected
+        room = reveal ? await config.openAssistant() : selected
       }
       if (expectedGeneration !== generation || !current(request)) return
       if (Date.parse(request.expiresAt) <= Date.now()) return receipt(request, 'expired', 'The prompt suggestion expired while opening its Room')
@@ -67,7 +72,7 @@ export const createPresentationBridge = (config: {
       }
       const stop = config.timer(Math.max(0, Date.parse(request.expiresAt) - Date.now()), () => {
         const delivery = deliveries.get(request.id)
-        if (delivery && !delivery.sent) receipt(request, 'expired', 'The Room did not become ready before delivery expired')
+        if (delivery && !delivery.acknowledged) { delivery.sent = true; delivery.acknowledged = true; receipt(request, 'expired', 'No presentation outcome was confirmed before delivery expired') }
       })
       deliveries.set(request.id, { request, room, stop, sent: false, acknowledged: false })
       offer(); flush()
@@ -91,8 +96,8 @@ export const createPresentationBridge = (config: {
         if (recipient && (!next || !sameReceiver(recipient, next))) clear()
         recipient = next; offer(); return
       }
-      if (type === 'leitbild:presentation-compose') {
-        const parsed = presentationComposerRequestMessageSchema.safeParse(data)
+      if (type === 'leitbild:presentation-compose' || type === 'leitbild:presentation-assistant-open') {
+        const parsed = (type === 'leitbild:presentation-compose' ? presentationComposerRequestMessageSchema : presentationAssistantOpenMessageSchema).safeParse(data)
         if (!parsed.success) return config.error('World sent an invalid composer request')
         void compose(parsed.data.request)
       }

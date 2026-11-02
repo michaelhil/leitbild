@@ -95,6 +95,14 @@ export const presentationComposerRequestMessageSchema = z.object({
   request: presentationRequestSchema,
 }).strict().refine(message => message.request.action.kind === 'draft', { message: 'Only a draft requests a composer' })
 
+/** An opted-in reveal opens the exact Run Assistant and waits for that Room's actual document. */
+export const presentationAssistantOpenMessageSchema = z.object({
+  type: z.literal('leitbild:presentation-assistant-open'),
+  request: presentationRequestSchema,
+}).strict().refine(message => message.request.action.kind === 'reveal'
+  && message.request.target.type === 'world.control' && message.request.target.id === 'assistant',
+{ message: 'Only the exact Run Assistant reveal uses this handshake' })
+
 /** World asks Host to clear a suggestion that Host previously resolved to one Room. */
 export const presentationCleanupRequestMessageSchema = z.object({
   type: z.literal('leitbild:presentation-clear'),

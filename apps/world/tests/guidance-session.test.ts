@@ -46,6 +46,10 @@ test('a refused Next preserves an offered prompt link; only successful progressi
     session.receive({ origin: 'http://world.test', source: parent, data: { type: 'leitbild:presentation-evidence', recipient, room: { ...subject, moduleId: 'agents', type: 'agents.room', id: 'room-a' }, requestId: 'request-prompt', messageId: 'actual-person-message' } } as MessageEvent)
     for (let n = 0; n < 20 && !calls.some(call => call.path.endsWith('/guide/prompt')); n++) await Bun.sleep(1)
     expect(calls.find(call => call.path.endsWith('/guide/prompt'))?.input.messageId).toBe('actual-person-message')
+    await session.reconnect()
+    expect(calls.filter(call => call.path.endsWith('/presentation/register'))).toHaveLength(2)
+    expect(messages.filter(message => message.type === 'leitbild:presentation-compose')).toHaveLength(1)
+    expect(screen?.restored).toBe(true)
   } finally {
     session?.stop(); configureActiveRoleSet(priorRoles); globalThis.fetch = originalFetch
     if (originalWindow) Object.defineProperty(globalThis, 'window', originalWindow); else Reflect.deleteProperty(globalThis, 'window')
