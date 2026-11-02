@@ -74,6 +74,7 @@ export const compiledScenarioSideViewRules: SideViewRules<CompiledScenario> = {
   view: 'pass',
   recording: 'pass',
   timeline: 'drop',
+  guide: 'drop',
 }
 
 /** A side view's Run snapshot: its objects by audience, the sequence and clock, and redacted scenario state. */

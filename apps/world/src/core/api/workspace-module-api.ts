@@ -32,6 +32,8 @@ import { assembleRunContext } from '../../features/displays/context/run-context.
 import { storedDashboards } from '../../features/displays/dashboards/dashboards.ts'
 import { observablesSearchInputSchema, observablesSearchOutputSchema, searchObservables } from '../../features/displays/observation/search.ts'
 import { displayCapabilities } from './display-capabilities.ts'
+import { guidanceCapabilities } from './guidance-capabilities.ts'
+import { isGuidanceFailure } from '../guides/errors.ts'
 import { isCapabilityRejection } from '../../simulation/capability-rejection.ts'
 import {
   isoTimestampSchema,
@@ -877,6 +879,7 @@ const visibleChangeEvents = (
 }
 
 const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, Response>(WORLD_MODULE_ID, [
+  ...guidanceCapabilities(),
   {
     descriptor: {
       id: 'world.map.symbols', moduleId: WORLD_MODULE_ID, kind: 'query', scope: { kind: 'workspace' },
@@ -1847,8 +1850,8 @@ const scriptRedacted: ReadonlySet<string> = new Set(['world.scenario.read', 'wor
 const scriptHidden = (message: string): Response => apiError(403, 'scenario_script_hidden', message)
 
 const withoutTimeline = (value: unknown): unknown => {
-  if (typeof value !== 'object' || value === null || !('timeline' in value)) return value
-  const { timeline: _timeline, ...rest } = value as Record<string, unknown>
+  if (typeof value !== 'object' || value === null) return value
+  const { timeline: _timeline, guide: _guide, ...rest } = value as Record<string, unknown>
   return rest
 }
 /** A script-bearing result as an AI caller reads it: a source without its timeline; an inspection without its timeline section or the timeline in the source it shows. */
@@ -1857,19 +1860,24 @@ const withoutScript = async (response: Response): Promise<Response> => {
   const body = await response.json() as { readonly result: Record<string, unknown> }
   const sections = body.result.sections as ReadonlyArray<{ readonly id: string; readonly data?: unknown }> | undefined
   const result = sections === undefined ? { ...body.result, source: withoutTimeline(body.result.source) }
-    : { ...body.result, sections: sections.filter(section => section.id !== 'timeline').map(section => ({ ...section, ...(section.data === undefined ? {} : { data: withoutTimeline(section.data) }) })) }
+    : { ...body.result, sections: sections.filter(section => section.id !== 'timeline' && section.id !== 'guide').map(section => ({ ...section, ...(section.data === undefined ? {} : { data: withoutTimeline(section.data) }) })) }
   return json({ ...body, result }, { status: response.status })
 }
 /** An AI caller's Scenario update: the stored timeline kept where it sends none; refused where it would replace one. */
 const scriptKept = async (registry: SimulationRunRegistry, invocation: ApiInvocation): Promise<ApiInvocation | Response> => {
   const input = createScenarioInputSchema.parse(invocation.input)
-  const stored = (await registry.currentScenario(requireScenarioDefinitionId(invocation)))?.document.timeline
-  if (stored === undefined) return invocation
+  const document = (await registry.currentScenario(requireScenarioDefinitionId(invocation)))?.document
+  const stored = document?.timeline
+  const guide = document?.guide
+  if (stored === undefined && guide === undefined) return invocation
   // One it sends unchanged (a source it wrote whole) it already knows.
   if (input.source.timeline !== undefined && JSON.stringify(input.source.timeline) !== JSON.stringify(stored)) {
     return scriptHidden('This Scenario\'s timeline is hidden from AI callers; an update from one keeps it as people wrote it and may not replace it')
   }
-  return { ...invocation, input: { ...input, source: { ...input.source, timeline: stored } } }
+  if (guide !== undefined && input.source.guide !== undefined && JSON.stringify(input.source.guide) !== JSON.stringify(guide)) {
+    return scriptHidden('This Scenario\'s guide source is hidden from AI callers; an update keeps it unchanged')
+  }
+  return { ...invocation, input: { ...input, source: { ...input.source, ...(stored === undefined ? {} : { timeline: stored }), ...(guide === undefined ? {} : { guide }) } } }
 }
 
 const invokeCapability = async (
@@ -2049,6 +2057,7 @@ export const handleWorldModuleApi = async (
     return null
   } catch (error) {
     if (isQueryReadRefusal(error)) return apiError(error.status, error.code, error.message)
+    if (isGuidanceFailure(error)) return apiError(error.status, error.code, error.message)
     if (isCapabilityRejection(error)) return apiError(error.status, error.code, error.message)
     if (isRoleGateRefusal(error)) return apiError(error.status, error.code, error.message, error.details)
     if (error instanceof Error && 'code' in error && error.code === 'storage_budget_exceeded') return apiError(507, 'storage_budget_exceeded', error.message)

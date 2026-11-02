@@ -5,9 +5,11 @@ import { idSchema,objectIdSchema,signalIdSchema,type ObjectId,type SignalId } fr
 import { interactionEndpointSchema,type InteractionEndpoint } from './interactions.ts'
 import { operationalObjectSchema,type OperationalObject } from './object.ts'
 import { scenarioRecordingSelectionSchema,type ScenarioRecordingSelection } from './recording.ts'
-import { roleDeclarationIssues,runRolesSchema,scenarioRolePresetSchema,scenarioRoleSchema,scenarioSideSchema,type RoleDeclarationIssue,type RunRoles,type ScenarioRole,type ScenarioRolePreset,type ScenarioSide } from './roles.ts'
-import { sidedObjectAudienceIssue,type ObjectAudience } from './audience.ts'
+import { roleDeclarationIssues,runRolesSchema,scenarioRolePresetSchema,scenarioRoleSchema,scenarioSideSchema,seesForRoleSet,type RoleDeclarationIssue,type RunRoles,type ScenarioRole,type ScenarioRolePreset,type ScenarioSide } from './roles.ts'
+import { audienceVisibleTo,sidedObjectAudienceIssue,type ObjectAudience } from './audience.ts'
+import { refObjectId } from './alerts.ts'
 import { isoTimestampSchema,type IsoTimestamp } from './time.ts'
+import { guideDefinitionSchema, guideReferenceIssues, type GuideDefinition } from '../guides/model.ts'
 
 export interface ScenarioWorldDefinition {
   readonly startsAt: IsoTimestamp
@@ -147,6 +149,7 @@ export interface CompiledScenario {
   readonly view: StartingView
   readonly recording: ReadonlyArray<ScenarioRecordingSelection>
   readonly timeline?: ScenarioTimeline
+  readonly guide?: GuideDefinition
 }
 
 export const scenarioWorldDefinitionSchema = z.object({
@@ -367,6 +370,7 @@ export const compiledScenarioSchema = z.object({
   view: startingViewSchema,
   recording: z.array(scenarioRecordingSelectionSchema).default([]),
   timeline: scenarioTimelineSchema.optional(),
+  guide: guideDefinitionSchema.optional(),
 }).superRefine((scenario, ctx) => {
   for (const issue of roleDeclarationIssues(scenario.roles, scenario.rolePresets, scenario.sides, 'complete')) {
     ctx.addIssue({ code: 'custom', path: [...issue.path], message: issue.message, ...issueParams(issue) })
@@ -380,6 +384,25 @@ export const compiledScenarioSchema = z.object({
     ctx.addIssue({ code: 'custom', path: ['agentRestrictions'], message: agentRestrictionsInRoleRunMessage, params: { code: 'agent_restrictions_in_role_run' } })
   }
   const objectIds = new Set(scenario.initialObjects.map(object => object.id))
+  if (scenario.guide !== undefined) {
+    for (const issue of guideReferenceIssues(scenario.guide, objectIds, new Set(scenario.roles?.map(role => role.id) ?? []))) {
+      ctx.addIssue({ code: 'custom', path: ['guide', ...issue.path], message: issue.message })
+    }
+    if (scenario.sides !== undefined && scenario.roles !== undefined) {
+      const declaration = { roles: scenario.roles, presets: scenario.rolePresets ?? [], sides: scenario.sides }
+      const objects = new Map(scenario.initialObjects.map(object => [String(object.id), object]))
+      scenario.guide.steps.forEach((step, index) => {
+        const references: string[] = step.effects.flatMap(effect => effect.target.kind === 'object' ? [effect.target.objectId] : [])
+        if (step.completion.kind === 'condition' && step.completion.condition.kind !== 'clock') references.push(step.completion.condition.kind === 'object-status' ? step.completion.condition.objectId : refObjectId(step.completion.condition.ref))
+        for (const reference of references) {
+          const object = objects.get(reference)
+          const visible = step.roles === undefined ? object?.audience === 'public'
+            : object === undefined || step.roles.every(role => audienceVisibleTo(object.audience, seesForRoleSet(declaration, [role])))
+          if (!visible) ctx.addIssue({ code: 'custom', path: ['guide', 'steps', index], message: 'A guide step may name only objects visible to every eligible role; late-bound side targets need explicit roles' })
+        }
+      })
+    }
+  }
   scenario.agentRestrictions.objects.forEach((entry, index) => {
     if (!objectIds.has(entry.objectId)) {
       ctx.addIssue({ code: 'custom', path: ['agentRestrictions', 'objects', index, 'objectId'], message: `AI restriction references unknown initial object: ${entry.objectId}` })
