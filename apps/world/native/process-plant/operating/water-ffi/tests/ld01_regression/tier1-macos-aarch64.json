@@ -1,12 +1,12 @@
 {
  "kind": "ld01-tier1-expectation",
  "platform": "macos-aarch64",
- "reason": "re-baseline after SBTL default and landing 3",
- "recorded_from": "/Users/hilde/Documents/ChatGPT/Leitbild-research/reference-designs/property-candidates/operating-joined-spine-s2/resume-2026-10-14/tiers/t1-d753fc765-20261101T173118Z",
- "app": "d753fc765",
+ "reason": "interim, R4-PZR-PI (lead 1 Nov, lane PZRP): the continuous PZR pressure master (PT1 lag, integral, spray stem as PZR coordinates), live spray (S-b) with the low-Reynolds restriction; packets pzrp-5b7a0eb-1, state carried by tests/pzr_state.rs",
+ "recorded_from": "/Users/hilde/Documents/ChatGPT/Leitbild-research/reference-designs/property-candidates/operating-joined-spine-s2/resume-2026-10-14/tiers/t1-84bbcffea-20261102T002449Z",
+ "app": "84bbcffea",
  "environment": {
-  "packet_sha256": "32e1c545f7180f9289833cd8b93aa7b12e65a88eeaa448c5077ae7a280e78cce",
-  "state_sha256": "6295c9a0e8d85fb482ef6478972ae1ae63c12dd9f5e7e857611487449c4ae79f",
+  "packet_sha256": "9e1e6aa94dd980544c3af6cdda6ad662ce90f660fb33e987ea812ff3018c13b1",
+  "state_sha256": "54e4df7ddfa5b5c8a231f0f5b10c42fc28b496ee3007924b4273ce4e94e3fa06",
   "elec_packet_sha256": "f91fc8e5929c78ceddbb7355dc12a0785292cae59725794f2d52306d1326e6f7",
   "wiki_commit": "620186f",
   "water_lib_dir": "/Users/hilde/Documents/ChatGPT/Leitbild-research/reference-designs/property-candidates/operating-water-sbtl-repin-97ad4d5",
@@ -15,12 +15,12 @@
  "instruction_tolerance": 0.01,
  "spans": {
   "C2@0": {
-   "instructions": 4919449595,
+   "instructions": 4936091702,
    "digest": "95b970b28fe75741a2590e69c318695764486857f211741d22233cda6911f132"
   },
   "C2@2.5": {
-   "instructions": 10455449522,
-   "digest": "349b81fe6bc997a6d5ac419bd6dad7db2733912f46f78db40b2deb51537f88c0"
+   "instructions": 10508672685,
+   "digest": "f09ffc1fad5313890dfeab73503dda13a2333211733f9d903b534c734b0a6ada"
   }
  }
 }
