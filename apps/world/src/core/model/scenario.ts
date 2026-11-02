@@ -52,6 +52,14 @@ export interface ScenarioGuidance {
 export interface ScenarioTimelineProgressState {
   readonly startedAt: IsoTimestamp
   readonly firedCueIds: ReadonlyArray<string>
+  /** Only newly admitted cues carry action outcomes. Admission is at-most-once, including after a crash. */
+  readonly executions?: ReadonlyArray<ScenarioCueExecution> | undefined
+}
+
+export interface ScenarioCueExecution {
+  readonly cueId: string
+  readonly status: 'admitted' | 'complete' | 'failed'
+  readonly actions: ReadonlyArray<'not_attempted' | 'unknown' | 'accepted' | 'failed'>
 }
 
 export interface ScenarioExecutionState {
@@ -193,6 +201,7 @@ export const scenarioGuidanceSchema = z.object({
 export const scenarioTimelineProgressStateSchema = z.object({
   startedAt: isoTimestampSchema,
   firedCueIds: z.array(idSchema).default([]),
+  executions: z.array(z.object({ cueId: idSchema, status: z.enum(['admitted', 'complete', 'failed']), actions: z.array(z.enum(['not_attempted', 'unknown', 'accepted', 'failed'])) }).strict()).optional(),
 }).strict()
 
 export const scenarioExecutionStateSchema = z.object({

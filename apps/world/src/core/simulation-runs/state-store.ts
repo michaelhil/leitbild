@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { projectTimelineProgress } from '../model/timeline-progress.ts'
 import { sameProcedureScope, operationalObjectSchema, procedureControlStateSchema, scenarioExecutionStateSchema, simulationClockStateSchema, type SimulationRunEvent, type ObjectId, type OperationalObject, type ProcedureControlState, type ProcedureId, type ProcedureRunScope, type ProcedureRunState, type ProcedureSourceId, type ProcedureStepDecision, type ProcedureStepRunState, type ScenarioExecutionState, type SimulationClockState } from '../model/index.ts'
 
 export interface SimulationRunStateSnapshot {
@@ -78,13 +79,10 @@ export const createSimulationRunStateStore = (): SimulationRunStateStore => {
       clock = event.clock
       return
     }
-    if (event.type === 'scenario.cue.started') {
+    if (event.type === 'scenario.cue.started' || event.type === 'scenario.cue.action' || event.type === 'scenario.cue.finished') {
       updateScenario(current => ({
         ...current,
-        timeline: {
-          startedAt: current.timeline?.startedAt ?? event.at,
-          firedCueIds: [...new Set([...(current.timeline?.firedCueIds ?? []), event.cueId])],
-        },
+        timeline: projectTimelineProgress(current.timeline, event),
       }))
       return
     }

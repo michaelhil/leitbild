@@ -179,3 +179,24 @@ test('same-time cues follow authored order, modify task priority and do not repl
   expect(restored.snapshot().scenario!.timeline!.firedCueIds).toEqual(['z-create-first', 'a-update-second'])
   expect(taskDataOf(restored.snapshot().objects.find(object => object.id === 'task:live')!).priority).toBe('high')
 }))
+
+test('compound cue retains accepted, rejected and unattempted outcomes without replay after restore', async () => withRegistry(async registry => {
+  const source = definition()
+  source.packs[0]!.items = [{ type: 'task', id: 'task:once' as never, label: 'Once', position: [11.4, 59.1], priority: 'low' }]
+  source.timeline = { cues: [{ id: 'partial', at: { kind: 'after_scenario_start', seconds: 0 }, actions: [
+    { type: 'invoke_capability', capabilityId: 'world.object.delete', input: { objectId: 'task:once' } },
+    { type: 'invoke_capability', capabilityId: 'world.object.delete', input: { objectId: 'task:once' } },
+    { type: 'show_guidance', guidance: { id: 'never', title: 'Never', message: 'Must not run after refusal', objectIds: [], dismissible: true, tone: 'default' } },
+  ] }] }
+  await registry.createScenario(source)
+  const run = await registry.create({ scenarioId: source.id })
+  await run.setClock({ paused: true })
+  expect(run.snapshot().scenario?.timeline?.executions).toEqual([{ cueId: 'partial', status: 'failed', actions: ['accepted', 'failed', 'not_attempted'] }])
+  expect(run.snapshot().scenario?.guidance).toBeUndefined()
+  const id = run.id
+  await registry.close(id)
+  const restored = await registry.load(id)
+  expect(restored.snapshot().scenario?.timeline?.executions).toEqual([{ cueId: 'partial', status: 'failed', actions: ['accepted', 'failed', 'not_attempted'] }])
+  expect(restored.snapshot().objects.some(object => object.id === 'task:once')).toBe(false)
+  expect(restored.snapshot().scenario?.guidance).toBeUndefined()
+}))

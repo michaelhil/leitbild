@@ -1,4 +1,5 @@
 import type { z } from 'zod'
+import { projectTimelineProgress } from '../core/model/timeline-progress.ts'
 import type { CommandResult, CompiledScenario, SimulationRunId, IsoTimestamp, ObjectId, OperationalNotification, OperationalObject, ScenarioGuidance, ScenarioExecutionState, SimulationClockState } from '../core/model/index.ts'
 import type { PackRuntimeRealtimeMessage } from '../simulation/protocol.ts'
 import type { CapabilityInvocationResponse } from './types.ts'
@@ -18,6 +19,9 @@ export interface SimulationRunEventPayload {
   readonly object?: OperationalObject
   readonly objectId?: ObjectId
   readonly cueId?: string
+  readonly actionCount?: number
+  readonly actionIndex?: number
+  readonly outcome?: string
   readonly guidance?: ScenarioGuidance
   readonly guidanceId?: string
   readonly notification?: OperationalNotification
@@ -179,6 +183,9 @@ const parseEventPayload = (value: unknown): SimulationRunEventPayload => {
     ...(isRecord(value.object) ? { object: value.object as unknown as OperationalObject } : {}),
     ...(typeof value.objectId === 'string' ? { objectId: value.objectId as ObjectId } : {}),
     ...(typeof value.cueId === 'string' ? { cueId: value.cueId } : {}),
+    ...(typeof value.actionCount === 'number' ? { actionCount: value.actionCount } : {}),
+    ...(typeof value.actionIndex === 'number' ? { actionIndex: value.actionIndex } : {}),
+    ...(typeof value.outcome === 'string' ? { outcome: value.outcome } : {}),
     ...(isRecord(value.guidance) ? { guidance: value.guidance as unknown as ScenarioGuidance } : {}),
     ...(typeof value.guidanceId === 'string' ? { guidanceId: value.guidanceId } : {}),
     ...(isRecord(value.notification) ? { notification: value.notification as unknown as OperationalNotification } : {}),
@@ -344,14 +351,11 @@ const applyScenarioEvents = (
   for (const event of events) {
     const current = nextState
     if (!current) continue
-    if (event.type === 'scenario.cue.started' && event.cueId) {
+    if (['scenario.cue.started', 'scenario.cue.action', 'scenario.cue.finished'].includes(event.type) && event.cueId) {
       if (!current.timeline) continue
       nextState = {
         ...current,
-        timeline: {
-          startedAt: current.timeline.startedAt,
-          firedCueIds: [...new Set([...current.timeline.firedCueIds, event.cueId])],
-        },
+        timeline: projectTimelineProgress(current.timeline, event),
       }
     }
     if (event.type === 'scenario.guidance.shown' && event.guidance) {

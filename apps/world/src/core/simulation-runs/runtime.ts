@@ -728,6 +728,7 @@ export const createSimulationRunRuntime = async (config: {
     ...nextScenarioBase(at),
     type: 'scenario.cue.started',
     cueId: cue.id,
+    actionCount: cue.actions.length,
   })
 
   const scenarioCueFailedEvent = (cue: ScenarioTimelineCue, error: unknown, at: IsoTimestamp): SimulationRunEvent => ({
@@ -1288,14 +1289,14 @@ export const createSimulationRunRuntime = async (config: {
   const executeScenarioCue = async (cue: ScenarioTimelineCue, at: IsoTimestamp): Promise<void> => {
     await publishOneGenerated(() => scenarioCueStartedEvent(cue, at))
 
-    for (const action of cue.actions) {
+    for (const [actionIndex, action] of cue.actions.entries()) {
+      // Journal uncertainty before dispatch: a crash after domain acceptance must not imply safe retry.
+      await publishOneGenerated(() => ({ ...nextScenarioBase(at), type: 'scenario.cue.action', cueId: cue.id, actionIndex, outcome: 'unknown' }))
       if (action.type === 'emit_signal') {
         await enqueuePublish(async () => {
           await handleInteractionSignalNow(scenarioSignalForAction(action, at), { source: 'system' })
         })
-        continue
-      }
-      if (action.type === 'invoke_capability') {
+      } else if (action.type === 'invoke_capability') {
         const outcome = await invokeCapabilityThroughRuntime(scenarioRunnerActor, {
           capabilityId: action.capabilityId,
           input: action.input,
@@ -1303,11 +1304,14 @@ export const createSimulationRunRuntime = async (config: {
           issuedAt: at,
         }, 'system')
         if (outcome.kind !== 'command') throw new Error(`Scenario cannot invoke query Capability: ${action.capabilityId}`)
-        if (!outcome.result.ok) throw new Error(outcome.result.reason)
-        continue
-      }
-      await publishGenerated(() => simulationRunEventsForScenarioActions([action], at))
+        if (!outcome.result.ok) {
+          await publishOneGenerated(() => ({ ...nextScenarioBase(at), type: 'scenario.cue.action', cueId: cue.id, actionIndex, outcome: 'failed' }))
+          throw new Error(outcome.result.reason)
+        }
+      } else await publishGenerated(() => simulationRunEventsForScenarioActions([action], at))
+      await publishOneGenerated(() => ({ ...nextScenarioBase(at), type: 'scenario.cue.action', cueId: cue.id, actionIndex, outcome: 'accepted' }))
     }
+    await publishOneGenerated(() => ({ ...nextScenarioBase(at), type: 'scenario.cue.finished', cueId: cue.id, outcome: 'complete' }))
   }
 
   let cueQueue: Promise<void> = Promise.resolve()
@@ -1317,7 +1321,10 @@ export const createSimulationRunRuntime = async (config: {
     const pending = cueQueue.then(async () => {
       if (state.snapshot().scenario?.timeline?.firedCueIds.includes(cue.id)) return
       try { await executeScenarioCue(cue, at) }
-      catch (error) { await publishOneGenerated(() => scenarioCueFailedEvent(cue, error, nowIso())) }
+      catch (error) {
+        await publishOneGenerated(() => ({ ...nextScenarioBase(nowIso()), type: 'scenario.cue.finished', cueId: cue.id, outcome: 'failed' }))
+        await publishOneGenerated(() => scenarioCueFailedEvent(cue, error, nowIso()))
+      }
     }).finally(() => { pendingCues-- })
     cueQueue = pending.catch(() => {})
     return pending
