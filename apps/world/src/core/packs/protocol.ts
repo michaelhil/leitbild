@@ -5,6 +5,7 @@ import type { DatasetConfig,DatasetId } from '../../reference-data/types.ts'
 import type { RoutingAdapter } from '../../routing/protocol.ts'
 import type { MapView } from '../../ui/map-view.ts'
 import type { SurfacePanelProps } from '../../ui/surface-panel-interaction.ts'
+import type { PackWorkspaceCapability } from '../../simulation/protocol.ts'
 import type { ElectricalConnectionDefinition,GeoJsonPoint,GeoJsonPolygon,InteractionHandler,IsoTimestamp,MapLayerId,ObjectId,OperationalObject,ProcedureId,ProcedureTag,RecordingProfileDescriptor,RunViewer,ScenarioRole,ScenarioSide,SimulationRunId } from '../model/index.ts'
 import { geoJsonPointSchema,geoJsonPolygonSchema,isoTimestampSchema } from '../model/index.ts'
 import { geoJsonGeometrySchema, type GeoJsonGeometry } from '../model/geo.ts'
@@ -428,6 +429,12 @@ export interface PackScenarioAuthoringItemType {
 }
 
 export interface PackScenarioAuthoringContribution {
+  /** Pack-owned configuration boundaries; shown only in selected semantic detail. */
+  readonly configuration?: {
+    readonly beforeStart: string
+    readonly liveChanges: string
+    readonly requiresNewRevision: string
+  }
   readonly configFields?: ReadonlyArray<PackScenarioAuthoringField>
   readonly itemTypes: ReadonlyArray<PackScenarioAuthoringItemType>
 }
@@ -896,6 +903,8 @@ export interface WorldPack extends WorldPackView {
   /** Owner-declared object references in a complete canonical object (not arbitrary text). */
   readonly inspectionReferences: (object: OperationalObject) => ReadonlyArray<string>
   readonly scenarioConfigSchema: z.ZodType
+  /** Exact owner operations available before a Run, including Packs with no runtime. */
+  readonly workspaceCapabilities?: ReadonlyArray<PackWorkspaceCapability>
   readonly physicalTargets?: (object: OperationalObject) => PackPhysicalTargetDescription | Promise<PackPhysicalTargetDescription>
   /**
    * Opts this Pack into Runs whose Scenario declares roles; compiling a role

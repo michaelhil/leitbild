@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { rejectCapabilityInput } from '../../simulation/capability-rejection.ts'
 import type { PackScenarioAuthoringField,WorldPack } from '../packs/protocol.ts'
 
 const pathSegmentSchema = z.union([z.string().min(1), z.number().int().nonnegative()])
@@ -78,6 +79,7 @@ const scenarioAuthoringPackSchema = z.object({
   configSchema: z.record(z.string(), z.unknown()),
   configDefaults: z.record(z.string(), z.unknown()),
   configFields: z.array(authoringFieldSchema),
+  configuration: z.object({ beforeStart: z.string().min(1), liveChanges: z.string().min(1), requiresNewRevision: z.string().min(1) }).strict().optional(),
   itemTypes: z.array(authoringItemTypeSchema),
 }).strict()
 
@@ -90,7 +92,8 @@ export const scenarioAuthoringCatalogSchema = z.object({
 
 export type ScenarioAuthoringCatalog = z.infer<typeof scenarioAuthoringCatalogSchema>
 
-export const scenarioAuthoringDetailSchema = z.enum(['catalog', 'authoring', 'editor'])
+export const scenarioAuthoringDetailSchema = z.enum(['catalog', 'authoring', 'editor', 'semantic'])
+export const scenarioAuthoringSelectionSchema = z.object({ itemTypeId: z.string().min(1).optional(), path: pathSchema.optional() }).strict()
 export type ScenarioAuthoringDetail = z.infer<typeof scenarioAuthoringDetailSchema>
 export const scenarioAuthoringDescriptionSchema = z.object({
   detail: scenarioAuthoringDetailSchema,
@@ -104,8 +107,31 @@ export const scenarioAuthoringDescriptionSchema = z.object({
 export const describeScenarioAuthoring = (
   catalog: ScenarioAuthoringCatalog,
   detail: ScenarioAuthoringDetail,
+  selection?: z.infer<typeof scenarioAuthoringSelectionSchema>,
 ): unknown => {
   if (detail === 'editor') return { detail, ...catalog }
+  if (detail === 'semantic') {
+    if (catalog.packs.length !== 1) return rejectCapabilityInput('Semantic authoring detail requires exactly one selected Pack')
+    const pack = catalog.packs[0]!
+    const item = selection?.itemTypeId === undefined ? undefined : pack.itemTypes.find(item => item.id === selection.itemTypeId)
+    if (selection?.itemTypeId !== undefined && item === undefined) return rejectCapabilityInput('Unknown authoring item type: ' + selection.itemTypeId)
+    const schema = (item?.itemSchema ?? pack.configSchema) as SchemaNode
+    const seed = item?.defaultItem ?? pack.configDefaults
+    const fields = item?.fields ?? pack.configFields
+    const at = selection?.path === undefined ? { node: schema, optional: false } : schemaAt(schema, selection.path)
+    if (selection?.path !== undefined && Object.keys(at.node).length === 0) return rejectCapabilityInput('Unknown authoring schema path: ' + selection.path.join('.'))
+    const semanticFields = fields.filter(field => selection?.path === undefined || JSON.stringify(field.path) === JSON.stringify(selection.path)).map(field => ({
+      path: field.path, label: field.label, ...(field.description === undefined ? {} : { description: field.description }), optional: field.optional,
+      ...(field.control.kind === 'select' ? { choices: field.control.options, ...(field.control.extendFromConfig === undefined ? {} : { choicesFromConfig: field.control.extendFromConfig }) } : {}),
+    }))
+    const value = selection?.path === undefined ? seed : valueAt(seed, selection.path) ?? at.node.default
+    return { detail, packs: [{ id: pack.id, title: pack.title, configuration: pack.configuration,
+      subject: item === undefined ? 'configuration' : 'item', ...(item === undefined ? {} : { itemTypeId: item.id, description: item.description, placement: item.placement }),
+      ...(selection?.path === undefined ? {} : { path: selection.path, optional: at.optional }), schema: at.node,
+      ...(value === undefined ? {} : { example: value }), fields: semanticFields,
+      ...(item === undefined || selection?.path !== undefined ? {} : { collections: item.collections.map(collection => ({ path: collection.path, label: collection.label, maxItems: collection.maxItems, example: collection.defaultItem })) }),
+    }], commands: [] }
+  }
   return {
     detail,
     packs: catalog.packs.map(pack => ({
@@ -210,13 +236,13 @@ const validateAuthoring = (pack: WorldPack): void => {
   }
 }
 
-type SchemaNode = { properties?: Record<string, SchemaNode>; items?: SchemaNode; required?: string[]; minimum?: number; maximum?: number; enum?: string[]; default?: unknown }
+type SchemaNode = { properties?: Record<string, SchemaNode>; items?: SchemaNode; prefixItems?: SchemaNode[]; required?: string[]; minimum?: number; maximum?: number; enum?: string[]; default?: unknown; description?: string }
 const schemaAt = (schema: SchemaNode, path: ReadonlyArray<string | number>): { node: SchemaNode; optional: boolean } => {
   let node = schema
   let optional = false
   for (const segment of path) {
     optional ||= typeof segment === 'string' && !(node.required ?? []).includes(segment)
-    node = (typeof segment === 'number' ? node.items : node.properties?.[segment]) ?? {}
+    node = (typeof segment === 'number' ? node.prefixItems?.[segment] ?? node.items : node.properties?.[segment]) ?? {}
   }
   return { node, optional }
 }
@@ -229,7 +255,8 @@ const describeFields = (fields: ReadonlyArray<PackScenarioAuthoringField>, seed:
     if (node.maximum !== undefined) control.max = node.maximum
   }
   if (control.kind === 'select' && node.enum) control.options = node.enum.map(value => ({ value, label: control.options.find(option => option.value === value)?.label ?? value }))
-  return { ...field, optional, control }
+  const description = field.description ?? node.description
+  return { ...field, ...(description === undefined ? {} : { description }), optional, control }
 })
 
 export const scenarioAuthoringCatalogFor = (packs: ReadonlyArray<WorldPack>): ScenarioAuthoringCatalog => {
@@ -250,6 +277,7 @@ export const scenarioAuthoringCatalogFor = (packs: ReadonlyArray<WorldPack>): Sc
     configSchema: z.toJSONSchema(pack.scenarioConfigSchema, { unrepresentable: 'any' }),
     configDefaults: pack.scenarioConfigSchema.parse({}),
     configFields: describeFields(pack.authoring?.configFields ?? [], pack.scenarioConfigSchema.parse({}) as Record<string, unknown>, z.toJSONSchema(pack.scenarioConfigSchema) as SchemaNode),
+    ...(pack.authoring?.configuration === undefined ? {} : { configuration: pack.authoring.configuration }),
     itemTypes: (pack.authoring?.itemTypes ?? []).map(itemType => ({
       ...itemType,
       itemSchema: z.toJSONSchema(pack.scenario!.itemSchemas[itemType.id]!, { io: 'input' }),

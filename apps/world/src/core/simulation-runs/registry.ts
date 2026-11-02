@@ -182,6 +182,7 @@ export const createSimulationRunRegistry = (config: {
   readonly dataDir: string
   readonly workspaceId: WorkspaceId
   readonly runtimeAdapters: ReadonlyArray<PackRuntimeAdapter>
+  readonly workspaceCapabilities?: ReadonlyArray<PackWorkspaceCapability>
   readonly scenarioRuntimeResolver: ScenarioRuntimeResolver
   readonly scenarioDefinitions: ReadonlyArray<ScenarioDefinition>
   readonly compileScenarioDefinition: (source: unknown) => Promise<CompiledScenario>
@@ -1308,7 +1309,7 @@ export const createSimulationRunRegistry = (config: {
       })),
     },
     installedCapabilities,
-    workspaceCapabilities: config.runtimeAdapters.flatMap(adapter => adapter.workspaceCapabilities ?? []),
+    workspaceCapabilities: [...config.workspaceCapabilities ?? [], ...config.runtimeAdapters.flatMap(adapter => adapter.workspaceCapabilities ?? [])],
     create,
     copy: copyRun,
     isAdvancing: id => {

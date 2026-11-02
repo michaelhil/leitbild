@@ -71,6 +71,11 @@ export const weatherPack: WorldPack = {
   }),
   scenarioConfigSchema: weatherPackConfigSchema,
   authoring: {
+    configuration: {
+      beforeStart: "Configure background atmosphere, initial surface and H3 gridResolution before start. Fractions are 0–1 heuristic intensities; windDirectionDeg is meteorological FROM, clockwise from north. Areas use metre radii and [longitude, latitude] centres. Keyframes are simulation-second endpoints measured from area creation, with interpolation and omitted-field inheritance described in the owning schema.",
+      liveChanges: "world.weather.create/update/set-enabled change areas or probes; world.weather.intervene-ground records an explicit ground intervention. Updating an area preserves its creation-time keyframe origin. Reading forecasts does not import external weather into this prescribed field.",
+      requiresNewRevision: "Changing background atmosphere, initial surface or gridResolution requires a new Scenario Revision and Run. Mesh replacement during a Run is unsupported; restored ground state is not reseeded from the Scenario.",
+    },
     configFields: [
       number(['gridResolution'], 'Ground H3 resolution (restart required)', 8, 0, 11),
       ...atmosphereFields,

@@ -64,7 +64,7 @@ import {
   simulationRunIdSchema,
   type OperationalObject
 } from '../model/index.ts'
-import { describeScenarioAuthoring, scenarioAuthoringCatalogSchema, scenarioAuthoringDescriptionSchema, scenarioAuthoringDetailSchema } from '../scenarios/authoring.ts'
+import { describeScenarioAuthoring, scenarioAuthoringCatalogSchema, scenarioAuthoringDescriptionSchema, scenarioAuthoringDetailSchema, scenarioAuthoringSelectionSchema } from '../scenarios/authoring.ts'
 import { scenarioDefinitionSchema } from '../scenarios/definition.ts'
 import { scenarioRevisionIdSchema } from '../scenarios/library.ts'
 import { CommandIdempotencyConflictError } from '../simulation-runs/command-idempotency.ts'
@@ -180,7 +180,11 @@ const emptyInputSchema = z.object({}).strict()
 const scenarioAuthoringDescribeInputSchema = z.object({
   packIds: z.array(z.string().trim().min(1).max(128)).min(1).optional(),
   detail: scenarioAuthoringDetailSchema.default('catalog'),
-}).strict()
+  selection: scenarioAuthoringSelectionSchema.optional(),
+}).strict().superRefine((input, context) => {
+  if (input.detail === 'semantic' && input.packIds?.length !== 1) context.addIssue({ code: 'custom', path: ['packIds'], message: 'Semantic detail requires exactly one selected Pack' })
+  if (input.selection !== undefined && input.detail !== 'semantic') context.addIssue({ code: 'custom', path: ['selection'], message: 'Selection applies only to semantic detail' })
+})
 const runScenarioSourceSchema = z.object({ source: scenarioDefinitionSchema, definition: workspaceDefinitionRevisionReferenceSchema }).strict()
 const readObjectInputSchema = z.object({
   objectId: z.string().trim().min(1).max(128),
@@ -895,7 +899,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       kind: 'query',
       scope: { kind: 'workspace' },
       title: 'Describe Scenario Authoring',
-      description: 'Discovers World Pack scenario inputs. The default catalog is compact; request authoring for machine schemas of selected Packs or editor for UI form metadata.',
+      description: 'Discovers World Pack scenario inputs. Default catalog is compact; authoring returns machine schemas of selected Packs; editor returns form metadata. semantic requires exactly one packId and returns owner configuration/lifecycle guidance and one selected item or configuration schema; optional selection.itemTypeId and selection.path narrow to an item or field. Includes defaults/examples, schema units/limits and compatible choices without form layout. Preserves advanced fields through the Scenario source JSON.',
       risk: 'read',
       idempotent: true,
       inputSchema: z.toJSONSchema(scenarioAuthoringDescribeInputSchema, { io: 'input' }),
@@ -910,7 +914,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
         packs: registry.scenarioAuthoringCatalog.packs.filter(pack => requested.has(pack.id)),
         commands: registry.scenarioAuthoringCatalog.commands.filter(command => requested.has(command.packId)),
       })
-      return json({ result: scenarioAuthoringDescriptionSchema.parse(describeScenarioAuthoring(catalog, input.detail)) })
+      return json({ result: scenarioAuthoringDescriptionSchema.parse(describeScenarioAuthoring(catalog, input.detail, input.selection)) })
     },
   },
   {

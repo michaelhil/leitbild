@@ -10,6 +10,11 @@ export const dronePack: WorldPack = {
   ...dronePackView,
   scenarioConfigSchema: dronePackConfigSchema,
   authoring: {
+    configuration: {
+      beforeStart: "Choose built-in or Pack-configured models by modelId. Custom models extend or override matching built-in ids; inspect the models schema for limits and sensor/control choices. altitudeM is metres, headingDeg is degrees clockwise from north. Runtime timing fields use milliseconds; smaller values increase mechanics/projection/transport work.",
+      liveChanges: "Exact world.drone.* commands control vehicles and missions. configure-vehicle-model replaces one vehicle's validated model definition in that Run; discover its complete input schema and command constraints. Sensor contacts expose hasMore/nextAfter and read current state on each page.",
+      requiresNewRevision: "Pack limits and step/projection/motion timing belong to the Scenario Pack Selection and require a new Scenario Revision and Run. Starting positions and initial model selections do not hot-rewrite existing vehicles.",
+    },
     configFields: [
       { path: ['maxDrones'], label: 'Maximum drones', control: { kind: 'number', step: 1 } },
     ],

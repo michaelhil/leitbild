@@ -13,8 +13,8 @@ const availableLoopIds = ['A', 'B', 'C', 'D', 'E', 'F'] as const
 type LoopId = typeof availableLoopIds[number]
 
 export const pwrReferenceParametersSchema = z.object({
-  loopCount: z.number().int().min(2).max(availableLoopIds.length),
-  title: z.string().min(1).optional(),
+  loopCount: z.number().int().min(2).max(availableLoopIds.length).describe('Number of primary coolant loops (dimensionless integer, 2–6). Required; the Scenario Builder example chooses 4. Changes graph topology before start; changing an existing Run requires a new Scenario Revision and Run.'),
+  title: z.string().min(1).optional().describe('Optional model title. Does not select another model or change its physics.'),
 }).strict()
 
 const loopComponentIdPattern = /^(?:sg|rcp|feedwaterControlValve|auxFeedwaterValve|mainSteamIsolationValve|steamGeneratorReliefValve|mainSteamSafetyValve|auxFeedwaterTurbineSteamValve|safetyAccumulator|deltaTChannel)([A-F])$/u

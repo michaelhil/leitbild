@@ -109,6 +109,8 @@ const entries: ReadonlyArray<CatalogEntry> = [
   { manifest: shutdownCoolingCampusManifest, load: async () => ({ source: (await import('./pwr-campus-shutdown-cooling.source.json')).default, bindings: (await import('./pwr-campus-shutdown-cooling.bindings.json')).default, coverage: (await import('./pwr-campus-shutdown-cooling.coverage.json')).default }) },
 ]
 const catalog = new Map(entries.map(entry => [canonicalPhysicalJson(entry.manifest.design), entry]))
+/** Retained admission metadata only; never loads Design sources or compiles geometry. */
+export const physicalDesignManifests = (): ReadonlyArray<PhysicalCatalogManifest> => entries.map(entry => structuredClone(entry.manifest))
 if (catalog.size !== entries.length) throw new Error('Duplicate exact physical Design Revision')
 const loaded = new Map<CatalogEntry, Promise<ResolvedPhysicalDesign>>()
 const load = async (entry: CatalogEntry): Promise<ResolvedPhysicalDesign> => {

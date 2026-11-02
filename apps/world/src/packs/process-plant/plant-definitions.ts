@@ -109,7 +109,7 @@ export const processPlantDefinitionCatalog = (): ProcessPlantDefinitionCatalogVi
   models: [{
     id: processPlantPwrReferenceModelRef,
     title: 'Reference pressurized-water reactor',
-    description: 'Validated two- through six-loop PWR training model with coupled primary, secondary, safety, containment, and electrical systems.',
+    description: 'Simplified two- through six-loop PWR training model with coupled primary, secondary, safety, containment, and electrical systems. Regression-tested model behavior is not qualification as a plant simulator.',
     parameters: z.toJSONSchema(pwrReferenceParametersSchema),
   }],
   operatingPoints: [{
