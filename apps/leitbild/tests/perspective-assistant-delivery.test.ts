@@ -9,7 +9,7 @@ const fixture = () => {
   const room = workspaceResourceReferenceSchema.parse({ workspaceId, moduleId: 'agents', type: 'agents.room', id: 'private-blue' })
   const binding = { perspective, room, admissionGeneration: crypto.randomUUID(), actualAgentId: 'actual-blue', runtimeGeneration: crypto.randomUUID(), templateId: 'template', templateRevision: 'revision' }
   const admission = { resource: perspective, status: 'active' as const, revision: 1, admissionGeneration: binding.admissionGeneration, runIncarnation: crypto.randomUUID(), roleSetDigest: 'a'.repeat(64), binding, createdAt: at, updatedAt: at }
-  const offer: PerspectiveAssistantOffer = { type: 'leitbild:perspective-assistant-offer', requestId: crypto.randomUUID(), admission, roleLabels: ['Blue'], recipient: { subject: perspective, clientId: 'client', documentId: 'world-document', leaseId: 'lease', expiresAt: new Date(Date.now() + 60_000).toISOString() } }
+  const offer: PerspectiveAssistantOffer = { type: 'leitbild:perspective-assistant-offer', worldDocumentId: crypto.randomUUID(), requestId: crypto.randomUUID(), admission, roleLabels: ['Blue'], recipient: { subject: perspective, clientId: 'client', documentId: 'world-document', leaseId: 'lease', expiresAt: new Date(Date.now() + 60_000).toISOString() } }
   const state = { now: Date.now(), requests: [] as string[], world: [] as unknown[], agents: [] as unknown[], hold: null as (() => Promise<void>) | null, expire: () => {} }
   const token = crypto.randomUUID()
   const delivery = createPerspectiveAssistantDelivery({ workspaceId: () => workspaceId, available: () => true, uuid: () => crypto.randomUUID(), now: () => state.now,
@@ -17,6 +17,8 @@ const fixture = () => {
     timer: (_ms, action) => { state.expire = action; return () => {} },
     request: async (path, body) => { state.requests.push(path); const hold = state.hold; state.hold = null; await hold?.(); const input = body as { agentsDocumentId: string }; return { token, room, perspective, documentId: input.agentsDocumentId, expiresAt: new Date(state.now + 30_000).toISOString() } },
   })
+  delivery.availabilityChanged()
+  offer.worldDocumentId = (state.world[0] as { worldDocumentId: string }).worldDocumentId
   return { delivery, state, offer }
 }
 
@@ -76,4 +78,19 @@ test('loss of World renewal retires the private document at lease expiry', async
   expect(f.delivery.state().problem).toContain('expired')
   f.delivery.retryView(); await settle()
   expect(f.delivery.state().lease!.documentId).not.toBe(priorDocument)
+})
+
+test('queued offers from an unloaded World document cannot reopen its private view', async () => {
+  const f = fixture(); f.delivery.fromWorld(f.offer); await settle()
+  expect(f.state.requests).toHaveLength(1)
+  f.delivery.worldUnloaded()
+  f.delivery.availabilityChanged()
+  f.delivery.fromWorld(f.offer); await settle()
+  expect(f.delivery.state().offer).toBeNull()
+  expect(f.delivery.state().frameUrl).toBeNull()
+  expect(f.state.requests).toHaveLength(1)
+  const handshake = f.state.world.at(-1) as { worldDocumentId: string }
+  expect(handshake.worldDocumentId).not.toBe(f.offer.worldDocumentId)
+  f.delivery.fromWorld({ ...f.offer, worldDocumentId: handshake.worldDocumentId }); await settle()
+  expect(f.state.requests).toHaveLength(2)
 })

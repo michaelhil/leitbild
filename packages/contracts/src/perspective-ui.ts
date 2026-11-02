@@ -24,14 +24,15 @@ export const perspectiveViewReadyMessageSchema = z.object({
 })
 
 export const perspectiveAssistantAvailabilityMessageSchema = z.object({
-  type: z.literal('leitbild:perspective-assistant-availability'), available: z.boolean(),
+  type: z.literal('leitbild:perspective-assistant-availability'), worldDocumentId: documentId, available: z.boolean(),
 }).strict()
 export const perspectiveAssistantRequestMessageSchema = z.object({
-  type: z.literal('leitbild:perspective-assistant-request'), requestId: documentId,
+  type: z.literal('leitbild:perspective-assistant-request'), worldDocumentId: documentId, requestId: documentId,
 }).strict()
 /** Only the currently shown World document prepares its held roles. Host does not select a role. */
 export const perspectiveAssistantOfferMessageSchema = z.object({
   type: z.literal('leitbild:perspective-assistant-offer'),
+  worldDocumentId: documentId,
   requestId: documentId,
   admission: perspectiveAdmissionSchema.nullable(),
   recipient: perspectivePresentationRecipientSchema.nullable(),
@@ -47,7 +48,7 @@ export const perspectiveAssistantOfferMessageSchema = z.object({
 export type PerspectiveAssistantOffer = z.infer<typeof perspectiveAssistantOfferMessageSchema>
 
 export const perspectiveAssistantResultMessageSchema = z.object({
-  type: z.literal('leitbild:perspective-assistant-result'), requestId: documentId,
+  type: z.literal('leitbild:perspective-assistant-result'), worldDocumentId: documentId, requestId: documentId,
   admission: perspectiveAdmissionSchema.optional(),
   problem: z.object({ code: z.string().min(1).max(128), message: z.string().min(1).max(500) }).strict().optional(),
 }).strict().refine(value => (value.admission !== undefined) !== (value.problem !== undefined), 'A setup result contains an admission or a problem')

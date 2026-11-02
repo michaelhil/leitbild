@@ -32,7 +32,7 @@ export const createPerspectiveAssistantDelivery = (config: {
   now: () => number
   timer: (ms: number, action: () => void) => () => void
 }) => {
-  let screen = empty(), generation = 0, controller = new AbortController(), documentId = config.uuid(), closed = false
+  let screen = empty(), generation = 0, controller = new AbortController(), documentId = config.uuid(), worldDocumentId = config.uuid(), closed = false
   let blocked = false, opening = false
   let stopExpiry = (): void => {}
   const update = (patch: Partial<PerspectiveDeliveryScreen>): void => { screen = { ...screen, ...patch }; if (!closed) config.changed(screen) }
@@ -76,14 +76,14 @@ export const createPerspectiveAssistantDelivery = (config: {
   }
   return {
     state: () => screen,
-    request: (): void => { if (config.available()) config.postWorld({ type: 'leitbild:perspective-assistant-request', requestId: config.uuid() }) },
+    request: (): void => { if (config.available()) config.postWorld({ type: 'leitbild:perspective-assistant-request', worldDocumentId, requestId: config.uuid() }) },
     availabilityChanged: (): void => {
       if (!config.available()) reset()
-      config.postWorld({ type: 'leitbild:perspective-assistant-availability', available: config.available() })
+      config.postWorld({ type: 'leitbild:perspective-assistant-availability', worldDocumentId, available: config.available() })
     },
     fromWorld: (data: unknown): void => {
       const parsed = perspectiveAssistantOfferMessageSchema.safeParse(data)
-      if (!parsed.success || !config.available()) return
+      if (!parsed.success || !config.available() || parsed.data.worldDocumentId !== worldDocumentId) return
       const offer = parsed.data
       if (offer.admission && offer.admission.resource.workspaceId !== config.workspaceId()) return
       if (!screen.offer || offerKey(screen.offer) !== offerKey(offer)) reset()
@@ -108,12 +108,12 @@ export const createPerspectiveAssistantDelivery = (config: {
         if (closed || token !== generation || controller.signal.aborted) return
         if (result.admission.resource.id !== offer.admission.resource.id || result.admission.admissionGeneration !== offer.admission.admissionGeneration) throw new Error('The setup response belongs to another Perspective')
         update({ choosing: false })
-        config.postWorld({ type: 'leitbild:perspective-assistant-result', requestId: offer.requestId, admission: result.admission })
+        config.postWorld({ type: 'leitbild:perspective-assistant-result', worldDocumentId, requestId: offer.requestId, admission: result.admission })
       } catch (error) {
         if (closed || token !== generation || controller.signal.aborted) return
         const message = error instanceof Error ? error.message : String(error)
         update({ problem: message })
-        config.postWorld({ type: 'leitbild:perspective-assistant-result', requestId: offer.requestId, problem: { code: 'perspective_setup_unconfirmed', message: message.slice(0, 500) } })
+        config.postWorld({ type: 'leitbild:perspective-assistant-result', worldDocumentId, requestId: offer.requestId, problem: { code: 'perspective_setup_unconfirmed', message: message.slice(0, 500) } })
       } finally { if (token === generation) update({ busy: false }) }
     },
     fromAgents: (data: unknown): boolean => {
@@ -125,7 +125,7 @@ export const createPerspectiveAssistantDelivery = (config: {
     },
     agentsLoaded: (): void => { update({ ready: false }); if (screen.lease) config.postAgents({ type: 'leitbild:perspective-view', lease: screen.lease }) },
     retryView: (): void => { blocked = false; if (!screen.frameUrl) documentId = config.uuid(); void openView() },
-    worldUnloaded: reset,
+    worldUnloaded: (): void => { worldDocumentId = config.uuid(); reset() },
     dispose: (): void => { closed = true; reset() },
   }
 }
