@@ -5,6 +5,10 @@
   import { initialRunViewPreferences, readRunViewPreferences, runViewPreferencesKey, writeRunViewPreferences, type RunViewPreferences } from '../run-view-preferences.ts'
   import RunViewControls from '../RunViewControls.svelte'
   import GuidePanel from '../GuidePanel.svelte'
+  import PerspectiveAssistantPanel from '../PerspectiveAssistantPanel.svelte'
+  import { createPerspectiveAssistantSession, type PerspectiveAssistantSession, type PerspectiveAssistantScreen } from '../perspective-assistant-session.ts'
+  import { createPerspectiveOwnerClient } from '../perspective-client.ts'
+  import { perspectiveAssistantAvailabilityMessageSchema, perspectiveAssistantRequestMessageSchema } from '@leitbild/contracts'
   import { createGuidanceSession, type GuidanceSession, type GuidanceScreen, type PresentationApplication } from '../guidance-session.ts'
   import type { PresentationRequest } from '@leitbild/contracts'
   import { fitObjectsTarget, homeMapTarget, type RunViewChoice } from '../run-view-actions.ts'
@@ -241,6 +245,11 @@
   let displayWindowOpen = $state(false)
   // Whether the Host offers the Run's Assistant room on this page (`run-assistant-messages.ts`).
   let runAssistantOffered = $state(false)
+  let perspectiveAvailability: ReturnType<typeof perspectiveAssistantAvailabilityMessageSchema.parse> | null = null
+  let perspectiveAssistantSession: PerspectiveAssistantSession | null = $state.raw(null)
+  let perspectiveAssistantScreen: PerspectiveAssistantScreen = $state.raw({ available: false, phase: 'idle', requestId: null, admission: null, attention: { recipient: null, suggestion: null, cue: null, error: null }, problem: null })
+  const perspectiveRoleLabels = $derived.by(() => { const declaration = runRoles; return declaration ? (heldRoleIds ?? []).map(id => roleSetText(declaration, [id])) : [] })
+  const perspectiveScopeLabel = $derived(perspectiveAssistantScreen.available || perspectiveAssistantScreen.admission ? ({ idle: 'Not set up', preparing: 'Preparing', pending: 'Setup pending', connecting: 'Connecting view', connected: 'View connected', disconnected: 'Disconnected', revoked: 'Ended' } as const)[perspectiveAssistantScreen.phase] : null)
   let guidanceSession: GuidanceSession | null = $state.raw(null)
   let guidanceScreen: GuidanceScreen = $state.raw({ recipient: null, guide: null, suggestion: null, cue: null, busy: false, error: null, restored: false, explored: false })
   let viewControls: { reveal: (which: 'view' | 'guide', focus?: boolean) => Promise<void>; dismiss: () => void } | null = $state(null)
@@ -578,7 +587,7 @@
     try { writeRunViewPreferences(sessionStorage, key, { guidance: guidancePreferences, alarms: alarmStripVisible, layout: layoutControlsVisible, panels: surfacePanelOpen }) } catch { /* A denied storage getter must not prevent local presentation. */ }
   })
   const actOnView = (id: string): void => {
-    if (['home', 'fit-selected', 'fit-visible', 'north'].includes(id)) guidanceSession?.manualCamera()
+    if (['home', 'fit-selected', 'fit-visible', 'north'].includes(id)) { guidanceSession?.manualCamera(); perspectiveAssistantSession?.manualCamera() }
     if (id === 'home' && mapConfig) focusMapTarget(homeMapTarget(mapConfig))
     else if (id === 'fit-selected' && fitSelectedTarget) focusMapTarget(fitSelectedTarget)
     else if (id === 'fit-visible') {
@@ -611,7 +620,7 @@
     mapLayerGroupVisibility = Object.fromEntries(activeMapLayerGroups.map(layer => [layer.id, layer.defaultVisible]))
     categoryMapVisibility = {}
     weatherLayerVisible = true
-    if (mapConfig && mapReady) { guidanceSession?.manualCamera(); focusMapTarget(homeMapTarget(mapConfig)) }
+    if (mapConfig && mapReady) { guidanceSession?.manualCamera(); perspectiveAssistantSession?.manualCamera(); focusMapTarget(homeMapTarget(mapConfig)) }
   }
   const setGuidanceMode = (mode: RunViewPreferences['guidance']['mode']): void => {
     guidancePreferences = { ...guidancePreferences, mode, ...(mode === 'running' ? { dismissedId: null } : {}) }
@@ -645,8 +654,9 @@
     const current = (): void => {
       signal.throwIfAborted()
       if (Date.parse(request.expiresAt) <= Date.now()) throw new Error('This presentation request expired before the target became ready')
-      const recipient = guidanceScreen.recipient
-      if (!recipient || recipient.leaseId !== request.recipient.leaseId || recipient.documentId !== request.recipient.documentId) throw new Error('This presentation request no longer owns the current World document')
+      const recipients = [guidanceScreen.recipient, perspectiveAssistantScreen.attention.recipient]
+      const exactSubject = (subject: PresentationRequest['target']['subject']): boolean => subject.workspaceId === request.recipient.subject.workspaceId && subject.moduleId === request.recipient.subject.moduleId && subject.type === request.recipient.subject.type && subject.id === request.recipient.subject.id
+      if (!exactSubject(request.target.subject) || !recipients.some(recipient => recipient && exactSubject(recipient.subject) && recipient.leaseId === request.recipient.leaseId && recipient.documentId === request.recipient.documentId)) throw new Error('This presentation request no longer owns the current World document')
     }
     current()
     const target = request.target, action = request.action
@@ -656,7 +666,7 @@
       await viewControls?.reveal('guide', false)
       await tick()
       current()
-      const cue = document.querySelector<HTMLElement>('[aria-label="Current presentation cue"]')
+      const cue = document.querySelector<HTMLElement>(request.recipient.subject.type === 'world.perspective' ? '[aria-label="Perspective presentation cue"]' : '[aria-label="Current presentation cue"]')
       if (!cue) throw new Error('The explanation card did not mount')
       cue.scrollIntoView({ block: 'nearest', behavior: 'instant' })
       return { status: 'applied' }
@@ -725,7 +735,7 @@
     let priorGuideStatus: string | undefined
     const session = untrack(() => createGuidanceSession({
       runId, perspective: roles,
-      apply: applyPresentation, clear: clearPresentation,
+      apply: (request, signal, cameraAllowed) => { perspectiveAssistantSession?.clearVisualCue(); return applyPresentation(request, signal, cameraAllowed) }, clear: clearPresentation,
       changed: screen => {
         const status = screen.guide?.status
         if (status !== priorGuideStatus) {
@@ -750,10 +760,38 @@
     }
   })
 
+  $effect(() => {
+    const runId = simulationRunId, roles = heldRoleIds, ready = richOperationalUiReady && scenarioDefinition !== null && runRoles !== null
+    if (!runId || !ready || !roles || roles.length === 0) return
+    const workspaceId = activeWorkspaceId(), roleIds = [...roles].sort()
+    const session = untrack(() => createPerspectiveAssistantSession({
+      key: `leitbild.perspective-assistant:${workspaceId}:${runId}:${JSON.stringify(roleIds)}`,
+      roleLabels: perspectiveRoleLabels,
+      owner: createPerspectiveOwnerClient({ workspaceId, runId, roleIds }),
+      host: { origin: location.origin, parent: window.parent }, initialAvailability: perspectiveAvailability,
+      post: message => window.parent.postMessage(message, location.origin),
+      changed: screen => {
+        const previous = perspectiveAssistantScreen.phase
+        perspectiveAssistantScreen = screen
+        if (screen.phase === 'preparing' && previous !== 'preparing') void viewControls?.reveal('guide', false)
+      },
+      apply: (request, signal, cameraAllowed) => { guidanceSession?.clearVisualCue(); return applyPresentation(request, signal, cameraAllowed) },
+      clear: clearPresentation,
+      cleanupProblem: () => { status = 'The previous Assistant view was detached, but ending its scope could not be confirmed.' },
+      storage: { getItem: key => sessionStorage.getItem(key), setItem: (key, value) => sessionStorage.setItem(key, value), removeItem: key => sessionStorage.removeItem(key) },
+    }))
+    perspectiveAssistantSession = session
+    return () => {
+      session.stop()
+      perspectiveAssistantSession = null
+      perspectiveAssistantScreen = { available: false, phase: 'idle', requestId: null, admission: null, attention: { recipient: null, suggestion: null, cue: null, error: null }, problem: null }
+    }
+  })
+
   let previousPresentationFilter: string | null = null
   $effect(() => {
     const key = JSON.stringify(seenRoleIds)
-    if (previousPresentationFilter !== null && previousPresentationFilter !== key) untrack(() => guidanceSession?.invalidateSurface())
+    if (previousPresentationFilter !== null && previousPresentationFilter !== key) untrack(() => { guidanceSession?.invalidateSurface(); perspectiveAssistantSession?.clearVisualCue() })
     previousPresentationFilter = key
   })
 
@@ -1779,6 +1817,7 @@
   const adoptPerspective = (perspective: RealtimePerspective): void => {
     if (heldRoleIds !== null && !sameRoleSet(heldRoleIds, perspective.roleIds)) {
       guidanceSession?.forgetAttemptReference()
+      perspectiveAssistantSession?.forgetForRoleChange()
       // A same-id public object does not make an earlier role's rich inspection safe to retain.
       displayWindowReturnFocus = null
       closeDisplayWindow()
@@ -2172,7 +2211,19 @@
       runAssistantOffered = offer.available
     }
     const receivePresentationMessage = (event: MessageEvent): void => guidanceSession?.receive(event)
+    const receivePerspectiveAssistantMessage = (event: MessageEvent): void => {
+      if (event.origin !== location.origin || event.source !== window.parent) return
+      const availability = perspectiveAssistantAvailabilityMessageSchema.safeParse(event.data)
+      if (availability.success) {
+        if (perspectiveAvailability === null || perspectiveAvailability.worldDocumentId === availability.data.worldDocumentId) perspectiveAvailability = availability.data
+        else perspectiveAvailability = { ...perspectiveAvailability, available: false }
+      }
+      const request = perspectiveAssistantRequestMessageSchema.safeParse(event.data)
+      if (request.success && !perspectiveAssistantSession) status = 'Choose an exercise role and wait for the World view before opening its Assistant.'
+      perspectiveAssistantSession?.receive(event)
+    }
     window.addEventListener('message', receivePresentationMessage)
+    window.addEventListener('message', receivePerspectiveAssistantMessage)
     window.addEventListener('message', receiveDisplayWindowMessage)
     window.addEventListener('message', receiveRunAssistantOffer)
     window.parent.postMessage(displayWindowReadyMessage(), location.origin)
@@ -2184,6 +2235,7 @@
     return () => {
       viewPreferencesKey = null
       window.removeEventListener('message', receivePresentationMessage)
+      window.removeEventListener('message', receivePerspectiveAssistantMessage)
       window.removeEventListener('message', receiveDisplayWindowMessage)
       window.removeEventListener('message', receiveRunAssistantOffer)
       cleanupInternalDiagnosticsGlobal()
@@ -2373,7 +2425,7 @@
           onMapReady={handleMapReady}
           onMapView={view => panelMapView = view}
           onFocusResult={(revision, status) => presentationMapWaiters.get(revision)?.({ status, ...(status === 'superseded' ? { reason: 'Your camera interaction took priority' } : {}) })}
-          onCameraGesture={() => guidanceSession?.manualCamera()}
+          onCameraGesture={() => { guidanceSession?.manualCamera(); perspectiveAssistantSession?.manualCamera() }}
           onMapError={handleMapError}
           onMapDiagnostic={handleMapDiagnostic}
           {simulationRunId}
@@ -2448,10 +2500,14 @@
       <RunViewControls bind:this={viewControls} camera={viewCamera} layers={viewLayers} panels={viewPanels} act={actOnView} toggle={setViewChoice}
         reset={resetLocalView} resetDisabledReason={viewResetDisabledReason} alarms={viewAlarmCount} alarmsVisible={alarmStripVisible} showAlarms={visible => alarmStripVisible = visible}
         guidance={{ available: Boolean(scenarioState?.guidance), visible: guidanceOverlayVisible, unread: guidanceUnread, mode: guidancePreferences.mode, instruction: scenarioState?.guidance ?? null }} setGuidance={mode => { timedCardRequested = mode === 'running'; setGuidanceMode(mode) }}
-        clear={mapCameraPadding} ready={mapReady} raised={displayWindowOpen && (Boolean(scenarioState?.guidance) && guidancePreferences.mode !== 'stopped' || Boolean(guidanceScreen.guide) || Boolean(guidanceScreen.suggestion) || Boolean(guidanceScreen.cue))}
-        hasGuide={Boolean(guidanceScreen.guide)} guideNotice={Boolean(guidanceScreen.suggestion) || Boolean(guidanceScreen.cue) || Boolean(guidanceScreen.guide && !guidanceScreen.guide.attemptId && !guidanceScreen.explored)}
+        clear={mapCameraPadding} ready={mapReady} raised={displayWindowOpen && (Boolean(scenarioState?.guidance) && guidancePreferences.mode !== 'stopped' || Boolean(guidanceScreen.guide) || Boolean(guidanceScreen.suggestion) || Boolean(guidanceScreen.cue) || perspectiveScopeLabel !== null)}
+        scopeLabel={perspectiveScopeLabel}
+        hasGuide={Boolean(guidanceScreen.guide) || perspectiveScopeLabel !== null} guideNotice={Boolean(guidanceScreen.suggestion) || Boolean(guidanceScreen.cue) || Boolean(perspectiveAssistantScreen.attention.suggestion) || Boolean(guidanceScreen.guide && !guidanceScreen.guide.attemptId && !guidanceScreen.explored)}
         guideOpenKey={guidanceScreen.guide && !guidanceScreen.guide.attemptId && !guidanceScreen.explored ? guidanceScreen.guide.title : null}>
-        {#snippet guideContent()}<GuidePanel screen={guidanceScreen} session={guidanceSession} explore={() => { guidanceSession?.explore(); viewControls?.dismiss() }} />{/snippet}
+        {#snippet guideContent()}
+          {#if perspectiveScopeLabel !== null}<PerspectiveAssistantPanel screen={perspectiveAssistantScreen} session={perspectiveAssistantSession} roleLabels={perspectiveRoleLabels} />{/if}
+          <GuidePanel screen={guidanceScreen} session={guidanceSession} explore={() => { guidanceSession?.explore(); viewControls?.dismiss() }} />
+        {/snippet}
       </RunViewControls>
       {#if scenarioState?.timeline?.executions?.some(cue => cue.status !== 'complete')}
         <div class="timeline-outcome" role="status">Scenario cue actions are incomplete or uncertain. {scenarioState.timeline.executions.filter(cue => cue.status !== 'complete').map(cue => `${cue.cueId}: ${cue.status}; ${cue.actions.filter(action => action === 'accepted').length}/${cue.actions.length} accepted`).join(' · ')}</div>

@@ -46,6 +46,8 @@ test('a refused Next preserves an offered prompt link; only successful progressi
     expect(messages.some(message => message.type === 'leitbild:presentation-compose')).toBe(true)
     await session.action('next')
     expect(screen?.error).toBe('No completed response')
+    session.clearVisualCue()
+    expect(screen?.cue).toBeNull()
     expect(messages.filter(message => message.type === 'leitbild:presentation-clear')).toHaveLength(0)
     session.receive({ origin: 'http://world.test', source: parent, data: { type: 'leitbild:presentation-evidence', recipient, room: { ...subject, moduleId: 'agents', type: 'agents.room', id: 'room-a' }, requestId: 'request-prompt', messageId: 'actual-person-message' } } as MessageEvent)
     for (let n = 0; n < 20 && !calls.some(call => call.path.endsWith('/guide/prompt')); n++) await Bun.sleep(1)

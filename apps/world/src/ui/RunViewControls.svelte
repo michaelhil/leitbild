@@ -26,11 +26,14 @@
     hasGuide?: boolean
     guideNotice?: boolean
     guideOpenKey?: string | null
+    scopeLabel?: string | null
   }
-  let { camera, layers, panels, act, toggle, reset, resetDisabledReason, alarms, alarmsVisible, showAlarms, guidance, setGuidance, clear, ready, raised, guideContent, hasGuide = false, guideNotice = false, guideOpenKey = null }: Props = $props()
+  let { camera, layers, panels, act, toggle, reset, resetDisabledReason, alarms, alarmsVisible, showAlarms, guidance, setGuidance, clear, ready, raised, guideContent, hasGuide = false, guideNotice = false, guideOpenKey = null, scopeLabel = null }: Props = $props()
   let root = $state<HTMLDivElement | null>(null)
   let viewTrigger = $state<HTMLButtonElement | null>(null)
   let guideTrigger = $state<HTMLButtonElement | null>(null)
+  let scopeTrigger = $state<HTMLButtonElement | null>(null)
+  let disclosureTrigger: HTMLElement | null = null
   let sheet = $state<HTMLElement | null>(null)
   let open = $state<'view' | 'guide' | null>(null)
   let group = $state<'camera' | 'layers' | 'panels'>('camera')
@@ -40,13 +43,15 @@
   $effect(() => { if (guideOpenKey && guideOpenKey !== openedGuideKey) { openedGuideKey = guideOpenKey; void disclose('guide') } })
 
   const close = (returnFocus = false): void => {
-    const trigger = open === 'guide' ? guideTrigger : viewTrigger
+    const trigger = disclosureTrigger ?? (open === 'guide' ? guideTrigger : viewTrigger)
     open = null
+    disclosureTrigger = null
     if (returnFocus) trigger?.focus({ preventScroll: true })
   }
   export const dismiss = (): void => close(true)
   export const reveal = async (which: 'view' | 'guide', focus = true): Promise<void> => { if (open !== which) await disclose(which, focus) }
-  const disclose = async (which: 'view' | 'guide', focus = true): Promise<void> => {
+  const disclose = async (which: 'view' | 'guide', focus = true, trigger?: HTMLElement | null): Promise<void> => {
+    disclosureTrigger = trigger ?? (which === 'guide' ? guideTrigger : viewTrigger)
     if (open === which) { close(true); return }
     open = which
     await tick()
@@ -168,6 +173,7 @@
     <button id="run-view-trigger" bind:this={viewTrigger} type="button" aria-label="View" aria-expanded={open === 'view'} aria-controls={open === 'view' ? 'run-view-sheet' : undefined} onclick={() => void disclose('view')}>View <span aria-hidden="true">{open === 'view' ? '⌄' : '⌃'}</span></button>
     <button id="run-alarms-trigger" type="button" aria-label={`${alarms} unacknowledged ${alarms === 1 ? 'alarm' : 'alarms'}; ${alarmsVisible ? 'hide' : 'show'} alarm strip`} aria-pressed={alarmsVisible} onclick={() => showAlarms(!alarmsVisible)}>Alarms <strong>{alarms}</strong></button>
     <button id="run-guide-trigger" bind:this={guideTrigger} type="button" aria-label={`Guide${guidance.unread || guideNotice ? ': new instruction' : ''}${guidance.mode !== 'running' ? `; ${guidance.mode}` : ''}`} aria-expanded={open === 'guide'} aria-controls={open === 'guide' ? 'run-guide-options' : undefined} onclick={() => void disclose('guide')}>Guide{#if guidance.unread || guideNotice}<span class="new">New</span>{:else if guidance.mode !== 'running'}<small>{guidance.mode}</small>{/if}</button>
+    {#if scopeLabel !== null}<button id="run-assistant-scope-trigger" bind:this={scopeTrigger} type="button" aria-label={`Exercise Assistant scope: ${scopeLabel}; inspect only`} aria-expanded={open === 'guide'} aria-controls={open === 'guide' ? 'run-guide-options' : undefined} onclick={() => void disclose('guide', true, scopeTrigger)}>Assistant <small>{scopeLabel}</small></button>{/if}
   </nav>
 </div>
 
