@@ -1,5 +1,6 @@
 import { z } from 'zod'
-import { workspaceResourceReferenceSchema } from './resources.ts'
+import { moduleCapabilityDescriptorSchema, moduleResourceDescriptorSchema, workspaceResourceReferenceSchema } from './resources.ts'
+import { presentationRecipientSchema } from './presentation.ts'
 
 const identity = z.string().min(1).max(256)
 const generation = z.string().uuid()
@@ -38,12 +39,20 @@ export const perspectiveAdmissionSchema = z.object({
   createdAt: stamp,
   updatedAt: stamp,
   revokedReason: z.string().min(1).max(500).optional(),
+  // Derived on a holder's read, never a replacement for World lifecycle/CAS.
+  runtimeAvailability: z.object({ status: z.enum(['available', 'unavailable']), reason: z.string().min(1).max(500).optional() }).strict().optional(),
 }).strict().superRefine((admission, context) => {
   if (admission.status === 'pending' && admission.binding !== undefined || admission.status === 'active' && admission.binding === undefined) context.addIssue({ code: 'custom', path: ['binding'], message: 'Only an activated Perspective has a runtime binding' })
   const binding = admission.binding
   if (binding !== undefined && (binding.perspective.workspaceId !== admission.resource.workspaceId || binding.perspective.id !== admission.resource.id || binding.admissionGeneration !== admission.admissionGeneration)) context.addIssue({ code: 'custom', path: ['binding'], message: 'The runtime binding names this exact Perspective admission' })
 })
 export type PerspectiveAdmission = z.infer<typeof perspectiveAdmissionSchema>
+
+export const perspectiveDiscoverySchema = z.object({ resource: moduleResourceDescriptorSchema, capabilities: z.array(moduleCapabilityDescriptorSchema) }).strict()
+export const perspectivePresentationVerificationSchema = z.object({
+  admission: perspectiveAdmissionSchema, binding: perspectiveRuntimeBindingSchema,
+  recipient: presentationRecipientSchema.refine(recipient => recipient.subject.moduleId === 'world' && recipient.subject.type === 'world.perspective', 'A Perspective browser recipient is required'),
+}).strict()
 
 /** Private Agents owner facts. Preparing a Room does not make it callable. */
 export const agentsPerspectiveRoomAdmissionSchema = perspectiveRuntimeBindingSchema.safeExtend({
