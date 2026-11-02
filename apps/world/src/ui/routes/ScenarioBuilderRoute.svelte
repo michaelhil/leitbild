@@ -11,6 +11,7 @@
   import AdvancedConfiguration from '../AdvancedConfiguration.svelte'
   import PackSettingsEditor from '../PackSettingsEditor.svelte'
   import TimelineEditor from '../TimelineEditor.svelte'
+  import GuideEditor from '../GuideEditor.svelte'
   import ScenarioBuilderMap from '../ScenarioBuilderMap.svelte'
   import type { MapView } from '../map-view.ts'
   import { parseControlSurfaceRoute } from '../simulation-run-route.ts'
@@ -62,7 +63,9 @@
   let networkEndpointKey = $state('')
   let savedDocument = $state('')
   let editorMapView = $state<MapView | null>(null)
-  const dirty = $derived(!loading && savedDocument !== JSON.stringify(draft))
+  let guideInvalid = $state(false)
+  let guideEditorKey = $state(0)
+  const dirty = $derived(!loading && (guideInvalid || savedDocument !== JSON.stringify(draft)))
 
   const invoke = async <T,>(capabilityId: string, input: unknown, definition?: CreateResult['definition']): Promise<T> => {
     const response = await fetch(
@@ -262,6 +265,8 @@
     if (target === 'scenario') {
       const parsed = scenarioDefinitionSchema.parse(value)
       candidate = { ...parsed, timeline: parsed.timeline ?? { cues: [] } } as ScenarioDraft
+      guideInvalid = false
+      guideEditorKey += 1
     }
     else if (target === 'pack') selectionFor(candidate, selectedPack()!.id)!.config = value as Record<string, unknown>
     else {
@@ -363,6 +368,7 @@
   }
 
   const validationError = (): string | null => {
+    if (guideInvalid) return 'Complete or discard the unvalidated Guide changes in Scenario settings.'
     if (draft.title.trim().length === 0) return 'Give the scenario a title.'
     if (draft.packs.length === 0) return 'Add at least one Pack.'
     if (placementItemId) return 'Place the selected item on the map.'
@@ -400,6 +406,8 @@
 
   const reset = (): void => {
     draft = createEmptyScenarioDefinition()
+    guideInvalid = false
+    guideEditorKey += 1
     editing = null
     selection = { kind: 'scenario' }
     placementItemId = null
@@ -414,10 +422,16 @@
     success: result => { preview = result; previewError = null },
     failure: cause => { preview = null; previewError = cause instanceof Error ? cause.message : String(cause) },
   })
-  const structuralKey = $derived(JSON.stringify({ packs: draft.packs, connections: draft.connections, timeline: draft.timeline, world: draft.world }))
+  const structuralKey = $derived(JSON.stringify({ packs: draft.packs, connections: draft.connections, timeline: draft.timeline, world: draft.world, guide: draft.guide }))
   $effect(() => {
     void structuralKey
     if (loading || catalog === null) return
+    if (guideInvalid) {
+      previews.cancel()
+      preview = null
+      previewError = 'Guide changes need validation before preview. Complete or discard them in Scenario settings.'
+      return
+    }
     if (draft.packs.length === 0) {
       previews.cancel()
       preview = null
@@ -452,8 +466,8 @@
       <label class="feature-picker">Add Pack <select bind:value={packToAdd}><option value="">Choose…</option>{#each availablePacks() as pack (pack.id)}<option value={pack.id}>{pack.title}</option>{/each}</select></label>
       <button disabled={!packToAdd} onclick={addPack}>Add</button>
       <span class="builder-spacer"></span>
-      <button class="primary" disabled={saving} onclick={() => void save(false)}>{editing ? 'Save revision' : 'Save'}</button>
-      <button disabled={saving} onclick={() => void save(true)}>Save & start</button>
+      <button class="primary" disabled={saving || guideInvalid} onclick={() => void save(false)}>{editing ? 'Save revision' : 'Save'}</button>
+      <button disabled={saving || guideInvalid} onclick={() => void save(true)}>Save & start</button>
     </section>
     {#if error}<p class="builder-inline-error">{error}</p>{/if}
     {#if saved}<p role="status">Saved: {saved.title}{dirty ? ' · Unsaved changes' : ''}. <button disabled={saving || dirty} onclick={async () => { saving = true; error = null; try { await launchSaved() } catch (cause) { error = cause instanceof Error ? cause.message : String(cause) } finally { saving = false } }}>Start saved revision</button> <button onclick={() => { if (!dirty || confirm('Discard unsaved changes?')) reset() }}>Build another</button></p>{/if}
@@ -493,7 +507,7 @@
           <TimelineEditor cues={draft.timeline.cues} commands={catalog.commands.filter(command => command.runtimeId === 'world.core' || activePacks().some(pack => command.packId === pack.id && command.runtimeId === (selectionFor(draft, pack.id)?.runtime ?? pack.defaultRuntimeId)))} onchange={cues => { draft.timeline = { cues } }} />
           <label>Objectives <textarea rows="3" placeholder="One objective per line" value={draft.objectives.join('\n')} onchange={event => { draft.objectives = event.currentTarget.value.split('\n').map(line => line.trim()).filter(Boolean) }}></textarea></label>
           <label>Description <textarea rows="4" placeholder="Optional" value={draft.description ?? ''} oninput={event => { draft.description = event.currentTarget.value; draft = { ...draft } }}></textarea></label>
-          <details class="agent-restrictions"><summary>Initial AI restrictions</summary><p>Runs start open to scoped Agents except for these entries. Object limits block targeted details and changes, not existence or aggregate results. A user can replace this policy while a Run is active.</p>
+          <details class="agent-restrictions"><summary>Initial AI restrictions</summary><p>Runs start open to scoped Agents except for these entries. Inspection limits apply to object details, related evidence and collection results. A user can replace this policy while a Run is active.</p>
             <label>Blocked operation IDs <textarea rows="3" placeholder="One operation ID per line" value={draft.agentRestrictions.operationIds.join('\n')} onchange={event => setScenarioOperationRestrictions(event.currentTarget.value)}></textarea></label>
             {#each preview?.assets ?? [] as asset (asset.id)}
               <div><span title={asset.id}>{asset.label}<small>{asset.packId}</small></span><label><input type="checkbox" checked={scenarioObjectDenies(asset.id).includes('inspect')} onchange={event => setScenarioObjectRestriction(asset.id, 'inspect', event.currentTarget.checked)} /> Details</label><label><input type="checkbox" checked={scenarioObjectDenies(asset.id).includes('change')} onchange={event => setScenarioObjectRestriction(asset.id, 'change', event.currentTarget.checked)} /> Change</label></div>
@@ -608,6 +622,10 @@
             <AdvancedConfiguration value={item} onapply={value => applyAdvanced(value, 'item')} />
           {/if}
         {/if}
+        {#if guideInvalid && selection.kind !== 'scenario'}<p role="alert">Guide changes need attention. <button onclick={() => { selection = { kind: 'scenario' } }}>Open Scenario settings</button></p>{/if}
+        <div hidden={selection.kind !== 'scenario'}>
+          {#key guideEditorKey}<GuideEditor guide={draft.guide} objects={allItems().map(entry => ({ id: entry.item.id, label: entry.item.label }))} packIds={draft.packs.map(pack => pack.id)} onchange={guide => { if (guide === undefined) delete draft.guide; else draft.guide = guide; draft = { ...draft } }} oninvalid={invalid => { guideInvalid = invalid }} />{/key}
+        </div>
       </aside>
     </section>
   {/if}

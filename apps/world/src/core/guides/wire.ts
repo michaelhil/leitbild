@@ -7,6 +7,7 @@ const effect = guideEffectSchema.extend({ requestId: z.string().optional(), deli
 export const guideReadingSchema = z.object({
   available: z.literal(true), title: z.string(), description: z.string().optional(), attemptId: z.string().uuid().optional(),
   revision: z.number().int().nonnegative().optional(), status: guideAttemptSchema.shape.status.optional(), stepAttemptId: z.string().uuid().optional(),
+  problem: z.string().optional(),
   step: z.object({ id: z.string(), title: z.string(), instruction: z.string(), help: z.string().optional(), completion: z.enum(['acknowledge', 'condition', 'presentation', 'prompt-response']), effects: z.array(effect) }).strict().optional(),
   completed: guideAttemptSchema.shape.completed.optional(), receipts: guideAttemptSchema.shape.receipts.optional(),
   condition: z.object({ status: z.enum(['satisfied', 'contradicted', 'unknown', 'stale', 'refused']), reason: z.string(), at: z.string(), sequence: z.number(), value: z.union([z.string(), z.number(), z.boolean()]).optional(), clock: z.enum(['wall', 'simulation']).optional(), ref: z.string().optional(), unit: z.string().optional() }).strict().optional(),

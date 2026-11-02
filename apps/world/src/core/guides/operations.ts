@@ -184,16 +184,26 @@ const guideView = async (call: GuidanceCall, attempt: GuideAttempt, recipient?: 
   const { guide, startsAt } = await requireGuide(call)
   const step = currentGuideStep(guide, attempt, call.actor.roleIds ?? [])
   const runtime = await call.registry.load(call.runId)
-  if (recipient !== undefined) call.registry.presentation.assertGuide(attempt.id, ownReceiver(call, recipient))
+  let deliveryProblem: string | undefined
+  if (recipient !== undefined) try { call.registry.presentation.assertGuide(attempt.id, ownReceiver(call, recipient)) }
+  catch (error) {
+    if (!present || !isGuidanceFailure(error) || !['no_recipient', 'guide_lease_conflict'].includes(error.code)) throw error
+    deliveryProblem = `Guide progress was saved, but presentation is unavailable: ${error.message}`
+  }
   const canInspect = (id: string) => runtime.inspectionPolicy(call.actor).canInspect(id)
   const references = step.effects.flatMap(effect => effect.target.kind === 'object' ? [effect.target.objectId] : [])
   if (step.completion.kind === 'condition' && step.completion.condition.kind !== 'clock') references.push(step.completion.condition.kind === 'object-status' ? step.completion.condition.objectId : refObjectId(step.completion.condition.ref))
-  if (references.some(id => !canInspect(id))) throw guideFailure('guide_step_unavailable', 'This guide step is not available in the current inspection picture', 403)
+  const unavailableStep = () => ({ available: true, title: guide.title, attemptId: attempt.id, revision: attempt.revision, status: attempt.status, stepAttemptId: attempt.stepAttemptId,
+    problem: 'Guide progress was saved, but the current step is no longer available in this inspection picture. Read again, skip or stop guidance.' })
+  if (references.some(id => !canInspect(id))) {
+    if (present) return unavailableStep()
+    throw guideFailure('guide_step_unavailable', 'This guide step is not available in the current inspection picture', 403)
+  }
   const condition = step.completion.kind !== 'condition' ? undefined : await evaluateGuideCondition({ condition: step.completion.condition, runtime, actor: call.actor, startsAt, canInspect: id => runtime.inspectionPolicy(call.actor).canInspect(id) })
   const prompt = step.completion.kind === 'prompt-response' ? await readPrompt(call, attempt) : undefined
   const effects: Array<GuideStep['effects'][number] & { requestId?: string; delivery?: string; reason?: string }> = []
-  if (present && recipient !== undefined && attempt.status === 'active') {
-    call.registry.presentation.assertGuide(attempt.id, ownReceiver(call, recipient))
+  if (deliveryProblem !== undefined) effects.push(...step.effects.map(effect => ({ ...effect, delivery: 'unavailable', reason: deliveryProblem })))
+  else if (present && recipient !== undefined && attempt.status === 'active') {
     for (const effect of step.effects) {
       if (attempt.receipts.some(record => record.effectId === effect.id)) { effects.push(effect); continue }
       const target = targetFor(call, effect.target)
@@ -213,13 +223,18 @@ const guideView = async (call: GuidanceCall, attempt: GuideAttempt, recipient?: 
       }
     }
   } else for (const effect of step.effects) effects.push({ ...effect, ...(recipient === undefined ? {} : { requestId: effectRequestId(attempt, effect.id, ownReceiver(call, recipient)) }) })
+  // Conditions and prompt evidence can suspend. Recheck before returning authored text or exact targets.
+  if (references.some(id => !canInspect(id))) {
+    if (present) return unavailableStep()
+    throw guideFailure('guide_step_unavailable', 'This guide step became unavailable while its evidence was acquired', 403)
+  }
   return {
     available: true, title: guide.title, attemptId: attempt.id, revision: attempt.revision, status: attempt.status,
     stepAttemptId: attempt.stepAttemptId,
     // No future instructions, trigger metadata, hidden step count, or another learner's progress.
     step: { id: step.id, title: step.title, instruction: step.instruction, ...(step.help === undefined ? {} : { help: step.help }), completion: step.completion.kind, effects },
     completed: attempt.completed.map(entry => entry.evidence?.ref !== undefined && !canInspect(refObjectId(entry.evidence.ref)) ? { stepId: entry.stepId, outcome: entry.outcome, at: entry.at } : entry),
-    receipts: attempt.receipts, ...(condition === undefined ? {} : { condition }), ...(prompt === undefined ? {} : { prompt }),
+    receipts: attempt.receipts, ...(condition === undefined ? {} : { condition }), ...(prompt === undefined ? {} : { prompt }), ...(deliveryProblem === undefined ? {} : { problem: deliveryProblem }),
   }
 }
 
@@ -234,11 +249,17 @@ export const runGuideOperation = async (kind: keyof typeof guideInputs, raw: unk
       if (evidence.status !== 'satisfied') throw guideFailure('guide_entry_unmet', `${evidence.reason}; continue unguided or start a fresh Run`)
     }
     const attempt = createGuideAttempt(guide, call.actor.roleIds ?? [], new Date().toISOString())
+    // Validate current references before saving a new identity. Delivery is requested only after the durable write.
+    await guideView(call, attempt)
     await call.registry.guideFile(call.runId, attempt.id).change(current => {
       if (current !== null) throw guideFailure('guide_identity_conflict', 'This guide attempt already exists')
       return { next: attempt, result: attempt }
     })
-    call.registry.presentation.claimGuide(attempt.id, recipient, false)
+    try { call.registry.presentation.claimGuide(attempt.id, recipient, false) }
+    catch (error) {
+      // The attempt is durable now. The reading reports its identity and delivery problem for explicit recovery.
+      if (!isGuidanceFailure(error) || error.code !== 'no_recipient') throw error
+    }
     return guideView(call, attempt, recipient, true)
   }
   if (kind === 'read') {
