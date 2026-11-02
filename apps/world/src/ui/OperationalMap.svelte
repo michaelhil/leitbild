@@ -231,6 +231,7 @@
   const packFeatureLayer = createPackFeatureLayer(selection => { clickHandled = true; featureSelection = selection }, message => onMapError(message))
   const syncPackFeatures = () => { if (runtime) packFeatureLayer.update(runtime.map, cachedPackMapFeatures, visibleFamilies()) }
   let appliedTheme: ThemeMode | null = null
+  let cameraMoveStarted: { at: number; user: boolean } | null = null
   let pendingFocus: number | null = null
   let appliedCameraKey: string | null = null
   /** The camera still shows the Starting View: neither the operator nor a focus request has moved it. */
@@ -641,6 +642,7 @@
           })
         },
         onMoveStart: event => {
+          cameraMoveStarted = { at: performance.now(), user: event.originalEvent !== undefined }
           if (event.originalEvent !== undefined) { startingCamera = false; onCameraGesture(); if (pendingFocus !== null) { onFocusResult(pendingFocus, 'superseded'); pendingFocus = null } }
           stackChooser.hide()
           packOverlayController.setCameraGestureActive(true)
@@ -648,6 +650,7 @@
           popupController.hide()
         },
         onMoveEnd: () => {
+          if (cameraMoveStarted !== null) { mapPerformanceDiagnostics.record('camera', 'moveend', performance.now() - cameraMoveStarted.at, { userGesture: cameraMoveStarted.user }); cameraMoveStarted = null }
           if (pendingFocus !== null) { onFocusResult(pendingFocus, 'applied'); pendingFocus = null }
           if (runtime) onMapView(readMapView(runtime.map))
           packOverlayController.setCameraGestureActive(false)
