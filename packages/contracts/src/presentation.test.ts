@@ -44,3 +44,12 @@ test('composer readiness and owned cleanup carry no submission or text mutation 
   expect(presentationClearMessageSchema.safeParse({ type: 'leitbild:presentation-clear', recipient, room, requestId: request.id }).success).toBe(true)
   expect(presentationClearMessageSchema.safeParse({ type: 'leitbild:presentation-clear', recipient, room, requestId: request.id, text: '' }).success).toBe(false)
 })
+
+test('World composer requests resolve in Host before the exact Room delivery envelope', async () => {
+  const { presentationComposerRequestMessageSchema, presentationCleanupRequestMessageSchema } = await import('./presentation.ts')
+  const draft = { ...request, target: { subject, type: 'world.composer', id: 'assistant' }, action: { kind: 'draft', text: 'sitrep unit 1' } }
+  expect(presentationComposerRequestMessageSchema.safeParse({ type: 'leitbild:presentation-compose', request: draft }).success).toBe(true)
+  expect(presentationComposerRequestMessageSchema.safeParse({ type: 'leitbild:presentation-compose', request }).success).toBe(false)
+  expect(presentationCleanupRequestMessageSchema.safeParse({ type: 'leitbild:presentation-clear', recipient, requestId: draft.id, clearRequestId: 'clear-owned-cue' }).success).toBe(true)
+  expect(presentationCleanupRequestMessageSchema.safeParse({ type: 'leitbild:presentation-clear', recipient, requestId: draft.id, selector: 'textarea' }).success).toBe(false)
+})

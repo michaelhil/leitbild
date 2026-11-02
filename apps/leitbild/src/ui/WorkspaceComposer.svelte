@@ -1,8 +1,9 @@
 <script lang="ts">
-  import { onDestroy, untrack } from 'svelte'
+  import { onDestroy, untrack, tick } from 'svelte'
   import type { WorkspaceResourceReference, WorkspaceSubjectReference } from '@leitbild/contracts'
   import { createViewRelay, type WorldPane } from './view-relay.ts'
   import { createRunAssistantBridge } from './run-assistant-bridge.ts'
+  import { createPresentationBridge } from './presentation-bridge.ts'
   import { workspaceSubjectFocusMessage } from './workspace-focus.ts'
 
   interface Props {
@@ -157,6 +158,27 @@
     reportError: message => onError(message),
   })
 
+  const roomReference = (): WorkspaceResourceReference | null => agentsRoomId === null ? null : { workspaceId, moduleId: 'agents', type: 'agents.room', id: agentsRoomId } as WorkspaceResourceReference
+  const presentation = createPresentationBridge({
+    subject: () => worldRunId === null ? null : { workspaceId, moduleId: 'world', type: 'world.simulation-run', id: worldRunId } as WorkspaceResourceReference,
+    room: roomReference,
+    openAssistant: async () => {
+      if (!runAssistantAvailable) throw new Error('This Run offers no Assistant')
+      await onOpenRunAssistant()
+      await tick()
+      const room = roomReference()
+      if (!room) throw new Error('The Run Assistant did not open a Room')
+      onShowAgents()
+      if (collapsedPane === 'agents') restoreSplit()
+      return room
+    },
+    postToWorld: message => worldFrame?.contentWindow?.postMessage(message, location.origin),
+    postToAgents: message => agentsFrame?.contentWindow?.postMessage(message, location.origin),
+    error: message => onError(message),
+    timer: (ms, action) => { const timer = setTimeout(action, ms); return () => clearTimeout(timer) },
+  })
+  onDestroy(() => presentation.dispose())
+
   // The World document that last said it listens; a frame that loads another
   // document (a reload, or the World start page) no longer listens.
   let listeningWorldDocument: Document | null = null
@@ -164,11 +186,12 @@
   // Only the two frames' own documents take part in the window's protocol.
   const receiveViewMessage = (event: MessageEvent): void => {
     if (event.origin !== location.origin || event.source === null) return
-    if (event.source === agentsFrame?.contentWindow) relay.fromAgents(event.data)
+    if (event.source === agentsFrame?.contentWindow) { relay.fromAgents(event.data); presentation.fromAgents(event.data) }
     else if (event.source === worldFrame?.contentWindow) {
       if ((event.data as { readonly type?: unknown } | null)?.type === 'leitbild:view-window-ready') listeningWorldDocument = worldFrame?.contentDocument ?? null
       relay.fromWorld(event.data)
       assistantBridge.fromWorld(event.data)
+      presentation.fromWorld(event.data)
     }
   }
 
@@ -179,6 +202,7 @@
     listeningWorldDocument = null
     relay.worldFrameUnloaded()
     assistantBridge.worldFrameUnloaded()
+    presentation.worldUnloaded()
   }
 
   // A new Run gives the World frame a new document (or none), which listens only
@@ -189,6 +213,7 @@
     untrack(() => {
       relay.worldFrameUnloaded()
       assistantBridge.worldFrameUnloaded()
+    presentation.worldUnloaded()
     })
   })
 
@@ -201,12 +226,13 @@
   // Another Room or a closed chat ends the Agents document that listed the displays.
   $effect(() => {
     agentsRoomId
-    untrack(() => relay.agentsFrameUnloaded())
+    untrack(() => { relay.agentsFrameUnloaded(); presentation.agentsUnloaded() })
   })
 
   const agentsFrameLoaded = (): void => {
     publishResourceFocus()
     relay.agentsFrameLoaded()
+    presentation.agentsLoaded()
   }
 
   const resizeWithKeyboard = (event: KeyboardEvent): void => {

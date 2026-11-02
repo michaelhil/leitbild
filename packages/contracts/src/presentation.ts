@@ -89,6 +89,20 @@ export const presentationOfferMessageSchema = z.object({
   recipient: presentationRecipientSchema.nullable(),
 }).strict()
 
+/** World asks Host to resolve this Run's Assistant; only Host addresses the exact Room. */
+export const presentationComposerRequestMessageSchema = z.object({
+  type: z.literal('leitbild:presentation-compose'),
+  request: presentationRequestSchema,
+}).strict().refine(message => message.request.action.kind === 'draft', { message: 'Only a draft requests a composer' })
+
+/** World asks Host to clear a suggestion that Host previously resolved to one Room. */
+export const presentationCleanupRequestMessageSchema = z.object({
+  type: z.literal('leitbild:presentation-clear'),
+  recipient: presentationRecipientSchema,
+  requestId: identity,
+  clearRequestId: identity.optional(),
+}).strict()
+
 /** An Agents composer is resolved by Agents; World does not write or submit its text. */
 export const presentationDraftMessageSchema = z.object({
   type: z.literal('leitbild:presentation-draft'),
