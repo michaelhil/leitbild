@@ -17,7 +17,7 @@
     {#if screen.phase === 'disconnected' && screen.admission?.status === 'active' && screen.admission.runtimeAvailability?.status !== 'unavailable'}<button type="button" onclick={() => void session?.reconnect()}>Reconnect this view</button>{/if}
     {#if screen.phase === 'preparing' || screen.admission && screen.admission.status !== 'revoked'}<button type="button" onclick={() => void session?.end()}>{screen.phase === 'preparing' ? 'Stop setup' : 'End this scope'}</button>{/if}
   </div>
-  <p class="help">This scope can inspect permitted information and offer attention cues. It cannot issue simulation commands. Changing exercise roles starts a separate conversation; unsent text stays with its original conversation.</p>
+  <p class="help">This scope can inspect permitted information and offer attention cues. It cannot issue simulation commands. Changing exercise roles starts a separate conversation. Unsent text is kept only in this open document; copy it before changing scope or reconnecting.</p>
   {#if screen.admission}
     <details><summary>Scope and evidence</summary>
       <dl><dt>World admission</dt><dd>{screen.admission.status}</dd><dt>Perspective</dt><dd>{screen.admission.resource.id}</dd><dt>Admission generation</dt><dd>{screen.admission.admissionGeneration}</dd><dt>Run incarnation</dt><dd>{screen.admission.runIncarnation}</dd><dt>Role-set digest</dt><dd>{screen.admission.roleSetDigest}</dd></dl>
