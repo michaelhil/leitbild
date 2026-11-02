@@ -113,6 +113,8 @@ export const createRoom = (
   const createRoomMessage = (params: PostParams): Message => {
     const admission = profile.perspective?.admission
     if (isPerspectiveScope(profile.scope) && admission?.status !== 'bound') throw Object.assign(new Error('Perspective Room is not admitted'), { code: 'perspective_room_not_bound' })
+    if (admission !== undefined && params.senderId !== admission.actualAgentId && params.senderId !== SYSTEM_SENDER_ID
+      && resolveKind?.(params.senderId) !== 'human') throw Object.assign(new Error('Perspective messages require the actual runtime or an existing public human author'), { code: 'perspective_sender_unavailable' })
     const { focusedSubjects, presentationRecipient, perspective: _untrustedScope, ...persisted } = params as PostParams & { perspective?: unknown }
     const message: Message = {
       // Caller-supplied Message fields flow through untouched. Browser focus
@@ -161,7 +163,9 @@ export const createRoom = (
     callbacks?.onMessagePosted?.(profile.id, message)
     callbacks?.onScriptMessage?.(profile.id, message)
 
-    if (params.senderId !== SYSTEM_SENDER_ID && params.type !== 'join' && params.type !== 'leave') {
+    // A scoped human is an attributed author, not another execution member.
+    // Posting must never enrol a caller or another AI into the private runtime.
+    if (!isPerspectiveScope(profile.scope) && params.senderId !== SYSTEM_SENDER_ID && params.type !== 'join' && params.type !== 'leave') {
       members.add(params.senderId)
     }
 

@@ -9,6 +9,11 @@ import { asAIAgent } from '../../agents/shared.ts'
 import { bindingOf, toolWitness } from './owner.ts'
 import { createRuntimeAccessView } from '../workspaces/runtime-access.ts'
 import { createWSManager } from '../../api/ws-handler.ts'
+import { serializeModuleSnapshots, saveWorkspaceModuleSnapshots, loadWorkspaceModuleSnapshots } from '../storage/module-snapshots.ts'
+import type { WorkspaceModulePaths } from '../paths.ts'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 
 const fixture = async (enabled = true, persist: () => Promise<void> = async () => {}) => {
   const workspaceId = newWorkspaceId()
@@ -21,6 +26,7 @@ const fixture = async (enabled = true, persist: () => Promise<void> = async () =
     perspectiveWorldRead: async reference => readWorld(reference.id),
   })
   const template = asAIAgent(await runtime.spawnAIAgent({ name: 'Public template', model: 'stub:mock-model', persona: 'Read the current permitted view.', tools: [] }))!
+  const human = await runtime.spawnHumanAgent({ name: 'Public human' }, () => {})
   const input = (id = crypto.randomUUID()) => {
     const reference = worldPerspectiveReferenceSchema.parse({ workspaceId, moduleId: 'world', type: 'world.perspective', id })
     const world = perspectiveAdmissionSchema.parse({ resource: reference, status: 'pending', revision: 0,
@@ -35,7 +41,7 @@ const fixture = async (enabled = true, persist: () => Promise<void> = async () =
     worlds.set(prepared.perspective.id, perspectiveAdmissionSchema.parse({ ...worlds.get(prepared.perspective.id), status: 'active', revision: 1, binding: bindingOf(prepared) }))
     return runtime.perspectiveRooms!.bind(prepared.room.id, prepared.revision)
   }
-  return { runtime, template, worlds, workspaceId, input, prepare, bind,
+  return { runtime, template, human, worlds, workspaceId, input, prepare, bind,
     setRead: (read: typeof readWorld) => { readWorld = read },
     close: async () => { for (const agent of runtime.team.listByKind('ai')) { const ai = asAIAgent(agent)!; ai.close(); ai.cancelGeneration() }; await runtime.comparisons.close(); runtime.executionStore.close(); deployment.providerSetup.dispose() },
   }
@@ -87,11 +93,11 @@ test('ordinary tools, Room/Agent readers and snapshots omit private compartments
     const blue = await f.bind(), red = await f.bind()
     const room = f.runtime.rooms.getRoom(blue.room.id)!
     room.setPaused(true)
-    const message = room.post({ senderId: 'person', content: 'BLUE_PRIVATE_CANARY', type: 'chat' })
+    const message = room.post({ senderId: f.human.id, senderName: f.human.name, content: 'BLUE_PRIVATE_CANARY', type: 'chat' })
     expect(message.perspective?.runtimeGeneration).toBe(blue.runtimeGeneration)
     const ordinary = createRuntimeAccessView(f.runtime)
     expect(ordinary.rooms.listAllRooms()).toEqual([])
-    expect(ordinary.team.listAgents().map(agent => agent.id)).toEqual([f.template.id])
+    expect(ordinary.team.listAgents().map(agent => agent.id)).toEqual([f.template.id, f.human.id])
     expect(ordinary.rooms.getRoom(blue.room.id)).toBeUndefined()
     expect(ordinary.team.getAgent(blue.actualAgentId)).toBeUndefined()
     const roomsTool = await f.runtime.toolRegistry.get('list_rooms')!.execute({}, { callerId: f.template.id, callerName: f.template.name })
@@ -117,6 +123,30 @@ test('ordinary tools, Room/Agent readers and snapshots omit private compartments
     expect(JSON.stringify(output)).not.toContain('UNCOMMITTED_PRIVATE')
     await expect(f.runtime.addAgentToRoom(f.template.id, blue.room.id)).rejects.toMatchObject({ code: 'perspective_membership_immutable' })
   } finally { await f.close() }
+})
+
+test('real human authors persist without joining private execution membership; unknown/other-AI senders are refused', async () => {
+  const f = await fixture(), root = await mkdtemp(join(tmpdir(), 'perspective-snapshot-'))
+  try {
+    const admission = await f.bind(), room = f.runtime.rooms.getRoom(admission.room.id)!
+    room.setPaused(true)
+    const message = room.post({ senderId: f.human.id, senderName: f.human.name, type: 'chat', content: 'HUMAN_SCOPED_DRAFT' })
+    expect(room.getParticipantIds()).toEqual([admission.actualAgentId])
+    expect(() => room.post({ senderId: f.template.id, type: 'chat', content: 'Impersonating an extra runtime' })).toThrow('existing public human')
+    expect(() => room.post({ senderId: 'unknown-person', type: 'chat', content: 'Unadmitted author' })).toThrow('existing public human')
+    const snapshots = serializeModuleSnapshots(f.runtime)
+    const agentsRoot = join(root, 'agents'), roomsRoot = join(agentsRoot, 'rooms')
+    const paths: WorkspaceModulePaths = { root,
+      rooms: { root: roomsRoot, marker: join(roomsRoot, 'workspace.json'), snapshot: join(roomsRoot, 'snapshot.json'), logs: join(roomsRoot, 'logs'), documents: join(roomsRoot, 'documents') },
+      agents: { root: agentsRoot, marker: join(agentsRoot, 'workspace.json'), snapshot: join(agentsRoot, 'snapshot.json'), inspections: join(agentsRoot, 'generation-inspections.json'), executions: join(agentsRoot, 'executions.sqlite'), people: join(agentsRoot, 'people.sqlite'), memory: join(agentsRoot, 'memory'), vectors: join(agentsRoot, 'vectors.jsonl') },
+    }
+    await saveWorkspaceModuleSnapshots(snapshots, paths)
+    const saved = await loadWorkspaceModuleSnapshots(paths)
+    const persisted = saved.rooms!.rooms.find(candidate => candidate.profile.id === room.profile.id)!
+    expect(persisted.members).toEqual([admission.actualAgentId])
+    expect(persisted.messages).toEqual([message])
+    expect(saved.rooms!.humanActors.find(actor => actor.id === f.human.id)?.name).toBe(f.human.name)
+  } finally { await f.close(); await rm(root, { recursive: true, force: true }) }
 })
 
 test('exact view renewals survive an owner await, while local revoke and replacement never rebind an admitted read', async () => {
