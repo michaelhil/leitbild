@@ -1,9 +1,8 @@
 import { z } from 'zod'
 import type { PackWorkspaceCapability } from '../../simulation/protocol.ts'
-import { rejectCapabilityInput } from '../../simulation/capability-rejection.ts'
 import { physicalCatalogManifestSchema } from './catalog-manifest.ts'
-import { physicalDesignManifests } from './design.ts'
-import { canonicalPhysicalJson, physicalDesignRefSchema } from './model.ts'
+import { physicalDesignChoices, physicalDesignManifest } from './design.ts'
+import { physicalDesignRefSchema } from './model.ts'
 
 const profiles = z.enum(['turbine-island', 'campus', 'explorer', 'architecture', 'drafting'])
 const listInput = z.object({ profile: profiles.optional(), modelRef: z.string().min(1).optional() }).strict()
@@ -18,11 +17,7 @@ export const physicalLayoutWorkspaceCapabilities: ReadonlyArray<PackWorkspaceCap
   kind: 'query', risk: 'read', idempotent: true, input: listInput, output: z.object({ designs: z.array(entry) }).strict(),
   invoke: async raw => {
     const input = listInput.parse(raw)
-    return { designs: physicalDesignManifests().filter(manifest => (input.profile === undefined || input.profile === manifest.profile) && (input.modelRef === undefined || input.modelRef === manifest.modelRequirement.modelRef)).map(manifest => ({
-      design: manifest.design, profile: manifest.profile, modelRequirement: manifest.modelRequirement,
-      ownerRole: manifest.profile === 'turbine-island' ? 'unit' : manifest.requirements.ownerRole,
-      relatedRoles: manifest.profile === 'turbine-island' ? [] : manifest.requirements.relatedMembers.map(member => member.role),
-    })) }
+    return { designs: physicalDesignChoices().filter(choice => (input.profile === undefined || input.profile === choice.profile) && (input.modelRef === undefined || input.modelRef === choice.modelRequirement.modelRef)) }
   },
 }, {
   id: 'world.physical-layout.design.describe', title: 'Describe one retained Physical Design',
@@ -31,8 +26,7 @@ export const physicalLayoutWorkspaceCapabilities: ReadonlyArray<PackWorkspaceCap
   output: z.object({ manifest: physicalCatalogManifestSchema, application: z.literal('new-scenario-revision'), liveDesignReplacement: z.literal(false) }).strict(),
   invoke: async raw => {
     const { design } = describeInput.parse(raw)
-    const manifest = physicalDesignManifests().find(candidate => canonicalPhysicalJson(candidate.design) === canonicalPhysicalJson(design))
-    if (!manifest) return rejectCapabilityInput(`Unsupported or mismatched physical Design Revision: ${design.id}/${design.revision}`)
+    const manifest = physicalDesignManifest(design)
     return { manifest, application: 'new-scenario-revision', liveDesignReplacement: false }
   },
 }]

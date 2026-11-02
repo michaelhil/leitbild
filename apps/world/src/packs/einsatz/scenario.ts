@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { rejectCapabilityInput } from '../../simulation/capability-rejection.ts'
 import { geoPointFromLonLat, idSchema, type IsoTimestamp, type OperationalObject, type ScenarioSide } from '../../core/model/index.ts'
 import type { PackScenarioSupport } from '../../core/packs/protocol.ts'
 import { configIdSchema } from './config-schema.ts'
@@ -65,7 +66,7 @@ export const einsatzScenarioSupport: PackScenarioSupport = {
     const item = itemSchema.parse(raw)
     const state = authoredState(context.packConfigs[einsatzPackId], context.objects, context.at, context.sides)
     const outcome = commitIntent(state, intentOf(item), authored, [])
-    if (!outcome.ok) throw new Error(`Einsatz item ${item.id}: ${outcome.reason}`)
+    if (!outcome.ok) return rejectCapabilityInput(`Einsatz item ${item.id}: ${outcome.reason}`)
     const transition = outcome.transitions.filter(entry => entry.record.id === item.id).at(-1)
     if (transition === undefined) throw new Error(`Einsatz item ${item.id} produced no object`)
     if (transition.kind !== 'unit' && transition.kind !== 'task') throw new Error(`Einsatz item ${item.id} produced a ${transition.kind}, not a unit or a task`)

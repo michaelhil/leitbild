@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { rejectCapabilityInput } from '../../simulation/capability-rejection.ts'
 import turbineManifestData from './pwr-turbine-island.design.json'
 import fullUnitManifestData from './pwr-full-unit.design.json'
 import campusManifestData from './pwr-campus.design.json'
@@ -109,8 +110,18 @@ const entries: ReadonlyArray<CatalogEntry> = [
   { manifest: shutdownCoolingCampusManifest, load: async () => ({ source: (await import('./pwr-campus-shutdown-cooling.source.json')).default, bindings: (await import('./pwr-campus-shutdown-cooling.bindings.json')).default, coverage: (await import('./pwr-campus-shutdown-cooling.coverage.json')).default }) },
 ]
 const catalog = new Map(entries.map(entry => [canonicalPhysicalJson(entry.manifest.design), entry]))
-/** Retained admission metadata only; never loads Design sources or compiles geometry. */
-export const physicalDesignManifests = (): ReadonlyArray<PhysicalCatalogManifest> => entries.map(entry => structuredClone(entry.manifest))
+/** Compact immutable choices; do not clone large applicability records for a list. */
+export const physicalDesignChoices = () => entries.map(({ manifest }) => ({
+  design: { ...manifest.design }, profile: manifest.profile, modelRequirement: { ...manifest.modelRequirement },
+  ownerRole: manifest.profile === 'turbine-island' ? 'unit' : manifest.requirements.ownerRole,
+  relatedRoles: manifest.profile === 'turbine-island' ? [] : manifest.requirements.relatedMembers.map(member => member.role),
+}))
+/** Exact retained metadata only; no source loading, geometry or runtime startup. */
+export const physicalDesignManifest = (reference: unknown): PhysicalCatalogManifest => {
+  const parsed = physicalDesignRefSchema.parse(reference), entry = catalog.get(canonicalPhysicalJson(parsed))
+  if (!entry) return rejectCapabilityInput(`Unsupported or mismatched physical Design Revision: ${parsed.id}/${parsed.revision}`)
+  return structuredClone(entry.manifest)
+}
 if (catalog.size !== entries.length) throw new Error('Duplicate exact physical Design Revision')
 const loaded = new Map<CatalogEntry, Promise<ResolvedPhysicalDesign>>()
 const load = async (entry: CatalogEntry): Promise<ResolvedPhysicalDesign> => {
@@ -135,7 +146,7 @@ export function resolvePhysicalDesign(reference: unknown): Promise<ResolvedPhysi
 export async function resolvePhysicalDesign(reference: unknown): Promise<ResolvedPhysicalDesign> {
   const parsed = physicalDesignRefSchema.parse(reference)
   const entry = catalog.get(canonicalPhysicalJson(parsed))
-  if (entry === undefined) throw new Error(`Unsupported or mismatched physical Design Revision: ${parsed.id}/${parsed.revision}`)
+  if (entry === undefined) return rejectCapabilityInput(`Unsupported or mismatched physical Design Revision: ${parsed.id}/${parsed.revision}`)
   let pending = loaded.get(entry)
   if (pending === undefined) { pending = load(entry); loaded.set(entry, pending) }
   return structuredClone(await pending)

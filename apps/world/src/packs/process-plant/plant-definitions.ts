@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { rejectCapabilityInput } from '../../simulation/capability-rejection.ts'
 import { assemblePwrReferencePlantGraph,pwrReferenceParametersSchema } from './assembly/pwr-reference-assembly.ts'
 import type {
   ProcessPlantAutomationSelection,
@@ -66,7 +67,7 @@ export const createPwrReferencePlantDefinition = (config: {
 
 export const resolveProcessPlantModel = (selection: ProcessPlantModelSelection): PlantGraphSpec => {
   if (selection.ref !== processPlantPwrReferenceModelRef) {
-    throw new Error(`unknown process plant model: ${selection.ref}`)
+    return rejectCapabilityInput(`unknown process plant model: ${selection.ref}`)
   }
   return assemblePwrReferencePlantGraph(pwrReferenceParametersSchema.parse(selection.parameters))
 }
@@ -77,10 +78,10 @@ export const resolveProcessPlantOperatingPoint = (
   graph: PlantGraphSpec,
 ): ResolvedProcessPlantOperatingPoint => {
   if (selection.ref !== processPlantPwrFullPowerOperatingPointRef) {
-    throw new Error(`unknown process plant operating point: ${selection.ref}`)
+    return rejectCapabilityInput(`unknown process plant operating point: ${selection.ref}`)
   }
   if (modelRef !== processPlantPwrReferenceModelRef) {
-    throw new Error(`operating point ${selection.ref} is not compatible with process plant model ${modelRef}`)
+    return rejectCapabilityInput(`operating point ${selection.ref} is not compatible with process plant model ${modelRef}`)
   }
   // Operating conditions belong to the selected operating point, not to a
   // scenario or the topology template. Resolve every selected loop by kind.
@@ -97,10 +98,10 @@ export const resolveProcessPlantAutomation = (
   graph: CompiledPlantGraph,
 ): ProcessPlantProtectionConfig => {
   if (selection.ref !== processPlantPwrReferenceAutomationRef) {
-    throw new Error(`unknown process plant automation: ${selection.ref}`)
+    return rejectCapabilityInput(`unknown process plant automation: ${selection.ref}`)
   }
   if (modelRef !== processPlantPwrReferenceModelRef) {
-    throw new Error(`automation ${selection.ref} is not compatible with process plant model ${modelRef}`)
+    return rejectCapabilityInput(`automation ${selection.ref} is not compatible with process plant model ${modelRef}`)
   }
   return pressurizedWaterReactorReferenceIcForGraph(graph)
 }
