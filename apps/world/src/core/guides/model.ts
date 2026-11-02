@@ -5,8 +5,11 @@ import { observableRefSchema } from '../model/alerts.ts'
 import { quantitySchema, quantityUnits } from '../observation/model.ts'
 
 export const guideControlTargets = [
-  { id: 'view', label: 'View controls' }, { id: 'guide', label: 'Guide' }, { id: 'alarms', label: 'Alarms' },
-  { id: 'dashboard', label: 'Dashboard' }, { id: 'assistant', label: 'Assistant' },
+  { id: 'view', label: 'View controls', actions: ['reveal', 'highlight', 'explain'] },
+  { id: 'guide', label: 'Guide', actions: ['reveal', 'highlight', 'explain'] },
+  { id: 'alarms', label: 'Alarms', actions: ['reveal', 'highlight', 'explain'] },
+  { id: 'dashboard', label: 'Dashboard', actions: ['reveal', 'explain'] },
+  { id: 'assistant', label: 'Assistant', actions: ['reveal', 'explain'] },
 ] as const
 
 /** World owns these semantic targets; a browser decides their current availability. */
@@ -76,6 +79,11 @@ export const guideDefinitionSchema = z.object({
     step.effects.forEach((effect, at) => {
       if (effects.has(effect.id)) ctx.addIssue({ code: 'custom', path: ['steps', index, 'effects', at, 'id'], message: 'A step effect identity occurs once' })
       effects.add(effect.id)
+      if (effect.target.kind === 'control') {
+        const controlId = effect.target.controlId
+        const control = guideControlTargets.find(control => control.id === controlId)
+        if (control === undefined || !(control.actions as readonly string[]).includes(effect.action.kind)) ctx.addIssue({ code: 'custom', path: ['steps', index, 'effects', at], message: 'The World control does not declare this presentation action' })
+      }
       if (effect.action.kind === 'clear') ctx.addIssue({ code: 'custom', path: ['steps', index, 'effects', at], message: 'Guide effect cleanup is owned by the current attempt; authored steps do not name old delivery IDs' })
       if (effect.action.kind === 'draft' && effect.target.kind !== 'composer') ctx.addIssue({ code: 'custom', path: ['steps', index, 'effects', at], message: 'A prompt draft targets the Agents composer' })
       if (effect.target.kind === 'composer' && effect.action.kind !== 'draft') ctx.addIssue({ code: 'custom', path: ['steps', index, 'effects', at], message: 'The composer accepts prompt suggestions only' })

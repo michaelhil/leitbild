@@ -108,7 +108,7 @@ export const runPresentationOperation = async (kind: keyof typeof presentationIn
     }
     if (input.objectId === undefined) {
       for (const pack of runtime.packs()) for (const panel of pack.ui?.surfacePanels ?? []) targets.push({ target: { subject: subjectOf(call), type: 'world.panel', id: panel.id }, label: panel.label, actions: ['reveal', 'highlight'] })
-      for (const id of supportedControls) targets.push({ target: { subject: subjectOf(call), type: 'world.control', id }, label: id, actions: ['reveal', 'highlight'] })
+      for (const control of guideControlTargets) targets.push({ target: { subject: subjectOf(call), type: 'world.control', id: control.id }, label: control.label, actions: [...control.actions] })
       targets.push({ target: { subject: subjectOf(call), type: 'world.composer', id: 'assistant' }, label: 'Assistant prompt suggestion', actions: ['draft'] })
     }
     const found = targets.filter(entry => input.text === undefined || `${entry.label} ${entry.target.id}`.toLowerCase().includes(input.text.toLowerCase()))
