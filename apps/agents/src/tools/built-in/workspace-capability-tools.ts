@@ -26,6 +26,9 @@ import {
 import type { Tool, ToolContext, ToolResult, ToolExecutionEffect } from '../../core/types/tool.ts'
 import { isPeopleCapabilityId } from '../../core/people/people-capability-ids.ts'
 import { cardLines, entryCard, type TurnCards } from '../../agents/answer-cards.ts'
+import { perspectiveDiscoverySchema, worldPerspectiveReferenceSchema } from '@leitbild/contracts'
+import { createPerspectiveWorldClient } from '../../core/perspectives/world-client.ts'
+import { isPerspectiveScope } from '../../core/rooms/perspective-scope.ts'
 
 export interface WorkspaceCapabilityToolsDeps {
   readonly workspaceId: WorkspaceId
@@ -421,7 +424,25 @@ const createCatalogReader = (deps: WorkspaceCapabilityToolsDeps) => {
     operationCache = etag ? {etag,catalog} : undefined
     return catalog
   }
-  const loadPublished = async (signal: AbortSignal | undefined) => {
+  const loadPublished = async (signal: AbortSignal | undefined, context?: ToolContext) => {
+    const privateScope = context?.roomId === undefined ? undefined : deps.getRoomScope(context.roomId)
+    if (privateScope !== undefined && isPerspectiveScope(privateScope)) {
+      const execution = context?.perspectiveOrigin
+      if (privateScope.kind !== 'resource' || execution === undefined || execution.roomId !== context?.roomId
+        || execution.actualAgentId !== context?.callerId || execution.turnId !== context?.executionTurnId
+        || execution.perspectiveId !== privateScope.resource.id) throw new Error('perspective_execution_origin_required: discovery requires the actual admitted runtime and turn')
+      const reference = worldPerspectiveReferenceSchema.parse(privateScope.resource)
+      const result = perspectiveDiscoverySchema.parse(await createPerspectiveWorldClient(deps).invoke('world.perspective.discovery.read', reference, {}, execution, signal))
+      if (referenceKey(result.resource.ref) !== referenceKey(reference) || result.resource.sourceDefinition !== undefined
+        || result.resource.links.some(link => referenceKey(link.ref) !== referenceKey(reference))
+        || result.capabilities.some(capability => capability.scope.kind !== 'resource' || capability.scope.resourceType !== 'world.perspective')
+        || result.resource.capabilityIds.some(id => !result.capabilities.some(capability => capability.id === id))) throw new Error('perspective_discovery_contract_invalid: owner discovery widened its exact subject')
+      return {
+        definitions: workspaceDefinitionCatalogSchema.parse({ workspaceId: deps.workspaceId, modules: [], definitions: [] }),
+        resources: workspaceResourceCatalogSchema.parse({ workspaceId: deps.workspaceId, modules: [], resources: [result.resource] }),
+        operations: workspaceCapabilityCatalogSchema.parse({ workspaceId: deps.workspaceId, modules: [], capabilities: result.capabilities }),
+      }
+    }
     const [definitionResponse, resourceResponse, operations] = await Promise.all([
       getJson(fetchImpl, catalogPath(workspacePath, 'definitions'), signal),
       getJson(fetchImpl, catalogPath(workspacePath, 'resources'), signal),
@@ -515,7 +536,7 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
   const { fetchImpl, workspacePath, loadPublished } = createCatalogReader(deps)
 
   const loadCatalogs = async (context: ToolContext) => {
-    const catalogs = await loadPublished(context.signal)
+    const catalogs = await loadPublished(context.signal, context)
     const { operations } = catalogs
     if (!context.comparison) return catalogs
     const captured = context.comparison
@@ -561,6 +582,7 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
 
   const explore: Tool = {
     name: 'workspace_explore',
+    compartmentAccess: 'scoped-owner',
     contextEffect: 'read',
     description: 'Discover scoped Resources and Definitions, or search their available read/change operations. Request input schemas directly with a focused search; reuse known targets and operations without mandatory rediscovery.',
     usage: 'Choose scope for exact targets or operations for callable behavior. Focused operation searches can include input schemas in the same call; schemas are omitted unless requested. Focus indicates attention and never expands Room Scope.',
@@ -692,6 +714,7 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
 
   const call: Tool = {
     name: 'workspace_call',
+    compartmentAccess: 'scoped-owner',
     description: 'Call discovered operations; batch only independent reads. A missing Resource or Definition target resolves only when exactly one eligible target is in scope; otherwise choose an exact discovered target.',
     usage: 'Use exact operation IDs and targets returned by workspace_explore. Reads and changes use the same call shape. Batch only independent reads; issue changes separately. Supply idempotencyKey only when the discovered operation advertises acceptsIdempotencyKey. A change may carry `say`: once it succeeds, that line is posted to the Room as the Agent\'s own progress message while its turn continues; a read carrying it is refused. A target Module enforces current run restrictions and safety checks.',
     returns: 'Results in request order. Each result contains either data or a structured error such as out-of-scope, restricted, stale, or invalid input.',
@@ -792,7 +815,8 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
             // After dispatch begins, an HTTP, transport or response-contract
             // failure cannot establish that a requested change did not happen.
             effects[index] = effect(entry, 'unknown')
-            const response = await fetchImpl(`${workspacePath}/capabilities/${encodeURIComponent(entry.operationId)}/invoke`, {
+            const dispatchPath = context.perspectiveOrigin === undefined ? workspacePath : `${origin(deps.hostBaseUrl)}/internal/workspaces/${encodeURIComponent(deps.workspaceId)}`
+            const response = await fetchImpl(`${dispatchPath}/capabilities/${encodeURIComponent(entry.operationId)}/invoke`, {
               method: 'POST',
               signal: requestSignal(context.signal),
               headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
@@ -802,6 +826,7 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
                 ...(entry.expectedRevision === undefined ? {} : { expectedRevision: entry.expectedRevision }),
                 ...(entry.idempotencyKey === undefined ? {} : { idempotencyKey: entry.idempotencyKey }),
                 input,
+                ...(context.perspectiveOrigin === undefined ? {} : { perspectiveOrigin: context.perspectiveOrigin }),
                 actor: { kind: 'ai', id: context.callerId, displayName: context.callerName },
               }),
             })

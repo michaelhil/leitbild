@@ -24,6 +24,8 @@ import { validateWSInbound } from './ws-commands/validate.ts'
 import type { LimitMetrics } from '../core/limit-metrics.ts'
 import type { WorkspaceId } from '@leitbild/contracts'
 import type { ClientSession, WSConnection, WSManager } from './ws-types.ts'
+import { createRuntimeAccessView } from '../core/workspaces/runtime-access.ts'
+import { isPerspectiveScope } from '../core/rooms/perspective-scope.ts'
 
 // === Constants ===
 
@@ -57,6 +59,52 @@ export const createWSManager = (deps: WSManagerDeps): WSManager => {
   const sessions = new Map<string, ClientSession>()
   const wsConnections = new Map<string, WSConnection>()
   const stateUnsubs = new Map<string, () => void>()
+  const privateEvents = new Map<WorkspaceId, { roomIds: Set<string>; roomNames: Map<string, string>; agentNames: Map<string, string>; agentIds: Map<string, string> }>()
+  const rememberPrivate = (workspaceId: WorkspaceId) => {
+    let known = privateEvents.get(workspaceId)
+    if (known === undefined) { known = { roomIds: new Set(), roomNames: new Map(), agentNames: new Map(), agentIds: new Map() }; privateEvents.set(workspaceId, known) }
+    const runtime = getRuntime(workspaceId)
+    for (const profile of runtime?.rooms.listAllRooms() ?? []) if (isPerspectiveScope(profile.scope)) {
+      known.roomIds.add(profile.id); known.roomNames.set(profile.name, profile.id)
+      const id = profile.perspective?.admission.actualAgentId
+      if (id !== undefined) {
+        known.agentIds.set(id, profile.id)
+        const agent = runtime?.team.getAgent(id)
+        if (agent !== undefined) known.agentNames.set(agent.name, profile.id)
+      }
+    }
+    return known
+  }
+  const eventRoom = (workspaceId: WorkspaceId, msg: WSOutbound): string | undefined => {
+    const known = rememberPrivate(workspaceId), runtime = getRuntime(workspaceId)
+    if (msg.type === 'message') return msg.message.roomId
+    if (msg.type === 'room_created') return msg.profile.id
+    if ('roomId' in msg && typeof msg.roomId === 'string') return msg.roomId
+    if ('roomName' in msg && typeof msg.roomName === 'string') return runtime?.rooms.getRoom(msg.roomName)?.profile.id ?? known.roomNames.get(msg.roomName)
+    if (msg.type === 'agent_joined') return known.agentIds.get(msg.agent.id)
+    if ('agentId' in msg && typeof msg.agentId === 'string') return known.agentIds.get(msg.agentId)
+    if ('agentName' in msg && typeof msg.agentName === 'string') return known.agentNames.get(msg.agentName)
+    return undefined
+  }
+  const mayDeliver = (session: ClientSession, msg: WSOutbound, explicitRoomId?: string): boolean => {
+    const runtime = getRuntime(session.workspaceId)
+    const roomId = explicitRoomId ?? eventRoom(session.workspaceId, msg)
+    const known = rememberPrivate(session.workspaceId)
+    const privateEvent = roomId !== undefined && known.roomIds.has(roomId)
+    const view = session.perspectiveViewToken === undefined ? undefined : runtime?.perspectiveRooms?.viewLocal(session.perspectiveViewToken)
+    if (session.perspectiveViewToken !== undefined && view === undefined) {
+      wsConnections.get(session.sessionToken)?.close(4004, 'Perspective view expired or revoked')
+      return false
+    }
+    if (privateEvent) {
+      // No private chunks/thinking/tool previews cross a transport before the
+      // final fresh authority gate. Exact outcomes remain in scoped Inspector.
+      if (msg.type === 'agent_activity') return false
+      return view?.room.id === roomId && session.focusedRoomId === roomId
+    }
+    if (view !== undefined && roomId !== undefined && view.room.id !== roomId) return false
+    return true
+  }
 
   const releaseSessionForWorkspaceSwitch = (sessionToken: string, nextWorkspaceId: WorkspaceId): boolean => {
     const existing = sessions.get(sessionToken)
@@ -91,8 +139,9 @@ export const createWSManager = (deps: WSManagerDeps): WSManager => {
 
   const broadcastAllWorkspaces = (msg: WSOutbound): void => {
     const data = JSON.stringify(msg)
-    for (const ws of wsConnections.values()) {
-      safeSend(ws, data)
+    for (const [token, ws] of wsConnections) {
+      const session = sessions.get(token)
+      if (session !== undefined && mayDeliver(session, msg)) safeSend(ws, data)
     }
   }
 
@@ -109,6 +158,7 @@ export const createWSManager = (deps: WSManagerDeps): WSManager => {
     const data = JSON.stringify(msg)
     for (const [token, session] of sessions) {
       if (session.workspaceId !== workspaceId) continue
+      if (!mayDeliver(session, msg)) continue
       const ws = wsConnections.get(token)
       if (!ws) continue
       safeSend(ws, data)
@@ -123,6 +173,7 @@ export const createWSManager = (deps: WSManagerDeps): WSManager => {
     const data = JSON.stringify(msg)
     for (const [token, session] of sessions) {
       if (session.workspaceId !== workspaceId) continue
+      if (!mayDeliver(session, msg, roomId)) continue
       if (session.focusedRoomId && session.focusedRoomId !== roomId) continue
       const ws = wsConnections.get(token)
       if (!ws) continue
@@ -136,6 +187,7 @@ export const createWSManager = (deps: WSManagerDeps): WSManager => {
   // (3s polling) — no WS push path.
 
   const subscribeAgentState = (agent: Agent, workspaceId: WorkspaceId): void => {
+    rememberPrivate(workspaceId)
     if (agent.kind !== 'ai') return
     if (stateUnsubs.has(agent.id)) return
     const agentName = agent.name
@@ -173,8 +225,13 @@ export const createWSManager = (deps: WSManagerDeps): WSManager => {
       void sessionToken
       return null
     }
-    const focusedRoomId = sessionToken ? sessions.get(sessionToken)?.focusedRoomId : undefined
-    const visibleRooms = sys.rooms.listAllRooms().filter(profile => !focusedRoomId || profile.id === focusedRoomId)
+    const session = sessionToken ? sessions.get(sessionToken) : undefined
+    const focusedRoomId = session?.focusedRoomId
+    const viewLease = session?.perspectiveViewToken === undefined ? undefined : sys.perspectiveRooms?.viewLocal(session.perspectiveViewToken)
+    if (session?.perspectiveViewToken !== undefined && (viewLease === undefined || viewLease.room.id !== focusedRoomId)) return null
+    rememberPrivate(workspaceId)
+    const visible = createRuntimeAccessView(sys, viewLease?.room.id)
+    const visibleRooms = visible.rooms.listAllRooms().filter(profile => !focusedRoomId || profile.id === focusedRoomId)
     const roomStates: Record<string, RoomState> = {}
     for (const profile of visibleRooms) {
       const room = sys.rooms.getRoom(profile.id)
@@ -183,7 +240,7 @@ export const createWSManager = (deps: WSManagerDeps): WSManager => {
     const visibleAgentIds = focusedRoomId
       ? new Set(sys.rooms.getRoom(focusedRoomId)?.getParticipantIds() ?? [])
       : null
-    const agents: AgentProfile[] = sys.team.listAgents()
+    const agents: AgentProfile[] = visible.team.listAgents()
       .filter(a => !a.inactive && (!visibleAgentIds || visibleAgentIds.has(a.id)))
       .map(a => {
         const ai = asAIAgent(a)
@@ -273,9 +330,15 @@ export const handleWSMessage = async (
     return
   }
 
-  const ctx = { ws, session, system, wsManager }
-
   try {
+    const lease = session.perspectiveViewToken === undefined ? undefined : await (system.perspectiveRooms?.viewAuthorize(session.perspectiveViewToken)
+      ?? Promise.reject(new Error('Perspective view is unavailable')))
+    if (lease !== undefined) {
+      if (lease.room.id !== session.focusedRoomId || msg.type !== 'post_message' && msg.type !== 'cancel_generation') throw new Error('perspective_view_read_only: only scoped conversation submission and Stop are admitted')
+      if (msg.type === 'post_message' && msg.presentationRecipient !== undefined
+        && JSON.stringify(msg.presentationRecipient.subject) !== JSON.stringify(lease.perspective)) throw new Error('perspective_recipient_mismatch: use this exact Perspective document offer')
+    }
+    const ctx = { ws, session, system: createRuntimeAccessView(system, lease?.room.id), wsManager }
     for (const handler of commandHandlers) {
       if (await handler(msg, ctx)) return
     }

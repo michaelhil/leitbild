@@ -3,6 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import type { RoomDirectory } from '../../core/rooms/directory.ts'
+import { createRoomDirectory } from '../../core/rooms/directory.ts'
 import type { ProviderKeys } from '../../llm/provider-keys.ts'
 import { createVectorStore } from '../../embed/vector-store.ts'
 import { createRecallTool } from './recall-tool.ts'
@@ -44,10 +45,11 @@ const mkProviderKeys = (openaiKey: string): ProviderKeys => {
   }
 }
 
-const makeRoomDirectoryStub = (): RoomDirectory => ({
-  // Only getRoom is exercised by the tool.
-  getRoom: () => undefined,
-} as unknown as RoomDirectory)
+const makeRoomDirectoryStub = (): RoomDirectory => {
+  const rooms = createRoomDirectory()
+  rooms.restoreRoom({ id: 'r1', name: 'general', createdBy: 'test', createdAt: 1, scope: { kind: 'workspace' }, scopeRevision: 0 })
+  return rooms
+}
 
 describe('recall tool', () => {
   test('empty store returns success + empty array', async () => {

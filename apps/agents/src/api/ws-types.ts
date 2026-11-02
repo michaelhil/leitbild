@@ -12,6 +12,7 @@ export interface ClientSession {
   readonly workspaceId: WorkspaceId
   readonly sessionToken: string
   readonly focusedRoomId?: string
+  readonly perspectiveViewToken?: string
   lastActivity: number
 }
 
@@ -19,6 +20,7 @@ export interface WSData {
   sessionToken: string
   workspaceId: WorkspaceId
   focusedRoomId?: string
+  perspectiveViewToken?: string
   terminalClose?: 'workspace-unavailable'
 }
 

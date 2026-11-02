@@ -25,6 +25,7 @@ import type { ModuleActivity, WorkspaceActivityItem } from '@leitbild/contracts'
 import { asAIAgent } from '../../agents/shared.ts'
 import type { AgentsWorkspaceRuntime } from '../../workspace-runtime.ts'
 import type { WorkspaceRuntimeRegistry } from './runtime-registry.ts'
+import { createRuntimeAccessView } from './runtime-access.ts'
 
 interface Noun { readonly one: string; readonly many: string }
 interface Part extends Noun { readonly count: number }
@@ -39,6 +40,7 @@ const fact = (key: string, active: boolean, parts: ReadonlyArray<Part>, umbrella
 }
 
 const activityOf = (runtime: AgentsWorkspaceRuntime): WorkspaceActivityItem[] => {
+  runtime = createRuntimeAccessView(runtime) // Ordinary Host activity never counts private conversations.
   const agents = runtime.team.listAgents()
   const rooms = runtime.rooms.listAllRooms().map(profile => {
     const room = runtime.rooms.getRoom(profile.id)

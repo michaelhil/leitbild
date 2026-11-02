@@ -40,7 +40,8 @@ export interface RoomDirectoryCallbacks {
 
 export interface RoomDirectory {
   readonly createRoom: (config: RoomConfig) => Room
-  readonly createRoomSafe: (config: RoomConfig) => CreateResult<Room>
+  /** Owner-only initializer runs before any directory/event/persistence publication. */
+  readonly createRoomSafe: (config: RoomConfig, initialize?: (room: Room) => void) => CreateResult<Room>
   readonly getRoom: (idOrName: string) => Room | undefined
   readonly getRoomsForAgent: (agentId: string) => ReadonlyArray<Room>
   readonly listAllRooms: () => ReadonlyArray<RoomProfile>
@@ -69,7 +70,7 @@ export const createRoomDirectory = (callbacks: RoomDirectoryCallbacks = {}): Roo
     onScriptMessage: callbacks.onScriptMessage,
   })
 
-  const storeRoom = (config: RoomConfig, name: string): Room => {
+  const storeRoom = (config: RoomConfig, name: string, initialize?: (room: Room) => void): Room => {
     validateName(name, 'Room')
     const profile: RoomProfile = {
       scope: config.scope ?? { kind: 'workspace' },
@@ -82,9 +83,10 @@ export const createRoomDirectory = (callbacks: RoomDirectoryCallbacks = {}): Roo
       ...(config.sourceDefinition === undefined ? {} : { sourceDefinition: config.sourceDefinition }),
     }
     const room = createRoom(profile, makeRoomCallbacks())
+    initialize?.(room)
     rooms.set(profile.id, room)
     nameIndex.set(name.toLowerCase(), profile.id)
-    callbacks.onRoomCreated?.(profile)
+    callbacks.onRoomCreated?.(room.profile)
     return room
   }
 
@@ -100,9 +102,9 @@ export const createRoomDirectory = (callbacks: RoomDirectoryCallbacks = {}): Roo
       if (nameIndex.has(config.name.toLowerCase())) throw new Error(`Room name "${config.name}" is already taken`)
       return storeRoom(config, config.name)
     },
-    createRoomSafe: (config) => {
+    createRoomSafe: (config, initialize) => {
       const assignedName = ensureUniqueName(config.name, [...rooms.values()].map(room => room.profile.name))
-      return { value: storeRoom(config, assignedName), requestedName: config.name, assignedName }
+      return { value: storeRoom(config, assignedName, initialize), requestedName: config.name, assignedName }
     },
     getRoom,
     getRoomsForAgent: (agentId) => [...rooms.values()].filter(room => room.hasMember(agentId)),

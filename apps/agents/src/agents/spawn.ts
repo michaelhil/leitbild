@@ -20,12 +20,13 @@ import { createAIAgent } from './ai-agent.ts'
 import type { AgentProgress, AgentTurnStart, Decision } from './ai-agent.ts'
 import { createToolModelContext } from './tool-model-context.ts'
 import { addAgentToRoom } from './actions.ts'
-import { createToolSurface } from '../tool-surface/index.ts'
+import { createToolSurface, type RoomActivation } from '../tool-surface/index.ts'
 import { WORKSPACE_CAPABILITY_TOOL_NAMES } from '../tools/built-in/workspace-capability-tools.ts'
 import type { RunContextFetcher } from './run-context.ts'
 import type { WorkspaceSubjectReference } from '@leitbild/contracts'
 import type { ExecutionStore } from '../core/executions/store.ts'
 import { CONTEXT_CHECKPOINT_TOOL, isWorkingContextArchiveFailure } from '../core/working-context.ts'
+import { immutablePerspectiveRuntime } from './immutable-runtime.ts'
 
 export type ExecutionGrowth = <T>(bytes: number, work: () => Promise<T>) => Promise<T>
 export type RunToolOperation = <T>(work: () => Promise<T>) => Promise<T>
@@ -36,6 +37,12 @@ interface AgentToolContextRef {
   currentLLMSettings?: () => Pick<AIAgentConfig, 'model' | 'seed' | 'thinking' | 'reasoningEffort'>
   focusedSubjects?: (roomId: string) => ReadonlyArray<WorkspaceSubjectReference>
   presentationRecipient?: (roomId: string, turnId?: string) => import('@leitbild/contracts').PresentationRecipient | undefined
+  perspective?: PerspectiveExecution
+}
+
+interface PerspectiveExecution {
+  readonly origin: (roomId: string, turnId: string) => NonNullable<ToolContext['perspectiveOrigin']>
+  readonly assertAllowed: (roomId: string, signal?: AbortSignal) => Promise<void>
 }
 
 // --- Tool executor ---
@@ -54,6 +61,7 @@ export const createToolExecutor = (
   runToolOperation?: RunToolOperation,
   modelContext?: (invocation: { signal: AbortSignal; turnId?: string; callId?: string; roomId?: string }) => { context: Pick<ToolContext, 'llm' | 'llmStream'>; calls: NonNullable<ToolResult['nestedModelCalls']> },
   getPresentationRecipient?: AgentToolContextRef['presentationRecipient'],
+  perspective?: PerspectiveExecution,
 ): ToolExecutor => {
   const allowed = new Set(allowedTools)
 
@@ -134,8 +142,14 @@ export const createToolExecutor = (
           // Admission/cancellation before dispatch is not a tool outcome.
           // In particular, a queued Workspace operation may already be stale.
           callSignal.throwIfAborted()
+          if (perspective !== undefined) {
+            if (roomId === undefined || executionTurnId === undefined) throw new Error('Perspective execution requires its exact Room and turn')
+            await perspective.assertAllowed(roomId, callSignal)
+            callSignal.throwIfAborted()
+          }
           const entry = registry.getEntry(call.tool)
           if (!entry) return retainOutcome({ success: false, error: `Tool "${call.tool}" is not registered` })
+          if (perspective !== undefined && entry.tool.compartmentAccess === undefined) return retainOutcome({ success: false, error: 'perspective_tool_not_admitted: tool has no owner-reviewed compartment declaration' })
           const room = roomId === undefined || getRoomActivation === undefined ? undefined : getRoomActivation(roomId)
           if (roomId !== undefined && getRoomActivation !== undefined && room === undefined) {
             return retainOutcome({ success: false, error: `Room "${roomId}" is unavailable; no tool was dispatched` })
@@ -148,6 +162,7 @@ export const createToolExecutor = (
           dispatched = true
           invocationModels = modelContext?.({ signal: callSignal, ...(executionTurnId === undefined ? {} : { turnId: executionTurnId }), ...(call.callId === undefined ? {} : { callId: call.callId }), ...(roomId === undefined ? {} : { roomId }) })
           try { result = await entry.tool.execute(call.arguments, { ...callContext, ...invocationModels?.context, signal: callSignal, ...(call.callId === undefined ? {} : { executionCallId: call.callId }), ...(executionTurnId === undefined ? {} : { executionTurnId }),
+            ...(perspective === undefined ? {} : { perspectiveOrigin: perspective.origin(roomId!, executionTurnId!) }),
             ...(controls === undefined ? {} : { contextCheckpoint: input => controls.checkpoint(call, input) }),
           }) }
           catch (err) {
@@ -155,7 +170,9 @@ export const createToolExecutor = (
             console.error(`[tool] "${call.tool}" execution failed:`, err)
             result = { success: false, error: err instanceof Error ? err.message : 'Tool execution failed' }
           }
-          return retainOutcome(result)
+          const retained = retainOutcome(result)
+          if (perspective !== undefined) await perspective.assertAllowed(roomId!, callSignal)
+          return retained
         }
         // Existing Workspace lifetime ownership must outlive the abort race:
         // an uncooperative tool still needs its store when its real result arrives.
@@ -221,7 +238,7 @@ const warnMissingTools = (agentName: string, requested: ReadonlyArray<string>, r
 // resolver to filter the static tool list down to tools whose owning pack is
 // active in the current room. An unknown room exposes no tools.
 export type GetRoomActivation = (roomId: string) =>
-  | { readonly getActivePacks: () => ReadonlyArray<string> }
+  | RoomActivation
   | undefined
 
 // Build tool support — always uses native tool calling.
@@ -283,6 +300,7 @@ export const buildToolSupport = async (
     // Pure standalone tool callers need no model settings; attempting a helper
     // without them still fails explicitly at that helper boundary.
     invocation => createToolModelContext({ provider: llmProvider, settings: agentRef.currentLLMSettings === undefined ? undefined : currentLLMSettings(), signal: invocation.signal,
+      ...(agentRef.perspective === undefined ? {} : { beforeDispatch: () => agentRef.perspective!.assertAllowed(invocation.roomId!, invocation.signal) }),
       ...(invocation.callId === undefined ? {} : { callId: invocation.callId }),
       observer: ({ id, ordinal }) => ({
         started: async request => {
@@ -303,6 +321,7 @@ export const buildToolSupport = async (
       }),
     }),
     (roomId, turnId) => agentRef.presentationRecipient?.(roomId, turnId),
+    agentRef.perspective,
   )
 
   // Initial projection has no Room context. Each evaluation reads activation.
@@ -355,6 +374,9 @@ const resolveAgentTools = async (
 // --- Spawn AI Agent ---
 
 export interface SpawnOptions {
+  readonly perspective?: PerspectiveExecution & { readonly roomId: string }
+  readonly getWorkspacePrompt?: () => string
+  readonly getResponseFormat?: () => string
   readonly onTurnStart?: (input: AgentTurnStart) => Promise<void>
   readonly onTurnFinished?: (executionTurnId: string) => void
   readonly onTurnMessageLinked?: (input: {
@@ -554,7 +576,7 @@ export const spawnAIAgent = async (
   }
 
   // Resolve tool support — agentRef filled after agent creation (lazy context)
-  const agentRef: AgentToolContextRef = { id: '', name: '' }
+  const agentRef: AgentToolContextRef = { id: '', name: '', ...(spawnOptions?.perspective === undefined ? {} : { perspective: spawnOptions.perspective }) }
   const toolSupport = await resolveAgentTools(
     config,
     llmProvider,
@@ -568,6 +590,7 @@ export const spawnAIAgent = async (
 
   const agent = createAIAgent(config, llmProvider, onDecision, {
     ...toolSupport,
+    ...(spawnOptions?.perspective === undefined ? {} : { isolatedRoomId: spawnOptions.perspective.roomId, assertTurnAllowed: spawnOptions.perspective.assertAllowed }),
     providerForTurn: observer => llmService.bound({ source: 'agent', agentId, onChainSwitch: (preferred, effective, reason) => {
       observer({ kind: 'model_fallback', preferred, effective, reason })
       onChainSwitch(preferred, effective, reason)
@@ -578,8 +601,8 @@ export const spawnAIAgent = async (
     ...(spawnOptions?.executionStore ? { executionStore: spawnOptions.executionStore } : {}),
     ...(spawnOptions?.executionGrowth ? { executionGrowth: spawnOptions.executionGrowth } : {}),
     ...(spawnOptions?.fetchRunContext ? { fetchRunContext: spawnOptions.fetchRunContext } : {}),
-    getWorkspacePrompt: settings.getPrompt,
-    getResponseFormat: settings.getResponseFormat,
+    getWorkspacePrompt: spawnOptions?.getWorkspacePrompt ?? settings.getPrompt,
+    getResponseFormat: spawnOptions?.getResponseFormat ?? settings.getResponseFormat,
     getCompressedIds: (roomId: string) => rooms.getRoom(roomId)?.getCompressedIds() ?? new Set(),
     getCompressionSummary: (roomId: string) => rooms.getRoom(roomId)?.getCurrentCompressionMessage(),
     getRoomMembers: (roomId: string) => {
@@ -608,9 +631,10 @@ export const spawnAIAgent = async (
   agentRef.focusedSubjects = agent.getFocusedSubjects
   agentRef.presentationRecipient = agent.getPresentationRecipient
 
-  team.addAgent(agent)
+  const admittedAgent = spawnOptions?.perspective === undefined ? agent : immutablePerspectiveRuntime(agent)
+  team.addAgent(admittedAgent)
 
-  return agent
+  return admittedAgent
 }
 
 export const spawnHumanAgent = async (

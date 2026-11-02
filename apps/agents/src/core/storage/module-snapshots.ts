@@ -2,6 +2,8 @@ import { mkdir, rename, rm } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { z } from 'zod'
 import { presentationPromptLinkSchema, workspaceRoomScopeSchema } from '@leitbild/contracts'
+import { perspectiveRoomStateSchema, perspectiveMessageProvenanceSchema } from '../types/perspective-room.ts'
+import { isPerspectiveScope } from '../rooms/perspective-scope.ts'
 import type { Agent, AIAgentConfig } from '../types/agent.ts'
 import type { DeliveryMode, Message, RoomProfile } from '../types/messaging.ts'
 import type { GenerationQueryRecord, Room } from '../types/room.ts'
@@ -111,6 +113,7 @@ const triggerSchema = z.object({
 }).strict()
 
 const roomProfileSchema = z.object({
+  perspective: perspectiveRoomStateSchema.optional(),
   scope: workspaceRoomScopeSchema,
   scopeRevision: z.number().int().nonnegative(),
   id: z.string(),
@@ -141,6 +144,7 @@ const messageAttachmentSchema = z.object({
 }).strict()
 
 const messageSchema = z.object({
+  perspective: perspectiveMessageProvenanceSchema.optional(),
   id: z.string(),
   senderId: z.string(),
   senderName: z.string().optional(),
@@ -278,7 +282,23 @@ const roomSnapshotSchema = z.object({
   summaryConfig: summaryConfigSchema.optional(),
   latestSummary: z.string().optional(),
   activePacks: z.array(z.string()),
-}).strict()
+}).strict().superRefine((room, ctx) => {
+  const state = room.profile.perspective
+  const privateRoom = isPerspectiveScope(room.profile.scope)
+  if (privateRoom !== (state !== undefined)) {
+    ctx.addIssue({ code: 'custom', path: ['profile', 'perspective'], message: 'A Perspective Room requires explicit owner provenance; ordinary Rooms cannot carry it' })
+    return
+  }
+  if (state !== undefined) {
+    const admission = state.admission
+    if (room.profile.scope.kind !== 'resource' || JSON.stringify(room.profile.scope.resource) !== JSON.stringify(admission.perspective)
+      || admission.room.id !== room.profile.id || room.members.some(id => id !== admission.actualAgentId)) ctx.addIssue({ code: 'custom', message: 'Perspective Room scope and membership must match its immutable binding' })
+    for (const [index, message] of room.messages.entries()) {
+      const expected = { perspectiveId: admission.perspective.id, admissionGeneration: admission.admissionGeneration, actualAgentId: admission.actualAgentId, runtimeGeneration: admission.runtimeGeneration }
+      if (message.roomId !== room.profile.id || JSON.stringify(message.perspective) !== JSON.stringify(expected)) ctx.addIssue({ code: 'custom', path: ['messages', index], message: 'Private messages retain their exact owner compartment provenance' })
+    }
+  } else if (room.messages.some(message => message.perspective !== undefined)) ctx.addIssue({ code: 'custom', path: ['messages'], message: 'Private messages cannot be copied into an ordinary Room' })
+})
 
 const agentConfigSchema = z.object({
   name: z.string(),

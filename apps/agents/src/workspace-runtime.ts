@@ -99,6 +99,10 @@ import type { LogConfig, LogConfigState, LogEvent, LogSink } from './logging/typ
 import { createJsonlFileSink } from './logging/jsonl-sink.ts'
 import { matchesKindFilter, validateLogConfig, defaultLogDir, defaultSessionId } from './logging/config.ts'
 import { isPerspectiveScope } from './core/rooms/perspective-scope.ts'
+import { createPerspectiveRooms, type PerspectiveRooms } from './core/perspectives/owner.ts'
+import { createPerspectiveWorldClient } from './core/perspectives/world-client.ts'
+import { createRoomAccessView, createTeamAccessView } from './core/rooms/access-view.ts'
+import { publishedContextSchema } from '@leitbild/contracts'
 import {
   mkDeliveryModeChanged, mkEvalEvent,
   mkMembershipChanged, mkMessagePosted, mkModeAutoSwitched,
@@ -109,6 +113,7 @@ import {
 } from './logging/event-mapping.ts'
 
 export interface AgentsWorkspaceRuntime {
+  readonly perspectiveRooms?: PerspectiveRooms
   readonly readPromptEvidence: (roomId: string, input: unknown) => Promise<import('@leitbild/contracts').PresentationPromptEvidence>
   readonly comparisons: import('./agents/comparisons.ts').Comparisons
   readonly executionStore: ExecutionStore
@@ -269,6 +274,9 @@ export interface LoggingHandle {
 }
 
 export interface CreateAgentsWorkspaceRuntimeOptions {
+  /** Construction dependency only. Production assembly omits this gate. */
+  readonly perspectivePilot?: { readonly enabled: boolean }
+  readonly perspectiveWorldRead?: import('./core/perspectives/owner.ts').PerspectiveRoomsDeps['readWorld']
   /** Workspace registry supplies a durable path. Ephemeral standalone/test runtimes use memory. */
   readonly executionsFile?: string
   readonly persistConfiguration?: () => Promise<void>
@@ -411,7 +419,9 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
     // Diagnostics ring buffer — subscribes to the multi-subscriber eval-event
     // channel so it coexists with the wire-workspace-runtime-events broadcaster.
     const evalBuffer = createEvalBuffer()
-    evalBuffer.attach(evalEvent.add)
+    evalBuffer.attach(listener => evalEvent.add((scope, event) => {
+      if (scope.perspective === undefined) listener(scope, event) // Private execution evidence has its scoped durable Inspector; never enter the ordinary Workspace ring.
+    }))
 
     // Forward-declared (matches schedulerRef pattern). RoomDirectoryCallbacks.onScriptMessage closes over this.
     let scriptRunnerRef: ScriptRunner | undefined
@@ -434,7 +444,7 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
       resolveKind,
       onMessagePosted: (roomId, message) => {
         messagePosted.proxy(roomId, message)
-        schedulerRef?.onMessagePosted(roomId, message)
+        if (message.perspective === undefined) schedulerRef?.onMessagePosted(roomId, message) // Private automatic summary/indexing is outside the bounded pilot.
       },
       beforeMessageRemoval: (roomId, messageId) => {
         comparisons.removeMessages(roomId, messageId)
@@ -462,14 +472,25 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
       onSummaryUpdated: summaryUpdated.proxy,
     }
     const rooms = createRoomDirectory(roomCallbacks)
-    const createRoom: AgentsWorkspaceRuntime['createRoom'] = async config => {
+    const createRoomWithBudget = async (config: Parameters<RoomDirectory['createRoomSafe']>[0], initialize?: (room: import('./core/types/room.ts').Room) => void): Promise<ReturnType<RoomDirectory['createRoomSafe']>> => {
       const root = options.workspaceId === undefined ? sharedPaths.root() : workspaceModulePaths(options.workspaceId).agents.root
       // Reserve initial metadata headroom; ongoing conversations remain authoritative
       // and are never silently discarded by optional-observation retention.
-      const work = () => agentsStorageBudget().withGrowth(root, 64 * 1024 + Buffer.byteLength(JSON.stringify(config)), async () => rooms.createRoomSafe(config))
+      const work = () => agentsStorageBudget().withGrowth(root, 64 * 1024 + Buffer.byteLength(JSON.stringify(config)), async () => rooms.createRoomSafe(config, initialize))
       // Standalone/headless runtimes have no evicting Workspace registry.
       return options.runWorkspaceOperation ? options.runWorkspaceOperation(work) : work()
     }
+    const createRoom: AgentsWorkspaceRuntime['createRoom'] = async config => {
+      if (config.scope !== undefined && isPerspectiveScope(config.scope)) throw Object.assign(new Error('Perspective Rooms require owner preparation'), { code: 'perspective_preparation_required' })
+      return createRoomWithBudget(config)
+    }
+    const publicRooms = createRoomAccessView(rooms)
+    const privateAgent = (id: string): boolean => {
+      const agent = team.getAgent(id), ownerRoom = agent === undefined ? undefined : asAIAgent(agent)?.getConfig().ownerRoomId
+      const room = ownerRoom === undefined ? undefined : rooms.getRoom(ownerRoom)
+      return room !== undefined && isPerspectiveScope(room.profile.scope)
+    }
+    const publicTeam = createTeamAccessView(team, id => !privateAgent(id))
     const settings = createWorkspaceSettings()
     const bookmarks = createBookmarkStore(bookmarksChanged.proxy)
     const routeMessage = createMessageRouter({ rooms, limitMetrics: deployment.limitMetrics })
@@ -668,20 +689,20 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
     // and are registered once at boot — see bootstrap.ts.
     toolRegistry.registerAll([
       // Room management — bound to per-Workspace rooms
-      createListRoomsTool(rooms),
+      createListRoomsTool(publicRooms),
       createCreateRoomTool(createRoom, systemAddAgentToRoom),
-      createDeleteRoomTool(systemRemoveRoom, rooms),
-      createSetRoomPromptTool(rooms),
-      createPauseRoomTool(rooms),
-      createSetDeliveryModeTool(rooms),
-      createAddToRoomTool(team, rooms, systemAddAgentToRoom),
-      createRemoveFromRoomTool(team, rooms, systemRemoveAgentFromRoom),
+      createDeleteRoomTool(systemRemoveRoom, publicRooms),
+      createSetRoomPromptTool(publicRooms),
+      createPauseRoomTool(publicRooms),
+      createSetDeliveryModeTool(publicRooms),
+      createAddToRoomTool(publicTeam, publicRooms, systemAddAgentToRoom),
+      createRemoveFromRoomTool(publicTeam, publicRooms, systemRemoveAgentFromRoom),
       // Agent tools — bound to per-Workspace team / rooms
-      createListAgentsTool(team),
-      createMuteAgentTool(team, rooms),
-      createGetMyContextTool(team, rooms),
+      createListAgentsTool(publicTeam),
+      createMuteAgentTool(publicTeam, publicRooms),
+      createGetMyContextTool(publicTeam, publicRooms),
       // Utility tools — bound to per-Workspace rooms
-      createGetRoomHistoryTool(rooms),
+      createGetRoomHistoryTool(publicRooms),
       createConversationReadTool(rooms, executionStore),
       createContextCheckpointTool(),
       createWikiLookupTool({ getSources: roomId => {
@@ -691,12 +712,12 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
         return deployment.packCatalog.list().filter(pack => active.has(pack.id))
           .flatMap(pack => pack.wikis.map(wiki => ({ packId: pack.id, wiki })))
       } }),
-      createPostToRoomTool(rooms),
+      createPostToRoomTool(publicRooms),
       // RAG: recall tool — only registered when this Workspace has a vector
       // store (i.e. options.vectorsFile was provided). Focused runtime tests
       // do not get it; agents see a clean tool list without
       // a non-functional `recall`.
-      ...(vectorStore ? [createRecallTool({ vectorStore, providerKeys, rooms })] : []),
+      ...(vectorStore ? [createRecallTool({ vectorStore, providerKeys, rooms: publicRooms })] : []),
       ...(vectorStore ? [createQueryDocumentsTool({ vectorStore, providerKeys })] : []),
     ])
 
@@ -766,6 +787,8 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
       for (const agent of team.listByKind('ai')) {
         const ai = agent as AIAgent
         if (!ai.refreshTools) continue
+        const ownerId = ai.getConfig().ownerRoomId
+        const privateOwner = ownerId === undefined ? undefined : rooms.getRoom(ownerId)?.profile.perspective
         const toolNames = effectiveAgentToolSelection(ai.getConfig())
         const support = await buildToolSupport(
           toolNames, toolRegistry,
@@ -775,6 +798,10 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
             currentLLMSettings: () => ai.getEffectiveConfig?.() ?? ai.getConfig(),
             focusedSubjects: roomId => ai.getFocusedSubjects(roomId),
             presentationRecipient: (roomId, turnId) => ai.getPresentationRecipient?.(roomId, turnId),
+            ...(privateOwner === undefined ? {} : { perspective: {
+              origin: (roomId: string, turnId: string) => { if (perspectiveRooms === undefined) throw new Error('perspective_runtime_unavailable'); return perspectiveRooms.executionOrigin(roomId, ai.id, turnId) },
+              assertAllowed: async (roomId: string, signal?: AbortSignal) => { if (perspectiveRooms === undefined) throw new Error('perspective_runtime_unavailable'); await perspectiveRooms.assertLive(roomId, signal) },
+            } }),
           },
           llm,
           // Pack-aware filter must survive a hot reload — without re-passing
@@ -892,13 +919,33 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
       : undefined
 
     const runToolOperation = options.runWorkspaceOperation
-    const boundSpawnAIAgent = (config: AIAgentConfig, options?: SpawnOptions) =>
-      spawnAIAgent(config, llmService, rooms, settings, team, routeMessage, toolRegistry, {
-        ...options,
+    const perspectiveWorld = options.workspaceId !== undefined && options.workspaceHostUrl !== undefined
+      ? createPerspectiveWorldClient({ workspaceId: options.workspaceId, hostBaseUrl: options.workspaceHostUrl }) : undefined
+    const boundSpawnAIAgent = (config: AIAgentConfig, spawnOptions?: SpawnOptions) => {
+      const ownerRoom = config.ownerRoomId === undefined ? undefined : rooms.getRoom(config.ownerRoomId)
+      const privateState = ownerRoom?.profile.perspective
+      if (ownerRoom !== undefined && isPerspectiveScope(ownerRoom.profile.scope)
+        && (privateState === undefined || privateState.admission.actualAgentId !== spawnOptions?.overrideId)) throw Object.assign(new Error('Private runtimes require their exact owner preparation identity'), { code: 'perspective_runtime_preparation_required' })
+      const roomId = ownerRoom?.profile.id
+      const privateOptions: SpawnOptions = privateState === undefined || roomId === undefined ? {} : {
+        perspective: { roomId, assertAllowed: async (id, signal) => { if (id !== roomId || perspectiveRooms === undefined) throw new Error('perspective_runtime_scope_mismatch'); await perspectiveRooms.assertLive(id, signal) },
+          origin: (id, turnId) => { if (perspectiveRooms === undefined) throw new Error('perspective_runtime_unavailable'); return perspectiveRooms.executionOrigin(id, privateState.admission.actualAgentId, turnId) } },
+        getWorkspacePrompt: () => privateState.workspacePrompt, getResponseFormat: () => privateState.responseFormat,
+        getSkills: () => privateState.skills.map(skill => `[${skill.name}] ${skill.description}\n${skill.body}`).join('\n\n---\n\n'),
+        getActiveSkillsDeclarations: () => privateState.skills.map(skill => ({ name: skill.name, declaredTools: skill.allowedToolNames })),
+        fetchRunContext: async (id, _focused, caller, signal) => {
+          if (perspectiveRooms === undefined || perspectiveWorld === undefined || id !== roomId || caller.executionTurnId === undefined) throw new Error('perspective_context_origin_required')
+          const execution = perspectiveRooms.executionOrigin(id, caller.id, caller.executionTurnId)
+          const result = publishedContextSchema.parse(await perspectiveWorld.invoke('world.perspective.context.read', privateState.admission.perspective, {}, execution, signal))
+          return `Perspective ${privateState.admission.perspective.id} as of ${result.context.at} (${result.context.clock} time):\n${result.context.text}`
+        },
+      }
+      return spawnAIAgent(config, llmService, rooms, settings, team, routeMessage, toolRegistry, {
+        ...spawnOptions,
         executionStore,
         executionGrowth,
         ...(fetchRunContext ? { fetchRunContext } : {}),
-        onTurnStart: comparisons.capture,
+        onTurnStart: privateState === undefined ? comparisons.capture : async () => { /* Private comparison/delegation capture is deliberately not admitted in this pilot. */ },
         onTurnMessageLinked: input => {
           // Absent without a Workspace Host (see proposalResumes above).
           proposalResumes?.answered(input)
@@ -914,13 +961,27 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
         // packs active in the trigger room. Returns the Room directly; the
         // resolver only needs getActivePacks().
         getRoomActivation: (roomId: string) => rooms.getRoom(roomId),
-        onEvalEvent: evalEvent.proxy,
+        onEvalEvent: (scope, event) => evalEvent.proxy(privateState === undefined ? scope : { ...scope, perspective: {
+          perspectiveId: privateState.admission.perspective.id, admissionGeneration: privateState.admission.admissionGeneration,
+          actualAgentId: privateState.admission.actualAgentId, runtimeGeneration: privateState.admission.runtimeGeneration,
+        } }, event),
         resolveEffectiveModel,
         // Process-global counter sink — context-builder bumps
         // multimodalImagesDropped whenever it swaps image bytes for a text
         // placeholder. Surfaces in /api/system/health.
         metricsSink: deployment.limitMetrics,
+        ...privateOptions,
       })
+    }
+    const perspectiveRooms = options.workspaceId === undefined || perspectiveWorld === undefined ? undefined : createPerspectiveRooms({
+      workspaceId: options.workspaceId, enabled: () => options.perspectivePilot?.enabled === true,
+      rooms, team, tools: toolRegistry, skills: skillStore, workspacePrompt: settings.getPrompt, responseFormat: settings.getResponseFormat,
+      createRoom: async (perspective, initialize) => (await createRoomWithBudget({ scope: { kind: 'resource', resource: perspective }, name: 'Perspective Assistant', createdBy: 'perspective-owner' }, initialize)).value,
+      spawn: (config, actualAgentId) => boundSpawnAIAgent(config, { overrideId: actualAgentId }),
+      readWorld: options.perspectiveWorldRead ?? perspectiveWorld.read,
+      changed: () => agentSettingsChanged.proxy(),
+      persist: async () => { if (options.persistConfiguration !== undefined) await options.persistConfiguration(); else if (options.executionsFile !== undefined) throw new Error('Perspective persistence is not wired') },
+    })
 
     // Provider-routing-event listener lives on the shared router (see
     // createDeploymentRuntime). The dispatcher is normally set by WorkspaceRuntimeRegistry
@@ -1058,6 +1119,7 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
       receipts: configurationReceipts, changed: () => agentSettingsChanged.proxy(), durable: options.executionsFile !== undefined })
 
     const system: AgentsWorkspaceRuntime = {
+      ...(perspectiveRooms === undefined ? {} : { perspectiveRooms }),
       rooms, createRoom, settings, bookmarks, team, routeMessage, executionStore, comparisons,
       readPromptEvidence: (roomId, input) => {
         if (options.workspaceId === undefined) throw Object.assign(new Error('Prompt evidence requires a Workspace identity'), { code: 'workspace_required' })

@@ -125,6 +125,7 @@ interface WorkspaceRuntimeEntry {
 }
 
 export interface WorkspaceRuntimeRegistryOptions {
+  readonly perspectivePilot?: { readonly enabled: boolean }
   readonly deployment: DeploymentRuntime
   readonly moduleState: AgentsModuleState
   readonly workspaceHostUrl?: string
@@ -360,6 +361,7 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
         return await work()
       }),
       ...(opts.workspaceHostUrl === undefined ? {} : { workspaceId: id, workspaceHostUrl: opts.workspaceHostUrl }),
+      ...(opts.perspectivePilot === undefined ? {} : { perspectivePilot: opts.perspectivePilot }),
       vectorsFile: paths.agents.vectors,
       executionsFile: paths.agents.executions,
     })
@@ -369,8 +371,10 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
       // the Agents Module. Corrupt or obsolete state fails the load.
       const snapshots = await loadWorkspaceModuleSnapshots(paths)
       await restoreWorkspaceModuleSnapshots(system, snapshots)
+      const invalidatedPerspectiveRuntimes = system.perspectiveRooms?.invalidateRestored() ?? false
 
       autoSaver = createModuleAutoSaver(system, paths)
+      if (invalidatedPerspectiveRuntimes) await autoSaver.flush()
 
       // Notify the registry's caller (e.g. WS broadcast wiring). autoSaver
       // is passed explicitly because the map entry isn't installed until

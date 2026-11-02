@@ -484,6 +484,10 @@ const correctResponse = async (
 // === Main evaluation loop ===
 
 export interface EvalOptions {
+  /** Live owner authority is checked after request retention, immediately
+   * before each provider dispatch. It does not discard an admitted late result.
+   */
+  readonly beforeModelDispatch?: () => Promise<void>
   readonly executionTurnId?: string
   readonly workingContext?: WorkingContextArchive
   readonly toolDefinitions?: ReadonlyArray<ToolDefinition>
@@ -584,6 +588,8 @@ export const evaluate = async (
     try {
       // Input retention may await storage admission. A cancellation during
       // that await must never dispatch a new paid/provider request.
+      signal?.throwIfAborted()
+      await options?.beforeModelDispatch?.()
       signal?.throwIfAborted()
       result = await callLLMOnce(llmProvider, request, onEvent, signal)
     }
@@ -927,6 +933,7 @@ export const evaluate = async (
 // Tool loop support is planned for a future phase — for now, tools are not supported.
 
 export interface LLMCallControls {
+  readonly beforeDispatch?: () => Promise<void>
   readonly signal?: AbortSignal
   readonly observer?: {
     readonly started: (request: ChatRequest) => Promise<void>
@@ -958,6 +965,8 @@ export const callLLM = async (provider: LLMProvider, options: LLMCallOptions, co
   let response: ExecutionModelResponse | undefined, completionAttempted = false
   try {
     controls.signal?.throwIfAborted()
+    await controls.beforeDispatch?.()
+    controls.signal?.throwIfAborted()
     // Stream-capable providers receive the invocation abort. A chat-only
     // provider is uncooperative after dispatch; retain its actual late outcome.
     response = await callLLMOnce(controls.signal && provider.stream ? provider : { ...provider, stream: undefined }, request, undefined, controls.signal)
@@ -978,6 +987,8 @@ export const streamLLM = async function* (provider: LLMProvider, options: LLMCal
   let metrics: ExecutionModelResponse['metrics'] = {}
   let finishReason: string | undefined, completionAttempted = false, terminalObserved = false
   try {
+    controls.signal?.throwIfAborted()
+    await controls.beforeDispatch?.()
     controls.signal?.throwIfAborted()
     for await (const chunk of provider.stream(request, controls.signal)) {
       if (chunk.delta) content += chunk.delta

@@ -52,6 +52,7 @@ export interface ToolLLMRequest {
 }
 
 export interface ToolContext {
+  readonly perspectiveOrigin?: Extract<import('@leitbild/contracts').PerspectiveOrigin, { kind: 'execution' }>
   readonly comparison?: {
     readonly resourceKeys: ReadonlyArray<string>
     readonly definitionKeys: ReadonlyArray<string>
@@ -75,6 +76,11 @@ export interface ToolContext {
 
 export interface Tool {
   readonly name: string
+  /** Owner-reviewed compatibility with an isolated conversation. Omission
+   * excludes the tool from a perspective runtime, even when selected by its
+   * reusable template. This is independent of Skill guidance and Pack activation.
+   */
+  readonly compartmentAccess?: 'current-conversation' | 'scoped-owner' | 'public'
   /** Absent classification stays unknown and is pinned during checkpointing. */
   readonly contextEffect?: 'read' | 'change'
   // LLM-facing prose. Single imperative clause; second sentence only for a

@@ -33,6 +33,8 @@ import { loadWorkspaceModuleSnapshots } from '../core/storage/module-snapshots.t
 import { roomPacksInputSchema } from '../packs/activation.ts'
 import { isPeopleCapabilityId } from '../core/people/people-capability-ids.ts'
 import { invokePeopleCapability, peopleCapabilityDescriptors } from './people-capabilities.ts'
+import { perspectiveRoomCapabilities } from './perspective-capabilities.ts'
+import { isPerspectiveScope } from '../core/rooms/perspective-scope.ts'
 
 export const agentsModuleManifest = workspaceModuleManifestSchema.parse({
   module: {
@@ -149,14 +151,17 @@ const resourcesFor = async (
 ): Promise<ReadonlyArray<ModuleResourceDescriptor>> => {
   const runtime = registry.tryGetLive(workspaceId)
   const saved = runtime ? null : await loadWorkspaceModuleSnapshots(workspaceModulePaths(workspaceId))
-  const agents = runtime ? runtime.team.listByKind('ai').map(agent => ({ id: agent.id, name: agent.name, description: agent.getDescription?.(), state: agent.state.get() }))
-    : (saved?.agents?.agents ?? []).map(agent => ({ id: agent.id, name: agent.config.name, description: agent.config.persona, state: 'Unloaded' }))
+  const privateProfiles = (runtime?.rooms.listAllRooms() ?? saved?.rooms?.rooms.map(room => room.profile) ?? []).filter(profile => isPerspectiveScope(profile.scope))
+  const privateRoomIds = new Set(privateProfiles.map(profile => profile.id))
+  const privateAgentIds = new Set(privateProfiles.flatMap(profile => profile.perspective ? [profile.perspective.admission.actualAgentId] : []))
+  const agents = runtime ? runtime.team.listByKind('ai').filter(agent => !privateAgentIds.has(agent.id) && !privateRoomIds.has(asAIAgent(agent)?.getConfig().ownerRoomId ?? '')).map(agent => ({ id: agent.id, name: agent.name, description: agent.getDescription?.(), state: agent.state.get() }))
+    : (saved?.agents?.agents ?? []).filter(agent => !privateAgentIds.has(agent.id) && !privateRoomIds.has(agent.config.ownerRoomId ?? '')).map(agent => ({ id: agent.id, name: agent.config.name, description: agent.config.persona, state: 'Unloaded' }))
   const agentById = new Map(agents.map(agent => [agent.id, agent]))
-  const rooms = runtime ? runtime.rooms.listAllRooms().map(profile => {
+  const rooms = runtime ? runtime.rooms.listAllRooms().filter(profile => !isPerspectiveScope(profile.scope)).map(profile => {
     const room = runtime.rooms.getRoom(profile.id)
     if (!room) throw new Error(`Room disappeared during Resource discovery: ${profile.id}`)
     return { profile, members: room.getParticipantIds(), paused: room.paused, deliveryMode: room.deliveryMode, messageCount: room.getMessageCount(), latestMessage: room.getRecent(1)[0] }
-  }) : (saved?.rooms?.rooms ?? []).map(room => ({ ...room, messageCount: room.messages.length, latestMessage: room.messages.at(-1) }))
+  }) : (saved?.rooms?.rooms ?? []).filter(room => !isPerspectiveScope(room.profile.scope)).map(room => ({ ...room, messageCount: room.messages.length, latestMessage: room.messages.at(-1) }))
   const observedAt = new Date().toISOString()
   return moduleResourceCollectionSchema.parse({ resources: [
     ...rooms.map(room => {
@@ -182,7 +187,7 @@ const resourcesFor = async (
           title: agentById.get(id)?.name,
         }] : [])],
         uiPath: `/workspaces/${encodeURIComponent(workspaceId)}/agents?room=${encodeURIComponent(profile.id)}`,
-        capabilityIds: agentsCapabilities.idsForResourceType('agents.room'),
+        capabilityIds: agentsCapabilities.idsForResourceType('agents.room').filter(id => !id.startsWith('agents.perspective-room.')),
         inspectionCapabilityId: 'agents.room.inspect',
         deleteCapabilityId: 'agents.room.delete',
         summary: [
@@ -321,6 +326,7 @@ const parseRoomDefinitionWrite = (runtime: AgentsWorkspaceRuntime, raw: unknown)
 }
 
 const agentsCapabilities = createModuleCapabilityRegistry<{ runtime: AgentsWorkspaceRuntime; library: RoomDefinitionLibrary; flush: () => Promise<void> }, Response>(AGENTS_MODULE_ID, [
+  ...perspectiveRoomCapabilities(),
   {
     descriptor: {
       id: 'agents.packs.list', moduleId: AGENTS_MODULE_ID,
@@ -970,6 +976,12 @@ const invoke = async (
   if (invocation.capabilityId !== capabilityId) return apiError(409, 'capability_scope_mismatch', 'Invocation Capability does not match the route')
   if (invocation.idempotencyKey !== undefined) return apiError(400, 'idempotency_not_supported', 'This Capability does not support keyed retries; inspect the Resource after an uncertain result.')
   const runtime = await registry.getOrLoad(workspaceId)
+  if (!capabilityId.startsWith('agents.perspective-room.')) {
+    const resource = invocation.resource
+    if (resource?.type === 'agents.room' && runtime.rooms.getRoom(resource.id)?.profile.scope !== undefined
+      && isPerspectiveScope(runtime.rooms.getRoom(resource.id)!.profile.scope)
+      || resource?.type === 'agents.agent' && runtime.perspectiveRooms?.isPrivateAgent(resource.id)) return apiError(403, 'conversation_access_denied', 'Private Room and runtime access requires its exact document view or admission owner port')
+  }
   const response = await agentsCapabilities.invoke(capabilityId, {
     runtime, library: registry.definitionsFor(workspaceId),
     flush: async () => {
@@ -1040,6 +1052,7 @@ export const handleAgentsModuleApi = async (
     if (error instanceof Error && 'code' in error && error.code === 'workspace_capacity_exceeded') return apiError(503, 'workspace_capacity_exceeded', error.message)
     if (error instanceof SyntaxError) return apiError(400, 'invalid_json', error.message)
     if (error instanceof z.ZodError) return apiError(400, 'invalid_request', error.message)
+    if (error instanceof Error && 'code' in error && typeof error.code === 'string' && error.code.startsWith('perspective_')) return apiError(403, error.code, error.message)
     if (error instanceof Error && error.message.includes('Workspace not found:')) return apiError(404, 'workspace_not_found', 'Module Workspace not found')
     if (error instanceof Error && (error.message.startsWith('Capability requires') || error.message.includes('not provisioned'))) {
       return apiError(409, 'capability_scope_invalid', error.message)
