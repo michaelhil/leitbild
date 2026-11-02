@@ -36,6 +36,7 @@ import { SYSTEM_SENDER_ID } from '../types/constants.ts'
 import { parseAddressedAgents } from './addressing.ts'
 import { deliverBroadcast } from './delivery-modes.ts'
 import { attachMessageFocus } from '../message-focus.ts'
+import { attachMessagePresentation } from '../message-presentation.ts'
 import { workspaceRoomScopeSchema } from '@leitbild/contracts'
 
 export interface RoomCallbacks {
@@ -108,7 +109,7 @@ export const createRoom = (
   // --- Post helpers ---
 
   const createRoomMessage = (params: PostParams): Message => {
-    const { focusedSubjects, ...persisted } = params
+    const { focusedSubjects, presentationRecipient, ...persisted } = params
     const message: Message = {
       // Caller-supplied Message fields flow through untouched. Browser focus
       // is deliberately excluded because it is not durable conversation data.
@@ -118,6 +119,7 @@ export const createRoom = (
       timestamp: Date.now(),
     }
     attachMessageFocus(message, focusedSubjects)
+    attachMessagePresentation(message, presentationRecipient)
     return message
   }
 

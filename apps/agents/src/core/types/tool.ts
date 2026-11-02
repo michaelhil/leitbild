@@ -61,6 +61,9 @@ export interface ToolContext {
   readonly signal?: AbortSignal
   /** Execution-evidence id of this call within the current turn; absent for standalone executors. */
   readonly executionCallId?: string
+  readonly executionTurnId?: string
+  /** Trusted initiating browser offer; never a model-selected address or Resource grant. */
+  readonly presentationRecipient?: import('@leitbild/contracts').PresentationRecipient
   readonly contextCheckpoint?: (input: unknown) => Promise<unknown>
   readonly callerId: string
   readonly callerName: string

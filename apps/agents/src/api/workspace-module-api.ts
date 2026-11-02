@@ -1,6 +1,7 @@
 import { agentConfigurationUpdateSchema } from '../agents/configuration.ts'
 import { z } from 'zod'
 import {
+  presentationPromptEvidenceInputSchema, presentationPromptEvidenceSchema,
   inspectionViewSchema,
   moduleActivitySchema,
   moduleCapabilityCollectionSchema,
@@ -665,6 +666,24 @@ const agentsCapabilities = createModuleCapabilityRegistry<{ runtime: AgentsWorks
             messages: room.getRecent(input.limit),
           } })
         : apiError(404, 'room_not_found', 'Room not found')
+    },
+  },
+  {
+    descriptor: {
+      id: 'agents.room.prompt-evidence.read', moduleId: AGENTS_MODULE_ID,
+      kind: 'query', scope: { kind: 'resource', resourceType: 'agents.room' },
+      title: 'Read actual suggested-prompt evidence',
+      description: 'Read one explicitly submitted prompt and actual causal Agent replies from canonical Room messages and execution records. The Room must be scoped to the exact World subject or a current allowed collection member. Insertion is not submission; a reply is not comprehension or physical outcome.',
+      risk: 'read', idempotent: true,
+      inputSchema: z.toJSONSchema(presentationPromptEvidenceInputSchema), outputSchema: z.toJSONSchema(presentationPromptEvidenceSchema),
+    },
+    invoke: async ({ runtime }, invocation) => {
+      const input = presentationPromptEvidenceInputSchema.parse(invocation.input)
+      try { return json({ result: await runtime.readPromptEvidence(requireResourceId(invocation, 'agents.room'), input) }) }
+      catch (error) {
+        if (error instanceof Error && 'code' in error && typeof error.code === 'string') return apiError(error.code === 'room_not_found' ? 404 : 422, error.code, error.message)
+        throw error
+      }
     },
   },
   {

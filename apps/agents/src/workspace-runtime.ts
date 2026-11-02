@@ -1,3 +1,4 @@
+import { readPromptEvidence } from './agents/prompt-evidence.ts'
 import { createAgentConfiguration, createConfigurationReceipts, type AgentConfiguration } from './agents/configuration.ts'
 import { createSkillAuthoring, type SkillAuthoring } from './skills/authoring.ts'
 // ============================================================================
@@ -107,6 +108,7 @@ import {
 } from './logging/event-mapping.ts'
 
 export interface AgentsWorkspaceRuntime {
+  readonly readPromptEvidence: (roomId: string, input: unknown) => Promise<import('@leitbild/contracts').PresentationPromptEvidence>
   readonly comparisons: import('./agents/comparisons.ts').Comparisons
   readonly executionStore: ExecutionStore
   readonly setOnMessagesRemoved: (cb: NonNullable<RoomDirectoryCallbacks['onMessagesRemoved']>) => void
@@ -766,6 +768,7 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
             name: ai.name,
             currentLLMSettings: () => ai.getEffectiveConfig?.() ?? ai.getConfig(),
             focusedSubjects: roomId => ai.getFocusedSubjects(roomId),
+            presentationRecipient: (roomId, turnId) => ai.getPresentationRecipient?.(roomId, turnId),
           },
           llm,
           // Pack-aware filter must survive a hot reload — without re-passing
@@ -1050,6 +1053,10 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
 
     const system: AgentsWorkspaceRuntime = {
       rooms, createRoom, settings, bookmarks, team, routeMessage, executionStore, comparisons,
+      readPromptEvidence: (roomId, input) => {
+        if (options.workspaceId === undefined) throw Object.assign(new Error('Prompt evidence requires a Workspace identity'), { code: 'workspace_required' })
+        return readPromptEvidence({ workspaceId: options.workspaceId, rooms, executionStore, ...(options.workspaceHostUrl === undefined ? {} : { hostBaseUrl: options.workspaceHostUrl }) }, roomId, input)
+      },
       llm, llmService, ollama, providerConfig, providerKeys, gateways, monitors,
       providerPolicy: deployment.providerPolicy,
       refreshAvailableModels,

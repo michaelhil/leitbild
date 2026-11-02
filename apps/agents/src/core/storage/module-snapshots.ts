@@ -1,7 +1,7 @@
 import { mkdir, rename, rm } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { z } from 'zod'
-import { workspaceRoomScopeSchema } from '@leitbild/contracts'
+import { presentationPromptLinkSchema, workspaceRoomScopeSchema } from '@leitbild/contracts'
 import type { Agent, AIAgentConfig } from '../types/agent.ts'
 import type { DeliveryMode, Message, RoomProfile } from '../types/messaging.ts'
 import type { GenerationQueryRecord, Room } from '../types/room.ts'
@@ -151,6 +151,7 @@ const messageSchema = z.object({
   correlationId: z.string().optional(),
   inReplyTo: z.array(z.string()).optional(),
   cause: messageCauseSchema.optional(),
+  presentationPrompt: presentationPromptLinkSchema.optional(),
   progress: z.literal(true).optional(),
   progressEvidence: z.object({
     turnId: z.string().min(1), callId: z.string().min(1), callIds: z.array(z.string().min(1)).min(1), operationKey: z.string().min(1).optional(),

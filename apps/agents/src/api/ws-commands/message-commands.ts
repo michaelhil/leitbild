@@ -22,6 +22,17 @@ export const handleMessageCommand = (msg: WSInbound, ctx: CommandContext): boole
         wsManager.safeSend(ws, JSON.stringify({ type: 'error', message: `senderId must be a human agent` } satisfies WSOutbound))
         return true
       }
+      if (msg.presentationRecipient !== undefined && (msg.presentationRecipient.subject.workspaceId !== ctx.session.workspaceId
+        || msg.presentationRecipient.subject.moduleId !== 'world'
+        || Date.parse(msg.presentationRecipient.expiresAt) <= Date.now())) {
+        wsManager.safeSend(ws, JSON.stringify({ type: 'error', message: 'presentation_recipient_invalid: use the current World browser offer in this Workspace' } satisfies WSOutbound))
+        return true
+      }
+      if (msg.presentationDraft !== undefined && (msg.target.rooms.length !== 1 || msg.presentationRecipient === undefined
+        || JSON.stringify(msg.presentationDraft.subject) !== JSON.stringify(msg.presentationRecipient.subject))) {
+        wsManager.safeSend(ws, JSON.stringify({ type: 'error', message: 'presentation_draft_invalid: submit the chosen suggestion to its exact Room and current World browser' } satisfies WSOutbound))
+        return true
+      }
       const resolved = msg.target ?? {}
       const delivered = system.routeMessage(resolved, {
         senderId: sender.id,
@@ -29,10 +40,13 @@ export const handleMessageCommand = (msg: WSInbound, ctx: CommandContext): boole
         content: msg.content,
         type: 'chat',
         ...(msg.focusedSubjects === undefined ? {} : { focusedSubjects: msg.focusedSubjects }),
+        ...(msg.presentationRecipient === undefined ? {} : { presentationRecipient: msg.presentationRecipient }),
+        ...(msg.presentationDraft === undefined ? {} : { presentationPrompt: msg.presentationDraft }),
         ...(msg.attachments && msg.attachments.length > 0 ? { attachments: msg.attachments } : {}),
       })
       for (const m of delivered) {
         wsManager.safeSend(ws, JSON.stringify({ type: 'message', message: m } satisfies WSOutbound))
+        if (msg.presentationDraft !== undefined) wsManager.safeSend(ws, JSON.stringify({ type: 'presentation_prompt_posted', link: msg.presentationDraft, roomId: m.roomId, messageId: m.id } satisfies WSOutbound))
       }
       return true
     }

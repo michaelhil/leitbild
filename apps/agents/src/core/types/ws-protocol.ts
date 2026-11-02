@@ -10,7 +10,7 @@ import type { OllamaHealth, ReasoningEffort } from './llm.ts'
 import type { SummaryConfig } from './summary.ts'
 
 export type WSInbound =
-  | { readonly type: 'post_message'; readonly target: MessageTarget; readonly content: string; readonly senderId?: string; readonly attachments?: ReadonlyArray<import('./messaging.ts').MessageAttachment>; readonly focusedSubjects?: ReadonlyArray<WorkspaceSubjectReference> }
+  | { readonly type: 'post_message'; readonly target: MessageTarget; readonly content: string; readonly senderId?: string; readonly attachments?: ReadonlyArray<import('./messaging.ts').MessageAttachment>; readonly focusedSubjects?: ReadonlyArray<WorkspaceSubjectReference>; readonly presentationRecipient?: import('@leitbild/contracts').PresentationRecipient; readonly presentationDraft?: import('@leitbild/contracts').PresentationPromptLink }
   | { readonly type: 'create_room'; readonly name: string; readonly roomPrompt?: string }
   | { readonly type: 'add_to_room'; readonly roomName: string; readonly agentName: string }
   | { readonly type: 'remove_from_room'; readonly roomName: string; readonly agentName: string }
@@ -67,6 +67,7 @@ export interface BiometricSignalWire {
 
 export type WSOutbound =
   | { readonly type: 'message'; readonly message: Message }
+  | { readonly type: 'presentation_prompt_posted'; readonly link: import('@leitbild/contracts').PresentationPromptLink; readonly roomId: string; readonly messageId: string }
   | { readonly type: 'agent_state'; readonly agentId: string; readonly agentName: string; readonly state: StateValue; readonly context?: string; readonly generationStarted?: number }
   | { readonly type: 'room_created'; readonly profile: RoomProfile }
   | { readonly type: 'agent_joined'; readonly agent: AgentProfile }

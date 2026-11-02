@@ -35,6 +35,7 @@ interface AgentToolContextRef {
   name: string
   currentLLMSettings?: () => Pick<AIAgentConfig, 'model' | 'seed' | 'thinking' | 'reasoningEffort'>
   focusedSubjects?: (roomId: string) => ReadonlyArray<WorkspaceSubjectReference>
+  presentationRecipient?: (roomId: string, turnId?: string) => import('@leitbild/contracts').PresentationRecipient | undefined
 }
 
 // --- Tool executor ---
@@ -52,14 +53,16 @@ export const createToolExecutor = (
   executionGrowth?: ExecutionGrowth,
   runToolOperation?: RunToolOperation,
   modelContext?: (invocation: { signal: AbortSignal; turnId?: string; callId?: string; roomId?: string }) => { context: Pick<ToolContext, 'llm' | 'llmStream'>; calls: NonNullable<ToolResult['nestedModelCalls']> },
+  getPresentationRecipient?: AgentToolContextRef['presentationRecipient'],
 ): ToolExecutor => {
   const allowed = new Set(allowedTools)
 
   return async (calls, roomId, signal, executionTurnId, controls): Promise<ReadonlyArray<ToolResult>> => {
     const results: ToolResult[] = []
     const mixedCheckpoint = calls.length !== 1 && calls.some(call => call.tool === CONTEXT_CHECKPOINT_TOOL)
+    const recipient = roomId === undefined ? undefined : getPresentationRecipient?.(roomId, executionTurnId)
     const callContext: ToolContext = roomId
-      ? { ...context, roomId, focusedSubjects: getFocusedSubjects?.(roomId) ?? [] }
+      ? { ...context, roomId, focusedSubjects: getFocusedSubjects?.(roomId) ?? [], ...(recipient === undefined ? {} : { presentationRecipient: recipient }) }
       : context
 
     // Two access gates: Agent Tool Selection and, where applicable, Room
@@ -144,7 +147,7 @@ export const createToolExecutor = (
           let result: ToolResult
           dispatched = true
           invocationModels = modelContext?.({ signal: callSignal, ...(executionTurnId === undefined ? {} : { turnId: executionTurnId }), ...(call.callId === undefined ? {} : { callId: call.callId }), ...(roomId === undefined ? {} : { roomId }) })
-          try { result = await entry.tool.execute(call.arguments, { ...callContext, ...invocationModels?.context, signal: callSignal, ...(call.callId === undefined ? {} : { executionCallId: call.callId }),
+          try { result = await entry.tool.execute(call.arguments, { ...callContext, ...invocationModels?.context, signal: callSignal, ...(call.callId === undefined ? {} : { executionCallId: call.callId }), ...(executionTurnId === undefined ? {} : { executionTurnId }),
             ...(controls === undefined ? {} : { contextCheckpoint: input => controls.checkpoint(call, input) }),
           }) }
           catch (err) {
@@ -299,6 +302,7 @@ export const buildToolSupport = async (
         failed: async (error, partial) => { if (executionStore && invocation.turnId) executionStore.recordModelFailure(invocation.turnId, id, error instanceof Error ? error.message : String(error), invocation.signal.aborted, partial) },
       }),
     }),
+    (roomId, turnId) => agentRef.presentationRecipient?.(roomId, turnId),
   )
 
   // Initial projection has no Room context. Each evaluation reads activation.
@@ -602,6 +606,7 @@ export const spawnAIAgent = async (
   agentRef.name = agent.name
   agentRef.currentLLMSettings = () => agent.getEffectiveConfig?.() ?? agent.getConfig()
   agentRef.focusedSubjects = agent.getFocusedSubjects
+  agentRef.presentationRecipient = agent.getPresentationRecipient
 
   team.addAgent(agent)
 

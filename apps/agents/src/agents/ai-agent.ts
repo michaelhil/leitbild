@@ -37,6 +37,7 @@ import { executionStageEvent, type ExecutionStage } from '../core/executions/mod
 import { createConcurrencyManager } from './concurrency.ts'
 import type { ModelInfo } from '../core/types/model-info.ts'
 import { messageFocus } from '../core/message-focus.ts'
+import { messagePresentation } from '../core/message-presentation.ts'
 import type { WorkspaceSubjectReference } from '@leitbild/contracts'
 import type { ExecutionStore } from '../core/executions/store.ts'
 import { createWorkingContextArchive, workingContextArchiveFailure } from '../core/working-context.ts'
@@ -194,11 +195,11 @@ export const createAIAgent = (
   // supplied threshold out of the base spread so clearing it is durable.
   const { maxToolIterations: _initialToolIterationThreshold, ...baseConfig } = config
 
-  let activeTurn: { traceId: string; config: AIAgentConfig; executor: typeof toolExecutor; definitions: typeof toolDefinitions; resolve: typeof resolveToolDefinitions; skillsText?: string } | undefined
+  let activeTurn: { traceId: string; config: AIAgentConfig; executor: typeof toolExecutor; definitions: typeof toolDefinitions; resolve: typeof resolveToolDefinitions; skillsText?: string; roomId: string; recipient?: import('@leitbild/contracts').PresentationRecipient } | undefined
   const turnConfiguration = (): AIAgentConfig => activeTurn?.config ?? desiredConfiguration()
-  const admitTurn = (traceId: string, roomId: string): void => {
+  const admitTurn = (traceId: string, roomId: string, recipient?: import('@leitbild/contracts').PresentationRecipient): void => {
     const snapshot = structuredClone(desiredConfiguration())
-    activeTurn = { traceId, config: snapshot, executor: toolExecutor, definitions: toolDefinitions, resolve: resolveToolDefinitions,
+    activeTurn = { traceId, roomId, ...(recipient === undefined ? {} : { recipient: structuredClone(recipient) }), config: snapshot, executor: toolExecutor, definitions: toolDefinitions, resolve: resolveToolDefinitions,
       ...(getSkills === undefined ? {} : { skillsText: getSkills(snapshot.skills ?? [], roomId) }) }
   }
 
@@ -662,7 +663,7 @@ export const createAIAgent = (
     // carries it so subscribers (the diagnostics ring buffer + UI) can
     // correlate per-eval state without polling.
     const traceId = generateTraceId()
-    admitTurn(traceId, triggerRoomId)
+    admitTurn(traceId, triggerRoomId, requested === undefined && triggerMessage !== undefined ? messagePresentation(triggerMessage) : undefined)
     const epoch = cm.epochAtStart()
     const abortController = new AbortController()
     activeAbortController = abortController
@@ -862,6 +863,7 @@ export const createAIAgent = (
     getSkills: () => currentSkills,
     updateSkills: (skills: ReadonlyArray<string>) => { currentSkills = [...skills] },
     getFocusedSubjects: (roomId: string) => focusedSubjectsByRoom.get(roomId) ?? [],
+    getPresentationRecipient: (roomId, turnId) => activeTurn?.roomId === roomId && (turnId === undefined || activeTurn.traceId === turnId) ? activeTurn.recipient : undefined,
     getIncludePrompts: () => ({ ...includePromptsState }),
     updateIncludePrompts: (partial: IncludePrompts) => {
       for (const key of Object.keys(partial) as PromptSection[]) {
