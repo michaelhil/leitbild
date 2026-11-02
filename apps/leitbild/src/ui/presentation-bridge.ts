@@ -22,7 +22,7 @@ export const createPresentationBridge = (config: {
   let recipient: PresentationRecipient | null = null
   let readyRoom: WorkspaceResourceReference | null = null
   let generation = 0, agentsGeneration = 0
-  const deliveries = new Map<string, { request: PresentationRequest; room: WorkspaceResourceReference; stop: () => void; sent: boolean; sentGeneration?: number; acknowledged: boolean }>()
+  const deliveries = new Map<string, { request: PresentationRequest; room: WorkspaceResourceReference; stop: () => void; sent: boolean; sentGeneration?: number; acknowledged: boolean; receiptStatus?: 'applied' | 'declined' | 'unavailable' | 'expired' | 'superseded' | 'cancelled' }>()
   const offer = (): void => config.postToAgents(presentationOfferMessageSchema.parse({ type: 'leitbild:presentation-offer', recipient }))
   const current = (request: PresentationRequest): boolean => {
     const subject = config.subject()
@@ -40,11 +40,11 @@ export const createPresentationBridge = (config: {
       if (delivery.sent || !current(delivery.request) || !readyRoom || !sameResource(readyRoom, delivery.room)) continue
       const room = config.room()
       if (!room || !sameResource(room, delivery.room)) continue
-      if (Date.parse(delivery.request.expiresAt) <= Date.now()) { delivery.sent = true; delivery.acknowledged = true; delivery.stop(); receipt(delivery.request, 'expired', 'The presentation request expired before its Room became ready'); continue }
+      if (Date.parse(delivery.request.expiresAt) <= Date.now()) { delivery.sent = true; delivery.acknowledged = true; delivery.receiptStatus = 'expired'; delivery.stop(); receipt(delivery.request, 'expired', 'The presentation request expired before its Room became ready'); continue }
       delivery.sent = true
       delivery.sentGeneration = agentsGeneration
       if (delivery.request.action.kind === 'reveal') {
-        delivery.acknowledged = true; delivery.stop()
+        delivery.acknowledged = true; delivery.receiptStatus = 'applied'; delivery.stop()
         config.postToWorld(presentationReceiptMessageSchema.parse({ type: 'leitbild:presentation-receipt', receipt: { requestId: delivery.request.id, documentId: delivery.request.recipient.documentId, status: 'applied', reason: 'The exact Run Assistant Room is shown and its current composer document is ready', at: new Date().toISOString() } }))
       } else config.postToAgents(presentationDraftMessageSchema.parse({ type: 'leitbild:presentation-draft', request: delivery.request, room }))
     }
@@ -66,13 +66,13 @@ export const createPresentationBridge = (config: {
       if (Date.parse(request.expiresAt) <= Date.now()) return receipt(request, 'expired', 'The prompt suggestion expired while opening its Room')
       // This ledger survives insertion so evidence can later be relayed to the exact originating document.
       if (deliveries.size >= 64) {
-        const terminal = [...deliveries].find(([, delivery]) => delivery.acknowledged)
-        if (!terminal) throw new Error('The presentation relay is full of unconfirmed deliveries; try again after an outcome')
+        const terminal = [...deliveries].find(([, delivery]) => delivery.acknowledged && !(delivery.request.action.kind === 'draft' && delivery.receiptStatus === 'applied'))
+        if (!terminal) throw new Error('This view is retaining too many pending attention requests or active prompt links; clear an owned cue before showing another')
         terminal[1].stop(); deliveries.delete(terminal[0])
       }
       const stop = config.timer(Math.max(0, Date.parse(request.expiresAt) - Date.now()), () => {
         const delivery = deliveries.get(request.id)
-        if (delivery && !delivery.acknowledged) { delivery.sent = true; delivery.acknowledged = true; receipt(request, 'expired', 'No presentation outcome was confirmed before delivery expired') }
+        if (delivery && !delivery.acknowledged) { delivery.sent = true; delivery.acknowledged = true; delivery.receiptStatus = 'expired'; receipt(request, 'expired', 'No presentation outcome was confirmed before delivery expired') }
       })
       deliveries.set(request.id, { request, room, stop, sent: false, acknowledged: false })
       offer(); flush()
@@ -129,6 +129,7 @@ export const createPresentationBridge = (config: {
         if (!delivery || !room || !sameResource(room, delivery.room) || !current(delivery.request)
           || delivery.sentGeneration !== agentsGeneration || parsed.data.receipt.documentId !== delivery.request.recipient.documentId) return
         delivery.acknowledged = true
+        delivery.receiptStatus = parsed.data.receipt.status
         delivery.stop()
         config.postToWorld(parsed.data)
       }
