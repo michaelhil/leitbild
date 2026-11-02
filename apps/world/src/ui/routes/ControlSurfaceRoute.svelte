@@ -56,7 +56,7 @@
   import { roleSetText, type RoleCommandsDescriber, type RoleSetChange } from '../roles/role-controller.ts'
   import { hiddenOnceHeld, roleDialogChange, seenRoleIdsFor, type RoleDialogResult } from '../roles/role-dialog.ts'
   import { perspectiveKey, storesForPerspective, type RealtimePerspective } from '../roles/perspective.ts'
-  import { configureActiveRoleSet, currentActiveRoleSet, hiddenRolesStorageKey, initialRoleSet, readStoredHiddenRoles, roleSetFromSearch, roleSetStorageKey, searchWithRoleSet, writeStoredHiddenRoles, writeStoredRoleSet } from '../roles/role-session.ts'
+  import { configureActiveRoleSet, currentActiveRoleSet, hiddenRolesStorageKey, initialRoleSet, readStoredHiddenRoles, roleSetFromSearch, roleSetStorageKey, sameRoleSet, searchWithRoleSet, writeStoredHiddenRoles, writeStoredRoleSet } from '../roles/role-session.ts'
   import { beginAction, completeAction, commandFeedbackText, emptyCommandFeedback, failAction, noteAction, settleCommand, type CommandFeedback } from '../command-feedback.ts'
   import { parseDroneMotionFramesRealtimeMessage, type DroneMotionFrame } from '../../packs/drone/realtime.ts'
   import { createMapFeatureLoader } from '../app/map-feature-loader.ts'
@@ -644,6 +644,7 @@
   const applyPresentation = async (request: PresentationRequest, signal: AbortSignal, cameraAllowed: boolean): Promise<PresentationApplication> => {
     const current = (): void => {
       signal.throwIfAborted()
+      if (Date.parse(request.expiresAt) <= Date.now()) throw new Error('This presentation request expired before the target became ready')
       const recipient = guidanceScreen.recipient
       if (!recipient || recipient.leaseId !== request.recipient.leaseId || recipient.documentId !== request.recipient.documentId) throw new Error('This presentation request no longer owns the current World document')
     }
@@ -718,12 +719,12 @@
     throw new Error('This object action is unsupported')
   }
   $effect(() => {
-    const runId = simulationRunId, epoch = perspectiveEpoch, roles = JSON.stringify(seenRoleIds), ready = richOperationalUiReady && activePack !== null && scenarioDefinition !== null
+    const runId = simulationRunId, epoch = perspectiveEpoch, roles = JSON.stringify([...(heldRoleIds ?? [])].sort()), ready = richOperationalUiReady && activePack !== null && scenarioDefinition !== null
     void epoch
     if (!runId || !ready) return
     let priorGuideStatus: string | undefined
     const session = untrack(() => createGuidanceSession({
-      runId, perspective: JSON.stringify([heldRoleIds, JSON.parse(roles)]),
+      runId, perspective: roles,
       apply: applyPresentation, clear: clearPresentation,
       changed: screen => {
         const status = screen.guide?.status
@@ -747,6 +748,13 @@
       guidanceSession = null
       guidanceScreen = { recipient: null, guide: null, suggestion: null, cue: null, busy: false, error: null, restored: false, explored: false }
     }
+  })
+
+  let previousPresentationFilter: string | null = null
+  $effect(() => {
+    const key = JSON.stringify(seenRoleIds)
+    if (previousPresentationFilter !== null && previousPresentationFilter !== key) untrack(() => guidanceSession?.invalidateSurface())
+    previousPresentationFilter = key
   })
 
   const detailPresentationFor = async (object: OperationalObject): Promise<PackObjectPresentation> => {
@@ -1767,6 +1775,7 @@
 
   /** A fresh snapshot of a new perspective replaces every Run-scoped store; the map view and panel sizes stay. */
   const adoptPerspective = (perspective: RealtimePerspective): void => {
+    if (heldRoleIds !== null && !sameRoleSet(heldRoleIds, perspective.roleIds)) guidanceSession?.forgetAttemptReference()
     const declaration = runRolesOf(perspective.compiledScenario)
     const perspectiveContext: PackTargetContext = declaration !== null
       ? { objects: perspective.snapshot.objects, viewer: viewerForRoleSet(declaration, perspective.roleIds) }

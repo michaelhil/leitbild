@@ -3,7 +3,7 @@ import {
   presentationComposerRequestMessageSchema, presentationAssistantOpenMessageSchema, type PresentationRequest, type PresentationRecipient, type PresentationReceipt,
 } from '@leitbild/contracts'
 import { guideReadingSchema, presentationOutputs, type GuideReading } from '../core/guides/wire.ts'
-import { withActiveRoleSet } from './roles/role-session.ts'
+import { currentActiveRoleSet, searchWithRoleSet } from './roles/role-session.ts'
 import { activeWorkspaceId, workspaceApiPath } from './workspace-context.ts'
 
 export interface GuidanceScreen {
@@ -21,6 +21,8 @@ export interface GuidanceSession {
   action: (action: 'start' | 'show' | 'next' | 'skip' | 'pause' | 'resume' | 'stop', takeover?: boolean) => Promise<void>
   read: () => Promise<void>
   reconnect: () => Promise<void>
+  forgetAttemptReference: () => void
+  invalidateSurface: () => void
   accept: () => Promise<void>
   decline: () => Promise<void>
   explore: () => void
@@ -41,6 +43,10 @@ export const createGuidanceSession = (config: {
   storage: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>
 }): GuidanceSession => {
   const key = `leitbild.guide-attempt:${activeWorkspaceId()}:${config.runId}:${config.perspective}`
+  const apiRoot = workspaceApiPath(`/simulation-runs/${encodeURIComponent(config.runId)}`)
+  const ownRoles = currentActiveRoleSet()
+  const roleQuery = searchWithRoleSet('', ownRoles)
+  let referenceForgotten = false
   let attempt: string | null = null
   try { attempt = config.storage.getItem(key) } catch { /* Denied storage leaves an independent attempt. */ }
   let screen: GuidanceScreen = { recipient: null, guide: null, suggestion: null, cue: null, busy: false, error: null, restored: attempt !== null, explored: false }
@@ -50,13 +56,13 @@ export const createGuidanceSession = (config: {
   const controller = new AbortController()
   const applications = new Map<string, AbortController>()
   const update = (patch: Partial<GuidanceScreen>): void => {
-    if (closed) return
+    if (closed || referenceForgotten) return
     if (patch.guide?.attemptId && patch.guide.attemptId === screen.guide?.attemptId && (patch.guide.revision ?? 0) < (screen.guide.revision ?? 0)) { const { guide: _stale, ...rest } = patch; patch = rest }
     screen = { ...screen, ...patch }; config.changed(screen)
   }
   const errorText = (error: unknown): string => error instanceof Error ? error.message : String(error)
   const call = async (family: 'guide' | 'presentation', kind: string, input: unknown): Promise<unknown> => {
-    const response = await fetch(withActiveRoleSet(workspaceApiPath(`/simulation-runs/${encodeURIComponent(config.runId)}/${family}/${kind}`)), {
+    const response = await fetch(`${apiRoot}/${family}/${kind}${roleQuery}`, {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(input), cache: 'no-store', signal: controller.signal,
     })
     const body = await response.json() as { result?: unknown; error?: { message?: string; code?: string } }
@@ -66,18 +72,26 @@ export const createGuidanceSession = (config: {
   // Keep this document's own receipts and commands ordered; World still checks revisions and the document lease.
   let guideWrites: Promise<void> = Promise.resolve()
   const writeGuide = <T,>(operation: () => Promise<T>): Promise<T> => {
-    const result = guideWrites.then(() => { if (closed) throw new Error('The guide document closed'); return operation() })
+    const result = guideWrites.then(() => { if (closed || referenceForgotten) throw new Error('The guide document changed'); return operation() })
     // Each caller receives its rejection; this continuation lets the next independent operation proceed.
     guideWrites = result.then(() => undefined, () => undefined)
     return result
   }
   const readGuide = async (): Promise<void> => {
-    if (guideUnavailable) return
+    if (guideUnavailable || closed || referenceForgotten) return
+    const readingAttempt = attempt
     try {
-      const readingAttempt = attempt
       const guide = guideReadingSchema.parse(await call('guide', 'read', { ...(attempt ? { attemptId: attempt } : {}), ...(screen.recipient && !screen.restored ? { recipient: screen.recipient } : {}) }))
       if (attempt === readingAttempt) update({ guide })
     } catch (error) {
+      if (closed || referenceForgotten || attempt !== readingAttempt) return
+      if ((error as { code?: string }).code === 'guide_attempt_unavailable' && readingAttempt !== null) {
+        attempt = null
+        try { config.storage.removeItem(key) } catch { /* A denied store cannot hold a resumable reference for this document. */ }
+        update({ guide: null, restored: false, error: 'The previous guide attempt no longer exists in this Run. Start a new eligible attempt.' })
+        await readGuide()
+        return
+      }
       if ((error as { code?: string }).code === 'guide_not_available') { guideUnavailable = true; update({ guide: null }); return }
       if ((error as { code?: string }).code === 'guide_step_unavailable' && screen.guide?.attemptId) {
         const prior = screen.guide
@@ -195,6 +209,7 @@ export const createGuidanceSession = (config: {
           : kind === 'show' ? { attemptId: attempt, recipient: screen.recipient, takeover }
           : { attemptId: attempt, recipient: screen.recipient, expectedRevision: screen.guide?.revision, action: kind, takeover }
         const guide = guideReadingSchema.parse(await call('guide', kind === 'start' || kind === 'show' ? kind : 'advance', input))
+        if (closed || referenceForgotten || token !== commandToken) return
         if (guide.stepAttemptId !== screen.guide?.stepAttemptId || guide.status !== 'active') clearGuide()
         if (['start', 'show', 'resume'].includes(kind)) cameraHeld = false
         guidePresentationSuspended = guide.status !== 'active'
@@ -243,6 +258,13 @@ export const createGuidanceSession = (config: {
   void connect()
   return {
     action,
+    forgetAttemptReference: () => { clear(); referenceForgotten = true; try { config.storage.removeItem(key) } catch { /* Storage may be denied; this closed scope still cannot repersist it. */ } },
+    invalidateSurface: () => {
+      cameraHeld = true
+      for (const application of applications.values()) application.abort('surface-changed')
+      applications.clear()
+      if (screen.cue && !hostRequests.has(screen.cue.id)) { config.clear(screen.cue); update({ cue: null }) }
+    },
     reconnect: async () => { if (screen.busy) return; clear(); update({ recipient: null, suggestion: null, restored: attempt !== null }); config.post({ type: 'leitbild:presentation-offer', recipient: null }); await connect() },
     read: async () => { try { await readGuide(); update({ error: null }) } catch (error) { update({ error: errorText(error) }) } },
     accept: async () => { const request = screen.suggestion; if (!request) return; update({ suggestion: null }); await apply(request, true) },
