@@ -933,23 +933,24 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
     // the logging system cares about. Each native-callback signature is
     // translated into a unified LogEvent envelope via src/logging/event-mapping.
     // Returns an aggregate unsubscribe.
+    const loggingWorkspaceId = options.workspaceId ?? options.workspaceLabel ?? `ephemeral-${crypto.randomUUID()}`
     const addEventObserver = (
       observer: (event: LogEvent) => void,
       sessionIdRef: { readonly current: string },
     ): (() => void) => {
       const sid = () => sessionIdRef.current
       const safe = (makeEvent: () => LogEvent) => {
-        try { observer(makeEvent()) } catch { /* observer errors already caught in proxy */ }
+        try { observer({ ...makeEvent(), workspaceId: loggingWorkspaceId }) } catch { /* observer errors already caught in proxy */ }
       }
       const unsubs: Array<() => void> = [
-        messagePosted.add((roomId, message) => safe(() => mkMessagePosted(sid(), roomId, message))),
+        messagePosted.add((roomId, message) => safe(() => mkMessagePosted(sid(), roomId, message, team.getAgent(message.senderId)?.kind ?? (message.senderId === 'system' ? 'system' : 'unknown')))),
         deliveryModeChanged.add((roomId, mode) => safe(() => mkDeliveryModeChanged(sid(), roomId, mode))),
         modeAutoSwitched.add((roomId, toMode, reason) => safe(() => mkModeAutoSwitched(sid(), roomId, toMode, reason))),
         roomCreated.add((profile) => safe(() => mkRoomCreated(sid(), profile))),
         roomDeleted.add((roomId, roomName) => safe(() => mkRoomDeleted(sid(), roomId, roomName))),
         membershipChanged.add((roomId, roomName, agentId, agentName, action) =>
           safe(() => mkMembershipChanged(sid(), roomId, roomName, agentId, agentName, action))),
-        evalEvent.add((scope, event) => safe(() => mkEvalEvent(sid(), scope.agentName, event))),
+        evalEvent.add((scope, event) => safe(() => mkEvalEvent(sid(), scope, event))),
         providerBound.add((agentId, model, oldProvider, newProvider) =>
           safe(() => mkProviderBound(sid(), agentId, model, oldProvider, newProvider))),
         providerAllFailed.add((agentId, model, attempts, summary) =>
@@ -993,7 +994,7 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
 
         // Tear down current sink (if any). session.end bracket before flush.
         if (loggingState.sink) {
-          try { loggingState.sink.write(mkSessionEnd(loggingState.config.sessionId, 'reconfigure')) } catch { /* best-effort */ }
+          try { loggingState.sink.write({ ...mkSessionEnd(loggingState.config.sessionId, 'reconfigure'), workspaceId: loggingWorkspaceId }) } catch { /* best-effort */ }
           try { await loggingState.sink.close() } catch { /* sink already errored */ }
           loggingState.sink = null
         }
@@ -1011,12 +1012,12 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
         // B1: awaited so the sink's seedBytes() completes before the first
         // write — without it, the rotation check skipped on a pre-existing
         // file and the log grew past the configured cap.
-        const sink = await createJsonlFileSink({ dir: next.dir, sessionId: next.sessionId })
+        const sink = await createJsonlFileSink({ dir: join(next.dir, 'workspaces', encodeURIComponent(loggingWorkspaceId).replaceAll('.', '%2E')), budgetRoot: next.dir, workspaceId: loggingWorkspaceId, sessionId: next.sessionId })
         const filtered = (event: LogEvent) => {
           if (matchesKindFilter(event.kind, next.kinds)) sink.write(event)
         }
         loggingState.unsub = addEventObserver(filtered, loggingState.sessionRef)
-        sink.write(mkSessionStart(next.sessionId, { dir: next.dir, kinds: next.kinds }))
+        sink.write({ ...mkSessionStart(next.sessionId, { dir: next.dir, kinds: next.kinds }), workspaceId: loggingWorkspaceId })
         loggingState.sink = sink
       },
     }

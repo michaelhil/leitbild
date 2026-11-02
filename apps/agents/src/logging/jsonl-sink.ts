@@ -8,6 +8,8 @@ import type { LogEvent, LogSink, LogSinkStats } from './types.ts'
 export interface JsonlFileSinkOptions {
   readonly dir: string
   readonly sessionId: string
+  readonly budgetRoot?: string
+  readonly workspaceId?: string
   readonly rotateAtBytes?: number
   readonly flushIntervalMs?: number
   readonly queueCap?: number
@@ -15,6 +17,7 @@ export interface JsonlFileSinkOptions {
   readonly maxDirectoryBytes?: number
 }
 
+const activeFiles = new Set<string>()
 const directoryBudgets = new Map<string, { budget: StorageBudget; users: number; limit: number }>()
 
 export const createJsonlFileSink = async (options: JsonlFileSinkOptions): Promise<LogSink> => {
@@ -42,7 +45,7 @@ export const createJsonlFileSink = async (options: JsonlFileSinkOptions): Promis
   try { currentFileBytes = (await stat(currentFilePath)).size } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
   }
-  const directory = resolve(options.dir)
+  const directory = resolve(options.budgetRoot ?? options.dir)
   const directoryLimit = options.maxDirectoryBytes ?? Number(process.env.LEITBILD_LOG_DIRECTORY_MAX_BYTES ?? 512 * 1024 * 1024)
   let shared = directoryBudgets.get(directory)
   if (shared && shared.limit !== directoryLimit) throw new Error('Conflicting logging directory budgets')
@@ -50,6 +53,8 @@ export const createJsonlFileSink = async (options: JsonlFileSinkOptions): Promis
     shared = { budget: createStorageBudget({ root: directory, maxBytes: directoryLimit, maxWorkspaceBytes: directoryLimit }), users: 0, limit: directoryLimit }
     directoryBudgets.set(directory, shared)
   }
+  if (activeFiles.has(resolve(currentFilePath))) throw new Error(`Logging file already has an active owner: ${currentFilePath}`)
+  activeFiles.add(resolve(currentFilePath))
   shared.users++
   const directoryBudget = shared
 
@@ -64,7 +69,7 @@ export const createJsonlFileSink = async (options: JsonlFileSinkOptions): Promis
     let line: string
     try { line = JSON.stringify(event) + '\n' } catch (error) {
       line = JSON.stringify({ ts: event.ts, kind: 'log.serialize_failed', session: event.session,
-        payload: { originalKind: event.kind, error: String(error) } }) + '\n'
+        ...(event.workspaceId === undefined ? {} : { workspaceId: event.workspaceId }), payload: { originalKind: event.kind, error: String(error) } }) + '\n'
     }
     return { kind: event.kind, line, bytes: Buffer.byteLength(line) }
   }
@@ -75,7 +80,7 @@ export const createJsonlFileSink = async (options: JsonlFileSinkOptions): Promis
     queue = []
     queuedBytes = 0
     if (pendingDrops) {
-      const notice = serialize({ ts: Date.now(), kind: 'log.dropped', session: options.sessionId,
+      const notice = serialize({ ts: Date.now(), kind: 'log.dropped', session: options.sessionId, ...(options.workspaceId === undefined ? {} : { workspaceId: options.workspaceId }),
         payload: { count: pendingDrops, reason: 'queue/file limit or I/O failure', kinds: [...droppedKinds].map(([kind, count]) => count > 1 ? `${kind}×${count}` : kind) } })
       // With a tiny file budget the notice itself may not fit. Counters/stderr
       // still report the loss; never break the byte limit to record that notice.
@@ -134,6 +139,7 @@ export const createJsonlFileSink = async (options: JsonlFileSinkOptions): Promis
         closed = true
         clearInterval(timer)
         closing = flush().finally(() => {
+          activeFiles.delete(resolve(currentFilePath))
           if (--directoryBudget.users === 0) directoryBudgets.delete(directory)
         })
       }
