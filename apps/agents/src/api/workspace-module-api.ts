@@ -1038,7 +1038,9 @@ export const handleAgentsModuleApi = async (
       return json(moduleResourceCollectionSchema.parse({ resources: await resourcesFor(workspaceId, config.registry) }))
     }
     if (collection === 'capabilities' && request.method === 'GET') {
-      return json(moduleCapabilityCollectionSchema.parse({ capabilities: allCapabilityDescriptors }))
+      const capabilities = config.registry.perspectivePilotEnabled() ? allCapabilityDescriptors
+        : allCapabilityDescriptors.filter(descriptor => !descriptor.id.startsWith('agents.perspective-room.'))
+      return json(moduleCapabilityCollectionSchema.parse({ capabilities }))
     }
     if (capabilityId !== undefined && request.method === 'POST') {
       return await invoke(capabilityId, workspaceId, await readJson(request), config.registry)
