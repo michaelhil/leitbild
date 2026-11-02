@@ -1,11 +1,12 @@
 import type { WorldPack } from '../../core/packs/protocol.ts'
 import { dronePackConfigSchema } from './config.ts'
 import { createDroneAttackInteractionHandler } from './interactions.ts'
-import { defaultDroneVehicleModels } from './model.ts'
+import { defaultDroneVehicleModels, dronePackDataSchema } from './model.ts'
 import { droneScenarioSupport } from './scenario.ts'
 import { dronePackView } from './ui-pack.ts'
 
 export const dronePack: WorldPack = {
+  inspectionReferences: object => { const data = dronePackDataSchema.parse(object.packData); return [...data.control.guidedTarget?.targetObjectId === undefined ? [] : [data.control.guidedTarget.targetObjectId], ...data.health.damage.flatMap(entry => entry.sourceObjectId === undefined ? [] : [entry.sourceObjectId])] },
   ...dronePackView,
   scenarioConfigSchema: dronePackConfigSchema,
   authoring: {

@@ -19,6 +19,7 @@ export const physicalLayoutScenarioItemSchema = z.object({
 }).strict()
 
 export const physicalLayoutPack: WorldPack = {
+  inspectionReferences: object => { const data = physicalLayoutDataSchema.parse(object.packData); return [data.owner.objectId, ...'relatedMembers' in data ? data.relatedMembers.map(member => member.objectId) : []] },
   ...physicalLayoutPackView,
   scenarioConfigSchema: emptyPackScenarioConfigSchema,
   knowledge: { wikiRefs: [{ name: 'Physical layouts', url: '/wiki?path=world%2Fphysical-layouts%2Findex.md' }] },

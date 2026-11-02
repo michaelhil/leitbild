@@ -1,3 +1,4 @@
+import { unrestrictedQueryReadPolicy } from '../src/simulation/query-read-policy.ts'
 import { describe, expect, test } from 'bun:test'
 import type { ActorId, CommandEnvelope, SimulationRunId, GeoJsonPoint, IsoTimestamp, ObjectId, OperationalObject, PackId } from '../src/core/model/index.ts'
 import { geoPointFromLonLat } from '../src/core/model/index.ts'
@@ -641,12 +642,12 @@ describe('drone pack native runtime', () => {
 
     expect(droneSceneObjects(objects)[0]?.modelId).toBe(model.id)
     expect(droneControllerBindings(objects)[0]?.inputKind).toBe('keyboard')
-    expect(droneSensorContacts(objects)).toEqual([expect.objectContaining({ droneId: object.id, sensorId: 'eo-test-camera', targetId: contactTarget.id })])
+    expect(droneSensorContacts(objects).contacts).toEqual([expect.objectContaining({ droneId: object.id, sensorId: 'eo-test-camera', targetId: contactTarget.id })])
 
-    const scene = answerDroneQuery({ request: { capabilityId: droneSceneQueryKind, input: {} }, objects }) as { drones: ReadonlyArray<unknown> }
-    const models = answerDroneQuery({ request: { capabilityId: droneVehicleModelsQueryKind, input: {} }, objects, models: [model] }) as { models: ReadonlyArray<DroneVehicleModel> }
-    const features = answerDroneQuery({ request: { capabilityId: droneMapFeaturesQueryKind, input: {} }, objects }) as { features: ReadonlyArray<unknown> }
-    const bindings = answerDroneQuery({ request: { capabilityId: droneControllerBindingsQueryKind, input: {} }, objects }) as { bindings: ReadonlyArray<unknown> }
+    const scene = answerDroneQuery({ request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId: droneSceneQueryKind, input: {} }, objects }) as { drones: ReadonlyArray<unknown> }
+    const models = answerDroneQuery({ request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId: droneVehicleModelsQueryKind, input: {} }, objects, models: [model] }) as { models: ReadonlyArray<DroneVehicleModel> }
+    const features = answerDroneQuery({ request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId: droneMapFeaturesQueryKind, input: {} }, objects }) as { features: ReadonlyArray<unknown> }
+    const bindings = answerDroneQuery({ request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId: droneControllerBindingsQueryKind, input: {} }, objects }) as { bindings: ReadonlyArray<unknown> }
 
     expect(scene.drones).toHaveLength(1)
     expect(models.models[0]?.id).toBe(model.id)

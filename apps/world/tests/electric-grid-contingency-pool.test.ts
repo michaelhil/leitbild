@@ -1,3 +1,4 @@
+import { unrestrictedQueryReadPolicy } from '../src/simulation/query-read-policy.ts'
 import { afterAll, describe, expect, test } from 'bun:test'
 import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
@@ -135,7 +136,7 @@ describe('electric grid N-1 worker pool', () => {
     const all = selectContingencies(live, { kind: 'all-branches' }, 'circuit')
     expect(contingencyExecution(captureContingencySnapshot(live, all, 'normal'), 3)).toBe('pool')
     const answer = await answerElectricGridQuery({
-      request: { capabilityId: 'world.electric-grid.contingency.screen', input: { gridId: grid.definition.gridId, contingencies: 'all-branches', limit: 500 } },
+      request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.electric-grid.contingency.screen', input: { gridId: grid.definition.gridId, contingencies: 'all-branches', limit: 500 } },
       grids: new Map([[grid.definition.gridId, grid]]),
     }) as { results: unknown }
     expect(JSON.stringify(answer.results)).toBe(JSON.stringify((await screened(live, all, 'normal', inline)).results.slice(0, 500)))

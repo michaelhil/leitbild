@@ -1,3 +1,4 @@
+import { unrestrictedQueryReadPolicy } from '../src/simulation/query-read-policy.ts'
 import { describe, expect, test } from 'bun:test'
 import { gridAlarmLifecycleCommandKind } from '../src/packs/electric-grid/commands/alarm.ts'
 import { gridOpenBranchCommandKind } from '../src/packs/electric-grid/commands/branch.ts'
@@ -34,7 +35,7 @@ import { gridDefinitionForModel, handBuiltModel } from './fixtures/synthetic-gri
 const ask = async <T>(run: SteppedGrid, capabilityId: string, input: Readonly<Record<string, unknown>> = {}): Promise<T> => {
   const capability = electricGridQueryCapabilities.find(candidate => candidate.id === capabilityId)!
   const answer = await answerElectricGridQuery({
-    request: { capabilityId, input: { gridId: run.grid.definition.gridId, ...input } },
+    request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId, input: { gridId: run.grid.definition.gridId, ...input } },
     grids: new Map([[run.grid.definition.gridId, run.grid]]),
   })
   return JSON.parse(JSON.stringify(capability.output.parse(answer))) as T

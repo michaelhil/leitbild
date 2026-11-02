@@ -102,6 +102,7 @@ const islandView = (grid: GridRuntimeInstance, islands: GridIslandPlan, island: 
 }
 
 export const gridIslandsQuery = defineGridQuery({
+  readScope: 'object',
   id: 'world.electric-grid.islands.list',
   title: 'List Grid islands',
   description: 'Lists the electrically separate islands of one Grid, largest demand first: buses, units, energisation, island frequency, generation, demand, served and unserved load, reserve, and the latch state of each LFDD stage (restore-lfdd-stage and rearm-lfdd-stage act on it). Use an island id to filter assets.search and power-flow.snapshot.',

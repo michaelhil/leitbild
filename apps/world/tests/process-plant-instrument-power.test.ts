@@ -1,3 +1,4 @@
+import { unrestrictedQueryReadPolicy } from '../src/simulation/query-read-policy.ts'
 import { describe, expect, test } from 'bun:test'
 import { component, connect, plantGraphSpecSchema, compileResolvedProcessPlant, compileProcessPlant, createPwrReferencePlantDefinition, createProcessPlantRuntime, createProcessPlantProtectionRunner, createProcessPlantRampRunner, answerProcessPlantQuery, commandsForProcessPlantAction, type VariablePath } from '../src/packs/process-plant/index.ts'
 import { createProcessPlantRuntimePerformance, type ProcessPlantRuntimeInstance } from '../src/packs/process-plant/runtime-instance.ts'
@@ -70,7 +71,7 @@ describe('powered delta-T indications and common evidence validity', () => {
     const evaluate = (criterion: ProcessPlantProcedureCondition) => evaluateProcessPlantProcedureCondition({ plant: instance, condition: criterion, basis })
     expect(evaluate(condition)).toMatchObject({ status: 'unknown', readings: [{ rangeValidity: 'unavailable', quality: { status: 'unavailable' } }], evidence: [{ readingIndex: 0, status: 'unknown' }] })
     expect(evaluate({ type: 'not', condition }).status).toBe('unknown')
-    const queried = answerProcessPlantQuery({ request: { capabilityId: 'world.process-plant.signals.read', input: { plantId: plant.id, signals: [{ path: signal }] } }, plants: new Map([[plant.id, instance]]), objects: new Map() }) as { signals: Array<{ quality: { status: string } }> }
+    const queried = answerProcessPlantQuery({ request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.process-plant.signals.read', input: { plantId: plant.id, signals: [{ path: signal }] } }, plants: new Map([[plant.id, instance]]), objects: new Map() }) as { signals: Array<{ quality: { status: string } }> }
     expect(queried.signals[0]?.quality.status).toBe('unavailable')
     expect(readPlant({ objectId: objectIdSchema.parse(plant.id), system: instance, recording: null, simulationTime: timestamp(1), history: undefined }, [signal])[0]).toMatchObject({ value: null, quality: 'not-applicable' })
     const functionOnChannel = processPlantIcSafetyFunctionSchema.parse({ ...plant.automation.safetyFunctions[0], monitored: undefined,

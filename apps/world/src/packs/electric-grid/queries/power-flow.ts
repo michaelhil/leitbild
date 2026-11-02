@@ -95,6 +95,7 @@ const hvdcRowFor = (grid: GridRuntimeInstance, definition: GridHvdcLinkDefinitio
 }
 
 export const gridPowerFlowQuery = defineGridQuery({
+  readScope: 'object',
   id: 'world.electric-grid.power-flow.snapshot',
   title: 'Get power-flow snapshot',
   description: 'Returns a bounded page of compact branch rows: rating, closed/open/tripped, derate, flow model (AC where the island\'s load flow converged, else DC), flow (0.1 MW, positive from fromBusId to toBusId), rated flow (MVA in AC) and loading (0.1 % of the derated rating), optionally filtered by minimum loading and island and sorted by loading. Every HVDC link follows in its own rows: deblocked/blocked/tripped, set-point and transfer (positive exports from Norway), losses, loading and the ramp group whose limit it shares. Endpoints and electrical parameters come with includeDefinition.',

@@ -164,7 +164,7 @@ const placement = { kind: 'point' as const, path: ['position'], orReference: ['a
 const atObjectField: PackScenarioAuthoringField = { path: ['atObject'], label: 'At existing object (instead of coordinates)', control: { kind: 'reference' } }
 const ownedByFixture = { pack: z.literal(fixturePackId) }
 
-export const fixturePack: WorldPack = {
+export const fixturePack: WorldPack = { inspectionReferences: () => [],
   descriptor: createWorldPackDescriptor({
     id: fixturePackId,
     version: '1.0.0',

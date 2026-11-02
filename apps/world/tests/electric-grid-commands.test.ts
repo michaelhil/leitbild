@@ -1,3 +1,4 @@
+import { unrestrictedQueryReadPolicy } from '../src/simulation/query-read-policy.ts'
 import { describe, expect, test } from 'bun:test'
 import { norwayRuntimeTestOperatingPointRef } from './fixtures/grid-operating-point.ts'
 import type { ActorId, CommandEnvelope, CommandId, IsoTimestamp, ObjectId, SimulationRunId } from '../src/core/model/index.ts'
@@ -286,7 +287,7 @@ describe('electric grid branch commands', () => {
     expect(grid.branches.get(branch.id)!.state).toBe('open')
     // Evaluating the close as a remedial action reports the same rejection with the measured Δf.
     const evaluation = answerElectricGridQuery({
-      request: { capabilityId: 'world.electric-grid.remedial-actions.evaluate', input: { gridId: grid.definition.gridId, contingencies: 'largest-generators', largestGeneratorCount: 1, actions: [{ kind: 'close-branch', assetId: branch.id }] } },
+      request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.electric-grid.remedial-actions.evaluate', input: { gridId: grid.definition.gridId, contingencies: 'largest-generators', largestGeneratorCount: 1, actions: [{ kind: 'close-branch', assetId: branch.id }] } },
       grids: new Map([[grid.definition.gridId, grid]]),
     })
     await expect(evaluation).rejects.toThrow(`close-branch ${branch.id} would be rejected by synchro-check`)
@@ -409,7 +410,7 @@ describe('electric grid command Capabilities', () => {
         if (update?.type !== 'object.upserted') throw new Error('Trip emitted no Grid update')
         expect(update.object.revision).toBeGreaterThan(before.revision)
         expect(update.provenance.source).toBe(actor.startsWith('ai:') ? 'ai' : 'operator')
-        const detail = await connection.invokeQuery({ capabilityId: 'world.electric-grid.asset.get', input: { gridId: 'grid:norway', assetId: kvilldalId } }) as { asset: { state: { state: string; dispatchMw: number } } }
+        const detail = await connection.invokeQuery({ readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.electric-grid.asset.get', input: { gridId: 'grid:norway', assetId: kvilldalId } }) as { asset: { state: { state: string; dispatchMw: number } } }
         expect(detail.asset.state).toMatchObject({ state: 'tripped', dispatchMw: 0 })
         unsubscribe()
       } finally { await connection.close() }
@@ -468,7 +469,7 @@ const queryCapability = (id: string) => electricGridQueryCapabilities.find(capab
 /** Answers a query the way the Host does: the Pack answer, then the published output schema. */
 const queryGrid = (grid: GridRuntimeInstance, capabilityId: string, input: Readonly<Record<string, unknown>> = {}) => {
   const scoped = capabilityId === 'world.electric-grid.catalog.list' ? input : { gridId: grid.definition.gridId, ...input }
-  const raw = answerElectricGridQuery({ request: { capabilityId, input: scoped }, grids: new Map([[grid.definition.gridId, grid]]) })
+  const raw = answerElectricGridQuery({ request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId, input: scoped }, grids: new Map([[grid.definition.gridId, grid]]) })
   return { raw, parsed: queryCapability(capabilityId).output.parse(raw) as Record<string, unknown> }
 }
 const query = (grid: GridRuntimeInstance, capabilityId: string, input: Readonly<Record<string, unknown>> = {}) =>

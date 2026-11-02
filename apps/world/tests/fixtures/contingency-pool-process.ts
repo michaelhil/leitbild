@@ -1,3 +1,4 @@
+import { unrestrictedQueryReadPolicy } from '../../src/simulation/query-read-policy.ts'
 // Run as a child process by electric-grid-contingency-pool.test.ts: the process's N-1 worker pool
 // across a server-like lifetime, printed as one JSON line. A fresh process, so no other test's
 // screening has started the pool before.
@@ -12,13 +13,13 @@ import { corridorDefinition, steppedGrid } from './grid-corridor.ts'
 import { syntheticGridDefinition } from './synthetic-grid.ts'
 
 const screen = async (grid: GridRuntimeInstance): Promise<unknown> => await answerElectricGridQuery({
-  request: { capabilityId: 'world.electric-grid.contingency.screen', input: { gridId: grid.definition.gridId, contingencies: 'all-branches' } },
+  request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.electric-grid.contingency.screen', input: { gridId: grid.definition.gridId, contingencies: 'all-branches' } },
   grids: new Map([[grid.definition.gridId, grid]]),
 })
 
 /** The pool as grid.summary reports it in its diagnostics. */
 const summaryPool = (grid: GridRuntimeInstance): unknown => (answerElectricGridQuery({
-  request: { capabilityId: 'world.electric-grid.grid.summary', input: { gridId: grid.definition.gridId } },
+  request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.electric-grid.grid.summary', input: { gridId: grid.definition.gridId } },
   grids: new Map([[grid.definition.gridId, grid]]),
 }) as { diagnostics: { contingencyWorkerPool: unknown } }).diagnostics.contingencyWorkerPool
 

@@ -74,6 +74,7 @@ const compatibleDefinition = (entry: CompatibleCatalogEntry): z.infer<typeof com
 })
 
 export const gridCatalogQuery = defineGridQuery({
+  readScope: 'collection',
   id: 'world.electric-grid.catalog.list',
   title: 'List Grid catalog',
   description: 'Lists compatible Grid Models, Operating Points and Automations, the accepted Operating Point overrides, and the running Grids with their Model diagnostics. Per-Grid runtime state is read with grid.summary.',

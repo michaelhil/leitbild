@@ -1,3 +1,4 @@
+import { unrestrictedQueryReadPolicy } from '../src/simulation/query-read-policy.ts'
 import { describe, expect, test } from 'bun:test'
 import { compileProcessPlant, createProcessPlantRampRunner, createProcessPlantRuntime, createPwrReferencePlantDefinition } from '../src/packs/process-plant/index.ts'
 import { createProcessPlantRuntimePerformance, type ProcessPlantRuntimeInstance } from '../src/packs/process-plant/runtime-instance.ts'
@@ -236,7 +237,7 @@ describe('explicitly sampled Plant response', () => {
     const capability = processPlantCapabilities.find(candidate => candidate.id === 'world.process-plant.response.evaluate')!
     expect(capability.inspectObjectIds?.(input).map(String)).toEqual([String(compiled.id)])
     expect(capability.input.safeParse({ ...input, extra: true }).success).toBe(false)
-    expect(capability.output.parse(answerProcessPlantQuery({ ...config(), request: { capabilityId: capability.id, input }, plants: new Map([[compiled.id, plant]]), objects: new Map() }))).toMatchObject({ status: 'satisfied', targetObjectId: compiled.id })
+    expect(capability.output.parse(answerProcessPlantQuery({ ...config(), request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId: capability.id, input }, plants: new Map([[compiled.id, plant]]), objects: new Map() }))).toMatchObject({ status: 'satisfied', targetObjectId: compiled.id })
     expect(capability.output.parse(evaluateProcessPlantResponse(config([sample(60)])))).toMatchObject({ status: 'unknown' })
   })
 

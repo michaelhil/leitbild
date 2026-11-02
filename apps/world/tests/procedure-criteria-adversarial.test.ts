@@ -1,3 +1,4 @@
+import { unrestrictedQueryReadPolicy } from '../src/simulation/query-read-policy.ts'
 import { describe, expect, test } from 'bun:test'
 import type { ProcedureAssessmentCondition } from '@leitbild/procmd'
 import { isoTimestampSchema, objectIdSchema } from '../src/core/model/index.ts'
@@ -45,7 +46,7 @@ const setup = () => {
   const runtime = createProcessPlantRuntime({ system: compiled })
   const plant: ProcessPlantRuntimeInstance = { plant: compiled, runtime, ramps: createProcessPlantRampRunner({ runtime }), performance: createProcessPlantRuntimePerformance() }
   const port = createProcedureObservationPort({ scopeId: plantId, provider: processPlantPackView.procedures, query: async request =>
-    answerProcessPlantQuery({ request, plants: new Map([[plantId, plant]]), objects: new Map(), simulationTime: at }),
+    answerProcessPlantQuery({ request: { ...request, readPolicy: unrestrictedQueryReadPolicy }, plants: new Map([[plantId, plant]]), objects: new Map(), simulationTime: at }),
   })
   const read = async (condition: ProcedureAssessmentCondition) => {
     const document = documentFor(condition)

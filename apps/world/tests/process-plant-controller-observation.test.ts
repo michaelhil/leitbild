@@ -1,3 +1,4 @@
+import { unrestrictedQueryReadPolicy } from '../src/simulation/query-read-policy.ts'
 import { describe, expect, test } from 'bun:test'
 import { compileProcessPlant, createPwrReferencePlantDefinition } from '../src/packs/process-plant/index.ts'
 import { operatorControllerBindings } from '../src/packs/process-plant/graph/valve-controller.ts'
@@ -38,10 +39,10 @@ describe('operator-controller configuration is published without being physical 
     const instance = plants.get(plant.id)!
     const paths = ['turbineBypassValve.controllerAutomatic', 'turbineBypassValve.controllerSetpoint', 'feedwaterControlValveA.controllerSetpoint']
     const before = instance.runtime.checkpoint()
-    const signals: any = answerProcessPlantQuery({ request: { capabilityId: 'world.process-plant.signals.read', input: { plantId: plant.id, signals: paths.map(path => ({ path })) } }, plants, objects: new Map() })
+    const signals: any = answerProcessPlantQuery({ request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.process-plant.signals.read', input: { plantId: plant.id, signals: paths.map(path => ({ path })) } }, plants, objects: new Map() })
     expect(signals.signals.map((row: any) => row.variable.value)).toEqual([true, 7.6, 55])
     expect(signals.signals.every((row: any) => row.signal.writable && row.signal.published)).toBe(true)
-    const observations: any = answerProcessPlantObservationQuery({ request: { capabilityId: processPlantObservationCapabilityIds.read, input: { refs: paths.map(path => `${plant.id}#${path}`) } }, plants,
+    const observations: any = answerProcessPlantObservationQuery({ request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId: processPlantObservationCapabilityIds.read, input: { refs: paths.map(path => `${plant.id}#${path}`) } }, plants,
       simulationTime: '2026-10-29T00:00:00.000Z' as IsoTimestamp, recording: { seriesIds: new Set(), intervalMs: 1_000 } })
     expect(observations.unknown).toEqual([])
     expect(observations.observations.map((row: any) => row.value)).toEqual([true, 7.6, 55])

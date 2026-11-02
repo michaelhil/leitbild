@@ -1,3 +1,4 @@
+import { einsatzQueryState } from '../read-policy.ts'
 import { nowIso, type CommandEnvelope, type CommandResult, type GeoJsonPoint, type IsoTimestamp, type ObjectAudience, type ObjectId, type OperationalObject, type Provenance, type RoleSees, type RunViewer } from '../../../core/model/index.ts'
 import { defaultSimulationRunRuntimePolicy } from '../../../core/simulation-runs/runtime-persistence-policy.ts'
 import type { RoutingAdapter } from '../../../routing/protocol.ts'
@@ -328,7 +329,7 @@ const connectEinsatz = async (config: PackRuntimeConnectionConfig, routing: Rout
       const viewer = resolveViewer(query.viewer, roles)
       if (query.capabilityId === einsatzQueryIds.recommend) {
         const input = recommendInputSchema.parse(query.input)
-        return await recommend({ state: withoutDeleted(current).state, viewer, taskId: input.taskId, routing })
+        return await recommend({ state: einsatzQueryState(withoutDeleted(current).state, query.readPolicy), viewer, taskId: input.taskId, routing })
       }
       if (query.capabilityId === einsatzQueryIds.configuration) return { revision, config: current.catalog.config }
       throw new Error(`Einsatz does not answer ${query.capabilityId}`)

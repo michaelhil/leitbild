@@ -1,3 +1,6 @@
+import { rawObjectReadPolicy } from '../packs/inspection.ts'
+import { audienceVisibleTo } from '../model/audience.ts'
+import { createQueryReadPolicy, unrestrictedQueryReadPolicy, type QueryReadPolicy } from '../../simulation/query-read-policy.ts'
 import type { WorkspaceId } from '@leitbild/contracts'
 import { randomUUID } from 'node:crypto'
 import type { RunHistorian, SeriesSamplesQuery } from '../../features/historian/store.ts'
@@ -62,6 +65,8 @@ export interface SimulationRunRuntime {
   readonly id: SimulationRunId
   readonly capabilities: () => SimulationRunCapabilities
   readonly snapshot: () => SimulationRunStateSnapshot
+  /** Caller-qualified complete-object visibility at this exact projection/policy boundary; refresh before a later dispatch. */
+  readonly inspectionPolicy: (actor: Actor) => QueryReadPolicy
   /** The roles this Run declares, fixed for its lifetime; null in open mode. */
   readonly roles: () => RunRoles | null
   readonly setClock: (update: SimulationClockUpdate) => Promise<SimulationClockState>
@@ -615,7 +620,7 @@ export const createSimulationRunRuntime = async (config: {
           }
           const acquisitionKey = JSON.stringify(['query', binding.capabilityId, input])
           const raw = active.capability.output.parse(await acquireObservation(acquisitionKey,
-            async () => await config.runtimeConnection.invokeQuery({ capabilityId: binding.capabilityId, input }), acquisitionBudget))
+            async () => await config.runtimeConnection.invokeQuery({ capabilityId: binding.capabilityId, input, readPolicy: unrestrictedQueryReadPolicy }), acquisitionBudget))
           result = procedureObservationUpdatedEventSchema.shape.observation.shape.result.parse(raw)
         } catch (error) {
           // Failed acquisition is explicit unknown evidence, never the last green.
@@ -1227,13 +1232,21 @@ export const createSimulationRunRuntime = async (config: {
       }
     }
     if (active.capability.kind === 'query') {
-      assertAllowed('inspect', active.capability.inspectObjectIds?.(input) ?? [])
+      if (!active.capability.readScope) throw new Error(`Query Capability ${active.capability.id} has no read scope`)
+      const inspected = active.capability.inspectObjectIds?.(input) ?? []
+      if (active.capability.readScope === 'object' && inspected.length === 0) throw new Error(`Object query ${active.capability.id} resolved no inspection target`)
+      assertAllowed('inspect', inspected)
+      const readPolicy = createQueryReadPolicy(`${config.id}:${actor.id}:${actor.role}:${currentRestrictions?.revision ?? 0}`,
+        actor.role === 'ai_agent' ? currentRestrictions?.objects.filter(entry => entry.deny.includes('inspect')).map(entry => entry.objectId) ?? [] : [])
       const viewer = viewerForActor(runRoles, actor)
       const result = await config.runtimeConnection.invokeQuery({
         capabilityId: active.capability.id,
-        input,
+        input, readPolicy,
         ...(viewer === undefined ? {} : { viewer }),
       })
+      if (actor.role === 'ai_agent' && state.snapshot().scenario?.agentRestrictions.revision !== currentRestrictions?.revision) {
+        throw Object.assign(new Error('AI inspection policy changed while the query ran; acquire a new result'), { code: 'query_policy_superseded', status: 409 })
+      }
       return { kind: 'query', result: active.capability.output.parse(result) }
     }
     const built = active.capability.buildCommand?.(input)
@@ -1481,6 +1494,21 @@ export const createSimulationRunRuntime = async (config: {
     }
   }
 
+  const inspectionPolicy = (actor: Actor): QueryReadPolicy => {
+    assertRunCapabilityAllowed(runRoles, actor, 'world.simulation-run.read-object')
+    const snapshot = committedState.snapshot()
+    const restrictions = snapshot.scenario?.agentRestrictions
+    const viewer = viewerForActor(runRoles, actor)
+    const denied = [
+      ...(actor.role === 'ai_agent' ? restrictions?.objects.filter(entry => entry.deny.includes('inspect')).map(entry => String(entry.objectId)) ?? [] : []),
+      ...snapshot.objects.filter(object => !audienceVisibleTo(object.audience, viewer?.sees ?? 'all')).map(object => String(object.id)),
+    ]
+    const key = `${config.id}:${actor.id}:${actor.role}:${actor.roleIds?.join(',') ?? ''}:${restrictions?.revision ?? 0}:${snapshot.seq}`
+    const policy = rawObjectReadPolicy(createQueryReadPolicy(key, denied), snapshot.objects, config.packs ?? [])
+    const present = new Set(snapshot.objects.map(object => String(object.id)))
+    return Object.freeze({ ...policy, canInspect: (id: string) => present.has(id) && policy.canInspect(id) })
+  }
+
   const invokeCapability = async (
     actor: Actor,
     invocation: SimulationRunCapabilityInvocation,
@@ -1717,6 +1745,7 @@ export const createSimulationRunRuntime = async (config: {
       recording: config.capabilities?.recording ?? { selections: [], profiles: [] },
     }),
     snapshot: () => snapshotWithCurrentClock(),
+    inspectionPolicy,
     roles: () => runRoles,
     setClock,
     setAgentRestrictions,

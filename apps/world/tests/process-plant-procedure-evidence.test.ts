@@ -1,3 +1,4 @@
+import { unrestrictedQueryReadPolicy } from '../src/simulation/query-read-policy.ts'
 import { describe, expect, test } from 'bun:test'
 import { answerProcessPlantQuery, compileProcessPlant, createProcessPlantRampRunner, createProcessPlantRuntime, createProcessPlantProtectionRunner, createPwrReferencePlantDefinition } from '../src/packs/process-plant/index.ts'
 import { createProcessPlantRuntimePerformance, type ProcessPlantRuntimeInstance } from '../src/packs/process-plant/runtime-instance.ts'
@@ -118,7 +119,7 @@ describe('read-only procedure condition evidence', () => {
     expect(capability.inspectObjectIds?.({ ...input, targetObjectId: objectIdSchema.parse('plant:other') })).toEqual([objectIdSchema.parse('plant:other')])
     expect(capability.input.safeParse({ ...input, condition: { ...power(0), unit: undefined } }).success).toBe(false)
     expect(processPlantProcedureConditionSchema.safeParse({ type: 'vote', required: 3, conditions: [power(0)] }).success).toBe(false)
-    const result = answerProcessPlantQuery({ request: { capabilityId: capability.id, input }, plants: new Map([[compiled.id, plant]]), objects: new Map() })
+    const result = answerProcessPlantQuery({ request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId: capability.id, input }, plants: new Map([[compiled.id, plant]]), objects: new Map() })
     expect(capability.output.parse(result)).toMatchObject({ targetObjectId: compiled.id, status: 'satisfied' })
   })
 

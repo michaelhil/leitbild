@@ -893,6 +893,8 @@ export interface PackPhysicalTargetDescription {
 /** Complete server-side Pack definition. World Pack views are projections of
  * this contract, never partial World Packs with fabricated schemas. */
 export interface WorldPack extends WorldPackView {
+  /** Owner-declared object references in a complete canonical object (not arbitrary text). */
+  readonly inspectionReferences: (object: OperationalObject) => ReadonlyArray<string>
   readonly scenarioConfigSchema: z.ZodType
   readonly physicalTargets?: (object: OperationalObject) => PackPhysicalTargetDescription | Promise<PackPhysicalTargetDescription>
   /**

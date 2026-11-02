@@ -1,3 +1,4 @@
+import type { QueryReadPolicy } from '../../../simulation/query-read-policy.ts'
 import { z } from 'zod'
 import { objectIdSchema, type ScenarioRecordingSelection } from '../../../core/model/index.ts'
 import { rejectCapabilityTarget } from '../../../simulation/capability-rejection.ts'
@@ -12,7 +13,7 @@ export type GridRuntimes = ReadonlyMap<string, GridRuntimeInstance>
 export interface ElectricGridQuery {
   readonly capability: SimulationCapability
   /** The answer, or a Promise of it from a query that finishes on worker threads; `recording` is the Run's selection for this Pack. */
-  readonly answer: (rawInput: unknown, grids: GridRuntimes, recording?: ScenarioRecordingSelection) => unknown
+  readonly answer: (rawInput: unknown, grids: GridRuntimes, recording: ScenarioRecordingSelection | undefined, policy: QueryReadPolicy) => unknown
 }
 
 export const assetKindSchema = z.enum(['bus', 'branch', 'generator', 'load', 'storage', 'hvdc'])
@@ -20,15 +21,17 @@ export const gridPayloadSchema = z.object({ gridId: z.string().min(1) }).strict(
 
 export const defineGridQuery = <Input extends z.ZodType>(config: {
   readonly id: string
+  readonly readScope: 'object' | 'collection'
   readonly title: string
   readonly description: string
   readonly searchTerms: ReadonlyArray<string>
   readonly input: Input
   readonly output: z.ZodType
-  readonly answer: (payload: z.output<Input>, grids: GridRuntimes) => unknown
+  readonly answer: (payload: z.output<Input>, grids: GridRuntimes, policy: QueryReadPolicy) => unknown
 }): ElectricGridQuery => ({
   capability: defineSimulationQueryCapability({
     id: config.id,
+    readScope: config.readScope,
     title: config.title,
     description: config.description,
     searchTerms: config.searchTerms,
@@ -39,7 +42,7 @@ export const defineGridQuery = <Input extends z.ZodType>(config: {
       return typeof gridId === 'string' ? [objectIdSchema.parse(gridId)] : []
     },
   }),
-  answer: (rawInput, grids) => config.answer(config.input.parse(rawInput), grids),
+  answer: (rawInput, grids, _recording, policy) => config.answer(config.input.parse(rawInput), grids, policy),
 })
 
 export const gridFor = (grids: GridRuntimes, gridId: string): GridRuntimeInstance => {

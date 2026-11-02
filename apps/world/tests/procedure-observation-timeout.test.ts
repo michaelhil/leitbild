@@ -1,3 +1,4 @@
+import { unrestrictedQueryReadPolicy } from '../src/simulation/query-read-policy.ts'
 import { describe, expect, test } from 'bun:test'
 import { actorIdSchema, isoTimestampSchema, nowIso, type SimulationRunEvent, type SimulationRunId } from '../src/core/model/index.ts'
 import { createSimulationClock } from '../src/core/model/time.ts'
@@ -36,7 +37,7 @@ const setup = async (options: { readonly steps?: number; readonly restored?: Sim
   const adapter = createLocalProcessPlantPackRuntimeAdapter()
   const actual = await createRuntimeHub([adapter]).connect({ simulationRunId: id, scenario,
     initialObjects: initial.objects, runClock: clock, objectById: stateStore.getObject })
-  const plants = await actual.invokeQuery({ capabilityId: 'world.process-plant.plants.list', input: {} }) as { plants: Array<{ id: string; modelRef: string; modelDigest: string }> }
+  const plants = await actual.invokeQuery({ readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.process-plant.plants.list', input: {} }) as { plants: Array<{ id: string; modelRef: string; modelDigest: string }> }
   const plant = plants.plants[0]!
   const document = parseProcedureMarkdown({ source: procedureTestSource, sourcePath: 'wiki/procedures/TIMEOUT.md',
     sourceUrl: 'https://example.test/TIMEOUT.md', rawMarkdown: `---

@@ -3,6 +3,7 @@ import { situationConfigSchema } from './model.ts'
 import { situationMonitorPackView } from './ui-pack.ts'
 
 export const situationMonitorPack: WorldPack = {
+  inspectionReferences: () => [],
   descriptor: situationMonitorPackView.descriptor,
   runtime: situationMonitorPackView.runtime!,
   presentation: situationMonitorPackView.presentation,

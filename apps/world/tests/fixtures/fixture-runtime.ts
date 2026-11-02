@@ -107,17 +107,17 @@ const capabilities = [
     input: announceInput, output: commandResultSchema, idempotent: false, schedulable: true,
     buildCommand: raw => ({ targetObjectIds: [], payload: announceInput.parse(raw) }),
   }),
-  defineSimulationQueryCapability({
+  defineSimulationQueryCapability({ readScope: 'collection',
     id: fixtureQueryIds.viewer, title: 'Read the stamped viewer',
     description: 'The role view core stamped on this query from the caller\'s connection, or null where there is none.',
     input: stateInput, output: viewerOutput,
   }),
-  defineSimulationQueryCapability({
+  defineSimulationQueryCapability({ readScope: 'collection',
     id: fixtureQueryIds.state, title: 'Read fixture state',
     description: 'Every unit, task and site with its status and assignment.',
     input: stateInput, output: stateOutput,
   }),
-  defineSimulationQueryCapability({
+  defineSimulationQueryCapability({ readScope: 'collection',
     id: fixtureQueryIds.object, title: 'Read one fixture object',
     description: 'One exact fixture object, or null when it does not exist.',
     input: objectInput, output: z.object({ object: operationalObjectSchema.nullable() }).strict(),

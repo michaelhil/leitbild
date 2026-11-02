@@ -23,17 +23,18 @@ const connectionPointResultSchema = z.object({
 }).strict()
 
 export const gridConnectionPointsQuery = defineGridQuery({
+  readScope: 'object',
   id: 'world.electric-grid.connection-points.list',
   title: 'List connection points',
   description: 'Lists the typed electrical connection points where other systems such as Plants connect, with their limits, connected port and current exchange (positive into the Grid), bus voltage and frequency.',
   searchTerms: ['connection point', 'plant connection', 'offsite power', 'grid connection', 'exchange', 'tilknytning', 'tilknytningspunkt', 'nettilknytning', 'utveksling'],
   input: gridPayloadSchema,
   output: connectionPointResultSchema,
-  answer: (payload, grids) => {
+  answer: (payload, grids, policy) => {
     const grid = gridFor(grids, payload.gridId)
     return {
       gridId: payload.gridId,
-      connectionPoints: grid.definition.model.connectionPoints.map(point => {
+      connectionPoints: grid.definition.model.connectionPoints.filter(point => { const connection = grid.externalConnections.get(point.id); return connection === undefined || policy.canInspect(connection.definition.system.objectId) }).map(point => {
         const busState = grid.busStates.get(point.busId)!
         const connection = grid.externalConnections.get(point.id)
         return {

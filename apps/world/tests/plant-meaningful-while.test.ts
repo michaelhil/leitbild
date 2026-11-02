@@ -1,3 +1,4 @@
+import { unrestrictedQueryReadPolicy } from '../src/simulation/query-read-policy.ts'
 import { describe, expect, test } from 'bun:test'
 import type { IsoTimestamp, ObjectId, OperationalObject } from '../src/core/model/index.ts'
 import type { Observation } from '../src/core/observation/model.ts'
@@ -18,7 +19,7 @@ guardPlantTests()
 const declaration = plantDeclaration(PLANT_ID as ObjectId, plantModel(), null)
 const observable = (path: string) => declaration.observables.find(entry => entry.ref === `${PLANT_ID}#${path}`)!
 const read = (instance: ProcessPlantRuntimeInstance, paths: ReadonlyArray<string>): ReadonlyArray<Observation> => (answerProcessPlantObservationQuery({
-  request: { capabilityId: 'world.process-plant.observation.read', input: { refs: paths.map(path => `${PLANT_ID}#${path}`) } },
+  request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.process-plant.observation.read', input: { refs: paths.map(path => `${PLANT_ID}#${path}`) } },
   plants: new Map([[PLANT_ID, instance]]), simulationTime: SIMULATION_TIME as IsoTimestamp, recording: null,
 }) as { readonly observations: ReadonlyArray<Observation> }).observations
 const SPEED = 'turbine.speedRpm'

@@ -1,3 +1,4 @@
+import { unrestrictedQueryReadPolicy } from '../src/simulation/query-read-policy.ts'
 import {test,expect} from 'bun:test'
 import type {ObjectId} from '../src/core/model/index.ts'
 import {compileProcessPlant,createPwrReferencePlantDefinition,createProcessPlantRuntime} from '../src/packs/process-plant/index.ts'
@@ -31,7 +32,7 @@ test('a primary reading still respects explicit readability and fault-truth excl
 })
 test('known physical model revisions cannot mask new read semantics, while current projections round-trip unchanged',()=>{
   const plants=new Map([[id,{plant,runtime:createProcessPlantRuntime({system:plant})} as unknown as ProcessPlantRuntimeInstance]])
-  const ask=(capabilityId:string,input:unknown)=>answerProcessPlantObservationQuery({request:{capabilityId,input},plants,recording:null})
+  const ask=(capabilityId:string,input:unknown)=>answerProcessPlantObservationQuery({request:{ readPolicy: unrestrictedQueryReadPolicy, capabilityId,input},plants,recording:null})
   const topology=observationShapes.topology.output.parse(ask(processPlantObservationCapabilityIds.topology,{objectId:id,known:plant.modelDigest}))
   expect('unchanged'in topology).toBe(false)
   expect(topology.revision).toBe(lineStateProjectionRevision(plant))

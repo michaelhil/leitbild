@@ -307,6 +307,7 @@ const processPlantQueryCapabilities = processPlantQueryKinds.map(id => {
   if (!output) throw new Error(`missing Process Plant capability output schema: ${id}`)
   return defineSimulationQueryCapability({
     id,
+    readScope: ['world.process-plant.catalog.list', 'world.process-plant.actions.search'].includes(id) ? 'catalog' : ['world.process-plant.plants.list', 'world.process-plant.runtime.status', 'world.process-plant.signals.search'].includes(id) ? 'collection' : 'object',
     title: titleFor(id),
     description: queryDescriptionById[id] ?? `Read ${titleFor(id)} from the active Process Plant runtime.`,
     input,

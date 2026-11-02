@@ -129,4 +129,4 @@ export type StoppedLead = z.output<typeof stoppedLeadSchema>
 export const defineObservationCapability = (
   kind: ObservationCapabilityKind,
   meta: { readonly id: string; readonly title: string; readonly description: string },
-): SimulationCapability => defineSimulationQueryCapability({ ...meta, audience: 'system', ...observationShapes[kind] })
+): SimulationCapability => defineSimulationQueryCapability({ ...meta, readScope: 'object', audience: 'system', ...observationShapes[kind] })

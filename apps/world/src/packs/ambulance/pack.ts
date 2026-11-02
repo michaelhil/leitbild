@@ -1,3 +1,4 @@
+import { ambulanceInspectionReferences } from './read-policy.ts'
 import type { PackScenarioAuthoringField, WorldPack } from '../../core/packs/protocol.ts'
 import { ambulanceRecordingProfiles, observationsFor } from './recording.ts'
 import { createIncidentObservationHandler } from './interactions.ts'
@@ -19,6 +20,7 @@ const responseUnitFields: ReadonlyArray<PackScenarioAuthoringField> = [locationF
 ]
 
 export const ambulancePack: WorldPack = {
+  inspectionReferences: ambulanceInspectionReferences,
   ...ambulancePackView,
   scenarioConfigSchema: ambulancePackConfigSchema,
   recording: { profiles: ambulanceRecordingProfiles, estimateSeries: objects => objects.reduce((sum, object) => sum + observationsFor(object).length, 0) },

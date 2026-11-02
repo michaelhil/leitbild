@@ -129,6 +129,7 @@ const sortValueOf = (grid: GridRuntimeInstance, entry: SearchEntry, sort: 'loadi
 }
 
 export const gridAssetSearchQuery = defineGridQuery({
+  readScope: 'object',
   id: 'world.electric-grid.assets.search',
   title: 'Search Grid Assets',
   description: 'Searches stable private Grid Assets (buses, branches, generators, loads, storage and HVDC links) by text, kind, state, island and branch loading, sorted by Model order, loading, dispatch or unserved demand, with bounded pagination, live status, map targets and applicable operations. Example: tripped units are kinds [generator] with status [tripped] (branches tripped by protection match tripped too); overloaded corridors are kinds [branch] with minLoadingPercent 100 and sort loading.',
@@ -167,6 +168,7 @@ export const gridAssetSearchQuery = defineGridQuery({
 })
 
 export const gridAssetGetQuery = defineGridQuery({
+  readScope: 'object',
   id: 'world.electric-grid.asset.get',
   title: 'Get Grid Asset',
   description: 'Returns the Model definition with provenance, the current state, map target and applicable operations of one Grid Asset. Branch flow is positive from fromBusId to toBusId; storage and generator output are positive into the Grid; an HVDC link (kind hvdc) transfers positive from its Norwegian converter fromBusId, so positive exports from Norway, and names the ramp group whose limit it shares. The bus of an external system reached only by HVDC is an HVDC terminal in no island: its state names the system\'s area and the links ending there.',

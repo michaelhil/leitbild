@@ -1,3 +1,4 @@
+import { unrestrictedQueryReadPolicy } from '../src/simulation/query-read-policy.ts'
 import { describe, expect, test } from 'bun:test'
 import { gridCloseBranchCommandKind, gridOpenBranchCommandKind } from '../src/packs/electric-grid/commands/branch.ts'
 import { gridDispatchGeneratorCommandKind, gridResetGeneratorTripCommandKind, gridStartGeneratorCommandKind, gridTripGeneratorCommandKind } from '../src/packs/electric-grid/commands/generator.ts'
@@ -73,7 +74,7 @@ const ok = (result: { readonly ok: boolean; readonly reason?: string }): void =>
 const islandIds = (run: SteppedGrid): string[] => run.grid.islandPlan!.islands.map(island => island.id)
 const islandAt = (run: SteppedGrid, busId: string) => run.grid.islandPlan!.islands.find(island => island.id === run.grid.busStates.get(busId)!.islandId)!
 const listed = (grid: GridRuntimeInstance) => answerElectricGridQuery({
-  request: { capabilityId: 'world.electric-grid.islands.list', input: { gridId: grid.definition.gridId } },
+  request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.electric-grid.islands.list', input: { gridId: grid.definition.gridId } },
   grids: new Map([[grid.definition.gridId, grid]]),
 }) as { islands: ReadonlyArray<{ id: string; energized: boolean; anchorBus: { id: string } }> }
 

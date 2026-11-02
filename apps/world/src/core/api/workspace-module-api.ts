@@ -1,3 +1,5 @@
+import { objectInspectionReferences } from '../packs/inspection.ts'
+import { isQueryReadRefusal } from '../../simulation/query-read-policy.ts'
 import { procedureRunsListInputSchema, procedureRunsListResultSchema, projectProcedureRuns } from '../../features/procedures/run-list.ts'
 import { procedureDecisionReadInputSchema, procedureTransitionDecisionSchema, retainedProcedureDecision } from '../../features/procedures/transition-receipt.ts'
 import { runHistorianStatusSchema } from '../../features/historian/policy.ts'
@@ -661,10 +663,12 @@ type ApiInvocation = z.infer<typeof moduleCapabilityInvocationSchema>
 
 // Projections must respect the same exact-subject inspection boundary as live
 // queries. A procedure's comments and branch evidence can contain plant readings.
-const deniedInspectionSubjects = (runtime: ApiRunRuntime, invocation: ApiInvocation): ReadonlySet<string> =>
-  new Set(invocation.access.actor.kind === 'ai'
-    ? runtime.snapshot().scenario?.agentRestrictions.objects.filter(entry => entry.deny.includes('inspect')).map(entry => entry.objectId) ?? []
-    : [])
+const deniedInspectionSubjects = (runtime: ApiRunRuntime, invocation: ApiInvocation): ReadonlySet<string> => {
+  const snapshot = runtime.snapshot()
+  const policy = runtime.inspectionPolicy(buildSimulationRunActorForAccess(invocation.access))
+  const direct = invocation.access.actor.kind === 'ai' ? snapshot.scenario?.agentRestrictions.objects.filter(entry => entry.deny.includes('inspect')).map(entry => String(entry.objectId)) ?? [] : []
+  return new Set([...direct, ...snapshot.objects.filter(object => !policy.canInspect(object.id)).map(object => String(object.id))])
+}
 
 const visibleProcedureState = (runtime: ApiRunRuntime, invocation: ApiInvocation) => {
   const procedures = runtime.snapshot().procedures ?? { runs: [] }
@@ -820,11 +824,11 @@ const readableChangeEvents = (
 ): { readonly events: ReturnType<ApiRunRuntime['events']>; readonly withheld: number } => {
   const withheld = withheldCommands(registry, runtime, invocation)
   const kept = withheld.size === 0 ? page : page.filter(event => !(event.type === 'command.issued' && withheld.has(event.command.id)) && !(event.type === 'command.result' && withheld.has(event.result.commandId)))
-  return { events: visibleChangeEvents(runtime, invocation, kept), withheld: page.length - kept.length }
+  return { events: visibleChangeEvents(registry, runtime, invocation, kept), withheld: page.length - kept.length }
 }
 
 const visibleChangeEvents = (
-  runtime: ApiRunRuntime, invocation: ApiInvocation,
+  registry: SimulationRunRegistry, runtime: ApiRunRuntime, invocation: ApiInvocation,
   page: ReturnType<ApiRunRuntime['events']>,
 ): ReturnType<ApiRunRuntime['events']> => {
   const denied = deniedInspectionSubjects(runtime, invocation)
@@ -838,7 +842,8 @@ const visibleChangeEvents = (
   }
   const deniedCommands = new Set(journal.filter(event => {
     if (event.type !== 'command.issued') return false
-    if (event.command.targetObjectIds.some(id => denied.has(id))) return true
+    const capability = registry.installedCapabilities.find(active => active.capability.id === event.command.kind)?.capability
+    if ([...event.command.targetObjectIds, ...capability?.historyObjectIds?.(event.command.payload) ?? []].some(id => denied.has(id))) return true
     // Older procedure command envelopes did not declare their plant target.
     if (!event.command.kind.startsWith('world.procedure.') || typeof event.command.payload !== 'object' || event.command.payload === null) return false
     const payload = event.command.payload as { runId?: string; scope?: { plantId?: string } }
@@ -846,13 +851,20 @@ const visibleChangeEvents = (
     return scope !== undefined && denied.has(scope)
   }).flatMap(event => event.type === 'command.issued' ? [event.command.id] : []))
   return page.filter(event => {
+    if (event.type === 'scenario.agent-restrictions.set') return false // Administrative subjects are not observation history.
+    if (event.type === 'scenario.guidance.shown') return event.guidance.objectIds.every(id => !denied.has(id))
+    if (event.type === 'scenario.objects.highlighted' || event.type === 'scenario.highlights.cleared') return (event.objectIds ?? []).every(id => !denied.has(id))
     if (event.type === 'procedure.run.started') return !denied.has(event.run.scope.plantId)
     if (event.type === 'procedure.run.reset') return !denied.has(event.scope.plantId)
     if (event.type.startsWith('procedure.') && 'runId' in event) {
       const scope = scopes.get(event.runId)
       return scope !== undefined && !denied.has(scope)
     }
-    if (event.type === 'object.upserted') return !denied.has(event.object.id)
+    if (event.type === 'object.upserted') {
+      const owner = runtime.packs().find(pack => pack.descriptor.id === event.object.packId)
+      if (!owner) throw new Error(`No inspection owner for Pack ${event.object.packId}`)
+      return !denied.has(event.object.id) && objectInspectionReferences(event.object, owner).every(id => !denied.has(id))
+    }
     if (event.type === 'object.deleted' || event.type === 'telemetry.sampled') return !denied.has(event.objectId)
     if (event.type === 'command.issued') return !deniedCommands.has(event.command.id)
     if (event.type === 'command.result') return !deniedCommands.has(event.result.commandId)
@@ -1137,7 +1149,8 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       ])
       const snapshot = runtime.snapshot()
       const leaseSummary = registry.leaseSummary(simulationRunId)
-      const assetSummaries = snapshot.objects.map(object => ({
+      const denied = deniedInspectionSubjects(runtime, invocation)
+      const assetSummaries = snapshot.objects.filter(object => !denied.has(object.id)).map(object => ({
         id: object.id,
         label: object.label,
         kind: object.kind,
@@ -1168,7 +1181,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
           data: {
             sequence: snapshot.seq,
             clock: snapshot.clock ?? null,
-            scenario: snapshot.scenario ?? null,
+            scenario: invocation.access.actor.kind === 'ai' ? { scenarioId: snapshot.scenario?.scenarioId } : snapshot.scenario ?? null,
             runtimeHealth: runtime.health(),
             historian: runtime.recordingStatus(),
             execution,
@@ -1183,7 +1196,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
             byKind: countBy(assetSummaries.map(object => String(object.kind))),
             objects: assetSummaries,
           },
-        }, ...scenarioSections(definition)],
+        }, ...scenarioSections({ ...definition, initialObjects: definition.initialObjects.filter(object => !denied.has(object.id)), connections: definition.connections.filter(connection => !denied.has(connection.system.objectId) && !denied.has(connection.network.objectId)) })],
       }) })
     },
   },
@@ -1477,6 +1490,8 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
     invoke: async (registry, invocation) => {
       const runtime = await registry.load(requireSimulationRunResource(invocation))
       const input = readObjectInputSchema.parse(invocation.input)
+      const denied = deniedInspectionSubjects(runtime, invocation)
+      if (denied.has(input.objectId)) return apiError(403, 'agent_access_restricted', 'This object contains restricted evidence for this caller')
       const object = runtime.snapshot().objects.find(candidate => candidate.id === input.objectId)
       return object
         ? json({ result: object })
@@ -1908,7 +1923,10 @@ const invokeCapability = async (
     if (ai && scriptRefused.has(capabilityId)) return scriptHidden('A Run\'s pinned Scenario source carries its timeline, which is hidden from AI callers; world.simulation-run.inspect describes the Run without it')
     const granted = ai && capabilityId === 'world.scenario.update' ? await scriptKept(registry, invocation) : invocation
     if (granted instanceof Response) return granted
+    const readRuntime = ai && invocation.resource?.type === 'world.simulation-run' && worldCapabilities.descriptors.find(descriptor => descriptor.id === capabilityId)?.kind === 'query' ? await registry.load(requireSimulationRunResource(invocation)) : undefined
+    const readRevision = readRuntime?.snapshot().scenario?.agentRestrictions.revision
     const response = await worldCapabilities.invoke(capabilityId, registry, granted)
+    if (response && readRuntime && readRuntime.snapshot().scenario?.agentRestrictions.revision !== readRevision) return apiError(409, 'query_policy_superseded', 'AI inspection policy changed while the query ran; acquire a new result')
     if (response) return ai && scriptRedacted.has(capabilityId) ? await withoutScript(response) : response
 
     const workspaceCapability = registry.workspaceCapabilities.find(capability => capability.id === capabilityId)
@@ -2030,6 +2048,7 @@ export const handleWorldModuleApi = async (
 
     return null
   } catch (error) {
+    if (isQueryReadRefusal(error)) return apiError(error.status, error.code, error.message)
     if (isCapabilityRejection(error)) return apiError(error.status, error.code, error.message)
     if (isRoleGateRefusal(error)) return apiError(error.status, error.code, error.message, error.details)
     if (error instanceof Error && 'code' in error && error.code === 'storage_budget_exceeded') return apiError(507, 'storage_budget_exceeded', error.message)

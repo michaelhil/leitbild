@@ -308,6 +308,7 @@ const summaryFor = (grid: GridRuntimeInstance): z.infer<typeof summaryResultSche
 }
 
 export const gridSummaryQuery = defineGridQuery({
+  readScope: 'object',
   id: 'world.electric-grid.grid.summary',
   title: 'Get Grid summary',
   description: 'Returns the Grid projection (system frequency, generation, demand, served and unserved load, reserve), each synchronous external system\'s exchange schedule beside the Operating Point\'s, asset counts, fidelity and diagnostics, the most loaded constrained branches, the largest units, and the loads with unserved demand. The thresholds field states what counts as constrained and affected. Per-island frequency is in world.electric-grid.islands.list.',

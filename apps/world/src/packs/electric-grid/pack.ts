@@ -17,6 +17,7 @@ import { gridObservationTopologyQuery } from './observation/topology.ts'
 import { describeElectricGridPhysicalTargets } from './physical-targets.ts'
 
 export const electricGridPack: WorldPack = {
+  inspectionReferences: () => [],
   ...electricGridPackView,
   physicalTargets: describeElectricGridPhysicalTargets,
   scenarioConfigSchema: electricGridPackConfigSchema,

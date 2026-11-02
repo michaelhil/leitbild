@@ -1,3 +1,4 @@
+import { unrestrictedQueryReadPolicy } from '../src/simulation/query-read-policy.ts'
 import { describe, expect, test } from 'bun:test'
 import {
   compileProcessPlant,
@@ -24,7 +25,7 @@ interface CatalogPage {
   readonly rules: ReadonlyArray<{ readonly id: string; readonly ruleClass: string; readonly watchedSignals: ReadonlyArray<Record<string, unknown>> }>
 }
 const catalog = (input: Record<string, unknown> = {}): CatalogPage => answerProcessPlantIcQuery({
-  request: { capabilityId: 'world.process-plant.ic.catalog', input: { plantId: plant.id, ...input } },
+  request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.process-plant.ic.catalog', input: { plantId: plant.id, ...input } },
   plants,
 }) as CatalogPage
 

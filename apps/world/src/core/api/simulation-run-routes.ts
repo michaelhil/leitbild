@@ -1,3 +1,4 @@
+import { isQueryReadRefusal } from '../../simulation/query-read-policy.ts'
 import { sourceDocumentPathSchema,sourceRevisionSchema,type AccessContext } from '@leitbild/contracts'
 import { z } from 'zod'
 import { actorIdSchema,clientIdSchema,interactionEndpointSchema,interactionSignalSchema,isSideView,nowIso,objectIdSchema,procedureIdSchema,procedureSourceIdSchema,runRolesOf,simulationRunIdSchema,type CompiledScenario,type InteractionSignal,type RoleSees,type SimulationRunId } from '../model/index.ts'
@@ -371,6 +372,8 @@ const handleSimulationRunApiInner = async (
       return json(outcome)
     } catch (error) {
       const reason = error instanceof z.ZodError ? zodReason(error) : error instanceof Error ? error.message : String(error)
+      if (isQueryReadRefusal(error)) return apiError(error.status, error.code, reason)
+      if (error instanceof Error && 'code' in error && error.code === 'agent_access_restricted') return apiError(403, 'agent_access_restricted', reason)
       if (isRoleGateRefusal(error)) return apiError(error.status, error.code, reason, error.details)
       if (error instanceof CommandIdempotencyConflictError) {
         return apiError(error.status, error.code, reason)

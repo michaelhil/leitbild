@@ -1,3 +1,4 @@
+import { unrestrictedQueryReadPolicy } from '../src/simulation/query-read-policy.ts'
 import { describe, expect, test } from 'bun:test'
 import type { ActorId, CommandEnvelope, CommandId, IsoTimestamp, SimulationRunId } from '../src/core/model/index.ts'
 import { createSimulationClock, type SimulationClock } from '../src/core/model/time.ts'
@@ -55,7 +56,7 @@ const send = async (connection: PackRuntimeConnection, kind: string, payload: un
   } satisfies CommandEnvelope, origin === undefined ? {} : { origin })
 /** The operations signals.read serves with the paths a display reads: the commands issued on them and the resets of actuations that held them. */
 const sample = async (connection: PackRuntimeConnection, paths: ReadonlyArray<string>) => {
-  const read = await connection.invokeQuery({ capabilityId: 'world.process-plant.signals.read', input: { plantId, signals: paths.map(path => ({ path })), operations: true } }) as {
+  const read = await connection.invokeQuery({ readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.process-plant.signals.read', input: { plantId, signals: paths.map(path => ({ path })), operations: true } }) as {
     readonly operations: { readonly log: ReadonlyArray<OperationRecord>; readonly resets: ReadonlyArray<unknown> }
   }
   return { operations: { log: read.operations.log, resets: read.operations.resets } }

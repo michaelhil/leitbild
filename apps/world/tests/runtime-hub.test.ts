@@ -1,3 +1,4 @@
+import { unrestrictedQueryReadPolicy } from '../src/simulation/query-read-policy.ts'
 import { describe, expect, spyOn, test } from 'bun:test'
 import { z } from 'zod'
 import type {
@@ -61,7 +62,7 @@ const createStubAdapter = (
         output: z.object({}).passthrough(),
         buildCommand: input => ({ targetObjectIds: [], payload: input }),
       }),
-      ...(options.queryKind === undefined ? [] : [defineSimulationQueryCapability({
+      ...(options.queryKind === undefined ? [] : [defineSimulationQueryCapability({ readScope: 'collection',
         id: options.queryKind,
         title: options.queryKind,
         description: `Test query ${options.queryKind}`,
@@ -256,7 +257,7 @@ describe('createRuntimeHub', () => {
     })
     const connection = await createRuntimeHub([adapter]).connect(connectionConfig([adapter.id]))
 
-    await expect(connection.invokeQuery({ capabilityId: 'world.health.status', input: {} }))
+    await expect(connection.invokeQuery({ readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.health.status', input: {} }))
       .rejects.toThrow('stub query failure')
     expect(connection.health?.()).toEqual([expect.objectContaining({
       runtimeId: 'health.runtime',
@@ -265,7 +266,7 @@ describe('createRuntimeHub', () => {
       lastFailure: expect.objectContaining({ operation: 'world.health.status', message: 'stub query failure' }),
     })])
 
-    expect(await connection.invokeQuery({ capabilityId: 'world.health.status', input: {} })).toEqual({ adapterId: 'health.runtime' })
+    expect(await connection.invokeQuery({ readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.health.status', input: {} })).toEqual({ adapterId: 'health.runtime' })
     expect(connection.health?.()).toEqual([expect.objectContaining({
       runtimeId: 'health.runtime',
       state: 'ready',
@@ -282,7 +283,7 @@ describe('createRuntimeHub', () => {
     })
     const connection = await createRuntimeHub([adapter]).connect(connectionConfig([adapter.id]))
 
-    await expect(connection.invokeQuery({ capabilityId: 'world.healthy.status', input: {} }))
+    await expect(connection.invokeQuery({ readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.healthy.status', input: {} }))
       .rejects.toMatchObject({ code: 'capability_target_not_found' })
     expect(connection.health?.()).toEqual([expect.objectContaining({
       runtimeId: 'healthy.runtime',
@@ -308,7 +309,7 @@ describe('createRuntimeHub', () => {
     try {
       const claimed = { capabilityId: 'world.provider.status', input: {}, viewer: { roleIds: ['control'], class: 'controller', sees: 'all' } }
       await expect(peerConfig!.queries!.invoke(claimed)).resolves.toEqual({ adapterId: 'provider.runtime' })
-      expect(received).toEqual([{ capabilityId: 'world.provider.status', input: {} }])
+      expect(received).toEqual([{ capabilityId: 'world.provider.status', input: {}, readPolicy: unrestrictedQueryReadPolicy }])
     } finally { await connection.close() }
   })
 
@@ -388,7 +389,7 @@ describe('createRuntimeHub', () => {
       expect(reconciliations).toBe(0)
       expect(connection.health?.()[0]).toMatchObject({ state: 'failed', failureCount: 1, lastFailure: { operation: 'observe-committed-events' } })
       expect(peerConfig?.isObjectProviderAvailable?.(observed.id)).toBe(false)
-      await expect(connection.invokeQuery({ capabilityId: 'world.failure.query', input: {} })).rejects.toThrow('missed committed state')
+      await expect(connection.invokeQuery({ readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.failure.query', input: {} })).rejects.toThrow('missed committed state')
       await expect(peerConfig!.queries!.invoke({ capabilityId: 'world.failure.query', input: {} })).rejects.toThrow('missed committed state')
       await expect(connection.sendCommand(command('world.failure.command'), {})).rejects.toThrow('missed committed state')
       await expect(connection.setClock({ currentTime: '2026-01-01T00:00:00Z' as IsoTimestamp, updatedAt: '2026-01-01T00:00:00Z' as IsoTimestamp, paused: true })).rejects.toThrow('missed committed state')

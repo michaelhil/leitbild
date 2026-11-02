@@ -33,6 +33,7 @@
     readonly gamepads: ReadonlyArray<GamepadOption>
     readonly selectedGamepadIndex: number | null
     readonly sensorContacts: ReadonlyArray<DroneSensorContact>
+    readonly sensorContactsHasMore: boolean
     readonly targetOptions: ReadonlyArray<OperationalObject>
     readonly selectedTargetId: string
     readonly onToggleCollapsed: () => void
@@ -66,6 +67,7 @@
     gamepads,
     selectedGamepadIndex,
     sensorContacts,
+    sensorContactsHasMore,
     targetOptions,
     selectedTargetId,
     onToggleCollapsed,
@@ -235,6 +237,7 @@
           {:else}
             <span>No contacts</span>
           {/each}
+          {#if sensorContactsHasMore}<span>More contacts available</span>{/if}
         </div>
       </section>
 

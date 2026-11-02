@@ -1,3 +1,4 @@
+import { stepTargetId } from './steps.ts'
 import { z } from 'zod'
 import { commandResultSchema, idSchema, objectIdSchema, type ObjectId } from '../../core/model/index.ts'
 import { defineSimulationCommandCapability, defineSimulationQueryCapability } from '../../simulation/capabilities.ts'
@@ -81,6 +82,13 @@ const command = <K extends EinsatzCommandId>(config: {
   output: commandResultSchema,
   idempotent: config.idempotent,
   schedulable: true,
+  historyObjectIds: raw => {
+    if (config.id === einsatzCommandIds.send) { const payload = commandInputSchemas[einsatzCommandIds.send].parse(raw); return objectIds(...[stepTargetId(payload.to)].filter((id): id is string => id !== undefined), ...payload.divert?.flatMap(divert => [divert.unitId, divert.fromTaskId]) ?? []) }
+    if (config.id === einsatzCommandIds.queue) { const payload = commandInputSchemas[einsatzCommandIds.queue].parse(raw); const target = stepTargetId(payload.to); return target === undefined ? [] : objectIds(target) }
+    if (config.id === einsatzCommandIds.recall) { const payload = commandInputSchemas[einsatzCommandIds.recall].parse(raw); return payload.fromTaskId === undefined ? [] : objectIds(payload.fromTaskId) }
+    if (config.id === einsatzCommandIds.engage) return objectIds(commandInputSchemas[einsatzCommandIds.engage].parse(raw).trackId)
+    return [] // The remaining commands name only their mutation target.
+  },
   buildCommand: raw => {
     const payload = commandInputSchemas[config.id].parse(raw) as CommandInput<K>
     return { targetObjectIds: config.targets(payload), payload }
@@ -187,6 +195,7 @@ export const einsatzCapabilities: ReadonlyArray<SimulationCapability> = [
     targets: input => objectIds(input.unitId),
   }),
   defineSimulationQueryCapability({
+    readScope: 'collection',
     id: einsatzQueryIds.recommend,
     title: 'Recommend units for a task',
     description: 'For a task: the smallest set of free units covering what it needs, by fit then ETA; when free units cannot cover it, completed with units still on their way to strictly lower-priority work (diverts), else the best partial set with the remainder named. Also single-unit alternatives (free first, then diverts), ineligible units with the reasons, busy units, and the units that hold the task queued in their job chain (next), which count towards nothing until it is active. A proposed or alternative unit that holds steps says how many (steps): a send replaces its active step, a queue adds behind them. ETAs include turnout and say whether they are routed or straight-line. Where the router fails or finds no route, or a point lies more than 1 km from a road, the ETA is unavailable with the refusal a send would get (routing_unavailable, no_road_near_point) and the straight distance; the recommendation is still given.',
@@ -195,6 +204,7 @@ export const einsatzCapabilities: ReadonlyArray<SimulationCapability> = [
     inspectObjectIds: raw => objectIds(recommendInputSchema.parse(raw).taskId),
   }),
   defineSimulationQueryCapability({
+    readScope: 'catalog',
     id: einsatzQueryIds.configuration,
     title: 'Read the Einsatz configuration',
     description: 'The whole configuration in force (unit types, properties, task templates, load classes, wording, authority) and its revision. Authoring material: no instances or positions.',

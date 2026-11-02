@@ -1,3 +1,4 @@
+import { einsatzInspectionReferences } from './read-policy.ts'
 import type { WorldPack } from '../../core/packs/protocol.ts'
 import { einsatzAuthoring } from './authoring.ts'
 import { einsatzConfigSchema } from './config-validation.ts'
@@ -18,6 +19,7 @@ import { einsatzPackView } from './ui-pack.ts'
  * (`groups.ts`).
  */
 export const einsatzPack: WorldPack = {
+  inspectionReferences: einsatzInspectionReferences,
   ...einsatzPackView,
   scenarioConfigSchema: einsatzConfigSchema,
   authoring: einsatzAuthoring,

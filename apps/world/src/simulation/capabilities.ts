@@ -7,6 +7,8 @@ export const defineSimulationCapability = (config: SimulationCapability): Simula
   capabilityIdSchema.parse(config.id)
   if (config.title.trim() === '') throw new Error(`Capability ${config.id} has no title`)
   if (config.description.trim() === '') throw new Error(`Capability ${config.id} has no description`)
+  if (config.kind === 'query' && !['catalog', 'object', 'collection'].includes(config.readScope!)) throw new Error(`Query Capability ${config.id} must declare its read scope`)
+  if (config.kind === 'query' && config.readScope === 'object' && !config.inspectObjectIds) throw new Error(`Object query ${config.id} must declare exact input targets`)
   if (config.kind === 'query' && config.risk !== 'read') {
     throw new Error(`Query Capability ${config.id} must have read risk`)
   }
@@ -28,7 +30,7 @@ export const defineSimulationCapability = (config: SimulationCapability): Simula
   return Object.freeze(config)
 }
 
-export const defineSimulationQueryCapability = (config: Omit<SimulationCapability, 'kind' | 'risk' | 'idempotent' | 'schedulable' | 'buildCommand' | 'withheldFromAgents'>): SimulationCapability =>
+export const defineSimulationQueryCapability = (config: Omit<SimulationCapability, 'kind' | 'risk' | 'idempotent' | 'schedulable' | 'buildCommand' | 'withheldFromAgents'> & { readonly readScope: NonNullable<SimulationCapability['readScope']> }): SimulationCapability =>
   defineSimulationCapability({ ...config, kind: 'query', risk: 'read', idempotent: true })
 
 export const defineSimulationCommandCapability = (config: Omit<SimulationCapability, 'kind' | 'risk'> & {

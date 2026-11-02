@@ -1,3 +1,4 @@
+import { unrestrictedQueryReadPolicy } from '../src/simulation/query-read-policy.ts'
 import { describe, expect, test } from 'bun:test'
 import { norwayRuntimeTestOperatingPointRef } from './fixtures/grid-operating-point.ts'
 import { readFile } from 'node:fs/promises'
@@ -48,7 +49,7 @@ const solvedNorway = (): GridRuntimeInstance => {
 type Query = { readonly capabilityId: string; readonly input: Readonly<Record<string, unknown>> }
 /** The contingency queries answer asynchronously (large screenings run on worker threads). */
 const ask = async (grid: GridRuntimeInstance, capabilityId: string, input: Readonly<Record<string, unknown>>): Promise<any> =>
-  await answerElectricGridQuery({ request: { capabilityId, input: { gridId: grid.definition.gridId, ...input } } satisfies Query, grids: new Map([[grid.definition.gridId, grid]]) })
+  await answerElectricGridQuery({ request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId, input: { gridId: grid.definition.gridId, ...input } }, grids: new Map([[grid.definition.gridId, grid]]) })
 
 /** Main-thread CPU of an async run, in references timed just before it: the median of `rounds` (cpu-cost.ts). */
 const asyncCostInReferences = async (run: () => Promise<unknown>, rounds: number): Promise<number> => {
@@ -415,23 +416,23 @@ describe('electric grid N-1 screening', () => {
     try {
       // Output parsed by the published schema, as the Capability Broker does.
       const capability = (id: string) => adapter.capabilities.find(candidate => candidate.id === id)!
-      const screening: any = capability('world.electric-grid.contingency.screen').output.parse(await connection.invokeQuery({
+      const screening: any = capability('world.electric-grid.contingency.screen').output.parse(await connection.invokeQuery({ readPolicy: unrestrictedQueryReadPolicy,
         capabilityId: 'world.electric-grid.contingency.screen', input: { gridId: 'grid:norway', contingencies: 'all-branches', limit: 5 },
       }))
       expect(screening.screenedCount).toBeGreaterThan(250)
       expect(screening.results).toHaveLength(5)
-      const remedial: any = capability('world.electric-grid.remedial-actions.evaluate').output.parse(await connection.invokeQuery({
+      const remedial: any = capability('world.electric-grid.remedial-actions.evaluate').output.parse(await connection.invokeQuery({ readPolicy: unrestrictedQueryReadPolicy,
         capabilityId: 'world.electric-grid.remedial-actions.evaluate',
         input: { gridId: 'grid:norway', contingencies: [screening.results[0].contingency.assetId], actions: [{ kind: 'open-branch', assetId: screening.results[1].contingency.assetId }] },
       }))
       expect(remedial.before.screenedCount).toBe(1)
-      await expect(connection.invokeQuery({ capabilityId: 'world.electric-grid.contingency.screen', input: { gridId: 'grid:missing', contingencies: 'all-branches' } }))
+      await expect(connection.invokeQuery({ readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.electric-grid.contingency.screen', input: { gridId: 'grid:missing', contingencies: 'all-branches' } }))
         .rejects.toThrow('Electric Grid not found: grid:missing')
     } finally {
       await connection.close()
     }
     const grid = solvedNorway()
-    const summary = answerElectricGridQuery({ request: { capabilityId: 'world.electric-grid.grid.summary', input: { gridId: grid.definition.gridId } }, grids: new Map([[grid.definition.gridId, grid]]) })
+    const summary = answerElectricGridQuery({ request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.electric-grid.grid.summary', input: { gridId: grid.definition.gridId } }, grids: new Map([[grid.definition.gridId, grid]]) })
     expect(summary).not.toBeInstanceOf(Promise)
     expect((summary as { gridId: string }).gridId).toBe(grid.definition.gridId)
   }, 60_000)

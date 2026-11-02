@@ -1,3 +1,4 @@
+import { unrestrictedQueryReadPolicy } from '../src/simulation/query-read-policy.ts'
 import { expect, test } from 'bun:test'
 import { isoTimestampSchema } from '../src/core/model/index.ts'
 import { parseProcedureTagValue } from '../src/features/procedures/pack-observations.ts'
@@ -18,7 +19,7 @@ const fixture = (): ProcessPlantRuntimeInstance => {
 }
 const read = (instance: ProcessPlantRuntimeInstance, input: Record<string, unknown>, simulationTime = at): any => {
   const result = answerProcessPlantQuery({
-    request: { capabilityId: capability.id, input: capability.input.parse({ plantId: plant.id, ...input }) },
+    request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId: capability.id, input: capability.input.parse({ plantId: plant.id, ...input }) },
     plants: new Map([[plant.id, instance]]), objects: new Map(), simulationTime,
   })
   expect(capability.output.parse(result)).toEqual(result)
@@ -87,7 +88,7 @@ test('a common batch frame preserves independent unavailable-quality rows and th
 test('evidence requires an acquisition time and the output accepts only the canonical batch contract', () => {
   const instance = fixture()
   const input = { plantId: plant.id, signals: [{ tagId: 'PT-455' }], evidence: true }
-  expect(() => answerProcessPlantQuery({ request: { capabilityId: capability.id, input },
+  expect(() => answerProcessPlantQuery({ request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId: capability.id, input },
     plants: new Map([[plant.id, instance]]), objects: new Map() })).toThrow('needs the Run time')
   const acquired = read(instance, input)
   expect(capability.output.safeParse({ ...acquired, evidence: { ...acquired.evidence, kind: 'engineering-diagnostic' } }).success).toBe(false)

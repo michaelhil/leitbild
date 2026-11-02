@@ -127,6 +127,7 @@ const byUrgency = (left: GridAlarmRecord, right: GridAlarmRecord): number =>
   || (left.id < right.id ? -1 : left.id > right.id ? 1 : 0)
 
 export const gridAlarmsQuery = defineGridQuery({
+  readScope: 'object',
   id: 'world.electric-grid.alarms.list',
   title: 'List Grid alarms',
   description: 'Lists persistent Grid alarm records, most urgent first: island frequency bands, de-energised and formed islands, reserve deficits per product, unserved load, LFDD stages, AC non-convergence, branch loading bands, branch, generator and HVDC link trips, and an external exchange voided by separation. An alarm stays active until its condition clears; acknowledgement never clears it. Filter by priority, state and island; acknowledge or shelve with world.electric-grid.alarm.lifecycle.',

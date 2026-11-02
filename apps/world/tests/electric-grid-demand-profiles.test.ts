@@ -1,3 +1,4 @@
+import { unrestrictedQueryReadPolicy } from '../src/simulation/query-read-policy.ts'
 import { describe, expect, test } from 'bun:test'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -225,11 +226,11 @@ describe('Electric Grid demand profiles', () => {
     // asset.get and grid.summary name the day type.
     const grids = new Map([[winter.gridId, grid]])
     const load = winter.model.loads[0]!
-    const detail = gridAssetGetQuery.capability.output.parse(answerElectricGridQuery({ request: { capabilityId: gridAssetGetQuery.capability.id, input: { gridId: winter.gridId, assetId: load.id } }, grids })) as {
+    const detail = gridAssetGetQuery.capability.output.parse(answerElectricGridQuery({ request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId: gridAssetGetQuery.capability.id, input: { gridId: winter.gridId, assetId: load.id } }, grids })) as {
       readonly asset: { readonly demandProfile: { readonly sample: { readonly localTime: string; readonly dayType: string } } }
     }
     expect(detail.asset.demandProfile.sample).toMatchObject({ localTime: '00:29', dayType: 'holiday' })
-    const summary = gridSummaryQuery.capability.output.parse(answerElectricGridQuery({ request: { capabilityId: gridSummaryQuery.capability.id, input: { gridId: winter.gridId } }, grids })) as {
+    const summary = gridSummaryQuery.capability.output.parse(answerElectricGridQuery({ request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId: gridSummaryQuery.capability.id, input: { gridId: winter.gridId } }, grids })) as {
       readonly demandProfiles: { readonly sample: { readonly dayType: string } }
     }
     expect(summary.demandProfiles.sample.dayType).toBe('holiday')
@@ -279,7 +280,7 @@ describe('Electric Grid demand profiles', () => {
     applyGridDemand(grid, Date.parse('2026-01-17T11:30:00.000Z'))
     const grids = new Map([[winter.gridId, grid]])
     const load = winter.model.loads.find(candidate => candidate.id.startsWith('load:0301-private-'))!
-    const detail = gridAssetGetQuery.capability.output.parse(answerElectricGridQuery({ request: { capabilityId: gridAssetGetQuery.capability.id, input: { gridId: winter.gridId, assetId: load.id } }, grids })) as {
+    const detail = gridAssetGetQuery.capability.output.parse(answerElectricGridQuery({ request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId: gridAssetGetQuery.capability.id, input: { gridId: winter.gridId, assetId: load.id } }, grids })) as {
       readonly asset: { readonly state: { readonly profileFactor: number; readonly demandMw: number; readonly nominalDemandMw: number }; readonly demandProfile: { readonly definition: GridDemandProfileDefinition; readonly sample: { readonly localTime: string; readonly dayType: string } } }
     }
     expect(detail.asset.demandProfile.definition.series).toMatchObject({ season: 'winter', priceArea: 'NO1', group: 'private' })
@@ -287,7 +288,7 @@ describe('Electric Grid demand profiles', () => {
     const weekend = detail.asset.demandProfile.definition.weekend
     expect(detail.asset.state.profileFactor).toBeCloseTo((weekend[12]! + weekend[13]!) / 2, 12)
     expect(detail.asset.state.demandMw).toBeCloseTo(detail.asset.state.nominalDemandMw * detail.asset.state.profileFactor, 9)
-    const summary = gridSummaryQuery.capability.output.parse(answerElectricGridQuery({ request: { capabilityId: gridSummaryQuery.capability.id, input: { gridId: winter.gridId } }, grids })) as {
+    const summary = gridSummaryQuery.capability.output.parse(answerElectricGridQuery({ request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId: gridSummaryQuery.capability.id, input: { gridId: winter.gridId } }, grids })) as {
       readonly demandProfiles: { readonly sample: { readonly dayType: string }; readonly profiles: ReadonlyArray<{ readonly sources: ReadonlyArray<string>; readonly loadCount: number; readonly demandMw: number }> }
     }
     expect(summary.demandProfiles.sample.dayType).toBe('weekend')

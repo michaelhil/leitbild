@@ -1,3 +1,4 @@
+import { unrestrictedQueryReadPolicy } from '../src/simulation/query-read-policy.ts'
 import { describe, expect, test } from 'bun:test'
 import {
   answerProcessPlantQuery,
@@ -70,7 +71,7 @@ describe('requested-unit signal read boundary', () => {
   const plants = new Map([[plant.id, {
     plant, runtime, ramps: createProcessPlantRampRunner({ runtime }), performance: createProcessPlantRuntimePerformance(),
   }]])
-  const query = (capabilityId: string, input: unknown): unknown => answerProcessPlantQuery({ request: { capabilityId, input }, plants, objects: new Map() })
+  const query = (capabilityId: string, input: unknown): unknown => answerProcessPlantQuery({ request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId, input }, plants, objects: new Map() })
   const read = (signals: unknown[]) => query('world.process-plant.signals.read', { plantId: plant.id, signals }) as {
     signals: Array<{ signal: { path: string; unit: string; quantity: string; description?: string }; variable: { value: number | boolean }; quality: unknown; valueView?: RequestedSignalValueView }>
   }

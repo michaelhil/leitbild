@@ -1,3 +1,4 @@
+import { unrestrictedQueryReadPolicy } from '../src/simulation/query-read-policy.ts'
 import { describe, expect, test } from 'bun:test'
 import type { SimulationRunId, IsoTimestamp } from '../src/core/model/index.ts'
 import {
@@ -197,7 +198,7 @@ const displayAlarmIdsFor = (input: {
   ]])
   // What a live display shows: the active alarms and trips alarms.status reads.
   const response = answerProcessPlantQuery({
-    request: {
+    request: { readPolicy: unrestrictedQueryReadPolicy,
       capabilityId: 'world.process-plant.alarms.status',
       input: { plantId: input.system.id },
     },

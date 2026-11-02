@@ -41,7 +41,7 @@ const delay = async (ms: number): Promise<void> => {
   })
 }
 
-const createPack = (requests: ReadonlyArray<PackMapFeatureQuery>): WorldPack => ({
+const createPack = (requests: ReadonlyArray<PackMapFeatureQuery>): WorldPack => ({ inspectionReferences: () => [],
   descriptor: createWorldPackDescriptor({
     id: 'weather-test',
     version: '1.0.0',

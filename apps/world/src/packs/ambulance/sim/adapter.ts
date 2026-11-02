@@ -5,7 +5,7 @@ import { createSimulationClock } from '../../../core/model/time.ts'
 import type { RoutingAdapter } from '../../../routing/protocol.ts'
 import { defineSimulationCommandCapability, defineSimulationQueryCapability } from '../../../simulation/capabilities.ts'
 import type { PackRuntimeAdapter, PackRuntimeConnection, PackRuntimeConnectionConfig, PackRuntimeEvent, PackRuntimeEventHandler, PackRuntimeHealth } from '../../../simulation/protocol.ts'
-import { ambulanceCommandSchemas } from '../commands.ts'
+import { ambulanceCommandSchemas, assignPayloadSchema, appendStopPayloadSchema, createItemPayloadSchema } from '../commands.ts'
 import { ambulancePackId, responseUnitPackDataSchema } from '../model.ts'
 import { ambulanceQueryCapabilities, answerAmbulanceQuery } from '../query.ts'
 import { createAmbulanceRecordingPlan } from '../recording.ts'
@@ -29,6 +29,14 @@ const commandCapabilities = Object.entries(ambulanceCommandSchemas).map(([key, i
   const id = key as keyof typeof ambulanceCommandSchemas
   return defineSimulationCommandCapability({
     id, ...commandDescriptions[id], input, output: commandResultSchema, schedulable: true,
+    historyObjectIds: raw => {
+      // The other commands carry only their mutation target. These payloads
+      // additionally name read-only destinations, patients or placement anchors.
+      if (id === 'world.ambulance.assign') { const payload = assignPayloadSchema.parse(raw); return [payload.incidentId, ...payload.patientIds] }
+      if (id === 'world.ambulance.append-stop') { const payload = appendStopPayloadSchema.parse(raw); return [...payload.patientIds, payload.kind === 'pickup' ? payload.incidentId : payload.careSiteId] }
+      if (id === 'world.ambulance.create-item') { const { item } = createItemPayloadSchema.parse(raw); return item.type === 'patient' ? [item.incidentId] : item.atObject === undefined ? [] : [item.atObject] }
+      return []
+    },
     buildCommand: raw => {
       const payload = input.parse(raw)
       const targetId = 'unitId' in payload ? payload.unitId : 'careSiteId' in payload ? payload.careSiteId : 'patientId' in payload ? payload.patientId : undefined
@@ -65,6 +73,7 @@ export const createLocalAmbulancePackRuntimeAdapter = (adapterConfig: { readonly
       buildCommand: input => ({ targetObjectIds: [], payload: roadWeatherPolicySchema.parse(input) }),
     }),
     defineSimulationQueryCapability({
+      readScope: 'catalog',
       id: 'world.ambulance.road-weather-policy', title: 'Inspect road-weather policy',
       description: 'Current heuristic speed factors, applied at each moving vehicle’s position. Not a clinical, tire-friction or whole-route forecast model.',
       input: z.object({}).strict(), output: roadWeatherPolicySchema,

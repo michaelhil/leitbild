@@ -1,3 +1,4 @@
+import { unrestrictedQueryReadPolicy } from '../../src/simulation/query-read-policy.ts'
 /**
  * T39's Plant states (swap plan): the deterministic states T01 recorded the
  * old display path in (tests/fixtures/display-characterization/old-path.json),
@@ -74,7 +75,7 @@ export const plantIn = (state: CharacterizationState): ProcessPlantRuntimeInstan
 
 /** The Plant's Capabilities, as a person asks them of the Run, at the state's Run time. */
 export const askOf = (instance: ProcessPlantRuntimeInstance) => <T,>(capabilityId: string, input: unknown): T => answerProcessPlantQuery({
-  request: { capabilityId, input },
+  request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId, input },
   plants: new Map([[PLANT_ID, instance]]),
   objects: new Map(),
   simulationTime: SIMULATION_TIME,

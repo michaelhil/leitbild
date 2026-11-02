@@ -1,3 +1,4 @@
+import { unrestrictedQueryReadPolicy } from '../src/simulation/query-read-policy.ts'
 import { afterEach, describe, expect, test } from 'bun:test'
 import { workspaceIdSchema } from '@leitbild/contracts'
 import { readFileSync } from 'node:fs'
@@ -170,7 +171,7 @@ describe('procedure client', () => {
         expect(url).toBe(`/api/workspaces/${workspaceId}/world/simulation-runs/run-test/capabilities/world.process-plant.procedure-tags.validate/invoke`)
         const body = JSON.parse(String(init?.body)) as { input: { plantId: string; tags: Record<string, unknown>[] } }
         requests.push(body.input)
-        const result = answerProcessPlantQuery({ request: { capabilityId: 'world.process-plant.procedure-tags.validate', input: body.input }, plants, objects: new Map() })
+        const result = answerProcessPlantQuery({ request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.process-plant.procedure-tags.validate', input: body.input }, plants, objects: new Map() })
         return Response.json({ kind: 'query', result })
       }) as typeof fetch
       const document = await readProcedureDocument('run-test' as SimulationRunId, 'E-0')
@@ -189,7 +190,7 @@ describe('procedure client', () => {
       expect(JSON.stringify(document)).toBe(original)
       expect(JSON.stringify(parsed)).toBe(original)
       // Directly forwarding an AST still fails: do not weaken the Pack schema.
-      expect(() => answerProcessPlantQuery({ request: { capabilityId: 'world.process-plant.procedure-tags.validate',
+      expect(() => answerProcessPlantQuery({ request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.process-plant.procedure-tags.validate',
         input: { plantId: plant.id, tags: document.tags } }, plants, objects: new Map() })).toThrow('annotations')
     }
   })
@@ -207,7 +208,7 @@ describe('procedure client', () => {
     globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit): Promise<Response> => {
       const body = JSON.parse(String(init?.body)) as { input: unknown }
       requests.push(body.input)
-      const result = answerProcessPlantQuery({ request: { capabilityId: 'world.process-plant.signals.read', input: body.input }, plants, objects: new Map(), simulationTime: acquiredAt }) as { signals: SignalRow[] }
+      const result = answerProcessPlantQuery({ request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.process-plant.signals.read', input: body.input }, plants, objects: new Map(), simulationTime: acquiredAt }) as { signals: SignalRow[] }
       responses.push(result.signals[0]!)
       return Response.json({ kind: 'query', result })
     }) as typeof fetch

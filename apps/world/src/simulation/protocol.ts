@@ -1,3 +1,4 @@
+import type { QueryReadPolicy } from './query-read-policy.ts'
 import type { z } from 'zod'
 import type { ActorId,ClientId,CommandEnvelope,CommandResult,ElectricalConnectionDefinition,InteractionSignal,IsoTimestamp,ObjectId,OperationalObject,PackRuntimeRecordingBatch,Provenance,RecordedSample,RunViewer,ScenarioRecordingSelection,ScenarioRole,ScenarioSide,ScenarioWorldDefinition,SimulationClockState,SimulationRunEvent,SimulationRunId,TelemetryState } from '../core/model/index.ts'
 import type { PackRuntimeClock } from '../core/packs/protocol.ts'
@@ -107,6 +108,8 @@ export interface PackRuntimeConnection {
 export interface PackRuntimeQuery {
   readonly capabilityId: string
   readonly input: unknown
+  /** World stamps the caller policy; never accepted from wire input or another Pack. */
+  readonly readPolicy: QueryReadPolicy
   /**
    * The caller's role view in a Run that declares roles, stamped by core from
    * the caller's connection, never from input. Absent in open mode, for the
@@ -167,10 +170,12 @@ export interface SimulationCapability {
   /** What a successful result publishes for other Modules to present (contracts resources.ts):
    * `embedded-view` where the result carries an embedded view publication in `view`. */
   readonly publishes?: ReadonlyArray<CapabilityPublication>
-  /** Objects whose detailed state a query inspects. Broad discovery/list
-   * operations deliberately omit this: they may reveal that an object exists,
-   * but not bypass a restriction on detailed inspection. */
+  /** Mandatory for every query: catalogs contain no Run objects; collections derive from policy-filtered owners. */
+  readonly readScope?: 'catalog' | 'object' | 'collection'
+  /** Exact input targets, checked before entering the owner. Collection projections also apply readPolicy to derived targets. */
   readonly inspectObjectIds?: (input: unknown) => ReadonlyArray<ObjectId>
+  /** Non-mutating object references in an accepted command payload, needed when projecting its history. Mutation targets are always included separately. */
+  readonly historyObjectIds?: (input: unknown) => ReadonlyArray<ObjectId>
   readonly buildCommand?: (input: unknown) => {
     readonly targetObjectIds: ReadonlyArray<ObjectId>
     readonly payload: unknown
@@ -248,7 +253,7 @@ export interface PackRuntimeRecordedHistory {
 export interface PackRuntimeQueries {
   readonly has: (capabilityId: string) => boolean
   /** A query between Packs carries no viewer: only core stamps one, from a caller's connection. */
-  readonly invoke: (query: Omit<PackRuntimeQuery, 'viewer'>) => Promise<unknown>
+  readonly invoke: (query: Omit<PackRuntimeQuery, 'viewer' | 'readPolicy'>) => Promise<unknown>
 }
 export interface PackRuntimeConnectionConfig {
   /** Workspace-owned persistence scope. Required only by adapters with shared local data. */

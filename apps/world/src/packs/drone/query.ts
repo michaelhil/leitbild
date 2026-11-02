@@ -68,14 +68,15 @@ const sensorContactSchema = z.object({
   confidence: z.number().finite().min(0).max(1),
   source: z.enum(['runtime', 'payload']),
 }).strict()
-const sensorContactsInputSchema = z.object({ droneId: objectIdSchema.optional() }).strict()
+const contactCursorSchema = z.object({ droneId: objectIdSchema, targetId: objectIdSchema }).strict()
+const sensorContactsInputSchema = z.object({ droneId: objectIdSchema.optional(), limit: z.number().int().min(1).max(500).default(500), after: contactCursorSchema.optional() }).strict()
 
 export const droneQueryCapabilities: ReadonlyArray<SimulationCapability> = [
-  defineSimulationQueryCapability({ id: droneSceneQueryKind, title: 'Read drone scene', description: 'Returns bounded current render and status data for active drones.', input: z.object({}).strict(), output: z.object({ drones: z.array(droneSceneObjectSchema) }).strict() }),
-  defineSimulationQueryCapability({ id: droneControllerBindingsQueryKind, title: 'Read drone controller bindings', description: 'Returns current operator and client input bindings for active drones.', input: z.object({}).strict(), output: z.object({ bindings: z.array(controllerBindingSchema) }).strict() }),
-  defineSimulationQueryCapability({ id: droneVehicleModelsQueryKind, title: 'List drone vehicle models', description: 'Lists the validated vehicle models available to the Drone runtime.', input: z.object({}).strict(), output: z.object({ models: z.array(droneVehicleModelSchema) }).strict() }),
-  defineSimulationQueryCapability({ id: droneMapFeaturesQueryKind, title: 'Read drone map features', description: 'Projects current sensor, effect, and swarm envelopes into map features.', input: mapFeaturesPayloadSchema, output: z.object({ features: z.array(packMapFeatureSchema) }).strict() }),
-  defineSimulationQueryCapability({ id: droneSensorContactsQueryKind, title: 'Read drone sensor contacts', description: 'Returns bounded, currently detectable positioned objects for all drones or one selected drone, based on each configured sensor range and target tags.', input: sensorContactsInputSchema, output: z.object({ contacts: z.array(sensorContactSchema) }).strict(), inspectObjectIds: raw => { const input = sensorContactsInputSchema.parse(raw); return input.droneId ? [input.droneId] : [] } }),
+  defineSimulationQueryCapability({ readScope: 'collection', id: droneSceneQueryKind, title: 'Read drone scene', description: 'Returns bounded current render and status data for active drones.', input: z.object({}).strict(), output: z.object({ drones: z.array(droneSceneObjectSchema) }).strict() }),
+  defineSimulationQueryCapability({ readScope: 'collection', id: droneControllerBindingsQueryKind, title: 'Read drone controller bindings', description: 'Returns current operator and client input bindings for active drones.', input: z.object({}).strict(), output: z.object({ bindings: z.array(controllerBindingSchema) }).strict() }),
+  defineSimulationQueryCapability({ readScope: 'catalog', id: droneVehicleModelsQueryKind, title: 'List drone vehicle models', description: 'Lists the validated vehicle models available to the Drone runtime.', input: z.object({}).strict(), output: z.object({ models: z.array(droneVehicleModelSchema) }).strict() }),
+  defineSimulationQueryCapability({ readScope: 'collection', id: droneMapFeaturesQueryKind, title: 'Read drone map features', description: 'Projects current sensor, effect, and swarm envelopes into map features.', input: mapFeaturesPayloadSchema, output: z.object({ features: z.array(packMapFeatureSchema) }).strict() }),
+  defineSimulationQueryCapability({ readScope: 'collection', id: droneSensorContactsQueryKind, title: 'Read drone sensor contacts', description: 'Returns visible, currently detectable targets in stable droneId/targetId order. limit (1–500, default 500) bounds the page; hasMore and nextAfter make partial coverage explicit. Continue with after or narrow droneId. Pages read current state, not a frozen sensor snapshot.', input: sensorContactsInputSchema, output: z.object({ contacts: z.array(sensorContactSchema), hasMore: z.boolean(), nextAfter: contactCursorSchema.nullable() }).strict(), inspectObjectIds: raw => { const input = sensorContactsInputSchema.parse(raw); return input.droneId ? [input.droneId] : [] } }),
 ]
 
 const fail = (reason: string): never => { throw new Error(reason) }
@@ -119,13 +120,17 @@ export const droneControllerBindings = (objects: ReadonlyArray<OperationalObject
     }]
   })
 
-export const droneSensorContacts = (objects: ReadonlyArray<OperationalObject>, droneId?: string): ReadonlyArray<DroneSensorContact> => {
+export const droneSensorContacts = (objects: ReadonlyArray<OperationalObject>, droneId?: string, page: { readonly limit?: number; readonly after?: z.infer<typeof contactCursorSchema> | undefined } = {}): { readonly contacts: ReadonlyArray<DroneSensorContact>; readonly hasMore: boolean; readonly nextAfter: z.infer<typeof contactCursorSchema> | null } => {
   const contacts: DroneSensorContact[] = []
-  for (const drone of objects) {
+  const limit = page.limit ?? 500
+  const ordered = [...objects].sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+  const result = () => { const hasMore = contacts.length > limit; const kept = contacts.slice(0, limit); const last = kept.at(-1); return { contacts: kept, hasMore, nextAfter: hasMore && last ? { droneId: last.droneId, targetId: last.targetId } : null } }
+  for (const drone of ordered) {
     const data = droneDataFor(drone)
     if (droneId !== undefined && drone.id !== droneId) continue
     if (!data || data.health.state === 'destroyed' || data.link.state === 'lost') continue
-    for (const target of objects) {
+    for (const target of ordered) {
+      if (page.after && (drone.id < page.after.droneId || (drone.id === page.after.droneId && target.id <= page.after.targetId))) continue
       if (target.id === drone.id || target.lifecycle !== 'active') continue
       const point = target.spatial.position?.point ?? (target.spatial.geometry?.type === 'Point' ? target.spatial.geometry : undefined)
       if (!point) continue
@@ -143,10 +148,10 @@ export const droneSensorContacts = (objects: ReadonlyArray<OperationalObject>, d
         confidence: Math.max(0.2, Math.min(1, 1 - distanceM / sensor.rangeM * 0.65)),
         source: sensor.source === 'runtime' ? 'runtime' : 'payload',
       })
-      if (contacts.length >= 500) return contacts
+      if (contacts.length > limit) return result()
     }
   }
-  return contacts
+  return result()
 }
 
 const circlePolygon = (
@@ -240,23 +245,24 @@ export const answerDroneQuery = (config: {
   readonly at?: IsoTimestamp
   readonly models?: ReadonlyArray<DroneVehicleModel>
 }): unknown => {
+  const objects = config.objects.filter(object => config.request.readPolicy.canInspect(object.id))
   try {
     if (config.request.capabilityId === droneSceneQueryKind) {
-      return { drones: droneSceneObjects(config.objects) }
+      return { drones: droneSceneObjects(objects) }
     }
     if (config.request.capabilityId === droneControllerBindingsQueryKind) {
-      return { bindings: droneControllerBindings(config.objects) }
+      return { bindings: droneControllerBindings(objects) }
     }
     if (config.request.capabilityId === droneVehicleModelsQueryKind) {
       return { models: config.models ?? defaultDroneVehicleModels }
     }
     if (config.request.capabilityId === droneSensorContactsQueryKind) {
       const payload = sensorContactsInputSchema.parse(config.request.input)
-      return { contacts: droneSensorContacts(config.objects, payload.droneId) }
+      return droneSensorContacts(objects, payload.droneId, payload)
     }
     if (config.request.capabilityId === droneMapFeaturesQueryKind) {
       const payload = mapFeaturesPayloadSchema.parse(config.request.input)
-      return { features: mapFeatures(config.objects, payload.layers) }
+      return { features: mapFeatures(objects, payload.layers) }
     }
     return fail(`unsupported Drone query Capability: ${config.request.capabilityId}`)
   } catch (err) {

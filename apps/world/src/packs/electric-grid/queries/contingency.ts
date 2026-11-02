@@ -141,6 +141,7 @@ const summaryOf = (summary: ScreeningSummary): z.infer<typeof summarySchema> => 
 })
 
 export const gridContingencyScreenQuery = defineGridQuery({
+  readScope: 'object',
   id: 'world.electric-grid.contingency.screen',
   title: 'Screen N-1 contingencies',
   description: 'Read-only N-1 screening of the solved Grid: for each branch or generator outage, the post-contingency worst branch and its loading, overloaded branches, whether the outage islands part of the network with each part\'s imbalance (rebalanced by FCR reserve participation; a part without a voltage-forming source loses supply), and the violation count. A branch outage takes out one circuit of a multi-circuit branch by default, the rest staying in service (N-1); branchOutage branch screens the loss of all its circuits, an exceptional N-k contingency. Post-contingency flows are the solved base flows (AC where the island\'s load flow converged, else DC) plus DC outage increments: line outage distribution factors on the cached factorisation for branches and circuits, compensating solves for islanding and unit outages. Nothing in the Grid changes.',
@@ -190,6 +191,7 @@ const remedialResultSchema = z.object({
 }).strict()
 
 export const gridRemedialActionsEvaluateQuery = defineGridQuery({
+  readScope: 'object',
   id: 'world.electric-grid.remedial-actions.evaluate',
   title: 'Evaluate remedial actions',
   description: 'Read-only: applies candidate redispatch, load-shedding and branch open/close actions to a private copy of the solved Grid and returns its base case and N-1 screening before and after them, with the same outages as contingency.screen (one circuit of a multi-circuit branch unless branchOutage is branch). The post-action base flows are the solved base flows plus the DC change the actions make, screened like the live ones. An action its command would reject rejects the evaluation with that reason; a close-branch the synchro-check would refuse reports the measured frequency (Δf) or voltage-angle (Δθ) difference. Nothing is applied; issue the matching commands to act.',

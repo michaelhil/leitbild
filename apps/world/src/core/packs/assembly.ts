@@ -48,6 +48,7 @@ const capabilityContract = (capability: PackRuntimeAdapter['capabilities'][numbe
   idempotent: capability.idempotent,
   schedulable: capability.schedulable ?? false,
   audience: capability.audience ?? null,
+  readScope: capability.readScope ?? null,
   inputSchema: capabilityJsonSchema(capability.input),
   outputSchema: capabilityJsonSchema(capability.output),
 })
@@ -109,6 +110,8 @@ export const validateWorldAssembly = (config: {
       if (!capability.id.startsWith(`world.${adapter.packId}.`)) throw new Error('Workspace Capability is not owned by its Pack: ' + capability.id)
     }
     for (const capability of adapter.capabilities) {
+      if (capability.kind === 'query' && !['catalog', 'object', 'collection'].includes(capability.readScope!)) throw new Error(`Query Capability ${capability.id} must declare its read scope`)
+      if (capability.kind === 'query' && capability.readScope === 'object' && !capability.inspectObjectIds) throw new Error(`Object query ${capability.id} must declare exact input targets`)
       if (capability.id.trim() === '' || capability.title.trim() === '' || capability.description.trim() === '') {
         throw new Error(`Pack Runtime ${adapter.id} has incomplete ${capability.kind} capability metadata`)
       }

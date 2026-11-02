@@ -1,3 +1,4 @@
+import { unrestrictedQueryReadPolicy } from '../src/simulation/query-read-policy.ts'
 import { describe, expect, test } from 'bun:test'
 import { gridCloseBranchCommandKind, gridOpenBranchCommandKind } from '../src/packs/electric-grid/commands/branch.ts'
 import { gridSetExternalExchangeCommandKind } from '../src/packs/electric-grid/commands/external.ts'
@@ -55,7 +56,7 @@ const definition = (): CompiledGridDefinition => {
 const queryCapability = (id: string) => electricGridQueryCapabilities.find(capability => capability.id === id)!
 const query = (grid: GridRuntimeInstance, capabilityId: string, input: Readonly<Record<string, unknown>> = {}) =>
   queryCapability(capabilityId).output.parse(answerElectricGridQuery({
-    request: { capabilityId, input: { gridId: grid.definition.gridId, ...input } },
+    request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId, input: { gridId: grid.definition.gridId, ...input } },
     grids: new Map([[grid.definition.gridId, grid]]),
   })) as Record<string, any>
 
@@ -80,7 +81,7 @@ describe('a separated boundary bus of a synchronous external system', () => {
     expect(before.islands[0].busCount).toBe(4)
     // N-1 and remedial switching agree: losing SE1's only tie separates the boundary bus, no split.
     const ask = async (capabilityId: string, input: Readonly<Record<string, unknown>>) => await answerElectricGridQuery({
-      request: { capabilityId, input: { gridId: run.grid.definition.gridId, ...input } },
+      request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId, input: { gridId: run.grid.definition.gridId, ...input } },
       grids: new Map([[run.grid.definition.gridId, run.grid]]),
     }) as Record<string, any>
     const tieOutage = await ask('world.electric-grid.contingency.screen', { contingencies: ['tie-se1'] })
@@ -122,7 +123,7 @@ describe('a separated boundary bus of a synchronous external system', () => {
 
     // N-1 screening runs on the separated topology; a remedial evaluation leaves reconnecting the external system to close-branch.
     const screening = await answerElectricGridQuery({
-      request: { capabilityId: 'world.electric-grid.contingency.screen', input: { gridId: run.grid.definition.gridId, contingencies: 'all-branches', ratingBasis: 'emergency' } },
+      request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.electric-grid.contingency.screen', input: { gridId: run.grid.definition.gridId, contingencies: 'all-branches', ratingBasis: 'emergency' } },
       grids: new Map([[run.grid.definition.gridId, run.grid]]),
     }) as { readonly screenedCount: number }
     expect(screening.screenedCount).toBe(2)

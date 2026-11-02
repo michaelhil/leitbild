@@ -1,3 +1,4 @@
+import { unrestrictedQueryReadPolicy } from '../src/simulation/query-read-policy.ts'
 import { describe, expect, test } from 'bun:test'
 import { norwayRuntimeTestOperatingPointRef } from './fixtures/grid-operating-point.ts'
 import type { ActorId, CommandId, ObjectId, SimulationRunId } from '../src/core/model/index.ts'
@@ -204,7 +205,7 @@ describe('electric grid alarms', () => {
     const run = overloadedCorridor()
     const grids = new Map([[run.grid.definition.gridId, run.grid]])
     const list = (input: Readonly<Record<string, unknown>>) => answerElectricGridQuery({
-      request: { capabilityId: 'world.electric-grid.alarms.list', input: { gridId: run.grid.definition.gridId, ...input } },
+      request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.electric-grid.alarms.list', input: { gridId: run.grid.definition.gridId, ...input } },
       grids,
     }) as { counts: { active: number; activeByPriority: Record<string, number> }; total: number; alarms: ReadonlyArray<{ id: string; priority: number; active: boolean; shelved: boolean; islandId: string | null; assetLabel: string; mapAssetId: string | null }> }
     const all = list({})

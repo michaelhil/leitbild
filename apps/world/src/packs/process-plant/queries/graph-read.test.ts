@@ -1,3 +1,4 @@
+import { unrestrictedQueryReadPolicy } from '../../../simulation/query-read-policy.ts'
 import { describe, expect, test } from 'bun:test'
 import { answerProcessPlantQuery, compileProcessPlant, createPwrReferencePlantDefinition } from '../index.ts'
 import { processPlantCapabilities } from '../capabilities.ts'
@@ -18,7 +19,7 @@ interface Connections {
 // Through the published input and output contracts, as the Workspace Host invokes it.
 const read = (input: Record<string, unknown>): unknown => {
   const result = answerProcessPlantQuery({
-    request: { capabilityId: 'world.process-plant.graph.read', input: capability.input.parse({ plantId: plant.id, ...input }) },
+    request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.process-plant.graph.read', input: capability.input.parse({ plantId: plant.id, ...input }) },
     plants,
     objects: new Map(),
   })

@@ -122,6 +122,7 @@ const expandPlantObject = (spec: PackScenarioItemSpec, at: IsoTimestamp): Operat
 }
 
 export const processPlantPack: WorldPack = {
+  inspectionReferences: () => [],
   ...processPlantPackView,
   scenarioConfigSchema: processPlantPackConfigSchema,
   physicalTargets: describeProcessPlantPhysicalTargets,

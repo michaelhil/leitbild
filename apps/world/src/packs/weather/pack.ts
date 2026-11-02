@@ -60,6 +60,7 @@ export const areaDefault = {
   keyframes: [],
 }
 export const weatherPack: WorldPack = {
+  inspectionReferences: object => weatherPackDataSchema.parse(object.packData).sample.activeInfluenceIds,
   descriptor: createWorldPackDescriptor({
     id: 'weather',
     version: '1.0.0',

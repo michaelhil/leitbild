@@ -1,3 +1,4 @@
+import { unrestrictedQueryReadPolicy } from '../src/simulation/query-read-policy.ts'
 import { expect, test } from 'bun:test'
 import Ajv2020 from 'ajv/dist/2020.js'
 import { answerProcessPlantQuery, compileProcessPlant, createPwrReferencePlantDefinition, createProcessPlantRuntime, createProcessPlantRampRunner } from '../src/packs/process-plant/index.ts'
@@ -13,7 +14,7 @@ test('compact search preserves selection and meaning, with exact full metadata a
   const runtime = createProcessPlantRuntime({ system: plant })
   const plants = new Map([[plant.id, { plant, runtime, ramps: createProcessPlantRampRunner({ runtime }), performance: createProcessPlantRuntimePerformance() }]])
   const query = (capabilityId: string, input: Record<string, unknown>): any => {
-    const result = answerProcessPlantQuery({ request: { capabilityId, input: { plantId: plant.id, ...input } }, plants, objects: new Map() })
+    const result = answerProcessPlantQuery({ request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId, input: { plantId: plant.id, ...input } }, plants, objects: new Map() })
     expect(processPlantCapabilities.find(capability => capability.id === capabilityId)!.output.parse(result)).toEqual(result)
     return result
   }
