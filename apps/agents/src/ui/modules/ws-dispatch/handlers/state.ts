@@ -31,7 +31,7 @@ import {
 } from '../../stores.ts'
 import type { WSOutbound } from '../../../../core/types/ws-protocol.ts'
 import { showToast } from '../../toast.ts'
-import { toUIMessage, toUIRoomProfile, toAgentEntry } from '../mappers.ts'
+import { toUIMessage, toUIRoomProfile, toAgentEntry, snapshotAgentsForView } from '../mappers.ts'
 import { fetchRoomMessages } from '../../room-fetchers.ts'
 import { focusedRoomId } from '../../focused-room.ts'
 
@@ -55,10 +55,7 @@ export const stateHandlers: StateHandlers = {
     $rooms.set(roomMap)
 
     // Populate agents (UI-shaped via toAgentEntry; type inferred)
-    const visibleAgentIds = focusedRoomId === null
-      ? null
-      : new Set(msg.roomStates?.[focusedRoomId]?.members ?? [])
-    const agentMap = Object.fromEntries(msg.agents.filter(agent => visibleAgentIds === null || visibleAgentIds.has(agent.id)).map(a => [a.id, toAgentEntry(a)]))
+    const agentMap = Object.fromEntries(snapshotAgentsForView(msg, focusedRoomId).map(a => [a.id, toAgentEntry(a)]))
     $agents.set(agentMap)
 
     // Room states: paused, members, muted

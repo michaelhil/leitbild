@@ -173,6 +173,9 @@ test('ordinary tools, Room/Agent readers and snapshots omit private compartments
     expect(JSON.stringify(manager.buildSnapshot(f.workspaceId, 'ordinary'))).not.toContain(blue.room.id)
     const snapshot = manager.buildSnapshot(f.workspaceId, 'private')!
     expect(snapshot.rooms.map(profile => profile.id)).toEqual([blue.room.id])
+    expect(snapshot.agents.map(agent => agent.id).sort()).toEqual([blue.actualAgentId, f.human.id].sort())
+    expect(snapshot.agents.find(agent => agent.id === f.human.id)?.kind).toBe('human')
+    expect(snapshot.roomStates?.[blue.room.id]?.members).toEqual([blue.actualAgentId])
     expect(JSON.stringify(snapshot)).not.toContain(red.room.id)
     const output = { ordinary: [] as string[], private: [] as string[] }
     for (const key of ['ordinary', 'private'] as const) manager.wsConnections.set(key, { send: data => output[key].push(data), close: () => {}, getBufferedAmount: () => 0 })

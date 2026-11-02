@@ -5,6 +5,19 @@
 import type { UIMessage, RoomProfile } from '../render/render-types.ts'
 import type { Message, AgentProfile, RoomProfile as ServerRoomProfile } from '../../../core/types/messaging.ts'
 import type { AgentEntry } from '../stores.ts'
+import type { WSOutbound } from '../../../core/types/ws-protocol.ts'
+
+/** Human authors are not execution members of a private Room. Keep the
+ * owner's admitted public-human projection so its composer can ask who posts. */
+export const snapshotAgentsForView = (
+  snapshot: Extract<WSOutbound, { type: 'snapshot' }>,
+  roomId: string | null,
+): ReadonlyArray<AgentProfile> => {
+  if (roomId === null) return snapshot.agents
+  const members = new Set(snapshot.roomStates?.[roomId]?.members ?? [])
+  const privateRoom = snapshot.rooms.find(room => room.id === roomId)?.perspective !== undefined
+  return snapshot.agents.filter(agent => members.has(agent.id) || privateRoom && agent.kind === 'human')
+}
 
 export const toUIMessage = (m: Message): UIMessage => ({
   id: m.id,
