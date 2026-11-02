@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import type { ActorId, CommandEnvelope, CommandId, IsoTimestamp, OperationalObject, SimulationRunId } from '../src/core/model/index.ts'
 import { createSimulationClock, type SimulationClock } from '../src/core/model/time.ts'
 import type { PackRuntimeConnection, PackRuntimeEvent, PackRuntimeStateStore } from '../src/simulation/protocol.ts'
+import { createQueryReadPolicy, unrestrictedQueryReadPolicy } from '../src/simulation/query-read-policy.ts'
 import { createLocalProcessPlantPackRuntimeAdapter, processPlantControlWriteCommandKind } from '../src/packs/process-plant/index.ts'
 import { processPlantPack } from '../src/packs/process-plant/pack.ts'
 import { processPlantUnitPackDataSchema } from '../src/packs/process-plant/model.ts'
@@ -94,8 +95,8 @@ const ld01Item = {
   operatingPoint: { ref: 'process-plant.ld01.s3-settled' },
   automation: { ref: 'process-plant.ld01.kernel' },
 }
-const expand = (): OperationalObject => {
-  const expanded = processPlantPack.scenario!.expandItem(ld01Item as never, { at: world.startsAt } as never)
+const expand = (id = ld01Item.id): OperationalObject => {
+  const expanded = processPlantPack.scenario!.expandItem({ ...ld01Item, id } as never, { at: world.startsAt } as never)
   if (expanded instanceof Promise) throw new Error('the process-plant Pack expands a Plant synchronously')
   return expanded.objects[0]!
 }
@@ -111,17 +112,17 @@ const advance = async (connection: PackRuntimeConnection, clock: SimulationClock
   await connection.advanceTo!(next)
   clock.set(next)
 }
-const connect = async (object: OperationalObject, store: PackRuntimeStateStore, clock: SimulationClock): Promise<PackRuntimeConnection> => {
+const connect = async (object: OperationalObject, store: PackRuntimeStateStore, clock: SimulationClock, otherObjects: ReadonlyArray<OperationalObject> = []): Promise<PackRuntimeConnection> => {
   const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
     simulationRunId,
-    scenario: { scenarioId: 'ld01-shell', runtimeIds: ['process-plant.local'], connections: [], world, initialObjects: [object], runtimeConfig: {} } as never,
+    scenario: { scenarioId: 'ld01-shell', runtimeIds: ['process-plant.local'], connections: [], world, initialObjects: [object, ...otherObjects], runtimeConfig: {} } as never,
     runtimeStateStore: store,
     runClock: clock,
   })
   return connection
 }
 const read = async (connection: PackRuntimeConnection, path: string): Promise<unknown> => {
-  const served = await connection.invokeQuery({ capabilityId: 'world.process-plant.signals.read', input: { plantId: 'plant:ld01', signals: [{ path }] } }) as { readonly signals: ReadonlyArray<{ readonly variable: { readonly value: unknown } }> }
+  const served = await connection.invokeQuery({ readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.process-plant.signals.read', input: { plantId: 'plant:ld01', signals: [{ path }] } }) as { readonly signals: ReadonlyArray<{ readonly variable: { readonly value: unknown } }> }
   return served.signals[0]!.variable.value
 }
 const projectionOf = async (connection: PackRuntimeConnection) => {
@@ -205,6 +206,65 @@ describe('an LD-01 Plant in a Run', () => {
     }
   })
 
+  test('native unavailability obeys exact-target and collection inspection policy before exposing failure causes', async () => {
+    process.env[ld01UnitArtifactEnv] = await artifactWith({})
+    const visible = expand('plant:visible'), hidden = expand('plant:hidden'), store = memoryStore()
+    const first = await connect(visible, store, pausedClock(), [hidden])
+    await first.close()
+    const saved = processPlantRuntimeStateSchema.parse(store.state())
+    const hiddenArtifact = 'c'.repeat(64), visibleArtifact = 'b'.repeat(64)
+    const hiddenPolicy = createQueryReadPolicy('native:hidden', [hidden.id])
+    const nonePolicy = createQueryReadPolicy('native:none', [visible.id, hidden.id])
+    const withMismatches = async (both: boolean): Promise<void> => store.save({ ...saved, plants: saved.plants.map(entry => {
+      if (!('engine' in entry.runtime)) throw new Error('Expected the native fixture checkpoint')
+      return entry.plantId === hidden.id || both ? { ...entry, runtime: { ...entry.runtime, artifactSha256: entry.plantId === hidden.id ? hiddenArtifact : visibleArtifact } } : entry
+    }) })
+    const forms = [
+      ['world.process-plant.signals.read', { plantId: hidden.id, signals: [{ path: 'PROTECTION.pressure' }] }],
+      ['world.process-plant.observation.topology', { objectId: hidden.id }],
+      ['world.process-plant.observation.declarations', { objectIds: [visible.id, hidden.id] }],
+      ['world.process-plant.observation.read', { refs: [`${visible.id}#PROTECTION.pressure`, `${hidden.id}#PROTECTION.pressure`] }],
+    ] as const
+    for (const both of [false, true]) {
+      await withMismatches(both)
+      const restored = await connect(visible, store, pausedClock(), [hidden])
+      try {
+        for (const [capabilityId, input] of forms) {
+          await expect(restored.invokeQuery({ capabilityId, input, readPolicy: hiddenPolicy })).rejects.toMatchObject({ code: 'query_read_scope_unavailable', status: 403, message: 'Inspection of the requested Process Plant target is not permitted' })
+        }
+        const read = (capabilityId: string, input: unknown, readPolicy = hiddenPolicy) => restored.invokeQuery({ capabilityId, input, readPolicy })
+        // A person may still inspect the exact unavailable Plant and its cause.
+        await expect(read('world.process-plant.signals.read', forms[0][1], unrestrictedQueryReadPolicy)).rejects.toThrow(hiddenArtifact)
+        for (const capabilityId of ['world.process-plant.plants.list', 'world.process-plant.runtime.status', 'world.process-plant.signals.search']) {
+          if (both) {
+            const failure = await read(capabilityId, {}).then(() => { throw Error('Visible unavailable Plant was not reported') }, error => error as Error)
+            expect(failure.message).toContain(visible.id)
+            expect(failure.message).toContain(visibleArtifact)
+            expect(failure.message).not.toContain(hidden.id)
+            expect(failure.message).not.toContain(hiddenArtifact)
+          } else {
+            const result = JSON.stringify(await read(capabilityId, {}))
+            expect(result).toContain(visible.id)
+            expect(result).not.toContain(hidden.id)
+            expect(result).not.toContain(hiddenArtifact)
+          }
+          const empty = JSON.stringify(await read(capabilityId, {}, nonePolicy))
+          expect(empty).not.toContain(visible.id)
+          expect(empty).not.toContain(hidden.id)
+          expect(empty).not.toContain(visibleArtifact)
+          expect(empty).not.toContain(hiddenArtifact)
+        }
+        expect(await read('world.process-plant.runtime.status', {}, nonePolicy)).toEqual({ active: false, plantCount: 0, plants: [] })
+        expect(await read('world.process-plant.plants.list', {}, nonePolicy)).toEqual({ plants: [] })
+        expect(await read('world.process-plant.catalog.list', {}, nonePolicy)).toHaveProperty('models')
+        if (!both) {
+          expect(await read('world.process-plant.runtime.status', {})).toMatchObject({ active: true, plantCount: 1, plants: [{ id: visible.id }] })
+          expect(await read('world.process-plant.signals.read', { plantId: visible.id, signals: [{ path: 'PROTECTION.pressure' }] })).toHaveProperty('signals.0.variable.value')
+        }
+      } finally { await restored.close() }
+    }
+  })
+
   test('whose child dies fails at its time: it shows the cause, keeps its last state, and nothing restarts it', async () => {
     process.env[ld01UnitArtifactEnv] = await artifactWith({ dieAtS: 101.5 })
     const object = expand()
@@ -241,10 +301,10 @@ describe('an LD-01 Plant in a Run', () => {
     const connection = await connect(object, memoryStore(), clock)
     try {
       await advance(connection, clock, 1_000)
-      const declarations = await connection.invokeQuery({ capabilityId: 'world.process-plant.observation.declarations', input: { objectIds: ['plant:ld01'] } }) as { readonly declarations: ReadonlyArray<{ readonly observables: ReadonlyArray<{ readonly ref: string; readonly tag?: string }> }> }
+      const declarations = await connection.invokeQuery({ readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.process-plant.observation.declarations', input: { objectIds: ['plant:ld01'] } }) as { readonly declarations: ReadonlyArray<{ readonly observables: ReadonlyArray<{ readonly ref: string; readonly tag?: string }> }> }
       const observables = declarations.declarations[0]!.observables
       expect(observables.find(entry => entry.ref === 'plant:ld01#PZR.PT1')?.tag).toBe('LD01.PZR.PT1')
-      const topology = await connection.invokeQuery({ capabilityId: 'world.process-plant.observation.topology', input: { objectId: 'plant:ld01' } }) as { readonly nodes: ReadonlyArray<{ readonly id: string; readonly class: string; readonly group?: string }>; readonly groups: ReadonlyArray<{ readonly id: string }> }
+      const topology = await connection.invokeQuery({ readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.process-plant.observation.topology', input: { objectId: 'plant:ld01' } }) as { readonly nodes: ReadonlyArray<{ readonly id: string; readonly class: string; readonly group?: string }>; readonly groups: ReadonlyArray<{ readonly id: string }> }
       // World core's own topology contract holds (node bindings, ports, media within its bounds).
       topologyGraphSchema.parse(topology)
       expect(topology.groups.map(group => group.id)).toEqual(['A', 'B'])
@@ -252,11 +312,11 @@ describe('an LD-01 Plant in a Run', () => {
       expect(topology.nodes.find(node => node.id === 'CORE')?.class).toBe('source')
       expect(topology.nodes.find(node => node.id === 'SG.A.PRIMARY')).toMatchObject({ class: 'transfer', group: 'A' })
       expect(topology.nodes.find(node => node.id === 'PUMP.B1')).toMatchObject({ class: 'mover', group: 'B' })
-      const read = await connection.invokeQuery({ capabilityId: 'world.process-plant.observation.read', input: { refs: ['plant:ld01#PZR.PT1', 'plant:ld01#PUMP.A1.speed'] } }) as { readonly observations: ReadonlyArray<{ readonly ref: string; readonly value: unknown }> }
+      const read = await connection.invokeQuery({ readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.process-plant.observation.read', input: { refs: ['plant:ld01#PZR.PT1', 'plant:ld01#PUMP.A1.speed'] } }) as { readonly observations: ReadonlyArray<{ readonly ref: string; readonly value: unknown }> }
       expect(read.observations.find(entry => entry.ref === 'plant:ld01#PZR.PT1')?.value).toBeCloseTo(15.0011, 9)
       expect(read.observations.find(entry => entry.ref === 'plant:ld01#PUMP.A1.speed')?.value).toBeCloseTo(15_001_100 * 60 / (2 * Math.PI), 3)
       // The kernel's latches (every '1' channel of this double reads 1: each function latched in one division) annunciate.
-      const alarms = await connection.invokeQuery({ capabilityId: 'world.process-plant.alarms.status', input: { plantId: 'plant:ld01' } }) as { readonly trips: ReadonlyArray<{ readonly ruleId: string; readonly active: boolean }>; readonly alarms: ReadonlyArray<{ readonly ruleId: string; readonly active: boolean }> }
+      const alarms = await connection.invokeQuery({ readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.process-plant.alarms.status', input: { plantId: 'plant:ld01' } }) as { readonly trips: ReadonlyArray<{ readonly ruleId: string; readonly active: boolean }>; readonly alarms: ReadonlyArray<{ readonly ruleId: string; readonly active: boolean }> }
       expect(alarms.trips.find(trip => trip.ruleId === 'LD01.PROT.PZR.HIGH_PRESSURE')?.active).toBe(true)
     } finally {
       await connection.close()
