@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount, tick, untrack } from 'svelte'
   import {
+    workspaceResourceReferenceSchema,
     type FeaturedDefinitionCatalog,
     type InspectionView,
     type ModuleCapabilityDescriptor,
@@ -15,6 +16,7 @@
   import JsonTree from './JsonTree.svelte'
   import WikiLink from './WikiLink.svelte'
   import WorkspaceComposer from './WorkspaceComposer.svelte'
+  import { createRunAssistantOpening, type RunAssistantResolution } from './run-assistant-opening.ts'
   import SimulationRunControls from './SimulationRunControls.svelte'
   import AssistantLauncher from './AssistantLauncher.svelte'
   import RunRoomControls from './RunRoomControls.svelte'
@@ -491,70 +493,54 @@
   // for it as often as it likes.
   // One open at a time, whoever asks (the toolbar launcher or a World page): a second click
   // while the first is still finding or creating the room waits for it, so no second room is made.
-  let runAssistantOpening: Promise<void> | null = null
-  const openRunAssistant = (): Promise<void> => {
-    runAssistantOpening ??= openRunAssistantRoom().finally(() => { runAssistantOpening = null })
-    return runAssistantOpening
-  }
-  const openRunAssistantRoom = async (): Promise<void> => {
-    if (!runAssistantAvailable || !workspace || !selectedWorldResource || !selectedRunFamily || !assistantCapability) {
-      throw new Error('Run Assistant is unavailable for this Run')
-    }
-    const existing = selectedAgentsResource && roomSelectsRun(selectedAgentsResource, selectedWorldResource)
-      ? selectedAgentsResource
-      : applicableRunRooms[0]
-    if (existing) {
-      selectedAgentsRoomId = existing.ref.id
-    } else if (familyRunRooms[0]) {
-      const room = familyRunRooms[0]
+  const openRunAssistant = createRunAssistantOpening({
+    current: () => workspace && selectedWorldResource?.ref.workspaceId === workspace.id ? selectedWorldResource.ref : null,
+    resolve: (run, assertCurrent) => openRunAssistantRoom(run, assertCurrent),
+  })
+  const openRunAssistantRoom = async (run: WorkspaceResourceReference, assertCurrent: () => void): Promise<RunAssistantResolution> => {
+    assertCurrent()
+    if (!runAssistantAvailable || !workspace || !selectedWorldResource || !selectedRunFamily || !assistantCapability) throw new Error('Run Assistant is unavailable for this Run')
+    // Capture the operation's accepted scope before suspension. Later UI selection is never its return value.
+    const openedWorkspace = workspace, resource = selectedWorldResource, family = selectedRunFamily, capability = assistantCapability
+    const existing = selectedAgentsResource && roomSelectsRun(selectedAgentsResource, resource) ? selectedAgentsResource : applicableRunRooms[0]
+    const familyRoom = familyRunRooms[0]
+    let room: WorkspaceResourceReference
+    let changed = false
+    if (existing) room = existing.ref
+    else if (familyRoom) {
       const capabilityId = 'agents.room.scope.set'
       if (!capabilities.some(capability => capability.id === capabilityId)) throw new Error('Room scope controls are unavailable')
-      const expectedRevision = Number(room.summary.find(item => item.key === 'scope-revision')?.value ?? 0)
-      await request(
-        `/api/workspaces/${workspace.id}/capabilities/${encodeURIComponent(capabilityId)}/invoke`,
-        jsonRequest('POST', {
-          resource: room.ref,
-          input: {
-            scope: roomScopeIncludingRun(room, selectedRunFamily, selectedWorldResource.ref),
-            expectedRevision,
-          },
-          actor: { kind: 'human' },
-        }),
-      )
-      selectedAgentsRoomId = room.ref.id
-      agentsVisible = true
-      const url = new URL(location.href)
-      url.searchParams.set('agents', selectedAgentsRoomId)
-      history.replaceState(null, '', url)
-      void refreshResources(workspace.id).catch(cause => { refreshError = String(cause) })
-      return
+      const expectedRevision = Number(familyRoom.summary.find(item => item.key === 'scope-revision')?.value ?? 0)
+      await request(`/api/workspaces/${openedWorkspace.id}/capabilities/${encodeURIComponent(capabilityId)}/invoke`, jsonRequest('POST', {
+        resource: familyRoom.ref,
+        input: { scope: roomScopeIncludingRun(familyRoom, family, run), expectedRevision },
+        actor: { kind: 'human' },
+      }))
+      assertCurrent()
+      room = familyRoom.ref
+      changed = true
     } else {
       const response = await request<InvocationResponse & { result: { resource: ModuleResourceDescriptor['ref']; uiPath: string; reused: boolean } }>(
-        `/api/workspaces/${workspace.id}/capabilities/${encodeURIComponent(assistantCapability.id)}/invoke`,
-        jsonRequest('POST', {
-          input: {
-            scope: { kind: 'collection', collection: selectedRunFamily, members: { mode: 'all', except: [] } },
-            title: selectedWorldResource.title,
-            focusedSubjects: [selectedWorldResource.ref],
-          },
-          actor: { kind: 'human' },
+        `/api/workspaces/${openedWorkspace.id}/capabilities/${encodeURIComponent(capability.id)}/invoke`, jsonRequest('POST', {
+          input: { scope: { kind: 'collection', collection: family, members: { mode: 'all', except: [] } }, title: resource.title, focusedSubjects: [run] }, actor: { kind: 'human' },
         }),
       )
-      selectedAgentsRoomId = response.result.resource.id
-      agentsVisible = true
-      const url = new URL(location.href)
-      url.searchParams.set('agents', selectedAgentsRoomId)
-      history.replaceState(null, '', url)
-      void refreshResources(workspace.id).catch(cause => { refreshError = String(cause) })
-      return
+      assertCurrent()
+      room = workspaceResourceReferenceSchema.parse(response.result.resource)
+      changed = true
     }
+    assertCurrent()
+    if (room.workspaceId !== run.workspaceId || room.moduleId !== 'agents' || room.type !== 'agents.room') throw new Error('The Run Assistant did not return an Agents Room in this Workspace')
+    selectedAgentsRoomId = room.id
     agentsVisible = true
     const url = new URL(location.href)
-    url.searchParams.set('agents', selectedAgentsRoomId!)
+    url.searchParams.set('agents', room.id)
     history.replaceState(null, '', url)
+    if (changed) void refreshResources(openedWorkspace.id).catch(cause => { if (workspace?.id === openedWorkspace.id && selectedWorldRunId === run.id) refreshError = String(cause) })
+    return { run, room }
   }
   const toggleRunAssistant = async (): Promise<void> => {
-    if (!agentsVisible) return openRunAssistant()
+    if (!agentsVisible) { await openRunAssistant(); return }
     agentsVisible = false
     const url = new URL(location.href)
     url.searchParams.delete('agents')

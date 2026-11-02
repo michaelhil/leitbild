@@ -4,6 +4,7 @@
   import { createViewRelay, type WorldPane } from './view-relay.ts'
   import { createRunAssistantBridge } from './run-assistant-bridge.ts'
   import { createPresentationBridge } from './presentation-bridge.ts'
+  import type { RunAssistantResolution } from './run-assistant-opening.ts'
   import { workspaceSubjectFocusMessage } from './workspace-focus.ts'
 
   interface Props {
@@ -20,7 +21,7 @@
     /** Whether the shown Run offers its Assistant, as the Host's own launcher does; its World page may then offer it too. */
     readonly runAssistantAvailable: boolean
     /** Shows the shown Run's Assistant room, creating it where none serves the Run; it never hides the room. */
-    readonly onOpenRunAssistant: () => Promise<void>
+    readonly onOpenRunAssistant: () => Promise<RunAssistantResolution>
     readonly onError: (message: string) => void
     /** The World pane, for overlays anchored to it (the people chat); null without a Run. */
     worldPane?: HTMLElement | null
@@ -153,7 +154,7 @@
     worldRunId: () => worldRunId,
     available: () => runAssistantAvailable,
     postToWorld: message => worldFrame?.contentWindow?.postMessage(message, location.origin),
-    openAssistant: () => onOpenRunAssistant(),
+    openAssistant: async () => { await onOpenRunAssistant() },
     showAgents: () => { if (collapsedPane === 'agents') restoreSplit() },
     reportError: message => onError(message),
   })
@@ -164,10 +165,12 @@
     room: roomReference,
     openAssistant: async () => {
       if (!runAssistantAvailable) throw new Error('This Run offers no Assistant')
-      await onOpenRunAssistant()
+      const expectedRun = worldRunId, expectedWorkspace = workspaceId
+      const resolved = await onOpenRunAssistant()
       await tick()
-      const room = roomReference()
-      if (!room) throw new Error('The Run Assistant did not open a Room')
+      if (workspaceId !== expectedWorkspace || worldRunId !== expectedRun || resolved.run.workspaceId !== expectedWorkspace || resolved.run.moduleId !== 'world' || resolved.run.type !== 'world.simulation-run' || resolved.run.id !== expectedRun) throw new Error('The Run changed while its Assistant was opening')
+      const room = resolved.room
+      if (room.workspaceId !== expectedWorkspace || room.moduleId !== 'agents' || room.type !== 'agents.room' || agentsRoomId !== room.id) throw new Error('The resolved Run Assistant Room is no longer the one shown')
       onShowAgents()
       if (collapsedPane === 'agents') restoreSplit()
       return room
