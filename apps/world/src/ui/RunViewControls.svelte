@@ -102,11 +102,20 @@
       // Panel covers are measured by their owners. Keep a reachable strip when
       // a panel uses all of a narrow map; do not resize or wake the map here.
       const launcherHeight = element.querySelector('.view-launchers')?.getBoundingClientRect().height ?? 50
-      const availableHeight = visibleBottom - bounds.top - bottom - inset * 2 - launcherHeight - 8
+      const visibleHeight = Math.max(0, visibleBottom - bounds.top)
+      // A disclosure needs room for a 44 px action plus its padding. When a
+      // split pane is shorter (for example above a keyboard), controls take
+      // priority over the bottom attribution/status reserve. Their whole
+      // scrollport must stay inside this World pane.
+      const minimumSheet = Math.min(76, Math.max(0, visibleHeight - launcherHeight - 8))
+      const minimumContent = launcherHeight + (open ? minimumSheet + 8 : 0)
+      const verticalInset = Math.min(inset, Math.max(0, (visibleHeight - minimumContent) / 2))
+      bottom = Math.min(bottom, Math.max(0, visibleHeight - minimumContent - verticalInset * 2))
+      const availableHeight = visibleHeight - bottom - verticalInset * 2 - launcherHeight - 8
       // The active disclosure can temporarily cover an instruction when the
       // viewport is too short for both. Guide Pause/Resume remains reachable.
-      const clearTop = Math.min(top, Math.max(0, availableHeight - 44))
-      geometry = { left: inset + left, right: inset + right, bottom: bottom + inset, height: Math.max(44, availableHeight - clearTop) }
+      const clearTop = Math.min(top, Math.max(0, availableHeight - minimumSheet))
+      geometry = { left: inset + left, right: inset + right, bottom: bottom + verticalInset, height: Math.max(minimumSheet, availableHeight - clearTop) }
     }
     const observer = new ResizeObserver(measure)
     observer.observe(main); observer.observe(element)
@@ -207,5 +216,13 @@
   .current-instruction p { margin-bottom: 0; }
   .new { border-radius: 8px; padding: 1px 5px; background: var(--accent); color: var(--panel); font-size: 10px; }
   @media (pointer: coarse) { button { min-height: 44px; } label { min-height: 28px; padding-block: 10px; } }
+  /* A short World split needs a single reachable launcher row. Status stays in
+     accessible names; keyboard focus can scroll the row on narrower surfaces. */
+  @media (max-height: 280px) {
+    .view-launchers { flex-wrap: nowrap; justify-content: flex-start; max-width: 100%; box-sizing: border-box; overflow-x: auto; gap: 2px; }
+    .view-launchers button { flex: none; padding-inline: 6px; }
+    .view-launchers small { display: none; }
+    .view-launchers .new { width: 7px; height: 7px; padding: 0; font-size: 0; }
+  }
   @media (prefers-reduced-transparency: reduce), (forced-colors: active) { .view-launchers { background: var(--panel); } }
 </style>
