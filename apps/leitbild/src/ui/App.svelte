@@ -493,10 +493,23 @@
   // for it as often as it likes.
   // One open at a time, whoever asks (the toolbar launcher or a World page): a second click
   // while the first is still finding or creating the room waits for it, so no second room is made.
-  const openRunAssistant = createRunAssistantOpening({
+  const resolveRunAssistant = createRunAssistantOpening({
     current: () => workspace && selectedWorldResource?.ref.workspaceId === workspace.id ? selectedWorldResource.ref : null,
     resolve: (run, assertCurrent) => openRunAssistantRoom(run, assertCurrent),
   })
+  const openRunAssistant = async (signal?: AbortSignal): Promise<RunAssistantResolution> => {
+    const priorRoom = selectedAgentsRoomId
+    const resolved = await resolveRunAssistant()
+    signal?.throwIfAborted()
+    if (workspace?.id !== resolved.run.workspaceId || selectedWorldRunId !== resolved.run.id) throw new Error('The Run changed while its Assistant was opening')
+    if (selectedAgentsRoomId !== priorRoom && selectedAgentsRoomId !== resolved.room.id) throw new Error('A different Room was selected while this Assistant was opening')
+    selectedAgentsRoomId = resolved.room.id
+    agentsVisible = true
+    const url = new URL(location.href)
+    url.searchParams.set('agents', resolved.room.id)
+    history.replaceState(null, '', url)
+    return resolved
+  }
   const openRunAssistantRoom = async (run: WorkspaceResourceReference, assertCurrent: () => void): Promise<RunAssistantResolution> => {
     assertCurrent()
     if (!runAssistantAvailable || !workspace || !selectedWorldResource || !selectedRunFamily || !assistantCapability) throw new Error('Run Assistant is unavailable for this Run')
@@ -531,11 +544,6 @@
     }
     assertCurrent()
     if (room.workspaceId !== run.workspaceId || room.moduleId !== 'agents' || room.type !== 'agents.room') throw new Error('The Run Assistant did not return an Agents Room in this Workspace')
-    selectedAgentsRoomId = room.id
-    agentsVisible = true
-    const url = new URL(location.href)
-    url.searchParams.set('agents', room.id)
-    history.replaceState(null, '', url)
     if (changed) void refreshResources(openedWorkspace.id).catch(cause => { if (workspace?.id === openedWorkspace.id && selectedWorldRunId === run.id) refreshError = String(cause) })
     return { run, room }
   }

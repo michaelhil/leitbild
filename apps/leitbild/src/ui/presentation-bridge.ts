@@ -13,7 +13,7 @@ const sameReceiver = (a: PresentationRecipient, b: PresentationRecipient): boole
 export const createPresentationBridge = (config: {
   subject: () => WorkspaceResourceReference | null
   room: () => WorkspaceResourceReference | null
-  openAssistant: () => Promise<WorkspaceResourceReference>
+  openAssistant: (signal: AbortSignal) => Promise<WorkspaceResourceReference>
   postToWorld: (message: unknown) => void
   postToAgents: (message: unknown) => void
   error: (message: string) => void
@@ -22,7 +22,7 @@ export const createPresentationBridge = (config: {
   let recipient: PresentationRecipient | null = null
   let readyRoom: WorkspaceResourceReference | null = null
   let generation = 0, agentsGeneration = 0
-  const deliveries = new Map<string, { request: PresentationRequest; room: WorkspaceResourceReference; stop: () => void; sent: boolean; sentGeneration?: number; acknowledged: boolean; receiptStatus?: 'applied' | 'declined' | 'unavailable' | 'expired' | 'superseded' | 'cancelled' }>()
+  const deliveries = new Map<string, { request: PresentationRequest; room: WorkspaceResourceReference | null; controller: AbortController; stop: () => void; sent: boolean; sentGeneration?: number; acknowledged: boolean; receiptStatus?: 'applied' | 'declined' | 'unavailable' | 'expired' | 'superseded' | 'cancelled' }>()
   const offer = (): void => config.postToAgents(presentationOfferMessageSchema.parse({ type: 'leitbild:presentation-offer', recipient }))
   const current = (request: PresentationRequest): boolean => {
     const subject = config.subject()
@@ -37,7 +37,7 @@ export const createPresentationBridge = (config: {
   }
   const flush = (): void => {
     for (const delivery of deliveries.values()) {
-      if (delivery.sent || !current(delivery.request) || !readyRoom || !sameResource(readyRoom, delivery.room)) continue
+      if (delivery.sent || !delivery.room || !current(delivery.request) || !readyRoom || !sameResource(readyRoom, delivery.room)) continue
       const room = config.room()
       if (!room || !sameResource(room, delivery.room)) continue
       if (Date.parse(delivery.request.expiresAt) <= Date.now()) { delivery.sent = true; delivery.acknowledged = true; delivery.receiptStatus = 'expired'; delivery.stop(); receipt(delivery.request, 'expired', 'The presentation request expired before its Room became ready'); continue }
@@ -54,17 +54,9 @@ export const createPresentationBridge = (config: {
     const reveal = request.action.kind === 'reveal' && request.target.type === 'world.control' && request.target.id === 'assistant'
     if (!reveal && (request.target.type !== 'world.composer' || request.target.id !== 'assistant' || request.action.kind !== 'draft')) return receipt(request, 'unavailable', 'This is not the Run Assistant or its composer')
     const expectedGeneration = generation
+    const controller = new AbortController()
     try {
-      let room: WorkspaceResourceReference
-      if (request.source.kind === 'guide' || request.source.kind === 'person') room = await config.openAssistant()
-      else {
-        const selected = config.room()
-        if (!request.source.initiatingRoom || !selected || !sameResource(selected, request.source.initiatingRoom)) throw new Error('The originating Room is not currently shown')
-        room = reveal ? await config.openAssistant() : selected
-      }
-      if (expectedGeneration !== generation || !current(request)) return
-      if (Date.parse(request.expiresAt) <= Date.now()) return receipt(request, 'expired', 'The prompt suggestion expired while opening its Room')
-      // This ledger survives insertion so evidence can later be relayed to the exact originating document.
+      // Reserve before the first suspension: clear, expiry and navigation can then cancel a pending open.
       if (deliveries.size >= 64) {
         const terminal = [...deliveries].find(([, delivery]) => delivery.acknowledged && !(delivery.request.action.kind === 'draft' && delivery.receiptStatus === 'applied'))
         if (!terminal) throw new Error('This view is retaining too many pending attention requests or active prompt links; clear an owned cue before showing another')
@@ -72,16 +64,36 @@ export const createPresentationBridge = (config: {
       }
       const stop = config.timer(Math.max(0, Date.parse(request.expiresAt) - Date.now()), () => {
         const delivery = deliveries.get(request.id)
-        if (delivery && !delivery.acknowledged) { delivery.sent = true; delivery.acknowledged = true; delivery.receiptStatus = 'expired'; receipt(request, 'expired', 'No presentation outcome was confirmed before delivery expired') }
+        if (delivery && !delivery.acknowledged) {
+          delivery.sent = true; delivery.acknowledged = true; delivery.receiptStatus = 'expired'
+          controller.abort('expired')
+          receipt(request, 'expired', 'No presentation outcome was confirmed before delivery expired')
+        }
       })
-      deliveries.set(request.id, { request, room, stop, sent: false, acknowledged: false })
+      const delivery = { request, room: null as WorkspaceResourceReference | null, controller, stop, sent: false, acknowledged: false }
+      deliveries.set(request.id, delivery)
+      let room: WorkspaceResourceReference
+      if (request.source.kind === 'guide' || request.source.kind === 'person') room = await config.openAssistant(controller.signal)
+      else {
+        const selected = config.room()
+        if (!request.source.initiatingRoom || !selected || !sameResource(selected, request.source.initiatingRoom)) throw new Error('The originating Room is not currently shown')
+        room = reveal ? await config.openAssistant(controller.signal) : selected
+      }
+      if (controller.signal.aborted || expectedGeneration !== generation || !current(request) || deliveries.get(request.id) !== delivery) return
+      if (Date.parse(request.expiresAt) <= Date.now()) { stop(); deliveries.delete(request.id); return receipt(request, 'expired', 'The attention request expired while opening its Room') }
+      delivery.room = room
       offer(); flush()
-    } catch (error) { receipt(request, 'unavailable', error instanceof Error ? error.message : String(error)) }
+    } catch (error) {
+      if (controller.signal.aborted) return
+      const delivery = deliveries.get(request.id)
+      delivery?.stop(); deliveries.delete(request.id)
+      receipt(request, 'unavailable', error instanceof Error ? error.message : String(error))
+    }
   }
   const clear = (): void => {
     generation++
     recipient = null
-    for (const delivery of deliveries.values()) delivery.stop()
+    for (const delivery of deliveries.values()) { delivery.controller.abort('document-closed'); delivery.stop() }
     deliveries.clear()
     offer()
   }
@@ -108,8 +120,11 @@ export const createPresentationBridge = (config: {
         if (!recipient || !sameReceiver(value.recipient, recipient)) return
         const delivery = deliveries.get(value.requestId)
         if (!delivery || !current(delivery.request)) return
-        config.postToAgents({ type, recipient, room: delivery.room, requestId: value.requestId, ...(value.clearRequestId ? { clearRequestId: value.clearRequestId } : {}) })
-        if (value.clearRequestId) deliveries.set(value.clearRequestId, { ...delivery, request: { ...delivery.request, id: value.clearRequestId }, acknowledged: false })
+        delivery.controller.abort('cue-cleared')
+        if (delivery.room && delivery.sent) {
+          config.postToAgents({ type, recipient, room: delivery.room, requestId: value.requestId, ...(value.clearRequestId ? { clearRequestId: value.clearRequestId } : {}) })
+          if (value.clearRequestId) deliveries.set(value.clearRequestId, { ...delivery, request: { ...delivery.request, id: value.clearRequestId, action: { kind: 'clear', requestId: value.requestId } }, acknowledged: false })
+        } else if (value.clearRequestId) config.postToWorld(presentationReceiptMessageSchema.parse({ type: 'leitbild:presentation-receipt', receipt: { requestId: value.clearRequestId, documentId: recipient.documentId, status: 'applied', reason: 'The pending Host delivery was cancelled before it reached a composer', at: new Date().toISOString() } }))
         delivery.stop(); deliveries.delete(value.requestId)
       }
     },
@@ -126,7 +141,7 @@ export const createPresentationBridge = (config: {
         const parsed = presentationReceiptMessageSchema.safeParse(data)
         if (!parsed.success) return config.error('Agents sent an invalid presentation receipt')
         const delivery = deliveries.get(parsed.data.receipt.requestId), room = config.room()
-        if (!delivery || !room || !sameResource(room, delivery.room) || !current(delivery.request)
+        if (!delivery?.room || !room || !sameResource(room, delivery.room) || !current(delivery.request)
           || delivery.sentGeneration !== agentsGeneration || parsed.data.receipt.documentId !== delivery.request.recipient.documentId) return
         delivery.acknowledged = true
         delivery.receiptStatus = parsed.data.receipt.status
@@ -137,7 +152,7 @@ export const createPresentationBridge = (config: {
         const parsed = presentationEvidenceMessageSchema.safeParse(data)
         if (!parsed.success) return config.error('Agents sent an invalid prompt evidence hint')
         const delivery = deliveries.get(parsed.data.requestId), room = config.room()
-        if (!delivery || !room || !sameResource(room, delivery.room) || !sameResource(parsed.data.room, delivery.room)
+        if (!delivery?.room || !room || !sameResource(room, delivery.room) || !sameResource(parsed.data.room, delivery.room)
           || delivery.sentGeneration !== agentsGeneration || !current(delivery.request) || !sameReceiver(parsed.data.recipient, delivery.request.recipient)) return
         config.postToWorld(parsed.data)
       }

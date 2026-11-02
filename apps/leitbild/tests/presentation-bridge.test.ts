@@ -147,3 +147,31 @@ test('an expired unresolved Assistant request never delivers on a later readines
   expect(state.world.at(-1).receipt.status).toBe('expired')
   expect(state.agents.filter(message => message.type === 'leitbild:presentation-draft')).toHaveLength(0)
 })
+
+test('clear before a suspended Room resolution cancels its source and prevents later draft delivery', async () => {
+  const { bridge, state } = harness(), request = draft('pending-open-clear')
+  state.held = true
+  bridge.fromWorld({ type: 'leitbild:presentation-compose', request })
+  bridge.fromWorld({ type: 'leitbild:presentation-clear', recipient, requestId: request.id, clearRequestId: 'cancel-pending-open' })
+  expect(state.world.at(-1).receipt).toMatchObject({ requestId: 'cancel-pending-open', status: 'applied' })
+  state.hold?.()
+  await settle()
+  bridge.fromAgents({ type: 'leitbild:presentation-ready', room: roomA })
+  expect(state.agents.filter(message => message.type === 'leitbild:presentation-draft')).toHaveLength(0)
+})
+
+test('expiry aborts an unresolved Assistant subscriber before it can select UI', async () => {
+  let release: (() => void) | undefined, receivedSignal: AbortSignal | undefined, selected = false
+  const world: any[] = [], timers: Array<() => void> = []
+  const bridge = createPresentationBridge({ subject: () => subject, room: () => roomA,
+    openAssistant: async signal => { receivedSignal = signal; await new Promise<void>(resolve => release = resolve); signal.throwIfAborted(); selected = true; return roomA },
+    postToWorld: message => world.push(message), postToAgents: () => {}, error: () => {}, timer: (_ms, callback) => { timers.push(callback); return () => {} },
+  })
+  bridge.fromWorld({ type: 'leitbild:presentation-offer', recipient })
+  bridge.fromWorld({ type: 'leitbild:presentation-compose', request: draft('expired-open') })
+  timers[0]?.()
+  expect(receivedSignal?.aborted).toBe(true)
+  release?.(); await settle()
+  expect(selected).toBe(false)
+  expect(world.at(-1).receipt.status).toBe('expired')
+})

@@ -25,7 +25,7 @@ test('same exact Run deduplicates while a new Run never borrows the prior deferr
   expect(next === first).toBe(false)
   expect(admitted).toEqual(['a', 'b'])
   gateB.resolve()
-  expect((await next).run.id).toBe('b')
+  expect(String((await next).run.id)).toBe('b')
   gateA.resolve(); await expect(first).rejects.toThrow('Run changed')
   expect(selected).toEqual(['b'])
 })
