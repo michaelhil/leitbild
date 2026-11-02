@@ -68,7 +68,7 @@ test('five runtime Packs share one paused startup clock and retain static layout
     await Bun.sleep(40)
     await run.setClock({ paused: true })
     const frozen = run.snapshot().clock!.currentTime
-    expect(Date.parse(frozen)).toBeGreaterThan(Date.parse(source.world.startsAt))
+    expect(frozen).toBe(source.world.startsAt) // The pinned guide starts paused; wall time must not start the exercise.
     expect(clocks.every(clock => clock.read().currentTime === frozen && clock.read().paused)).toBe(true)
     expect(run.snapshot().objects).toHaveLength(15)
     const layoutObjects = run.snapshot().objects.filter(object => object.packId === 'physical-layout')

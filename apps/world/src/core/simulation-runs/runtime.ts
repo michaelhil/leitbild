@@ -1322,8 +1322,8 @@ export const createSimulationRunRuntime = async (config: {
       if (state.snapshot().scenario?.timeline?.firedCueIds.includes(cue.id)) return
       try { await executeScenarioCue(cue, at) }
       catch (error) {
-        await publishOneGenerated(() => ({ ...nextScenarioBase(nowIso()), type: 'scenario.cue.finished', cueId: cue.id, outcome: 'failed' }))
-        await publishOneGenerated(() => scenarioCueFailedEvent(cue, error, nowIso()))
+        await publishOneGenerated(() => ({ ...nextScenarioBase(runClock.read().currentTime), type: 'scenario.cue.finished', cueId: cue.id, outcome: 'failed' }))
+        await publishOneGenerated(() => scenarioCueFailedEvent(cue, error, runClock.read().currentTime))
       }
     }).finally(() => { pendingCues-- })
     cueQueue = pending.catch(() => {})
@@ -1357,10 +1357,10 @@ export const createSimulationRunRuntime = async (config: {
         return Math.max(0, dueAtMs - nowMs)
       },
       onCueDue: async (cue): Promise<void> => {
-        await publishScenarioCue(cue, nowIso())
+        await publishScenarioCue(cue, runClock.read().currentTime)
       },
       onCueFailed: async (cue, error): Promise<void> => {
-        await publishOneGenerated(() => scenarioCueFailedEvent(cue, error, nowIso()))
+        await publishOneGenerated(() => scenarioCueFailedEvent(cue, error, runClock.read().currentTime))
       },
     })
     scenarioRunner?.start()
