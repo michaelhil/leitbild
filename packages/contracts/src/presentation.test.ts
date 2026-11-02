@@ -36,3 +36,11 @@ test('draft routing and evidence hints name one exact Agents Room without assert
   expect(presentationPromptEvidenceSchema.safeParse(unavailable).success).toBe(true)
   expect(presentationPromptEvidenceSchema.safeParse({ ...unavailable, responses: [{ messageId: 'claimed', senderId: 'agent', at: 1, kind: 'chat', turnId: 'turn', executionStatus: 'completed' }] }).success).toBe(false)
 })
+
+test('composer readiness and owned cleanup carry no submission or text mutation authority', async () => {
+  const { presentationReadyMessageSchema, presentationClearMessageSchema } = await import('./presentation.ts')
+  const room = { workspaceId: subject.workspaceId, moduleId: 'agents', type: 'agents.room', id: 'assistant-a' }
+  expect(presentationReadyMessageSchema.safeParse({ type: 'leitbild:presentation-ready', room }).success).toBe(true)
+  expect(presentationClearMessageSchema.safeParse({ type: 'leitbild:presentation-clear', recipient, room, requestId: request.id }).success).toBe(true)
+  expect(presentationClearMessageSchema.safeParse({ type: 'leitbild:presentation-clear', recipient, room, requestId: request.id, text: '' }).success).toBe(false)
+})

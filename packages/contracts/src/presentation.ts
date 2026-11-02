@@ -104,6 +104,23 @@ export const presentationReceiptMessageSchema = z.object({
   receipt: presentationReceiptSchema,
 }).strict()
 
+/** Clears only an owned suggestion/correlation, never a person's edited composer text. */
+export const presentationClearMessageSchema = z.object({
+  type: z.literal('leitbild:presentation-clear'),
+  recipient: presentationRecipientSchema,
+  room: workspaceResourceReferenceSchema,
+  requestId: identity,
+}).strict().refine(message => message.room.moduleId === 'agents' && message.room.type === 'agents.room'
+  && message.room.workspaceId === message.recipient.subject.workspaceId,
+{ message: 'A clear addresses one exact Agents Room in this Workspace' })
+
+/** Sent after the asynchronous Room snapshot selects the composer's actual destination. */
+export const presentationReadyMessageSchema = z.object({
+  type: z.literal('leitbild:presentation-ready'),
+  room: workspaceResourceReferenceSchema,
+}).strict().refine(message => message.room.moduleId === 'agents' && message.room.type === 'agents.room',
+{ message: 'A ready composer names its exact Agents Room' })
+
 /** Causal attribution of an explicitly submitted prompt; no browser address is persisted. */
 export const presentationPromptLinkSchema = z.object({
   requestId: identity,
