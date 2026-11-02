@@ -76,6 +76,7 @@ export const startLocalProxy = (route: (path: string) => ModuleName, ports: Reco
   hostname: loopback, port,
   async fetch(request, server) {
     const url = new URL(request.url)
+    if (url.pathname === '/internal' || url.pathname.startsWith('/internal/')) return new Response('Not found', { status: 404 })
     url.hostname = loopback; url.port = String(ports[route(url.pathname)])
     if (request.headers.get('upgrade')?.toLowerCase() === 'websocket') {
       url.protocol = 'ws:'
@@ -148,7 +149,7 @@ export const startLocalStack = async ({ port = 43100, models = false, osrm, ld01
     // provider keys, user MCP configuration or a real deployment's data paths.
     const env = {
       PATH: process.env.PATH ?? '', NODE_ENV: 'production',
-      WORKSPACE_HOST_URL: origin, LEITBILD_BIND_HOST: loopback, BIND_HOST: loopback,
+      WORKSPACE_HOST_URL: `http://${loopback}:${ports.host}`, LEITBILD_BIND_HOST: loopback, BIND_HOST: loopback,
       WORKSPACE_HOST_HOME: join(directory, 'host'), LEITBILD_HOME: join(directory, 'agents'),
       LEITBILD_DATA_DIR: join(directory, 'world'), LEITBILD_MAP_ROOT: join(directory, 'maps'),
       LEITBILD_REFERENCE_ROOT: join(directory, 'reference'), ...localRoutingEnvironment(osrm),

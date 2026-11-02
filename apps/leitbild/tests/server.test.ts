@@ -62,16 +62,41 @@ const gateway = (): ModuleGateway => ({
   }] : [] }) }),
 })
 
-const startHost = (uiDistPath?: string, modules: ModuleGateway = gateway()) => {
+const startHost = (uiDistPath?: string, modules: ModuleGateway = gateway(), perspectivePilot = false) => {
   const store = createWorkspaceStore(':memory:')
   stores.push(store)
   const host = createWorkspaceHost({ store, modules })
-  const server = createWorkspaceHostServer({ host, port: 0, bindHost: '127.0.0.1', ...(uiDistPath === undefined ? {} : { uiDistPath }) })
+  const server = createWorkspaceHostServer({ host, port: 0, bindHost: '127.0.0.1', ...(uiDistPath === undefined ? {} : { uiDistPath }), ...(perspectivePilot ? { perspectivePilot: { enabled: true } } : {}) })
   servers.push(server)
   return { host, baseUrl: `http://127.0.0.1:${server.port}` }
 }
 
 describe('Leitbild server', () => {
+  test('public requests cannot supply internal execution provenance; the internal pilot seam is absent by default', async () => {
+    let calls = 0
+    const { host, baseUrl } = startHost(undefined, { ...gateway(), invoke: async () => { calls++; return { ok: true, value: { result: null } } } })
+    const workspace = await host.create({ name: null })
+    const body = { input: {}, actor: { kind: 'system', id: 'world' }, perspectiveOrigin: { kind: 'owner', moduleId: 'world' } }
+    expect((await fetch(`${baseUrl}/internal/workspaces/${workspace.id}/capabilities/agents.perspective-room.read/invoke`, { method: 'POST', body: JSON.stringify(body) })).status).toBe(404)
+    expect((await fetch(`${baseUrl}/api/workspaces/${workspace.id}/capabilities/agents.perspective-room.read/invoke`, { method: 'POST', body: JSON.stringify(body) })).status).toBe(400)
+    for (const route of ['perspective-assistant', 'perspective-view']) expect((await fetch(`${baseUrl}/api/workspaces/${workspace.id}/${route}`, { method: 'POST', body: '{}' })).status).toBe(404)
+    expect(calls).toBe(0)
+  })
+
+  test('a trusted direct pilot invocation retains exact runtime provenance and rejects substituted attribution or proxy ingress', async () => {
+    const received: unknown[] = []
+    const { host, baseUrl } = startHost(undefined, { ...gateway(), invoke: async (_module, invocation) => { received.push(invocation); return { ok: true, value: { result: null } } } }, true)
+    const workspace = await host.create({ name: null })
+    const origin = { kind: 'execution', roomId: 'room-a', actualAgentId: 'agent-a', runtimeGeneration: crypto.randomUUID(), turnId: 'turn-a', perspectiveId: 'perspective-a', admissionGeneration: crypto.randomUUID() }
+    const body = { input: {}, actor: { kind: 'ai', id: 'agent-a' }, perspectiveOrigin: origin }
+    const url = `${baseUrl}/internal/workspaces/${workspace.id}/capabilities/world.perspective.context.read/invoke`
+    expect((await fetch(url, { method: 'POST', body: JSON.stringify(body) })).status).toBe(200)
+    expect(received[0]).toMatchObject({ workspaceId: workspace.id, access: { actor: body.actor, client: { id: 'workspace-host', kind: 'service' }, perspectiveOrigin: origin } })
+    expect((await fetch(url, { method: 'POST', body: JSON.stringify({ ...body, actor: { kind: 'ai', id: 'another-agent' } }) })).status).toBe(400)
+    for (const header of ['forwarded', 'x-forwarded-for']) expect((await fetch(url, { method: 'POST', headers: { [header]: 'untrusted-proxy' }, body: JSON.stringify(body) })).status).toBe(404)
+    expect(received).toHaveLength(1)
+  })
+
   test('revalidates capability catalogs with an exact content ETag', async () => {
     const {host,baseUrl}=startHost()
     const workspace=await host.create({name:null})
