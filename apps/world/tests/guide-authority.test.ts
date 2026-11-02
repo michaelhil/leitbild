@@ -6,6 +6,7 @@ import { newWorkspaceId, presentationRecipientSchema } from '@leitbild/contracts
 import { createSimulationRunRegistry } from '../src/core/simulation-runs/registry.ts'
 import { runGuideOperation, runPresentationOperation } from '../src/core/guides/operations.ts'
 import { guideDefinitionSchema } from '../src/core/guides/model.ts'
+import { createPresentationDelivery } from '../src/core/guides/presentation.ts'
 import { createGuideAttempt } from '../src/core/guides/store.ts'
 import type { SimulationRunRuntime } from '../src/core/simulation-runs/runtime.ts'
 import type { SimulationRunRegistry } from '../src/core/simulation-runs/registry.ts'
@@ -86,4 +87,32 @@ test('a guide read cannot return a now-hidden authored target after its asynchro
     guideFile: () => ({ read: async () => attempt, change: () => { throw new Error('A read never writes') } }),
   } as unknown as SimulationRunRegistry
   await expect(runGuideOperation('read', { attemptId: attempt.id }, { ...blueCall, registry: readingRegistry })).rejects.toMatchObject({ code: 'guide_step_unavailable' })
+})
+
+
+test('a saved attempt stays recoverable when its browser lease expires during the durable save', async () => {
+  const { registry, runtime, blueCall } = await setup()
+  let now = Date.now(), storedId: string | undefined
+  const presentation = createPresentationDelivery(() => now)
+  const recipient = presentation.register({ subject: { workspaceId: registry.workspaceId, moduleId: 'world', type: 'world.simulation-run', id: runtime.id } as never, clientId: 'slow-save', documentId: 'slow-save' }, ['blue'])
+  const delayedRegistry: SimulationRunRegistry = { ...registry, presentation,
+    guideFile: (runId, attemptId) => {
+      const file = registry.guideFile(runId, attemptId)
+      return { read: file.read, change: async apply => {
+        const result = await file.change(current => {
+          const changed = apply(current); storedId = changed.next.id; return changed
+        })
+        now += 61_000 // The durable write succeeded; its delivery offer was lost during that await.
+        return result
+      } }
+    },
+  }
+  const sequence = runtime.snapshot().seq
+  const result = await runGuideOperation('start', { recipient }, { ...blueCall, registry: delayedRegistry }) as { attemptId?: string; status?: string; problem?: string; step?: { effects: Array<{ delivery?: string }> } }
+  expect(result.attemptId).toBe(storedId!)
+  expect(result.status).toBe('active')
+  expect(result.problem).toBeDefined()
+  expect(result.step?.effects.every(effect => effect.delivery === 'unavailable')).toBe(true)
+  expect((await registry.guideFile(runtime.id, storedId!).read())?.id).toBe(storedId!)
+  expect(runtime.snapshot().seq).toBe(sequence) // A presentation retry cannot replay physical commands.
 })
