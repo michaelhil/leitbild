@@ -156,8 +156,8 @@ export const buildExecutionJourney = (
     for (const call of execution.models) {
       const state = call.status === 'running' && execution.turn.status !== 'running' ? 'unknown' : call.status === 'completed' ? 'recorded' : call.status
       events.push({
-        id: `model:${call.id}`, actor: 'model', title: `Model ${call.ordinal}`,
-        description: `${call.phase === 'tool-response' ? 'After tools' : call.phase === 'correction' ? 'Correction' : 'Initial request'} · ${call.model ?? call.requestedModel}`,
+        id: `model:${call.id}`, actor: 'model', title: call.phase === 'nested' ? `Nested model ${call.ordinal}` : `Model ${call.ordinal}`,
+        description: `${call.phase === 'tool-response' ? 'After tools' : call.phase === 'correction' ? 'Correction' : call.phase === 'nested' ? `Tool ${call.parentToolCallId}` : 'Initial request'} · ${call.model ?? call.requestedModel}`,
         state, at: call.startedAt, finishedAt: call.completedAt, source: { kind: 'model', call },
       })
     }

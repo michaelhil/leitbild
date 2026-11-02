@@ -25,6 +25,8 @@ export interface ToolResult {
   /** Trusted invocation metadata, never a model declaration or physical proof. */
   readonly effects?: ReadonlyArray<ToolExecutionEffect>
   /** Runtime-owned selector into this actual execution's immutable outcome. */
+  /** Runtime-owned nested call accounting. Each id is aggregated at most once. */
+  readonly nestedModelCalls?: ReadonlyArray<{ readonly id: string; readonly metrics: { readonly promptTokens?: number; readonly completionTokens?: number; readonly cacheCreation?: number; readonly cacheRead?: number; readonly cacheMiss?: number; readonly costUsd?: number; readonly provider?: string; readonly model?: string } }>
   readonly recall?: { readonly turnId: string; readonly toolCallId: string; readonly part: 'result' }
 }
 

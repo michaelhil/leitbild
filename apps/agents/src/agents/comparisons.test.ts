@@ -95,6 +95,26 @@ describe('full-turn model comparisons', () => {
     } finally { await state.close() }
   })
 
+  test('nested comparison calls share exact parent evidence and unique cost accounting', async () => {
+    let outer = 0
+    const state = setup(async request => request.tools === undefined ? { ...answer('Nested knowledge result'), billing: { costUsd: 0.25 } }
+      : ++outer === 1 ? call('product_read') : answer('Independent conclusion.'))
+    state.registry.register({ name: 'product_read', description: 'Read', parameters: {}, execute: async (_params, context) => ({ success: true, data: await context.llm!({ messages: [{ role: 'user', content: 'Only nested input' }] }) }) })
+    try {
+      const messageId = await state.prepare(['product_read'])
+      const started = await state.comparisons.start(state.room.profile.id, messageId, 'provider:alternative')
+      const finished = await completed(state.comparisons, state.room.profile.id, messageId, started.id)
+      expect(finished.status).toBe('completed')
+      expect(finished.execution.models.map(model => model.phase)).toEqual(['initial', 'nested', 'tool-response'])
+      const nested = finished.execution.models.find(model => model.phase === 'nested')!
+      expect(nested.parentToolCallId).toBe(finished.calls[0]!.id)
+      expect((await state.comparisons.model(state.room.profile.id, messageId, started.id, nested.id))!.request.messages).toEqual([{ role: 'user', content: 'Only nested input' }])
+      expect(finished.metrics).toMatchObject({ modelCalls: 3, costReportedCalls: 1, reportedCostUsd: 0.25 })
+      expect(state.executions.listTurns(state.room.profile.id)).toEqual([])
+      expect(finished.nestedQueries).toBeUndefined()
+    } finally { await state.close() }
+  })
+
   test('withholds unreviewed tools and rejects hallucinated calls without executing them', async () => {
     let passes = 0
     let writes = 0

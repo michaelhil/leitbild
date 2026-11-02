@@ -663,6 +663,7 @@ export const evaluate = async (
   // [pass] message — that was a bad UX where you'd see the agent typing,
   // then watch its message get deleted and replaced with a terse error.
   let lastAssistantText = ''
+  const accountedNestedCalls = new Set<string>()
 
   try {
     for (let toolRound = 0; ; toolRound++) {
@@ -740,6 +741,9 @@ export const evaluate = async (
           // A batch may return several notices. They share its exact completed
           // calls; subsequent batches start afresh, without timestamp inference.
           pendingProgressCallIds = postedProgress ? [] : activityCallIds
+        }
+        for (const result of results) for (const nested of result.nestedModelCalls ?? []) {
+          if (!accountedNestedCalls.has(nested.id)) { accountedNestedCalls.add(nested.id); metrics = mergeMetrics(metrics, nested.metrics) }
         }
         signal?.throwIfAborted()
         const serializedResults: string[] = []
@@ -922,57 +926,98 @@ export const evaluate = async (
 // Returns raw model output. Use jsonMode for structured extraction.
 // Tool loop support is planned for a future phase — for now, tools are not supported.
 
-export const callLLM = async (
-  provider: LLMProvider,
-  options: LLMCallOptions,
-): Promise<string> => {
-  const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = []
-  if (options.systemPrompt) {
-    messages.push({ role: 'system', content: options.systemPrompt })
+export interface LLMCallControls {
+  readonly signal?: AbortSignal
+  readonly observer?: {
+    readonly started: (request: ChatRequest) => Promise<void>
+    readonly completed: (response: ExecutionModelResponse) => Promise<void>
+    readonly failed: (error: unknown, partial?: ExecutionModelResponse) => Promise<void>
   }
-  for (const m of options.messages) messages.push(m)
-  const response = await provider.chat({
-    model: options.model,
-    messages,
-    temperature: options.temperature,
-    ...(options.seed !== undefined ? { seed: options.seed } : {}),
-    jsonMode: options.jsonMode,
-    ...(options.reasoningEffort !== undefined ? { reasoningEffort: options.reasoningEffort } : {}),
-    ...(options.think !== undefined ? { think: options.think } : {}),
-  })
-  assertCompleteOutput(response.finishReason)
-  return response.content
+}
+const helperRequest = (options: LLMCallOptions): ChatRequest => ({
+  model: options.model,
+  messages: [...(options.systemPrompt ? [{ role: 'system' as const, content: options.systemPrompt }] : []), ...options.messages],
+  temperature: options.temperature,
+  ...(options.seed === undefined ? {} : { seed: options.seed }),
+  ...(options.jsonMode === undefined ? {} : { jsonMode: options.jsonMode }),
+  ...(options.reasoningEffort === undefined ? {} : { reasoningEffort: options.reasoningEffort }),
+  ...(options.think === undefined ? {} : { think: options.think }),
+})
+const partialResponse = (error: unknown): ExecutionModelResponse | undefined =>
+  error && typeof error === 'object' && 'partialModelResponse' in error ? error.partialModelResponse as ExecutionModelResponse : undefined
+
+export const callLLM = async (provider: LLMProvider, options: LLMCallOptions, controls: LLMCallControls = {}): Promise<string> => {
+  controls.signal?.throwIfAborted()
+  if (controls.signal && provider.stream) {
+    let content = ''
+    for await (const delta of streamLLM(provider, options, controls)) content += delta
+    return content
+  }
+  const request = helperRequest(options)
+  await controls.observer?.started(request)
+  let response: ExecutionModelResponse | undefined, completionAttempted = false
+  try {
+    controls.signal?.throwIfAborted()
+    // Stream-capable providers receive the invocation abort. A chat-only
+    // provider is uncooperative after dispatch; retain its actual late outcome.
+    response = await callLLMOnce(controls.signal && provider.stream ? provider : { ...provider, stream: undefined }, request, undefined, controls.signal)
+    assertCompleteOutput(response.finishReason)
+    completionAttempted = true
+    await controls.observer?.completed(response)
+    return response.content
+  } catch (error) { if (!completionAttempted) await controls.observer?.failed(error, response ?? partialResponse(error)); throw error }
 }
 
-// Streaming variant — yields raw deltas as they arrive. Falls back to callLLM if
-// the provider does not support streaming, emitting the full response as one chunk.
-export const streamLLM = async function* (
-  provider: LLMProvider,
-  options: LLMCallOptions,
-): AsyncGenerator<string> {
-  const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = []
-  if (options.systemPrompt) messages.push({ role: 'system', content: options.systemPrompt })
-  for (const m of options.messages) messages.push(m)
-
-  const request = {
-    model: options.model,
-    messages,
-    temperature: options.temperature,
-    ...(options.seed !== undefined ? { seed: options.seed } : {}),
-    jsonMode: options.jsonMode,
-    ...(options.reasoningEffort !== undefined ? { reasoningEffort: options.reasoningEffort } : {}),
-    ...(options.think !== undefined ? { think: options.think } : {}),
-  }
-
-  if (provider.stream) {
-    for await (const chunk of provider.stream(request)) {
-      if (chunk.done) assertCompleteOutput(chunk.finishReason)
+export const streamLLM = async function* (provider: LLMProvider, options: LLMCallOptions, controls: LLMCallControls = {}): AsyncGenerator<string> {
+  if (!provider.stream) { yield await callLLM(provider, options, controls); return }
+  controls.signal?.throwIfAborted()
+  const request = helperRequest(options), startedAt = performance.now()
+  await controls.observer?.started(request)
+  let content = '', observed: ExecutionModelResponse | undefined
+  let toolCalls: ExecutionModelResponse['toolCalls'], continuation: ExecutionModelResponse['continuation']
+  let metrics: ExecutionModelResponse['metrics'] = {}
+  let finishReason: string | undefined, completionAttempted = false, terminalObserved = false
+  try {
+    controls.signal?.throwIfAborted()
+    for await (const chunk of provider.stream(request, controls.signal)) {
+      if (chunk.delta) content += chunk.delta
+      if (chunk.done) {
+        finishReason = chunk.finishReason
+        toolCalls = chunk.toolCalls
+        continuation = chunk.continuation
+        metrics = {
+          ...(chunk.tokensUsed === undefined ? {} : {
+            promptTokens: chunk.tokensUsed.prompt, completionTokens: chunk.tokensUsed.completion,
+            ...(chunk.tokensUsed.cacheCreation === undefined ? {} : { cacheCreation: chunk.tokensUsed.cacheCreation }),
+            ...(chunk.tokensUsed.cacheRead === undefined ? {} : { cacheRead: chunk.tokensUsed.cacheRead }),
+            ...(chunk.tokensUsed.cacheMiss === undefined ? {} : { cacheMiss: chunk.tokensUsed.cacheMiss }),
+          }),
+          ...(chunk.billing ?? {}),
+          ...(chunk.contextMax === undefined ? {} : { contextMax: chunk.contextMax }),
+          ...(chunk.provider ? { provider: chunk.provider } : {}), model: chunk.model ?? request.model,
+        }
+        assertCompleteOutput(finishReason)
+        terminalObserved = true
+      }
       if (chunk.delta) yield chunk.delta
     }
-  } else {
-    // Provider doesn't support streaming — emit full response as a single delta
-    const response = await provider.chat(request)
-    assertCompleteOutput(response.finishReason)
-    yield response.content
+    if (!terminalObserved) throw new Error('incomplete_output: nested provider stream ended without terminal completion')
+    observed = { content, durationMs: Math.round(performance.now() - startedAt), metrics, ...(toolCalls === undefined ? {} : { toolCalls }), ...(continuation === undefined ? {} : { continuation }), ...(finishReason === undefined ? {} : { finishReason }) }
+    completionAttempted = true
+    await controls.observer?.completed(observed)
+  } catch (error) {
+    if (!completionAttempted) {
+      completionAttempted = true
+      await controls.observer?.failed(error, observed ?? { content, durationMs: Math.round(performance.now() - startedAt), metrics, ...(toolCalls === undefined ? {} : { toolCalls }), ...(continuation === undefined ? {} : { continuation }), ...(finishReason === undefined ? {} : { finishReason }) })
+    }
+    throw error
+  } finally {
+    // Returning early closes the provider iterator too. Preserve the observed
+    // terminal or explicit partial outcome instead of leaving a ghost request.
+    if (!completionAttempted) {
+      const partial = { content, durationMs: Math.round(performance.now() - startedAt), metrics, ...(toolCalls === undefined ? {} : { toolCalls }), ...(continuation === undefined ? {} : { continuation }), ...(finishReason === undefined ? {} : { finishReason }) }
+      if (terminalObserved) await controls.observer?.completed(partial)
+      else await controls.observer?.failed(new Error('Nested stream consumer stopped before completion'), partial)
+    }
   }
 }

@@ -62,3 +62,27 @@ test('refreshing desired tool support during a turn cannot replace its admitted 
   expect(oldCalls).toBe(1)
   expect(replacementCalls).toBe(0)
 })
+
+test('cancelled preparation cannot borrow a newer active turn configuration or clear its snapshot', async () => {
+  const firstEntered = Promise.withResolvers<void>(), firstRelease = Promise.withResolvers<void>(), secondEntered = Promise.withResolvers<void>(), secondRelease = Promise.withResolvers<void>()
+  const requests: ChatRequest[] = []
+  const provider: LLMProvider = {
+    models: async () => ['old', 'new'],
+    modelInfo: async model => {
+      if (model === 'old') { firstEntered.resolve(); await firstRelease.promise }
+      return { id: model, provider: 'fixture', contextMax: 128000, source: 'unavailable' }
+    },
+    chat: async request => { requests.push(request); secondEntered.resolve(); await secondRelease.promise; return { content: 'Done', generationMs: 0, tokensUsed: { prompt: 1, completion: 1 } } },
+  }
+  const agent = createAIAgent({ name: 'Helper', model: 'old', persona: 'Old' }, provider, () => {})
+  agent.receive({ id: 'first', roomId: 'room', senderId: 'human', content: 'First', type: 'chat', timestamp: 1 })
+  await firstEntered.promise
+  agent.cancelGeneration!(); agent.updateModel('new'); agent.updatePersona('New')
+  agent.receive({ id: 'second', roomId: 'room', senderId: 'human', content: 'Second', type: 'chat', timestamp: 2 })
+  await secondEntered.promise
+  firstRelease.resolve()
+  await Bun.sleep(0) // Let the old preparation's epoch guard and finally run.
+  expect(agent.getEffectiveConfig!()).toMatchObject({ model: 'new', persona: 'New' })
+  expect(requests.map(request => request.model)).toEqual(['new'])
+  secondRelease.resolve(); await agent.whenIdle()
+})
