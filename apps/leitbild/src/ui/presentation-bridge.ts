@@ -60,7 +60,11 @@ export const createPresentationBridge = (config: {
       if (expectedGeneration !== generation || !current(request)) return
       if (Date.parse(request.expiresAt) <= Date.now()) return receipt(request, 'expired', 'The prompt suggestion expired while opening its Room')
       // This ledger survives insertion so evidence can later be relayed to the exact originating document.
-      if (deliveries.size >= 64) { const oldest = deliveries.keys().next().value; if (oldest) { deliveries.get(oldest)?.stop(); deliveries.delete(oldest) } }
+      if (deliveries.size >= 64) {
+        const terminal = [...deliveries].find(([, delivery]) => delivery.acknowledged)
+        if (!terminal) throw new Error('The presentation relay is full of unconfirmed deliveries; try again after an outcome')
+        terminal[1].stop(); deliveries.delete(terminal[0])
+      }
       const stop = config.timer(Math.max(0, Date.parse(request.expiresAt) - Date.now()), () => {
         const delivery = deliveries.get(request.id)
         if (delivery && !delivery.sent) receipt(request, 'expired', 'The Room did not become ready before delivery expired')

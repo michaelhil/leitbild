@@ -115,3 +115,12 @@ test('queued cleanup waits for the actual owned Room receipt and never reports p
   bridge.fromAgents({ type: 'leitbild:presentation-receipt', receipt: { requestId: 'clear-1', documentId: recipient.documentId, status: 'applied', at: new Date().toISOString() } })
   expect(state.world.at(-1).receipt.requestId).toBe('clear-1')
 })
+
+test('capacity refuses a new request while every retained delivery is unconfirmed', async () => {
+  const { bridge, state } = harness()
+  for (let n = 0; n < 65; n++) { bridge.fromWorld({ type: 'leitbild:presentation-compose', request: draft(`capacity-${n}`) }); await settle() }
+  expect(state.world.at(-1).receipt).toMatchObject({ requestId: 'capacity-64', status: 'unavailable' })
+  bridge.fromAgents({ type: 'leitbild:presentation-ready', room: roomA })
+  expect(state.agents.filter(message => message.type === 'leitbild:presentation-draft')).toHaveLength(64)
+  expect(state.agents.some(message => message.request?.id === 'capacity-0')).toBe(true)
+})
