@@ -44,15 +44,25 @@ export const guideInputs = {
 }
 
 export interface GuidanceCall { readonly registry: SimulationRunRegistry; readonly runId: SimulationRunId; readonly actor: Actor }
-const subjectOf = (call: GuidanceCall) => workspaceResourceReferenceSchema.parse({ workspaceId: call.registry.workspaceId, moduleId: 'world', type: 'world.simulation-run', id: call.runId })
-const sameSubject = (call: GuidanceCall, subject: PresentationRecipient['subject']): boolean => subject.workspaceId === call.registry.workspaceId && subject.moduleId === 'world' && subject.type === 'world.simulation-run' && String(subject.id) === String(call.runId)
-const recipientOf = (call: GuidanceCall, recipient: PresentationRecipient): PresentationRecipient => {
-  if (!sameSubject(call, recipient.subject)) throw guideFailure('presentation_scope_mismatch', 'The receiver belongs to another Resource', 403)
+/** Explicit World owner scope for presentation only; Guide progress never receives this port. */
+export interface PresentationOperationScope {
+  readonly subject: PresentationRecipient['subject']
+  readonly current: () => boolean
+  readonly actions: ReadonlySet<string>
+  readonly source?: { readonly kind: 'agent'; readonly id: string; readonly label: string; readonly executionId: string; readonly initiatingRoom: PresentationRecipient['subject'] }
+}
+const subjectOf = (call: GuidanceCall, scope?: PresentationOperationScope) => scope?.subject ?? workspaceResourceReferenceSchema.parse({ workspaceId: call.registry.workspaceId, moduleId: 'world', type: 'world.simulation-run', id: call.runId })
+const sameSubject = (call: GuidanceCall, subject: PresentationRecipient['subject'], scope?: PresentationOperationScope): boolean => {
+  const expected = subjectOf(call, scope)
+  return subject.workspaceId === expected.workspaceId && subject.moduleId === expected.moduleId && subject.type === expected.type && subject.id === expected.id
+}
+const recipientOf = (call: GuidanceCall, recipient: PresentationRecipient, scope?: PresentationOperationScope): PresentationRecipient => {
+  if (!sameSubject(call, recipient.subject, scope)) throw guideFailure('presentation_scope_mismatch', 'The receiver belongs to another Resource', 403)
   return call.registry.presentation.current(recipient)
 }
-const ownReceiver = (call: GuidanceCall, recipient: PresentationRecipient): PresentationRecipient => {
+const ownReceiver = (call: GuidanceCall, recipient: PresentationRecipient, scope?: PresentationOperationScope): PresentationRecipient => {
   if (call.actor.role === 'ai_agent') throw guideFailure('presentation_receiver_for_people', 'An agent cannot register or impersonate a browser receiver', 403)
-  const current = recipientOf(call, recipient)
+  const current = recipientOf(call, recipient, scope)
   if (JSON.stringify([...call.registry.presentation.roleIds(current)].sort()) !== JSON.stringify([...(call.actor.roleIds ?? [])].sort())) {
     throw guideFailure('presentation_perspective_changed', 'The receiver belongs to another perspective; register this document again', 403)
   }
@@ -68,9 +78,9 @@ const targetFor = (call: GuidanceCall, target: GuideTarget): PresentationTarget 
 const effectRequestId = (attempt: GuideAttempt, effectId: string, recipient: PresentationRecipient): string =>
   `guide:${attempt.id}:${attempt.stepAttemptId}:${createHash('sha256').update(JSON.stringify([effectId, recipient.leaseId])).digest('hex').slice(0, 32)}`
 
-const targetAllowed = (call: GuidanceCall, recipient: PresentationRecipient, target: PresentationTarget): (() => boolean) => () => {
+const targetAllowed = (call: GuidanceCall, recipient: PresentationRecipient, target: PresentationTarget, scope?: PresentationOperationScope): (() => boolean) => () => {
   const runtime = call.registry.get(call.runId)
-  if (!runtime || !sameSubject(call, target.subject)) return false
+  if (!runtime || scope !== undefined && !scope.current() || !sameSubject(call, target.subject, scope)) return false
   const issuer = runtime.inspectionPolicy(call.actor)
   const roles = call.registry.presentation.roleIds(recipient)
   const receiver = runtime.inspectionPolicy({ id: call.actor.id, label: 'Presentation recipient', role: 'operator', ...(roles.length === 0 ? {} : { roleIds: roles }) })
@@ -81,14 +91,15 @@ const targetAllowed = (call: GuidanceCall, recipient: PresentationRecipient, tar
 }
 
 /** Availability is cheap metadata; the receiver reports real panel/display/geometry availability when applying it. */
-export const runPresentationOperation = async (kind: keyof typeof presentationInputs, raw: unknown, call: GuidanceCall): Promise<unknown> => {
+export const runPresentationOperation = async (kind: keyof typeof presentationInputs, raw: unknown, call: GuidanceCall, scope?: PresentationOperationScope): Promise<unknown> => {
+  if (scope !== undefined && !scope.current()) throw guideFailure('presentation_scope_ended', 'This presentation admission has ended', 403)
   const delivery = call.registry.presentation
   const runtime = await call.registry.load(call.runId)
   // Applies the existing role/side and AI restriction boundary before any target metadata is returned.
   const policy = runtime.inspectionPolicy(call.actor)
   if (kind === 'register') {
     if (call.actor.role === 'ai_agent') throw guideFailure('presentation_receiver_for_people', 'Only a person opens a browser receiver', 403)
-    return delivery.register({ subject: subjectOf(call), ...presentationInputs.register.parse(raw) }, call.actor.roleIds ?? [])
+    return delivery.register({ subject: subjectOf(call, scope), ...presentationInputs.register.parse(raw) }, call.actor.roleIds ?? [])
   }
   if (kind === 'targets') {
     const input = presentationInputs.targets.parse(raw)
@@ -97,31 +108,33 @@ export const runPresentationOperation = async (kind: keyof typeof presentationIn
     const targets: Array<{ target: PresentationTarget; label: string; actions: string[] }> = []
     for (const object of runtime.snapshot().objects) {
       if (!policy.canInspect(object.id) || input.objectId !== undefined && input.objectId !== object.id) continue
-      targets.push({ target: { subject: subjectOf(call), type: 'world.object', id: object.id }, label: object.label, actions: ['focus', 'reveal', 'highlight'] })
+      targets.push({ target: { subject: subjectOf(call, scope), type: 'world.object', id: object.id }, label: object.label, actions: ['focus', 'reveal', 'highlight'] })
     }
     if (input.elements && input.objectId !== undefined) {
       const declarations = await runtime.observations(call.actor).declarations([input.objectId])
       const declaration = declarations[0]
       if (declaration !== undefined && !('refused' in declaration)) for (const element of declaration.elements) {
-        targets.push({ target: { subject: subjectOf(call), type: 'world.object', id: input.objectId, part: element.id }, label: element.label, actions: ['reveal', 'highlight'] })
+        targets.push({ target: { subject: subjectOf(call, scope), type: 'world.object', id: input.objectId, part: element.id }, label: element.label, actions: ['reveal', 'highlight'] })
       }
     }
     if (input.objectId === undefined) {
-      for (const pack of runtime.packs()) for (const panel of pack.ui?.surfacePanels ?? []) targets.push({ target: { subject: subjectOf(call), type: 'world.panel', id: panel.id }, label: panel.label, actions: ['reveal', 'highlight'] })
-      for (const control of guideControlTargets) targets.push({ target: { subject: subjectOf(call), type: 'world.control', id: control.id }, label: control.label, actions: [...control.actions] })
-      targets.push({ target: { subject: subjectOf(call), type: 'world.composer', id: 'assistant' }, label: 'Assistant prompt suggestion', actions: ['draft'] })
+      for (const pack of runtime.packs()) for (const panel of pack.ui?.surfacePanels ?? []) targets.push({ target: { subject: subjectOf(call, scope), type: 'world.panel', id: panel.id }, label: panel.label, actions: ['reveal', 'highlight'] })
+      for (const control of guideControlTargets) targets.push({ target: { subject: subjectOf(call, scope), type: 'world.control', id: control.id }, label: control.label, actions: [...control.actions] })
+      targets.push({ target: { subject: subjectOf(call, scope), type: 'world.composer', id: 'assistant' }, label: 'Assistant prompt suggestion', actions: ['draft'] })
     }
-    const found = targets.filter(entry => input.text === undefined || `${entry.label} ${entry.target.id}`.toLowerCase().includes(input.text.toLowerCase()))
+    const supported = scope === undefined ? targets : targets.map(entry => ({ ...entry, actions: entry.actions.filter(action => scope.actions.has(action)) })).filter(entry => entry.actions.length > 0)
+    const found = supported.filter(entry => input.text === undefined || `${entry.label} ${entry.target.id}`.toLowerCase().includes(input.text.toLowerCase()))
     if (runtime.inspectionPolicy(call.actor).key !== policy.key) throw guideFailure('presentation_discovery_superseded', 'The inspection picture changed; discover targets again')
     return { targets: found.slice(input.offset, input.offset + input.limit), ...(found.length > input.offset + input.limit ? { nextOffset: input.offset + input.limit } : {}) }
   }
   if (kind === 'request') {
     const input = presentationInputs.request.parse(raw)
+    if (scope !== undefined && !scope.actions.has(input.action.kind)) throw guideFailure('presentation_action_unsupported', 'This Perspective does not offer that presentation action', 400)
     if (input.initiatingRoom !== undefined && (input.initiatingRoom.workspaceId !== call.registry.workspaceId || input.initiatingRoom.moduleId !== 'agents' || input.initiatingRoom.type !== 'agents.room')) throw guideFailure('presentation_scope_mismatch', 'The initiating Room belongs to this Workspace\'s Agents Module', 403)
     if (input.action.kind === 'clear') throw guideFailure('presentation_use_cancel', 'Cancel the original request to clear only its owned cues', 400)
     if (input.recipient === undefined) throw guideFailure('no_recipient', 'This turn has no current browser receiver; offer an attributed suggestion for a person to open')
-    const recipient = recipientOf(call, input.recipient)
-    const allowed = targetAllowed(call, recipient, input.target)
+    const recipient = recipientOf(call, input.recipient, scope)
+    const allowed = targetAllowed(call, recipient, input.target, scope)
     if (!allowed()) throw guideFailure('presentation_target_unavailable', 'This target is not available to the caller', 403)
     if (input.target.part !== undefined) {
       const declarations = await runtime.observations(call.actor).declarations([objectIdSchema.parse(input.target.id)])
@@ -129,30 +142,30 @@ export const runPresentationOperation = async (kind: keyof typeof presentationIn
       if (declaration === undefined || 'refused' in declaration || !declaration.elements.some(element => element.id === input.target.part)) throw guideFailure('presentation_target_unavailable', 'This target is not available to the caller', 403)
     }
     const request = delivery.request({ id: input.requestId, recipient,
-      source: { moduleId: worldModuleId, kind: call.actor.role === 'ai_agent' ? 'agent' : 'person', id: call.actor.id, label: call.actor.displayName ?? call.actor.label, ...(input.executionId === undefined ? {} : { executionId: input.executionId }), ...(input.initiatingRoom === undefined ? {} : { initiatingRoom: input.initiatingRoom }) },
+      source: scope?.source === undefined ? { moduleId: worldModuleId, kind: call.actor.role === 'ai_agent' ? 'agent' : 'person', id: call.actor.id, label: call.actor.displayName ?? call.actor.label, ...(input.executionId === undefined ? {} : { executionId: input.executionId }), ...(input.initiatingRoom === undefined ? {} : { initiatingRoom: input.initiatingRoom }) } : { moduleId: worldModuleId, ...scope.source },
       target: input.target, action: input.action, purpose: input.purpose, mode: 'suggest', allowed,
     })
     return { requestId: request.id, status: 'pending', expiresAt: request.expiresAt }
   }
   if (kind === 'poll') {
-    const input = presentationInputs.poll.parse(raw), recipient = ownReceiver(call, input.recipient)
+    const input = presentationInputs.poll.parse(raw), recipient = ownReceiver(call, input.recipient, scope)
     const renewed = delivery.renew(recipient)
     return { recipient: renewed, requests: delivery.pending(renewed) }
   }
   if (kind === 'receipt') {
     const input = presentationInputs.receipt.parse(raw)
-    return delivery.receipt(ownReceiver(call, input.recipient), input.receipt)
+    return delivery.receipt(ownReceiver(call, input.recipient, scope), input.receipt)
   }
   if (kind === 'unregister') {
-    delivery.unregister(ownReceiver(call, presentationInputs.unregister.parse(raw).recipient))
+    delivery.unregister(ownReceiver(call, presentationInputs.unregister.parse(raw).recipient, scope))
     return { closed: true }
   }
   if (kind === 'cancel') {
     const input = presentationInputs.cancel.parse(raw)
-    return delivery.cancel(recipientOf(call, input.recipient), input.requestId, call.actor.role === 'ai_agent' ? call.actor.id : undefined)
+    return delivery.cancel(recipientOf(call, input.recipient, scope), input.requestId, scope?.source?.id ?? (call.actor.role === 'ai_agent' ? call.actor.id : undefined))
   }
   const input = presentationInputs.result.parse(raw)
-  return delivery.result(recipientOf(call, input.recipient), input.requestId)
+  return delivery.result(recipientOf(call, input.recipient, scope), input.requestId)
 }
 
 // Every guidance entry loads the Run first. Reuse its validated immutable pin rather than rereading megabytes on each browser poll.

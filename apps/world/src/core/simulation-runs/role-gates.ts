@@ -135,6 +135,9 @@ export const aiRoleRunRefusal = (): RoleGateRefusal =>
  * delete and the pinned Scenario source (authoring material outside play).
  */
 export const roleRunOpenCapabilityIds: ReadonlySet<string> = new Set([
+  // A human selects the held roles for an explicitly enabled pending pilot;
+  // this is not a canonical Run read or an AI exemption.
+  'world.perspective.prepare',
   'world.simulation-run.execution.read',
   'world.simulation-run.execution.set',
   'world.simulation-run.execution.advance',

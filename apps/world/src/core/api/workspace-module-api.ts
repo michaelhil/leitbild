@@ -33,6 +33,8 @@ import { storedDashboards } from '../../features/displays/dashboards/dashboards.
 import { observablesSearchInputSchema, observablesSearchOutputSchema, searchObservables } from '../../features/displays/observation/search.ts'
 import { displayCapabilities } from './display-capabilities.ts'
 import { guidanceCapabilities } from './guidance-capabilities.ts'
+import { perspectiveCapabilityDescriptors, perspectiveCapabilityRegistry } from './perspective-capabilities.ts'
+import { isPerspectiveFailure } from '../perspectives/model.ts'
 import { isGuidanceFailure } from '../guides/errors.ts'
 import { isCapabilityRejection } from '../../simulation/capability-rejection.ts'
 import {
@@ -1892,6 +1894,7 @@ const invokeCapability = async (
   const invocation = moduleCapabilityInvocationSchema.parse(rawInvocation)
   if (invocation.workspaceId !== registry.workspaceId) return apiError(409, 'workspace_scope_mismatch', 'Invocation belongs to another Workspace')
   if (invocation.capabilityId !== capabilityId) return apiError(409, 'capability_scope_mismatch', 'Invocation Capability does not match the route')
+  if (capabilityId.startsWith('world.perspective.') && registry.perspectives === undefined) return apiError(404, 'capability_not_found', 'Capability not found')
   if (invocation.idempotencyKey !== undefined && worldCapabilities.descriptors.some(descriptor => descriptor.id === capabilityId)) return apiError(400, 'idempotency_not_supported', 'This Capability does not support keyed retries; inspect the Resource after an uncertain result.')
 
   const release = invocation.resource?.type === 'world.simulation-run' && capabilityId !== 'world.simulation-run.delete'
@@ -1937,6 +1940,8 @@ const invokeCapability = async (
     if (granted instanceof Response) return granted
     const readRuntime = ai && invocation.resource?.type === 'world.simulation-run' && worldCapabilities.descriptors.find(descriptor => descriptor.id === capabilityId)?.kind === 'query' ? await registry.load(requireSimulationRunResource(invocation)) : undefined
     const readRevision = readRuntime?.snapshot().scenario?.agentRestrictions.revision
+    const perspectiveResponse = await perspectiveCapabilityRegistry.invoke(capabilityId, registry, granted)
+    if (perspectiveResponse) return perspectiveResponse
     const response = await worldCapabilities.invoke(capabilityId, registry, granted)
     if (response && readRuntime && readRuntime.snapshot().scenario?.agentRestrictions.revision !== readRevision) return apiError(409, 'query_policy_superseded', 'AI inspection policy changed while the query ran; acquire a new result')
     if (response) return ai && scriptRedacted.has(capabilityId) ? await withoutScript(response) : response
@@ -2047,7 +2052,7 @@ export const handleWorldModuleApi = async (
     if (capabilitiesMatch && request.method === 'GET') {
       const workspaceId = workspaceIdSchema.parse(decodeURIComponent(capabilitiesMatch[1] ?? ''))
       return await workspaces.withRuntime(workspaceId, async runtime => json(moduleCapabilityCollectionSchema.parse({
-        capabilities: [...worldCapabilities.descriptors, ...workspacePackCapabilityDescriptorsFor(runtime.simulationRuns), ...runtimeCapabilityDescriptorsFor(runtime.simulationRuns)],
+        capabilities: [...worldCapabilities.descriptors, ...perspectiveCapabilityDescriptors(runtime.simulationRuns), ...workspacePackCapabilityDescriptorsFor(runtime.simulationRuns), ...runtimeCapabilityDescriptorsFor(runtime.simulationRuns)],
       })))
     }
 
@@ -2060,6 +2065,7 @@ export const handleWorldModuleApi = async (
 
     return null
   } catch (error) {
+    if (isPerspectiveFailure(error)) return apiError(error.status, error.code, error.message, error.details)
     if (isQueryReadRefusal(error)) return apiError(error.status, error.code, error.message)
     if (isGuidanceFailure(error)) return apiError(error.status, error.code, error.message)
     if (isCapabilityRejection(error)) return apiError(error.status, error.code, error.message)
