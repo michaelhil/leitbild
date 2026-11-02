@@ -317,7 +317,7 @@
             "type": "show_guidance",
             "guidance": {
               "id": "offsite-power-briefing",
-              "title": "In two minutes, a fault cuts Halden off the grid",
+              "title": "A switchyard fault is scheduled in two minutes",
               "message": "Open View at the bottom, choose Panels, and turn on Grid operations to follow the grid frequency. To jump ahead, press Advance\u2026 next to the clock and choose +2 min. You can close this briefing with \u00d7 and read it again from Guide.",
               "objectIds": [
                 "grid:halden-four-unit",
@@ -326,7 +326,7 @@
                 "plant:halden-3",
                 "plant:halden-4"
               ],
-              "dismissible": false,
+              "dismissible": true,
               "tone": "default"
             }
           }
@@ -393,7 +393,7 @@
             "guidance": {
               "id": "switchyard-busbar-fault",
               "title": "Inspect the switchyard fault outcome",
-              "message": "All six circuits are open and every turbine has tripped. To restore offsite power, open View at the bottom, choose Panels and turn on Grid operations, then open Assets, search \u201cHasle circuit 1\u201d, choose it and press Close. Or ask the Leitbild Assistant: \u201cWhy did the turbine trip?\u201d",
+              "message": "The scheduled switchyard fault cue was attempted. Inspect circuit positions, each unit\u2019s indications and the grid frequency before drawing conclusions. Check the cue notice for incomplete or uncertain actions. View \u2192 Panels \u2192 Grid operations \u2192 Assets lets you inspect Hasle circuit 1 and its current switching controls. The Assistant can help explain observed changes.",
               "objectIds": [
                 "grid:halden-four-unit",
                 "plant:halden-1",

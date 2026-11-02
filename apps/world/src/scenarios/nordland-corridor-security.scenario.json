@@ -56,10 +56,10 @@
             "type": "show_guidance",
             "guidance": {
               "id": "corridor-security-briefing",
-              "title": "At ten minutes a major line trips, and others follow",
+              "title": "A corridor contingency is scheduled at ten minutes",
               "message": "Use Guide for the copy/remedy/two-futures exercise. Copy this Run and verify the distinct identity before changing it. In the copy, use View → Panels → Grid operations to inspect a remedy such as opening Smibelg – Sjona; review and confirm the actual operation. Advance both Runs to the same exact simulation time for comparison.",
               "objectIds": ["grid:norway"],
-              "dismissible": false,
+              "dismissible": true,
               "tone": "default"
             }
           }
