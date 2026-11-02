@@ -730,9 +730,7 @@
       storage: { getItem: key => sessionStorage.getItem(key), setItem: (key, value) => sessionStorage.setItem(key, value), removeItem: key => sessionStorage.removeItem(key) },
     }))
     guidanceSession = session
-    window.addEventListener('message', session.receive)
     return () => {
-      window.removeEventListener('message', session.receive)
       session.stop()
       for (const settle of presentationMapWaiters.values()) settle({ status: 'unavailable', reason: 'The Run or perspective changed' })
       for (const settle of presentationDisplayWaiters.values()) settle({ status: 'unavailable', reason: 'The Run or perspective changed' })
@@ -2138,6 +2136,8 @@
       }
       runAssistantOffered = offer.available
     }
+    const receivePresentationMessage = (event: MessageEvent): void => guidanceSession?.receive(event)
+    window.addEventListener('message', receivePresentationMessage)
     window.addEventListener('message', receiveDisplayWindowMessage)
     window.addEventListener('message', receiveRunAssistantOffer)
     window.parent.postMessage(displayWindowReadyMessage(), location.origin)
@@ -2148,6 +2148,7 @@
     const executionPoll = window.setInterval(() => { void refreshExecution() }, 1_000)
     return () => {
       viewPreferencesKey = null
+      window.removeEventListener('message', receivePresentationMessage)
       window.removeEventListener('message', receiveDisplayWindowMessage)
       window.removeEventListener('message', receiveRunAssistantOffer)
       cleanupInternalDiagnosticsGlobal()
