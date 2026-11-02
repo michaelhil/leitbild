@@ -33,7 +33,7 @@ test('focused private snapshot preserves existing human authors without promotin
 // Lifecycle-only DOM fixture: actual layout and native input are exercised by
 // the browser proof. This checks the actual picker handlers and outgoing ports.
 const domFixture = () => {
-  type Node = { tag: string; children: Node[]; style: Record<string, string>; className: string; textContent: string; innerHTML: string;
+  type Node = { tag: string; type?: string; children: Node[]; style: Record<string, string>; className: string; textContent: string; innerHTML: string;
     onclick?: (event?: unknown) => Promise<void> | void; removed: boolean; appendChild: (node: Node) => Node;
     querySelector: () => Node; remove: () => void; addEventListener: () => void }
   const nodes: Node[] = []
@@ -66,6 +66,8 @@ test('private picker posts as an existing public human without creating or addin
     expect(dom.nodes.some(node => node.textContent === '+ New human')).toBe(false)
     expect(dom.nodes.some(node => node.textContent === 'add to room')).toBe(false)
     const row = dom.nodes.find(node => node.children.some(child => child.textContent === 'Participant'))!
+    expect(row.tag).toBe('button') // Native Tab/Enter/Space activation; no clickable-div keyboard emulation.
+    expect(row.type).toBe('button') // Choosing an author must not submit an enclosing form first.
     expect(row.children.some(child => child.textContent === 'post as')).toBe(true)
     await row.onclick!()
     expect(submitted).toEqual(['public-human'])

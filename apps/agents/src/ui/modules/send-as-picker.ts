@@ -100,8 +100,9 @@ export const openSendAsPicker = async (
   document.addEventListener('keydown', onEsc)
 
   const buildRow = (h: AgentInfo, needsAdd: boolean): HTMLElement => {
-    const row = document.createElement('div')
-    row.className = 'py-2 flex items-center gap-2 border-b border-border last:border-b-0 cursor-pointer hover:bg-surface-muted px-2 -mx-2 rounded'
+    const row = document.createElement('button')
+    row.type = 'button'
+    row.className = 'w-full text-left py-2 flex items-center gap-2 border-b border-border last:border-b-0 cursor-pointer hover:bg-surface-muted px-2 -mx-2 rounded'
     // Build via DOM so h.name (user-controlled — validateName allows `<>`)
     // never reaches innerHTML as a raw string.
     const nameSpan = document.createElement('span')
