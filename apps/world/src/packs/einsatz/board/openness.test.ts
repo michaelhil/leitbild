@@ -6,6 +6,7 @@ import { createWall, openScreen, pastGuardMs, runFor } from '../fixtures/board-h
 import { openRun } from '../fixtures/run-harness.ts'
 import supplyConfig from '../fixtures/supply-run.config.json'
 import supplyRun from '../../../scenarios/supply-run.scenario.json'
+import { withoutScenarioGuide } from '../../../../tests/fixtures/scenario-domain.ts'
 
 /**
  * Openness: a unit type that no code knows, with a property and an icon the
@@ -47,10 +48,11 @@ const raise = invoked(raised).input as { unitId: string; properties: Record<stri
  * The openness core of supply-run: its first place, the lighter vehicle and
  * the first request of the first template, with the first cues that add a
  * vehicle and a request and the raise. The rest of the exercise sends other
- * vehicles to the requests first.
+ * vehicles to the requests first. Its guide addresses that complete exercise,
+ * so this reduced domain fixture omits it.
  */
 const core = {
-  ...supplyRun,
+  ...withoutScenarioGuide(supplyRun),
   packs: [{
     ...supplyRun.packs[0]!,
     items: [
