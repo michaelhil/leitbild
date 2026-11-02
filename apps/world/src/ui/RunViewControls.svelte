@@ -153,11 +153,12 @@
     <section id="run-guide-options" class="view-sheet guide-options" aria-label="Guidance options" bind:this={sheet}>
       <header><strong>Guide</strong><button class="close" type="button" aria-label="Close guidance options" onclick={() => close(true)}>×</button></header>
       {#if guidance.available}
-      <h4>Timed scenario cards</h4>
+      <details class="timed-cards" open={!hasGuide}><summary>Timed scenario cards{guidance.unread ? ' · new' : ''}</summary>
       {#if guidance.instruction}<div class="current-instruction"><strong>{guidance.instruction.title}</strong><p>{guidance.instruction.message}</p></div>{/if}
       <p>{guidance.available ? guidance.unread ? 'A new scenario instruction is available.' : 'Show the current scenario instruction again.' : hasGuide ? 'An authored guide is available below.' : 'This Run has no current scenario instruction.'}</p>
       <div class="camera-actions"><button type="button" disabled={!guidance.available} onclick={() => { setGuidance('running'); close(true) }}>{hasGuide ? 'Show current card' : 'Resume guidance'}</button><button type="button" disabled={guidance.mode === 'paused'} onclick={() => { setGuidance('paused'); close(true) }}>{hasGuide ? 'Pause timed cards' : 'Pause guidance'}</button><button type="button" disabled={guidance.mode === 'stopped'} onclick={() => { setGuidance('stopped'); close(true) }}>{hasGuide ? 'Stop timed cards' : 'Stop guidance'}</button></div>
       <p class="help">Pause and Stop hide instructions on this screen. The simulation keeps its current playback. Resume remains available.</p>
+      </details>
       {:else if !hasGuide}<p>This Run has no current scenario instruction.</p>{/if}
       {#if guideContent}{@render guideContent()}{/if}
     </section>
@@ -194,6 +195,8 @@
   footer { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; border-top: 1px solid var(--border); padding-top: 9px; }
   p { margin: 8px 0 12px; line-height: 1.5; }
   .help { color: var(--muted); font-size: 12px; margin-bottom: 0; }
+  .timed-cards summary { cursor: pointer; min-height: 32px; line-height: 1.5; }
+  @media (pointer: coarse) { .timed-cards summary { min-height: 44px; } }
   .current-instruction { padding: 10px; border: 1px solid var(--border); border-radius: 7px; background: var(--panel-strong); }
   .current-instruction p { margin-bottom: 0; }
   .new { border-radius: 8px; padding: 1px 5px; background: var(--accent); color: var(--panel); font-size: 10px; }

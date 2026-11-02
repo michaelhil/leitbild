@@ -270,7 +270,9 @@
   const surfacePanelLoadPromises = new Map<string, Promise<Component<SurfacePanelProps>>>()
   let surfacePanelOpen = $state<Record<string, boolean>>({})
   let guidancePreferences = $state<RunViewPreferences['guidance']>(initialRunViewPreferences().guidance)
-  const guidanceOverlayVisible = $derived(Boolean(scenarioState?.guidance && guidancePreferences.mode === 'running' && guidancePreferences.dismissedId !== scenarioState.guidance.id))
+  let timedCardRequested = $state(false)
+  const structuredGuideVisible = $derived(Boolean(guidanceScreen.guide && !guidanceScreen.explored && (!guidanceScreen.guide.attemptId || guidanceScreen.guide.status === 'active')))
+  const guidanceOverlayVisible = $derived(Boolean(scenarioState?.guidance && guidancePreferences.mode === 'running' && guidancePreferences.dismissedId !== scenarioState.guidance.id && (!structuredGuideVisible || timedCardRequested)))
   const guidanceUnread = $derived(Boolean(scenarioState?.guidance && guidancePreferences.presentedId !== scenarioState.guidance.id))
   let alarmStripVisible = $state(false)
   let layoutControlsVisible = $state(false)
@@ -629,12 +631,21 @@
     presentationOwner = request.id
     element.classList.add('world-presentation-target')
   }
-  const waitForPresentation = (request: PresentationRequest, waiters: Map<number, (result: PresentationApplication) => void>, sequence: number): Promise<PresentationApplication> => new Promise(resolve => {
-    const finish = (result: PresentationApplication): void => { clearTimeout(timer); waiters.delete(sequence); resolve(result) }
+  const waitForPresentation = (request: PresentationRequest, signal: AbortSignal, waiters: Map<number, (result: PresentationApplication) => void>, sequence: number): Promise<PresentationApplication> => new Promise(resolve => {
+    const finish = (result: PresentationApplication): void => { clearTimeout(timer); signal.removeEventListener('abort', aborted); waiters.delete(sequence); resolve(result) }
+    const aborted = (): void => finish({ status: signal.reason === 'manual-camera' ? 'superseded' : signal.reason === 'expired' ? 'expired' : 'cancelled', reason: 'The owning presentation cue was interrupted' })
     const timer = setTimeout(() => finish({ status: 'unavailable', reason: 'The target did not confirm presentation before the request expired' }), Math.max(0, Date.parse(request.expiresAt) - Date.now()))
     waiters.set(sequence, finish)
+    signal.addEventListener('abort', aborted, { once: true })
+    if (signal.aborted) aborted()
   })
-  const applyPresentation = async (request: PresentationRequest): Promise<PresentationApplication> => {
+  const applyPresentation = async (request: PresentationRequest, signal: AbortSignal, cameraAllowed: boolean): Promise<PresentationApplication> => {
+    const current = (): void => {
+      signal.throwIfAborted()
+      const recipient = guidanceScreen.recipient
+      if (!recipient || recipient.leaseId !== request.recipient.leaseId || recipient.documentId !== request.recipient.documentId) throw new Error('This presentation request no longer owns the current World document')
+    }
+    current()
     const target = request.target, action = request.action
     const bounds = surfaceShell?.getBoundingClientRect()
     if (document.hidden || !bounds || bounds.width <= 0 || bounds.height <= 0) throw new Error('The World surface is not visible; reopen it and request Show again')
@@ -644,15 +655,17 @@
       if (target.id === 'dashboard') {
         if (action.kind !== 'reveal') throw new Error('The dashboard control supports reveal; highlight an exact displayed object or element')
         requestDisplayWindow({ kind: 'dashboard' }, false)
-        return waitForPresentation(request, presentationDisplayWaiters, displayWindowRequestSequence)
+        return waitForPresentation(request, signal, presentationDisplayWaiters, displayWindowRequestSequence)
       }
       if (!['view', 'guide', 'alarms'].includes(target.id)) throw new Error('This World control is unavailable')
       if (action.kind === 'reveal') {
         if (target.id === 'alarms') alarmStripVisible = true
         else await viewControls?.reveal(target.id as 'view' | 'guide')
+        current()
       }
       if (action.kind !== 'reveal' && action.kind !== 'highlight') throw new Error('This control supports reveal or highlight')
       await tick()
+      current()
       const element = document.getElementById(`run-${target.id}-trigger`)
       if (!element) throw new Error('The World control is not mounted')
       if (action.kind === 'highlight') markPresentation(request, element)
@@ -663,8 +676,10 @@
       if (!panel || !richOperationalUiReady) throw new Error('This declared Pack panel is unavailable')
       if (action.kind !== 'reveal' && action.kind !== 'highlight') throw new Error('This panel supports reveal or highlight')
       await loadSurfacePanel(panel.id)
+      current()
       setSurfacePanelOpen(panel.id, true)
       await tick()
+      current()
       const element = document.getElementById(`world-panel-${panel.id}`)?.firstElementChild
       if (!(element instanceof HTMLElement)) throw new Error('The Pack panel did not mount')
       if (action.kind === 'highlight') markPresentation(request, element)
@@ -673,19 +688,22 @@
     if (target.type !== 'world.object') throw new Error('This World target is unsupported')
     const object = objects.find(object => object.id === target.id)
     if (!object) throw new Error('The target is not available in this inspection picture')
-    if (action.kind === 'reveal' || target.part !== undefined && action.kind === 'highlight') {
+    if (action.kind === 'reveal' && observedAssetObjects.some(asset => asset.id === object.id) || target.part !== undefined && (action.kind === 'highlight' || action.kind === 'reveal')) {
       if (!observedAssetObjects.some(asset => asset.id === object.id)) throw new Error('This object has no default display in the current Run')
       // The display itself confirms mounting and exact element selection, independently of admission.
       requestDisplayWindow({ kind: 'asset', objectId: object.id, ...(target.part === undefined ? {} : { select: target.part }) }, false)
-      return waitForPresentation(request, presentationDisplayWaiters, displayWindowRequestSequence)
+      return waitForPresentation(request, signal, presentationDisplayWaiters, displayWindowRequestSequence)
     }
+    if (target.part !== undefined) throw new Error('An equipment element supports display reveal or highlight; its geometry is owned by the display')
     if (!mapReady || !mapVisible || !object.spatial.position || hiddenObjectCategoryIds.includes(presentationFor(object).categoryId)) throw new Error('The object has no currently visible map position')
-    if (action.kind === 'highlight') { presentationOwner = request.id; presentationObjectIds = [object.id]; await tick(); return { status: 'applied' } }
-    if (action.kind === 'focus') {
+    if (action.kind === 'highlight') { presentationOwner = request.id; presentationObjectIds = [object.id]; await tick(); current(); return { status: 'applied' } }
+    if (action.kind === 'focus' || action.kind === 'reveal') {
+      if (!cameraAllowed) return { status: 'superseded', reason: 'Your map gesture took priority; use Show to request another camera move' }
       if (viewResetDisabledReason) throw new Error('Finish or cancel the current map operation before a guided camera move')
+      if (action.kind === 'reveal') { presentationOwner = request.id; presentationObjectIds = [object.id] }
       const position = object.spatial.position.point.coordinates
-      focusMapTarget({ kind: 'view', center: [position[0], position[1]], zoom: action.zoom ?? Math.max(9, panelMapView?.zoom ?? 9), bearing: panelMapView?.bearing ?? 0 })
-      return waitForPresentation(request, presentationMapWaiters, mapFocusRevision)
+      focusMapTarget({ kind: 'view', center: [position[0], position[1]], zoom: (action.kind === 'focus' ? action.zoom : undefined) ?? Math.max(9, panelMapView?.zoom ?? 9), bearing: panelMapView?.bearing ?? 0 })
+      return waitForPresentation(request, signal, presentationMapWaiters, mapFocusRevision)
     }
     throw new Error('This object action is unsupported')
   }
@@ -702,6 +720,7 @@
         if (status !== priorGuideStatus) {
           if (status === 'paused') setGuidanceMode('paused')
           if (status === 'stopped') setGuidanceMode('stopped')
+          if (status === 'active') timedCardRequested = false
           if (status === 'active' && (priorGuideStatus === 'paused' || priorGuideStatus === 'stopped')) setGuidanceMode('running')
           priorGuideStatus = status
         }
@@ -2390,7 +2409,7 @@
       {/if}
       <RunViewControls bind:this={viewControls} camera={viewCamera} layers={viewLayers} panels={viewPanels} act={actOnView} toggle={setViewChoice}
         reset={resetLocalView} resetDisabledReason={viewResetDisabledReason} alarms={viewAlarmCount} alarmsVisible={alarmStripVisible} showAlarms={visible => alarmStripVisible = visible}
-        guidance={{ available: Boolean(scenarioState?.guidance), visible: guidanceOverlayVisible, unread: guidanceUnread, mode: guidancePreferences.mode, instruction: scenarioState?.guidance ?? null }} setGuidance={setGuidanceMode}
+        guidance={{ available: Boolean(scenarioState?.guidance), visible: guidanceOverlayVisible, unread: guidanceUnread, mode: guidancePreferences.mode, instruction: scenarioState?.guidance ?? null }} setGuidance={mode => { timedCardRequested = mode === 'running'; setGuidanceMode(mode) }}
         clear={mapCameraPadding} ready={mapReady} raised={displayWindowOpen && (Boolean(scenarioState?.guidance) && guidancePreferences.mode !== 'stopped' || Boolean(guidanceScreen.guide) || Boolean(guidanceScreen.suggestion) || Boolean(guidanceScreen.cue))}
         hasGuide={Boolean(guidanceScreen.guide)} guideNotice={Boolean(guidanceScreen.suggestion) || Boolean(guidanceScreen.cue) || Boolean(guidanceScreen.guide && !guidanceScreen.guide.attemptId && !guidanceScreen.explored)}
         guideOpenKey={guidanceScreen.guide && !guidanceScreen.guide.attemptId && !guidanceScreen.explored ? guidanceScreen.guide.title : null}>

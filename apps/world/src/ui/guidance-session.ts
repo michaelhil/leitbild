@@ -34,7 +34,7 @@ export interface GuidanceSession {
 export const createGuidanceSession = (config: {
   runId: string
   perspective: string
-  apply: (request: PresentationRequest) => Promise<PresentationApplication>
+  apply: (request: PresentationRequest, signal: AbortSignal, cameraAllowed: boolean) => Promise<PresentationApplication>
   clear: (request: PresentationRequest) => void
   changed: (screen: GuidanceScreen) => void
   post: (message: unknown) => void
@@ -47,6 +47,7 @@ export const createGuidanceSession = (config: {
   let closed = false, polling = false, cameraHeld = false, guideUnavailable = false
   const handled = new Set<string>(), pendingDrafts = new Map<string, PresentationRequest>(), pendingClears = new Map<string, PresentationRequest>()
   const controller = new AbortController()
+  const applications = new Map<string, AbortController>()
   const update = (patch: Partial<GuidanceScreen>): void => {
     if (closed) return
     if (patch.guide?.attemptId && patch.guide.attemptId === screen.guide?.attemptId && (patch.guide.revision ?? 0) < (screen.guide.revision ?? 0)) { const { guide: _stale, ...rest } = patch; patch = rest }
@@ -86,6 +87,8 @@ export const createGuidanceSession = (config: {
     } else await call('presentation', 'receipt', { recipient: screen.recipient, receipt })
   }
   const clear = (): void => {
+    for (const application of applications.values()) application.abort('cue-cleared')
+    applications.clear()
     if (screen.cue) config.clear(screen.cue)
     for (const draft of pendingDrafts.values()) if (draft.action.kind === 'draft') config.post({ type: 'leitbild:presentation-clear', recipient: draft.recipient, requestId: draft.id })
     pendingDrafts.clear()
@@ -95,7 +98,7 @@ export const createGuidanceSession = (config: {
     if (!owned(request)) return
     if (Date.parse(request.expiresAt) <= Date.now()) return finish(request, { status: 'expired', reason: 'This presentation request expired before delivery' })
     if (request.action.kind === 'clear') {
-      if (screen.cue?.id === request.action.requestId) { config.clear(screen.cue); update({ cue: null }) }
+      if (screen.cue?.id === request.action.requestId) { applications.get(screen.cue.id)?.abort('cue-cleared'); applications.delete(screen.cue.id); config.clear(screen.cue); update({ cue: null }) }
       const draft = pendingDrafts.get(request.action.requestId)
       if (draft) {
         pendingClears.set(request.id, request)
@@ -117,10 +120,14 @@ export const createGuidanceSession = (config: {
       config.post(presentationComposerRequestMessageSchema.parse({ type: 'leitbild:presentation-compose', request }))
       return
     }
-    if (screen.cue) config.clear(screen.cue)
+    if (screen.cue) { applications.get(screen.cue.id)?.abort('cue-superseded'); applications.delete(screen.cue.id); config.clear(screen.cue) }
+    const application = new AbortController()
+    applications.set(request.id, application)
+    const expireApplication = setTimeout(() => application.abort('expired'), Math.max(0, Date.parse(request.expiresAt) - Date.now()))
     update({ cue: request })
-    try { await finish(request, await config.apply(request)) }
-    catch (error) { await finish(request, { status: 'unavailable', reason: errorText(error) }) }
+    try { await finish(request, await config.apply(request, application.signal, !cameraHeld)) }
+    catch (error) { await finish(request, application.signal.aborted ? { status: application.signal.reason === 'manual-camera' ? 'superseded' : application.signal.reason === 'expired' ? 'expired' : 'cancelled', reason: 'The owning cue was interrupted before presentation completed' } : { status: 'unavailable', reason: errorText(error) }) }
+    finally { clearTimeout(expireApplication); applications.delete(request.id) }
   }
   const poll = async (): Promise<void> => {
     if (closed || polling || !screen.recipient) return
@@ -205,7 +212,7 @@ export const createGuidanceSession = (config: {
     decline: async () => { const request = screen.suggestion; if (!request) return; update({ suggestion: null }); await finish(request, { status: 'declined', reason: 'You declined this attention suggestion' }) },
     explore: () => update({ explored: true }),
     clearCue: clear,
-    manualCamera: () => { cameraHeld = true },
+    manualCamera: () => { cameraHeld = true; if (screen.cue?.action.kind === 'focus' || screen.cue?.action.kind === 'reveal' && screen.cue.target.type === 'world.object') applications.get(screen.cue.id)?.abort('manual-camera') },
     receive,
     stop: () => {
       clear(); clearInterval(timer); config.post({ type: 'leitbild:presentation-offer', recipient: null })
