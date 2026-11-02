@@ -88,12 +88,16 @@ describe('Leitbild server', () => {
     const { host, baseUrl } = startHost(undefined, { ...gateway(), invoke: async (_module, invocation) => { received.push(invocation); return { ok: true, value: { result: null } } } }, true)
     const workspace = await host.create({ name: null })
     const origin = { kind: 'execution', roomId: 'room-a', actualAgentId: 'agent-a', runtimeGeneration: crypto.randomUUID(), turnId: 'turn-a', perspectiveId: 'perspective-a', admissionGeneration: crypto.randomUUID() }
-    const body = { input: {}, actor: { kind: 'ai', id: 'agent-a' }, perspectiveOrigin: origin }
+    const body = { resource: { workspaceId: workspace.id, moduleId: 'world', type: 'world.perspective', id: origin.perspectiveId }, input: {}, actor: { kind: 'ai', id: 'agent-a' }, perspectiveOrigin: origin }
     const url = `${baseUrl}/internal/workspaces/${workspace.id}/capabilities/world.perspective.context.read/invoke`
     expect((await fetch(url, { method: 'POST', body: JSON.stringify(body) })).status).toBe(200)
     expect(received[0]).toMatchObject({ workspaceId: workspace.id, access: { actor: body.actor, client: { id: 'workspace-host', kind: 'service' }, perspectiveOrigin: origin } })
     expect((await fetch(url, { method: 'POST', body: JSON.stringify({ ...body, actor: { kind: 'ai', id: 'another-agent' } }) })).status).toBe(400)
     for (const header of ['forwarded', 'x-forwarded-for']) expect((await fetch(url, { method: 'POST', headers: { [header]: 'untrusted-proxy' }, body: JSON.stringify(body) })).status).toBe(404)
+    expect((await fetch(url, { method: 'POST', body: JSON.stringify({ ...body, resource: { ...body.resource, id: 'another-perspective' } }) })).status).toBe(403)
+    const owner = { input: {}, actor: { kind: 'system', id: 'agents' }, perspectiveOrigin: { kind: 'owner', moduleId: 'agents' } }
+    expect((await fetch(url, { method: 'POST', body: JSON.stringify(owner) })).status).toBe(403)
+    expect((await fetch(`${baseUrl}/internal/workspaces/${workspace.id}/capabilities/agents.agent.configuration.read/invoke`, { method: 'POST', body: JSON.stringify(owner) })).status).toBe(403)
     expect(received).toHaveLength(1)
   })
 

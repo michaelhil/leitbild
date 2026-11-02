@@ -100,6 +100,15 @@ const internalPerspectiveRequestSchema = workspaceCapabilityInvocationRequestSch
   }
 })
 
+// This transport carries only the concrete Perspective handshake. It is not
+// another generic system-actor invocation endpoint or a permission service.
+const perspectiveOwnerPorts = {
+  host: new Set(['world.perspective.read', 'world.perspective.bind', 'world.perspective.revoke', 'world.perspective.presentation.verify',
+    'agents.perspective-room.prepare', 'agents.perspective-room.read', 'agents.perspective-room.bind', 'agents.perspective-room.revoke', 'agents.perspective-room.view-open', 'agents.perspective-room.view-close']),
+  world: new Set(['agents.perspective-room.read', 'agents.perspective-room.revoke']),
+  agents: new Set(['world.perspective.read', 'world.perspective.revoke']),
+} as const
+
 export const createWorkspaceHostServer = (config: {
   readonly host: WorkspaceHost
   readonly port?: number
@@ -184,6 +193,16 @@ export const createWorkspaceHostServer = (config: {
           const capabilityId = capabilityIdSchema.parse(decodeURIComponent(invocationMatch[2] ?? ''))
           const raw = await parseJson(request)
           const requestInput = internalPerspective ? internalPerspectiveRequestSchema.parse(raw) : workspaceCapabilityInvocationRequestSchema.parse(raw)
+          const perspectiveOrigin = internalPerspective ? internalPerspectiveRequestSchema.parse(raw).perspectiveOrigin : undefined
+          if (perspectiveOrigin?.kind === 'owner' && !perspectiveOwnerPorts[perspectiveOrigin.moduleId].has(capabilityId)) {
+            return jsonError(403, 'perspective_owner_port_required', 'This owner relationship is limited to its exact Perspective admission ports')
+          }
+          if (perspectiveOrigin?.kind === 'execution' && (!capabilityId.startsWith('world.perspective.')
+            || requestInput.definition !== undefined || requestInput.resource?.workspaceId !== workspaceId
+            || requestInput.resource?.moduleId !== 'world' || requestInput.resource.type !== 'world.perspective'
+            || requestInput.resource.id !== perspectiveOrigin.perspectiveId)) {
+            return jsonError(403, 'perspective_execution_subject_required', 'This execution transport requires its exact World Perspective subject')
+          }
           const input = {
             ...(requestInput.definition === undefined ? {} : { definition: requestInput.definition }),
             ...(requestInput.resource === undefined ? {} : { resource: requestInput.resource }),
@@ -196,7 +215,7 @@ export const createWorkspaceHostServer = (config: {
             requestId: newRequestId(),
             actor: requestInput.actor ?? { kind: 'anonymous' },
             client: { id: 'workspace-host', kind: 'service' },
-            ...(internalPerspective ? { perspectiveOrigin: internalPerspectiveRequestSchema.parse(raw).perspectiveOrigin } : {}),
+            ...(perspectiveOrigin === undefined ? {} : { perspectiveOrigin }),
           })
           return Response.json(await config.host.invoke(workspaceId, capabilityId, input, access, request.signal))
         }
