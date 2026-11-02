@@ -147,6 +147,7 @@ export interface AgentsWorkspaceRuntime {
   // Refresh the cached available-models snapshot used by per-call effective-
   // model resolution. Called at boot and after any provider config change so
   // agents picking up a fallback get the latest list (no boot-time freeze).
+  readonly isProviderDiscoveryEnabled: ProviderSetupResult['isDiscoveryEnabled']
   readonly refreshAvailableModels: () => Promise<void>
   // Per-Workspace ring buffer of recent agent evals — fuel for
   // /api/diagnostics/evals/*. Subscribes via addEvalEventListener so
@@ -1060,6 +1061,7 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
       llm, llmService, ollama, providerConfig, providerKeys, gateways, monitors,
       providerPolicy: deployment.providerPolicy,
       refreshAvailableModels,
+      isProviderDiscoveryEnabled: providerSetup.isDiscoveryEnabled,
       captureRegistry,
       packCatalog: deployment.packCatalog,
       evalBuffer,

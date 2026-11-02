@@ -159,11 +159,14 @@ export const providersConfigRoutes: RouteEntry[] = [
           // Implicit re-enable when user saves a key on a disabled provider.
           system.providerKeys.setEnabled(name, true)
         }
+        // An automatic refresh follows only an eligible configuration;
+        // disabling a provider must not itself probe that provider. Named
+        // user diagnostics remain separate explicit actions.
         // Fire-and-forget a model-list refresh so the dropdown populates.
         // Local providers (llamacpp) refresh on key OR baseUrl change so the
         // user sees the loaded model immediately after pointing at a new URL.
         const gw = system.gateways[name]
-        if (gw && (nextKey || (isLocal(name) && 'baseUrl' in body))) {
+        if (gw && system.isProviderDiscoveryEnabled(name) && (nextKey || (isLocal(name) && 'baseUrl' in body))) {
           void gw.refreshModels().catch(err => {
             console.warn(`[providers:${name}] model refresh failed after config update: ${err instanceof Error ? err.message : String(err)}`)
           })

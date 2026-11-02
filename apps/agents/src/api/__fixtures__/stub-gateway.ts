@@ -40,7 +40,7 @@ export const makeStubGateway = (): ProviderGateway => {
 
 export const makeStubSetup = (gateway: ProviderGateway = makeStubGateway()): ProviderSetupResult => {
   const router = createProviderRouter({ stub: gateway }, { order: ['stub'] })
-  return { router, gateways: { stub: gateway }, monitors: {}, dispose: () => router.dispose() }
+  return { router, isDiscoveryEnabled: name => router.getOrder().includes(name), gateways: { stub: gateway }, monitors: {}, dispose: () => router.dispose() }
 }
 
 export const stubProviderConfig = {

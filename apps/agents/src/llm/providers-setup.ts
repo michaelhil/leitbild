@@ -26,6 +26,7 @@ export interface ProviderSetupResult {
   readonly router: ProviderRouter
   readonly ollama?: OllamaGateway                      // present iff 'ollama' is in order
   readonly ollamaRaw?: OllamaProviderExtended          // raw provider for URL edit UX
+  readonly isDiscoveryEnabled: (name: string) => boolean // current order + live configuration, never a network probe
   readonly gateways: Record<string, ProviderGateway>   // all gateways in the router
   readonly monitors: Record<string, ProviderMonitor>   // one per gateway
   readonly dispose: () => void
@@ -71,6 +72,10 @@ export const buildProvidersFromConfig = (
   // added at runtime can activate a provider without server restart. The
   // router skips providers whose current key is empty via `isProviderEnabled`.
   const providerKeys = options.providerKeys
+  const userEnabled = (name: string): boolean => (!config.ollamaOnly || name === 'ollama')
+    && (name === 'ollama' || (providerKeys ? providerKeys.isUserEnabled(name) : config.cloud[name as CloudProviderName]?.enabled !== false))
+  const isEnabled = (name: string): boolean => userEnabled(name) && (isLocal(name)
+    || (providerKeys ? providerKeys.get(name) : config.cloud[name as CloudProviderName]?.apiKey ?? '').length > 0)
   for (const name of Object.keys(PROVIDER_PROFILES) as CloudProviderName[]) {
     const cc = config.cloud[name]
     const staticKey = cc?.apiKey ?? ''
@@ -129,11 +134,7 @@ export const buildProvidersFromConfig = (
       : providerKeys
         ? () => providerKeys.get(name).length > 0
         : () => (config.cloud[name as CloudProviderName]?.apiKey ?? '').length > 0
-    const isUserEnabled = local
-      ? () => true
-      : providerKeys
-        ? () => providerKeys.isUserEnabled(name)
-        : () => true
+    const isUserEnabled = () => userEnabled(name)
     monitors[name] = createProviderMonitor({
       name,
       kind,
@@ -146,9 +147,7 @@ export const buildProvidersFromConfig = (
   const router = createProviderRouter(gateways, {
     order: config.order,
     forceFailProvider: config.forceFailProvider,
-    isProviderEnabled: providerKeys
-      ? (name) => name === 'ollama' || providerKeys.isEnabled(name)
-      : undefined,
+    isProviderEnabled: isEnabled,
     monitors,
     contextLookup: async (provider, model) => {
       const info = await getContextWindow(provider, model, {
@@ -176,6 +175,7 @@ export const buildProvidersFromConfig = (
 
   return {
     router,
+    isDiscoveryEnabled: name => router.getOrder().includes(name) && isEnabled(name),
     ...(ollama ? { ollama } : {}),
     ...(ollamaRaw ? { ollamaRaw } : {}),
     gateways,
@@ -184,26 +184,29 @@ export const buildProvidersFromConfig = (
   }
 }
 
-// Warm the `availableModels` cache on every provider. Called once at startup
+// Warm the `availableModels` cache only for currently eligible providers. Called once at startup
 // so the first router call doesn't optimistically attempt providers that
 // don't serve the requested model.
 export const warmProviderModels = async (
   gateways: Record<string, ProviderGateway>,
+  isEnabled: (name: string) => boolean,
   timeoutMs = 5_000,
-): Promise<Record<string, { status: 'ok'; count: number } | { status: 'error'; message: string }>> => {
-  const result: Record<string, { status: 'ok'; count: number } | { status: 'error'; message: string }> = {}
+): Promise<Record<string, { status: 'ok'; count: number } | { status: 'skipped'; message: string } | { status: 'error'; message: string }>> => {
+  const result: Record<string, { status: 'ok'; count: number } | { status: 'skipped'; message: string } | { status: 'error'; message: string }> = {}
   const entries = Object.entries(gateways)
   await Promise.all(entries.map(async ([name, gateway]) => {
+    if (!isEnabled(name)) { result[name] = { status: 'skipped', message: 'Provider is outside the active order or disabled/unconfigured' }; return }
+    let timer: ReturnType<typeof setTimeout> | undefined
     try {
       const timeout = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('models warm-up timeout')), timeoutMs))
+        { timer = setTimeout(() => reject(new Error('models warm-up timeout')), timeoutMs) })
       await Promise.race([gateway.refreshModels(), timeout])
       const count = gateway.getHealth().availableModels.length
       result[name] = { status: 'ok', count }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       result[name] = { status: 'error', message }
-    }
+    } finally { if (timer !== undefined) clearTimeout(timer) }
   }))
   return result
 }

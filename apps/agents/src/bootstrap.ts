@@ -466,9 +466,10 @@ export const bootstrap = async (): Promise<void> => {
     // use their own runtime subscriptions below.
 
     // Warm provider model caches (best-effort).
-    const warmResults = await warmProviderModels(providerSetup.gateways)
+    const warmResults = await warmProviderModels(providerSetup.gateways, providerSetup.isDiscoveryEnabled)
     for (const [name, result] of Object.entries(warmResults)) {
       if (result.status === 'ok') console.log(`  ${name}: ${result.count} models available`)
+      else if (result.status === 'skipped') console.log(`  ${name}: discovery skipped — ${result.message}`)
       else console.warn(`  ${name}: warm-up failed — ${result.message}`)
     }
 
@@ -508,9 +509,10 @@ export const bootstrap = async (): Promise<void> => {
   // Warm provider model caches. Awaited synchronously: B3 of the audit
   // requires that warm complete BEFORE we accept traffic, so the router's
   // catalog filter has real data to work with (no optimistic-include).
-  const warmResults = await warmProviderModels(providerSetup.gateways)
+  const warmResults = await warmProviderModels(providerSetup.gateways, providerSetup.isDiscoveryEnabled)
   for (const [name, result] of Object.entries(warmResults)) {
     if (result.status === 'ok') console.log(`  ${name}: ${result.count} models available`)
+    else if (result.status === 'skipped') console.log(`  ${name}: discovery skipped — ${result.message}`)
     else console.warn(`  ${name}: warm-up failed — ${result.message}`)
   }
 
