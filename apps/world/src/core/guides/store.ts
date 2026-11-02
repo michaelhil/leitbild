@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import type { PresentationPromptEvidence } from '@leitbild/contracts'
 import { readFile } from 'node:fs/promises'
 import type { GuideDefinition, GuideConditionResult, GuideStep } from './model.ts'
 import { guideFailure } from './errors.ts'
@@ -47,7 +48,7 @@ export const currentGuideStep = (guide: GuideDefinition, attempt: GuideAttempt, 
 
 export const advanceGuideAttempt = (input: {
   guide: GuideDefinition; attempt: GuideAttempt; expectedRevision: number; roleIds: readonly string[];
-  action: 'next' | 'skip' | 'pause' | 'resume' | 'stop'; at: string; evidence?: GuideConditionResult;
+  action: 'next' | 'skip' | 'pause' | 'resume' | 'stop'; at: string; evidence?: GuideConditionResult; promptEvidence?: PresentationPromptEvidence;
 }): GuideAttempt => {
   const { guide, attempt, action } = input
   if (attempt.revision !== input.expectedRevision) throw guideFailure('guide_progress_conflict', 'Guide progress changed; read its current step before trying again')
@@ -62,18 +63,21 @@ export const advanceGuideAttempt = (input: {
   if (action === 'next') {
     if (step.completion.kind === 'condition' && input.evidence?.status !== 'satisfied') throw guideFailure('guide_condition_unmet', input.evidence?.reason ?? 'Current World evidence does not establish this step')
     const completion = step.completion
+    if (completion.kind === 'prompt-response' && !input.promptEvidence?.responses.some(response => response.kind === 'chat' && response.executionStatus === 'completed')) throw guideFailure('guide_prompt_pending', 'No completed Assistant response is established for this submitted prompt; retry, or skip if no provider is available')
     if (completion.kind === 'presentation' && !attempt.receipts.some(entry => entry.effectId === completion.effectId && entry.receipt.status === 'applied')) {
       throw guideFailure('guide_presentation_pending', 'The requested presentation has not been applied; show it, retry it or explicitly skip this step')
     }
-    outcome = step.completion.kind === 'condition' ? 'satisfied' : step.completion.kind === 'presentation' ? 'presented' : 'acknowledged'
+    outcome = step.completion.kind === 'condition' ? 'satisfied' : step.completion.kind === 'presentation' ? 'presented' : step.completion.kind === 'prompt-response' ? 'responded' : 'acknowledged'
   }
   const index = guide.steps.findIndex(candidate => candidate.id === step.id)
   const nextIndex = step.next === undefined ? index + 1 : guide.steps.findIndex(candidate => candidate.id === step.next)
   const next = guide.steps.slice(nextIndex).find(candidate => eligible(candidate, input.roleIds))
+  const { prompt: _prompt, ...withoutPrompt } = base
   return guideAttemptSchema.parse({
-    ...base, status: next === undefined ? 'completed' : 'active', stepId: next?.id ?? attempt.stepId,
+    ...withoutPrompt, status: next === undefined ? 'completed' : 'active', stepId: next?.id ?? attempt.stepId,
     stepAttemptId: next === undefined ? attempt.stepAttemptId : crypto.randomUUID(), receipts: [],
     completed: [...attempt.completed, { stepId: step.id, outcome, at: input.at,
-      ...(action === 'next' && step.completion.kind === 'condition' ? { evidence: input.evidence } : {}) }],
+      ...(action === 'next' && step.completion.kind === 'condition' ? { evidence: input.evidence } : {}),
+      ...(action === 'next' && step.completion.kind === 'prompt-response' ? { promptEvidence: input.promptEvidence } : {}) }],
   })
 }

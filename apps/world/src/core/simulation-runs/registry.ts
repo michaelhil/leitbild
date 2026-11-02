@@ -46,6 +46,7 @@ import { createKeyedOperations } from '../storage/keyed-operations.ts'
 import { readGuideAttempt, type GuideFile } from '../guides/store.ts'
 import { guideAttemptIdSchema, guideAttemptSchema } from '../guides/attempt.ts'
 import { createPresentationDelivery, type PresentationDelivery } from '../guides/presentation.ts'
+import type { GuidePromptEvidenceReader } from '../guides/prompt-evidence.ts'
 import { writeAtomic } from '../storage/atomic-write.ts'
 
 const maxRestoredEventHistoryBytes = 8 * 1024 * 1024
@@ -143,6 +144,7 @@ export interface SimulationRunRegistry {
   /** Participant progress is read by opaque attempt identity, never broadcast with the Run snapshot. */
   readonly guideFile: (id: SimulationRunId, attemptId: string) => GuideFile
   readonly presentation: PresentationDelivery
+  readonly readGuidePromptEvidence: GuidePromptEvidenceReader
   readonly get: (id: SimulationRunId) => SimulationRunRuntime | undefined
   readonly list: () => ReadonlyArray<SimulationRunRuntime>
   readonly listKnown: () => Promise<ReadonlyArray<SimulationRunSummary>>
@@ -192,6 +194,7 @@ export const createSimulationRunRegistry = (config: {
   readonly idleRuntimeCloseDelayMs?: number
   readonly idleRuntimeCloseTimer?: IdleRuntimeCloseTimer
   readonly procedureSourceService?: ProcedureSourceService
+  readonly readGuidePromptEvidence?: GuidePromptEvidenceReader
 }): SimulationRunRegistry => {
   const simulationRuns = new Map<SimulationRunId, SimulationRunRuntime>()
   /**
@@ -1338,6 +1341,7 @@ export const createSimulationRunRegistry = (config: {
       }
     },
     presentation,
+    readGuidePromptEvidence: config.readGuidePromptEvidence ?? (async () => { throw Object.assign(new Error('This World instance has no Agents evidence reader'), { domain: 'world-guidance', code: 'guide_prompt_evidence_unavailable', status: 503 }) }),
     guideFile: (id, rawAttemptId) => {
       const attemptId = guideAttemptIdSchema.parse(rawAttemptId)
       const directory = join(simulationRunRoot, id, 'guides')

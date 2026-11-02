@@ -27,6 +27,7 @@ const guideDescriptions: Record<keyof typeof guideInputs, { title: string; descr
   show: { title: 'Show the current guide step', description: 'A person explicitly resumes/takes over an attempt and requests fresh presentation of its current step. Reissues presentation only, never physical commands or sent prompts.', kind: 'command' },
   advance: { title: 'Advance, skip or pause a guide', description: 'A person changes its current attempt using its expected progress revision. Next checks authored evidence; Skip stays skipped. Pause/Stop affects guidance, never the shared clock.', kind: 'command' },
   receipt: { title: 'Retain a guide delivery result', description: 'The current participant document records one exact current-step presentation receipt. Old step/document receipts cannot complete a new step or establish a World outcome.', kind: 'command' },
+  prompt: { title: 'Link an actually submitted guide prompt', description: 'Record an actual human message hint for this step\'s offered prompt. World independently reads Agents\' Room-scoped published evidence; a draft insertion or browser claim cannot establish an Assistant answer.', kind: 'command' },
 }
 
 export const guidanceCapabilities = (): ReadonlyArray<CapabilityRegistration<SimulationRunRegistry, Response>> => {

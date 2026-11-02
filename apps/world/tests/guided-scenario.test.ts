@@ -10,14 +10,15 @@ import { guideDefinitionSchema } from '../src/core/guides/model.ts'
 import { guideReadingSchema } from '../src/core/guides/wire.ts'
 import { createTestPackRuntimeAdapters, createTestScenarioRuntimeResolver, testScenarioAuthoring } from './helpers.ts'
 import { testScenarioDefinitions } from './fixtures/scenarios.ts'
+import type { GuidePromptEvidenceReader } from '../src/core/guides/prompt-evidence.ts'
 
 const cleanup: Array<() => Promise<void>> = []
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close() })
 
-const setup = async () => {
+const setup = async (readGuidePromptEvidence?: GuidePromptEvidenceReader) => {
   const dataDir = await mkdtemp(join(tmpdir(), 'world-guides-'))
   const workspaces = createWorldWorkspaceRuntimeRegistry({ dataDir, moduleState: createWorldModuleState({ dataDir }),
-    scenarioRuntimeResolver: createTestScenarioRuntimeResolver(), ...testScenarioAuthoring(), runtimeAdapters: createTestPackRuntimeAdapters() })
+    scenarioRuntimeResolver: createTestScenarioRuntimeResolver(), ...testScenarioAuthoring(), runtimeAdapters: createTestPackRuntimeAdapters(), ...(readGuidePromptEvidence === undefined ? {} : { readGuidePromptEvidence }) })
   cleanup.push(async () => { await workspaces.shutdown(); await rm(dataDir, { recursive: true, force: true }) })
   const workspaceId = newWorkspaceId()
   const request = new Request(`http://world.test/internal/workspaces/${workspaceId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workspaceId }) })
@@ -97,6 +98,46 @@ test('published guide operations persist honest learning evidence, restore it, a
   const late = await call('guide.receipt', { attemptId: first.attemptId, stepAttemptId: first.stepAttemptId, effectId: effect.id, recipient,
     receipt: { requestId: effect.requestId, documentId: recipient.documentId, status: 'applied', at: new Date().toISOString() } })
   expect(late.status).toBe(409)
+})
+
+test('a draft receipt cannot stand in for owner-verified submission and completed Assistant response', async () => {
+  let mode: 'wrong-source' | 'error' | 'chat' = 'wrong-source'
+  let expectedSource = '', expectedExecution = ''
+  const { registry, workspaces, workspaceId, source } = await setup(async input => ({
+    requestId: input.requestId, messageId: input.messageId, room: input.room, found: true,
+    submission: { messageId: input.messageId, senderId: 'real-human', at: Date.now(), source: { requestId: input.requestId, subject: input.subject, sourceId: mode === 'wrong-source' ? 'another-guide' : expectedSource, sourceExecutionId: expectedExecution } },
+    responses: [{ messageId: 'actual-ai-answer', senderId: 'analyst', at: Date.now(), kind: mode === 'chat' ? 'chat' : 'error', turnId: 'actual-turn', executionStatus: 'completed', finishedAt: Date.now() }],
+  }))
+  const promptSource = { ...source, id: 'prompt-guide', guide: guideDefinitionSchema.parse({ id: 'ask', title: 'Ask for a report', steps: [{ id: 'ask', title: 'Ask', instruction: 'Edit and send this prompt yourself. Skip if no provider is available.', effects: [{ id: 'prompt', target: { kind: 'composer' }, action: { kind: 'draft', text: 'Report on the current unit' } }], completion: { kind: 'prompt-response', effectId: 'prompt' } }] }) }
+  await registry.createScenario(promptSource)
+  const runtime = await registry.create({ scenarioId: promptSource.id })
+  const resource = { workspaceId, moduleId: 'world', type: 'world.simulation-run', id: runtime.id }
+  const call = (operation: string, input: unknown) => invoke(workspaces, workspaceId, `world.simulation-run.${operation}`, input, { resource })
+  let recipient = presentationRecipientSchema.parse((await call('presentation.register', { clientId: 'screen', documentId: 'doc' })).body.result)
+  let reading = guideReadingSchema.parse((await call('guide.start', { recipient })).body.result)
+  expectedSource = reading.attemptId!; expectedExecution = reading.stepAttemptId!
+  const effect = reading.step!.effects[0]!
+  reading = guideReadingSchema.parse((await call('guide.receipt', { attemptId: reading.attemptId, stepAttemptId: reading.stepAttemptId, effectId: 'prompt', recipient, receipt: { requestId: effect.requestId, documentId: recipient.documentId, status: 'applied', at: new Date().toISOString() } })).body.result)
+  const advance = () => call('guide.advance', { attemptId: reading.attemptId, expectedRevision: reading.revision, recipient, action: 'next' })
+  expect((await advance()).body.error.code).toBe('guide_prompt_pending')
+  const hint = { attemptId: reading.attemptId, stepAttemptId: reading.stepAttemptId, effectId: 'prompt', recipient, requestId: effect.requestId, messageId: 'actual-human-message', room: { workspaceId, moduleId: 'agents', type: 'agents.room', id: 'run-assistant' } }
+  reading = guideReadingSchema.parse((await call('guide.prompt', hint)).body.result)
+  expect(reading.prompt?.status).toBe('unavailable')
+  expect((await advance()).status).toBe(409)
+  const revision = reading.revision
+  expect((await call('guide.prompt', hint)).body.result.revision).toBe(revision)
+  mode = 'error'
+  expect((await call('guide.read', { attemptId: reading.attemptId, recipient })).body.result.prompt.status).toBe('pending')
+  expect((await advance()).status).toBe(409)
+  // Refresh takes over presentation only; the actual submitted-message link survives and keeps its original cause.
+  recipient = presentationRecipientSchema.parse((await call('presentation.register', { clientId: 'screen', documentId: 'new-doc' })).body.result)
+  reading = guideReadingSchema.parse((await call('guide.show', { attemptId: reading.attemptId, recipient, takeover: true })).body.result)
+  mode = 'chat'
+  reading = guideReadingSchema.parse((await advance()).body.result)
+  expect(reading.status).toBe('completed')
+  expect(reading.completed?.[0]?.outcome).toBe('responded')
+  expect(reading.completed?.[0]?.promptEvidence?.responses[0]?.messageId).toBe('actual-ai-answer')
+  expect((await call('guide.prompt', hint)).status).toBe(409)
 })
 
 test('AI reads omit future guide source and ordinary updates preserve hidden human-authored material', async () => {

@@ -4,6 +4,7 @@ import {
   presentationActionSchema, presentationRecipientSchema, presentationReceiptSchema, presentationTargetSchema,
   workspaceResourceReferenceSchema, type PresentationRecipient, type PresentationTarget,
   moduleIdSchema,
+  type PresentationPromptEvidence,
 } from '@leitbild/contracts'
 import type { SimulationRunRegistry } from '../simulation-runs/registry.ts'
 import type { SimulationRunId } from '../model/ids.ts'
@@ -11,7 +12,7 @@ import { objectIdSchema } from '../model/ids.ts'
 import type { Actor } from '../simulation-runs/actors.ts'
 import { createGuideAttempt, currentGuideStep, advanceGuideAttempt } from './store.ts'
 import { guideAttemptIdSchema, type GuideAttempt } from './attempt.ts'
-import { guideFailure } from './errors.ts'
+import { guideFailure, isGuidanceFailure } from './errors.ts'
 import { evaluateGuideCondition } from './conditions.ts'
 import type { GuideTarget, GuideStep } from './model.ts'
 import { refObjectId } from '../model/alerts.ts'
@@ -27,6 +28,7 @@ export const presentationInputs = {
   request: z.object({
     recipient: presentationRecipientSchema.optional(), requestId: identity, target: presentationTargetSchema,
     action: presentationActionSchema, purpose: z.string().min(1).max(500), executionId: identity.optional(),
+    initiatingRoom: workspaceResourceReferenceSchema.optional(),
   }).strict(),
   result: z.object({ recipient: presentationRecipientSchema, requestId: identity }).strict(),
   cancel: z.object({ recipient: presentationRecipientSchema, requestId: identity }).strict(),
@@ -38,6 +40,7 @@ export const guideInputs = {
   show: z.object({ attemptId: guideAttemptIdSchema, recipient: presentationRecipientSchema, takeover: z.boolean().default(false) }).strict(),
   advance: z.object({ attemptId: guideAttemptIdSchema, recipient: presentationRecipientSchema, expectedRevision: z.number().int().nonnegative(), action: z.enum(['next', 'skip', 'pause', 'resume', 'stop']), takeover: z.boolean().default(false) }).strict(),
   receipt: z.object({ attemptId: guideAttemptIdSchema, stepAttemptId: z.string().uuid(), effectId: identity, recipient: presentationRecipientSchema, receipt: presentationReceiptSchema }).strict(),
+  prompt: z.object({ attemptId: guideAttemptIdSchema, stepAttemptId: z.string().uuid(), effectId: identity, recipient: presentationRecipientSchema, room: workspaceResourceReferenceSchema, requestId: identity, messageId: identity }).strict(),
 }
 
 export interface GuidanceCall { readonly registry: SimulationRunRegistry; readonly runId: SimulationRunId; readonly actor: Actor }
@@ -114,6 +117,7 @@ export const runPresentationOperation = async (kind: keyof typeof presentationIn
   }
   if (kind === 'request') {
     const input = presentationInputs.request.parse(raw)
+    if (input.initiatingRoom !== undefined && (input.initiatingRoom.workspaceId !== call.registry.workspaceId || input.initiatingRoom.moduleId !== 'agents' || input.initiatingRoom.type !== 'agents.room')) throw guideFailure('presentation_scope_mismatch', 'The initiating Room belongs to this Workspace\'s Agents Module', 403)
     if (input.action.kind === 'clear') throw guideFailure('presentation_use_cancel', 'Cancel the original request to clear only its owned cues', 400)
     if (input.recipient === undefined) throw guideFailure('no_recipient', 'This turn has no current browser receiver; offer an attributed suggestion for a person to open')
     const recipient = recipientOf(call, input.recipient)
@@ -125,7 +129,7 @@ export const runPresentationOperation = async (kind: keyof typeof presentationIn
       if (declaration === undefined || 'refused' in declaration || !declaration.elements.some(element => element.id === input.target.part)) throw guideFailure('presentation_target_unavailable', 'This target is not available to the caller', 403)
     }
     const request = delivery.request({ id: input.requestId, recipient,
-      source: { moduleId: worldModuleId, kind: call.actor.role === 'ai_agent' ? 'agent' : 'person', id: call.actor.id, label: call.actor.displayName ?? call.actor.label, ...(input.executionId === undefined ? {} : { executionId: input.executionId }) },
+      source: { moduleId: worldModuleId, kind: call.actor.role === 'ai_agent' ? 'agent' : 'person', id: call.actor.id, label: call.actor.displayName ?? call.actor.label, ...(input.executionId === undefined ? {} : { executionId: input.executionId }), ...(input.initiatingRoom === undefined ? {} : { initiatingRoom: input.initiatingRoom }) },
       target: input.target, action: input.action, purpose: input.purpose, mode: 'suggest', allowed,
     })
     return { requestId: request.id, status: 'pending', expiresAt: request.expiresAt }
@@ -157,15 +161,36 @@ const requireGuide = async (call: GuidanceCall) => {
   return { guide: scenario.guide, startsAt: scenario.world.startsAt }
 }
 
+const readPrompt = async (call: GuidanceCall, attempt: GuideAttempt): Promise<{ status: 'pending' | 'responded' | 'unavailable'; reason: string; evidence?: PresentationPromptEvidence }> => {
+  const hint = attempt.prompt
+  if (hint === undefined) return { status: 'pending', reason: 'Insert or edit the offered prompt, then send it yourself. If no provider is configured, skip this optional task.' }
+  let evidence: PresentationPromptEvidence
+  try { evidence = await call.registry.readGuidePromptEvidence({ ...hint, subject: subjectOf(call), actor: call.actor }) }
+  catch (error) {
+    if (!isGuidanceFailure(error) || error.code !== 'guide_prompt_evidence_unavailable') throw error
+    return { status: 'unavailable', reason: error.message }
+  }
+  const source = evidence.submission?.source, subject = subjectOf(call)
+  if (!evidence.found || evidence.requestId !== hint.requestId || evidence.messageId !== hint.messageId
+    || evidence.room.id !== hint.room.id || evidence.room.workspaceId !== subject.workspaceId
+    || source === undefined || source.sourceId !== attempt.id || source.sourceExecutionId !== hint.stepAttemptId
+    || !sameSubject(call, source.subject)) return { status: 'unavailable', reason: 'Agents did not establish a matching human submission for this guide prompt' }
+  return evidence.responses.some(response => response.kind === 'chat' && response.executionStatus === 'completed')
+    ? { status: 'responded', reason: 'A real Assistant response completed for the actual human message. Its presence does not establish answer quality or a World outcome.', evidence }
+    : { status: 'pending', reason: 'The human message is linked; no completed Assistant response is established yet. Retry, or skip if the provider is unavailable.', evidence }
+}
+
 const guideView = async (call: GuidanceCall, attempt: GuideAttempt, recipient?: PresentationRecipient, present = false): Promise<unknown> => {
   const { guide, startsAt } = await requireGuide(call)
   const step = currentGuideStep(guide, attempt, call.actor.roleIds ?? [])
   const runtime = await call.registry.load(call.runId)
+  if (recipient !== undefined) call.registry.presentation.assertGuide(attempt.id, ownReceiver(call, recipient))
   const canInspect = (id: string) => runtime.inspectionPolicy(call.actor).canInspect(id)
   const references = step.effects.flatMap(effect => effect.target.kind === 'object' ? [effect.target.objectId] : [])
   if (step.completion.kind === 'condition' && step.completion.condition.kind !== 'clock') references.push(step.completion.condition.kind === 'object-status' ? step.completion.condition.objectId : refObjectId(step.completion.condition.ref))
   if (references.some(id => !canInspect(id))) throw guideFailure('guide_step_unavailable', 'This guide step is not available in the current inspection picture', 403)
   const condition = step.completion.kind !== 'condition' ? undefined : await evaluateGuideCondition({ condition: step.completion.condition, runtime, actor: call.actor, startsAt, canInspect: id => runtime.inspectionPolicy(call.actor).canInspect(id) })
+  const prompt = step.completion.kind === 'prompt-response' ? await readPrompt(call, attempt) : undefined
   const effects: Array<GuideStep['effects'][number] & { requestId?: string; delivery?: string; reason?: string }> = []
   if (present && recipient !== undefined && attempt.status === 'active') {
     call.registry.presentation.assertGuide(attempt.id, ownReceiver(call, recipient))
@@ -194,7 +219,7 @@ const guideView = async (call: GuidanceCall, attempt: GuideAttempt, recipient?: 
     // No future instructions, trigger metadata, hidden step count, or another learner's progress.
     step: { id: step.id, title: step.title, instruction: step.instruction, ...(step.help === undefined ? {} : { help: step.help }), completion: step.completion.kind, effects },
     completed: attempt.completed.map(entry => entry.evidence?.ref !== undefined && !canInspect(refObjectId(entry.evidence.ref)) ? { stepId: entry.stepId, outcome: entry.outcome, at: entry.at } : entry),
-    receipts: attempt.receipts, ...(condition === undefined ? {} : { condition }),
+    receipts: attempt.receipts, ...(condition === undefined ? {} : { condition }), ...(prompt === undefined ? {} : { prompt }),
   }
 }
 
@@ -245,13 +270,32 @@ export const runGuideOperation = async (kind: keyof typeof guideInputs, raw: unk
     const step = currentGuideStep(guide, current, call.actor.roleIds ?? [])
     const evidence = input.action !== 'next' || step.completion.kind !== 'condition' ? undefined
       : await evaluateGuideCondition({ condition: step.completion.condition, runtime, actor: call.actor, startsAt, canInspect: id => runtime.inspectionPolicy(call.actor).canInspect(id) })
+    const prompt = input.action === 'next' && step.completion.kind === 'prompt-response' ? await readPrompt(call, current) : undefined
+    ownReceiver(call, recipient)
+    call.registry.presentation.assertGuide(current.id, recipient)
     const next = await file.change(attempt => {
       if (attempt === null) throw guideFailure('guide_attempt_unavailable', 'This guide attempt was removed', 404)
-      const next = advanceGuideAttempt({ guide, attempt, expectedRevision: input.expectedRevision, roleIds: call.actor.roleIds ?? [], action: input.action, at: new Date().toISOString(), ...(evidence === undefined ? {} : { evidence }) })
+      const next = advanceGuideAttempt({ guide, attempt, expectedRevision: input.expectedRevision, roleIds: call.actor.roleIds ?? [], action: input.action, at: new Date().toISOString(), ...(evidence === undefined ? {} : { evidence }), ...(prompt?.status === 'responded' ? { promptEvidence: prompt.evidence! } : {}) })
       return { next, result: next }
     })
     if (input.action === 'pause' || input.action === 'stop') call.registry.presentation.cancelGuide(input.attemptId)
     return guideView(call, next, recipient, true)
+  }
+  if (kind === 'prompt') {
+    const input = guideInputs.prompt.parse(raw), recipient = ownReceiver(call, input.recipient)
+    call.registry.presentation.assertGuide(input.attemptId, recipient)
+    const next = await call.registry.guideFile(call.runId, input.attemptId).change(attempt => {
+      if (attempt === null || attempt.status !== 'active' || attempt.stepAttemptId !== input.stepAttemptId) throw guideFailure('guide_prompt_stale', 'This prompt belongs to an earlier guide step')
+      const step = currentGuideStep(guide, attempt, call.actor.roleIds ?? [])
+      if (step.completion.kind !== 'prompt-response' || step.completion.effectId !== input.effectId
+        || input.requestId !== effectRequestId(attempt, input.effectId, recipient) || input.room.workspaceId !== call.registry.workspaceId
+        || input.room.moduleId !== 'agents' || input.room.type !== 'agents.room') throw guideFailure('guide_prompt_stale', 'The submitted prompt does not match this guide step')
+      const prompt = { effectId: input.effectId, requestId: input.requestId, messageId: input.messageId, room: input.room, stepAttemptId: input.stepAttemptId }
+      if (attempt.prompt !== undefined && JSON.stringify(attempt.prompt) === JSON.stringify(prompt)) return { next: attempt, result: attempt }
+      const next = { ...attempt, revision: attempt.revision + 1, updatedAt: new Date().toISOString(), prompt }
+      return { next, result: next }
+    })
+    return guideView(call, next, recipient)
   }
   const input = guideInputs.receipt.parse(raw), recipient = ownReceiver(call, input.recipient)
   call.registry.presentation.assertGuide(input.attemptId, recipient)

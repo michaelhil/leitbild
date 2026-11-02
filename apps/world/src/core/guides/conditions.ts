@@ -39,7 +39,7 @@ export const evaluateGuideCondition = async (input: {
   const read = await port.read({ refs: [condition.ref] })
   if (read.refused.length > 0) return { ...base, status: 'refused', reason: 'The deciding observation was refused' }
   const observation = read.observations.find(observation => observation.ref === condition.ref)
-  if (!observation || typeof observation.value !== 'number') return { ...base, status: 'unknown', reason: 'The deciding numeric observation is unavailable' }
+  if (!observation || typeof observation.value !== typeof condition.value || typeof observation.value !== 'number' && typeof observation.value !== 'boolean' && typeof observation.value !== 'string') return { ...base, status: 'unknown', reason: 'The deciding observation is unavailable or has a different value type' }
   const evidence = { at: observation.at, clock: observation.clock, sequence: snapshot.seq, ref: condition.ref, value: observation.value, unit: condition.unit }
   const now = observation.clock === 'wall' ? wallNow() : Date.parse(runtime.snapshot().clock?.currentTime ?? at)
   const age = now - Date.parse(observation.at)
@@ -47,8 +47,8 @@ export const evaluateGuideCondition = async (input: {
   if (observation.quality !== 'good' || age < 0) return { ...evidence, status: 'unknown', reason: 'Observation quality/time does not establish this condition' }
   if (!input.canInspect(objectId)) return { ...base, status: 'refused', reason: 'Access to the deciding evidence changed while it was acquired' }
   const value = observation.value, expected = condition.value
-  const met = condition.operator === 'eq' ? value === expected : condition.operator === 'lt' ? value < expected
-    : condition.operator === 'lte' ? value <= expected : condition.operator === 'gt' ? value > expected : value >= expected
+  const met = condition.operator === 'eq' ? value === expected : typeof value === 'number' && typeof expected === 'number' && (condition.operator === 'lt' ? value < expected
+    : condition.operator === 'lte' ? value <= expected : condition.operator === 'gt' ? value > expected : value >= expected)
   return { ...evidence, status: met ? 'satisfied' : 'contradicted', reason: met ? 'The acquired observation satisfies the stated comparison' : 'The acquired observation contradicts the stated comparison' }
   } catch (error) {
     if (!isQueryReadRefusal(error)) throw error

@@ -1,4 +1,5 @@
 import { createWorldApplicationAssembly } from './app-assembly.ts'
+import { createGuidePromptEvidenceReader } from './core/guides/prompt-evidence.ts'
 import { createServer } from './core/api/server.ts'
 import { scenarioAuthoringCatalogFor } from './core/scenarios/authoring.ts'
 import { compileScenarioDefinition } from './core/scenarios/compiler.ts'
@@ -23,6 +24,7 @@ if (workspaceHostUrl === undefined) {
 const moduleState = createWorldModuleState({ dataDir })
 const workspaces = createWorldWorkspaceRuntimeRegistry({
   dataDir,
+  readGuidePromptEvidence: createGuidePromptEvidenceReader(workspaceHostUrl),
   moduleState,
   scenarioRuntimeResolver,
   scenarioDefinitions: builtinScenarioDefinitions,
