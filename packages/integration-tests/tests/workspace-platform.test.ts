@@ -697,14 +697,25 @@ describe('Workspace Host with real Modules', () => {
     expect(started.status).toBe(200)
     const runId = (await started.json() as { result: { id: string } }).result.id
     expect(await activityOf(workspace.id)).toEqual([
+      { moduleId: 'world', key: 'simulations', label: '1 simulation', count: 1, active: false },
+    ])
+
+    // Guided exercises wait for an explicit shared-clock start.
+    const resources = workspaceResourceCatalogSchema.parse(await (await fetch(`${baseUrl}/api/workspaces/${workspace.id}/resources?moduleId=world`)).json())
+    const run = resources.resources.find(resource => resource.ref.type === 'world.simulation-run' && resource.ref.id === runId)!
+    expect(run.capabilityIds.map(String)).toContain('world.simulation-run.execution.set')
+    const playing = await fetch(`${baseUrl}/api/workspaces/${workspace.id}/capabilities/world.simulation-run.execution.set/invoke`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ resource: run.ref, input: { playback: 'playing' }, actor: { kind: 'human' } }),
+    })
+    expect(playing.status).toBe(200)
+    expect(await activityOf(workspace.id)).toEqual([
       { moduleId: 'world', key: 'simulations-running', label: '1 simulation running', count: 1, active: true },
       { moduleId: 'world', key: 'simulations', label: '1 simulation', count: 1, active: false },
     ])
 
     // Paused through the Run's own published Capability, it is stored but no longer running.
-    const resources = workspaceResourceCatalogSchema.parse(await (await fetch(`${baseUrl}/api/workspaces/${workspace.id}/resources?moduleId=world`)).json())
-    const run = resources.resources.find(resource => resource.ref.type === 'world.simulation-run' && resource.ref.id === runId)!
-    expect(run.capabilityIds.map(String)).toContain('world.simulation-run.execution.set')
     const paused = await fetch(`${baseUrl}/api/workspaces/${workspace.id}/capabilities/world.simulation-run.execution.set/invoke`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
