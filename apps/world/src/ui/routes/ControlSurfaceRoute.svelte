@@ -1181,10 +1181,12 @@
     displayWindowRequestSequence += 1
     displayWindowRequest = { sequence: displayWindowRequestSequence, target, focus }
     displayWindowOpen = true
+    const requestedSequence = displayWindowRequestSequence, requestedEpoch = perspectiveEpoch
     void (async (): Promise<void> => {
       try {
         await loadDisplayWindow()
       } catch (err) {
+        if (requestedEpoch !== perspectiveEpoch || displayWindowRequest?.sequence !== requestedSequence) return
         closeDisplayWindow()
         status = `Could not open the process display window: ${err instanceof Error ? err.message : String(err)}`
       }
@@ -1355,12 +1357,12 @@
   ))
 
   const openProcedureInputRequest = async (request: ProcedureInputView): Promise<boolean> => {
-    const id = simulationRunId, session = procedureSession, object = objectById.get(request.objectId)
+    const id = simulationRunId, epoch = perspectiveEpoch, session = procedureSession, object = objectById.get(request.objectId)
     const scope = object ? procedureScopeForObject(object) : null
     if (!id || !session || !object || !scope) { status = 'The unit for this procedure request is no longer available.'; return false }
     const current = () => {
       const unit = objectById.get(request.objectId), latestScope = unit ? procedureScopeForObject(unit) : null
-      return simulationRunId === id && procedureSession === session && latestScope ? resolveProcedureInputFocus(session.snapshot().runs, request.focus, latestScope, id) : null
+      return simulationRunId === id && perspectiveEpoch === epoch && procedureSession === session && latestScope ? resolveProcedureInputFocus(session.snapshot().runs, request.focus, latestScope, id) : null
     }
     const unavailable = (): false => { status = 'This procedure input request is no longer current. No step was opened.'; return false }
     if (!current()) return unavailable()
@@ -1372,7 +1374,7 @@
       openProcedureWindowAt(object, run.procedureId, request.focus)
       return true
     } catch (error) {
-      status = `Could not open the requested procedure step: ${error instanceof Error ? error.message : String(error)}`
+      if (perspectiveEpoch === epoch) status = `Could not open the requested procedure step: ${error instanceof Error ? error.message : String(error)}`
       return false
     }
   }
@@ -1775,7 +1777,21 @@
 
   /** A fresh snapshot of a new perspective replaces every Run-scoped store; the map view and panel sizes stay. */
   const adoptPerspective = (perspective: RealtimePerspective): void => {
-    if (heldRoleIds !== null && !sameRoleSet(heldRoleIds, perspective.roleIds)) guidanceSession?.forgetAttemptReference()
+    if (heldRoleIds !== null && !sameRoleSet(heldRoleIds, perspective.roleIds)) {
+      guidanceSession?.forgetAttemptReference()
+      // A same-id public object does not make an earlier role's rich inspection safe to retain.
+      displayWindowReturnFocus = null
+      closeDisplayWindow()
+      conversationDisplays = []
+      droneControlWindows = []
+      droneProfileEditorWindows = []
+      procedureSystemWindows = []
+      procedureSession?.dispose()
+      procedureRuns = []
+      procedureRunDocuments = new Map()
+      aiStartedProcedureRunIds.clear()
+      status = 'The exercise role changed. Private windows were closed.'
+    }
     const declaration = runRolesOf(perspective.compiledScenario)
     const perspectiveContext: PackTargetContext = declaration !== null
       ? { objects: perspective.snapshot.objects, viewer: viewerForRoleSet(declaration, perspective.roleIds) }
@@ -2223,6 +2239,7 @@
 
   $effect(() => {
     const id = simulationRunId
+    void perspectiveEpoch
     if (!id) return
     const next = createProcedureSession({
       simulationRunId: id,
