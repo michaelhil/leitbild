@@ -79,7 +79,7 @@ export const provideOpening = (config: {
   const stopSelect = host.subscribeSelect(select => {
     clearInterval(selecting)
     const until = Date.now() + SELECT_WAIT_MS
-    const ask = (): void => { if (requestElement({ ...select, how: 'select' }) || Date.now() > until) clearInterval(selecting) }
+    const ask = (): void => { const applied = requestElement({ objectId: select.objectId, elementId: select.elementId, how: 'select' }); if (applied || Date.now() > until) { clearInterval(selecting); select.acknowledge?.(applied) } }
     selecting = setInterval(ask, 250)
     ask()
   })

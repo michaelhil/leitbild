@@ -99,6 +99,8 @@
     readonly onObjectSeen: (object: OperationalObject) => void
     readonly onMapReady: () => void
     readonly onMapView?: (view: MapView) => void
+    readonly onFocusResult?: (revision: number, status: 'applied' | 'superseded') => void
+    readonly onCameraGesture?: () => void
     readonly onMapError: (message: string) => void
     readonly onMapDiagnostic?: (snapshot: MapRuntimeDiagnosticsSnapshot) => void
     readonly simulationRunId?: string | null
@@ -183,6 +185,8 @@
     onObjectSeen,
     onMapReady,
     onMapView = () => {},
+    onFocusResult = () => {},
+    onCameraGesture = () => {},
     onMapError,
     onMapDiagnostic = () => undefined,
     simulationRunId = null,
@@ -227,6 +231,7 @@
   const packFeatureLayer = createPackFeatureLayer(selection => { clickHandled = true; featureSelection = selection }, message => onMapError(message))
   const syncPackFeatures = () => { if (runtime) packFeatureLayer.update(runtime.map, cachedPackMapFeatures, visibleFamilies()) }
   let appliedTheme: ThemeMode | null = null
+  let pendingFocus: number | null = null
   let appliedCameraKey: string | null = null
   /** The camera still shows the Starting View: neither the operator nor a focus request has moved it. */
   let startingCamera = true
@@ -454,6 +459,10 @@
     const request = focusRequest
     const current = runtime?.map
     if (!request || !current || request.revision === appliedFocusRevision) return
+    if (pendingFocus !== null) onFocusResult(pendingFocus, 'superseded')
+    pendingFocus = null
+    current.stop()
+    pendingFocus = request.revision
     appliedFocusRevision = request.revision
     startingCamera = false
     const duration = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 650
@@ -632,13 +641,14 @@
           })
         },
         onMoveStart: event => {
-          if (event.originalEvent !== undefined) startingCamera = false
+          if (event.originalEvent !== undefined) { startingCamera = false; onCameraGesture(); if (pendingFocus !== null) { onFocusResult(pendingFocus, 'superseded'); pendingFocus = null } }
           stackChooser.hide()
           packOverlayController.setCameraGestureActive(true)
           packOverlayController.abort('map camera moved before pack map-area query completed')
           popupController.hide()
         },
         onMoveEnd: () => {
+          if (pendingFocus !== null) { onFocusResult(pendingFocus, 'applied'); pendingFocus = null }
           if (runtime) onMapView(readMapView(runtime.map))
           packOverlayController.setCameraGestureActive(false)
           void packOverlayController.refresh()

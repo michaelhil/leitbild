@@ -72,7 +72,7 @@ export const createViewHost = (ports: ViewHostPorts) => {
   const subscribers = new Set<(presentation: DisplayPresentation) => void>()
   const onWindow = new Set<() => void>()
   const openingSubscribers = new Set<(opening: DisplayOpening | null) => void>()
-  const selectSubscribers = new Set<(select: { readonly objectId: string; readonly elementId: string }) => void>()
+  const selectSubscribers = new Set<(select: { readonly objectId: string; readonly elementId: string; readonly acknowledge?: (applied: boolean) => void }) => void>()
   const post = (message: DisplayFrameMessage | EmbeddedViewOpenMessage | EmbeddedViewHeightMessage): void => ports.parent?.postMessage(message, ports.origin)
   const opening = (): DisplayOpening | null => presentedByWindow ? 'window' : relayed ? 'relay' : null
   const openingChanged = (): void => {
@@ -97,7 +97,7 @@ export const createViewHost = (ports: ViewHostPorts) => {
     if (type === 'world:display-select') {
       const select = parseDisplayFrameSelect(message.data)
       if (select === null) { ports.refused(message.data); return }
-      for (const subscriber of [...selectSubscribers]) subscriber({ objectId: select.objectId, elementId: select.elementId })
+      for (const subscriber of [...selectSubscribers]) subscriber({ objectId: select.objectId, elementId: select.elementId, ...(select.requestId === undefined ? {} : { acknowledge: (applied: boolean) => post({ type: 'world:display-selected', requestId: select.requestId!, objectId: select.objectId, elementId: select.elementId, applied }) }) })
       return
     }
     if (type !== 'world:display-frame') return
@@ -130,7 +130,7 @@ export const createViewHost = (ports: ViewHostPorts) => {
     },
     current: (): DisplayPresentation => presentation,
     /** Hears each element the window asks the display to select. Returns the stop. */
-    subscribeSelect: (subscriber: (select: { readonly objectId: string; readonly elementId: string }) => void): (() => void) => {
+    subscribeSelect: (subscriber: (select: { readonly objectId: string; readonly elementId: string; readonly acknowledge?: (applied: boolean) => void }) => void): (() => void) => {
       selectSubscribers.add(subscriber)
       return () => { selectSubscribers.delete(subscriber) }
     },

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { tick } from 'svelte'
+  import { tick, type Snippet } from 'svelte'
   import type { RunViewChoice } from './run-view-actions.ts'
   import type { RunViewPreferences } from './run-view-preferences.ts'
   import type { MapCover } from './surface-panel-contract.ts'
@@ -22,8 +22,12 @@
     ready: boolean
     /** The World shell keeps active guidance reachable over a live display. */
     raised: boolean
+    guideContent?: Snippet
+    hasGuide?: boolean
+    guideNotice?: boolean
+    guideOpenKey?: string | null
   }
-  let { camera, layers, panels, act, toggle, reset, resetDisabledReason, alarms, alarmsVisible, showAlarms, guidance, setGuidance, clear, ready, raised }: Props = $props()
+  let { camera, layers, panels, act, toggle, reset, resetDisabledReason, alarms, alarmsVisible, showAlarms, guidance, setGuidance, clear, ready, raised, guideContent, hasGuide = false, guideNotice = false, guideOpenKey = null }: Props = $props()
   let root = $state<HTMLDivElement | null>(null)
   let viewTrigger = $state<HTMLButtonElement | null>(null)
   let guideTrigger = $state<HTMLButtonElement | null>(null)
@@ -32,12 +36,16 @@
   let group = $state<'camera' | 'layers' | 'panels'>('camera')
   let geometry = $state({ left: 12, right: 12, bottom: 52, height: 300 })
   let remeasure: (() => void) | null = null
+  let openedGuideKey: string | null = null
+  $effect(() => { if (guideOpenKey && guideOpenKey !== openedGuideKey) { openedGuideKey = guideOpenKey; void disclose('guide') } })
 
   const close = (returnFocus = false): void => {
     const trigger = open === 'guide' ? guideTrigger : viewTrigger
     open = null
     if (returnFocus) trigger?.focus({ preventScroll: true })
   }
+  export const dismiss = (): void => close(true)
+  export const reveal = async (which: 'view' | 'guide'): Promise<void> => { if (open !== which) await disclose(which) }
   const disclose = async (which: 'view' | 'guide'): Promise<void> => {
     if (open === which) { close(true); return }
     open = which
@@ -144,17 +152,21 @@
   {:else if open === 'guide'}
     <section id="run-guide-options" class="view-sheet guide-options" aria-label="Guidance options" bind:this={sheet}>
       <header><strong>Guide</strong><button class="close" type="button" aria-label="Close guidance options" onclick={() => close(true)}>×</button></header>
+      {#if guidance.available}
+      <h4>Timed scenario cards</h4>
       {#if guidance.instruction}<div class="current-instruction"><strong>{guidance.instruction.title}</strong><p>{guidance.instruction.message}</p></div>{/if}
-      <p>{guidance.available ? guidance.unread ? 'A new scenario instruction is available.' : 'Show the current scenario instruction again.' : 'This Run has no current scenario instruction.'}</p>
-      <div class="camera-actions"><button type="button" disabled={!guidance.available} onclick={() => { setGuidance('running'); close(true) }}>Resume guidance</button><button type="button" disabled={guidance.mode === 'paused'} onclick={() => { setGuidance('paused'); close(true) }}>Pause guidance</button><button type="button" disabled={guidance.mode === 'stopped'} onclick={() => { setGuidance('stopped'); close(true) }}>Stop guidance</button></div>
+      <p>{guidance.available ? guidance.unread ? 'A new scenario instruction is available.' : 'Show the current scenario instruction again.' : hasGuide ? 'An authored guide is available below.' : 'This Run has no current scenario instruction.'}</p>
+      <div class="camera-actions"><button type="button" disabled={!guidance.available} onclick={() => { setGuidance('running'); close(true) }}>{hasGuide ? 'Show current card' : 'Resume guidance'}</button><button type="button" disabled={guidance.mode === 'paused'} onclick={() => { setGuidance('paused'); close(true) }}>{hasGuide ? 'Pause timed cards' : 'Pause guidance'}</button><button type="button" disabled={guidance.mode === 'stopped'} onclick={() => { setGuidance('stopped'); close(true) }}>{hasGuide ? 'Stop timed cards' : 'Stop guidance'}</button></div>
       <p class="help">Pause and Stop hide instructions on this screen. The simulation keeps its current playback. Resume remains available.</p>
+      {:else if !hasGuide}<p>This Run has no current scenario instruction.</p>{/if}
+      {#if guideContent}{@render guideContent()}{/if}
     </section>
   {/if}
   <nav class="view-launchers" aria-label="World Run presentation">
     {#if raised}<span class="world-context" title="These controls belong to the World map. The display window has its own controls.">World</span>{/if}
-    <button bind:this={viewTrigger} type="button" aria-label="View" aria-expanded={open === 'view'} aria-controls={open === 'view' ? 'run-view-sheet' : undefined} onclick={() => void disclose('view')}>View <span aria-hidden="true">{open === 'view' ? '⌄' : '⌃'}</span></button>
-    <button type="button" aria-label={`${alarms} unacknowledged ${alarms === 1 ? 'alarm' : 'alarms'}; ${alarmsVisible ? 'hide' : 'show'} alarm strip`} aria-pressed={alarmsVisible} onclick={() => showAlarms(!alarmsVisible)}>Alarms <strong>{alarms}</strong></button>
-    <button id="run-guide-trigger" bind:this={guideTrigger} type="button" aria-label={`Guide${guidance.unread ? ': new instruction' : ''}${guidance.mode !== 'running' ? `; ${guidance.mode}` : ''}`} aria-expanded={open === 'guide'} aria-controls={open === 'guide' ? 'run-guide-options' : undefined} onclick={() => void disclose('guide')}>Guide{#if guidance.unread}<span class="new">New</span>{:else if guidance.mode !== 'running'}<small>{guidance.mode}</small>{/if}</button>
+    <button id="run-view-trigger" bind:this={viewTrigger} type="button" aria-label="View" aria-expanded={open === 'view'} aria-controls={open === 'view' ? 'run-view-sheet' : undefined} onclick={() => void disclose('view')}>View <span aria-hidden="true">{open === 'view' ? '⌄' : '⌃'}</span></button>
+    <button id="run-alarms-trigger" type="button" aria-label={`${alarms} unacknowledged ${alarms === 1 ? 'alarm' : 'alarms'}; ${alarmsVisible ? 'hide' : 'show'} alarm strip`} aria-pressed={alarmsVisible} onclick={() => showAlarms(!alarmsVisible)}>Alarms <strong>{alarms}</strong></button>
+    <button id="run-guide-trigger" bind:this={guideTrigger} type="button" aria-label={`Guide${guidance.unread || guideNotice ? ': new instruction' : ''}${guidance.mode !== 'running' ? `; ${guidance.mode}` : ''}`} aria-expanded={open === 'guide'} aria-controls={open === 'guide' ? 'run-guide-options' : undefined} onclick={() => void disclose('guide')}>Guide{#if guidance.unread || guideNotice}<span class="new">New</span>{:else if guidance.mode !== 'running'}<small>{guidance.mode}</small>{/if}</button>
   </nav>
 </div>
 

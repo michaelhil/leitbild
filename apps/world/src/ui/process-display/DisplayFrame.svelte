@@ -51,6 +51,7 @@
     readonly onFill: (key: string, fill: boolean) => void
     /** The frame's page listens (or loaded): it can be shown without leaving a blank. */
     readonly onUp: (key: string) => void
+    readonly onSelected?: (key: string, requestId: string, applied: boolean) => void
     /** The frame went away; its extent and readiness go with it. */
     readonly onDown: (key: string) => void
     readonly onExtent: (key: string, extent: DisplayExtent) => void
@@ -64,7 +65,7 @@
     readonly onMap: (bounds: DisplayFrameMap['bounds']) => void
   }
 
-  let { entryKey, envelope, title, shown, zoom, kind, extent, back, focus, select, handles, fill, onFill, onUp, onDown, onExtent, onZoomRequest, onProblem, onOpen, onBack, onMap }: Props = $props()
+  let { entryKey, envelope, title, shown, zoom, kind, extent, back, focus, select, handles, fill, onFill, onUp, onSelected = () => {}, onDown, onExtent, onZoomRequest, onProblem, onOpen, onBack, onMap }: Props = $props()
 
   // A frame's page is fixed for its life; a new envelope is a new entry.
   const source = untrack(() => `${embeddedViewPath(envelope)}${embeddedViewFragment(envelope)}`)
@@ -142,7 +143,7 @@
   $effect(() => {
     if (select === null || select.sequence === selected || !shown || !ready || !frame?.contentWindow) return
     selected = select.sequence
-    const message: DisplayFrameSelect = { type: 'world:display-select', objectId: select.objectId, elementId: select.elementId }
+    const message: DisplayFrameSelect = { type: 'world:display-select', requestId: String(select.sequence), objectId: select.objectId, elementId: select.elementId }
     frame.contentWindow.postMessage(message, location.origin)
   })
 
@@ -161,6 +162,10 @@
       if (message === null) {
         const type = typeof event.data === 'object' && event.data !== null ? (event.data as { readonly type?: unknown }).type : undefined
         if (typeof type === 'string' && type.startsWith('world:display')) onProblem(key, `The display sent an unreadable ${type} message.`)
+        return
+      }
+      if (message.type === 'world:display-selected') {
+        if (select && String(select.sequence) === message.requestId && select.objectId === message.objectId && select.elementId === message.elementId) onSelected(key, message.requestId, message.applied)
         return
       }
       if (message.type === 'world:display-frame-ready') {

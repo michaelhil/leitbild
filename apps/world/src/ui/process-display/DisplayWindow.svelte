@@ -125,6 +125,7 @@
     readonly openAssistant: (() => void) | null
     /** Frames the page's live map (a vignette's "Show on map"). */
     readonly focusMap: (target: MapFocusTarget) => void
+    readonly onPresentation?: (sequence: number, applied: boolean, reason?: string) => void
     readonly close: () => void
   }
 
@@ -142,6 +143,7 @@
     controller,
     openAssistant,
     focusMap,
+    onPresentation = () => {},
     close,
   }: Props = $props()
 
@@ -429,6 +431,18 @@
   let frameFocus = $state.raw<{ readonly key: string; readonly sequence: number } | null>(null)
   let frameSelect = $state.raw<{ readonly key: string; readonly sequence: number; readonly objectId: string; readonly elementId: string } | null>(null)
   let selectSequence = 0
+  let presentedRequest = 0
+  const selectionResult = (key: string, id: string, applied: boolean): void => {
+    if (!frameSelect || frameSelect.key !== key || String(frameSelect.sequence) !== id || current?.key !== key) return
+    presentedRequest = request.sequence
+    onPresentation(request.sequence, applied, applied ? undefined : 'The display could not draw that element')
+  }
+  $effect(() => {
+    if (request.sequence === presentedRequest || !current || !framesUp.has(current.key) || !extents.has(current.key)) return
+    if (request.target.kind === 'dashboard' ? current.source !== 'dashboard' : request.target.kind !== 'asset' || request.target.select !== undefined || current.source !== 'asset' || current.asset.objectId !== request.target.objectId) return
+    presentedRequest = request.sequence
+    onPresentation(request.sequence, true)
+  })
   const focusShown = (): void => {
     if (current !== null) frameFocus = { key: current.key, sequence: (frameFocus?.sequence ?? 0) + 1 }
   }
@@ -1057,6 +1071,7 @@
           kind={extents.get(mounted.entry.key)?.kind ?? mounted.entry.kind}
           extent={extents.get(mounted.entry.key) ?? null}
           onUp={frameUp}
+          onSelected={selectionResult}
           onDown={frameDown}
           onExtent={receiveExtent}
           onZoomRequest={receiveZoomRequest}
