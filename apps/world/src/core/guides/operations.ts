@@ -250,11 +250,11 @@ export const runGuideOperation = async (kind: keyof typeof guideInputs, raw: unk
   }
   if (kind === 'show') {
     const input = guideInputs.show.parse(raw), recipient = ownReceiver(call, input.recipient)
-    call.registry.presentation.claimGuide(input.attemptId, recipient, input.takeover)
     const attempt = await call.registry.guideFile(call.runId, input.attemptId).change(current => {
       if (current === null) throw guideFailure('guide_attempt_unavailable', 'This guide attempt is not available', 404)
       currentGuideStep(guide, current, call.actor.roleIds ?? [])
       if (current.status === 'stopped' || current.status === 'completed') throw guideFailure('guide_finished', 'Start a new eligible guide attempt')
+      call.registry.presentation.claimGuide(input.attemptId, recipient, input.takeover)
       // Explicit Show is a new delivery attempt; it never replays a physical command or rewrites completed learning.
       const next = { ...current, revision: current.revision + 1, stepAttemptId: crypto.randomUUID(), receipts: [], updatedAt: new Date().toISOString(), status: 'active' as const }
       return { next, result: next }
@@ -263,8 +263,7 @@ export const runGuideOperation = async (kind: keyof typeof guideInputs, raw: unk
   }
   if (kind === 'advance') {
     const input = guideInputs.advance.parse(raw), recipient = ownReceiver(call, input.recipient)
-    if (input.action === 'resume') call.registry.presentation.claimGuide(input.attemptId, recipient, input.takeover)
-    else call.registry.presentation.assertGuide(input.attemptId, recipient)
+    if (input.action !== 'resume') call.registry.presentation.assertGuide(input.attemptId, recipient)
     const file = call.registry.guideFile(call.runId, input.attemptId), current = await file.read()
     if (current === null) throw guideFailure('guide_attempt_unavailable', 'This guide attempt is not available in this Run', 404)
     const step = currentGuideStep(guide, current, call.actor.roleIds ?? [])
@@ -272,10 +271,11 @@ export const runGuideOperation = async (kind: keyof typeof guideInputs, raw: unk
       : await evaluateGuideCondition({ condition: step.completion.condition, runtime, actor: call.actor, startsAt, canInspect: id => runtime.inspectionPolicy(call.actor).canInspect(id) })
     const prompt = input.action === 'next' && step.completion.kind === 'prompt-response' ? await readPrompt(call, current) : undefined
     ownReceiver(call, recipient)
-    call.registry.presentation.assertGuide(current.id, recipient)
+    if (input.action !== 'resume') call.registry.presentation.assertGuide(current.id, recipient)
     const next = await file.change(attempt => {
       if (attempt === null) throw guideFailure('guide_attempt_unavailable', 'This guide attempt was removed', 404)
       const next = advanceGuideAttempt({ guide, attempt, expectedRevision: input.expectedRevision, roleIds: call.actor.roleIds ?? [], action: input.action, at: new Date().toISOString(), ...(evidence === undefined ? {} : { evidence }), ...(prompt?.status === 'responded' ? { promptEvidence: prompt.evidence! } : {}) })
+      if (input.action === 'resume') call.registry.presentation.claimGuide(input.attemptId, recipient, input.takeover)
       return { next, result: next }
     })
     if (input.action === 'pause' || input.action === 'stop') call.registry.presentation.cancelGuide(input.attemptId)
