@@ -1,11 +1,13 @@
 <script lang="ts">
   import { onDestroy, untrack, tick } from 'svelte'
-  import type { WorkspaceResourceReference, WorkspaceSubjectReference } from '@leitbild/contracts'
+  import type { ModuleResourceDescriptor, WorkspaceResourceReference, WorkspaceSubjectReference } from '@leitbild/contracts'
   import { createViewRelay, type WorldPane } from './view-relay.ts'
   import { createRunAssistantBridge } from './run-assistant-bridge.ts'
   import { createPresentationBridge } from './presentation-bridge.ts'
   import type { RunAssistantResolution } from './run-assistant-opening.ts'
   import { workspaceSubjectFocusMessage } from './workspace-focus.ts'
+  import { createPerspectiveAssistantDelivery, type PerspectiveDeliveryScreen } from './perspective-assistant-delivery.ts'
+  import { request, jsonRequest } from './api.ts'
 
   interface Props {
     readonly workspaceId: string
@@ -20,6 +22,9 @@
     readonly onOpenRun: (runId: string) => void
     /** Whether the shown Run offers its Assistant, as the Host's own launcher does; its World page may then offer it too. */
     readonly runAssistantAvailable: boolean
+    readonly restrictedRun: boolean
+    readonly perspectiveAssistantAvailable: boolean
+    readonly agentTemplates: ReadonlyArray<ModuleResourceDescriptor>
     /** Shows the shown Run's Assistant room, creating it where none serves the Run; it never hides the room. */
     readonly onOpenRunAssistant: (signal?: AbortSignal, assertDelivery?: () => void) => Promise<RunAssistantResolution>
     readonly onError: (message: string) => void
@@ -35,7 +40,7 @@
 
   let {
     workspaceId, worldRunId, focusedSubjects, agentsRoomId, agentsVisible, onShowAgents, runRefusal, onOpenRun,
-    runAssistantAvailable, onOpenRunAssistant, onError, worldPane = $bindable(null),
+    runAssistantAvailable, restrictedRun, perspectiveAssistantAvailable, agentTemplates, onOpenRunAssistant, onError, worldPane = $bindable(null),
   }: Props = $props()
   let splitPercent = $state(initialSplit)
   let lastOpenSplit = $state(initialSplit)
@@ -45,25 +50,32 @@
   let dragWidth = 1
   let agentsFrame = $state<HTMLIFrameElement | null>(null)
   let worldFrame = $state<HTMLIFrameElement | null>(null)
+  let privateScreen = $state<PerspectiveDeliveryScreen>({ offer: null, choosing: false, busy: false, lease: null, frameUrl: null, ready: false, problem: null })
+  let selectedTemplate = $state('')
+  const shownRoomId = $derived(restrictedRun ? privateScreen.lease?.room.id ?? null : agentsRoomId)
+  const shownAgents = $derived(restrictedRun ? privateScreen.lease !== null : agentsVisible)
+  const agentsUrl = $derived(restrictedRun ? privateScreen.frameUrl : agentsRoomId === null ? null : `/workspaces/${encodeURIComponent(workspaceId)}/agents?room=${encodeURIComponent(agentsRoomId)}&view=focused`)
   // The process display window asked for the whole area and the chat was collapsed for it.
   let windowMaximised = $state(false)
 
   const publishResourceFocus = (): void => {
     agentsFrame?.contentWindow?.postMessage(
-      workspaceSubjectFocusMessage(focusedSubjects),
+      workspaceSubjectFocusMessage(restrictedRun ? privateScreen.lease ? [privateScreen.lease.perspective] : [] : focusedSubjects),
       location.origin,
     )
   }
 
   $effect(() => {
     focusedSubjects
+    privateScreen.lease
+    restrictedRun
     publishResourceFocus()
   })
 
   const gridColumns = $derived(
     worldRunId === null
       ? 'minmax(0, 1fr)'
-      : agentsRoomId === null || !agentsVisible
+      : shownRoomId === null || !shownAgents
         ? 'minmax(0, 1fr)'
     : collapsedPane === 'world'
       ? '0 0 minmax(0, 1fr)'
@@ -118,7 +130,7 @@
   // restoring undoes only that collapse.
   const maximiseWorld = (maximised: boolean): void => {
     if (maximised) {
-      if (worldRunId === null || agentsRoomId === null || !agentsVisible || collapsedPane !== null) return
+      if (worldRunId === null || shownRoomId === null || !shownAgents || collapsedPane !== null) return
       collapsedPane = 'agents'
       windowMaximised = true
       return
@@ -159,12 +171,33 @@
     reportError: message => onError(message),
   })
 
-  const roomReference = (): WorkspaceResourceReference | null => agentsRoomId === null ? null : { workspaceId, moduleId: 'agents', type: 'agents.room', id: agentsRoomId } as WorkspaceResourceReference
+  const privateDelivery = createPerspectiveAssistantDelivery({
+    workspaceId: () => workspaceId, available: () => perspectiveAssistantAvailable,
+    uuid: () => crypto.randomUUID(), now: () => Date.now(),
+    timer: (ms, action) => { const timer = setTimeout(action, ms); return () => clearTimeout(timer) },
+    request: (path, body, signal) => request(path, { ...jsonRequest('POST', body), signal }),
+    postWorld: message => worldFrame?.contentWindow?.postMessage(message, location.origin),
+    postAgents: message => agentsFrame?.contentWindow?.postMessage(message, location.origin),
+    changed: screen => {
+      privateScreen = screen
+      if (restrictedRun) presentation.fromWorld({ type: 'leitbild:presentation-offer', recipient: screen.offer?.recipient ?? null })
+    },
+  })
+  export const requestPerspectiveAssistant = (): void => privateDelivery.request()
+  onDestroy(() => privateDelivery.dispose())
+
+  const roomReference = (): WorkspaceResourceReference | null => restrictedRun ? privateScreen.lease?.room ?? null : agentsRoomId === null ? null : { workspaceId, moduleId: 'agents', type: 'agents.room', id: agentsRoomId } as WorkspaceResourceReference
   const presentation = createPresentationBridge({
-    subject: () => worldRunId === null ? null : { workspaceId, moduleId: 'world', type: 'world.simulation-run', id: worldRunId } as WorkspaceResourceReference,
+    subject: () => restrictedRun ? privateScreen.offer?.recipient?.subject ?? null : worldRunId === null ? null : { workspaceId, moduleId: 'world', type: 'world.simulation-run', id: worldRunId } as WorkspaceResourceReference,
     room: roomReference,
     openAssistant: async (signal, assertDelivery) => {
       assertDelivery()
+      if (restrictedRun) {
+        const room = privateScreen.lease?.room
+        if (!room) throw new Error('The current scoped Assistant view is unavailable')
+        if (collapsedPane === 'agents') restoreSplit()
+        return room
+      }
       if (!runAssistantAvailable) throw new Error('This Run offers no Assistant')
       const expectedRun = worldRunId, expectedWorkspace = workspaceId
       const resolved = await onOpenRunAssistant(signal, assertDelivery)
@@ -188,16 +221,29 @@
   // The World document that last said it listens; a frame that loads another
   // document (a reload, or the World start page) no longer listens.
   let listeningWorldDocument: Document | null = null
+  let listeningAgentsDocument: Document | null = null
 
   // Only the two frames' own documents take part in the window's protocol.
   const receiveViewMessage = (event: MessageEvent): void => {
     if (event.origin !== location.origin || event.source === null) return
-    if (event.source === agentsFrame?.contentWindow) { relay.fromAgents(event.data); presentation.fromAgents(event.data) }
+    if (event.source === agentsFrame?.contentWindow) {
+      if (restrictedRun) {
+        if (privateDelivery.fromAgents(event.data)) {
+          listeningAgentsDocument = agentsFrame?.contentDocument ?? null
+          publishResourceFocus()
+          presentation.fromAgents({ type: 'leitbild:presentation-ready', room: privateScreen.lease?.room })
+        } else if (privateScreen.ready) presentation.fromAgents(event.data)
+      } else { relay.fromAgents(event.data); presentation.fromAgents(event.data) }
+    }
     else if (event.source === worldFrame?.contentWindow) {
       if ((event.data as { readonly type?: unknown } | null)?.type === 'leitbild:view-window-ready') listeningWorldDocument = worldFrame?.contentDocument ?? null
       relay.fromWorld(event.data)
       assistantBridge.fromWorld(event.data)
-      presentation.fromWorld(event.data)
+      if ((event.data as { readonly type?: unknown } | null)?.type === 'leitbild:view-window-ready') privateDelivery.availabilityChanged()
+      privateDelivery.fromWorld(event.data)
+      // The canonical human Guide receiver coexists with the private receiver.
+      // Private offers are delivered above; canonical offers cannot replace them.
+      if (!restrictedRun || (event.data as { readonly type?: unknown } | null)?.type !== 'leitbild:presentation-offer') presentation.fromWorld(event.data)
     }
   }
 
@@ -209,6 +255,7 @@
     relay.worldFrameUnloaded()
     assistantBridge.worldFrameUnloaded()
     presentation.worldUnloaded()
+    privateDelivery.worldUnloaded()
   }
 
   // A new Run gives the World frame a new document (or none), which listens only
@@ -220,6 +267,7 @@
       relay.worldFrameUnloaded()
       assistantBridge.worldFrameUnloaded()
     presentation.worldUnloaded()
+      privateDelivery.worldUnloaded()
     })
   })
 
@@ -228,14 +276,25 @@
     runAssistantAvailable
     untrack(() => assistantBridge.availabilityChanged())
   })
+  $effect(() => {
+    perspectiveAssistantAvailable
+    untrack(() => privateDelivery.availabilityChanged())
+  })
 
   // Another Room or a closed chat ends the Agents document that listed the displays.
   $effect(() => {
-    agentsRoomId
-    untrack(() => { relay.agentsFrameUnloaded(); presentation.agentsUnloaded() })
+    shownRoomId
+    untrack(() => { listeningAgentsDocument = null; relay.agentsFrameUnloaded(); presentation.agentsUnloaded() })
   })
 
   const agentsFrameLoaded = (): void => {
+    if (restrictedRun) {
+      if (listeningAgentsDocument !== agentsFrame?.contentDocument) {
+        privateDelivery.agentsLoaded()
+        presentation.agentsLoaded()
+      }
+      return
+    }
     publishResourceFocus()
     relay.agentsFrameLoaded()
     presentation.agentsLoaded()
@@ -281,7 +340,7 @@
     ></iframe>
   </section>{/if}
 
-  {#if worldRunId !== null && agentsRoomId !== null && agentsVisible}<button
+  {#if worldRunId !== null && shownRoomId !== null && shownAgents}<button
     class="split-handle"
     class:hidden={collapsedPane !== null}
     type="button"
@@ -293,12 +352,12 @@
     onkeydown={resizeWithKeyboard}
   ><span></span></button>{/if}
 
-  {#if agentsRoomId !== null}<section class="module-pane agents-pane" class:hidden-pane={!agentsVisible} class:collapsed={collapsedPane === 'agents'} aria-label="Agents room">
+  {#if shownRoomId !== null && agentsUrl !== null}<section class="module-pane agents-pane" class:hidden-pane={!shownAgents} class:collapsed={collapsedPane === 'agents'} aria-label={restrictedRun ? 'Scoped Assistant conversation' : 'Agents room'}>
     <iframe
       bind:this={agentsFrame}
       class="module-frame active"
-      src={`/workspaces/${encodeURIComponent(workspaceId)}/agents?room=${encodeURIComponent(agentsRoomId)}&view=focused`}
-      title="Agents room"
+      src={agentsUrl}
+      title={restrictedRun ? 'Scoped Assistant conversation' : 'Agents room'}
       onload={agentsFrameLoaded}
     ></iframe>
   </section>{/if}
@@ -308,7 +367,32 @@
   {:else if collapsedPane === 'agents'}
     <button class="reopen-handle right" type="button" aria-label="Reopen Agents" onclick={restoreSplit}>‹</button>
   {/if}
-  {#if worldRunId !== null && agentsRoomId !== null && !agentsVisible}
+  {#if worldRunId !== null && shownRoomId !== null && !shownAgents}
     <button class="reopen-handle right" type="button" aria-label="Show Agents" onclick={onShowAgents}>‹</button>
   {/if}
+  {#if perspectiveAssistantAvailable && (privateScreen.choosing || privateScreen.problem)}
+    <aside class="perspective-setup" aria-label="Set up scoped Assistant">
+      <strong>Assistant for {privateScreen.offer?.roleLabels.join(' + ') || 'these roles'}</strong>
+      {#if privateScreen.choosing}
+        <p>Choose a template for a fresh, private conversation. Its configuration is captured for this scope.</p>
+        {#if agentTemplates.length > 0}
+          <label>Agent template <select bind:value={selectedTemplate} disabled={privateScreen.busy}>
+            <option value="" disabled>Choose a template…</option>
+            {#each agentTemplates as template (template.ref.id)}<option value={template.ref.id}>{template.title}</option>{/each}
+          </select></label>
+          <button disabled={!selectedTemplate || privateScreen.busy} onclick={() => void privateDelivery.choose(selectedTemplate)}>{privateScreen.busy ? 'Connecting…' : 'Use template'}</button>
+        {:else}<p>Create an Agent profile in Agents, then return here to choose it.</p>{/if}
+      {/if}
+      {#if privateScreen.problem}<p role="alert">{privateScreen.problem}</p>
+        {#if !privateScreen.choosing}<button onclick={() => privateDelivery.retryView()}>Retry current view</button>{/if}
+      {/if}
+    </aside>
+  {/if}
 </section>
+
+<style>
+  .perspective-setup { position: absolute; z-index: 8; inset: auto 1rem 1rem auto; max-width: 28rem; padding: 1rem; border: 1px solid #566273; border-radius: .6rem; color: #f1f5f9; background: #182330f5; box-shadow: 0 5px 24px #0005; }
+  .perspective-setup p { margin: .5rem 0; }
+  .perspective-setup label { display: grid; gap: .35rem; margin: .75rem 0; }
+  .perspective-setup select, .perspective-setup button { padding: .45rem .65rem; }
+</style>
