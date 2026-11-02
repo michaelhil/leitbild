@@ -155,8 +155,9 @@ export const runPresentationOperation = async (kind: keyof typeof presentationIn
   return delivery.result(recipientOf(call, input.recipient), input.requestId)
 }
 
-const requireGuide = async (call: GuidanceCall) => {
-  const scenario = await call.registry.compiledScenarioForRun(call.runId)
+// Every guidance entry loads the Run first. Reuse its validated immutable pin rather than rereading megabytes on each browser poll.
+const requireGuide = (call: GuidanceCall) => {
+  const scenario = call.registry.loadedCompiledScenario(call.runId)
   if (scenario.guide === undefined) throw guideFailure('guide_not_available', 'No guide is pinned in this Run', 404)
   return { guide: scenario.guide, startsAt: scenario.world.startsAt }
 }

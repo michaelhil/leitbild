@@ -83,7 +83,7 @@ test('a guide read cannot return a now-hidden authored target after its asynchro
       read: async () => { allowed = false; return { observations: [{ ref: 'unit:truck-1#pressure', at: observedAt, clock: 'simulation', quality: 'good', value: 5 }], refused: [], unknown: [], leads: [] } },
     }),
   } as unknown as SimulationRunRuntime
-  const readingRegistry = { ...registry, load: async () => readRuntime, compiledScenarioForRun: async () => ({ ...source, guide }),
+  const readingRegistry = { ...registry, load: async () => readRuntime, loadedCompiledScenario: () => ({ ...source, guide }),
     guideFile: () => ({ read: async () => attempt, change: () => { throw new Error('A read never writes') } }),
   } as unknown as SimulationRunRegistry
   await expect(runGuideOperation('read', { attemptId: attempt.id }, { ...blueCall, registry: readingRegistry })).rejects.toMatchObject({ code: 'guide_step_unavailable' })
