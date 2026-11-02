@@ -23,7 +23,7 @@ test('a refused Next preserves an offered prompt link; only successful progressi
       const requests = queued && !sent ? [{ id: 'request-prompt', recipient, source: { moduleId: 'world', kind: 'guide', id: attemptId, label: 'Guide', executionId: stepAttemptId }, target: { subject, type: 'world.composer', id: 'assistant' }, action: effect.action, purpose: 'Ask', mode: 'guide', createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 30_000).toISOString() }] : []
       if (requests.length) {
         sent = true
-        requests.push({ ...requests[0]!, id: 'analyst-draft', source: { moduleId: 'agents', kind: 'agent', id: 'analyst', label: 'Analyst', executionId: 'turn-a' }, mode: 'suggest' })
+        requests.push({ ...requests[0]!, id: 'analyst-draft', source: { moduleId: 'agents', kind: 'agent', id: crypto.randomUUID(), label: 'Analyst', executionId: crypto.randomUUID() }, mode: 'suggest' })
       }
       return Response.json({ result: { recipient, requests } })
     }

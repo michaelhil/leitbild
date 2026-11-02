@@ -7,7 +7,7 @@ import { actorIdSchema, geoPointFromLonLat, objectContextSchema } from '../src/c
 import { compileScenarioDefinition } from '../src/core/scenarios/compiler.ts'
 import { scenarioDefinitionSchema } from '../src/core/scenarios/definition.ts'
 import { createSimulationRunRegistry } from '../src/core/simulation-runs/registry.ts'
-import type { SimulationClockReader } from '../src/core/model/time.ts'
+import { isoTimestampSchema, type SimulationClockReader } from '../src/core/model/time.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { createTestPackRuntimeAdapters, createTestScenarioRuntimeResolver, testPacks, testScenarioAuthoring } from './helpers.ts'
 import { testScenarioDefinitions } from './fixtures/scenarios.ts'
@@ -68,7 +68,7 @@ test('five runtime Packs share one paused startup clock and retain static layout
     await Bun.sleep(40)
     await run.setClock({ paused: true })
     const frozen = run.snapshot().clock!.currentTime
-    expect(frozen).toBe(source.world.startsAt) // The pinned guide starts paused; wall time must not start the exercise.
+    expect(frozen).toBe(isoTimestampSchema.parse(source.world.startsAt)) // The pinned guide starts paused; wall time must not start the exercise.
     expect(clocks.every(clock => clock.read().currentTime === frozen && clock.read().paused)).toBe(true)
     expect(run.snapshot().objects).toHaveLength(15)
     const layoutObjects = run.snapshot().objects.filter(object => object.packId === 'physical-layout')
