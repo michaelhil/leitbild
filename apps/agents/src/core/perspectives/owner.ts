@@ -169,10 +169,16 @@ export const createPerspectiveRooms = (deps: PerspectiveRoomsDeps) => {
       return { kind: 'execution', roomId: admission.room.id, actualAgentId, runtimeGeneration: admission.runtimeGeneration,
         turnId, perspectiveId: admission.perspective.id, admissionGeneration: admission.admissionGeneration }
     },
-    prepare: (raw: unknown) => serial.run(async (): Promise<AgentsPerspectiveRoomAdmission> => {
+    prepare: async (raw: unknown): Promise<AgentsPerspectiveRoomAdmission> => {
       requireEnabled()
       const input = agentsPerspectiveRoomPrepareInputSchema.parse(raw)
       if (input.perspective.workspaceId !== deps.workspaceId) fail('perspective_workspace_mismatch', 'Perspective belongs to another Workspace')
+      // Remote verification never owns the local mutation chain: revoke must
+      // remain available while a peer is suspended. A keyed retry is resolved
+      // again inside the serialized admission below.
+      const existingBeforeRead = deps.rooms.listAllRooms().some(profile => profile.perspective?.requestId === input.requestId)
+      const world = existingBeforeRead ? undefined : await deps.readWorld(input.perspective)
+      return serial.run(async () => {
       const existing = deps.rooms.listAllRooms().find(profile => profile.perspective?.requestId === input.requestId)
       if (existing !== undefined) {
         const admission = existing.perspective!.admission
@@ -181,8 +187,7 @@ export const createPerspectiveRooms = (deps: PerspectiveRoomsDeps) => {
         await save(requireRoom(existing.id))
         return read(existing.id)
       }
-      const world = await deps.readWorld(input.perspective)
-      if (world.status !== 'pending' || world.admissionGeneration !== input.admissionGeneration || JSON.stringify(world.resource) !== JSON.stringify(input.perspective)) fail('perspective_not_pending', 'World Perspective is not the requested pending admission')
+      if (world === undefined || world.status !== 'pending' || world.admissionGeneration !== input.admissionGeneration || JSON.stringify(world.resource) !== JSON.stringify(input.perspective)) fail('perspective_not_pending', 'World Perspective is not the requested pending admission')
       const template = deps.team.getAgent(input.templateId), ai = template === undefined ? undefined : asAIAgent(template)
       if (ai === undefined) return fail('perspective_template_unavailable', 'Choose an existing public AI Agent template')
       const config = structuredClone(ai.getConfig())
@@ -232,19 +237,23 @@ export const createPerspectiveRooms = (deps: PerspectiveRoomsDeps) => {
         fail('perspective_preparation_outcome_unknown', 'Perspective preparation did not finish; read the accepted Room before retrying', { room: admission.room, cause: error instanceof Error && 'code' in error ? error.code : 'preparation_failed' })
       }
       return read(room.profile.id)
-    }),
-    bind: (roomId: string, expectedRevision: number) => serial.run(async () => {
+      })
+    },
+    bind: async (roomId: string, expectedRevision: number) => {
       requireEnabled()
+      const captured = current(roomId, expectedRevision).state.admission
+      if (captured.status !== 'prepared' || !live.has(captured.runtimeGeneration)) fail('perspective_room_not_prepared', 'Only the prepared live runtime can be bound')
+      const world = await deps.readWorld(captured.perspective)
+      return serial.run(async () => {
       const { room, state } = current(roomId, expectedRevision)
-      if (state.admission.status !== 'prepared' || !live.has(state.admission.runtimeGeneration)) fail('perspective_room_not_prepared', 'Only the prepared live runtime can be bound')
-      const world = await deps.readWorld(state.admission.perspective)
-      current(roomId, expectedRevision)
+      if (state.admission.status !== 'prepared' || !live.has(state.admission.runtimeGeneration) || !sameBinding(bindingOf(captured), bindingOf(state.admission))) fail('perspective_room_not_prepared', 'The captured prepared runtime is no longer current')
       if (world.status !== 'active' || world.binding === undefined || !sameBinding(bindingOf(state.admission), world.binding)) fail('perspective_world_not_bound', 'World has not activated this exact Room/runtime binding')
       room.setPerspectiveState({ ...state, admission: { ...state.admission, status: 'bound', revision: expectedRevision + 1, updatedAt: new Date().toISOString() } }, expectedRevision)
       room.setPaused(false)
       await save(room)
       return read(roomId)
-    }),
+      })
+    },
     revoke: (roomId: string, expectedRevision: number, reason: string) => serial.run(async () => {
       const { room, state } = current(roomId, expectedRevision)
       if (state.admission.status !== 'revoked') invalidate(room, reason)

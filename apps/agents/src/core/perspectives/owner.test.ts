@@ -217,3 +217,21 @@ test('a new closure with identical source text retires live authority, and uploa
     await expect(f.prepare()).rejects.toMatchObject({ code: 'perspective_tool_not_admitted' })
   } finally { await f.close() }
 })
+
+test('revoke completes while bind verifies its peer; stale continuation cannot reactivate the runtime', async () => {
+  const f = await fixture()
+  try {
+    const prepared = await f.prepare(), owner = f.runtime.perspectiveRooms!
+    f.worlds.set(prepared.perspective.id, perspectiveAdmissionSchema.parse({ ...f.worlds.get(prepared.perspective.id), status: 'active', revision: 1, binding: bindingOf(prepared) }))
+    const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>()
+    f.setRead(async id => { entered.resolve(); await release.promise; return structuredClone(f.worlds.get(id)!) })
+    const binding = owner.bind(prepared.room.id, prepared.revision)
+    await entered.promise
+    const revoked = await owner.revoke(prepared.room.id, prepared.revision, 'Role changed while bind awaited World')
+    expect(revoked.status).toBe('revoked')
+    release.resolve()
+    await expect(binding).rejects.toMatchObject({ code: 'perspective_room_revision_conflict' })
+    expect(owner.read(prepared.room.id)).toEqual(revoked)
+    expect(owner.isLocallyReady(prepared.room.id)).toBe(false)
+  } finally { await f.close() }
+})
