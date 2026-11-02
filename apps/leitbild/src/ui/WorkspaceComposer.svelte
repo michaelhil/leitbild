@@ -52,15 +52,19 @@
   let worldFrame = $state<HTMLIFrameElement | null>(null)
   let privateScreen = $state<PerspectiveDeliveryScreen>({ offer: null, choosing: false, busy: false, lease: null, frameUrl: null, ready: false, problem: null })
   let selectedTemplate = $state('')
-  const shownRoomId = $derived(restrictedRun ? privateScreen.lease?.room.id ?? null : agentsRoomId)
-  const shownAgents = $derived(restrictedRun ? privateScreen.lease !== null : agentsVisible)
-  const agentsUrl = $derived(restrictedRun ? privateScreen.frameUrl : agentsRoomId === null ? null : `/workspaces/${encodeURIComponent(workspaceId)}/agents?room=${encodeURIComponent(agentsRoomId)}&view=focused`)
+  let perspectiveRunId = $state<string | null>(null)
+  // A disabled pilot leaves the established shell unchanged. Once this Run
+  // enters scoped mode, transient discovery failure cannot expose its old public chat.
+  const perspectiveMode = $derived(restrictedRun && (perspectiveAssistantAvailable || worldRunId !== null && perspectiveRunId === worldRunId))
+  const shownRoomId = $derived(perspectiveMode ? privateScreen.lease?.room.id ?? null : agentsRoomId)
+  const shownAgents = $derived(perspectiveMode ? privateScreen.lease !== null : agentsVisible)
+  const agentsUrl = $derived(perspectiveMode ? privateScreen.frameUrl : agentsRoomId === null ? null : `/workspaces/${encodeURIComponent(workspaceId)}/agents?room=${encodeURIComponent(agentsRoomId)}&view=focused`)
   // The process display window asked for the whole area and the chat was collapsed for it.
   let windowMaximised = $state(false)
 
   const publishResourceFocus = (): void => {
     agentsFrame?.contentWindow?.postMessage(
-      workspaceSubjectFocusMessage(restrictedRun ? privateScreen.lease ? [privateScreen.lease.perspective] : [] : focusedSubjects),
+      workspaceSubjectFocusMessage(perspectiveMode ? privateScreen.lease ? [privateScreen.lease.perspective] : [] : focusedSubjects),
       location.origin,
     )
   }
@@ -68,7 +72,7 @@
   $effect(() => {
     focusedSubjects
     privateScreen.lease
-    restrictedRun
+    perspectiveMode
     publishResourceFocus()
   })
 
@@ -180,19 +184,19 @@
     postAgents: message => agentsFrame?.contentWindow?.postMessage(message, location.origin),
     changed: screen => {
       privateScreen = screen
-      if (restrictedRun) presentation.fromWorld({ type: 'leitbild:presentation-offer', recipient: screen.offer?.recipient ?? null })
+      if (perspectiveMode) presentation.fromWorld({ type: 'leitbild:presentation-offer', recipient: screen.offer?.recipient ?? null })
     },
   })
   export const requestPerspectiveAssistant = (): void => privateDelivery.request()
   onDestroy(() => privateDelivery.dispose())
 
-  const roomReference = (): WorkspaceResourceReference | null => restrictedRun ? privateScreen.lease?.room ?? null : agentsRoomId === null ? null : { workspaceId, moduleId: 'agents', type: 'agents.room', id: agentsRoomId } as WorkspaceResourceReference
+  const roomReference = (): WorkspaceResourceReference | null => perspectiveMode ? privateScreen.lease?.room ?? null : agentsRoomId === null ? null : { workspaceId, moduleId: 'agents', type: 'agents.room', id: agentsRoomId } as WorkspaceResourceReference
   const presentation = createPresentationBridge({
-    subject: () => restrictedRun ? privateScreen.offer?.recipient?.subject ?? null : worldRunId === null ? null : { workspaceId, moduleId: 'world', type: 'world.simulation-run', id: worldRunId } as WorkspaceResourceReference,
+    subject: () => perspectiveMode ? privateScreen.offer?.recipient?.subject ?? null : worldRunId === null ? null : { workspaceId, moduleId: 'world', type: 'world.simulation-run', id: worldRunId } as WorkspaceResourceReference,
     room: roomReference,
     openAssistant: async (signal, assertDelivery) => {
       assertDelivery()
-      if (restrictedRun) {
+      if (perspectiveMode) {
         const room = privateScreen.lease?.room
         if (!room) throw new Error('The current scoped Assistant view is unavailable')
         if (collapsedPane === 'agents') restoreSplit()
@@ -227,7 +231,7 @@
   const receiveViewMessage = (event: MessageEvent): void => {
     if (event.origin !== location.origin || event.source === null) return
     if (event.source === agentsFrame?.contentWindow) {
-      if (restrictedRun) {
+      if (perspectiveMode) {
         if (privateDelivery.fromAgents(event.data)) {
           listeningAgentsDocument = agentsFrame?.contentDocument ?? null
           publishResourceFocus()
@@ -243,7 +247,7 @@
       privateDelivery.fromWorld(event.data)
       // The canonical human Guide receiver coexists with the private receiver.
       // Private offers are delivered above; canonical offers cannot replace them.
-      if (!restrictedRun || (event.data as { readonly type?: unknown } | null)?.type !== 'leitbild:presentation-offer') presentation.fromWorld(event.data)
+      if (!perspectiveMode || (event.data as { readonly type?: unknown } | null)?.type !== 'leitbild:presentation-offer') presentation.fromWorld(event.data)
     }
   }
 
@@ -264,6 +268,7 @@
   $effect(() => {
     worldRunId
     untrack(() => {
+      perspectiveRunId = perspectiveAssistantAvailable ? worldRunId : null
       relay.worldFrameUnloaded()
       assistantBridge.worldFrameUnloaded()
     presentation.worldUnloaded()
@@ -278,7 +283,10 @@
   })
   $effect(() => {
     perspectiveAssistantAvailable
-    untrack(() => privateDelivery.availabilityChanged())
+    untrack(() => {
+      if (perspectiveAssistantAvailable) perspectiveRunId = worldRunId
+      privateDelivery.availabilityChanged()
+    })
   })
 
   // Another Room or a closed chat ends the Agents document that listed the displays.
@@ -288,7 +296,7 @@
   })
 
   const agentsFrameLoaded = (): void => {
-    if (restrictedRun) {
+    if (perspectiveMode) {
       if (listeningAgentsDocument !== agentsFrame?.contentDocument) {
         privateDelivery.agentsLoaded()
         presentation.agentsLoaded()
@@ -352,12 +360,12 @@
     onkeydown={resizeWithKeyboard}
   ><span></span></button>{/if}
 
-  {#if shownRoomId !== null && agentsUrl !== null}<section class="module-pane agents-pane" class:hidden-pane={!shownAgents} class:collapsed={collapsedPane === 'agents'} aria-label={restrictedRun ? 'Scoped Assistant conversation' : 'Agents room'}>
+  {#if shownRoomId !== null && agentsUrl !== null}<section class="module-pane agents-pane" class:hidden-pane={!shownAgents} class:collapsed={collapsedPane === 'agents'} aria-label={perspectiveMode ? 'Scoped Assistant conversation' : 'Agents room'}>
     <iframe
       bind:this={agentsFrame}
       class="module-frame active"
       src={agentsUrl}
-      title={restrictedRun ? 'Scoped Assistant conversation' : 'Agents room'}
+      title={perspectiveMode ? 'Scoped Assistant conversation' : 'Agents room'}
       onload={agentsFrameLoaded}
     ></iframe>
   </section>{/if}
