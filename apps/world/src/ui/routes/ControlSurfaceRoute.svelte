@@ -2270,8 +2270,8 @@
       {/if}
       <RunViewControls camera={viewCamera} layers={viewLayers} panels={viewPanels} act={actOnView} toggle={setViewChoice}
         reset={resetLocalView} resetDisabledReason={viewResetDisabledReason} alarms={viewAlarmCount} alarmsVisible={alarmStripVisible} showAlarms={visible => alarmStripVisible = visible}
-        guidance={{ available: Boolean(scenarioState?.guidance), visible: guidanceOverlayVisible, unread: guidanceUnread, mode: guidancePreferences.mode }} setGuidance={setGuidanceMode}
-        clear={mapCameraPadding} ready={mapReady} />
+        guidance={{ available: Boolean(scenarioState?.guidance), visible: guidanceOverlayVisible, unread: guidanceUnread, mode: guidancePreferences.mode, instruction: scenarioState?.guidance ?? null }} setGuidance={setGuidanceMode}
+        clear={mapCameraPadding} ready={mapReady} raised={displayWindowOpen && Boolean(scenarioState?.guidance) && guidancePreferences.mode !== 'stopped'} />
       <WorldStatusLine {clock} execution={executionState} feedback={commandFeedback.line} placementHint={placement.placementText()} />
       {#if runRoles && heldRoleIds}
         <RoleBar declaration={runRoles} held={heldRoleIds} switchingTo={pendingRoleIds} request={requestRoleChange} openDialog={() => { roleDialogOpen = true }} />
@@ -2299,7 +2299,7 @@
       bind:bottom={guidanceBottom}
       guidance={scenarioState.guidance}
       presented={markGuidancePresented}
-      close={() => { if (scenarioState?.guidance?.dismissible) guidancePreferences = { ...guidancePreferences, dismissedId: scenarioState.guidance.id } }}
+      close={() => { if (scenarioState?.guidance?.dismissible) { guidancePreferences = { ...guidancePreferences, dismissedId: scenarioState.guidance.id }; document.getElementById('run-guide-trigger')?.focus({ preventScroll: true }) } }}
     />
     {/key}
     {/if}

@@ -19,10 +19,10 @@
   }
 </script>
 
-<aside class="scenario-guidance" aria-live="polite" {@attach measure}>
+<aside class="scenario-guidance" data-world-disclosure aria-live="polite" {@attach measure}>
   <div>
     <strong class:update-title={guidance.tone === 'update'}>{guidance.title}</strong>
     <p>{guidance.message}</p>
   </div>
-  {#if guidance.dismissible}<button type="button" aria-label="Dismiss current guidance" onclick={close}>×</button>{/if}
+  {#if guidance.dismissible}<button type="button" aria-label="Dismiss current guidance" onkeydown={event => event.stopPropagation()} onclick={close}>×</button>{/if}
 </aside>
