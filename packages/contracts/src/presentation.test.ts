@@ -21,3 +21,18 @@ test('presentation publication names only a Resource command, distinct from read
   expect(moduleCapabilityDescriptorSchema.safeParse({ ...descriptor, kind: 'query' }).success).toBe(false)
   expect(moduleCapabilityDescriptorSchema.safeParse({ ...descriptor, scope: { kind: 'workspace' } }).success).toBe(false)
 })
+
+test('draft routing and evidence hints name one exact Agents Room without asserting an answer', async () => {
+  const { presentationDraftMessageSchema, presentationEvidenceMessageSchema, presentationPromptEvidenceSchema } = await import('./presentation.ts')
+  const room = { workspaceId: subject.workspaceId, moduleId: 'agents', type: 'agents.room', id: 'assistant-a' }
+  const draft = { ...request, target: { subject, type: 'world.composer', id: 'assistant' }, action: { kind: 'draft', text: 'sitrep unit 1' } }
+  expect(presentationDraftMessageSchema.safeParse({ type: 'leitbild:presentation-draft', request: draft }).success).toBe(false)
+  expect(presentationDraftMessageSchema.safeParse({ type: 'leitbild:presentation-draft', request: draft, room }).success).toBe(true)
+  expect(presentationDraftMessageSchema.safeParse({ type: 'leitbild:presentation-draft', request: draft, room: subject }).success).toBe(false)
+  const hint = { type: 'leitbild:presentation-evidence', recipient, room, requestId: request.id, messageId: 'actual-human-message' }
+  expect(presentationEvidenceMessageSchema.safeParse(hint).success).toBe(true)
+  expect(presentationEvidenceMessageSchema.safeParse({ ...hint, understood: true }).success).toBe(false)
+  const unavailable = { requestId: request.id, messageId: hint.messageId, room, found: false, responses: [] }
+  expect(presentationPromptEvidenceSchema.safeParse(unavailable).success).toBe(true)
+  expect(presentationPromptEvidenceSchema.safeParse({ ...unavailable, responses: [{ messageId: 'claimed', senderId: 'agent', at: 1, kind: 'chat', turnId: 'turn', executionStatus: 'completed' }] }).success).toBe(false)
+})
