@@ -588,6 +588,7 @@ export const spawnAIAgent = async (
       }
       return profiles
     },
+    ...(toolRegistry === undefined ? {} : { getUnavailableSelectedTools: (names: ReadonlyArray<string>) => names.filter(name => !toolRegistry.has(name)) }),
     getSkills: spawnOptions?.getSkills,
     ...(spawnOptions?.getActiveSkillsDeclarations ? { getActiveSkillsDeclarations: spawnOptions.getActiveSkillsDeclarations } : {}),
     getScriptContext: spawnOptions?.getScriptContext,

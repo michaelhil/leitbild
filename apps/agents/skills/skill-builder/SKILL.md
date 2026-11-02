@@ -15,7 +15,7 @@ description: Use when asked to create a new skill or capability, or when you nee
 
 - Name: lowercase-with-hyphens, descriptive
 - Body: numbered steps describing how to approach tasks, referencing bundled tools by name
-- Scope: list room names, or omit for global
+- Skill and tool source is deployment-owned. Room scope and Pack activation still govern availability; writing a Skill does not grant access.
 
 ## generate_tool_code prompt guidelines
 

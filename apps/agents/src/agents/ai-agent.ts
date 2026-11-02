@@ -97,6 +97,7 @@ export interface AIAgentOptions {
   // context section so an agent sees every peer in its room — not only those
   // whose messages it has already observed.
   readonly getRoomMembers?: (roomId: string) => ReadonlyArray<import('../core/types/messaging.ts').AgentProfile>
+  readonly getUnavailableSelectedTools?: (toolNames: ReadonlyArray<string>) => ReadonlyArray<string>
   readonly getSkills?: (skillNames: ReadonlyArray<string>, roomId: string) => string
   // Structured access to the same skill set getSkills() formats, so the
   // pre-LLM coherence check can compare declared tools against the actual
@@ -359,12 +360,14 @@ export const createAIAgent = (
     emit({ kind: 'context_ready', messages: contextResult.messages, model: effectiveModel,
       temperature: turnConfiguration().temperature, toolCount: effectiveToolDefs?.length ?? 0 })
     for (const warning of contextResult.warnings) emit({ kind: 'warning', message: warning })
+    for (const name of options?.getUnavailableSelectedTools?.(turnConfiguration().tools ?? []) ?? []) emit({ kind: 'warning', message: `Selected tool "${name}" is unavailable or retired; edit the Agent's tool selection.` })
     // Compare skill declarations with the exact Room tool surface, for every
     // turn origin. A mismatch is visible evidence, not a new permission gate.
-    if (getActiveSkillsDeclarations && effectiveToolDefs) {
-      const surfaceNames = new Set(effectiveToolDefs.map(definition => definition.function.name))
+    if (getActiveSkillsDeclarations) {
+      const surfaceNames = new Set((effectiveToolDefs ?? []).map(definition => definition.function.name))
       for (const skill of getActiveSkillsDeclarations(turnConfiguration().skills ?? [], roomId)) {
         if (skill.unavailable) emit({ kind: 'warning', message: skill.unavailable })
+        if (effectiveToolDefs === undefined) continue // Disabled tools do not invalidate documentary dependencies.
         const missing = skill.declaredTools.filter(tool => !surfaceNames.has(tool))
         if (missing.length > 0) emit({ kind: 'warning',
           message: `Skill "${skill.name}" declares tools not in the LLM surface: ${missing.join(', ')}. Check pack activation in this room.` })

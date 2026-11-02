@@ -165,7 +165,6 @@ export interface AgentsWorkspaceRuntime {
   readonly setOnScriptEvent: (cb: ScriptEventEmitter) => void
   // Multi-subscriber observer slot (lateBinding.add). Returns an unsubscribe.
   readonly addScriptEventListener: (cb: ScriptEventEmitter) => () => void
-  readonly knowledgeDir: string
   readonly providersStorePath: string
   // Trigger scheduler — REST handlers call invalidate() after mutating an
   // agent's trigger list so the cached "any triggers exist" flag stays
@@ -1062,7 +1061,6 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
       scriptRunner,
       setOnScriptEvent: scriptEvent.set,
       addScriptEventListener: scriptEvent.add,
-      knowledgeDir: sharedPaths.knowledge(),
       providersStorePath: sharedPaths.providers(),
       triggerScheduler,
       ollamaUrls,
