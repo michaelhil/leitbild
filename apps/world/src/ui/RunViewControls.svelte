@@ -45,12 +45,12 @@
     if (returnFocus) trigger?.focus({ preventScroll: true })
   }
   export const dismiss = (): void => close(true)
-  export const reveal = async (which: 'view' | 'guide'): Promise<void> => { if (open !== which) await disclose(which) }
-  const disclose = async (which: 'view' | 'guide'): Promise<void> => {
+  export const reveal = async (which: 'view' | 'guide', focus = true): Promise<void> => { if (open !== which) await disclose(which, focus) }
+  const disclose = async (which: 'view' | 'guide', focus = true): Promise<void> => {
     if (open === which) { close(true); return }
     open = which
     await tick()
-    sheet?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus({ preventScroll: true })
+    if (focus) sheet?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus({ preventScroll: true })
     remeasure?.()
   }
   const outside = (event: PointerEvent): void => { if (open && event.target instanceof Node && !root?.contains(event.target)) close() }

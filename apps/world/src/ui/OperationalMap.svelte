@@ -119,6 +119,7 @@
     readonly packFeatureLayers?: ReadonlyArray<MapLayerId>
     readonly packFeatureSourcePackIds?: ReadonlyArray<string>
     readonly focusRequest?: MapFocusRequest | null
+    readonly cancelFocusRevision?: number | null
     readonly packDataRevisionKey?: string
     /** A role Run's perspective epoch: a hover card of an earlier one is never left showing. */
     readonly perspectiveEpoch?: number
@@ -204,6 +205,7 @@
     packFeatureLayers = [],
     packFeatureSourcePackIds = [],
     focusRequest = null,
+    cancelFocusRevision = null,
     packDataRevisionKey = '',
     perspectiveEpoch = 0,
     onPackFeatureSelected = () => {},
@@ -460,6 +462,7 @@
     const request = focusRequest
     const current = runtime?.map
     if (!request || !current || request.revision === appliedFocusRevision) return
+    if (request.revision === cancelFocusRevision) { appliedFocusRevision = request.revision; return }
     if (pendingFocus !== null) onFocusResult(pendingFocus, 'superseded')
     pendingFocus = null
     current.stop()
@@ -480,6 +483,14 @@
       [[request.target.bounds[0][0], request.target.bounds[0][1]], [request.target.bounds[1][0], request.target.bounds[1][1]]],
       { padding: { ...cameraPadding }, maxZoom: 10, duration },
     )
+  })
+
+  $effect(() => {
+    const revision = cancelFocusRevision, current = runtime?.map
+    if (revision === null || !current || pendingFocus !== revision) return
+    // Cancel only this still-owned flight at its current position. A newer human or Home move wins.
+    pendingFocus = null
+    current.stop()
   })
 
   const currentDisplayTime = (): IsoTimestamp | undefined =>

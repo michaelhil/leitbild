@@ -11,7 +11,7 @@ test('a refused Next preserves an offered prompt link; only successful progressi
   const recipient = { subject, clientId: 'client', documentId: 'document', leaseId: 'lease', expiresAt: new Date(Date.now() + 60_000).toISOString() }
   const attemptId = crypto.randomUUID(), stepAttemptId = crypto.randomUUID()
   const effect = { id: 'prompt', target: { kind: 'composer' }, action: { kind: 'draft', text: 'sitrep unit 1' }, requestId: 'request-prompt' }
-  let guide: any = { available: true, title: 'Guide' }, queued = false, sent = false
+  let guide: any = { available: true, title: 'Guide' }, queued = false, sent = false, advanceAllowed = false
   const active = () => ({ available: true, title: 'Guide', attemptId, stepAttemptId, revision: 0, status: 'active', step: { id: 'ask', title: 'Ask', instruction: 'Send explicitly', completion: 'prompt-response', effects: [effect] }, receipts: [], completed: [] })
   let screen: GuidanceScreen | undefined
   Object.defineProperty(globalThis, 'window', { configurable: true, value: { parent } })
@@ -21,11 +21,15 @@ test('a refused Next preserves an offered prompt link; only successful progressi
     if (path.endsWith('/presentation/register')) return Response.json({ result: recipient })
     if (path.endsWith('/presentation/poll')) {
       const requests = queued && !sent ? [{ id: 'request-prompt', recipient, source: { moduleId: 'world', kind: 'guide', id: attemptId, label: 'Guide', executionId: stepAttemptId }, target: { subject, type: 'world.composer', id: 'assistant' }, action: effect.action, purpose: 'Ask', mode: 'guide', createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 30_000).toISOString() }] : []
-      if (requests.length) sent = true
+      if (requests.length) {
+        sent = true
+        requests.push({ ...requests[0]!, id: 'analyst-draft', source: { moduleId: 'agents', kind: 'agent', id: 'analyst', label: 'Analyst', executionId: 'turn-a' }, mode: 'suggest' })
+      }
       return Response.json({ result: { recipient, requests } })
     }
     if (path.endsWith('/guide/read')) return Response.json({ result: guide })
     if (path.endsWith('/guide/start')) { guide = active(); queued = true; return Response.json({ result: guide }) }
+    if (path.endsWith('/guide/advance') && advanceAllowed) { guide = { ...guide, revision: 1, stepAttemptId: crypto.randomUUID(), step: { id: 'next', title: 'Next', instruction: 'Continue', completion: 'acknowledge', effects: [] } }; return Response.json({ result: guide }) }
     if (path.endsWith('/guide/advance')) return Response.json({ error: { code: 'guide_condition_unmet', message: 'No completed response' } }, { status: 409 })
     if (path.endsWith('/guide/prompt')) return Response.json({ result: guide })
     return Response.json({ result: { closed: true } })
@@ -46,9 +50,15 @@ test('a refused Next preserves an offered prompt link; only successful progressi
     session.receive({ origin: 'http://world.test', source: parent, data: { type: 'leitbild:presentation-evidence', recipient, room: { ...subject, moduleId: 'agents', type: 'agents.room', id: 'room-a' }, requestId: 'request-prompt', messageId: 'actual-person-message' } } as MessageEvent)
     for (let n = 0; n < 20 && !calls.some(call => call.path.endsWith('/guide/prompt')); n++) await Bun.sleep(1)
     expect(calls.find(call => call.path.endsWith('/guide/prompt'))?.input.messageId).toBe('actual-person-message')
+    await session.accept()
+    advanceAllowed = true
+    await session.action('next')
+    const cleared = messages.filter(message => message.type === 'leitbild:presentation-clear').map(message => message.requestId)
+    expect(cleared).toContain('request-prompt')
+    expect(cleared).not.toContain('analyst-draft')
     await session.reconnect()
     expect(calls.filter(call => call.path.endsWith('/presentation/register'))).toHaveLength(2)
-    expect(messages.filter(message => message.type === 'leitbild:presentation-compose')).toHaveLength(1)
+    expect(messages.filter(message => message.type === 'leitbild:presentation-compose')).toHaveLength(2)
     expect(screen?.restored).toBe(true)
   } finally {
     session?.stop(); configureActiveRoleSet(priorRoles); globalThis.fetch = originalFetch

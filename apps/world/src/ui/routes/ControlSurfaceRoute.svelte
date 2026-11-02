@@ -243,7 +243,7 @@
   let runAssistantOffered = $state(false)
   let guidanceSession: GuidanceSession | null = $state.raw(null)
   let guidanceScreen: GuidanceScreen = $state.raw({ recipient: null, guide: null, suggestion: null, cue: null, busy: false, error: null, restored: false, explored: false })
-  let viewControls: { reveal: (which: 'view' | 'guide') => Promise<void>; dismiss: () => void } | null = $state(null)
+  let viewControls: { reveal: (which: 'view' | 'guide', focus?: boolean) => Promise<void>; dismiss: () => void } | null = $state(null)
   let presentationObjectIds: ReadonlyArray<string> = $state([])
   let presentationElement: HTMLElement | null = null
   let presentationOwner: string | null = null
@@ -290,6 +290,7 @@
   let latestMapRuntimeDiagnostics = $state<MapRuntimeDiagnosticsSnapshot | null>(null)
   let mapFocusRequest = $state<MapFocusRequest | null>(null)
   let mapFocusRevision = 0
+  let cancelledMapFocusRevision = $state<number | null>(null)
   let mapAssignment = $state<MapAssignmentState | null>(null)
   let mapAssignmentPicker = $state<MapAssignmentPicker | null>(null)
   let mapAssignmentChoiceIds = $state<ReadonlyArray<string>>([])
@@ -577,6 +578,7 @@
     try { writeRunViewPreferences(sessionStorage, key, { guidance: guidancePreferences, alarms: alarmStripVisible, layout: layoutControlsVisible, panels: surfacePanelOpen }) } catch { /* A denied storage getter must not prevent local presentation. */ }
   })
   const actOnView = (id: string): void => {
+    if (['home', 'fit-selected', 'fit-visible', 'north'].includes(id)) guidanceSession?.manualCamera()
     if (id === 'home' && mapConfig) focusMapTarget(homeMapTarget(mapConfig))
     else if (id === 'fit-selected' && fitSelectedTarget) focusMapTarget(fitSelectedTarget)
     else if (id === 'fit-visible') {
@@ -609,7 +611,7 @@
     mapLayerGroupVisibility = Object.fromEntries(activeMapLayerGroups.map(layer => [layer.id, layer.defaultVisible]))
     categoryMapVisibility = {}
     weatherLayerVisible = true
-    if (mapConfig && mapReady) focusMapTarget(homeMapTarget(mapConfig))
+    if (mapConfig && mapReady) { guidanceSession?.manualCamera(); focusMapTarget(homeMapTarget(mapConfig)) }
   }
   const setGuidanceMode = (mode: RunViewPreferences['guidance']['mode']): void => {
     guidancePreferences = { ...guidancePreferences, mode, ...(mode === 'running' ? { dismissedId: null } : {}) }
@@ -633,7 +635,7 @@
   }
   const waitForPresentation = (request: PresentationRequest, signal: AbortSignal, waiters: Map<number, (result: PresentationApplication) => void>, sequence: number): Promise<PresentationApplication> => new Promise(resolve => {
     const finish = (result: PresentationApplication): void => { clearTimeout(timer); signal.removeEventListener('abort', aborted); waiters.delete(sequence); resolve(result) }
-    const aborted = (): void => finish({ status: signal.reason === 'manual-camera' ? 'superseded' : signal.reason === 'expired' ? 'expired' : 'cancelled', reason: 'The owning presentation cue was interrupted' })
+    const aborted = (): void => { if (waiters === presentationMapWaiters) cancelledMapFocusRevision = sequence; finish({ status: signal.reason === 'manual-camera' ? 'superseded' : signal.reason === 'expired' ? 'expired' : 'cancelled', reason: 'The owning presentation cue was interrupted' }) }
     const timer = setTimeout(() => finish({ status: 'unavailable', reason: 'The target did not confirm presentation before the request expired' }), Math.max(0, Date.parse(request.expiresAt) - Date.now()))
     waiters.set(sequence, finish)
     signal.addEventListener('abort', aborted, { once: true })
@@ -649,7 +651,15 @@
     const target = request.target, action = request.action
     const bounds = surfaceShell?.getBoundingClientRect()
     if (document.hidden || !bounds || bounds.width <= 0 || bounds.height <= 0) throw new Error('The World surface is not visible; reopen it and request Show again')
-    if (action.kind === 'explain') return { status: 'applied' }
+    if (action.kind === 'explain') {
+      await viewControls?.reveal('guide', false)
+      await tick()
+      current()
+      const cue = document.querySelector<HTMLElement>('[aria-label="Current presentation cue"]')
+      if (!cue) throw new Error('The explanation card did not mount')
+      cue.scrollIntoView({ block: 'nearest', behavior: 'instant' })
+      return { status: 'applied' }
+    }
     if (target.type === 'world.control') {
       if (target.id === 'assistant') throw new Error('Use a composer draft to open the exact Run Assistant with acknowledged delivery; this control cannot confirm opening')
       if (target.id === 'dashboard') {
@@ -2358,6 +2368,7 @@
           packFeatureLayers={activePackFeatureLayers}
           packFeatureSourcePackIds={activePackFeatureSourcePackIds}
           focusRequest={mapFocusRequest}
+          cancelFocusRevision={cancelledMapFocusRevision}
           assignmentActive={mapAssignment !== null}
           assignmentAnchor={mapAssignmentAnchor}
           assignmentHandles={mapAssignmentHandles}

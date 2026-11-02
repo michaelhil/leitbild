@@ -38,15 +38,21 @@
             {/if}
           </section>
         {/if}
+        {#if screen.guide.step.effects.length > 0}
+        {@const applied = screen.guide.step.effects.filter(effect => screen.guide?.receipts?.some(record => record.effectId === effect.id && record.receipt.status === 'applied')).length}
+        {@const unavailable = screen.guide.step.effects.some(effect => effect.delivery === 'unavailable' || screen.guide?.receipts?.some(record => record.effectId === effect.id && ['unavailable', 'expired', 'superseded', 'cancelled', 'declined'].includes(record.receipt.status)))}
+        {#if unavailable}<p class="problem" role="status">A presentation action did not complete. Open outcomes for its reason, use Show here to retry, or skip this step.</p>{/if}
+        <details><summary>Presentation outcomes · {applied} of {screen.guide.step.effects.length} applied</summary>
         <ul aria-label="Guide action outcomes">
           {#each screen.guide.step.effects as effect (effect.id)}
             {@const record = screen.guide.receipts?.find(receipt => receipt.effectId === effect.id)}
             <li>{effect.action.kind} · {effect.id}: <strong>{record?.receipt.status ?? effect.delivery ?? 'not delivered'}</strong>{#if record}<span class="meta"> · delivery at {new Date(record.receipt.at).toLocaleTimeString()}</span>{/if}{#if record?.receipt.reason ?? effect.reason} — {record?.receipt.reason ?? effect.reason}{/if}</li>
           {/each}
-        </ul>
+        </ul></details>
+        {/if}
       {/if}
       <div class="actions">
-        {#if !screen.guide.step}<button type="button" disabled={screen.busy} onclick={() => void session?.read()}>Read current guide</button>{/if}
+        {#if !screen.guide.step || screen.error}<button type="button" disabled={screen.busy} onclick={() => void session?.read()}>Read current guide</button>{/if}
         {#if screen.guide.status === 'active'}
           <button type="button" disabled={screen.busy} onclick={() => void session?.action('show')}>Show here</button>
           <button type="button" disabled={screen.busy || screen.restored} onclick={() => void session?.action('next')}>{screen.guide.step?.completion === 'acknowledge' ? 'I understand · Next' : 'Check and continue'}</button>
