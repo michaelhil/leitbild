@@ -311,7 +311,7 @@
           "kind": "after_scenario_start",
           "seconds": 0
         },
-        "title": "In two minutes, a fault cuts Halden off the grid",
+        "title": "A fault is scheduled at +2 minutes",
         "actions": [
           {
             "type": "show_guidance",
@@ -392,7 +392,7 @@
             "type": "show_guidance",
             "guidance": {
               "id": "switchyard-busbar-fault",
-              "title": "Halden is cut off from the grid",
+              "title": "Inspect the switchyard fault outcome",
               "message": "All six circuits are open and every turbine has tripped. To restore offsite power, open View at the bottom, choose Panels and turn on Grid operations, then open Assets, search \u201cHasle circuit 1\u201d, choose it and press Close. Or ask the Leitbild Assistant: \u201cWhy did the turbine trip?\u201d",
               "objectIds": [
                 "grid:halden-four-unit",
@@ -406,6 +406,190 @@
             }
           }
         ]
+      }
+    ]
+  },
+  "guide": {
+    "id": "guide:offsite",
+    "title": "Restore a grid connection",
+    "description": "Beginner guided observation of four modelled units and their shared switchyard. Shared time starts paused; no model provider is required for the World steps.",
+    "startPaused": true,
+    "entry": {
+      "kind": "clock",
+      "beforeSeconds": 120
+    },
+    "steps": [
+      {
+        "id": "orient",
+        "title": "Find Unit 1",
+        "instruction": "This is a modelled power complex. Locate Halden Unit 1; View contains local Camera, Layers and Panels. The shared clock is paused. Continue does not start the fault.",
+        "effects": [
+          {
+            "id": "unit-location",
+            "target": {
+              "kind": "object",
+              "objectId": "plant:halden-1"
+            },
+            "action": {
+              "kind": "focus"
+            }
+          }
+        ],
+        "completion": {
+          "kind": "acknowledge"
+        }
+      },
+      {
+        "id": "display",
+        "title": "Open the unit display",
+        "instruction": "Open the model-backed Unit 1 display. Read the current simulation time and one lead indication. An opened display is a presentation result; it does not prove you have read the values.",
+        "effects": [
+          {
+            "id": "unit-display",
+            "target": {
+              "kind": "object",
+              "objectId": "plant:halden-1"
+            },
+            "action": {
+              "kind": "reveal"
+            }
+          }
+        ],
+        "completion": {
+          "kind": "presentation",
+          "effectId": "unit-display"
+        }
+      },
+      {
+        "id": "sitrep",
+        "title": "Ask the Assistant",
+        "instruction": "The suggestion is editable and is never sent automatically. Send it yourself, then use Inspect on the actual answer to follow a World read. If no provider is configured, Skip this optional task and continue with the live display.",
+        "effects": [
+          {
+            "id": "prompt",
+            "target": {
+              "kind": "composer"
+            },
+            "action": {
+              "kind": "draft",
+              "text": "sitrep unit 1"
+            }
+          }
+        ],
+        "completion": {
+          "kind": "prompt-response",
+          "effectId": "prompt"
+        }
+      },
+      {
+        "id": "grid",
+        "title": "Find the grid connection",
+        "instruction": "Grid operations shows the shared grid and switchyard. Read the present circuit states and alarms before advancing. Alarms retain an entry even when their detail strip is hidden.",
+        "effects": [
+          {
+            "id": "grid-panel",
+            "target": {
+              "kind": "panel",
+              "panelId": "electric-grid.overview"
+            },
+            "action": {
+              "kind": "reveal"
+            }
+          }
+        ],
+        "completion": {
+          "kind": "presentation",
+          "effectId": "grid-panel"
+        }
+      },
+      {
+        "id": "fault-time",
+        "title": "Advance to the fault",
+        "instruction": "Use the shared execution control to advance two simulation minutes from the start. This guide does not send those commands for you. Recheck time if this Run is shared.",
+        "effects": [],
+        "completion": {
+          "kind": "condition",
+          "condition": {
+            "kind": "clock",
+            "afterSeconds": 120
+          }
+        }
+      },
+      {
+        "id": "observe-loss",
+        "title": "Check the actual loss",
+        "instruction": "Read Unit 1 offsite-grid energisation and the grid alarms. This gate checks the current model indication is false; it does not infer that every circuit action or every turbine trip completed. If a cue is partial or evidence is unavailable, inspect it and Skip explicitly.",
+        "effects": [
+          {
+            "id": "loss-display",
+            "target": {
+              "kind": "object",
+              "objectId": "plant:halden-1"
+            },
+            "action": {
+              "kind": "reveal"
+            }
+          }
+        ],
+        "completion": {
+          "kind": "condition",
+          "condition": {
+            "kind": "observation",
+            "ref": "plant:halden-1#offsiteGrid.energized",
+            "value": false,
+            "operator": "eq",
+            "quantity": "state",
+            "unit": "",
+            "maxAgeSeconds": 5
+          }
+        }
+      },
+      {
+        "id": "restore",
+        "title": "Restore one path and verify",
+        "instruction": "In Grid operations inspect a Hasle circuit, close one circuit onto the dead switchyard using its supported control, and advance a small interval if needed. Check current energisation and station-service import; a closed breaker alone is not proof. This gate observes Unit 1 offsite energisation true. Finish the remaining circuits only after inspecting each synchro-check result.",
+        "effects": [
+          {
+            "id": "restore-grid",
+            "target": {
+              "kind": "panel",
+              "panelId": "electric-grid.overview"
+            },
+            "action": {
+              "kind": "reveal"
+            }
+          }
+        ],
+        "completion": {
+          "kind": "condition",
+          "condition": {
+            "kind": "observation",
+            "ref": "plant:halden-1#offsiteGrid.energized",
+            "value": true,
+            "operator": "eq",
+            "quantity": "state",
+            "unit": "",
+            "maxAgeSeconds": 5
+          }
+        }
+      },
+      {
+        "id": "compare",
+        "title": "Separate restoration from recovery",
+        "instruction": "Read the actual plant and grid feedback. Restored offsite energisation does not mean a tripped turbine is generating again. Inspect station-service exchange, remaining alarms and continuing duties; keep the source and observation time with any conclusion.",
+        "effects": [],
+        "completion": {
+          "kind": "acknowledge"
+        }
+      },
+      {
+        "id": "explore",
+        "title": "Continue exploring",
+        "instruction": "This guide is finished. The same Run remains available. Pause or stop guidance whenever you wish; those controls do not pause the shared simulation. Copy the Run before trying a different intervention. Acknowledgements record your choice to continue, not a qualification.",
+        "effects": [],
+        "completion": {
+          "kind": "acknowledge"
+        }
       }
     ]
   }

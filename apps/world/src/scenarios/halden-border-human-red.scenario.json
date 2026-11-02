@@ -797,5 +797,184 @@
         ]
       }
     ]
+  },
+  "guide": {
+    "id": "guide:halden-border-human-red",
+    "title": "Two human pictures",
+    "description": "Human role and side exercise. Choose a compatible role before starting. Private instructions are delivered only for that perspective; AI role operation remains refused.",
+    "startPaused": true,
+    "entry": {
+      "kind": "clock",
+      "beforeSeconds": 30
+    },
+    "steps": [
+      {
+        "id": "ready",
+        "title": "Agree readiness before shared time",
+        "instruction": "Keep the Run paused while players choose their roles and inspect their own picture. Each player tells the instructor when ready. The controller explicitly starts the shared clock after agreement. Guide acknowledgement is local progress and never a shared readiness vote.",
+        "effects": [],
+        "completion": {
+          "kind": "acknowledge"
+        }
+      },
+      {
+        "id": "control",
+        "title": "Instructor check",
+        "instruction": "Verify Blue and, for a two-human exercise, Red screens independently. Start the shared clock only after agreement. Do not relay hidden orders or future script to a player.",
+        "effects": [
+          {
+            "id": "board",
+            "target": {
+              "kind": "panel",
+              "panelId": "einsatz.board"
+            },
+            "action": {
+              "kind": "reveal"
+            }
+          }
+        ],
+        "completion": {
+          "kind": "acknowledge"
+        },
+        "roles": [
+          "controller"
+        ]
+      },
+      {
+        "id": "civil",
+        "title": "Civil dispatch in your picture",
+        "instruction": "Inspect your own calls and eligible units through the Board. Dispatch a response and inspect assignment and arrival history; do not infer hidden opposing positions from a missing map symbol.",
+        "effects": [
+          {
+            "id": "board",
+            "target": {
+              "kind": "panel",
+              "panelId": "einsatz.board"
+            },
+            "action": {
+              "kind": "reveal"
+            }
+          }
+        ],
+        "completion": {
+          "kind": "acknowledge"
+        },
+        "roles": [
+          "group:ems",
+          "group:police",
+          "group:fire"
+        ]
+      },
+      {
+        "id": "blue-recce",
+        "title": "Observe before identifying",
+        "instruction": "Inspect your Blue recce unit. Use its actual permitted tracks and their freshness before issuing an observation or movement order. A track is evidence with uncertainty, not truth-view access.",
+        "effects": [
+          {
+            "id": "recce",
+            "target": {
+              "kind": "object",
+              "objectId": "unit:blue-recce-1"
+            },
+            "action": {
+              "kind": "reveal"
+            }
+          }
+        ],
+        "completion": {
+          "kind": "acknowledge"
+        },
+        "roles": [
+          "group:blue-recce"
+        ]
+      },
+      {
+        "id": "blue-armour",
+        "title": "Command from your own picture",
+        "instruction": "Inspect your Blue armour unit and its chain. Choose a supported task or map target, read back the accepted order, then inspect achieved movement. Queueing an order does not prove arrival or identification.",
+        "effects": [
+          {
+            "id": "armour",
+            "target": {
+              "kind": "object",
+              "objectId": "unit:blue-tank-1"
+            },
+            "action": {
+              "kind": "reveal"
+            }
+          }
+        ],
+        "completion": {
+          "kind": "acknowledge"
+        },
+        "roles": [
+          "group:blue-armour"
+        ]
+      },
+      {
+        "id": "red-recce",
+        "title": "Build the Red picture",
+        "instruction": "Inspect your Red recce unit and the calls visible to your role. Use your own observations to identify contacts. The Blue picture, hidden units and future orders are not supplied by this guide.",
+        "effects": [
+          {
+            "id": "red-recce",
+            "target": {
+              "kind": "object",
+              "objectId": "unit:red-recce-1"
+            },
+            "action": {
+              "kind": "reveal"
+            }
+          }
+        ],
+        "completion": {
+          "kind": "acknowledge"
+        },
+        "roles": [
+          "group:red-recce"
+        ]
+      },
+      {
+        "id": "red-armour",
+        "title": "Choose and verify a Red order",
+        "instruction": "Inspect your Red armour unit and a permitted task. Issue a supported order or queued waypoint, then read back the chain and actual movement. Decide which current calls to follow using your own picture.",
+        "effects": [
+          {
+            "id": "red-armour",
+            "target": {
+              "kind": "object",
+              "objectId": "unit:red-tank-1"
+            },
+            "action": {
+              "kind": "reveal"
+            }
+          }
+        ],
+        "completion": {
+          "kind": "acknowledge"
+        },
+        "roles": [
+          "group:red-armour"
+        ]
+      },
+      {
+        "id": "perspective",
+        "title": "Keep the perspective boundary",
+        "instruction": "A role or side change invalidates this guide attempt and its pending cues. Start a fresh compatible attempt in the new picture. Debrief only from permitted observations/history unless acting as the instructor. Continue into the exercise without a guide-generated score.",
+        "effects": [],
+        "completion": {
+          "kind": "acknowledge"
+        }
+      },
+      {
+        "id": "explore",
+        "title": "Continue exploring",
+        "instruction": "This guide is finished. The same Run remains available. Pause or stop guidance whenever you wish; those controls do not pause the shared simulation. Copy the Run before trying a different intervention. Acknowledgements record your choice to continue, not a qualification.",
+        "effects": [],
+        "completion": {
+          "kind": "acknowledge"
+        }
+      }
+    ]
   }
 }

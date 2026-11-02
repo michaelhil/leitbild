@@ -114,5 +114,100 @@
         ]
       }
     ]
+  },
+  "guide": {
+    "id": "guide:dispatch",
+    "title": "Inspect custody and sensing",
+    "description": "Advanced ambulance/drone exercise distinct from the Einsatz call-board tutorial. Several assignments and observations begin automatically.",
+    "startPaused": true,
+    "steps": [
+      {
+        "id": "existing",
+        "title": "Read existing work",
+        "instruction": "Inspect Halden road unit 1 and the E6 collision. Read the actual existing assignments and distinguish road versus rotary-wing eligibility.",
+        "effects": [
+          {
+            "id": "unit",
+            "target": {
+              "kind": "object",
+              "objectId": "unit:halden-1"
+            },
+            "action": {
+              "kind": "reveal"
+            }
+          }
+        ],
+        "completion": {
+          "kind": "acknowledge"
+        }
+      },
+      {
+        "id": "sensor",
+        "title": "Check sensing freshness",
+        "instruction": "Inspect the incident quadcopter and its contacts. Follow continuation when contact results are partial; retain observation time and identify unobserved or expired coverage.",
+        "effects": [
+          {
+            "id": "drone",
+            "target": {
+              "kind": "object",
+              "objectId": "drone:halden-inspection"
+            },
+            "action": {
+              "kind": "reveal"
+            }
+          }
+        ],
+        "completion": {
+          "kind": "acknowledge"
+        }
+      },
+      {
+        "id": "custody",
+        "title": "Trace patient custody",
+        "instruction": "Inspect patient A and the selected care site. Follow actual custody/transport/handover evidence; dispatch acceptance is not arrival or handover.",
+        "effects": [
+          {
+            "id": "patient",
+            "target": {
+              "kind": "object",
+              "objectId": "patient:e6-a"
+            },
+            "action": {
+              "kind": "reveal"
+            }
+          }
+        ],
+        "completion": {
+          "kind": "acknowledge"
+        }
+      },
+      {
+        "id": "capacity",
+        "title": "Choose a destination",
+        "instruction": "Review receiving capacity and an available handover slot before issuing a supported destination action. Read back the admitted choice and later achieved handover.",
+        "effects": [],
+        "completion": {
+          "kind": "acknowledge"
+        }
+      },
+      {
+        "id": "bottleneck",
+        "title": "Handle a bottleneck",
+        "instruction": "Continue the exercise in bounded intervals. Inspect the specialist bottleneck when it occurs and adjust only after reading current patients, capacities and priorities. Summarise actual custody events rather than inventing outcomes from the script.",
+        "effects": [],
+        "completion": {
+          "kind": "acknowledge"
+        }
+      },
+      {
+        "id": "explore",
+        "title": "Continue exploring",
+        "instruction": "This guide is finished. The same Run remains available. Pause or stop guidance whenever you wish; those controls do not pause the shared simulation. Copy the Run before trying a different intervention. Acknowledgements record your choice to continue, not a qualification.",
+        "effects": [],
+        "completion": {
+          "kind": "acknowledge"
+        }
+      }
+    ]
   }
 }

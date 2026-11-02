@@ -95,7 +95,7 @@
             "guidance": {
               "id": "rhr-chain-briefing",
               "title": "RHR cooling chain",
-              "message": "A primary release starts at +10 s. Advance the simulation to observe the sump and shutdown response, then ask the Assistant to run RHR-1 on Unit 2. The task verifies finite cooled injection and ends with an operator handoff.",
+              "message": "A primary release is scheduled at +10 s. Use Guide, inspect actual sump and shutdown feedback, then request RHR-1 for Unit 2 if an Assistant provider is available. Inspect achieved flow and both heat-transfer paths through the admitted procedure criteria before handing off continuing duties.",
               "objectIds": [
                 "plant:halden-2"
               ],
@@ -123,6 +123,120 @@
             }
           }
         ]
+      }
+    ]
+  },
+  "guide": {
+    "id": "guide:halden-rhr-cooling-chain",
+    "title": "Trace the RHR cooling chain",
+    "description": "Supervised process-model exercise using RHR-1; it is not an operational qualification.",
+    "startPaused": true,
+    "entry": {
+      "kind": "clock",
+      "beforeSeconds": 10
+    },
+    "steps": [
+      {
+        "id": "orient",
+        "title": "Identify Unit 2",
+        "instruction": "Locate the exact Unit 2 object and open its model-backed display. Read the starting state and current time before the scripted event.",
+        "effects": [
+          {
+            "id": "unit",
+            "target": {
+              "kind": "object",
+              "objectId": "plant:halden-2"
+            },
+            "action": {
+              "kind": "reveal"
+            }
+          }
+        ],
+        "completion": {
+          "kind": "presentation",
+          "effectId": "unit"
+        }
+      },
+      {
+        "id": "release-time",
+        "title": "Advance to the initiating event",
+        "instruction": "Advance the shared Run ten simulation seconds. Inspect the admitted cue and actual feedback; a failed or uncertain cue is not a completed initiating event.",
+        "effects": [],
+        "completion": {
+          "kind": "condition",
+          "condition": {
+            "kind": "clock",
+            "afterSeconds": 10
+          }
+        }
+      },
+      {
+        "id": "procedure",
+        "title": "Ask the Assistant",
+        "instruction": "Review the target and explicitly send or edit this request. Inspect the actual RHR-1 execution and its admitted criteria. If no provider is available, Skip the response task and inspect the same model and procedure evidence manually.",
+        "effects": [
+          {
+            "id": "prompt",
+            "target": {
+              "kind": "composer"
+            },
+            "action": {
+              "kind": "draft",
+              "text": "Run RHR-1 for Halden Unit 2 using the admitted procedure and report actual flow, both heat-transfer paths, evidence times and continuing duties."
+            }
+          }
+        ],
+        "completion": {
+          "kind": "prompt-response",
+          "effectId": "prompt"
+        }
+      },
+      {
+        "id": "verify",
+        "title": "Inspect achieved response",
+        "instruction": "Verify achieved RHR flow and heat transfer through CCW to service water; a pump start or valve command does not establish heat removal.",
+        "effects": [
+          {
+            "id": "unit-evidence",
+            "target": {
+              "kind": "object",
+              "objectId": "plant:halden-2"
+            },
+            "action": {
+              "kind": "reveal"
+            }
+          }
+        ],
+        "completion": {
+          "kind": "acknowledge"
+        }
+      },
+      {
+        "id": "comparison",
+        "title": "Keep the comparison independent",
+        "instruction": "Copy the Run before trying loss of cooling, a wrong order or source restoration. Confirm the new Run identity and checkpoint. Compare achieved response at equivalent times; never reset this Run merely to make a guide fit.",
+        "effects": [],
+        "completion": {
+          "kind": "acknowledge"
+        }
+      },
+      {
+        "id": "handoff",
+        "title": "Choose a continuing duty",
+        "instruction": "Inspect the remaining criteria, unresolved alarms and sustaining conditions. Name who or what will monitor the continuing duty. Continue acknowledges the handoff discussion; it does not close a procedure or prove continuing performance.",
+        "effects": [],
+        "completion": {
+          "kind": "acknowledge"
+        }
+      },
+      {
+        "id": "explore",
+        "title": "Continue exploring",
+        "instruction": "This guide is finished. The same Run remains available. Pause or stop guidance whenever you wish; those controls do not pause the shared simulation. Copy the Run before trying a different intervention. Acknowledgements record your choice to continue, not a qualification.",
+        "effects": [],
+        "completion": {
+          "kind": "acknowledge"
+        }
       }
     ]
   }

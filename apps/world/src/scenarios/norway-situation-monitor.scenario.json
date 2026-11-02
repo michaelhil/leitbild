@@ -14,5 +14,91 @@
     { "id": "warnings", "name": "Weather warnings", "adapter": "met-alerts", "intervalSeconds": 600, "retentionHours": 2, "attribution": "MET Norway" }
   ] }, "items": [] }],
   "world": { "startsAt": "2026-09-03T00:00:00.000Z" },
-  "view": { "map": { "center": [13, 64.5], "zoom": 4 } }
+  "view": { "map": { "center": [13, 64.5], "zoom": 4 } },
+  "guide": {
+    "id": "guide:monitor",
+    "title": "Read live evidence responsibly",
+    "description": "Live-time observation, not a fast-forward scenario. Source availability and validity are part of every conclusion.",
+    "startPaused": false,
+    "steps": [
+      {
+        "id": "sources",
+        "title": "Discover active sources",
+        "instruction": "Open Situation Monitor. Inspect active sources and current coverage; an empty or failed source is explicit missing evidence.",
+        "effects": [
+          {
+            "id": "monitor",
+            "target": {
+              "kind": "panel",
+              "panelId": "situation-monitor.records"
+            },
+            "action": {
+              "kind": "reveal"
+            }
+          }
+        ],
+        "completion": {
+          "kind": "presentation",
+          "effectId": "monitor"
+        }
+      },
+      {
+        "id": "times",
+        "title": "Read observation and validity times",
+        "instruction": "Select a current record and compare observation time, fetched time and validity. A scheduled roadwork notice or warning is not necessarily an observed current incident.",
+        "effects": [],
+        "completion": {
+          "kind": "acknowledge"
+        }
+      },
+      {
+        "id": "summary",
+        "title": "Ask the Assistant",
+        "instruction": "Edit and send the suggestion. Inspect the actual response and its cited reads. If no provider is available, Skip and inspect source records manually. A camera listing does not prove image understanding.",
+        "effects": [
+          {
+            "id": "prompt",
+            "target": {
+              "kind": "composer"
+            },
+            "action": {
+              "kind": "draft",
+              "text": "Summarise the currently available Norway situation observations. Cite original evidence and distinguish expired, scheduled, missing and current coverage."
+            }
+          }
+        ],
+        "completion": {
+          "kind": "prompt-response",
+          "effectId": "prompt"
+        }
+      },
+      {
+        "id": "gaps",
+        "title": "Inspect a coverage gap",
+        "instruction": "Find a missing, unavailable or expired source, or explicitly record that none is currently shown. Explain what cannot be concluded. Do not fabricate a deterministic fault or media interpretation to complete the tour.",
+        "effects": [],
+        "completion": {
+          "kind": "acknowledge"
+        }
+      },
+      {
+        "id": "live-clock",
+        "title": "Continue in live time",
+        "instruction": "Follow source refreshes in wall time and keep original evidence links with your conclusions. This scenario does not support fast-forwarding external events.",
+        "effects": [],
+        "completion": {
+          "kind": "acknowledge"
+        }
+      },
+      {
+        "id": "explore",
+        "title": "Continue exploring",
+        "instruction": "This guide is finished. The same Run remains available. Pause or stop guidance whenever you wish; those controls do not pause the shared simulation. Copy the Run before trying a different intervention. Acknowledgements record your choice to continue, not a qualification.",
+        "effects": [],
+        "completion": {
+          "kind": "acknowledge"
+        }
+      }
+    ]
+  }
 }

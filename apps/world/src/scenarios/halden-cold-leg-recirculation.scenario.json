@@ -95,7 +95,7 @@
             "guidance": {
               "id": "cold-leg-recirculation-briefing",
               "title": "Cold-leg recirculation",
-              "message": "A primary release starts at +10 s. Advance about two minutes, inspect shutdown and actual sump inventory, then ask the Assistant to run ES-1.3 on Unit 2. It establishes cooled RHR and same-train SI delivery, checks source-transfer order, and ends with an operator handoff.",
+              "message": "A primary release is scheduled at +10 s. Use Guide, inspect actual shutdown and sump inventory, then request ES-1.3 for Unit 2 if an Assistant provider is available. The procedure criteria must establish cooled RHR, same-train SI delivery and correct source transfer; an issued procedure or guide acknowledgement is not that evidence.",
               "objectIds": [
                 "plant:halden-2"
               ],
@@ -123,6 +123,120 @@
             }
           }
         ]
+      }
+    ]
+  },
+  "guide": {
+    "id": "guide:halden-cold-leg-recirculation",
+    "title": "Establish cooled recirculation",
+    "description": "Supervised process-model exercise using ES-1.3; it is not an operational qualification.",
+    "startPaused": true,
+    "entry": {
+      "kind": "clock",
+      "beforeSeconds": 10
+    },
+    "steps": [
+      {
+        "id": "orient",
+        "title": "Identify Unit 2",
+        "instruction": "Locate the exact Unit 2 object and open its model-backed display. Read the starting state and current time before the scripted event.",
+        "effects": [
+          {
+            "id": "unit",
+            "target": {
+              "kind": "object",
+              "objectId": "plant:halden-2"
+            },
+            "action": {
+              "kind": "reveal"
+            }
+          }
+        ],
+        "completion": {
+          "kind": "presentation",
+          "effectId": "unit"
+        }
+      },
+      {
+        "id": "release-time",
+        "title": "Advance to the initiating event",
+        "instruction": "Advance the shared Run ten simulation seconds. Inspect the admitted cue and actual feedback; a failed or uncertain cue is not a completed initiating event.",
+        "effects": [],
+        "completion": {
+          "kind": "condition",
+          "condition": {
+            "kind": "clock",
+            "afterSeconds": 10
+          }
+        }
+      },
+      {
+        "id": "procedure",
+        "title": "Ask the Assistant",
+        "instruction": "Review the target and explicitly send or edit this request. Inspect the actual ES-1.3 execution and its admitted criteria. If no provider is available, Skip the response task and inspect the same model and procedure evidence manually.",
+        "effects": [
+          {
+            "id": "prompt",
+            "target": {
+              "kind": "composer"
+            },
+            "action": {
+              "kind": "draft",
+              "text": "Run ES-1.3 for Halden Unit 2 using admitted criteria, verifying the sump source, cooled RHR and same-train SI delivery. Identify continuing duties."
+            }
+          }
+        ],
+        "completion": {
+          "kind": "prompt-response",
+          "effectId": "prompt"
+        }
+      },
+      {
+        "id": "verify",
+        "title": "Inspect achieved response",
+        "instruction": "Verify the source transfer, cooled RHR path and same-train SI piggyback delivery using the procedure criteria. Do not replace those criteria with this guide.",
+        "effects": [
+          {
+            "id": "unit-evidence",
+            "target": {
+              "kind": "object",
+              "objectId": "plant:halden-2"
+            },
+            "action": {
+              "kind": "reveal"
+            }
+          }
+        ],
+        "completion": {
+          "kind": "acknowledge"
+        }
+      },
+      {
+        "id": "comparison",
+        "title": "Keep the comparison independent",
+        "instruction": "Copy the Run before trying loss of cooling, a wrong order or source restoration. Confirm the new Run identity and checkpoint. Compare achieved response at equivalent times; never reset this Run merely to make a guide fit.",
+        "effects": [],
+        "completion": {
+          "kind": "acknowledge"
+        }
+      },
+      {
+        "id": "handoff",
+        "title": "Choose a continuing duty",
+        "instruction": "Inspect the remaining criteria, unresolved alarms and sustaining conditions. Name who or what will monitor the continuing duty. Continue acknowledges the handoff discussion; it does not close a procedure or prove continuing performance.",
+        "effects": [],
+        "completion": {
+          "kind": "acknowledge"
+        }
+      },
+      {
+        "id": "explore",
+        "title": "Continue exploring",
+        "instruction": "This guide is finished. The same Run remains available. Pause or stop guidance whenever you wish; those controls do not pause the shared simulation. Copy the Run before trying a different intervention. Acknowledgements record your choice to continue, not a qualification.",
+        "effects": [],
+        "completion": {
+          "kind": "acknowledge"
+        }
       }
     ]
   }

@@ -50,14 +50,14 @@
       {
         "id": "corridor-security-briefing",
         "at": { "kind": "after_scenario_start", "seconds": 0 },
-        "title": "At ten minutes a major line trips, and others follow",
+        "title": "Compare a contingency at +10 minutes",
         "actions": [
           {
             "type": "show_guidance",
             "guidance": {
               "id": "corridor-security-briefing",
               "title": "At ten minutes a major line trips, and others follow",
-              "message": "Try a what-if: choose More, then Copy this Run. In the copy, open View at the bottom, choose Panels, turn on Grid operations and open Smibelg – Sjona (Assets in the grid panel, search “Smibelg”, then Open and Confirm). Use Advance… next to the clock to fast-forward each Run past ten minutes, and compare.",
+              "message": "Use Guide for the copy/remedy/two-futures exercise. Copy this Run and verify the distinct identity before changing it. In the copy, use View → Panels → Grid operations to inspect a remedy such as opening Smibelg – Sjona; review and confirm the actual operation. Advance both Runs to the same exact simulation time for comparison.",
               "objectIds": ["grid:norway"],
               "dismissible": false,
               "tone": "default"
@@ -79,14 +79,117 @@
             "type": "show_guidance",
             "guidance": {
               "id": "svartisen-rana-trip",
-              "title": "Svartisen – Rana has tripped",
-              "message": "Where Smibelg – Sjona is still closed, protection trips a chain of smaller lines and customers lose power; where you opened it, the trip passes. Switch between your Runs with the Run name at the top to compare.",
+              "title": "Inspect the contingency outcome",
+              "message": "The scheduled Svartisen – Rana trip has been attempted. Compare actual topology, affected load, branch trips and observation times in the original and remedied Runs. The default model predicts a different cascade when Smibelg – Sjona is open; verify the result and any partial cue failure rather than assuming that prediction occurred.",
               "objectIds": ["grid:norway"],
               "dismissible": true,
               "tone": "update"
             }
           }
         ]
+      }
+    ]
+  },
+  "guide": {
+    "id": "guide:corridor",
+    "title": "Compare two corridor futures",
+    "description": "A guided what-if exercise. Keep the unremedied and remedied Runs separate and compare the same simulation time.",
+    "startPaused": true,
+    "entry": {
+      "kind": "clock",
+      "beforeSeconds": 600
+    },
+    "steps": [
+      {
+        "id": "weakness",
+        "title": "Read the starting corridor",
+        "instruction": "Open Grid operations and inspect the Nordland corridor, its flows and current alarms. The scripted contingency is at ten minutes. Do not treat an authored prediction as an observed cascade.",
+        "effects": [
+          {
+            "id": "grid",
+            "target": {
+              "kind": "panel",
+              "panelId": "electric-grid.overview"
+            },
+            "action": {
+              "kind": "reveal"
+            }
+          }
+        ],
+        "completion": {
+          "kind": "presentation",
+          "effectId": "grid"
+        }
+      },
+      {
+        "id": "copy",
+        "title": "Create an independent copy",
+        "instruction": "Use the Run copy control, name the copy Remedied, and verify its distinct Run identity and checkpoint time before changing it. Keep this original as Unremedied. Continue records acknowledgement; it does not certify that a copy exists.",
+        "effects": [],
+        "completion": {
+          "kind": "acknowledge"
+        }
+      },
+      {
+        "id": "remedy",
+        "title": "Ask the Assistant",
+        "instruction": "In the remedied copy, ask the Assistant for an evidence-based proposal. Review the exact Run and operation targets before authorising changes. A no-provider route is manual Grid inspection; Skip this optional answer task.",
+        "effects": [
+          {
+            "id": "prompt",
+            "target": {
+              "kind": "composer"
+            },
+            "action": {
+              "kind": "draft",
+              "text": "Inspect this Run and evaluate a preventive remedy for the Nordland corridor contingency. Describe evidence and proposed actions before making changes."
+            }
+          }
+        ],
+        "completion": {
+          "kind": "prompt-response",
+          "effectId": "prompt"
+        }
+      },
+      {
+        "id": "apply",
+        "title": "Apply only the reviewed remedy",
+        "instruction": "In the remedied Run use supported grid controls after reviewing their effects. Read back the resulting topology and flow. Keep the original unchanged. The guide never applies a remedy from an acknowledgement.",
+        "effects": [],
+        "completion": {
+          "kind": "acknowledge"
+        }
+      },
+      {
+        "id": "event-time",
+        "title": "Advance the original to ten minutes",
+        "instruction": "Advance this unremedied Run to exactly ten minutes. Advance the remedied copy to the same exact target separately; do not use elapsed wall time to compare them.",
+        "effects": [],
+        "completion": {
+          "kind": "condition",
+          "condition": {
+            "kind": "clock",
+            "afterSeconds": 600
+          }
+        }
+      },
+      {
+        "id": "two-futures",
+        "title": "Compare actual outcomes",
+        "instruction": "Compare affected load, branch trips, topology, frequency and timestamps in both Runs. Inspect the cue outcome if the scripted command failed or was uncertain. Record what actually differed and what remains unknown; Continue is an explanation checkpoint, not a claim that the remedy was successful.",
+        "effects": [],
+        "completion": {
+          "kind": "acknowledge"
+        }
+      },
+      {
+        "id": "explore",
+        "title": "Continue exploring",
+        "instruction": "This guide is finished. The same Run remains available. Pause or stop guidance whenever you wish; those controls do not pause the shared simulation. Copy the Run before trying a different intervention. Acknowledgements record your choice to continue, not a qualification.",
+        "effects": [],
+        "completion": {
+          "kind": "acknowledge"
+        }
       }
     ]
   }

@@ -287,19 +287,124 @@
       {
         "id": "exercise-end",
         "at": {"kind": "after_scenario_start", "seconds": 1800},
-        "title": "End of the exercise",
+        "title": "Scheduled request sequence complete",
         "actions": [
           {
             "type": "show_guidance",
             "guidance": {
               "id": "exercise-end",
               "title": "End of the exercise",
-              "message": "30 minutes in, the exercise is over. Check the objectives: a heavy truck at every urgent bulk request within 4 minutes, and no request waiting more than 10 minutes for a truck.",
+              "message": "The authored 30-minute request sequence has ended; deliveries and the simulation may continue. Derive actual urgent-bulk response and maximum waiting times from history, then compare them with the 4-minute and 10-minute objectives. This card does not certify delivery.",
               "dismissible": true,
               "tone": "update"
             }
           }
         ]
+      }
+    ]
+  },
+  "guide": {
+    "id": "guide:supply",
+    "title": "Dispatch the first delivery",
+    "description": "A beginner logistics exercise with differently sized trucks and a growing request queue.",
+    "startPaused": true,
+    "entry": {
+      "kind": "clock",
+      "beforeSeconds": 120
+    },
+    "steps": [
+      {
+        "id": "board",
+        "title": "Find depots and requests",
+        "instruction": "Open the Board. Compare the first requests, their urgency and required capacity with Truck 3 and the two depots.",
+        "effects": [
+          {
+            "id": "board",
+            "target": {
+              "kind": "panel",
+              "panelId": "einsatz.board"
+            },
+            "action": {
+              "kind": "reveal"
+            }
+          }
+        ],
+        "completion": {
+          "kind": "presentation",
+          "effectId": "board"
+        }
+      },
+      {
+        "id": "dispatch",
+        "title": "Send the first truck",
+        "instruction": "Inspect Field kitchen and the suggested eligible units. Dispatch Truck 3 using the real Board action. Acceptance is an assignment; delivery requires travel and work.",
+        "effects": [
+          {
+            "id": "request",
+            "target": {
+              "kind": "object",
+              "objectId": "task:field-kitchen"
+            },
+            "action": {
+              "kind": "focus"
+            }
+          }
+        ],
+        "completion": {
+          "kind": "acknowledge"
+        }
+      },
+      {
+        "id": "arrival",
+        "title": "Observe arrival",
+        "instruction": "Play or advance in small intervals, then pause when Truck 3 reaches its task. This gate reads the actual on-task phase. If you chose another truck or advanced past that phase, inspect the history and Skip this checkpoint explicitly.",
+        "effects": [
+          {
+            "id": "truck",
+            "target": {
+              "kind": "object",
+              "objectId": "unit:truck-3"
+            },
+            "action": {
+              "kind": "reveal"
+            }
+          }
+        ],
+        "completion": {
+          "kind": "condition",
+          "condition": {
+            "kind": "object-status",
+            "objectId": "unit:truck-3",
+            "status": "on-task"
+          }
+        }
+      },
+      {
+        "id": "queue",
+        "title": "Build a workable queue",
+        "instruction": "Queue the next request when the appropriate truck is busy. Watch the later lighter-truck capacity upgrade and newly arriving requests; verify actual capacity before dispatch rather than relying on the opening plan.",
+        "effects": [],
+        "completion": {
+          "kind": "acknowledge"
+        }
+      },
+      {
+        "id": "outcomes",
+        "title": "Review service evidence",
+        "instruction": "At a useful stopping point inspect delivery/task histories, urgent requests and maximum waits. Derive the summary from events and times. The guide does not score completion from elapsed time alone.",
+        "effects": [],
+        "completion": {
+          "kind": "acknowledge"
+        }
+      },
+      {
+        "id": "explore",
+        "title": "Continue exploring",
+        "instruction": "This guide is finished. The same Run remains available. Pause or stop guidance whenever you wish; those controls do not pause the shared simulation. Copy the Run before trying a different intervention. Acknowledgements record your choice to continue, not a qualification.",
+        "effects": [],
+        "completion": {
+          "kind": "acknowledge"
+        }
       }
     ]
   }

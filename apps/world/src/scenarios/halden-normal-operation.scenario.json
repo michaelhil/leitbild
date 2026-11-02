@@ -395,5 +395,134 @@
       ],
       "zoom": 9.5
     }
+  },
+  "guide": {
+    "id": "guide:normal",
+    "title": "Discover Leitbild",
+    "description": "A calm orientation for first use: object → generated display → evidence → optional Assistant. No faults are scripted.",
+    "startPaused": true,
+    "steps": [
+      {
+        "id": "unit",
+        "title": "Find a unit",
+        "instruction": "Locate Halden Unit 1. View changes local presentation; the execution controls change shared time. Use Guide to resume after closing a card.",
+        "effects": [
+          {
+            "id": "location",
+            "target": {
+              "kind": "object",
+              "objectId": "plant:halden-1"
+            },
+            "action": {
+              "kind": "focus"
+            }
+          }
+        ],
+        "completion": {
+          "kind": "acknowledge"
+        }
+      },
+      {
+        "id": "model-display",
+        "title": "Read a generated display",
+        "instruction": "Open Unit 1 and inspect a live lead value, its unit and simulation time. Follow its model-backed detail; the same semantic evidence is available to agents.",
+        "effects": [
+          {
+            "id": "display",
+            "target": {
+              "kind": "object",
+              "objectId": "plant:halden-1"
+            },
+            "action": {
+              "kind": "reveal"
+            }
+          }
+        ],
+        "completion": {
+          "kind": "presentation",
+          "effectId": "display"
+        }
+      },
+      {
+        "id": "weather",
+        "title": "Observe a separate process",
+        "instruction": "Inspect the ground weather probe. The drifting rain is modelled weather; this scenario does not automatically turn it into a plant fault. Distinguish coexistence from a declared coupling.",
+        "effects": [
+          {
+            "id": "weather",
+            "target": {
+              "kind": "object",
+              "objectId": "weather-probe:halden-complex"
+            },
+            "action": {
+              "kind": "reveal"
+            }
+          }
+        ],
+        "completion": {
+          "kind": "acknowledge"
+        }
+      },
+      {
+        "id": "grid",
+        "title": "Read the shared grid",
+        "instruction": "Open Grid operations. Read generation, load, exchange and current alarms. Local layout choices do not change the model.",
+        "effects": [
+          {
+            "id": "grid",
+            "target": {
+              "kind": "panel",
+              "panelId": "electric-grid.overview"
+            },
+            "action": {
+              "kind": "reveal"
+            }
+          }
+        ],
+        "completion": {
+          "kind": "presentation",
+          "effectId": "grid"
+        }
+      },
+      {
+        "id": "analyst",
+        "title": "Ask the Assistant",
+        "instruction": "Send or edit the suggestion yourself. Inspect the actual response and one tool result. The analyst may offer attention using the same tools as this guide. Accept or decline it; if no provider is available, Skip and continue exploring.",
+        "effects": [
+          {
+            "id": "prompt",
+            "target": {
+              "kind": "composer"
+            },
+            "action": {
+              "kind": "draft",
+              "text": "Compare Halden Unit 1 and Unit 2 using current World evidence. Explain a useful difference and offer to show the relevant display or location."
+            }
+          }
+        ],
+        "completion": {
+          "kind": "prompt-response",
+          "effectId": "prompt"
+        }
+      },
+      {
+        "id": "safe-copy",
+        "title": "Try a change on a copy",
+        "instruction": "Copy the Run before applying an instructor fault. Verify the copied Run identity, then compare its feedback with the original. This step acknowledges your plan; it does not certify a physical result.",
+        "effects": [],
+        "completion": {
+          "kind": "acknowledge"
+        }
+      },
+      {
+        "id": "explore",
+        "title": "Continue exploring",
+        "instruction": "This guide is finished. The same Run remains available. Pause or stop guidance whenever you wish; those controls do not pause the shared simulation. Copy the Run before trying a different intervention. Acknowledgements record your choice to continue, not a qualification.",
+        "effects": [],
+        "completion": {
+          "kind": "acknowledge"
+        }
+      }
+    ]
   }
 }

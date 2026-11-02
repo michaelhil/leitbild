@@ -54,7 +54,7 @@
           "guidance": {
             "id": "station-blackout-briefing",
             "title": "Station blackout and vital DC",
-            "message": "Offsite power is lost at +10 s and the diesels cannot start. Inspect the actual response, then ask the Assistant to run ECA-0.0 on Unit 2.",
+            "message": "Loss of offsite power and unavailable diesels are scheduled at +10 s. Use Guide and inspect the actual response and cue outcomes. If an Assistant provider is available, request ECA-0.0 for Unit 2 and follow its real criteria, AFW and battery evidence.",
             "objectIds": ["plant:halden-2"],
             "dismissible": true,
             "tone": "default"
@@ -70,6 +70,120 @@
           { "type": "invoke_capability", "capabilityId": "world.process-plant.control.write", "input": { "plantId": "plant:halden-2", "path": "dieselGeneratorB.available", "value": false } },
           { "type": "invoke_capability", "capabilityId": "world.process-plant.action.invoke", "input": { "plantId": "plant:halden-2", "actionId": "loss-offsite-power", "parameters": {} } }
         ]
+      }
+    ]
+  },
+  "guide": {
+    "id": "guide:halden-station-blackout",
+    "title": "Inspect a station blackout",
+    "description": "Supervised process-model exercise using ECA-0.0; it is not an operational qualification.",
+    "startPaused": true,
+    "entry": {
+      "kind": "clock",
+      "beforeSeconds": 10
+    },
+    "steps": [
+      {
+        "id": "orient",
+        "title": "Identify Unit 2",
+        "instruction": "Locate the exact Unit 2 object and open its model-backed display. Read the starting state and current time before the scripted event.",
+        "effects": [
+          {
+            "id": "unit",
+            "target": {
+              "kind": "object",
+              "objectId": "plant:halden-2"
+            },
+            "action": {
+              "kind": "reveal"
+            }
+          }
+        ],
+        "completion": {
+          "kind": "presentation",
+          "effectId": "unit"
+        }
+      },
+      {
+        "id": "release-time",
+        "title": "Advance to the initiating event",
+        "instruction": "Advance the shared Run ten simulation seconds. Inspect the admitted cue and actual feedback; a failed or uncertain cue is not a completed initiating event.",
+        "effects": [],
+        "completion": {
+          "kind": "condition",
+          "condition": {
+            "kind": "clock",
+            "afterSeconds": 10
+          }
+        }
+      },
+      {
+        "id": "procedure",
+        "title": "Ask the Assistant",
+        "instruction": "Review the target and explicitly send or edit this request. Inspect the actual ECA-0.0 execution and its admitted criteria. If no provider is available, Skip the response task and inspect the same model and procedure evidence manually.",
+        "effects": [
+          {
+            "id": "prompt",
+            "target": {
+              "kind": "composer"
+            },
+            "action": {
+              "kind": "draft",
+              "text": "Run ECA-0.0 for Halden Unit 2 using admitted criteria. Report actual reactor, AFW and battery evidence and propose the next continuing duty."
+            }
+          }
+        ],
+        "completion": {
+          "kind": "prompt-response",
+          "effectId": "prompt"
+        }
+      },
+      {
+        "id": "verify",
+        "title": "Inspect achieved response",
+        "instruction": "Observe actual reactor, auxiliary-feedwater and battery feedback; distinguish command delivery, achieved response and remaining DC time.",
+        "effects": [
+          {
+            "id": "unit-evidence",
+            "target": {
+              "kind": "object",
+              "objectId": "plant:halden-2"
+            },
+            "action": {
+              "kind": "reveal"
+            }
+          }
+        ],
+        "completion": {
+          "kind": "acknowledge"
+        }
+      },
+      {
+        "id": "comparison",
+        "title": "Keep the comparison independent",
+        "instruction": "Copy the Run before trying loss of cooling, a wrong order or source restoration. Confirm the new Run identity and checkpoint. Compare achieved response at equivalent times; never reset this Run merely to make a guide fit.",
+        "effects": [],
+        "completion": {
+          "kind": "acknowledge"
+        }
+      },
+      {
+        "id": "handoff",
+        "title": "Choose a continuing duty",
+        "instruction": "Inspect the remaining criteria, unresolved alarms and sustaining conditions. Name who or what will monitor the continuing duty. Continue acknowledges the handoff discussion; it does not close a procedure or prove continuing performance.",
+        "effects": [],
+        "completion": {
+          "kind": "acknowledge"
+        }
+      },
+      {
+        "id": "explore",
+        "title": "Continue exploring",
+        "instruction": "This guide is finished. The same Run remains available. Pause or stop guidance whenever you wish; those controls do not pause the shared simulation. Copy the Run before trying a different intervention. Acknowledgements record your choice to continue, not a qualification.",
+        "effects": [],
+        "completion": {
+          "kind": "acknowledge"
+        }
       }
     ]
   }

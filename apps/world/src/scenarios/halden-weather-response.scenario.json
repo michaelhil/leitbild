@@ -242,5 +242,90 @@
         ]
       }
     ]
+  },
+  "guide": {
+    "id": "guide:weather-response",
+    "title": "Follow weather and response",
+    "description": "Advanced cross-pack observation. Initial dispatch actions run automatically at time zero; this guide does not claim you dispatched them.",
+    "startPaused": true,
+    "steps": [
+      {
+        "id": "forcing",
+        "title": "Read the forcing",
+        "instruction": "Inspect the Halden ground probe and the authored rain/freeze/clearing area.",
+        "effects": [
+          {
+            "id": "probe",
+            "target": {
+              "kind": "object",
+              "objectId": "weather-probe:halden"
+            },
+            "action": {
+              "kind": "reveal"
+            }
+          }
+        ],
+        "completion": {
+          "kind": "acknowledge"
+        }
+      },
+      {
+        "id": "automatic-dispatch",
+        "title": "Inspect the existing assignment",
+        "instruction": "Open the weather-response ambulance and inspect its already admitted patient/incident assignment. A current on-task/transport state may differ from the opening state.",
+        "effects": [
+          {
+            "id": "ambulance",
+            "target": {
+              "kind": "object",
+              "objectId": "amb:weather-response"
+            },
+            "action": {
+              "kind": "reveal"
+            }
+          }
+        ],
+        "completion": {
+          "kind": "presentation",
+          "effectId": "ambulance"
+        }
+      },
+      {
+        "id": "road",
+        "title": "Observe movement and policy",
+        "instruction": "Advance bounded intervals and compare route movement, weather observations and the actual road-weather policy. Preserve observation and validity times.",
+        "effects": [],
+        "completion": {
+          "kind": "acknowledge"
+        }
+      },
+      {
+        "id": "residual",
+        "title": "Compare forcing with residue",
+        "instruction": "On a copy disable the weather forcing using its supported control, then observe residual water or ice over time. Change road-weather policy separately so the causal comparison is interpretable.",
+        "effects": [],
+        "completion": {
+          "kind": "acknowledge"
+        }
+      },
+      {
+        "id": "boundary",
+        "title": "Explain the boundary",
+        "instruction": "Explain which changes came from the weather field, which from policy and which from an existing assignment. Continue records acknowledgement, not a meteorological or transport validation.",
+        "effects": [],
+        "completion": {
+          "kind": "acknowledge"
+        }
+      },
+      {
+        "id": "explore",
+        "title": "Continue exploring",
+        "instruction": "This guide is finished. The same Run remains available. Pause or stop guidance whenever you wish; those controls do not pause the shared simulation. Copy the Run before trying a different intervention. Acknowledgements record your choice to continue, not a qualification.",
+        "effects": [],
+        "completion": {
+          "kind": "acknowledge"
+        }
+      }
+    ]
   }
 }

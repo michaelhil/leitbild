@@ -38,14 +38,14 @@
       {
         "id": "frequency-event-briefing",
         "at": { "kind": "after_scenario_start", "seconds": 0 },
-        "title": "Winter peak before a unit trip",
+        "title": "Read the baseline before the scheduled trip",
         "actions": [
           {
             "type": "show_guidance",
             "guidance": {
               "id": "frequency-event-briefing",
               "title": "Winter peak before a unit trip",
-              "message": "Read the starting frequency, the largest units and the allocated reserves in the Grid summary. Kvilldal, Norway's largest hydropower station, trips at two minutes.",
+              "message": "Use Guide or inspect the starting frequency, allocated reserves and generator state directly. The model schedules a Kvilldal trip at +2 min. Shared time starts paused until a person advances or plays it.",
               "objectIds": ["grid:norway"],
               "dismissible": true,
               "tone": "default"
@@ -67,14 +67,105 @@
             "type": "show_guidance",
             "guidance": {
               "id": "kvilldal-trip",
-              "title": "Kvilldal tripped",
-              "message": "Follow the nadir and FCR-D, then aFRR and mFRR as they restore 50 Hz over the next twenty minutes. Check which reserves remain for a second incident.",
+              "title": "Inspect the generator-trip response",
+              "message": "Inspect the actual Kvilldal state and cue outcome. Follow measured nadir and FCR-D, then aFRR and mFRR in the model. Check recovery, observation time and reserves remaining; the scheduled event does not establish that frequency reached 50 Hz.",
               "objectIds": ["grid:norway"],
               "dismissible": true,
               "tone": "update"
             }
           }
         ]
+      }
+    ]
+  },
+  "guide": {
+    "id": "guide:frequency",
+    "title": "Follow a frequency event",
+    "description": "An illustrative Nordic-grid reserve exercise. Observe actual frequency and reserves rather than taking the scripted prose as evidence.",
+    "startPaused": true,
+    "entry": {
+      "kind": "clock",
+      "beforeSeconds": 120
+    },
+    "steps": [
+      {
+        "id": "baseline",
+        "title": "Read the baseline",
+        "instruction": "Open Grid operations. Inspect current frequency, reserves and the Kvilldal generator before the event.",
+        "effects": [
+          {
+            "id": "grid",
+            "target": {
+              "kind": "panel",
+              "panelId": "electric-grid.overview"
+            },
+            "action": {
+              "kind": "reveal"
+            }
+          }
+        ],
+        "completion": {
+          "kind": "presentation",
+          "effectId": "grid"
+        }
+      },
+      {
+        "id": "trip-time",
+        "title": "Advance to two minutes",
+        "instruction": "Advance the shared Run to the two-minute generator trip. Check the cue journal and the actual generator state.",
+        "effects": [],
+        "completion": {
+          "kind": "condition",
+          "condition": {
+            "kind": "clock",
+            "afterSeconds": 120
+          }
+        }
+      },
+      {
+        "id": "nadir",
+        "title": "Follow the arrest",
+        "instruction": "Advance in bounded intervals and inspect the frequency trend and FCR-D response. A browser highlight cannot establish a nadir; use the recorded series and its time range.",
+        "effects": [],
+        "completion": {
+          "kind": "acknowledge"
+        }
+      },
+      {
+        "id": "restoration",
+        "title": "Observe recovery",
+        "instruction": "Continue in bounded intervals while reading aFRR, mFRR and residual reserves. This gate checks a fresh largest-load-island frequency of at least 49.9 Hz; it does not establish that every island or all reserves recovered.",
+        "effects": [],
+        "completion": {
+          "kind": "condition",
+          "condition": {
+            "kind": "observation",
+            "ref": "grid:norway#grid.frequency",
+            "operator": "gte",
+            "value": 49.9,
+            "quantity": "frequency",
+            "unit": "Hz",
+            "maxAgeSeconds": 5
+          }
+        }
+      },
+      {
+        "id": "explain",
+        "title": "Explain the evidence",
+        "instruction": "State what the model showed, which island the frequency represents, when each reserve responded and what capacity remains. Treat this as an illustrative model result, not validation of the real Nordic grid.",
+        "effects": [],
+        "completion": {
+          "kind": "acknowledge"
+        }
+      },
+      {
+        "id": "explore",
+        "title": "Continue exploring",
+        "instruction": "This guide is finished. The same Run remains available. Pause or stop guidance whenever you wish; those controls do not pause the shared simulation. Copy the Run before trying a different intervention. Acknowledgements record your choice to continue, not a qualification.",
+        "effects": [],
+        "completion": {
+          "kind": "acknowledge"
+        }
       }
     ]
   }
