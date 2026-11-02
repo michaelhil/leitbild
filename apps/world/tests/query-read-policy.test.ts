@@ -193,6 +193,32 @@ test('an asynchronous query cannot return under a superseded AI policy, while hu
   } })
 })
 
+test('a suspended AI read retains its caller policy while a person reads the same runtime', async () => {
+  let entered!: () => void, release!: () => void
+  const waiting = new Promise<void>(resolve => { entered = resolve }), gate = new Promise<void>(resolve => { release = resolve })
+  let delay = true
+  await withWorld(async ({ registry, invoke }) => {
+    const source = smallSource(); await registry.createScenario(source)
+    const run = await registry.create({ scenarioId: source.id }); await run.setClock({ paused: true })
+    await run.setAgentRestrictions(operator, { operationIds: [], objects: [{ objectId: objectIdSchema.parse('drone:hidden'), deny: ['inspect'] }] }, 0)
+    const pending = invoke(run.id, 'world.drone.scene', {})
+    await waiting
+    const person = await invoke(run.id, 'world.drone.scene', {}, 'human')
+    expect(person.status).toBe(200)
+    expect(person.body.result.drones).toHaveLength(2)
+    release()
+    const ai = await pending
+    expect(ai.status).toBe(200)
+    expect(ai.body.result.drones.map((drone: any) => drone.id)).toEqual(['drone:visible'])
+  }, adapter => adapter.packId !== 'drone' ? adapter : { ...adapter, connect: async config => {
+    const connection = await adapter.connect(config)
+    return { ...connection, invokeQuery: async query => {
+      if (delay && query.capabilityId === 'world.drone.scene') { delay = false; entered(); await gate }
+      return connection.invokeQuery(query)
+    } }
+  } })
+})
+
 test('Plant, Grid, retained layout and history reads do not rediscover a restricted owner through other projections', async () => withWorld(async ({ registry, invoke }) => {
   const source = scenarioDefinitionSchema.parse({ ...offsite, id: 'owner-policy', timeline: undefined })
   await registry.createScenario(source)
