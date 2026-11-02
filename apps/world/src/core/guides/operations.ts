@@ -14,7 +14,7 @@ import { createGuideAttempt, currentGuideStep, advanceGuideAttempt } from './sto
 import { guideAttemptIdSchema, type GuideAttempt } from './attempt.ts'
 import { guideFailure, isGuidanceFailure } from './errors.ts'
 import { evaluateGuideCondition } from './conditions.ts'
-import type { GuideTarget, GuideStep } from './model.ts'
+import { guideControlTargets, type GuideTarget, type GuideStep } from './model.ts'
 import { refObjectId } from '../model/alerts.ts'
 
 const identity = z.string().min(1).max(256)
@@ -59,7 +59,7 @@ const ownReceiver = (call: GuidanceCall, recipient: PresentationRecipient): Pres
   return current
 }
 
-const supportedControls = ['view', 'guide', 'alarms', 'dashboard', 'assistant'] as const
+const supportedControls = guideControlTargets.map(control => control.id)
 const targetFor = (call: GuidanceCall, target: GuideTarget): PresentationTarget => ({
   subject: subjectOf(call), type: target.kind === 'composer' ? 'world.composer' : target.kind === 'panel' ? 'world.panel' : target.kind === 'control' ? 'world.control' : 'world.object',
   id: target.kind === 'object' ? target.objectId : target.kind === 'panel' ? target.panelId : target.kind === 'control' ? target.controlId : 'assistant',

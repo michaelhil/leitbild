@@ -4,6 +4,11 @@ import { idSchema, objectIdSchema } from '../model/ids.ts'
 import { observableRefSchema } from '../model/alerts.ts'
 import { quantitySchema, quantityUnits } from '../observation/model.ts'
 
+export const guideControlTargets = [
+  { id: 'view', label: 'View controls' }, { id: 'guide', label: 'Guide' }, { id: 'alarms', label: 'Alarms' },
+  { id: 'dashboard', label: 'Dashboard' }, { id: 'assistant', label: 'Assistant' },
+] as const
+
 /** World owns these semantic targets; a browser decides their current availability. */
 export const guideTargetSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('object'), objectId: objectIdSchema, elementId: idSchema.optional(), lateBound: z.literal(true).optional() }).strict(),
