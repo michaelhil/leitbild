@@ -151,6 +151,7 @@ test('regression: pause longer than peer TTL preserves electrical connection on 
   const registry = createSimulationRunRegistry({ dataDir,workspaceId,...testScenarioAuthoring(),runtimeAdapters:createTestPackRuntimeAdapters(),scenarioRuntimeResolver:createTestScenarioRuntimeResolver(),idleRuntimeCloseDelayMs:-1 })
   try {
     const run = await registry.create({scenarioId:'halden-power-complex'})
+    await run.setClock({paused:false}) // The guided Definition deliberately starts paused; this regression needs advancing peers.
     // Each Pack tick commits events and exchanges connection states; a loaded machine delays ticks, so wait for them.
     const ticked = (label: string, afterSeq: number) => waitForCondition(label, () => run.snapshot().seq > afterSeq, { timeoutMs: 20_000 })
     await Bun.sleep(2100)
