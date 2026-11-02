@@ -8,8 +8,8 @@
 //! | `core_power_w` | 1 | nuclear heat released (`heats().nuclear.released_w`) |
 //! | `regional_fraction` | regions | region i's induced fissions `Σ_{k∈i} g_k N_i` over the core's, `g_k` the support's fissions per population |
 //! | `fuel_doppler_k` | regions | production-weighted fuel temperature in the Doppler measure: `(Σ_{k∈i} g_k √T_{a(k)} / Σ_{k∈i} g_k)²`, `T_a` the carrier's `[mean √T]²` |
-//! | `core_cell_k` | CORE.* cells | cell liquid temperature from its (p, u) |
-//! | `average_coolant_k` | 1 | mass-weighted mean temperature of the 27 primary cells (every regular cell but SURGE) |
+//! | `core_cell_k` | CORE.* cells | cell liquid temperature per its phase mode ([`cell_state`]): a liquid cell's from its (p, u), an equilibrium cell's `Tsat(p)` |
+//! | `average_coolant_k` | 1 | mass-weighted mean temperature of the 27 primary cells (every regular cell but SURGE), each cell's mixture per its phase mode ([`cell_state`]) |
 //! | `pzr_roof_pa`, `pzr_level_m` | 1 | the stratified cell's PT1 and collapsed level |
 //! | `core_dp_pa` | 1 | LOWER less UPPER cell pressure (S1) |
 //! | `loop_flow_kg_s` | 2 | RETURN.A->DOWN and RETURN.B->DOWN mass flow |
@@ -20,7 +20,8 @@ use leitbild_operating_plant::{
         operator::Joined,
         post_trip_domain::{self, Admission, Extension},
     },
-    network::{Properties, packet::Packet as NetworkPacket},
+    network::{CellMode, Network, Properties, packet::Packet as NetworkPacket},
+    thermal::Scalar,
 };
 use leitbild_operating_water::If97;
 use serde_json::{Value, json};
@@ -39,7 +40,8 @@ pub struct Reader {
     sg_pressure: Vec<(usize, f64)>,
     sg_liquid: Vec<(usize, f64)>,
     /// First rod coordinate, clusters, and the travel scales.
-    rods: (usize, usize, Vec<f64>),
+    /// Each cluster's travel coordinate (global) and scale.
+    rods: (Vec<usize>, usize, Vec<f64>),
     pub reference_travel_m: f64,
     supports: Vec<(usize, usize)>,
     regions: usize,
@@ -99,10 +101,22 @@ impl Reader {
             ));
         }
         let o = joined.offsets();
-        // The rods' block ends where the PZR block (G6) begins.
-        let clusters = (o.pzr - o.rods) / 3;
+        // HOOK (OU-C P2): each cluster's travel coordinate is the rod owner's
+        // travel output (the layout has two mouth currents per cluster and
+        // the bore groups after the clusters).
+        let travel: Vec<usize> = joined
+            .rods()
+            .map(|b| {
+                b.structure()
+                    .outputs
+                    .iter()
+                    .map(|t| o.rods + t[0])
+                    .collect::<Vec<usize>>()
+            })
+            .unwrap_or_default();
+        let clusters = travel.len();
         let scales = joined.scales();
-        let travel_scales = (0..clusters).map(|c| scales[o.rods + 3 * c]).collect();
+        let travel_scales = travel.iter().map(|i| scales[*i]).collect();
         let nuclear = joined.nuclear();
         Ok(Self {
             cells,
@@ -111,7 +125,7 @@ impl Reader {
             upper: region("UPPER")?,
             sg_pressure,
             sg_liquid,
-            rods: (o.rods, clusters, travel_scales),
+            rods: (travel, clusters, travel_scales),
             reference_travel_m,
             supports: nuclear
                 .supports()
@@ -134,17 +148,9 @@ impl Reader {
         rods: bool,
     ) -> Result<Vec<(&'static str, Vec<f64>)>, String> {
         let net = &joined.network;
-        let scales = net.scales();
         let (mut mass, mut weighted, mut core) = (0., 0., Vec::new());
-        for (c, l) in net.cell_layout.iter().enumerate() {
-            let p = y[l.base] * scales[l.base];
-            let m = y[l.mass[0]] * scales[l.mass[0]];
-            let u = y[l.energy[0]] * scales[l.energy[0]];
-            let q = net
-                .properties()
-                .caloric(false, p, u / m, false)
-                .map_err(|e| format!("cell {c} caloric: {e:?}"))?;
-            let temperature = net.properties().values(&q).temperature_k;
+        for c in 0..net.cell_layout.len() {
+            let (temperature, m) = cell_temperature(net, y, c)?;
             let (primary, in_core) = self.cells[c];
             if primary {
                 mass += m;
@@ -230,16 +236,68 @@ impl Reader {
             ),
         ];
         if rods {
-            let (offset, clusters, scales) = &self.rods;
+            let (travel, clusters, scales) = &self.rods;
             out.push((
                 key::ROD_TRAVEL_M,
-                (0..*clusters)
-                    .map(|c| y[offset + 3 * c] * scales[c])
-                    .collect(),
+                (0..*clusters).map(|c| y[travel[c]] * scales[c]).collect(),
             ));
         }
         Ok(out)
     }
+}
+
+/// A regular cell's temperature and mass per its phase mode, as the kernel
+/// defines them (`network::phase_modes`, S3-D-P1, S3-D-P6): a liquid-mode
+/// cell holds no vapour and is liquid at `(p, U_l/M_l)` with mass `M_l`; an
+/// equilibrium cell's slots `M_l, U_l` hold its totals `M, U` and both of
+/// its phases sit at the saturated endpoints of its pressure (never an
+/// inversion of `(p, U/M)` at the endpoint), so its liquid's and its
+/// mixture's temperature is `Tsat(p)` and its mass the total `M`. `(p, m,
+/// u)` are the cell's pressure and its `M_l, U_l` slots (physical units).
+pub fn cell_state<P: Properties>(
+    properties: &P,
+    mode: CellMode,
+    p: f64,
+    m: f64,
+    u: f64,
+) -> Result<(f64, f64), String> {
+    match mode {
+        CellMode::Liquid => {
+            let q = properties
+                .caloric(false, p, u / m, false)
+                .map_err(|e| format!("liquid caloric: {e:?}"))?;
+            Ok((properties.values(&q).temperature_k, m))
+        }
+        CellMode::Equilibrium => {
+            let sat = properties
+                .saturation_caloric(Scalar::constant(p))
+                .map_err(|e| format!("saturation: {e:?}"))?;
+            Ok((sat.temperature.value, m))
+        }
+    }
+}
+
+/// [`cell_state`] of regular cell `c` at `y` (solver scaling), by the
+/// network's mode table.
+pub fn cell_temperature<P: Properties>(
+    net: &Network<P>,
+    y: &[f64],
+    c: usize,
+) -> Result<(f64, f64), String> {
+    let scales = net.scales();
+    let l = &net.cell_layout[c];
+    let mode = *net
+        .cell_modes()
+        .get(c)
+        .ok_or_else(|| format!("cell {c} has no phase mode"))?;
+    cell_state(
+        net.properties(),
+        mode,
+        y[l.base] * scales[l.base],
+        y[l.mass[0]] * scales[l.mass[0]],
+        y[l.energy[0]] * scales[l.energy[0]],
+    )
+    .map_err(|e| format!("cell {c} ({mode:?}): {e}"))
 }
 
 /// The credited outputs defined on the network's cell-pressure coordinates
@@ -285,7 +343,7 @@ pub fn extension(raw: &Value) -> Result<(Extension, Value), String> {
     Ok((
         serde_json::from_slice(&bytes).map_err(|e| format!("{file}: {e}"))?,
         json!({"source": "compiled section file (pre-D3 packet)", "file": file,
-            "sha256": crate::provenance::sha256_file(&file)?}),
+            "sha256": crate::common::provenance::sha256_file(&file)?}),
     ))
 }
 
@@ -336,6 +394,7 @@ pub fn d3_point(
             &at.neutrons,
             at.conditions(),
             e,
+            0.,
         ) {
             Ok(m) => {
                 let r = m.reactivity_gain.len();
@@ -405,4 +464,41 @@ pub fn reference_densities(raw: &Value) -> Result<Vec<f64>, String> {
                 .ok_or_else(|| "a region without reference_density_kg_m3".to_string())
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A two-phase (equilibrium-mode) cell: 500 kg of saturated vapour over
+    /// saturated liquid at 12 MPa in 10 m^3. Its totals' (p, U/M) lie inside
+    /// the dome, where the liquid inverse refuses; per its mode the cell is
+    /// at Tsat(p) with its total mass. A liquid-mode cell reads its liquid
+    /// point, as before.
+    #[test]
+    fn a_two_phase_cell_reads_at_saturation_with_its_total_mass() {
+        let water = If97;
+        let p = 12e6;
+        let sat = water.saturation_caloric(Scalar::constant(p)).unwrap();
+        let (rf, rg) = (sat.liquid.density.value, sat.vapor.density.value);
+        let (uf, ug) = (
+            sat.liquid.enthalpy.value - p / rf,
+            sat.vapor.enthalpy.value - p / rg,
+        );
+        let (mg, v) = (500., 10.);
+        let ml = (v - mg / rg) * rf;
+        let (m, u) = (ml + mg, ml * uf + mg * ug);
+        assert!(
+            cell_state(&water, CellMode::Liquid, p, m, u).is_err(),
+            "the liquid inverse at a two-phase cell's totals"
+        );
+        let (t, mass) = cell_state(&water, CellMode::Equilibrium, p, m, u).unwrap();
+        assert_eq!((t, mass), (sat.temperature.value, m));
+        assert!((597.0..599.0).contains(&t), "Tsat(12 MPa) = {t} K");
+        // A subcooled liquid cell at the same pressure.
+        let q = water.caloric(false, p, 1.2e6, false).unwrap();
+        let (tl, ml2) = cell_state(&water, CellMode::Liquid, p, 1000., 1.2e9).unwrap();
+        assert_eq!((tl, ml2), (water.values(&q).temperature_k, 1000.));
+        assert!(tl < t);
+    }
 }

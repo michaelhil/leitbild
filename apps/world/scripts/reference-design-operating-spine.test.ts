@@ -286,7 +286,7 @@ test.skipIf(!wiki || !if97)('actual seed and steady passes: the steady solids ow
   expect(new Set(seen!.packet.thermal.fuel_bands.flatMap(b => [...b.fuel_temperatures_k, b.clad_temperature_k]))).toEqual(new Set([593.15]))
   const basis = seen!.settleBasis, derivation = seen!.settleDerivation
   expect(basis.coreMassFlux_kg_m2_s).toBe(derivation.enthalpyReferenceFlow_kg_s / derivation.coreMainFlowArea_m2)
-  expect(basis.sgPrimaryMassFlux_kg_m2_s).toEqual(['A', 'B'].map(id => ({ id, massFlux_kg_m2_s: derivation.enthalpyReferenceFlow_kg_s / 2 / 1.25 })))
+  expect(basis.sgPrimaryMassFlux_kg_m2_s).toEqual(['A', 'B'].map(id => ({ id, massFlux_kg_m2_s: derivation.enthalpyReferenceFlow_kg_s / 2 / 1.649652499862129, inflowTemperature_K: 593.15 })))
   expect(basis.basisPower_W).toBe(2992.5e6); expect(derivation.preparedPower_W).toBe(seen!.packet.thermal.source_total_w)
   for (const [i, b] of p.thermal.fuel_bands.entries()) {
     const c = steady.carriers[i]!
@@ -325,13 +325,14 @@ test.skipIf(!wiki || !if97)('actual single hot packet rebases every recipient, f
   expect(p.thermal.fuel_bands).toHaveLength(386); expect(p.thermal.helium).toHaveLength(193)
   expect(p.thermal.core_contacts).toHaveLength(448); expect(p.thermal.sg_segments).toHaveLength(8)
   const h = p.thermal.water.filter(r => r.id.startsWith('HOT.A.'))
-  expect(sum(h.map(r => r.volume_m3))).toBe(15); expect(h[1]!.volume_m3).toBe(Math.PI / 4)
-  expect(sum(h.map(r => r.mass_kg))).toBeCloseTo(15 * 679.3368894359069, 8)
+  // X4.5 refit R1.3 (steam-generation/index.md): HOT.A 15 -> 3.571353 m³ (developed 19.0986 -> 4.5472 m at the kept 1.0 m ID).
+  expect(sum(h.map(r => r.volume_m3))).toBeCloseTo(3.571353, 12); expect(h[1]!.volume_m3).toBe(Math.PI / 4)
+  expect(sum(h.map(r => r.mass_kg))).toBeCloseTo(3.571353 * 679.3368894359069, 8)
   expect(p.hot.fluid.primary_mass_kg).toBeCloseTo(sum(p.thermal.water.map(r => r.mass_kg)), 8)
   expect(p.hot.fluid.primary_energy_j).toBeCloseTo(sum(p.thermal.water.map(r => r.energy_j)), 3)
-  expect(sum(p.water_boron_amount_kg_eq)).toBeCloseTo(p.hot.fluid.primary_mass_kg / 1000, 9)
+  expect(sum(p.water_boron_amount_kg_eq)).toBeCloseTo(p.hot.fluid.primary_mass_kg * 1538 / 1e6, 9) // R14-A1: 1,538 ppm_eq
   expect(p.external_ports.surge_stock.volume_m3).toBeCloseTo(p.pzr.surge.route.liquidVolume_m3, 13)
-  expect(p.external_ports.surge_stock.absorberTracer_kgEq).toBeCloseTo(p.external_ports.surge_stock.mass_kg / 1000, 12)
+  expect(p.external_ports.surge_stock.absorberTracer_kgEq).toBeCloseTo(p.external_ports.surge_stock.mass_kg * 1538 / 1e6, 12) // R14-A1
   expect(p.thermal.water[p.external_ports.primary_to_surge.primary_water]!.id).toBe('HOT.A.JUNCTION')
   type Any = typeof p.hydraulics.sections[number]
   const channels = p.hydraulics.sections.filter((s: Any): s is Section => !('kind' in s)),
@@ -347,9 +348,10 @@ test.skipIf(!wiki || !if97)('actual single hot packet rebases every recipient, f
   expect(cell.taps).toEqual([{ id: 'PT1', elevation_m: 18.5 }, { id: 'LT.LOW', elevation_m: 6.5 }, { id: 'LT.HIGH', elevation_m: 18.5 }])
   expect([cell.absorberMassFraction, cell.interfacialLength_m]).toEqual([.001, .003])
   expect(p.hydraulics.coveredEdges).toHaveLength(31); expect(p.hydraulics.unclosedTreeEdges).toHaveLength(2)
-  expect(p.hydraulics.mainInertance.aa).toBeCloseTo(70.629211610045, 10)
+  // X4.5 refit: the main loop inertances follow the refit volumes and lengths (compiled at wiki fb3756a).
+  expect(p.hydraulics.mainInertance.aa).toBeCloseTo(23.266240367604322, 10)
   expect(p.hydraulics.mainInertance.ab).toBeCloseTo(2.654786439092273, 12)
-  expect(p.hydraulics.mainInertance.bb).toBeCloseTo(70.629211610045, 10)
+  expect(p.hydraulics.mainInertance.bb).toBeCloseTo(23.26624036760432, 10)
   const m = p.mechanics
   expect(m.regions).toHaveLength(29); expect(m.faces).toHaveLength(35); expect(m.force_projection).toHaveLength(0)
   expect(m.regions[28]).toEqual({ id: 'PZR', volume_m3: cell.fluidVolume_m3, elevation_m: cell.top_m })
@@ -405,7 +407,8 @@ test.skipIf(!wiki || !if97)('actual single hot packet rebases every recipient, f
   const pump = p.hydraulics.pump, omega = pump.referenceOmega_rad_s
   expect([pump.driveTrackingTime_s, pump.driveTorqueCapFactor, pump.driveEfficiency]).toEqual([5, 1.5, .96])
   expect(pump.drag_Nm_per_rad_s * omega ** 2).toBeCloseTo(.01 * pump.nominalFluidPower_W, 8)
-  expect(pump.rotorInertia_kg_m2).toBeCloseTo((pump.nominalFluidPower_W + pump.drag_Nm_per_rad_s * omega ** 2) * 10 / omega ** 2, 10)
+  // X4.5 refit R4.1: inertiaDecay_s 10 -> 4.48 s.
+  expect(pump.rotorInertia_kg_m2).toBeCloseTo((pump.nominalFluidPower_W + pump.drag_Nm_per_rad_s * omega ** 2) * 4.48 / omega ** 2, 10)
   expect('nominalDragPower_W' in pump).toBe(false)
   const native = process.env.LD01_OPERATING_HOT_SPINE_TEST
   if (native) {

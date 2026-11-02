@@ -11,10 +11,84 @@ import {parseFuelConstruction} from './reference-design-fuel-construction'
 import {parseFuelHandling, fuelHandlingChecks, fuelAssemblyPositions, fuelLatticeSites} from './reference-design-fuel-handling'
 import {parseControlAbsorber, controlAbsorberGeometry} from './reference-design-control-absorber'
 import {nativeIf97Primitives, nativeIf97Revision, nativeIf97HeaderSha256, nativeIf97LicenseSha256} from './reference-design-if97-primitives'
-import {parseSgContact,sgContactOwner} from './reference-design-sg-contact-law'
+import {parseSgContact,sgContactOwner,sgTubeBundle} from './reference-design-sg-contact-law'
 
-export type WaterPoint={region:number,p:number,T:number,rho:number,u:number,h:number,cp:number,cv:number,
-  w:number,alpha:number,kappa:number,mu:number,conductivity:number,saturationSlope:number}
+export type WaterPoint={region:number,p:number,T:number,rho:number,u:number,h:number,cp:number,cv?:number,
+  w?:number,alpha:number,kappa:number,mu:number,conductivity:number,saturationSlope:number}
+// spec: world/packs/process-plant/reference-designs/ld-01/model/operating-phase-properties.md#sbtl-water-properties
+/** The water method a preparation runs on (lead ruling, 1 Nov): a state is
+ * prepared on the method the unit runs. IF97: the maintained reference
+ * through the pinned header. SBTL: the water archive's ld01_sbtl_point (its
+ * tables of that reference), linked from the archive directory, which
+ * records its library and table sha256. cv and w are not tabulated: an SBTL
+ * point carries neither (no preparation reads them). */
+export type PreparationWater={method:'if97'}|{method:'sbtl',archive:string}
+export const if97Preparation:PreparationWater={method:'if97'}
+/** `--water=sbtl:<archive dir>` or `--water=if97`. */
+export function parsePreparationWater(arg:string):PreparationWater{
+  if(arg==='--water=if97')return if97Preparation
+  const m=/^--water=sbtl:(\/.+)$/.exec(arg)
+  if(!m)throw Error(`water method ${arg}: --water=if97 or --water=sbtl:<absolute water archive directory>`)
+  return {method:'sbtl',archive:m[1]!}
+}
+const sbtlQuerySource=String.raw`
+#include <cmath>
+#include <iostream>
+#include <iomanip>
+#include <string>
+extern "C" {
+struct OperatingWaterPoint { int region; double p,T,rho,u,h,cp,cv,alpha,kappa,mu,conductivity,saturation_slope,saturation_departure; };
+int ld01_sbtl_point(int branch,double p,double T,OperatingWaterPoint* out) noexcept;
+}
+int main(){
+ std::string branch; double p,T; std::cout<<std::setprecision(17);
+ while(std::cin>>branch>>p>>T){
+  if(!(p>=1e5&&p<=16e6)){std::cerr<<"Hot pilot pressure domain 0.1--16 MPa\n";return 1;}
+  const int b=branch=="liquid"?0:branch=="vapor"?1:branch=="sat-liquid"?2:branch=="sat-vapor"?3:-1;
+  if(b<0){std::cerr<<"Unknown branch\n";return 1;}
+  OperatingWaterPoint q{};
+  const int status=ld01_sbtl_point(b,p,b>=2?0.:T,&q);
+  if(status){std::cerr<<"SBTL preparation point refused, status "<<status<<"\n";return 1;}
+  if(q.region!=1&&q.region!=2){std::cerr<<"Hot pilot admits only R1/R2 states\n";return 1;}
+  std::cout<<"{\"region\":"<<q.region<<",\"p\":"<<q.p<<",\"T\":"<<q.T
+   <<",\"rho\":"<<q.rho<<",\"u\":"<<q.u<<",\"h\":"<<q.h<<",\"cp\":"<<q.cp
+   <<",\"alpha\":"<<q.alpha<<",\"kappa\":"<<q.kappa
+   <<",\"mu\":"<<q.mu<<",\"conductivity\":"<<q.conductivity
+   <<",\"saturationSlope\":"<<q.saturation_slope<<"}\n";
+ }
+ if(!std::cin.eof()){std::cerr<<"Malformed query\n";return 1;}
+ return 0;
+}
+`
+/** The archive's identity a preparation on SBTL records. */
+async function sbtlArchive(archive:string){
+  const receipt=await Bun.file(join(archive,'water-build.json')).json() as {librarySha256:string,sbtl?:{tableSha256:string,generatorSha256:string}}
+  const library=hash(await Bun.file(join(archive,'libld01_operating_water.a')).bytes())
+  if(!receipt.sbtl||library!==receipt.librarySha256)throw Error('The water archive is not the SBTL build its receipt records')
+  return {method:'sbtl' as const,librarySha256:library,tableSha256:receipt.sbtl.tableSha256,generatorSha256:receipt.sbtl.generatorSha256,querySourceSha256:hash(sbtlQuerySource)}
+}
+/** The preparation's water queries on its method: IF97 through
+ * withOperatingIf97, SBTL through the archive's own entry. */
+export async function withOperatingWater<T>(water:PreparationWater,if97Directory:string,body:(query:(rows:readonly PropertyQuery[])=>Promise<WaterPoint[]>)=>Promise<T>){
+  if(water.method==='if97')return withOperatingIf97(if97Directory,body)
+  const work=await mkdtemp(join(tmpdir(),'ld01-operating-sbtl-')),executable=join(work,'properties')
+  try{
+    const compile=Bun.spawn(['c++','-std=c++17','-O2','-x','c++','-o',executable,'-','-x','none',join(water.archive,'libld01_operating_water.a')],
+      {stdin:new Blob([sbtlQuerySource]),stdout:'pipe',stderr:'pipe'})
+    const [out,err,status]=await Promise.all([new Response(compile.stdout).text(),new Response(compile.stderr).text(),compile.exited])
+    if(status!==0)throw Error(err||out||'SBTL preparation compiler failed')
+    const query=async(rows:readonly PropertyQuery[])=>{
+      for(const q of rows)if(!['liquid','vapor','sat-liquid','sat-vapor'].includes(q.branch)||!Number.isFinite(q.p)||!Number.isFinite(q.T))throw Error('Invalid SBTL query')
+      const child=Bun.spawn([executable],{stdin:new Blob([rows.map(q=>`${q.branch} ${q.p} ${q.T}\n`).join('')]),stdout:'pipe',stderr:'pipe'})
+      const [output,error,code]=await Promise.all([new Response(child.stdout).text(),new Response(child.stderr).text(),child.exited])
+      if(code!==0)throw Error(error||'SBTL hot preparation query failed')
+      const result=output.trim()?output.trim().split('\n').map(line=>JSON.parse(line) as WaterPoint):[]
+      if(result.length!==rows.length||result.some(q=>Object.values(q).some(v=>!Number.isFinite(v))))throw Error('Malformed SBTL property result')
+      return result
+    }
+    return await body(query)
+  }finally{await rm(work,{recursive:true,force:true})}
+}
 export type PropertyQuery={branch:'liquid'|'vapor'|'sat-liquid'|'sat-vapor',p:number,T:number}
 const finite=(v:number)=>{if(!Number.isFinite(v))throw Error('Nonfinite hot reference');return v}
 const positive=(v:number)=>{if(finite(v)<=0)throw Error('Nonpositive hot reference');return v}
@@ -22,7 +96,7 @@ const sum=(v:readonly number[])=>v.reduce((a,b)=>a+b,0)
 const overlap=(a:number,b:number,c:number,d:number)=>Math.max(0,Math.min(b,d)-Math.max(a,c))
 const hash=(s:string|Uint8Array)=>createHash('sha256').update(s).digest('hex')
 const hotSchema=z.object({primaryPressure_Pa:z.number().min(1e5).max(16e6),achievedRodTravel_m:z.number().finite().nonnegative(),
-  boronReference_ppmEq:z.number().finite().nonnegative(),gapAccommodationReferenceTemperature_K:z.number().positive(),
+  boronReference_ppmEq:z.number().finite().nonnegative(),preparedBoron_ppmEq:z.number().finite().nonnegative(),gapAccommodationReferenceTemperature_K:z.number().positive(),
   sgSecondaryPressure_Pa:z.number().min(1e5).max(16e6),initialLoopMassflow_kg_s:z.literal(0),sgMetalSegments:z.literal(4)}).strict()
 const positiveNumber=z.number().finite().positive(),finiteNumber=z.number().finite()
 const record=z.record(z.string(),z.unknown())
@@ -44,7 +118,14 @@ export const steadySolidsSchema=z.object({identity:z.literal('LD01-STEADY-SOLIDS
   passive:z.array(z.object({id:z.string().min(1),temperature_k:positiveNumber,energy_j:finiteNumber,rate_w:finiteNumber}).strict()),
   sg_metal:z.array(z.object({id:z.string().min(1),generator:z.string(),temperature_k:positiveNumber,energy_j:finiteNumber,
     primary_to_metal_w:finiteNumber,metal_to_secondary_w:finiteNumber,rate_w:finiteNumber}).strict()),
-  steam_generators:z.array(record),admission:record,steady:record,checkpoints:z.array(record),ida:record}).strict()
+  steam_generators:z.array(record),admission:record,steady:record,checkpoints:z.array(record),ida:record,
+  /** The PZR steel at the steady state of its laws (S3-D36): present exactly
+   * when the settle's input carries the PZR owner's pzrMetal section. */
+  pzr:z.object({frozen:z.array(z.string()),roof_pressure_pa:positiveNumber,level_m:positiveNumber,saturation_k:positiveNumber,
+    heater_request_w:finiteNumber,joule_w:finiteNumber,exterior_w:finiteNumber,to_fluid_w:finiteNumber,
+    stores:z.array(z.object({id:z.string().min(1),temperature_k:positiveNumber,energy_j:positiveNumber,saturation_energy_j:positiveNumber,
+      rate_w:finiteNumber}).strict()).min(1),temperature_k:z.tuple([positiveNumber,positiveNumber]),stored_energy_change_j:finiteNumber,
+    steady:record,checkpoints:z.array(record),ida:record}).strict().optional()}).strict()
 export type SteadySolids=z.infer<typeof steadySolidsSchema>
 /** Where the prepared solid stocks come from: the steady solid state, or the
  * explicit seed of its own solve. The seed puts every core solid store at
@@ -434,7 +515,7 @@ export function preparePressureContinuity(regions:readonly PressureRegion[],edge
   throw Error('Pressure preparation donor branch limit')
 }
 
-export async function prepareOperatingFluid(directory:string,if97Directory:string,sourceHeat_W:number,solids:SolidPreparation){
+export async function prepareOperatingFluid(directory:string,if97Directory:string,sourceHeat_W:number,solids:SolidPreparation,water:PreparationWater=if97Preparation){
   positive(sourceHeat_W)
   const root='world/packs/process-plant/reference-designs/ld-01/',files=['systems/reactor/fuel-construction.md','systems/reactor/fuel-handling-and-pool.md','systems/reactor/control-absorber-and-guide-water.md',
       'model/operating-hot-reference.md','numerical-basis.md','systems/primary-coolant/mechanical-energy-and-geometry.md','model/connected-primary-initialization.md','systems/primary-coolant/surge-route.md',
@@ -447,7 +528,7 @@ export async function prepareOperatingFluid(directory:string,if97Directory:strin
     surge=resolveSurgeRoute(parseSurgeRoute(documents[7]!)),
     // The contact law's area per SG, uniform over the developed fold, on the
     // compiler's four equal metal segments.
-    sgContact=parseSgContact(documents[8]!),sgSegment_m=mechanics.sgDevelopedLength_m/4,
+    sgContact=parseSgContact(documents[8]!),sgBundle=sgTubeBundle(sgContact,mechanics.sgDevelopedLength_m),sgSegment_m=mechanics.sgDevelopedLength_m/4,
     physical:Physical={downVolume_m3:volumes[0]!,hotVolume_m3:volumes[5]!,sgPrimaryVolume_m3:volumes[7]!,
       pumpVolume_m3:mechanics.pumpPassageVolume_m3,coldHeaderVolume_m3:mechanics.coldHeaderVolume_m3,
       pumpDiameter_m:mechanics.pumpPassageInsideDiameter_m,hotDiameter_m:mechanics.hotInsideDiameter_m,
@@ -455,7 +536,8 @@ export async function prepareOperatingFluid(directory:string,if97Directory:strin
       surgeLength_m:surge.developedLength_m,surgeDiameter_m:surge.internalDiameter_m,surgeElevation_m:surge.volumeMeanElevation_m,
       inlet_K:balance.coreInlet_C+273.15,outlet_K:balance.coreOutlet_C+273.15},
     input={fuel:parseFuelConstruction(documents[0]!),handling:parseFuelHandling(documents[1]!),control:parseControlAbsorber(documents[2]!),achievedRodTravel_m:reference.achievedRodTravel_m,physical},geometry=operatingFluidGeometry(input)
-  return withOperatingIf97(if97Directory,async query=>{
+  const waterIdentity=water.method==='sbtl'?await sbtlArchive(water.archive):{method:'if97' as const}
+  return withOperatingWater(water,if97Directory,async query=>{
     const points=await query([physical.inlet_K,(physical.inlet_K+physical.outlet_K)/2,physical.outlet_K].map(T=>({branch:'liquid' as const,p:reference.primaryPressure_Pa,T}))),
       // S2-D18: the composed state's SG secondaries at the hot reference's
       // preparation pressure (Z2's emergent steady pressure at the G17 basis),
@@ -464,7 +546,9 @@ export async function prepareOperatingFluid(directory:string,if97Directory:strin
       endpoints=await query([{branch:'sat-liquid',p:reference.sgSecondaryPressure_Pa,T:0},{branch:'sat-vapor',p:reference.sgSecondaryPressure_Pa,T:0}]),
       regions=geometry.regions.map(r=>{const q=points.find(q=>q.T===r.temperature_K)!,chart=fixedVolumeChart(r.volume_m3,q);return {...r,pressure_Pa:q.p,water:q,...chart,
         liquidMass_kg:chart.mass_kg,steamMass_kg:0,airMass_kg:0,nitrogenMass_kg:0,
-        absorberTracer_kgEq:chart.mass_kg*reference.boronReference_ppmEq/1e6}}),
+        // R4-NUC-CRITICAL-BORON: the coolant carries the prepared (critical)
+        // boron; the feedback reference keeps boronReference_ppmEq.
+        absorberTracer_kgEq:chart.mass_kg*reference.preparedBoron_ppmEq/1e6}}),
       sg=saturatedVolumeChart(balance.secondaryVolume_m3,balance.secondaryLiquidVolume_m3,endpoints[0]!,endpoints[1]!),
       referenceFlow=sourceHeat_W/(points[2]!.h-points[0]!.h),A=sum(regions.map(r=>r.massPAtEnergy_kg_Pa)),
       resolved:ResolvedSolids=solids.kind==='steady'?solids:{kind:'provisional',coreSeed_K:physical.outlet_K,sgMetalSeed_K:(physical.inlet_K+sg.temperature_K)/2},
@@ -484,7 +568,8 @@ export async function prepareOperatingFluid(directory:string,if97Directory:strin
       steamGenerators=['A','B'].map(id=>({id,...sg,metal:Array.from({length:4},(_,i)=>{
         const capacity_J_K=balance.wallCapacity_MJ_K*1e6/4,segment=`SG.${id}.METAL.${i}`
         return {id:segment,developedStart_m:sgSegment_m*i,developedEnd_m:sgSegment_m*(i+1),capacity_J_K,...metal(segment,capacity_J_K),
-          exchangeArea_m2:sgContact.exchangeArea_m2*sgSegment_m/mechanics.sgDevelopedLength_m}}),
+          exchangeArea_m2:sgBundle.exchangeArea_m2*sgSegment_m/mechanics.sgDevelopedLength_m,
+          thermalDiameter_m:sgBundle.thermalDiameter_m,primaryFlowArea_m2:sgBundle.filmFlowArea_m2}}),
         liquidDensity_kg_m3:endpoints[0]!.rho,steamDensity_kg_m3:endpoints[1]!.rho,airMass_kg:0,nitrogenMass_kg:0,absorberTracer_kgEq:0}))
     steadyMetal?.covered()
     if(!Number.isFinite(A)||A===0)throw Error('Singular connected primary inventory pressure')
@@ -493,7 +578,7 @@ export async function prepareOperatingFluid(directory:string,if97Directory:strin
       hotReference:reference,sourceCapsule_m:input.handling.sourceCapsule_m,
       provenance:{if97Revision:nativeIf97Revision,headerSha256:nativeIf97HeaderSha256,licenseSha256:nativeIf97LicenseSha256,sourceSha256:hash(await Bun.file(import.meta.path).text()),propertyAdapterSha256:hash(querySource),
         helperSources:await Promise.all(['reference-design-fuel-materials.ts','reference-design-fuel-construction.ts','reference-design-fuel-handling.ts','reference-design-control-absorber.ts','reference-design-surge-route.ts','reference-design-if97-primitives.ts','reference-design-balance.ts'].map(async name=>({name,sha256:hash(await Bun.file(join(import.meta.dir,name)).text())}))),
-        consumed:files.map((name,i)=>({name,sha256:hash(documents[i]!)}))},
+        consumed:files.map((name,i)=>({name,sha256:hash(documents[i]!)})),water:waterIdentity},
       primary:{pressure_Pa:reference.primaryPressure_Pa,regions,edges:geometry.edges,tree:fluidTree(regions,geometry.edges),cycleCount:geometry.cycleCount,
         totalMass_kg:sum(regions.map(r=>r.mass_kg)),totalInternalEnergy_J:sum(regions.map(r=>r.internalEnergy_J)),
         totalVolume_m3:geometry.totalVolume_m3,aggregateMassPAtEnergy_kg_Pa:A,

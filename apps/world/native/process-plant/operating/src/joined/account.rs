@@ -27,6 +27,9 @@
 //! - **Handovers.** The metal heat the secondary received against the heat
 //!   the solids delivered, and the nuclear event energy against the heat
 //!   released plus the reservoirs' rate.
+//! - **CVCS (plan r4 X4.2).** Charging and letdown cross the primary's
+//!   envelope at COLD.A (mass, enthalpy, absorber); the CVCS tanks, outside
+//!   it, balance their mass and absorber against those crossings.
 //!
 //! Each identity closes when `|defect| <= bound (1 + sum |terms|)`, the
 //! terms being every store's rate and every boundary term (S1's bound form).
@@ -110,6 +113,8 @@ pub struct Account {
     /// Per SG.
     pub sg_mass: Vec<Identity>,
     pub sg_energy: Vec<Identity>,
+    /// Plan r4 X4.2: the CVCS tanks' mass and absorber, when composed.
+    pub cvcs: Vec<Identity>,
     /// The metal heat per SG as the secondary received it against the
     /// solids' delivery, and the nuclear event energy split.
     pub handovers: Vec<Identity>,
@@ -131,6 +136,7 @@ impl Account {
         .chain(&self.sg_mass)
         .chain(&self.sg_energy)
         .chain(&self.handovers)
+        .chain(&self.cvcs)
     }
     /// The identity with the largest relative defect.
     pub fn worst(&self) -> &Identity {
@@ -181,7 +187,6 @@ pub struct Plan {
     rods: std::ops::Range<usize>,
     /// The PZR metal's energies (global), with a composed PZR owner (G6).
     pzr_metal: Vec<usize>,
-    pzr: bool,
     scales: Vec<f64>,
     row_scales: Vec<f64>,
     /// Network coordinates by kind (labels' categories).
@@ -195,11 +200,25 @@ pub struct Plan {
     precursors: Vec<usize>,
     /// Differential solid energies and history reservoirs (global).
     solid_energy: Vec<usize>,
+    /// E-NUC: per global coordinate, how many unreduced stores its value
+    /// counts for: a solid replica class's coordinate is one member's store
+    /// (its layout multiplicity); every other coordinate, a grouped nuclear
+    /// one included (it holds its members' sum), counts once.
+    weight: Vec<f64>,
     histories: Vec<usize>,
     /// Per SG, its mass and internal energy coordinates (global).
     sg_mass: Vec<usize>,
     sg_energy: Vec<usize>,
     sg_names: Vec<String>,
+    /// HOOK (OU-C P2): the rod bores' water stocks (global): mass, internal
+    /// energy and boron of every bore group.
+    bore_mass: Vec<usize>,
+    bore_energy: Vec<usize>,
+    bore_boron: Vec<usize>,
+    /// Plan r4 X4.2: the CVCS tank masses (BLEND, WATER, CONCENTRATE,
+    /// RECEIVER) and absorbers (BLEND, RECEIVER), global; empty without it.
+    cvcs_mass: Vec<usize>,
+    cvcs_boron: Vec<usize>,
 }
 
 impl Plan {
@@ -213,7 +232,6 @@ impl Plan {
             network: o.nuclear,
             rods: o.rods..o.pzr,
             pzr_metal: Vec::new(),
-            pzr: joined.pzr().is_some(),
             scales: Vec::with_capacity(o.end),
             row_scales: Vec::with_capacity(o.end),
             net_mass: Vec::new(),
@@ -223,11 +241,22 @@ impl Plan {
             populations: Vec::new(),
             precursors: Vec::new(),
             solid_energy: Vec::new(),
+            weight: Vec::with_capacity(o.end),
             histories: Vec::new(),
             sg_mass: Vec::new(),
             sg_energy: Vec::new(),
             sg_names: Vec::new(),
+            bore_mass: Vec::new(),
+            bore_energy: Vec::new(),
+            bore_boron: Vec::new(),
+            cvcs_mass: Vec::new(),
+            cvcs_boron: Vec::new(),
         };
+        if joined.cvcs().is_some() {
+            let (masses, absorbers) = super::cvcs::Cvcs::stocks();
+            plan.cvcs_mass = masses.iter().map(|i| o.cvcs + i).collect();
+            plan.cvcs_boron = absorbers.iter().map(|i| o.cvcs + i).collect();
+        }
         for (i, (category, _)) in joined.network.labels().iter().enumerate() {
             match *category {
                 "M" => plan.net_mass.push(i),
@@ -255,6 +284,9 @@ impl Plan {
                     ("nuclear", Class::RegionalPopulation) => plan.populations.push(global),
                     ("nuclear", Class::Precursor) => plan.precursors.push(global),
                     ("pzr", Class::PzrMetal) => plan.pzr_metal.push(global),
+                    ("rods", Class::PhaseMass) => plan.bore_mass.push(global),
+                    ("rods", Class::PhaseEnergy) => plan.bore_energy.push(global),
+                    ("rods", Class::Tracer) => plan.bore_boron.push(global),
                     ("secondary", Class::SecondaryStock) => {
                         let label = &layout.labels[i];
                         if let Some(id) = label
@@ -276,6 +308,9 @@ impl Plan {
             }
             plan.scales.extend(&layout.scales);
             plan.row_scales.extend(&layout.row_scales);
+            plan.weight.extend(layout.multiplicity.iter().map(|m| {
+                if owner == "solids" { *m as f64 } else { 1. }
+            }));
             k += layout.len();
         }
         let generators = joined
@@ -299,6 +334,11 @@ impl Plan {
             .chain(&plan.sg_mass)
             .chain(&plan.sg_energy)
             .chain(&plan.pzr_metal)
+            .chain(&plan.bore_mass)
+            .chain(&plan.bore_energy)
+            .chain(&plan.bore_boron)
+            .chain(&plan.cvcs_mass)
+            .chain(&plan.cvcs_boron)
         {
             if differential[i] != 1. || plan.scales[i] != plan.row_scales[i] {
                 return Err(fatal(format!(
@@ -368,24 +408,27 @@ impl Plan {
             ]
             .map(String::from),
         );
-        if self.pzr {
-            names.extend(
-                [
-                    "pzr_heater_joule_j",
-                    "pzr_exterior_loss_j",
-                    "pzr_relief_j",
-                    "pzr_relief_attribution_kg",
-                    "pzr_relief_attribution_boron_kg_eq",
-                ]
-                .map(String::from),
-            );
+        names.extend(
+            [
+                "pzr_heater_joule_j",
+                "pzr_exterior_loss_j",
+                "pzr_relief_j",
+                "pzr_relief_attribution_kg",
+                "pzr_relief_attribution_boron_kg_eq",
+            ]
+            .map(String::from),
+        );
+        // Plan r4 X4.2: charging and letdown energy across COLD.A (their
+        // mass and absorber are in the primary's net receipts).
+        if !self.cvcs_mass.is_empty() {
+            names.extend(["cvcs_charging_j", "cvcs_letdown_j"].map(String::from));
         }
         names
     }
 
     /// The store rate `(y' - row) scale` of a differential coordinate.
     fn rate(&self, rows: &[Scalar], yp: &[f64], i: usize) -> f64 {
-        (yp[i] - rows[i].value) * self.scales[i]
+        (yp[i] - rows[i].value) * self.scales[i] * self.weight[i]
     }
     fn rates(&self, rows: &[Scalar], yp: &[f64], indices: &[usize]) -> (f64, f64) {
         indices.iter().fold((0., 0.), |(sum, abs), &i| {
@@ -460,15 +503,18 @@ impl Plan {
         };
         let heats = joined.heats();
         let (secondary, rods) = self.owners(joined, y, yp, rows)?;
+        let cvcs = joined.cvcs().map(|b| (b.account(), b.transfers()));
+        let cvcs_port = |name: &str| -> Result<super::block::Crossing, Failure> {
+            cvcs.as_ref()
+                .and_then(|(a, _)| a.crossings.iter().find(|c| c.port == name).cloned())
+                .ok_or_else(|| fatal(format!("no crossing {name}")))
+        };
         // G6: the PZR metal's Joule power and exterior loss as the captured
         // evaluation recorded them, and the relief's outflow from the cell's
         // own evaluation (zero with the relief seated or no relief port).
-        let pzr = match joined.pzr() {
-            Some(b) => Some(b.captured().ok_or_else(|| {
-                fatal("the PZR metal's account terms were not captured (read the account through Joined::account)")
-            })?),
-            None => None,
-        };
+        let p = joined.pzr().captured().ok_or_else(|| {
+            fatal("the PZR metal's account terms were not captured (read the account through Joined::account)")
+        })?;
         let relief = joined
             .network
             .pzr_evaluation()
@@ -497,6 +543,10 @@ impl Plan {
         e.store("history reservoirs", histories, histories_abs);
         let (sg_u, sg_u_abs) = self.rates(rows, yp, &self.sg_energy);
         e.store("SG secondary energies", sg_u, sg_u_abs);
+        if !self.bore_energy.is_empty() {
+            let (u, u_abs) = self.rates(rows, yp, &self.bore_energy);
+            e.store("rod bores' water energies", u, u_abs);
+        }
         e.store(
             "rod bodies kinetic and potential",
             rods.mechanical_rate_w,
@@ -526,13 +576,16 @@ impl Plan {
         for c in secondary.crossings.iter().chain(&rods.crossings) {
             e.boundary(&c.port, c.energy_w);
         }
-        if let Some(p) = pzr {
-            let (metal, metal_abs) = self.rates(rows, yp, &self.pzr_metal);
-            e.store("PZR metal energies", metal, metal_abs);
-            e.boundary("PZR heater Joule power", p.joule_w);
-            e.boundary("PZR exterior loss", -p.exterior_w);
-            e.boundary("PZR relief outflow", -relief[1]);
+        if let Some((a, _)) = &cvcs {
+            for c in &a.crossings {
+                e.boundary(&c.port, c.energy_w);
+            }
         }
+        let (metal, metal_abs) = self.rates(rows, yp, &self.pzr_metal);
+        e.store("PZR metal energies", metal, metal_abs);
+        e.boundary("PZR heater Joule power", p.joule_w);
+        e.boundary("PZR exterior loss", -p.exterior_w);
+        e.boundary("PZR relief outflow", -relief[1]);
         account.unit_energy = e;
 
         // Primary mass and boron: the network's receipts over every cell.
@@ -542,8 +595,15 @@ impl Plan {
             b("mass_receipt_sum_kg_s")?,
             b("mass_receipt_abs_sum_kg_s")?,
         );
-        if pzr.is_some() {
-            m.boundary("PZR relief outflow", -relief[0]);
+        if !self.bore_mass.is_empty() {
+            let (r, r_abs) = self.rates(rows, yp, &self.bore_mass);
+            m.store("rod bores' water", r, r_abs);
+        }
+        m.boundary("PZR relief outflow", -relief[0]);
+        if let Some((a, _)) = &cvcs {
+            for c in &a.crossings {
+                m.boundary(&c.port, c.mass_kg_s);
+            }
         }
         account.primary_mass = m;
         let mut bo = Identity::new("primary_boron");
@@ -552,10 +612,34 @@ impl Plan {
             b("boron_receipt_sum_kg_eq_s")?,
             b("boron_receipt_abs_sum_kg_eq_s")?,
         );
-        if pzr.is_some() {
-            bo.boundary("PZR relief outflow", -relief[2]);
+        if !self.bore_boron.is_empty() {
+            let (r, r_abs) = self.rates(rows, yp, &self.bore_boron);
+            bo.store("rod bores' boron", r, r_abs);
+        }
+        bo.boundary("PZR relief outflow", -relief[2]);
+        if let Some((a, _)) = &cvcs {
+            for c in &a.crossings {
+                bo.boundary(&c.port, c.tracer_kg_s);
+            }
         }
         account.primary_boron = bo;
+        // Plan r4 X4.2: the tanks lose what the primary receives; CONCENTRATE
+        // delivers at its constant fraction, WATER none.
+        if let Some((a, (_, _, fraction))) = &cvcs {
+            let into_primary =
+                |f: fn(&super::block::Crossing) -> f64| -> f64 { a.crossings.iter().map(f).sum() };
+            let mut tm = Identity::new("cvcs_mass");
+            let (r, r_abs) = self.rates(rows, yp, &self.cvcs_mass);
+            tm.store("CVCS tank masses", r, r_abs);
+            tm.boundary("charging less letdown", -into_primary(|c| c.mass_kg_s));
+            let mut tb = Identity::new("cvcs_boron");
+            let (r, r_abs) = self.rates(rows, yp, &self.cvcs_boron);
+            tb.store("BLEND and RECEIVER absorber", r, r_abs);
+            let concentrate = self.rate(rows, yp, self.cvcs_mass[2]) * fraction;
+            tb.store("CONCENTRATE absorber", concentrate, concentrate.abs());
+            tb.boundary("charging less letdown", -into_primary(|c| c.tracer_kg_s));
+            account.cvcs = vec![tm, tb];
+        }
 
         // Each SG, and the metal heat handed to it.
         if secondary.received_heat_w.len() != self.sg_names.len()
@@ -626,8 +710,12 @@ impl Plan {
             }
         }
         q.extend([event, b("motor_work_w")?, -b("bearing_loss_w")?, remainder]);
-        if let Some(p) = pzr {
-            q.extend([p.joule_w, -p.exterior_w, -relief[1], -relief[0], -relief[2]]);
+        q.extend([p.joule_w, -p.exterior_w, -relief[1], -relief[0], -relief[2]]);
+        if cvcs.is_some() {
+            q.extend([
+                cvcs_port("CVCS.charging")?.energy_w,
+                cvcs_port("CVCS.letdown")?.energy_w,
+            ]);
         }
         account.boundary = q;
         Ok(account)
@@ -667,7 +755,10 @@ impl Plan {
             mut source_abs,
         ] = [0.; 4];
         for ((&i, f), p) in self.populations.iter().zip(&feedback.regions).zip(regions) {
-            let g = f.reactivity.value / p.generation_time_s * y[i] * self.scales[i];
+            // B1: the applied stuck-cluster term, as Nuclear::rows adds it.
+            let g = (f.reactivity.value + nuclear.stuck_worth_dk()) / p.generation_time_s
+                * y[i]
+                * self.scales[i];
             generation += g;
             generation_abs += g.abs();
             source += f.external_source_per_s.value;
@@ -712,9 +803,16 @@ impl Plan {
                 absolute: &atol[..n],
             },
         )?;
-        let unit = |i: usize| rtol * (y[i] * self.scales[i]).abs() + atol[i] * self.scales[i];
+        let unit = |i: usize| {
+            (rtol * (y[i] * self.scales[i]).abs() + atol[i] * self.scales[i]) * self.weight[i]
+        };
         let tol = |indices: &[usize]| indices.iter().map(|&i| unit(i)).sum::<f64>();
-        let sum = |indices: &[usize]| indices.iter().map(|&i| y[i] * self.scales[i]).sum::<f64>();
+        let sum = |indices: &[usize]| {
+            indices
+                .iter()
+                .map(|&i| y[i] * self.scales[i] * self.weight[i])
+                .sum::<f64>()
+        };
         let inertia = joined.network.rotor_inertia();
         // KE = L^2 / 2I: its tolerance is omega times L's.
         let rotor_tol: f64 = self
@@ -836,17 +934,13 @@ impl<P: Properties + WaterProperties> Joined<P> {
     ) -> Result<Account, Failure> {
         let rods = self.rods_mut().ok_or_else(|| fatal("no rod owner"))?;
         rods.capture_account(true);
-        if let Some(pzr) = self.pzr_mut() {
-            pzr.capture_account(true);
-        }
+        self.pzr_mut().capture_account(true);
         let evaluated = self.evaluate(t, y, yp, None, 0., None);
         let account = evaluated.and_then(|()| plan.read(self, y, yp));
         if let Some(rods) = self.rods_mut() {
             rods.capture_account(false);
         }
-        if let Some(pzr) = self.pzr_mut() {
-            pzr.capture_account(false);
-        }
+        self.pzr_mut().capture_account(false);
         account
     }
 }

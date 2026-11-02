@@ -4,6 +4,11 @@ import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
 import { processPlantIdForObject } from '../model.ts'
 import { processPlantProjectionKey, projectedProcessPlantUnit } from '../projection.ts'
 
+const unavailableFor = (unavailable: ReadonlyMap<string, { readonly reason: string }> | undefined, plantId: string): { readonly unavailable?: string } => {
+  const entry = unavailable?.get(plantId)
+  return entry === undefined ? {} : { unavailable: entry.reason }
+}
+
 export const initialProcessPlantObjects = (config: {
   readonly initialObjects?: ReadonlyArray<OperationalObject>
   readonly scenario: { readonly initialObjects: ReadonlyArray<OperationalObject> }
@@ -16,6 +21,7 @@ export const projectedInitialProcessPlantObjects = (config: {
   readonly at: IsoTimestamp
   readonly simulationTime: IsoTimestamp
   readonly connectedPlantIds?: ReadonlySet<string>
+  readonly unavailable?: ReadonlyMap<string, { readonly reason: string }>
 }): ReadonlyArray<OperationalObject> =>
   config.objects.map(object => {
     const plantId = processPlantIdForObject(object)
@@ -27,6 +33,7 @@ export const projectedInitialProcessPlantObjects = (config: {
           at: config.at,
           simulationTime: config.simulationTime,
           connected: config.connectedPlantIds?.has(plantId) ?? false,
+          ...unavailableFor(config.unavailable, plantId),
         })
   })
 
@@ -37,6 +44,7 @@ export const processPlantProjectionEvents = (config: {
   readonly simulationTime: IsoTimestamp
   readonly provenance: Provenance
   readonly connectedPlantIds?: ReadonlySet<string>
+  readonly unavailable?: ReadonlyMap<string, { readonly reason: string }>
 }): ReadonlyArray<PackRuntimeEvent> => {
   const events: PackRuntimeEvent[] = []
   for (const object of config.objectsById.values()) {
@@ -48,6 +56,7 @@ export const processPlantProjectionEvents = (config: {
       at: config.at,
       simulationTime: config.simulationTime,
       connected: config.connectedPlantIds?.has(plantId) ?? false,
+      ...unavailableFor(config.unavailable, plantId),
     })
     if (processPlantProjectionKey(object) === processPlantProjectionKey(next)) continue
     config.objectsById.set(next.id, next)

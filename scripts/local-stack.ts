@@ -110,9 +110,10 @@ export const startLocalProxy = (route: (path: string) => ModuleName, ports: Reco
   },
 })
 
-export interface LocalStackOptions { readonly port?: number; readonly models?: boolean; readonly osrm?: string }
+/** `ld01Artifact`: a local LD-01 native artifact directory for World (LD01_UNIT_ARTIFACT); absent, World runs no LD-01 Plant, as on production. */
+export interface LocalStackOptions { readonly port?: number; readonly models?: boolean; readonly osrm?: string; readonly ld01Artifact?: string }
 
-export const startLocalStack = async ({ port = 43100, models = false, osrm }: LocalStackOptions = {}) => {
+export const startLocalStack = async ({ port = 43100, models = false, osrm, ld01Artifact }: LocalStackOptions = {}) => {
   // Validate prerequisites before starting any child or creating a data directory.
   await preflightLocalStack(repository)
   if (osrm !== undefined) await preflightOsrm(osrm)
@@ -162,7 +163,7 @@ export const startLocalStack = async ({ port = 43100, models = false, osrm }: Lo
       await reservations.shift()!.release()
       const child = spawn(process.execPath, ['--no-env-file', 'run', name === 'agents' ? 'src/main.ts' : 'src/index.ts'], {
         cwd: join(repository, 'apps', name === 'host' ? 'leitbild' : name),
-        env: { ...env, PORT: String(ports[name]) }, stdio: ['ignore', log.fd, log.fd],
+        env: { ...env, PORT: String(ports[name]), ...(name === 'world' && ld01Artifact !== undefined ? { LD01_UNIT_ARTIFACT: ld01Artifact } : {}) }, stdio: ['ignore', log.fd, log.fd],
       })
       children.push(child)
       let spawnError: Error | undefined
@@ -198,10 +199,11 @@ if (import.meta.main) {
   const args = process.argv.slice(2)
   const portArg = args.find(argument => argument.startsWith('--port='))
   const osrmArg = args.find(argument => argument.startsWith('--osrm='))
-  if (args.some(argument => argument !== '--smoke' && argument !== '--models' && argument !== portArg && argument !== osrmArg)) throw new Error('Usage: bun run dev:stack [--smoke] [--models] [--osrm=http://127.0.0.1:5055] [--port=43100]')
+  const ld01Arg = args.find(argument => argument.startsWith('--ld01-artifact='))
+  if (args.some(argument => argument !== '--smoke' && argument !== '--models' && argument !== portArg && argument !== osrmArg && argument !== ld01Arg)) throw new Error('Usage: bun run dev:stack [--smoke] [--models] [--osrm=http://127.0.0.1:5055] [--ld01-artifact=<dir>] [--port=43100]')
   const port = portArg ? Number(portArg.slice(7)) : 43100
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('Invalid loopback port')
-  const stack = await startLocalStack({ port, models: args.includes('--models'), ...(osrmArg === undefined ? {} : { osrm: osrmArg.slice(7) }) })
+  const stack = await startLocalStack({ port, models: args.includes('--models'), ...(osrmArg === undefined ? {} : { osrm: osrmArg.slice(7) }), ...(ld01Arg === undefined ? {} : { ld01Artifact: resolve(ld01Arg.slice('--ld01-artifact='.length)) }) })
   if (args.includes('--smoke')) {
     try { await smokeLocalStack(stack.origin); console.log('Local stack smoke passed') }
     finally { await stack.stop() }

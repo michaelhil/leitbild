@@ -5,7 +5,7 @@ import {sprayContactDefinitionsPython,sprayNozzleDefinitionsPython,sprayPhaseAre
 
 export function surgeConnectionGeometry(input:SurgeRoute){
  const route=resolveSurgeRoute(input),mainArea=Math.PI/4,width=Math.sqrt(mainArea),nodeLength=1
- return {route,hot:{totalVolume_m3:15,nodeVolume_m3:mainArea*nodeLength,remainingVolume_m3:15-mainArea*nodeLength,
+ return {route,hot:{nodeVolume_m3:mainArea*nodeLength,
   mainArea_m2:mainArea,sideArea_m2:route.area_m2,nodeLength_m:nodeLength,width_m:width,
   remainingPositiveSideWall_m2:width*nodeLength-route.area_m2,negativeSideWall_m2:width*nodeLength,
   distributedLoss:0.49504493,retiredLocalizedThroughLoss:0.00405},

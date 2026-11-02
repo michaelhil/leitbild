@@ -22,16 +22,8 @@
 //! prefix): every S2 run integrates its conservation ledgers as stock
 //! quadratures (K2).
 #![cfg(feature = "quadratures")]
-#[path = "common/counts.rs"]
-mod counts;
-#[path = "common/cpu.rs"]
-mod cpu;
-#[path = "common/filter.rs"]
-mod filter;
-#[path = "common/observe.rs"]
-mod observe;
-#[path = "common/provenance.rs"]
-mod provenance;
+mod common;
+use common::{cpu, provenance};
 mod s2_harness;
 pub use s2_harness::{
     compare, compose, conservation, gates, guards, meter, outputs, receipt, run, runner, sequence,
@@ -39,6 +31,7 @@ pub use s2_harness::{
 
 use compare::{Credited, key};
 use gates::{Block, Declaration};
+use leitbild_operating_water::unit::profile;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
@@ -180,6 +173,7 @@ fn complete_receipt() -> Value {
             caps_report_only: true,
             rods_observed: false,
             domain_exit_stops: true,
+            weights: profile::Weights::Stock,
         }),
         process_cpu_s: 1.,
         ..run::RunRecord::default()
@@ -949,6 +943,7 @@ fn a_references_ledger_counts_in_the_contracts_tolerance_units_and_a_declared_li
         caps_report_only: false,
         rods_observed: false,
         domain_exit_stops: true,
+        weights: profile::Weights::Stock,
     };
     let contract = vec![1e-8, 2e-8];
     let tight: Vec<f64> = contract.iter().map(|a| a * 0.1).collect();
@@ -1804,7 +1799,7 @@ fn s2_z5_unit_costs() {
         cpu::thread_cpu_s() - t0
     };
     // The exact consistent start (cached analyses, as at a restart).
-    let weights = compose::error_weights(&y, rtol, &atol);
+    let weights = profile::error_weights(&y, rtol, &atol);
     let mut starts = Vec::new();
     for _ in 0..rounds {
         let mut y1 = y.clone();
@@ -1819,7 +1814,7 @@ fn s2_z5_unit_costs() {
                 &mut y1,
                 &ids,
                 &weights,
-                compose::START_BOUND,
+                profile::START_BOUND,
                 2,
             )
             .expect("consistent start");
@@ -1871,16 +1866,12 @@ fn s2_z5_unit_costs() {
         .configure(&mut ida)
         .unwrap();
     let (mut ys, mut yps) = (y.clone(), yp.clone());
-    let reached = ida
-        .advance_one_step(1., &mut ys, &mut yps)
-        .unwrap()
-        .reached()
-        .unwrap();
+    let reached = ida.step(1., &mut ys, &mut yps).unwrap().reached().unwrap();
     let mut samples = Vec::new();
     for _ in 0..rounds {
         let at = 0.5 * reached;
         samples.push(timed(&mut || {
-            ida.dense(at, &mut ys, &mut yps).unwrap();
+            ida.dense_output(at, &mut ys, &mut yps).unwrap();
             let account = ida.system_mut().inner.account(at, &ys, &yps).unwrap();
             let joined = &ida.system().inner.integrated.joined;
             let values = reader.read(joined, &ys, false).unwrap();

@@ -149,10 +149,23 @@ impl<P: Properties> Network<P> {
         }
         self.receipts.fill([[s(0.); 3]; 2]);
         self.shaft_power = s(0.);
+        // HOOK (PHASE-P7, S3-D-P1/P6): equilibrium cells' saturated endpoints
+        // and the view every phase reader sees; empty when all are liquid.
+        let (y_coordinates, seed_coordinates) = (y, seed);
+        let saturated = self.saturated(y, seed)?;
+        let view = (!saturated.is_empty()).then(|| self.equilibrium_view(y, seed, &saturated));
+        let (y, seed) = match &view {
+            Some((v, d)) => (&v[..], d.as_deref()),
+            None => (y, seed),
+        };
         let mut points: Vec<[Point; 2]> = vec![[None; 2]; n];
         for (node, current_point) in points.iter_mut().enumerate() {
-            let (cell, point, row) =
-                self.regular_cell(node, y, seed, self.cell_volume[node], reuse.as_deref_mut())?;
+            let (cell, point, row) = match saturated.get(node).copied().flatten() {
+                Some(sat) => self.equilibrium_cell(node, y, seed, self.cell_volume[node], &sat)?,
+                None => {
+                    self.regular_cell(node, y, seed, self.cell_volume[node], reuse.as_deref_mut())?
+                }
+            };
             self.cells[node] = cell;
             *current_point = point;
             self.rows[self.cell_layout[node].base] = row;
@@ -160,6 +173,11 @@ impl<P: Properties> Network<P> {
         // The stratified cell's column and the port view its port face reads.
         let column = self.stratified_column(y, seed, reuse.as_deref_mut())?;
         self.cells[self.pzr.cell] = self.stratified.port_view(&column, self.pzr_port()?)?;
+        // IC-CTRL (S3 spray path, for KERN): the spray port face reads the
+        // cell's spray-port view through its virtual cell.
+        if let Some(sp) = self.spray {
+            self.cells[sp.port_cell] = self.stratified.port_view(&column, sp.port)?;
+        }
         // Supports are regular cells only (validated at compile time).
         let phase_mass: [Vec<thermal::Scalar>; 2] = std::array::from_fn(|k| {
             (0..n)
@@ -172,7 +190,7 @@ impl<P: Properties> Network<P> {
         let volumes = &self.cell_volume[..n];
         let pre_source_mass_rate = vec![s(0.); n];
         self.charts.fill([None; 2]);
-        for l in &self.face_layout {
+        for (li, l) in self.face_layout.iter().enumerate() {
             let pi = self.get(y, seed, l.index);
             let f = &self.faces[l.face];
             let inertance = f.supports.iter().fold(s(0.), |sum, support| {
@@ -192,7 +210,10 @@ impl<P: Properties> Network<P> {
             // Source assembly first needs the exact empty-path rest value.
             // The physical TOTAL-force limit is checked after source assembly;
             // a nonzero-I path always uses its retained impulse, not this value.
-            let path = if inertance.value == 0. && pi.value == 0. {
+            // L1 (decision 0014): a locked path transports nothing.
+            let path = if self.path_locked(li) {
+                super::unilateral::held_path(inertance)
+            } else if inertance.value == 0. && pi.value == 0. {
                 flow::PathKinematics {
                     inertance_kg_m4: inertance,
                     inertance_rate_kg_m4_s: s(0.),
@@ -224,17 +245,29 @@ impl<P: Properties> Network<P> {
             })?;
             self.charts[l.face][l.phase] = Some(c);
             let flux = [c.mass_flow_kg_s, c.enthalpy_flow_w, c.boron_flow_kg_s];
+            // S3-D32: vapor at a liquid-mode end is that end's liquid.
+            let (pf, pt) = (
+                self.receipt_phase(f.from, l.phase),
+                self.receipt_phase(f.to, l.phase),
+            );
             for (k, q) in flux.into_iter().enumerate() {
-                self.receipts[f.from][l.phase][k] = self.receipts[f.from][l.phase][k] - q;
-                self.receipts[f.to][l.phase][k] = self.receipts[f.to][l.phase][k] + q;
+                self.receipts[f.from][pf][k] = self.receipts[f.from][pf][k] - q;
+                self.receipts[f.to][pt][k] = self.receipts[f.to][pt][k] + q;
             }
         }
+        // R4-NCHEAD: the SG profiles' drives, from a coupled owner's passes.
+        self.profile_drive.fill(s(0.));
+        self.coupled_passes.fill(None);
         if let Some(coupling) = coupling.as_deref_mut() {
             self.couple(coupling, y, seed, &points, &phase_mass)?;
         }
+        // IC-CTRL (S3 spray path, S3-D25): the valve opening of this time.
+        self.spray_opening_at(t)?;
         self.compose_sections(y, yp, seed, cj, &points)?;
         self.compose_momentum(t, y, yp, seed, cj, &phase_mass)?;
         self.compose_stocks(y, yp, seed, cj, &points, reuse)?;
+        // HOOK (PHASE-P7, S3-D-P1): equilibrium rows from the coordinates.
+        self.compose_equilibrium_rows(y_coordinates, yp, seed_coordinates, cj, &saturated);
         self.compose_stratified(column, y, yp, seed, cj, coupling)?;
         self.counters.evaluation_wall_s += started.elapsed().as_secs_f64();
         Ok(())
@@ -392,6 +425,10 @@ impl<P: Properties> Network<P> {
         let mut current = vec![none; n];
         let mut mass = [vec![none; n], vec![none; n]];
         let mut tracer = vec![none; n];
+        // HOOK (PHASE-P7, S3-D-P1/P6): equilibrium cells through their view.
+        let saturated = self.saturated(y, None)?;
+        let view = (!saturated.is_empty()).then(|| self.equilibrium_view(y, None, &saturated).0);
+        let y = view.as_deref().unwrap_or(y);
         for &node in cells {
             if node >= n {
                 return Err(Failure::Fatal(format!(
@@ -399,7 +436,10 @@ impl<P: Properties> Network<P> {
                 )));
             }
             let (volume, _) = self.evaluated_volume(node, volumes)?;
-            let (cell, point, _) = self.regular_cell(node, y, None, volume, None)?;
+            let (cell, point, _) = match saturated.get(node).copied().flatten() {
+                Some(sat) => self.equilibrium_cell(node, y, None, volume, &sat)?,
+                None => self.regular_cell(node, y, None, volume, None)?,
+            };
             states[node] = cell;
             points[node] = point;
             current[node] = volume;
@@ -480,6 +520,52 @@ impl<P: Properties> Network<P> {
                     e.value.pump_euler_pa - e.value.passive_loss_pa,
                     e.direction.pump_euler_pa - e.direction.passive_loss_pa,
                 );
+            // HOOK (PHASE-P7, S3-D-P8 gas-path loss; operating-hydraulics.md
+            // gas-phase passive loss): a passive section's own law on the
+            // same declared geometry, with the gas phase's current, density
+            // and viscosity, weighted by its fraction as the liquid's drive
+            // is. No pump head acts on gas; a pump section carries none. A
+            // region without gas composes nothing, so liquid-only states are
+            // unchanged.
+            self.section_gas_drive[j] = s(0.);
+            if self.sections[j].rotor.is_none()
+                && self.sections[j].section.pump.is_none()
+                && let (Some(gas), Some((qg, dqg))) =
+                    (self.cells[region].phase[1], points[region][1])
+            {
+                let mut gas_profile = s(0.);
+                for (face, section, w) in &self.section_projection {
+                    if *section == j
+                        && let Some(chart) = self.charts[*face][1]
+                    {
+                        gas_profile = gas_profile + s(*w) * chart.volume_flow_m3_s;
+                    }
+                }
+                let gas_current = gas.density * gas.fraction * gas_profile;
+                let g = self.sections[j]
+                    .section
+                    .evaluate(
+                        hydraulics::Input {
+                            massflow_kg_s: gas_current.value,
+                            density_kg_m3: qg.density_kg_m3,
+                            viscosity_pa_s: qg.viscosity_pa_s,
+                            pressure_drop_pa: 0.,
+                            omega_rad_s: 0.,
+                            gas_volume_fraction: gas.fraction.value,
+                        },
+                        hydraulics::Input {
+                            massflow_kg_s: gas_current.direction,
+                            density_kg_m3: dqg.density_kg_m3,
+                            viscosity_pa_s: dqg.viscosity_pa_s,
+                            pressure_drop_pa: 0.,
+                            omega_rad_s: 0.,
+                            gas_volume_fraction: gas.fraction.direction,
+                        },
+                    )
+                    .map_err(|e| Failure::Recoverable(e.to_string()))?;
+                self.section_gas_drive[j] =
+                    gas.fraction * rec(-g.value.passive_loss_pa, -g.direction.passive_loss_pa);
+            }
             if let Some(r) = self.sections[j].rotor {
                 let shaft = rec(e.value.shaft_power_w, e.direction.shaft_power_w);
                 self.shaft_power = self.shaft_power + shaft;
@@ -557,32 +643,70 @@ impl<P: Properties> Network<P> {
                         force = force + s(*w) * self.section_drive[*section];
                     }
                 }
+            } else {
+                // HOOK (PHASE-P7, S3-D-P8): the gas phase's passive loss.
+                for (face, section, w) in &self.section_projection {
+                    if *face == l.face {
+                        force = force + s(*w) * self.section_gas_drive[*section];
+                    }
+                }
             }
+            // R4-NCHEAD: an SG port face's profiled head, beside its sections.
+            force = force + self.profile_drive[li];
             // ProvenRest is the prepared all-zero-current case ONLY. This
             // network is not a generic disappearance/reappearance handler.
             // Cold I' uses assembled physical receipts, not an off-row yp.
             let pi = self.get(y, seed, l.index);
-            let path = flow::phase_path_kinematics(
-                &self.faces[l.face],
-                &phase_mass[l.phase],
-                &phase_mass_rate[l.phase],
-                &self.cell_volume[..n],
-                pi,
-                force + current.pressure_gravity_pa,
-                flow::ColdOnset::ProvenRest,
-            )
-            .map_err(|e| {
-                self.first_mechanical_birth.get_or_insert(json!({"time_s":t,"face":l.face,"phase":l.phase,"inertance_kg_m4":current.inertance_kg_m4.value,"total_force_pa":(force+current.pressure_gravity_pa).value,"scope":"unsupported exact-zero physical onset; no guessed Q, phase seed or momentum reset"}));
-                Failure::Recoverable(format!("{e}; t={t},face={},phase={}", l.face, l.phase))
-            })?;
+            // L1 (decision 0014): a locked path's
+            // row is `Pi/s`, it transports nothing, and its drive is the
+            // reported reaction.
+            let locked = self.path_locked(li);
+            let path = if locked {
+                super::unilateral::held_path(current.inertance_kg_m4)
+            } else {
+                flow::phase_path_kinematics(
+                    &self.faces[l.face],
+                    &phase_mass[l.phase],
+                    &phase_mass_rate[l.phase],
+                    &self.cell_volume[..n],
+                    pi,
+                    force + current.pressure_gravity_pa,
+                    flow::ColdOnset::ProvenRest,
+                )
+                .map_err(|e| {
+                    self.first_mechanical_birth.get_or_insert(json!({"time_s":t,"face":l.face,"phase":l.phase,"inertance_kg_m4":current.inertance_kg_m4.value,"total_force_pa":(force+current.pressure_gravity_pa).value,"scope":"unsupported exact-zero physical onset; no guessed Q, phase seed or momentum reset"}));
+                    Failure::Recoverable(format!("{e}; t={t},face={},phase={}", l.face, l.phase))
+                })?
+            };
             let chart = flow::chart_from_path(&self.faces[l.face], &self.cells, l.phase, pi, path)
                 .map_err(|e| Failure::Recoverable(e.into()))?;
             self.charts[l.face][l.phase] = Some(chart);
             self.face_drive[l.face][l.phase] = force + chart.pressure_gravity_pa;
-            self.rows[l.index] =
+            // IC-CTRL (S3 spray path, S3-D25 (1)): the open valve's liquid
+            // path is the restriction relation, algebraic.
+            let restriction = match self.spray {
+                Some(sp) if !locked && self.spray_algebraic(li) => {
+                    let rho = self.cells[sp.region].phase[0]
+                        .map(|p| p.density)
+                        .ok_or_else(|| Failure::Recoverable("spray line without liquid".into()))?;
+                    self.spray_restriction_row(
+                        li,
+                        chart.volume_flow_m3_s,
+                        force + chart.pressure_gravity_pa,
+                        rho,
+                    )?
+                }
+                _ => None,
+            };
+            self.rows[l.index] = if locked {
+                pi / s(self.scales[l.index])
+            } else if let Some(row) = restriction {
+                row
+            } else {
                 flow::momentum_residual(self.rate(yp, seed, cj, l.index), chart, force)
                     .map_err(|e| Failure::Recoverable(e.into()))?
-                    / s(self.scales[l.index]);
+                    / s(self.scales[l.index])
+            };
         }
         Ok(())
     }
@@ -601,6 +725,11 @@ impl<P: Properties> Network<P> {
             let index = l.boron;
             self.rows[index] = (self.rate(yp, seed, cj, index) - self.receipts[node][0][2])
                 / s(self.scales[index]);
+            // HOOK (PHASE-P7, S3-D-P1): an equilibrium cell's stock rows are
+            // its own (`compose_equilibrium_rows`), not the phase elimination.
+            if self.modes[node] == super::CellMode::Equilibrium {
+                continue;
+            }
             let mut therm = [None; 2];
             let pressure = self.get(y, seed, l.base);
             let md = std::array::from_fn(|k| self.receipts[node][k][0]);
@@ -704,19 +833,23 @@ impl<P: Properties> Network<P> {
     }
 
     /// The stratified cell's port receipts in its port order: the surge
-    /// port's is the liquid receipt `self.receipts[pzr]` of its face, and a
-    /// spray or relief port, which no face carries, receives none (the
-    /// relief's flow is the cell's own restriction). A vapor arrival through
-    /// the surge port is outside the composed cell and refuses.
+    /// port's is the liquid receipt `self.receipts[pzr]` of its face; a
+    /// composed spray port's is its face's total (both phase paths) from the
+    /// virtual cell, which the cell's own spray law takes (it splits a
+    /// withdrawal by its vapour region's volume share); an uncomposed spray
+    /// port and the relief receive none (the relief's flow is the cell's
+    /// own restriction). The surge face's vapor receipt is the cell's
+    /// surge vapor arrival (S3-D30), which joins zone A's bubbles; vapor
+    /// carries no boron, so a vapor tracer receipt refuses.
     pub(super) fn pzr_receipts(
         &self,
         surge: [[thermal::Scalar; 3]; 2],
+        spray: Option<[[thermal::Scalar; 3]; 2]>,
     ) -> Result<Vec<stratified::Receipt>, Failure> {
         let [liquid, vapor] = surge;
-        if vapor.iter().any(|q| q.value != 0. || q.direction != 0.) {
+        if vapor[2].value != 0. || vapor[2].direction != 0. {
             return Err(Failure::Fatal(
-                "a vapor receipt through the surge port is outside the composed stratified cell"
-                    .into(),
+                "a vapor tracer receipt through the surge port: vapor carries no boron".into(),
             ));
         }
         let mut receipts =
@@ -725,7 +858,17 @@ impl<P: Properties> Network<P> {
             mass: liquid[0],
             enthalpy: liquid[1],
             boron: liquid[2],
+            vapor_mass: vapor[0],
+            vapor_enthalpy: vapor[1],
         };
+        if let (Some(sp), Some([l, v])) = (self.spray, spray) {
+            receipts[sp.port] = stratified::Receipt {
+                mass: l[0] + v[0],
+                enthalpy: l[1] + v[1],
+                boron: l[2] + v[2],
+                ..stratified::Receipt::zero()
+            };
+        }
         Ok(receipts)
     }
 
@@ -745,7 +888,10 @@ impl<P: Properties> Network<P> {
     ) -> Result<(), Failure> {
         let x = self.pzr_coordinates(|i| self.get(y, seed, i))?;
         let rate = self.pzr_coordinates(|i| self.rate(yp, seed, cj, i))?;
-        let receipts = self.pzr_receipts(self.receipts[self.pzr.cell])?;
+        let receipts = self.pzr_receipts(
+            self.receipts[self.pzr.cell],
+            self.spray.map(|sp| self.receipts[sp.port_cell]),
+        )?;
         let scales: [f64; PZR_COORDINATES] = self.scales[self.pzr.coordinates()]
             .try_into()
             .map_err(|_| Failure::Fatal("PZR scale layout".into()))?;

@@ -518,7 +518,8 @@ impl ExchangeCase {
 }
 
 /// Piecewise free-area geometry: band start, end, area, volume below the
-/// band start and first moment `∫ z A dz` below the band start.
+/// band start and first moment `∫ z A dz` below the band start (kept for
+/// the band records; the centroid sums band by band).
 #[derive(Clone, Debug)]
 struct Geometry {
     bands: Vec<[f64; 5]>,
@@ -556,11 +557,6 @@ impl Geometry {
         let [from, _, area, below, _] = self.bands[self.band_at(z)];
         s(below) + s(area) * (z - s(from))
     }
-    /// First moment `∫ z A dz` below elevation `z`.
-    fn moment(&self, z: Scalar) -> Scalar {
-        let [from, _, area, _, below] = self.bands[self.band_at(z)];
-        s(below) + s(area / 2.) * (z * z - s(from * from))
-    }
     /// Elevation below which the volume is `v`, the inverse of `volume`.
     fn level(&self, v: Scalar) -> Scalar {
         let last = self.bands.len() - 1;
@@ -583,9 +579,31 @@ impl Geometry {
         let [from, _, area, below, _] = self.bands[j];
         s(from) + (v - s(below)) / s(area)
     }
-    /// Volume centroid elevation of `[low, high]`.
+    /// Volume centroid elevation of `[low, high]`, summed band by band as
+    /// `sum A (z2 - z1)(z1 + z2)/2 / sum A (z2 - z1)`: within one band the
+    /// exact midpoint, so a thin region keeps its own centroid instead of a
+    /// cancelled difference of whole-vessel moments (G6-DR).
     fn centroid(&self, low: Scalar, high: Scalar) -> Scalar {
-        (self.moment(high) - self.moment(low)) / (self.volume(high) - self.volume(low))
+        let (first, last) = (self.band_at(low), self.band_at(high));
+        if first == last {
+            return (low + high) / s(2.);
+        }
+        // The ratio does not depend on the orientation of [low, high].
+        let ((from, lo), (to, hi)) = if first < last {
+            ((first, low), (last, high))
+        } else {
+            ((last, high), (first, low))
+        };
+        let (mut moment, mut volume) = (s(0.), s(0.));
+        for j in from..=to {
+            let [start, end, area, ..] = self.bands[j];
+            let z1 = if j == from { lo } else { s(start) };
+            let z2 = if j == to { hi } else { s(end) };
+            let height = z2 - z1;
+            moment = moment + s(area) * height * (z1 + z2) / s(2.);
+            volume = volume + s(area) * height;
+        }
+        moment / volume
     }
 }
 
@@ -834,12 +852,17 @@ impl Column {
     }
 }
 
-/// Signed receipt of one port into the cell, in `Parameters::ports` order.
+/// Signed receipt of one port into the cell, in `Parameters::ports` order:
+/// its liquid (mass, enthalpy, boron) and, at the surge port only, the
+/// vapor arriving through it (S3-D30), which carries no boron.
 #[derive(Clone, Copy, Debug)]
 pub struct Receipt {
     pub mass: Scalar,
     pub enthalpy: Scalar,
     pub boron: Scalar,
+    /// Vapor entering through the surge port (kg/s, W); zero elsewhere.
+    pub vapor_mass: Scalar,
+    pub vapor_enthalpy: Scalar,
 }
 impl Receipt {
     pub fn zero() -> Self {
@@ -847,7 +870,15 @@ impl Receipt {
             mass: s(0.),
             enthalpy: s(0.),
             boron: s(0.),
+            vapor_mass: s(0.),
+            vapor_enthalpy: s(0.),
         }
+    }
+    /// A vapor part, value or direction.
+    pub fn carries_vapor(&self) -> bool {
+        [self.vapor_mass, self.vapor_enthalpy]
+            .iter()
+            .any(|v| v.value != 0. || v.direction != 0.)
     }
 }
 
@@ -1123,6 +1154,8 @@ pub struct Flows {
     pub transit_drift: [Scalar; 2],
     /// Vapor condensed onto arriving spray at entry, kg/s (negative flashes).
     pub spray_condensation: Scalar,
+    /// Vapor arriving through the surge port into b_A, kg/s (S3-D30).
+    pub surge_vapor: Scalar,
     /// The relief outflow, when a relief port is declared.
     pub relief: Option<ReliefFlow>,
     /// `p_s'` along the coordinate rates.
@@ -1226,7 +1259,8 @@ pub struct Taps {
 #[derive(Clone, Copy, Debug)]
 pub struct Inventory {
     pub mass_kg: Scalar,
-    /// Zone internal energy plus transit energy at `h_g`/`h_f(p_s)`.
+    /// Zone internal energy plus transit internal energy: `h_g`/`h_f(p_s)`
+    /// per kg less `p_s` times the transit volumes.
     pub energy_j: Scalar,
     pub boron_kg: Scalar,
 }
@@ -1456,7 +1490,11 @@ fn path_volume<P: Properties>(
 /// `[p_back, p0]`. The path is integrated by RK4 on a geometric pressure
 /// grid of `PATH_LOG_STEP` in `ln p`, stopped two nodes past the maximum
 /// or at `p_back`; an interior maximum is refined by a parabola in `ln p`.
-/// The directions are those of the same discrete computation.
+/// The enthalpy drop `h0 − h` is accumulated step by step from the RK4
+/// increments, not formed by subtracting two absolute enthalpies (whose
+/// cancellation set a 1e-11 residual floor in C09's feed block); the path
+/// state is `h = h0 − drop`. The directions are those of the same discrete
+/// computation.
 pub fn restriction_flux<P: Properties>(
     properties: &P,
     vapor: bool,
@@ -1490,6 +1528,7 @@ pub fn restriction_flux<P: Properties>(
     let ratio = (-PATH_LOG_STEP).exp();
     let mut p = p0;
     let mut h = h0;
+    let mut drop = s(0.);
     let mut sat = sat_at(p, &mut saturation_calls)?;
     let mut v = path_volume(properties, vapor, p, h, &sat, &mut inversions)?;
     // Nodes (p, G) from the stagnation point, where G is zero.
@@ -1530,11 +1569,12 @@ pub fn restriction_flux<P: Properties>(
             &next_sat,
             &mut inversions,
         )?;
-        h = h + dp * (k1 + s(2.) * k2 + s(2.) * k3 + k4) / s(6.);
+        // dp < 0 along the expansion: the drop grows by -dp * v_mean.
+        drop = drop - dp * (k1 + s(2.) * k2 + s(2.) * k3 + k4) / s(6.);
+        h = h0 - drop;
         p = next;
         sat = next_sat;
         v = path_volume(properties, vapor, p, h, &sat, &mut inversions)?;
-        let drop = h0 - h;
         if drop.value <= 0. {
             return Err(recoverable("restriction path gained enthalpy on expansion"));
         }
@@ -1833,7 +1873,34 @@ impl Cell {
     pub fn level(&self, v: Scalar) -> Scalar {
         self.geometry.level(v)
     }
-
+    /// S3 hook (IC-PROT, for KERN): the LT pair's tap pressures `(low,
+    /// high)` from the coordinates alone (the column's hydrostatics, no
+    /// property call), by the same piecewise law as [`Column::pressure_at`];
+    /// `None` for an instance without the LT pair. The acquired PZR level
+    /// reads it at the dense output's nodes.
+    pub fn level_tap_pressures(
+        &self,
+        x: &Coordinates,
+    ) -> Result<Option<(Scalar, Scalar)>, Failure> {
+        let Some((low, high)) = self.parameters.level_taps()? else {
+            return Ok(None);
+        };
+        let h = self.hydrostatics(x)?;
+        let top = self.parameters.top_m;
+        let at = |z: f64| {
+            let below = |boundary: Scalar| {
+                z < boundary.value || (z == boundary.value && boundary.direction > 0.)
+            };
+            if !below(h.mixture_elevation) {
+                x.roof_pressure + s(G) * h.vapor_density * (s(top) - s(z))
+            } else if !below(h.boundary_elevation) {
+                h.interface_pressure + s(G) * h.resident_density * (h.mixture_elevation - s(z))
+            } else {
+                h.boundary_pressure + s(G) * h.admitted_density * (h.boundary_elevation - s(z))
+            }
+        };
+        Ok(Some((at(low), at(high))))
+    }
     fn hydrostatics(&self, x: &Coordinates) -> Result<Hydrostatics, Failure> {
         let geometry = &self.geometry;
         let (bottom, top) = (s(self.parameters.bottom_m), s(self.parameters.top_m));
@@ -1860,20 +1927,26 @@ impl Cell {
             boundary_pressure + g * admitted_density * (boundary - centroid[1]),
             interface + g * resident_density * (mixture - centroid[2]),
         ];
-        for v in [
-            boundary,
-            mixture,
-            collapsed,
-            liquid_boundary,
-            interface,
-            boundary_pressure,
-            bottom_pressure,
-        ]
-        .iter()
-        .chain(&pressure)
-        .chain(&centroid)
-        {
-            finite(*v, "column geometry or pressure")?;
+        for (name, v) in [
+            ("A/R boundary elevation", boundary),
+            ("mixture elevation", mixture),
+            ("collapsed elevation", collapsed),
+            ("A liquid boundary elevation", liquid_boundary),
+            ("interface pressure", interface),
+            ("A/R boundary pressure", boundary_pressure),
+            ("bottom pressure", bottom_pressure),
+            ("vapor zone pressure", pressure[0]),
+            ("A zone pressure", pressure[1]),
+            ("R zone pressure", pressure[2]),
+            ("vapor region centroid", centroid[0]),
+            ("A region centroid", centroid[1]),
+            ("R region centroid", centroid[2]),
+        ] {
+            if !(v.value.is_finite() && v.direction.is_finite()) {
+                return Err(recoverable(format!(
+                    "nonfinite column {name} {v:?} (G6-DR diagnostic: x = {x:?}; region densities g {vapor_density:?}, R {resident_density:?}, A {admitted_density:?})"
+                )));
+            }
         }
         Ok(Hydrostatics {
             boundary_elevation: boundary,
@@ -2043,6 +2116,18 @@ impl Cell {
                 let (a, r) = (&column.admitted, &column.resident);
                 let rest = s(1.) - phi;
                 let density = s(1.) / (phi / a.density + rest / r.density);
+                // S3-D37: an outflow of vapor draws zone A's bubble
+                // population b_A at A's region bubble fraction
+                // V_bA/(V_A + V_bA), saturated at p_s, without boron. The
+                // liquid path keeps its selected aperture fraction 1.
+                let sat = &column.interface_saturation;
+                let bubbles = (column.admitted_bubble_mass.value != 0.).then(|| FacePhase {
+                    fraction: column.admitted_bubble_volume
+                        / (a.volume + column.admitted_bubble_volume),
+                    density: sat.vapor.density,
+                    enthalpy: sat.vapor.enthalpy,
+                    boron_concentration: s(0.),
+                });
                 Ok(FaceCell {
                     pressure: column.pressure_at(p.elevation_m),
                     phase: [
@@ -2053,7 +2138,7 @@ impl Cell {
                             boron_concentration: phi * column.admitted_concentration
                                 + rest * column.resident_concentration,
                         }),
-                        None,
+                        bubbles,
                     ],
                 })
             }
@@ -2232,6 +2317,7 @@ impl Cell {
         const RV: usize = 2;
         let mut bubbles = s(0.);
         let mut admitted_bubbles = s(0.);
+        let mut surge_vapor = s(0.);
         let mut drops = s(0.);
         let mut drop_boron = s(0.);
         let mut spray_condensation = s(0.);
@@ -2239,6 +2325,33 @@ impl Cell {
         for (port, rec) in self.parameters.ports.iter().zip(receipts) {
             for (total, v) in receipt.iter_mut().zip([rec.mass, rec.enthalpy, rec.boron]) {
                 *total = *total + finite(v, "port receipt")?;
+            }
+            if rec.carries_vapor() {
+                // S3-D30 (decision 0014 extended): vapor arriving through the
+                // surge port joins zone A's bubble stock b_A at the surge
+                // entry, saturated at p_s like every bubble; A pays the
+                // difference between the arriving enthalpy and h_g(p_s), as
+                // for the wall-born vapor it hosts. b_A then condenses and
+                // rises under K1's exchange and amendment 6's crossing.
+                // S3-D37: vapor leaving through the port is drawn from b_A
+                // (the port view's bubbles at h_g(p_s)), so the same terms
+                // hold with w < 0 and A pays nothing. Vapor at another port
+                // is outside the composed cell.
+                let (w, h) = (
+                    finite(rec.vapor_mass, "surge vapor receipt")?,
+                    finite(rec.vapor_enthalpy, "surge vapor receipt")?,
+                );
+                if port.kind != PortKind::Surge {
+                    return Err(fatal(format!(
+                        "port {}: only the surge port receives vapor",
+                        port.id
+                    )));
+                }
+                admitted_bubbles = admitted_bubbles + w;
+                energy[AV] = energy[AV] + h - w * hg;
+                receipt[0] = receipt[0] + w;
+                receipt[1] = receipt[1] + h;
+                surge_vapor = surge_vapor + w;
             }
             match port.kind {
                 PortKind::Surge => {
@@ -2686,6 +2799,7 @@ impl Cell {
                 drop,
                 transit_drift,
                 spray_condensation,
+                surge_vapor,
                 relief,
                 interface_pressure_rate,
                 interface,
@@ -2940,7 +3054,13 @@ impl Cell {
         })
     }
 
-    /// Total mass, energy and boron of the cell for conservation accounting.
+    /// Total mass, internal energy and boron of the cell for conservation
+    /// accounting. The transit stocks b, b_A and d hold `u_sat(p_s)` per kg:
+    /// every transfer carries `h_g`/`h_f(p_s)`, but the flow work `p_s V` of
+    /// their volumes is not stored (the zones pay it as volume work), so it
+    /// is taken off at their volume coordinates. The rows change this energy
+    /// by the port receipts and heat less the hydrostatic remainder
+    /// [`Balance::volume_work_w`].
     pub fn inventory(&self, x: &Coordinates, column: &Column) -> Inventory {
         let sat = &column.interface_saturation;
         Inventory {
@@ -2954,7 +3074,9 @@ impl Cell {
                 + x.admitted_energy
                 + x.resident_energy
                 + (x.bubble_mass + x.admitted_bubble_mass) * sat.vapor.enthalpy
-                + x.drop_mass * sat.liquid.enthalpy,
+                + x.drop_mass * sat.liquid.enthalpy
+                - column.interface_pressure
+                    * (x.bubble_volume + x.drop_volume + x.admitted_bubble_volume),
             boron_kg: x.admitted_boron + x.resident_boron + x.drop_boron,
         }
     }

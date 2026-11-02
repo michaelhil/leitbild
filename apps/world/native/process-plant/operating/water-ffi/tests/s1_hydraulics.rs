@@ -41,18 +41,10 @@ use std::{f64::consts::PI, time::Instant};
 // Process CPU (CLOCK_PROCESS_CPUTIME_ID) and the 1-, 5- and 15-minute load
 // averages, recorded at the receipt's start and end for the declared CPU
 // measurement hygiene.
-#[path = "common/cpu.rs"]
-mod cpu;
+mod common;
+use common::{counts, cpu, filter, observe, provenance};
 use cpu::{load_average, process_cpu_s as cpu_s};
 // The helpers S1 shares with the S2 gate harness (s2_gates.rs).
-#[path = "common/counts.rs"]
-mod counts;
-#[path = "common/filter.rs"]
-mod filter;
-#[path = "common/observe.rs"]
-mod observe;
-#[path = "common/provenance.rs"]
-mod provenance;
 use counts::{CONVERGENCE_FAILURES_COUNTER, Counts, Mark};
 use filter::{
     CAP_CYCLE_RULE, DECLARED_FILTER, EXCESS_SPECTRUM_METHOD, WELCH_SEGMENT_S, cap_cycle_output,
@@ -2359,6 +2351,10 @@ fn s1_settled_energy_identity() {
 /// for the observation clock.
 struct Decay;
 impl System for Decay {
+    /// Unreduced: every coordinate stands for itself (E-NUC).
+    fn multiplicities(&self) -> Option<Vec<f64>> {
+        None
+    }
     fn dimension(&self) -> usize {
         2
     }
@@ -3117,6 +3113,10 @@ fn the_water_build_is_carried_verbatim_and_refused_unless_it_matches() {
 /// with its exact pencil: a stock-IDA fixture for H1's restart.
 struct Cubic;
 impl System for Cubic {
+    /// Unreduced: every coordinate stands for itself (E-NUC).
+    fn multiplicities(&self) -> Option<Vec<f64>> {
+        None
+    }
     fn dimension(&self) -> usize {
         2
     }

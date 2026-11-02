@@ -22,7 +22,7 @@ use leitbild_operating_plant::{
         blocks::{Classes, JoinedJacobian, jacobian_blocks},
         operator::Joined,
     },
-    network::{Failure, Properties},
+    network::{CreditedOutput, Failure, Properties},
     sparse::Pattern,
     thermal::WaterProperties,
 };
@@ -50,6 +50,18 @@ fn largest(values: impl Iterator<Item = (usize, f64)>) -> Largest {
     })
 }
 
+/// The declared factor on the unit roundoff of the per-row bound
+/// (lead, 17 October 2026, with DR13-ROD-A): a row is held to
+/// `max(bound, ROUNDOFF_FACTOR * eps * sum |terms|)`, where `sum |terms|` is
+/// the magnitude of the terms the row subtracts at the state, from the
+/// row's own linearization: `sum_j |dF_r/dy_j y_j| + |dF_r/dy'_j y'_j|` for
+/// a residual, `sum_j |dg_r/dy_j y'_j|` for a constraint rate. One rule for
+/// every row; where the terms are small the declared bound holds unchanged.
+pub const ROUNDOFF_FACTOR: f64 = 8.;
+fn row_bound(bound: f64, magnitude: f64) -> f64 {
+    bound.max(ROUNDOFF_FACTOR * f64::EPSILON * magnitude)
+}
+
 /// What the start did, with its timings.
 #[derive(Clone, Debug, Default)]
 pub struct Report {
@@ -66,6 +78,10 @@ pub struct Report {
     /// Passes of the rate solve on the one factorization (the first exact,
     /// later ones removing round-off only).
     pub rate_passes: usize,
+    /// Rows accepted above `bound` under their own roundoff bound
+    /// ([`ROUNDOFF_FACTOR`]): the projection's constraints, the residual and
+    /// the constraint rates, each the largest such row over its bound.
+    pub roundoff_rows: [Largest; 3],
     /// The projection's correction of the coordinates exempt from the WRMS
     /// guard (lead decision S2-D21: a transacted owner's algebraic
     /// coordinates), reported, never bounded; `None` when none is exempt.
@@ -242,6 +258,7 @@ fn assemble<P: Properties + WaterProperties>(
     values: &mut [f64],
     report: &mut Report,
 ) -> Result<(), Failure> {
+    let _cost = leitbild_operating_plant::cost::scope("start-jacobian");
     let zero = vec![0.; y.len()];
     let started = Instant::now();
     match matrices {
@@ -342,6 +359,7 @@ pub fn consistent_start_exempting<P: Properties + WaterProperties>(
     let algebraic: Vec<bool> = differential.iter().map(|d| *d == 0.).collect();
     let zero = vec![0.; n];
     let rows_at = |joined: &mut Joined<P>, y: &[f64], yp: &[f64]| -> Result<Vec<f64>, Failure> {
+        let _cost = leitbild_operating_plant::cost::scope("start-residual");
         joined.evaluate(t, y, yp, None, 0., None)?;
         Ok(joined.rows().iter().map(|r| r.value).collect())
     };
@@ -423,7 +441,7 @@ pub fn consistent_start_exempting<P: Properties + WaterProperties>(
         rows = rows_at(joined, y, &zero)?;
         report.constraint_after = constraint(&rows);
     }
-    if report.constraint_after.value.is_nan() || report.constraint_after.value > bound {
+    if report.constraint_after.value.is_nan() {
         return Err(fatal(format!(
             "constraints miss their bound after projection: {:?}",
             report.constraint_after
@@ -432,8 +450,8 @@ pub fn consistent_start_exempting<P: Properties + WaterProperties>(
     (report.correction_wrms, report.exempt) = correction_wrms(y, &start, weights, exempt);
     if report.correction_wrms.is_nan() || report.correction_wrms > 1. {
         return Err(fatal(format!(
-            "the projection exceeds the solver's error scale: WRMS {}",
-            report.correction_wrms
+            "the projection exceeds the solver's error scale: WRMS {} (largest scaled correction {:?})",
+            report.correction_wrms, report.correction
         )));
     }
     // 2. The consistent rates: differential rows dF/dy', algebraic rows dg/dy.
@@ -441,6 +459,48 @@ pub fn consistent_start_exempting<P: Properties + WaterProperties>(
     assemble(joined, &matrices, t, 0., y, &mut a, &mut report)?;
     let mut ab = vec![0.; nnz];
     assemble(joined, &matrices, t, 1., y, &mut ab, &mut report)?;
+    // Each row's magnitude of terms from its linearization at the state:
+    // `sum_j |dF/dy_ij y_j|`, and with rates `sum_j |dF/dy'_ij y'_j|`.
+    let magnitude = |matrix: &dyn Fn(usize) -> f64, v: &[f64]| {
+        let mut m = vec![0.; n];
+        for j in 0..n {
+            for position in pointers[j]..pointers[j + 1] {
+                m[indices[position]] += (matrix(position) * v[j]).abs();
+            }
+        }
+        m
+    };
+    let of_y = magnitude(&|p| a[p], y);
+    // The projection's constraints, each under its own roundoff bound.
+    let over = |values: &[f64], magnitudes: &[f64], only_algebraic: bool| {
+        largest(
+            values
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| !only_algebraic || algebraic[*i])
+                .filter(|(i, v)| v.abs() > bound && v.abs() > row_bound(bound, magnitudes[*i]))
+                .map(|(i, v)| (i, *v)),
+        )
+    };
+    let accepted_above = |values: &[f64], only_algebraic: bool| {
+        largest(
+            values
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| !only_algebraic || algebraic[*i])
+                .filter(|(_, v)| v.abs() > bound)
+                .map(|(i, v)| (i, *v)),
+        )
+    };
+    let missed = over(&rows, &of_y, true);
+    if missed.value.is_nan() || missed.value > 0. {
+        return Err(fatal(format!(
+            "constraints miss their bound after projection: {:?} (row bound {})",
+            report.constraint_after,
+            row_bound(bound, of_y[missed.row])
+        )));
+    }
+    report.roundoff_rows[0] = accepted_above(&rows, true);
     let matrix: Vec<f64> = (0..nnz)
         .map(|p| {
             if algebraic[indices[p]] {
@@ -533,29 +593,45 @@ pub fn consistent_start_exempting<P: Properties + WaterProperties>(
             break;
         }
     }
+    // Each row under its own roundoff bound: the residual's terms at
+    // (y, y'), the constraint rate's at y'.
+    let of_rates = magnitude(&|p| ab[p] - a[p], &yp);
+    let of_residual: Vec<f64> = of_y.iter().zip(&of_rates).map(|(a, b)| a + b).collect();
+    let of_constraint_rate = magnitude(&|p| a[p], &yp);
+    let rate = constraint_rate(&yp);
+    let (missed_residual, missed_rate) = (
+        over(&residual, &of_residual, false),
+        over(&rate, &of_constraint_rate, true),
+    );
     if report.residual.value.is_nan()
-        || report.residual.value > bound
         || report.constraint_rate.value.is_nan()
-        || report.constraint_rate.value > bound
+        || missed_residual.value > 0.
+        || missed_rate.value > 0.
     {
         return Err(fatal(format!(
-            "the consistent-rate solve missed its bound: residual {:?}, constraint rate {:?}",
-            report.residual, report.constraint_rate
+            "the consistent-rate solve missed its bound: residual {:?}, constraint rate {:?} (row bounds {} and {})",
+            report.residual,
+            report.constraint_rate,
+            row_bound(bound, of_residual[missed_residual.row]),
+            row_bound(bound, of_constraint_rate[missed_rate.row])
         )));
     }
+    report.roundoff_rows[1] = accepted_above(&residual, false);
+    report.roundoff_rows[2] = accepted_above(&rate, true);
     Ok((yp, report))
 }
 
-/// Each transacting owner's own coordinate range: the SG secondary, the rods
-/// and the PZR block (G6), which follows the rods and is empty while its
-/// owner is not composed.
+/// Each transacting owner's own coordinate range: the SG secondary, the rods,
+/// the PZR block (G6), which follows the rods and is empty while its owner is
+/// not composed, and the CVCS (plan r4 X4.2), empty unless composed.
 fn owner_ranges(
     o: leitbild_operating_plant::joined::operator::Offsets,
-) -> [(&'static str, std::ops::Range<usize>); 3] {
+) -> [(&'static str, std::ops::Range<usize>); 4] {
     [
         ("secondary", o.secondary..o.rods),
         ("rods", o.rods..o.pzr),
-        ("pzr", o.pzr..o.end),
+        ("pzr", o.pzr..o.cvcs),
+        ("cvcs", o.cvcs..o.end),
     ]
 }
 
@@ -581,18 +657,244 @@ fn transacted_owners(
         .collect()
 }
 
+/// The derived absolute-tolerance classes on the composition's own rows
+/// (lead decisions S2-D24r and S3-D16, the default in every S3 run path,
+/// never an opt-in), as `owner/Class` of the joined layouts: an algebraic
+/// current set by pressure differences takes the tightest credited budget
+/// among the credited outputs it determines through its own sensitivity.
+/// The equilibrium cells' vapor class (S3-D16 on S3-D3) is derived at
+/// every restart ([`discrete_restart`]); ELEC's stator class joins this
+/// list when its owner is composed.
+pub const DERIVED_CLASSES: &[&str] = &["rods/GuideCurrent"];
+
+/// One credited output a derived coordinate determines.
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+pub struct Determined {
+    pub output: String,
+    /// The output's budget in its own unit (Pa for a pressure output).
+    pub budget: f64,
+    /// `|∂x/∂p_j|` in SI, the largest over the output's coordinates the row
+    /// reads (for a difference output, `|∂x/∂Δp|`).
+    pub sensitivity: f64,
+    pub column: String,
+    /// `budget × sensitivity`, SI.
+    pub tolerance: f64,
+}
+
+/// One coordinate's derived absolute tolerance.
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+pub struct DerivedRow {
+    pub coordinate: usize,
+    pub label: String,
+    pub class: String,
+    /// The class tolerance it replaces, and the applied one, solver scaling.
+    pub replaced_scaled: f64,
+    pub applied_scaled: f64,
+    /// The applied tolerance in SI: the tightest determined output's.
+    pub applied: f64,
+    /// Every credited output it determines, tightest first.
+    pub determines: Vec<Determined>,
+}
+
+/// What [`derived_tolerances`] applied: the evidence an S3 run path carries
+/// (the frame driver's setup requires it).
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+pub struct DerivedTolerances {
+    pub rule: &'static str,
+    pub classes: Vec<String>,
+    pub credited: Vec<CreditedOutput>,
+    pub t_s: f64,
+    pub relative: f64,
+    pub rows: Vec<DerivedRow>,
+}
+
+impl DerivedTolerances {
+    /// The record of a reference run that scales every tolerance by
+    /// `factor` (an R2-style reference checks the derived class scaled with
+    /// the rest, PLAN §9).
+    pub fn scaled(&self, factor: f64) -> Self {
+        let mut out = self.clone();
+        out.relative *= factor;
+        for r in &mut out.rows {
+            r.applied_scaled *= factor;
+            r.applied *= factor;
+        }
+        out
+    }
+}
+
+/// S2-D24r / S3-D16 on `atol` (solver scaling) for every coordinate of
+/// [`DERIVED_CLASSES`], from the block Jacobian `∂F/∂y` at `(t, y, y')`: a
+/// derived row `r`'s sensitivity to a pressure column `j` is
+/// `|∂x/∂p_j| = |J[r,j] / J[r,r]|`; the credited outputs it determines are
+/// those whose coordinates its row reads, each giving `budget × |∂x/∂p_j|`
+/// over its own coordinates; the tightest is applied, so every determined
+/// output's budget holds (rods/GuideCurrent: core DP's 50 Pa × `|∂m/∂Δp|`).
+/// The rule HARNESS-B's S2 gate harness applies (r7.1). `credited` comes
+/// from the strict blocks and is also declared on the operator for the
+/// restarts' classes. A covered row without a finite nonzero diagonal, or
+/// that determines no credited output, refuses; so does a composition with
+/// no covered coordinate.
+#[allow(clippy::too_many_arguments)] // The operator, its structure, the state, the outputs, rtol and atol.
+pub fn derived_tolerances<P: Properties + WaterProperties>(
+    joined: &mut Joined<P>,
+    structure: &JoinedJacobian,
+    t: f64,
+    y: &[f64],
+    yp: &[f64],
+    relative: f64,
+    credited: &[CreditedOutput],
+    atol: &mut [f64],
+) -> Result<DerivedTolerances, String> {
+    let layouts = joined.layouts();
+    let class_of: Vec<String> = layouts
+        .iter()
+        .flat_map(|(owner, l)| l.classes.iter().map(move |c| format!("{owner}/{c:?}")))
+        .collect();
+    let labels: Vec<String> = layouts
+        .iter()
+        .flat_map(|(owner, l)| l.labels.iter().map(move |x| format!("{owner}/{x}")))
+        .collect();
+    if class_of.len() != y.len() || atol.len() != y.len() {
+        return Err("derived tolerances: the layouts do not cover the coordinates".into());
+    }
+    if credited.is_empty() {
+        return Err("derived tolerances: no credited output declared".into());
+    }
+    let covered: Vec<usize> = (0..y.len())
+        .filter(|i| DERIVED_CLASSES.contains(&class_of[*i].as_str()))
+        .collect();
+    if covered.is_empty() {
+        return Err(format!(
+            "derived tolerances: no coordinate of {DERIVED_CLASSES:?}"
+        ));
+    }
+    let mut values = vec![0.; structure.pattern.nonzeros()];
+    jacobian_blocks(joined, structure, t, 0., y, yp, &mut values, Classes::ALL)
+        .map_err(|e| format!("derived tolerances: block Jacobian: {e:?}"))?;
+    let (pointers, indices) = (structure.pattern.pointers(), structure.pattern.indices());
+    let index: std::collections::BTreeMap<usize, usize> =
+        covered.iter().enumerate().map(|(k, r)| (*r, k)).collect();
+    let mut diagonal = vec![None; covered.len()];
+    let mut entries: Vec<Vec<(usize, f64)>> = vec![Vec::new(); covered.len()];
+    for j in 0..y.len() {
+        for position in pointers[j]..pointers[j + 1] {
+            if let Some(k) = index.get(&indices[position]) {
+                if indices[position] == j {
+                    diagonal[*k] = Some(values[position]);
+                } else if values[position] != 0. {
+                    entries[*k].push((j, values[position]));
+                }
+            }
+        }
+    }
+    let scales = joined.scales();
+    let mut rows = Vec::with_capacity(covered.len());
+    for (k, r) in covered.iter().enumerate() {
+        let d = diagonal[k]
+            .filter(|d| *d != 0. && d.is_finite())
+            .ok_or_else(|| {
+                format!(
+                    "derived tolerances: {} has no finite nonzero diagonal",
+                    labels[*r]
+                )
+            })?;
+        let mut determines: Vec<Determined> = credited
+            .iter()
+            .filter_map(|o| {
+                entries[k]
+                    .iter()
+                    .filter(|(j, _)| o.columns.contains(j))
+                    .map(|(j, v)| ((v / d).abs() * scales[*r] / scales[*j], *j))
+                    .max_by(|a, b| a.0.total_cmp(&b.0))
+                    .map(|(sensitivity, j)| Determined {
+                        output: o.name.clone(),
+                        budget: o.budget,
+                        sensitivity,
+                        column: labels[j].clone(),
+                        tolerance: o.budget * sensitivity,
+                    })
+            })
+            .collect();
+        determines.sort_by(|a, b| a.tolerance.total_cmp(&b.tolerance));
+        let applied = determines.first().map(|o| o.tolerance).ok_or_else(|| {
+            format!(
+                "derived tolerances: {} determines no credited output",
+                labels[*r]
+            )
+        })?;
+        rows.push(DerivedRow {
+            coordinate: *r,
+            label: labels[*r].clone(),
+            class: class_of[*r].clone(),
+            replaced_scaled: atol[*r],
+            applied_scaled: applied / scales[*r],
+            applied,
+            determines,
+        });
+        atol[*r] = applied / scales[*r];
+    }
+    Ok(DerivedTolerances {
+        rule: "S2-D24r/S3-D16: the tightest credited budget among the credited outputs the coordinate determines x |dx/dp| = |J[r,j]/J[r,r]| from the block Jacobian dF/dy",
+        classes: DERIVED_CLASSES.iter().map(|c| c.to_string()).collect(),
+        credited: credited.to_vec(),
+        t_s: t,
+        relative,
+        rows,
+    })
+}
+
+/// N1 (lead, 17 Oct): the most coordinates in a weight group that holds a
+/// credited row. Under group-normalised weights stock's WRMS^2 is
+/// `sum_g RMS_g^2`, so WRMS <= 1 holds every row of a group of `n_g`
+/// coordinates within `sqrt(n_g)` of its declared tolerance: 3 units here.
+pub const CREDITED_GROUP_MAX: usize = 9;
+
+/// N1: weight-group keys from census keys (one per coordinate, census
+/// order). Every key that a `credited` coordinate carries is split, in
+/// census order, into consecutive groups of at most `max` coordinates,
+/// keyed `key#k`; every other key stays one group. No hand list: the
+/// split follows from the census and the credited coordinates.
+pub fn split_credited_groups(keys: &[String], credited: &[bool], max: usize) -> Vec<String> {
+    let split: std::collections::HashSet<&str> = keys
+        .iter()
+        .zip(credited)
+        .filter(|(_, c)| **c)
+        .map(|(k, _)| k.as_str())
+        .collect();
+    let mut seen = std::collections::HashMap::<&str, usize>::new();
+    keys.iter()
+        .map(|k| {
+            if split.contains(k.as_str()) {
+                let n = seen.entry(k.as_str()).or_default();
+                let key = format!("{k}#{}", *n / max.max(1));
+                *n += 1;
+                key
+            } else {
+                k.clone()
+            }
+        })
+        .collect()
+}
+
 pub use integrated::{
-    Assembly, Discrete, Integrated, JoinedSystem, Restart, Restarted, discrete_restart,
+    Assembly, Discrete, FirstStep, Integrated, JoinedSystem, Restart, Restarted, census_groups,
+    credited_coordinates, discrete_restart, discrete_restart_unless_noop, root_directions,
+    stock_initial_conditions,
 };
 
 mod integrated {
     use super::{Analyses, Matrices, Report, transacted_owners};
-    use crate::ida::{Failure, Ida, KluOrdering, System};
+    use crate::ida::{Failure, Ida, KluOrdering, System, WeightGroups};
     use leitbild_operating_plant::{
         joined::{
             block::{Command, Transaction},
-            blocks::{Classes, JoinedJacobian, jacobian_blocks},
+            blocks::{
+                Classes, JoinedJacobian, Profile, jacobian_blocks, jacobian_blocks_on_base,
+                jacobian_blocks_profiled,
+            },
             operator::Joined,
+            presence::{PatternCache, PresenceKey, VaporPresence, pattern_cells},
         },
         network::{self, Properties},
         thermal::WaterProperties,
@@ -637,10 +939,45 @@ mod integrated {
         /// from the start's WRMS guard ([`Report::exempt`]).
         pub transacted: Vec<&'static str>,
         /// The start's pass bound: `transaction_passes` after an owner
-        /// transaction, `start_passes` otherwise.
+        /// transaction or a birth (DR-C3-BIRTH05), `start_passes`
+        /// otherwise.
         pub passes_allowed: usize,
+        /// The declared vapor presence's key changed, so the restart
+        /// switched the block structure (S3-D-P3; never without
+        /// [`Integrated::following_presence`]).
+        pub presence_changed: bool,
+        /// The phase-mode owner's mode table changed (a birth or an
+        /// exhaustion): the identity, the nonnegative stocks and the
+        /// tolerances were set again.
+        pub modes_changed: bool,
+        /// S3-D16's derived vapor class of every equilibrium cell at this start
+        /// (empty with every cell liquid).
+        pub equilibrium_classes: Vec<serde_json::Value>,
+        /// The appended owners' changes at this restart (ELEC hook; empty
+        /// without appended coordinates).
+        pub appended: Vec<String>,
+        /// N3: the first step this restart set, and the last step stock
+        /// accepted before the event.
+        pub first_step_s: f64,
+        pub last_step_s: f64,
+        /// The largest algebraic row of the state handed to the restart,
+        /// before any transaction, under the identity before it
+        /// (DR-C3-BIRTH05).
+        pub constraint_at_entry: super::Largest,
+        /// Every cell born at this restart: its pressure at entry and after
+        /// the consistent start, the step, and its vapor (physical units,
+        /// [`network::Network::birth_flash`]), with the correction of its
+        /// `p, M_g, U_g` in the integrator's tolerance units (weighted, as
+        /// the WRMS guard reads them; those coordinates are exempt from it,
+        /// lead decision S3-D64).
+        pub births: Vec<serde_json::Value>,
         pub yp: Vec<f64>,
         pub report: Report,
+        /// E-EVT (plan r4): nothing the integrator reads changed (the state,
+        /// the identity, every residual row and root function bitwise), so
+        /// no consistent start and no IDAReInit were made: stock's history
+        /// continues. `yp` is then empty.
+        pub noop: bool,
     }
     impl Restart {
         /// Configure a segment start (after construction or a restart).
@@ -670,6 +1007,9 @@ mod integrated {
     /// 2. a nonnegative network stock below zero by less than the declared
     ///    roundoff is placed on its bound and reported; a larger violation
     ///    refuses;
+    ///    the vapor presence the stocks then declare is followed: a changed
+    ///    key switches the block structure (S3-D-P3, presence-following
+    ///    systems only);
     /// 3. the differential identity is recomputed from the owners' modes; an
     ///    owner whose transaction changed one of its differential
     ///    coordinates (a rod or relief seat) is transacted (S2-D21);
@@ -680,64 +1020,301 @@ mod integrated {
     ///    After an owner transaction the start takes up to the declared
     ///    `transaction_passes`, and its WRMS guard leaves out the transacted
     ///    owners' algebraic coordinates, whose correction it reports; the
-    ///    constraint and rate bounds are unchanged (S2-D21);
+    ///    constraint and rate bounds are unchanged (S2-D21). A birth's
+    ///    flash at the born cell's unchanged totals is finite at G1's
+    ///    credited superheat, so it also takes up to `transaction_passes`
+    ///    (S3-D41), and the born cells' `p, M_g, U_g`, only at their birth
+    ///    instant, are exempt and reported (S3-D64, DR-C3-BIRTH05);
     /// 5. IDAReInit with the consistent rates and the segment configuration.
     #[allow(clippy::too_many_arguments)] // One restart: event, state, identity and tolerances.
     pub fn discrete_restart<S: JoinedSystem>(
         ida: &mut Ida<S>,
         t: f64,
         discrete: Discrete<'_>,
-        y: &mut [f64],
+        y_all: &mut [f64],
         network_ids: &[f64],
-        absolute: &[f64],
+        absolute_all: &[f64],
         relative: f64,
         restart: &Restart,
     ) -> Result<Restarted, String> {
+        restart_or_continue(ida, t, discrete, y_all, network_ids, absolute_all, relative, restart, false)
+    }
+
+    /// E-EVT (plan r4): [`discrete_restart`], or, for a command or an owner
+    /// time event whose owners' changes leave everything the integrator
+    /// reads bitwise as it was
+    /// ([`Restarted::noop`]), no consistent start and no IDAReInit. Only a
+    /// driver whose instant carries no client change of its own (such as an
+    /// H1 window-end restart, which must reconfigure the segment) calls it.
+    #[allow(clippy::too_many_arguments)] // As discrete_restart.
+    pub fn discrete_restart_unless_noop<S: JoinedSystem>(
+        ida: &mut Ida<S>,
+        t: f64,
+        discrete: Discrete<'_>,
+        y_all: &mut [f64],
+        network_ids: &[f64],
+        absolute_all: &[f64],
+        relative: f64,
+        restart: &Restart,
+    ) -> Result<Restarted, String> {
+        restart_or_continue(ida, t, discrete, y_all, network_ids, absolute_all, relative, restart, true)
+    }
+
+    #[allow(clippy::too_many_arguments)] // One restart: event, state, identity and tolerances.
+    fn restart_or_continue<S: JoinedSystem>(
+        ida: &mut Ida<S>,
+        t: f64,
+        discrete: Discrete<'_>,
+        y_all: &mut [f64],
+        network_ids: &[f64],
+        absolute_all: &[f64],
+        relative: f64,
+        restart: &Restart,
+        allow_noop: bool,
+    ) -> Result<Restarted, String> {
+        // E-EVT (plan r4, lead): only a command or an owner time event may be
+        // a no-op; a located root (a kink root among them) keeps its restart.
+        let allow_noop = allow_noop && !matches!(discrete, Discrete::Roots(_));
+        if absolute_all.len() != y_all.len() {
+            return Err("restart tolerances layout".into());
+        }
+        // ELEC hook: appended coordinates (none on S1/S2 paths) take their
+        // owners' changes first, then the operator restarts on its own part.
+        let appended = ida.system().appended();
+        let rule = ida.weight_rule();
+        // N3: the last step stock accepted before this event (0 before any).
+        let last_step = ida.stats()?.last_step;
+        let first_step_policy = match (ida.system().integrated().first_step, discrete) {
+            (FirstStep::LastStepUnlessRoots { .. }, Discrete::Roots(_)) => FirstStep::Declared,
+            (FirstStep::LastStepUnlessRoots { divisor }, _) => FirstStep::LastStep { divisor },
+            (policy, _) => policy,
+        };
+        let m = y_all
+            .len()
+            .checked_sub(appended)
+            .ok_or("restart: appended layout")?;
+        let appended_done = if appended > 0 {
+            let command = match discrete {
+                Discrete::Command(c) => Some(c),
+                _ => None,
+            };
+            ida.system_mut()
+                .appended_events(t, command, &mut y_all[m..])?
+        } else {
+            Vec::new()
+        };
+        // E-EVT no-op (PERF tightening): stock's own rates at `t`, the
+        // last accepted step's dense derivative; a no-op also needs every
+        // row unchanged there, so a change in a term linear in y' restarts.
+        // Without them (no accepted step yet) the instant restarts.
+        let rates_hist: Option<Vec<f64>> = if allow_noop {
+            let mut r = vec![0.; y_all.len()];
+            ida.dense(t, 1, &mut r).ok().map(|()| r)
+        } else {
+            None
+        };
+        let allow_noop = allow_noop && rates_hist.is_some();
+        let (y, y_tail) = y_all.split_at_mut(m);
+        let absolute = &absolute_all[..m];
+        let integrated = ida.system_mut().integrated_mut();
+        let message = |f: network::Failure| match f {
+            network::Failure::Recoverable(r) | network::Failure::Fatal(r) => r,
+        };
+        let joined = &mut integrated.joined;
+        let before = y.to_vec();
+        let identity_before = joined.differential(network_ids);
+        let modes_before = joined.network.cell_modes().to_vec();
+        // HOOK (BIRTH05, DR-C3-BIRTH05; KERN to reconcile): the constraint
+        // of the state handed to the restart, before any transaction: the
+        // largest algebraic row of one value evaluation at `(t, y, 0)` under
+        // the identity before it. A root-located or dense-output state off
+        // the algebraic manifold shows here, separately from what the
+        // transactions change.
+        let zero_rates = vec![0.; y.len()];
+        let mut roots_entry = vec![0.; joined.root_count()];
+        let mut directions_entry = Vec::new();
+        if allow_noop {
+            joined
+                .roots(t, y, &zero_rates, &mut roots_entry)
+                .map_err(message)?;
+            directions_entry = joined.root_directions().map_err(message)?;
+        }
+        let mut entry_rows_hist: Vec<f64> = Vec::new();
+        if let Some(r) = rates_hist.as_ref() {
+            joined
+                .evaluate(t, y, &r[..m], None, 0., None)
+                .map_err(message)?;
+            entry_rows_hist = joined.rows().iter().map(|r| r.value).collect();
+        }
+        let entry_rows: Vec<f64>;
+        let entry = {
+            let zero = vec![0.; y.len()];
+            joined
+                .evaluate(t, y, &zero, None, 0., None)
+                .map_err(message)?;
+            entry_rows = joined.rows().iter().map(|r| r.value).collect();
+            super::largest(
+                joined
+                    .rows()
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, _)| identity_before[*i] == 0.)
+                    .map(|(i, r)| (i, r.value)),
+            )
+        };
+        let mut done = match discrete {
+            // E-EVT (plan r4): one event per bank seat. The located roots
+            // are widened to the roots of the same event, judged in the
+            // handle's own error weights at the state handed in.
+            Discrete::Roots(directions) => {
+                let mut event = directions.to_vec();
+                let mut w = vec![0.; y.len()];
+                rule.weights(y, relative, absolute, &mut w)?;
+                joined
+                    .coincident(y, &w, &mut event)
+                    .map_err(message)?;
+                joined.transact(t, &event, y).map_err(message)?
+            }
+            Discrete::TimeEvent => Vec::new(),
+            Discrete::Command(c) => joined.command(t, y, c).map_err(message)?,
+        };
+        done.extend(joined.time_events(t, y).map_err(message)?);
+        // The vapor presence declared after the transactions (the stocks'
+        // for liquid cells, both phases for an equilibrium cell): a changed
+        // presence key switches the block structure (S3-D-P3).
+        let declared = VaporPresence::of(&joined.network, &joined.network.declared_presence(y));
+        let presence_changed = integrated.follow_presence(t, y, &declared)?;
+        // E-EVT (plan r4): a no-op instant. Nothing the integrator reads
+        // changed: the state and identity bitwise, no presence change, no
+        // appended change, every residual row at (t, y, 0) and every root
+        // function and direction bitwise as at entry. Stock's history then
+        // continues; there is no consistent start and no IDAReInit.
+        if allow_noop
+            && !presence_changed
+            && appended_done.is_empty()
+            && y.iter().zip(&before).all(|(a, b)| a.to_bits() == b.to_bits())
+            && integrated.joined.differential(network_ids) == identity_before
+            && integrated.joined.network.cell_modes() == modes_before.as_slice()
+        {
+            let joined = &mut integrated.joined;
+            joined
+                .evaluate(t, y, &zero_rates, None, 0., None)
+                .map_err(message)?;
+            let mut rows_same = joined
+                .rows()
+                .iter()
+                .zip(&entry_rows)
+                .all(|(r, e)| r.value.to_bits() == e.to_bits());
+            if let Some(r) = rates_hist.as_ref() {
+                joined
+                    .evaluate(t, y, &r[..m], None, 0., None)
+                    .map_err(message)?;
+                rows_same = rows_same
+                    && joined
+                        .rows()
+                        .iter()
+                        .zip(&entry_rows_hist)
+                        .all(|(r, e)| r.value.to_bits() == e.to_bits());
+            }
+            let mut roots_now = vec![0.; roots_entry.len()];
+            joined
+                .roots(t, y, &zero_rates, &mut roots_now)
+                .map_err(message)?;
+            let roots_same = roots_now
+                .iter()
+                .zip(&roots_entry)
+                .all(|(a, b)| a.to_bits() == b.to_bits())
+                && joined.root_directions().map_err(message)? == directions_entry;
+            if rows_same && roots_same {
+                return Ok(Restarted {
+                    transactions: done,
+                    placements: Vec::new(),
+                    transacted: Vec::new(),
+                    passes_allowed: 0,
+                    presence_changed,
+                    modes_changed: false,
+                    equilibrium_classes: Vec::new(),
+                    appended: appended_done,
+                    constraint_at_entry: entry,
+                    first_step_s: 0.,
+                    last_step_s: last_step,
+                    births: Vec::new(),
+                    yp: Vec::new(),
+                    report: Report::default(),
+                    noop: true,
+                });
+            }
+        }
         let Integrated {
             joined,
             assembly,
             analyses,
             ..
-        } = ida.system_mut().integrated_mut();
-        if absolute.len() != y.len() {
-            return Err("restart tolerances layout".into());
-        }
-        let message = |f: network::Failure| match f {
-            network::Failure::Recoverable(r) | network::Failure::Fatal(r) => r,
-        };
-        let before = y.to_vec();
-        let identity_before = joined.differential(network_ids);
-        let mut done = match discrete {
-            Discrete::Roots(directions) => joined.transact(t, directions, y).map_err(message)?,
-            Discrete::TimeEvent => Vec::new(),
-            Discrete::Command(c) => joined.command(t, y, c).map_err(message)?,
-        };
-        done.extend(joined.time_events(t, y).map_err(message)?);
+        } = integrated;
         let nonnegative = joined.network.nonnegative_stocks();
         let placements = network::place_on_bounds(t, y, &nonnegative, restart.bound_placement)
             .map_err(message)?;
         let ids = joined.differential(network_ids);
-        let weights: Vec<f64> = y
-            .iter()
-            .zip(absolute)
-            .map(|(v, a)| 1. / (relative * v.abs() + a))
-            .collect();
+        // S3-D16 (default on every path): an equilibrium cell's algebraic
+        // vapor slots take the tightest credited budget among the declared
+        // credited outputs they determine through their flash sensitivity
+        // at this segment's start state, or rtol·|p| when they determine
+        // none (S3-D16b; HOOK by GATE, KERN to reconcile); every other
+        // coordinate keeps the caller's class. With every cell liquid this is the caller's
+        // vector unchanged.
+        let modes_changed = joined.network.cell_modes() != modes_before.as_slice();
+        let mut effective = absolute.to_vec();
+        let equilibrium_classes = if joined.network.has_equilibrium_cells() {
+            let n = joined.offsets().nuclear;
+            let credited = joined.credited().to_vec();
+            joined
+                .network
+                .equilibrium_credited_tolerances(&y[..n], &credited, relative, &mut effective[..n])
+                .map_err(message)?
+        } else {
+            Vec::new()
+        };
+        let retune = modes_changed || !equilibrium_classes.is_empty();
+        // The handle's own weight rule (stock's, or N1's groups) on this
+        // segment's tolerances, so the guard measures in stock's norm.
+        let mut weights = vec![0.; y.len()];
+        rule.weights(y, relative, &effective, &mut weights)?;
         let o = joined.offsets();
         let owners = super::owner_ranges(o);
         let transacted = transacted_owners(&owners, &before, y, &identity_before);
-        let exempt: Vec<bool> = if transacted.is_empty() {
+        // HOOK (BIRTH05, DR-C3-BIRTH05; KERN to reconcile): a birth at the
+        // band's credited superheat (owner decision G1) keeps the cell's
+        // totals, but its algebraic rows become the flash at those totals,
+        // which the metastable liquid misses by a finite step (about
+        // +0.1 MPa): the start takes up to `transaction_passes` (lead
+        // decision S2-D21's pass bound, S3-D41), and (lead decision S3-D64,
+        // BIRTH05 r3) the born cells' p, M_g, U_g, and only theirs, leave
+        // its WRMS guard at this instant, reported with their correction in
+        // tolerance units (`Report::exempt`, `Restarted::births`). C3's R2
+        // reference (rtol x 0.01, atol x 0.1) otherwise refuses the honest
+        // +104 kPa flash at +18.93 s (WRMS 13.9). The bound is unchanged.
+        let born = joined.network.born_cells(&modes_before).map_err(message)?;
+        let flash: Vec<usize> = born
+            .iter()
+            .flat_map(|c| {
+                let l = joined.network.cell_layout[*c];
+                [l.base, l.mass[1], l.energy[1]]
+            })
+            .collect();
+        let exempt: Vec<bool> = if transacted.is_empty() && flash.is_empty() {
             Vec::new()
         } else {
             (0..y.len())
                 .map(|i| {
                     ids[i] == 0.
-                        && owners
-                            .iter()
-                            .any(|(name, range)| transacted.contains(name) && range.contains(&i))
+                        && (flash.contains(&i)
+                            || owners.iter().any(|(name, range)| {
+                                transacted.contains(name) && range.contains(&i)
+                            }))
                 })
                 .collect()
         };
-        let passes_allowed = if transacted.is_empty() {
+        let passes_allowed = if transacted.is_empty() && born.is_empty() {
             restart.start_passes
         } else {
             restart.transaction_passes
@@ -761,17 +1338,176 @@ mod integrated {
             passes_allowed,
         )
         .map_err(message)?;
-        ida.reinitialize(t, y, &yp)?;
+        let births = born
+            .iter()
+            .map(|c| {
+                let mut record = joined.network.birth_flash(*c, &before, y)?;
+                let l = joined.network.cell_layout[*c];
+                let units = |i: usize| (y[i] - before[i]) * weights[i];
+                record["correction_tolerance_units"] = serde_json::json!({
+                    "p": units(l.base), "vapor_mass": units(l.mass[1]),
+                    "vapor_energy": units(l.energy[1])});
+                Ok(record)
+            })
+            .collect::<Result<Vec<_>, network::Failure>>()
+            .map_err(message)?;
+        // L1 at the segment start (DR S3-REBIRTH, decision 0014): a lock
+        // whose drive draws from its holding end at t0+ (at the consistent
+        // state, or from an exact zero by its rate) is released now; stock
+        // IDA would never report its root. No coordinate moves; the
+        // released impulse's rate and the id vector change.
+        let mut yp = yp;
+        let ids = match joined
+            .unilateral_release_at_start(t, y, &mut yp)
+            .map_err(message)?
+        {
+            Some(release) => {
+                done.push(release);
+                joined.differential(network_ids)
+            }
+            None => ids,
+        };
+        let (yp, ids) = if appended > 0 {
+            let mut tail = vec![0.; appended];
+            ida.system_mut().appended_operator_state(y);
+            let tail_ids = ida.system_mut().appended_start(t, y_tail, &mut tail)?;
+            if tail_ids.len() != appended {
+                return Err("restart: appended identity layout".into());
+            }
+            effective.extend_from_slice(&absolute_all[m..]);
+            ([yp, tail].concat(), [ids, tail_ids].concat())
+        } else {
+            (yp, ids)
+        };
+        ida.reinitialize(t, y_all, &yp)?;
         ida.set_differential(&ids)?;
         restart.configure(ida)?;
+        let first_step_s = match first_step_policy {
+            FirstStep::LastStep { divisor } if last_step > 0. => {
+                let h = last_step / divisor;
+                ida.set_init_step(h)?;
+                h
+            }
+            _ => restart.first_step_s,
+        };
+        root_directions(ida)?;
+        if retune {
+            // A phase-mode change or an equilibrium cell: the segment's
+            // derived tolerances and its nonnegative stocks (an equilibrium
+            // cell's vapor mass is algebraic, its sign the exhaustion
+            // root's).
+            ida.set_tolerances(relative, &effective)?;
+            ida.constrain_nonnegative(&nonnegative)?;
+        }
         Ok(Restarted {
             transactions: done,
             placements,
             transacted,
             passes_allowed,
+            presence_changed,
+            modes_changed,
+            equilibrium_classes,
+            appended: appended_done,
+            constraint_at_entry: entry,
+            first_step_s,
+            last_step_s: last_step,
+            births,
             yp,
             report,
+            noop: false,
         })
+    }
+
+    /// N1 (Operable Unit plan, R1 S1: groups = census classes): the weight
+    /// groups of a joined system, each operator coordinate in its
+    /// `owner/class` group of the operator's layouts (the census of
+    /// `operating-hot-spine.md`), the coordinates a wrapper appends (ELEC's
+    /// slice, whose stator rows are credited) in a group of their own. Every
+    /// group holding a credited row (a coordinate a declared credited output
+    /// reads, a coordinate of a derived class, an appended coordinate) is
+    /// split in census order into groups of at most
+    /// [`super::CREDITED_GROUP_MAX`] ([`super::split_credited_groups`]), so a
+    /// stock WRMS of at most 1 holds every credited row within 3 of its
+    /// declared tolerance units. For [`Ida::group_weights`].
+    pub fn census_groups<S: JoinedSystem>(system: &S) -> Result<WeightGroups, String> {
+        let layouts = system.integrated().joined.layouts();
+        let mut keys: Vec<String> = layouts
+            .iter()
+            .flat_map(|(owner, l)| l.classes.iter().map(move |c| format!("{owner}/{c:?}")))
+            .collect();
+        let operator = system.integrated().joined.dimension();
+        if keys.len() != operator {
+            return Err(format!(
+                "census groups: the layouts cover {} of {operator} coordinates",
+                keys.len()
+            ));
+        }
+        let mut credited = credited_coordinates(system)?;
+        keys.extend((0..system.appended()).map(|_| "appended".to_string()));
+        credited.resize(keys.len(), true);
+        if keys.len() != system.dimension() {
+            return Err(
+                "census groups: the system's dimension is not the operator's and the appended"
+                    .into(),
+            );
+        }
+        let keys = super::split_credited_groups(&keys, &credited, super::CREDITED_GROUP_MAX);
+        Ok(WeightGroups::from_keys(&keys))
+    }
+
+    /// N1: the operator's credited coordinates, census order: every
+    /// coordinate of a derived class (S2-D24r/S3-D16, [`super::DERIVED_CLASSES`])
+    /// and every coordinate a declared credited output reads. The appended
+    /// coordinates are not included (the caller decides for them).
+    pub fn credited_coordinates<S: JoinedSystem>(system: &S) -> Result<Vec<bool>, String> {
+        let joined = &system.integrated().joined;
+        let mut credited: Vec<bool> = joined
+            .layouts()
+            .iter()
+            .flat_map(|(owner, l)| {
+                l.classes.iter().map(move |c| {
+                    super::DERIVED_CLASSES.contains(&format!("{owner}/{c:?}").as_str())
+                })
+            })
+            .collect();
+        if credited.len() != joined.dimension() {
+            return Err("credited coordinates: the layouts do not cover the operator".into());
+        }
+        for o in joined.credited() {
+            for j in &o.columns {
+                *credited.get_mut(*j).ok_or(
+                    "credited coordinates: a credited output reads outside the operator",
+                )? = true;
+            }
+        }
+        Ok(credited)
+    }
+
+    /// Stock IDASetRootDirection from the owners' current state
+    /// ([`Joined::root_directions`]): each armed relief threshold reports
+    /// only the crossing its memory acts on, so a threshold just crossed is
+    /// not crossed again by the restart's own consistent start. Roots a
+    /// wrapper declares after the operator's (an observation root) report
+    /// both directions. [`discrete_restart`] applies it at every restart; a
+    /// segment start after construction may apply it too.
+    pub fn root_directions<S: JoinedSystem>(ida: &mut Ida<S>) -> Result<(), String> {
+        let mut directions =
+            ida.system()
+                .integrated()
+                .joined
+                .root_directions()
+                .map_err(|f| match f {
+                    network::Failure::Recoverable(r) | network::Failure::Fatal(r) => r,
+                })?;
+        let declared = ida.system().root_count();
+        if declared < directions.len() {
+            return Err("the system declares fewer roots than its operator".into());
+        }
+        if declared == 0 {
+            return Ok(());
+        }
+        directions.resize(declared, 0);
+        ida.set_root_directions(&directions)
     }
 
     /// A stock-IDA system whose residual is one [`Integrated`] joined
@@ -782,6 +1518,120 @@ mod integrated {
         type Properties: Properties + WaterProperties;
         fn integrated(&self) -> &Integrated<Self::Properties>;
         fn integrated_mut(&mut self) -> &mut Integrated<Self::Properties>;
+        // ELEC S3 hook (joined.rs, KERN-owned): coordinates a wrapper
+        // appends after the operator's (the electrical slice). The defaults
+        // append none, so every S1/S2 path is unchanged.
+        /// Number of coordinates appended after the operator's.
+        fn appended(&self) -> usize {
+            0
+        }
+        /// The appended owners' changes due exactly at `t`, before the
+        /// operator's transactions (they may set the operator's discrete
+        /// inputs, e.g. an RCP's supply), with the restart's command if any:
+        /// `y` is the appended part only.
+        fn appended_events(
+            &mut self,
+            _t: f64,
+            _command: Option<Command>,
+            _y: &mut [f64],
+        ) -> Result<Vec<String>, String> {
+            Ok(Vec::new())
+        }
+        /// The appended part's exact consistent start at `t` (its rates into
+        /// `yp`) and its differential identity.
+        fn appended_start(
+            &mut self,
+            _t: f64,
+            _y: &mut [f64],
+            _yp: &mut [f64],
+        ) -> Result<Vec<f64>, String> {
+            Ok(Vec::new())
+        }
+        /// X4.3 hook (lane TURB): the operator's coordinates `y` at a
+        /// restart, given to the appended owners before
+        /// [`JoinedSystem::appended_start`] (the slice's admission reads the
+        /// SG pressures). The default reads nothing.
+        fn appended_operator_state(&mut self, _y: &[f64]) {}
+        /// X4.3: the admitted turbine steam's measurand at `t`, when an
+        /// appended owner sets it: the appended valve coordinate (global)
+        /// and per SG the global pressure coordinate with its coefficient
+        /// per solver unit, `m = y[valve] * sum c_k y[p_k]`. `None`: the
+        /// SG owner's time-only admission.
+        fn admission_probe(&self, _t: f64) -> Option<(usize, Vec<(usize, f64)>)> {
+            None
+        }
+        /// PROC T1–T3 hook (lane PHYS2, for the IC client): the electrical
+        /// routing, when an appended owner routes AC. The client advances its
+        /// own copy to each frame instant, so a routing instant that is not a
+        /// restart (a qualification timer, a contact end that leaves support
+        /// unchanged) is reported at its frame. The default routes none.
+        fn routing(&self) -> Option<&leitbild_operating_plant::electrical::bus::Distribution> {
+            None
+        }
+        /// PROC T5 hook (lane PHYS2): the DC groups, when an appended owner
+        /// composes them (report-only). The client keeps a copy taken at the
+        /// start and after every restart; their reports are exact at any time.
+        fn dc_groups(&self) -> Option<&leitbild_operating_plant::electrical::dc::Groups> {
+            None
+        }
+        /// The appended owners' earliest due time strictly after `t`.
+        fn appended_next_event(&self, _t: f64) -> Option<f64> {
+            None
+        }
+        /// The operator's and the appended owners' earliest time event.
+        fn next_time_event(&self, t: f64) -> Option<f64> {
+            let own = self.integrated().joined.next_time_event(t);
+            match (own, self.appended_next_event(t)) {
+                (Some(a), Some(b)) => Some(a.min(b)),
+                (a, b) => a.or(b),
+            }
+        }
+        /// The whole differential identity: the operator's, then the
+        /// appended part's in its current mode.
+        fn differential_all(&self, network_ids: &[f64]) -> Vec<f64> {
+            self.integrated().joined.differential(network_ids)
+        }
+        /// S3-D19: the appended owners' discrete state (null when none is
+        /// appended), beside the operator's.
+        fn appended_discrete_state(&self) -> serde_json::Value {
+            serde_json::Value::Null
+        }
+        /// Restore [`JoinedSystem::appended_discrete_state`] exactly.
+        fn restore_appended_discrete_state(
+            &mut self,
+            state: &serde_json::Value,
+        ) -> Result<(), String> {
+            if state.is_null() {
+                Ok(())
+            } else {
+                Err("this system appends no owner: its appended snapshot is null".into())
+            }
+        }
+        /// S3-D19 (S5's snapshot): every owner's discrete state, the
+        /// operator's ([`Joined::discrete_state`]) and the appended owners'.
+        fn system_discrete_state(&self) -> serde_json::Value {
+            serde_json::json!({"operator": self.integrated().joined.discrete_state(),
+                "appended": self.appended_discrete_state()})
+        }
+        /// Restore [`JoinedSystem::system_discrete_state`] exactly: the
+        /// operator's owners, then the appended ones (no owner re-derives
+        /// another's state here).
+        fn restore_system_discrete_state(
+            &mut self,
+            state: &serde_json::Value,
+        ) -> Result<(), String> {
+            let o = state
+                .as_object()
+                .filter(|o| {
+                    o.len() == 2 && o.contains_key("operator") && o.contains_key("appended")
+                })
+                .ok_or("system snapshot is not {operator, appended}")?;
+            self.integrated_mut()
+                .joined
+                .restore_discrete_state(&o["operator"])
+                .map_err(|f| format!("{f:?}"))?;
+            self.restore_appended_discrete_state(&o["appended"])
+        }
     }
     impl<P: Properties + WaterProperties> JoinedSystem for Integrated<P> {
         type Properties = P;
@@ -812,6 +1662,80 @@ mod integrated {
         pointers: Vec<i64>,
         assembly: Assembly,
         analyses: Analyses,
+        /// The presence-keyed structures when the system follows a
+        /// declared vapor presence (S3-D-P3), else `None` (S1, S2).
+        presence: Option<Following>,
+        /// N3: the first step a discrete restart sets ([`FirstStep`]).
+        first_step: FirstStep,
+        /// PERF2 (E-LIN, R4-JAC-BASE): the last residual's evaluation, which
+        /// stock's next linear setup at the same state repeats.
+        base: Base,
+    }
+
+    /// PERF2 (E-LIN, R4-JAC-BASE): the state of the last residual call.
+    /// Stock IDA sets up its linear system
+    /// right after a residual at the same `(t, y, y')` (SUNNonlinSol_Newton
+    /// evaluates the residual, then calls lsetup on the same iterate), and
+    /// the block assembly starts with exactly that evaluation. The base is
+    /// taken only when the state is bitwise the residual's and the operator
+    /// has evaluated nothing since (its residual counter); any other
+    /// callback or mutable access releases it.
+    struct Base {
+        held: bool,
+        t: f64,
+        y: Vec<f64>,
+        yp: Vec<f64>,
+        evaluations: usize,
+    }
+    impl Base {
+        fn new() -> Self {
+            Self {
+                held: false,
+                t: 0.,
+                y: Vec::new(),
+                yp: Vec::new(),
+                evaluations: 0,
+            }
+        }
+        fn matches(&self, t: f64, y: &[f64], yp: &[f64], evaluations: usize) -> bool {
+            let same = |a: &[f64], b: &[f64]| {
+                a.len() == b.len() && a.iter().zip(b).all(|(x, y)| x.to_bits() == y.to_bits())
+            };
+            self.held
+                && self.evaluations == evaluations
+                && self.t.to_bits() == t.to_bits()
+                && same(&self.y, y)
+                && same(&self.yp, yp)
+        }
+    }
+
+    /// N3 (Operable Unit plan, R1 S4): the first step stock IDA takes after
+    /// a discrete restart. `Declared` is the segment configuration's own
+    /// (`Restart::first_step_s`, G13's 1e-4 s), the composition's default.
+    /// `LastStep` is the last step stock accepted before the event divided
+    /// by `divisor` (stock IDASetInitStep; it falls back to the declared
+    /// step at a segment with no accepted step yet, the composed start).
+    #[derive(Clone, Copy, Debug, PartialEq, serde::Serialize)]
+    pub enum FirstStep {
+        Declared,
+        LastStep {
+            divisor: f64,
+        },
+        /// `LastStep` after a declared command or an owner time event, the
+        /// declared step after located roots (a located root is where the
+        /// mode-changing events of the surge and phase owners sit).
+        LastStepUnlessRoots {
+            divisor: f64,
+        },
+    }
+
+    /// A presence-following block assembly (lead decision S3-D-P3): one
+    /// structure and its symbolic analyses per presence key, the key in
+    /// force, and the stock-IDA matrix capacity every key fits.
+    struct Following {
+        cache: PatternCache<(JoinedJacobian, Analyses)>,
+        key: PresenceKey,
+        capacity: usize,
     }
     impl<P: Properties + WaterProperties> Integrated<P> {
         /// On the colored assembly.
@@ -831,6 +1755,9 @@ mod integrated {
                 pointers,
                 assembly: Assembly::Colored,
                 analyses: Analyses::default(),
+                presence: None,
+                first_step: FirstStep::Declared,
+                base: Base::new(),
             })
         }
         /// On the block assembly, compiled at the value state `(t, y, 0)`;
@@ -869,7 +1796,156 @@ mod integrated {
                 pointers,
                 assembly: Assembly::Blocks(Box::new(structure)),
                 analyses,
+                presence: None,
+                first_step: FirstStep::Declared,
+                base: Base::new(),
             })
+        }
+        /// On the block assembly that follows the vapor presence its
+        /// owners declare (lead decision S3-D-P3): compiled at the value
+        /// state `(t, y, 0)` for `presence`, keyed by the cells the joined
+        /// pattern reads ([`pattern_cells`]), with the stock-IDA matrix
+        /// sized for the key in which every read cell holds vapor (compiled
+        /// once and kept), so a restart can switch keys on the same handle
+        /// ([`Self::follow_presence`]). S1 and S2 compose with
+        /// [`Self::with_blocks`] or [`Self::from_blocks`] (exact size).
+        pub fn following_presence(
+            mut joined: Joined<P>,
+            t: f64,
+            y: &[f64],
+            presence: &VaporPresence,
+        ) -> Result<Self, String> {
+            if !joined.integrable() {
+                return Err(
+                    "a joined operator with a prepared SG or rod port cannot be integrated".into(),
+                );
+            }
+            let message = |f: network::Failure| match f {
+                network::Failure::Recoverable(r) | network::Failure::Fatal(r) => r,
+            };
+            let cells = pattern_cells(&joined);
+            let mut cache = PatternCache::new(cells.clone());
+            let all = VaporPresence {
+                cells: (0..joined.network.pzr.cell)
+                    .map(|c| cells.contains(&c))
+                    .collect(),
+            };
+            let widest = cache.key(&all);
+            let (structure, analyses) = cache
+                .check_out(&widest, || {
+                    JoinedJacobian::compile_for(&mut joined, t, y, Some(&all))
+                        .map(|s| (s, Analyses::default()))
+                })
+                .map_err(message)?;
+            let capacity = structure.pattern.nonzeros();
+            cache
+                .check_in(&widest, (structure, analyses))
+                .map_err(message)?;
+            let key = cache.key(presence);
+            let (structure, analyses) = cache
+                .check_out(&key, || {
+                    JoinedJacobian::compile_for(&mut joined, t, y, Some(presence))
+                        .map(|s| (s, Analyses::default()))
+                })
+                .map_err(message)?;
+            let (pointers, rows) = structure.pattern.to_i64()?;
+            Ok(Self {
+                joined,
+                rows,
+                pointers,
+                assembly: Assembly::Blocks(Box::new(structure)),
+                analyses,
+                first_step: FirstStep::Declared,
+                base: Base::new(),
+                presence: Some(Following {
+                    cache,
+                    key,
+                    capacity,
+                }),
+            })
+        }
+        /// Follow a declared vapor presence at a restart, before its
+        /// consistent start: a changed key checks the structure in force and
+        /// its symbolic analyses back in and takes the new key's (compiled
+        /// at `(t, y, 0)` by `compile_for` on a miss), refusing a pattern
+        /// above the handle's capacity. Stock IDAReInit makes KLU analyse
+        /// the new pattern at its next setup. Returns whether the key
+        /// changed; a system that does not follow presence returns false.
+        pub fn follow_presence(
+            &mut self,
+            t: f64,
+            y: &[f64],
+            presence: &VaporPresence,
+        ) -> Result<bool, String> {
+            let Self {
+                joined,
+                rows,
+                pointers,
+                assembly,
+                analyses,
+                presence: following,
+                base,
+                ..
+            } = self;
+            let Some(f) = following else {
+                return Ok(false);
+            };
+            base.held = false;
+            let key = f.cache.key(presence);
+            if key == f.key {
+                return Ok(false);
+            }
+            let message = |e: network::Failure| match e {
+                network::Failure::Recoverable(r) | network::Failure::Fatal(r) => r,
+            };
+            let Assembly::Blocks(current) = std::mem::replace(assembly, Assembly::Colored) else {
+                return Err("a presence-following system assembles by blocks".into());
+            };
+            f.cache
+                .check_in(&f.key, (*current, std::mem::take(analyses)))
+                .map_err(message)?;
+            let (structure, cached) = f
+                .cache
+                .check_out(&key, || {
+                    JoinedJacobian::compile_for(joined, t, y, Some(presence))
+                        .map(|s| (s, Analyses::default()))
+                })
+                .map_err(message)?;
+            if structure.pattern.nonzeros() > f.capacity {
+                return Err(format!(
+                    "presence key {key:?}: {} entries above the handle's capacity {}",
+                    structure.pattern.nonzeros(),
+                    f.capacity
+                ));
+            }
+            let (p, r) = structure.pattern.to_i64()?;
+            *pointers = p;
+            *rows = r;
+            *assembly = Assembly::Blocks(Box::new(structure));
+            *analyses = cached;
+            f.key = key;
+            Ok(true)
+        }
+        /// The presence key in force and the cache's statistics, when the
+        /// system follows presence.
+        /// N3: the first step later discrete restarts set.
+        pub fn set_first_step(&mut self, first_step: FirstStep) -> Result<(), String> {
+            if let FirstStep::LastStep { divisor } | FirstStep::LastStepUnlessRoots { divisor } =
+                first_step
+                && !(divisor.is_finite() && divisor >= 1.)
+            {
+                return Err(format!(
+                    "N3 first step: divisor {divisor} must be finite and >= 1"
+                ));
+            }
+            self.first_step = first_step;
+            Ok(())
+        }
+        pub fn first_step(&self) -> FirstStep {
+            self.first_step
+        }
+        pub fn presence_key(&self) -> Option<(&PresenceKey, usize)> {
+            self.presence.as_ref().map(|f| (&f.key, f.cache.keys()))
         }
         pub fn assembly(&self) -> &Assembly {
             &self.assembly
@@ -889,8 +1965,22 @@ mod integrated {
         fn klu_ordering(&self) -> KluOrdering {
             KluOrdering::Amd
         }
+        /// E-NUC: each coordinate's multiplicity, from the owners' layouts.
+        fn multiplicities(&self) -> Option<Vec<f64>> {
+            Some(
+                self.joined
+                    .layouts()
+                    .iter()
+                    .flat_map(|(_, l)| l.multiplicity.iter().map(|m| *m as f64))
+                    .collect(),
+            )
+        }
+        /// The pattern's entries, or for a presence-following system the
+        /// capacity every presence key fits.
         fn nonzeros(&self) -> usize {
-            self.rows.len()
+            self.presence
+                .as_ref()
+                .map_or(self.rows.len(), |f| f.capacity)
         }
         /// The owners' root functions, read once at construction.
         fn root_count(&self) -> usize {
@@ -903,6 +1993,7 @@ mod integrated {
             yp: &[f64],
             out: &mut [f64],
         ) -> Result<(), Failure> {
+            self.base.held = false;
             self.joined.roots(time, y, yp, out).map_err(failure)
         }
         fn residual(
@@ -912,11 +2003,22 @@ mod integrated {
             yp: &[f64],
             out: &mut [f64],
         ) -> Result<(), Failure> {
+            self.base.held = false;
             self.joined
                 .evaluate(time, y, yp, None, 0., None)
                 .map_err(failure)?;
             for (r, v) in out.iter_mut().zip(self.joined.rows()) {
                 *r = v.value;
+            }
+            if matches!(self.assembly, Assembly::Blocks(_)) {
+                let b = &mut self.base;
+                b.t = time;
+                b.y.clear();
+                b.y.extend_from_slice(y);
+                b.yp.clear();
+                b.yp.extend_from_slice(yp);
+                b.evaluations = self.joined.counters.residuals;
+                b.held = true;
             }
             Ok(())
         }
@@ -930,23 +2032,82 @@ mod integrated {
             rows: &mut [i64],
             pointers: &mut [i64],
         ) -> Result<(), Failure> {
-            rows.copy_from_slice(&self.rows);
+            // The structure in force fills the first entries; a
+            // presence-following handle's capacity may hold more, which the
+            // column pointers leave unread.
+            let n = self.rows.len();
+            rows[..n].copy_from_slice(&self.rows);
             pointers.copy_from_slice(&self.pointers);
+            let data = &mut data[..n];
             match &self.assembly {
                 Assembly::Colored => self.joined.jacobian(time, cj, y, yp, data),
                 Assembly::Blocks(structure) => {
                     // The operator counts its colored assemblies itself.
                     let started = std::time::Instant::now();
-                    let result = jacobian_blocks(
-                        &mut self.joined,
-                        structure,
-                        time,
-                        cj,
-                        y,
-                        yp,
-                        data,
-                        Classes::ALL,
-                    );
+                    // R4-WATER-PARTIALS: the water basis store for this assembly.
+                    crate::basis_assembly(true);
+                    // R4-ENDPOINT-ASSEMBLY: the heater endpoints of this assembly.
+                    leitbild_operating_plant::network::heaters::hold_endpoints(true);
+                    // R4-JAC-BASE: the residual's evaluation at this very
+                    // state stands; with the relief shut its rows are those
+                    // of the assembly's reuse evaluation bit for bit (only a
+                    // lifted relief's restriction is held with partials).
+                    let on_base = self.base.matches(time, y, yp, self.joined.counters.residuals)
+                        && self.joined.network.pzr_boundary().is_none_or(|(b, _)| {
+                            b.relief.as_ref().is_none_or(|r| r.lift.value == 0.)
+                        });
+                    self.base.held = false;
+                    let result = if on_base {
+                        let reuse = self.joined.network.reuse();
+                        let mut profile = leitbild_operating_plant::cost::pieces()
+                            .then(|| Profile::new(leitbild_operating_plant::cost::now_f64));
+                        let result = jacobian_blocks_on_base(
+                            &mut self.joined,
+                            structure,
+                            time,
+                            cj,
+                            y,
+                            yp,
+                            data,
+                            Classes::ALL,
+                            reuse,
+                            profile.as_mut(),
+                        );
+                        for (piece, (calls, spent)) in profile.into_iter().flat_map(|p| p.pieces) {
+                            leitbild_operating_plant::cost::book(piece, calls, spent as u64);
+                        }
+                        result
+                    } else if leitbild_operating_plant::cost::pieces() {
+                        let mut profile = Profile::new(leitbild_operating_plant::cost::now_f64);
+                        let result = jacobian_blocks_profiled(
+                            &mut self.joined,
+                            structure,
+                            time,
+                            cj,
+                            y,
+                            yp,
+                            data,
+                            Classes::ALL,
+                            &mut profile,
+                        );
+                        for (piece, (calls, spent)) in profile.pieces {
+                            leitbild_operating_plant::cost::book(piece, calls, spent as u64);
+                        }
+                        result
+                    } else {
+                        jacobian_blocks(
+                            &mut self.joined,
+                            structure,
+                            time,
+                            cj,
+                            y,
+                            yp,
+                            data,
+                            Classes::ALL,
+                        )
+                    };
+                    crate::basis_assembly(false);
+                    leitbild_operating_plant::network::heaters::hold_endpoints(false);
                     self.joined.counters.jacobians += 1;
                     self.joined.counters.jacobian_wall_s += started.elapsed().as_secs_f64();
                     result
@@ -955,11 +2116,190 @@ mod integrated {
             .map_err(failure)
         }
     }
+    /// One borrowed handle on an [`Integrated`] system, for a stock solve
+    /// that must hand the composition back (DR13-ROD-A).
+    struct Borrowed<'a, P: Properties>(&'a mut Integrated<P>);
+    impl<P: Properties + WaterProperties> System for Borrowed<'_, P> {
+        fn dimension(&self) -> usize {
+            self.0.dimension()
+        }
+        fn nonzeros(&self) -> usize {
+            self.0.nonzeros()
+        }
+        fn root_count(&self) -> usize {
+            self.0.root_count()
+        }
+        fn klu_ordering(&self) -> KluOrdering {
+            self.0.klu_ordering()
+        }
+        fn multiplicities(&self) -> Option<Vec<f64>> {
+            self.0.multiplicities()
+        }
+        fn residual(
+            &mut self,
+            time: f64,
+            y: &[f64],
+            yp: &[f64],
+            out: &mut [f64],
+        ) -> Result<(), Failure> {
+            self.0.residual(time, y, yp, out)
+        }
+        fn jacobian(
+            &mut self,
+            time: f64,
+            cj: f64,
+            y: &[f64],
+            yp: &[f64],
+            data: &mut [f64],
+            rows: &mut [i64],
+            pointers: &mut [i64],
+        ) -> Result<(), Failure> {
+            self.0.jacobian(time, cj, y, yp, data, rows, pointers)
+        }
+        fn roots(
+            &mut self,
+            time: f64,
+            y: &[f64],
+            yp: &[f64],
+            out: &mut [f64],
+        ) -> Result<(), Failure> {
+            self.0.roots(time, y, yp, out)
+        }
+    }
+
+    /// Lead decision DR13-ROD-A (17 October 2026): at a zero-time
+    /// composition, stock IDACalcIC (`IDA_YA_YDP_INIT`, through the pinned
+    /// [`Ida::initialize`]) makes the algebraic coordinates consistent with
+    /// the held differential ones (the rod owner's mouth currents start at
+    /// zero) before the declared exact consistent start, which then only
+    /// refines. Preparation only: `y` keeps every differential coordinate,
+    /// the rates are not kept, and the composition is handed back.
+    /// `horizon` is stock's first output time after `t`.
+    pub fn stock_initial_conditions<P: Properties + WaterProperties>(
+        joined: Joined<P>,
+        t: f64,
+        y: &mut [f64],
+        differential: &[f64],
+        absolute: &[f64],
+        relative: f64,
+        horizon: f64,
+    ) -> Result<Joined<P>, String> {
+        let mut integrated = Integrated::new(joined)?;
+        let held: Vec<f64> = y.to_vec();
+        let mut yp = vec![0.; y.len()];
+        {
+            let mut ida = Ida::new(
+                Borrowed(&mut integrated),
+                crate::ida::Initial {
+                    time: t,
+                    y,
+                    yp: &yp,
+                    differential,
+                    absolute_tolerance: absolute,
+                    relative_tolerance: relative,
+                },
+            )
+            .map_err(|e| format!("stock IDA for the initial conditions: {e}"))?;
+            ida.initialize(horizon, y, &mut yp)
+                .map_err(|e| format!("stock IDACalcIC: {e}"))?;
+        }
+        if held
+            .iter()
+            .zip(y.iter())
+            .zip(differential)
+            .any(|((a, b), d)| *d != 0. && a.to_bits() != b.to_bits())
+        {
+            return Err("stock IDACalcIC moved a differential coordinate".into());
+        }
+        Ok(integrated.joined)
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{correction_wrms, owner_ranges, transacted_owners};
+    use super::{
+        CREDITED_GROUP_MAX, ROUNDOFF_FACTOR, correction_wrms, owner_ranges, row_bound,
+        split_credited_groups, transacted_owners,
+    };
+    use crate::ida::WeightGroups;
+
+    #[test]
+    fn a_row_is_held_to_the_declared_bound_or_its_own_roundoff() {
+        // Small terms: the declared bound.
+        assert_eq!(row_bound(1e-12, 1.), 1e-12);
+        // A balance of ~3e4 in scaled units (two 15 MPa pressures over a
+        // 34 kPa head scale, or the bores' pressure rate after a seat): its
+        // last bit is 2^-37 = 7.3e-12, held to 8 eps x 3e4 = 5.3e-11.
+        let b = row_bound(1e-12, 3e4);
+        assert!((b - ROUNDOFF_FACTOR * f64::EPSILON * 3e4).abs() < 1e-24);
+        assert!(b > 2f64.powi(-37));
+    }
+
+    /// N1's bound by construction: under group-normalised weights a vector
+    /// at grouped WRMS 1 (in declared tolerance units u) has no credited row
+    /// above sqrt(9) = 3, whatever its shape; the uncredited class keeps one
+    /// group and may carry more.
+    #[test]
+    fn a_credited_row_stays_within_three_units_at_grouped_wrms_one() {
+        let mut keys: Vec<String> = Vec::new();
+        keys.extend((0..52).map(|_| "rods/GuideCurrent".to_string()));
+        keys.extend((0..29).map(|_| "network/CellPressure".to_string()));
+        keys.extend((0..2316).map(|_| "nuclear/Precursor".to_string()));
+        let mut credited = vec![false; keys.len()];
+        credited[..52].fill(true);
+        credited[52 + 3] = true; // one pressure a credited output reads
+        let split = split_credited_groups(&keys, &credited, CREDITED_GROUP_MAX);
+        let groups = WeightGroups::from_keys(&split);
+        assert!(
+            groups.sizes().iter().take(6 + 4).all(|n| *n <= 9),
+            "{:?}",
+            groups.sizes()
+        );
+        assert_eq!(groups.sizes().len(), 6 + 4 + 1);
+        assert_eq!(split[0], "rods/GuideCurrent#0");
+        assert_eq!(split[51], "rods/GuideCurrent#5");
+        assert_eq!(split[52 + 28], "network/CellPressure#3");
+        assert_eq!(split[52 + 29], "nuclear/Precursor");
+        let factor = groups.factors();
+        let n = keys.len() as f64;
+        let grouped = |u: &[f64]| {
+            (u.iter()
+                .zip(&factor)
+                .map(|(u, f)| (u * f) * (u * f))
+                .sum::<f64>()
+                / n)
+                .sqrt()
+        };
+        // The worst case: all error on one credited row.
+        for i in [0, 47, 52 + 3, 52 + 28] {
+            let mut u = vec![0.; keys.len()];
+            u[i] = 1.;
+            let at_one = u[i] / grouped(&u);
+            assert!(at_one <= 3. + 1e-12, "row {i}: {at_one}");
+        }
+        // Deterministic pseudo-random shapes, scaled to grouped WRMS 1.
+        let mut x = 0x9e37_79b9_7f4a_7c15u64;
+        for _ in 0..200 {
+            let u: Vec<f64> = (0..keys.len())
+                .map(|_| {
+                    x ^= x << 13;
+                    x ^= x >> 7;
+                    x ^= x << 17;
+                    (x >> 11) as f64 / (1u64 << 53) as f64 - 0.5
+                })
+                .collect();
+            let s = grouped(&u);
+            let worst = (0..keys.len())
+                .filter(|i| credited[*i] || split[*i].starts_with("network/CellPressure"))
+                .map(|i| (u[i] / s).abs())
+                .fold(0f64, f64::max);
+            assert!(worst <= 3. + 1e-12, "{worst}");
+        }
+        // The uncredited class (one group of 2,316) is not bounded by 3.
+        let mut u = vec![0.; keys.len()];
+        u[52 + 29] = 1.;
+        assert!(u[52 + 29] / grouped(&u) > 40.);
+    }
     use leitbild_operating_plant::joined::operator::Offsets;
 
     #[test]
@@ -970,9 +2310,10 @@ mod tests {
             secondary: 6,
             rods: 9,
             pzr: 12,
-            end: 15,
+            cvcs: 15,
+            end: 18,
         };
-        let [secondary, rods, pzr] = owner_ranges(composed);
+        let [secondary, rods, pzr, cvcs] = owner_ranges(composed);
         assert_eq!(secondary, ("secondary", 6..9));
         assert_eq!(
             rods,
@@ -980,12 +2321,15 @@ mod tests {
             "the rods end where the PZR block starts"
         );
         assert_eq!(pzr, ("pzr", 12..15));
+        assert_eq!(cvcs, ("cvcs", 15..18));
         let without = Offsets {
             pzr: 12,
+            cvcs: 12,
             end: 12,
             ..composed
         };
         assert!(owner_ranges(without)[2].1.is_empty());
+        assert!(owner_ranges(without)[3].1.is_empty());
     }
 
     #[test]

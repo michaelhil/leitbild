@@ -1,11 +1,15 @@
 #![cfg(feature = "ida")]
-use leitbild_operating_water::ida::{Advance, Failure, Ida, Initial, System};
+use leitbild_operating_water::ida::{Advance, Failure, Ida, Initial, System, WeightGroups};
 use std::f64::consts::LN_2;
 struct Decay {
     panic: bool,
     fatal: bool,
 }
 impl System for Decay {
+    /// Unreduced: every coordinate stands for itself (E-NUC).
+    fn multiplicities(&self) -> Option<Vec<f64>> {
+        None
+    }
     fn dimension(&self) -> usize {
         2
     }
@@ -65,6 +69,76 @@ fn decay() -> Decay {
         panic: false,
         fatal: false,
     }
+}
+/// N1: stock IDAWFtolerances with group-normalised weights. Stock's own
+/// weights (IDAGetErrWeights) of a step are sqrt(N/n_g) times
+/// 1/(rtol|y| + atol) at the state the step starts from, bitwise the
+/// handle's rule there; one
+/// group of every coordinate is stock's rule; the groups must cover the
+/// handle; SV tolerances never replace the rule; a later set_tolerances
+/// reaches it.
+#[test]
+fn grouped_weights_are_the_group_factor_times_stocks_through_stock_wf_tolerances() {
+    let groups = WeightGroups::from_keys(&["a", "b"]);
+    assert_eq!(groups.sizes(), &[1, 1]);
+    assert_eq!(groups.group_of(), &[0, 1]);
+    let run = |groups: Option<WeightGroups>, relative: f64| {
+        let mut y = [1., 2.];
+        let mut yp = [-1., 0.];
+        let mut ida = new(decay(), &y, &yp);
+        if let Some(g) = groups {
+            ida.group_weights(g).unwrap();
+            assert!(ida.weight_rule().grouped());
+        }
+        ida.set_tolerances(relative, &[1e-10; 2]).unwrap();
+        ida.advance(0.05, &mut y, &mut yp).unwrap();
+        // Stock sets the weights before each step from the state the step
+        // starts at: after one more step they are the rule at that state.
+        // (The first one-step call returns the internal endpoint, past the
+        // interpolated output, without a step.)
+        let (mut ty, mut typ) = ([0.; 2], [0.; 2]);
+        ida.current_state(&mut ty, &mut typ).unwrap();
+        let before = ida.stats().unwrap().steps;
+        ida.step(1., &mut y, &mut yp).unwrap();
+        if ida.stats().unwrap().steps == before {
+            ida.step(1., &mut y, &mut yp).unwrap();
+        }
+        assert_eq!(ida.stats().unwrap().steps, before + 1);
+        let (mut e, mut w) = ([0.; 2], [0.; 2]);
+        ida.error_diagnostics(&mut e, &mut w).unwrap();
+        let mut rule = [0.; 2];
+        ida.weight_rule()
+            .weights(&ty, relative, &[1e-10; 2], &mut rule)
+            .unwrap();
+        (w, rule, ty, ida.stats().unwrap().steps)
+    };
+    // Two groups of one coordinate each: factor sqrt(2) on both.
+    let (w, rule, y, _) = run(Some(WeightGroups::from_keys(&["a", "b"])), 1e-8);
+    for i in 0..2 {
+        let stock = 1. / (1e-8 * y[i].abs() + 1e-10);
+        assert!(
+            (w[i] / stock - 2f64.sqrt()).abs() < 1e-12,
+            "{i}: {} {stock}",
+            w[i]
+        );
+        assert_eq!(
+            w[i].to_bits(),
+            rule[i].to_bits(),
+            "{i}: stock's weights are the rule's"
+        );
+    }
+    // One group of both: factor 1, stock's own weights and trajectory.
+    let (w1, _, y1, steps1) = run(Some(WeightGroups::from_keys(&["a", "a"])), 1e-8);
+    let (w0, r0, y0, steps0) = run(None, 1e-8);
+    assert_eq!((w1, y1, steps1), (w0, y0, steps0));
+    assert_eq!(w0, r0);
+    // The tighter grouped norm takes at least as many steps.
+    let (_, _, _, grouped) = run(Some(WeightGroups::from_keys(&["a", "b"])), 1e-8);
+    assert!(grouped >= steps0, "{grouped} < {steps0}");
+    // The groups must cover the handle.
+    let mut ida = new(decay(), &[1., 2.], &[-1., 0.]);
+    assert!(ida.group_weights(WeightGroups::from_keys(&["a"])).is_err());
+    assert!(ida.weight_groups().is_none());
 }
 #[test]
 fn stock_ida_initializes_and_advances_an_index_one_system_without_resetting_stock() {
@@ -220,6 +294,163 @@ fn current_snapshot_reads_internal_endpoint_without_changing_interpolant_or_hist
     assert_eq!(actual.residuals, expected.residuals);
     assert_eq!(actual.jacobians, expected.jacobians);
     assert_eq!(actual.internal_time, expected.internal_time);
+}
+
+/// Dense output (S3-D1 #7): stock IDAGetDky reads the interpolant of the
+/// last accepted step at any time inside it, equal to stock's IDA_NORMAL
+/// output there, bitwise equal to the internal endpoint's snapshot, refused
+/// outside the step or before one, and with no effect on the history.
+#[test]
+fn dense_output_reads_the_last_steps_interpolant_without_changing_history() {
+    let mut y = [1., 2.];
+    let mut yp = [-1., -2.];
+    let mut ida = new(decay(), &y, &yp);
+    let (mut dy, mut dyp) = ([0.; 2], [0.; 2]);
+    assert!(
+        ida.dense_output(0., &mut dy, &mut dyp)
+            .unwrap_err()
+            .contains("accepted step")
+    );
+    ida.initialize(0.1, &mut y, &mut yp).unwrap();
+    let requested = ida
+        .advance(0.137, &mut y, &mut yp)
+        .and_then(Advance::reached)
+        .unwrap();
+    let output = (y, yp);
+    let before = ida.stats().unwrap();
+    let (tn, hu) = (before.internal_time, before.last_step);
+    assert!(
+        tn > requested && tn - hu < requested,
+        "test must interpolate inside the last step"
+    );
+    // At the requested time: the same interpolant as stock's output.
+    ida.dense_output(requested, &mut dy, &mut dyp).unwrap();
+    for j in 0..2 {
+        assert!((dy[j] - y[j]).abs() <= 1e-14, "{} vs {}", dy[j], y[j]);
+        assert!((dyp[j] - yp[j]).abs() <= 1e-12, "{} vs {}", dyp[j], yp[j]);
+    }
+    // Inside the step: the solution to the run's accuracy.
+    let inside = tn - 0.5 * hu;
+    ida.dense_output(inside, &mut dy, &mut dyp).unwrap();
+    assert!((dy[0] - (-inside).exp()).abs() < 4e-8);
+    assert!((dy[1] - 2. * dy[0]).abs() < 1e-8);
+    assert!((dyp[0] + dy[0]).abs() < 2e-7);
+    // At tn: the internal endpoint's snapshot, bit for bit.
+    let (mut sy, mut syp) = ([0.; 2], [0.; 2]);
+    assert_eq!(ida.current_state(&mut sy, &mut syp).unwrap(), tn);
+    ida.dense_output(tn, &mut dy, &mut dyp).unwrap();
+    assert_eq!((dy, dyp), (sy, syp));
+    // Outside the last step, a wrong buffer: refused, nothing written.
+    for t in [tn + hu, tn - 1.5 * hu, f64::NAN] {
+        let mut probe = [7.; 2];
+        assert!(ida.dense_output(t, &mut probe, &mut dyp).is_err(), "{t}");
+        assert_eq!(probe, [7.; 2]);
+    }
+    assert!(ida.dense_output(tn, &mut [0.; 1], &mut dyp).is_err());
+    // Any derivative up to the step's order; above it refused (IDA_BAD_K).
+    let order = before.last_order as usize;
+    assert!(order >= 1);
+    let mut d0 = [0.; 2];
+    ida.dense(inside, 0, &mut d0).unwrap();
+    ida.dense_output(inside, &mut dy, &mut dyp).unwrap();
+    assert_eq!(d0, dy);
+    ida.dense(inside, order, &mut d0).unwrap();
+    assert!(ida.dense(inside, order + 1, &mut d0).is_err());
+    // No effect on the history, the counters or the advance buffers.
+    let after = ida.stats().unwrap();
+    assert_eq!(
+        (after.steps, after.residuals, after.jacobians),
+        (before.steps, before.residuals, before.jacobians)
+    );
+    assert_eq!(after.internal_time, before.internal_time);
+    assert_eq!((y, yp), output);
+    ida.advance(0.27, &mut y, &mut yp).unwrap();
+    let mut control_y = [1., 2.];
+    let mut control_yp = [-1., -2.];
+    let mut control = new(decay(), &control_y, &control_yp);
+    control
+        .initialize(0.1, &mut control_y, &mut control_yp)
+        .unwrap();
+    for target in [0.137, 0.27] {
+        control
+            .advance(target, &mut control_y, &mut control_yp)
+            .unwrap();
+    }
+    assert_eq!((y, yp), (control_y, control_yp));
+    assert_eq!(ida.stats().unwrap().steps, control.stats().unwrap().steps);
+    // A restarted segment has no step to read until it advances.
+    ida.reinitialize(0.27, &y, &yp).unwrap();
+    assert!(ida.dense_output(0.27, &mut dy, &mut dyp).is_err());
+    ida.advance(0.3, &mut y, &mut yp).unwrap();
+    ida.dense_output(0.3, &mut dy, &mut dyp).unwrap();
+    assert!((dy[0] - y[0]).abs() <= 1e-14);
+}
+
+/// Stock IDA_ONE_STEP: one internal step per call, never past an armed stop
+/// boundary, readable by dense output, and the same steps and endpoint as
+/// stock's IDA_NORMAL to the same boundary.
+#[test]
+fn one_step_mode_takes_one_step_per_call_and_ends_at_the_boundary() {
+    let (mut y, mut yp) = ([1., 2.], [-1., -2.]);
+    let mut ida = new(decay(), &y, &yp);
+    ida.initialize(0.1, &mut y, &mut yp).unwrap();
+    ida.stop_at(0.05).unwrap();
+    let (mut last, mut calls) = (0., 0);
+    while last < 0.05 {
+        let steps = ida.stats().unwrap().steps;
+        let time = ida.step(1., &mut y, &mut yp).unwrap().reached().unwrap();
+        calls += 1;
+        assert_eq!(ida.stats().unwrap().steps, steps + 1);
+        assert!(time > last && time <= 0.05, "{time}");
+        let (mut dy, mut dyp) = ([0.; 2], [0.; 2]);
+        ida.dense_output(time, &mut dy, &mut dyp).unwrap();
+        // The returned state is the step's endpoint, the polynomial's value
+        // there to an ulp; the returned y' is the corrector's y'_n, which the
+        // polynomial's derivative matches only to the step's local error.
+        assert!((dy[0] - y[0]).abs() <= 4. * f64::EPSILON * y[0].abs());
+        assert!((dyp[0] - yp[0]).abs() <= 1e-5, "{} vs {}", dyp[0], yp[0]);
+        last = time;
+    }
+    let (mut cy, mut cyp) = ([1., 2.], [-1., -2.]);
+    let mut control = new(decay(), &cy, &cyp);
+    control.initialize(0.1, &mut cy, &mut cyp).unwrap();
+    control.stop_at(0.05).unwrap();
+    assert_eq!(
+        control.advance(1., &mut cy, &mut cyp).unwrap(),
+        Advance::Reached(0.05)
+    );
+    assert_eq!(control.stats().unwrap().steps, calls);
+    assert_eq!((y, yp), (cy, cyp));
+}
+
+/// Stock IDASVtolerances as a segment option: refused once a segment has
+/// started and for an invalid vector; after a reinitialization the new
+/// tolerances govern the next segment (looser tolerances take fewer steps
+/// over the same span).
+#[test]
+fn tolerances_change_only_at_a_segment_start_and_govern_the_next_segment() {
+    let (mut y, mut yp) = ([1., 2.], [-1., -2.]);
+    let mut ida = new(decay(), &y, &yp);
+    assert!(ida.set_tolerances(1e-8, &[1e-10; 1]).is_err());
+    assert!(ida.set_tolerances(0., &[1e-10; 2]).is_err());
+    assert!(ida.set_tolerances(1e-8, &[1e-10, 0.]).is_err());
+    ida.initialize(0.1, &mut y, &mut yp).unwrap();
+    ida.advance(1., &mut y, &mut yp).unwrap();
+    let tight = ida.stats().unwrap().steps;
+    assert!(
+        ida.set_tolerances(1e-4, &[1e-6; 2])
+            .unwrap_err()
+            .contains("only after")
+    );
+    ida.reinitialize(1., &y, &yp).unwrap();
+    ida.set_tolerances(1e-4, &[1e-6; 2]).unwrap();
+    ida.advance(2., &mut y, &mut yp).unwrap();
+    let loose = ida.stats().unwrap().steps;
+    assert!(
+        loose < tight,
+        "{loose} steps at 1e-4 against {tight} at 1e-8"
+    );
+    assert!((y[0] - (-2_f64).exp()).abs() < 1e-3, "{}", y[0]);
 }
 
 #[test]
@@ -443,6 +674,10 @@ fn removing_the_step_bound_continues_the_active_history_unbounded() {
 /// rising time crossing t = 0.3 and an algebraic function that never crosses.
 struct Crossings(Decay);
 impl System for Crossings {
+    /// Unreduced: every coordinate stands for itself (E-NUC).
+    fn multiplicities(&self) -> Option<Vec<f64>> {
+        None
+    }
     fn dimension(&self) -> usize {
         self.0.dimension()
     }
@@ -521,6 +756,56 @@ fn roots_stop_at_known_crossings_and_reinitialization_follows_the_analytic_bounc
     }
 }
 
+/// Stock IDASetRootDirection: a root function restricted to rising
+/// crossings never locates its falling one, the restriction survives
+/// IDAReInit, and it is a segment option checked like the others.
+#[test]
+fn a_root_restricted_to_one_direction_ignores_the_other_and_survives_a_restart() {
+    let mut y = [1., 0.];
+    let mut yp = [0.; 2];
+    let mut ida = start(Crossings(decay()), &y, &yp, 1e-10, 1e-12);
+    for wrong in [&[1, 0][..], &[2, 0, 0], &[0, -2, 0], &[]] {
+        assert!(ida.set_root_directions(wrong).is_err(), "{wrong:?}");
+    }
+    // y0 - 0.5 falls through zero at ln 2: rising only, it is never located.
+    ida.set_root_directions(&[1, 1, 0]).unwrap();
+    ida.initialize(0.01, &mut y, &mut yp).unwrap();
+    let Advance::Root { time, directions } = ida.advance(2., &mut y, &mut yp).unwrap() else {
+        panic!("the rising time crossing is still located");
+    };
+    assert!((time - 0.3).abs() < 1e-9, "{time}");
+    assert_eq!(directions, [0, 1, 0]);
+    assert_eq!(
+        ida.advance(2., &mut y, &mut yp).unwrap(),
+        Advance::Reached(2.)
+    );
+    assert!(
+        ida.set_root_directions(&[0, 0, 0])
+            .unwrap_err()
+            .contains("only after construction or reinitialization")
+    );
+    // IDAReInit keeps the restriction: the inventory jumps back to 1 and
+    // falls through 0.5 again at 2 + ln 2, unlocated.
+    ida.reinitialize(2., &[1., 2.], &[-1., -2.]).unwrap();
+    let (mut y, mut yp) = ([1., 2.], [-1., -2.]);
+    assert_eq!(
+        ida.advance(3., &mut y, &mut yp).unwrap(),
+        Advance::Reached(3.)
+    );
+    // Falling only, set at the next restart: located at 3 + ln 2.
+    ida.reinitialize(3., &[1., 2.], &[-1., -2.]).unwrap();
+    ida.set_root_directions(&[-1, 0, 0]).unwrap();
+    let (mut y, mut yp) = ([1., 2.], [-1., -2.]);
+    let Advance::Root { time, directions } = ida.advance(5., &mut y, &mut yp).unwrap() else {
+        panic!("the falling crossing is located");
+    };
+    assert!((time - 3. - LN_2).abs() < 1e-8, "{time}");
+    assert_eq!(directions, [-1, 0, 0]);
+    // A system without root functions has nothing to restrict.
+    let mut plain = new(decay(), &[1., 2.], &[-1., -2.]);
+    assert!(plain.set_root_directions(&[]).is_err());
+}
+
 #[test]
 fn reinitialization_after_an_imposed_discontinuity_retains_options_and_constraints() {
     let mut y = [1., 2.];
@@ -586,6 +871,10 @@ fn reinitialization_after_an_imposed_discontinuity_retains_options_and_constrain
 /// Root-function failure modes: recoverable, non-finite, panic and fatal.
 struct BrokenRoots(u8);
 impl System for BrokenRoots {
+    /// Unreduced: every coordinate stands for itself (E-NUC).
+    fn multiplicities(&self) -> Option<Vec<f64>> {
+        None
+    }
     fn dimension(&self) -> usize {
         2
     }
@@ -654,6 +943,10 @@ struct Rotor {
     seized: bool,
 }
 impl System for Rotor {
+    /// Unreduced: every coordinate stands for itself (E-NUC).
+    fn multiplicities(&self) -> Option<Vec<f64>> {
+        None
+    }
     fn dimension(&self) -> usize {
         3
     }
@@ -768,6 +1061,10 @@ fn an_explicit_first_step_is_admitted_before_a_segment_and_refused_after() {
 struct Ledgered(Decay);
 #[cfg(feature = "quadratures")]
 impl System for Ledgered {
+    /// Unreduced: every coordinate stands for itself (E-NUC).
+    fn multiplicities(&self) -> Option<Vec<f64>> {
+        None
+    }
     fn dimension(&self) -> usize {
         self.0.dimension()
     }

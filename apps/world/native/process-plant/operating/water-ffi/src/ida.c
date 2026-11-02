@@ -13,6 +13,8 @@
 #include <klu.h>
 #include <sundials/sundials_config.h>
 #include <sundials/sundials_version.h>
+#include <float.h>
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
@@ -28,9 +30,12 @@ typedef int (*Residual)(void*, double, const double*, const double*, double*);
 typedef int (*Jacobian)(void*, double, double, const double*, const double*, double*, int64_t*, int64_t*);
 typedef int (*Roots)(void*, double, const double*, const double*, double*);
 typedef int (*Quadrature)(void*, double, const double*, const double*, double*);
+typedef int (*Weights)(void*, const double*, double*);
 typedef struct {
     SUNContext ctx;
     N_Vector y, yp, atol, ids, q;
+    /* Scratch of the dense output (IDAGetDky), never solver history. */
+    N_Vector dense;
     SUNMatrix matrix;
     SUNLinearSolver linear;
     void *ida, *user;
@@ -38,7 +43,14 @@ typedef struct {
     Jacobian jacobian;
     Roots roots;
     Quadrature quadrature;
+    /* N1: the caller's error-weight rule (stock IDAWFtolerances), or none
+       (stock IDASVtolerances on rtol and atol). */
+    Weights weights;
     double time;
+    /* MR-1 (owner, request 7 R7-P): the stock IDAS check-point interval in
+       steps (0: stock IDASolve, no forced setup), the most check points
+       held before stock IDAAdjReInit frees them, and the counts. */
+    long rebuild_steps, rebuild_held_max, rebuild_held, rebuild_most, rebuild_drops;
 } OperatingIDA;
 static int residual(double t, N_Vector y, N_Vector yp, N_Vector r, void *v) {
     OperatingIDA *o = v;
@@ -51,9 +63,34 @@ static int jacobian(double t, double cj, N_Vector y, N_Vector yp, N_Vector r,
     return o->jacobian(o->user,t,cj,N_VGetArrayPointer(y),N_VGetArrayPointer(yp),
         SUNSparseMatrix_Data(j),SUNSparseMatrix_IndexValues(j),SUNSparseMatrix_IndexPointers(j));
 }
+static int error_weights(N_Vector y, N_Vector ewt, void *v) {
+    OperatingIDA *o = v;
+    return o->weights(o->user,N_VGetArrayPointer(y),N_VGetArrayPointer(ewt));
+}
 static int root_values(double t, N_Vector y, N_Vector yp, double *g, void *v) {
     OperatingIDA *o = v;
     return o->roots(o->user,t,N_VGetArrayPointer(y),N_VGetArrayPointer(yp),g);
+}
+/* PERF E-PROF (plan r4): an opt-in cost profile of stock KLU's setup
+   (factor/refactor) and solve. When the caller passes its scope hooks at
+   construction, the stock operations are called unchanged inside them. */
+typedef void (*CostEnter)(int);
+typedef void (*CostExit)(void);
+static CostEnter cost_enter;
+static CostExit cost_exit;
+static int (*stock_setup)(SUNLinearSolver, SUNMatrix);
+static int (*stock_solve)(SUNLinearSolver, SUNMatrix, N_Vector, N_Vector, sunrealtype);
+static int profiled_setup(SUNLinearSolver s, SUNMatrix a) {
+    cost_enter(0);
+    int code=stock_setup(s,a);
+    cost_exit();
+    return code;
+}
+static int profiled_solve(SUNLinearSolver s, SUNMatrix a, N_Vector x, N_Vector b, sunrealtype tol) {
+    cost_enter(1);
+    int code=stock_solve(s,a,x,b,tol);
+    cost_exit();
+    return code;
 }
 void operating_ida_free(OperatingIDA *o) {
     if (!o) return;
@@ -61,6 +98,7 @@ void operating_ida_free(OperatingIDA *o) {
     if (o->linear) SUNLinSolFree(o->linear);
     if (o->matrix) SUNMatDestroy(o->matrix);
     if (o->ids) N_VDestroy(o->ids);
+    if (o->dense) N_VDestroy(o->dense);
     if (o->q) N_VDestroy(o->q);
     if (o->atol) N_VDestroy(o->atol);
     if (o->yp) N_VDestroy(o->yp);
@@ -70,7 +108,7 @@ void operating_ida_free(OperatingIDA *o) {
 }
 OperatingIDA *operating_ida_create(int64_t n,int64_t nnz,double t,double rtol,
     const double *atol,const double *ids,const double *y,const double *yp,
-    Residual f,Jacobian j,int nroots,Roots g,void *user,int *status) {
+    Residual f,Jacobian j,int nroots,Roots g,void *user,CostEnter enter,CostExit leave,int *status) {
     OperatingIDA *o = calloc(1,sizeof(*o));
     *status=-1;
     if (!o) return NULL;
@@ -82,7 +120,8 @@ OperatingIDA *operating_ida_create(int64_t n,int64_t nnz,double t,double rtol,
     if (SUNContext_Create(SUN_COMM_NULL,&o->ctx)) goto fail;
     o->y=N_VNew_Serial(n,o->ctx); o->yp=N_VNew_Serial(n,o->ctx);
     o->atol=N_VNew_Serial(n,o->ctx); o->ids=N_VNew_Serial(n,o->ctx);
-    if (!o->y || !o->yp || !o->atol || !o->ids) goto fail;
+    o->dense=N_VNew_Serial(n,o->ctx);
+    if (!o->y || !o->yp || !o->atol || !o->ids || !o->dense) goto fail;
     memcpy(N_VGetArrayPointer(o->y),y,n*sizeof(double));
     memcpy(N_VGetArrayPointer(o->yp),yp,n*sizeof(double));
     memcpy(N_VGetArrayPointer(o->atol),atol,n*sizeof(double));
@@ -92,6 +131,12 @@ OperatingIDA *operating_ida_create(int64_t n,int64_t nnz,double t,double rtol,
     o->linear=SUNLinSol_KLU(o->y,o->matrix,o->ctx);
     o->ida=IDACreate(o->ctx);
     if (!o->linear || !o->ida) goto fail;
+    if (enter && leave) {
+        if (stock_setup && (stock_setup!=o->linear->ops->setup || stock_solve!=o->linear->ops->solve)) goto fail;
+        stock_setup=o->linear->ops->setup; stock_solve=o->linear->ops->solve;
+        cost_enter=enter; cost_exit=leave;
+        o->linear->ops->setup=profiled_setup; o->linear->ops->solve=profiled_solve;
+    }
 #define CHECK(call) do { *status=(call); if (*status<0) goto fail; } while(0)
     CHECK(IDAInit(o->ida,residual,t,o->y,o->yp));
     CHECK(IDASetUserData(o->ida,o));
@@ -112,46 +157,39 @@ int operating_ida_initialize(OperatingIDA *o,double horizon,double *y,double *yp
     }
     return code;
 }
+/* One stock solve call. Under MR-1 (owner R7-P, 17 Oct): stock IDAS
+   IDASolveF in place of IDASolve. IDASolveF takes the same steps and makes a
+   check point at every rebuild_steps-th step, which sets stock's own
+   forceSetup, so the next step sets the iteration matrix up again (idaa.c
+   IDASolveF, idas.c IDANls); step size, order and history are untouched and
+   no backward pass is ever run. Check points serve nothing else here: once
+   more than rebuild_held_max are held, stock IDAAdjReInit frees them. */
+static int solve(OperatingIDA *o,double target,int task) {
+#ifdef OPERATING_IDAS
+    if (o->rebuild_steps>0) {
+        int ncheck=0;
+        int code=IDASolveF(o->ida,target,&o->time,o->y,o->yp,task,&ncheck);
+        if (code<0) return code;
+        o->rebuild_held=ncheck;
+        if (ncheck>o->rebuild_most) o->rebuild_most=ncheck;
+        if (ncheck>o->rebuild_held_max) {
+            int freed=IDAAdjReInit(o->ida);
+            if (freed<0) return freed;
+            o->rebuild_held=0;
+            o->rebuild_drops++;
+        }
+        return code;
+    }
+#endif
+    return IDASolve(o->ida,target,&o->time,o->y,o->yp,task);
+}
 int operating_ida_advance(OperatingIDA *o,double target,double *time,double *y,double *yp) {
-    int code=IDASolve(o->ida,target,&o->time,o->y,o->yp,IDA_NORMAL);
+    int code=solve(o,target,IDA_NORMAL);
     *time=o->time;
     if (code>=0) {
         memcpy(y,N_VGetArrayPointer(o->y),N_VGetLength(o->y)*sizeof(double));
         memcpy(yp,N_VGetArrayPointer(o->yp),N_VGetLength(o->yp)*sizeof(double));
     }
-    return code;
-}
-/* Stock IDASolve in IDA_ONE_STEP mode: one accepted internal step (or a
-   located root, or the armed stop time), the state at the returned time
-   copied out. The S2 harness reads the step's stock interpolant between
-   steps by operating_ida_dense (lead decision S3-D1 #6), never by stopping
-   IDASolve at observation times. */
-int operating_ida_step(OperatingIDA *o,double target,double *time,double *y,double *yp) {
-    int code=IDASolve(o->ida,target,&o->time,o->y,o->yp,IDA_ONE_STEP);
-    *time=o->time;
-    if (code>=0) {
-        memcpy(y,N_VGetArrayPointer(o->y),N_VGetLength(o->y)*sizeof(double));
-        memcpy(yp,N_VGetArrayPointer(o->yp),N_VGetLength(o->yp)*sizeof(double));
-    }
-    return code;
-}
-/* Stock IDAGetDky (k = 0 and 1): the solution and its rate at t within the
-   last step [tn - hu, tn], into independent scratch; no history changes. */
-int operating_ida_dense(OperatingIDA *o,double t,double *y,double *yp) {
-    N_Vector state=N_VClone(o->y), rate=N_VClone(o->yp);
-    if (!state || !rate) {
-        if (state) N_VDestroy(state);
-        if (rate) N_VDestroy(rate);
-        return IDA_MEM_FAIL;
-    }
-    int code=IDAGetDky(o->ida,t,0,state);
-    if (code>=0) code=IDAGetDky(o->ida,t,1,rate);
-    if (code>=0) {
-        memcpy(y,N_VGetArrayPointer(state),N_VGetLength(state)*sizeof(double));
-        memcpy(yp,N_VGetArrayPointer(rate),N_VGetLength(rate)*sizeof(double));
-    }
-    N_VDestroy(rate);
-    N_VDestroy(state);
     return code;
 }
 int operating_ida_stop_at(OperatingIDA *o,double target) { return IDASetStopTime(o->ida,target); }
@@ -189,6 +227,37 @@ int operating_ida_current_state(OperatingIDA *o,double *time,double *y,double *y
     N_VDestroy(state);
     return code;
 }
+/* Stock IDA_ONE_STEP: one internal step toward target per call (an armed
+   stop time is never passed), so an observer reads every accepted step's
+   dense output instead of IDASolve calls at the observation rate (S3-D1 #7;
+   IC-PROT's frame driver). */
+int operating_ida_step(OperatingIDA *o,double target,double *time,double *y,double *yp) {
+    int code=solve(o,target,IDA_ONE_STEP);
+    *time=o->time;
+    if (code>=0) {
+        memcpy(y,N_VGetArrayPointer(o->y),N_VGetLength(o->y)*sizeof(double));
+        memcpy(yp,N_VGetArrayPointer(o->yp),N_VGetLength(o->yp)*sizeof(double));
+    }
+    return code;
+}
+/* Stock IDAGetDky: the k-th derivative at t of the last accepted step's
+   interpolating polynomial, t within [tn - hu, tn] and k at most that step's
+   order, into the handle's own scratch, then copied out. No step, history,
+   option or status changes (dense output, S3-D1 #7). Stock checks only the
+   lower end (it would extrapolate past tn); a time past tn by more than
+   stock's own time fuzz, 100 uround (|tn| + |h|) as in IDAGetDky's lower
+   end and the stop-time test (a stop at tstop leaves tn a few ulps short of
+   the returned tstop), is refused here with stock's own IDA_BAD_T. */
+int operating_ida_dky(OperatingIDA *o,double t,int k,double *out) {
+    double current, next;
+    int code=IDAGetCurrentTime(o->ida,&current);
+    if (code>=0) code=IDAGetCurrentStep(o->ida,&next);
+    if (code<0) return code;
+    if (!(t<=current+100.0*DBL_EPSILON*(fabs(current)+fabs(next)))) return IDA_BAD_T;
+    code=IDAGetDky(o->ida,t,k,o->dense);
+    if (code>=0) memcpy(out,N_VGetArrayPointer(o->dense),N_VGetLength(o->dense)*sizeof(double));
+    return code;
+}
 int operating_ida_error_diagnostics(OperatingIDA *o,double *errors,double *weights,int *order) {
     N_Vector e=N_VClone(o->y), w=N_VClone(o->y);
     if (!e || !w) {
@@ -223,6 +292,24 @@ int operating_ida_stats(OperatingIDA *o,long *counts,int *orders,double *steps) 
     return code;
 }
 int operating_ida_max_order(OperatingIDA *o,int order) { return IDASetMaxOrd(o->ida,order); }
+/* Stock IDASVtolerances on the handle's own atol vector (a segment's
+   tolerances, e.g. a derived class at a phase-mode change). Refused while
+   the caller's weight rule is in force: it would replace that rule. */
+int operating_ida_tolerances(OperatingIDA *o,double rtol,const double *atol) {
+    if (o->weights) return IDA_ILL_INPUT;
+    memcpy(N_VGetArrayPointer(o->atol),atol,N_VGetLength(o->atol)*sizeof(double));
+    return IDASVtolerances(o->ida,rtol,o->atol);
+}
+/* N1 (OU plan, R1 S1): stock IDAWFtolerances. Stock calls the rule for the
+   error weights wherever it would compute rtol|y| + atol from the tolerances
+   (its error test, the Newton convergence test and the initial step), with
+   the user data as its data (IDAInitialSetup). Once set, it stays. */
+int operating_ida_weight_function(OperatingIDA *o,Weights w) {
+    if (!w || o->weights) return IDA_ILL_INPUT;
+    int code=IDAWFtolerances(o->ida,error_weights);
+    if (code>=0) o->weights=w;
+    return code;
+}
 int operating_ida_max_step(OperatingIDA *o,double step) { return IDASetMaxStep(o->ida,step); }
 /* Stock IDASetInitStep: the first step; it persists across IDAReInit. */
 int operating_ida_init_step(OperatingIDA *o,double step) { return IDASetInitStep(o->ida,step); }
@@ -234,6 +321,29 @@ int operating_ida_quadratures_linked(void) {
     return 0;
 #endif
 }
+/* MR-1 (owner R7-P): stock IDAAdjInit(steps, IDA_HERMITE) once per handle;
+   its interpolation store, (steps + 1) x 2 vectors, is allocated here.
+   Refused under plain IDA (no check points) and when already set. */
+int operating_ida_rebuild_every(OperatingIDA *o,long steps,long held) {
+#ifdef OPERATING_IDAS
+    if (steps<1 || held<1 || o->rebuild_steps>0) return IDA_ILL_INPUT;
+    int code=IDAAdjInit(o->ida,steps,IDA_HERMITE);
+    if (code<0) return code;
+    o->rebuild_steps=steps;
+    o->rebuild_held_max=held;
+    return code;
+#else
+    (void)o; (void)steps; (void)held;
+    return IDA_ILL_INPUT;
+#endif
+}
+int operating_ida_rebuild_counts(OperatingIDA *o,long *counts) {
+    counts[0]=o->rebuild_steps;
+    counts[1]=o->rebuild_held;
+    counts[2]=o->rebuild_most;
+    counts[3]=o->rebuild_drops;
+    return 0;
+}
 int operating_ida_solution_scaling(OperatingIDA *o,int enabled) {
     return IDASetLinearSolutionScaling(o->ida,enabled?SUNTRUE:SUNFALSE);
 }
@@ -244,6 +354,12 @@ int operating_ida_newton_coefficient(OperatingIDA *o,double coefficient) {
    leaves ((1-dcj)/(1+dcj), (1+dcj)/(1-dcj)); stock's default is 0.25. */
 int operating_ida_delta_cj(OperatingIDA *o,double dcj) {
     return IDASetDeltaCjLSetup(o->ida,dcj);
+}
+/* Stock IDASetEtaFixedStepBounds (plan r4, lead decision R4-ETA): after an
+   accepted step stock keeps h unchanged while its tentative ratio lies in
+   (eta_min_fx, eta_max_fx); stock's defaults are 1 and 2. */
+int operating_ida_eta_fixed(OperatingIDA *o,double eta_min_fx,double eta_max_fx) {
+    return IDASetEtaFixedStepBounds(o->ida,eta_min_fx,eta_max_fx);
 }
 /* Stock SUNLinSol_KLUSetOrdering: KLU's fill-reducing ordering, 0 AMD,
    1 COLAMD (stock's default), 2 natural. KLU reads it at its first symbolic
@@ -257,11 +373,24 @@ int operating_ida_reinitialize(OperatingIDA *o,double t,const double *y,const do
     memcpy(N_VGetArrayPointer(o->y),y,N_VGetLength(o->y)*sizeof(double));
     memcpy(N_VGetArrayPointer(o->yp),yp,N_VGetLength(o->yp)*sizeof(double));
     int code=IDAReInit(o->ida,t,o->y,o->yp);
+#ifdef OPERATING_IDAS
+    /* MR-1: a restart frees every check point (stock IDAAdjReInit). */
+    if (code>=0 && o->rebuild_steps>0) {
+        code=IDAAdjReInit(o->ida);
+        o->rebuild_held=0;
+    }
+#endif
     if (code>=0) o->time=t;
     return code;
 }
 int operating_ida_root_directions(OperatingIDA *o,int *directions) {
     return IDAGetRootInfo(o->ida,directions);
+}
+/* Stock IDASetRootDirection after IDARootInit: per root function +1 locates
+   rising crossings only, -1 falling only, 0 both. Stock copies the array;
+   IDAReInit keeps it. */
+int operating_ida_set_root_direction(OperatingIDA *o,int *directions) {
+    return IDASetRootDirection(o->ida,directions);
 }
 /* Stock IDASetId copies the vector; the owned ids remain only its source. */
 int operating_ida_differential(OperatingIDA *o,const double *ids) {

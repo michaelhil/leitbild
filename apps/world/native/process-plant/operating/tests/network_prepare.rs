@@ -272,6 +272,8 @@ fn packet() -> Packet {
         },
     ];
     Packet {
+        pzr_spray: None,
+        secondary: None,
         mechanics: Mechanics {
             regions,
             faces,
@@ -282,7 +284,10 @@ fn packet() -> Packet {
                 coefficient: 1.,
             }],
         },
-        thermal: Thermal { water },
+        thermal: Thermal {
+            water,
+            sg_segments: Vec::new(),
+        },
         water_boron_amount_kg_eq: boron,
         external_ports: ExternalPorts {
             surge_stock: SurgeStock {
@@ -292,6 +297,8 @@ fn packet() -> Packet {
                 internal_energy_j: surge_mass * surge_water.internal_energy_j_kg,
                 absorber_tracer_kg_eq: TRACER_PER_KG * surge_mass,
             },
+            spray_stock: None,
+            spray_path: None,
         },
         pzr: Pzr {
             cell: PzrCell {

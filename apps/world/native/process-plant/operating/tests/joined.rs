@@ -83,23 +83,39 @@ fn coordinates_carry_the_seed_and_the_stage_coefficient_in_physical_units() {
 
 #[test]
 fn the_census_counts_composed_classes_and_keeps_pending_owners_apart() {
-    let mut layout = Layout::default();
+    // A row counts its own owner's coordinates of its classes (P2: the rod
+    // bores' and the network cells' share classes).
+    let mut nuclear = Layout::default();
     for i in 0..3 {
-        layout.push(format!("N[{i}]"), Class::RegionalPopulation, true, 1., 1.);
+        nuclear.push(format!("N[{i}]"), Class::RegionalPopulation, true, 1., 1.);
     }
-    layout.push("T".into(), Class::Surface, false, 1., 1.);
-    let ids = [1., 1., 1., 0.];
+    let mut solids = Layout::default();
+    solids.push("T".into(), Class::Surface, false, 1., 1.);
+    let mut stranger = Layout::default();
+    stranger.push("M".into(), Class::PhaseMass, true, 1., 1.);
     let pending = census::Pending {
         owner: "rods",
         by: "fixture owner",
         classes: vec![(Class::GuideCurrent, [0, 5])],
     };
     let c = census::census(
-        &[census::Composed {
-            owner: "fixture",
-            layout: &layout,
-            differential: &ids,
-        }],
+        &[
+            census::Composed {
+                owner: "nuclear",
+                layout: &nuclear,
+                differential: &[1., 1., 1.],
+            },
+            census::Composed {
+                owner: "solids",
+                layout: &solids,
+                differential: &[0.],
+            },
+            census::Composed {
+                owner: "fixture",
+                layout: &stranger,
+                differential: &[1.],
+            },
+        ],
         &[pending],
     );
     assert_eq!(c.composed, [3, 1, 4]);

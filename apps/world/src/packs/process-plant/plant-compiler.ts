@@ -18,6 +18,7 @@ import { assertThrottleFloorsValid } from './operations/demand-span.ts'
 import { assertResetTimesValid } from './operations/actuation-reset.ts'
 import type { ProcessPlantDefinition } from './config.ts'
 import {
+  processPlantPwrReferenceModelRef,
   resolveProcessPlantAutomation,
   resolveProcessPlantModel,
   resolveProcessPlantOperatingPoint,
@@ -194,7 +195,7 @@ export const compileProcessPlant = (
       definition.model.ref,
       graph,
     ),
-    validateGraph: assertPrimaryLoopTopologyValid,
+    ...(definition.model.ref === processPlantPwrReferenceModelRef ? { validateGraph: assertPrimaryLoopTopologyValid } : {}),
   })
 }
 

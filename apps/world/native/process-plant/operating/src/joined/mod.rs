@@ -16,10 +16,12 @@ pub mod account;
 pub mod block;
 pub mod blocks;
 pub mod census;
+pub mod cvcs;
 pub mod nuclear;
 pub mod operator;
 pub mod packet;
 pub mod post_trip_domain;
+pub mod presence;
 pub mod pzr;
 pub mod solids;
 
@@ -40,6 +42,7 @@ pub fn network_layout<P: Properties>(network: &Network<P>) -> Layout {
         differential: vec![true; n],
         scales: scales.to_vec(),
         row_scales: scales.to_vec(),
+        multiplicity: vec![1; n],
     };
     let mut set = |i: usize, label: String, class: Class, differential: bool, row: f64| {
         layout.labels[i] = label;
@@ -133,15 +136,21 @@ pub fn pending_secondary() -> census::Pending {
 }
 
 /// The rod owner's declared counts at the prepared hold (bodies HELD: their
-/// velocity rows algebraic), per memo §4 and Table 1.1, while it is pending.
+/// velocity rows algebraic), per memo §4 and Table 1.1, with P2's two mouth
+/// currents per cluster and the LD-01 packet's eight bore groups (no single
+/// declared), while it is pending.
 pub fn pending_rods() -> census::Pending {
     census::Pending {
         owner: "rods",
-        by: "S2-RODS (block::Rods)",
+        by: "S2-RODS (block::Rods), P2 bores",
         classes: vec![
             (Class::RodPosition, [52, 0]),
             (Class::RodVelocity, [0, 52]),
-            (Class::GuideCurrent, [0, 52]),
+            (Class::GuideCurrent, [0, 104]),
+            (Class::PhaseMass, [8, 0]),
+            (Class::PhaseEnergy, [8, 0]),
+            (Class::Tracer, [8, 0]),
+            (Class::CellPressure, [0, 8]),
         ],
     }
 }

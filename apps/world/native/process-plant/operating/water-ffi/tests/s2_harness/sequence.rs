@@ -28,7 +28,7 @@ use super::{
     run::RunSpec,
     runner::{DomainExit, Run, Start, advance},
 };
-use crate::{
+use crate::common::{
     cpu,
     filter::{CAP_CYCLE_RULE, EXCESS_SPECTRUM_METHOD, cap_cycle_output, content_above_band},
     provenance::{WATER_BUILD, WATER_LIB_DIR, git_provenance, water_build},
@@ -37,6 +37,7 @@ use leitbild_operating_plant::{
     joined::{block::Command, post_trip_domain::Extension},
     network::{MetastableBand, packet::Packet as NetworkPacket},
 };
+use leitbild_operating_water::unit::profile::{self, Weights};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
@@ -181,6 +182,12 @@ impl Harness {
                     "trip" | "R0" | "R1" | "R2" | "noTurbineTrip" | "stuckCluster"
                 )
             },
+            // N1: `LD01_S2_WEIGHTS` (stock | grouped; unset: stock, as S2
+            // closed), recorded in the run's spec.
+            weights: Weights::parse(
+                &std::env::var("LD01_S2_WEIGHTS").unwrap_or_else(|_| "stock".into()),
+            )
+            .unwrap_or_else(|e| panic!("LD01_S2_WEIGHTS: {e}")),
         };
         let window = g.number("/trip/window_s").min(duration_s);
         let trip = |spec: &mut RunSpec| {
@@ -1127,7 +1134,7 @@ pub fn judge_trip_declared_and_information(
 pub fn state_receipt(h: &mut Harness, start: &Start, item: &str) -> Value {
     let mut c = h.compose(item);
     let mut y = start.y.clone();
-    let weights = compose::error_weights(&y, c.rtol, &c.atol);
+    let weights = profile::error_weights(&y, c.rtol, &c.atol);
     let started = cpu::process_cpu_s();
     let result = leitbild_operating_water::joined::consistent_start(
         &mut c.joined,
@@ -1139,7 +1146,7 @@ pub fn state_receipt(h: &mut Harness, start: &Start, item: &str) -> Value {
         &mut y,
         &c.ids,
         &weights,
-        compose::START_BOUND,
+        profile::START_BOUND,
         3,
     );
     let cpu_s = cpu::process_cpu_s() - started;
@@ -1158,7 +1165,7 @@ pub fn state_receipt(h: &mut Harness, start: &Start, item: &str) -> Value {
             json!({"from": start.from, "t_s": start.t,
                 "z1": {"residual": report.residual.value, "constraint_rate": report.constraint_rate.value,
                     "correction_wrms": report.correction_wrms, "projection_passes": report.projection_passes,
-                    "rate_passes": report.rate_passes, "cpu_s": cpu_s, "bound": compose::START_BOUND},
+                    "rate_passes": report.rate_passes, "cpu_s": cpu_s, "bound": profile::START_BOUND},
                 "d3_at_state": d3})
         }
         Err(e) => json!({"from": start.from, "refused": format!("{e:?}")}),
@@ -1297,7 +1304,7 @@ pub fn check_external(
         if let Some(c) = cpu.filter(|_| !reused) {
             charges.push((name.to_string(), c));
         }
-        let mut entry = json!({"receipt": path, "sha256": crate::provenance::sha256_file(path).ok(),
+        let mut entry = json!({"receipt": path, "sha256": crate::common::provenance::sha256_file(path).ok(),
             "kind": r["kind"], "verdict": r["verdict"], "status": r["status"],
             "process_cpu_s": cpu, "reused": reused, "pass": pass});
         if name.starts_with("Z3") {

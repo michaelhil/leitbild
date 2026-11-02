@@ -18,6 +18,32 @@ pub struct Packet {
     pub pzr: Pzr,
     pub hydraulics: Hydraulics,
     pub preparation: Preparation,
+    /// The controlled-spray path's owner section (`pzrSpray`), present only
+    /// in a packet that composes the path (`reference-design-operating-spray-path.ts`).
+    #[serde(rename = "pzrSpray", default)]
+    pub pzr_spray: Option<crate::control::spray_valve::Section>,
+    /// R4-NCHEAD: the SG secondary section's fold, read for the SG primary
+    /// cells' profiled heads; required with `thermal.sg_segments`.
+    #[serde(default)]
+    pub secondary: Option<Secondary>,
+}
+#[derive(Debug, Deserialize)]
+pub struct Secondary {
+    pub exposure: Exposure,
+}
+#[derive(Debug, Deserialize)]
+pub struct Exposure {
+    pub fold: Fold,
+}
+/// The folded SG tube path (`ld01-sg-exposure`; the same four values the
+/// SG owner's contact map reads).
+#[derive(Clone, Copy, Debug, Deserialize)]
+pub struct Fold {
+    #[serde(rename = "developedLength_m")]
+    pub developed_length_m: f64,
+    pub inlet_m: f64,
+    pub crest_m: f64,
+    pub outlet_m: f64,
 }
 #[derive(Debug, Deserialize)]
 pub struct Preparation {
@@ -78,6 +104,13 @@ pub struct SectionProjection {
 #[derive(Debug, Deserialize)]
 pub struct Thermal {
     pub water: Vec<WaterOwner>,
+    /// The SG tube segments; the network reads only their primary cells.
+    #[serde(default)]
+    pub sg_segments: Vec<SgSegment>,
+}
+#[derive(Debug, Deserialize)]
+pub struct SgSegment {
+    pub primary: usize,
 }
 #[derive(Debug, Deserialize)]
 pub struct WaterOwner {
@@ -89,6 +122,38 @@ pub struct WaterOwner {
 #[derive(Debug, Deserialize)]
 pub struct ExternalPorts {
     pub surge_stock: SurgeStock,
+    /// The spray line's initial stock and its path indices, present
+    /// together with `pzrSpray`.
+    #[serde(default)]
+    pub spray_stock: Option<SprayStock>,
+    #[serde(default)]
+    pub spray_path: Option<SprayPath>,
+}
+/// The spray line's declared initial state: pressure and temperature (the
+/// network prepares mass and energy by its property forward) and the
+/// absorber mass fraction.
+#[derive(Debug, Deserialize)]
+pub struct SprayStock {
+    pub id: String,
+    pub volume_m3: f64,
+    pub elevation_m: f64,
+    #[serde(rename = "pressure_Pa")]
+    pub pressure_pa: f64,
+    #[serde(rename = "temperature_K")]
+    pub temperature_k: f64,
+    #[serde(rename = "absorberMassFraction")]
+    pub absorber_mass_fraction: f64,
+    pub basis: String,
+}
+/// Where the composed spray path sits in the packet.
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SprayPath {
+    pub region: usize,
+    pub valve_face: usize,
+    pub port_face: usize,
+    pub valve_section: usize,
+    pub distributor_section: usize,
 }
 #[derive(Debug, Deserialize)]
 pub struct SurgeStock {

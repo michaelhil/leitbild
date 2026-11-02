@@ -75,11 +75,21 @@ impl<P: Properties> Network<P> {
         let mut orphan_abs = 0.;
         let mut orphan_allowance = 0.;
         for node in 0..self.pzr.cell {
-            for k in 0..2 {
+            // HOOK (PHASE-P7, S3-D-P1): phase stocks through the cell's mode.
+            // An equilibrium cell's algebraic vapor mass may carry a negative
+            // residue inside its own error allowance (its sign is the
+            // exhaustion root's); beyond that it refuses like any stock.
+            let stocks = self.phase_stocks(node, y);
+            let equilibrium = self.cell_modes()[node] == super::CellMode::Equilibrium;
+            for (k, &(mass, energy)) in stocks.iter().enumerate() {
                 let (mi, ui) = self.stock_indices(node, k);
-                let mass = y[mi] * self.scales[mi];
-                let energy = y[ui] * self.scales[ui];
-                if !mass.is_finite() || !energy.is_finite() || mass < 0. {
+                let residue = equilibrium
+                    && k == 1
+                    && mass < 0.
+                    && -mass
+                        <= self.scales[mi]
+                            * (tolerance.absolute[mi] + tolerance.relative * y[mi].abs());
+                if !mass.is_finite() || !energy.is_finite() || (mass < 0. && !residue) {
                     return Err(Failure::Fatal(format!(
                         "physical stock admission failed region={node},phase={k},M={mass},U={energy}"
                     )));
@@ -171,7 +181,13 @@ impl<P: Properties> Network<P> {
         let mut boron_abs = 0.;
         let mut energy_abs = 0.;
         for node in 0..self.pzr.cell {
-            for k in 0..2 {
+            // HOOK (PHASE-P7, S3-D-P1): an equilibrium cell's receipts are its
+            // totals' rows; its vapor rows are algebraic.
+            let phases = match self.cell_modes()[node] {
+                super::CellMode::Liquid => 2,
+                super::CellMode::Equilibrium => 1,
+            };
+            for k in 0..phases {
                 let (mi, ui) = self.stock_indices(node, k);
                 let md = (yp[mi] - self.rows[mi].value) * self.scales[mi];
                 let ud = (yp[ui] - self.rows[ui].value) * self.scales[ui];

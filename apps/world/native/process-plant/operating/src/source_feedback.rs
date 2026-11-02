@@ -442,6 +442,15 @@ impl Model {
     pub fn material_count(&self) -> usize {
         self.materials.len()
     }
+    /// S3 hook (IC-PROT, for KERN): the compiled (region, material)
+    /// supports, read by the acquired current proxy (S3-D7).
+    pub fn supports(&self) -> &[Support] {
+        &self.supports
+    }
+    /// S3 hook (IC-PROT, for KERN): the compiled materials.
+    pub fn materials(&self) -> &[Material] {
+        &self.materials
+    }
     pub fn support_count(&self) -> usize {
         self.supports.len()
     }

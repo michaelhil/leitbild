@@ -54,6 +54,10 @@ fn two_runs_write_the_same_bytes() {
         .collect();
     raw["steady"] = serde_json::json!({"basisPower_W": total,
         "coreMassFlux_kg_m2_s": 3725.0, "sgPrimaryMassFlux_kg_m2_s": fluxes});
+    // A settle's input is the seed: never a steady PZR steel of its own.
+    if let Some(o) = raw.as_object_mut() {
+        o.remove("pzrSteel");
+    }
     let input = serde_json::to_vec(&raw).unwrap();
     let (a, b) = (run(&input), run(&input));
     assert!(a.status.success(), "{}", String::from_utf8_lossy(&a.stderr));
@@ -69,4 +73,6 @@ fn two_runs_write_the_same_bytes() {
         out["sg_metal"].as_array().unwrap().len(),
         raw["thermal"]["sg_segments"].as_array().unwrap().len()
     );
+    // S3-D36: the PZR steel exactly when the input carries pzrMetal.
+    assert_eq!(out.get("pzr").is_some(), raw.get("pzrMetal").is_some());
 }

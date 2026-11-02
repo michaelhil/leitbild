@@ -49,10 +49,8 @@ use std::time::Instant;
 
 // CLOCK_PROCESS_CPUTIME_ID as the S1 harness measures (`cpu_s`), and
 // CLOCK_THREAD_CPUTIME_ID reported beside it.
-#[path = "../common/cpu.rs"]
-pub mod clock;
 #[allow(unused_imports)] // Each test crate uses its own subset.
-pub use clock::{process_cpu_s as cpu_s, thread_cpu_s};
+pub use crate::common::cpu::{process_cpu_s as cpu_s, thread_cpu_s};
 
 fn s(v: f64) -> Scalar {
     Scalar::constant(v)
@@ -389,6 +387,7 @@ impl CellSystem {
                     mass: s(w),
                     enthalpy: s(w * f.enthalpy_j_kg),
                     boron: s(w * f.concentration),
+                    ..Receipt::zero()
                 }
             } else if w < 0. {
                 // The donor is the cell: the port view's φ-weighted liquid.
@@ -400,6 +399,7 @@ impl CellSystem {
                     mass: s(w),
                     enthalpy: s(w) * liquid.enthalpy,
                     boron: s(w) * liquid.boron_concentration,
+                    ..Receipt::zero()
                 }
             } else {
                 Receipt::zero()
@@ -416,6 +416,7 @@ impl CellSystem {
                 mass: s(w),
                 enthalpy: s(w * f.enthalpy_j_kg),
                 boron: s(w * f.concentration),
+                ..Receipt::zero()
             };
         }
         Ok(out)
@@ -688,6 +689,10 @@ pub struct Segment {
     pub ledger: bool,
 }
 impl System for Segment {
+    /// Unreduced: every coordinate stands for itself (E-NUC).
+    fn multiplicities(&self) -> Option<Vec<f64>> {
+        None
+    }
     fn dimension(&self) -> usize {
         self.system.n()
     }
@@ -857,7 +862,8 @@ pub struct Sample {
     pub inventory: [f64; 3],
     /// The integrator's ledger at this time: the quadratures since t = 0.
     pub ledger_q: [f64; LEDGER],
-    /// Inventory energy minus `p_s (V_b + V_d)`: zone and transit internal energy.
+    /// The inventory's energy: zone and transit internal energy (the cell
+    /// takes `p_s (V_b + V_d + V_bA)` off the transit enthalpy).
     pub internal_energy_j: f64,
     /// Solver tolerance of the mass, energy and boron totals at this state.
     pub tolerance: [f64; 3],
@@ -1049,9 +1055,7 @@ pub fn sample(
         ],
         inventory: [inv.mass_kg.value, inv.energy_j.value, inv.boron_kg.value],
         ledger_q: [0.; LEDGER],
-        internal_energy_j: inv.energy_j.value
-            - c.interface_pressure.value
-                * (x.bubble_volume.value + x.drop_volume.value + x.admitted_bubble_volume.value),
+        internal_energy_j: inv.energy_j.value,
         tolerance: [
             tol(&[
                 st::VAPOR_MASS,

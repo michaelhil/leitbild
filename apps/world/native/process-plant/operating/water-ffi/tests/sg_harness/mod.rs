@@ -223,7 +223,11 @@ impl<P: leitbild_operating_plant::sg::Properties> Standalone<P> {
         let mut y: Vec<f64> = prepared.iter().zip(&scales).map(|(v, s)| v / s).collect();
         let (tube, segments): (Option<Tube>, Vec<Segment>) = match heat {
             Heat::Tube(_) => (
-                Some(Tube::new(&section.contact, probe.tube.thermal_diameter_m)?),
+                Some(Tube::new(
+                    &section.contact,
+                    probe.tube.thermal_diameter_m,
+                    &section.exposure,
+                )?),
                 probe.segments.iter().map(Segment::from).collect(),
             ),
             Heat::Schedule(_) => (None, Vec::new()),
@@ -599,8 +603,15 @@ pub fn held_ports<P: WaterProperties>(props: &P, probe: &Probe) -> Vec<PrimaryPo
     q.mass_flow_kg_s
         .iter()
         .map(|m| {
-            PrimaryPort::held(props, q.pressure_pa, q.temperature_k, m / q.flow_area_m2)
-                .expect("held primary")
+            PrimaryPort::held(
+                props,
+                q.pressure_pa,
+                q.temperature_k,
+                q.inlet_temperature_k,
+                *m,
+                q.flow_area_m2,
+            )
+            .expect("held primary")
         })
         .collect()
 }
@@ -667,6 +678,10 @@ pub mod integrate {
         }
     }
     impl<P: Properties> System for Integrated<P> {
+        /// Unreduced: every coordinate stands for itself (E-NUC).
+        fn multiplicities(&self) -> Option<Vec<f64>> {
+            None
+        }
         fn dimension(&self) -> usize {
             self.sys.n()
         }

@@ -1,4 +1,5 @@
 //! spec: world/packs/process-plant/reference-designs/ld-01/systems/reactor/kinetics.md#post-trip-domain-extension
+//! spec: world/packs/process-plant/reference-designs/ld-01/systems/reactor/kinetics.md#hot-standby-kinetics
 //! D3 (a): the post-trip kinetics domain, checked on accepted states.
 //!
 //! The `ld01-post-trip-domain` block widens two source-feedback domains, the
@@ -33,6 +34,11 @@
 //! verdict is the sign of the pivots.
 //!
 //! The predicate judges; it changes no state, coefficient or tolerance.
+//!
+//! P1 (owner R11): [`HotStandby`] admits the hot liquid laws over the
+//! hot-standby range on published evidence and reports the margin at its
+//! declared water-term factors ([`admit_hot_standby_accepted`]); there the
+//! margin is an output and never a gate.
 use super::nuclear::Nuclear;
 use crate::{kinetics, source_feedback as sf, thermal::Scalar};
 use std::fmt;
@@ -62,6 +68,9 @@ pub enum Domain {
     Original,
     /// The D3 (a) extension, while the checked margin holds.
     Extended,
+    /// P1's hot-standby domain (owner R11), admitted on the published
+    /// evidence; the margin is reported, never a domain gate.
+    HotStandby,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -175,32 +184,50 @@ pub struct Margin {
 fn static_operator(
     model: &kinetics::Model,
     inputs: kinetics::Inputs<'_>,
+    mut diagonal_products: Option<&mut Vec<(usize, f64)>>,
 ) -> Result<Vec<f64>, Error> {
     let r = model.region_count();
     let n = model.state_dimension();
     let mut nn = vec![0.; r * r];
     let mut decay = vec![0.; n - r];
-    let mut births: Vec<Vec<(usize, f64)>> = vec![Vec::new(); n - r];
-    let mut returns: Vec<Vec<(usize, f64)>> = vec![Vec::new(); n - r];
+    // HOOK (COST2, for KERN2): each precursor's births (its row from a
+    // neutron column) and returns (a neutron row from its column) kept flat
+    // in emission order, then grouped per precursor by a stable counting
+    // pass (no per-precursor vectors). Every sum below takes the same terms
+    // in the same order as the per-precursor lists did: bitwise the same
+    // operator.
+    // One birth and one return per support and delayed group.
+    let entries = model.support_count() * kinetics::DELAYED_GROUPS;
+    let mut births: Vec<(usize, usize, f64)> = Vec::with_capacity(entries);
+    let mut returns: Vec<(usize, usize, f64)> = Vec::with_capacity(entries);
     let mut coupled = false;
     model.state_jacobian_entries(inputs, |row, column, value| match (row < r, column < r) {
         (true, true) => nn[column * r + row] += value,
-        (false, true) => births[row - r].push((column, value)),
-        (true, false) => returns[column - r].push((row, value)),
+        (false, true) => births.push((row - r, column, value)),
+        (true, false) => returns.push((column - r, row, value)),
         (false, false) if row == column => decay[row - r] += value,
         (false, false) => coupled = true,
     })?;
     if coupled {
         return Err(Error::Operator("precursor rows couple to each other"));
     }
-    for c in 0..n - r {
-        let lambda = -decay[c];
+    let births = grouped(n - r, &births);
+    let returns = grouped(n - r, &returns);
+    for (c, d) in decay.iter().enumerate() {
+        let lambda = -d;
         if !(lambda.is_finite() && lambda > 0.) {
             return Err(Error::Operator("precursor without a positive decay"));
         }
-        for &(i, w) in &returns[c] {
-            for &(j, b) in &births[c] {
-                nn[j * r + i] += w * b / lambda;
+        for &(i, w) in returns.of(c) {
+            for &(j, b) in births.of(c) {
+                let product = w * b / lambda;
+                nn[j * r + i] += product;
+                // HOOK (COST2): a diagonal's precursor terms in assembly order.
+                if i == j
+                    && let Some(d) = diagonal_products.as_deref_mut()
+                {
+                    d.push((i, product));
+                }
             }
         }
     }
@@ -215,6 +242,71 @@ fn static_operator(
         }
     }
     Ok(nn)
+}
+
+/// HOOK (COST2, for KERN2): the static operators at `plain` and at
+/// `shifted`, two inputs that differ only in the regions' reactivities (the
+/// margin check's operator and its inserted-margin twin). Reactivity enters
+/// only the neutron diagonal (`rho_i / Lambda_i`, the kinetics block's
+/// first emission per region), so the twin is the plain operator with each
+/// diagonal re-summed: the twin's own diagonal emissions in emission order
+/// (its trial inputs validated and its values checked as before), then the
+/// plain assembly's precursor terms on that diagonal in their order. Every
+/// entry is bitwise the one a second [`static_operator`] call computes; the
+/// off-diagonals (the plain operator's) already passed the Metzler check.
+fn static_operators(
+    model: &kinetics::Model,
+    plain: kinetics::Inputs<'_>,
+    shifted: kinetics::Inputs<'_>,
+) -> Result<(Vec<f64>, Vec<f64>), Error> {
+    let r = model.region_count();
+    let mut products = Vec::new();
+    let operator = static_operator(model, plain, Some(&mut products))?;
+    let mut diagonal = vec![0.; r];
+    model.state_jacobian_entries(shifted, |row, column, value| {
+        if row == column && row < r {
+            diagonal[row] += value;
+        }
+    })?;
+    for &(i, product) in &products {
+        diagonal[i] += product;
+    }
+    let mut twin = operator.clone();
+    for (i, d) in diagonal.iter().enumerate() {
+        twin[i * r + i] = *d;
+    }
+    if twin.iter().any(|v| !v.is_finite()) {
+        return Err(Error::Operator("nonfinite operator"));
+    }
+    Ok((operator, twin))
+}
+
+/// HOOK (COST2): entries `(group, index, value)` grouped by `group` in
+/// their original order within each group (a stable counting sort).
+struct Grouped {
+    start: Vec<usize>,
+    entries: Vec<(usize, f64)>,
+}
+impl Grouped {
+    fn of(&self, group: usize) -> &[(usize, f64)] {
+        &self.entries[self.start[group]..self.start[group + 1]]
+    }
+}
+fn grouped(groups: usize, flat: &[(usize, usize, f64)]) -> Grouped {
+    let mut start = vec![0usize; groups + 1];
+    for &(g, _, _) in flat {
+        start[g + 1] += 1;
+    }
+    for g in 0..groups {
+        start[g + 1] += start[g];
+    }
+    let mut next = start.clone();
+    let mut entries = vec![(0usize, 0.); flat.len()];
+    for &(g, k, v) in flat {
+        entries[next[g]] = (k, v);
+        next[g] += 1;
+    }
+    Grouped { start, entries }
 }
 
 /// Pivots of the Z-matrix `-m` (column-major `r x r`) by elimination without
@@ -255,6 +347,24 @@ pub fn shutdown_margin(
     water_terms: &[f64],
     extension: &Extension,
 ) -> Result<Margin, Error> {
+    margin_with(
+        model,
+        inputs,
+        water_terms,
+        extension.margin_water_term_factor,
+        extension.shutdown_margin_minimum,
+    )
+}
+
+/// The margin check with the water term at `factor` and `minimum` (Δk/k,
+/// positive) inserted.
+fn margin_with(
+    model: &kinetics::Model,
+    inputs: kinetics::Inputs<'_>,
+    water_terms: &[f64],
+    factor: f64,
+    minimum: f64,
+) -> Result<Margin, Error> {
     let r = model.region_count();
     if inputs.regions.len() != r || water_terms.len() != r {
         return Err(Error::Length("regions"));
@@ -268,22 +378,23 @@ pub fn shutdown_margin(
             .iter()
             .zip(water_terms)
             .map(|(x, w)| kinetics::RegionInput {
-                reactivity: x.reactivity + (extension.margin_water_term_factor - 1.) * w + inserted,
+                reactivity: x.reactivity + (factor - 1.) * w + inserted,
                 external_source_per_s: 0.,
             })
             .collect()
     };
-    let m = extension.shutdown_margin_minimum;
+    let m = minimum;
+    if !(m.is_finite() && m > 0. && factor.is_finite()) {
+        return Err(Error::Extension("margin minimum or factor"));
+    }
     let (plain, inserted) = (with(0.), with(m));
-    let operator = static_operator(
+    // HOOK (COST2): one assembly for both (they differ only in reactivity).
+    let (operator, shifted) = static_operators(
         model,
         kinetics::Inputs {
             regions: &plain,
             ..inputs
         },
-    )?;
-    let shifted = static_operator(
-        model,
         kinetics::Inputs {
             regions: &inserted,
             ..inputs
@@ -319,7 +430,9 @@ pub struct Fixed<'a> {
 }
 
 /// The margin check at one state from its source-feedback conditions: the
-/// current `rho`, `G` and water terms the feedback evaluates there.
+/// current `rho`, `G` and water terms the feedback evaluates there, with
+/// `applied_dk` (B1's applied stuck-cluster term, `Nuclear::stuck_worth_dk`)
+/// added to every region's reactivity as the running kinetics adds it.
 pub fn margin_at(
     feedback: &sf::Model,
     kinetics: &kinetics::Model,
@@ -327,7 +440,34 @@ pub fn margin_at(
     neutrons: &[Scalar],
     conditions: sf::Conditions<'_>,
     extension: &Extension,
+    applied_dk: f64,
 ) -> Result<Margin, Error> {
+    margins_at(
+        feedback,
+        kinetics,
+        fixed,
+        neutrons,
+        conditions,
+        &[extension.margin_water_term_factor],
+        extension.shutdown_margin_minimum,
+        applied_dk,
+    )
+    .map(|mut m| m.remove(0))
+}
+
+/// [`margin_at`] at each water-term factor of `factors`, with `minimum`
+/// inserted, on one evaluation of the feedback.
+#[allow(clippy::too_many_arguments)] // The feedback's inputs, the factors and B1's term.
+fn margins_at(
+    feedback: &sf::Model,
+    kinetics: &kinetics::Model,
+    fixed: Fixed<'_>,
+    neutrons: &[Scalar],
+    conditions: sf::Conditions<'_>,
+    factors: &[f64],
+    minimum: f64,
+    applied_dk: f64,
+) -> Result<Vec<Margin>, Error> {
     let r = feedback.region_count();
     let mut terms = vec![sf::ReactivityTerms::default(); r];
     feedback
@@ -341,7 +481,8 @@ pub fn margin_at(
         .regions
         .iter()
         .map(|x| kinetics::RegionInput {
-            reactivity: x.reactivity.value,
+            // B1: the applied stuck-cluster term.
+            reactivity: x.reactivity.value + applied_dk,
             external_source_per_s: x.external_source_per_s.value,
         })
         .collect();
@@ -351,22 +492,29 @@ pub fn margin_at(
         .map(|g| g.value)
         .collect();
     let water: Vec<f64> = terms.iter().map(|t| t.water_density).collect();
-    shutdown_margin(
-        kinetics,
-        kinetics::Inputs {
-            regions: &regions,
-            transfer_rates_per_s: fixed.transfer_rates_per_s,
-            fissions_per_population_s: &production,
-            emission_fractions: fixed.emission_fractions,
-            outside_fractions: fixed.outside_fractions,
-        },
-        &water,
-        extension,
-    )
+    factors
+        .iter()
+        .map(|factor| {
+            margin_with(
+                kinetics,
+                kinetics::Inputs {
+                    regions: &regions,
+                    transfer_rates_per_s: fixed.transfer_rates_per_s,
+                    fissions_per_population_s: &production,
+                    emission_fractions: fixed.emission_fractions,
+                    outside_fractions: fixed.outside_fractions,
+                },
+                &water,
+                *factor,
+                minimum,
+            )
+        })
+        .collect()
 }
 
 /// D3 (a) at one accepted state from its source-feedback conditions: the
 /// margin check, then the source domains it selects.
+#[allow(clippy::too_many_arguments)] // The feedback's inputs, the record and B1's term.
 pub fn admit(
     feedback: &sf::Model,
     kinetics: &kinetics::Model,
@@ -375,10 +523,13 @@ pub fn admit(
     conditions: sf::Conditions<'_>,
     additional_reference_exposure_s: f64,
     extension: &Extension,
+    applied_dk: f64,
 ) -> Result<Admission, Error> {
     let original = feedback.domains();
     extension.validate(&original)?;
-    let margin = margin_at(feedback, kinetics, fixed, neutrons, conditions, extension)?;
+    let margin = margin_at(
+        feedback, kinetics, fixed, neutrons, conditions, extension, applied_dk,
+    )?;
     let mut out = sf::Output::new(
         feedback.region_count(),
         feedback.material_count(),
@@ -500,10 +651,237 @@ pub fn admit_accepted(
         at.conditions(),
         additional_reference_exposure_s,
         extension,
+        nuclear.stuck_worth_dk(),
     )?;
     sf::phase_absence(phase).map_err(|exit| Error::Unsupported {
         domain: admission.domain,
         margin_holds: admission.margin.holds,
+        exit,
+    })?;
+    Ok(admission)
+}
+
+/// P1 (owner R11, 17 October 2026): the `ld01-hot-standby-kinetics` record,
+/// as the source compiler emits it (the joined packet's top-level
+/// `hot_standby_kinetics` section). It widens the density-ratio and pressure
+/// domains of the hot liquid laws on the published comparison
+/// (`kinetics.md`, "Hot-standby kinetics"), and names the water-term factors
+/// at which the shutdown margin is reported and the margin it is reported
+/// against. The margin never selects the domain and never ends a run.
+#[derive(Clone, Copy, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct HotStandby {
+    /// Largest admitted `rho_H2O/rho_ref`.
+    pub density_ratio_maximum: f64,
+    /// Lowest admitted pressure (Pa).
+    pub pressure_minimum_pa: f64,
+    /// Highest admitted pressure (Pa): the laws read pressure only through
+    /// the liquid density, so the stable-liquid property ceiling.
+    pub pressure_maximum_pa: f64,
+    /// Water-term factors of the reported margins: nominal first, then
+    /// increasing (the rodded measured and design-limit coefficients).
+    pub reported_water_term_factors: [f64; 3],
+    /// The margin (Δk/k) each reported margin is checked against.
+    pub reference_margin_dk_k: f64,
+}
+
+impl HotStandby {
+    /// A widening of `original` with a nominal first factor, increasing
+    /// factors and a reference margin in (0, 1).
+    pub fn validate(&self, original: &sf::Domains) -> Result<(), Error> {
+        let [nominal, middle, high] = self.reported_water_term_factors;
+        if ![
+            self.density_ratio_maximum,
+            self.pressure_minimum_pa,
+            self.pressure_maximum_pa,
+            self.reference_margin_dk_k,
+            nominal,
+            middle,
+            high,
+        ]
+        .iter()
+        .all(|v| v.is_finite())
+        {
+            return Err(Error::Extension("nonfinite"));
+        }
+        if self.density_ratio_maximum < original.density_ratio.maximum {
+            return Err(Error::Extension("density ratio maximum narrows the domain"));
+        }
+        if !(self.pressure_minimum_pa > 0.
+            && self.pressure_minimum_pa <= original.pressure_pa.minimum)
+        {
+            return Err(Error::Extension("pressure minimum narrows the domain"));
+        }
+        if self.pressure_maximum_pa < original.pressure_pa.maximum {
+            return Err(Error::Extension("pressure maximum narrows the domain"));
+        }
+        if !(nominal == 1. && nominal < middle && middle < high) {
+            return Err(Error::Extension(
+                "reported factors are not nominal then increasing",
+            ));
+        }
+        if !(self.reference_margin_dk_k > 0. && self.reference_margin_dk_k < 1.) {
+            return Err(Error::Extension("reference margin outside (0, 1)"));
+        }
+        Ok(())
+    }
+    /// The compiled domains widened by this record.
+    pub fn domains(&self, original: sf::Domains) -> sf::Domains {
+        sf::Domains {
+            density_ratio: sf::Bounds {
+                minimum: original.density_ratio.minimum,
+                maximum: self.density_ratio_maximum,
+            },
+            pressure_pa: sf::Bounds {
+                minimum: self.pressure_minimum_pa,
+                maximum: self.pressure_maximum_pa,
+            },
+            ..original
+        }
+    }
+}
+
+/// One reported margin of a hot-standby state.
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+pub struct ReportedMargin {
+    pub factor: f64,
+    /// The source-free operator with the water term at the factor is not
+    /// supercritical (no return to criticality at this factor).
+    pub subcritical: bool,
+    /// The check against the record's reference margin, with the operator
+    /// and gains whose pencil gives the margin's value (S2-D13's dggev).
+    pub margin: Margin,
+}
+
+/// One accepted state's hot-standby admission: its reported margins.
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+pub struct HotStandbyAdmission {
+    pub margins: Vec<ReportedMargin>,
+}
+
+/// P1 at one state from its source-feedback conditions: the reported
+/// margins, then the hot-standby domains. The margin is an output; only
+/// leaving the domains is an unsupported result.
+#[allow(clippy::too_many_arguments)] // The feedback's inputs, the record and B1's term.
+pub fn admit_hot_standby(
+    feedback: &sf::Model,
+    kinetics: &kinetics::Model,
+    fixed: Fixed<'_>,
+    neutrons: &[Scalar],
+    conditions: sf::Conditions<'_>,
+    additional_reference_exposure_s: f64,
+    record: &HotStandby,
+    applied_dk: f64,
+) -> Result<HotStandbyAdmission, Error> {
+    let original = feedback.domains();
+    record.validate(&original)?;
+    let checks = margins_at(
+        feedback,
+        kinetics,
+        fixed,
+        neutrons,
+        conditions,
+        &record.reported_water_term_factors,
+        record.reference_margin_dk_k,
+        applied_dk,
+    )?;
+    let r = feedback.region_count();
+    let margins: Vec<ReportedMargin> = record
+        .reported_water_term_factors
+        .iter()
+        .zip(checks)
+        .map(|(factor, margin)| ReportedMargin {
+            factor: *factor,
+            subcritical: m_matrix(r, &margin.operator).0,
+            margin,
+        })
+        .collect();
+    let mut out = sf::Output::new(r, feedback.material_count(), feedback.support_count());
+    match feedback.validate_accepted_within(
+        neutrons,
+        conditions,
+        additional_reference_exposure_s,
+        &mut out,
+        record.domains(original),
+    ) {
+        Ok(()) => Ok(HotStandbyAdmission { margins }),
+        Err(exit @ sf::Error::OutsideDomain(..)) => Err(Error::Unsupported {
+            domain: Domain::HotStandby,
+            margin_holds: margins[0].margin.holds,
+            exit,
+        }),
+        Err(e) => Err(Error::Feedback(e)),
+    }
+}
+
+/// R4-P1-FRAMES (lead 1 Nov): P1's domain exits alone at one accepted
+/// state, the cheap part a judge checks at every state: the declared record,
+/// the source domains it selects (the pressure floor and the P1 bounds) and
+/// B1's phase absence. `Ok(false)` when the state stays inside, `Ok(true)`
+/// at an exit (the caller then takes [`admit_hot_standby_accepted`] there,
+/// whose result carries the margin with the exit).
+pub fn hot_standby_domain_exit(
+    nuclear: &Nuclear,
+    phase: &[sf::RegionPhase],
+    record: &HotStandby,
+    travel: &[Scalar],
+    t: f64,
+    additional_reference_exposure_s: f64,
+) -> Result<bool, Error> {
+    if phase.len() != nuclear.regions() {
+        return Err(Error::Length("phase"));
+    }
+    let feedback = nuclear.feedback();
+    let original = feedback.domains();
+    record.validate(&original)?;
+    let at = AcceptedConditions::of(nuclear, travel, t);
+    let mut out = sf::Output::new(
+        feedback.region_count(),
+        feedback.material_count(),
+        feedback.support_count(),
+    );
+    match feedback.validate_accepted_within(
+        &at.neutrons,
+        at.conditions(),
+        additional_reference_exposure_s,
+        &mut out,
+        record.domains(original),
+    ) {
+        Ok(()) => Ok(sf::phase_absence(phase).is_err()),
+        Err(sf::Error::OutsideDomain(..)) => Ok(true),
+        Err(e) => Err(Error::Feedback(e)),
+    }
+}
+
+/// P1 at one accepted state of the joined operator, as [`admit_accepted`]:
+/// call it after the joined evaluation AT that state; `phase` is each core
+/// region's coolant phase of the same evaluation (owner answer B1's
+/// phase-absence exit stays).
+pub fn admit_hot_standby_accepted(
+    nuclear: &Nuclear,
+    phase: &[sf::RegionPhase],
+    record: &HotStandby,
+    travel: &[Scalar],
+    t: f64,
+    additional_reference_exposure_s: f64,
+) -> Result<HotStandbyAdmission, Error> {
+    if phase.len() != nuclear.regions() {
+        return Err(Error::Length("phase"));
+    }
+    let at = AcceptedConditions::of(nuclear, travel, t);
+    let admission = admit_hot_standby(
+        nuclear.feedback(),
+        nuclear.kinetics(),
+        fixed(nuclear),
+        &at.neutrons,
+        at.conditions(),
+        additional_reference_exposure_s,
+        record,
+        nuclear.stuck_worth_dk(),
+    )?;
+    sf::phase_absence(phase).map_err(|exit| Error::Unsupported {
+        domain: Domain::HotStandby,
+        margin_holds: admission.margins[0].margin.holds,
         exit,
     })?;
     Ok(admission)

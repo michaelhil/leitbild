@@ -15,7 +15,9 @@ use std::collections::BTreeSet;
 
 impl<P: Properties> Network<P> {
     fn cell_coordinates(&self, cell: usize) -> std::ops::Range<usize> {
-        if cell == self.pzr.cell {
+        // The spray port's virtual cell is the PZR cell's port view: its
+        // coordinates are the PZR's (IC-CTRL, S3 spray path).
+        if cell == self.pzr.cell || self.spray.is_some_and(|s| s.port_cell == cell) {
             return self.pzr.coordinates();
         }
         let base = self.cell_layout[cell].base;

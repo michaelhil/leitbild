@@ -7,7 +7,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { prepareOperatingHot } from './reference-design-operating-hot'
-import { compileOperatingPostTripDomain, compileOperatingSource, evaluateOperatingSource, operatingPostTripDomainNative, operatingReferenceFissions,
+import { compileOperatingPostTripDomain, compileOperatingSource, operatingHotStandbyNative, parseOperatingHotStandby, evaluateOperatingSource, operatingPostTripDomainNative, operatingReferenceFissions,
   operatingSourceDirection, operatingSourceNativeMetadata, operatingSourceFreshFuelAtoms, parseOperatingPostTripDomain, parseOperatingSource,
   validateOperatingSourceAccepted,
   type OperatingSourceCoefficients, type OperatingSourceConditions, type OperatingSourceConstruction, type OperatingSourceDirection } from './reference-design-operating-source'
@@ -161,6 +161,25 @@ describe('D3 (a) post-trip domain extension', () => {
   test.skipIf(!process.env.LD01_WIKI_ROOT)('the actual kinetics owner page compiles the joined packet section', async () => {
     expect(await compileOperatingPostTripDomain(process.env.LD01_WIKI_ROOT!)).toEqual({ density_ratio_maximum: 1.125,
       pressure_minimum_pa: 8000000, shutdown_margin_minimum: 0.01, margin_water_term_factor: 2, extrapolation_sensitivity: [0.5, 1, 2] })
+  })
+})
+
+describe('P1 hot-standby kinetics (owner R11)', () => {
+  const block = { identity: 'LD01-HOT-STANDBY-1', densityRatioMax: 1.125, pressureMin_Pa: 8000000, pressureMax_Pa: 17000000,
+    reportedWaterTermFactors: [1, 1.53, 2.24], referenceMargin_dk_k: 0.016 }
+  const page = (d: object) => '```reference-operating-source\n' + JSON.stringify(p) + '\n```\n\n```ld01-hot-standby-kinetics\n' + JSON.stringify(d) + '\n```\n'
+  test('one strict block widens the domains, orders the reported factors and crosses to the native HotStandby', () => {
+    expect(parseOperatingHotStandby(page(block), p)).toEqual(block as never)
+    expect(operatingHotStandbyNative(parseOperatingHotStandby(page(block), p))).toEqual({ density_ratio_maximum: 1.125,
+      pressure_minimum_pa: 8000000, pressure_maximum_pa: 17000000, reported_water_term_factors: [1, 1.53, 2.24], reference_margin_dk_k: 0.016 })
+    expect(() => parseOperatingHotStandby(page(block) + page(block), p)).toThrow('one')
+    expect(() => parseOperatingHotStandby(page({ ...block, extra: 1 }), p)).toThrow()
+    expect(() => parseOperatingHotStandby(page({ ...block, identity: 'X' }), p)).toThrow()
+    expect(() => parseOperatingHotStandby(page({ ...block, densityRatioMax: 1.09 }), p)).toThrow('widen')
+    expect(() => parseOperatingHotStandby(page({ ...block, pressureMin_Pa: 14.5e6 }), p)).toThrow('widen')
+    expect(() => parseOperatingHotStandby(page({ ...block, pressureMax_Pa: 15.9e6 }), p)).toThrow('widen')
+    expect(() => parseOperatingHotStandby(page({ ...block, reportedWaterTermFactors: [1.53, 1, 2.24] }), p)).toThrow('nominal')
+    expect(() => parseOperatingHotStandby(page({ ...block, referenceMargin_dk_k: 1 }), p)).toThrow('margin')
   })
 })
 
@@ -343,7 +362,7 @@ describe('authored hot operating source', () => {
 })
 
 const energyCoefficients: OperatingEnergyCoefficients = {
-  identity: 'LD01-HOT-ENERGY-1', preparationDuration_s: 2592000,
+  identity: 'LD01-HOT-ENERGY-1', preparationDuration_s: 2592000, decayHistoryDuration_s: 2592000,
   fertileCapture_barn: 4, fertileBinding_MeV: 4.8063822, xenonBinding_MeV: 8.0871234, samariumBinding_MeV: 7.9867556,
   bindingCoolantFraction: .1, bindingCoolantSensitivity: [0, .1, .2],
   promptFissionCoolantFraction: .02, promptFissionCoolantSensitivity: [0, .02, .04],
@@ -381,7 +400,28 @@ describe('actual source / finite material / event-energy join', () => {
     // the additional operational allowance begins at this immutable baseline.
     expect(() => validateOperatingSourceAccepted(preparedSource, preparedSource.reference.neutrons, preparedSource.reference.conditions, 0)).not.toThrow()
     expect(sum(energy.carriers.map(c => c.spentFissions)) / p.referenceFissions_per_s).toBeGreaterThan(30 * 86400)
-    expect(() => prepareOperatingEnergy(mapping, p, { ...energyCoefficients, preparationDuration_s: 600 * 86400 }, history)).toThrow('Infeasible')
+    expect(() => prepareOperatingEnergy(mapping, p, { ...energyCoefficients, preparationDuration_s: 600 * 86400, decayHistoryDuration_s: 600 * 86400 }, history)).toThrow('Infeasible')
+  })
+
+  test('R4-NUC-DECAY-HISTORY: a longer decay-heat history fills only the 25 stores, decayed through the unchanged preparation', () => {
+    const year = 365 * 86400
+    const longer = prepareOperatingEnergy(mapping, p, { ...energyCoefficients, decayHistoryDuration_s: year }, history)
+    energy.carriers.forEach((c, a) => {
+      const l = longer.carriers[a]!
+      // Depletion, poisons, precursors and present events are the preparation's, bit for bit.
+      expect([l.fissileAtoms, l.fertileAtoms, l.iodineAtoms, l.xenonAtoms, l.samariumAtoms, l.fissions_per_s, ...l.precursors])
+        .toEqual([c.fissileAtoms, c.fertileAtoms, c.iodineAtoms, c.xenonAtoms, c.samariumAtoms, c.fissions_per_s, ...c.precursors])
+      c.stores_J.forEach((E, g) => {
+        const k = history.fissionProductLambda_s_inv[g] ?? 1 / history.effectiveCaptureTimeConstants_s[g - 23]!
+        expect(l.stores_J[g]!).toBeGreaterThanOrEqual(E)
+        // A short-lived store forgets the extension; a long-lived one keeps more of it.
+        if (k * 2592000 > 50) expect(l.stores_J[g]!).toBe(E)
+      })
+      expect(l.history_W).toBeGreaterThan(c.history_W)
+      expect(l.preparationReleased_J).toBeGreaterThanOrEqual(0)
+    })
+    // Equal durations reproduce the preparation exactly.
+    expect(prepareOperatingEnergy(mapping, p, { ...energyCoefficients }, history).carriers).toEqual(energy.carriers)
   })
 
   test('finite six-group precursor and 25 heat stores are not silently overwritten by stationary values', () => {

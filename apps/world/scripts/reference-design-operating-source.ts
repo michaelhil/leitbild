@@ -75,6 +75,39 @@ export async function compileOperatingPostTripDomain(wiki: string) {
   const document = await Bun.file(join(wiki, 'world/packs/process-plant/reference-designs/ld-01/systems/reactor/kinetics.md')).text()
   return operatingPostTripDomainNative(parseOperatingPostTripDomain(document, parseOperatingSource(document)))
 }
+// P1 (owner R11), kinetics.md "Hot-standby kinetics": the hot liquid laws
+// admitted over the hot-standby range on the published comparison (density
+// ratio and pressure widened; the pressure ceiling is the stable-liquid
+// property ceiling, since the laws read pressure only through the liquid
+// density), with the shutdown margin reported at three
+// water-term factors (nominal, then increasing) against a reference margin;
+// the margin is an output, never a domain gate.
+const hotStandbySchema = z.object({
+  identity: z.literal('LD01-HOT-STANDBY-1'), densityRatioMax: positive, pressureMin_Pa: positive, pressureMax_Pa: positive,
+  reportedWaterTermFactors: z.tuple([positive, positive, positive]), referenceMargin_dk_k: positive,
+}).strict()
+export type OperatingHotStandby = z.infer<typeof hotStandbySchema>
+export function parseOperatingHotStandby(document: string, source: OperatingSourceCoefficients): OperatingHotStandby {
+  const blocks = [...document.matchAll(/^```ld01-hot-standby-kinetics\s*\n([\s\S]*?)^```\s*$/gm)]
+  if (blocks.length !== 1) throw Error('Expected one ld01-hot-standby-kinetics block')
+  const d = hotStandbySchema.parse(JSON.parse(blocks[0]![1]!)), [nominal, middle, high] = d.reportedWaterTermFactors
+  if (d.densityRatioMax < source.densityRatioDomain[1]) throw Error('The hot-standby density-ratio maximum must widen the source domain')
+  if (d.pressureMin_Pa > source.pressureDomain_Pa[0]) throw Error('The hot-standby pressure minimum must widen the source domain')
+  if (d.pressureMax_Pa < source.pressureDomain_Pa[1]) throw Error('The hot-standby pressure maximum must widen the source domain')
+  if (!(nominal === 1 && nominal < middle && middle < high)) throw Error('The reported water-term factors must be nominal, then increasing')
+  if (d.referenceMargin_dk_k >= 1) throw Error('Invalid hot-standby reference margin')
+  return d
+}
+/** Native boundary of P1: joined/post_trip_domain.rs `HotStandby`. */
+export function operatingHotStandbyNative(d: OperatingHotStandby) {
+  return { density_ratio_maximum: d.densityRatioMax, pressure_minimum_pa: d.pressureMin_Pa, pressure_maximum_pa: d.pressureMax_Pa,
+    reported_water_term_factors: [...d.reportedWaterTermFactors], reference_margin_dk_k: d.referenceMargin_dk_k }
+}
+/** The joined packet's `hot_standby_kinetics` section from the wiki's kinetics owner page. */
+export async function compileOperatingHotStandby(wiki: string) {
+  const document = await Bun.file(join(wiki, 'world/packs/process-plant/reference-designs/ld-01/systems/reactor/kinetics.md')).text()
+  return operatingHotStandbyNative(parseOperatingHotStandby(document, parseOperatingSource(document)))
+}
 type Mapping = ReturnType<typeof compileOperatingMapping>
 export type OperatingSourceConstruction = {
   assemblyPitch_m: number, sourceZ_m: number,

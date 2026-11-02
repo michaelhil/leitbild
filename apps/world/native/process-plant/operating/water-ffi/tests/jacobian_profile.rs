@@ -9,6 +9,7 @@
 //! the recorded matrices with SUNDIALS 7.5.0's settings (KLU defaults,
 //! COLAMD ordering). Nothing here is a production path.
 #![cfg(all(feature = "ida", target_os = "macos"))]
+mod common;
 mod jacobian_harness;
 use jacobian_harness::*;
 use leitbild_operating_plant::{

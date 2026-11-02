@@ -28,7 +28,7 @@
 //!   against the cap rule's computable floor: at least 2 × the run's budget
 //!   over its span, and for R1 at least `r1CapFloor_cpu_s`. The total guard
 //!   is the cap plus 2 × observed samples × the per-sample observation cost.
-use crate::gates::{Block, wiki_model};
+use super::gates::{Block, wiki_model};
 use serde_json::{Value, json};
 
 /// Canonical JSON: object keys sorted, no whitespace.
@@ -183,11 +183,18 @@ fn superseded_rows(log_rows: &[Vec<String>]) -> std::collections::BTreeSet<Strin
 /// The frozen SHA of `ld01-s2-gates` the log pins: the last RP1 row naming
 /// the block and exactly one 64-hex value. `Ok(None)` when no row pins it.
 pub fn frozen_sha256(log: &str) -> Result<Option<(String, String)>, String> {
+    frozen_sha256_of(log, "ld01-s2-gates")
+}
+
+/// The frozen SHA the log pins for the strict block `fence` (the S3 cases'
+/// `ld01-s3-cases-c1c3` as S2's gates): the last RP1 row naming it and
+/// exactly one 64-hex value.
+pub fn frozen_sha256_of(log: &str, fence: &str) -> Result<Option<(String, String)>, String> {
     let mut found = None;
     for cells in rows(log) {
         let id = cells.first().cloned().unwrap_or_default();
         let text = cells.join(" | ");
-        if !id.starts_with("RP1") || !text.contains("ld01-s2-gates") {
+        if !id.starts_with("RP1") || !text.contains(fence) {
             continue;
         }
         let shas = hex64(&text);
@@ -203,6 +210,23 @@ pub fn frozen_sha256(log: &str) -> Result<Option<(String, String)>, String> {
         }
     }
     Ok(found)
+}
+
+/// The pin check of any pinned strict block against the log at `log_page`
+/// (the S3 cases' block as S2's gates).
+pub fn pin_of(block: &Block, log: Option<&str>, log_page: &str) -> Result<Value, String> {
+    let declared = declared_sha256(block)?;
+    let raw = sha256_bytes(canonical(&block.value).as_bytes())?;
+    let frozen = match log {
+        Some(text) => frozen_sha256_of(text, &block.fence)?,
+        None => None,
+    };
+    let pinned = frozen.as_ref().is_some_and(|(_, sha)| *sha == declared);
+    Ok(
+        json!({"rule": format!("sha256 of the canonical {} JSON with every tbd value set to null, against the last decision-log RP1 row naming it and one sha256", block.fence),
+        "declared_sha256": declared, "filled_block_sha256": raw, "decision_log": log_page, "log_read": log.is_some(),
+        "frozen_row": frozen.as_ref().map(|f| f.0.clone()), "frozen_sha256": frozen.map(|f| f.1), "pinned": pinned}),
+    )
 }
 
 /// The pin check. `Ok` carries the receipt entry; a gate run refuses on

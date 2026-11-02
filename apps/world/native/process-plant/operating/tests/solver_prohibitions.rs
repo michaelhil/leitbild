@@ -86,13 +86,6 @@ const ALLOWED: &[(&str, &str, &str, usize, &str)] = &[
         1,
         "SG tube stationary wall temperature: bracketed scalar Newton to 1e-12 (zero-time preparation diagnostic)",
     ),
-    (
-        "src/rods/mod.rs",
-        "passage_current",
-        "iteration",
-        3,
-        "rod guide passage current: bracket expansion (two loops) and bracketed scalar Newton on a monotone balance to 1e-12 of its row scale",
-    ),
     // The declared exact consistent start (operating-hot-spine.md, "Exact
     // consistent start"): Newton on the algebraic constraints g(y) = 0 with
     // the system's own dg/dy_a, differential coordinates bitwise fixed, the
@@ -136,7 +129,7 @@ const ALLOWED: &[(&str, &str, &str, usize, &str)] = &[
         "consistent_start_exempting",
         "iteration",
         2,
-        "declared exact consistent start of the joined residual: KLU constraint projection passes and rate passes (lead decision S2-D21: up to 12 passes after an owner transaction)",
+        "declared exact consistent start of the joined residual: KLU constraint projection passes and rate passes (lead decision S2-D21: up to 12 passes after an owner transaction, and after a phase birth: DR-C3-BIRTH05, proposed S3-D41)",
     ),
     (
         "water-ffi/src/lib.rs",
@@ -209,20 +202,6 @@ const ALLOWED: &[(&str, &str, &str, usize, &str)] = &[
         "Z2 probe: SG duty-balance pressure by bisection to 1e-4 Pa (a reported sweep)",
     ),
     (
-        "water-ffi/tests/s2_rods_z4.rs",
-        "terminal",
-        "iteration",
-        1,
-        "Z4 probe: rod terminal velocity by bisection (a reported force balance)",
-    ),
-    (
-        "water-ffi/tests/s2_rods_z4.rs",
-        "z4_zero_time_rod_force_balance",
-        "iteration",
-        1,
-        "Z4 probe: analytic oscillator crossing time by bisection",
-    ),
-    (
         "water-ffi/tests/heater_rods.rs",
         "boundary",
         "iteration",
@@ -269,6 +248,10 @@ const SOLVER_API: &[&str] = &[
     "IDASVtolerances",
     "IDASetConstraints",
     "IDASetDeltaCjLSetup",
+    // Lead decision R4-ETA (plan r4, owner 31 Oct efficiency instruction):
+    // stock IDAS's fixed step-size bounds, a step-size controller option;
+    // the error test still judges every step.
+    "IDASetEtaFixedStepBounds",
     "IDASetId",
     "IDASetInitStep",
     "IDASetJacFn",
@@ -278,14 +261,27 @@ const SOLVER_API: &[&str] = &[
     "IDASetMaxStep",
     "IDASetNonlinConvCoef",
     "IDASetQuadErrCon",
+    "IDASetRootDirection",
     "IDASetStopTime",
     "IDASetUserData",
     "IDASolve",
+    "IDA_BAD_T",
     "IDA_ILL_INPUT",
     "IDA_MEM_FAIL",
     "IDA_NORMAL",
     "IDA_ONE_STEP",
     "IDA_YA_YDP_INIT",
+    // MR-1 (owner, request 7 R7-P, 17 Oct): the joined solve's forced
+    // iteration-matrix rebuild through stock IDAS check points, and nothing
+    // else of the adjoint module (no backward problem, no IDASolveB).
+    "IDAAdjInit",
+    "IDAAdjReInit",
+    "IDASolveF",
+    "IDA_HERMITE",
+    // N1 (owner R11-2, 17 Oct: group-normalised error weights through stock
+    // IDAWFtolerances): the caller's weight rule replaces stock's
+    // rtol|y| + atol weights for the error test, Newton and h0.
+    "IDAWFtolerances",
     // Stock N_Vector, SUNContext, SUNMatrix and SUNLinSol_KLU (ida.c).
     "N_VClone",
     "N_VDestroy",
@@ -332,8 +328,9 @@ const SOLVER_API: &[&str] = &[
     "operating_ida_current_state",
     "operating_ida_current_time",
     "operating_ida_delta_cj",
-    "operating_ida_dense",
+    "operating_ida_eta_fixed",
     "operating_ida_differential",
+    "operating_ida_dky",
     "operating_ida_error_diagnostics",
     "operating_ida_free",
     "operating_ida_init_step",
@@ -348,11 +345,18 @@ const SOLVER_API: &[&str] = &[
     "operating_ida_quadrature_init",
     "operating_ida_quadrature_reinit",
     "operating_ida_quadratures_linked",
+    // MR-1 (R7-P): the check-point interval and its counts.
+    "operating_ida_rebuild_counts",
+    "operating_ida_rebuild_every",
     "operating_ida_reinitialize",
     "operating_ida_root_directions",
+    "operating_ida_set_root_direction",
     "operating_ida_solution_scaling",
     "operating_ida_stats",
     "operating_ida_step",
+    "operating_ida_tolerances",
+    // N1 (owner R11-2): the weight rule's registration.
+    "operating_ida_weight_function",
     "operating_ida_stop_at",
     "operating_klu_analyze",
     "operating_klu_factor",
@@ -372,6 +376,20 @@ const SOLVER_API: &[&str] = &[
     "ld01_water_point",
     "ld01_water_surface",
     "ld01_water_vapor_sat_density",
+    // C13's three IF97 saturation entries by temperature (owner F5 / S4-D2,
+    // 15 Oct): p_sat(T) with its exact derivative, and the saturated-vapor
+    // enthalpy and viscosity at T on IF97's own saturation endpoint.
+    "ld01_water_saturated_vapor_enthalpy",
+    "ld01_water_saturated_vapor_viscosity",
+    "ld01_water_saturation_pressure",
+    // The SBTL entries of the same water archive (IAPWS G13-15 tables of the
+    // IF97 reference; owner decision 1 Nov 2026; reviewed and approved by the
+    // lead, 1 Nov): point, analytic direction, caloric inverse and its
+    // direction. Property evaluations, not solver controls.
+    "ld01_sbtl_direction",
+    "ld01_sbtl_inverse",
+    "ld01_sbtl_inverse_direction",
+    "ld01_sbtl_point",
     // LAPACK's generalized eigenproblem for the zero-time spectrum (spectrum.rs;
     // Accelerate on macOS). Not a solver of F(y) = 0.
     "dggev",
@@ -1039,11 +1057,9 @@ fn analyse_source(source: &str, crate_source: bool) -> Vec<Finding> {
                 .any(|(c, b)| convergence_test(&t[c.0..c.1], &flags) && exits(&t, b))
             || midpoint(&t, from, to, &updated);
         // A loop that advances stock IDA iterates in time, not on F(x) = 0:
-        // `.advance(` (IDA_NORMAL) or `.advance_one_step(` (IDA_ONE_STEP).
+        // `.advance(` (IDA_NORMAL) or `.step(` (IDA_ONE_STEP).
         let integrates = (from..to).any(|k| {
-            (is(&t[k], "advance") || is(&t[k], "advance_one_step"))
-                && is(&t[k - 1], ".")
-                && is(&t[k + 1], "(")
+            (is(&t[k], "advance") || is(&t[k], "step")) && is(&t[k - 1], ".") && is(&t[k + 1], "(")
         });
         let iteration = !iterates.is_empty() && converges && !integrates;
         if iteration {

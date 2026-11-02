@@ -68,6 +68,19 @@ export const assessProcedureBranches = (config: {
         status, ...(reason === undefined ? {} : { reason }) })
       return status
     }
+    if (condition.type === 'not-acquired') {
+      // Explicit authored absence: only the owning Pack's own report that the tag is unbound on this Plant supports it.
+      const statuses = condition.tagIds.map((tagId): ProcedureCriterionStatus => {
+        const read = config.reads.find(candidate => candidate.tagId === tagId)
+        const reason = read?.binding === 'missing' ? `Not acquired on this Plant: ${condition.description}`
+          : read?.value !== undefined ? `Signal ${tagId} is acquired on this Plant; this not-acquired route does not apply.`
+            : `Signal ${tagId} acquisition is not established: ${read?.unavailable ?? 'no reading'}.`
+        const status = read?.binding === 'missing' ? 'supported' : read?.value !== undefined ? 'contradicted' : unknown(reason)
+        readings.push({ tagId, source: condition.source, description: condition.description, ...(read === undefined ? {} : { binding: read.binding }), status, reason })
+        return status
+      })
+      return statuses.includes('contradicted') ? 'contradicted' : statuses.includes('unknown') ? 'unknown' : 'supported'
+    }
     if (condition.type === 'not') {
       const result = evaluate(condition.condition)
       return result === 'unknown' ? 'unknown' : result === 'supported' ? 'contradicted' : 'supported'

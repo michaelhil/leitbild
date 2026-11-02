@@ -260,9 +260,33 @@ export const projectedProcessPlantUnit = (config: {
   /** The Run time the Plant's runtime stands at, for its readings. */
   readonly simulationTime: IsoTimestamp
   readonly connected?: boolean
+  /** Why the Plant's engine does not run (an LD-01 Plant with no usable native engine, or one that failed). */
+  readonly unavailable?: string
 }): OperationalObject => {
   const parsed = processPlantUnitPackDataSchema.safeParse(config.object.packData)
   if (!parsed.success) return config.object
+  if (!config.plant && config.unavailable !== undefined) {
+    // Explicit unit failure state: the Plant shows why its engine does not run, and nothing runs in its place.
+    return {
+      ...config.object,
+      revision: config.object.revision + 1,
+      operational: { ...config.object.operational, status: 'critical', priority: 'critical' },
+      packData: {
+        ...parsed.data,
+        projection: {
+          schemaVersion: 1,
+          summary: config.unavailable,
+          statusTone: 'error',
+          statusLabel: 'Engine unavailable',
+          activeAlarmCount: 0,
+          activeTripCount: 0,
+          energy: [],
+          fields: [processPlantField('runtime', 'Runtime', 'engine unavailable')],
+          updatedAt: config.at,
+        },
+      } satisfies ProcessPlantUnitPackData,
+    }
+  }
   if (!config.plant) {
     return {
       ...config.object,

@@ -422,6 +422,7 @@ impl State {
             self.conditions(),
             0.,
             &extension(),
+            0.,
         )
     }
 }
@@ -495,6 +496,7 @@ fn the_margin_is_judged_on_the_doubled_water_term() {
                     st.conditions(),
                     0.,
                     e,
+                    0.,
                 )
             };
             at(&once).is_ok_and(|a| a.margin.holds)
@@ -558,4 +560,115 @@ fn a_region_with_vapour_or_an_unevaluable_phase_is_a_phase_absence_exit() {
             "{bad}"
         );
     }
+}
+
+/// P1 (owner R11): the hot-standby record as the wiki's block declares it.
+fn hot_standby() -> leitbild_operating_plant::joined::post_trip_domain::HotStandby {
+    leitbild_operating_plant::joined::post_trip_domain::HotStandby {
+        density_ratio_maximum: 1.125,
+        pressure_minimum_pa: 8e6,
+        pressure_maximum_pa: 17e6,
+        reported_water_term_factors: [1., 1.53, 2.24],
+        reference_margin_dk_k: 0.016,
+    }
+}
+fn admit_p1(
+    st: &State,
+    record: &leitbild_operating_plant::joined::post_trip_domain::HotStandby,
+) -> Result<leitbild_operating_plant::joined::post_trip_domain::HotStandbyAdmission, Error> {
+    leitbild_operating_plant::joined::post_trip_domain::admit_hot_standby(
+        &feedback(),
+        &coupled(),
+        fixed(),
+        &[s(1e6), s(1e6)],
+        st.conditions(),
+        0.,
+        record,
+        0.,
+    )
+}
+
+#[test]
+fn p1_reports_the_margin_at_every_factor_and_never_gates_the_domain() {
+    // Rods in: subcritical at every factor, the margins reported.
+    let a = admit_p1(&State::new(0., 1.12, 13e6), &hot_standby()).unwrap();
+    assert_eq!(a.margins.len(), 3);
+    assert_eq!(
+        a.margins.iter().map(|m| m.factor).collect::<Vec<_>>(),
+        vec![1., 1.53, 2.24]
+    );
+    // Subcritical at every factor; the reference margin holds at the nominal
+    // and measured factors, not at the design limit: reported, still admitted.
+    assert!(a.margins.iter().all(|m| m.subcritical));
+    assert_eq!(
+        a.margins.iter().map(|m| m.margin.holds).collect::<Vec<_>>(),
+        vec![true, true, false]
+    );
+    // The same factors give the same margin check as D3 (a)'s at that factor.
+    for m in &a.margins {
+        let mut e = extension();
+        e.margin_water_term_factor = m.factor;
+        e.shutdown_margin_minimum = 0.016;
+        let d3 = leitbild_operating_plant::joined::post_trip_domain::margin_at(
+            &feedback(),
+            &coupled(),
+            fixed(),
+            &[s(1e6), s(1e6)],
+            State::new(0., 1.12, 13e6).conditions(),
+            &e,
+            0.,
+        )
+        .unwrap();
+        assert_eq!(d3, m.margin);
+    }
+    // At the at-power pose the operator is supercritical: still admitted in
+    // the hot-standby domain (the margin is an output), reported as such.
+    let at_power = admit_p1(&State::new(2.8, 1.12, 13e6), &hot_standby()).unwrap();
+    assert!(
+        at_power
+            .margins
+            .iter()
+            .all(|m| !m.subcritical && !m.margin.holds)
+    );
+    // Only leaving the domain is an exit, whatever the margin.
+    assert_eq!(
+        exit(admit_p1(&State::new(0., 1.13, 13e6), &hot_standby())),
+        (Domain::HotStandby, true, "density ratio")
+    );
+    assert_eq!(
+        exit(admit_p1(&State::new(2.8, 1.13, 13e6), &hot_standby())),
+        (Domain::HotStandby, false, "density ratio")
+    );
+    let low = admit_p1(&State::new(0., 1.12, 8e6), &hot_standby()).unwrap();
+    assert_eq!(low.margins.len(), 3);
+    // Above the source's 16 MPa up to the record's 17 MPa ceiling: admitted;
+    // beyond it a labelled pressure exit.
+    let high = admit_p1(&State::new(0., 1.12, 16.8e6), &hot_standby()).unwrap();
+    assert_eq!(high.margins.len(), 3);
+    assert!(admit_p1(&State::new(0., 1.12, 17e6), &hot_standby()).is_ok());
+    assert_eq!(
+        exit(admit_p1(&State::new(0., 1.12, 17.1e6), &hot_standby())),
+        (Domain::HotStandby, true, "pressure")
+    );
+}
+
+#[test]
+fn a_hot_standby_record_must_widen_and_order_its_factors() {
+    let original = feedback().domains();
+    assert!(hot_standby().validate(&original).is_ok());
+    let mut r = hot_standby();
+    r.density_ratio_maximum = 1.05;
+    assert!(r.validate(&original).is_err());
+    let mut r = hot_standby();
+    r.reported_water_term_factors = [1.53, 1., 2.24];
+    assert!(r.validate(&original).is_err());
+    let mut r = hot_standby();
+    r.reference_margin_dk_k = 0.;
+    assert!(r.validate(&original).is_err());
+    let mut r = hot_standby();
+    r.pressure_maximum_pa = original.pressure_pa.maximum - 1.;
+    assert!(r.validate(&original).is_err());
+    let mut r = hot_standby();
+    r.pressure_maximum_pa = f64::NAN;
+    assert!(r.validate(&original).is_err());
 }

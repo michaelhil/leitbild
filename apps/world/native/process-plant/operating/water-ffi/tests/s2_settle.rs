@@ -27,13 +27,20 @@
 //! - `LD01_S2_SETTLE_CAP_S` and `LD01_S2_SETTLE_CPU_CAP_S`: the lead's caps
 //!   for this run (simulated s, process CPU s);
 //! - `LD01_S2_SETTLE_CHECKPOINT_S`: the spacing of y/y' checkpoints (s);
+//! - `LD01_S2_SETTLE_MAX_STEP_S`: IDA's maximum step for the settle, in s,
+//!   or `none` for S2-07's procedure (no bound); recorded in the receipt
+//!   (the regression settles on the spray packet use S3-D35's 2 s while
+//!   DR-P2-SPRAYDROP is open);
 //! - `LD01_S2_SETTLE_DIR`: a new directory for the log, the checkpoints,
 //!   the settled state and the receipt.
 #![cfg(all(feature = "ida", target_os = "macos"))]
-#[path = "common/filter.rs"]
-mod filter;
-#[path = "joined_spine.rs"]
-mod spine;
+mod common;
+use common::filter;
+use leitbild_operating_water::unit::{
+    clock::process_cpu_s,
+    profile::{DELTA_CJ_LSETUP, FIRST_STEP_S, NEWTON_COEFFICIENT},
+    spine::{Started, started_s3_composition},
+};
 
 use leitbild_operating_plant::{
     joined::operator::Joined,
@@ -45,9 +52,6 @@ use leitbild_operating_water::{
     joined::{Discrete, Integrated, Restart, discrete_restart},
 };
 use serde_json::{Map, Value, json};
-use spine::{
-    DELTA_CJ_LSETUP, FIRST_STEP_S, NEWTON_COEFFICIENT, Started, started_full_composition, z1,
-};
 use std::{io::Write, path::PathBuf};
 
 /// BDF order at most 2 (revision 7, Configuration).
@@ -250,7 +254,15 @@ fn bits(v: &[f64]) -> Vec<String> {
 #[test]
 #[ignore = "S2-07 re-settle (PREVIEW, NOT evidence): requires the joined packet, the wiki, IF97, stock IDA/KLU and the run's environment"]
 fn s2_07_resettle_to_the_declared_settling_thresholds() {
-    let started = z1::cpu_s();
+    // The water method this harness composes on (lead, 1 Nov: a state is
+    // prepared on the method it runs): LD01_S3_WATER, unset SBTL (the default
+    // since the combined re-pin, lead 1 Nov; if97 names the reference); selected before any water call and recorded.
+    let water = leitbild_operating_water::WaterMethod::parse(
+        &std::env::var("LD01_S3_WATER").unwrap_or_else(|_| "sbtl".into()),
+    )
+    .unwrap_or_else(|e| panic!("{e}"));
+    leitbild_operating_water::select_water_method(water).unwrap_or_else(|e| panic!("{e}"));
+    let started = process_cpu_s();
     let gates_path = env("LD01_S2_GATES_SOURCE");
     let gates_text = std::fs::read_to_string(&gates_path).expect("declaration draft");
     let gates = gates_block(&gates_text);
@@ -273,6 +285,15 @@ fn s2_07_resettle_to_the_declared_settling_thresholds() {
     let cap_s = env_f64("LD01_S2_SETTLE_CAP_S");
     let cpu_cap_s = env_f64("LD01_S2_SETTLE_CPU_CAP_S");
     let checkpoint_s = env_f64("LD01_S2_SETTLE_CHECKPOINT_S");
+    let max_step_s: Option<f64> = match env("LD01_S2_SETTLE_MAX_STEP_S").as_str() {
+        "none" => None,
+        v => Some(
+            v.parse::<f64>()
+                .ok()
+                .filter(|h| h.is_finite() && *h > 0.)
+                .expect("LD01_S2_SETTLE_MAX_STEP_S: a positive number of seconds or none"),
+        ),
+    };
     let dir = PathBuf::from(env("LD01_S2_SETTLE_DIR"));
     assert!(!dir.exists(), "never overwritten: {}", dir.display());
     std::fs::create_dir_all(&dir).unwrap();
@@ -283,8 +304,8 @@ fn s2_07_resettle_to_the_declared_settling_thresholds() {
         "the window is a whole number of outputs"
     );
     let checkpoint_every = (checkpoint_s / output_s).round() as usize;
-    let (packet_path, packet_bytes) = spine::packet_bytes();
-    let packet_sha256 = spine::sha256(&packet_bytes);
+    let (packet_path, packet_bytes) = common::packet_bytes();
+    let packet_sha256 = leitbild_operating_plant::digest::sha256(&packet_bytes);
     let network_packet: NetworkPacket =
         serde_json::from_slice(&packet_bytes).expect("network packet");
     let face = |id: &str| {
@@ -297,6 +318,11 @@ fn s2_07_resettle_to_the_declared_settling_thresholds() {
     };
     let loops = [face("RETURN.A->DOWN"), face("RETURN.B->DOWN")];
 
+    // Decision 32: the S2 settle composes with S2-D24r as r7.1 and S3 do
+    // (the existing derived class and credited outputs; no new class). The
+    // derived rows are recorded in the receipt.
+    let (composition, derived) =
+        started_s3_composition(&common::spine()).expect("the S3 composition");
     let Started {
         mut joined,
         y,
@@ -309,8 +335,8 @@ fn s2_07_resettle_to_the_declared_settling_thresholds() {
         structure,
         analyses,
         ..
-    } = started_full_composition();
-    let preparation_cpu_s = z1::cpu_s() - started;
+    } = composition;
+    let preparation_cpu_s = process_cpu_s() - started;
     let (credited0, cells0) = observe(&mut joined, &network_packet, &loops, 0., &y, &yp);
     let nonnegative = joined.network.nonnegative_stocks();
     let restart = Restart {
@@ -339,6 +365,9 @@ fn s2_07_resettle_to_the_declared_settling_thresholds() {
     ida.set_max_order(MAX_ORDER).unwrap();
     ida.constrain_nonnegative(&nonnegative).unwrap();
     restart.configure(&mut ida).unwrap();
+    if let Some(h) = max_step_s {
+        ida.set_max_step(h).unwrap();
+    }
 
     let (mut y, mut yp) = (y, yp);
     let mut t = 0.;
@@ -365,10 +394,10 @@ fn s2_07_resettle_to_the_declared_settling_thresholds() {
         )
         .unwrap();
         std::fs::write(&path, &bytes).unwrap();
-        json!({"file": name, "t_s": t, "sha256": spine::sha256(&bytes)})
+        json!({"file": name, "t_s": t, "sha256": leitbild_operating_plant::digest::sha256(&bytes)})
     };
     loop {
-        let cpu = z1::cpu_s() - started;
+        let cpu = process_cpu_s() - started;
         if cpu > cpu_cap_s {
             failure = Some(format!("CPU cap {cpu_cap_s} s reached at t = {t} s"));
             break;
@@ -376,90 +405,23 @@ fn s2_07_resettle_to_the_declared_settling_thresholds() {
         let next_output = (k + 1) as f64 * output_s;
         let event = ida.system().joined.next_time_event(t);
         let stop = event.map_or(cap_s, |e| e.min(cap_s));
-        ida.stop_at(stop).unwrap();
         let target = next_output.min(stop);
+        // Lead ruling 1 Nov (HYD's combined re-pin, option (a)): stock stops
+        // exactly at every output time (tstop), so the state handed on is a
+        // step end, as the S3 frame driver's, never IDA's interpolant (which
+        // could dip a bound-held coordinate below its bound: PZR spray-drop
+        // mass -3.08e-9 against the S3 start's 1e-12 bound placement).
+        ida.stop_at(target).unwrap();
         let outcome = ida.advance(target, &mut y, &mut yp);
         match outcome {
             Ok(Advance::Reached(time)) => {
                 t = time;
-                if (t - next_output).abs() <= 1e-9 * next_output.max(1.) {
-                    k += 1;
-                    let timer = z1::cpu_s();
-                    let (c, cells) = observe(
-                        &mut ida.system_mut().joined,
-                        &network_packet,
-                        &loops,
-                        t,
-                        &y,
-                        &yp,
-                    );
-                    window.push_back(c.clone());
-                    while window.len() > samples_per_window + 1 {
-                        window.pop_front();
-                    }
-                    let st = ida.stats().unwrap();
-                    let mut cumulative = totals;
-                    add(&mut cumulative, &st);
-                    if k == (1. / output_s).round() as usize {
-                        first_second = Some(named(&cumulative));
-                    }
-                    let full = window.len() == samples_per_window + 1;
-                    if k.is_multiple_of(LOG_EVERY) {
-                        let rs = if full {
-                            let w: Vec<Vec<Vec<f64>>> = window.iter().cloned().collect();
-                            ranges(&w, output_s, &thresholds)
-                        } else {
-                            Vec::new()
-                        };
-                        let line = json!({"t_s": t, "credited": CREDITED.iter().zip(&c).map(|(q, v)| (q.name.to_string(), json!(v))).collect::<Map<String, Value>>(),
-                            "ranges_20s": CREDITED.iter().zip(&rs).map(|(q, r)| (q.name.to_string(), json!([r.0, r.1, r.2]))).collect::<Map<String, Value>>(),
-                            "cells_k": cells, "ida": named(&cumulative), "last_step_s": st.last_step, "order": st.last_order,
-                            "cpu_s": z1::cpu_s() - started});
-                        writeln!(log, "{}", serde_json::to_string(&line).unwrap()).unwrap();
-                        log.flush().unwrap();
-                        if k.is_multiple_of(LOG_EVERY * 10) {
-                            history.push(line);
-                        }
-                        eprintln!(
-                            "settle t = {t:.1} s: P = {:.6e} W, p_s = {:?}, steps {}, CPU {:.1} s",
-                            c[0][0],
-                            c[4],
-                            cumulative[0],
-                            z1::cpu_s() - started
-                        );
-                        if full {
-                            last_ranges = rs.clone();
-                            if rs.iter().all(|r| r.2) {
-                                verdict = json!({"settled_at_s": t, "window_s": window_s,
-                                    "ranges": CREDITED.iter().zip(&rs).map(|(q, r)| (q.name.to_string(), json!({"range": r.0, "threshold": r.1, "holds": r.2}))).collect::<Map<String, Value>>()});
-                            }
-                        }
-                    }
-                    if k.is_multiple_of(checkpoint_every) {
-                        checkpoints.push(write_state(
-                            &format!("checkpoint-{:05}s.json", t.round() as i64),
-                            t,
-                            &y,
-                            &yp,
-                        ));
-                    }
-                    observation_cpu_s += z1::cpu_s() - timer;
-                    if !verdict.is_null() {
-                        break;
-                    }
-                }
-                if t >= cap_s {
-                    failure = Some(format!(
-                        "simulated cap {cap_s} s reached before the thresholds held"
-                    ));
-                    break;
-                }
                 if event.is_some_and(|e| (e - t).abs() <= 1e-12 * t.max(1.)) {
                     // Settling declares no time event; one that occurs
                     // restarts exactly (S2-D21) and is reported.
                     let st = ida.stats().unwrap();
                     add(&mut totals, &st);
-                    let timer = z1::cpu_s();
+                    let timer = process_cpu_s();
                     match discrete_restart(
                         &mut ida,
                         t,
@@ -481,14 +443,14 @@ fn s2_07_resettle_to_the_declared_settling_thresholds() {
                             break;
                         }
                     }
-                    restart_cpu_s += z1::cpu_s() - timer;
+                    restart_cpu_s += process_cpu_s() - timer;
                 }
             }
             Ok(Advance::Root { time, directions }) => {
                 t = time;
                 let st = ida.stats().unwrap();
                 add(&mut totals, &st);
-                let timer = z1::cpu_s();
+                let timer = process_cpu_s();
                 let roots: Vec<Value> = directions
                     .iter()
                     .enumerate()
@@ -516,17 +478,93 @@ fn s2_07_resettle_to_the_declared_settling_thresholds() {
                         break;
                     }
                 }
-                restart_cpu_s += z1::cpu_s() - timer;
+                restart_cpu_s += process_cpu_s() - timer;
             }
             Err(e) => {
                 failure = Some(format!("stock IDA at {t} s: {e}"));
                 break;
             }
         }
+        // An output reached by a step end or by a root located exactly at it
+        // (stock returns the root at the tstop, HYD 1 Nov: SBTL iterate 0 at
+        // 506.1 s): the sample is the state at the output time, after its
+        // restart, so the next stop always lies after t.
+        if (t - next_output).abs() <= 1e-9 * next_output.max(1.) {
+            k += 1;
+            let timer = process_cpu_s();
+            let (c, cells) = observe(
+                &mut ida.system_mut().joined,
+                &network_packet,
+                &loops,
+                t,
+                &y,
+                &yp,
+            );
+            window.push_back(c.clone());
+            while window.len() > samples_per_window + 1 {
+                window.pop_front();
+            }
+            let st = ida.stats().unwrap();
+            let mut cumulative = totals;
+            add(&mut cumulative, &st);
+            if k == (1. / output_s).round() as usize {
+                first_second = Some(named(&cumulative));
+            }
+            let full = window.len() == samples_per_window + 1;
+            if k.is_multiple_of(LOG_EVERY) {
+                let rs = if full {
+                    let w: Vec<Vec<Vec<f64>>> = window.iter().cloned().collect();
+                    ranges(&w, output_s, &thresholds)
+                } else {
+                    Vec::new()
+                };
+                let line = json!({"t_s": t, "credited": CREDITED.iter().zip(&c).map(|(q, v)| (q.name.to_string(), json!(v))).collect::<Map<String, Value>>(),
+                    "ranges_20s": CREDITED.iter().zip(&rs).map(|(q, r)| (q.name.to_string(), json!([r.0, r.1, r.2]))).collect::<Map<String, Value>>(),
+                    "cells_k": cells, "ida": named(&cumulative), "last_step_s": st.last_step, "order": st.last_order,
+                    "cpu_s": process_cpu_s() - started});
+                writeln!(log, "{}", serde_json::to_string(&line).unwrap()).unwrap();
+                log.flush().unwrap();
+                if k.is_multiple_of(LOG_EVERY * 10) {
+                    history.push(line);
+                }
+                eprintln!(
+                    "settle t = {t:.1} s: P = {:.6e} W, p_s = {:?}, steps {}, CPU {:.1} s",
+                    c[0][0],
+                    c[4],
+                    cumulative[0],
+                    process_cpu_s() - started
+                );
+                if full {
+                    last_ranges = rs.clone();
+                    if rs.iter().all(|r| r.2) {
+                        verdict = json!({"settled_at_s": t, "window_s": window_s,
+                            "ranges": CREDITED.iter().zip(&rs).map(|(q, r)| (q.name.to_string(), json!({"range": r.0, "threshold": r.1, "holds": r.2}))).collect::<Map<String, Value>>()});
+                    }
+                }
+            }
+            if k.is_multiple_of(checkpoint_every) {
+                checkpoints.push(write_state(
+                    &format!("checkpoint-{:05}s.json", t.round() as i64),
+                    t,
+                    &y,
+                    &yp,
+                ));
+            }
+            observation_cpu_s += process_cpu_s() - timer;
+            if !verdict.is_null() {
+                break;
+            }
+        }
+        if t >= cap_s {
+            failure = Some(format!(
+                "simulated cap {cap_s} s reached before the thresholds held"
+            ));
+            break;
+        }
     }
     let st = ida.stats().unwrap();
     add(&mut totals, &st);
-    let total_cpu_s = z1::cpu_s() - started;
+    let total_cpu_s = process_cpu_s() - started;
     let settled_state = write_state("settled-state.json", t, &y, &yp);
     let (final_credited, final_cells) = observe(
         &mut ida.system_mut().joined,
@@ -541,17 +579,21 @@ fn s2_07_resettle_to_the_declared_settling_thresholds() {
     let receipt = json!({
         "kind": "s2-07-resettle",
         "status": "PREVIEW (critic H4), NOT evidence: S2 is not declared. Results recorded before any TBD fill.",
-        "provenance": spine::provenance(),
+        "provenance": common::spine_provenance(),
         "packet": packet_path, "packet_sha256": packet_sha256,
-        "gates": {"source": gates_path, "sha256": spine::sha256(gates_text.as_bytes()), "settling": settling, "outputInterval_s": output_s},
+        "gates": {"source": gates_path, "sha256": leitbild_operating_plant::digest::sha256(gates_text.as_bytes()), "settling": settling, "outputInterval_s": output_s},
         "preparation": preparation,
+        "derived_tolerances": {
+            "reason": "decision 32: S2 settle composes with S2-D24r as r7.1 and S3 do",
+            "record": derived,
+        },
         "configuration": {"max_order": MAX_ORDER, "newton_coefficient": NEWTON_COEFFICIENT, "delta_cj_lsetup": DELTA_CJ_LSETUP,
             "first_step_s": FIRST_STEP_S, "relative_tolerance": rtol, "jacobian": "block, cached KLU analyses (S2-D4)", "klu_ordering": "AMD",
             "restart": {"start_passes": 2, "transaction_passes": 12, "rule": "S2-D21"},
             "measure": {"filter": filter::DECLARED_FILTER, "cutoff_hz": CREDITED_BAND_HZ, "sampled_s": output_s, "window_s": window_s,
                 "checked": "every 1 s once a full window exists; the worst instance per quantity"},
             "caps": {"simulated_s": cap_s, "process_cpu_s": cpu_cap_s, "source": "lead's S2-07 brief"},
-            "checkpoint_s": checkpoint_s},
+            "checkpoint_s": checkpoint_s, "max_step_s": max_step_s},
         "verdict": verdict,
         "failure": failure,
         "reached_s": t,
@@ -572,6 +614,7 @@ fn s2_07_resettle_to_the_declared_settling_thresholds() {
             "jacobian_wall_s_per_call": c.jacobian_wall_s / c.jacobians.max(1) as f64,
             "load_average_end": String::from_utf8_lossy(&std::process::Command::new("sysctl").args(["-n","vm.loadavg"]).output().unwrap().stdout).trim().to_string()},
         "history_every_10_s": history,
+        "water": water,
     });
     std::fs::write(
         dir.join("receipt.json"),

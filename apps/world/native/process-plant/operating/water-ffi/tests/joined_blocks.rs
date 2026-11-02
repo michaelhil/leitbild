@@ -4,6 +4,7 @@
 //! on the actual packet at the hot reference. Zero-time checks, NOT S2
 //! evidence.
 #![cfg(all(feature = "ida", target_os = "macos"))]
+mod common;
 mod jacobian_harness;
 use jacobian_harness::*;
 use leitbild_operating_plant::{
@@ -124,10 +125,11 @@ fn nuclear_partials_against_seeded_rows() {
     )
     .expect("nuclear partials");
     let entries = rhs_entries(&template, &partials);
-    let (r, a) = (nuclear.regions(), nuclear.carriers());
+    // E-NUC: the nuclear coordinates are the replica groups'.
+    let (r, a) = (nuclear.regions(), nuclear.replica_groups());
     let len = nuclear.layout().len();
     // Coordinate directions: every population, and every coordinate of a
-    // few carriers.
+    // few replica groups.
     let mut columns: Vec<usize> = (0..r).collect();
     for c in [0, a / 2, a - 1] {
         for g in 0..6 {
@@ -321,12 +323,21 @@ fn joined_blocks_against_colored() {
         .map(|v| v.parse::<f64>().expect("LD01_JAC_PZR_LIFT"));
     let mut y = y;
     if let Some(lift) = lift {
-        let relief = joined.pzr().and_then(|b| b.relief());
+        let relief = joined.pzr().relief();
         assert!(
             relief.is_some(),
             "LD01_JAC_PZR_LIFT needs a composed PZR relief"
         );
         y[o.pzr] = lift;
+    }
+    // B1 (lane ROD, NUC review): LD01_JAC_STUCK_WORTH_DK applies the
+    // stuck-cluster term before both assemblies, so the nuclear block's
+    // partials are compared with it applied.
+    let stuck_worth = std::env::var("LD01_JAC_STUCK_WORTH_DK")
+        .ok()
+        .map(|v| v.parse::<f64>().expect("LD01_JAC_STUCK_WORTH_DK"));
+    if let Some(dk) = stuck_worth {
+        joined.nuclear_mut().apply_stuck_worth(dk).expect("B1 term");
     }
     let (reference, colored, colors, colored_s) = joined_colored(&mut joined, &y, &zero, cj);
     let mine = &structure.pattern;
@@ -433,7 +444,7 @@ fn joined_blocks_against_colored() {
     let klu_structural = klu(&reference, &colored);
     let receipt = json!({
         "kind": "s2-joined-blocks-against-colored-NOT-EVIDENCE",
-        "relative_state_perturbation": perturb, "pzr_relief_lift": lift,
+        "relative_state_perturbation": perturb, "pzr_relief_lift": lift, "stuck_worth_dk": stuck_worth,
         "block_assembly_refused": refused,
         "klu_block_pattern": klu_blocks, "klu_structural_pattern": klu_structural,
         "composition": {"dimension": n, "offsets": o, "full_owners": full},

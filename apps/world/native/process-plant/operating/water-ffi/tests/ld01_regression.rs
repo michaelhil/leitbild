@@ -30,31 +30,22 @@
 //! Single-threaded; nothing is written unless `LD01_SMOKE_RECORD` or
 //! `LD01_SETTLED_STATE_OUT` names a new file.
 #![cfg(feature = "ida")]
-#[path = "common/cpu.rs"]
-mod cpu;
-#[path = "ld01_regression/wiki.rs"]
-mod wiki;
+mod common;
+use common::{cpu, filter};
 
 use leitbild_operating_plant::{
-    initialization::SurfacePolicy,
+    digest::sha256,
     joined::{
         self,
         block::Command,
         blocks::{Classes, JoinedJacobian, jacobian_blocks},
         census,
         nuclear::Nuclear,
-        operator::{Joined, RodPort, SecondaryPort},
+        operator::Joined,
         packet,
         solids::Solids,
     },
-    network::{
-        Network, PzrPreparation, RotorState, ToleranceClasses, consistent_start as network_start,
-        packet::Packet as NetworkPacket,
-        prepare::{self, OperatingPoint, Settings},
-    },
-    rods::{RodBlock, Section as RodSection},
-    rotor::{Shaft, SpeedRequest, Support},
-    sg::{packet::Section as SecondarySection, secondary::Secondaries},
+    network::{Network, packet::Packet as NetworkPacket},
 };
 use leitbild_operating_water::{
     If97,
@@ -62,80 +53,22 @@ use leitbild_operating_water::{
     joined::{
         Analyses, Discrete, Integrated, Matrices, Restart, consistent_start, discrete_restart,
     },
-    network::Integrated as NetworkIntegrated,
+    unit::{
+        clock,
+        profile::{DELTA_CJ_LSETUP, FIRST_STEP_S, NEWTON_COEFFICIENT, PZR, START_BOUND},
+        provenance::provenance_with,
+        spine::{self, S1Settling},
+    },
 };
 use serde_json::{Map, Value, json};
 use std::path::{Path, PathBuf};
 
 // ------------------------------------------------- declared configuration
 
-/// The S1 harness's declared PZR preparation controls (s1_hydraulics.rs).
-const PZR: PzrPreparation = PzrPreparation {
-    pressure_tolerance_pa: 1e-6,
-    max_passes: 50,
-};
-/// The S1 harness's hydrostatic preparation settings (s1_hydraulics.rs).
-const SETTINGS: Settings = Settings {
-    pressure_tolerance_pa: 1e-6,
-    max_passes: 50,
-    level_match_m: 1e-9,
-    eos_row_bound: 1e-12,
-    tree_face_bound_pa: 1e-6,
-    representation_search: 8,
-};
 /// S2's numerical configuration at every start and restart (claude/ld01-wiki
-/// c968921; G13), as the settling probe and the restart check use it.
-const NEWTON_COEFFICIENT: f64 = 0.33;
-const DELTA_CJ_LSETUP: f64 = 0.1;
-const FIRST_STEP_S: f64 = 1e-4;
+/// c968921; G13) is the unit library's profile; the settle's output chunk:
 const ADVANCE_CHUNK_S: f64 = 0.01;
-/// The exact consistent start's bound (Z1 and restarts).
-const START_BOUND: f64 = 1e-12;
-
-fn rotors() -> Vec<RotorState> {
-    vec![
-        RotorState {
-            support: Support::Supported(SpeedRequest::Nominal),
-            shaft: Shaft::Free,
-        };
-        4
-    ]
-}
-
-// ----------------------------------------------------------------- inputs
-
-fn sha256(bytes: &[u8]) -> String {
-    use std::io::Write;
-    use std::process::{Command as Process, Stdio};
-    // `shasum` on macOS, coreutils `sha256sum` on Linux.
-    let run = |program: &str, args: &[&str]| {
-        let mut child = Process::new(program)
-            .args(args)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .spawn()
-            .ok()?;
-        child.stdin.take()?.write_all(bytes).ok()?;
-        let out = child.wait_with_output().ok()?;
-        out.status.success().then(|| {
-            String::from_utf8_lossy(&out.stdout)
-                .split_whitespace()
-                .next()
-                .unwrap_or("")
-                .to_string()
-        })
-    };
-    run("shasum", &["-a", "256"])
-        .or_else(|| run("sha256sum", &[]))
-        .expect("shasum or sha256sum")
-}
-
-fn packet_bytes() -> (String, Vec<u8>) {
-    let path = std::env::var("LD01_OPERATING_HOT_SPINE_PACKET")
-        .expect("LD01_OPERATING_HOT_SPINE_PACKET names the compiled spine packet");
-    let bytes = std::fs::read(&path).expect("packet");
-    (path, bytes)
-}
+use common::packet_bytes;
 
 /// The `ld01-s1-gates` block of the wiki named by `LD01_WIKI_ROOT`.
 fn s1_gates() -> Value {
@@ -152,17 +85,6 @@ fn s1_gates_text() -> String {
     let end = start + text[start..].find("\n```").unwrap();
     text[start..end].to_string()
 }
-fn classes(gates: &Value) -> ToleranceClasses {
-    let f = |k: &str| gates[k].as_f64().unwrap_or_else(|| panic!("gate {k}"));
-    ToleranceClasses {
-        relative: f("relativeTolerance"),
-        stock_scaled: f("stockScaledAbsolute"),
-        tracer_scaled: f("tracerScaledAbsolute"),
-        rotor_scaled: f("rotorScaledAbsolute"),
-        volume_flow_m3_s: f("volumeFlowAbsolute_m3_s"),
-    }
-}
-
 /// The deterministic identity of the water and SUNDIALS builds in use.
 fn environment(packet_sha256: &str) -> Value {
     let water =
@@ -197,114 +119,10 @@ fn environment(packet_sha256: &str) -> Value {
 
 // ------------------------------------------------------------- composition
 
-/// S1's declared network-only settling from rest, run only to export the
-/// settled flows (memo §3 (A)); as `joined_spine.rs`.
-fn s1_settled_flows(packet: &NetworkPacket, gates: &Value) -> (Vec<f64>, Vec<f64>, Value) {
-    let point = OperatingPoint::from(&packet.preparation.operating_point);
-    let (network, prepared, _) =
-        prepare::prepare(packet, If97, &point, &rotors(), &SETTINGS).expect("hydrostatic");
-    let mut y = prepared.y.clone();
-    for i in &network.rotor_index {
-        y[*i] = 0.;
-    }
-    let classes = classes(gates);
-    let atol = network.absolute_tolerances(&y, classes).unwrap();
-    let rtol = classes.relative;
-    let ids = prepared.differential.clone();
-    let weights: Vec<f64> = y
-        .iter()
-        .zip(&atol)
-        .map(|(v, a)| 1. / (rtol * v.abs() + a))
-        .collect();
-    let mut probe = network;
-    let (yp, _) = network_start(&mut probe, 0., &mut y, &ids, &weights, 1e-12, 2)
-        .expect("S1 exact consistent start");
-    let nonnegative = probe.nonnegative_stocks();
-    let mut ida = Ida::new(
-        NetworkIntegrated::colored(probe).unwrap(),
-        Initial {
-            time: 0.,
-            y: &y,
-            yp: &yp,
-            differential: &ids,
-            absolute_tolerance: &atol,
-            relative_tolerance: rtol,
-        },
-    )
-    .unwrap();
-    ida.set_max_order(gates["maxOrder"].as_u64().unwrap() as usize)
-        .unwrap();
-    ida.constrain_nonnegative(&nonnegative).unwrap();
-    let settling = &gates["settling"];
-    let cap = settling["maxSimulated_s"].as_f64().unwrap();
-    let window = settling["window_s"].as_f64().unwrap();
-    let rotor_rel = settling["rotorSpeedRelative"].as_f64().unwrap();
-    let flow_rel = settling["loopFlowRelativeChange"].as_f64().unwrap();
-    ida.stop_at(cap).unwrap();
-    let face = |id: &str| {
-        packet
-            .mechanics
-            .faces
-            .iter()
-            .position(|f| f.id == id)
-            .unwrap()
-    };
-    let loops = [face("RETURN.A->DOWN"), face("RETURN.B->DOWN")];
-    let (mut yv, mut ypv) = (y.clone(), yp.clone());
-    let mut history: Vec<(f64, [f64; 2])> = Vec::new();
-    let mut t = 0.;
-    let settled_at = loop {
-        t += 1.;
-        ida.advance(t, &mut yv, &mut ypv)
-            .unwrap()
-            .reached()
-            .unwrap();
-        let net = &mut ida.system_mut().network;
-        net.evaluate(t, &yv, &ypv, None, 0., None).unwrap();
-        let flows = loops.map(|f| net.chart(f, 0).unwrap().mass_flow_kg_s.value);
-        let omega: Vec<f64> = net
-            .rotor_index
-            .iter()
-            .map(|i| yv[*i] * net.scales()[*i] / net.rotor_inertia())
-            .collect();
-        let w0 = net.drive().reference_omega_rad_s;
-        history.push((t, flows));
-        let earlier = history.iter().rev().find(|h| h.0 <= t - window);
-        let rested = earlier.is_some_and(|e| {
-            omega.iter().all(|w| ((w - w0) / w0).abs() < rotor_rel)
-                && (0..2).all(|k| ((flows[k] - e.1[k]) / flows[k]).abs() < flow_rel)
-        });
-        if rested {
-            break Some(t);
-        }
-        if t >= cap {
-            break None;
-        }
-    };
-    let stats = ida.stats().unwrap();
-    let net = &mut ida.system_mut().network;
-    net.evaluate(t, &yv, &ypv, None, 0., None).unwrap();
-    let flows: Vec<f64> = (0..net.face_count())
-        .map(|f| net.chart(f, 0).map_or(0., |c| c.volume_flow_m3_s.value))
-        .collect();
-    let momenta: Vec<f64> = net
-        .rotor_index
-        .iter()
-        .map(|i| yv[*i] * net.scales()[*i])
-        .collect();
-    let counts = json!({
-        "settled": settled_at.is_some(),
-        "steps": stats.steps, "residuals": stats.residuals, "jacobians": stats.jacobians,
-        "error_failures": stats.error_failures, "convergence_failures": stats.convergence_failures,
-    });
-    assert!(settled_at.is_some(), "S1 settling did not rest: {counts}");
-    (flows, momenta, counts)
-}
-
 /// The full composition at the hot reference before its consistent start
-/// (memo §3 (A)-(C)): S1-settled flows transferred by the flowing
-/// preparation, the SG secondary and rod owners, prepared owners and
-/// initialized surfaces.
+/// (memo §3 (A)-(C)), by the unit library's builder: S1-settled flows
+/// transferred by the flowing preparation, the SG secondary and rod owners,
+/// prepared owners and initialized surfaces; with the counts the smoke pins.
 struct Composed {
     joined: Joined<If97>,
     y: Vec<f64>,
@@ -315,81 +133,31 @@ struct Composed {
     counts: Value,
 }
 fn composed(bytes: &[u8], gates: &Value) -> Composed {
-    let network_packet: NetworkPacket = serde_json::from_slice(bytes).expect("network packet");
-    let joined_packet: packet::Packet = serde_json::from_slice(bytes).expect("joined packet");
-    let raw: Value = serde_json::from_slice(bytes).expect("packet json");
-    let (flows, momenta, s1) = s1_settled_flows(&network_packet, gates);
-    let point = OperatingPoint::from(&network_packet.preparation.operating_point);
-    let (mut network, mut prepared, hydrostatic) =
-        prepare::prepare(&network_packet, If97, &point, &rotors(), &SETTINGS).expect("hydrostatic");
-    prepare::compose_flows(
-        &mut network,
-        &network_packet,
-        &mut prepared.y,
-        hydrostatic.port_pressure_pa,
-        &flows,
-        &momenta,
-        &SETTINGS,
-    )
-    .expect("flowing preparation");
-    let network_ids = prepared.differential.clone();
-    let section: SecondarySection =
-        serde_json::from_value(raw["secondary"].clone()).expect("secondary section");
-    let rods: RodSection = serde_json::from_value(raw["rods"].clone()).expect("rods section");
-    let mut joined = Joined::new(
-        network,
-        &network_packet,
-        &joined_packet,
-        If97,
-        SecondaryPort::Owner(Box::new(
-            Secondaries::new(&section, &joined_packet.thermal.secondaries, &If97)
-                .expect("SG secondary owner"),
-        )),
-        RodPort::Owner(Box::new(
-            RodBlock::from_packet(&rods, &network_packet).expect("rod owner"),
-        )),
-    )
-    .expect("joined operator");
-    let mut y = joined.prepared(&prepared.y).unwrap();
-    let ids = joined.differential(&network_ids);
-    let owners = joined
-        .prepare_owners(0., &mut y)
-        .expect("owner preparation");
-    let surfaces = joined
-        .initialize_surfaces(
-            0.,
-            &mut y,
-            SurfacePolicy {
-                maximum_residual_w: 1e-3,
-                maximum_correction_k: 1e-6,
-                maximum_iterations: 16,
-                maximum_backtracks: 12,
-            },
-        )
-        .expect("surfaces");
-    let classes = classes(gates);
-    let n_net = joined.offsets().nuclear;
-    let mut atol = joined
-        .network
-        .absolute_tolerances(&y[..n_net], classes)
-        .unwrap();
-    // G12: S1's scaled absolute floor for every new coordinate class.
-    atol.resize(y.len(), classes.stock_scaled);
+    let s1 = S1Settling::from_gates(gates).expect("ld01-s1-gates");
+    let network_packet = spine::packets(bytes).expect("packet").network;
+    let settled =
+        spine::s1_settled_flows(&network_packet, &s1, clock::process_cpu_s).expect("S1 settling");
+    let p = spine::prepare(bytes, &settled.flows, &settled.momenta, s1.classes, &[])
+        .expect("steps (B)-(C)");
     let counts = json!({
-        "s1_settling": s1,
-        "dimension": y.len(),
-        "algebraic": ids.iter().filter(|v| **v == 0.).count(),
-        "owner_transactions": owners.len(),
-        "surface_sets": surfaces.len(),
-        "surface_max_iterations": surfaces.iter().map(|s| s.iterations).max(),
+        "s1_settling": {
+            "settled": settled.settled_at_s.is_some(),
+            "steps": settled.steps, "residuals": settled.residuals, "jacobians": settled.jacobians,
+            "error_failures": settled.error_failures, "convergence_failures": settled.convergence_failures,
+        },
+        "dimension": p.y.len(),
+        "algebraic": p.ids.iter().filter(|v| **v == 0.).count(),
+        "owner_transactions": p.owners.len(),
+        "surface_sets": p.surfaces.len(),
+        "surface_max_iterations": p.surfaces.iter().map(|s| s.iterations).max(),
     });
     Composed {
-        joined,
-        y,
-        ids,
-        network_ids,
-        atol,
-        rtol: classes.relative,
+        joined: p.joined,
+        y: p.y,
+        ids: p.ids,
+        network_ids: p.network_ids,
+        atol: p.atol,
+        rtol: s1.classes.relative,
         counts,
     }
 }
@@ -533,6 +301,14 @@ fn oracle(
 #[test]
 #[ignore = "LD-01 smoke (scripts/ld01-smoke.sh): requires the joined packet, the wiki, IF97 and stock IDA/KLU"]
 fn smoke() {
+    // The water method the tuple's packets were prepared on (SBTL's lead
+    // ruling, 1 Nov: a state is prepared and run on one method):
+    // LD01_S3_WATER, unset SBTL (the default since the combined re-pin, lead 1 Nov), selected before any water call.
+    let water = leitbild_operating_water::WaterMethod::parse(
+        &std::env::var("LD01_S3_WATER").unwrap_or_else(|_| "sbtl".into()),
+    )
+    .unwrap_or_else(|e| panic!("{e}"));
+    leitbild_operating_water::select_water_method(water).unwrap_or_else(|e| panic!("{e}"));
     let started = cpu::process_cpu_s();
     let load_start = cpu::load_average();
     let mut phase_cpu = Map::new();
@@ -560,8 +336,13 @@ fn smoke() {
         );
     }
     let gates = s1_gates();
-    let wiki_root = std::env::var("LD01_WIKI_ROOT").expect("LD01_WIKI_ROOT");
-    let wiki = wiki::provenance(Path::new(&wiki_root)).expect("wiki provenance");
+    let inputs = common::spine();
+    let wiki = provenance_with(
+        Path::new(&inputs.wiki_root),
+        inputs.wiki_commit.as_deref(),
+        inputs.wiki_repository.as_deref(),
+    )
+    .expect("wiki provenance");
 
     // Census against memo Table 1.1.
     let census = {
@@ -569,8 +350,20 @@ fn smoke() {
         let joined_packet: packet::Packet = serde_json::from_slice(&bytes).expect("joined packet");
         let (network, prepared) = Network::new(&network_packet, If97, &PZR).expect("network");
         let cells = network.cell_layout.len();
-        let nuclear = Nuclear::new(&joined_packet, cells).expect("nuclear block");
-        let solids = Solids::new(&joined_packet, cells).expect("solids block");
+        let mut nuclear = Nuclear::new(&joined_packet, cells).expect("nuclear block");
+        // E-NUC phase B: each rod seat's fitting stays out of the solids' classes.
+        let raw: serde_json::Value = serde_json::from_slice(&bytes).expect("packet json");
+        let singles: Vec<String> = raw["rods"]["clusters"]
+            .as_array()
+            .map(|c| {
+                c.iter()
+                    .map(|c| format!("{}/top-fitting", c["fuel_assembly"].as_str().unwrap()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let solids =
+            Solids::new(&joined_packet, cells, nuclear.group_of(), &singles).expect("solids block");
+        nuclear.set_ports(solids.half_members()).expect("nuclear ports");
         let network_layout = joined::network_layout(&network);
         let k_ids = nuclear.layout().ids();
         let s_ids = solids.layout().ids();
@@ -672,13 +465,52 @@ fn smoke() {
     let (mut ys, mut yps) = (y.clone(), yp.clone());
     let mut t = 0.;
     let mut failure = Value::Null;
+    // A located owner root restarts exactly (a composed spray port's scoped
+    // L1, DR-P3-SPRAY, releases within the settle).
+    let mut root_restarts = 0;
+    // Stock IDA's counters restart with every reinitialization: the
+    // segments before a restart are summed.
+    let mut before = [0_i64; 7];
+    let counted = |st: &leitbild_operating_water::ida::Stats| {
+        [
+            st.steps,
+            st.residuals,
+            st.jacobians,
+            st.nonlinear_iterations,
+            st.linear_setups,
+            st.error_failures,
+            st.convergence_failures,
+        ]
+    };
     while t < settle_s {
         let target = (t + ADVANCE_CHUNK_S).min(settle_s);
         match ida.advance(target, &mut ys, &mut yps) {
             Ok(Advance::Reached(time)) => t = time,
             Ok(Advance::Root { time, directions }) => {
-                failure = json!(format!("a root at {time} s: {directions:?}"));
-                break;
+                t = time;
+                let segment = counted(&ida.stats().unwrap());
+                for (b, v) in before.iter_mut().zip(segment) {
+                    *b += v;
+                }
+                match discrete_restart(
+                    &mut ida,
+                    t,
+                    Discrete::Roots(&directions),
+                    &mut ys,
+                    &network_ids,
+                    &atol,
+                    rtol,
+                    &restart,
+                ) {
+                    Ok(r) => {
+                        yps.copy_from_slice(&r.yp);
+                        root_restarts += 1;
+                    }
+                    Err(e) => {
+                        failure = json!(format!("a root restart at {time} s: {directions:?}: {e}"));
+                        break;
+                    }
+                }
             }
             Err(e) => {
                 failure = json!(e);
@@ -687,12 +519,16 @@ fn smoke() {
         }
     }
     let st = ida.stats().unwrap();
+    let mut n = counted(&st);
+    for (v, b) in n.iter_mut().zip(before) {
+        *v += b;
+    }
     let c = ida.system().joined.counters;
     let settle = json!({
-        "reached": t >= settle_s, "failure": failure,
-        "steps": st.steps, "residuals": st.residuals, "jacobians": st.jacobians,
-        "nonlinear_iterations": st.nonlinear_iterations, "linear_setups": st.linear_setups,
-        "error_failures": st.error_failures, "convergence_failures": st.convergence_failures,
+        "reached": t >= settle_s, "failure": failure, "root_restarts": root_restarts,
+        "steps": n[0], "residuals": n[1], "jacobians": n[2],
+        "nonlinear_iterations": n[3], "linear_setups": n[4],
+        "error_failures": n[5], "convergence_failures": n[6],
         "last_order": st.last_order,
         "system_residuals": c.residuals - evaluations_before.residuals,
         "system_jacobians": c.jacobians - evaluations_before.jacobians,
@@ -808,6 +644,10 @@ const SETTLING: [(&str, f64, bool); 8] = [
     ("loop_flow", 5e-4, true),
 ];
 const SETTLING_WINDOW_S: f64 = 20.;
+/// `ld01-s2-gates`: the output interval and the 2 Hz credited band of the
+/// settling measure.
+const SETTLING_OUTPUT_S: f64 = 0.1;
+const SETTLING_BAND_HZ: f64 = 2.;
 const ROW_BOUND: f64 = 1e-10;
 
 /// The credited outputs at `(t, y)`: each name of [`SETTLING`] with one
@@ -889,46 +729,111 @@ fn credited(
     ]
 }
 
-/// Each credited output's change over the settling window at the pair's
-/// exact rates (`y'`), by a central difference along `y'` of half-width
-/// `h`, against its threshold: (name, worst change, threshold, holds).
-fn settling_rates(
-    joined: &mut Joined<If97>,
+/// The declared settling measure (`ld01-s2-gates` settling, DR-P3-PT1: one
+/// measure everywhere): each credited output sampled at the output
+/// interval over the settling window, 2 Hz zero-phase filtered
+/// (`filter::zero_phase_lowpass`, the S2 settle's), its range max - min
+/// (relative to the filtered mean where declared) against its threshold.
+/// The S2 settle judges the window that ends at the settled time; a pinned
+/// pair is judged on the window that starts at it, integrated by stock IDA
+/// at S2's configuration: (name, worst range, threshold, holds), and the
+/// window start's bound placements (the restart rule: a nonnegative
+/// coordinate below zero by roundoff starts the window on its bound,
+/// reported). A root or a failure inside the window refuses.
+/// Each credited settling rate: (name, worst 20 s range, threshold, holds).
+type SettlingRates = Vec<(&'static str, f64, f64, bool)>;
+
+#[allow(clippy::too_many_arguments)] // The operator, its packet, the pair and its tolerance classes.
+fn settling_window(
+    joined: Joined<If97>,
     network_packet: &NetworkPacket,
-    t: f64,
+    t0: f64,
     y: &[f64],
     yp: &[f64],
-) -> Vec<(&'static str, f64, f64, bool)> {
-    let h = 0.01;
-    let shifted =
-        |sign: f64| -> Vec<f64> { y.iter().zip(yp).map(|(v, r)| v + sign * h * r).collect() };
-    let at = credited(joined, network_packet, t, y, yp);
-    let ahead = credited(joined, network_packet, t + h, &shifted(1.), yp);
-    let behind = credited(joined, network_packet, t - h, &shifted(-1.), yp);
-    // Leave the operator evaluated at the pair itself.
-    credited(joined, network_packet, t, y, yp);
-    SETTLING
+    ids: &[f64],
+    atol: &[f64],
+    rtol: f64,
+) -> Result<(SettlingRates, Value), String> {
+    let nonnegative = joined.network.nonnegative_stocks();
+    let mut start = y.to_vec();
+    let placed =
+        leitbild_operating_plant::network::place_on_bounds(t0, &mut start, &nonnegative, 1e-12)
+            .map_err(|f| format!("{f:?}"))?;
+    let y = start.as_slice();
+    let mut ida = Ida::new(
+        Integrated::with_blocks(joined, t0, y)?,
+        Initial {
+            time: t0,
+            y,
+            yp,
+            differential: ids,
+            absolute_tolerance: atol,
+            relative_tolerance: rtol,
+        },
+    )?;
+    ida.set_max_order(2)?;
+    ida.constrain_nonnegative(&nonnegative)?;
+    let restart = Restart {
+        newton_coefficient: NEWTON_COEFFICIENT,
+        delta_cj_lsetup: DELTA_CJ_LSETUP,
+        first_step_s: FIRST_STEP_S,
+        start_bound: START_BOUND,
+        start_passes: 2,
+        transaction_passes: 12,
+        bound_placement: 1e-12,
+    };
+    restart.configure(&mut ida)?;
+    let samples = (SETTLING_WINDOW_S / SETTLING_OUTPUT_S).round() as usize;
+    let end = t0 + samples as f64 * SETTLING_OUTPUT_S;
+    ida.stop_at(end)?;
+    let (mut ys, mut yps) = (y.to_vec(), yp.to_vec());
+    let mut series = vec![credited(
+        &mut ida.system_mut().joined,
+        network_packet,
+        t0,
+        y,
+        yp,
+    )];
+    for k in 1..=samples {
+        let target = t0 + k as f64 * SETTLING_OUTPUT_S;
+        match ida.advance(target, &mut ys, &mut yps)? {
+            Advance::Reached(_) => {}
+            Advance::Root { time, directions } => {
+                return Err(format!(
+                    "a root at {time} s inside the settling window: {directions:?}"
+                ));
+            }
+        }
+        series.push(credited(
+            &mut ida.system_mut().joined,
+            network_packet,
+            target,
+            &ys,
+            &yps,
+        ));
+    }
+    let measured = SETTLING
         .iter()
-        .map(|(name, threshold, relative)| {
-            let find =
-                |v: &[(&str, Vec<f64>)]| v.iter().find(|(n, _)| n == name).unwrap().1.clone();
-            let (a, b, c) = (find(&at), find(&ahead), find(&behind));
-            assert_eq!(a.len(), b.len());
-            let worst = a
-                .iter()
-                .zip(b.iter().zip(&c))
-                .map(|(v, (p, m))| {
-                    let change = (p - m) / (2. * h) * SETTLING_WINDOW_S;
+        .enumerate()
+        .map(|(q, (name, threshold, relative))| {
+            assert_eq!(series[0][q].0, *name);
+            let worst = (0..series[0][q].1.len())
+                .map(|i| {
+                    let x: Vec<f64> = series.iter().map(|s| s[q].1[i]).collect();
+                    let f = filter::zero_phase_lowpass(&x, SETTLING_BAND_HZ, SETTLING_OUTPUT_S);
+                    let hi = f.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+                    let lo = f.iter().cloned().fold(f64::INFINITY, f64::min);
                     if *relative {
-                        (change / v).abs()
+                        ((hi - lo) / filter::mean(&f)).abs()
                     } else {
-                        change.abs()
+                        hi - lo
                     }
                 })
-                .fold(0., f64::max);
+                .fold(0., filter::larger);
             (*name, worst, *threshold, worst <= *threshold)
         })
-        .collect()
+        .collect();
+    Ok((measured, json!(placed)))
 }
 
 /// Exact f64 bits as hex: serde_json's default float parsing is best
@@ -1065,7 +970,8 @@ fn settled_state_pin() {
     .expect("exact consistent start at the settled state");
     joined.evaluate(t, &y, &yp, None, 0., None).unwrap();
     let rows: Vec<f64> = joined.rows().iter().map(|r| r.value).collect();
-    let rates = settling_rates(&mut joined, &network_packet, t, &y, &yp);
+    let (rates, placed) = settling_window(joined, &network_packet, t, &y, &yp, &ids, &atol, rtol)
+        .expect("the settling window from the pinned pair");
     let pin = json!({
         "kind": "ld01-settled-state-pin",
         "status": "NOT-EVIDENCE regression pin; S2 is not declared",
@@ -1086,7 +992,8 @@ fn settled_state_pin() {
             "provisional": !misses.is_empty(), "known_misses": misses,
             "digest": {platform(): digest(&rows)},
             "max_abs_scaled_row": rows.iter().fold(0_f64, |m, r| m.max(r.abs())),
-            "rates_per_20_s": rates.iter().map(|r| (r.0.to_string(), json!({"change": r.1, "threshold": r.2, "holds": r.3}))).collect::<Map<String, Value>>(),
+            "settling_window_20_s": rates.iter().map(|r| (r.0.to_string(), json!({"range": r.1, "threshold": r.2, "holds": r.3}))).collect::<Map<String, Value>>(),
+            "window_start_placements": placed,
             "source": pin["source"], "start": pin["start"],
         })
     );
@@ -1117,7 +1024,16 @@ fn settled_state() {
     );
     assert_eq!(state["packet_sha256"], pin["packet_sha256"]);
     let gates = s1_gates();
-    let (Composed { mut joined, .. }, network_packet) = operator(&bytes, &gates);
+    let (
+        Composed {
+            mut joined,
+            ids,
+            atol,
+            rtol,
+            ..
+        },
+        network_packet,
+    ) = operator(&bytes, &gates);
     let t = state["t_s"].as_f64().unwrap();
     let (y, yp) = (from_bits(&state["y_bits"]), from_bits(&state["yp_bits"]));
     joined
@@ -1137,15 +1053,16 @@ fn settled_state() {
         .flat_map(|(o, l)| l.labels.iter().map(move |x| format!("{o}/{x}")))
         .nth(worst_row)
         .unwrap_or_default();
-    let rates = settling_rates(&mut joined, &network_packet, t, &y, &yp);
+    let (rates, placed) = settling_window(joined, &network_packet, t, &y, &yp, &ids, &atol, rtol)
+        .expect("the settling window from the pinned pair");
     let misses: Vec<&str> = rates.iter().filter(|r| !r.3).map(|r| r.0).collect();
     let found_digest = digest(&rows);
     let pinned_digest = pin["digest"][platform()].as_str();
     println!(
         "{}",
         json!({"max_abs_scaled_row": worst, "at": label, "digest": found_digest, "pinned_digest": pinned_digest,
-            "rates_per_20_s": rates.iter().map(|r| (r.0.to_string(), json!({"change": r.1, "threshold": r.2, "holds": r.3}))).collect::<Map<String, Value>>(),
-            "misses": misses, "provisional": pin["provisional"]})
+            "settling_window_20_s": rates.iter().map(|r| (r.0.to_string(), json!({"range": r.1, "threshold": r.2, "holds": r.3}))).collect::<Map<String, Value>>(),
+            "window_start_placements": placed, "misses": misses, "provisional": pin["provisional"]})
     );
     let mut problems = Vec::new();
     if worst.is_nan() || worst > ROW_BOUND {
@@ -1231,7 +1148,7 @@ fn wiki_provenance_verifies_a_named_commit_against_the_tree() {
     git(&repository, &["commit", "-q", "-am", "second"]);
     let second = git(&repository, &["rev-parse", "HEAD"]);
     let repo = repository.to_string_lossy().to_string();
-    let verified = wiki::provenance_with(&archive, Some(&first[..7]), Some(&repo)).unwrap();
+    let verified = provenance_with(&archive, Some(&first[..7]), Some(&repo)).unwrap();
     assert_eq!(verified["commit"], json!(first));
     assert_eq!(
         verified["tree"],
@@ -1240,14 +1157,14 @@ fn wiki_provenance_verifies_a_named_commit_against_the_tree() {
             &["rev-parse", &format!("{first}^{{tree}}")]
         ))
     );
-    let refused = wiki::provenance_with(&archive, Some(&second), Some(&repo)).unwrap_err();
+    let refused = provenance_with(&archive, Some(&second), Some(&repo)).unwrap_err();
     assert!(refused.contains("has tree"), "{refused}");
-    assert!(wiki::provenance_with(&archive, Some(&first), None).is_err());
+    assert!(provenance_with(&archive, Some(&first), None).is_err());
     assert_eq!(
-        wiki::provenance_with(&archive, None, None).unwrap()["commit"],
+        provenance_with(&archive, None, None).unwrap()["commit"],
         Value::Null
     );
-    let head = wiki::provenance_with(&repository, None, None).unwrap();
+    let head = provenance_with(&repository, None, None).unwrap();
     assert_eq!(
         (head["commit"].clone(), head["basis"].clone()),
         (json!(second), json!("checkout HEAD, files match its tree"))

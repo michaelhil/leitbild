@@ -47,9 +47,18 @@ export function parsePzrHeaterBanks(equipment:string){
   if(Math.abs(banks.reduce((v,b)=>v+b.solidDisplacement_m3,0)-geometry.totalSolid_m3)>=1e-7)throw Error('Heater displacements disagree with the rod geometry')
   return banks
 }
-/** The independent relief device from its pressure-and-inventory owner. */
+const designSchema=z.object({designPressure_Pa:positive}).strict()
+/** The RCS and PZR design pressure (`ld01-rcs-design-pressure`, CRED-FIX-A2 I2)
+ * under the relief's heading: the relief must open at or below it. */
+export function parseRcsDesignPressure(inventory:string){
+  return designSchema.parse(ownedBlock(inventory,equipmentOwners.relief.heading,'ld01-rcs-design-pressure')).designPressure_Pa
+}
+/** The independent relief device from its pressure-and-inventory owner,
+ * checked against the declared design pressure. */
 export function parsePzrRelief(inventory:string){
-  return reliefSchema.parse(ownedBlock(inventory,equipmentOwners.relief.heading,equipmentOwners.relief.fence))
+  const relief=reliefSchema.parse(ownedBlock(inventory,equipmentOwners.relief.heading,equipmentOwners.relief.fence))
+  if(!(relief.openingPressure_Pa<=parseRcsDesignPressure(inventory)))throw Error('The PZR relief must open at or below the RCS design pressure')
+  return relief
 }
 
 /** Spray and relief port geometry for case-set packets; each value must come

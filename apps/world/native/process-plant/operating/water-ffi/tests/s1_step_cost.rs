@@ -28,9 +28,9 @@ use std::{cell::RefCell, rc::Rc};
 
 // Thread CPU (CLOCK_THREAD_CPUTIME_ID) and the performance-core request
 // (macOS QOS_CLASS_USER_INTERACTIVE), which change no computation.
-#[path = "common/cpu.rs"]
-mod clock;
-use clock::{prefer_performance_core, thread_cpu_s as cpu};
+mod common;
+use common::cpu;
+use cpu::{prefer_performance_core, thread_cpu_s as cpu};
 
 #[derive(Clone, Copy, Debug, Default)]
 struct Tally {
@@ -135,6 +135,9 @@ impl System for TimedSystem {
     /// The wrapped system's own KLU ordering (AMD on every joined system).
     fn klu_ordering(&self) -> KluOrdering {
         self.inner.klu_ordering()
+    }
+    fn multiplicities(&self) -> Option<Vec<f64>> {
+        self.inner.multiplicities()
     }
     fn nonzeros(&self) -> usize {
         self.inner.nonzeros()

@@ -9,52 +9,21 @@
 //! The tolerance classes are S1's (`ld01-s1-gates`, shared by S2): the
 //! network's own classes and the scaled stock floor for every new coordinate
 //! class (G12).
-use crate::{cpu::process_cpu_s, gates::Block, provenance::sha256_file};
+use super::gates::Block;
+use crate::common::{cpu::process_cpu_s, provenance::sha256_file};
 use leitbild_operating_plant::{
-    initialization::SurfacePolicy,
     joined::{
         blocks::{Classes, JoinedJacobian, jacobian_blocks},
-        operator::{Joined, RodPort, SecondaryPort},
-        packet,
+        operator::Joined,
     },
-    network::{
-        Network, RotorState, ToleranceClasses, consistent_start,
-        packet::Packet as NetworkPacket,
-        prepare::{self, OperatingPoint, Settings},
-    },
-    rods::{RodBlock, Section as RodSection},
-    rotor::{Shaft, SpeedRequest, Support},
-    sg::{packet::Section as SecondarySection, secondary::Secondaries},
+    network::{ToleranceClasses, packet::Packet as NetworkPacket},
 };
 use leitbild_operating_water::{
     If97,
-    ida::{Ida, Initial},
-    joined::{Analyses, Matrices, consistent_start as joined_start},
-    network::Integrated as NetworkIntegrated,
+    joined::Analyses,
+    unit::spine::{self, S1Settling},
 };
 use serde_json::{Value, json};
-
-/// The S1 harness's hydrostatic preparation settings (s1_hydraulics.rs).
-pub const SETTINGS: Settings = Settings {
-    pressure_tolerance_pa: 1e-6,
-    max_passes: 50,
-    level_match_m: 1e-9,
-    eos_row_bound: 1e-12,
-    tree_face_bound_pa: 1e-6,
-    representation_search: 8,
-};
-/// The exact consistent start's declared row bound (decision 0013's exit).
-pub const START_BOUND: f64 = 1e-12;
-
-pub fn rotors() -> Vec<RotorState> {
-    vec![
-        RotorState {
-            support: Support::Supported(SpeedRequest::Nominal),
-            shaft: Shaft::Free,
-        };
-        4
-    ]
-}
 
 /// S1's tolerance classes, read from the shared block.
 pub fn classes(shared: &Block) -> ToleranceClasses {
@@ -119,141 +88,29 @@ pub fn carries_b1(raw: &Value) -> Result<(), String> {
 
 /// S1's declared network-only settling from rest (step (A)), run only to
 /// export the settled flows: the RCPs start from rest through the drive
-/// law and the network settles under S1's own tolerance classes and caps.
+/// law and the network settles under S1's own tolerance classes and caps
+/// (the unit library's step (A), its settings read from the shared block).
 /// Returns every face's settled liquid volume flow, the rotors' angular
 /// momenta and a summary.
 pub fn s1_settled_flows(packet: &NetworkPacket, shared: &Block) -> (Vec<f64>, Vec<f64>, Value) {
-    let started = process_cpu_s();
-    let point = OperatingPoint::from(&packet.preparation.operating_point);
-    let (network, prepared, _) =
-        prepare::prepare(packet, If97, &point, &rotors(), &SETTINGS).expect("hydrostatic");
-    let mut y = prepared.y.clone();
-    for i in &network.rotor_index {
-        y[*i] = 0.;
-    }
-    let classes = classes(shared);
-    let atol = network.absolute_tolerances(&y, classes).unwrap();
-    let rtol = classes.relative;
-    let ids = prepared.differential.clone();
-    let weights: Vec<f64> = y
-        .iter()
-        .zip(&atol)
-        .map(|(v, a)| 1. / (rtol * v.abs() + a))
-        .collect();
-    let mut probe = network;
-    let (yp, _) = consistent_start(&mut probe, 0., &mut y, &ids, &weights, START_BOUND, 2)
-        .expect("S1 exact consistent start");
-    let nonnegative = probe.nonnegative_stocks();
-    let mut ida = Ida::new(
-        NetworkIntegrated::colored(probe).unwrap(),
-        Initial {
-            time: 0.,
-            y: &y,
-            yp: &yp,
-            differential: &ids,
-            absolute_tolerance: &atol,
-            relative_tolerance: rtol,
-        },
-    )
-    .unwrap();
-    ida.set_max_order(shared.count("/maxOrder") as usize)
-        .unwrap();
-    ida.constrain_nonnegative(&nonnegative).unwrap();
-    let cap = shared.number("/settling/maxSimulated_s");
-    let window = shared.number("/settling/window_s");
-    let rotor_rel = shared.number("/settling/rotorSpeedRelative");
-    let flow_rel = shared.number("/settling/loopFlowRelativeChange");
-    ida.stop_at(cap).unwrap();
-    let face = |id: &str| {
-        packet
-            .mechanics
-            .faces
-            .iter()
-            .position(|f| f.id == id)
-            .unwrap()
+    let s1 = S1Settling {
+        classes: classes(shared),
+        max_order: shared.count("/maxOrder") as usize,
+        max_simulated_s: shared.number("/settling/maxSimulated_s"),
+        window_s: shared.number("/settling/window_s"),
+        rotor_speed_relative: shared.number("/settling/rotorSpeedRelative"),
+        loop_flow_relative_change: shared.number("/settling/loopFlowRelativeChange"),
     };
-    let loops = [face("RETURN.A->DOWN"), face("RETURN.B->DOWN")];
-    let (mut yv, mut ypv) = (y.clone(), yp.clone());
-    let mut history: Vec<(f64, [f64; 2], Vec<f64>)> = Vec::new();
-    let mut t = 0.;
-    let settled_at = loop {
-        t += 1.;
-        ida.advance(t, &mut yv, &mut ypv)
-            .unwrap()
-            .reached()
-            .unwrap();
-        let net = &mut ida.system_mut().network;
-        net.evaluate(t, &yv, &ypv, None, 0., None).unwrap();
-        let flows = loops.map(|f| net.chart(f, 0).unwrap().mass_flow_kg_s.value);
-        let omega: Vec<f64> = net
-            .rotor_index
-            .iter()
-            .map(|i| yv[*i] * net.scales()[*i] / net.rotor_inertia())
-            .collect();
-        let w0 = net.drive().reference_omega_rad_s;
-        history.push((t, flows, omega.clone()));
-        let earlier = history.iter().rev().find(|h| h.0 <= t - window);
-        let rested = earlier.is_some_and(|e| {
-            omega.iter().all(|w| ((w - w0) / w0).abs() < rotor_rel)
-                && (0..2).all(|k| ((flows[k] - e.1[k]) / flows[k]).abs() < flow_rel)
-        });
-        if rested {
-            break Some(t);
-        }
-        if t >= cap {
-            break None;
-        }
-    };
-    let stats = ida.stats().unwrap();
-    let net = &mut ida.system_mut().network;
-    net.evaluate(t, &yv, &ypv, None, 0., None).unwrap();
-    let flows: Vec<f64> = (0..net.face_count())
-        .map(|f| net.chart(f, 0).map_or(0., |c| c.volume_flow_m3_s.value))
-        .collect();
-    let momenta: Vec<f64> = net
-        .rotor_index
-        .iter()
-        .map(|i| yv[*i] * net.scales()[*i])
-        .collect();
+    let settled = spine::s1_settled_flows(packet, &s1, process_cpu_s)
+        .unwrap_or_else(|e| panic!("step (A): {e}"));
     let summary = json!({
         "scope": "S1's declared network-only settling, run only to export settled flows (step (A))",
-        "settled_at_s": settled_at,
-        "loop_mass_flow_kg_s": history.last().map(|h| h.1),
-        "steps": stats.steps, "residuals": stats.residuals, "jacobians": stats.jacobians,
-        "cpu_s": process_cpu_s() - started,
+        "settled_at_s": settled.settled_at_s,
+        "loop_mass_flow_kg_s": settled.loop_mass_flow_kg_s,
+        "steps": settled.steps, "residuals": settled.residuals, "jacobians": settled.jacobians,
+        "cpu_s": settled.cpu_s,
     });
-    assert!(settled_at.is_some(), "S1 settling did not rest: {summary}");
-    (flows, momenta, summary)
-}
-
-/// Step (B): a fresh hydrostatic preparation at the hot-reference water
-/// energies with the declared PZR, then the S1-settled volume flows and
-/// rotor momenta transferred by the flowing preparation.
-pub fn composed_network(
-    packet: &NetworkPacket,
-    flows: &[f64],
-    momenta: &[f64],
-) -> (Network<If97>, Vec<f64>, Vec<f64>, Value) {
-    let point = OperatingPoint::from(&packet.preparation.operating_point);
-    let (mut network, mut prepared, hydrostatic) =
-        prepare::prepare(packet, If97, &point, &rotors(), &SETTINGS).expect("hydrostatic");
-    let receipt = prepare::compose_flows(
-        &mut network,
-        packet,
-        &mut prepared.y,
-        hydrostatic.port_pressure_pa,
-        flows,
-        momenta,
-        &SETTINGS,
-    )
-    .expect("flowing preparation");
-    let ids = prepared.differential.clone();
-    (
-        network,
-        prepared.y,
-        ids,
-        serde_json::to_value(&receipt).unwrap(),
-    )
+    (settled.flows, settled.momenta, summary)
 }
 
 /// The full composition, consistently started at `t = 0`.
@@ -298,11 +155,13 @@ pub fn compose_from(
 ) -> Composed {
     let started = process_cpu_s();
     let packet = packet_file();
-    let network_packet: NetworkPacket =
-        serde_json::from_slice(&packet.bytes).expect("network packet");
-    let joined_packet: packet::Packet =
-        serde_json::from_slice(&packet.bytes).expect("joined packet");
-    let raw: Value = serde_json::from_slice(&packet.bytes).expect("packet json");
+    // The network packet with the rod bores' water carved out (OU-C P2), as
+    // the builder composes it. No cluster is kept singly: G7's stuck-cluster
+    // run needs its selected cluster declared single at this composition
+    // (the StuckCluster command refuses a grouped one).
+    let network_packet = spine::packets(&packet.bytes)
+        .unwrap_or_else(|e| panic!("packet: {e}"))
+        .network;
     let (flows, momenta, s1) = match settled {
         Some((flows, momenta, s1)) => (
             flows.clone(),
@@ -311,71 +170,32 @@ pub fn compose_from(
         ),
         None => s1_settled_flows(&network_packet, shared),
     };
-    let (network, y_network, network_ids, flowing) =
-        composed_network(&network_packet, &flows, &momenta);
-    let section: SecondarySection =
-        serde_json::from_value(raw["secondary"].clone()).expect("secondary section");
-    let rods: RodSection = serde_json::from_value(raw["rods"].clone()).expect("rods section");
-    let mut joined = Joined::new(
-        network,
-        &network_packet,
-        &joined_packet,
-        If97,
-        SecondaryPort::Owner(Box::new(
-            Secondaries::new(&section, &joined_packet.thermal.secondaries, &If97)
-                .expect("SG secondary owner"),
-        )),
-        RodPort::Owner(Box::new(
-            RodBlock::from_packet(&rods, &network_packet).expect("rod owner"),
-        )),
-    )
-    .expect("joined operator");
-    let mut y = joined.prepared(&y_network).unwrap();
-    let ids = joined.differential(&network_ids);
-    let owners = joined
-        .prepare_owners(0., &mut y)
-        .expect("owner preparation");
-    let surfaces = joined
-        .initialize_surfaces(
-            0.,
-            &mut y,
-            SurfacePolicy {
-                maximum_residual_w: 1e-3,
-                maximum_correction_k: 1e-6,
-                maximum_iterations: 16,
-                maximum_backtracks: 12,
-            },
-        )
-        .expect("surfaces");
+    // Steps (B)-(D) by the unit library's builder.
     let classes = classes(shared);
-    let atol = joined_tolerances(&joined, &y, classes);
-    // G6: the PZR relief lift's absolute tolerance (the scaled floor at its
-    // unit scale, G12) bounds its distance from a stop at a travel root.
-    if let Some(b) = joined.pzr_mut() {
-        b.declare_lift_root_bound(classes.stock_scaled)
-            .expect("lift root bound");
-    }
-    let weights = error_weights(&y, classes.relative, &atol);
-    let compile_cpu = process_cpu_s();
-    let structure = JoinedJacobian::compile(&mut joined, 0., &y).expect("block structure");
-    let compile_cpu_s = process_cpu_s() - compile_cpu;
-    let mut analyses = Analyses::default();
-    let start_cpu = process_cpu_s();
-    let (yp, start) = joined_start(
-        &mut joined,
-        Matrices::Blocks {
-            structure: &structure,
-            analyses: &mut analyses,
-        },
-        0.,
-        &mut y,
-        &ids,
-        &weights,
-        START_BOUND,
-        3,
-    )
-    .expect("exact consistent start");
-    let start_cpu_s = process_cpu_s() - start_cpu;
+    let mut prepared = spine::prepare(&packet.bytes, &flows, &momenta, classes, &[])
+        .unwrap_or_else(|e| panic!("steps (B)-(C): {e}"));
+    let started_at =
+        spine::start(&mut prepared, process_cpu_s).unwrap_or_else(|e| panic!("step (D): {e}"));
+    let spine::Prepared {
+        mut joined,
+        y,
+        ids,
+        network_ids,
+        atol,
+        flowing,
+        owners,
+        surfaces,
+        ..
+    } = prepared;
+    let spine::Start {
+        yp,
+        structure,
+        analyses,
+        report: start,
+        compile_cpu_s,
+        start_cpu_s,
+        ..
+    } = started_at;
     let mut atol = atol;
     let pressure_outputs = super::outputs::cell_pressure_outputs(&joined, &network_packet)
         .expect("credited outputs on cell pressures");
@@ -420,21 +240,6 @@ pub fn compose_from(
         receipt,
         cpu_s: process_cpu_s() - started,
     }
-}
-
-/// The joined absolute tolerances: the network's classes on its own
-/// coordinates and the scaled stock floor on every other (G12). The
-/// pressure-driven algebraic currents' derived classes (S2-D24) replace
-/// their entries after the composed state's exact start, from the joined
-/// Jacobian there ([`derive_tolerances`]).
-pub fn joined_tolerances(joined: &Joined<If97>, y: &[f64], classes: ToleranceClasses) -> Vec<f64> {
-    let n_net = joined.offsets().nuclear;
-    let mut atol = joined
-        .network
-        .absolute_tolerances(&y[..n_net], classes)
-        .unwrap();
-    atol.resize(y.len(), classes.stock_scaled);
-    atol
 }
 
 /// S2-D24 on a Jacobian in CSC (`pointers`, `rows`, `values`, the
@@ -510,7 +315,7 @@ impl DerivedRule {
     /// derived class. The budgets are the credited blocks' own
     /// (`ld01-accuracy-contract`, `ld01-s2-accuracy`), read as the
     /// comparison reads them.
-    pub fn from(d: &crate::gates::Declaration) -> Result<Option<Self>, String> {
+    pub fn from(d: &super::gates::Declaration) -> Result<Option<Self>, String> {
         if d.gates.value.get("derivedTolerance").is_none() {
             return Ok(None);
         }
@@ -755,14 +560,6 @@ pub fn derive_tolerances(
         "applied_kg_s_range": range(&applied_kg_s), "derived_kg_s_range": range(&derived_kg_s),
         "coordinates": per.len(), "per_coordinate": per}),
     )
-}
-
-/// The integrator's error weights at a state, `1 / (rtol |y| + atol)`.
-pub fn error_weights(y: &[f64], rtol: f64, atol: &[f64]) -> Vec<f64> {
-    y.iter()
-        .zip(atol)
-        .map(|(v, a)| 1. / (rtol * v.abs() + a))
-        .collect()
 }
 
 /// A saved state `{t_s, y, yp, packet}` (the settling probe's

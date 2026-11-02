@@ -7,6 +7,7 @@ import { heatExchangerComponentDefinitions } from './heat-exchanger-component-de
 import { instrumentationComponentDefinitions } from './instrumentation-component-definitions.ts'
 import { electricalComponentDefinitions } from './electrical-component-definitions.ts'
 import { junctionComponentDefinitions } from './junction-component-definitions.ts'
+import { nativeUnitComponentDefinitions } from './native-unit-component-definitions.ts'
 import { pressurizerComponentDefinitions } from './pressurizer-component-definitions.ts'
 import { pumpComponentDefinitions } from './pump-component-definitions.ts'
 import { reactorComponentDefinitions } from './reactor-component-definitions.ts'
@@ -25,6 +26,7 @@ export const processPlantComponentDefinitions: ReadonlyArray<ComponentDefinition
   ...accumulatorComponentDefinitions,
   ...electricalComponentDefinitions,
   ...instrumentationComponentDefinitions,
+  ...nativeUnitComponentDefinitions,
 ]
 
 export const processPlantComponentRegistry: ReadonlyMap<ComponentKind, ComponentDefinition> = new Map(

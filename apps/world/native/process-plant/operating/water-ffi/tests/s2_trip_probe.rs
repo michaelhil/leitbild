@@ -22,8 +22,12 @@
 //! optionally `LD01_S2_TRIP_RECEIPT`, a new receipt path, and
 //! `LD01_S2_TRIP_CPU_CAP_S` (default 1800), the probe's own CPU guard.
 #![cfg(all(feature = "ida", target_os = "macos"))]
-#[path = "joined_spine.rs"]
-mod spine;
+mod common;
+use leitbild_operating_water::unit::{
+    clock::process_cpu_s,
+    profile::{DELTA_CJ_LSETUP, FIRST_STEP_S, NEWTON_COEFFICIENT},
+    spine::{Started, started_full_composition},
+};
 
 use leitbild_operating_plant::joined::{block::Command, post_trip_domain};
 use leitbild_operating_water::{
@@ -32,9 +36,6 @@ use leitbild_operating_water::{
     joined::{Discrete, Integrated, JoinedSystem, Restart, Restarted, discrete_restart},
 };
 use serde_json::{Value, json};
-use spine::{
-    DELTA_CJ_LSETUP, FIRST_STEP_S, NEWTON_COEFFICIENT, Started, started_full_composition, z1,
-};
 use std::collections::BTreeMap;
 
 /// The draft's trip timing (S2 declaration draft revision 6, "Trip"; G1).
@@ -144,9 +145,9 @@ impl System for RootLedger {
         self.inner.jacobian(t, cj, y, yp, data, rows, pointers)
     }
     fn roots(&mut self, t: f64, y: &[f64], yp: &[f64], out: &mut [f64]) -> Result<(), Failure> {
-        let started = z1::cpu_s();
+        let started = process_cpu_s();
         let result = self.inner.roots(t, y, yp, out);
-        self.cpu_s += z1::cpu_s() - started;
+        self.cpu_s += process_cpu_s() - started;
         self.calls += 1;
         for word in std::iter::once(t.to_bits()).chain(out.iter().map(|v| v.to_bits())) {
             for byte in word.to_le_bytes() {
@@ -157,6 +158,9 @@ impl System for RootLedger {
     }
     fn klu_ordering(&self) -> KluOrdering {
         self.inner.klu_ordering()
+    }
+    fn multiplicities(&self) -> Option<Vec<f64>> {
+        self.inner.multiplicities()
     }
     fn quadrature_count(&self) -> usize {
         self.inner.quadrature_count()
@@ -421,7 +425,7 @@ fn the_rod_seat_restarts_exactly_after_its_transaction() {
 /// The trip from `LD01_S2_TRIP_STATE` over `duration_s` (the window's
 /// timing unchanged), as one receipt.
 fn trip(duration_s: f64) -> Value {
-    let started = z1::cpu_s();
+    let started = process_cpu_s();
     let state_path = std::env::var("LD01_S2_TRIP_STATE").expect("LD01_S2_TRIP_STATE");
     let cpu_cap_s: f64 =
         std::env::var("LD01_S2_TRIP_CPU_CAP_S").map_or(1800., |v| v.parse().unwrap());
@@ -429,7 +433,7 @@ fn trip(duration_s: f64) -> Value {
         std::env::var("LD01_S2_TRIP_START_PASSES").map_or(2, |v| v.parse().unwrap());
     let state_bytes = std::fs::read(&state_path).expect("settled state");
     let state: Value = serde_json::from_slice(&state_bytes).expect("settled state json");
-    let (packet_path, _) = spine::packet_bytes();
+    let (packet_path, _) = common::packet_bytes();
     assert_eq!(
         state["packet"].as_str(),
         Some(packet_path.as_str()),
@@ -447,7 +451,7 @@ fn trip(duration_s: f64) -> Value {
         analyses,
         receipt: preparation,
         ..
-    } = started_full_composition();
+    } = started_full_composition(&common::spine()).expect("the S2 composition");
     // The state's exact bits where the file carries them (S2-07's pin),
     // otherwise its floats.
     let vector = |k: &str| -> Vec<f64> {
@@ -505,11 +509,15 @@ fn trip(duration_s: f64) -> Value {
         "at_settled_state_reported_only": derived_settled.receipt(),
         "g12_scaled_before": g12_guide_atol.first(),
     });
-    let preparation_cpu_s = z1::cpu_s() - started;
+    let preparation_cpu_s = process_cpu_s() - started;
     let t0 = state["t_s"].as_f64().expect("settled t_s");
     assert_eq!(y.len(), joined.dimension(), "settled state layout");
     let o = joined.offsets();
     let clusters = joined.rods().expect("rod owner").clusters();
+    // E-NUC: each cluster's coordinates are its motion class's.
+    let coordinate: Vec<usize> = (0..clusters)
+        .map(|c| joined.rods().expect("rod owner").cluster_coordinate(c))
+        .collect();
     let labels = root_labels(&joined);
     assert_eq!(labels.len(), joined.root_count(), "root labels");
     let layouts = joined.layouts();
@@ -586,8 +594,8 @@ fn trip(duration_s: f64) -> Value {
     // Cluster trajectories grouped by bitwise-equal (travel, speed).
     let groups = |y: &[f64]| -> Vec<Vec<usize>> {
         let mut by: BTreeMap<(u64, u64), Vec<usize>> = BTreeMap::new();
-        for c in 0..clusters {
-            let b = o.rods + 3 * c;
+        for (c, k) in coordinate.iter().enumerate() {
+            let b = o.rods + k;
             by.entry((y[b].to_bits(), y[b + 1].to_bits()))
                 .or_default()
                 .push(c);
@@ -625,7 +633,7 @@ fn trip(duration_s: f64) -> Value {
      -> Result<f64, String> {
         let pre = groups(y);
         let y_before = y.clone();
-        let timer = z1::cpu_s();
+        let timer = process_cpu_s();
         let restarted = match discrete_restart(
             ida,
             t,
@@ -713,7 +721,7 @@ fn trip(duration_s: f64) -> Value {
                 return Err(message);
             }
         };
-        let cpu = z1::cpu_s() - timer;
+        let cpu = process_cpu_s() - timer;
         yp.copy_from_slice(&restarted.yp);
         let (kinds, detail) = kinds_of(&restarted, name, &roots, &labels);
         let r = &restarted.report;
@@ -784,7 +792,7 @@ fn trip(duration_s: f64) -> Value {
         }
     };
     loop {
-        if z1::cpu_s() - started > cpu_cap_s {
+        if process_cpu_s() - started > cpu_cap_s {
             failure = Some(format!(
                 "probe CPU guard {cpu_cap_s} s reached at t0 + {} s",
                 t - t0
@@ -799,12 +807,12 @@ fn trip(duration_s: f64) -> Value {
             break;
         }
         let target = stop.min(t + CHUNK_S);
-        let timer = z1::cpu_s();
+        let timer = process_cpu_s();
         let outcome = ida.advance(target, &mut y, &mut yp);
-        let spent = z1::cpu_s() - timer;
+        let spent = process_cpu_s() - timer;
         solver_cpu_s[usize::from(!in_window)] += spent;
         segment.solver_cpu_s += spent;
-        let timer = z1::cpu_s();
+        let timer = process_cpu_s();
         match outcome {
             Ok(Advance::Reached(time)) => {
                 t = time;
@@ -845,10 +853,16 @@ fn trip(duration_s: f64) -> Value {
                     let j = &mut ida.system_mut().joined;
                     j.evaluate(t, &y, &yp, None, 0., None).unwrap();
                     let travel: Vec<f64> = (0..clusters)
-                        .map(|c| y[o.rods + 3 * c] * scales[o.rods + 3 * c])
+                        .map(|c| {
+                            let b = o.rods + coordinate[c];
+                            y[b] * scales[b]
+                        })
                         .collect();
                     let speed: Vec<f64> = (0..clusters)
-                        .map(|c| y[o.rods + 3 * c + 1] * scales[o.rods + 3 * c + 1])
+                        .map(|c| {
+                            let b = o.rods + coordinate[c] + 1;
+                            y[b] * scales[b]
+                        })
                         .collect();
                     let spread = |v: &[f64]| {
                         v.iter().cloned().fold(f64::NEG_INFINITY, f64::max)
@@ -897,7 +911,7 @@ fn trip(duration_s: f64) -> Value {
                         "segment_counts": cumulative, "local_error_largest": limiting}));
                     next_sample += SAMPLE_S;
                 }
-                observation_cpu_s += z1::cpu_s() - timer;
+                observation_cpu_s += process_cpu_s() - timer;
                 if t == stop {
                     let w = usize::from(!in_window);
                     let closed = close(&ida, std::mem::take(&mut segment), t);
@@ -940,7 +954,7 @@ fn trip(duration_s: f64) -> Value {
                 }
             }
             Ok(Advance::Root { time, directions }) => {
-                observation_cpu_s += z1::cpu_s() - timer;
+                observation_cpu_s += process_cpu_s() - timer;
                 t = time;
                 let w = usize::from(!in_window);
                 let closed = close(&ida, std::mem::take(&mut segment), t);
@@ -984,7 +998,7 @@ fn trip(duration_s: f64) -> Value {
     }
     let joined = &ida.system().joined;
     let c = joined.counters;
-    let total_cpu_s = z1::cpu_s() - started;
+    let total_cpu_s = process_cpu_s() - started;
     // Restart instants by kind, in the window and over the trip.
     let mut by_kind: BTreeMap<String, [usize; 2]> = BTreeMap::new();
     for r in &restarts {
@@ -1024,9 +1038,9 @@ fn trip(duration_s: f64) -> Value {
     let receipt = json!({
         "kind": "s2-10-trip-probe",
         "status": "NOT-EVIDENCE probe; S2 is not declared and no gate is judged; PREVIEW (critic H4): recorded before any TBD fill. The start is the state named in settled_state; its composition (G6 PZR block, packet) is the packet's",
-        "provenance": spine::provenance(),
+        "provenance": common::spine_provenance(),
         "preparation": preparation,
-        "settled_state": {"path": state_path, "sha256": spine::sha256(&state_bytes), "t_s": t0},
+        "settled_state": {"path": state_path, "sha256": leitbild_operating_plant::digest::sha256(&state_bytes), "t_s": t0},
         "derived_tolerance": derived_receipt,
         "d3": d3_summary,
         "configuration": {"source": "S2 declaration draft revision 6, Trip, and its block (maxOrder 2, newtonCoefficient 0.33, deltaCjLSetup 0.1, restartInitialStep_s 1e-4)",
@@ -1066,7 +1080,7 @@ fn trip(duration_s: f64) -> Value {
 /// D3 (a)'s record and the regions' reference water densities, if the run
 /// names one (see `trip`).
 fn post_trip_record() -> Option<(post_trip_domain::Extension, Vec<f64>)> {
-    let (_, bytes) = spine::packet_bytes();
+    let (_, bytes) = common::packet_bytes();
     let raw: Value = serde_json::from_slice(&bytes).expect("packet json");
     let record = match raw.get("post_trip_domain") {
         Some(v) => v.clone(),
@@ -1119,6 +1133,7 @@ fn d3_at(
             &at.neutrons,
             at.conditions(),
             e,
+            0.,
         ) {
             Ok(m) => {
                 let r = m.reactivity_gain.len();
@@ -1229,7 +1244,7 @@ fn s3_d1_restart_against_stop_and_continue_at_a_c0_kink() {
             structure,
             analyses,
             ..
-        } = started_full_composition();
+        } = started_full_composition(&common::spine()).expect("the S2 composition");
         let (atol, rtol): (Vec<f64>, f64) =
             (atol.iter().map(|a| a / refine).collect(), rtol / refine);
         let labels: Vec<String> = joined
@@ -1266,7 +1281,7 @@ fn s3_d1_restart_against_stop_and_continue_at_a_c0_kink() {
         }
         let before = ida.stats().unwrap();
         let h_before = before.current_step;
-        let started = z1::cpu_s();
+        let started = process_cpu_s();
         let mut restart_cpu = 0.;
         // Counts accumulate over IDAReInit segments (a restart zeroes them).
         let mut total = [0i64; 8];
@@ -1298,7 +1313,7 @@ fn s3_d1_restart_against_stop_and_continue_at_a_c0_kink() {
                         assert_eq!(done.len(), 1, "the ramp end");
                     }
                     if policy == "restart" {
-                        let timer = z1::cpu_s();
+                        let timer = process_cpu_s();
                         discrete_restart(
                             ida,
                             t,
@@ -1310,7 +1325,7 @@ fn s3_d1_restart_against_stop_and_continue_at_a_c0_kink() {
                             &restart,
                         )
                         .unwrap();
-                        z1::cpu_s() - timer
+                        process_cpu_s() - timer
                     } else {
                         0.
                     }
@@ -1343,7 +1358,7 @@ fn s3_d1_restart_against_stop_and_continue_at_a_c0_kink() {
         add(&ida, segment_base);
         let after = ida.stats().unwrap();
         json!({"policy": policy, "tolerance_divisor": refine, "h_before_s": h_before, "restart_cpu_s": restart_cpu,
-            "cpu_s_to_end": z1::cpu_s() - started,
+            "cpu_s_to_end": process_cpu_s() - started,
             "counts_after_change": named(&total),
             "last_step_s": after.last_step, "y": y, "atol": atol, "rtol": rtol, "labels": labels})
     };
@@ -1395,7 +1410,7 @@ fn s3_d1_restart_against_stop_and_continue_at_a_c0_kink() {
     let receipt = json!({
         "kind": "s3-d1-c0-kink-policy-measurement",
         "status": "NOT-EVIDENCE measurement for the S3-D1 event-policy draft; provisional settled state (pre-G18)",
-        "provenance": spine::provenance(),
+        "provenance": common::spine_provenance(),
         "settled_state": state_path, "quiet_history_s": quiet_s, "after_change_s": after_s,
         "change": "the SG owner's STOP ramp (TG TRIP to the secondary owner only): steam demand ramps linearly to zero over 0.3 s; two C0 kinks (start, end), no rod involvement",
         "runs": runs.iter().map(|r| json!({"policy": r["policy"], "tolerance_divisor": r["tolerance_divisor"], "h_before_s": r["h_before_s"], "restart_cpu_s": r["restart_cpu_s"],

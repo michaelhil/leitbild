@@ -3,7 +3,7 @@
 //! object of a fenced block, file hashes and the water build this binary
 //! links, refused unless it is the one the receipt names.
 //!
-//! Include it with `#[path = "common/provenance.rs"] mod provenance;`.
+//! Declared once in `tests/common/mod.rs` (`mod common;` in a test crate).
 #![allow(dead_code)] // Each test crate uses its own subset.
 use leitbild_operating_plant::network::MetastableBand;
 use serde::Deserialize;
@@ -45,7 +45,37 @@ pub struct WaterBuild {
     library_sha256: String,
     platform: String,
     architecture: String,
+    toolchain: WaterBuildToolchain,
+    wiki: WaterBuildWiki,
     metastable_band: WaterBuildBand,
+}
+/// The deterministic build's toolchain (f5f56faf1: the compiler's version
+/// line, target and flags, and the archiver).
+#[allow(dead_code)] // As for `WaterBuild`.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WaterBuildToolchain {
+    compiler: WaterBuildCompiler,
+    archiver: String,
+}
+#[allow(dead_code)] // As for `WaterBuild`.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WaterBuildCompiler {
+    command: String,
+    version: String,
+    target: String,
+    flags: Vec<String>,
+}
+/// The wiki the build read: git's tree id of the directory and the commit
+/// it was verified against, if one was named.
+#[allow(dead_code)] // As for `WaterBuild`.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WaterBuildWiki {
+    tree: String,
+    commit: Option<String>,
+    basis: String,
 }
 #[allow(dead_code)] // As for `WaterBuild`.
 #[derive(Debug, Deserialize)]

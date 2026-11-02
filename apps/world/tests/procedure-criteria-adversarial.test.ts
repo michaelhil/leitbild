@@ -32,7 +32,7 @@ const documentFor = (condition: ProcedureAssessmentCondition) => {
   const visit = (node: ProcedureAssessmentCondition): void => {
     if (node.type === 'comparison') tags.set(node.tagId, node.unit)
     else if (node.type === 'not' || node.type === 'held') visit(node.condition)
-    else if (node.type !== 'manual') node.conditions.forEach(visit)
+    else if (node.type !== 'manual' && node.type !== 'not-acquired') node.conditions.forEach(visit)
   }
   visit(condition)
   return parseProcedureMarkdown({

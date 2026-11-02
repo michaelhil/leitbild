@@ -5,10 +5,11 @@ import {
 } from './features/procedures/source.ts'
 import { join, resolve } from 'node:path'
 import { loadKnowledge, knowledgeSnapshotPath } from '@leitbild/knowledge'
-import { assertPwrReferenceProcedureTarget } from './packs/process-plant/procedure-applicability.ts'
+import { assertLd01ProcedureTarget, assertPwrReferenceProcedureTarget } from './packs/process-plant/procedure-applicability.ts'
+import { resolveLd01UnitArtifact } from './packs/process-plant/engine/artifact.ts'
 
 /** Product-owned procedure catalogs. The generic World procedure engine does not choose content. */
-export const procedureSources: ReadonlyArray<ProcedureSourceConfig> = [{
+const pwrProcedureSource: ProcedureSourceConfig = {
   sourceId: 'leitbild',
   label: 'Leitbild model-scoped PWR tasks and reference transfer procedures',
   repository: 'Leitbild-wiki',
@@ -36,7 +37,25 @@ export const procedureSources: ReadonlyArray<ProcedureSourceConfig> = [{
     ].map(id => `archive/pwr-reference-model/procedures/${id}.md`),
   ],
   assertTargetApplicable: (_document, object) => assertPwrReferenceProcedureTarget(object),
-}]
+}
+
+/** LD-01's X4 procedure set (owner 1 Nov: E0, ES0, A2, ECA0), only where the LD-01 native engine is installed
+ * (LD01_UNIT_ARTIFACT names a usable artifact). Production installs none, so it lists no LD-01 procedure; an LD-01
+ * procedure applies only to an LD-01 Plant. Each stays uninstalled until its wiki page installs it. */
+const ld01ProcedureSource: ProcedureSourceConfig = {
+  sourceId: 'leitbild-ld01',
+  label: 'LD-01 X4 procedures (local native unit only)',
+  repository: 'Leitbild-wiki',
+  ref: 'publication',
+  procedurePath: 'world/packs/process-plant/reference-designs/ld-01/procedures',
+  documentPaths: ['trip-and-safety-response', 'post-trip-stabilization', 'control-and-power-assessment', 'loss-of-ac-power']
+    .map(name => `world/packs/process-plant/reference-designs/ld-01/procedures/${name}.md`),
+  assertTargetApplicable: (_document, object) => assertLd01ProcedureTarget(object),
+}
+
+export const procedureSources: ReadonlyArray<ProcedureSourceConfig> = resolveLd01UnitArtifact().ok
+  ? [pwrProcedureSource, ld01ProcedureSource]
+  : [pwrProcedureSource]
 
 export const createConfiguredProcedureSourceService = (config: { readonly dataDir: string }): ProcedureSourceService =>
   createProcedureSourceService({

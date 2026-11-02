@@ -5,6 +5,8 @@ export type ProcedureAssessmentCondition =
   | { readonly type: 'not'; readonly condition: ProcedureAssessmentCondition }
   | { readonly type: 'held'; readonly durationSeconds: number; readonly condition: ProcedureAssessmentCondition }
   | { readonly type: 'manual'; readonly description: string; readonly tagIds: ReadonlyArray<string>; readonly source: string }
+  /** Supported only when the owning Pack reports every named tag unbound on the Plant; allowed only on an unknown-outcome branch. */
+  | { readonly type: 'not-acquired'; readonly description: string; readonly tagIds: ReadonlyArray<string>; readonly source: string }
 
 export interface ProcedureAssessment {
   readonly condition: ProcedureAssessmentCondition
@@ -68,23 +70,26 @@ export const parseProcedureAssessment = (value: unknown): ProcedureAssessment =>
     }
     if (node.type === 'not' || node.type === 'held') {
       record(node, node.type === 'held' ? ['type', 'condition', 'durationSeconds'] : ['type', 'condition'])
-      return node.type === 'held' ? { type: 'held', condition: condition(node.condition, depth + 1), durationSeconds: seconds(node.durationSeconds, 'durationSeconds', true) }
-        : { type: 'not', condition: condition(node.condition, depth + 1) }
+      const child = condition(node.condition, depth + 1)
+      // Absence is evidence only for its own unknown route: negated, it would read any acquired value as support.
+      if (assessmentLeaves(child).some(leaf => leaf.type === 'not-acquired')) throw new Error(`not-acquired cannot be placed under ${node.type}`)
+      return node.type === 'held' ? { type: 'held', condition: child, durationSeconds: seconds(node.durationSeconds, 'durationSeconds', true) }
+        : { type: 'not', condition: child }
     }
-    if (node.type === 'manual') {
+    if (node.type === 'manual' || node.type === 'not-acquired') {
       record(node, ['type', 'description', 'tagIds', 'source'])
-      if (!Array.isArray(node.tagIds)) throw new Error('manual assessment requires explicit tagIds')
+      if (!Array.isArray(node.tagIds) || (node.type === 'not-acquired' && node.tagIds.length === 0)) throw new Error(`${node.type} assessment requires explicit tagIds`)
       const tagIds = node.tagIds.map(tag)
-      if (new Set(tagIds).size !== tagIds.length) throw new Error('manual assessment contains duplicate tagIds')
-      return { type: 'manual', description: text(node.description, 'manual judgment description'), tagIds, source: text(node.source, 'source') }
+      if (new Set(tagIds).size !== tagIds.length) throw new Error(`${node.type} assessment contains duplicate tagIds`)
+      return { type: node.type, description: text(node.description, node.type === 'manual' ? 'manual judgment description' : 'not-acquired reason'), tagIds, source: text(node.source, 'source') }
     }
     throw new Error(`unsupported assessment condition ${String(node.type)}`)
   }
   return { condition: condition(root.condition, 0) }
 }
 
-export const assessmentLeaves = (condition: ProcedureAssessmentCondition): ReadonlyArray<Extract<ProcedureAssessmentCondition, { type: 'comparison' | 'manual' }>> => {
-  if (condition.type === 'comparison' || condition.type === 'manual') return [condition]
+export const assessmentLeaves = (condition: ProcedureAssessmentCondition): ReadonlyArray<Extract<ProcedureAssessmentCondition, { type: 'comparison' | 'manual' | 'not-acquired' }>> => {
+  if (condition.type === 'comparison' || condition.type === 'manual' || condition.type === 'not-acquired') return [condition]
   if (condition.type === 'not' || condition.type === 'held') return assessmentLeaves(condition.condition)
   return condition.conditions.flatMap(assessmentLeaves)
 }

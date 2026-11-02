@@ -13,13 +13,14 @@
 use super::{
     nuclear::{LinearTemplate, Nuclear, RegionWater, Target},
     operator::{Joined, LocalCoupler, LocalRows, OwnerRows},
+    presence::VaporPresence,
     solids::FUEL_HEAT_SPLIT,
 };
 use crate::{
     kinetics,
     network::{
         BlockJacobian, Failure, Fluid, Held, LocalCoupling, NetworkSeed, Properties, Receipts,
-        Replay, stratified,
+        Replay, Reuse, stratified,
     },
     poisons, source_feedback as sf,
     sparse::Pattern,
@@ -77,7 +78,13 @@ pub fn nuclear_partials(
     travel: &[f64],
     out: &mut NuclearPartials,
 ) -> Result<(), Failure> {
-    let (r, a) = (nuclear.regions(), nuclear.carriers());
+    let (r, a, n) = (
+        nuclear.regions(),
+        nuclear.ports(),
+        nuclear.replica_groups(),
+    );
+    let members = nuclear.members();
+    let (group_ports, port_count) = (nuclear.group_ports(), nuclear.port_count());
     let k = nuclear.coefficients();
     let feedback = nuclear.feedback();
     let kinetics = nuclear.kinetics();
@@ -89,19 +96,35 @@ pub fn nuclear_partials(
     {
         return Err(fatal("nuclear partials stage length"));
     }
-    let m0 = r + kinetics::DELAYED_GROUPS * a;
+    let m0 = r + kinetics::DELAYED_GROUPS * n;
     let material = |c: usize, m: usize| m0 + 6 * c + m;
     // The same conditions Nuclear::rows composes, as values.
     let neutrons: Vec<Scalar> = (0..r).map(|i| s(x[i])).collect();
-    let fuel: Vec<Scalar> = fuel_t.iter().map(|v| s(*v)).collect();
+    // E-NUC: each group's feedback temperature from its members' own (at
+    // its ports), and d T_group / d T_port for the port chain.
+    let port_t: Vec<Scalar> = fuel_t.iter().map(|v| s(*v)).collect();
+    let fuel: Vec<Scalar> = group_ports
+        .iter()
+        .map(|ports| super::nuclear::replica_temperature(ports, port_count, &port_t))
+        .collect::<Result<_, _>>()?;
+    let mut chain = vec![1.; a];
+    for (g, ports) in group_ports.iter().enumerate() {
+        if ports.len() > 1 {
+            let mean = fuel[g].value.sqrt();
+            for &p in ports {
+                chain[p] = mean * port_count[p] as f64
+                    / (members[g].len() as f64 * fuel_t[p].sqrt());
+            }
+        }
+    }
     let density: Vec<Scalar> = water.iter().map(|w| s(w.density_kg_m3.value)).collect();
     let boron: Vec<Scalar> = water.iter().map(|w| s(w.boron_ppm_eq.value)).collect();
     let pressure: Vec<Scalar> = water.iter().map(|w| s(w.pressure_pa.value)).collect();
     let moderator: Vec<Scalar> = water.iter().map(|w| s(w.temperature_k.value)).collect();
-    let fissile: Vec<Scalar> = (0..a).map(|c| s(x[material(c, 0)])).collect();
-    let xenon: Vec<Scalar> = (0..a).map(|c| s(x[material(c, 3)])).collect();
-    let samarium: Vec<Scalar> = (0..a).map(|c| s(x[material(c, 5)])).collect();
-    let opacity: Vec<Scalar> = (0..a)
+    let fissile: Vec<Scalar> = (0..n).map(|c| s(x[material(c, 0)])).collect();
+    let xenon: Vec<Scalar> = (0..n).map(|c| s(x[material(c, 3)])).collect();
+    let samarium: Vec<Scalar> = (0..n).map(|c| s(x[material(c, 5)])).collect();
+    let opacity: Vec<Scalar> = (0..n)
         .map(|c| s(k.capture.cross_section_m2) * (s(x[material(c, 1)]) - s(k.reference_fertile[c])))
         .collect();
     let rods: Vec<Scalar> = travel.iter().map(|v| s(*v)).collect();
@@ -118,7 +141,7 @@ pub fn nuclear_partials(
         achieved_rod_travel_m: &rods,
         capsule_age_s: s(k.capsule_age0_s + t),
     };
-    let mut values = sf::Output::new(r, a, supports.len());
+    let mut values = sf::Output::new(r, n, supports.len());
     feedback
         .evaluate(&neutrons, conditions, &mut values)
         .map_err(trial)?;
@@ -129,7 +152,8 @@ pub fn nuclear_partials(
         .regions
         .iter()
         .map(|v| kinetics::RegionInput {
-            reactivity: v.reactivity.value,
+            // B1: the applied stuck-cluster term, as Nuclear::rows adds it.
+            reactivity: v.reactivity.value + nuclear.stuck_worth_dk(),
             external_source_per_s: v.external_source_per_s.value,
         })
         .collect();
@@ -146,7 +170,7 @@ pub fn nuclear_partials(
         outside_fractions: k.outside_fractions,
     };
     out.feeds.clear();
-    out.feeds.resize(2 * a, Vec::new());
+    out.feeds.resize(2 * n, Vec::new());
     out.own.clear();
     out.fuel_t.clear();
     out.water.clear();
@@ -180,7 +204,7 @@ pub fn nuclear_partials(
     let zero_emission = vec![0.; k.emission_fractions.len()];
     let zero_outside = vec![0.; k.outside_fractions.len()];
     let mut rates = vec![0.; m0];
-    let mut fissions = vec![0.; a];
+    let mut fissions = vec![0.; n];
     kinetics
         .directional_derivative(
             state,
@@ -204,7 +228,7 @@ pub fn nuclear_partials(
         .map(|y| y.iter().sum())
         .collect();
     // Per carrier: d F / d fissile = sum_k dG_k/dfissile N_i(k).
-    let mut fission_fissile = vec![0.; a];
+    let mut fission_fissile = vec![0.; n];
     for (sk, sp) in supports.iter().zip(&fp.supports) {
         fission_fissile[sk.material] += sp.production_fissile * x[sk.region];
     }
@@ -213,7 +237,10 @@ pub fn nuclear_partials(
         let (i, c) = (sk.region, sk.material);
         let row = offset + i;
         let coef = per_reactivity[i];
-        out.fuel_t.push((row, c, coef * sp.fuel_temperature));
+        for &port in &group_ports[c] {
+            out.fuel_t
+                .push((row, port, coef * sp.fuel_temperature * chain[port]));
+        }
         out.own.push((
             row,
             offset + material(c, 0),
@@ -247,11 +274,12 @@ pub fn nuclear_partials(
         .tangent(&vec![0.; fission_model.dimension()], 1., &mut prompt)
         .map_err(trial)?
         .prompt_w;
-    let mut by_carrier: Vec<Vec<usize>> = vec![Vec::new(); a];
+    let mut by_carrier: Vec<Vec<usize>> = vec![Vec::new(); n];
     for (index, sk) in supports.iter().enumerate() {
         by_carrier[sk.material].push(index);
     }
-    for c in 0..a {
+    for c in 0..n {
+        let share = 1. / members[c].len() as f64;
         let fertile = x[material(c, 1)];
         let exposure = values.exposure_per_m2_s[c].value;
         let fissions_c = values.carrier_fissions_per_s[c].value;
@@ -394,8 +422,11 @@ pub fn nuclear_partials(
                 offset + material(c, 5),
                 fraction_b * k.samarium_binding_j * pm.samarium_capture_per_samarium * exposure,
             ));
+            // E-NUC: each port's heat is one member's share of the group's.
             for (column, v) in entries.drain(..) {
-                sink.push((c, column, v));
+                for &port in &group_ports[c] {
+                    sink.push((port, column, v * share));
+                }
             }
         }
     }
@@ -426,11 +457,13 @@ pub fn nuclear_partials(
 /// Every other part is the joined operator's own structural pattern.
 /// `partials` fixes the nuclear structure, which no state changes; the
 /// pattern holds while every wall cell holds liquid only, which S2's wall
-/// laws require (a vapor-holding wall cell refuses).
+/// laws require (a vapor-holding wall cell refuses). `vapor` is the vapor
+/// presence the donor reads follow (S3-D-P3).
 pub fn joined_pattern<P: Properties + WaterProperties>(
     joined: &Joined<P>,
     template: &LinearTemplate,
     partials: &NuclearPartials,
+    vapor: &VaporPresence,
 ) -> Result<Vec<Vec<usize>>, Failure> {
     let o = joined.offsets();
     let n = o.end;
@@ -600,7 +633,7 @@ pub fn joined_pattern<P: Properties + WaterProperties>(
         }
         let l = network.cell_layout[m];
         let mut out = vec![l.base, l.mass[0], l.energy[0]];
-        if network.cell(m).phase[1].is_some() {
+        if vapor.holds(m) {
             out.extend([l.mass[1], l.energy[1]]);
             out.extend(moved.get(&m).into_iter().flatten().copied());
         }
@@ -637,12 +670,23 @@ pub fn joined_pattern<P: Properties + WaterProperties>(
         }
         columns[row].extend(receipt_rows(c));
     }
+    // R4-NCHEAD: a profiled SG primary's port heads read its fold
+    // conductance, whose film reads each segment's metal.
+    let profiles = network.profile_faces();
     for (i, &(c, _)) in incidence.segments.iter().enumerate() {
         let row = o.solids + solids.metal(i);
         for col in water_reads(c).into_iter().chain(flux_reads(c)) {
             columns[col].insert(row);
         }
         columns[row].extend(receipt_rows(c));
+        for (_, faces) in profiles.iter().filter(|(cell, _)| *cell == c) {
+            for f in faces {
+                columns[row].extend([
+                    network.face_layout[2 * f].index,
+                    network.face_layout[2 * f + 1].index,
+                ]);
+            }
+        }
     }
     for (c, rows) in columns.iter_mut().enumerate() {
         rows.insert(c);
@@ -681,6 +725,8 @@ pub struct Classes {
     pub rods: bool,
     /// The PZR metal and relief block (G6).
     pub pzr: bool,
+    /// The CVCS block (plan r4 X4.2).
+    pub cvcs: bool,
 }
 impl Classes {
     pub const ALL: Self = Self {
@@ -690,6 +736,7 @@ impl Classes {
         secondary: true,
         rods: true,
         pzr: true,
+        cvcs: true,
     };
     pub const NONE: Self = Self {
         network: false,
@@ -698,6 +745,7 @@ impl Classes {
         secondary: false,
         rods: false,
         pzr: false,
+        cvcs: false,
     };
 }
 
@@ -787,6 +835,17 @@ impl JoinedJacobian {
         t: f64,
         y: &[f64],
     ) -> Result<Self, Failure> {
+        Self::compile_for(joined, t, y, None)
+    }
+    /// [`JoinedJacobian::compile`] with the donor reads following the
+    /// declared vapor presence (the phase-mode owner's, S3-D-P3), or the
+    /// value state's own when `None` (S3-D-P3).
+    pub fn compile_for<P: Properties + WaterProperties>(
+        joined: &mut Joined<P>,
+        t: f64,
+        y: &[f64],
+        presence: Option<&VaporPresence>,
+    ) -> Result<Self, Failure> {
         let o = joined.offsets();
         if y.len() != o.end {
             return Err(fatal("joined block Jacobian compile length"));
@@ -804,7 +863,8 @@ impl JoinedJacobian {
             partials.fuel_w.len(),
             partials.coolant_w.len(),
         ];
-        let columns = joined_pattern(joined, &template, &partials)?;
+        let evaluated = VaporPresence::evaluated(&joined.network);
+        let columns = joined_pattern(joined, &template, &partials, presence.unwrap_or(&evaluated))?;
         let pattern = Pattern::from_columns(o.end, &columns).map_err(fatal)?;
         let network = joined.network.block_jacobian()?;
         let row_scales = joined
@@ -1012,7 +1072,39 @@ pub fn jacobian_blocks<P: Properties + WaterProperties>(
         yp,
         values,
         classes,
+        None,
         Clock(None),
+    )
+}
+
+/// [`jacobian_blocks`] on a base evaluation already made (PERF2, E-LIN
+/// R4-JAC-BASE): `joined`'s last evaluation is `evaluate(t, y, yp, None, 0.,
+/// Some(reuse))` at exactly this state, with nothing evaluated or changed
+/// since, so the assembly's own base evaluation would repeat it bit for bit.
+#[allow(clippy::too_many_arguments)] // The stage inputs, the structure, the classes and the base.
+pub fn jacobian_blocks_on_base<P: Properties + WaterProperties>(
+    joined: &mut Joined<P>,
+    structure: &JoinedJacobian,
+    t: f64,
+    cj: f64,
+    y: &[f64],
+    yp: &[f64],
+    values: &mut [f64],
+    classes: Classes,
+    reuse: Reuse<P::Caloric>,
+    profile: Option<&mut Profile>,
+) -> Result<(), Failure> {
+    assemble(
+        joined,
+        structure,
+        t,
+        cj,
+        y,
+        yp,
+        values,
+        classes,
+        Some(reuse),
+        Clock(profile),
     )
 }
 
@@ -1038,6 +1130,7 @@ pub fn jacobian_blocks_profiled<P: Properties + WaterProperties>(
         yp,
         values,
         classes,
+        None,
         Clock(Some(profile)),
     )
 }
@@ -1052,6 +1145,7 @@ fn assemble<P: Properties + WaterProperties>(
     yp: &[f64],
     values: &mut [f64],
     classes: Classes,
+    base: Option<Reuse<P::Caloric>>,
     mut clock: Clock<'_>,
 ) -> Result<(), Failure> {
     let o = joined.offsets();
@@ -1059,8 +1153,14 @@ fn assemble<P: Properties + WaterProperties>(
         return Err(fatal("joined block Jacobian layout"));
     }
     let started = clock.now();
-    let mut reuse = joined.network.reuse();
-    joined.evaluate(t, y, yp, None, 0., Some(&mut reuse))?;
+    let reuse = match base {
+        Some(reuse) => reuse,
+        None => {
+            let mut reuse = joined.network.reuse();
+            joined.evaluate(t, y, yp, None, 0., Some(&mut reuse))?;
+            reuse
+        }
+    };
     clock.book("base: joined evaluation", started, 0.);
     let started = clock.now();
     let scales = &structure.scales;
@@ -1114,6 +1214,7 @@ fn assemble<P: Properties + WaterProperties>(
     };
     let (network, mut coupler) = joined.local_parts(t, y, yp, cj);
     let regular = network.pzr.cell;
+    let pzr_coordinates = network.pzr.coordinates();
     let held = Held::new(network.properties());
     let mut replay = Replay::new(
         network,
@@ -1164,6 +1265,13 @@ fn assemble<P: Properties + WaterProperties>(
                 }
             }
             let spent = hook.spent;
+            // Plan r4 X4.2: a PZR column's CVCS level row (the LT law reads
+            // the cell's coordinates directly, not through the fluid).
+            if pzr_coordinates.contains(&j)
+                && let Some((row, v)) = coupler.cvcs_level_column(j)?
+            {
+                sink.add(row, j, v)?;
+            }
             clock.book("network columns: replay and chains", started, spent);
         }
         clock.book_spent("network columns: local coupling", locals, local);
@@ -1226,6 +1334,7 @@ fn assemble<P: Properties + WaterProperties>(
         for (col, heats) in &coolant {
             seed.receipts.clear();
             seed.volumes.clear();
+            seed.passes.clear();
             for (cell, q) in heats {
                 seed.receipts.push((*cell, [[0., *q, 0.], [0.; 3]]));
             }
@@ -1253,10 +1362,13 @@ fn assemble<P: Properties + WaterProperties>(
     }
     let zero = [[Scalar::constant(0.); 3]; 2];
     let mut buffer = vec![zero; regular];
+    // R4-NCHEAD: an owner column's SG pass directions (the solids' metal).
+    let mut passes = vec![None; regular];
     for (name, range, named) in [
         ("solid", o.solids..o.secondary, classes.solids),
         ("secondary", o.secondary..o.rods, classes.secondary),
         ("rod", o.rods..o.pzr, classes.rods),
+        ("cvcs", o.cvcs..o.end, classes.cvcs),
     ] {
         if !named {
             continue;
@@ -1266,10 +1378,11 @@ fn assemble<P: Properties + WaterProperties>(
         for j in range {
             let started = clock.now();
             buffer.fill(zero);
+            passes.fill(None);
             coupler.owner_column(
                 j,
                 &replay.fluid(),
-                &mut Receipts::new(&mut buffer),
+                &mut Receipts::with_passes(&mut buffer, &mut passes),
                 &mut owner,
             )?;
             own.0 += 1;
@@ -1301,7 +1414,16 @@ fn assemble<P: Properties + WaterProperties>(
                         .push((*cell, v.volume_m3.direction, v.rate_m3_s.direction));
                 }
             }
-            if seed.receipts.is_empty() && seed.volumes.is_empty() {
+            seed.passes.clear();
+            for (cell, p) in passes.iter().enumerate() {
+                if let Some(p) = p
+                    && (p.conductance_w_k.direction != 0. || p.capacity_w_k.direction != 0.)
+                {
+                    seed.passes
+                        .push((cell, [p.conductance_w_k.direction, p.capacity_w_k.direction]));
+                }
+            }
+            if seed.receipts.is_empty() && seed.volumes.is_empty() && seed.passes.is_empty() {
                 continue;
             }
             let started = clock.now();
@@ -1333,6 +1455,12 @@ fn assemble<P: Properties + WaterProperties>(
                 "secondary columns: local coupling",
                 "secondary columns: chains",
             ),
+            "cvcs" => (
+                "cvcs columns: owner_column",
+                "cvcs columns: network replay of receipts",
+                "cvcs columns: local coupling",
+                "cvcs columns: chains",
+            ),
             _ => (
                 "rod columns: owner_column",
                 "rod columns: network replay of receipts and volumes",
@@ -1349,7 +1477,7 @@ fn assemble<P: Properties + WaterProperties>(
     }
     // The PZR block's columns (G6): its own rows at the base column, and the
     // stratified rows through the boundary's directions.
-    if classes.pzr && o.end > o.pzr {
+    if classes.pzr && o.cvcs > o.pzr {
         let started = clock.now();
         let cell = network.stratified();
         let column = *network
@@ -1357,7 +1485,8 @@ fn assemble<P: Properties + WaterProperties>(
             .ok_or_else(|| fatal("the PZR columns need the base evaluation's column"))?;
         seed.receipts.clear();
         seed.volumes.clear();
-        for j in o.pzr..o.end {
+        seed.passes.clear();
+        for j in o.pzr..o.cvcs {
             let boundary = coupler.pzr_column(j, cell, &column)?;
             for (row, v) in coupler.last_pzr() {
                 sink.add(*row, j, v.direction)?;

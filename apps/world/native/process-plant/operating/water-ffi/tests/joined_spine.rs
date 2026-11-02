@@ -6,49 +6,32 @@
 //! written only to a new path, never over an existing file.
 //! The harness needs stock IDA/KLU (`--features ida`).
 #![cfg(feature = "ida")]
+use leitbild_operating_plant::digest::sha256;
 use leitbild_operating_plant::{
-    joined::{self, census, nuclear::Nuclear, packet, pzr::Pzr, solids::Solids},
-    network::{Network, PzrPreparation, packet::Packet as NetworkPacket},
+    joined::{
+        self, census,
+        nuclear::Nuclear,
+        packet,
+        pzr::{Pzr, SteelPreparation},
+        solids::Solids,
+    },
+    network::{Network, packet::Packet as NetworkPacket},
 };
-use leitbild_operating_water::If97;
+use leitbild_operating_water::{
+    If97,
+    unit::{
+        clock::process_cpu_s,
+        profile::{self, DELTA_CJ_LSETUP, FIRST_STEP_S, NEWTON_COEFFICIENT, PZR},
+        spine::{
+            S1Settling, Started, composed_network, s1_settled_flows, started_full_composition,
+            started_full_composition_with_singles,
+        },
+    },
+};
 use serde_json::{Value, json};
 use std::path::Path;
-#[path = "ld01_regression/wiki.rs"]
-mod wiki;
-
-/// The S1 harness's declared PZR preparation controls (s1_hydraulics.rs).
-const PZR: PzrPreparation = PzrPreparation {
-    pressure_tolerance_pa: 1e-6,
-    max_passes: 50,
-};
-
-pub fn packet_bytes() -> (String, Vec<u8>) {
-    let path = std::env::var("LD01_OPERATING_HOT_SPINE_PACKET")
-        .expect("LD01_OPERATING_HOT_SPINE_PACKET names the compiled spine packet");
-    let bytes = std::fs::read(&path).expect("packet");
-    (path, bytes)
-}
-
-/// App and wiki provenance of a receipt: commits and whether the worktrees
-/// were clean. The wiki is the archive or checkout named by `LD01_WIKI_ROOT`;
-/// its tree hash is recorded and `LD01_WIKI_COMMIT` is verified against it
-/// (`ld01_regression/wiki.rs`), so an archive's receipt names its commit.
-pub fn provenance() -> Value {
-    let git = |args: &[&str]| {
-        std::process::Command::new("git")
-            .args(args)
-            .output()
-            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-            .unwrap_or_default()
-    };
-    let wiki = std::env::var("LD01_WIKI_ROOT").ok();
-    json!({
-        "app_commit": git(&["rev-parse", "HEAD"]),
-        "app_worktree_dirty": !git(&["status", "--porcelain"]).is_empty(),
-        "wiki": wiki,
-        "wiki_provenance": wiki.as_ref().map(|w| wiki::provenance(Path::new(w)).expect("wiki provenance")),
-    })
-}
+mod common;
+use common::{packet_bytes, spine_provenance};
 
 /// Write a receipt to a NEW file named by `LD01_JOINED_RECEIPT`, if set.
 fn write_receipt(receipt: &Value) {
@@ -71,8 +54,20 @@ fn joined_census_against_table_1_1() {
     let joined_packet: packet::Packet = serde_json::from_slice(&bytes).expect("joined packet");
     let (network, prepared) = Network::new(&network_packet, If97, &PZR).expect("network");
     let cells = network.cell_layout.len();
-    let nuclear = Nuclear::new(&joined_packet, cells).expect("nuclear block");
-    let solids = Solids::new(&joined_packet, cells).expect("solids block");
+    let mut nuclear = Nuclear::new(&joined_packet, cells).expect("nuclear block");
+    // E-NUC phase B: each rod seat's fitting stays out of the solids' classes.
+    let raw: serde_json::Value = serde_json::from_slice(&bytes).expect("packet json");
+    let singles: Vec<String> = raw["rods"]["clusters"]
+        .as_array()
+        .map(|c| {
+            c.iter()
+                .map(|c| format!("{}/top-fitting", c["fuel_assembly"].as_str().unwrap()))
+                .collect()
+        })
+        .unwrap_or_default();
+    let solids =
+        Solids::new(&joined_packet, cells, nuclear.group_of(), &singles).expect("solids block");
+    nuclear.set_ports(solids.half_members()).expect("nuclear ports");
     let network_layout = joined::network_layout(&network);
     network_layout.validate("network").unwrap();
     let ids = |l: &joined::block::Layout| l.ids();
@@ -83,16 +78,15 @@ fn joined_census_against_table_1_1() {
     );
     assert_eq!(n_ids, ids(&network_layout), "network identity");
     // G6: the PZR owner from the packet's pzrMetal section, at the prepared
-    // cell's Tsat(p_s); a packet compiled before G6 has none.
-    let pzr = joined_packet.pzr_metal.as_ref().map(|section| {
-        Pzr::new(
-            network.stratified(),
-            section,
-            network.pzr_saturation_temperature_k(),
-        )
-        .expect("PZR owner")
-    });
-    let p_ids = pzr.as_ref().map(|b| b.differential());
+    // cell's Tsat(p_s).
+    let pzr = Pzr::new(
+        network.stratified(),
+        &joined_packet.pzr_metal,
+        SteelPreparation::Steady(joined_packet.pzr_steel.as_ref().expect("pzrSteel")),
+        network.pzr_saturation_temperature_k(),
+    )
+    .expect("PZR owner");
+    let p_ids = pzr.differential();
     let mut composed = vec![
         census::Composed {
             owner: "network",
@@ -110,13 +104,11 @@ fn joined_census_against_table_1_1() {
             differential: &s_ids,
         },
     ];
-    if let (Some(b), Some(ids)) = (&pzr, &p_ids) {
-        composed.push(census::Composed {
-            owner: "pzr",
-            layout: b.layout(),
-            differential: ids,
-        });
-    }
+    composed.push(census::Composed {
+        owner: "pzr",
+        layout: pzr.layout(),
+        differential: &p_ids,
+    });
     let c = census::census(
         &composed,
         &[joined::pending_secondary(), joined::pending_rods()],
@@ -129,40 +121,77 @@ fn joined_census_against_table_1_1() {
             .clone()
     };
     assert_eq!(row("Regional N").composed, Some([24, 0]));
-    assert_eq!(row("Material precursors").composed, Some([2316, 0]));
-    assert_eq!(row("Fissile, fertile").composed, Some([2316, 0]));
-    assert_eq!(row("Delayed-energy").composed, Some([9650, 0]));
-    assert_eq!(row("Fuel 2 + clad 1").composed, Some([1158, 0]));
-    assert_eq!(row("Massless").composed, Some([0, 1158]));
-    assert_eq!(row("Helium").composed, Some([193, 0]));
-    assert_eq!(row("Guide/plenum").composed, Some([1351, 0]));
+    // E-NUC: 18 exact replica groups of the 386 carriers.
+    let groups = nuclear.replica_groups();
+    assert_eq!(groups, 18);
+    assert_eq!(row("Material precursors").composed, Some([6 * groups, 0]));
+    assert_eq!(row("Fissile, fertile").composed, Some([6 * groups, 0]));
+    assert_eq!(row("Delayed-energy").composed, Some([25 * groups, 0]));
+    assert_eq!(row("Material precursors").represented, Some([2316, 0]));
+    assert_eq!(row("Fissile, fertile").represented, Some([2316, 0]));
+    assert_eq!(row("Delayed-energy").represented, Some([9650, 0]));
+    // E-NUC phase B: the solids' replica classes (each rod seat's fitting
+    // single).
+    let (halves, helium, stores) = (
+        solids.halves(),
+        solids.helium_members().len(),
+        solids.store_members().len(),
+    );
+    assert_eq!(halves, 18);
+    assert_eq!(row("Fuel 2 + clad 1").composed, Some([3 * halves, 0]));
+    assert_eq!(row("Massless").composed, Some([0, 3 * halves]));
+    assert_eq!(row("Helium").composed, Some([helium, 0]));
+    assert_eq!(row("Guide/plenum").composed, Some([stores, 0]));
     assert_eq!(row("SG metal").composed, Some([8, 0]));
+    assert_eq!(row("Fuel 2 + clad 1").represented, Some([1158, 0]));
+    assert_eq!(row("Massless").represented, Some([0, 1158]));
+    assert_eq!(row("Helium").represented, Some([193, 0]));
+    assert_eq!(row("Guide/plenum").represented, Some([1351, 0]));
+    // The coordinates the groups and classes replace (differential, algebraic).
+    let reduced = 2316 + 2316 + 9650 - 37 * groups + 1158 - 3 * halves + 193 - helium + 1351 - stores;
+    let reduced_algebraic = 1158 - 3 * halves;
     // Decision 0014 with amendment 6: the stratified cell has 19 coordinates.
-    assert_eq!(row("Network cells").composed, Some([152, 35]));
-    assert_eq!(row("Network faces").composed, Some([70, 0]));
+    // S3-D28: the regression packet composes the closed spray line (S3-D25):
+    // its cell (5 differential, 1 algebraic) and its two paths' 4 impulses.
+    assert_eq!(row("Network cells").composed, Some([157, 36]));
+    assert_eq!(row("Network faces").composed, Some([74, 0]));
     assert_eq!(row("RCP rotors").composed, Some([4, 0]));
     // G6: 3 heater rod segments, 5 shell bands and 2 heads, and the lift.
-    let g6 = match &pzr {
-        Some(b) => {
-            let relief = usize::from(b.relief().is_some());
-            let metal = b.layout().len() - relief;
-            assert_eq!(row("PZR heater rod").composed, Some([metal, 0]));
-            assert_eq!(row("PZR relief lift").composed, Some([relief, 0]));
-            metal + relief
-        }
-        None => 0,
+    let g6 = {
+        let relief = usize::from(pzr.relief().is_some());
+        let metal = pzr.layout().len() - relief;
+        assert_eq!(row("PZR heater rod").composed, Some([metal, 0]));
+        assert_eq!(row("PZR relief lift").composed, Some([relief, 0]));
+        metal + relief
     };
-    assert_eq!(c.composed, [17242 + g6, 1193, 18435 + g6]);
-    assert_eq!(c.with_pending, [17302 + g6, 1301, 18603 + g6]);
+    assert_eq!(c.represented, [17251 + g6, 1194, 18445 + g6]);
+    assert_eq!(
+        c.composed,
+        [
+            17251 + g6 - reduced,
+            1194 - reduced_algebraic,
+            18445 + g6 - reduced - reduced_algebraic
+        ]
+    );
+    // P2 (OU-P2): the rods add their bore groups' water (8 x (M, U, B)
+    // differential, 8 pressures) and each cluster's upper-mouth current.
+    assert_eq!(
+        c.with_pending,
+        [
+            17335 + g6 - reduced,
+            1362 - reduced_algebraic,
+            18697 + g6 - reduced - reduced_algebraic
+        ]
+    );
     let histories = nuclear.histories();
-    assert_eq!(histories.len(), 9650);
+    assert_eq!(histories.len(), 25 * groups);
     let receipt = json!({
         "kind": "s2-joined-census",
         "status": "NOT-EVIDENCE zero-time allocation; no residual evaluated, no trajectory",
         "packet": path,
         "packet_sha256": sha256(&bytes),
         "packet_identity": joined_packet.identity,
-        "provenance": provenance(),
+        "provenance": spine_provenance(),
         "census": c,
         "linear_histories": {
             "rows": histories.len(),
@@ -173,34 +202,16 @@ fn joined_census_against_table_1_1() {
             ]
         },
         "network": {"dimension": network.dimension(), "regular_cells": cells, "faces": network.face_count(), "rotors": network.rotor_count()},
-        "pzr": pzr.as_ref().map(|b| json!({"coordinates": b.layout().labels, "steel_temperature_k": b.saturation_temperature_k(),
-            "heater_demand_w": b.request_w(), "bank_power_w": b.bank_power_w(),
-            "relief": b.relief().map(|r| json!({"port": r.port, "opening_pa": r.device.opening_pa, "reseat_pa": r.device.reseat_pa,
-                "full_strokes_per_s": r.device.full_strokes_per_s, "back_pressure_pa": r.back_pressure_pa}))})),
+        "pzr": json!({"coordinates": pzr.layout().labels, "steel_temperature_k": pzr.saturation_temperature_k(),
+            "heater_demand_w": pzr.request_w(), "bank_power_w": pzr.bank_power_w(),
+            "relief": pzr.relief().map(|r| json!({"port": r.port, "opening_pa": r.device.opening_pa, "reseat_pa": r.device.reseat_pa,
+                "full_strokes_per_s": r.device.full_strokes_per_s, "back_pressure_pa": r.back_pressure_pa}))}),
     });
     println!("{}", serde_json::to_string(&receipt).unwrap());
     write_receipt(&receipt);
 }
 
-pub fn sha256(bytes: &[u8]) -> String {
-    let out = std::process::Command::new("shasum")
-        .args(["-a", "256"])
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .spawn()
-        .and_then(|mut child| {
-            use std::io::Write;
-            child.stdin.take().unwrap().write_all(bytes)?;
-            child.wait_with_output()
-        })
-        .expect("shasum");
-    String::from_utf8_lossy(&out.stdout)
-        .split_whitespace()
-        .next()
-        .unwrap_or_default()
-        .to_string()
-}
-
+/// Z1's probe helpers: the prepared ports, rows by census class, heats.
 pub mod z1 {
     use super::*;
     use leitbild_operating_plant::{
@@ -208,226 +219,8 @@ pub mod z1 {
             block::SecondaryView,
             operator::{Joined, RodPort, SecondaryPort},
         },
-        network::{
-            RotorState, ToleranceClasses, consistent_start,
-            prepare::{self, OperatingPoint, Settings},
-        },
-        rotor::{Shaft, SpeedRequest, Support},
         thermal::{Scalar, WaterProperties},
     };
-    use leitbild_operating_water::{
-        ida::{Ida, Initial},
-        network::Integrated,
-    };
-
-    /// The S1 harness's hydrostatic preparation settings (s1_hydraulics.rs).
-    pub const SETTINGS: Settings = Settings {
-        pressure_tolerance_pa: 1e-6,
-        max_passes: 50,
-        level_match_m: 1e-9,
-        eos_row_bound: 1e-12,
-        tree_face_bound_pa: 1e-6,
-        representation_search: 8,
-    };
-    pub fn rotors() -> Vec<RotorState> {
-        vec![
-            RotorState {
-                support: Support::Supported(SpeedRequest::Nominal),
-                shaft: Shaft::Free,
-            };
-            4
-        ]
-    }
-    /// The `ld01-s1-gates` block of the wiki named by `LD01_WIKI_ROOT`.
-    pub fn s1_gates() -> Value {
-        let wiki = std::env::var("LD01_WIKI_ROOT").expect("LD01_WIKI_ROOT");
-        let page = format!(
-            "{wiki}/world/packs/process-plant/reference-designs/ld-01/model/build-readiness.md"
-        );
-        let text = std::fs::read_to_string(&page).unwrap();
-        let open = "```ld01-s1-gates\n";
-        let start = text.find(open).expect("ld01-s1-gates") + open.len();
-        let end = start + text[start..].find("\n```").unwrap();
-        serde_json::from_str(&text[start..end]).unwrap()
-    }
-    pub fn classes(gates: &Value) -> ToleranceClasses {
-        let f = |k: &str| gates[k].as_f64().unwrap_or_else(|| panic!("gate {k}"));
-        ToleranceClasses {
-            relative: f("relativeTolerance"),
-            stock_scaled: f("stockScaledAbsolute"),
-            tracer_scaled: f("tracerScaledAbsolute"),
-            rotor_scaled: f("rotorScaledAbsolute"),
-            volume_flow_m3_s: f("volumeFlowAbsolute_m3_s"),
-        }
-    }
-    pub fn cpu_s() -> f64 {
-        #[repr(C)]
-        struct Timespec {
-            seconds: i64,
-            nanoseconds: i64,
-        }
-        unsafe extern "C" {
-            fn clock_gettime(clock: i32, out: *mut Timespec) -> i32;
-        }
-        let mut t = Timespec {
-            seconds: 0,
-            nanoseconds: 0,
-        };
-        // SAFETY: one live output; CLOCK_PROCESS_CPUTIME_ID on macOS is 12.
-        assert_eq!(unsafe { clock_gettime(12, &mut t) }, 0);
-        t.seconds as f64 + 1e-9 * t.nanoseconds as f64
-    }
-
-    /// S1's declared network-only settling from rest (NOT-EVIDENCE probe of
-    /// an S1 trajectory, run only to export the settled flows): the RCPs
-    /// start from rest through the drive law and the network settles under
-    /// S1's own tolerance classes and caps. Returns the settled liquid
-    /// volume flow of every face, the rotors' angular momenta and a summary.
-    pub fn s1_settled_flows(packet: &NetworkPacket, gates: &Value) -> (Vec<f64>, Vec<f64>, Value) {
-        let started = cpu_s();
-        let point = OperatingPoint::from(&packet.preparation.operating_point);
-        let (network, prepared, _) =
-            prepare::prepare(packet, If97, &point, &rotors(), &SETTINGS).expect("hydrostatic");
-        let mut y = prepared.y.clone();
-        for i in &network.rotor_index {
-            y[*i] = 0.;
-        }
-        let classes = classes(gates);
-        let atol = network.absolute_tolerances(&y, classes).unwrap();
-        let rtol = classes.relative;
-        let ids = prepared.differential.clone();
-        let weights: Vec<f64> = y
-            .iter()
-            .zip(&atol)
-            .map(|(v, a)| 1. / (rtol * v.abs() + a))
-            .collect();
-        let mut probe = network;
-        let (yp, pair) = consistent_start(&mut probe, 0., &mut y, &ids, &weights, 1e-12, 2)
-            .expect("S1 exact consistent start");
-        let nonnegative = probe.nonnegative_stocks();
-        let system = Integrated::colored(probe).unwrap();
-        let mut ida = Ida::new(
-            system,
-            Initial {
-                time: 0.,
-                y: &y,
-                yp: &yp,
-                differential: &ids,
-                absolute_tolerance: &atol,
-                relative_tolerance: rtol,
-            },
-        )
-        .unwrap();
-        let max_order = gates["maxOrder"].as_u64().unwrap() as usize;
-        ida.set_max_order(max_order).unwrap();
-        ida.constrain_nonnegative(&nonnegative).unwrap();
-        let settling = &gates["settling"];
-        let cap = settling["maxSimulated_s"].as_f64().unwrap();
-        let window = settling["window_s"].as_f64().unwrap();
-        let rotor_rel = settling["rotorSpeedRelative"].as_f64().unwrap();
-        let flow_rel = settling["loopFlowRelativeChange"].as_f64().unwrap();
-        ida.stop_at(cap).unwrap();
-        let face = |id: &str| {
-            packet
-                .mechanics
-                .faces
-                .iter()
-                .position(|f| f.id == id)
-                .unwrap()
-        };
-        let loops = [face("RETURN.A->DOWN"), face("RETURN.B->DOWN")];
-        let (mut yv, mut ypv) = (y.clone(), yp.clone());
-        let mut history: Vec<(f64, [f64; 2], Vec<f64>)> = Vec::new();
-        let mut t = 0.;
-        let settled_at = loop {
-            t += 1.;
-            ida.advance(t, &mut yv, &mut ypv)
-                .unwrap()
-                .reached()
-                .unwrap();
-            let net = &mut ida.system_mut().network;
-            net.evaluate(t, &yv, &ypv, None, 0., None).unwrap();
-            let flows = loops.map(|f| net.chart(f, 0).unwrap().mass_flow_kg_s.value);
-            let omega: Vec<f64> = net
-                .rotor_index
-                .iter()
-                .map(|i| yv[*i] * net.scales()[*i] / net.rotor_inertia())
-                .collect();
-            let w0 = net.drive().reference_omega_rad_s;
-            history.push((t, flows, omega.clone()));
-            let earlier = history.iter().rev().find(|h| h.0 <= t - window);
-            let rested = earlier.is_some_and(|e| {
-                omega.iter().all(|w| ((w - w0) / w0).abs() < rotor_rel)
-                    && (0..2).all(|k| ((flows[k] - e.1[k]) / flows[k]).abs() < flow_rel)
-            });
-            if rested {
-                break Some(t);
-            }
-            if t >= cap {
-                break None;
-            }
-        };
-        let stats = ida.stats().unwrap();
-        let net = &mut ida.system_mut().network;
-        net.evaluate(t, &yv, &ypv, None, 0., None).unwrap();
-        let flows: Vec<f64> = (0..net.face_count())
-            .map(|f| net.chart(f, 0).map_or(0., |c| c.volume_flow_m3_s.value))
-            .collect();
-        let momenta: Vec<f64> = net
-            .rotor_index
-            .iter()
-            .map(|i| yv[*i] * net.scales()[*i])
-            .collect();
-        let last = history.last().unwrap();
-        let summary = json!({
-            "scope": "NOT-EVIDENCE: S1's declared network-only settling, run only to export settled flows (memo §3 (A))",
-            "settled_at_s": settled_at,
-            "loop_mass_flow_kg_s": last.1,
-            "rotor_speed_rad_s": last.2,
-            "steps": stats.steps, "residuals": stats.residuals, "jacobians": stats.jacobians,
-            "error_failures": stats.error_failures, "convergence_failures": stats.convergence_failures,
-            "initial_pair": format!("{pair:?}"),
-            "cpu_s": cpu_s() - started,
-        });
-        assert!(settled_at.is_some(), "S1 settling did not rest: {summary}");
-        (flows, momenta, summary)
-    }
-
-    /// The joined state at the hot reference (memo §3 (B)): a fresh
-    /// hydrostatic preparation at the hot-reference water energies with the
-    /// declared PZR, then the S1-settled volume flows and rotor momenta
-    /// transferred by the flowing preparation.
-    pub fn composed(
-        packet: &NetworkPacket,
-        flows: &[f64],
-        momenta: &[f64],
-    ) -> (
-        leitbild_operating_plant::network::Network<If97>,
-        Vec<f64>,
-        Vec<f64>,
-        Value,
-    ) {
-        let point = OperatingPoint::from(&packet.preparation.operating_point);
-        let (mut network, mut prepared, hydrostatic) =
-            prepare::prepare(packet, If97, &point, &rotors(), &SETTINGS).expect("hydrostatic");
-        let receipt = prepare::compose_flows(
-            &mut network,
-            packet,
-            &mut prepared.y,
-            hydrostatic.port_pressure_pa,
-            flows,
-            momenta,
-            &SETTINGS,
-        )
-        .expect("flowing preparation");
-        let ids = prepared.differential.clone();
-        (
-            network,
-            prepared.y,
-            ids,
-            serde_json::to_value(&receipt).unwrap(),
-        )
-    }
 
     /// The packet's prepared SG secondary and rod pose as zero-time ports.
     pub fn prepared_ports(joined_packet: &packet::Packet) -> (SecondaryPort<If97>, RodPort<If97>) {
@@ -533,26 +326,48 @@ fn z1_probe(full: bool) {
         sg::{packet::Section as SecondarySection, secondary::Secondaries},
         thermal::{Scalar, WaterProperties},
     };
-    let started = z1::cpu_s();
+    let started = process_cpu_s();
     let (path, bytes) = packet_bytes();
-    let network_packet: NetworkPacket = serde_json::from_slice(&bytes).expect("network packet");
+    let mut network_packet: NetworkPacket = serde_json::from_slice(&bytes).expect("network packet");
     let joined_packet: packet::Packet = serde_json::from_slice(&bytes).expect("joined packet");
     let raw: Value = serde_json::from_slice(&bytes).expect("packet json");
-    let gates = z1::s1_gates();
-    let (flows, momenta, s1) = z1::s1_settled_flows(&network_packet, &gates);
+    // HOOK (OU-C P2 -> OU-B builder): the rod bores' water leaves the sector
+    // inventory before the network is compiled.
+    let rods: RodSection = serde_json::from_value(raw["rods"].clone()).expect("rods section");
+    let carved = full.then(|| {
+        leitbild_operating_plant::rods::carve(&rods, &mut network_packet).expect("rods carve")
+    });
+    let gates = common::s1_gates();
+    let settled = s1_settled_flows(
+        &network_packet,
+        &S1Settling::from_gates(&gates).expect("ld01-s1-gates"),
+        process_cpu_s,
+    )
+    .expect("S1 settling");
+    let (flows, momenta, s1) = (
+        settled.flows.clone(),
+        settled.momenta.clone(),
+        settled.summary(),
+    );
     let (network, y_network, network_ids, flowing) =
-        z1::composed(&network_packet, &flows, &momenta);
+        composed_network(&network_packet, &flows, &momenta).expect("composed network");
     let (secondary, rods) = if full {
         let section: SecondarySection =
             serde_json::from_value(raw["secondary"].clone()).expect("secondary section");
-        let rods: RodSection = serde_json::from_value(raw["rods"].clone()).expect("rods section");
         (
             SecondaryPort::Owner(Box::new(
                 Secondaries::new(&section, &joined_packet.thermal.secondaries, &If97)
                     .expect("SG secondary owner"),
             )),
             RodPort::Owner(Box::new(
-                RodBlock::from_packet(&rods, &network_packet).expect("rod owner"),
+                RodBlock::from_packet(
+                    &rods,
+                    &network_packet,
+                    carved.as_ref().expect("carved"),
+                    &If97,
+                    &[],
+                )
+                .expect("rod owner"),
             )),
         )
     } else {
@@ -607,23 +422,23 @@ fn z1_probe(full: bool) {
     );
     // Cost of one value residual and one seeded residual at this state.
     let calls = 20;
-    let timer = z1::cpu_s();
+    let timer = process_cpu_s();
     for _ in 0..calls {
         joined.evaluate(0., &y, &zero, None, 0., None).unwrap();
     }
-    let value_s = (z1::cpu_s() - timer) / calls as f64;
+    let value_s = (process_cpu_s() - timer) / calls as f64;
     let seed: Vec<f64> = (0..y.len())
         .map(|i| if i % 7 == 0 { 1. } else { 0. })
         .collect();
-    let timer = z1::cpu_s();
+    let timer = process_cpu_s();
     for _ in 0..calls {
         joined
             .evaluate(0., &y, &zero, Some(&seed), 1., None)
             .unwrap();
     }
-    let seeded_s = (z1::cpu_s() - timer) / calls as f64;
+    let seeded_s = (process_cpu_s() - timer) / calls as f64;
     // The exact consistent start of the composed coordinates at t = 0.
-    let classes = z1::classes(&gates);
+    let classes = profile::classes(&gates).expect("S1's classes");
     let n_net = joined.offsets().nuclear;
     let mut atol = joined
         .network
@@ -631,6 +446,22 @@ fn z1_probe(full: bool) {
         .unwrap();
     // G12: S1's scaled 1e-8 absolute floor for every new coordinate class.
     atol.resize(y.len(), classes.stock_scaled);
+    // Lead decision DR13-ROD-A: with the owners composed, stock IDACalcIC
+    // makes the algebraic coordinates consistent (the rod owner's mouth
+    // currents start at zero) before the declared exact start; G13's first
+    // step is its horizon.
+    if full {
+        joined = leitbild_operating_water::joined::stock_initial_conditions(
+            joined,
+            0.,
+            &mut y,
+            &ids,
+            &atol,
+            classes.relative,
+            1e-4,
+        )
+        .expect("stock IDACalcIC");
+    }
     let weights: Vec<f64> = y
         .iter()
         .zip(&atol)
@@ -646,7 +477,7 @@ fn z1_probe(full: bool) {
     // colored reference. The block structure is compiled once per mode,
     // outside the start.
     let start_assembly = std::env::var("LD01_START_ASSEMBLY").unwrap_or_else(|_| "blocks".into());
-    let timer = z1::cpu_s();
+    let timer = process_cpu_s();
     let structure = match start_assembly.as_str() {
         "blocks" => Some(
             leitbild_operating_plant::joined::blocks::JoinedJacobian::compile(&mut joined, 0., &y)
@@ -655,7 +486,7 @@ fn z1_probe(full: bool) {
         "colored" => None,
         other => panic!("LD01_START_ASSEMBLY {other}: blocks or colored"),
     };
-    let compile_cpu_s = z1::cpu_s() - timer;
+    let compile_cpu_s = process_cpu_s() - timer;
     let mut analyses = leitbild_operating_water::joined::Analyses::default();
     let y_before = y.clone();
     let start_at = |joined: &mut Joined<If97>,
@@ -668,11 +499,11 @@ fn z1_probe(full: bool) {
             },
             None => leitbild_operating_water::joined::Matrices::Colored,
         };
-        let timer = z1::cpu_s();
+        let timer = process_cpu_s();
         let start = leitbild_operating_water::joined::consistent_start(
             joined, matrices, 0., y, &ids, &weights, bound, 3,
         );
-        (start, z1::cpu_s() - timer)
+        (start, process_cpu_s() - timer)
     };
     let (start, start_cpu_s) = start_at(&mut joined, &mut y, &mut analyses);
     // The same start again from the same state, on the analyses the first
@@ -791,11 +622,7 @@ fn z1_probe(full: bool) {
         json!({"history_prepared_release_w": released, "rcp_once_paid_shaft_power_w": shaft,
             "feed_enthalpy_j_kg": h_feed, "steam_demand_kg_s": demand,
             "at_prepared_sg_pressure": at(prepared_p), "at_z2_emergent_sg_pressure": at(6.3631e6),
-            "other_heat": if joined.pzr().is_some() {
-                "the PZR metal's heater demand (P4) equals its exterior loss at the composed Tsat(p_s); relief closed; no other sink or source in the composition"
-            } else {
-                "PZR boundary closed (no heater, wall loss or relief composed); no other sink or source in the composition"
-            },
+            "other_heat": "the PZR metal's heater demand (P4) equals its exterior loss at the composed Tsat(p_s); relief closed; no other sink or source in the composition",
             "confirmed_above": 2e-3})
     } else {
         Value::Null
@@ -819,7 +646,7 @@ fn z1_probe(full: bool) {
         },
         "packet": path,
         "packet_sha256": sha256(&bytes),
-        "provenance": provenance(),
+        "provenance": spine_provenance(),
         "s1_settling": s1,
         "flowing_preparation": flowing,
         "dimension": joined.dimension(),
@@ -831,7 +658,7 @@ fn z1_probe(full: bool) {
         "initialized": {"rows_by_class": initialized_rows, "heats": initialized_heats, "network_budget": budget},
         "cost": {"process_cpu_s_per_value_residual": value_s, "process_cpu_s_per_seeded_residual": seeded_s, "calls": calls,
             "load_average": String::from_utf8_lossy(&std::process::Command::new("sysctl").args(["-n","vm.loadavg"]).output().unwrap().stdout).trim().to_string()},
-        "total_cpu_s": z1::cpu_s() - started,
+        "total_cpu_s": process_cpu_s() - started,
     });
     println!("{}", serde_json::to_string(&receipt).unwrap());
     write_receipt(&receipt);
@@ -839,160 +666,18 @@ fn z1_probe(full: bool) {
 
 /// The PZR owner of a composition (G6), for receipts.
 fn pzr_receipt(joined: &leitbild_operating_plant::joined::operator::Joined<If97>) -> Value {
-    match joined.pzr() {
-        Some(b) => json!({
-            "composed": true,
-            "coordinates": b.layout().labels,
-            "steel_temperature_k": b.saturation_temperature_k(),
-            "heater_demand_w": b.request_w(),
-            "bank_power_w": b.bank_power_w(),
-            "heater_demand_basis": "P4 (S2 design choices, 11 October): the metal's exterior loss at the composed Tsat(p_s), computed once and held constant; it stands in for the pressure controller's steady output (S3)",
-            "relief": b.relief().map(|r| json!({"opening_pa": r.device.opening_pa, "reseat_pa": r.device.reseat_pa,
-                "full_strokes_per_s": r.device.full_strokes_per_s, "receiver_back_pressure_pa": r.back_pressure_pa,
-                "motion": format!("{:?}", r.motion), "demand_open": r.demand_open})),
-        }),
-        None => json!({"composed": false,
-            "boundary": "closed: a packet compiled before G6 (no pzrMetal section): no heater, shell metal or relief"}),
-    }
-}
-
-/// The full composition at the hot reference, consistently started.
-pub struct Started {
-    pub joined: leitbild_operating_plant::joined::operator::Joined<If97>,
-    pub y: Vec<f64>,
-    pub yp: Vec<f64>,
-    /// Differential identity (joined, then the network's own), absolute
-    /// tolerances and relative tolerance.
-    pub ids: Vec<f64>,
-    pub network_ids: Vec<f64>,
-    pub atol: Vec<f64>,
-    pub rtol: f64,
-    /// A receipt of the preparation.
-    pub receipt: Value,
-    /// The composed state before its consistent start.
-    pub unstarted: Vec<f64>,
-    /// JAC's block structure compiled at the composed state, and the
-    /// symbolic analyses the start made on it (lead decision S2-D4).
-    pub structure: leitbild_operating_plant::joined::blocks::JoinedJacobian,
-    pub analyses: leitbild_operating_water::joined::Analyses,
-}
-
-/// The full composition at the hot reference, consistently started: memo
-/// §3 (A)-(D), the start on the block assembly (lead decision S2-D4).
-pub fn started_full_composition() -> Started {
-    use leitbild_operating_plant::{
-        initialization::SurfacePolicy,
-        joined::operator::{Joined, RodPort, SecondaryPort},
-        rods::{RodBlock, Section as RodSection},
-        sg::{packet::Section as SecondarySection, secondary::Secondaries},
-    };
-    let (path, bytes) = packet_bytes();
-    let network_packet: NetworkPacket = serde_json::from_slice(&bytes).expect("network packet");
-    let joined_packet: packet::Packet = serde_json::from_slice(&bytes).expect("joined packet");
-    let raw: Value = serde_json::from_slice(&bytes).expect("packet json");
-    let gates = z1::s1_gates();
-    let (flows, momenta, s1) = z1::s1_settled_flows(&network_packet, &gates);
-    let (network, y_network, network_ids, flowing) =
-        z1::composed(&network_packet, &flows, &momenta);
-    let section: SecondarySection =
-        serde_json::from_value(raw["secondary"].clone()).expect("secondary section");
-    let rods: RodSection = serde_json::from_value(raw["rods"].clone()).expect("rods section");
-    let mut joined = Joined::new(
-        network,
-        &network_packet,
-        &joined_packet,
-        If97,
-        SecondaryPort::Owner(Box::new(
-            Secondaries::new(&section, &joined_packet.thermal.secondaries, &If97)
-                .expect("SG secondary owner"),
-        )),
-        RodPort::Owner(Box::new(
-            RodBlock::from_packet(&rods, &network_packet).expect("rod owner"),
-        )),
-    )
-    .expect("joined operator");
-    let mut y = joined.prepared(&y_network).unwrap();
-    let ids = joined.differential(&network_ids);
-    let owners = joined
-        .prepare_owners(0., &mut y)
-        .expect("owner preparation");
-    let surfaces = joined
-        .initialize_surfaces(
-            0.,
-            &mut y,
-            SurfacePolicy {
-                maximum_residual_w: 1e-3,
-                maximum_correction_k: 1e-6,
-                maximum_iterations: 16,
-                maximum_backtracks: 12,
-            },
-        )
-        .expect("surfaces");
-    let classes = z1::classes(&gates);
-    let n_net = joined.offsets().nuclear;
-    let mut atol = joined
-        .network
-        .absolute_tolerances(&y[..n_net], classes)
-        .unwrap();
-    atol.resize(y.len(), classes.stock_scaled);
-    // G12: the lift's absolute tolerance (the scaled floor at its unit
-    // scale) bounds its distance from a stop at a travel root.
-    if let Some(b) = joined.pzr_mut() {
-        b.declare_lift_root_bound(classes.stock_scaled)
-            .expect("lift root bound");
-    }
-    let weights: Vec<f64> = y
-        .iter()
-        .zip(&atol)
-        .map(|(v, a)| 1. / (classes.relative * v.abs() + a))
-        .collect();
-    let unstarted = y.clone();
-    let timer = z1::cpu_s();
-    let structure =
-        leitbild_operating_plant::joined::blocks::JoinedJacobian::compile(&mut joined, 0., &y)
-            .expect("block structure");
-    let compile_cpu_s = z1::cpu_s() - timer;
-    let mut analyses = leitbild_operating_water::joined::Analyses::default();
-    let timer = z1::cpu_s();
-    let (yp, start) = leitbild_operating_water::joined::consistent_start(
-        &mut joined,
-        leitbild_operating_water::joined::Matrices::Blocks {
-            structure: &structure,
-            analyses: &mut analyses,
-        },
-        0.,
-        &mut y,
-        &ids,
-        &weights,
-        1e-12,
-        3,
-    )
-    .expect("exact consistent start");
-    let start_cpu_s = z1::cpu_s() - timer;
-    let receipt = json!({
-        "packet": path, "packet_sha256": sha256(&bytes), "provenance": provenance(),
-        "s1_settling": s1, "flowing_preparation_max_cycle_drive_pa": flowing["max_cycle_drive_pa"],
-        "owners_prepared": owners.iter().map(|t| t.receipt.clone()).collect::<Vec<_>>(),
-        "surfaces_worst_residual_w": surfaces.iter().map(|s| s.residual_w.iter().fold(0., |a: f64, r| a.max(r.abs()))).fold(0., f64::max),
-        "start": {"residual": [start.residual.value, start.residual.row], "constraint_rate": [start.constraint_rate.value, start.constraint_rate.row],
-            "correction_wrms": start.correction_wrms, "projection_passes": start.projection_passes, "rate_passes": start.rate_passes,
-            "assembly": start.assembly, "analyses": start.analyses, "cpu_s": start_cpu_s, "block_compile_cpu_s": compile_cpu_s},
-        "dimension": y.len(), "algebraic": ids.iter().filter(|v| **v == 0.).count(),
-        "tolerances": {"relative": classes.relative, "network": "S1's tolerance classes (ld01-s1-gates)", "new_classes_scaled_absolute": classes.stock_scaled, "basis": "G12"},
-    });
-    Started {
-        joined,
-        y,
-        yp,
-        ids,
-        network_ids,
-        atol,
-        rtol: classes.relative,
-        receipt,
-        unstarted,
-        structure,
-        analyses,
-    }
+    let b = joined.pzr();
+    json!({
+        "composed": true,
+        "coordinates": b.layout().labels,
+        "steel_temperature_k": b.saturation_temperature_k(),
+        "heater_demand_w": b.request_w(),
+        "bank_power_w": b.bank_power_w(),
+        "heater_demand_basis": "P4 (S2 design choices, 11 October): the metal's exterior loss at the composed Tsat(p_s), computed once and held constant; it stands in for the pressure controller's steady output (S3)",
+        "relief": b.relief().map(|r| json!({"opening_pa": r.device.opening_pa, "reseat_pa": r.device.reseat_pa,
+            "full_strokes_per_s": r.device.full_strokes_per_s, "receiver_back_pressure_pa": r.back_pressure_pa,
+            "motion": format!("{:?}", r.motion), "demand_open": r.demand_open})),
+    })
 }
 
 /// One observation of the joined state at an accepted output.
@@ -1074,7 +759,7 @@ fn the_holding_opening_releases_the_held_clusters_at_its_stop_and_restarts_exact
         structure,
         analyses,
         ..
-    } = started_full_composition();
+    } = started_full_composition(&common::spine()).expect("the S2 composition");
     let algebraic = |ids: &[f64]| ids.iter().filter(|v| **v == 0.).count();
     let held = algebraic(&ids);
     let mut y = y;
@@ -1083,7 +768,7 @@ fn the_holding_opening_releases_the_held_clusters_at_its_stop_and_restarts_exact
     let trip = joined.command(0., &mut y, Command::TurbineTrip).unwrap();
     assert_eq!(
         trip.len(),
-        2 + usize::from(joined.pzr().is_some()),
+        3,
         "every composed owner takes the command; nothing is due at once"
     );
     let open = joined.next_time_event(0.).expect("the holding opening");
@@ -1122,7 +807,7 @@ fn the_holding_opening_releases_the_held_clusters_at_its_stop_and_restarts_exact
     let analyses_before = ida.system().analyses().made();
     // The stop at the opening, without stepping: the release root t - open
     // is exactly zero there, so only the time event can release.
-    let timer = z1::cpu_s();
+    let timer = process_cpu_s();
     let restarted = discrete_restart(
         &mut ida,
         open,
@@ -1134,7 +819,7 @@ fn the_holding_opening_releases_the_held_clusters_at_its_stop_and_restarts_exact
         &restart,
     )
     .unwrap();
-    let restart_cpu_s = z1::cpu_s() - timer;
+    let restart_cpu_s = process_cpu_s() - timer;
     let (done, yp_open, report) = (&restarted.transactions, &restarted.yp, &restarted.report);
     // The release changes the algebraic set: the projection's analysis is
     // made again, the rate system's is reused.
@@ -1197,6 +882,8 @@ fn the_holding_opening_releases_the_held_clusters_at_its_stop_and_restarts_exact
 #[test]
 #[ignore = "NOT-EVIDENCE zero-time check: requires the joined packet, the wiki, IF97 and stock IDA/KLU"]
 fn the_stuck_cluster_command_keeps_its_grip_at_the_opening_and_the_rest_release() {
+    // The last of the 52 clusters, kept singly at composition (P2).
+    const STUCK: usize = 51;
     use leitbild_operating_plant::joined::block::Command;
     use leitbild_operating_water::{
         ida::{Ida, Initial},
@@ -1213,11 +900,13 @@ fn the_stuck_cluster_command_keeps_its_grip_at_the_opening_and_the_rest_release(
         structure,
         analyses,
         ..
-    } = started_full_composition();
+    } = started_full_composition_with_singles(&common::spine(), &[STUCK])
+        .expect("the S2 composition");
     let algebraic = |ids: &[f64]| ids.iter().filter(|v| **v == 0.).count();
     let held = algebraic(&ids);
     let clusters = joined.rods().unwrap().clusters();
     let stuck = clusters - 1;
+    assert_eq!(stuck, STUCK, "the last cluster is the stuck one");
     let mut y = y;
     let before = y.clone();
     // G7's declared malfunction through every composed owner: no
@@ -1226,7 +915,7 @@ fn the_stuck_cluster_command_keeps_its_grip_at_the_opening_and_the_rest_release(
     let declared = joined
         .command(0., &mut y, Command::StuckCluster { cluster: stuck })
         .unwrap();
-    assert_eq!(declared.len(), 2 + usize::from(joined.pzr().is_some()));
+    assert_eq!(declared.len(), 3);
     assert_eq!(y, before, "the declaration moves no coordinate");
     assert_eq!(joined.differential(&network_ids), ids);
     assert_eq!(joined.next_time_event(0.), None);
@@ -1287,7 +976,11 @@ fn the_stuck_cluster_command_keeps_its_grip_at_the_opening_and_the_rest_release(
     let ids_open = ida.system().joined.differential(&network_ids);
     assert_eq!(algebraic(&ids_open), held - (clusters - 1));
     let o = ida.system().joined.offsets();
-    assert_eq!(ids_open[o.rods + 3 * stuck + 1], 0., "the stuck speed row");
+    assert_eq!(
+        ids_open[o.rods + ida.system().joined.rods().unwrap().cluster_coordinate(stuck) + 1],
+        0.,
+        "the stuck speed row"
+    );
     assert!(report.residual.value <= 1e-12 && report.constraint_rate.value <= 1e-12);
     assert!(restarted.yp.iter().all(|v| v.is_finite()));
     // Nothing more is due at the opening, and a declaration after it is
@@ -1379,7 +1072,7 @@ fn the_block_start_matrices_match_the_colored_reference_at_the_composed_and_rele
         operator::Joined,
     };
     use leitbild_operating_water::joined::{Analyses, Matrices, consistent_start};
-    let started = z1::cpu_s();
+    let started = process_cpu_s();
     let Started {
         mut joined,
         y,
@@ -1392,7 +1085,7 @@ fn the_block_start_matrices_match_the_colored_reference_at_the_composed_and_rele
         mut analyses,
         receipt: preparation,
         ..
-    } = started_full_composition();
+    } = started_full_composition(&common::spine()).expect("the S2 composition");
     let n = y.len();
     let zero = vec![0.; n];
     let matrices = |joined: &mut Joined<If97>, t: f64, y: &[f64]| -> Value {
@@ -1448,7 +1141,7 @@ fn the_block_start_matrices_match_the_colored_reference_at_the_composed_and_rele
      -> Value {
         let w = weights(y0);
         let (mut yb, mut yc) = (y0.to_vec(), y0.to_vec());
-        let timer = z1::cpu_s();
+        let timer = process_cpu_s();
         let (pb, rb) = consistent_start(
             joined,
             Matrices::Blocks {
@@ -1463,11 +1156,11 @@ fn the_block_start_matrices_match_the_colored_reference_at_the_composed_and_rele
             3,
         )
         .expect("block start");
-        let block_cpu_s = z1::cpu_s() - timer;
-        let timer = z1::cpu_s();
+        let block_cpu_s = process_cpu_s() - timer;
+        let timer = process_cpu_s();
         let (pc, rc) = consistent_start(joined, Matrices::Colored, t, &mut yc, ids, &w, 1e-12, 3)
             .expect("colored start");
-        let colored_cpu_s = z1::cpu_s() - timer;
+        let colored_cpu_s = process_cpu_s() - timer;
         let (mut dy, mut dyp, mut ypmax) = (0_f64, (0_f64, 0usize), 0_f64);
         for i in 0..n {
             dy = dy.max((yb[i] - yc[i]).abs() * w[i]);
@@ -1512,7 +1205,7 @@ fn the_block_start_matrices_match_the_colored_reference_at_the_composed_and_rele
         "released": {"t_s": open, "transactions": done.len(), "algebraic": algebraic(&ids_open),
             "matrices": released_matrices, "starts": released_starts},
         "analyses_made_in_total": analyses.made(),
-        "total_cpu_s": z1::cpu_s() - started,
+        "total_cpu_s": process_cpu_s() - started,
         "load_average": String::from_utf8_lossy(&std::process::Command::new("sysctl").args(["-n","vm.loadavg"]).output().unwrap().stdout).trim().to_string(),
     });
     println!("{}", serde_json::to_string(&receipt).unwrap());
@@ -1595,23 +1288,28 @@ fn the_pzr_relief_roots_and_stops_transact_on_the_joined_state() {
         atol,
         rtol,
         ..
-    } = started_full_composition();
+    } = started_full_composition(&common::spine()).expect("the S2 composition");
     let relief = joined
         .pzr()
-        .and_then(|b| b.relief())
+        .relief()
         .expect("a G6 packet composes the PZR relief");
     let o = joined.offsets();
     let n = joined.root_count();
     let owners = joined.secondary().unwrap().root_count() + joined.rods().unwrap().root_count();
+    // The relief's demand and travel roots follow the owners'; a composed
+    // spray path adds three slots after them (its inlet check, S3-D25, and
+    // its port's two scoped-L1 paths, DR-P3-SPRAY).
+    let spray = 3 * usize::from(joined.network.spray().is_some());
     assert_eq!(
         n,
-        owners + 2,
-        "the relief's demand and travel roots come last"
+        owners + 2 + spray,
+        "the relief's demand and travel roots follow the owners'"
     );
+    let (demand_slot, travel_slot) = (owners, owners + 1);
     let roots = |joined: &mut Joined<If97>, y: &[f64]| {
         let mut out = vec![0.; n];
         joined.roots(0., y, &vec![0.; y.len()], &mut out).unwrap();
-        [out[n - 2], out[n - 1]]
+        [out[demand_slot], out[travel_slot]]
     };
     let roof = joined.network.pzr.base + PZR_PRESSURE;
     let p_roof = y[roof] * joined.network.scales()[roof];
@@ -1621,12 +1319,12 @@ fn the_pzr_relief_roots_and_stops_transact_on_the_joined_state() {
     );
     let crossing = |demand: i32, travel: i32| {
         let mut d = vec![0; n];
-        d[n - 2] = demand;
-        d[n - 1] = travel;
+        d[demand_slot] = demand;
+        d[travel_slot] = travel;
         d
     };
     let state = |joined: &Joined<If97>| {
-        let r = joined.pzr().unwrap().relief().unwrap();
+        let r = joined.pzr().relief().unwrap();
         (r.demand_open, r.motion)
     };
     let mut y = y;
@@ -1676,7 +1374,7 @@ fn the_pzr_relief_roots_and_stops_transact_on_the_joined_state() {
     println!(
         "{}",
         json!({"kind":"s2-g6-relief-transactions","status":"NOT-EVIDENCE zero-time check; declared crossings, no trajectory",
-            "roots":n,"relief_roots":[n - 2, n - 1],"p_roof_pa":p_roof,"restart":format!("{start:?}")})
+            "roots":n,"relief_roots":[demand_slot, travel_slot],"p_roof_pa":p_roof,"restart":format!("{start:?}")})
     );
 }
 
@@ -1688,7 +1386,7 @@ fn reactivity_decomposition_at_the_prepared_and_settled_states() {
         ida::{Ida, Initial},
         joined::{Integrated, Restart},
     };
-    let started = z1::cpu_s();
+    let started = process_cpu_s();
     let Started {
         mut joined,
         y,
@@ -1698,7 +1396,7 @@ fn reactivity_decomposition_at_the_prepared_and_settled_states() {
         rtol,
         receipt: preparation,
         ..
-    } = started_full_composition();
+    } = started_full_composition(&common::spine()).expect("the S2 composition");
     let settle_s: f64 = std::env::var("LD01_SETTLING_CAP_S").map_or(600., |v| v.parse().unwrap());
     joined.evaluate(0., &y, &yp, None, 0., None).unwrap();
     let inputs0 = joined.nuclear().feedback_inputs();
@@ -1943,7 +1641,7 @@ fn decomposition(
         "prepared_coolant_with_settled_fuel_minus_prepared": state_a,
         "settled_minus_prepared": state_b,
         "region_terms_pcm": {"prepared": t0.iter().map(|r| json!(r)).collect::<Vec<_>>(), "settled": tb.iter().map(|r| json!(r)).collect::<Vec<_>>()},
-        "cpu_s": z1::cpu_s() - started,
+        "cpu_s": process_cpu_s() - started,
     });
     if let Some(path) = std::env::var_os("LD01_SETTLED_STATE_OUT") {
         assert!(!Path::new(&path).exists(), "states are never overwritten");
@@ -1960,13 +1658,6 @@ fn decomposition(
     println!("{}", serde_json::to_string(&json!({"a": receipt["prepared_coolant_with_settled_fuel_minus_prepared"], "b": receipt["settled_minus_prepared"], "states": receipt["states"]})).unwrap());
 }
 
-/// S2's Newton configuration (claude/ld01-wiki c968921, "Configuration
-/// superseded the same day"): stock's own 0.33 Newton coefficient and an
-/// iteration-matrix refresh when cj changes by 10% (IDASetDeltaCjLSetup).
-pub const NEWTON_COEFFICIENT: f64 = 0.33;
-pub const DELTA_CJ_LSETUP: f64 = 0.1;
-/// G13: the first step at every restart (s).
-pub const FIRST_STEP_S: f64 = 1e-4;
 /// Output target spacing of one stock IDA call (s).
 const ADVANCE_CHUNK_S: f64 = 0.01;
 
@@ -1977,7 +1668,7 @@ fn settling_probe_toward_a_consistent_100_percent_state() {
         ida::{Advance, Ida, Initial},
         joined::Integrated,
     };
-    let started = z1::cpu_s();
+    let started = process_cpu_s();
     let Started {
         joined,
         y: y0,
@@ -1987,8 +1678,8 @@ fn settling_probe_toward_a_consistent_100_percent_state() {
         rtol,
         receipt: preparation,
         ..
-    } = started_full_composition();
-    let preparation_cpu_s = z1::cpu_s() - started;
+    } = started_full_composition(&common::spine()).expect("the S2 composition");
+    let preparation_cpu_s = process_cpu_s() - started;
     // Declared NOT-EVIDENCE caps and criteria: the S2 memo's draft settling
     // block (s2-design-memo §7), not a declared S2 gate.
     let cap_s: f64 = std::env::var("LD01_SETTLING_CAP_S").map_or(600., |v| v.parse().unwrap());
@@ -2081,7 +1772,7 @@ fn settling_probe_toward_a_consistent_100_percent_state() {
     let mut failure = None;
     let mut next_output = 1.;
     while t < cap_s {
-        if z1::cpu_s() - started > cpu_cap_s {
+        if process_cpu_s() - started > cpu_cap_s {
             failure = Some(format!("probe CPU cap {cpu_cap_s} s reached at t = {t} s"));
             break;
         }
@@ -2107,7 +1798,7 @@ fn settling_probe_toward_a_consistent_100_percent_state() {
                     s["ida"] = json!({"steps": counts.0 + st.steps, "residuals": counts.1 + st.residuals, "jacobians": counts.2 + st.jacobians,
                         "nonlinear_iterations": counts.3 + st.nonlinear_iterations, "error_failures": counts.4 + st.error_failures,
                         "convergence_failures": counts.5 + st.convergence_failures, "last_step_s": st.last_step, "last_order": st.last_order});
-                    s["cpu_s"] = json!(z1::cpu_s() - started);
+                    s["cpu_s"] = json!(process_cpu_s() - started);
                     let c = ida.system().joined.counters;
                     s["joined_counters"] = json!(c);
                     s["coupler_counters"] = json!(ida.system().joined.coupler_counters());
@@ -2152,7 +1843,7 @@ fn settling_probe_toward_a_consistent_100_percent_state() {
     counts.0 += st.as_ref().map_or(0, |s| s.steps);
     counts.1 += st.as_ref().map_or(0, |s| s.residuals);
     counts.2 += st.as_ref().map_or(0, |s| s.jacobians);
-    let total = z1::cpu_s() - started;
+    let total = process_cpu_s() - started;
     let c = ida.system().joined.counters;
     let simulated = internal_s
         .filter(|_| failure.is_some())

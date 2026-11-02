@@ -35,7 +35,7 @@ test('heater banks and the relief device parse from their owners and agree with 
     relief={openingPressure_Pa:15800000,reseatPressure_Pa:15600000,fullStrokesPerSecond:20,effectiveAreaPerLift_m2:.00411672057382,
       calibration:{massFlow_kg_s:100,fluid:'saturatedSteam',inletPressure_Pa:15800000,backPressure_Pa:101325},bore_m:.15,elevation_m:18.5},
     spray={elevation_m:18.5,exitCount:16,exitBore_m:.012,ringRadius_m:.6,effectiveAreaPerExit_m2:.0000625,aggregateEffectiveArea_m2:.001},
-    inventory='### Independent relief candidate\n\n'+fence('ld01-pzr-relief-device',relief)+'\n\n## Controlled-spray material path\n\n'+fence('ld01-pzr-spray-port',spray)+'\n'
+    inventory='### Independent relief candidate\n\n'+fence('ld01-rcs-design-pressure',{designPressure_Pa:17234662})+'\n\n'+fence('ld01-pzr-relief-device',relief)+'\n\n## Controlled-spray material path\n\n'+fence('ld01-pzr-spray-port',spray)+'\n'
   expect(parsePzrHeaterBanks(equipment).map(b=>b.id)).toEqual(['normal','backup'])
   expect(parsePzrRelief(inventory)).toEqual(relief)
   expect(parsePzrSpray(inventory)).toEqual(spray)
@@ -47,6 +47,8 @@ test('heater banks and the relief device parse from their owners and agree with 
   expect(()=>parsePzrHeaterBanks(edit('"steelMass_kg":79.620524','"steelMass_kg":79.620524,"extra":1'))).toThrow()
   expect(()=>parsePzrHeaterBanks(edit('[[0,1],[1,3]]','[[0,1],[1.5,3]]'))).toThrow('tile')
   expect(()=>parsePzrRelief(inventory.replace('15600000','15900000'))).toThrow('reseat')
+  // CRED-FIX-A2 (I2): a relief above the RCS design pressure is refused.
+  expect(()=>parsePzrRelief(inventory.replace('17234662','15700000'))).toThrow('design pressure')
   // Case-set sections: ports appended, siblings on the plant datum, surge port kept.
   const cell=compileOperatingPzr(pzrSources(),hot).cell,
     added=caseSetSections(cell,parsePzrHeaterBanks(equipment),parsePzrRelief(inventory),{relief:{elevation_m:18.5},spray:{elevation_m:18,bore_m:.1}})
@@ -72,3 +74,19 @@ test('heater banks and the relief device parse from their owners and agree with 
   expect(()=>joinedPzrSections(cell,{...pages,thermal:'### Elsewhere\n'})).toThrow('Shell and head metal')
 })
 
+
+test('S3-D36: the packet takes the settle\'s PZR steel in layout order by label, with its receipt; the schema refuses extra fields', async ()=>{
+  const {pzrSteelSection}=await import('./reference-design-operating-joined'),{steadySolidsSchema}=await import('./reference-design-operating-fluid')
+  const store=(id:string,T:number,E:number)=>({id,temperature_k:T,energy_j:E,saturation_energy_j:E+1,rate_w:1e-4})
+  const pzr={frozen:['cell'],roof_pressure_pa:14.86e6,level_m:6,saturation_k:614.6,heater_request_w:19590,joule_w:19590,exterior_w:19583,
+    to_fluid_w:7,stores:[store('heater normal [6.5, 7.5] m steel energy U (J)',615.3,1.3e7),store('bottom head steel energy U (J)',614.4,9.9e8)],
+    temperature_k:[614.4,615.3] as [number,number],stored_energy_change_j:-8e6,steady:{reached_s:4116},checkpoints:[],ida:{steps:268}}
+  const section=pzrSteelSection(pzr)
+  expect(section.stores).toEqual([{id:'heater normal [6.5, 7.5] m steel energy U (J)',energy_J:1.3e7,temperature_K:615.3},
+    {id:'bottom head steel energy U (J)',energy_J:9.9e8,temperature_K:614.4}])
+  expect(section.provenance.receipt).toMatchObject({heaterRequest_W:19590,exterior_W:19583,toFluid_W:7,storedEnergyChange_J:-8e6})
+  const shape=steadySolidsSchema.shape.pzr.unwrap()
+  expect(shape.parse(pzr).stores.length).toBe(2)
+  expect(()=>shape.parse({...pzr,extra:1})).toThrow()
+  expect(()=>shape.parse({...pzr,stores:[]})).toThrow()
+})

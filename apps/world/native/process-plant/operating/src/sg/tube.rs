@@ -34,27 +34,42 @@ pub struct PrimaryPort {
     pub bulk: WaterPoint,
     /// Wall mass flux `sum(w m_face)/A_flow`, kg/(m² s).
     pub mass_flux: Scalar,
+    /// X4.5 (lead ruling d): the inflow's temperature and capacity rate
+    /// (W/K), the single-pass law's inlet.
+    pub inflow_temperature: Scalar,
+    pub inflow_capacity_w_k: Scalar,
 }
 
 impl PrimaryPort {
-    /// A held liquid primary state with its own maintained tuples.
+    /// A held liquid primary state with its own maintained tuples: the cell
+    /// at `temperature_k`, fed at `inlet_k` with `mass_flow_kg_s` over the
+    /// tube film's `flow_area_m2`. The inflow's capacity rate takes the mean
+    /// of the inflow's and the cell's specific heat (the joined solids' rule).
     pub fn held<P: WaterProperties>(
         props: &P,
         pressure_pa: f64,
         temperature_k: f64,
-        mass_flux_kg_m2_s: f64,
+        inlet_k: f64,
+        mass_flow_kg_s: f64,
+        flow_area_m2: f64,
     ) -> Result<Self, Failure> {
         let (p, t) = (s(pressure_pa), s(temperature_k));
+        let bulk = props
+            .liquid(p, t)
+            .map_err(|e| fatal(format!("primary liquid: {e}")))?;
+        let inflow = props
+            .liquid(p, s(inlet_k))
+            .map_err(|e| fatal(format!("primary inflow liquid: {e}")))?;
         Ok(Self {
             pressure: p,
             temperature: t,
             saturation: props
                 .saturation(p)
                 .map_err(|e| fatal(format!("primary saturation: {e}")))?,
-            bulk: props
-                .liquid(p, t)
-                .map_err(|e| fatal(format!("primary liquid: {e}")))?,
-            mass_flux: s(mass_flux_kg_m2_s),
+            bulk,
+            mass_flux: s(mass_flow_kg_s / flow_area_m2),
+            inflow_temperature: s(inlet_k),
+            inflow_capacity_w_k: s(mass_flow_kg_s.abs()) * s(0.5) * (inflow.cp + bulk.cp),
         })
     }
 }
@@ -84,6 +99,16 @@ impl From<&packet::Segment> for Segment {
 #[derive(Clone, Copy, Debug)]
 pub struct Tube {
     law: WallLaw,
+    /// X4.5 (`ld01-sg-contact`): primary over outer area `ID/OD`, the outside
+    /// diameter of the secondary contact, and the wall plus fouling
+    /// resistance per primary area in series with the primary film.
+    inner_fraction: f64,
+    outside_diameter_m: f64,
+    series_m2k_w: f64,
+    /// The SG's whole outer exchange area (the segments' share base).
+    exchange_area_m2: f64,
+    /// The tube wetting's two-zone contact coordinate (S3-D26).
+    contact_map: thermal::ContactMap,
 }
 
 /// The stationary local wall balance of one segment at a held primary and
@@ -106,7 +131,18 @@ pub struct Stationary {
 impl Tube {
     /// The tube film's law from the contact block's wall constants and the
     /// effective thermal diameter.
-    pub fn new(c: &packet::Contact, thermal_diameter_m: f64) -> Result<Self, Failure> {
+    pub fn new(
+        c: &packet::Contact,
+        thermal_diameter_m: f64,
+        exposure: &packet::Exposure,
+    ) -> Result<Self, Failure> {
+        let contact_map = exposure.contact_map().map_err(fatal)?;
+        c.check(exposure.fold.developed_length_m).map_err(fatal)?;
+        if thermal_diameter_m.to_bits() != c.tube_inside_diameter_m.to_bits() {
+            return Err(fatal(
+                "SG tube thermal diameter is not the bundle's inside diameter",
+            ));
+        }
         if ![
             thermal_diameter_m,
             c.exchange_area_m2,
@@ -121,6 +157,11 @@ impl Tube {
             return Err(fatal("SG tube law constants"));
         }
         Ok(Self {
+            contact_map,
+            inner_fraction: c.inner_fraction(),
+            outside_diameter_m: c.tube_outside_diameter_m,
+            series_m2k_w: c.primary_series_m2k_w(),
+            exchange_area_m2: c.exchange_area_m2,
             law: WallLaw {
                 diameter_m: thermal_diameter_m,
                 film: Film::Tube,
@@ -148,7 +189,10 @@ impl Tube {
         wall_k: Scalar,
         segment: &Segment,
     ) -> Result<(Scalar, Scalar), Failure> {
-        let primary = thermal::liquid_wall_current(
+        // X4.6 item 1: the mixed cell's law (the single-pass heat at steady
+        // flow, the cell's own exchange with no inflow), the segment carrying
+        // its area share of the whole fold's.
+        let u = thermal::tube_series_conductance(
             props,
             port.pressure,
             port.temperature,
@@ -157,13 +201,17 @@ impl Tube {
             self.law,
             port.saturation,
             port.bulk,
+            self.series_m2k_w,
         )
         .map_err(|e| recoverable(format!("SG tube primary film: {e}")))?;
-        if primary.vapor_mass.value != 0. || primary.vapor_mass.direction != 0. {
-            return Err(recoverable(
-                "SG-primary wall vapor needs its phase transaction",
-            ));
-        }
+        let whole = thermal::cell_pass_heat(
+            u * s(self.exchange_area_m2 * self.inner_fraction),
+            port.inflow_capacity_w_k,
+            port.inflow_temperature,
+            port.temperature,
+            wall_k,
+        )
+        .map_err(|e| recoverable(format!("SG tube cell pass: {e}")))?;
         let secondary = thermal::secondary_wall(
             props,
             view.pressure,
@@ -173,15 +221,19 @@ impl Tube {
             segment.start_m,
             segment.end_m,
             segment.area_m2,
-            self.law.diameter_m,
+            self.outside_diameter_m,
             thermal::SteelContact {
                 emissivity: self.law.emissivity,
                 material: self.law.material,
             },
             view.steam_present,
+            self.contact_map,
         )
         .map_err(|e| recoverable(format!("SG tube secondary contact: {e}")))?;
-        Ok((-primary.heat * s(segment.area_m2), secondary))
+        Ok((
+            whole * s(segment.area_m2 / self.exchange_area_m2),
+            secondary,
+        ))
     }
 
     /// Solve the stationary local wall balance of one segment by safeguarded
@@ -196,7 +248,10 @@ impl Tube {
         view: &SecondaryView,
         segment: &Segment,
     ) -> Result<Stationary, Failure> {
-        let (mut lo, mut hi) = (view.saturation_temperature.value, port.temperature.value);
+        let (mut lo, mut hi) = (
+            view.saturation_temperature.value,
+            port.temperature.value.max(port.inflow_temperature.value),
+        );
         if lo.is_nan() || hi.is_nan() || lo >= hi {
             return Err(fatal(
                 "stationary wall needs a primary hotter than secondary saturation",
@@ -243,6 +298,7 @@ impl Tube {
                     s(0.),
                     WallLaw {
                         film: Film::External,
+                        diameter_m: self.outside_diameter_m,
                         ..self.law
                     },
                 )

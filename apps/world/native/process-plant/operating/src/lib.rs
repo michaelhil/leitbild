@@ -6,8 +6,13 @@
 //! Callers own plant coefficients, equipment mappings and constitutive inputs.
 
 pub mod capture;
+pub mod control;
+pub mod cost;
+pub mod digest;
+pub mod electrical;
 pub mod heat_history;
 pub mod hydraulics;
+pub mod ic;
 pub mod initialization;
 pub mod joined;
 pub mod kinetics;
@@ -24,3 +29,4 @@ pub mod sg;
 pub mod source_feedback;
 pub mod sparse;
 pub mod thermal;
+pub mod turbine;

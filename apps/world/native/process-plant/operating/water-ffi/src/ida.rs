@@ -1,6 +1,7 @@
 //! spec: world/packs/process-plant/reference-designs/ld-01/model/operating-equations.md#6-solver-properties-and-cost-obligations
 //! Owned, opt-in boundary to the explicitly linked stock IDA/KLU build.
 //! No solver implementation, numerical fallback, or physical model lives here.
+use leitbild_operating_plant::cost;
 use std::{
     ffi::{c_int, c_long, c_void},
     panic::{AssertUnwindSafe, catch_unwind},
@@ -55,6 +56,14 @@ pub trait System {
     fn klu_ordering(&self) -> KluOrdering {
         KluOrdering::Colamd
     }
+    /// E-NUC (plan r4): per coordinate, how many identical coordinates of
+    /// the unreduced model it stands for, read once at construction. `None`
+    /// or all ones: the system is unreduced. Otherwise the handle weights
+    /// every coordinate so that stock's WRMS norm of this system equals
+    /// stock's norm of the unreduced one ([`WeightGroups`]). Every system
+    /// states it (no default): a wrapper that dropped its inner system's
+    /// multiplicities would silently change the norm.
+    fn multiplicities(&self) -> Option<Vec<f64>>;
     /// Number of quadratures `q' = fQ(t,y,yp)` (stock IDAS, the
     /// `quadratures` feature). A system without them states nothing.
     fn quadrature_count(&self) -> usize {
@@ -143,6 +152,27 @@ type Jacobian = unsafe extern "C" fn(
 type Roots = unsafe extern "C" fn(*mut c_void, f64, *const f64, *const f64, *mut f64) -> c_int;
 #[cfg(feature = "quadratures")]
 type Quadrature = unsafe extern "C" fn(*mut c_void, f64, *const f64, *const f64, *mut f64) -> c_int;
+type Weights = unsafe extern "C" fn(*mut c_void, *const f64, *mut f64) -> c_int;
+type CostEnter = extern "C" fn(c_int);
+type CostExit = extern "C" fn();
+/// PERF E-PROF: stock KLU's setup (0) and solve (1) inside the cost
+/// profile's scopes, when one is installed at construction.
+extern "C" fn klu_enter(kind: c_int) {
+    cost::enter(if kind == 0 { "klu-setup" } else { "klu-solve" });
+}
+extern "C" fn klu_exit() {
+    cost::exit();
+}
+/// The profile scope of a step `k` steps after its segment start.
+fn step_scope(k: u64) -> &'static str {
+    match k {
+        0 => "step[1]",
+        1..=4 => "step[2-5]",
+        5..=19 => "step[6-20]",
+        20..=99 => "step[21-100]",
+        _ => "step[101+]",
+    }
+}
 const IDA_SUCCESS: c_int = 0;
 const IDA_TSTOP_RETURN: c_int = 1;
 const IDA_ROOT_RETURN: c_int = 2;
@@ -161,6 +191,8 @@ unsafe extern "C" {
         nroots: c_int,
         g: Roots,
         user: *mut c_void,
+        enter: Option<CostEnter>,
+        leave: Option<CostExit>,
         status: *mut c_int,
     ) -> *mut c_void;
     fn operating_ida_free(ida: *mut c_void);
@@ -180,9 +212,13 @@ unsafe extern "C" {
         steps: *mut f64,
     ) -> c_int;
     fn operating_ida_max_order(ida: *mut c_void, order: c_int) -> c_int;
+    fn operating_ida_tolerances(ida: *mut c_void, rtol: f64, atol: *const f64) -> c_int;
+    fn operating_ida_weight_function(ida: *mut c_void, w: Weights) -> c_int;
     fn operating_ida_max_step(ida: *mut c_void, step: f64) -> c_int;
     fn operating_ida_init_step(ida: *mut c_void, step: f64) -> c_int;
     fn operating_ida_quadratures_linked() -> c_int;
+    fn operating_ida_rebuild_every(ida: *mut c_void, steps: c_long, held: c_long) -> c_int;
+    fn operating_ida_rebuild_counts(ida: *mut c_void, counts: *mut c_long) -> c_int;
     #[cfg(feature = "quadratures")]
     fn operating_ida_quadrature_init(
         ida: *mut c_void,
@@ -199,12 +235,12 @@ unsafe extern "C" {
     fn operating_ida_solution_scaling(ida: *mut c_void, enabled: c_int) -> c_int;
     fn operating_ida_newton_coefficient(ida: *mut c_void, coefficient: f64) -> c_int;
     fn operating_ida_delta_cj(ida: *mut c_void, dcj: f64) -> c_int;
+    fn operating_ida_eta_fixed(ida: *mut c_void, eta_min_fx: f64, eta_max_fx: f64) -> c_int;
     fn operating_ida_klu_ordering(ida: *mut c_void, ordering: c_int) -> c_int;
     fn operating_ida_reinitialize(ida: *mut c_void, t: f64, y: *const f64, yp: *const f64)
     -> c_int;
     fn operating_ida_root_directions(ida: *mut c_void, directions: *mut c_int) -> c_int;
-    fn operating_ida_differential(ida: *mut c_void, ids: *const f64) -> c_int;
-    fn operating_ida_stop_at(ida: *mut c_void, target: f64) -> c_int;
+    fn operating_ida_set_root_direction(ida: *mut c_void, directions: *mut c_int) -> c_int;
     fn operating_ida_step(
         ida: *mut c_void,
         target: f64,
@@ -212,7 +248,9 @@ unsafe extern "C" {
         y: *mut f64,
         yp: *mut f64,
     ) -> c_int;
-    fn operating_ida_dense(ida: *mut c_void, t: f64, y: *mut f64, yp: *mut f64) -> c_int;
+    fn operating_ida_dky(ida: *mut c_void, t: f64, k: c_int, out: *mut f64) -> c_int;
+    fn operating_ida_differential(ida: *mut c_void, ids: *const f64) -> c_int;
+    fn operating_ida_stop_at(ida: *mut c_void, target: f64) -> c_int;
     fn operating_ida_nonnegative(ida: *mut c_void, flags: *const f64) -> c_int;
     fn operating_ida_current_time(ida: *mut c_void, time: *mut f64) -> c_int;
     fn operating_ida_current_state(
@@ -234,10 +272,159 @@ struct Context<S> {
     nnz: usize,
     roots: usize,
     /// Quadratures initialized on this handle (stock IDAS), else 0.
-    #[cfg_attr(not(feature = "quadratures"), allow(dead_code))]
     quadratures: usize,
     fatal: Option<String>,
     last_trial: Option<String>,
+    /// N1: the grouped error-weight rule in force, if any.
+    grouped: Option<Grouped>,
+    /// E-NUC: the system's multiplicities when any differs from 1.
+    multiplicity: Option<Vec<f64>>,
+}
+/// The grouped rule's per-coordinate factor and the tolerances it divides.
+struct Grouped {
+    groups: WeightGroups,
+    factor: Vec<f64>,
+    relative: f64,
+    absolute: Vec<f64>,
+}
+/// N1 (Operable Unit plan, R1 S1): every coordinate in exactly one named
+/// group. Under [`Ida::group_weights`] coordinate `i` of group `g` (`n_g`
+/// coordinates of `N`) is weighted `w_i = sqrt(N / n_g) / (rtol |y_i| +
+/// atol_i)` through stock IDAWFtolerances, so stock's WRMS norm becomes
+/// `sqrt(sum_g RMS_g^2)`, `RMS_g` the group's root mean square in its
+/// declared tolerances: a norm at most 1 holds every group's RMS within its
+/// tolerance whatever the group's size, and no weight is below stock's.
+#[derive(Clone, Debug, PartialEq)]
+pub struct WeightGroups {
+    names: Vec<String>,
+    of: Vec<usize>,
+    sizes: Vec<usize>,
+}
+impl WeightGroups {
+    /// Groups named by each coordinate's key, in order of first appearance.
+    pub fn from_keys<K: AsRef<str>>(keys: &[K]) -> Self {
+        let mut index = std::collections::HashMap::<&str, usize>::new();
+        let mut names = Vec::new();
+        let mut sizes = Vec::new();
+        let of = keys
+            .iter()
+            .map(|k| {
+                let g = *index.entry(k.as_ref()).or_insert_with(|| {
+                    names.push(k.as_ref().to_string());
+                    sizes.push(0);
+                    names.len() - 1
+                });
+                sizes[g] += 1;
+                g
+            })
+            .collect();
+        Self { names, of, sizes }
+    }
+    pub fn len(&self) -> usize {
+        self.of.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.of.is_empty()
+    }
+    /// Group names, sizes and each coordinate's group.
+    pub fn names(&self) -> &[String] {
+        &self.names
+    }
+    pub fn sizes(&self) -> &[usize] {
+        &self.sizes
+    }
+    pub fn group_of(&self) -> &[usize] {
+        &self.of
+    }
+    /// `sqrt(N / n_g)` per coordinate.
+    pub fn factors(&self) -> Vec<f64> {
+        self.factors_for(None)
+    }
+    /// E-NUC: the factors of a reduced system whose coordinate `i` stands
+    /// for `m_i` identical coordinates of the unreduced one,
+    /// `sqrt(m_i N / M_g)` with `M_g = sum_{j in g} m_j`. A vector whose
+    /// replicas are equal then has the same WRMS norm here as the unreduced
+    /// model's under the unreduced groups (`sqrt(N' / n'_g)`): stock's norm
+    /// when there is one group. With every `m_i = 1` it is [`Self::factors`]
+    /// bit for bit.
+    pub fn factors_for(&self, multiplicity: Option<&[f64]>) -> Vec<f64> {
+        let n = self.of.len() as f64;
+        let Some(m) = multiplicity else {
+            return self
+                .of
+                .iter()
+                .map(|g| (n / self.sizes[*g] as f64).sqrt())
+                .collect();
+        };
+        let mut weighted = vec![0.; self.sizes.len()];
+        for (g, mi) in self.of.iter().zip(m) {
+            weighted[*g] += mi;
+        }
+        self.of
+            .iter()
+            .zip(m)
+            .map(|(g, mi)| (mi * n / weighted[*g]).sqrt())
+            .collect()
+    }
+}
+/// A handle's error-weight rule ([`Ida::weight_rule`]): stock's
+/// `1 / (rtol |y| + atol)`, times `sqrt(N / n_g)` under weight groups (N1).
+/// The guard of the exact consistent start reads its weights here, while the
+/// handle's system is borrowed, so it measures in stock's own norm.
+#[derive(Clone, Debug, PartialEq)]
+pub struct WeightRule {
+    factor: Option<Vec<f64>>,
+}
+impl WeightRule {
+    /// Whether the rule is grouped (N1) rather than stock's.
+    pub fn grouped(&self) -> bool {
+        self.factor.is_some()
+    }
+    /// The weights of the handle's first `y.len()` coordinates at `y` for
+    /// the tolerances `relative`, `absolute` (a segment's, which may not be
+    /// set on the handle yet).
+    pub fn weights(
+        &self,
+        y: &[f64],
+        relative: f64,
+        absolute: &[f64],
+        out: &mut [f64],
+    ) -> Result<()> {
+        if absolute.len() != y.len()
+            || out.len() != y.len()
+            || self.factor.as_ref().is_some_and(|f| f.len() < y.len())
+        {
+            return Err("IDA weights dimension".into());
+        }
+        let factor = self.factor.as_ref().map(|f| &f[..y.len()]);
+        if weight_rule(factor, relative, absolute, y, out) {
+            Ok(())
+        } else {
+            Err("an error weight is not finite and positive".into())
+        }
+    }
+}
+/// The one weight rule of a handle at `y` under `relative`, `absolute`
+/// (and the group factors when grouped): stock's `1 / (rtol |y| + atol)`
+/// times the factor. `false` when a weight is not finite and positive.
+fn weight_rule(
+    factor: Option<&[f64]>,
+    relative: f64,
+    absolute: &[f64],
+    y: &[f64],
+    out: &mut [f64],
+) -> bool {
+    for (i, w) in out.iter_mut().enumerate() {
+        let stock = 1. / (relative * y[i].abs() + absolute[i]);
+        *w = match factor {
+            Some(f) => f[i] * stock,
+            None => stock,
+        };
+        if !(w.is_finite() && *w > 0.) {
+            return false;
+        }
+    }
+    true
 }
 impl<S> Context<S> {
     fn status(&mut self, result: std::thread::Result<std::result::Result<(), Failure>>) -> c_int {
@@ -291,6 +478,7 @@ unsafe extern "C" fn residual<S: System>(
     if c.fatal.is_some() {
         return -1;
     }
+    let _cost = cost::scope("residual");
     let result = catch_unwind(AssertUnwindSafe(|| unsafe {
         c.system.residual(
             t,
@@ -315,6 +503,7 @@ unsafe extern "C" fn jacobian<S: System>(
     if c.fatal.is_some() {
         return -1;
     }
+    let _cost = cost::scope("jacobian");
     let result = catch_unwind(AssertUnwindSafe(|| unsafe {
         c.system.jacobian(
             t,
@@ -341,6 +530,7 @@ unsafe extern "C" fn roots<S: System>(
         return -1;
     }
     let out = unsafe { std::slice::from_raw_parts_mut(out, c.roots) };
+    let _cost = cost::scope("roots");
     let result = catch_unwind(AssertUnwindSafe(|| unsafe {
         c.system.roots(
             t,
@@ -350,6 +540,33 @@ unsafe extern "C" fn roots<S: System>(
         )
     }));
     c.root_status(result, out)
+}
+/// Stock IDAWFtolerances' rule (N1): the grouped weights at `y`. A
+/// weight that is not finite and positive is a fatal model error.
+unsafe extern "C" fn weights<S: System>(user: *mut c_void, y: *const f64, ewt: *mut f64) -> c_int {
+    // SAFETY: as for residual; stock passes vectors of the handle's length.
+    let c = unsafe { &mut *user.cast::<Context<S>>() };
+    if c.fatal.is_some() {
+        return -1;
+    }
+    let Some(g) = &c.grouped else {
+        c.fatal
+            .get_or_insert("stock asked for grouped weights without a rule".into());
+        return -1;
+    };
+    let (y, out) = unsafe {
+        (
+            std::slice::from_raw_parts(y, c.n),
+            std::slice::from_raw_parts_mut(ewt, c.n),
+        )
+    };
+    if weight_rule(Some(&g.factor), g.relative, &g.absolute, y, out) {
+        0
+    } else {
+        c.fatal
+            .get_or_insert("a grouped error weight is not finite and positive".into());
+        -1
+    }
 }
 #[cfg(feature = "quadratures")]
 unsafe extern "C" fn quadrature<S: System>(
@@ -364,6 +581,7 @@ unsafe extern "C" fn quadrature<S: System>(
     if c.fatal.is_some() {
         return -1;
     }
+    let _cost = cost::scope("quadrature");
     let result = catch_unwind(AssertUnwindSafe(|| unsafe {
         c.system.quadrature(
             t,
@@ -386,6 +604,17 @@ pub fn quadratures_linked() -> bool {
     );
     linked
 }
+/// MR-1's counts on one handle ([`Ida::rebuild_matrix_every`]).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Rebuild {
+    /// The check-point interval in steps (0: stock IDASolve).
+    pub steps: i64,
+    /// Check points held now, the most ever held, and how often stock
+    /// IDAAdjReInit freed them at the held bound (restarts not counted).
+    pub held: i64,
+    pub most_held: i64,
+    pub drops: i64,
+}
 #[cfg(not(feature = "quadratures"))]
 const NO_QUADRATURES: &str = "stock IDA has no quadratures: this build links IDA, not IDAS (build with the quadratures feature)";
 pub struct Ida<S: System> {
@@ -395,6 +624,13 @@ pub struct Ida<S: System> {
     failed: bool,
     /// Set by the first `advance` after construction or reinitialization.
     started: bool,
+    /// HOOK (S3GATES, S3-D67; KERN to reconcile): the absolute tolerance
+    /// vector stock was last given (construction or `set_tolerances`).
+    absolute: Vec<f64>,
+    /// The relative tolerance last given.
+    relative: f64,
+    /// PERF E-PROF: steps since the segment start (the profile's scopes).
+    segment_steps: u64,
 }
 impl<S: System> Ida<S> {
     pub fn new(system: S, initial: Initial<'_>) -> Result<Self> {
@@ -435,6 +671,8 @@ impl<S: System> Ida<S> {
             quadratures: 0,
             fatal: None,
             last_trial: None,
+            grouped: None,
+            multiplicity: None,
         });
         let mut status = 0;
         let handle = unsafe {
@@ -452,6 +690,8 @@ impl<S: System> Ida<S> {
                 nroots,
                 roots::<S>,
                 (&mut *context as *mut Context<S>).cast(),
+                cost::active().then_some(klu_enter as CostEnter),
+                cost::active().then_some(klu_exit as CostExit),
                 &mut status,
             )
         };
@@ -466,13 +706,94 @@ impl<S: System> Ida<S> {
             unsafe { operating_ida_free(handle.as_ptr()) };
             return Err(format!("stock SUNLinSol_KLUSetOrdering failed ({code})"));
         }
-        Ok(Self {
+        let multiplicity = context.system.multiplicities();
+        let mut ida = Self {
             handle,
             context,
             time: initial.time,
             failed: false,
             started: false,
-        })
+            absolute: initial.absolute_tolerance.to_vec(),
+            relative: initial.relative_tolerance,
+            segment_steps: 0,
+        };
+        // E-NUC: a reduced system keeps the unreduced model's stock norm
+        // through stock IDAWFtolerances: one group, each coordinate weighted
+        // by its multiplicity ([`WeightGroups::factors_for`]).
+        if let Some(m) = multiplicity {
+            if m.len() != n || m.iter().any(|v| !(v.is_finite() && *v >= 1.)) {
+                return Err(format!(
+                    "{} multiplicities for {n} coordinates, or one below 1",
+                    m.len()
+                ));
+            }
+            if m.iter().any(|v| *v != 1.) {
+                ida.context.multiplicity = Some(m);
+                ida.group_weights(WeightGroups::from_keys(&vec!["stock"; n]))?;
+            }
+        }
+        Ok(ida)
+    }
+    /// N1: group-normalised error weights ([`WeightGroups`]) through stock
+    /// IDAWFtolerances on the tolerances in force, from the next step on: one
+    /// rule for stock's error test, its Newton convergence test and its
+    /// initial step, and the weights [`Self::weights`] gives the exact
+    /// consistent start's guard. A segment option (before `advance`); given
+    /// again at a later segment start it replaces the groups (a mode change
+    /// that changes a coordinate's class). Once set, stock's own
+    /// `rtol |y| + atol` weights do not return on this handle.
+    pub fn group_weights(&mut self, groups: WeightGroups) -> Result<()> {
+        self.configurable("weight groups")?;
+        if groups.len() != self.context.n {
+            return Err(format!(
+                "weight groups cover {} coordinates, the handle has {}",
+                groups.len(),
+                self.context.n
+            ));
+        }
+        let first = self.context.grouped.is_none();
+        self.context.grouped = Some(Grouped {
+            factor: groups.factors_for(self.context.multiplicity.as_deref()),
+            groups,
+            relative: self.relative,
+            absolute: self.absolute.clone(),
+        });
+        if first {
+            let code = unsafe { operating_ida_weight_function(self.handle.as_ptr(), weights::<S>) };
+            if let Err(e) = self.check(code) {
+                self.context.grouped = None;
+                return Err(e);
+            }
+        }
+        Ok(())
+    }
+    /// The error-weight rule in force, for receipts: stock IDASVtolerances
+    /// (`"stock"`), or stock IDAWFtolerances carrying the coordinates'
+    /// multiplicities under one group (E-NUC: the unreduced model's stock
+    /// norm, `"stock-equivalent multiplicity rule"`), or N1's groups, with
+    /// or without multiplicities.
+    pub fn weight_rule_kind(&self) -> &'static str {
+        match (&self.context.grouped, &self.context.multiplicity) {
+            (None, _) => "stock",
+            (Some(g), Some(_)) if g.groups.sizes().len() == 1 => "stock-equivalent multiplicity rule",
+            (Some(_), Some(_)) => "N1 groups with multiplicities",
+            (Some(_), None) => "N1 groups",
+        }
+    }
+    /// The weight groups in force, if any (N1).
+    pub fn weight_groups(&self) -> Option<&WeightGroups> {
+        self.context.grouped.as_ref().map(|g| &g.groups)
+    }
+    /// This handle's error-weight rule, apart from the handle (N1).
+    pub fn weight_rule(&self) -> WeightRule {
+        WeightRule {
+            factor: self.context.grouped.as_ref().map(|g| g.factor.clone()),
+        }
+    }
+    /// HOOK (S3GATES, S3-D67): the absolute tolerances stock uses now, as
+    /// last given (derived classes included).
+    pub fn absolute_tolerances(&self) -> &[f64] {
+        &self.absolute
     }
     fn buffers(&self, y: &[f64], yp: &[f64]) -> Result<()> {
         if y.len() != self.context.n || yp.len() != self.context.n {
@@ -509,6 +830,7 @@ impl<S: System> Ida<S> {
         if !horizon.is_finite() || horizon <= self.time {
             return Err("IDA initialization horizon must be in the future".into());
         }
+        let _cost = cost::scope("ic");
         let status = unsafe {
             operating_ida_initialize(
                 self.handle.as_ptr(),
@@ -532,6 +854,7 @@ impl<S: System> Ida<S> {
             return Err("IDA target must be in the future".into());
         }
         self.started = true;
+        let _cost = cost::scope("advance");
         let status = unsafe {
             operating_ida_advance(
                 self.handle.as_ptr(),
@@ -544,50 +867,6 @@ impl<S: System> Ida<S> {
         let result = self.check(status).and_then(|()| self.outcome(status));
         self.failed = result.is_err();
         result
-    }
-    /// One stock IDA_ONE_STEP call: a single accepted internal step toward
-    /// `target`, or a located root, or the armed stop time; the outcome is
-    /// as [`Ida::advance`]'s, at the returned time. Read the step's
-    /// interpolant by [`Ida::dense`] (lead decision S3-D1 #6).
-    pub fn advance_one_step(
-        &mut self,
-        target: f64,
-        y: &mut [f64],
-        yp: &mut [f64],
-    ) -> Result<Advance> {
-        if self.failed {
-            return Err("IDA handle is fail-stopped".into());
-        }
-        self.buffers(y, yp)?;
-        if !target.is_finite() || target <= self.time {
-            return Err("IDA target must be in the future".into());
-        }
-        self.started = true;
-        let status = unsafe {
-            operating_ida_step(
-                self.handle.as_ptr(),
-                target,
-                &mut self.time,
-                y.as_mut_ptr(),
-                yp.as_mut_ptr(),
-            )
-        };
-        let result = self.check(status).and_then(|()| self.outcome(status));
-        self.failed = result.is_err();
-        result
-    }
-    /// Stock IDAGetDky: the solution and its rate at `t` within the last
-    /// accepted step `[tn - hu, tn]`, from stock's interpolant into the
-    /// caller's buffers. No step, history or status changes.
-    pub fn dense(&self, t: f64, y: &mut [f64], yp: &mut [f64]) -> Result<()> {
-        self.buffers(y, yp)?;
-        let status = unsafe {
-            operating_ida_dense(self.handle.as_ptr(), t, y.as_mut_ptr(), yp.as_mut_ptr())
-        };
-        if status < 0 {
-            return Err(format!("stock IDAGetDky status {status} at {t} s"));
-        }
-        Ok(())
     }
     fn outcome(&self, status: c_int) -> Result<Advance> {
         match status {
@@ -620,6 +899,7 @@ impl<S: System> Ida<S> {
         if !time.is_finite() || y.iter().chain(yp).any(|v| !v.is_finite()) {
             return Err("IDA reinitialization requires a finite time and state".into());
         }
+        let _cost = cost::scope("reinit");
         let status = unsafe {
             operating_ida_reinitialize(self.handle.as_ptr(), time, y.as_ptr(), yp.as_ptr())
         };
@@ -628,6 +908,7 @@ impl<S: System> Ida<S> {
         result?;
         self.time = time;
         self.started = false;
+        self.segment_steps = 0;
         Ok(())
     }
     /// IDASetId on this instance after a structural discrete event, such as a
@@ -659,6 +940,56 @@ impl<S: System> Ida<S> {
         } else {
             Ok(())
         }
+    }
+    /// Stock IDASetRootDirection: one of -1, 0, +1 per declared root
+    /// function (+1 locates rising crossings only, -1 falling only, 0 both;
+    /// stock's default is 0 for every function). A segment option like the
+    /// others: before `advance`; stock keeps it across IDAReInit.
+    pub fn set_root_directions(&mut self, directions: &[i32]) -> Result<()> {
+        self.configurable("root directions")?;
+        if directions.len() != self.context.roots
+            || directions.is_empty()
+            || directions.iter().any(|d| !(-1..=1).contains(d))
+        {
+            return Err("IDA root directions need one of -1, 0, +1 per root function".into());
+        }
+        // Stock copies the array, so the copy may drop after the call.
+        let mut copy: Vec<c_int> = directions.to_vec();
+        let code =
+            unsafe { operating_ida_set_root_direction(self.handle.as_ptr(), copy.as_mut_ptr()) };
+        self.check(code)
+    }
+    /// Stock IDASVtolerances: the segment's relative and absolute
+    /// tolerances (finite, positive), a segment option like the others
+    /// (before `advance`); for a derived class that changes at a
+    /// reinitialization, such as an equilibrium cell's vapor class at a
+    /// phase-mode change (S3-D3). Under [`Self::group_weights`] the grouped
+    /// rule takes the new tolerances instead (N1).
+    pub fn set_tolerances(&mut self, relative: f64, absolute: &[f64]) -> Result<()> {
+        self.configurable("tolerances")?;
+        if absolute.len() != self.context.n
+            || !relative.is_finite()
+            || relative <= 0.
+            || absolute.iter().any(|a| !a.is_finite() || *a <= 0.)
+        {
+            return Err(
+                "IDA tolerances need a positive rtol and one positive atol per coordinate".into(),
+            );
+        }
+        if let Some(g) = self.context.grouped.as_mut() {
+            // N1: the grouped rule reads the tolerances at each weight
+            // evaluation; stock IDASVtolerances would replace the rule.
+            g.relative = relative;
+            g.absolute.copy_from_slice(absolute);
+        } else {
+            let code = unsafe {
+                operating_ida_tolerances(self.handle.as_ptr(), relative, absolute.as_ptr())
+            };
+            self.check(code)?;
+        }
+        self.absolute.copy_from_slice(absolute);
+        self.relative = relative;
+        Ok(())
     }
     /// IDASetMaxOrd; stock admits 1 through its allocated maximum order 5.
     pub fn set_max_order(&mut self, order: usize) -> Result<()> {
@@ -739,6 +1070,12 @@ impl<S: System> Ida<S> {
         let code = unsafe { operating_ida_quadrature_reinit(self.handle.as_ptr(), q0.as_ptr()) };
         self.check(code)
     }
+    /// The quadratures stock IDAS integrates on this handle: zero until
+    /// `initialize_quadratures` (always zero without the `quadratures`
+    /// feature).
+    pub fn quadrature_count(&self) -> usize {
+        self.context.quadratures
+    }
     /// Stock IDAS IDAGetQuad: the quadratures at the last returned time.
     #[cfg(feature = "quadratures")]
     pub fn quadratures(&self, q: &mut [f64]) -> Result<f64> {
@@ -813,6 +1150,23 @@ impl<S: System> Ida<S> {
         let code = unsafe { operating_ida_delta_cj(self.handle.as_ptr(), dcj) };
         self.check(code)
     }
+    /// Stock IDASetEtaFixedStepBounds (lead decision R4-ETA, plan r4): after
+    /// an accepted step stock keeps h unchanged while its tentative step
+    /// ratio lies in `(eta_min_fx, eta_max_fx)` (stock's defaults 1 and 2);
+    /// the error test still judges every step. Stock silently replaces an
+    /// out-of-range value with its default, so `eta_min_fx` outside `[0, 1]`
+    /// or `eta_max_fx` below 1 is refused here instead. Retained across
+    /// IDAReInit.
+    pub fn set_eta_fixed_step_bounds(&mut self, eta_min_fx: f64, eta_max_fx: f64) -> Result<()> {
+        self.configurable("fixed step-size bounds")?;
+        if !(0. ..=1.).contains(&eta_min_fx) || !(eta_max_fx >= 1. && eta_max_fx.is_finite()) {
+            return Err(format!(
+                "IDA fixed-step bounds ({eta_min_fx}, {eta_max_fx}) need 0 <= eta_min_fx <= 1 <= eta_max_fx"
+            ));
+        }
+        let code = unsafe { operating_ida_eta_fixed(self.handle.as_ptr(), eta_min_fx, eta_max_fx) };
+        self.check(code)
+    }
     /// Only actual intervention/event boundaries and the final horizon require
     /// a forced endpoint. Ordinary observation calls use IDA interpolation.
     pub fn stop_at(&mut self, target: f64) -> Result<()> {
@@ -844,6 +1198,72 @@ impl<S: System> Ida<S> {
             return Err(format!("stock IDA current-state query failed ({status})"));
         }
         Ok(time)
+    }
+    /// Stock IDA_ONE_STEP: one internal step toward `target` (an armed stop
+    /// boundary is never passed); a located root returns early as
+    /// `Advance::Root`. An observer reads each accepted step by
+    /// [`Self::dense`] instead of `advance` calls at the observation rate
+    /// (S3-D1 #7; IC-PROT's frame driver).
+    pub fn step(&mut self, target: f64, y: &mut [f64], yp: &mut [f64]) -> Result<Advance> {
+        if self.failed {
+            return Err("IDA handle is fail-stopped".into());
+        }
+        self.buffers(y, yp)?;
+        if !target.is_finite() || target <= self.time {
+            return Err("IDA target must be in the future".into());
+        }
+        self.started = true;
+        let _cost = cost::scope(step_scope(self.segment_steps));
+        self.segment_steps += 1;
+        let status = unsafe {
+            operating_ida_step(
+                self.handle.as_ptr(),
+                target,
+                &mut self.time,
+                y.as_mut_ptr(),
+                yp.as_mut_ptr(),
+            )
+        };
+        let result = self.check(status).and_then(|()| self.outcome(status));
+        self.failed = result.is_err();
+        result
+    }
+    /// Dense output (S3-D1 #7): stock IDAGetDky, the `k`-th derivative at
+    /// `t` of the last accepted step's interpolating polynomial, for `t`
+    /// within `[tn - h_used, tn]` (`stats()`'s `internal_time` and
+    /// `last_step`) and `k` at most that step's order (`last_order`). An
+    /// observation, never an `IDASolve` call: no step, history, option or
+    /// status changes, and the `advance` buffers are untouched. Refused
+    /// before the first accepted step of a segment, on a fail-stopped
+    /// handle, outside the last step (stock IDA_BAD_T; stock alone would
+    /// extrapolate past tn) and above its order (IDA_BAD_K).
+    pub fn dense(&self, t: f64, k: usize, out: &mut [f64]) -> Result<()> {
+        if self.failed {
+            return Err("IDA handle is fail-stopped".into());
+        }
+        if !self.started {
+            return Err("IDA dense output needs an accepted step of this segment".into());
+        }
+        if out.len() != self.context.n {
+            return Err("IDA output dimension".into());
+        }
+        if !t.is_finite() {
+            return Err(format!("IDA dense output time {t} must be finite"));
+        }
+        let order = c_int::try_from(k).map_err(|_| format!("IDA dense derivative {k}"))?;
+        let code = unsafe { operating_ida_dky(self.handle.as_ptr(), t, order, out.as_mut_ptr()) };
+        if code < 0 {
+            return Err(format!(
+                "stock IDAGetDky status {code} at {t} s, derivative {k} (outside the last accepted step [tn - h_used, tn] or above its order)"
+            ));
+        }
+        Ok(())
+    }
+    /// [`Self::dense`] at `k` = 0 and 1: the state and its derivative at `t`.
+    pub fn dense_output(&self, t: f64, y: &mut [f64], yp: &mut [f64]) -> Result<()> {
+        self.buffers(y, yp)?;
+        self.dense(t, 0, y)?;
+        self.dense(t, 1, yp)
     }
     /// Copy stock's current local-error estimate and reciprocal error weights.
     /// These are diagnostics of its current history, not errors of the last
@@ -898,6 +1318,51 @@ impl<S: System> Ida<S> {
         let result = self.check(code);
         self.failed = result.is_err();
         result
+    }
+    /// MR-1 (owner, request 7 R7-P, 17 Oct): stock IDAS check points every
+    /// `steps` steps, i.e. IDAAdjInit(steps, IDA_HERMITE) and IDASolveF in
+    /// place of IDASolve. Each check point sets stock's own forceSetup, so
+    /// the iteration matrix is set up again at least every `steps` steps
+    /// although step size and order stay fixed (stock never does so at a
+    /// constant cj); step, order and history are untouched and no backward
+    /// pass is run. Check points are freed by stock IDAAdjReInit at every
+    /// `reinitialize` and whenever more than `held` are held, so memory is
+    /// the interpolation store, (steps + 1) x 2 vectors, plus at most `held`
+    /// check points. Set once per handle, at any time; refused under plain
+    /// IDA, which has no check points (no fallback: build with the
+    /// `quadratures` feature, stock IDAS).
+    pub fn rebuild_matrix_every(&mut self, steps: usize, held: usize) -> Result<()> {
+        if !quadratures_linked() {
+            return Err(
+                "MR-1 needs stock IDAS check points: this build links plain IDA (build with the quadratures feature)"
+                    .into(),
+            );
+        }
+        let (Ok(n), Ok(h)) = (c_long::try_from(steps), c_long::try_from(held)) else {
+            return Err("MR-1 interval or held bound out of range".into());
+        };
+        if n < 1 || h < 1 {
+            return Err("MR-1 interval and held bound must be at least 1".into());
+        }
+        let code = unsafe { operating_ida_rebuild_every(self.handle.as_ptr(), n, h) };
+        if code < 0 {
+            return Err(format!(
+                "stock IDAAdjInit refused MR-1 ({code}; set once per handle)"
+            ));
+        }
+        Ok(())
+    }
+    /// MR-1's counts on this handle (all zero when it is off).
+    #[allow(clippy::unnecessary_cast)] // C long varies by host ABI.
+    pub fn rebuild(&self) -> Rebuild {
+        let mut c = [0 as c_long; 4];
+        unsafe { operating_ida_rebuild_counts(self.handle.as_ptr(), c.as_mut_ptr()) };
+        Rebuild {
+            steps: c[0] as i64,
+            held: c[1] as i64,
+            most_held: c[2] as i64,
+            drops: c[3] as i64,
+        }
     }
     #[allow(clippy::unnecessary_cast)] // C long varies by host ABI.
     pub fn stats(&self) -> Result<Stats> {

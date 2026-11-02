@@ -17,11 +17,24 @@
 //! backpressure); zone heat is zero, since every external heat into the
 //! zones reaches them through the metal.
 //!
-//! G6 with P4 (S2 design choices, 11 October): the steel is prepared at the
-//! composed cell's `Tsat(p_s)`, and the heater demand is the metal's
-//! exterior loss (shell bands and both heads) at that temperature, computed
-//! once and held constant. It stands in for the pressure controller's
-//! steady output, which belongs to S3; control laws are S3.
+//! G6 with P4 (S2 design choices, 11 October): the heater demand is the
+//! metal's exterior loss (shell bands and both heads) at the composed cell's
+//! `Tsat(p_s)`, computed once. Without a controller it is held constant
+//! (S2). S3-D36 (G18's principle, S2-D2/D3): every steel store starts at the
+//! steady state of its own laws at the prepared cell, the demand and the
+//! exterior loss, from the stock-IDA steady solids settle
+//! (`prepare_steady_solids`), carried by the packet's `pzrSteel` section
+//! ([`Steel`]); `Tsat(p_s)` is only that settle's initial state
+//! ([`SteelPreparation::Saturation`]).
+//!
+//! S3 (IC-CTRL): the normal pressure controller (`control::pzr_pressure`)
+//! replaces the demand at frame instants through [`Pzr::apply_control`],
+//! a held-input change between solver segments that the frame driver
+//! classifies (S3-D1: class S under the smallness criterion, else R). The
+//! banks take the request by the equipment's continuous split. The S2
+//! network composes no controlled-spray material path (the spray port's
+//! receipt is the network's zero), so a nonzero spray demand refuses here
+//! instead of being dropped.
 //!
 //! The relief is the independent device unchanged from its owner: demand
 //! by root on raw PT1 (at the roof, so the roof pressure), finite lift
@@ -29,7 +42,7 @@
 //! sets the lift exactly to 1 (open) or exactly to 0 (on the seat). The
 //! block always reports two roots, the demand threshold and the travel; a
 //! lift at rest reports the travel root as the constant [`DISARMED`].
-use super::block::{Class, Coordinates, Layout, Transaction};
+use super::block::{Class, Coordinates, Layout, Transaction, snapshot_object};
 use crate::{
     network::{
         Failure,
@@ -79,6 +92,37 @@ pub struct Section {
     pub provenance: serde_json::Value,
 }
 
+/// The packet's `pzrSteel` section (S3-D36): each steel coordinate's
+/// prepared energy at the steady state of its laws, in the block's layout
+/// order and by its census label, from the stock-IDA steady solids settle.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Steel {
+    pub stores: Vec<SteelStore>,
+    /// The settle's provenance and receipt, for receipts only.
+    pub provenance: serde_json::Value,
+}
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SteelStore {
+    pub id: String,
+    #[serde(rename = "energy_J")]
+    pub energy_j: f64,
+    #[serde(rename = "temperature_K")]
+    pub temperature_k: f64,
+}
+
+/// Where the block's prepared steel energies come from.
+#[derive(Clone, Copy, Debug)]
+pub enum SteelPreparation<'a> {
+    /// Every steel at the composed cell's `Tsat(p_s)`: only the steady
+    /// solids settle's initial state.
+    Saturation,
+    /// The steady state of the steel's laws (S3-D36), the packet's
+    /// `pzrSteel`.
+    Steady(&'a Steel),
+}
+
 /// The relief device and its discrete state, retained by the block.
 #[derive(Clone, Copy, Debug)]
 pub struct Relief {
@@ -90,6 +134,10 @@ pub struct Relief {
     /// The demand's state: open above the opening pressure until the roof
     /// pressure falls through the reseat pressure.
     pub demand_open: bool,
+    /// HOOK (C4 lane, for KERN/G6): the declared fails-open malfunction
+    /// ([`super::block::Command::ReliefStuckOpen`]): the demand is held open
+    /// and its root disarmed; the travel root still stops the lift at 1.
+    pub stuck_open: bool,
 }
 
 /// What one relief transaction did, for its receipt.
@@ -109,7 +157,34 @@ impl Relief {
         let r = self
             .device
             .roots(s(roof_pressure_pa), s(lift), self.demand_open, self.motion);
-        [r.demand.value, r.travel.map_or(DISARMED, |t| t.value)]
+        // HOOK (C4 lane): a stuck-open demand never crosses.
+        let demand = if self.stuck_open {
+            DISARMED
+        } else {
+            r.demand.value
+        };
+        [demand, r.travel.map_or(DISARMED, |t| t.value)]
+    }
+    /// HOOK (C4 lane, for KERN/G6): the fails-open malfunction. The demand
+    /// is held open from now on and its root disarmed; a closed or closing
+    /// lift starts opening at the device's rate, and the mechanical stop at
+    /// full lift keeps it there. Refused once stuck.
+    pub fn stick_open(&mut self) -> Result<ReliefEvent, Failure> {
+        if self.stuck_open {
+            return Err(fatal("the relief is already stuck open"));
+        }
+        let before = (self.demand_open, self.motion);
+        self.stuck_open = true;
+        self.demand_open = true;
+        self.motion = match self.motion {
+            ReliefMotion::Closed | ReliefMotion::Closing => ReliefMotion::Opening,
+            m => m,
+        };
+        Ok(ReliefEvent {
+            before,
+            after: (self.demand_open, self.motion),
+            stop: None,
+        })
     }
     /// The transaction at located roots, `[demand, travel]` directions as
     /// IDAGetRootInfo. The travel root first: the mechanical stop sets the
@@ -132,6 +207,9 @@ impl Relief {
             let report = self.device.stop(self.motion, lift, root_bound)?;
             self.motion = report.motion_after;
             stop = Some(report);
+        }
+        if directions[0] != 0 && self.stuck_open {
+            return Err(fatal("a stuck-open relief's disarmed demand root crossed"));
         }
         if directions[0] != 0 {
             let expected = if self.demand_open { -1 } else { 1 };
@@ -167,15 +245,26 @@ pub struct Ledger {
     pub exterior_w: f64,
 }
 
+/// What one control frame put in force, for its receipt.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct ControlApplied {
+    pub t_s: f64,
+    pub request_before_w: f64,
+    pub request_after_w: f64,
+    pub banks_before_w: Vec<f64>,
+    pub banks_after_w: Vec<f64>,
+}
+
 /// The joined PZR block.
 pub struct Pzr {
     heaters: Heaters,
     walls: Walls,
     relief: Option<Relief>,
-    /// P4's constant heater demand (W) and each bank's delivered power.
+    /// The heater demand in force (W; P4's until a control frame) and each
+    /// bank's delivered power.
     request_w: f64,
     bank_power_w: Vec<f64>,
-    /// `Tsat(p_s)` of the composed cell: the prepared steel temperature.
+    /// `Tsat(p_s)` of the composed cell: P4's demand temperature.
     saturation_temperature_k: f64,
     /// A travel root's lift farther than this from its stop (full strokes)
     /// is not that root; declared by the harness before any transaction.
@@ -186,17 +275,23 @@ pub struct Pzr {
     /// turns it on), and the last value evaluation's record.
     capture: bool,
     captured: Option<Ledger>,
+    /// HOOK (COST2): the heaters' and walls' wet/film turnovers held across
+    /// evaluations (exact: pure functions of their keys).
+    turnovers: crate::thermal::TurnoverHeld,
 }
 
 impl Pzr {
-    /// Compose the block on the cell from the packet's section, with the
-    /// steel at `saturation_temperature_k`, the composed cell's
-    /// `Tsat(p_s)`. Refuses a relief port whose demand would not read the
-    /// roof pressure (PT1 below the roof), a nonpositive backpressure or a
-    /// heater demand outside the banks' range.
+    /// Compose the block on the cell from the packet's section, with P4's
+    /// demand at `saturation_temperature_k`, the composed cell's
+    /// `Tsat(p_s)`, and the steel as `steel` prepares it. Refuses a relief
+    /// port whose demand would not read the roof pressure (PT1 below the
+    /// roof), a nonpositive backpressure, a heater demand outside the banks'
+    /// range, and steady steel that is not one store per steel coordinate in
+    /// layout order with its energy's own 304 temperature.
     pub fn new(
         cell: &Cell,
         section: &Section,
+        steel: SteelPreparation<'_>,
         saturation_temperature_k: f64,
     ) -> Result<Self, Failure> {
         let contact = section.heater_contact;
@@ -244,6 +339,7 @@ impl Pzr {
                     back_pressure_pa: back,
                     motion: ReliefMotion::Closed,
                     demand_open: false,
+                    stuck_open: false,
                 })
             }
         };
@@ -257,8 +353,53 @@ impl Pzr {
             .map(|i| walls.exterior(i, steel_t).value)
             .sum::<f64>();
         let bank_power_w = heaters.bank_powers(request_w)?;
-        let mut energy = heaters.prepared_energy(saturation_temperature_k)?;
-        energy.extend(walls.prepared_energy(saturation_temperature_k)?);
+        let labels: Vec<String> = heaters
+            .census()
+            .coordinates
+            .into_iter()
+            .chain(walls.census().coordinates)
+            .collect();
+        let energy = match steel {
+            SteelPreparation::Saturation => {
+                let mut energy = heaters.prepared_energy(saturation_temperature_k)?;
+                energy.extend(walls.prepared_energy(saturation_temperature_k)?);
+                energy
+            }
+            SteelPreparation::Steady(steel) => {
+                let masses: Vec<f64> = heaters
+                    .segments()
+                    .iter()
+                    .map(|g| g.steel_mass_kg)
+                    .chain(walls.elements().iter().map(|e| e.steel_mass_kg))
+                    .collect();
+                if steel.stores.len() != labels.len() {
+                    return Err(fatal(format!(
+                        "pzrSteel lists {} stores for {} steel coordinates",
+                        steel.stores.len(),
+                        labels.len()
+                    )));
+                }
+                let mut energy = Vec::with_capacity(labels.len());
+                for ((store, label), mass) in steel.stores.iter().zip(&labels).zip(&masses) {
+                    if &store.id != label {
+                        return Err(fatal(format!(
+                            "pzrSteel store {} where the layout has {label}",
+                            store.id
+                        )));
+                    }
+                    let own = section.caloric.temperature(s(store.energy_j / mass))?.value;
+                    let gap = (own - store.temperature_k).abs();
+                    if !gap.is_finite() || gap > 1e-9 * own {
+                        return Err(fatal(format!(
+                            "pzrSteel {label}: {} K is not its energy's {own} K",
+                            store.temperature_k
+                        )));
+                    }
+                    energy.push(store.energy_j);
+                }
+                energy
+            }
+        };
         let mut layout = Layout::default();
         let mut prepared = Vec::new();
         if relief.is_some() {
@@ -271,12 +412,7 @@ impl Pzr {
             );
             prepared.push(0.);
         }
-        let labels = heaters
-            .census()
-            .coordinates
-            .into_iter()
-            .chain(walls.census().coordinates);
-        for (label, e) in labels.zip(&energy) {
+        for (label, e) in labels.into_iter().zip(&energy) {
             if !(e.is_finite() && *e > 0.) {
                 return Err(fatal(format!("{label}: prepared steel energy {e} J")));
             }
@@ -296,14 +432,15 @@ impl Pzr {
             prepared,
             capture: false,
             captured: None,
+            turnovers: crate::thermal::TurnoverHeld::default(),
         })
     }
 
     pub fn layout(&self) -> &Layout {
         &self.layout
     }
-    /// Prepared physical coordinates: the lift on its seat, every steel at
-    /// the composed `Tsat(p_s)`.
+    /// Prepared physical coordinates: the lift on its seat, every steel as
+    /// its [`SteelPreparation`] prepared it.
     pub fn prepared(&self) -> &[f64] {
         &self.prepared
     }
@@ -320,9 +457,39 @@ impl Pzr {
     pub fn relief(&self) -> Option<Relief> {
         self.relief
     }
-    /// P4's constant heater demand, W.
+    /// The heater demand in force, W: P4's prepared demand until a
+    /// controller frame replaces it.
     pub fn request_w(&self) -> f64 {
         self.request_w
+    }
+    /// Put a normal-control frame's demands in force (S3, IC-CTRL): the
+    /// heater request by the banks' continuous split
+    /// (`Heaters::bank_powers`, which rejects a request outside its range).
+    /// The spray demand must be zero: no controlled-spray path is composed.
+    /// Changes no coordinate; the caller owns the solver consequence (stop
+    /// and continue or restart).
+    pub fn apply_control(
+        &mut self,
+        t: f64,
+        demand: &crate::control::pzr_pressure::Demand,
+    ) -> Result<ControlApplied, Failure> {
+        if demand.spray_target != 0. {
+            return Err(fatal(format!(
+                "controlled-spray demand {} at {t} s, but no controlled-spray material path is composed",
+                demand.spray_target
+            )));
+        }
+        let bank_power_w = self.heaters.bank_powers(demand.heater_request_w)?;
+        let applied = ControlApplied {
+            t_s: t,
+            request_before_w: self.request_w,
+            request_after_w: demand.heater_request_w,
+            banks_before_w: self.bank_power_w.clone(),
+            banks_after_w: bank_power_w.clone(),
+        };
+        self.request_w = demand.heater_request_w;
+        self.bank_power_w = bank_power_w;
+        Ok(applied)
     }
     pub fn bank_power_w(&self) -> &[f64] {
         &self.bank_power_w
@@ -376,6 +543,9 @@ impl Pzr {
         let segments = self.heaters.segments().len();
         let rod: Vec<Scalar> = (base..base + segments).map(|i| x.value(i)).collect();
         let wall: Vec<Scalar> = (base + segments..n).map(|i| x.value(i)).collect();
+        // HOOK (COST2): one property boundary for the call, its turnovers
+        // held across calls (every answer the one a fresh query returns).
+        let shared = crate::thermal::Shared::with_held(properties, &self.turnovers);
         let rates = self.walls.rates(
             cell,
             column,
@@ -383,7 +553,7 @@ impl Pzr {
             &rod,
             &self.bank_power_w,
             &wall,
-            properties,
+            &shared,
         )?;
         let sources = rates
             .rod_metal_rates()
@@ -475,14 +645,125 @@ impl Pzr {
                 "stateChanged":event.before != event.after}),
         })
     }
-    /// The heater demand stays P4's constant and the relief answers its own
-    /// demand: a command changes nothing here.
-    pub fn command(&self, t: f64, command: super::block::Command) -> Transaction {
-        Transaction {
+    /// The block's copyable discrete state (S5 snapshot, PLATFORM; S3-D19):
+    /// the heater demand in force and each bank's delivered power (a
+    /// control frame changes them, [`Pzr::apply_control`]), as exact IEEE
+    /// bits, and the relief's demand latch and motion (null without a
+    /// relief) — never coordinates or caches.
+    pub fn discrete_state(&self) -> serde_json::Value {
+        let bits = |v: f64| format!("{:016x}", v.to_bits());
+        json!({
+            "heater_request_w": bits(self.request_w),
+            "bank_power_w": self.bank_power_w.iter().map(|v| bits(*v)).collect::<Vec<_>>(),
+            "relief": self.relief.map_or(serde_json::Value::Null, |r| {
+                let mut v = json!({"demand_open": r.demand_open, "motion": match r.motion {
+                    ReliefMotion::Closed => "closed", ReliefMotion::Opening => "opening",
+                    ReliefMotion::Open => "open", ReliefMotion::Closing => "closing",
+                }});
+                // HOOK (C4 lane): the declared malfunction, only once declared.
+                if r.stuck_open {
+                    v["stuck_open"] = json!(true);
+                }
+                v
+            }),
+        })
+    }
+    /// Restore [`Pzr::discrete_state`] exactly; any layout or key mismatch
+    /// refuses.
+    pub fn restore_discrete_state(&mut self, state: &serde_json::Value) -> Result<(), Failure> {
+        let o = snapshot_object(
+            state,
+            "pzr",
+            &["heater_request_w", "bank_power_w", "relief"],
+        )?;
+        let bits = |v: &serde_json::Value| -> Result<f64, Failure> {
+            v.as_str()
+                .filter(|h| h.len() == 16)
+                .and_then(|h| u64::from_str_radix(h, 16).ok())
+                .map(f64::from_bits)
+                .ok_or_else(|| fatal(format!("snapshot: PZR power {v}")))
+        };
+        let request_w = bits(&o["heater_request_w"])?;
+        let banks = o["bank_power_w"]
+            .as_array()
+            .filter(|a| a.len() == self.bank_power_w.len())
+            .ok_or_else(|| fatal("snapshot: one power per heater bank"))?
+            .iter()
+            .map(bits)
+            .collect::<Result<Vec<f64>, Failure>>()?;
+        match (self.relief.as_mut(), &o["relief"]) {
+            (None, serde_json::Value::Null) => {}
+            (Some(relief), v) if !v.is_null() => {
+                // HOOK (C4 lane): a declared fails-open malfunction is the
+                // third key, present only once declared and only as true.
+                let stuck_open = v.get("stuck_open").is_some();
+                let keys: &[&str] = if stuck_open {
+                    &["demand_open", "motion", "stuck_open"]
+                } else {
+                    &["demand_open", "motion"]
+                };
+                let r = snapshot_object(v, "pzr relief", keys)?;
+                if stuck_open && r["stuck_open"] != json!(true) {
+                    return Err(fatal(
+                        "snapshot: relief stuck_open must be true when present",
+                    ));
+                }
+                let demand_open = r["demand_open"]
+                    .as_bool()
+                    .ok_or_else(|| fatal("snapshot: relief demand latch"))?;
+                let motion = match r["motion"].as_str() {
+                    Some("closed") => ReliefMotion::Closed,
+                    Some("opening") => ReliefMotion::Opening,
+                    Some("open") => ReliefMotion::Open,
+                    Some("closing") => ReliefMotion::Closing,
+                    other => return Err(fatal(format!("snapshot: relief motion {other:?}"))),
+                };
+                relief.demand_open = demand_open;
+                relief.motion = motion;
+                relief.stuck_open = stuck_open;
+            }
+            (_, other) => {
+                return Err(fatal(format!(
+                    "snapshot: relief state {other} against the block's relief presence"
+                )));
+            }
+        }
+        self.request_w = request_w;
+        self.bank_power_w = banks;
+        Ok(())
+    }
+    /// The heater demand changes only at control frames
+    /// ([`Pzr::apply_control`]) and the relief answers its own demand: a
+    /// command changes nothing here.
+    ///
+    /// HOOK (C4 lane, for KERN/G6): [`super::block::Command::ReliefStuckOpen`]
+    /// is the relief's own malfunction ([`Relief::stick_open`]); a block
+    /// without a relief refuses it.
+    pub fn command(
+        &mut self,
+        t: f64,
+        command: super::block::Command,
+    ) -> Result<Transaction, Failure> {
+        if command == super::block::Command::ReliefStuckOpen {
+            let relief = self
+                .relief
+                .as_mut()
+                .ok_or_else(|| fatal("ReliefStuckOpen: the block composes no relief"))?;
+            let event = relief.stick_open()?;
+            return Ok(Transaction {
+                deposits: Vec::new(),
+                receipt: json!({"owner":"pzr","t_s":t,"command":command,
+                    "before":{"demand_open":event.before.0,"motion":format!("{:?}",event.before.1)},
+                    "after":{"demand_open":event.after.0,"motion":format!("{:?}",event.after.1)},
+                    "stuck_open":true,"lift_rate_per_s":relief.device.lift_rate(relief.motion),
+                    "stateChanged":true}),
+            });
+        }
+        Ok(Transaction {
             deposits: Vec::new(),
             receipt: json!({"owner":"pzr","t_s":t,"command":command,
-                "heaterDemand_W":self.request_w,"note":"constant heater demand (P4); control laws are S3"}),
-        }
+                "heaterDemand_W":self.request_w,"note":"heater demand in force; it changes only at control frames"}),
+        })
     }
 }
 
@@ -502,7 +783,29 @@ mod tests {
             back_pressure_pa: 101_325.,
             motion: ReliefMotion::Closed,
             demand_open: false,
+            stuck_open: false,
         }
+    }
+
+    #[test]
+    fn a_stuck_open_relief_opens_at_its_rate_and_never_reseats() {
+        // HOOK (C4 lane): the declared fails-open malfunction.
+        let mut r = relief();
+        let e = r.stick_open().unwrap();
+        assert_eq!(e.before, (false, ReliefMotion::Closed));
+        assert_eq!(e.after, (true, ReliefMotion::Opening));
+        // Demand disarmed far below the reseat pressure; travel armed.
+        let roots = r.roots(10e6, 0.5);
+        assert_eq!(roots[0], DISARMED);
+        assert!((roots[1] - 0.5).abs() < 1e-15);
+        // The stop at full lift leaves it open with the demand held.
+        let mut lift = 1.;
+        let e = r.transact([0, 1], &mut lift, 1e-6).unwrap();
+        assert_eq!(e.after, (true, ReliefMotion::Open));
+        assert_eq!(r.roots(10e6, 1.), [DISARMED, DISARMED]);
+        // A crossing of the disarmed demand refuses; a second stick refuses.
+        assert!(r.transact([-1, 0], &mut lift, 1e-6).is_err());
+        assert!(r.stick_open().is_err());
     }
 
     #[test]

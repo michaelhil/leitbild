@@ -16,6 +16,7 @@
 //! `LD01_JAC_Z7_MATRIX` selects the matrix: `colored` (the reference
 //! assembly) or `blocks` (the block assembly, all classes).
 #![cfg(all(feature = "ida", target_os = "macos"))]
+mod common;
 mod jacobian_harness;
 use jacobian_harness::*;
 use leitbild_operating_plant::{
@@ -178,7 +179,8 @@ fn joined_jacobian_directional_check() {
         ("solids", o.solids..o.secondary),
         ("secondary", o.secondary..o.rods),
         ("rods", o.rods..o.pzr),
-        ("pzr", o.pzr..o.end),
+        ("pzr", o.pzr..o.cvcs),
+        ("cvcs", o.cvcs..o.end),
     ];
     let started = cpu();
     let mut analytic = vec![0.; n];

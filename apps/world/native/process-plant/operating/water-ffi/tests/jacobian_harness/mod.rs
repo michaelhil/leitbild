@@ -28,10 +28,8 @@ use std::{
 
 // Thread CPU (CLOCK_THREAD_CPUTIME_ID), the performance-core request (macOS
 // QOS_CLASS_USER_INTERACTIVE; changes no computation) and the load average.
-#[path = "../common/cpu.rs"]
-pub mod clock;
 #[allow(unused_imports)] // Each test crate uses its own subset.
-pub use clock::{load_average, prefer_performance_core, thread_cpu_s as cpu};
+pub use crate::common::cpu::{load_average, prefer_performance_core, thread_cpu_s as cpu};
 pub fn command(program: &str, args: &[&str]) -> String {
     std::process::Command::new(program)
         .args(args)
@@ -531,6 +529,9 @@ pub struct Recording {
     ordering: KluOrdering,
 }
 impl System for Recording {
+    fn multiplicities(&self) -> Option<Vec<f64>> {
+        self.inner.multiplicities()
+    }
     fn klu_ordering(&self) -> KluOrdering {
         self.ordering
     }
@@ -1049,12 +1050,21 @@ where
         tree_face_bound_pa: 1e-6,
         representation_search: 8,
     };
+    // HOOK (OU-C P2 -> OU-B builder): with the rod owner composed, the rod
+    // bores' water leaves the sector inventory before the network is built.
+    let bytes = std::fs::read(&declared.packet_path).expect("packet");
+    let mut network_packet: Packet = serde_json::from_slice(&bytes).expect("network packet");
+    let raw: Value = serde_json::from_slice(&bytes).expect("packet json");
+    let rod_section: RodSection = serde_json::from_value(raw["rods"].clone()).expect("rods section");
+    let carved = full.then(|| {
+        leitbild_operating_plant::rods::carve(&rod_section, &mut network_packet).expect("rods carve")
+    });
     let (mut network, mut prepared, hydrostatic) =
-        prepare::prepare(&declared.packet, properties(), &point, &rotors, &settings)
+        prepare::prepare(&network_packet, properties(), &point, &rotors, &settings)
             .expect("hydrostatic preparation");
     let receipt = prepare::compose_flows(
         &mut network,
-        &declared.packet,
+        &network_packet,
         &mut prepared.y,
         hydrostatic.port_pressure_pa,
         &flows,
@@ -1062,21 +1072,25 @@ where
         &settings,
     )
     .expect("flowing preparation");
-    let bytes = std::fs::read(&declared.packet_path).expect("packet");
     let joined_packet: packet::Packet = serde_json::from_slice(&bytes).expect("joined packet");
     let (secondary, rods) = if full {
         // The owners from the joined packet's sections (S2-JOIN's full Z1).
-        let raw: Value = serde_json::from_slice(&bytes).expect("packet json");
         let section: SecondarySection =
             serde_json::from_value(raw["secondary"].clone()).expect("secondary section");
-        let rods: RodSection = serde_json::from_value(raw["rods"].clone()).expect("rods section");
         (
             SecondaryPort::Owner(Box::new(
                 Secondaries::new(&section, &joined_packet.thermal.secondaries, &If97)
                     .expect("SG secondary owner"),
             )),
             RodPort::Owner(Box::new(
-                RodBlock::from_packet(&rods, &declared.packet).expect("rod owner"),
+                RodBlock::from_packet(
+                    &rod_section,
+                    &network_packet,
+                    carved.as_ref().expect("carved"),
+                    &If97,
+                    &[],
+                )
+                .expect("rod owner"),
             )),
         )
     } else {
@@ -1103,7 +1117,7 @@ where
     };
     let mut joined = Joined::new(
         network,
-        &declared.packet,
+        &network_packet,
         &joined_packet,
         properties(),
         secondary,

@@ -2,12 +2,13 @@
 //! spec: world/packs/process-plant/reference-designs/ld-01/model/operating-hot-spine.md#joined-block-interface
 //! The composed joined residual and its colored stage Jacobian.
 //!
-//! `y` is `[network | nuclear | solids | secondary | rods | pzr]`. One evaluation
+//! `y` is `[network | nuclear | solids | secondary | rods | pzr | cvcs]`. One evaluation
 //! takes the rods' travel and cell volumes, then evaluates the network with
 //! this operator as its coupling: inside the coupling the SG views, the
 //! solids' temperatures, the nuclear rows, the solids' rows and heats, the
-//! rod rows and receipts and the secondary rows are evaluated on the
-//! network's fluid state of the same call; the PZR block (G6) is evaluated
+//! rod rows and receipts, the secondary rows and the CVCS rows and COLD.A
+//! receipt (plan r4 X4.2, when composed) are evaluated on the network's
+//! fluid state of the same call; the PZR block (G6) is evaluated
 //! inside the network's stratified rows, on the cell's column of the same
 //! call, as the cell's boundary (`Coupling::pzr_boundary`). Rows are the
 //! network's own scaled rows, then every block's physical rows divided by
@@ -25,21 +26,30 @@
 //! adapter refuses it, so no integrator can advance it.
 use super::{
     block::{CellVolume, Coordinates, Layout, Rods, Secondary, SecondaryView},
+    cvcs::{self, Cvcs},
     nuclear::{self, Nuclear, RegionWater},
     packet::Packet,
-    pzr::Pzr,
+    pzr::{Pzr, SteelPreparation},
     solids::{self, Solids},
 };
 use crate::{
     network::{
-        Coupling, Failure, Fluid, Network, PZR_PRESSURE, Properties, Receipts, Reuse,
-        packet::Packet as NetworkPacket, stratified,
+        CellMode, Coupling, CreditedOutput, Failure, Fluid, Network, PZR_PRESSURE, Properties,
+        Receipts, Reuse,
+        packet::Packet as NetworkPacket,
+        phase_events::{located, release_roots},
+        stratified,
+        unilateral::Transaction as UnilateralTransaction,
     },
     sparse::{self, Coloring, Pattern},
     thermal::{self, Scalar, WaterProperties},
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
+
+/// The value of an L1 root slot whose path carries no root (a lock with
+/// neither end holding): a constant that never crosses.
+const L1_DISARMED: f64 = 1.;
 
 fn s(v: f64) -> Scalar {
     Scalar::constant(v)
@@ -76,6 +86,8 @@ pub struct Offsets {
     /// The PZR metal and relief block (G6); empty while its owner is not
     /// composed.
     pub pzr: usize,
+    /// The CVCS block (plan r4 X4.2); empty unless the packet composes it.
+    pub cvcs: usize,
     pub end: usize,
 }
 
@@ -116,9 +128,12 @@ struct Blocks<P> {
     secondary: SecondaryPort<P>,
     rods: RodPort<P>,
     /// The PZR metal and relief owner (G6), from the packet's `pzrMetal`
-    /// section; `None` for a packet compiled before G6, whose cell then
-    /// declares no relief and keeps a closed boundary.
-    pzr: Option<Pzr>,
+    /// section.
+    pzr: Pzr,
+    /// The CVCS owner (plan r4 X4.2), from the packet's `cvcs` section.
+    cvcs: Option<Cvcs>,
+    /// Per regular cell: whether a CVCS row reads it (COLD.A, the legs).
+    cvcs_reads: Vec<bool>,
     offsets: Offsets,
     source_water: Vec<usize>,
     compiled_volumes: Vec<f64>,
@@ -127,6 +142,7 @@ struct Blocks<P> {
     secondary_rows: Vec<Scalar>,
     rod_rows: Vec<Scalar>,
     pzr_rows: Vec<Scalar>,
+    cvcs_rows: Vec<Scalar>,
     temperatures: solids::Temperatures,
     fuel_t: Vec<Scalar>,
     water: Vec<RegionWater>,
@@ -135,8 +151,9 @@ struct Blocks<P> {
     cell_volumes: Vec<CellVolume>,
     heats: Heats,
     coupled_wall_s: f64,
-    /// Nuclear, solids, secondary, rods and the PZR block, in that order.
-    scales: [Scales; 5],
+    /// Nuclear, solids, secondary, rods, the PZR block and the CVCS, in
+    /// that order.
+    scales: [Scales; 6],
     /// One startup evaluation lets the rod owner prepare its algebraic
     /// coordinates on that evaluation's fluid state ([`Joined::prepare_owners`]).
     prepare: Option<Vec<super::block::Transaction>>,
@@ -201,11 +218,80 @@ struct RodReads {
 
 pub struct Joined<P: Properties> {
     pub network: Network<P>,
+    /// MR-1 (R7-P), the packet's `matrixRebuild` section, for the S3 frame
+    /// driver; `None` for a packet compiled before the block.
+    matrix_rebuild: Option<super::packet::MatrixRebuild>,
     blocks: Blocks<P>,
     faces: Vec<Face>,
     rows: Vec<Scalar>,
     structure: Option<(Pattern, Coloring)>,
     pub counters: Counters,
+    /// The regular cells' phase modes are composed (S3-D-P1): two root
+    /// slots per regular cell and the birth/exhaustion transactions. Off
+    /// unless declared ([`Joined::activate_phase_modes`]): S1 and S2 hold
+    /// every cell liquid with no mode roots.
+    phase_modes: bool,
+    /// Owner request 14 B1 (lane ROD, for NUC's review): the declared
+    /// constant stuck-cluster term (Δk/k), applied to the nuclear block in
+    /// the transaction that seats the last released class while a stuck one
+    /// stays out ([`Joined::declare_stuck_worth`]); `None` when undeclared.
+    stuck_worth: Option<f64>,
+    /// The credited outputs on pressure coordinates the derived tolerance
+    /// classes take their budgets from (S2-D24r, S3-D16), declared by the
+    /// composition from their strict blocks ([`Joined::declare_credited`]);
+    /// empty until declared.
+    credited: Vec<CreditedOutput>,
+    /// The RCP drives' support is the AC routing's (ELEC's slice composed,
+    /// S3-D9..D12): a supply loss is applied there first, and the network's
+    /// part of the command checks it (declared before any restart).
+    supply_routed: bool,
+    /// HOOK (COST2, for KERN): the state `(t, y, y')` of the value
+    /// evaluation a root call left in the operator (seed none, `cj` 0, no
+    /// reuse), so a reader of an accepted state (rule I) takes it instead of
+    /// evaluating that state again ([`Joined::holds_value_evaluation`]).
+    /// Cleared by every evaluation and root call; set only at the end of a
+    /// root call whose value evaluation completed. It is valid for a reader
+    /// between that root call and the next change of the operator, which
+    /// the frame driver's accepted-state observer is: no transaction runs
+    /// between a step and its observer.
+    value_state: ValueState,
+}
+
+/// HOOK (COST2): the bits of one value evaluation's state.
+#[derive(Debug, Default)]
+struct ValueState {
+    held: bool,
+    /// The current root call evaluated its state.
+    evaluated: bool,
+    t: u64,
+    y: Vec<f64>,
+    yp: Vec<f64>,
+}
+impl ValueState {
+    fn holds(&self, t: f64, y: &[f64], yp: &[f64]) -> bool {
+        self.held
+            && self.t == t.to_bits()
+            && self.y.len() == y.len()
+            && self.yp.len() == yp.len()
+            && self
+                .y
+                .iter()
+                .zip(y)
+                .all(|(a, b)| a.to_bits() == b.to_bits())
+            && self
+                .yp
+                .iter()
+                .zip(yp)
+                .all(|(a, b)| a.to_bits() == b.to_bits())
+    }
+    fn set(&mut self, t: f64, y: &[f64], yp: &[f64]) {
+        self.t = t.to_bits();
+        self.y.clear();
+        self.y.extend_from_slice(y);
+        self.yp.clear();
+        self.yp.extend_from_slice(yp);
+        self.held = true;
+    }
 }
 
 fn view<'a>(
@@ -253,8 +339,16 @@ impl<P: Properties + WaterProperties> Joined<P> {
         rods: RodPort<P>,
     ) -> Result<Self, Failure> {
         let cells = network.cell_layout.len();
-        let nuclear = Nuclear::new(packet, cells)?;
-        let solids = Solids::new(packet, cells)?;
+        // E-NUC phase B: the solids' replica classes follow the nuclear
+        // groups and keep every rod seat's deposit store single; the nuclear
+        // block's ports are the solids' half classes.
+        let mut nuclear = Nuclear::new(packet, cells)?;
+        let singles = match &rods {
+            RodPort::Owner(b) => b.deposit_stores(),
+            RodPort::Prepared(_) => Vec::new(),
+        };
+        let solids = Solids::new(packet, cells, nuclear.group_of(), &singles)?;
+        nuclear.set_ports(solids.half_members())?;
         let generators = solids.secondaries();
         let clusters = nuclear.feedback().rod_count();
         let secondary_len = match &secondary {
@@ -287,31 +381,39 @@ impl<P: Properties + WaterProperties> Joined<P> {
                 0
             }
         };
-        // G6: the PZR owner composes from its section, its steel at the
-        // prepared cell's Tsat(p_s); a relief port needs it.
-        let pzr = match &packet.pzr_metal {
-            Some(section) => Some(Pzr::new(
-                network.stratified(),
-                section,
-                network.pzr_saturation_temperature_k(),
-            )?),
-            None => {
-                if let Some(port) = network
-                    .stratified()
-                    .parameters()
-                    .ports
-                    .iter()
-                    .find(|p| p.kind == stratified::PortKind::Relief)
-                {
-                    return Err(fatal(format!(
-                        "relief port {} needs the PZR owner's packet section (pzrMetal)",
-                        port.id
-                    )));
-                }
-                None
-            }
-        };
-        let pzr_len = pzr.as_ref().map_or(0, |b| b.layout().len());
+        // G6: the PZR owner composes from its section, P4's demand at the
+        // prepared cell's Tsat(p_s) and (S3-D36, PZRSOLIDS hook) its steel at
+        // the steady state of its laws, the packet's pzrSteel; a relief port
+        // needs it.
+        let pzr = Pzr::new(
+            network.stratified(),
+            &packet.pzr_metal,
+            SteelPreparation::Steady(packet.pzr_steel.as_ref().ok_or_else(|| {
+                fatal("the PZR owner's pzrMetal section needs its steady steel (pzrSteel, S3-D36)")
+            })?),
+            network.pzr_saturation_temperature_k(),
+        )?;
+        let pzr_len = pzr.layout().len();
+        // Plan r4 X4.2: the CVCS owner, when the packet composes it.
+        let cvcs = packet
+            .cvcs
+            .as_ref()
+            .map(|section| {
+                Cvcs::new(
+                    section,
+                    network.stratified(),
+                    network.pzr.base,
+                    network.scales(),
+                    cells,
+                    &properties,
+                )
+            })
+            .transpose()?;
+        let cvcs_len = cvcs.as_ref().map_or(0, |b| b.layout().len());
+        let mut cvcs_reads = vec![false; cells];
+        for c in cvcs.iter().flat_map(|b| b.read_cells()) {
+            cvcs_reads[c] = true;
+        }
         let n = network.dimension();
         let rods_at = n + nuclear.layout().len() + solids.layout().len() + secondary_len;
         let offsets = Offsets {
@@ -320,7 +422,8 @@ impl<P: Properties + WaterProperties> Joined<P> {
             secondary: n + nuclear.layout().len() + solids.layout().len(),
             rods: rods_at,
             pzr: rods_at + rods_len,
-            end: rods_at + rods_len + pzr_len,
+            cvcs: rods_at + rods_len + pzr_len,
+            end: rods_at + rods_len + pzr_len + cvcs_len,
         };
         let faces: Vec<Face> = network_packet
             .mechanics
@@ -347,7 +450,8 @@ impl<P: Properties + WaterProperties> Joined<P> {
                 RodPort::Owner(b) => Scales::of(b.layout()),
                 RodPort::Prepared(_) => Scales::default(),
             },
-            pzr.as_ref()
+            Scales::of(pzr.layout()),
+            cvcs.as_ref()
                 .map_or_else(Scales::default, |b| Scales::of(b.layout())),
         ];
         let rod_reads = match &rods {
@@ -400,8 +504,9 @@ impl<P: Properties + WaterProperties> Joined<P> {
             secondary_rows: vec![s(0.); secondary_len],
             rod_rows: vec![s(0.); rods_len],
             pzr_rows: vec![s(0.); pzr_len],
+            cvcs_rows: vec![s(0.); cvcs_len],
             temperatures: solids::Temperatures::default(),
-            fuel_t: vec![s(0.); nuclear.carriers()],
+            fuel_t: vec![s(0.); nuclear.ports()],
             water: vec![
                 RegionWater {
                     density_kg_m3: s(0.),
@@ -437,17 +542,25 @@ impl<P: Properties + WaterProperties> Joined<P> {
             secondary,
             rods,
             pzr,
+            cvcs,
+            cvcs_reads,
             offsets,
             source_water: packet.source_water.clone(),
             compiled_volumes,
         };
         let mut joined = Self {
             network,
+            matrix_rebuild: packet.matrix_rebuild.clone(),
             blocks,
             faces,
             rows: vec![s(0.); offsets.end],
             structure: None,
             counters: Counters::default(),
+            phase_modes: false,
+            stuck_worth: None,
+            credited: Vec::new(),
+            supply_routed: false,
+            value_state: ValueState::default(),
         };
         let columns = joined.structural_pattern()?;
         let pattern = Pattern::from_columns(offsets.end, &columns).map_err(fatal)?;
@@ -455,6 +568,37 @@ impl<P: Properties + WaterProperties> Joined<P> {
         coloring.verify(&pattern).map_err(fatal)?;
         joined.structure = Some((pattern, coloring));
         Ok(joined)
+    }
+
+    /// MR-1 (owner, request 7 R7-P): the packet's forced matrix-rebuild
+    /// section, `None` for a packet compiled before
+    /// `ld01-joined-matrix-rebuild`.
+    pub fn matrix_rebuild(&self) -> Option<&super::packet::MatrixRebuild> {
+        self.matrix_rebuild.as_ref()
+    }
+
+    /// The RCP drives' support is set by the AC routing (ELEC's slice):
+    /// [`super::block::Command::SupplyLoss`] then reaches the routing first
+    /// and the network's part checks the rotor is unsupported. Declared by
+    /// the wrapper that composes the routing.
+    pub fn declare_supply_routing(&mut self) {
+        self.supply_routed = true;
+    }
+
+    /// S3-D27: declare the SG owner's feed gate (ELEC's S3-D12) and
+    /// recompile the colored structure: the mass rows' pattern then covers
+    /// the gate closed. A block structure ([`super::blocks::JoinedJacobian`])
+    /// must be compiled after it.
+    pub fn declare_feed_gate(&mut self) -> Result<(), Failure> {
+        self.secondary_mut()
+            .ok_or_else(|| fatal("the feed gate needs the SG owner"))?
+            .declare_feed_gate()?;
+        let columns = self.structural_pattern()?;
+        let pattern = Pattern::from_columns(self.blocks.offsets.end, &columns).map_err(fatal)?;
+        let coloring = Coloring::greedy(&pattern);
+        coloring.verify(&pattern).map_err(fatal)?;
+        self.structure = Some((pattern, coloring));
+        Ok(())
     }
 
     /// Both ports are composed owners: the operator may be integrated.
@@ -467,6 +611,24 @@ impl<P: Properties + WaterProperties> Joined<P> {
     }
     pub fn offsets(&self) -> Offsets {
         self.blocks.offsets
+    }
+    /// B1 (owner request 14, lane ROD): declare the constant stuck-cluster
+    /// term (Δk/k) a composition with a declared stuck cluster applies once
+    /// that cluster stays out with every other class seated. Positive and
+    /// finite, declared once, before any transaction.
+    pub fn declare_stuck_worth(&mut self, dk: f64) -> Result<(), Failure> {
+        if !(dk.is_finite() && dk > 0.) {
+            return Err(fatal(format!("B1: declared stuck-cluster term {dk}")));
+        }
+        if self.stuck_worth.is_some() {
+            return Err(fatal("B1: the stuck-cluster term is already declared"));
+        }
+        self.stuck_worth = Some(dk);
+        Ok(())
+    }
+    /// B1 checks (zero-time): the nuclear block, to apply its term directly.
+    pub fn nuclear_mut(&mut self) -> &mut Nuclear {
+        &mut self.blocks.nuclear
     }
     pub fn nuclear(&self) -> &Nuclear {
         &self.blocks.nuclear
@@ -496,6 +658,14 @@ impl<P: Properties + WaterProperties> Joined<P> {
     /// evaluation (the region water above): the liquid's departure from
     /// saturation at its own pressure and its owner cell's vapour mass.
     /// Read on accepted states only, never inside a residual.
+    /// HOOK (COST2, for KERN): whether the operator holds the value
+    /// evaluation of exactly `(t, y, y')` (bitwise), left by the last root
+    /// call with nothing evaluated since: a reader of that accepted state
+    /// (rule I) may then read [`Self::nuclear`], [`Self::travel`] and
+    /// [`Self::region_phases`] without evaluating it again.
+    pub fn holds_value_evaluation(&self, t: f64, y: &[f64], yp: &[f64]) -> bool {
+        self.value_state.holds(t, y, yp)
+    }
     pub fn region_phases(&self) -> Result<Vec<crate::source_feedback::RegionPhase>, Failure> {
         self.blocks
             .water
@@ -539,18 +709,267 @@ impl<P: Properties + WaterProperties> Joined<P> {
             SecondaryPort::Prepared(_) => None,
         }
     }
+    /// X4.3 (lane TURB): the secondary rows' response to a unit direction in
+    /// the turbine valve opening at `(t, y, y')`, every coordinate unseeded,
+    /// on the metal heats of the last evaluation (its values only), as
+    /// `(global row, scaled value)` for every row of
+    /// [`Secondary::admission_rows`] (a fixed pattern; values may be zero).
+    #[allow(clippy::too_many_arguments)]
+    pub fn secondary_admission_column(
+        &mut self,
+        t: f64,
+        y: &[f64],
+        yp: &[f64],
+        cj: f64,
+        opening: f64,
+        out: &mut Vec<(usize, f64)>,
+    ) -> Result<(), Failure> {
+        let o = self.blocks.offsets;
+        out.clear();
+        let Blocks {
+            properties,
+            secondary,
+            heats,
+            scales,
+            secondary_rows,
+            ..
+        } = &mut self.blocks;
+        let SecondaryPort::Owner(b) = secondary else {
+            return Err(fatal("an admission column without a secondary owner"));
+        };
+        let heat_w: Vec<Scalar> = heats
+            .solids
+            .secondary_w
+            .iter()
+            .map(|h| s(h.value))
+            .collect();
+        let x = view(y, yp, None, cj, o.secondary..o.rods, &scales[2].coordinates)?;
+        b.set_admission_opening(opening, 1.)?;
+        let result = b.rows(properties, t, x, &heat_w, secondary_rows);
+        b.set_admission_opening(opening, 0.)?;
+        result?;
+        for r in b.admission_rows() {
+            out.push((
+                o.secondary + r,
+                secondary_rows[r].direction / scales[2].rows[r],
+            ));
+        }
+        Ok(())
+    }
+
     pub fn rods_mut(&mut self) -> Option<&mut (dyn Rods<P> + 'static)> {
         match &mut self.blocks.rods {
             RodPort::Owner(b) => Some(b.as_mut()),
             RodPort::Prepared(_) => None,
         }
     }
-    /// The PZR metal and relief owner (G6), when composed.
-    pub fn pzr(&self) -> Option<&Pzr> {
-        self.blocks.pzr.as_ref()
+    /// The PZR metal and relief owner (G6).
+    pub fn pzr(&self) -> &Pzr {
+        &self.blocks.pzr
     }
-    pub fn pzr_mut(&mut self) -> Option<&mut Pzr> {
-        self.blocks.pzr.as_mut()
+    pub fn pzr_mut(&mut self) -> &mut Pzr {
+        &mut self.blocks.pzr
+    }
+    /// The CVCS owner (plan r4 X4.2), when the packet composes it.
+    pub fn cvcs(&self) -> Option<&Cvcs> {
+        self.blocks.cvcs.as_ref()
+    }
+    /// AC.B's supply of CHARGE.P1 (the S3-D12 gate's form for the CVCS):
+    /// a held input of the CVCS rows; the caller restarts.
+    pub fn set_charging_supported(
+        &mut self,
+        supported: bool,
+    ) -> Result<super::block::Transaction, Failure> {
+        self.blocks
+            .cvcs
+            .as_mut()
+            .map(|b| b.set_charging_supported(supported))
+            .ok_or_else(|| fatal("the charging supply needs the CVCS owner"))
+    }
+    /// A CVCS command (plan r4 X4.2) at `t` on the state `y` (solver
+    /// scaling); no coordinate moves, the caller restarts.
+    pub fn cvcs_command(
+        &mut self,
+        t: f64,
+        y: &[f64],
+        command: cvcs::Command,
+    ) -> Result<super::block::Transaction, Failure> {
+        let o = self.blocks.offsets;
+        let x: Vec<f64> = (o.cvcs..o.end)
+            .zip(&self.blocks.scales[5].coordinates)
+            .map(|(i, s)| y[i] * s)
+            .collect();
+        self.blocks
+            .cvcs
+            .as_mut()
+            .ok_or_else(|| fatal("a CVCS command needs the CVCS owner"))?
+            .command(t, command, &x)
+    }
+    /// S5 snapshot hook (PLATFORM, claude/ld01-s5-host; KERN reconciles):
+    /// the unit's copyable discrete state — the SG secondary's, the rods',
+    /// the PZR block's and the network's rotor states — as plain data. With
+    /// the coordinates and the packet it is the joined operator's whole
+    /// state; nothing here is a cache.
+    pub fn discrete_state(&self) -> serde_json::Value {
+        use crate::rotor::{Shaft, SpeedRequest, Support};
+        let rotors: Vec<serde_json::Value> = (0..self.network.rotor_count())
+            .map(|r| {
+                self.network.rotor_state(r).map_or(serde_json::Value::Null, |st| {
+                    let support = match st.support {
+                        Support::Supported(SpeedRequest::Zero) => serde_json::json!("supported-zero"),
+                        Support::Supported(SpeedRequest::Nominal) => serde_json::json!("supported-nominal"),
+                        Support::Supported(SpeedRequest::EngineeringTest { omega_rad_s }) => {
+                            serde_json::json!({"engineering_test_rad_s": super::block::snapshot_time(Some(omega_rad_s))})
+                        }
+                        Support::Unsupported => serde_json::json!("unsupported"),
+                        Support::OutsideSupplyEnvelope => serde_json::json!("outside-supply-envelope"),
+                    };
+                    let shaft = match st.shaft {
+                        Shaft::Free => "free",
+                        Shaft::Locked => "locked",
+                    };
+                    serde_json::json!({"support": support, "shaft": shaft})
+                })
+            })
+            .collect();
+        let mut state = serde_json::json!({
+            "network": {
+                "unilateral": self.network.unilateral().map(|l| serde_json::to_value(l).expect("L1 locks serialize")),
+                "modes": serde_json::to_value(self.network.cell_modes()).expect("cell modes serialize"),
+                "spray": serde_json::to_value(self.network.spray_discrete_state()).expect("spray state serializes"),
+            },
+            // B1: the applied stuck-cluster term, when applied; the solids
+            // hold no discrete state.
+            "nuclear": match self.blocks.nuclear.stuck_worth_dk() {
+                0. => serde_json::Value::Null,
+                dk => serde_json::json!({"stuck_worth_dk": super::block::snapshot_time(Some(dk))}),
+            },
+            "solids": serde_json::Value::Null,
+            "secondary": self.secondary().map(|b| b.discrete_state()),
+            "rods": self.rods().map(|b| b.discrete_state()),
+            "pzr": self.pzr().discrete_state(),
+            "rotors": rotors,
+            "phase_modes": self.phase_modes,
+        });
+        // Plan r4 X4.2: a composed CVCS owner's modes; an operator without
+        // it has no such key.
+        if let Some(b) = self.cvcs() {
+            state["cvcs"] = b.discrete_state();
+        }
+        state
+    }
+    /// S5 snapshot hook: restore [`Joined::discrete_state`] exactly into a
+    /// composed operator of the same packet (freshly, or from another saved
+    /// state of it); any mismatch refuses.
+    pub fn restore_discrete_state(&mut self, state: &serde_json::Value) -> Result<(), Failure> {
+        use crate::{
+            network::RotorState,
+            rotor::{Shaft, SpeedRequest, Support},
+        };
+        let mut keys = vec![
+            "network",
+            "nuclear",
+            "solids",
+            "secondary",
+            "rods",
+            "pzr",
+            "rotors",
+            "phase_modes",
+        ];
+        if self.blocks.cvcs.is_some() {
+            keys.push("cvcs");
+        }
+        let o = super::block::snapshot_object(state, "joined", &keys)?;
+        if !o["solids"].is_null() {
+            return Err(fatal("snapshot: the solid blocks hold no discrete state"));
+        }
+        let stuck_worth = if o["nuclear"].is_null() {
+            None
+        } else {
+            let n = super::block::snapshot_object(&o["nuclear"], "nuclear", &["stuck_worth_dk"])?;
+            if self.stuck_worth.is_none() {
+                return Err(fatal(
+                    "snapshot: a B1 stuck-cluster term into an operator that declares none",
+                ));
+            }
+            super::block::restored_time(&n["stuck_worth_dk"])?
+        };
+        self.blocks.nuclear.restore_stuck_worth(stuck_worth)?;
+        let network = super::block::snapshot_object(
+            &o["network"],
+            "network",
+            &["unilateral", "modes", "spray"],
+        )?;
+        let spray = serde_json::from_value(network["spray"].clone())
+            .map_err(|e| fatal(format!("snapshot: spray path: {e}")))?;
+        self.network.restore_spray_discrete_state(spray)?;
+        let modes: Vec<CellMode> = serde_json::from_value(network["modes"].clone())
+            .map_err(|e| fatal(format!("snapshot: cell modes: {e}")))?;
+        self.network.set_cell_modes(&modes)?;
+        // HOOK (WORLD `ld01-unit` RESTORE): the locks replace those of an
+        // operator composed from another saved state of the same packet
+        // (the unit's LOAD state, L1 declared there); a snapshot without L1
+        // cannot undeclare it.
+        match (&network["unilateral"], self.network.unilateral().is_some()) {
+            (serde_json::Value::Null, false) => {}
+            (serde_json::Value::Null, true) => {
+                return Err(fatal(
+                    "snapshot: no L1 locks for an operator with L1 declared",
+                ));
+            }
+            (v, _) => {
+                let locks = serde_json::from_value(v.clone())
+                    .map_err(|e| fatal(format!("snapshot: L1 locks: {e}")))?;
+                self.network.restore_unilateral(locks)?;
+            }
+        }
+        self.phase_modes = o["phase_modes"]
+            .as_bool()
+            .ok_or_else(|| fatal("snapshot: phase_modes"))?;
+        match (self.secondary_mut(), &o["secondary"]) {
+            (Some(b), v) if !v.is_null() => b.restore_discrete_state(v)?,
+            (None, serde_json::Value::Null) => {}
+            _ => return Err(fatal("snapshot: secondary owner presence differs")),
+        }
+        match (self.rods_mut(), &o["rods"]) {
+            (Some(b), v) if !v.is_null() => b.restore_discrete_state(v)?,
+            (None, serde_json::Value::Null) => {}
+            _ => return Err(fatal("snapshot: rod owner presence differs")),
+        }
+        self.pzr_mut().restore_discrete_state(&o["pzr"])?;
+        if let Some(b) = self.blocks.cvcs.as_mut() {
+            b.restore_discrete_state(&o["cvcs"])?;
+        }
+        let rotors = o["rotors"]
+            .as_array()
+            .filter(|a| a.len() == self.network.rotor_count())
+            .ok_or_else(|| fatal("snapshot: one state per rotor"))?;
+        for (r, v) in rotors.iter().enumerate() {
+            let f = super::block::snapshot_object(v, "rotor", &["support", "shaft"])?;
+            let support = match &f["support"] {
+                serde_json::Value::String(s) => match s.as_str() {
+                    "supported-zero" => Support::Supported(SpeedRequest::Zero),
+                    "supported-nominal" => Support::Supported(SpeedRequest::Nominal),
+                    "unsupported" => Support::Unsupported,
+                    "outside-supply-envelope" => Support::OutsideSupplyEnvelope,
+                    other => return Err(fatal(format!("snapshot: rotor support {other}"))),
+                },
+                serde_json::Value::Object(m) if m.len() == 1 => {
+                    let omega = super::block::restored_time(&m["engineering_test_rad_s"])?
+                        .ok_or_else(|| fatal("snapshot: engineering-test speed"))?;
+                    Support::Supported(SpeedRequest::EngineeringTest { omega_rad_s: omega })
+                }
+                other => return Err(fatal(format!("snapshot: rotor support {other}"))),
+            };
+            let shaft = match f["shaft"].as_str() {
+                Some("free") => Shaft::Free,
+                Some("locked") => Shaft::Locked,
+                other => return Err(fatal(format!("snapshot: rotor shaft {other:?}"))),
+            };
+            self.network
+                .set_rotor_state(r, RotorState { support, shaft });
+        }
+        Ok(())
     }
     /// The joined rows of the last evaluation (solver scaling).
     pub fn rows(&self) -> &[Scalar] {
@@ -577,8 +996,9 @@ impl<P: Properties + WaterProperties> Joined<P> {
         if let RodPort::Owner(b) = &self.blocks.rods {
             out.push(("rods", b.layout().clone()));
         }
-        if let Some(b) = &self.blocks.pzr {
-            out.push(("pzr", b.layout().clone()));
+        out.push(("pzr", self.blocks.pzr.layout().clone()));
+        if let Some(b) = &self.blocks.cvcs {
+            out.push(("cvcs", b.layout().clone()));
         }
         out
     }
@@ -609,7 +1029,8 @@ impl<P: Properties + WaterProperties> Joined<P> {
         if let RodPort::Owner(b) = &self.blocks.rods {
             push(&b.prepared(), b.layout());
         }
-        if let Some(b) = &self.blocks.pzr {
+        push(self.blocks.pzr.prepared(), self.blocks.pzr.layout());
+        if let Some(b) = &self.blocks.cvcs {
             push(b.prepared(), b.layout());
         }
         Ok(y)
@@ -626,7 +1047,8 @@ impl<P: Properties + WaterProperties> Joined<P> {
         if let RodPort::Owner(b) = &self.blocks.rods {
             ids.extend(b.differential());
         }
-        if let Some(b) = &self.blocks.pzr {
+        ids.extend(self.blocks.pzr.differential());
+        if let Some(b) = &self.blocks.cvcs {
             ids.extend(b.differential());
         }
         ids
@@ -644,6 +1066,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
     ) -> Result<(), Failure> {
         let started = Instant::now();
         let o = self.blocks.offsets;
+        self.value_state.held = false; // HOOK (COST2)
         if y.len() != o.end || yp.len() != o.end || seed.is_some_and(|d| d.len() != o.end) {
             return Err(fatal("stage length"));
         }
@@ -687,20 +1110,175 @@ impl<P: Properties + WaterProperties> Joined<P> {
     }
 
     /// Root functions: the secondary owner's, the rod owner's (on one
-    /// value evaluation's fluid state), then the PZR relief's (on the roof
-    /// pressure and the lift). Stock IDA cannot retry a root, so every
-    /// failure is fatal.
+    /// value evaluation's fluid state), the PZR relief's (on the roof
+    /// pressure and the lift), then, once L1 is active, one slot per phase
+    /// path of the network ([`Self::activate_unilateral`]). Stock IDA cannot
+    /// retry a root, so every failure is fatal.
     pub fn root_count(&self) -> usize {
         self.secondary().map_or(0, |b| b.root_count())
             + self.rods().map_or(0, |b| b.root_count())
-            + self.pzr().map_or(0, |b| b.root_count())
+            + self.pzr().root_count()
+            + self.cvcs_slots()
+            + self.unilateral_slots()
+            + self.phase_mode_slots()
+            + self.spray_slots()
+    }
+    /// IC-CTRL (S3 spray path, for KERN): three root slots, last, while the
+    /// spray path is composed: the inlet check's (S3-D25 (3)), then the
+    /// spray port's two phase paths under the scoped L1 (DR-P3-SPRAY;
+    /// disarmed constants once the network-wide L1 governs them).
+    fn spray_slots(&self) -> usize {
+        if self.network.spray().is_some() { 3 } else { 0 }
+    }
+    /// Plan r4 X4.2: the CVCS owner's slots, after the PZR relief's and
+    /// before L1's (own coordinates only).
+    fn cvcs_slots(&self) -> usize {
+        self.cvcs().map_or(0, |b| b.root_count())
+    }
+    /// The CVCS block's physical coordinates of `y`.
+    fn cvcs_state(&self, y: &[f64]) -> Vec<f64> {
+        let o = self.blocks.offsets;
+        (o.cvcs..o.end)
+            .zip(&self.blocks.scales[5].coordinates)
+            .map(|(i, s)| y[i] * s)
+            .collect()
+    }
+    /// The phase modes' root slots: two per regular cell once declared,
+    /// after L1's ([`Self::activate_phase_modes`]).
+    fn phase_mode_slots(&self) -> usize {
+        if self.phase_modes {
+            2 * self.network.pzr.cell
+        } else {
+            0
+        }
+    }
+    /// Declare the regular cells' phase modes composed (lead decision
+    /// S3-D-P1): per regular cell two root slots after L1's, in the
+    /// phase-mode owner's mode at the restart: a liquid cell's birth root
+    /// `T_l(p, U_l/M_l) - Tsat(p)` [K] rising and a constant; an
+    /// equilibrium cell's exhaustion root `M_g` [kg] and dryout root
+    /// `M - M_g` [kg], both falling. Before the stock-IDA handle is made (the
+    /// root count grows by two per cell). Never by default.
+    pub fn activate_phase_modes(&mut self) -> Result<(), Failure> {
+        if self.phase_modes {
+            return Err(fatal("the phase modes are already composed"));
+        }
+        self.phase_modes = true;
+        Ok(())
+    }
+    /// Whether the phase modes are composed.
+    pub fn phase_modes_active(&self) -> bool {
+        self.phase_modes
+    }
+    /// Declare the credited outputs on pressure coordinates (each with its
+    /// strict block's budget) that the derived tolerance classes read
+    /// (S2-D24r, S3-D16); every column must be a coordinate of this
+    /// operator and every budget finite and positive.
+    pub fn declare_credited(&mut self, outputs: Vec<CreditedOutput>) -> Result<(), Failure> {
+        let n = self.blocks.offsets.end;
+        if let Some(o) = outputs.iter().find(|o| {
+            o.columns.is_empty()
+                || o.columns.iter().any(|j| *j >= n)
+                || !(o.budget.is_finite() && o.budget > 0.)
+        }) {
+            return Err(fatal(format!(
+                "credited output {} is not declarable",
+                o.name
+            )));
+        }
+        self.credited = outputs;
+        Ok(())
+    }
+    /// The declared credited outputs (empty until declared).
+    pub fn credited(&self) -> &[CreditedOutput] {
+        &self.credited
+    }
+    /// L1's root slots: one per phase path (face-layout order) while L1 is
+    /// active, none before (S1, S2). A slot carries the root of its path's
+    /// current lock ([`Network::unilateral_roots`]): a free path its contact
+    /// root, a one-sided lock its release root, a lock with neither end
+    /// holding none (a constant). The count is fixed for a handle, so L1 is
+    /// activated before the stock-IDA handle is made.
+    fn unilateral_slots(&self) -> usize {
+        self.network.unilateral().map_or(0, |u| u.paths.len())
+    }
+    /// Declare L1 active (decision 0014, lead decision S3-D-P2) at the
+    /// value state `(t, y, 0)`: every phase path classified from free by
+    /// the phase-mode owner's declared presence
+    /// ([`Network::declared_presence`]: the stocks' for liquid cells, both
+    /// phases for an equilibrium cell). Before the stock-IDA handle is
+    /// made (the root count grows by one slot per path) and before the
+    /// consistent start (a locked path's impulse row becomes `Π/s`,
+    /// algebraic). Never by default: S1 and S2 compose no L1.
+    pub fn activate_unilateral(
+        &mut self,
+        t: f64,
+        y: &[f64],
+    ) -> Result<UnilateralTransaction, Failure> {
+        if self.network.unilateral().is_some() {
+            return Err(fatal("L1 is already active"));
+        }
+        let zero = vec![0.; y.len()];
+        self.evaluate(t, y, &zero, None, 0., None)?;
+        let presence = self.network.declared_presence(y);
+        self.network.activate_unilateral(&presence)
+    }
+    /// The crossing direction each root function reports at the owners'
+    /// current state, in [`Self::roots`]' order (stock
+    /// IDASetRootDirection): the secondary owner's (each armed relief
+    /// threshold only the crossing its memory acts on), then both (0) for
+    /// the rods' and the PZR relief's.
+    pub fn root_directions(&self) -> Result<Vec<i32>, Failure> {
+        let mut out = vec![0; self.root_count()];
+        let ns = self.secondary().map_or(0, |b| b.root_count());
+        if let Some(b) = self.secondary() {
+            b.root_directions(&mut out[..ns])?;
+        }
+        if let Some(b) = self.cvcs() {
+            let first = ns + self.rods().map_or(0, |b| b.root_count()) + self.pzr().root_count();
+            b.root_directions(&mut out[first..first + b.root_count()])?;
+        }
+        // L1: release rising, contact falling (`Root::direction`); a slot
+        // with no root reports none. L1's slots follow the PZR relief's and
+        // precede the phase modes' and the spray path's three ([`Self::roots`]).
+        let first =
+            out.len() - self.spray_slots() - self.phase_mode_slots() - self.unilateral_slots();
+        for r in self.network.unilateral_roots() {
+            out[first + r.path()] = r.direction();
+        }
+        // The spray inlet check: contact falling, release rising; then the
+        // spray port's scoped L1 slots (their own directions).
+        if self.spray_slots() == 3 {
+            let check = out.len() - 3;
+            out[check] = match self.network.spray_check_watch() {
+                Some(crate::network::spray::CheckRoot::Contact) => -1,
+                Some(crate::network::spray::CheckRoot::Release) => 1,
+                _ => 0,
+            };
+            let tip = self.network.spray_tip_roots(&vec![0.; self.dimension()])?;
+            for (k, (_, d)) in tip.iter().enumerate() {
+                out[check + 1 + k] = *d;
+            }
+        }
+        // Phase modes: birth rising; exhaustion and dryout falling.
+        if self.phase_modes {
+            let first = out.len() - self.phase_mode_slots() - self.spray_slots();
+            for (c, mode) in self.network.cell_modes().iter().enumerate() {
+                let pair = match mode {
+                    CellMode::Liquid => [1, 0],
+                    CellMode::Equilibrium => [-1, -1],
+                };
+                out[first + 2 * c..first + 2 * c + 2].copy_from_slice(&pair);
+            }
+        }
+        Ok(out)
     }
     /// The PZR block's physical coordinates and the roof pressure of `y`.
     fn pzr_state(&self, y: &[f64]) -> (Vec<f64>, f64) {
         let o = self.blocks.offsets;
         let roof = self.network.pzr.base + PZR_PRESSURE;
         (
-            (o.pzr..o.end)
+            (o.pzr..o.cvcs)
                 .zip(&self.blocks.scales[4].coordinates)
                 .map(|(i, s)| y[i] * s)
                 .collect(),
@@ -709,7 +1287,16 @@ impl<P: Properties + WaterProperties> Joined<P> {
     }
     pub fn roots(&mut self, t: f64, y: &[f64], yp: &[f64], out: &mut [f64]) -> Result<(), Failure> {
         let started = Instant::now();
+        self.value_state.held = false; // HOOK (COST2)
         let result = self.root_values(t, y, yp, out);
+        // HOOK (COST2): a root call whose value evaluation completed leaves
+        // that state's evaluation in the operator; everything the call does
+        // after it reads the same `(y, y')` (the rods' moving volumes and
+        // read cells are recomputed from them bit for bit).
+        if result.is_ok() && self.value_state.evaluated {
+            self.value_state.set(t, y, yp);
+        }
+        self.value_state.evaluated = false;
         self.counters.roots += 1;
         self.counters.root_wall_s += started.elapsed().as_secs_f64();
         result
@@ -724,13 +1311,84 @@ impl<P: Properties + WaterProperties> Joined<P> {
         let o = self.blocks.offsets;
         let ns = self.secondary().map_or(0, |b| b.root_count());
         let nr = self.rods().map_or(0, |b| b.root_count());
-        let np = self.pzr().map_or(0, |b| b.root_count());
-        if out.len() != ns + nr + np {
+        let np = self.pzr().root_count() + self.cvcs_slots();
+        let nl = self.unilateral_slots();
+        let nm = self.phase_mode_slots();
+        let nk = self.spray_slots();
+        if out.len() != ns + nr + np + nl + nm + nk {
             return Err(fatal("root layout"));
         }
-        if let Some(b) = self.pzr() {
-            let (x, roof) = self.pzr_state(y);
-            b.roots(roof, &x, &mut out[ns + nr..])?;
+        if nk == 3 {
+            // The inlet check's and the spray port's release roots read the
+            // drives of this state's value evaluation; their contact roots
+            // the coordinates.
+            if self.network.spray_check_watch() == Some(crate::network::spray::CheckRoot::Release)
+                || self.network.spray_tip_reads_drive()
+            {
+                self.evaluate(t, y, yp, None, 0., None)
+                    .map_err(|e| fatal(format!("spray root evaluation: {e:?}")))?;
+                self.value_state.evaluated = true; // HOOK (COST2)
+            }
+            let check = out.len() - 3;
+            out[check] = self.network.spray_check_root(y).map_or(1., |r| r.1);
+            let tip = self
+                .network
+                .spray_tip_roots(y)
+                .map_err(|e| fatal(format!("spray port roots: {e:?}")))?;
+            for (k, (v, _)) in tip.iter().enumerate() {
+                out[check + 1 + k] = *v;
+            }
+        }
+        if nm > 0 {
+            let slots = &mut out[ns + nr + np + nl..ns + nr + np + nl + nm];
+            for c in 0..self.network.pzr.cell {
+                let pair = match self.network.cell_modes()[c] {
+                    CellMode::Liquid => [
+                        self.network
+                            .birth_root(c, y)
+                            .map_err(|e| fatal(format!("birth root of cell {c}: {e:?}")))?,
+                        L1_DISARMED,
+                    ],
+                    CellMode::Equilibrium => {
+                        let (vapor, liquid) = self
+                            .network
+                            .equilibrium_masses(c, y)
+                            .map_err(|e| fatal(format!("mode roots of cell {c}: {e:?}")))?;
+                        [vapor, liquid]
+                    }
+                };
+                slots[2 * c..2 * c + 2].copy_from_slice(&pair);
+            }
+        }
+        if nl > 0 {
+            // L1's release roots read the drives of this state's value
+            // evaluation; its contact roots read the coordinates alone.
+            let roots = self.network.unilateral_roots();
+            // HOOK (COST2): the spray roots' value evaluation of this same
+            // state, earlier in this call (nothing since mutates the
+            // operator: the spray and phase-mode roots only read), is the
+            // one L1's release roots read; it is not repeated.
+            if release_roots(&roots) && !self.value_state.evaluated {
+                self.evaluate(t, y, yp, None, 0., None)
+                    .map_err(|e| fatal(format!("L1 root evaluation: {e:?}")))?;
+                self.value_state.evaluated = true; // HOOK (COST2)
+            }
+            let mut values = vec![0.; roots.len()];
+            self.network
+                .unilateral_root_values(y, &roots, &mut values)
+                .map_err(|e| fatal(format!("L1 root values: {e:?}")))?;
+            let slots = &mut out[ns + nr + np..ns + nr + np + nl];
+            slots.fill(L1_DISARMED);
+            for (r, v) in roots.iter().zip(values) {
+                slots[r.path()] = v;
+            }
+        }
+        let (x, roof) = self.pzr_state(y);
+        let npzr = self.pzr().root_count();
+        self.pzr()
+            .roots(roof, &x, &mut out[ns + nr..ns + nr + npzr])?;
+        if let Some(b) = self.cvcs() {
+            b.roots(&self.cvcs_state(y), &mut out[ns + nr + npzr..ns + nr + np])?;
         }
         if let SecondaryPort::Owner(b) = &mut self.blocks.secondary {
             let x = view(
@@ -783,6 +1441,36 @@ impl<P: Properties + WaterProperties> Joined<P> {
         }
         Ok(())
     }
+    /// E-EVT (plan r4): the located `directions` (per root, owners' order)
+    /// widened to the roots of the same event, at the state `y` handed to
+    /// the restart (solver scaling) and the handle's error `weights` there
+    /// (solver scaling). Only the rods declare coincident roots (the bank
+    /// seat, [`super::block::Rods::coincident`]). Returns how many roots
+    /// were added.
+    pub fn coincident(
+        &self,
+        y: &[f64],
+        weights: &[f64],
+        directions: &mut [i32],
+    ) -> Result<usize, Failure> {
+        if directions.len() != self.root_count() || weights.len() != y.len() {
+            return Err(fatal("coincident root layout"));
+        }
+        let o = self.blocks.offsets;
+        let ns = self.secondary().map_or(0, |b| b.root_count());
+        let b = &self.blocks;
+        let RodPort::Owner(owner) = &b.rods else {
+            return Ok(0);
+        };
+        let nr = owner.root_count();
+        let scales = &b.scales[3].coordinates;
+        let x: Vec<f64> = (o.rods..o.pzr).zip(scales).map(|(i, s)| y[i] * s).collect();
+        let w: Vec<f64> = (o.rods..o.pzr)
+            .zip(scales)
+            .map(|(i, s)| weights[i] / s)
+            .collect();
+        owner.coincident(&x, &w, &mut directions[ns..ns + nr])
+    }
     /// The owners' transactions at located roots (`directions` per root,
     /// owners' order): each owner may change its own coordinates of `y`
     /// (solver scaling here, physical in the owner); energy deposits enter
@@ -825,17 +1513,290 @@ impl<P: Properties + WaterProperties> Joined<P> {
             for ((i, v), s) in (o.rods..o.pzr).zip(&x).zip(scales) {
                 y[i] = v / s;
             }
+            // B1 (owner request 14, lane ROD): the transaction that leaves
+            // a declared stuck cluster out with every other class seated
+            // applies the declared constant term, once.
+            if let Some(dk) = self.stuck_worth
+                && owner.stuck_out()
+                && b.nuclear.stuck_worth_dk() == 0.
+            {
+                b.nuclear.apply_stuck_worth(dk)?;
+                done.push(super::block::Transaction {
+                    deposits: Vec::new(),
+                    receipt: serde_json::json!({"owner": "nuclear", "B1": {"t_s": t, "stuck_worth_dk": dk,
+                        "rule": "owner request 14 B1: the declared constant stuck-cluster term, added to every region's reactivity while the cluster stays out"}}),
+                });
+            }
         }
-        if let Some(owner) = &mut b.pzr
-            && directions[ns + nr..].iter().any(|d| *d != 0)
-        {
-            done.push(owner.transact(t, &directions[ns + nr..], roof, &mut pzr_x)?);
-            for ((i, v), s) in (o.pzr..o.end).zip(&pzr_x).zip(&b.scales[4].coordinates) {
+        let npzr = b.pzr.root_count();
+        if directions[ns + nr..ns + nr + npzr].iter().any(|d| *d != 0) {
+            done.push(
+                b.pzr
+                    .transact(t, &directions[ns + nr..ns + nr + npzr], roof, &mut pzr_x)?,
+            );
+            for ((i, v), s) in (o.pzr..o.cvcs).zip(&pzr_x).zip(&b.scales[4].coordinates) {
                 y[i] = v / s;
             }
         }
+        // Plan r4 X4.2: the CVCS stops and AUTO withdrawals (no coordinate
+        // moves).
+        let nc = b.cvcs.as_ref().map_or(0, |c| c.root_count());
+        let np = npzr + nc;
+        if let Some(c) = b.cvcs.as_mut()
+            && directions[ns + nr + npzr..ns + nr + np]
+                .iter()
+                .any(|d| *d != 0)
+        {
+            let x: Vec<f64> = (o.cvcs..o.end)
+                .zip(&b.scales[5].coordinates)
+                .map(|(i, s)| y[i] * s)
+                .collect();
+            done.push(c.transact(t, &directions[ns + nr + npzr..ns + nr + np], &x)?);
+        }
         self.deposit(&done, y)?;
+        // The phase modes' transactions, then L1's on the post-mode state.
+        // L1's slots carry the roots armed for the segment that located
+        // this instant (an exhaustion may lock a path first: DR S3-EXHAUST).
+        let nl = self.unilateral_slots();
+        let armed = self.network.unilateral_roots();
+        if self.phase_modes {
+            let first = ns + nr + np + nl;
+            let nm = self.phase_mode_slots();
+            let mut modes = directions[first..first + nm].to_vec();
+            // DR S3-REBIRTH (PHASE-L1, for KERN): an L1 contact root located
+            // on a path drawing from an equilibrium cell is that cell's
+            // exhaustion root (the same function, the donor's vapor mass
+            // falling through zero, decision 0014's contact). The cell's own
+            // exhaustion root can start on the wrong side of a re-birth's
+            // projected root-size vapor and miss it, so the located contact
+            // exhausts the donor in this transaction, before L1 locks.
+            for r in &armed {
+                let crate::network::phase_events::Root::Contact(li) = *r else {
+                    continue;
+                };
+                if directions[ns + nr + np + li] != r.direction() {
+                    continue;
+                }
+                let l = self.network.face_layout[li];
+                let (from, to) = self.network.face_ends(l.face);
+                let flow = self.network.path_flow_sign(y, li);
+                let donor = if flow > 0. {
+                    from
+                } else if flow < 0. {
+                    to
+                } else {
+                    continue;
+                };
+                if donor < self.network.pzr.cell
+                    && self.network.cell_modes()[donor] == CellMode::Equilibrium
+                    && l.phase == 1
+                {
+                    modes[2 * donor] = -1;
+                }
+            }
+            if let Some(m) = self.mode_transact(t, &modes, y)? {
+                done.push(m);
+            }
+        }
+        if self.network.unilateral().is_some() {
+            let first = ns + nr + np;
+            if let Some(l1) =
+                self.unilateral_transact(t, &directions[first..first + nl], y, armed)?
+            {
+                done.push(l1);
+            }
+        }
+        // IC-CTRL (S3 spray path): the inlet check's transaction at its
+        // located root (S3-D25 (3)), then the spray port's scoped L1
+        // (DR-P3-SPRAY) on a value evaluation of the post-transaction state.
+        if self.spray_slots() == 3 {
+            let check = directions.len() - 3;
+            if let Some(receipt) = self.network.spray_check_transaction(t, directions[check])? {
+                done.push(super::block::Transaction {
+                    deposits: Vec::new(),
+                    receipt,
+                });
+            }
+            // Every root transaction decides the port's paths, as L1 decides
+            // all of its own (found at the transaction or at a located root).
+            let tip = [directions[check + 1], directions[check + 2]];
+            if self.network.unilateral().is_none() {
+                let zero = vec![0.; y.len()];
+                self.evaluate(t, y, &zero, None, 0., None)?;
+                let presence = self.network.declared_presence(y);
+                if let Some(receipt) = self.network.spray_tip_transaction(t, tip, y, &presence)? {
+                    done.push(super::block::Transaction {
+                        deposits: Vec::new(),
+                        receipt,
+                    });
+                }
+            }
+        }
         Ok(done)
+    }
+    /// The phase-mode owner's transactions at a root-located instant
+    /// (S3-D-P1): a located birth makes a liquid cell equilibrium (its
+    /// vapor slots, exactly zero, join its totals: no stock moves); a
+    /// located exhaustion makes an equilibrium cell liquid (its algebraic
+    /// vapor slots are zeroed, the totals stay); a located dryout refuses:
+    /// mode G is S6 scope, so it is C4's declared end. A crossing against a
+    /// root's declared direction does not act and is reported. `None` when
+    /// nothing was located.
+    fn mode_transact(
+        &mut self,
+        t: f64,
+        directions: &[i32],
+        y: &mut [f64],
+    ) -> Result<Option<super::block::Transaction>, Failure> {
+        if directions.len() != self.phase_mode_slots() {
+            return Err(fatal("phase-mode root layout"));
+        }
+        if directions.iter().all(|d| *d == 0) {
+            return Ok(None);
+        }
+        let mut events = Vec::new();
+        let mut opposite = Vec::new();
+        let mut exhausted = Vec::new();
+        for c in 0..self.network.pzr.cell {
+            let [a, b] = [directions[2 * c], directions[2 * c + 1]];
+            match self.network.cell_modes()[c] {
+                CellMode::Liquid => {
+                    if b != 0 {
+                        return Err(fatal(format!(
+                            "cell {c}: a disarmed phase-mode slot crossed"
+                        )));
+                    }
+                    match a {
+                        1 => events.push(self.network.birth(c, y)?),
+                        -1 => opposite
+                            .push(serde_json::json!({"cell": c, "root": "birth", "direction": -1})),
+                        _ => {}
+                    }
+                }
+                CellMode::Equilibrium => {
+                    if b == -1 {
+                        return Err(fatal(format!(
+                            "dryout of cell {c} at t = {t} s: mode G is S6 scope (C4's declared end)"
+                        )));
+                    }
+                    if b == 1 {
+                        opposite
+                            .push(serde_json::json!({"cell": c, "root": "dryout", "direction": 1}));
+                    }
+                    match a {
+                        -1 => exhausted.push(c),
+                        1 => opposite.push(
+                            serde_json::json!({"cell": c, "root": "exhaustion", "direction": 1}),
+                        ),
+                        _ => {}
+                    }
+                }
+            }
+        }
+        // DR S3-EXHAUST (PHASE-P7, for KERN): the exhaustions with the vapor
+        // paths they empty, in one transaction on this instant's value
+        // evaluation before the exhaustion (`Network::exhaustion_with_paths`).
+        let mut contacts = serde_json::Value::Null;
+        if !exhausted.is_empty() {
+            if self.network.unilateral().is_some() {
+                let zero = vec![0.; y.len()];
+                self.evaluate(t, y, &zero, None, 0., None)?;
+            }
+            let (ex, tx) = self.network.exhaustion_with_paths(y, &exhausted)?;
+            events.extend(ex);
+            if !tx.changes.is_empty() {
+                contacts =
+                    serde_json::json!({"changes":tx.changes,"energyPaid_J":tx.energy_paid_j});
+            }
+        }
+        Ok(Some(super::block::Transaction {
+            deposits: Vec::new(),
+            receipt: serde_json::json!({"owner":"phase modes","t_s":t,"events":events,
+                "vaporPathContacts":contacts,
+                "opposite":opposite,"stateChanged":!events.is_empty()}),
+        }))
+    }
+    /// L1's transaction at a root-located instant, after the owners' (on
+    /// the state they leave): every path decided by the declared presence
+    /// ([`Network::declared_presence`]) and the drives of the value evaluation at
+    /// `(t, y, 0)` (a drive reads the coordinates alone), with the L1 roots
+    /// located in this instant's `directions` (one per slot). A contact
+    /// sets `Π = 0` and pays its kinetic energy once into the receiving
+    /// end's energy stock. A crossing against a root's declared direction
+    /// does not act and is reported (stock IDASetRootDirection, set at
+    /// every restart, reports none). `None` when nothing was located and no
+    /// path changed.
+    fn unilateral_transact(
+        &mut self,
+        t: f64,
+        directions: &[i32],
+        y: &mut [f64],
+        roots: Vec<crate::network::phase_events::Root>,
+    ) -> Result<Option<super::block::Transaction>, Failure> {
+        if directions.len() != self.unilateral_slots() {
+            return Err(fatal("L1 root layout"));
+        }
+        let carried: Vec<bool> = {
+            let mut c = vec![false; directions.len()];
+            for r in &roots {
+                c[r.path()] = true;
+            }
+            c
+        };
+        if let Some(slot) = (0..directions.len()).find(|i| directions[*i] != 0 && !carried[*i]) {
+            return Err(fatal(format!(
+                "L1 slot {slot} crossed while its path carries no root"
+            )));
+        }
+        let per_root: Vec<i32> = roots.iter().map(|r| directions[r.path()]).collect();
+        let (fired, opposite) = located(&roots, &per_root);
+        let zero = vec![0.; y.len()];
+        self.evaluate(t, y, &zero, None, 0., None)?;
+        let presence = self.network.declared_presence(y);
+        let tx = self
+            .network
+            .unilateral_transaction(y, &presence, &fired, None)?;
+        if fired.is_empty() && opposite.is_empty() && tx.changes.is_empty() {
+            return Ok(None);
+        }
+        Ok(Some(super::block::Transaction {
+            deposits: Vec::new(),
+            receipt: serde_json::json!({"owner":"network L1","t_s":t,
+                "located":fired.iter().map(|(p, f)| serde_json::json!({"path":p,"root":format!("{f:?}")})).collect::<Vec<_>>(),
+                "opposite":opposite,"changes":tx.changes,"energyPaid_J":tx.energy_paid_j,
+                "stateChanged":!tx.changes.is_empty()}),
+        }))
+    }
+    /// L1 at a segment start, after the restart's exact consistent start
+    /// (DR S3-REBIRTH, decision 0014): the drives and their rates along the
+    /// consistent rates `yp` from one value evaluation seeded along `yp`
+    /// (`cj = 0`, so a direction is `dF/dt`), then
+    /// [`Network::unilateral_release_at_start`]: a one-sided lock whose
+    /// drive draws from its holding end at `t0+` is released, its impulse
+    /// rate set to the free row's `F` in `yp`; no coordinate moves, so the
+    /// caller updates the id vector only. `None` while L1 is inactive or
+    /// no one-sided lock exists.
+    pub fn unilateral_release_at_start(
+        &mut self,
+        t: f64,
+        y: &[f64],
+        yp: &mut [f64],
+    ) -> Result<Option<super::block::Transaction>, Failure> {
+        if self.network.unilateral().is_none() {
+            return Ok(None);
+        }
+        let seed = yp.to_vec();
+        self.evaluate(t, y, yp, Some(&seed), 0., None)?;
+        let (tx, one_sided) = self.network.unilateral_release_at_start(yp)?;
+        if one_sided.is_empty() {
+            return Ok(None);
+        }
+        Ok(Some(super::block::Transaction {
+            deposits: Vec::new(),
+            receipt: serde_json::json!({"owner":"network L1 at the segment start","t_s":t,
+                "oneSided":one_sided.iter().map(|(p, f, r)| serde_json::json!({"path":p,"orientedDrive_Pa":f,"orientedRate_Pa_s":r})).collect::<Vec<_>>(),
+                "changes":tx.changes,"stateChanged":!tx.changes.is_empty()}),
+        }))
     }
     /// A declared command to every composed owner, in order, followed by
     /// any time event the command makes due at once ([`Joined::time_events`]).
@@ -846,18 +1807,102 @@ impl<P: Properties + WaterProperties> Joined<P> {
         command: super::block::Command,
     ) -> Result<Vec<super::block::Transaction>, Failure> {
         let mut done = Vec::new();
+        if let super::block::Command::SupplyLoss { rotor } = command {
+            done.push(self.supply_loss(t, rotor)?);
+        }
         if let Some(b) = self.secondary_mut() {
             done.push(b.command(t, command)?);
         }
         if let Some(b) = self.rods_mut() {
             done.push(b.command(t, command)?);
         }
-        if let Some(b) = self.pzr() {
-            done.push(b.command(t, command));
-        }
+        // HOOK (C4 lane): the PZR owner may change its relief's state.
+        done.push(self.pzr_mut().command(t, command)?);
         self.deposit(&done, y)?;
         done.extend(self.time_events(t, y)?);
         Ok(done)
+    }
+    /// R3 on the joined spine (C3's cost line): how many rod clusters'
+    /// annulus volume current lies inside R3's blend band at the accepted
+    /// state `(t, y, y')`, on the cells the rod owner reads (as its roots
+    /// read them); 0 without a composed rod owner.
+    pub fn r3_band_clusters(&mut self, y: &[f64], yp: &[f64]) -> Result<usize, Failure> {
+        let o = self.blocks.offsets;
+        if !matches!(self.blocks.rods, RodPort::Owner(_)) {
+            return Ok(0);
+        }
+        self.blocks.pre_network(y, yp, None, 0.)?;
+        let Blocks {
+            rods,
+            rod_reads,
+            cell_volumes,
+            scales,
+            ..
+        } = &mut self.blocks;
+        let (RodPort::Owner(b), Some(reads)) = (rods, rod_reads.as_ref()) else {
+            return Err(fatal("R3 band without the rod owner's reads"));
+        };
+        let x = view(y, yp, None, 0., o.rods..o.pzr, &scales[3].coordinates)?;
+        self.network
+            .cells_fluid(&y[..o.nuclear], cell_volumes, &reads.read_cells, |fluid| {
+                b.r3_band(x, fluid)
+            })
+            .and_then(|r| r)
+    }
+    /// C3's initiator on the network: RCP `rotor` loses its supply, its drive
+    /// unsupported with the shaft free (it coasts down on its own law). No
+    /// coordinate moves; the caller restarts by the exact consistent start
+    /// (class R). A rotor that is not supported refuses.
+    fn supply_loss(&mut self, t: f64, rotor: usize) -> Result<super::block::Transaction, Failure> {
+        use crate::{
+            network::RotorState,
+            rotor::{Shaft, Support},
+        };
+        if rotor >= self.network.rotor_count() {
+            return Err(fatal(format!(
+                "supply loss of rotor {rotor}: no such rotor"
+            )));
+        }
+        let before = self.network.rotor_state(rotor).ok_or_else(|| {
+            fatal(format!(
+                "supply loss of rotor {rotor}: its state is undeclared"
+            ))
+        })?;
+        if self.supply_routed {
+            // The AC routing applied the loss before the operator's part
+            // (its appended events come first); the network only checks it.
+            if before.support != Support::Unsupported {
+                return Err(fatal(format!(
+                    "supply loss of rotor {rotor} at {t} s: the AC routing owns its supply and left it {:?}",
+                    before.support
+                )));
+            }
+            return Ok(super::block::Transaction {
+                deposits: Vec::new(),
+                receipt: serde_json::json!({"owner":"network","command":"SupplyLoss","rotor":rotor,"t_s":t,
+                    "appliedBy":"the AC routing (ELEC): the RCP's supply lost there","support":"Unsupported",
+                    "shaft":format!("{:?}", before.shaft),"stateChanged":false}),
+            });
+        }
+        if !matches!(before.support, Support::Supported(_)) {
+            return Err(fatal(format!(
+                "supply loss of rotor {rotor} at {t} s: it is not supported ({:?})",
+                before.support
+            )));
+        }
+        self.network.set_rotor_state(
+            rotor,
+            RotorState {
+                support: Support::Unsupported,
+                shaft: Shaft::Free,
+            },
+        );
+        Ok(super::block::Transaction {
+            deposits: Vec::new(),
+            receipt: serde_json::json!({"owner":"network","command":"SupplyLoss","rotor":rotor,"t_s":t,
+                "before":{"support":format!("{:?}", before.support),"shaft":format!("{:?}", before.shaft)},
+                "after":{"support":"Unsupported","shaft":"Free"},"stateChanged":true}),
+        })
     }
     /// The owners' transactions of every time event due exactly at `t`: at
     /// a stop at [`Joined::next_time_event`] and after a command. Each owner
@@ -897,13 +1942,60 @@ impl<P: Properties + WaterProperties> Joined<P> {
             }
         }
         self.deposit(&done, y)?;
+        // IC-CTRL (S3 spray path, for KERN): the spray stem's arrival at 0
+        // locks the valve path (class R; the identity follows the lock).
+        if let Some(receipt) = self.network.spray_event(t)? {
+            done.push(super::block::Transaction {
+                deposits: Vec::new(),
+                receipt,
+            });
+        }
         Ok(done)
+    }
+    /// IC-CTRL (S3 spray path, for KERN): put a normal PZR pressure control
+    /// frame's demands in force: the heater request into the PZR block, the
+    /// controlled-spray fraction into the network's valve stem when the
+    /// spray path is composed (without it a nonzero spray demand refuses in
+    /// the PZR block). Returns how the stem change enters (S3-D4: `Lock` is
+    /// class R, `Slope` class S, `None` nothing) and the receipts.
+    pub fn apply_pzr_control(
+        &mut self,
+        t: f64,
+        demand: &crate::control::pzr_pressure::Demand,
+    ) -> Result<
+        (
+            crate::control::spray_valve::StemChange,
+            Vec<serde_json::Value>,
+        ),
+        Failure,
+    > {
+        use crate::control::spray_valve::StemChange;
+        let composed = self.network.spray().is_some();
+        let heater = crate::control::pzr_pressure::Demand {
+            spray_target: if composed { 0. } else { demand.spray_target },
+            ..*demand
+        };
+        let applied = self.blocks.pzr.apply_control(t, &heater)?;
+        let mut receipts = vec![serde_json::to_value(&applied).map_err(|e| fatal(e.to_string()))?];
+        let change = if composed {
+            let (change, receipt) = self.network.issue_spray(t, demand.spray_target)?;
+            receipts.push(receipt);
+            change
+        } else {
+            StemChange::None
+        };
+        Ok((change, receipts))
     }
     /// The earliest declared time event of any owner strictly after `t`.
     pub fn next_time_event(&self, t: f64) -> Option<f64> {
         [
             self.secondary().and_then(|b| b.next_time_event(t)),
             self.rods().and_then(|b| b.next_time_event(t)),
+            // IC-CTRL (S3 spray path): only the closing arrival is an owner
+            // event (R); an open arrival is the controller's S stop.
+            self.network.spray_next_instant(t).and_then(|(a, c)| {
+                (c == crate::control::spray_valve::StemChange::Lock).then_some(a)
+            }),
         ]
         .into_iter()
         .flatten()
@@ -916,17 +2008,22 @@ impl<P: Properties + WaterProperties> Joined<P> {
                 .blocks
                 .solids
                 .passive_store(store)
-                .ok_or_else(|| fatal(format!("deposit into unknown passive store {store}")))?;
+                .ok_or_else(|| {
+                    fatal(format!(
+                        "deposit into passive store {store}: unknown or of a replica class (E-NUC)"
+                    ))
+                })?;
             let scale = self.blocks.scales[1].coordinates[i];
             y[o.solids + i] += energy / scale;
         }
         Ok(())
     }
 
-    /// Startup only: let the composed owners prepare their algebraic
-    /// coordinates on the fluid state of one value evaluation at `(t, y, 0)`
-    /// (the rods' steady guide currents), then write their prepared
-    /// coordinates into `y`. No differential coordinate of any block moves.
+    /// Startup only: let the composed owners prepare their coordinates on
+    /// the fluid state of one value evaluation at `(t, y, 0)`, then write
+    /// their prepared coordinates into `y`. No differential coordinate of
+    /// any block moves except the stocks an owner declares it prepares at
+    /// the composed state (HOOK OU-C P2: the rod bores' water).
     pub fn prepare_owners(
         &mut self,
         t: f64,
@@ -934,12 +2031,17 @@ impl<P: Properties + WaterProperties> Joined<P> {
     ) -> Result<Vec<super::block::Transaction>, Failure> {
         let zero = vec![0.; y.len()];
         self.blocks.prepare = Some(Vec::new());
+        if let Some(b) = self.blocks.cvcs.as_mut() {
+            b.request_preparation();
+        }
         let evaluated = self.evaluate(t, y, &zero, None, 0., None);
         let done = self.blocks.prepare.take().unwrap_or_default();
         evaluated?;
+        self.write_cvcs_preparation(y);
         let o = self.blocks.offsets;
         if let RodPort::Owner(b) = &self.blocks.rods {
             let ids = b.differential();
+            let stocks = b.prepared_stocks();
             for (i, (v, scale)) in b
                 .prepared()
                 .iter()
@@ -947,7 +2049,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
                 .enumerate()
             {
                 let new = v / scale;
-                if ids[i] != 0. && new != y[o.rods + i] {
+                if ids[i] != 0. && new != y[o.rods + i] && !stocks.contains(&i) {
                     return Err(fatal(format!(
                         "the rod owner's preparation moved differential coordinate {i}"
                     )));
@@ -956,6 +2058,35 @@ impl<P: Properties + WaterProperties> Joined<P> {
             }
         }
         Ok(done)
+    }
+
+    /// Plan r4 X4.2: the CVCS controller at its tracked AUTO point of the
+    /// state `(t, y, 0)` (lags at their inputs, each branch at its AUTO
+    /// request with the stem passing it, integrals at zero error) and BLEND
+    /// at the primary's concentration there, written into `y`; the tank
+    /// masses and every other block are not moved. For a state carried onto
+    /// a packet that adds the CVCS.
+    pub fn prepare_cvcs(&mut self, t: f64, y: &mut [f64]) -> Result<(), Failure> {
+        self.blocks
+            .cvcs
+            .as_mut()
+            .ok_or_else(|| fatal("no CVCS owner to prepare"))?
+            .request_preparation();
+        let zero = vec![0.; y.len()];
+        self.evaluate(t, y, &zero, None, 0., None)?;
+        self.write_cvcs_preparation(y);
+        Ok(())
+    }
+    /// The CVCS controller's prepared coordinates and BLEND's absorber
+    /// into `y` (the tank masses keep their values).
+    fn write_cvcs_preparation(&self, y: &mut [f64]) {
+        let o = self.blocks.offsets;
+        if let Some(b) = &self.blocks.cvcs {
+            let scales = &self.blocks.scales[5].coordinates;
+            for i in Cvcs::tracked() {
+                y[o.cvcs + i] = b.prepared()[i] / scales[i];
+            }
+        }
     }
 
     /// Memo §3 (C): the fixed-stock surface initializer at the state's own
@@ -1122,15 +2253,19 @@ impl<P: Properties + WaterProperties> Joined<P> {
         }
         let nuc = &self.blocks.nuclear;
         let sol = &self.blocks.solids;
-        let (regions, carriers) = (nuc.regions(), nuc.carriers());
+        // E-NUC: a "carrier" here is a nuclear port, one per solids half.
+        let (regions, carriers) = (nuc.regions(), nuc.ports());
         let mut regions_of = vec![BTreeSet::new(); carriers];
         let mut carriers_of = vec![BTreeSet::new(); regions];
-        for support in nuc.supports() {
+        for support in nuc.port_supports() {
             regions_of[support.material].insert(support.region);
             carriers_of[support.region].insert(support.material);
         }
         let n_of = |i: usize| o.nuclear + i;
-        let carrier_vars = |a: usize, out: &mut BTreeSet<usize>| {
+        // E-NUC: a port's nuclear state is its replica group's.
+        let group = nuc.port_group();
+        let carrier_vars = |carrier: usize, out: &mut BTreeSet<usize>| {
+            let a = group[carrier];
             for g in 0..6 {
                 out.insert(o.nuclear + nuc.precursor(a, g));
                 out.insert(o.nuclear + nuc.material(a, g));
@@ -1154,7 +2289,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
         // which read the support populations, fissile, fertile, Xe and Sm.
         let events = |a: usize, out: &mut BTreeSet<usize>| {
             for k in [0, 1, 3, 5] {
-                out.insert(o.nuclear + nuc.material(a, k));
+                out.insert(o.nuclear + nuc.material(group[a], k));
             }
             out.extend(regions_of[a].iter().map(|i| n_of(*i)));
         };
@@ -1162,7 +2297,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
         let fuel_heat = |a: usize, out: &mut BTreeSet<usize>| {
             events(a, out);
             for g in 0..nuclear::HISTORIES {
-                out.insert(o.nuclear + nuc.history(a, g));
+                out.insert(o.nuclear + nuc.history(group[a], g));
             }
         };
         let half_vars = |a: usize, out: &mut BTreeSet<usize>| {
@@ -1197,10 +2332,10 @@ impl<P: Properties + WaterProperties> Joined<P> {
             let mut cols: BTreeSet<usize> = (0..regions).map(n_of).collect();
             for a in carriers_i {
                 for g in 0..6 {
-                    cols.insert(o.nuclear + nuc.precursor(*a, g));
+                    cols.insert(o.nuclear + nuc.precursor(group[*a], g));
                 }
                 for k in [0, 1, 3, 5] {
-                    cols.insert(o.nuclear + nuc.material(*a, k));
+                    cols.insert(o.nuclear + nuc.material(group[*a], k));
                 }
                 cols.insert(o.solids + sol.energy(*a, 0));
                 cols.insert(o.solids + sol.energy(*a, 1));
@@ -1304,6 +2439,22 @@ impl<P: Properties + WaterProperties> Joined<P> {
             }
             add(&mut columns, &rows, &cols);
         }
+        // R4-NCHEAD: an SG primary's profiled port heads read its single-pass
+        // law: the wall water and its faces' charts, and each segment's metal.
+        for (c, faces) in self.network.profile_faces() {
+            let mut rows = BTreeSet::new();
+            for f in faces {
+                rows.extend(self.impulses(f));
+            }
+            let mut cols = BTreeSet::new();
+            self.wall(c, &mut cols);
+            for (i, (primary, _)) in incidence.segments.iter().enumerate() {
+                if *primary == c {
+                    cols.insert(o.solids + sol.metal(i));
+                }
+            }
+            add(&mut columns, &rows, &cols);
+        }
         // 4. The owners' rows and receipts.
         if let RodPort::Owner(b) = &self.blocks.rods {
             let st = b.structure();
@@ -1365,14 +2516,40 @@ impl<P: Properties + WaterProperties> Joined<P> {
         // cell's coordinates) and the steels its enclosure couples; the lift
         // row its own lift. The cell's rows read every block coordinate
         // through the boundary: heater and wall receipts and the relief.
-        if let Some(b) = &self.blocks.pzr {
+        {
+            let b = &self.blocks.pzr;
             let cell: BTreeSet<usize> = self.network.pzr.coordinates().collect();
-            let metal: BTreeSet<usize> = (o.pzr + b.metal_base()..o.end).collect();
+            let metal: BTreeSet<usize> = (o.pzr + b.metal_base()..o.cvcs).collect();
             let mut cols = cell.clone();
             cols.extend(metal.iter().copied());
             add(&mut columns, &metal, &cols);
-            let own: BTreeSet<usize> = (o.pzr..o.end).collect();
+            let own: BTreeSet<usize> = (o.pzr..o.cvcs).collect();
             add(&mut columns, &cell, &own);
+        }
+        // 6. The CVCS (plan r4 X4.2): every row reads its own coordinates and
+        // the cells it reads (COLD.A, the legs), the level row the PZR cell;
+        // the COLD.A receipt reaches that cell's rows, and the impulses of
+        // the faces it supports, from its own coordinates and the cell's.
+        if let Some(b) = &self.blocks.cvcs {
+            let own: BTreeSet<usize> = (o.cvcs..o.end).collect();
+            let mut cols = own.clone();
+            for c in b.read_cells() {
+                cols.extend(self.cell(c));
+            }
+            add(&mut columns, &own, &cols);
+            let level = BTreeSet::from([o.cvcs + cvcs::LEVEL_ROW]);
+            let pzr: BTreeSet<usize> = b.pzr_coordinates().collect();
+            add(&mut columns, &level, &pzr);
+            let cell = b.port_cell();
+            let mut rows: BTreeSet<usize> = self.cell(cell).collect();
+            for (f, face) in self.faces.iter().enumerate() {
+                if face.supports.contains(&cell) {
+                    rows.extend(self.impulses(f));
+                }
+            }
+            let mut cols = own;
+            cols.extend(self.cell(cell));
+            add(&mut columns, &rows, &cols);
         }
         for (c, rows) in columns.iter_mut().enumerate() {
             rows.insert(c);
@@ -1429,11 +2606,13 @@ impl<P: Properties + WaterProperties> Blocks<P> {
             solids,
             secondary,
             rods,
+            cvcs,
             source_water,
             nuclear_rows,
             solid_rows,
             secondary_rows,
             rod_rows,
+            cvcs_rows,
             temperatures,
             fuel_t,
             water,
@@ -1470,6 +2649,7 @@ impl<P: Properties + WaterProperties> Blocks<P> {
             *w = region_water(fluid, i, source_water[i])?;
         }
         let xn = view(y, yp, seed, cj, o.nuclear..o.solids, &scales[0].coordinates)?;
+        let cost_scope = crate::cost::scope("nuclear");
         nuclear.rows(
             t,
             xn,
@@ -1487,6 +2667,8 @@ impl<P: Properties + WaterProperties> Blocks<P> {
                 receipts.heat(*cell, q)?;
             }
         }
+        drop(cost_scope);
+        let cost_scope = crate::cost::scope("solids");
         solids.wall_water(properties, fluid)?;
         solids.rows(
             properties,
@@ -1499,7 +2681,9 @@ impl<P: Properties + WaterProperties> Blocks<P> {
             solid_rows,
             &mut heats.solids,
         )?;
+        drop(cost_scope);
         if let RodPort::Owner(b) = rods {
+            let _cost = crate::cost::scope("rods");
             if let Some(done) = self.prepare.as_mut() {
                 done.push(b.prepare(properties, fluid)?);
             }
@@ -1507,8 +2691,21 @@ impl<P: Properties + WaterProperties> Blocks<P> {
             b.rows(properties, t, x, fluid, receipts, rod_rows)?;
         }
         if let SecondaryPort::Owner(b) = secondary {
+            let _cost = crate::cost::scope("secondary");
             let x = view(y, yp, seed, cj, o.secondary..o.rods, &scales[2].coordinates)?;
             b.rows(properties, t, x, &heats.solids.secondary_w, secondary_rows)?;
+        }
+        // Plan r4 X4.2: the CVCS rows and its COLD.A receipt, with the PZR
+        // level indication of this evaluation's PZR coordinates.
+        if let Some(b) = cvcs.as_mut() {
+            let _cost = crate::cost::scope("cvcs");
+            let level = b.level(y, seed)?;
+            let x = view(y, yp, seed, cj, o.cvcs..o.end, &scales[5].coordinates)?;
+            b.rows(x, fluid, level, receipts, cvcs_rows)?;
+            let first = o.cvcs - o.nuclear;
+            for (k, (r, row_scale)) in cvcs_rows.iter().zip(&scales[5].rows).enumerate() {
+                rows[first + k] = *r / s(*row_scale);
+            }
         }
         // Scale every block's physical rows into the joined rows.
         let mut k = 0;
@@ -1533,8 +2730,7 @@ impl<P: Properties + WaterProperties> Blocks<P> {
 
     /// The PZR block's rows (into the joined `rows`, block scaling) and the
     /// stratified cell's boundary on `column`, at the block's coordinates
-    /// with `seed`. With no PZR owner (a packet compiled before G6, whose
-    /// cell declares no relief) the boundary is closed.
+    /// with `seed`.
     #[allow(clippy::too_many_arguments)] // The coupling's stage inputs and the cell's column.
     fn pzr_boundary(
         &mut self,
@@ -1547,10 +2743,8 @@ impl<P: Properties + WaterProperties> Blocks<P> {
         rows: &mut [Scalar],
     ) -> Result<stratified::Boundary, Failure> {
         let o = self.offsets;
-        let Some(b) = self.pzr.as_mut() else {
-            return Ok(stratified::Boundary::closed());
-        };
-        let x = view(y, yp, seed, cj, o.pzr..o.end, &self.scales[4].coordinates)?;
+        let b = &mut self.pzr;
+        let x = view(y, yp, seed, cj, o.pzr..o.cvcs, &self.scales[4].coordinates)?;
         let boundary = b.boundary(
             &self.properties,
             cell,
@@ -1758,7 +2952,9 @@ impl<P: Properties + WaterProperties> LocalCoupler<'_, P> {
             &scales[1].coordinates,
         )
         .and_then(|x| {
-            solids.rows_local(
+            // HOOK (COST lane): directions only, as every reader of this
+            // call takes them (Solids::rows_local_directions).
+            solids.rows_local_directions(
                 properties,
                 x,
                 temperatures,
@@ -1834,7 +3030,43 @@ impl<P: Properties + WaterProperties> LocalCoupler<'_, P> {
                     .map(|(i, r)| (o.rods + i, *r / s(scales[3].rows[*i]))),
             );
         }
+        // Plan r4 X4.2: the CVCS rows and COLD.A receipt read COLD.A and
+        // the leg cells; the owner's coordinates and the PZR cell unseeded.
+        if self.cvcs_reached(cells) {
+            let Blocks {
+                cvcs,
+                cvcs_rows,
+                scales,
+                ..
+            } = &mut *self.blocks;
+            let b = cvcs
+                .as_mut()
+                .ok_or_else(|| fatal("CVCS reads without a CVCS owner"))?;
+            let level = b.level(self.y, None)?;
+            let x = view(
+                self.y,
+                self.yp,
+                None,
+                self.cj,
+                o.cvcs..o.end,
+                &scales[5].coordinates,
+            )?;
+            b.rows(x, fluid, level, receipts, cvcs_rows)?;
+            self.last.rows.extend(
+                cvcs_rows
+                    .iter()
+                    .zip(&scales[5].rows)
+                    .enumerate()
+                    .map(|(k, (r, rs))| (o.cvcs + k, *r / s(*rs))),
+            );
+        }
         Ok(())
+    }
+    /// Whether a CVCS row reads any of `cells` (plan r4 X4.2).
+    fn cvcs_reached(&self, cells: &[usize]) -> bool {
+        cells
+            .iter()
+            .any(|c| self.blocks.cvcs_reads.get(*c).copied().unwrap_or(false))
     }
     pub fn last(&self) -> &LocalRows {
         &self.last
@@ -1869,7 +3101,7 @@ impl<P: Properties + WaterProperties> LocalCoupler<'_, P> {
         column: &stratified::Column,
     ) -> Result<stratified::Boundary, Failure> {
         let o = self.blocks.offsets;
-        if !(o.pzr..o.end).contains(&global) {
+        if !(o.pzr..o.cvcs).contains(&global) {
             return Err(fatal(format!("PZR column {global} outside the PZR block")));
         }
         let started = Instant::now();
@@ -1894,15 +3126,13 @@ impl<P: Properties + WaterProperties> LocalCoupler<'_, P> {
             scales,
             ..
         } = &mut *self.blocks;
-        let Some(b) = pzr.as_mut() else {
-            return Ok(stratified::Boundary::closed());
-        };
+        let b = pzr;
         let x = view(
             self.y,
             self.yp,
             seeded.map(|_| &self.scratch.seed[..]),
             self.cj,
-            o.pzr..o.end,
+            o.pzr..o.cvcs,
             &scales[4].coordinates,
         )?;
         let boundary = b.boundary(properties, cell, column, x, pzr_rows, false)?;
@@ -1925,12 +3155,20 @@ impl<P: Properties + WaterProperties> LocalCoupler<'_, P> {
         let o = self.blocks.offsets;
         let incidence = sol.incidence();
         let rods = self.rods_reached(cells, faces);
+        let cvcs = self.cvcs_reached(cells);
         let rod_receipts = self
             .blocks
             .rod_reads
             .iter()
             .filter(|_| rods)
-            .flat_map(|r| r.receipt_cells.iter().copied());
+            .flat_map(|r| r.receipt_cells.iter().copied())
+            .chain(
+                self.blocks
+                    .cvcs
+                    .iter()
+                    .filter(|_| cvcs)
+                    .map(|b| b.port_cell()),
+            );
         let mut receipt_cells: Vec<usize> = scope
             .bands
             .iter()
@@ -1951,6 +3189,7 @@ impl<P: Properties + WaterProperties> LocalCoupler<'_, P> {
             .chain(scope.segments.iter().map(|g| sol.metal(*g)))
             .map(|i| o.solids + i)
             .chain(rod_rows)
+            .chain(if cvcs { o.cvcs..o.end } else { 0..0 })
             .collect();
         rows.sort_unstable();
         (receipt_cells, rows)
@@ -1978,9 +3217,15 @@ impl<P: Properties + WaterProperties> LocalCoupler<'_, P> {
     ) -> Result<(), Failure> {
         let o = self.blocks.offsets;
         out.clear();
+        if (o.cvcs..o.end).contains(&column) {
+            self.scratch.seed[column] = 1.;
+            let result = self.cvcs_column(fluid, receipts, out);
+            self.scratch.seed[column] = 0.;
+            return result;
+        }
         if !(o.solids..o.pzr).contains(&column) {
             return Err(fatal(format!(
-                "owner column {column} outside the solid, secondary and rod coordinates"
+                "owner column {column} outside the solid, secondary, rod and CVCS coordinates"
             )));
         }
         let started = Instant::now();
@@ -2002,6 +3247,61 @@ impl<P: Properties + WaterProperties> LocalCoupler<'_, P> {
             c.rod_columns.add(started);
         }
         result
+    }
+
+    /// One CVCS column (plan r4 X4.2): every CVCS row and its COLD.A
+    /// receipt with the unit seed on it, the fluid and the PZR cell unseeded.
+    fn cvcs_column(
+        &mut self,
+        fluid: &Fluid<'_>,
+        receipts: &mut Receipts<'_>,
+        out: &mut OwnerRows,
+    ) -> Result<(), Failure> {
+        let o = self.blocks.offsets;
+        let Blocks {
+            cvcs,
+            cvcs_rows,
+            scales,
+            ..
+        } = &mut *self.blocks;
+        let b = cvcs
+            .as_mut()
+            .ok_or_else(|| fatal("a CVCS column without a CVCS owner"))?;
+        let level = b.level(self.y, None)?;
+        let x = view(
+            self.y,
+            self.yp,
+            Some(&self.scratch.seed),
+            self.cj,
+            o.cvcs..o.end,
+            &scales[5].coordinates,
+        )?;
+        b.rows(x, fluid, level, receipts, cvcs_rows)?;
+        out.rows.extend(
+            cvcs_rows
+                .iter()
+                .zip(&scales[5].rows)
+                .enumerate()
+                .map(|(k, (r, rs))| (o.cvcs + k, *r / s(*rs))),
+        );
+        Ok(())
+    }
+    /// The CVCS level row's direction (solver scaling) for a unit seed on
+    /// network PZR coordinate `j` (plan r4 X4.2), with its global row; `None`
+    /// without a CVCS owner.
+    pub fn cvcs_level_column(&self, j: usize) -> Result<Option<(usize, f64)>, Failure> {
+        let o = self.blocks.offsets;
+        let Some(b) = &self.blocks.cvcs else {
+            return Ok(None);
+        };
+        let d = b.level_column(self.y, j)?;
+        let row = cvcs::LEVEL_ROW;
+        // The row is `L' - (L_ind - L)/lag`: its L_ind part.
+        let lag = b.section().pzr_level.lag_s;
+        Ok(Some((
+            o.cvcs + row,
+            -d.direction / lag / self.blocks.scales[5].rows[row],
+        )))
     }
 
     /// The solids' rows reading local solid coordinate `i`. Its closed
@@ -2048,7 +3348,9 @@ impl<P: Properties + WaterProperties> LocalCoupler<'_, P> {
             if let Some((k, _)) = saved {
                 solids.temperatures_local(x, &[k], temperatures)?;
             }
-            solids.rows_local(
+            // HOOK (COST lane): directions only, as every reader of this
+            // owner column takes them (Solids::rows_local_directions).
+            solids.rows_local_directions(
                 properties,
                 x,
                 temperatures,

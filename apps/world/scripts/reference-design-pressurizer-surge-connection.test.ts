@@ -4,7 +4,7 @@ const g=surgeConnectionGeometry({source:'LD01.HOT.A',receiver:'LD01.PZR',sourceE
  developedLength_m:16,firstStraight_m:6,bendRadius_m:.45,internalDiameter_m:.3,wallThickness_m:.025,
  steelDensity_kg_m3:7920,roughness_m:.0000015,entryLoss:.5,elbowLoss:.2,exitLoss:1})
 test('HOT intersection partitions existing material and closes pressure-force geometry',()=>{
- expect(g.hot.nodeVolume_m3+g.hot.remainingVolume_m3).toBe(15)
+ expect(g.hot.nodeVolume_m3).toBeCloseTo(Math.PI/4,15)
  expect(g.hot.sideArea_m2+g.hot.remainingPositiveSideWall_m2-g.hot.negativeSideWall_m2).toBeCloseTo(0,12)
 })
 test('outer bottom mouth preserves route volume and clears rods and shell',()=>{

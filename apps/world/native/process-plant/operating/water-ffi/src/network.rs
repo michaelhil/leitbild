@@ -2,7 +2,10 @@
 //! spec: world/packs/process-plant/reference-designs/ld-01/model/operating-hot-spine.md#actual-local-pressure-pilot-and-step-work-blocker
 //! Maintained-IF97 implementation of the composed network's property
 //! boundary, and the narrow adapter that hands the network to stock IDA.
-use crate::{Branch, CaloricLinearization, If97, MetastableBand as Compiled, WaterPoint, point};
+use crate::{
+    Branch, CaloricLinearization, Domain, If97, If97LowPressure, MetastableBand as Compiled,
+    WaterPoint, point_in,
+};
 use leitbild_operating_plant::{
     network::{
         Band, BandReport, MetastableBand, Properties, Water,
@@ -29,148 +32,173 @@ fn water(q: WaterPoint) -> Water {
     }
 }
 
-impl Properties for If97 {
-    type Caloric = CaloricLinearization;
-    fn forward(&self, vapor: bool, pressure_pa: f64, temperature_k: f64) -> Result<Water, String> {
-        point(branch(vapor), pressure_pa, temperature_k)
-            .map(water)
-            .map_err(|e| e.to_string())
-    }
-    fn caloric(
-        &self,
-        vapor: bool,
-        pressure_pa: f64,
-        target: f64,
-        enthalpy: bool,
-    ) -> Result<CaloricLinearization, String> {
-        if enthalpy {
-            CaloricLinearization::enthalpy(branch(vapor), pressure_pa, target)
-        } else {
-            CaloricLinearization::internal_energy(branch(vapor), pressure_pa, target)
-        }
-        .map_err(|e| e.to_string())
-    }
-    /// The thermodynamics-only inverse leaves cv, conductivity and the
-    /// saturation slope unevaluated (NaN); its other fields are bit for bit
-    /// the complete inverse's.
-    fn caloric_for(
-        &self,
-        vapor: bool,
-        pressure_pa: f64,
-        target: f64,
-        enthalpy: bool,
-        need: Need,
-    ) -> Result<CaloricLinearization, String> {
-        match need {
-            Need::Complete => self.caloric(vapor, pressure_pa, target, enthalpy),
-            Need::Thermodynamic => {
-                CaloricLinearization::thermodynamic(branch(vapor), pressure_pa, target, enthalpy)
+/// The network water boundary of one declared pressure domain (S4-D2).
+macro_rules! network_properties {
+    ($water:ty, $domain:expr) => {
+        impl Properties for $water {
+            type Caloric = CaloricLinearization;
+            fn forward(
+                &self,
+                vapor: bool,
+                pressure_pa: f64,
+                temperature_k: f64,
+            ) -> Result<Water, String> {
+                point_in($domain, branch(vapor), pressure_pa, temperature_k)
+                    .map(water)
                     .map_err(|e| e.to_string())
             }
-        }
-    }
-    fn complete(&self, point: &CaloricLinearization) -> Result<CaloricLinearization, String> {
-        point.completed().map_err(|e| e.to_string())
-    }
-    fn values(&self, point: &CaloricLinearization) -> Water {
-        water(point.point())
-    }
-    /// The two direction maps from the point completed once.
-    fn partials(&self, point: &CaloricLinearization) -> Result<Partials, String> {
-        let held = point.completed().map_err(|e| e.to_string())?;
-        Ok(Partials {
-            pressure: self.direction(&held, 1., 0.)?,
-            target: self.direction(&held, 0., 1.)?,
-        })
-    }
-    /// Probe-free: the exact part of each direction map only.
-    fn thermodynamic_partials(
-        &self,
-        point: &CaloricLinearization,
-    ) -> Result<ThermodynamicPartials, String> {
-        let exact = |dp: f64, dt: f64| {
-            point
-                .exact_directional(dp, dt)
-                .map(|[t, rho, u, h]| ThermodynamicDirection {
-                    temperature_k: t,
-                    density_kg_m3: rho,
-                    internal_energy_j_kg: u,
-                    enthalpy_j_kg: h,
-                })
+            fn caloric(
+                &self,
+                vapor: bool,
+                pressure_pa: f64,
+                target: f64,
+                enthalpy: bool,
+            ) -> Result<CaloricLinearization, String> {
+                if enthalpy {
+                    CaloricLinearization::enthalpy_in($domain, branch(vapor), pressure_pa, target)
+                } else {
+                    CaloricLinearization::internal_energy_in(
+                        $domain,
+                        branch(vapor),
+                        pressure_pa,
+                        target,
+                    )
+                }
                 .map_err(|e| e.to_string())
-        };
-        Ok(ThermodynamicPartials {
-            pressure: exact(1., 0.)?,
-            target: exact(0., 1.)?,
-        })
-    }
-    fn direction(
-        &self,
-        point: &CaloricLinearization,
-        dp: f64,
-        dtarget: f64,
-    ) -> Result<Water, String> {
-        point
-            .directional(dp, dtarget)
-            .map(water)
-            .map_err(|e| e.to_string())
-    }
-    fn saturation(&self, pressure: Scalar) -> Result<Saturation, String> {
-        WaterProperties::saturation(self, pressure).map_err(|e| e.to_string())
-    }
-    /// Both endpoints' caloric states and exact directions only: no
-    /// transport, surface tension or coefficient probe.
-    fn saturation_caloric(&self, pressure: Scalar) -> Result<Saturation, String> {
-        let [(l, dl), (g, dg)] = crate::saturation_caloric(pressure.value, pressure.direction)
-            .map_err(|e| format!("maintained IF97 caloric saturation: {e}"))?;
-        let none = Scalar::new(f64::NAN, f64::NAN);
-        let endpoint =
-            |q: WaterPoint, d: WaterPoint| leitbild_operating_plant::thermal::WaterPoint {
-                density: Scalar::new(q.density_kg_m3, d.density_kg_m3),
-                viscosity: none,
-                conductivity: none,
-                cp: none,
-                expansion: none,
-                enthalpy: Scalar::new(q.enthalpy_j_kg, d.enthalpy_j_kg),
-            };
-        Ok(Saturation {
-            temperature: Scalar::new(l.temperature_k, dl.temperature_k),
-            liquid: endpoint(l, dl),
-            vapor: endpoint(g, dg),
-            surface_tension: none,
-        })
-    }
-    fn metastable_band(&self) -> Result<MetastableBand, String> {
-        let b = Compiled::compiled();
-        let lower_bound_exclusive = match b.lower_bound_exclusive {
-            0 => false,
-            1 => true,
-            other => return Err(format!("compiled band lower-bound flag {other}")),
-        };
-        Ok(MetastableBand {
-            pressure_range_pa: [b.pressure_low_pa, b.pressure_high_pa],
-            lower_bound_exclusive,
-            liquid_superheat_max_k: b.liquid_superheat_max_k,
-            vapor_subcooling_max_k: b.vapor_subcooling_max_k,
-            trial_max_k: b.trial_max_k,
-            credited_max_k: b.credited_max_k,
-            liquid_temperature_max_k: b.liquid_temperature_max_k,
-            liquid_pressure_ceiling_pa: b.liquid_pressure_ceiling_pa,
-            vapor_pressure_ceiling_pa: b.vapor_pressure_ceiling_pa,
-        })
-    }
-    fn band(&self, point: &CaloricLinearization) -> BandReport {
-        let report = point.band();
-        BandReport {
-            departure_k: report.departure_k,
-            band: match report.band {
-                crate::Band::Stable => Band::Stable,
-                crate::Band::Admitted { credited } => Band::Admitted { credited },
-                crate::Band::Exceeded => Band::Exceeded,
-            },
+            }
+            /// The thermodynamics-only inverse leaves cv, conductivity and the
+            /// saturation slope unevaluated (NaN); its other fields are bit for bit
+            /// the complete inverse's.
+            fn caloric_for(
+                &self,
+                vapor: bool,
+                pressure_pa: f64,
+                target: f64,
+                enthalpy: bool,
+                need: Need,
+            ) -> Result<CaloricLinearization, String> {
+                match need {
+                    Need::Complete => self.caloric(vapor, pressure_pa, target, enthalpy),
+                    Need::Thermodynamic => CaloricLinearization::thermodynamic_in(
+                        $domain,
+                        branch(vapor),
+                        pressure_pa,
+                        target,
+                        enthalpy,
+                    )
+                    .map_err(|e| e.to_string()),
+                }
+            }
+            fn complete(
+                &self,
+                point: &CaloricLinearization,
+            ) -> Result<CaloricLinearization, String> {
+                point.completed().map_err(|e| e.to_string())
+            }
+            fn values(&self, point: &CaloricLinearization) -> Water {
+                water(point.point())
+            }
+            /// The two direction maps from the point completed once.
+            fn partials(&self, point: &CaloricLinearization) -> Result<Partials, String> {
+                let held = point.completed().map_err(|e| e.to_string())?;
+                Ok(Partials {
+                    pressure: self.direction(&held, 1., 0.)?,
+                    target: self.direction(&held, 0., 1.)?,
+                })
+            }
+            /// Probe-free: the exact part of each direction map only.
+            fn thermodynamic_partials(
+                &self,
+                point: &CaloricLinearization,
+            ) -> Result<ThermodynamicPartials, String> {
+                let exact = |dp: f64, dt: f64| {
+                    point
+                        .exact_directional(dp, dt)
+                        .map(|[t, rho, u, h]| ThermodynamicDirection {
+                            temperature_k: t,
+                            density_kg_m3: rho,
+                            internal_energy_j_kg: u,
+                            enthalpy_j_kg: h,
+                        })
+                        .map_err(|e| e.to_string())
+                };
+                Ok(ThermodynamicPartials {
+                    pressure: exact(1., 0.)?,
+                    target: exact(0., 1.)?,
+                })
+            }
+            fn direction(
+                &self,
+                point: &CaloricLinearization,
+                dp: f64,
+                dtarget: f64,
+            ) -> Result<Water, String> {
+                point
+                    .directional(dp, dtarget)
+                    .map(water)
+                    .map_err(|e| e.to_string())
+            }
+            fn saturation(&self, pressure: Scalar) -> Result<Saturation, String> {
+                WaterProperties::saturation(self, pressure).map_err(|e| e.to_string())
+            }
+            /// Both endpoints' caloric states and exact directions only: no
+            /// transport, surface tension or coefficient probe.
+            fn saturation_caloric(&self, pressure: Scalar) -> Result<Saturation, String> {
+                let [(l, dl), (g, dg)] =
+                    crate::saturation_caloric_in($domain, pressure.value, pressure.direction)
+                        .map_err(|e| format!("maintained IF97 caloric saturation: {e}"))?;
+                let none = Scalar::new(f64::NAN, f64::NAN);
+                let endpoint =
+                    |q: WaterPoint, d: WaterPoint| leitbild_operating_plant::thermal::WaterPoint {
+                        density: Scalar::new(q.density_kg_m3, d.density_kg_m3),
+                        viscosity: none,
+                        conductivity: none,
+                        cp: none,
+                        expansion: none,
+                        enthalpy: Scalar::new(q.enthalpy_j_kg, d.enthalpy_j_kg),
+                    };
+                Ok(Saturation {
+                    temperature: Scalar::new(l.temperature_k, dl.temperature_k),
+                    liquid: endpoint(l, dl),
+                    vapor: endpoint(g, dg),
+                    surface_tension: none,
+                })
+            }
+            fn metastable_band(&self) -> Result<MetastableBand, String> {
+                let b = Compiled::compiled();
+                let lower_bound_exclusive = match b.lower_bound_exclusive {
+                    0 => false,
+                    1 => true,
+                    other => return Err(format!("compiled band lower-bound flag {other}")),
+                };
+                Ok(MetastableBand {
+                    pressure_range_pa: [b.pressure_low_pa, b.pressure_high_pa],
+                    lower_bound_exclusive,
+                    liquid_superheat_max_k: b.liquid_superheat_max_k,
+                    vapor_subcooling_max_k: b.vapor_subcooling_max_k,
+                    trial_max_k: b.trial_max_k,
+                    credited_max_k: b.credited_max_k,
+                    liquid_temperature_max_k: b.liquid_temperature_max_k,
+                    liquid_pressure_ceiling_pa: b.liquid_pressure_ceiling_pa,
+                    vapor_pressure_ceiling_pa: b.vapor_pressure_ceiling_pa,
+                })
+            }
+            fn band(&self, point: &CaloricLinearization) -> BandReport {
+                let report = point.band();
+                BandReport {
+                    departure_k: report.departure_k,
+                    band: match report.band {
+                        crate::Band::Stable => Band::Stable,
+                        crate::Band::Admitted { credited } => Band::Admitted { credited },
+                        crate::Band::Exceeded => Band::Exceeded,
+                    },
+                }
+            }
         }
-    }
+    };
 }
+network_properties!(If97, Domain::Operating);
+network_properties!(If97LowPressure, Domain::LowPressure);
 
 #[cfg(feature = "ida")]
 pub use integrated::{Assembly, Integrated, ResidualMemo};
@@ -298,6 +326,10 @@ mod integrated {
         }
     }
     impl<P: Properties> System for Integrated<P> {
+        /// Unreduced: every coordinate stands for itself (E-NUC).
+        fn multiplicities(&self) -> Option<Vec<f64>> {
+            None
+        }
         fn dimension(&self) -> usize {
             self.network.dimension()
         }
