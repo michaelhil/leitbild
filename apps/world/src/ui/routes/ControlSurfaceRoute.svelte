@@ -1,10 +1,10 @@
 <script lang="ts">
   import { packDataChangedSchema } from '../../core/packs/protocol.ts'
   import type { MapFocusTarget, MapView } from '../map-view.ts'
-  import { workspaceResourceReferenceSchema } from '@leitbild/contracts'
-  import type { EmbeddedViewListing, UiControl } from '@leitbild/contracts'
-  import { initialRunViewPreferences, readRunViewPreferences, runViewPreferencesKey, writeRunViewPreferences } from '../run-view-preferences.ts'
-  import { createRunViewHost } from '../run-view-host.ts'
+  import type { EmbeddedViewListing } from '@leitbild/contracts'
+  import { initialRunViewPreferences, readRunViewPreferences, runViewPreferencesKey, writeRunViewPreferences, type RunViewPreferences } from '../run-view-preferences.ts'
+  import RunViewControls from '../RunViewControls.svelte'
+  import { fitObjectsTarget, homeMapTarget, type RunViewChoice } from '../run-view-actions.ts'
   import { alertRows, unacknowledged } from '../../features/displays/alerts/rows.ts'
   import type { Component } from 'svelte'
   import { tick, untrack } from 'svelte'
@@ -258,11 +258,12 @@
   let displayWindowLoadPromise: Promise<DisplayWindowComponent> | null = null
   const surfacePanelLoadPromises = new Map<string, Promise<Component<SurfacePanelProps>>>()
   let surfacePanelOpen = $state<Record<string, boolean>>({})
-  let guidanceOverlayVisible = $state(true)
+  let guidancePreferences = $state<RunViewPreferences['guidance']>(initialRunViewPreferences().guidance)
+  const guidanceOverlayVisible = $derived(Boolean(scenarioState?.guidance && guidancePreferences.mode === 'running' && guidancePreferences.dismissedId !== scenarioState.guidance.id))
+  const guidanceUnread = $derived(Boolean(scenarioState?.guidance && guidancePreferences.presentedId !== scenarioState.guidance.id))
   let alarmStripVisible = $state(false)
   let layoutControlsVisible = $state(false)
   let viewPreferencesKey = $state<string | null>(null)
-  let runViewHost = $state.raw<ReturnType<typeof createRunViewHost> | null>(null)
   let appliedSurfacePanelKey = ''
   let procedureSystemModalLoadPromise: Promise<ProcedureSystemModalComponent> | null = null
   let droneControlModalLoadPromise: Promise<DroneControlModalComponent> | null = null
@@ -538,28 +539,70 @@
     return presentationComposer.present(object, options)
   }
 
-  const viewControls = $derived<ReadonlyArray<UiControl>>([
-    { id: 'scenario-briefing', label: 'Scenario briefing', visible: guidanceOverlayVisible && Boolean(scenarioState?.guidance), ...(scenarioState?.guidance ? {} : { disabledReason: 'This Run has no scenario briefing' }) },
-    { id: 'alarm-strip', label: 'Alarm strip', visible: alarmStripVisible },
-    { id: 'layout-controls', label: 'Layout controls', visible: layoutControlsVisible, ...(activePhysicalLayoutBindings.length > 0 ? {} : { disabledReason: 'This Run has no physical layout' }) },
+  const viewPanels = $derived<ReadonlyArray<RunViewChoice>>([
+    ...(activePhysicalLayoutBindings.length > 0 ? [{ id: 'layout-controls', label: 'Physical layout controls', visible: layoutControlsVisible }] : []),
     ...surfacePanels.map(panel => ({ id: `panel:${panel.id}`, label: panel.label, visible: isSurfacePanelOpen(panel), ...(mapTargetPanelContribution?.id === panel.id && (selectedControllerObject?.packId === mapTargetPanel?.packId || panelMapPrompts[panel.id] != null) ? { disabledReason: 'Finish or cancel the current map operation before hiding this panel' } : {}) })),
   ])
+  const viewLayers = $derived<ReadonlyArray<RunViewChoice>>([
+    ...activeMapLayerGroups.map(layer => ({ id: `layer:${layer.id}`, label: layer.label, visible: mapLayerGroupVisibility[layer.id] ?? layer.defaultVisible })),
+    ...(mapConfig?.layers.includes('weather') ? [{ id: 'weather', label: 'Weather', visible: weatherLayerVisible }] : []),
+  ])
+  const visiblePointObjects = (): ReadonlyArray<OperationalObject> => objects.filter(object => object.spatial.position !== undefined && !hiddenObjectCategoryIds.includes(presentationFor(object).categoryId))
+  const fitSelectedTarget = $derived(fitObjectsTarget(selectedControllerId === null ? [] : objects.filter(object => object.id === selectedControllerId)))
+  const viewCamera = $derived([
+    { id: 'home', label: 'Home view', ...(!mapReady ? { disabledReason: 'Map is not ready' } : {}) },
+    { id: 'fit-selected', label: 'Fit selection', ...(!mapReady ? { disabledReason: 'Map is not ready' } : !fitSelectedTarget ? { disabledReason: 'Select an object with a map position' } : {}) },
+    { id: 'fit-visible', label: 'Fit visible objects', ...(!mapReady ? { disabledReason: 'Map is not ready' } : !objects.some(object => object.spatial.position !== undefined && !hiddenObjectCategoryIds.includes(presentationFor(object).categoryId)) ? { disabledReason: 'No visible object positions' } : {}) },
+    { id: 'north', label: 'North up', ...(!mapReady || !panelMapView ? { disabledReason: 'Map is not ready' } : {}) },
+    ...(activePhysicalLayoutBindings.length > 0 ? [{ id: 'physical-controls', label: 'Plan / 3D and floors' }] : []),
+  ])
+  const viewResetDisabledReason = $derived(viewPanels.find(panel => panel.disabledReason)?.disabledReason)
   const viewAlarmCount = $derived(alertRows(objects, object => ({ label: object.label, categoryId: presentationFor(object).categoryId })).filter(row => row.priority !== 'none' && unacknowledged(row)).length)
-  $effect(() => {
-    void viewControls; void viewAlarmCount
-    runViewHost?.publish()
-  })
   $effect(() => {
     const key = viewPreferencesKey
     if (key === null) return
-    const preferences = { briefing: guidanceOverlayVisible, alarms: alarmStripVisible, layout: layoutControlsVisible, panels: surfacePanelOpen }
-    try { writeRunViewPreferences(sessionStorage, key, preferences) } catch { /* Browser storage may be disabled. */ }
+    try { writeRunViewPreferences(sessionStorage, key, { guidance: guidancePreferences, alarms: alarmStripVisible, layout: layoutControlsVisible, panels: surfacePanelOpen }) } catch { /* A denied storage getter must not prevent local presentation. */ }
   })
-  const setViewControl = (id: string, visible: boolean): void => {
-    if (id === 'scenario-briefing') guidanceOverlayVisible = visible
-    else if (id === 'alarm-strip') alarmStripVisible = visible
-    else if (id === 'layout-controls') layoutControlsVisible = visible
-    else if (id.startsWith('panel:')) setSurfacePanelOpen(id.slice('panel:'.length), visible)
+  const actOnView = (id: string): void => {
+    if (id === 'home' && mapConfig) focusMapTarget(homeMapTarget(mapConfig))
+    else if (id === 'fit-selected' && fitSelectedTarget) focusMapTarget(fitSelectedTarget)
+    else if (id === 'fit-visible') {
+      const target = fitObjectsTarget(visiblePointObjects())
+      if (!target) throw new Error('No visible object positions')
+      focusMapTarget(target)
+    }
+    else if (id === 'north' && panelMapView) focusMapTarget({ kind: 'view', center: panelMapView.center, zoom: panelMapView.zoom, bearing: 0 })
+    else if (id === 'physical-controls') layoutControlsVisible = true
+    else throw new Error(`View action is unavailable: ${id}`)
+  }
+  const setViewChoice = (id: string, visible: boolean): void => {
+    const panel = viewPanels.find(choice => choice.id === id)
+    if (panel) {
+      if (panel.disabledReason) { status = panel.disabledReason; return }
+      if (id === 'layout-controls') layoutControlsVisible = visible
+      else setSurfacePanelOpen(id.slice('panel:'.length), visible)
+      return
+    }
+    if (id === 'weather') { weatherLayerVisible = visible; return }
+    const layer = activeMapLayerGroups.find(layer => `layer:${layer.id}` === id)
+    if (!layer) throw new Error(`View choice is unavailable: ${id}`)
+    mapLayerGroupVisibility = { ...mapLayerGroupVisibility, [layer.id]: visible }
+  }
+  const resetLocalView = (): void => {
+    if (viewResetDisabledReason) { status = viewResetDisabledReason; return }
+    alarmStripVisible = false
+    layoutControlsVisible = false
+    surfacePanelOpen = {}
+    mapLayerGroupVisibility = Object.fromEntries(activeMapLayerGroups.map(layer => [layer.id, layer.defaultVisible]))
+    categoryMapVisibility = {}
+    weatherLayerVisible = true
+    if (mapConfig && mapReady) focusMapTarget(homeMapTarget(mapConfig))
+  }
+  const setGuidanceMode = (mode: RunViewPreferences['guidance']['mode']): void => {
+    guidancePreferences = { ...guidancePreferences, mode, ...(mode === 'running' ? { dismissedId: null } : {}) }
+  }
+  const markGuidancePresented = (id: string): void => {
+    if (guidancePreferences.presentedId !== id) guidancePreferences = { ...guidancePreferences, presentedId: id }
   }
 
   const detailPresentationFor = async (object: OperationalObject): Promise<PackObjectPresentation> => {
@@ -1924,26 +1967,11 @@
     const key = runViewPreferencesKey(workspaceId, route.simulationRunId)
     let preferences = initialRunViewPreferences()
     try { preferences = readRunViewPreferences(sessionStorage, key) } catch { /* Storage can be denied. */ }
-    guidanceOverlayVisible = preferences.briefing
+    guidancePreferences = preferences.guidance
     alarmStripVisible = preferences.alarms
     layoutControlsVisible = preferences.layout
     surfacePanelOpen = { ...preferences.panels }
     viewPreferencesKey = key
-    const viewHost = createRunViewHost({
-      subject: workspaceResourceReferenceSchema.parse({ workspaceId, moduleId: 'world', type: 'world.simulation-run', id: route.simulationRunId }),
-      post: message => window.parent.postMessage(message, location.origin),
-      controls: () => viewControls,
-      notification: () => objects.length === 0 ? undefined : { count: viewAlarmCount, label: `${viewAlarmCount} unacknowledged ${viewAlarmCount === 1 ? 'alarm' : 'alarms'}` },
-      set: setViewControl,
-      error: message => { status = message },
-    })
-    runViewHost = viewHost
-    const receiveViewControls = (event: MessageEvent): void => {
-      if (event.origin !== location.origin || event.source !== window.parent) return
-      viewHost.receive(event.data)
-    }
-    window.addEventListener('message', receiveViewControls)
-    viewHost.ready()
     const receiveDisplayWindowMessage = (event: MessageEvent): void => {
       const message = readDisplayWindowHostMessage(event, { origin: location.origin, parent: window.parent, workspaceId })
       if (message === null) return
@@ -1982,8 +2010,7 @@
     void joinSimulationRun()
     const executionPoll = window.setInterval(() => { void refreshExecution() }, 1_000)
     return () => {
-      window.removeEventListener('message', receiveViewControls)
-      viewHost.close(); runViewHost = null; viewPreferencesKey = null
+      viewPreferencesKey = null
       window.removeEventListener('message', receiveDisplayWindowMessage)
       window.removeEventListener('message', receiveRunAssistantOffer)
       cleanupInternalDiagnosticsGlobal()
@@ -2241,6 +2268,10 @@
       {#if activePack && alarmStripVisible}
         <AlertStrip onClose={() => alarmStripVisible = false} {objects} categoryOf={object => presentationFor(object).categoryId} openDisplay={openStripDisplay} {theme} onBounds={setAlarmStripBounds} belowRoles={Boolean(runRoles && heldRoleIds)} railWidth={railVisible ? railLayout.width : 0} clear={{ left: mapCameraPadding.left, right: mapCameraPadding.right, top: guidanceOverlayVisible && scenarioState?.guidance ? guidanceBottom : 0 }} />
       {/if}
+      <RunViewControls camera={viewCamera} layers={viewLayers} panels={viewPanels} act={actOnView} toggle={setViewChoice}
+        reset={resetLocalView} resetDisabledReason={viewResetDisabledReason} alarms={viewAlarmCount} alarmsVisible={alarmStripVisible} showAlarms={visible => alarmStripVisible = visible}
+        guidance={{ available: Boolean(scenarioState?.guidance), visible: guidanceOverlayVisible, unread: guidanceUnread, mode: guidancePreferences.mode }} setGuidance={setGuidanceMode}
+        clear={mapCameraPadding} ready={mapReady} />
       <WorldStatusLine {clock} execution={executionState} feedback={commandFeedback.line} placementHint={placement.placementText()} />
       {#if runRoles && heldRoleIds}
         <RoleBar declaration={runRoles} held={heldRoleIds} switchingTo={pendingRoleIds} request={requestRoleChange} openDialog={() => { roleDialogOpen = true }} />
@@ -2263,11 +2294,14 @@
     </main>
 
     {#if guidanceOverlayVisible && scenarioState?.guidance}
+    {#key scenarioState.guidance.id}
     <ScenarioGuidance
       bind:bottom={guidanceBottom}
       guidance={scenarioState.guidance}
-      close={() => guidanceOverlayVisible = false}
+      presented={markGuidancePresented}
+      close={() => { if (scenarioState?.guidance?.dismissible) guidancePreferences = { ...guidancePreferences, dismissedId: scenarioState.guidance.id } }}
     />
+    {/key}
     {/if}
   </div>
 {/if}

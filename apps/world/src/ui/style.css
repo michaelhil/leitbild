@@ -1074,8 +1074,8 @@ body.rail-resizing {
 }
 
 .scenario-guidance button {
-  width: 22px;
-  height: 22px;
+  width: 32px;
+  height: 32px;
   display: inline-grid;
   place-items: center;
   border: 0;
@@ -1084,6 +1084,8 @@ body.rail-resizing {
   color: var(--muted);
   cursor: pointer;
 }
+
+@media (pointer: coarse) { .scenario-guidance button { width: 44px; height: 44px; } }
 
 .scenario-guidance button:hover,
 .scenario-guidance button:focus-visible {

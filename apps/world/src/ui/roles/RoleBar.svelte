@@ -37,7 +37,7 @@
 
   const editableTarget = (target: EventTarget | null): boolean =>
     target instanceof HTMLElement
-    && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))
+    && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.closest('[data-world-disclosure]') !== null)
 
   runOnMount(() => {
     const onKeydown = (event: KeyboardEvent): void => {

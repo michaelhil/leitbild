@@ -456,13 +456,19 @@
     if (!request || !current || request.revision === appliedFocusRevision) return
     appliedFocusRevision = request.revision
     startingCamera = false
+    const duration = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 650
+    if (request.target.kind === 'view') {
+      const container = current.getContainer()
+      current.flyTo({ center: [...request.target.center], zoom: request.target.fitToAvailableArea ? startingZoomFor(request.target.zoom, { width: container.clientWidth, height: container.clientHeight }, cameraPadding) : request.target.zoom, bearing: request.target.bearing, padding: { ...cameraPadding }, duration })
+      return
+    }
     if (request.target.kind === 'point') {
-      current.flyTo({ center: [request.target.center[0], request.target.center[1]], zoom: Math.max(current.getZoom(), 9), duration: 650 })
+      current.flyTo({ center: [request.target.center[0], request.target.center[1]], zoom: Math.max(current.getZoom(), 9), padding: { ...cameraPadding }, duration })
       return
     }
     current.fitBounds(
       [[request.target.bounds[0][0], request.target.bounds[0][1]], [request.target.bounds[1][0], request.target.bounds[1][1]]],
-      { padding: 80, maxZoom: 10, duration: 650 },
+      { padding: { ...cameraPadding }, maxZoom: 10, duration },
     )
   })
 
