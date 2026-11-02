@@ -97,6 +97,10 @@ pub enum Class {
     // PZR metal and relief owner (G6).
     PzrMetal,
     PzrReliefLift,
+    // The PZR owner's continuous normal control (R4-PZR-CONTINUOUS): the
+    // PT1 channel lag (differential), only with the section's
+    // `continuousControl`.
+    PzrControl,
     // CVCS owner (plan r4 X4.2).
     InventoryStock,
     InventoryControl,

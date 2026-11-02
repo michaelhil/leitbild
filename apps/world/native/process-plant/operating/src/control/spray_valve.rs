@@ -96,6 +96,11 @@ pub struct ValveBlock {
     pub strokes_per_second: f64,
     #[serde(rename = "inletCheck")]
     pub inlet_check: String,
+    /// R4-PZR-SPRAY-LAMINAR: the passage's laminar-to-turbulent Reynolds
+    /// number on its equivalent bore (judgement: the wiki's reviewed pipe
+    /// transition).
+    #[serde(rename = "lowReynoldsTransition")]
+    pub low_reynolds_transition: f64,
     pub sizing: Sizing,
 }
 
@@ -127,6 +132,7 @@ pub struct Section {
 pub struct Valve {
     full_area_m2: f64,
     line_area_m2: f64,
+    low_reynolds_transition: f64,
 }
 impl Valve {
     /// Admits the section's valve against its own line and sizing: the
@@ -150,9 +156,14 @@ impl Valve {
         if v.inlet_check != "ideal-one-way" {
             return Err(fatal(format!("unselected inlet check {}", v.inlet_check)));
         }
+        let re_t = v.low_reynolds_transition;
+        if !(re_t.is_finite() && re_t > 0.) {
+            return Err(fatal(format!("low-Reynolds transition {re_t}")));
+        }
         Ok(Self {
             full_area_m2: c,
             line_area_m2: a,
+            low_reynolds_transition: re_t,
         })
     }
     /// `K_v(x) = (A/(x·CdA_full))²` on the line area for an open stem
@@ -168,6 +179,10 @@ impl Valve {
     }
     pub fn full_area_m2(&self) -> f64 {
         self.full_area_m2
+    }
+    /// R4-PZR-SPRAY-LAMINAR: the passage's transition Reynolds number.
+    pub fn low_reynolds_transition(&self) -> f64 {
+        self.low_reynolds_transition
     }
 }
 
@@ -298,7 +313,7 @@ mod tests {
                 "wallThickness_m": 0.01, "roughness_m": 1.5e-6, "wall": "circular_churchill"},
             "halves": [],
             "valve": {"face": "COLD.A->SPRAY", "fullEffectiveArea_m2": c, "fullOpenFormLoss": (a / c).powi(2),
-                "strokesPerSecond": 0.5, "inletCheck": "ideal-one-way",
+                "strokesPerSecond": 0.5, "inletCheck": "ideal-one-way", "lowReynoldsTransition": 2300.0,
                 "sizing": {"flow_kg_s": 20., "differential_Pa": 2e5, "density_kg_m3": 745.148_293_249_185_4}},
             "distributor": {"face": "SPRAY->PZR.SPRAY", "aggregateEffectiveArea_m2": 0.001, "elevation_m": 18.5,
                 "formLoss": (a / 0.001_f64).powi(2)},

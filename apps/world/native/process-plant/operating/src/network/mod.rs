@@ -275,8 +275,20 @@ pub struct Network<P: Properties> {
     /// before.
     spray: Option<SprayLayout>,
     /// The valve's opening at the last evaluation's time (the block replay
-    /// reuses it: it reads no coordinate).
-    spray_x: Option<f64>,
+    /// reuses it: it reads no network coordinate). R4-PZR-PI (S-b): under
+    /// the continuous master it is the PZR owner's stem coordinate, with
+    /// its direction for the evaluation the operator hands it to
+    /// ([`Network::set_spray_opening`]).
+    spray_x: Option<Scalar>,
+    /// R4-PZR-PI (S-b): the stem is the PZR owner's coordinate, not the
+    /// held trajectory; the opening the operator hands the next evaluation;
+    /// and the restriction row's index and partial in the opening of the
+    /// last evaluation (zero while the path is locked).
+    spray_continuous: bool,
+    spray_input: Option<Scalar>,
+    spray_row_x: Option<(usize, f64)>,
+    /// R4-PZR-SPRAY-LAMINAR: the line liquid's viscosity of this evaluation.
+    spray_mu: Option<Scalar>,
     /// R4-NCHEAD: the SG primary cells' profiled heads ([`ports::SgProfile`]),
     /// the passes a coupled owner reported in the last evaluation (regular
     /// cells), and each face layout's profile drive of that evaluation.
@@ -748,6 +760,10 @@ impl<P: Properties> Network<P> {
                 unilateral: None,
                 spray,
                 spray_x: None,
+                spray_continuous: false,
+                spray_input: None,
+                spray_row_x: None,
+                spray_mu: None,
                 profiles,
                 coupled_passes: vec![None; pzr],
                 profile_drive: vec![s(0.); layouts],

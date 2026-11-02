@@ -392,6 +392,10 @@ impl<P: Properties + WaterProperties> Joined<P> {
                 fatal("the PZR owner's pzrMetal section needs its steady steel (pzrSteel, S3-D36)")
             })?),
             network.pzr_saturation_temperature_k(),
+            network_packet.preparation.operating_point.pzr_roof_pressure_pa,
+            // R4-PZR-PI (S-b): with the spray path the continuous master
+            // owns the stem, at the valve's stroke rate.
+            network.spray().map(|s| s.stem.strokes_per_second()),
         )?;
         let pzr_len = pzr.layout().len();
         // Plan r4 X4.2: the CVCS owner, when the packet composes it.
@@ -1091,6 +1095,18 @@ impl<P: Properties + WaterProperties> Joined<P> {
             return Err(fatal("stage length"));
         }
         self.blocks.pre_network(y, yp, seed, cj)?;
+        // R4-PZR-PI (S-b): the continuous spray stem's opening, with this
+        // evaluation's direction, for the valve's restriction row.
+        if self.network.spray_continuous()
+            && let Some(k) = self.blocks.pzr.stem_coordinate()
+        {
+            let i = o.pzr + k;
+            let scale = self.blocks.pzr.layout().scales[k];
+            self.network.set_spray_opening(Scalar::new(
+                y[i] * scale,
+                seed.map_or(0., |d| d[i] * scale),
+            ));
+        }
         // The rod owner's moving volumes; a prepared pose lists none, so every
         // cell keeps its compiled volume. Taken out for the call, so the
         // coupling may borrow the blocks while the network reads them.
@@ -1510,6 +1526,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
         }
         let (mut pzr_x, roof) = self.pzr_state(y);
         let mut done = Vec::new();
+        let mut spray_lock = None;
         let b = &mut self.blocks;
         if let SecondaryPort::Owner(owner) = &mut b.secondary
             && directions[..ns].iter().any(|d| *d != 0)
@@ -1557,6 +1574,11 @@ impl<P: Properties + WaterProperties> Joined<P> {
             for ((i, v), s) in (o.pzr..o.cvcs).zip(&pzr_x).zip(&b.scales[4].coordinates) {
                 y[i] = v / s;
             }
+            // R4-PZR-PI (S-b): the located spray lock change, put in the
+            // network's valve path after the inlet check's transaction
+            // below (the stem's arrival at 0 ends the valve's flow, so the
+            // check's contact root can be located at the same instant).
+            spray_lock = b.pzr.take_spray_lock_change();
         }
         // Plan r4 X4.2: the CVCS stops and AUTO withdrawals (no coordinate
         // moves).
@@ -1637,6 +1659,13 @@ impl<P: Properties + WaterProperties> Joined<P> {
                     receipt,
                 });
             }
+            if let Some(closed) = spray_lock.take() {
+                let receipt = self.network.set_spray_lock(t, closed)?;
+                done.push(super::block::Transaction {
+                    deposits: Vec::new(),
+                    receipt,
+                });
+            }
             // Every root transaction decides the port's paths, as L1 decides
             // all of its own (found at the transaction or at a located root).
             let tip = [directions[check + 1], directions[check + 2]];
@@ -1651,6 +1680,11 @@ impl<P: Properties + WaterProperties> Joined<P> {
                     });
                 }
             }
+        }
+        if spray_lock.is_some() {
+            return Err(fatal(
+                "a located spray lock change without the spray path's root slots",
+            ));
         }
         Ok(done)
     }
@@ -2545,6 +2579,15 @@ impl<P: Properties + WaterProperties> Joined<P> {
             add(&mut columns, &metal, &cols);
             let own: BTreeSet<usize> = (o.pzr..o.cvcs).collect();
             add(&mut columns, &cell, &own);
+            // R4-PZR-PI (S-b): the valve's restriction row reads the stem.
+            if let (Some(s), Some(k)) = (self.network.spray(), b.stem_coordinate()) {
+                let row = self.network.face_layout[2 * s.valve_face].index;
+                add(
+                    &mut columns,
+                    &BTreeSet::from([row]),
+                    &BTreeSet::from([o.pzr + k]),
+                );
+            }
         }
         // 6. The CVCS (plan r4 X4.2): every row reads its own coordinates and
         // the cells it reads (COLD.A, the legs), the level row the PZR cell;

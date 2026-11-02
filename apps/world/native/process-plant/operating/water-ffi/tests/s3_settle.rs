@@ -62,7 +62,7 @@ use leitbild_operating_plant::{
 use leitbild_operating_water::{
     If97,
     electrical::{Configuration, CreditedBudget, Electrified, N},
-    frame::{COUNTER_NAMES, Class, Client, Diagnostic, Driver, Frame, Setup},
+    frame::{COUNTER_NAMES, Client, Diagnostic, Driver, Frame, Setup},
     ida::{Ida, Initial},
     joined::{
         Discrete, Integrated, JoinedSystem, Restart, derived_tolerances, discrete_restart,
@@ -425,10 +425,10 @@ fn s3_settle_state_for_c1() {
         "the control frame is the I&C frame"
     );
     let control_wiki = env("LD01_PZR_CONTROL_WIKI");
-    let channel = pzr_control::channel_block(&control_wiki, &law).expect("the PT1 channel block");
+    let channel = pzr_control::channel_block(&control_wiki).expect("the PT1 channel block");
+    let mut y = y;
     let (mut control, prepared_w, start_w) =
-        pzr_control::commission(&mut joined, &law, channel, Class::S, None, t0, &y, &yp)
-            .expect("commissioning");
+        pzr_control::commission(&mut joined, &law, channel, &mut y).expect("commissioning");
     // L1 and the phase modes armed at the start state.
     let l1 = joined.activate_unilateral(t0, &y).expect("L1");
     joined.activate_phase_modes().expect("phase modes");
@@ -551,7 +551,18 @@ fn s3_settle_state_for_c1() {
     let mut last_ranges: Vec<(f64, f64, bool)> = Vec::new();
     let mut history: Vec<Value> = Vec::new();
     let checks_every = (1. / output_s).round() as u64;
-    let heater = |ida: &Ida<Unit>| ida.system().integrated().joined.pzr().request_w();
+    // R4-PZR-PI: the continuous master's request at the state's lag and
+    // integral.
+    let (law_c, lag, integral) = (control.control, control.lag, control.integral);
+    let heater = |y: &[f64]| {
+        use leitbild_operating_plant::thermal::Scalar;
+        law_c
+            .heater_request(law_c.demand(
+                Scalar::constant(y[lag.0] * lag.1),
+                Scalar::constant(y[integral.0] * integral.1),
+            ))
+            .value
+    };
     {
         let mut clients: Vec<&mut dyn Client<Unit>> = vec![&mut control];
         if let Err(e) = driver.start(&mut clients, t0, &y_all, &yp_all) {
@@ -601,12 +612,12 @@ fn s3_settle_state_for_c1() {
                 if k.is_multiple_of(checks_every * 10) {
                     history.push(json!({"t_s": t, "credited": CREDITED.iter().zip(&c).map(|(q, v)| (q.name.to_string(), json!(v))).collect::<Map<String, Value>>(),
                         "ranges": CREDITED.iter().zip(&rs).map(|(q, r)| (q.name.to_string(), json!([r.0, r.1, r.2]))).collect::<Map<String, Value>>(),
-                        "cpu_s": process_cpu_s() - started, "heater_w": heater(&ida)}));
+                        "cpu_s": process_cpu_s() - started, "heater_w": heater(&y_all)}));
                     eprintln!(
                         "S3 settle t = {t:.1} s: PT1 range {:.1} Pa, P = {:.6e} W, heater {:.0} W, CPU {:.1} s",
                         rs[3].0,
                         c[0][0],
-                        heater(&ida),
+                        heater(&y_all),
                         process_cpu_s() - started
                     );
                 }
@@ -637,8 +648,8 @@ fn s3_settle_state_for_c1() {
         "appended": {"owner": "electrical slice (ELEC)", "y": &y_all[n..], "yp": &yp_all[n..],
             "y_bits": bits(&y_all[n..]), "yp_bits": bits(&yp_all[n..])},
         "discrete_state": snapshot,
-        "pzr_control": {"in_force_w": control.in_force_w, "note": "C1 re-commissions the controller at its start (the heater demand in force is the PZR block's discrete state)"},
-        "composition": "S3-D28 (3): joined + spray closed + SG two-zone + feed gate declared/open + S2-D24r/S3-D16 + L1 + phase modes + PZR control AUTO (S) + ELEC slice connected"});
+        "pzr_control": {"in_force_w": heater(&y_all), "note": "the continuous law on the state's PT1 channel lag (R4-PZR-CONTINUOUS); C1 re-commissions it at its start"},
+        "composition": "S3-D28 (3): joined + spray closed + SG two-zone + feed gate declared/open + S2-D24r/S3-D16 + L1 + phase modes + PZR control AUTO (C, R4-PZR-CONTINUOUS) + ELEC slice connected"});
     let state_bytes = serde_json::to_vec(&state).unwrap();
     let state_file = dir.join("s3-settled-state.json");
     std::fs::write(&state_file, &state_bytes).unwrap();
@@ -662,7 +673,7 @@ fn s3_settle_state_for_c1() {
             "first_step_s": FIRST_STEP_S, "relative_tolerance": rtol, "frame_s": ic.frame_s,
             "integration": "frame driver: stock IDA_ONE_STEP, observation from IDAGetDky, restarts by discrete_restart",
             "derived_tolerances": derived, "stator_rows": stator, "stator_budget": "S3-D23: 10 A, 1 MW",
-            "l1_activation_changes": l1.changes.len(), "pzr_control": {"class": "S (S3-D4)", "prepared_request_w": prepared_w, "start_request_w": start_w},
+            "l1_activation_changes": l1.changes.len(), "pzr_control": {"class": "C (continuous, R4-PZR-CONTINUOUS)", "held_request_replaced_w": prepared_w, "start_request_w": start_w},
             "caps": {"simulated_s": cap_s, "process_cpu_s": cpu_cap_s},
             "measure": {"filter": filter::DECLARED_FILTER, "cutoff_hz": CREDITED_BAND_HZ, "sampled_s": output_s, "window_s": window_s}},
         "start": {"projection_passes": initial.report.projection_passes, "residual": initial.report.residual.value,
@@ -671,7 +682,6 @@ fn s3_settle_state_for_c1() {
         "last_ranges": CREDITED.iter().zip(&last_ranges).map(|(q, r)| (q.name.to_string(), json!({"range": r.0, "threshold": r.1, "holds": r.2}))).collect::<Map<String, Value>>(),
         "state": {"file": "s3-settled-state.json", "sha256": leitbild_operating_plant::digest::sha256(&state_bytes)},
         "counts_by_class": driver.counts.json(), "stock_totals": totals, "observation": driver.observation_json(),
-        "pzr_control_changes": control.schedule.len().saturating_sub(1),
         "cpu": {"process_total_s": total_cpu_s, "preparation_s": preparation_cpu_s, "solver_s": driver.cpu.solver_s,
             "observation_s": driver.cpu.observation_s, "restart_s": driver.cpu.restart_s, "held_s": driver.cpu.held_s,
             "per_simulated_s": (total_cpu_s - preparation_cpu_s) / (t - t0).max(1e-9)},

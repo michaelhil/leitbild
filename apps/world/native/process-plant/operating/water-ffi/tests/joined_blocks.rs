@@ -330,6 +330,39 @@ fn joined_blocks_against_colored() {
         );
         y[o.pzr] = lift;
     }
+    // R4-PZR-PI (S-b): LD01_JAC_PZR_SPRAY (stem fraction) commissions the
+    // continuous master, puts its demand 100 kPa above the spray start
+    // through the integral, releases the valve by the spray root's own
+    // transaction and sets the stem, before both assemblies, so the valve's
+    // restriction row is compared in the stem and the stem's tracking row in
+    // the lag and the integral.
+    if let Ok(v) = std::env::var("LD01_JAC_PZR_SPRAY") {
+        let stem: f64 = v.parse().expect("LD01_JAC_PZR_SPRAY");
+        let pzr = joined.pzr();
+        let m = *pzr.continuous_control().expect("LD01_JAC_PZR_SPRAY needs the continuous master");
+        let (kl, ki, kx) = (
+            pzr.lag_coordinate().unwrap(),
+            pzr.integral_coordinate().unwrap(),
+            pzr.stem_coordinate().expect("LD01_JAC_PZR_SPRAY needs the spray path"),
+        );
+        let sc = pzr.layout().scales.clone();
+        let relief_roots = if pzr.relief().is_some() { 2 } else { 0 };
+        joined.pzr_mut().commission_continuous().expect("commission");
+        joined.network.set_spray_continuous().expect("continuous stem");
+        let lag_pa = y[o.pzr + kl] * sc[kl];
+        y[o.pzr + ki] = (m.spray_start_pa + 1e5 - (lag_pa - m.setpoint_pa)) / sc[ki];
+        let mut directions = vec![0; joined.root_count()];
+        let first = joined.secondary().map_or(0, |b| b.root_count())
+            + joined.rods().map_or(0, |b| b.root_count())
+            + relief_roots;
+        directions[first] = 1;
+        joined.transact(0., &directions, &mut y).expect("the spray root's release");
+        assert_eq!(
+            joined.pzr().spray_mode(),
+            Some(leitbild_operating_plant::joined::pzr::SprayMode::Tracking)
+        );
+        y[o.pzr + kx] = stem / sc[kx];
+    }
     // B1 (lane ROD, NUC review): LD01_JAC_STUCK_WORTH_DK applies the
     // stuck-cluster term before both assemblies, so the nuclear block's
     // partials are compared with it applied.
@@ -381,6 +414,13 @@ fn joined_blocks_against_colored() {
             .and_then(|mut f| std::io::Write::write_all(&mut f, &bytes))
             .unwrap_or_else(|e| panic!("values {path} must be new: {e}"));
     }
+    // The spray path's locks and the valve row's partial in the stem at the
+    // last (block) evaluation.
+    let spray_check = joined.pzr().stem_coordinate().map(|k| {
+        let sp = joined.network.spray_discrete_state();
+        json!({"stem": y[o.pzr + k], "closed": sp.map(|s| s.closed), "check_closed": sp.map(|s| s.check_closed),
+            "row_partial_in_opening": joined.network.spray_row_opening_partial()})
+    });
     let mut worst = 0_f64;
     let mut worst_at = json!(null);
     let mut differing = Vec::new();
@@ -445,6 +485,7 @@ fn joined_blocks_against_colored() {
     let receipt = json!({
         "kind": "s2-joined-blocks-against-colored-NOT-EVIDENCE",
         "relative_state_perturbation": perturb, "pzr_relief_lift": lift, "stuck_worth_dk": stuck_worth,
+        "pzr_spray": spray_check,
         "block_assembly_refused": refused,
         "klu_block_pattern": klu_blocks, "klu_structural_pattern": klu_structural,
         "composition": {"dimension": n, "offsets": o, "full_owners": full},

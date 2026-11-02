@@ -880,7 +880,15 @@ fn prepare_pzr(
     if saturation_k.to_bits() != network.pzr_saturation_temperature_k().to_bits() {
         return Err("the PZR preparation's Tsat(p_s) is not the network's".into());
     }
-    let block = Pzr::new(&cell, section, SteelPreparation::Saturation, saturation_k).map_err(nf)?;
+    let block = Pzr::new(
+        &cell,
+        section,
+        SteelPreparation::Saturation,
+        saturation_k,
+        point.pzr_roof_pressure_pa,
+        None,
+    )
+    .map_err(nf)?;
     let layout = block.layout().clone();
     let n = layout.len();
     let base = block.metal_base();
@@ -900,9 +908,20 @@ fn prepare_pzr(
                 .iter()
                 .map(|e| Some(e.steel_mass_kg)),
         )
+        // R4-PZR-CONTINUOUS: a composed channel lag follows the roof
+        // pressure under the held demand; it is no steel store.
+        // R4-PZR-PI: the master's integral and stem likewise.
+        .chain(
+            block
+                .lag_coordinate()
+                .into_iter()
+                .chain(block.integral_coordinate())
+                .chain(block.stem_coordinate())
+                .map(|_| None),
+        )
         .collect();
     if masses.len() != n {
-        return Err("the PZR block's layout is not its lift, rods and walls".into());
+        return Err("the PZR block's layout is not its lift, rods, walls and channel lag".into());
     }
     let y: Vec<f64> = block
         .prepared()
@@ -1035,8 +1054,11 @@ fn settle_pzr(part: PzrPart) -> Result<PzrSteady, Failure> {
     // The steady steel's ledger from the walls' and rods' own laws.
     let base = system.block.metal_base();
     let rods = system.block.heaters().segments().len();
+    let walls = system.block.walls().elements().len();
     let rod: Vec<Scalar> = (base..base + rods).map(|i| s(energy[i])).collect();
-    let wall: Vec<Scalar> = (base + rods..n).map(|i| s(energy[i])).collect();
+    let wall: Vec<Scalar> = (base + rods..base + rods + walls)
+        .map(|i| s(energy[i]))
+        .collect();
     let rates = system
         .block
         .walls()
@@ -2268,10 +2290,11 @@ mod tests {
         let section: pzr::Section =
             serde_json::from_value(raw["pzrMetal"].clone()).expect("a packet with pzrMetal");
         let part = prepare_pzr(&raw, &section).unwrap();
-        let (cell, column, t_sat) = (
+        let (cell, column, t_sat, roof) = (
             part.system.cell.clone(),
             part.system.column,
             part.saturation_k,
+            part.roof_pressure_pa,
         );
         let steady = settle_pzr(part).unwrap();
         let again = settle_pzr(prepare_pzr(&raw, &section).unwrap()).unwrap();
@@ -2293,7 +2316,8 @@ mod tests {
                 .collect(),
             provenance: serde_json::json!({}),
         };
-        let mut block = Pzr::new(&cell, &section, SteelPreparation::Steady(&steel), t_sat).unwrap();
+        let mut block =
+            Pzr::new(&cell, &section, SteelPreparation::Steady(&steel), t_sat, roof, None).unwrap();
         let layout = block.layout().clone();
         let n = layout.len();
         let y: Vec<f64> = block
@@ -2319,13 +2343,13 @@ mod tests {
         }
         let mut swapped = steel.clone();
         swapped.stores.swap(0, 1);
-        assert!(Pzr::new(&cell, &section, SteelPreparation::Steady(&swapped), t_sat).is_err());
+        assert!(Pzr::new(&cell, &section, SteelPreparation::Steady(&swapped), t_sat, roof, None).is_err());
         let mut off = steel.clone();
         off.stores[0].temperature_k += 1e-3;
-        assert!(Pzr::new(&cell, &section, SteelPreparation::Steady(&off), t_sat).is_err());
+        assert!(Pzr::new(&cell, &section, SteelPreparation::Steady(&off), t_sat, roof, None).is_err());
         let mut short = steel.clone();
         short.stores.pop();
-        assert!(Pzr::new(&cell, &section, SteelPreparation::Steady(&short), t_sat).is_err());
+        assert!(Pzr::new(&cell, &section, SteelPreparation::Steady(&short), t_sat, roof, None).is_err());
         let mut carried = raw.clone();
         carried["pzrSteel"] = serde_json::json!({"stores": [], "provenance": {}});
         assert!(

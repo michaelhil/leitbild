@@ -170,7 +170,6 @@ fn the_spray_valve_opens_delivers_and_closes_on_its_locks() {
             let demand = Demand {
                 heater_request_w: heater,
                 spray_target: target,
-                withdrawn: None,
             };
             let (change, receipts) = ida
                 .system_mut()
@@ -588,7 +587,6 @@ fn the_spray_paths_discrete_state_survives_a_snapshot() {
             &Demand {
                 heater_request_w: heater,
                 spray_target: 0.5,
-                withdrawn: None,
             },
         )
         .expect("a control frame opening the spray valve");

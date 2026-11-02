@@ -27,7 +27,7 @@ pub struct MemoRow {
 /// choices, 11 October) and the rod bores' water (P2, 17 October), which
 /// the memo predates: their counts are zero. A row counts its owner's
 /// coordinates of its classes only.
-pub const TABLE_1_1: [MemoRow; 22] = [
+pub const TABLE_1_1: [MemoRow; 23] = [
     MemoRow {
         row: "Regional N, 24 regions",
         owner: "nuclear",
@@ -181,6 +181,13 @@ pub const TABLE_1_1: [MemoRow; 22] = [
         rows: "lift' = full strokes per second of the motion; stops by transaction",
     },
     MemoRow {
+        row: "PZR PT1 channel lag (continuous normal control)",
+        owner: "pzr",
+        classes: &[Class::PzrControl],
+        memo: [0, 0],
+        rows: "tau p_L' = p_roof - p_L; the heater request C clamp[(p_set - p_L)/B, 0, 1] in the steel rows",
+    },
+    MemoRow {
         row: "SG apparent-level distribution x2 (C08)",
         owner: "secondary",
         classes: &[
@@ -296,6 +303,9 @@ fn difference(row: &str) -> Option<&'static str> {
         }
         "CVCS tanks and normal inventory controller (plan r4 X4.2)" => {
             "R4-CVCS (plan r4 X4.2, lead): the compact charging, letdown and source-transfer allocation joins after the memo's allocation"
+        }
+        "PZR PT1 channel lag (continuous normal control)" => {
+            "R4-PZR-CONTINUOUS (plan r4, lead 1 Nov): the normal heater law runs continuously in the PZR owner on the PT1 channel's lag, only with the section's continuousControl"
         }
         "PZR heater rod segments, shell bands and heads (G6)" | "PZR relief lift (G6)" => {
             "G6 (S2 design choices, 11 October): the PZR shell, heads, heater metal and relief join S2 after the memo's allocation"
