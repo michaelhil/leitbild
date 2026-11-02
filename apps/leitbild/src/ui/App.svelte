@@ -497,10 +497,11 @@
     current: () => workspace && selectedWorldResource?.ref.workspaceId === workspace.id ? selectedWorldResource.ref : null,
     resolve: (run, assertCurrent) => openRunAssistantRoom(run, assertCurrent),
   })
-  const openRunAssistant = async (signal?: AbortSignal): Promise<RunAssistantResolution> => {
+  const openRunAssistant = async (signal?: AbortSignal, assertDelivery?: () => void): Promise<RunAssistantResolution> => {
+    signal?.throwIfAborted(); assertDelivery?.()
     const priorRoom = selectedAgentsRoomId
     const resolved = await resolveRunAssistant()
-    signal?.throwIfAborted()
+    signal?.throwIfAborted(); assertDelivery?.()
     if (workspace?.id !== resolved.run.workspaceId || selectedWorldRunId !== resolved.run.id) throw new Error('The Run changed while its Assistant was opening')
     if (selectedAgentsRoomId !== priorRoom && selectedAgentsRoomId !== resolved.room.id) throw new Error('A different Room was selected while this Assistant was opening')
     selectedAgentsRoomId = resolved.room.id

@@ -13,7 +13,7 @@ const sameReceiver = (a: PresentationRecipient, b: PresentationRecipient): boole
 export const createPresentationBridge = (config: {
   subject: () => WorkspaceResourceReference | null
   room: () => WorkspaceResourceReference | null
-  openAssistant: (signal: AbortSignal) => Promise<WorkspaceResourceReference>
+  openAssistant: (signal: AbortSignal, assertCurrent: () => void) => Promise<WorkspaceResourceReference>
   postToWorld: (message: unknown) => void
   postToAgents: (message: unknown) => void
   error: (message: string) => void
@@ -72,12 +72,17 @@ export const createPresentationBridge = (config: {
       })
       const delivery = { request, room: null as WorkspaceResourceReference | null, controller, stop, sent: false, acknowledged: false }
       deliveries.set(request.id, delivery)
+      const assertCurrent = (): void => {
+        controller.signal.throwIfAborted()
+        if (Date.parse(request.expiresAt) <= Date.now()) throw new Error('The attention request expired before its Room could be shown')
+        if (expectedGeneration !== generation || !current(request) || deliveries.get(request.id) !== delivery) throw new Error('This attention request no longer owns the current World document')
+      }
       let room: WorkspaceResourceReference
-      if (request.source.kind === 'guide' || request.source.kind === 'person') room = await config.openAssistant(controller.signal)
+      if (request.source.kind === 'guide' || request.source.kind === 'person') room = await config.openAssistant(controller.signal, assertCurrent)
       else {
         const selected = config.room()
         if (!request.source.initiatingRoom || !selected || !sameResource(selected, request.source.initiatingRoom)) throw new Error('The originating Room is not currently shown')
-        room = reveal ? await config.openAssistant(controller.signal) : selected
+        room = reveal ? await config.openAssistant(controller.signal, assertCurrent) : selected
       }
       if (controller.signal.aborted || expectedGeneration !== generation || !current(request) || deliveries.get(request.id) !== delivery) return
       if (Date.parse(request.expiresAt) <= Date.now()) { stop(); deliveries.delete(request.id); return receipt(request, 'expired', 'The attention request expired while opening its Room') }
@@ -87,7 +92,7 @@ export const createPresentationBridge = (config: {
       if (controller.signal.aborted) return
       const delivery = deliveries.get(request.id)
       delivery?.stop(); deliveries.delete(request.id)
-      receipt(request, 'unavailable', error instanceof Error ? error.message : String(error))
+      receipt(request, Date.parse(request.expiresAt) <= Date.now() ? 'expired' : 'unavailable', error instanceof Error ? error.message : String(error))
     }
   }
   const clear = (): void => {

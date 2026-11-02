@@ -175,3 +175,20 @@ test('expiry aborts an unresolved Assistant subscriber before it can select UI',
   expect(selected).toBe(false)
   expect(world.at(-1).receipt.status).toBe('expired')
 })
+
+test('a delayed timer cannot permit UI selection after the actual request deadline', async () => {
+  const now = Date.now, world: any[] = []
+  let release: (() => void) | undefined, selected = false
+  const bridge = createPresentationBridge({ subject: () => subject, room: () => roomA,
+    openAssistant: async (_signal, assertCurrent) => { await new Promise<void>(resolve => release = resolve); assertCurrent(); selected = true; return roomA },
+    postToWorld: message => world.push(message), postToAgents: () => {}, error: () => {}, timer: () => () => {},
+  })
+  try {
+    bridge.fromWorld({ type: 'leitbild:presentation-offer', recipient })
+    bridge.fromWorld({ type: 'leitbild:presentation-compose', request: draft('late-deadline') })
+    const late = now() + 40_000; Date.now = () => late
+    release?.(); await settle()
+    expect(selected).toBe(false)
+    expect(world.at(-1).receipt.status).toBe('expired')
+  } finally { Date.now = now; bridge.dispose() }
+})

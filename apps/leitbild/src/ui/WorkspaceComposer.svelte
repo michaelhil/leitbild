@@ -21,7 +21,7 @@
     /** Whether the shown Run offers its Assistant, as the Host's own launcher does; its World page may then offer it too. */
     readonly runAssistantAvailable: boolean
     /** Shows the shown Run's Assistant room, creating it where none serves the Run; it never hides the room. */
-    readonly onOpenRunAssistant: (signal?: AbortSignal) => Promise<RunAssistantResolution>
+    readonly onOpenRunAssistant: (signal?: AbortSignal, assertDelivery?: () => void) => Promise<RunAssistantResolution>
     readonly onError: (message: string) => void
     /** The World pane, for overlays anchored to it (the people chat); null without a Run. */
     worldPane?: HTMLElement | null
@@ -163,12 +163,14 @@
   const presentation = createPresentationBridge({
     subject: () => worldRunId === null ? null : { workspaceId, moduleId: 'world', type: 'world.simulation-run', id: worldRunId } as WorkspaceResourceReference,
     room: roomReference,
-    openAssistant: async signal => {
+    openAssistant: async (signal, assertDelivery) => {
+      assertDelivery()
       if (!runAssistantAvailable) throw new Error('This Run offers no Assistant')
       const expectedRun = worldRunId, expectedWorkspace = workspaceId
-      const resolved = await onOpenRunAssistant(signal)
+      const resolved = await onOpenRunAssistant(signal, assertDelivery)
       await tick()
       signal.throwIfAborted()
+      assertDelivery()
       if (workspaceId !== expectedWorkspace || worldRunId !== expectedRun || resolved.run.workspaceId !== expectedWorkspace || resolved.run.moduleId !== 'world' || resolved.run.type !== 'world.simulation-run' || resolved.run.id !== expectedRun) throw new Error('The Run changed while its Assistant was opening')
       const room = resolved.room
       if (room.workspaceId !== expectedWorkspace || room.moduleId !== 'agents' || room.type !== 'agents.room' || agentsRoomId !== room.id) throw new Error('The resolved Run Assistant Room is no longer the one shown')
