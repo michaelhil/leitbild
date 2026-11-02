@@ -1,3 +1,4 @@
+import { createAgentConfiguration, createConfigurationReceipts } from '../../agents/configuration.ts'
 import { mkdtemp, rm, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -45,12 +46,13 @@ const setup = (provider: LLMProvider) => {
     },
     notifyAgentSettingsChanged: () => { saves++ },
   } as unknown as AgentsWorkspaceRuntime
+  Object.assign(system, { agentConfiguration: createAgentConfiguration({ team, tools: system.toolRegistry, skills: system.skillStore, refresh: async () => {}, persist: async () => {}, receipts: createConfigurationReceipts(), changed: system.notifyAgentSettingsChanged, durable: false }) })
   const request = async (method: string, path: string, body?: unknown) => {
     const route = agentRoutes.find(entry => entry.method === method && entry.pattern.test(path))!
     return route.handler(new Request(`http://localhost${path}`, {
       method,
       ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
-    }), path.match(route.pattern)!, { system, broadcastToWorkspace: () => {} } as unknown as RouteContext)
+    }), path.match(route.pattern)!, { system, broadcastToWorkspace: () => {}, accessContext: { actor: { kind: 'human', id: 'test-human' } } } as unknown as RouteContext)
   }
   return { system, decisions, request, saves: () => saves }
 }

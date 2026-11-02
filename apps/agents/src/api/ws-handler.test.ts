@@ -1,3 +1,6 @@
+import { createAgentConfiguration, createConfigurationReceipts } from '../agents/configuration.ts'
+import { createToolRegistry } from '../core/tool-registry.ts'
+import { createSkillStore } from '../skills/loader.ts'
 // ============================================================================
 // WS Handler — tests for message dispatch, error handling, and protocol edges.
 // ============================================================================
@@ -322,22 +325,26 @@ describe('WS Handler', () => {
 
   // --- update_agent ---
 
-  test('update_agent tools refreshes system tool support', async () => {
+  test('update_agent rejects unknown tools atomically and refreshes accepted selections', async () => {
     const bot = createAIAgent(
       { name: 'Bot', model: 'test', persona: 'You are a test bot.' },
       makeLLMProvider(),
       () => {},
     )
     system.team.addAgent(bot)
-    ;(system as unknown as { toolRegistry: { list: () => ReadonlyArray<{ name: string }> } }).toolRegistry = {
-      list: () => [{ name: 'pass' }],
-    }
+    const tools = createToolRegistry()
+    tools.register({ name: 'pass', description: 'Pass', parameters: {}, execute: async () => ({ success: true }) })
     let refreshes = 0
-    ;(system as unknown as Record<string, unknown>).refreshAllAgentTools = async () => { refreshes += 1 }
-    ;(system as unknown as Record<string, unknown>).notifyAgentSettingsChanged = () => {}
-    const { ws, errors } = makeWS()
-    await dispatch(ws, session, system, wsManager, { type: 'update_agent', name: 'Bot', tools: ['pass', 'missing'] })
-    expect(errors()).toHaveLength(0)
+    Object.assign(system, { toolRegistry: tools, agentConfiguration: createAgentConfiguration({ team: system.team, tools, skills: createSkillStore(), refresh: async () => { refreshes++ }, persist: async () => {}, receipts: createConfigurationReceipts(), changed: () => {}, durable: false }) })
+    const refused = makeWS()
+    await dispatch(refused.ws, session, system, wsManager, { type: 'update_agent', name: 'Bot', tools: ['pass', 'missing'], persona: 'Must not apply' })
+    expect(refused.errors()).toHaveLength(1)
+    expect(bot.getTools()).toBeUndefined()
+    expect(bot.getPersona()).toBe('You are a test bot.')
+    expect(refreshes).toBe(0)
+    const accepted = makeWS()
+    await dispatch(accepted.ws, session, system, wsManager, { type: 'update_agent', name: 'Bot', tools: ['pass'] })
+    expect(accepted.errors()).toHaveLength(0)
     expect(bot.getTools()).toEqual(['pass'])
     expect(refreshes).toBe(1)
   })

@@ -151,6 +151,7 @@ export interface AIAgent extends Agent {
   // Returns a snapshot of the agent's current configuration (mutable fields resolved).
   // Use this when you need multiple config fields at once (e.g. for serialization).
   readonly getConfig: () => AIAgentConfig
+  readonly getEffectiveConfig?: () => AIAgentConfig | undefined
   // Manual-mode primitives (general-purpose, not mode-specific):
   // ingestHistory appends unseen messages to the agent's room history without
   // triggering evaluation or compression; forceEvaluate triggers one eval

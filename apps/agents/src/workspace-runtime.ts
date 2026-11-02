@@ -1,3 +1,4 @@
+import { createAgentConfiguration, createConfigurationReceipts, type AgentConfiguration } from './agents/configuration.ts'
 import { createSkillAuthoring, type SkillAuthoring } from './skills/authoring.ts'
 // ============================================================================
 // Leitbild Agents workspace runtime factory.
@@ -157,6 +158,7 @@ export interface AgentsWorkspaceRuntime {
   readonly skillStore: SkillStore
   readonly skillsDir: string
   readonly skillAuthoring: SkillAuthoring
+  readonly agentConfiguration: AgentConfiguration
   readonly scriptStore: ScriptStore
   readonly scriptsDir: string
   readonly scriptRunner: ScriptRunner
@@ -266,6 +268,7 @@ export interface LoggingHandle {
 export interface CreateAgentsWorkspaceRuntimeOptions {
   /** Workspace registry supplies a durable path. Ephemeral standalone/test runtimes use memory. */
   readonly executionsFile?: string
+  readonly persistConfiguration?: () => Promise<void>
   /** Registry-owned admissions (including autonomous tools) must drain on removal. */
   readonly runWorkspaceOperation?: <T>(work: () => Promise<T>) => Promise<T>
   // Pre-built deployment runtime. When passed, createAgentsWorkspaceRuntime skips internal
@@ -762,7 +765,7 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
           {
             id: ai.id,
             name: ai.name,
-            currentLLMSettings: () => ai.getConfig(),
+            currentLLMSettings: () => ai.getEffectiveConfig?.() ?? ai.getConfig(),
             focusedSubjects: roomId => ai.getFocusedSubjects(roomId),
           },
           llm,
@@ -1037,6 +1040,15 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
       })
     }
 
+    const configurationReceipts = createConfigurationReceipts(options.executionsFile === undefined ? undefined : join(dirname(options.executionsFile), 'configuration'), executionGrowth)
+    const agentConfiguration = createAgentConfiguration({ team, tools: toolRegistry, skills: skillStore, refresh: refreshAllAgentTools,
+      persist: async () => {
+        if (options.persistConfiguration) return options.persistConfiguration()
+        if (options.executionsFile !== undefined) throw new Error('Durable configuration persistence is not wired')
+        // Standalone/test runtimes intentionally retain only memory.
+      },
+      receipts: configurationReceipts, changed: () => agentSettingsChanged.proxy(), durable: options.executionsFile !== undefined })
+
     const system: AgentsWorkspaceRuntime = {
       rooms, createRoom, settings, bookmarks, team, routeMessage, executionStore, comparisons,
       llm, llmService, ollama, providerConfig, providerKeys, gateways, monitors,
@@ -1045,7 +1057,7 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
       captureRegistry,
       packCatalog: deployment.packCatalog,
       evalBuffer,
-      toolRegistry, refreshAllAgentTools, skillStore, skillsDir, skillAuthoring,
+      toolRegistry, refreshAllAgentTools, skillStore, skillsDir, skillAuthoring, agentConfiguration,
       scriptStore, scriptsDir,
       scriptRunner,
       setOnScriptEvent: scriptEvent.set,

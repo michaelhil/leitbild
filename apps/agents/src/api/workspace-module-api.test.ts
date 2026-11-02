@@ -428,6 +428,32 @@ describe('Agents Workspace Module API', () => {
     expect(registry.definitionsFor(workspaceId)).toBe(library)
   })
 
+  test('AI configuration discovery, revision refusal and actor-attributed receipts survive eviction', async () => {
+    const workspaceId = newWorkspaceId()
+    await request('PUT', `/internal/workspaces/${workspaceId}`, { workspaceId })
+    const created = await request('POST', `/internal/workspaces/${workspaceId}/capabilities/agents.agent.create/invoke`, invokeBody(workspaceId, 'agents.agent.create', { name: 'Configurable', model: 'test-model', persona: 'Original' }))
+    const id = (await created.json() as { result: { id: string } }).result.id
+    const target = { resource: { type: 'agents.agent', id } }
+    const read = async () => {
+      const response = await request('POST', `/internal/workspaces/${workspaceId}/capabilities/agents.agent.configuration.read/invoke`, invokeBody(workspaceId, 'agents.agent.configuration.read', {}, target))
+      expect(response.status).toBe(200)
+      return (await response.json() as { result: { revision: string; desired: { persona: string }; latestReceipt?: { actor: { id: string }; targetId: string }; persistence: string } }).result
+    }
+    const initial = await read()
+    const update = async (expectedRevision: string, persona: string) => request('POST', `/internal/workspaces/${workspaceId}/capabilities/agents.agent.configuration.update/invoke`, invokeBody(workspaceId, 'agents.agent.configuration.update', { expectedRevision, changes: { persona, historyTokenBudget: 12345 } }, target))
+    expect((await update(initial.revision, 'Updated by peer')).status).toBe(200)
+    expect((await update(initial.revision, 'Stale overwrite')).status).toBe(409)
+    const after = await read()
+    expect(after.desired.persona).toBe('Updated by peer')
+    expect(after.latestReceipt).toMatchObject({ actor: { id: 'agent:operator' }, targetId: id })
+    expect(after.persistence).toBe('workspace')
+    await registry.evictOne(workspaceId)
+    const restored = await read()
+    expect(restored.revision).toBe(after.revision)
+    expect(restored.desired).toEqual(after.desired)
+    expect(restored.latestReceipt).toEqual(after.latestReceipt)
+  })
+
   test('publishes one strict Agents manifest', async () => {
     const body = await (await request('GET', '/.well-known/workspace-module')).json()
     expect(workspaceModuleManifestSchema.parse(body)).toEqual(agentsModuleManifest)

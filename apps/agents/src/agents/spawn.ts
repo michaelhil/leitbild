@@ -580,7 +580,7 @@ export const spawnAIAgent = async (
   // Fill agentRef so the lazy ToolContext in resolveAgentTools resolves correctly
   agentRef.id = agent.id
   agentRef.name = agent.name
-  agentRef.currentLLMSettings = agent.getConfig
+  agentRef.currentLLMSettings = () => agent.getEffectiveConfig?.() ?? agent.getConfig()
   agentRef.focusedSubjects = agent.getFocusedSubjects
 
   team.addAgent(agent)

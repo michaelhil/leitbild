@@ -193,10 +193,18 @@ export const createAIAgent = (
   // supplied threshold out of the base spread so clearing it is durable.
   const { maxToolIterations: _initialToolIterationThreshold, ...baseConfig } = config
 
+  let activeTurn: { traceId: string; config: AIAgentConfig; executor: typeof toolExecutor; definitions: typeof toolDefinitions; resolve: typeof resolveToolDefinitions; skillsText?: string } | undefined
+  const turnConfiguration = (): AIAgentConfig => activeTurn?.config ?? desiredConfiguration()
+  const admitTurn = (traceId: string, roomId: string): void => {
+    const snapshot = structuredClone(desiredConfiguration())
+    activeTurn = { traceId, config: snapshot, executor: toolExecutor, definitions: toolDefinitions, resolve: resolveToolDefinitions,
+      ...(getSkills === undefined ? {} : { skillsText: getSkills(snapshot.skills ?? [], roomId) }) }
+  }
+
   const effectiveToolsForRoom = (roomId: string): ReadonlyArray<ToolDefinition> | undefined => {
-    if (!includeTools) return undefined
-    const resolved = resolveToolDefinitions?.(roomId) ?? null
-    return resolved ?? toolDefinitions
+    if (turnConfiguration().includeTools === false) return undefined
+    const resolved = (activeTurn === undefined ? resolveToolDefinitions : activeTurn.resolve)?.(roomId) ?? null
+    return resolved ?? (activeTurn === undefined ? toolDefinitions : activeTurn.definitions)
   }
 
   const resolveContextTokenBudget = (effectiveModel: string, definitions: ReadonlyArray<ToolDefinition> | undefined): number => {
@@ -207,7 +215,7 @@ export const createAIAgent = (
       parameters: td.function.parameters,
     }))
     const result = computeContextBudget(
-      { contextMax, toolDefinitions: toolDefs, ...(currentHistoryTokenBudget === undefined ? {} : { historyTokenBudget: currentHistoryTokenBudget }) },
+      { contextMax, toolDefinitions: toolDefs, ...(turnConfiguration().historyTokenBudget === undefined ? {} : { historyTokenBudget: turnConfiguration().historyTokenBudget }) },
       estimateTokens,
     )
     return result.budget
@@ -264,18 +272,18 @@ export const createAIAgent = (
 
   const contextDeps = (effectiveModel: string, definitions: ReadonlyArray<ToolDefinition> | undefined, turnInstruction?: string): BuildContextDeps => ({
     agentId,
-    persona: currentPersona,
+    persona: turnConfiguration().persona,
     workspacePrompt: getWorkspacePrompt?.(),
     responseFormat: getResponseFormat?.(),
     history: agentHistory,
-    historyLimit,
+    historyLimit: turnConfiguration().historyLimit ?? DEFAULTS.historyLimit,
     resolveName,
-    getSkills: getSkills === undefined ? undefined : roomId => getSkills(currentSkills, roomId),
+    getSkills: getSkills === undefined ? undefined : roomId => activeTurn?.skillsText ?? getSkills(turnConfiguration().skills ?? [], roomId),
     getScriptContext,
-    includePrompts: includePromptsState,
-    includeContext: includeContextState,
-    promptsEnabled,
-    contextEnabled,
+    includePrompts: turnConfiguration().includePrompts,
+    includeContext: turnConfiguration().includeContext,
+    promptsEnabled: turnConfiguration().promptsEnabled,
+    contextEnabled: turnConfiguration().contextEnabled,
     contextTokenBudget: resolveContextTokenBudget(effectiveModel, definitions),
     getCompressedIds: (roomId: string) => getCompressedIds?.(roomId) ?? new Set<string>(),
     getCompressionSummary: options?.getCompressionSummary,
@@ -307,12 +315,12 @@ export const createAIAgent = (
     trailingPrompt?: string,
   ) => {
     const resolved = resolveEffective
-      ? resolveEffective(currentModel)
-      : { model: currentModel, fallback: false, reason: 'preferred_available' }
+      ? resolveEffective(turnConfiguration().model)
+      : { model: turnConfiguration().model, fallback: false, reason: 'preferred_available' }
     const effectiveModel = resolved.model
-    if (resolved.fallback && effectiveModel !== currentModel) {
+    if (resolved.fallback && effectiveModel !== turnConfiguration().model) {
       if (lastFallbackTarget !== effectiveModel) {
-        emit({ kind: 'model_fallback', preferred: currentModel, effective: effectiveModel, reason: resolved.reason })
+        emit({ kind: 'model_fallback', preferred: turnConfiguration().model, effective: effectiveModel, reason: resolved.reason })
       }
       lastFallbackTarget = effectiveModel
     } else if (!resolved.fallback) {
@@ -349,13 +357,13 @@ export const createAIAgent = (
       tokenBudget: info && info.contextMax > 0 ? Math.max(0, info.contextMax - toolTokens - OUTPUT_RESERVE - SAFETY_MARGIN) : undefined,
     }
     emit({ kind: 'context_ready', messages: contextResult.messages, model: effectiveModel,
-      temperature: currentTemperature, toolCount: effectiveToolDefs?.length ?? 0 })
+      temperature: turnConfiguration().temperature, toolCount: effectiveToolDefs?.length ?? 0 })
     for (const warning of contextResult.warnings) emit({ kind: 'warning', message: warning })
     // Compare skill declarations with the exact Room tool surface, for every
     // turn origin. A mismatch is visible evidence, not a new permission gate.
     if (getActiveSkillsDeclarations && effectiveToolDefs) {
       const surfaceNames = new Set(effectiveToolDefs.map(definition => definition.function.name))
-      for (const skill of getActiveSkillsDeclarations(currentSkills, roomId)) {
+      for (const skill of getActiveSkillsDeclarations(turnConfiguration().skills ?? [], roomId)) {
         if (skill.unavailable) emit({ kind: 'warning', message: skill.unavailable })
         const missing = skill.declaredTools.filter(tool => !surfaceNames.has(tool))
         if (missing.length > 0) emit({ kind: 'warning',
@@ -432,17 +440,9 @@ export const createAIAgent = (
     capturedContext?: ContextResult,
     preparationStages: ReadonlyArray<ExecutionStage> = [],
   ): Promise<EvalResult> => {
-    const evalConfig = {
-      ...baseConfig,
-      model: effectiveModel,
-      persona: currentPersona,
-      temperature: currentTemperature,
-      thinking: currentThinking,
-      reasoningEffort: currentReasoningEffort,
-      historyLimit,
-      ...(maxToolIterationsCfg !== undefined ? { maxToolIterations: maxToolIterationsCfg } : {}),
-    }
-    const evalToolExec = includeTools ? toolExecutor : undefined
+    const admitted = turnConfiguration()
+    const evalConfig = { ...admitted, model: effectiveModel }
+    const evalToolExec = admitted.includeTools === false ? undefined : (activeTurn === undefined ? toolExecutor : activeTurn.executor)
     // Tool-iteration check-in wiring. Returns a Promise the evaluate loop
     // awaits; the room's pending checkin Map below is keyed by roomId so
     // the agent-level continueTools() can resolve it from the HTTP route.
@@ -495,7 +495,7 @@ export const createAIAgent = (
       onEvent: emit,
       ...(postProgress ? { onProgress: postProgress } : {}),
       signal,
-      ...(checkinEnabled && maxToolIterationsCfg !== undefined ? { requestToolCheckin } : {}),
+      ...(checkinEnabled && admitted.maxToolIterations !== undefined ? { requestToolCheckin } : {}),
     }
     if (options?.onTurnStart) {
       signal.throwIfAborted()
@@ -523,7 +523,7 @@ export const createAIAgent = (
     const store = options?.executionStore
     if (!store) return evaluate(
       contextResult, evalConfig, llmProvider, evalToolExec,
-      maxToolIterationsCfg, triggerRoomId, evalOpts,
+      admitted.maxToolIterations, triggerRoomId, evalOpts,
     ) // Standalone/test agents have no persistent Workspace runtime.
     const begin = async (): Promise<void> => {
       signal.throwIfAborted()
@@ -599,7 +599,7 @@ export const createAIAgent = (
       const turnProvider = options?.providerForTurn?.(retainEvent) ?? llmProvider // Isolated providers have no service chain to observe.
       const result = await evaluate(
         contextResult, evalConfig, turnProvider, evalToolExec,
-        maxToolIterationsCfg, triggerRoomId, { ...evalOpts, onEvent: captureEvent, modelObserver, workingContext },
+        admitted.maxToolIterations, triggerRoomId, { ...evalOpts, onEvent: captureEvent, modelObserver, workingContext },
       )
       await pendingStages
       if (retaining) store.finishTurn(traceId, signal.aborted ? 'interrupted' : result.decision.response.action === 'error' ? 'failed' : 'completed',
@@ -659,6 +659,7 @@ export const createAIAgent = (
     // carries it so subscribers (the diagnostics ring buffer + UI) can
     // correlate per-eval state without polling.
     const traceId = generateTraceId()
+    admitTurn(traceId, triggerRoomId)
     const epoch = cm.epochAtStart()
     const abortController = new AbortController()
     activeAbortController = abortController
@@ -725,6 +726,7 @@ export const createAIAgent = (
         finish(abortController.signal.aborted ? 'cancelled' : outcome)
         if (requested) runningRequests.delete(triggerRoomId)
         notifyTurnFinished(traceId)
+        if (activeTurn?.traceId === traceId) activeTurn = undefined
         if (cm.isEpochCurrent(epoch)) {
           // A requested turn that waited behind this room's questions runs next.
           if (requestedTurns.has(triggerRoomId)) cm.addPending(triggerRoomId)
@@ -798,6 +800,27 @@ export const createAIAgent = (
   // values without needing to rebuild the agent.
   const liveMetadata: Record<string, unknown> = { model: currentModel, tags: currentTags }
 
+  const desiredConfiguration = (): AIAgentConfig => ({
+      ...baseConfig,
+      model: currentModel,
+      persona: currentPersona,
+      temperature: currentTemperature,
+      historyLimit,
+      historyTokenBudget: currentHistoryTokenBudget,
+      thinking: currentThinking,
+      reasoningEffort: currentReasoningEffort,
+      tools: currentTools,
+      skills: currentSkills,
+      tags: currentTags,
+      includePrompts: { ...includePromptsState },
+      includeContext: { ...includeContextState },
+      includeTools,
+      promptsEnabled,
+      contextEnabled,
+      ...(maxToolIterationsCfg !== undefined ? { maxToolIterations: maxToolIterationsCfg } : {}),
+      ...(currentTriggers.length > 0 ? { triggers: [...currentTriggers] } : {}),
+  })
+
   return {
     id: agentId,
     name: config.name,
@@ -824,7 +847,6 @@ export const createAIAgent = (
     getHistoryLimit: () => historyLimit,
     updateHistoryLimit: (n: number) => {
       historyLimit = n
-      for (const ctx of agentHistory.rooms.values()) ctx.history = ctx.history.slice(-historyLimit)
     },
     getThinking: () => currentThinking,
     updateThinking: (enabled: boolean) => { currentThinking = enabled },
@@ -886,27 +908,9 @@ export const createAIAgent = (
         historyEstimate: { messages: windowed.length, chars: historyChars },
       }
     },
-    getConfig: () => ({
-      ...baseConfig,
-      model: currentModel,
-      persona: currentPersona,
-      temperature: currentTemperature,
-      historyLimit,
-      historyTokenBudget: currentHistoryTokenBudget,
-      thinking: currentThinking,
-      reasoningEffort: currentReasoningEffort,
-      tools: currentTools,
-      skills: currentSkills,
-      tags: currentTags,
-      includePrompts: { ...includePromptsState },
-      includeContext: { ...includeContextState },
-      includeTools,
-      promptsEnabled,
-      contextEnabled,
-      ...(maxToolIterationsCfg !== undefined ? { maxToolIterations: maxToolIterationsCfg } : {}),
-      ...(currentTriggers.length > 0 ? { triggers: [...currentTriggers] } : {}),
-    }),
-    cancelGeneration: () => { activeAbortController?.abort(); activeAbortController = null; requestedTurns.clear(); cm.cancelAll() },
+    getConfig: desiredConfiguration,
+    getEffectiveConfig: () => activeTurn === undefined ? undefined : structuredClone(activeTurn.config),
+    cancelGeneration: () => { activeAbortController?.abort(); activeAbortController = null; activeTurn = undefined; requestedTurns.clear(); cm.cancelAll() },
     hasQueuedTurn: cm.hasQueuedWork,
     close: () => { requestedTurns.clear(); cm.close() },
     requestTurn: (roomId: string, turn: RequestedTurn) => {
@@ -1032,6 +1036,7 @@ export const createAIAgent = (
       const abortController = new AbortController()
       activeAbortController = abortController
       const triggerTraceId = generateTraceId()
+      admitTurn(triggerTraceId, roomId)
       const { emit: liveEmit, finish } = createTurnEvents(roomId, triggerTraceId, abortController.signal)
       const preparationStages: ExecutionStage[] = []
       let preparing = true
@@ -1064,6 +1069,7 @@ export const createAIAgent = (
       } finally {
         finish(abortController.signal.aborted ? 'cancelled' : outcome)
         notifyTurnFinished(triggerTraceId)
+        if (activeTurn?.traceId === triggerTraceId) activeTurn = undefined
         // Restore held incoming at the front; new arrivals during eval are
         // already at the back. Order preserved: held first, then new.
         if (heldIncoming.length > 0) {

@@ -347,7 +347,12 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
   const buildWorkspaceRuntime = async (id: WorkspaceId): Promise<{ system: AgentsWorkspaceRuntime; autoSaver: ModuleAutoSaver }> => {
     const paths = workspaceModulePaths(id)
     if (!await opts.moduleState.has(id)) throw new Error(`Agents Workspace not provisioned: ${id}`)
+    let autoSaver: ModuleAutoSaver | undefined
     const system = createAgentsWorkspaceRuntime({
+      persistConfiguration: async () => {
+        if (!autoSaver) throw new Error('Configuration persistence is not ready')
+        await autoSaver.flush()
+      },
       deployment: opts.deployment,
       workspaceLabel: id,
       runWorkspaceOperation: work => withWorkspace(id, async () => {
@@ -359,7 +364,6 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
       executionsFile: paths.agents.executions,
     })
 
-    let autoSaver: ModuleAutoSaver | undefined
     try {
       // Rooms and Agent runtime data remain separate strict documents inside
       // the Agents Module. Corrupt or obsolete state fails the load.
