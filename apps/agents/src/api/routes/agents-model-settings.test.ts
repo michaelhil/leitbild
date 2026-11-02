@@ -1,3 +1,11 @@
+import { mkdtemp, rm, readFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { newWorkspaceId } from '@leitbild/contracts'
+import { workspaceModulePaths } from '../../core/paths.ts'
+import { createWorkspaceSettings } from '../../core/workspaces/settings.ts'
+import { createBookmarkStore } from '../../core/workspaces/bookmark-store.ts'
+import { serializeModuleSnapshots, saveWorkspaceModuleSnapshots, loadWorkspaceModuleSnapshots, restoreWorkspaceModuleSnapshots } from '../../core/storage/module-snapshots.ts'
 import { afterEach, describe, expect, test } from 'bun:test'
 import { createAIAgent, type Decision } from '../../agents/ai-agent.ts'
 import { createTeam } from '../../agents/team.ts'
@@ -23,6 +31,9 @@ const setup = (provider: LLMProvider) => {
   let saves = 0
   const system = {
     team,
+    settings: createWorkspaceSettings(),
+    bookmarks: createBookmarkStore(),
+    refreshAllAgentTools: async () => {},
     rooms: createRoomDirectory({}),
     toolRegistry: createToolRegistry(),
     skillStore: { list: () => [], get: () => undefined },
@@ -129,4 +140,41 @@ describe('Agent model settings API', () => {
     expect((await request('PATCH', '/agents/Helper', { reasoningEffort: null })).status).toBe(200)
     expect((await request('POST', '/agents', { name: 'Bad', model: 'fixture', persona: 'Bad', reasoningEffort: null })).status).toBe(400)
   })
+})
+
+
+test('mixed Agent patches validate atomically and accepted edits persist through the strict snapshot boundary', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'leitbild-config-atomic-'))
+  const previous = process.env.LEITBILD_HOME
+  process.env.LEITBILD_HOME = root
+  try {
+    const provider: LLMProvider = { chat: async () => ({ content: 'Done', generationMs: 0, tokensUsed: { prompt: 1, completion: 1 } }), models: async () => ['fixture'] }
+    const { system, request, saves } = setup(provider)
+    system.toolRegistry.register({ name: 'known', description: 'Known', parameters: {}, execute: async () => ({ success: true }) })
+    await request('POST', '/agents', { name: 'Helper', model: 'fixture', persona: 'Original', tools: ['known'] })
+    const agent = system.team.getAgent('Helper') as ReturnType<typeof createAIAgent>
+    const original = structuredClone(agent.getConfig())
+    const paths = workspaceModulePaths(newWorkspaceId())
+    await saveWorkspaceModuleSnapshots(serializeModuleSnapshots(system), paths)
+    const before = await readFile(paths.agents.snapshot, 'utf8')
+    for (const invalid of [
+      { skills: ['missing'] }, { tools: ['typo'] }, { tools: [42] }, { historyLimit: -1 }, { historyLimit: 1.5 },
+      { temperature: 'warm' }, { temperature: -1 }, { maxToolIterations: 0 }, { maxToolIterations: 1.5 },
+      { includePrompts: { invented: true } }, { includeContext: { participants: 'true' } }, { tags: [false] }, { invented: true },
+    ]) {
+      expect((await request('PATCH', '/agents/Helper', { persona: 'Must not apply', ...invalid })).status).toBe(400)
+      expect(agent.getConfig()).toEqual(original)
+      expect(saves()).toBe(0)
+      expect(await readFile(paths.agents.snapshot, 'utf8')).toBe(before)
+    }
+    expect((await request('PATCH', '/agents/Helper', { persona: 'Accepted', tools: ['known'], historyLimit: 250, maxToolIterations: 7 })).status).toBe(200)
+    expect(saves()).toBe(1)
+    await saveWorkspaceModuleSnapshots(serializeModuleSnapshots(system), paths)
+    const restored = setup(provider)
+    await restoreWorkspaceModuleSnapshots(restored.system, await loadWorkspaceModuleSnapshots(paths))
+    expect((restored.system.team.getAgent('Helper') as ReturnType<typeof createAIAgent>).getConfig()).toMatchObject({ persona: 'Accepted', tools: ['known'], historyLimit: 250, maxToolIterations: 7 })
+  } finally {
+    if (previous === undefined) delete process.env.LEITBILD_HOME; else process.env.LEITBILD_HOME = previous
+    await rm(root, { recursive: true, force: true })
+  }
 })

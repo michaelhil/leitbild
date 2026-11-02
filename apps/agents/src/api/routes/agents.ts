@@ -1,3 +1,4 @@
+import { agentConfigurationPatchSchema, withAgentConfigurationUpdate } from '../../agents/configuration.ts'
 import { json, errorResponse, parseBody } from './helpers.ts'
 import { asAIAgent } from '../../agents/shared.ts'
 import { toolsToDefinitions } from '../../llm/tool-capability.ts'
@@ -15,10 +16,6 @@ const modelSettingsSchema = z.object({
   reasoningEffort: z.enum(REASONING_EFFORTS).optional(),
   historyTokenBudget: z.number().int().positive().optional(),
   thinking: z.boolean().optional(),
-})
-const modelSettingsPatchSchema = modelSettingsSchema.extend({
-  reasoningEffort: modelSettingsSchema.shape.reasoningEffort.nullable(),
-  historyTokenBudget: modelSettingsSchema.shape.historyTokenBudget.nullable(),
 })
 
 // Soft model-availability check used by both POST and PATCH agent handlers.
@@ -231,13 +228,21 @@ export const agentRoutes: RouteEntry[] = [
   {
     method: 'PATCH',
     pattern: /^\/agents\/([^/]+)$/,
-    handler: async (req, match, { system, workspaceId, broadcastToWorkspace }) => {
+    handler: async (req, match, { system, workspaceId, broadcastToWorkspace }) => withAgentConfigurationUpdate(system.team, async () => {
       const name = decodeURIComponent(match[1]!)
       const agent = system.team.getAgent(name)
       if (!agent) return errorResponse(`Agent "${name}" not found`, 404)
-      const body = await parseBody(req)
-      const modelSettings = modelSettingsPatchSchema.safeParse(body)
-      if (!modelSettings.success) return errorResponse(modelSettings.error.message, 400)
+      const parsed = agentConfigurationPatchSchema.safeParse(await parseBody(req))
+      if (!parsed.success) return errorResponse(parsed.error.message, 400)
+      const body = parsed.data
+      const known = new Set(system.toolRegistry.list().map(tool => tool.name))
+      const missingTools = body.tools?.filter(tool => !known.has(tool)) ?? []
+      if (missingTools.length) return errorResponse(`Tools not found: ${missingTools.join(', ')}`, 400)
+      const missingSkills = body.skills?.filter(skill => !system.skillStore.get(skill)) ?? []
+      if (missingSkills.length) return errorResponse(`Skills not found: ${missingSkills.join(', ')}`, 400)
+      const modelStatus = body.model === undefined ? undefined : await resolveModelStatus(system, body.model)
+      // Revalidate live contribution existence after the only asynchronous read.
+      if (body.tools?.some(tool => !system.toolRegistry.has(tool)) || body.skills?.some(skill => !system.skillStore.get(skill))) return errorResponse('Selected contribution was retired during configuration; rediscover and retry', 409)
       // --- Rename ---
       // Process before any other field so subsequent UI events reference the
       // new name. Humans are renameable today; AI rename support depends on
@@ -250,14 +255,12 @@ export const agentRoutes: RouteEntry[] = [
         broadcastToWorkspace(workspaceId, evt)
       }
       const aiAgent = asAIAgent(agent)
-      let modelStatus: ModelStatus | undefined
       if (aiAgent) {
-        if (body.persona) aiAgent.updatePersona(body.persona as string)
+        if (body.persona !== undefined) aiAgent.updatePersona(body.persona)
         if (body.model) {
           // Same soft-validation as POST — accept the update, surface status
           // so the UI can warn if currently unavailable.
           const requestedModel = body.model as string
-          modelStatus = await resolveModelStatus(system, requestedModel)
           if (modelStatus === 'unavailable') {
             console.warn(`[agents] Model "${requestedModel}" not currently available — agent will use fallback when invoked.`)
           }
@@ -265,9 +268,9 @@ export const agentRoutes: RouteEntry[] = [
         }
         if (body.temperature !== undefined) aiAgent.updateTemperature?.(body.temperature as number | undefined)
         if (body.historyLimit !== undefined) aiAgent.updateHistoryLimit?.(body.historyLimit as number)
-        if (modelSettings.data.thinking !== undefined) aiAgent.updateThinking?.(modelSettings.data.thinking)
-        if (modelSettings.data.reasoningEffort !== undefined) aiAgent.updateReasoningEffort(modelSettings.data.reasoningEffort ?? undefined)
-        if (modelSettings.data.historyTokenBudget !== undefined) aiAgent.updateHistoryTokenBudget(modelSettings.data.historyTokenBudget ?? undefined)
+        if (body.thinking !== undefined) aiAgent.updateThinking?.(body.thinking)
+        if (body.reasoningEffort !== undefined) aiAgent.updateReasoningEffort(body.reasoningEffort ?? undefined)
+        if (body.historyTokenBudget !== undefined) aiAgent.updateHistoryTokenBudget(body.historyTokenBudget ?? undefined)
         const inc = sanitizeIncludePrompts(body.includePrompts)
         if (inc) aiAgent.updateIncludePrompts(inc)
         const incCtx = sanitizeIncludeContext(body.includeContext)
@@ -277,25 +280,11 @@ export const agentRoutes: RouteEntry[] = [
         if (typeof body.contextEnabled === 'boolean') aiAgent.updateContextEnabled(body.contextEnabled)
         if (body.maxToolIterations === null) aiAgent.updateMaxToolIterations(undefined)
         else if (typeof body.maxToolIterations === 'number') aiAgent.updateMaxToolIterations(body.maxToolIterations)
-        // Tool-list edits rebuild every AI agent's tool support via the
-        // system helper. Routing through refreshAllAgentTools is what keeps
-        // the per-room pack-activation resolver wired — building a fresh
-        // support object here with raw buildToolSupport (no resolvers)
-        // silently erased it, so PATCH'd agents lost per-room filtering.
-        // Rejects names not in the registry before updating.
-        if (Array.isArray(body.tools)) {
-          const requested = (body.tools as unknown[]).filter((n): n is string => typeof n === 'string')
-          const known = new Set(system.toolRegistry.list().map(t => t.name))
-          const resolved = requested.filter(n => known.has(n))
-          aiAgent.updateTools?.(resolved)
+        if (body.tools !== undefined) {
+          aiAgent.updateTools?.([...new Set(body.tools)])
           await system.refreshAllAgentTools()
         }
-        if (Array.isArray(body.skills)) {
-          const requested = (body.skills as unknown[]).filter((name): name is string => typeof name === 'string')
-          const missing = requested.filter(name => system.skillStore.get(name) === undefined)
-          if (missing.length > 0) return errorResponse(`Skills not found: ${missing.join(', ')}`, 400)
-          aiAgent.updateSkills([...new Set(requested)])
-        }
+        if (body.skills !== undefined) aiAgent.updateSkills([...new Set(body.skills)])
       }
       if (typeof body.description === 'string' && agent.updateDescription) {
         agent.updateDescription(body.description)
@@ -311,7 +300,7 @@ export const agentRoutes: RouteEntry[] = [
       // memory until the next message-post (or a SIGKILL loses them).
       system.notifyAgentSettingsChanged()
       return json({ updated: true, name: agent.name, ...(modelStatus !== undefined ? { modelStatus } : {}) })
-    },
+    }),
   },
   {
     method: 'GET',
