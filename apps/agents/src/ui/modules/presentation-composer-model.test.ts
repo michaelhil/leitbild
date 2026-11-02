@@ -86,3 +86,36 @@ test('browser parsers follow the checked contract and reject hidden fields, wron
   expect(parsePresentationClear({ type: 'leitbild:presentation-clear', recipient, room, requestId: request.id, clearRequestId: 'actual-clear' })).toMatchObject({ requestId: request.id, clearRequestId: 'actual-clear' })
   expect(parsePresentationClear({ type: 'leitbild:presentation-clear', recipient, room, requestId: request.id, clearRequestId: 1 })).toBeNull()
 })
+
+
+test('submission capacity preserves every unconfirmed human post and refuses before a new draft can be sent', () => {
+  const { model, request, hints } = make()
+  const links: NonNullable<ReturnType<typeof model.postContext>['presentationDraft']>[] = []
+  for (let i = 0; i < 16; i++) {
+    const current = { ...request, id: `pending-${i}` }
+    model.receive(current, room); model.choose(current.id, 'insert', '')
+    links.push(model.postContext(room.id).presentationDraft!); model.submitted()
+  }
+  const waiting = { ...request, id: 'waiting-17' }
+  model.receive(waiting, room)
+  const unsent = model.choose(waiting.id, 'replace', 'existing draft')!
+  expect(unsent).toBe('sitrep unit 1')
+  expect(() => model.postContext(room.id)).toThrow('still awaiting their actual message receipts')
+  expect(model.chosen()?.link.requestId).toBe(waiting.id)
+  model.acknowledge(links[0]!, room.id, 'actual-human-message-0')
+  expect(hints).toMatchObject([{ requestId: 'pending-0', messageId: 'actual-human-message-0' }])
+  // A reconciled link may retire; the remaining unconfirmed links survive.
+  expect(model.postContext(room.id).presentationDraft?.requestId).toBe(waiting.id)
+  model.acknowledge(links[1]!, room.id, 'actual-human-message-1')
+  expect(hints.at(-1)).toMatchObject({ requestId: 'pending-1', messageId: 'actual-human-message-1' })
+})
+
+test('an expired linked recipient cannot silently turn the chosen draft into an unrelated post', () => {
+  const { model, request, tick } = make()
+  model.receive(request, room); model.choose(request.id, 'insert', '')
+  tick(61_000)
+  expect(() => model.postContext(room.id)).toThrow('no current browser receiver')
+  expect(model.chosen()?.link.requestId).toBe(request.id)
+  model.unlink()
+  expect(model.postContext(room.id)).toEqual({})
+})

@@ -69,10 +69,21 @@ export const createPresentationComposerModel = (deps: {
     roomChanged(): void { suggestions.clear(); chosen = undefined },
     postContext(roomId: string): { presentationRecipient?: PresentationRecipient; presentationDraft?: PresentationPromptLink } {
       const current = live()
-      if (current === undefined) return {}
+      if (current === undefined) {
+        if (chosen !== undefined) throw Object.assign(new Error('The linked prompt has no current browser receiver. Reconnect or explicitly Remove link before sending it.'), { code: 'presentation_recipient_unavailable' })
+        return {}
+      }
       if (chosen !== undefined && chosen.room.id === roomId && sameRecipient(chosen.recipient, current)) {
+        // Submission acknowledgements have a different lifetime from the
+        // owner's presentation queue. Never evict an unconfirmed human post.
+        // Keep at most 16 pending/recent links in this browser; an actual
+        // acknowledged Message can be read from its owner after its hint.
+        if (!posted.has(chosen.link.requestId) && posted.size >= 16) {
+          const reconciled = [...posted].find(([, entry]) => entry.messageId !== undefined)
+          if (reconciled === undefined) throw Object.assign(new Error('16 linked prompt submissions are still awaiting their actual message receipts. Wait, or explicitly Remove link before sending this draft.'), { code: 'presentation_correlation_capacity' })
+          posted.delete(reconciled[0])
+        }
         posted.set(chosen.link.requestId, { choice: { ...chosen, recipient: current } })
-        if (posted.size > 16) posted.delete(posted.keys().next().value!) // Same current receiver bound as the owner's pending queue.
         return { presentationRecipient: current, presentationDraft: chosen.link }
       }
       return { presentationRecipient: current }

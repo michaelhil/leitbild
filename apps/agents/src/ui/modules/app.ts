@@ -550,8 +550,14 @@ const submitComposer = (roomId: string, content: string, senderId: string): void
   const roomName = roomIdToName(roomId)
   if (!roomName) return
   const pendingAtts = getAttachments(roomId)
+  let presentationContext: ReturnType<typeof presentationComposer.postContext>
+  try { presentationContext = presentationComposer.postContext(roomId) }
+  catch (error) {
+    showToast(document.body, error instanceof Error ? error.message : String(error), { type: 'error', position: 'fixed' })
+    return // The unsent draft and its source association remain for review.
+  }
   send({ type: 'post_message', target: { rooms: [roomName] }, content, senderId,
-    focusedSubjects: getFocusedSubjects(), ...presentationComposer.postContext(roomId),
+    focusedSubjects: getFocusedSubjects(), ...presentationContext,
     ...(pendingAtts.length > 0 ? { attachments: pendingAtts } : {}),
   })
   presentationComposer.submitted()
