@@ -62,6 +62,17 @@ test('Perspective construction is default-off and rejects unsafe template select
   } finally { await ready.close() }
 })
 
+test('a scheduled public template is refused before construction rather than silently changing its policy', async () => {
+  const f = await fixture()
+  try {
+    const publicRoom = f.runtime.rooms.createRoom({ name: 'Public schedule', createdBy: f.human.id })
+    f.template.addTrigger!({ id: 'scheduled', name: 'Schedule', prompt: 'Report', mode: 'execute', intervalSec: 60, enabled: true, roomId: publicRoom.profile.id })
+    await expect(f.prepare()).rejects.toMatchObject({ code: 'perspective_template_triggers_unsupported' })
+    expect(f.runtime.rooms.listAllRooms()).toHaveLength(1)
+    expect(f.template.getTriggers!()).toHaveLength(1)
+  } finally { await f.close() }
+})
+
 test('preparation publishes an empty, immutable, separately identified Room and runtime before either owner admits execution', async () => {
   const f = await fixture()
   try {

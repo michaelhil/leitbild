@@ -186,6 +186,7 @@ export const createPerspectiveRooms = (deps: PerspectiveRoomsDeps) => {
       const template = deps.team.getAgent(input.templateId), ai = template === undefined ? undefined : asAIAgent(template)
       if (ai === undefined) return fail('perspective_template_unavailable', 'Choose an existing public AI Agent template')
       const config = structuredClone(ai.getConfig())
+      if ((config.triggers?.length ?? 0) > 0) fail('perspective_template_triggers_unsupported', 'The pilot cannot copy scheduled triggers; choose a public template with no triggers')
       const owner = config.ownerRoomId === undefined ? undefined : deps.rooms.getRoom(config.ownerRoomId)
       if (owner !== undefined && isPerspectiveScope(owner.profile.scope)) fail('perspective_template_private', 'A private runtime cannot become another perspective template')
       if (agentConfigurationRevision(config) !== input.templateRevision) fail('perspective_template_revision_conflict', 'Agent template changed; inspect its canonical configuration revision')
