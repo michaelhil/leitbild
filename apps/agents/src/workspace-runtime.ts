@@ -977,7 +977,13 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
       workspaceId: options.workspaceId, enabled: () => options.perspectivePilot?.enabled === true,
       rooms, team, tools: toolRegistry, skills: skillStore, workspacePrompt: settings.getPrompt, responseFormat: settings.getResponseFormat,
       createRoom: async (perspective, initialize) => (await createRoomWithBudget({ scope: { kind: 'resource', resource: perspective }, name: 'Perspective Assistant', createdBy: 'perspective-owner' }, initialize)).value,
-      spawn: (config, actualAgentId) => boundSpawnAIAgent(config, { overrideId: actualAgentId }),
+      // Resolve at admission time: bootstrap wraps the published spawn port
+      // with registry ownership and structural state subscriptions.
+      spawn: async (config, actualAgentId) => {
+        const agent = asAIAgent(await system.spawnAIAgent(config, { overrideId: actualAgentId }))
+        if (agent === undefined) throw new Error('Perspective preparation requires an AI runtime')
+        return agent
+      },
       readWorld: options.perspectiveWorldRead ?? perspectiveWorld.read,
       changed: () => agentSettingsChanged.proxy(),
       persist: async () => { if (options.persistConfiguration !== undefined) await options.persistConfiguration(); else if (options.executionsFile !== undefined) throw new Error('Perspective persistence is not wired') },

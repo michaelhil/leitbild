@@ -30,7 +30,7 @@ export const mountPerspectiveViewPanel = (deps: {
     const state = perspectiveView.status(), lease = perspectiveView.current(), room = deps.room()
     const label = state === 'connected' ? 'Connected' : state === 'connecting' ? 'Connecting' : state === 'expired' ? 'View expired' : 'View unavailable'
     status.textContent = state === 'expired' || state === 'unavailable'
-      ? `${label}. Reopen from the current exercise. Your unsent text remains here; retained history is locked after revocation.`
+      ? `${label}. Drafts stay only in this document. Copy unsent text before reconnecting or changing scope. Retained history is locked after revocation.`
       : `${label}. Send as yourself; the Assistant can read this view and offer attention cues.`
     identity.textContent = lease === undefined ? 'No admitted view.' : `Perspective: ${lease.perspective.id}\nConversation: ${lease.room.id}\nTemplate: ${room?.perspective?.admission.templateId ?? 'awaiting Room snapshot'}\nTemplate revision: ${room?.perspective?.admission.templateRevision ?? 'awaiting Room snapshot'}`
     const send = deps.form.querySelector<HTMLButtonElement>('button[type="submit"]')

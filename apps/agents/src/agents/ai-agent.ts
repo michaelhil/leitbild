@@ -616,6 +616,10 @@ export const createAIAgent = (
         admitted.maxToolIterations, triggerRoomId, { ...evalOpts, onEvent: captureEvent, modelObserver, workingContext },
       )
       await pendingStages
+      // The provider may complete after World has ended this perspective but
+      // before its peer-stop notification arrives. Retain the actual model
+      // response/cost first, then close the turn under fresh authority.
+      await options?.assertTurnAllowed?.(triggerRoomId, signal)
       if (retaining) store.finishTurn(traceId, signal.aborted ? 'interrupted' : result.decision.response.action === 'error' ? 'failed' : 'completed',
         result.decision.response.action === 'error' ? result.decision.response.message : undefined)
       return result

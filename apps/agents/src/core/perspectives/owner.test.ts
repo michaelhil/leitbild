@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { newWorkspaceId, perspectiveAdmissionSchema, worldPerspectiveReferenceSchema, type PerspectiveAdmission } from '@leitbild/contracts'
+import { accessContextSchema, newRequestId, newWorkspaceId, perspectiveAdmissionSchema, worldPerspectiveReferenceSchema, type PerspectiveAdmission } from '@leitbild/contracts'
 import { createAgentsWorkspaceRuntime } from '../../workspace-runtime.ts'
 import { createDeploymentRuntime } from '../deployment-runtime.ts'
 import { makeStubGateway, makeStubSetup, stubProviderConfig } from '../../api/__fixtures__/stub-gateway.ts'
@@ -9,19 +9,26 @@ import { asAIAgent } from '../../agents/shared.ts'
 import { bindingOf, toolWitness } from './owner.ts'
 import { createRuntimeAccessView } from '../workspaces/runtime-access.ts'
 import { createWSManager } from '../../api/ws-handler.ts'
-import { serializeModuleSnapshots, saveWorkspaceModuleSnapshots, loadWorkspaceModuleSnapshots } from '../storage/module-snapshots.ts'
+import { serializeModuleSnapshots, saveWorkspaceModuleSnapshots, loadWorkspaceModuleSnapshots, createModuleAutoSaver, restoreWorkspaceModuleSnapshots } from '../storage/module-snapshots.ts'
 import type { WorkspaceModulePaths } from '../paths.ts'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import type { ProviderGateway } from '../../llm/provider-gateway.ts'
+import type { ChatRequest } from '../types/llm.ts'
+import { wireWorkspaceRuntimeEvents } from '../../api/wire-workspace-runtime-events.ts'
+import { wireAgentTracking } from '../../api/agent-tracking.ts'
+import { handleAPI, type RouteDeps } from '../../api/http-routes.ts'
+import { createExecutionStore } from '../executions/store.ts'
 
-const fixture = async (enabled = true, persist: () => Promise<void> = async () => {}) => {
+const fixture = async (enabled = true, persist: () => Promise<void> = async () => {}, options: { gateway?: ProviderGateway; hostBaseUrl?: string; executionsFile?: string } = {}) => {
   const workspaceId = newWorkspaceId()
-  const deployment = createDeploymentRuntime({ providerConfig: stubProviderConfig, providerSetup: makeStubSetup(makeStubGateway()) })
+  const deployment = createDeploymentRuntime({ providerConfig: stubProviderConfig, providerSetup: makeStubSetup(options.gateway ?? makeStubGateway()) })
   deployment.sharedToolRegistry.register(createPassTool())
   const worlds = new Map<string, PerspectiveAdmission>()
   let readWorld: (id: string) => Promise<PerspectiveAdmission> = async id => structuredClone(worlds.get(id)!)
-  const runtime = createAgentsWorkspaceRuntime({ deployment, workspaceId, workspaceHostUrl: 'http://127.0.0.1:1',
+  const runtime = createAgentsWorkspaceRuntime({ deployment, workspaceId, workspaceHostUrl: options.hostBaseUrl ?? 'http://127.0.0.1:1',
+    ...(options.executionsFile === undefined ? {} : { executionsFile: options.executionsFile }),
     perspectivePilot: { enabled }, persistConfiguration: persist,
     perspectiveWorldRead: async reference => readWorld(reference.id),
   })
@@ -41,11 +48,54 @@ const fixture = async (enabled = true, persist: () => Promise<void> = async () =
     worlds.set(prepared.perspective.id, perspectiveAdmissionSchema.parse({ ...worlds.get(prepared.perspective.id), status: 'active', revision: 1, binding: bindingOf(prepared) }))
     return runtime.perspectiveRooms!.bind(prepared.room.id, prepared.revision)
   }
-  return { runtime, template, human, worlds, workspaceId, input, prepare, bind,
+  return { runtime, deployment, template, human, worlds, workspaceId, input, prepare, bind,
     setRead: (read: typeof readWorld) => { readWorld = read },
     close: async () => { for (const agent of runtime.team.listByKind('ai')) { const ai = asAIAgent(agent)!; ai.close(); ai.cancelGeneration() }; await runtime.comparisons.close(); runtime.executionStore.close(); deployment.providerSetup.dispose() },
   }
 }
+
+const eventually = async (description: string, predicate: () => boolean): Promise<void> => {
+  const deadline = performance.now() + 2_000
+  while (!predicate()) {
+    if (performance.now() > deadline) throw new Error(`Timed out waiting for ${description}`)
+    await Bun.sleep(5)
+  }
+}
+
+const callHTTP = async (f: Awaited<ReturnType<typeof fixture>>, method: string, path: string, token?: string, body?: unknown) => {
+  const request = new Request(`http://local${path}`, { method,
+    headers: { 'Content-Type': 'application/json', ...(token === undefined ? {} : { 'X-Leitbild-Perspective-View': token }) },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  })
+  // These routes do not use deployment catalog mutation ports.
+  const deps: RouteDeps = { broadcastAllWorkspaces: () => {}, broadcastToWorkspace: () => {}, subscribeAgentState: () => {},
+    packManager: {} as RouteDeps['packManager'], roomDefinitions: {} as RouteDeps['roomDefinitions'] }
+  return (await handleAPI(request, path, f.runtime, f.workspaceId, accessContextSchema.parse({ workspaceId: f.workspaceId,
+    requestId: newRequestId(), actor: { kind: 'human', id: f.human.id } }), deps))!
+}
+
+const pathsFor = (root: string): WorkspaceModulePaths => {
+  const agentsRoot = join(root, 'agents'), roomsRoot = join(agentsRoot, 'rooms')
+  return { root,
+    rooms: { root: roomsRoot, marker: join(roomsRoot, 'workspace.json'), snapshot: join(roomsRoot, 'snapshot.json'), logs: join(roomsRoot, 'logs'), documents: join(roomsRoot, 'documents') },
+    agents: { root: agentsRoot, marker: join(agentsRoot, 'workspace.json'), snapshot: join(agentsRoot, 'snapshot.json'), inspections: join(agentsRoot, 'generation-inspections.json'), executions: join(agentsRoot, 'executions.sqlite'), people: join(agentsRoot, 'people.sqlite'), memory: join(agentsRoot, 'memory'), vectors: join(agentsRoot, 'vectors.jsonl') },
+  }
+}
+
+test('private owner preparation uses the installed production spawn tracking wrapper exactly once', async () => {
+  const f = await fixture()
+  try {
+    const attached: string[] = [], subscribed: string[] = []
+    wireAgentTracking(f.runtime, f.workspaceId, {
+      attach: id => { attached.push(id) }, detach: () => {},
+      subscribeAgentState: agent => { subscribed.push(agent.id) }, unsubscribeAgentState: () => {},
+    })
+    const prepared = await f.prepare()
+    expect(attached).toEqual([prepared.actualAgentId])
+    expect(subscribed).toEqual([prepared.actualAgentId])
+    expect(f.runtime.team.getAgent(prepared.actualAgentId)?.id).toBe(prepared.actualAgentId)
+  } finally { await f.close() }
+})
 
 test('Perspective construction is default-off and rejects unsafe template selection before creating a Room', async () => {
   const disabled = await fixture(false)
@@ -146,11 +196,7 @@ test('real human authors persist without joining private execution membership; u
     expect(() => room.post({ senderId: f.template.id, type: 'chat', content: 'Impersonating an extra runtime' })).toThrow('existing public human')
     expect(() => room.post({ senderId: 'unknown-person', type: 'chat', content: 'Unadmitted author' })).toThrow('existing public human')
     const snapshots = serializeModuleSnapshots(f.runtime)
-    const agentsRoot = join(root, 'agents'), roomsRoot = join(agentsRoot, 'rooms')
-    const paths: WorkspaceModulePaths = { root,
-      rooms: { root: roomsRoot, marker: join(roomsRoot, 'workspace.json'), snapshot: join(roomsRoot, 'snapshot.json'), logs: join(roomsRoot, 'logs'), documents: join(roomsRoot, 'documents') },
-      agents: { root: agentsRoot, marker: join(agentsRoot, 'workspace.json'), snapshot: join(agentsRoot, 'snapshot.json'), inspections: join(agentsRoot, 'generation-inspections.json'), executions: join(agentsRoot, 'executions.sqlite'), people: join(agentsRoot, 'people.sqlite'), memory: join(agentsRoot, 'memory'), vectors: join(agentsRoot, 'vectors.jsonl') },
-    }
+    const paths = pathsFor(root)
     await saveWorkspaceModuleSnapshots(snapshots, paths)
     const saved = await loadWorkspaceModuleSnapshots(paths)
     const persisted = saved.rooms!.rooms.find(candidate => candidate.profile.id === room.profile.id)!
@@ -234,4 +280,123 @@ test('revoke completes while bind verifies its peer; stale continuation cannot r
     expect(owner.read(prepared.room.id)).toEqual(revoked)
     expect(owner.isLocallyReady(prepared.room.id)).toBe(false)
   } finally { await f.close() }
+})
+
+for (const peerStop of [true, false]) test(`World revoke ${peerStop ? 'with' : 'without'} peer cancellation retains late provider cost without WS content or an answer`, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'perspective-late-provider-'))
+  const previousHome = process.env.LEITBILD_HOME
+  process.env.LEITBILD_HOME = root
+  const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>()
+  let providerSignal: AbortSignal | undefined
+  const requests: ChatRequest[] = [], contextOrigins: unknown[] = []
+  const gateway: ProviderGateway = { ...makeStubGateway(),
+    modelInfo: async model => ({ id: model, provider: 'stub', contextMax: 128_000, source: 'fixture' }),
+    stream: async function* (request, signal) {
+      requests.push(request); providerSignal = signal
+      yield { delta: 'PRIVATE_STREAM_CANARY', done: false }
+      entered.resolve()
+      // An admitted provider may ignore abort and report its actual cost later.
+      await release.promise
+      yield { delta: '_LATE_PRIVATE_CANARY', done: false }
+      yield { delta: '', done: true, tokensUsed: { prompt: 17, completion: 9 }, billing: { generationId: 'fixture-late-generation', costUsd: 0.125 } }
+    },
+  }
+  const host = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch: async request => {
+    const body = await request.json() as { perspectiveOrigin: unknown }
+    contextOrigins.push(body.perspectiveOrigin)
+    return Response.json({ result: { context: { text: 'PRIVATE_WORLD_CONTEXT_CANARY', at: new Date().toISOString(), clock: 'simulation' } } })
+  } })
+  let saver: ReturnType<typeof createModuleAutoSaver> | undefined
+  const f = await fixture(true, async () => { await saver!.flush() }, { gateway, hostBaseUrl: host.url.origin, executionsFile: join(root, 'executions.sqlite') })
+  saver = createModuleAutoSaver(f.runtime, pathsFor(root), 10_000)
+  const manager = createWSManager({ getRuntime: () => f.runtime })
+  const attached: string[] = [], output = { ordinary: [] as string[], private: [] as string[] }
+  wireAgentTracking(f.runtime, f.workspaceId, { attach: id => { attached.push(id) }, detach: () => {},
+    subscribeAgentState: manager.subscribeAgentState, unsubscribeAgentState: manager.unsubscribeAgentState })
+  const unwire = wireWorkspaceRuntimeEvents(f.runtime, manager, saver, f.workspaceId)
+  try {
+    const admission = await f.bind(), room = f.runtime.rooms.getRoom(admission.room.id)!
+    const lease = await f.runtime.perspectiveRooms!.viewOpen(admission.room.id, admission.revision, crypto.randomUUID())
+    for (const key of ['ordinary', 'private'] as const) {
+      manager.sessions.set(key, { workspaceId: f.workspaceId, sessionToken: key, lastActivity: 1,
+        ...(key === 'ordinary' ? {} : { focusedRoomId: room.profile.id, perspectiveViewToken: lease.token }) })
+      manager.wsConnections.set(key, { send: value => output[key].push(value), close: () => {}, getBufferedAmount: () => 0 })
+    }
+    const posted = await callHTTP(f, 'POST', '/messages', lease.token, { senderId: f.human.id, content: 'PRIVATE_HUMAN_CANARY', target: { rooms: [room.profile.id] } })
+    expect(posted.status).toBe(201)
+    await entered.promise
+    expect(attached).toEqual([admission.actualAgentId])
+    expect(output.private.some(value => value.includes('agent_state') && value.includes('generating'))).toBe(true)
+    expect(JSON.stringify(contextOrigins)).toContain(admission.actualAgentId)
+    expect(JSON.stringify(requests)).toContain('PRIVATE_WORLD_CONTEXT_CANARY')
+    expect(f.runtime.executionStore.listTurns(room.profile.id)).toHaveLength(1)
+    const originalTurn = f.runtime.executionStore.listTurns(room.profile.id)[0]!
+    expect(JSON.stringify(contextOrigins)).toContain(originalTurn.id)
+
+    f.worlds.set(admission.perspective.id, perspectiveAdmissionSchema.parse({ ...f.worlds.get(admission.perspective.id), status: 'revoked', revision: 2, revokedReason: 'Role ended' }))
+    if (peerStop) await f.runtime.perspectiveRooms!.revoke(room.profile.id, admission.revision, 'World owner revoked')
+    expect(providerSignal?.aborted).toBe(peerStop)
+    release.resolve()
+    await eventually('late provider billing capture', () => f.runtime.executionStore.modelEvidence(room.profile.id, originalTurn.id).models[0]?.metrics?.costUsd === 0.125)
+    await Bun.sleep(10) // Allow the completed evaluator to attempt publication.
+    expect(room.getRetainedMessages().filter(message => message.senderId === admission.actualAgentId)).toEqual([])
+    expect(f.runtime.executionStore.getTurn(room.profile.id, originalTurn.id)?.status).toBe('interrupted')
+    expect((await callHTTP(f, 'GET', `/rooms/${room.profile.id}`, lease.token)).status).toBe(403)
+    const evidence = f.runtime.executionStore.getModelCall(room.profile.id, originalTurn.id, 'model_1')!
+    expect(evidence.response?.metrics).toMatchObject({ costUsd: 0.125, generationId: 'fixture-late-generation', promptTokens: 17, completionTokens: 9 })
+    expect(evidence.response?.content).toContain('_LATE_PRIVATE_CANARY')
+    const reopened = createExecutionStore(join(root, 'executions.sqlite'))
+    try {
+      expect(reopened.getTurn(room.profile.id, originalTurn.id)?.status).toBe('interrupted')
+      expect(reopened.getModelCall(room.profile.id, originalTurn.id, 'model_1')?.response?.metrics.costUsd).toBe(0.125)
+    } finally { reopened.close() }
+    const replacement = await f.bind()
+    expect(replacement.actualAgentId).not.toBe(admission.actualAgentId)
+    expect(f.runtime.executionStore.listTurns(replacement.room.id)).toEqual([])
+    expect(f.runtime.rooms.getRoom(replacement.room.id)!.getRetainedMessages()).toEqual([])
+    expect(JSON.stringify(output)).not.toContain('PRIVATE_STREAM_CANARY')
+    expect(JSON.stringify(output)).not.toContain('_LATE_PRIVATE_CANARY')
+    expect(JSON.stringify(output.ordinary)).not.toContain('PRIVATE_HUMAN_CANARY')
+    expect((await callHTTP(f, 'GET', `/rooms/${room.profile.id}/executions/${originalTurn.id}`)).status).toBe(404)
+    await saver.flush()
+    expect((await loadWorkspaceModuleSnapshots(pathsFor(root))).rooms!.rooms.find(item => item.profile.id === room.profile.id)!.profile.perspective!.admission.status).toBe('revoked')
+  } finally {
+    release.resolve(); unwire()
+    for (const agent of f.runtime.team.listByKind('ai')) manager.unsubscribeAgentState(agent.id)
+    await saver.dispose(); await f.close(); await host.stop(true)
+    if (previousHome === undefined) delete process.env.LEITBILD_HOME; else process.env.LEITBILD_HOME = previousHome
+    await rm(root, { recursive: true, force: true })
+  }
+}, 10_000)
+
+test('restored private data stays fenced and the old runtime generation cannot resume or reopen a view', async () => {
+  const f = await fixture()
+  let restored: ReturnType<typeof createAgentsWorkspaceRuntime> | undefined
+  const deployment = createDeploymentRuntime({ providerConfig: stubProviderConfig, providerSetup: makeStubSetup() })
+  deployment.sharedToolRegistry.register(createPassTool())
+  try {
+    const admission = await f.bind(), room = f.runtime.rooms.getRoom(admission.room.id)!
+    room.setPaused(true)
+    room.post({ senderId: f.human.id, type: 'chat', content: 'RESTORED_PRIVATE_CANARY' })
+    const lease = await f.runtime.perspectiveRooms!.viewOpen(room.profile.id, admission.revision, crypto.randomUUID())
+    restored = createAgentsWorkspaceRuntime({ deployment, workspaceId: f.workspaceId, workspaceHostUrl: 'http://127.0.0.1:1',
+      perspectivePilot: { enabled: true }, perspectiveWorldRead: async reference => structuredClone(f.worlds.get(reference.id)!) })
+    await restoreWorkspaceModuleSnapshots(restored, serializeModuleSnapshots(f.runtime))
+    expect(restored.perspectiveRooms!.isLocallyReady(room.profile.id)).toBe(false)
+    expect(restored.perspectiveRooms!.invalidateRestored()).toBe(true)
+    expect(restored.perspectiveRooms!.read(room.profile.id).status).toBe('revoked')
+    expect(restored.rooms.getRoom(room.profile.id)!.getRetainedMessages()[0]?.content).toBe('RESTORED_PRIVATE_CANARY')
+    expect(createRuntimeAccessView(restored).rooms.listAllRooms()).toEqual([])
+    expect(createRuntimeAccessView(restored).team.getAgent(admission.actualAgentId)).toBeUndefined()
+    await expect(restored.perspectiveRooms!.viewAuthorize(lease.token)).rejects.toMatchObject({ code: 'perspective_view_unavailable' })
+    await expect(restored.perspectiveRooms!.viewOpen(room.profile.id, admission.revision + 1, crypto.randomUUID())).rejects.toMatchObject({ code: 'perspective_room_not_bound' })
+    expect(restored.rooms.getRoom(room.profile.id)!.paused).toBe(true)
+    expect(restored.executionStore.listTurns(room.profile.id)).toEqual([])
+  } finally {
+    if (restored !== undefined) {
+      for (const agent of restored.team.listByKind('ai')) { asAIAgent(agent)!.close(); asAIAgent(agent)!.cancelGeneration() }
+      await restored.comparisons.close(); restored.executionStore.close()
+    }
+    deployment.providerSetup.dispose(); await f.close()
+  }
 })

@@ -41,7 +41,7 @@ export const createPerspectiveViewSession = (deps: { readonly url: URL; readonly
   const requireLease = (): PerspectiveViewLease | undefined => {
     checkExpiry()
     if (!privateIntent) return undefined
-    if (lease === undefined || status === 'expired' || status === 'unavailable') throw new Error('Perspective view is unavailable; reconnect from the current exercise. Your unsent draft remains in this compartment.')
+    if (lease === undefined || status === 'expired' || status === 'unavailable') throw new Error('Perspective view is unavailable. Drafts stay only in this document; copy unsent text before reconnecting or changing scope.')
     return structuredClone(lease)
   }
   return {
