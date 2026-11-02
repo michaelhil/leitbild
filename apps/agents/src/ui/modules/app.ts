@@ -17,6 +17,7 @@ import { mountRoomSwitcher } from './render/render-room-switcher.ts'
 import { mountVisibilityPopover } from './visibility-popover.ts'
 import { initMessageHeaderPrefs } from './message-header-prefs.ts'
 import { renderMessage } from './render/render-message.ts'
+import { initPresentationComposer } from './presentation-composer.ts'
 import { initPromptDeck } from './prompt-deck.ts'
 import type {
   UIMessage,
@@ -539,34 +540,38 @@ chatInput.addEventListener('keydown', (e) => {
   }
 })
 
+const presentationComposer = initPresentationComposer({ chatInput, chatForm, resetHeight: resetChatInputHeight })
+
+const submitComposer = (roomId: string, content: string, senderId: string): void => {
+  if (!$connected.get() || $selectedRoomId.get() !== roomId || chatInput.value.trim() !== content) {
+    showToast(document.body, 'The connection, Room or draft changed. Review it and Send again.', { type: 'error', position: 'fixed' })
+    return
+  }
+  const roomName = roomIdToName(roomId)
+  if (!roomName) return
+  const pendingAtts = getAttachments(roomId)
+  send({ type: 'post_message', target: { rooms: [roomName] }, content, senderId,
+    focusedSubjects: getFocusedSubjects(), ...presentationComposer.postContext(roomId),
+    ...(pendingAtts.length > 0 ? { attachments: pendingAtts } : {}),
+  })
+  presentationComposer.submitted()
+  if (pendingAtts.length > 0) clearAttachments(roomId)
+  chatInput.value = ''; resetChatInputHeight()
+}
+
 chatForm.onsubmit = (e) => {
   e.preventDefault()
   const content = chatInput.value.trim()
   const roomId = $selectedRoomId.get()
   if (!content || !roomId) return
-  const roomName = roomIdToName(roomId)
-  if (!roomName) return
-
-  // The chosen human, else the room's single human; otherwise the reader
-  // picks one in the send-as picker, which re-submits on selection.
+  // The actual chosen human owns this message. Picking an identity never
+  // permits a delayed modal to overwrite or send a subsequently edited draft.
   const senderId = posterForRoom(roomId)
   if (senderId === undefined) {
-    void openSendAsPicker(roomId, content, { chatInput, resetChatInputHeight })
+    void openSendAsPicker(roomId, content, { chatInput, resetChatInputHeight, submitAs: id => submitComposer(roomId, content, id) })
     return
   }
-
-  const pendingAtts = getAttachments(roomId)
-  send({
-    type: 'post_message',
-    target: { rooms: [roomName] },
-    content,
-    senderId,
-    focusedSubjects: getFocusedSubjects(),
-    ...(pendingAtts.length > 0 ? { attachments: pendingAtts } : {}),
-  })
-  if (pendingAtts.length > 0) clearAttachments(roomId)
-  chatInput.value = ''; resetChatInputHeight()
-  resetChatInputHeight()
+  submitComposer(roomId, content, senderId)
 }
 
 document.getElementById('btn-create-room')!.onclick = (e) => {
@@ -798,6 +803,7 @@ btnBookmarks.onclick = async () => {
   const { openBookmarksPanel } = await import('./panels/bookmarks-panel.ts')
   await openBookmarksPanel({
     setComposerText: (text: string) => {
+      presentationComposer.clearSource()
       chatInput.value = text
       chatInput.focus()
     },
@@ -849,6 +855,7 @@ ollamaEls.dashboard.addEventListener('close', () => stopProvidersPanel())
 
 const connect = () => {
   client = createWSClient($sessionToken.get(), (raw) => {
+    presentationComposer.observeWire(raw)
     const msg = raw as { type?: string }
     if (typeof msg.type !== 'string') return
     const handler = wsDispatch[msg.type]
