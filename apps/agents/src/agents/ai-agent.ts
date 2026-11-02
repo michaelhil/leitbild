@@ -340,7 +340,7 @@ export const createAIAgent = (
     describedModel = { requested: effectiveModel, info: info ?? { id: effectiveModel, provider: 'unknown', contextMax: 0, source: 'unavailable' } }
     // A scripted turn's context is the script's alone, so it reads no Run context.
     const runContext = getScriptContext?.(roomId, config.name) === undefined
-      ? await options?.fetchRunContext?.(roomId, focusedSubjectsByRoom.get(roomId) ?? [], { id: agentId, name: config.name, ...(capturedTurnId === undefined ? {} : { executionTurnId: capturedTurnId }) }, signal)
+      ? await options?.fetchRunContext?.(roomId, focusedSubjectsByRoom.get(roomId) ?? [], { id: agentId, name: config.name, ...(options?.isolatedRoomId === undefined || capturedTurnId === undefined ? {} : { executionTurnId: capturedTurnId }) }, signal)
       : undefined
     if (!cm.isEpochCurrent(epoch) || signal.aborted) return undefined
     await options?.assertTurnAllowed?.(roomId, signal)
