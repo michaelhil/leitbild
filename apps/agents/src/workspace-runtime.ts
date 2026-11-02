@@ -1,3 +1,4 @@
+import { createSkillAuthoring, type SkillAuthoring } from './skills/authoring.ts'
 // ============================================================================
 // Leitbild Agents workspace runtime factory.
 //
@@ -155,6 +156,7 @@ export interface AgentsWorkspaceRuntime {
   readonly refreshAllAgentTools: () => Promise<void>
   readonly skillStore: SkillStore
   readonly skillsDir: string
+  readonly skillAuthoring: SkillAuthoring
   readonly scriptStore: ScriptStore
   readonly scriptsDir: string
   readonly scriptRunner: ScriptRunner
@@ -715,6 +717,7 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
     const scriptsDir = sharedPaths.scripts()
     const skillStore = deployment.sharedSkillStore
     const scriptStore = deployment.sharedScriptStore
+    const skillAuthoring = createSkillAuthoring({ store: skillStore, root: skillsDir, registry: deployment.sharedToolRegistry, refresh: () => refreshAllAgentTools() })
 
     // Agent Skill Selection is exact. Room Pack activation is an independent
     // availability gate for Pack-owned skills, just as it is for Pack tools.
@@ -741,10 +744,12 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
     const getActiveSkillsDeclarationsForRoom = (skillNames: ReadonlyArray<string>, roomId: string): ReadonlyArray<{
       readonly name: string
       readonly declaredTools: ReadonlyArray<string>
+      readonly unavailable?: string
     }> => {
-      return selectedSkillsForRoom(skillNames, roomId)
-        .filter(s => s.allowedToolNames.length > 0)
-        .map(s => ({ name: s.name, declaredTools: s.allowedToolNames }))
+      return [
+        ...selectedSkillsForRoom(skillNames, roomId).map(s => ({ name: s.name, declaredTools: s.allowedToolNames })),
+        ...skillNames.filter(name => !skillStore.get(name)).map(name => ({ name, declaredTools: [], unavailable: `Selected Skill "${name}" is unavailable or retired; edit the Agent's Skill selection.` })),
+      ]
     }
 
     const refreshAllAgentTools = async (): Promise<void> => {
@@ -1039,7 +1044,7 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
       captureRegistry,
       packCatalog: deployment.packCatalog,
       evalBuffer,
-      toolRegistry, refreshAllAgentTools, skillStore, skillsDir,
+      toolRegistry, refreshAllAgentTools, skillStore, skillsDir, skillAuthoring,
       scriptStore, scriptsDir,
       scriptRunner,
       setOnScriptEvent: scriptEvent.set,

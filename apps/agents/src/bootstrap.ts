@@ -382,7 +382,7 @@ export const bootstrap = async (): Promise<void> => {
   // on disk); packsEnabled covers vetted GitHub pack management.
   if (codegenEnabled) {
     deployment.sharedToolRegistry.register(createWriteToolTool(
-      deployment.sharedToolRegistry, deployment.sharedSkillStore, crossWorkspaceRefreshAllAgentTools,
+      deployment.sharedToolRegistry, deployment.sharedSkillStore, crossWorkspaceRefreshAllAgentTools, sharedPaths.skills(),
     ))
   }
   const crossWorkspaceScrubActivePacks = createWorkspacePackScrubber({

@@ -1,3 +1,4 @@
+import { createAuthoredSkill, withAuthoredSkill } from '../../skills/authoring.ts'
 // ============================================================================
 // Code Generation Tools — Runtime skill and tool authoring by agents.
 //
@@ -14,8 +15,9 @@
 import type { Tool, ToolRegistry } from '../../core/types/tool.ts'
 import type { SkillStore } from '../../skills/loader.ts'
 import { VALID_NAME, isTool } from '../loader.ts'
-import { mkdir, unlink, writeFile } from 'node:fs/promises'
+import { mkdir, lstat, realpath, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { z } from 'zod'
 
 type RefreshAllFn = () => Promise<void>
 
@@ -37,42 +39,12 @@ export const createWriteSkillTool = (
     required: ['name', 'description', 'body'],
   },
   execute: async (params) => {
-    const name = params.name as string
-    const description = params.description as string
-    const body = params.body as string
-
-    if (!name || !description || !body) {
-      return { success: false, error: 'name, description, and body are required' }
-    }
-
-    if (!VALID_NAME.test(name)) {
-      return { success: false, error: `Invalid skill name "${name}" — use letters, digits, underscores, hyphens` }
-    }
-
-    if (store.get(name)) {
-      return { success: false, error: `Skill "${name}" already exists` }
-    }
-
-    const dirPath = join(skillsDir, name)
-    await mkdir(dirPath, { recursive: true })
-
-    const content = `---\nname: ${name}\ndescription: ${description}\n---\n\n${body}\n`
-
-    const filePath = join(dirPath, 'SKILL.md')
     try {
-      await writeFile(filePath, content, 'utf-8')
-    } catch (err) {
-      return { success: false, error: `Failed to write SKILL.md: ${err instanceof Error ? err.message : String(err)}` }
+      const skill = await createAuthoredSkill(store, skillsDir, params)
+      return { success: true, data: { name: skill.name, path: skill.dirPath } }
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) }
     }
-
-    store.register({
-      name, description, body,
-      tools: [],
-      allowedToolNames: [],
-      dirPath,
-    })
-
-    return { success: true, data: { name, path: dirPath } }
   },
 })
 
@@ -80,6 +52,7 @@ export const createWriteToolTool = (
   registry: ToolRegistry,
   store: SkillStore,
   refreshAll: RefreshAllFn,
+  skillsDir: string,
 ): Tool => ({
   name: 'write_tool',
   description: 'Write a TypeScript tool module into a skill\'s tools/ dir. Imported, validated, and registered immediately.',
@@ -95,68 +68,29 @@ export const createWriteToolTool = (
     required: ['skill', 'name', 'code'],
   },
   execute: async (params) => {
-    const skillName = params.skill as string
-    const name = params.name as string
-    const code = params.code as string
-
-    if (!skillName || !name || !code) {
-      return { success: false, error: 'skill, name, and code are required' }
-    }
-
-    const skill = store.get(skillName)
-    if (!skill) {
-      return { success: false, error: `Skill "${skillName}" not found — create it first with write_skill` }
-    }
-
-    if (!VALID_NAME.test(name)) {
-      return { success: false, error: `Invalid tool name "${name}" — use letters, digits, underscores, hyphens` }
-    }
-
-    const toolsDir = join(skill.dirPath, 'tools')
-    await mkdir(toolsDir, { recursive: true })
-
-    const filePath = join(toolsDir, `${name}.ts`)
-
     try {
-      await writeFile(filePath, code, 'utf-8')
-    } catch (err) {
-      return { success: false, error: `Failed to write file: ${err instanceof Error ? err.message : String(err)}` }
-    }
-
-    // Dynamic import + validation
-    let mod: { default?: unknown }
-    try {
-      mod = await import(`${filePath}?t=${Date.now()}`)
-    } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err)
-      await unlink(filePath).catch(() => {})
-      return { success: false, error: `Import failed (file deleted): ${errMsg}\n\nGenerated code:\n${code}` }
-    }
-
-    const tool = mod.default
-    if (!isTool(tool)) {
-      await unlink(filePath).catch(() => {})
-      return { success: false, error: `Module does not export a valid Tool (needs name, description, parameters, execute). File deleted.\n\nGenerated code:\n${code}` }
-    }
-
-    registry.registerWithSource(tool as Tool, {
-      kind: 'skill-bundled',
-      path: filePath,
-      skill: skillName,
-    })
-
-    // Update skill's tool list if this is a new tool
-    if (!skill.tools.includes(name)) {
-      store.register({ ...skill, tools: [...skill.tools, name] })
-    }
-
-    try {
-      await refreshAll()
-    } catch (err) {
-      console.error(`[codegen] Failed to refresh agents after registering "${name}":`, err)
-    }
-
-    return { success: true, data: { name, skill: skillName, path: filePath } }
+      const input = z.object({ skill: z.string().min(1), name: z.string().regex(VALID_NAME), code: z.string().min(1) }).strict().parse(params)
+      return await withAuthoredSkill(store, skillsDir, input.skill, async (skill, directory) => {
+        const prior = registry.getEntry(input.name)
+        if (prior && (prior.source.kind !== 'skill-bundled' || prior.source.skill !== input.skill)) return { success: false, error: `Tool "${input.name}" belongs to another owner` }
+        const toolsDir = join(directory, 'tools')
+        await mkdir(toolsDir, { recursive: true })
+        if ((await lstat(toolsDir)).isSymbolicLink() || await realpath(toolsDir) !== toolsDir) return { success: false, error: 'Skill tools directory must not be a symlink' }
+        const filePath = join(toolsDir, `${input.name}.ts`)
+        const temporary = join(toolsDir, `.candidate-${crypto.randomUUID()}.ts`)
+        try {
+          await writeFile(temporary, input.code, { encoding: 'utf8', flag: 'wx', mode: 0o600 })
+          // Codegen is explicitly enabled in-process code execution, not a sandbox.
+          const mod = await import(temporary) as { default?: unknown }
+          if (!isTool(mod.default) || mod.default.name !== input.name) return { success: false, error: 'Generated tool must export the exact requested name, description, parameters and execute function' }
+          await rename(temporary, filePath)
+          registry.registerWithSource(mod.default, { kind: 'skill-bundled', skill: input.skill, path: filePath })
+          if (!skill.tools.includes(input.name)) store.register({ ...skill, tools: [...skill.tools, input.name] })
+          await refreshAll()
+          return { success: true, data: { name: input.name, skill: input.skill, path: filePath } }
+        } finally { await rm(temporary, { force: true }) }
+      })
+    } catch (error) { return { success: false, error: error instanceof Error ? error.message : String(error) } }
   },
 })
 

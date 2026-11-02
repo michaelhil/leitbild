@@ -105,6 +105,7 @@ export interface AIAgentOptions {
   readonly getActiveSkillsDeclarations?: (skillNames: ReadonlyArray<string>, roomId: string) => ReadonlyArray<{
     readonly name: string
     readonly declaredTools: ReadonlyArray<string>
+    readonly unavailable?: string
   }>
   readonly getScriptContext?: (roomId: string, agentName: string) =>
     | { systemDoc: string; dialogue: ReadonlyArray<{ speaker: string; content: string }> }
@@ -355,6 +356,7 @@ export const createAIAgent = (
     if (getActiveSkillsDeclarations && effectiveToolDefs) {
       const surfaceNames = new Set(effectiveToolDefs.map(definition => definition.function.name))
       for (const skill of getActiveSkillsDeclarations(currentSkills, roomId)) {
+        if (skill.unavailable) emit({ kind: 'warning', message: skill.unavailable })
         const missing = skill.declaredTools.filter(tool => !surfaceNames.has(tool))
         if (missing.length > 0) emit({ kind: 'warning',
           message: `Skill "${skill.name}" declares tools not in the LLM surface: ${missing.join(', ')}. Check pack activation in this room.` })

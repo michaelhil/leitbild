@@ -1,122 +1,32 @@
-// Skills REST routes — isolated so the skills domain has its
-// own file like every other domain (rooms, agents, wikis, packs, etc.).
-//
-//   GET    /skills          — list (name, description, tools)
-//   GET    /skills/:name    — full detail (body included)
-//   POST   /skills          — create new skill on disk + in-memory
-//   PUT    /skills/:name    — update description/body; preserves
-//                                 allowed-tools across restart
-//   DELETE /skills/:name    — rm -rf the skill dir + drop from store
-
-import { mkdir, rm, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
 import { json, errorResponse, parseBody } from './helpers.ts'
 import type { RouteEntry } from './types.ts'
+import type { Skill } from '../../skills/loader.ts'
+import type { SkillAuthoring } from '../../skills/authoring.ts'
 
-// Build the SKILL.md content from a Skill's persisted fields. Centralised so
-// POST and PUT use the same shape — and so allowed-tools is never silently
-// dropped by a route that forgets to write it.
-const renderSkillMd = (
-  name: string,
-  description: string,
-  body: string,
-  allowedToolNames: ReadonlyArray<string>,
-): string => {
-  const allowedLine = allowedToolNames.length > 0
-    ? `\nallowed-tools: [${allowedToolNames.join(', ')}]`
-    : ''
-  return `---\nname: ${name}\ndescription: ${description}${allowedLine}\n---\n\n${body}\n`
+const detail = (skill: Skill, authoring: SkillAuthoring) => ({
+  name: skill.name, rawName: skill.displayName ?? skill.name,
+  description: skill.description, body: skill.body, tools: skill.tools,
+  allowedToolNames: skill.allowedToolNames,
+  owner: skill.pack ? { kind: 'pack', id: skill.pack } : { kind: authoring.editable(skill) ? 'authored' : 'bundled' },
+  editable: authoring.editable(skill),
+})
+const failure = (error: unknown): Response => {
+  const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : 'invalid_skill_input'
+  return json({ error: error instanceof Error ? error.message : String(error), code }, code === 'skill_not_found' ? 404 : code === 'skill_owner_read_only' ? 403 : 400)
 }
-
 export const skillRoutes: RouteEntry[] = [
-  {
-    method: 'GET',
-    pattern: /^\/skills$/,
-    handler: (_req, _match, { system }) =>
-      json(system.skillStore.list().map(s => ({
-        name: s.name, description: s.description,
-        tools: s.tools,
-      }))),
-  },
-  {
-    method: 'GET',
-    pattern: /^\/skills\/([^/]+)$/,
-    handler: (_req, match, { system }) => {
-      const name = decodeURIComponent(match[1]!)
-      const skill = system.skillStore.get(name)
-      if (!skill) return errorResponse(`Skill "${name}" not found`, 404)
-      return json({
-        name: skill.name,
-        description: skill.description,
-        body: skill.body,
-        tools: skill.tools,
-      })
-    },
-  },
-  {
-    method: 'POST',
-    pattern: /^\/skills$/,
-    handler: async (req, _match, { system }) => {
-      const body = await parseBody(req)
-      const name = body.name as string
-      const description = body.description as string
-      const skillBody = body.body as string
-      if (!name || !description || !skillBody) return errorResponse('name, description, and body are required')
-      if (system.skillStore.get(name)) return errorResponse(`Skill "${name}" already exists`)
-      const dirPath = join(system.skillsDir, name)
-      await mkdir(dirPath, { recursive: true })
-      await writeFile(
-        join(dirPath, 'SKILL.md'),
-        renderSkillMd(name, description, skillBody, []),
-        'utf-8',
-      )
-      system.skillStore.register({
-        name, description, body: skillBody,
-        tools: [], allowedToolNames: [], dirPath,
-      })
-      return json({ created: true, name }, 201)
-    },
-  },
-  {
-    method: 'PUT',
-    pattern: /^\/skills\/([^/]+)$/,
-    handler: async (req, match, { system }) => {
-      const name = decodeURIComponent(match[1]!)
-      const skill = system.skillStore.get(name)
-      if (!skill) return errorResponse(`Skill "${name}" not found`, 404)
-      const body = await parseBody(req)
-      const newDesc = (body.description as string) ?? skill.description
-      const newBody = (body.body as string) ?? skill.body
-      // Preserve allowed-tools across restart. The previous version of this
-      // route didn't write the allowed-tools frontmatter line, so an
-      // operator who edited a skill via PUT would lose its allowed-tools
-      // list on the next server restart (loader re-parses on-disk SKILL.md).
-      // The body field isn't editable through this route today; if it
-      // becomes editable, accept it from `body.allowedToolNames`.
-      const newAllowed = skill.allowedToolNames
-      await writeFile(
-        join(skill.dirPath, 'SKILL.md'),
-        renderSkillMd(name, newDesc, newBody, newAllowed),
-        'utf-8',
-      )
-      system.skillStore.register({
-        ...skill,
-        description: newDesc,
-        body: newBody,
-      })
-      return json({ updated: true, name })
-    },
-  },
-  {
-    method: 'DELETE',
-    pattern: /^\/skills\/([^/]+)$/,
-    handler: async (_req, match, { system }) => {
-      const name = decodeURIComponent(match[1]!)
-      const skill = system.skillStore.get(name)
-      if (!skill) return errorResponse(`Skill "${name}" not found`, 404)
-      await rm(skill.dirPath, { recursive: true, force: true })
-      system.skillStore.remove(name)
-      return json({ deleted: true, name })
-    },
-  },
+  { method: 'GET', pattern: /^\/skills$/, handler: (_req, _match, { system }) => json(system.skillStore.list().map(skill => detail(skill, system.skillAuthoring))) },
+  { method: 'GET', pattern: /^\/skills\/([^/]+)$/, handler: (_req, match, { system }) => {
+    const skill = system.skillStore.get(decodeURIComponent(match[1]!))
+    return skill ? json(detail(skill, system.skillAuthoring)) : errorResponse('Skill not found', 404)
+  } },
+  { method: 'POST', pattern: /^\/skills$/, handler: async (req, _match, { system }) => {
+    try { const skill = await system.skillAuthoring.create(await parseBody(req)); return json({ created: true, name: skill.name }, 201) } catch (error) { return failure(error) }
+  } },
+  { method: 'PUT', pattern: /^\/skills\/([^/]+)$/, handler: async (req, match, { system }) => {
+    try { const skill = await system.skillAuthoring.update(decodeURIComponent(match[1]!), await parseBody(req)); return json({ updated: true, name: skill.name }) } catch (error) { return failure(error) }
+  } },
+  { method: 'DELETE', pattern: /^\/skills\/([^/]+)$/, handler: async (_req, match, { system }) => {
+    try { return json({ retired: true, ...await system.skillAuthoring.retire(decodeURIComponent(match[1]!)) }) } catch (error) { return failure(error) }
+  } },
 ]
