@@ -98,6 +98,7 @@ export type { OllamaUrlRegistry }
 import type { LogConfig, LogConfigState, LogEvent, LogSink } from './logging/types.ts'
 import { createJsonlFileSink } from './logging/jsonl-sink.ts'
 import { matchesKindFilter, validateLogConfig, defaultLogDir, defaultSessionId } from './logging/config.ts'
+import { isPerspectiveScope } from './core/rooms/perspective-scope.ts'
 import {
   mkDeliveryModeChanged, mkEvalEvent,
   mkMembershipChanged, mkMessagePosted, mkModeAutoSwitched,
@@ -502,6 +503,10 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
           vectorStore,
           getProviders: () => buildEmbeddingProvidersFromKeys(providerKeys),
           getRoomName: (roomId) => rooms.getRoom(roomId)?.profile.name,
+          mayIndexRoom: roomId => {
+            const room = rooms.getRoom(roomId)
+            return room !== undefined && !isPerspectiveScope(room.profile.scope)
+          },
         })
       : undefined
 

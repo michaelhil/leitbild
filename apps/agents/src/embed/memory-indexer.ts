@@ -25,6 +25,10 @@ export interface MemoryIndexerDeps {
   readonly vectorStore: VectorStore
   readonly getProviders: () => MergedProviders
   readonly getRoomName: (roomId: string) => string | undefined
+  /** Admission precedes provider resolution, embedding and shared persistence.
+   * Private or unavailable Rooms never enter the Workspace memory index.
+   */
+  readonly mayIndexRoom: (roomId: string) => boolean
   readonly log?: (msg: string) => void
 }
 
@@ -44,6 +48,7 @@ export const createMemoryIndexer = (deps: MemoryIndexerDeps): MemoryIndexer => {
     candidates: ReadonlyArray<Message>,
     _newSummaryText: string,
   ): Promise<void> => {
+    if (!deps.mayIndexRoom(roomId)) return // Explicit owner exclusion, not a failed indexing fallback.
     // Only embed chat messages — skip prior room_summary entries (they
     // would re-embed compressed-of-compressed text, which is fine in
     // theory but rarely useful for recall — recall wants original speech).
@@ -79,6 +84,7 @@ export const createMemoryIndexer = (deps: MemoryIndexerDeps): MemoryIndexer => {
       return
     }
 
+    if (!deps.mayIndexRoom(roomId)) return // Room removal/scope change during embedding cannot publish into shared memory.
     const foldId = crypto.randomUUID()
     const ts = Date.now()
     const roomName = deps.getRoomName(roomId)
