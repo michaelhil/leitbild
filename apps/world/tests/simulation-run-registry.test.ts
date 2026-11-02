@@ -224,7 +224,7 @@ describe('Simulation Run registry', () => {
     const registry = createRegistry(dataDir)
     try {
       const runtime = await registry.create({ scenarioId: 'halden-power-complex' })
-      await registry.setExecution(runtime.id, { pace: 'maximum' })
+      await registry.setExecution(runtime.id, { playback: 'playing', pace: 'maximum' })
       for (let attempt = 0; attempt < 80; attempt += 1) {
         if ((await registry.executionStatus(runtime.id)).acceleration?.simulatedMs) break
         await Bun.sleep(10)

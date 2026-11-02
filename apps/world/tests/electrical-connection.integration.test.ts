@@ -56,8 +56,9 @@ const connectScenario = (scenario: CompiledScenario) => {
 describe('electrical Pack connection', () => {
   test('Weather composes without modifying Plant/Grid definitions or their electrical connections', async () => {
     const source = testScenarioDefinitions.find(candidate => candidate.id === 'halden-power-complex')!
+    const { guide: _guide, ...domainSource } = source // The connection comparison intentionally removes Weather and its tutorial targets.
     const withoutWeather = {
-      ...source,
+      ...domainSource,
       packs: source.packs.filter(pack => pack.id !== 'weather'),
     }
     const standalone = await compileScenarioDefinition(withoutWeather, packs, { routing: createDirectRoutingAdapter() })
