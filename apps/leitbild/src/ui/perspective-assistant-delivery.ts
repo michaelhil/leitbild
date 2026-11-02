@@ -123,7 +123,16 @@ export const createPerspectiveAssistantDelivery = (config: {
         || ready.data.perspective.id !== lease.perspective.id || ready.data.perspective.workspaceId !== lease.perspective.workspaceId) return false
       update({ ready: true }); return true
     },
-    agentsLoaded: (): void => { update({ ready: false }); if (screen.lease) config.postAgents({ type: 'leitbild:perspective-view', lease: screen.lease }) },
+    agentsLoaded: (replaced = false): void => {
+      if (replaced) {
+        generation++; controller.abort(); controller = new AbortController(); documentId = config.uuid(); blocked = false; opening = false; stopExpiry()
+        update({ lease: null, frameUrl: null, ready: false })
+        void openView()
+        return
+      }
+      update({ ready: false })
+      if (screen.lease) config.postAgents({ type: 'leitbild:perspective-view', lease: screen.lease })
+    },
     retryView: (): void => { blocked = false; if (!screen.frameUrl) documentId = config.uuid(); void openView() },
     worldUnloaded: (): void => { worldDocumentId = config.uuid(); reset() },
     dispose: (): void => { closed = true; reset() },

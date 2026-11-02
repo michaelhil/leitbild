@@ -59,6 +59,7 @@
   const shownRoomId = $derived(perspectiveMode ? privateScreen.lease?.room.id ?? null : agentsRoomId)
   const shownAgents = $derived(perspectiveMode ? privateScreen.lease !== null : agentsVisible)
   const agentsUrl = $derived(perspectiveMode ? privateScreen.frameUrl : agentsRoomId === null ? null : `/workspaces/${encodeURIComponent(workspaceId)}/agents?room=${encodeURIComponent(agentsRoomId)}&view=focused`)
+  const agentsDocumentKey = $derived(perspectiveMode ? privateScreen.lease?.documentId ?? null : null)
   // The process display window asked for the whole area and the chat was collapsed for it.
   let windowMaximised = $state(false)
 
@@ -225,15 +226,25 @@
   // The World document that last said it listens; a frame that loads another
   // document (a reload, or the World start page) no longer listens.
   let listeningWorldDocument: Document | null = null
-  let listeningAgentsDocument: Document | null = null
+  let loadedAgentsDocument: Document | null = null
+  const acceptAgentsDocument = (): boolean => {
+    const document = agentsFrame?.contentDocument ?? null
+    if (document === null) return false
+    if (document === loadedAgentsDocument) return true
+    const replaced = loadedAgentsDocument !== null
+    loadedAgentsDocument = document
+    privateDelivery.agentsLoaded(replaced)
+    presentation.agentsLoaded()
+    return !replaced
+  }
 
   // Only the two frames' own documents take part in the window's protocol.
   const receiveViewMessage = (event: MessageEvent): void => {
     if (event.origin !== location.origin || event.source === null) return
     if (event.source === agentsFrame?.contentWindow) {
       if (perspectiveMode) {
+        if (!acceptAgentsDocument()) return
         if (privateDelivery.fromAgents(event.data)) {
-          listeningAgentsDocument = agentsFrame?.contentDocument ?? null
           publishResourceFocus()
           presentation.fromAgents({ type: 'leitbild:presentation-ready', room: privateScreen.lease?.room })
         } else if (privateScreen.ready) presentation.fromAgents(event.data)
@@ -292,15 +303,13 @@
   // Another Room or a closed chat ends the Agents document that listed the displays.
   $effect(() => {
     shownRoomId
-    untrack(() => { listeningAgentsDocument = null; relay.agentsFrameUnloaded(); presentation.agentsUnloaded() })
+    agentsDocumentKey
+    untrack(() => { loadedAgentsDocument = null; relay.agentsFrameUnloaded(); presentation.agentsUnloaded() })
   })
 
   const agentsFrameLoaded = (): void => {
     if (perspectiveMode) {
-      if (listeningAgentsDocument !== agentsFrame?.contentDocument) {
-        privateDelivery.agentsLoaded()
-        presentation.agentsLoaded()
-      }
+      acceptAgentsDocument()
       return
     }
     publishResourceFocus()

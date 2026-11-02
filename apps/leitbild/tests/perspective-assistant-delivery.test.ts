@@ -94,3 +94,14 @@ test('queued offers from an unloaded World document cannot reopen its private vi
   f.delivery.fromWorld({ ...f.offer, worldDocumentId: handshake.worldDocumentId }); await settle()
   expect(f.state.requests).toHaveLength(2)
 })
+
+test('an actual Agents document replacement gets a fresh lease while ordinary renewal keeps its draft document', async () => {
+  const f = fixture(); f.delivery.fromWorld(f.offer); await settle()
+  const first = f.delivery.state().lease!, firstUrl = f.delivery.state().frameUrl
+  f.delivery.agentsLoaded(true)
+  expect(f.delivery.state().frameUrl).toBeNull()
+  await settle()
+  expect(f.delivery.state().lease?.documentId).not.toBe(first.documentId)
+  expect(f.delivery.state().frameUrl).not.toBe(firstUrl)
+  expect(f.delivery.fromAgents({ type: 'leitbild:perspective-view-ready', room: first.room, perspective: first.perspective, documentId: first.documentId })).toBe(false)
+})
