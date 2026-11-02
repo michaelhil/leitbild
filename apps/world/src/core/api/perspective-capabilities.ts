@@ -26,6 +26,22 @@ const readInput = z.object({ objectId: objectIdSchema }).strict()
 const observationInput = z.object({ refs: z.array(observableRefSchema).min(1).max(256) }).strict()
 const observationOutput = z.object({ observations: z.array(observationSchema), unknown: z.array(z.string()), refused: z.array(z.object({ objectId: objectIdSchema, refused: z.object({ code: z.string(), message: z.string() }).strict() }).strict()), leads: z.array(z.array(z.string())) }).strict()
 const actions = new Set(['focus', 'reveal', 'highlight', 'explain', 'clear'])
+const pilotControls = new Set(['view', 'guide', 'alarms'])
+/** Explicit counterparts, not a generic invocation alias. Observation values
+ * additionally pass their exact Pack capability restriction through the runtime. */
+const canonicalOperations: Readonly<Record<string, ReadonlyArray<string>>> = {
+  'discovery.read': [], 'context.read': ['world.simulation-run.context'],
+  'objects.list': ['world.simulation-run.objects.search'], 'objects.read': ['world.simulation-run.read-object'],
+  'observations.search': ['world.simulation-run.observables.search'], 'observations.read': [],
+  ...Object.fromEntries(['targets', 'request', 'result', 'cancel'].map(kind => [`presentation.${kind}`, [`world.simulation-run.presentation.${kind}`]])),
+}
+const operationAllowed = (context: AdmittedPerspective, operation: string): boolean => {
+  const denied = context.runtime.snapshot().scenario?.agentRestrictions.operationIds ?? []
+  return ![`world.perspective.${operation}`, ...canonicalOperations[operation] ?? []].some(id => denied.includes(id))
+}
+const assertOperation = (context: AdmittedPerspective, operation: string): void => {
+  if (!operationAllowed(context, operation)) throw perspectiveFailure('agent_access_restricted', 'AI access to this operation is restricted for this Perspective')
+}
 const attentionAction = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('focus'), zoom: z.number().finite().min(0).max(24).optional() }).strict(),
   z.object({ kind: z.literal('reveal') }).strict(), z.object({ kind: z.literal('highlight') }).strict(),
@@ -51,7 +67,8 @@ const inspectable = (context: AdmittedPerspective, objectIds: ReadonlyArray<stri
 }
 const scopeOf = (context: AdmittedPerspective): PresentationOperationScope => {
   const origin = context.access.perspectiveOrigin, binding = context.record.admission.binding
-  return { subject: context.record.admission.resource, actions, current: context.current,
+  return { subject: context.record.admission.resource, actions, current: () => context.current() && operationAllowed(context, 'presentation.request'),
+    allowsTarget: target => target.type === 'world.object' || target.type === 'world.panel' || target.type === 'world.control' && pilotControls.has(target.id),
     ...(origin?.kind !== 'execution' || binding === undefined ? {} : { source: {
       kind: 'agent' as const, id: binding.actualAgentId, label: context.actor.displayName ?? context.actor.label,
       executionId: origin.turnId, initiatingRoom: binding.room,
@@ -87,12 +104,14 @@ const modelOperations = new Set(['discovery.read', 'context.read', 'objects.list
 export const perspectiveReadCapabilityDescriptors = (): ReadonlyArray<ModuleCapabilityDescriptor> => perspectiveCapabilityRegistry.descriptors.filter(descriptor => modelOperations.has(descriptor.id.slice('world.perspective.'.length)))
 
 add('discovery.read', empty, perspectiveDiscoverySchema, 'Discover this exact private Perspective', 'Returns only this known Perspective and its narrow read/attention operations to its actual bound execution. No global Resource, Definition, private Room directory or canonical Run subject is returned.', async (registry, invocation) => json({ result: await serviceOf(registry).withExecution(perspectiveId(invocation), invocation.access, async context => {
-  const capabilities = perspectiveReadCapabilityDescriptors()
+  assertOperation(context, 'discovery.read')
+  const capabilities = perspectiveReadCapabilityDescriptors().filter(descriptor => operationAllowed(context, descriptor.id.slice('world.perspective.'.length)))
   const resource = moduleResourceDescriptorSchema.parse({ ref: context.record.admission.resource, title: 'Scoped World perspective', description: 'One owner-admitted held-role read and attention compartment.', links: [], capabilityIds: capabilities.map(descriptor => descriptor.id), observedAt: new Date().toISOString() })
   return { resource, capabilities }
 }) }))
 add('context.read', empty, publishedContextSchema, 'Read permitted current situation context', 'Bounded current object summaries from this exact held-role picture. It includes no future Scenario/Guide source, canonical Run link or another compartment’s evidence.', async (registry, invocation) => json({ result: await serviceOf(registry).withExecution(perspectiveId(invocation), invocation.access, async context => {
   const snapshot = context.runtime.snapshot(), policy = context.runtime.inspectionPolicy(context.actor)
+  assertOperation(context, 'context.read')
   if (snapshot.clock === undefined) throw perspectiveFailure('perspective_state_unavailable', 'The current simulation clock is unavailable', 409)
   const visible = snapshot.objects.filter(object => policy.canInspect(object.id))
   const text = [`Current permitted picture: ${visible.length} objects.`, ...visible.slice(0, 40).map(object => `${object.id} · ${object.label} · ${object.operational.status}`), ...(visible.length > 40 ? ['Use objects.list for the remaining permitted objects.'] : [])].join('\n').slice(0, 8_000)
@@ -102,6 +121,7 @@ add('objects.list', listInput, listOutput, 'List permitted object summaries', 'F
   const input = listInput.parse(invocation.input)
   return json({ result: await serviceOf(registry).withExecution(perspectiveId(invocation), invocation.access, async context => {
     const policy = context.runtime.inspectionPolicy(context.actor)
+    assertOperation(context, 'objects.list')
     const found = context.runtime.snapshot().objects.filter(object => policy.canInspect(object.id) && (input.text === undefined || `${object.id} ${object.label}`.toLowerCase().includes(input.text.toLowerCase())))
     return { total: found.length, objects: found.slice(input.offset, input.offset + input.limit).map(({ id, packId, kind, label, operational }) => ({ id, packId, kind, label, operational })), ...(found.length > input.offset + input.limit ? { nextOffset: input.offset + input.limit } : {}) }
   }) })
@@ -110,6 +130,7 @@ add('objects.read', readInput, operationalObjectSchema, 'Read one permitted curr
   const input = readInput.parse(invocation.input)
   return json({ result: await serviceOf(registry).withExecution(perspectiveId(invocation), invocation.access, async context => {
     inspectable(context, [input.objectId])
+    assertOperation(context, 'objects.read')
     return context.runtime.snapshot().objects.find(object => object.id === input.objectId) ?? (() => { throw perspectiveFailure('perspective_target_unavailable', 'The requested target is not available in this Perspective') })()
   }) })
 })
@@ -117,6 +138,7 @@ add('observations.search', observablesSearchInputSchema, observablesSearchOutput
   const input = observablesSearchInputSchema.parse(invocation.input)
   return json({ result: await serviceOf(registry).withExecution(perspectiveId(invocation), invocation.access, async context => {
     inspectable(context, input.queries.flatMap(query => query.objectId === undefined ? [] : [query.objectId]))
+    assertOperation(context, 'observations.search')
     const policy = context.runtime.inspectionPolicy(context.actor)
     const objects = context.runtime.snapshot().objects.filter(object => policy.canInspect(object.id))
     return { results: await searchObservables({ objects, denied: new Set(), packs: context.runtime.packs(), port: context.runtime.observations(context.actor) }, input.queries) }
@@ -126,6 +148,7 @@ add('observations.read', observationInput, observationOutput, 'Read exact permit
   const input = observationInput.parse(invocation.input)
   return json({ result: await serviceOf(registry).withExecution(perspectiveId(invocation), invocation.access, async context => {
     inspectable(context, input.refs.map(refObjectId))
+    assertOperation(context, 'observations.read')
     return context.runtime.observations(context.actor).read({ refs: input.refs })
   }) })
 })
@@ -139,6 +162,7 @@ for (const kind of Object.keys(perspectivePresentationInputs) as Array<keyof typ
     : 'Use the shared World attention delivery with this exact Perspective subject. Human receiver operations require held roles. Agent requests are attributed suggestions; drafts and World commands are unsupported.', async (registry, invocation) => {
     const service = serviceOf(registry), id = perspectiveId(invocation), input = inputSchema.parse(invocation.input)
     const work = async (context: AdmittedPerspective) => {
+      if (!human && kind !== 'verify') assertOperation(context, `presentation.${kind}`)
       if (kind === 'verify') {
         const recipient = registry.presentation.current(perspectivePresentationInputs.verify.parse(input).recipient)
         if (JSON.stringify(recipient.subject) !== JSON.stringify(context.record.admission.resource)

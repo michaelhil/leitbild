@@ -18,6 +18,7 @@ import { createWorldModuleState } from '../src/core/workspaces/module-state.ts'
 import { createWorldWorkspaceRuntimeRegistry } from '../src/core/workspaces/runtime-registry.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import border from '../src/scenarios/halden-border-human-red.scenario.json'
+import { actorIdSchema, objectIdSchema } from '../src/core/model/ids.ts'
 
 // The published Agents owner port is an explicit contract double in this World-only test.
 const setup = async (enabled = true) => {
@@ -25,6 +26,8 @@ const setup = async (enabled = true) => {
   const routing = createDirectRoutingAdapter(), assembly = createWorldApplicationAssembly({ routing })
   const peers = new Map<string, AgentsPerspectiveRoomAdmission>()
   let beforePeerRead: (() => Promise<void>) | undefined
+  let beforePeerRevoke: (() => Promise<void>) | undefined
+  let peerRevokeFails = false
   const workspaces = createWorldWorkspaceRuntimeRegistry({ dataDir: directory, moduleState: createWorldModuleState({ dataDir: directory }),
     runtimeAdapters: assembly.runtimeAdapters, workspaceCapabilities: assembly.packs.flatMap(pack => pack.workspaceCapabilities ?? []),
     scenarioRuntimeResolver: createScenarioRuntimeResolver({ packs: assembly.packs }), scenarioDefinitions: [],
@@ -34,6 +37,14 @@ const setup = async (enabled = true) => {
       const peer = peers.get(binding.room.id)
       if (!peer) throw Error('The actual scoped runtime is unavailable')
       return structuredClone(peer)
+    }, revokeAgentsAdmission: async (binding: PerspectiveRuntimeBinding) => {
+      await beforePeerRevoke?.()
+      if (peerRevokeFails) throw Error('Test owner cancellation transport is unavailable')
+      const peer = peers.get(binding.room.id)
+      if (!peer) throw Error('The actual scoped runtime is unavailable')
+      const revoked = peer.status === 'revoked' ? peer : { ...peer, status: 'revoked' as const, revision: peer.revision + 1 }
+      peers.set(binding.room.id, revoked)
+      return structuredClone(revoked)
     } } } : {}),
   })
   await workspaces.provision(workspaceId)
@@ -77,6 +88,9 @@ const setup = async (enabled = true) => {
   }
   return { invoke, get, prepare, bind, owner, registry, run, runRef, peers,
     waitOnPeer: (wait: () => Promise<void>) => { beforePeerRead = wait },
+    duringPeerRevoke: (wait: () => Promise<void>) => { beforePeerRevoke = wait },
+    failPeerRevoke: (fail: boolean) => { peerRevokeFails = fail },
+    reloadWorld: async () => { await workspaces.close(workspaceId); return (await workspaces.getOrLoad(workspaceId)).simulationRuns },
     close: async () => { await workspaces.shutdown(); await rm(directory, { recursive: true, force: true }) },
   }
 }
@@ -87,6 +101,15 @@ test('disabled pilot advertises no adapters, while canonical role-Run AI stays r
     expect(JSON.stringify(await fixture.get('capabilities'))).not.toContain('world.perspective.')
     expect((await fixture.invoke('world.perspective.prepare', fixture.runRef, { roleIds: ['group:blue-recce'], requestId: crypto.randomUUID() })).status).toBe(404)
     expect((await fixture.invoke('world.simulation-run.inspect', fixture.runRef, {}, 'ai')).status).toBe(403)
+  } finally { await fixture.close() }
+})
+
+test('the existing role-Run nonempty AgentRestrictions source and runtime invariants remain closed', async () => {
+  const restrictions = { operationIds: [], objects: [{ objectId: objectIdSchema.parse('unit:blue-recce-1'), deny: ['inspect' as const] }] }
+  expect(scenarioDefinitionSchema.safeParse({ ...border, agentRestrictions: restrictions }).success).toBe(false)
+  const fixture = await setup()
+  try {
+    await expect(fixture.run.setAgentRestrictions({ id: actorIdSchema.parse('actor:controller'), label: 'Controller', role: 'controller', roleIds: ['controller'] }, restrictions, 0)).rejects.toMatchObject({ code: 'agent_restrictions_in_role_run' })
   } finally { await fixture.close() }
 })
 
@@ -108,6 +131,10 @@ test('published private admissions require both owners and preserve Blue, Red an
     expect(JSON.stringify(blueList.body)).toContain('unit:blue-recce-1')
     expect(JSON.stringify(blueList.body)).not.toContain('unit:red-recce-1')
     expect(JSON.stringify(blueList.body)).not.toContain(fixture.run.id)
+    const permittedObject = await fixture.invoke('world.perspective.objects.read', pending.resource, { objectId: 'unit:blue-recce-1' }, 'ai', blue.origin)
+    expect(permittedObject.status).toBe(200)
+    expect(JSON.stringify(permittedObject.body)).not.toContain('unit:red-recce-1')
+    expect(JSON.stringify(permittedObject.body)).not.toContain(border.guide.steps.at(-1)!.instruction)
     const redList = await fixture.invoke('world.perspective.objects.list', red.admission.resource, { limit: 100 }, 'ai', red.origin)
     expect(redList.status).toBe(200)
     expect(JSON.stringify(redList.body)).toContain('unit:red-recce-1')
@@ -153,10 +180,53 @@ test('Perspective receivers use exact held-role leases and no prompt-draft route
     const targets = await fixture.invoke('world.perspective.presentation.targets', blue.admission.resource, {}, 'ai', blue.origin)
     expect(JSON.stringify(targets.body)).not.toContain('world.composer')
     expect(JSON.stringify(targets.body)).not.toContain('"draft"')
+    expect(JSON.stringify(targets.body)).not.toContain('"id":"assistant"')
+    expect(JSON.stringify(targets.body)).not.toContain('"id":"dashboard"')
     const revoked = await fixture.invoke('world.perspective.revoke', blue.admission.resource, { expectedRevision: 1, reason: 'Changed the screen role', roleIds: ['group:blue-recce'] })
     expect(revoked.status).toBe(200)
     expect((await fixture.invoke('world.perspective.presentation.poll', blue.admission.resource, { recipient, roleIds: ['group:blue-recce'] })).status).toBe(403)
     expect((await fixture.invoke('world.perspective.context.read', blue.admission.resource, {}, 'ai', blue.origin)).status).toBe(403)
+  } finally { await fixture.close() }
+})
+
+test('peer notification failure preserves durable World revocation and supports explicit read-back retry', async () => {
+  const fixture = await setup()
+  try {
+    const blue = await fixture.bind(await fixture.prepare(['group:blue-recce']))
+    fixture.failPeerRevoke(true)
+    const response = await fixture.invoke('world.perspective.revoke', blue.admission.resource, { expectedRevision: 1, reason: 'End this admission', roleIds: ['group:blue-recce'] })
+    expect(response.status).toBe(503)
+    expect(response.body.error).toMatchObject({ code: 'perspective_peer_revocation_unconfirmed', details: { resource: blue.admission.resource, acceptedWorldRevision: 2 } })
+    const read = await fixture.invoke('world.perspective.read', blue.admission.resource, { roleIds: ['group:blue-recce'] })
+    expect(perspectiveAdmissionSchema.parse(read.body.result)).toMatchObject({ status: 'revoked', revision: 2 })
+    expect((await fixture.invoke('world.perspective.context.read', blue.admission.resource, {}, 'ai', blue.origin)).status).toBe(403)
+    fixture.failPeerRevoke(false)
+    const retried = await fixture.invoke('world.perspective.revoke', blue.admission.resource, { expectedRevision: 2, reason: 'Retry the unconfirmed cancellation request', roleIds: ['group:blue-recce'] })
+    expect(retried.status).toBe(200)
+    expect(fixture.peers.get(blue.binding.room.id)).toMatchObject({ status: 'revoked' })
+  } finally { await fixture.close() }
+})
+
+test('reset notifies cold persisted bindings outside the Run lifecycle write lock', async () => {
+  const fixture = await setup()
+  try {
+    const blue = await fixture.bind(await fixture.prepare(['group:blue-recce']))
+    const reloaded = await fixture.reloadWorld()
+    let notified = false
+    fixture.duringPeerRevoke(async () => {
+      // Re-entering this exact Run would deadlock if reset held its writer lock.
+      await reloaded.load(fixture.run.id)
+      notified = true
+    })
+    await reloaded.reset(fixture.run.id)
+    expect(notified).toBe(true)
+    expect(fixture.peers.get(blue.binding.room.id)).toMatchObject({ status: 'revoked' })
+    expect((await fixture.invoke('world.perspective.context.read', blue.admission.resource, {}, 'ai', blue.origin)).status).toBe(403)
+    const fresh = await fixture.bind(await fixture.prepare(['group:blue-recce']))
+    // A delayed/retried lifecycle notice must not cancel the new incarnation.
+    await reloaded.perspectives!.notifyRunPeers(fixture.run.id, 'Retry the old reset notification')
+    expect(fixture.peers.get(fresh.binding.room.id)).toMatchObject({ status: 'bound' })
+    expect((await fixture.invoke('world.perspective.context.read', fresh.admission.resource, {}, 'ai', fresh.origin)).status).toBe(200)
   } finally { await fixture.close() }
 })
 

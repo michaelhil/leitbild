@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, readFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { resourceIdSchema, workspaceResourceReferenceSchema, type PerspectiveAdmission, type WorkspaceId } from '@leitbild/contracts'
@@ -7,6 +7,7 @@ import type { StorageBudget } from '@leitbild/module-runtime'
 import type { SimulationRunId } from '../model/ids.ts'
 import { createKeyedOperations } from '../storage/keyed-operations.ts'
 import { writeAtomic } from '../storage/atomic-write.ts'
+import { mapWithConcurrency, workspaceFanOutLimit } from '../storage/bounded-fan-out.ts'
 import { storedPerspectiveSchema, perspectiveFailure, perspectiveRoleDigest, type StoredPerspective } from './model.ts'
 
 const incarnationSchema = z.object({ id: z.string().uuid() }).strict()
@@ -15,6 +16,7 @@ export { perspectiveRoleDigest } from './model.ts'
 export interface PerspectiveStore {
   readonly prepare: (input: { runId: SimulationRunId; roleIds: ReadonlyArray<string>; requestId: string }) => Promise<StoredPerspective>
   readonly read: (id: string) => Promise<StoredPerspective>
+  readonly listForRun: (runId: SimulationRunId) => Promise<ReadonlyArray<StoredPerspective>>
   readonly change: (id: string, expectedRevision: number, change: (record: StoredPerspective) => StoredPerspective) => Promise<StoredPerspective>
   readonly admission: (record: StoredPerspective) => Promise<PerspectiveAdmission>
   readonly assertCurrent: (record: StoredPerspective) => Promise<void>
@@ -74,6 +76,13 @@ export const createPerspectiveStore = (config: {
   }
   return {
     read, admission, assertCurrent,
+    listForRun: async runId => {
+      let files: string[]
+      try { files = (await readdir(join(config.directory, 'admissions'))).filter(file => file.endsWith('.json')) }
+      catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []; throw error }
+      const records = await mapWithConcurrency(files, workspaceFanOutLimit, file => read(file.slice(0, -5)))
+      return records.filter(record => record.runId === runId)
+    },
     prepare: input => records.run(`perspective-${input.requestId}`, async () => {
       const id = resourceIdSchema.parse(`perspective-${z.string().uuid().parse(input.requestId)}`)
       const existing = await readOptional(pathFor(id))
@@ -102,6 +111,9 @@ export const createPerspectiveStore = (config: {
       await save(next)
       return next
     }),
-    rotateRun: runId => incarnations.run(runId, () => write(incarnationPath(runId), { id: randomUUID() })),
+    rotateRun: runId => incarnations.run(runId, async () => {
+      // Runs that have never admitted a Perspective need no extra persisted state.
+      if (await runIncarnation(runId, false) !== undefined) await write(incarnationPath(runId), { id: randomUUID() })
+    }),
   }
 }

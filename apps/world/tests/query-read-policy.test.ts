@@ -242,3 +242,43 @@ test('Plant, Grid, retained layout and history reads do not rediscover a restric
   expect(grids.body.result.grids).toEqual([])
   expect(grids.body.result.models.length).toBeGreaterThan(0)
 }))
+
+test('the internal read-only Agent projection intersects real AI restrictions while preserving human role class and rejecting commands', async () => withWorld(async ({ registry }) => {
+  // Open-mode mechanical fixture: role Runs deliberately reject nonempty AI
+  // restrictions at their source/runtime boundary; this test does not unlock it.
+  const source = smallSource(); await registry.createScenario(source)
+  const run = await registry.create({ scenarioId: source.id }); await run.setClock({ paused: true })
+  const actor = { ...operator, id: actorIdSchema.parse('actor:ai:scoped-read'), readOnlyAgent: true as const }
+  await run.setAgentRestrictions(operator, { operationIds: [], objects: [{ objectId: objectIdSchema.parse('drone:hidden'), deny: ['inspect'] }] }, 0)
+  expect(run.inspectionPolicy(operator).canInspect('drone:hidden')).toBe(true)
+  expect(run.inspectionPolicy(actor).canInspect('drone:hidden')).toBe(false)
+  expect(run.inspectionPolicy(actor).key).not.toBe(run.inspectionPolicy(operator).key)
+  const read = await run.invokeCapability(actor, { capabilityId: 'world.drone.scene', input: {} })
+  expect(read.kind).toBe('query')
+  expect(JSON.stringify(read.result)).not.toContain('drone:hidden')
+  await expect(run.invokeCapability(actor, { capabilityId: 'world.drone.set-gimbal', input: { droneId: 'drone:visible', yawDeg: 5, pitchDeg: 0 } })).rejects.toMatchObject({ code: 'perspective_commands_unsupported' })
+  await run.setAgentRestrictions(operator, { operationIds: ['world.drone.scene'], objects: [] }, 1)
+  await expect(run.invokeCapability(actor, { capabilityId: 'world.drone.scene', input: {} })).rejects.toMatchObject({ code: 'agent_access_restricted' })
+}))
+
+test('a suspended internal read-only Agent query refuses a changed restriction revision', async () => {
+  let entered!: () => void, release!: () => void, delay = false
+  const waiting = new Promise<void>(resolve => { entered = resolve }), gate = new Promise<void>(resolve => { release = resolve })
+  await withWorld(async ({ registry }) => {
+    const source = smallSource(); await registry.createScenario(source)
+    const run = await registry.create({ scenarioId: source.id }); await run.setClock({ paused: true })
+    const actor = { ...operator, id: actorIdSchema.parse('actor:ai:scoped-read'), readOnlyAgent: true as const }
+    delay = true
+    const pending = run.invokeCapability(actor, { capabilityId: 'world.drone.scene', input: {} })
+    await waiting
+    await run.setAgentRestrictions(operator, { operationIds: [], objects: [{ objectId: objectIdSchema.parse('drone:hidden'), deny: ['inspect'] }] }, 0)
+    release()
+    await expect(pending).rejects.toMatchObject({ code: 'query_policy_superseded' })
+  }, adapter => adapter.packId !== 'drone' ? adapter : { ...adapter, connect: async config => {
+    const connection = await adapter.connect(config)
+    return { ...connection, invokeQuery: async query => {
+      if (delay && query.capabilityId === 'world.drone.scene') { delay = false; entered(); await gate }
+      return connection.invokeQuery(query)
+    } }
+  } })
+})

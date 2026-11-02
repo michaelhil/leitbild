@@ -1083,7 +1083,7 @@ export const createSimulationRunRegistry = (config: {
   }
   const close = (id: SimulationRunId): Promise<boolean> => lifecycle.run(id, () => closeLoaded(id))
 
-  const reset = (id: SimulationRunId): Promise<SimulationRunRuntime> => lifecycle.run(id, async () => {
+  const resetWithinLifecycle = (id: SimulationRunId): Promise<SimulationRunRuntime> => lifecycle.run(id, async () => {
     await assertSimulationRunRecoveryNotRequired(join(simulationRunRoot, id, 'snapshot.json'))
     await settleCompletingMaximumPace(id)
     const leases = leaseSummary(id).leasesByKind
@@ -1113,9 +1113,14 @@ export const createSimulationRunRegistry = (config: {
       ...(resetEvent === undefined ? {} : { initialSeq: resetEvent.seq + 1 }),
     })
   })
+  const reset = async (id: SimulationRunId): Promise<SimulationRunRuntime> => {
+    const runtime = await resetWithinLifecycle(id)
+    await perspectives?.notifyRunPeers(id, 'The owning Run was reset')
+    return runtime
+  }
 
   // Serialized with execution changes too, so none persists into a deleted Run's directory.
-  const deleteSimulationRun = (id: SimulationRunId): Promise<boolean> => executionOperations.run(id, () => lifecycle.run(id, async () => {
+  const deleteWithinLifecycle = (id: SimulationRunId): Promise<boolean> => executionOperations.run(id, () => lifecycle.run(id, async () => {
     await perspectives?.invalidateRun(id)
     awaitingFirstScreen.delete(id)
     const maximumPaceJob = maximumPaceJobs.get(id)
@@ -1141,6 +1146,11 @@ export const createSimulationRunRegistry = (config: {
     if (existedOnDisk) await rm(runDir, { recursive: true, force: true })
     return wasLoaded || existedOnDisk
   }))
+  const deleteSimulationRun = async (id: SimulationRunId): Promise<boolean> => {
+    const deleted = await deleteWithinLifecycle(id)
+    await perspectives?.notifyRunPeers(id, 'The owning Run was deleted')
+    return deleted
+  }
 
   const listPersistedIds = (): Promise<ReadonlyArray<SimulationRunId>> => listStoredSimulationRunIds(simulationRunRoot)
 

@@ -49,6 +49,7 @@ export interface PresentationOperationScope {
   readonly subject: PresentationRecipient['subject']
   readonly current: () => boolean
   readonly actions: ReadonlySet<string>
+  readonly allowsTarget?: (target: PresentationTarget) => boolean
   readonly source?: { readonly kind: 'agent'; readonly id: string; readonly label: string; readonly executionId: string; readonly initiatingRoom: PresentationRecipient['subject'] }
 }
 const subjectOf = (call: GuidanceCall, scope?: PresentationOperationScope) => scope?.subject ?? workspaceResourceReferenceSchema.parse({ workspaceId: call.registry.workspaceId, moduleId: 'world', type: 'world.simulation-run', id: call.runId })
@@ -80,7 +81,7 @@ const effectRequestId = (attempt: GuideAttempt, effectId: string, recipient: Pre
 
 const targetAllowed = (call: GuidanceCall, recipient: PresentationRecipient, target: PresentationTarget, scope?: PresentationOperationScope): (() => boolean) => () => {
   const runtime = call.registry.get(call.runId)
-  if (!runtime || scope !== undefined && !scope.current() || !sameSubject(call, target.subject, scope)) return false
+  if (!runtime || scope !== undefined && (!scope.current() || scope.allowsTarget?.(target) === false) || !sameSubject(call, target.subject, scope)) return false
   const issuer = runtime.inspectionPolicy(call.actor)
   const roles = call.registry.presentation.roleIds(recipient)
   const receiver = runtime.inspectionPolicy({ id: call.actor.id, label: 'Presentation recipient', role: 'operator', ...(roles.length === 0 ? {} : { roleIds: roles }) })
@@ -122,7 +123,7 @@ export const runPresentationOperation = async (kind: keyof typeof presentationIn
       for (const control of guideControlTargets) targets.push({ target: { subject: subjectOf(call, scope), type: 'world.control', id: control.id }, label: control.label, actions: [...control.actions] })
       targets.push({ target: { subject: subjectOf(call, scope), type: 'world.composer', id: 'assistant' }, label: 'Assistant prompt suggestion', actions: ['draft'] })
     }
-    const supported = scope === undefined ? targets : targets.map(entry => ({ ...entry, actions: entry.actions.filter(action => scope.actions.has(action)) })).filter(entry => entry.actions.length > 0)
+    const supported = scope === undefined ? targets : targets.filter(entry => scope.allowsTarget?.(entry.target) !== false).map(entry => ({ ...entry, actions: entry.actions.filter(action => scope.actions.has(action)) })).filter(entry => entry.actions.length > 0)
     const found = supported.filter(entry => input.text === undefined || `${entry.label} ${entry.target.id}`.toLowerCase().includes(input.text.toLowerCase()))
     if (runtime.inspectionPolicy(call.actor).key !== policy.key) throw guideFailure('presentation_discovery_superseded', 'The inspection picture changed; discover targets again')
     return { targets: found.slice(input.offset, input.offset + input.limit), ...(found.length > input.offset + input.limit ? { nextOffset: input.offset + input.limit } : {}) }

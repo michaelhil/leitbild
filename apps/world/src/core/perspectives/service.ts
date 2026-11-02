@@ -10,11 +10,15 @@ import { resolveRunPerspective, assertHoldsRole } from '../simulation-runs/role-
 import { actorIdSchema, type SimulationRunId } from '../model/ids.ts'
 import { perspectiveFailure, type StoredPerspective } from './model.ts'
 import { perspectiveRoleDigest, type PerspectiveStore } from './store.ts'
+import { mapWithConcurrency, workspaceFanOutLimit } from '../storage/bounded-fan-out.ts'
 
 /** Supplying this explicit owner dependency is construction/test admission, not product activation. */
 export interface WorldPerspectivePilotConfig {
   readonly enabled: true
   readonly readAgentsAdmission: (binding: PerspectiveRuntimeBinding) => Promise<AgentsPerspectiveRoomAdmission>
+  /** A revoked response confirms closed admission and requested cooperative cancellation,
+   * never that an uncooperative provider stopped or prior effects rolled back. */
+  readonly revokeAgentsAdmission: (binding: PerspectiveRuntimeBinding, reason: string) => Promise<AgentsPerspectiveRoomAdmission>
 }
 export interface AdmittedPerspective {
   readonly record: StoredPerspective
@@ -62,7 +66,13 @@ export const createWorldPerspectiveService = (config: { store: PerspectiveStore;
     if (latest.admission.status !== 'active' || latest.admission.revision !== record.admission.revision || latest.admission.binding === undefined
       || record.admission.binding === undefined || !sameBinding(latest.admission.binding, record.admission.binding)) throw perspectiveFailure('perspective_admission_changed', 'The Perspective admission is no longer current', 409)
     if (peer) {
-      await verifyPeer(latest.admission.binding, ['bound'])
+      try { await verifyPeer(latest.admission.binding, ['bound']) }
+      catch (error) {
+        // World revocation during the owner read remains authoritative even
+        // when the peer's cancellation completes before its reply returns.
+        await fresh(latest, false)
+        throw error
+      }
       return fresh(latest, false)
     }
     return latest
@@ -76,7 +86,7 @@ export const createWorldPerspectiveService = (config: { store: PerspectiveStore;
       id: actorIdSchema.parse(actualId === undefined ? `actor:perspective:${record.admission.resource.id}` : `actor:ai:${actualId}`),
       label: actualId === undefined ? 'Perspective holder' : `Scoped Agent ${actualId}`,
       ...(access.actor.displayName === undefined ? {} : { displayName: access.actor.displayName }),
-      role: perspective.roleClass, roleIds: perspective.roleIds,
+      role: perspective.roleClass, roleIds: perspective.roleIds, readOnlyAgent: true,
     }
   }
   const withRecord = async <T>(record: StoredPerspective, access: AccessContext, work: (context: AdmittedPerspective) => Promise<T>): Promise<T> => {
@@ -87,7 +97,8 @@ export const createWorldPerspectiveService = (config: { store: PerspectiveStore;
       await fresh(record)
       const visibility = () => {
         const policy = runtime.inspectionPolicy(actor)
-        return runtime.snapshot().objects.filter(object => policy.canInspect(object.id)).map(object => object.id).sort().join('\u0000')
+        return JSON.stringify([runtime.snapshot().scenario?.agentRestrictions.revision,
+          runtime.snapshot().objects.filter(object => policy.canInspect(object.id)).map(object => object.id).sort()])
       }
       const visibleBefore = visibility()
       const current = () => !invalidated.has(record.admission.resource.id)
@@ -102,6 +113,17 @@ export const createWorldPerspectiveService = (config: { store: PerspectiveStore;
   const clearRecord = (record: StoredPerspective): void => {
     invalidated.add(record.admission.resource.id)
     config.runs.presentation.clear(record.admission.resource)
+  }
+  const notifyPeer = async (record: StoredPerspective, reason: string): Promise<void> => {
+    const binding = record.admission.binding
+    if (binding === undefined) return
+    try {
+      const peer = agentsPerspectiveRoomAdmissionSchema.parse(await config.pilot.revokeAgentsAdmission(binding, reason))
+      if (peer.status !== 'revoked' || !sameBinding(peer, binding)) throw new Error('The exact peer admission did not confirm revocation')
+    } catch {
+      throw perspectiveFailure('perspective_peer_revocation_unconfirmed', 'World ended this admission, but the Agents cancellation request was not confirmed; read back the exact admission before retrying', 503,
+        { resource: record.admission.resource, acceptedWorldRevision: record.admission.revision })
+    }
   }
   return {
     prepare: async (runId: SimulationRunId, input: { roleIds: ReadonlyArray<string>; requestId: string }, access: AccessContext): Promise<PerspectiveAdmission> => {
@@ -142,13 +164,18 @@ export const createWorldPerspectiveService = (config: { store: PerspectiveStore;
       else if (access.actor.kind !== 'human' || input.roleIds === undefined) throw perspectiveFailure('perspective_holder_required', 'This operation requires the held human perspective')
       const record = remember(await config.store.read(id))
       if (access.perspectiveOrigin?.kind !== 'owner') await requireHuman(record, access, input.roleIds)
-      if (record.admission.status === 'revoked') {
-        if (record.admission.revision !== input.expectedRevision) throw perspectiveFailure('perspective_revision_conflict', 'Read the revoked admission before retrying', 409)
-        return record.admission
+      if (record.admission.revision !== input.expectedRevision) throw perspectiveFailure('perspective_revision_conflict', 'Read the admission before retrying', 409)
+      const effective = await config.store.admission(record)
+      if (effective.status === 'revoked') {
+        clearRecord(record)
+        await notifyPeer(record, input.reason)
+        return effective
       }
       const next = remember(await config.store.change(id, input.expectedRevision, current => ({ ...current,
         admission: { ...current.admission, status: 'revoked', revision: current.admission.revision + 1, revokedReason: input.reason, updatedAt: new Date().toISOString() } })))
       clearRecord(next)
+      // The World CAS/save is finished. No cross-owner call holds its write lock.
+      await notifyPeer(next, input.reason)
       return next.admission
     },
     withExecution: async <T>(id: string, access: AccessContext, work: (context: AdmittedPerspective) => Promise<T>): Promise<T> => {
@@ -175,6 +202,28 @@ export const createWorldPerspectiveService = (config: { store: PerspectiveStore;
     },
     clearRunPresentation: (runId: SimulationRunId): void => {
       for (const record of known.values()) if (record.runId === runId) config.runs.presentation.clear(record.admission.resource)
+    },
+    notifyRunPeers: async (runId: SimulationRunId, reason: string): Promise<void> => {
+      // Reset/delete call this only after releasing their Run lifecycle locks.
+      // Cold persisted bindings matter even if this process has not read them.
+      let records: ReadonlyArray<StoredPerspective>
+      try { records = await config.store.listForRun(runId) }
+      catch {
+        console.warn(JSON.stringify({ event: 'world.perspective.peer-revocation-unconfirmed', runId, worldAdmissionEnded: true, reason: 'Stored binding lookup could not be established; inspect owned Perspective admissions' }))
+        return
+      }
+      await mapWithConcurrency(records, workspaceFanOutLimit, async record => {
+        // A fresh admission may have been prepared after the lifecycle lock
+        // released. Only ended incarnations/admissions belong to this notice.
+        if ((await config.store.admission(record)).status !== 'revoked') return
+        clearRecord(remember(record))
+        try { await notifyPeer(record, reason) }
+        catch {
+          // The existing World process owner log retains this operational warning;
+          // public Run/reset results never enumerate another compartment's binding.
+          console.warn(JSON.stringify({ event: 'world.perspective.peer-revocation-unconfirmed', resource: record.admission.resource, acceptedWorldRevision: record.admission.revision, worldAdmissionEnded: true, reason: 'Agents cooperative cancellation request was not confirmed' }))
+        }
+      })
     },
   }
 }

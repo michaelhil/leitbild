@@ -13,9 +13,15 @@ export interface Actor {
   readonly role: ActorRole
   /** The Scenario roles this actor holds; present only in a Run that declares roles. */
   readonly roleIds?: ReadonlyArray<string>
+  /** World-owned Perspective read projection: retain held role/class but intersect AI inspection policy.
+   * Never accepted from wire actor input and never permitted to issue commands. */
+  readonly readOnlyAgent?: true
 }
 
+export const isAgentInspectionActor = (actor: Actor): boolean => actor.role === 'ai_agent' || actor.readOnlyAgent === true
+
 export const canIssueCommand = (actor: Actor, command: CommandEnvelope): boolean => {
+  if (actor.readOnlyAgent === true) return false
   if (command.kind.startsWith('scenario.')) {
     return actor.role === 'controller' || actor.role === 'system'
   }
