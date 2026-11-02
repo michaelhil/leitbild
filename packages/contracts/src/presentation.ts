@@ -110,6 +110,8 @@ export const presentationClearMessageSchema = z.object({
   recipient: presentationRecipientSchema,
   room: workspaceResourceReferenceSchema,
   requestId: identity,
+  // Present only for an owner-queued clear action requiring its own receipt.
+  clearRequestId: identity.optional(),
 }).strict().refine(message => message.room.moduleId === 'agents' && message.room.type === 'agents.room'
   && message.room.workspaceId === message.recipient.subject.workspaceId,
 { message: 'A clear addresses one exact Agents Room in this Workspace' })
