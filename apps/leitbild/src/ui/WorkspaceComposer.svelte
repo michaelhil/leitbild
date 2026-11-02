@@ -401,7 +401,7 @@
         {:else}<p>Create an Agent profile in Agents, then return here to choose it.</p>{/if}
       {/if}
       {#if privateScreen.problem}<p role="alert">{privateScreen.problem}</p>
-        {#if !privateScreen.choosing}<button onclick={() => privateDelivery.retryView()}>Retry current view</button>{/if}
+        {#if !privateScreen.choosing}<button disabled={privateScreen.busy} onclick={() => privateDelivery.retryView()}>{privateScreen.busy ? 'Reconnecting…' : 'Retry current view'}</button>{/if}
       {/if}
     </aside>
   {/if}

@@ -105,3 +105,16 @@ test('an actual Agents document replacement gets a fresh lease while ordinary re
   expect(f.delivery.state().frameUrl).not.toBe(firstUrl)
   expect(f.delivery.fromAgents({ type: 'leitbild:perspective-view-ready', room: first.room, perspective: first.perspective, documentId: first.documentId })).toBe(false)
 })
+
+test('repeated reconnect clicks coalesce without replacing a suspended view document identity', async () => {
+  const f = fixture(); f.delivery.fromWorld(f.offer); await settle(); f.state.expire()
+  let release!: () => void
+  f.state.hold = () => new Promise<void>(resolve => { release = resolve })
+  f.delivery.retryView(); f.delivery.retryView(); await settle()
+  expect(f.state.requests).toHaveLength(2)
+  expect(f.delivery.state().busy).toBe(true)
+  release(); await settle()
+  expect(f.delivery.state().frameUrl).not.toBeNull()
+  expect(f.delivery.state().problem).toBeNull()
+  expect(f.delivery.state().busy).toBe(false)
+})

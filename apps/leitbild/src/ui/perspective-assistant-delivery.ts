@@ -50,6 +50,7 @@ export const createPerspectiveAssistantDelivery = (config: {
     if (screen.lease && Date.parse(screen.lease.expiresAt) - config.now() > 10_000) return
     const token = generation, expected = offerKey(offer)
     opening = true
+    update({ busy: true })
     try {
       const lease = perspectiveViewLeaseSchema.parse(await config.request(`/api/workspaces/${encodeURIComponent(config.workspaceId())}/perspective-view`, {
         recipient: offer.recipient, agentsDocumentId: documentId,
@@ -72,7 +73,7 @@ export const createPerspectiveAssistantDelivery = (config: {
       if (closed || token !== generation || controller.signal.aborted) return
       blocked = true
       update({ lease: null, frameUrl: null, ready: false, problem: error instanceof Error ? error.message : String(error) })
-    } finally { if (token === generation) opening = false }
+    } finally { if (token === generation) { opening = false; update({ busy: false }) } }
   }
   return {
     state: () => screen,
@@ -133,7 +134,12 @@ export const createPerspectiveAssistantDelivery = (config: {
       update({ ready: false })
       if (screen.lease) config.postAgents({ type: 'leitbild:perspective-view', lease: screen.lease })
     },
-    retryView: (): void => { blocked = false; if (!screen.frameUrl) documentId = config.uuid(); void openView() },
+    retryView: (): void => {
+      if (closed || opening || !config.available()) return
+      blocked = false
+      if (!screen.frameUrl) documentId = config.uuid()
+      void openView()
+    },
     worldUnloaded: (): void => { worldDocumentId = config.uuid(); reset() },
     dispose: (): void => { closed = true; reset() },
   }
