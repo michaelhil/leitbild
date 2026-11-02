@@ -2607,7 +2607,9 @@
 
 <style>
   .timeline-outcome { position: absolute; inset: 8px 12px auto auto; z-index: 27; max-width: min(440px, 80%); padding: 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); font-size: 12px; }
-  .presentation-panel-host { display: contents; }
+  /* Pack panels measure their immediate surface. Keep its real geometry while lending pointer input only to the panel. */
+  .presentation-panel-host { position: absolute; inset: 0; pointer-events: none; }
+  :global(:where(.presentation-panel-host) > :where(*)) { pointer-events: auto; }
   :global(.world-presentation-target) { outline: 3px solid var(--accent) !important; outline-offset: 3px; }
 
 </style>
