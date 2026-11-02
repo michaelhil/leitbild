@@ -9,6 +9,7 @@
 import { atom, map, computed, batched } from '../lib/nanostores.ts'
 import type { ReadableAtom, MapStore } from '../lib/nanostores.ts'
 import type { UIMessage, AgentInfo, RoomProfile } from './render/render-types.ts'
+import { perspectiveView } from './perspective-view.ts'
 
 // === Types ===
 
@@ -31,19 +32,19 @@ export type { UIMessage, AgentInfo, RoomProfile }
 
 const SESSION_TOKEN_KEY = 'ta_session'
 export const $sessionToken = atom(
-  typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(SESSION_TOKEN_KEY) ?? '' : '',
+  perspectiveView.privateIntent ? perspectiveView.current()?.documentId ?? '' : typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(SESSION_TOKEN_KEY) ?? '' : '',
 )
 
 export const persistSessionToken = (token: string): void => {
   $sessionToken.set(token)
-  if (typeof sessionStorage !== 'undefined') {
+  if (typeof sessionStorage !== 'undefined' && !perspectiveView.privateIntent) {
     try { sessionStorage.setItem(SESSION_TOKEN_KEY, token) } catch { /* privacy mode */ }
   }
 }
 
 export const rotateSessionTokenForWorkspaceSwitch = (): void => {
   $sessionToken.set('')
-  if (typeof sessionStorage !== 'undefined') {
+  if (typeof sessionStorage !== 'undefined' && !perspectiveView.privateIntent) {
     try { sessionStorage.removeItem(SESSION_TOKEN_KEY) } catch { /* privacy mode */ }
   }
 }

@@ -1,4 +1,6 @@
 import { apiFetch } from "./api-client.ts"
+import { perspectiveView } from './perspective-view.ts'
+import { mountPerspectiveViewPanel } from './perspective-view-panel.ts'
 // ============================================================================
 // leitbild — UI Application
 //
@@ -110,6 +112,13 @@ const $ = (sel: string) => document.querySelector(sel)!
 // The `client` reference is held in ws-send.ts so any UI module can call
 // `send(...)` without being threaded the client through imports.
 let client: WSClient | null = null
+const perspectivePanel = mountPerspectiveViewPanel({ form: chatForm, input: chatInput,
+  room: () => { const id = $selectedRoomId.get(); return id === null ? undefined : $rooms.get()[id] },
+  connected: () => $connected.get(), resume: () => client?.resume?.(),
+})
+$selectedRoomId.listen(perspectivePanel.refresh)
+$rooms.listen(perspectivePanel.refresh)
+$connected.listen(perspectivePanel.refresh)
 startWorkspaceFocusListener()
 
 // === Action helpers ===
@@ -543,7 +552,7 @@ chatInput.addEventListener('keydown', (e) => {
 const presentationComposer = initPresentationComposer({ chatInput, chatForm, resetHeight: resetChatInputHeight })
 
 const submitComposer = (roomId: string, content: string, senderId: string): void => {
-  if (!$connected.get() || $selectedRoomId.get() !== roomId || chatInput.value.trim() !== content) {
+  if (!$connected.get() || !perspectiveView.canSubmit(roomId) || $selectedRoomId.get() !== roomId || chatInput.value.trim() !== content) {
     showToast(document.body, 'The connection, Room or draft changed. Review it and Send again.', { type: 'error', position: 'fixed' })
     return
   }
@@ -782,7 +791,7 @@ for (const dlg of Array.from(document.querySelectorAll<HTMLDialogElement>('dialo
 }
 // Keep the logging recording dot fresh in the sidebar even when the
 // Logging modal isn't open.
-startLoggingStateDot()
+if (!perspectiveView.privateIntent) startLoggingStateDot()
 
 const btnClearMessages = $('#btn-clear-messages') as HTMLButtonElement
 const btnExecutions = $('#btn-executions') as HTMLButtonElement
@@ -866,8 +875,11 @@ const connect = () => {
     if (typeof msg.type !== 'string') return
     const handler = wsDispatch[msg.type]
     if (handler) handler(raw as Parameters<typeof handler>[0])
+    perspectivePanel.refresh()
   }, (connected, terminalReason) => {
     $connected.set(connected)
+    if (terminalReason === 'perspective-unavailable') perspectiveView.unavailable()
+    else perspectiveView.connected(connected)
     if (terminalReason === 'workspace-unavailable') {
       showToast(document.body, 'This Workspace is unavailable. Reload the page to create a fresh Workspace.', {
         type: 'error',
@@ -883,6 +895,7 @@ const connect = () => {
 void (async () => {
   const { ensureAuthenticated } = await import('./auth.ts')
   await ensureAuthenticated()
+  await perspectiveView.waitForLease()
   // UI extension reconciliation runs BEFORE connect() so any post-render
   // processors a pack-declared extension registers (e.g. biometrics) are in
   // place when the WS snapshot arrives and historical messages render.
@@ -890,11 +903,13 @@ void (async () => {
   // extension surface tracks pack lifecycle. Pack-declared but unknown
   // names are silently ignored (forward-compat — see
   // src/ui/modules/extensions/registry.ts).
-  const { refreshExtensions } = await import('./extensions/registry.ts')
-  await refreshExtensions()
-  window.addEventListener('packs-changed', () => { void refreshExtensions() })
+  if (!perspectiveView.privateIntent) {
+    const { refreshExtensions } = await import('./extensions/registry.ts')
+    await refreshExtensions()
+    window.addEventListener('packs-changed', () => { void refreshExtensions() })
+  }
   connect()
-  initPromptDeck()
+  if (!perspectiveView.privateIntent) initPromptDeck()
 })().catch((error: unknown) => {
   console.error('[startup] Agents interface failed to initialize', error)
   showToast(document.body, `Agents interface failed to initialize: ${error instanceof Error ? error.message : String(error)}`, {

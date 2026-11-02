@@ -15,35 +15,44 @@
 // === Connect + Reconnect ===
 
 import { workspaceRealtimeUrl } from './api-client.ts'
+import { perspectiveView } from './perspective-view.ts'
 
 const BACKOFF_SCHEDULE_MS = [1_000, 2_000, 4_000, 8_000, 16_000, 30_000]
 
 export interface WSClient {
   send: (data: unknown) => void
+  resume?: () => void
 }
 
 export const createWSClient = (
   sessionToken: string,
   onMessage: (msg: unknown) => void,
-  onStatusChange: (connected: boolean, terminalReason?: 'workspace-unavailable') => void,
+  onStatusChange: (connected: boolean, terminalReason?: 'workspace-unavailable' | 'perspective-unavailable') => void,
 ): WSClient => {
   let ws: WebSocket | null = null
   let attempt = 0
+  let generation = 0
 
   const nextDelayMs = (): number =>
     BACKOFF_SCHEDULE_MS[Math.min(attempt, BACKOFF_SCHEDULE_MS.length - 1)]!
 
   const connect = () => {
-    ws = new WebSocket(workspaceRealtimeUrl(sessionToken))
+    const current = ++generation
+    let lease: ReturnType<typeof perspectiveView.requireLease>
+    try { lease = perspectiveView.requireLease() }
+    catch { onStatusChange(false, 'perspective-unavailable'); return }
+    ws = new WebSocket(workspaceRealtimeUrl(sessionToken), lease === undefined ? [] : ['leitbild-perspective', lease.token])
 
     ws.onopen = () => {
+      if (current !== generation) return
       attempt = 0  // reset backoff on successful connect
       onStatusChange(true)
     }
 
     ws.onclose = (event) => {
+      if (current !== generation) return
       if (event.code === 4004) {
-        onStatusChange(false, 'workspace-unavailable')
+        onStatusChange(false, perspectiveView.privateIntent ? 'perspective-unavailable' : 'workspace-unavailable')
         return
       }
       onStatusChange(false)
@@ -52,10 +61,11 @@ export const createWSClient = (
       if (event.code === 4003) return
       const delay = nextDelayMs()
       attempt++
-      setTimeout(connect, delay)
+      setTimeout(() => { if (current === generation) connect() }, delay)
     }
 
     ws.onmessage = (e) => {
+      if (current !== generation) return
       try {
         onMessage(JSON.parse(e.data))
       } catch { /* ignore parse errors */ }
@@ -65,6 +75,10 @@ export const createWSClient = (
   connect()
 
   return {
+    resume: () => {
+      if (ws?.readyState === WebSocket.OPEN || ws?.readyState === WebSocket.CONNECTING) return
+      generation++; ws?.close(4003, 'Document view reconnecting'); attempt = 0; connect()
+    },
     send: (data: unknown) => {
       if (ws?.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify(data))

@@ -50,6 +50,7 @@ export interface UIMessage {
 }
 
 export interface RoomProfile {
+  perspective?: { readonly admission: import('@leitbild/contracts').AgentsPerspectiveRoomAdmission }
   id: string
   name: string
 }

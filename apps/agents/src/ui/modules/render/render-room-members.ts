@@ -1,3 +1,5 @@
+import { perspectiveView } from '../perspective-view.ts'
+
 // ============================================================================
 // Room members — the chip row at the top of the room page.
 //
@@ -149,7 +151,7 @@ const render = (container: HTMLElement, opts: RenderOpts): void => {
     container.appendChild(renderChip(agent, opts.mutedAgentIds.has(agentId), isGenerating, isManual, isSelected, opts.selectedRoomId, roomName, opts.send, opts.inspectAgent))
   }
 
-  container.appendChild(renderAddButton(opts, roomName))
+  if (!perspectiveView.privateIntent) container.appendChild(renderAddButton(opts, roomName))
 }
 
 const renderChip = (
@@ -207,7 +209,7 @@ const renderChip = (
         $selectedHumanByRoom.setKey(roomId, agent.id)
       }
     }
-  } else {
+  } else if (!perspectiveView.privateIntent) {
     dot.title = isMuted ? `Unmute ${agent.name}` : `Mute ${agent.name}`
     dot.onclick = (e) => {
       e.stopPropagation()
@@ -223,6 +225,7 @@ const renderChip = (
   name.textContent = agent.name
   name.title = `Inspect ${agent.name}`
   name.onclick = (e) => { e.stopPropagation(); inspectAgent(agent.id) }
+  if (perspectiveView.privateIntent) { name.onclick = null; name.title = 'Immutable exercise Assistant template'; dot.disabled = !isHuman }
   chip.appendChild(name)
 
   const kindIcon = icon(agent.kind === 'ai' ? 'cpu' : 'user', { size: 12 })
@@ -232,7 +235,7 @@ const renderChip = (
   // In manual mode, show a ▶ on AI agent chips (hidden when muted). Click
   // fires activate_agent — the server catches the agent up on missed
   // messages and triggers one evaluation.
-  if (isManualMode && agent.kind === 'ai' && !isMuted) {
+  if (!perspectiveView.privateIntent && isManualMode && agent.kind === 'ai' && !isMuted) {
     const activateBtn = document.createElement('button')
     const disabled = isGenerating
     activateBtn.className = `text-xs px-1 ${disabled ? 'text-border-strong cursor-not-allowed' : 'text-emerald-500 hover:text-emerald-700'}`
@@ -255,7 +258,7 @@ const renderChip = (
     e.stopPropagation()
     send({ type: 'remove_from_room', roomName, agentName: agent.name })
   }
-  chip.appendChild(removeBtn)
+  if (!perspectiveView.privateIntent) chip.appendChild(removeBtn)
 
   return chip
 }

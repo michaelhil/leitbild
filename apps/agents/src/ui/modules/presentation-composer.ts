@@ -3,6 +3,7 @@ import { $selectedRoomId } from './stores.ts'
 import { createPresentationComposerModel, type DraftChoice } from './presentation-composer-model.ts'
 import { parsePresentationClear, parsePresentationDraft, parsePresentationOffer, sameRecipient } from './presentation-wire.ts'
 import type { WSOutbound } from '../../core/types/ws-protocol.ts'
+import { perspectiveView, samePerspectiveResource } from './perspective-view.ts'
 
 export const initPresentationComposer = (deps: { chatInput: HTMLTextAreaElement; chatForm: HTMLFormElement; resetHeight: () => void }) => {
   const host = document.createElement('section')
@@ -71,7 +72,13 @@ export const initPresentationComposer = (deps: { chatInput: HTMLTextAreaElement;
   const receive = (event: MessageEvent): void => {
     if (event.origin !== location.origin || event.source !== window.parent || window.parent === window) return
     const offer = parsePresentationOffer(event.data)
-    if (offer !== null) { model.offer(offer.recipient); render(); ready(); return }
+    if (offer !== null) {
+      const privateSubject = perspectiveView.current()?.perspective
+      if (perspectiveView.privateIntent && offer.recipient !== null && (privateSubject === undefined || !samePerspectiveResource(offer.recipient.subject, privateSubject))) {
+        model.offer(null); render(); return
+      }
+      model.offer(offer.recipient); render(); ready(); return
+    }
     const draft = parsePresentationDraft(event.data)
     if (draft !== null) { model.receive(draft.request, draft.room); render(); return }
     const clear = parsePresentationClear(event.data), current = model.recipient()

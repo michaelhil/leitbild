@@ -1,3 +1,5 @@
+import { perspectiveView } from './perspective-view.ts'
+
 const workspaceIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 export const currentWorkspaceId = (): string => {
@@ -22,12 +24,24 @@ export const apiPath = (path: string): string => {
     : `/api/workspaces/${currentWorkspaceId()}/agents${path}`
 }
 
-export const apiFetch = (
+export const apiFetch = async (
   input: RequestInfo | URL,
   init?: RequestInit,
 ): Promise<Response> => {
-  if (typeof input !== 'string') return fetch(input, init)
-  return fetch(input.startsWith('/') ? apiPath(input) : input, init)
+  const target = typeof input === 'string' && input.startsWith('/') ? apiPath(input) : input
+  const targetUrl = typeof target === 'string' ? new URL(target, typeof location === 'undefined' || !location.origin ? 'http://local.invalid' : location.origin)
+    : target instanceof URL ? target : new URL(target.url)
+  const localAgentsPath = typeof location !== 'undefined' && targetUrl.origin === location.origin
+    && targetUrl.pathname.startsWith(`/api/workspaces/${currentWorkspaceId()}/agents/`)
+  const lease = localAgentsPath ? perspectiveView.requireLease() : undefined
+  const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined))
+  if (lease !== undefined) headers.set('X-Leitbild-Perspective-View', lease.token)
+  const response = await fetch(target, { ...init, headers })
+  if (lease !== undefined && (response.status === 403 || response.status === 503)) {
+    const body: unknown = await response.clone().json().catch(() => undefined)
+    if (body !== null && typeof body === 'object' && 'code' in body && typeof body.code === 'string' && (body.code === 'perspective_view_unavailable' || body.code === 'perspective_authority_unavailable' || body.code === 'perspective_authority_revoked')) perspectiveView.unavailable()
+  }
+  return response
 }
 
 export const workspaceRealtimeUrl = (sessionToken: string): string => {

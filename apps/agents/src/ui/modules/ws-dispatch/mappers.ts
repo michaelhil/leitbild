@@ -44,6 +44,7 @@ export const toUIMessage = (m: Message): UIMessage => ({
 export const toUIRoomProfile = (r: ServerRoomProfile): RoomProfile => ({
   id: r.id,
   name: r.name,
+  ...(r.perspective === undefined ? {} : { perspective: { admission: r.perspective.admission } }),
 })
 
 export const toAgentEntry = (a: AgentProfile): AgentEntry => ({

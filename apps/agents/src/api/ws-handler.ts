@@ -241,7 +241,7 @@ export const createWSManager = (deps: WSManagerDeps): WSManager => {
       ? new Set(sys.rooms.getRoom(focusedRoomId)?.getParticipantIds() ?? [])
       : null
     const agents: AgentProfile[] = visible.team.listAgents()
-      .filter(a => !a.inactive && (!visibleAgentIds || visibleAgentIds.has(a.id)))
+      .filter(a => !a.inactive && (!visibleAgentIds || visibleAgentIds.has(a.id) || viewLease !== undefined && a.kind === 'human'))
       .map(a => {
         const ai = asAIAgent(a)
         const ctx = a.state.getContext()
