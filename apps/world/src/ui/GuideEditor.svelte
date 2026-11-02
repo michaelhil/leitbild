@@ -58,7 +58,9 @@
     : { kind, ref: '', operator: 'eq', value: true, quantity: 'state', unit: '', maxAgeSeconds: 30 }
   const action = (kind: Exclude<PresentationAction['kind'], 'clear'>): PresentationAction => kind === 'draft' ? { kind, text: '' }
     : kind === 'explain' ? { kind, title: '', text: '' } : { kind }
-  const actionChoices = (target: GuideTarget): Array<Exclude<PresentationAction['kind'], 'clear'>> => target.kind === 'composer' ? ['draft'] : target.kind === 'object' ? ['reveal', 'focus', 'highlight', 'explain'] : ['reveal', 'highlight']
+  const actionChoices = (target: GuideTarget): Array<Exclude<PresentationAction['kind'], 'clear'>> => target.kind === 'composer' ? ['draft']
+    : target.kind === 'object' ? ['reveal', 'focus', 'highlight', 'explain']
+    : target.kind === 'control' ? [...(guideControlTargets.find(control => control.id === target.controlId)?.actions ?? [])] : ['reveal', 'highlight']
   const actionLabels = { reveal: 'Reveal / open', focus: 'Focus on map', highlight: 'Highlight', explain: 'Explain', draft: 'Suggest prompt' }
   const setCompletion = (index: number, kind: GuideStep['completion']['kind']) => step(index, current => {
     current.completion = kind === 'acknowledge' ? { kind } : kind === 'condition' ? { kind, condition: condition('clock') }
@@ -78,6 +80,13 @@
     step(index, current => { const effect = current.effects[effectIndex]!; effect.target = target(kind); if (!actionChoices(effect.target).includes(effect.action.kind as Exclude<PresentationAction['kind'], 'clear'>)) effect.action = action(actionChoices(effect.target)[0]!) })
     if (kind === 'panel') void loadPanels()
   }
+  const setControlTarget = (index: number, effectIndex: number, controlId: string) => step(index, current => {
+    const effect = current.effects[effectIndex]!
+    if (effect.target.kind !== 'control') return
+    effect.target.controlId = controlId
+    const choices = actionChoices(effect.target)
+    if (choices.length && !choices.includes(effect.action.kind as Exclude<PresentationAction['kind'], 'clear'>)) effect.action = action(choices[0]!)
+  })
   const setActionKind = (index: number, effectIndex: number, kind: Exclude<PresentationAction['kind'], 'clear'>) => step(index, current => {
     const effect = current.effects[effectIndex]!; effect.action = action(kind)
     if (kind === 'draft') effect.target = target('composer')
@@ -157,7 +166,7 @@
               <button type="button" disabled={panelsLoading} onclick={() => void loadPanels()}>{panelsLoading ? 'Loading panel choices…' : 'Load selected Pack panel choices'}</button>
             {:else if effect.target.kind === 'control'}
               {@const controlTarget = effect.target}
-              <label>View control <select value={controlTarget.controlId} onchange={event => step(index, value => { const target = value.effects[effectIndex]!.target; if (target.kind === 'control') target.controlId = event.currentTarget.value })}>{#if !guideControlTargets.some(control => control.id === controlTarget.controlId)}<option value={controlTarget.controlId}>{controlTarget.controlId} (unlisted)</option>{/if}{#each guideControlTargets as control}<option value={control.id}>{control.label}</option>{/each}</select></label>
+              <label>View control <select value={controlTarget.controlId} onchange={event => setControlTarget(index, effectIndex, event.currentTarget.value)}>{#if !guideControlTargets.some(control => control.id === controlTarget.controlId)}<option value={controlTarget.controlId}>{controlTarget.controlId} (unlisted)</option>{/if}{#each guideControlTargets as control}<option value={control.id}>{control.label}</option>{/each}</select></label>
             {/if}
             {#if effect.action.kind === 'focus'}<label>Map zoom (optional, 0–24) <input type="number" min="0" max="24" step="any" value={effect.action.zoom ?? ''} oninput={event => step(index, value => { const action = value.effects[effectIndex]!.action; if (action.kind === 'focus') action.zoom = event.currentTarget.value === '' ? undefined : event.currentTarget.valueAsNumber })} /></label>
             {:else if effect.action.kind === 'explain'}
