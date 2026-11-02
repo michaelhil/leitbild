@@ -16,6 +16,12 @@ export const perspectiveViewLeaseSchema = z.object({
   if (value.room.workspaceId !== value.perspective.workspaceId) context.addIssue({ code: 'custom', path: ['room'], message: 'A view belongs to one Workspace' })
 })
 export type PerspectiveViewLease = z.infer<typeof perspectiveViewLeaseSchema>
+export const perspectiveViewMessageSchema = z.object({ type: z.literal('leitbild:perspective-view'), lease: perspectiveViewLeaseSchema }).strict()
+export const perspectiveViewReadyMessageSchema = z.object({
+  type: z.literal('leitbild:perspective-view-ready'), room, perspective: worldPerspectiveReferenceSchema, documentId,
+}).strict().superRefine((value, context) => {
+  if (value.room.workspaceId !== value.perspective.workspaceId) context.addIssue({ code: 'custom', message: 'A ready document belongs to one Workspace' })
+})
 
 export const perspectiveAssistantAvailabilityMessageSchema = z.object({
   type: z.literal('leitbild:perspective-assistant-availability'), available: z.boolean(),
@@ -64,6 +70,7 @@ export const perspectiveAssistantSetupResultSchema = z.object({
     || binding.room.workspaceId !== value.roomAdmission.room.workspaceId
     || binding.runtimeGeneration !== value.roomAdmission.runtimeGeneration
     || binding.actualAgentId !== value.roomAdmission.actualAgentId
+    || binding.templateId !== value.roomAdmission.templateId || binding.templateRevision !== value.roomAdmission.templateRevision
     || binding.perspective.id !== value.roomAdmission.perspective.id
     || binding.admissionGeneration !== value.roomAdmission.admissionGeneration) {
     context.addIssue({ code: 'custom', message: 'Both owners must admit the exact same Room and runtime' })
