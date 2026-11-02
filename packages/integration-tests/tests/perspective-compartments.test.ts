@@ -24,6 +24,7 @@ import { createDeploymentRuntime } from '../../../apps/agents/src/core/deploymen
 import { makeStubGateway, makeStubSetup, stubProviderConfig } from '../../../apps/agents/src/api/__fixtures__/stub-gateway.ts'
 import { asAIAgent } from '../../../apps/agents/src/agents/shared.ts'
 import { createPassTool } from '../../../apps/agents/src/tools/built-in/agent-tools.ts'
+import type { ChatRequest } from '../../../apps/agents/src/core/types/llm.ts'
 import { agentConfigurationRevision } from '../../../apps/agents/src/agents/configuration.ts'
 import { createWorkspaceHost } from '../../../apps/leitbild/src/host.ts'
 import { createModuleGateway } from '../../../apps/leitbild/src/module-gateway.ts'
@@ -48,10 +49,26 @@ test('real Host, World and Agents establish three separate pictures and exclude 
     runtimeAdapters: assembly.runtimeAdapters, workspaceCapabilities: assembly.packs.flatMap(pack => pack.workspaceCapabilities ?? []),
     scenarioDefinitions: [], scenarioRuntimeResolver: createScenarioRuntimeResolver({ packs: assembly.packs }), scenarioAuthoringCatalog: scenarioAuthoringCatalogFor(assembly.packs),
     compileScenarioDefinition: source => compileScenarioDefinition(source, assembly.packs, { routing }),
-    perspectivePilot: { enabled: true, readAgentsAdmission: async (binding: PerspectiveRuntimeBinding) => agentsPerspectiveRoomAdmissionSchema.parse(await ownerInvoke(binding.room.workspaceId, 'agents.perspective-room.read', binding.room)) },
+    perspectivePilot: { enabled: true,
+      readAgentsAdmission: async (binding: PerspectiveRuntimeBinding) => agentsPerspectiveRoomAdmissionSchema.parse(await ownerInvoke(binding.room.workspaceId, 'agents.perspective-room.read', binding.room)),
+      revokeAgentsAdmission: async (binding, reason) => {
+        const read = async () => agentsPerspectiveRoomAdmissionSchema.parse(await ownerInvoke(binding.room.workspaceId, 'agents.perspective-room.read', binding.room))
+        const current = await read()
+        if (current.status === 'revoked') return current
+        try { return agentsPerspectiveRoomAdmissionSchema.parse(await ownerInvoke(binding.room.workspaceId, 'agents.perspective-room.revoke', binding.room, { expectedRevision: current.revision, reason })) }
+        catch (error) { const latest = await read(); if (latest.status === 'revoked') return latest; throw error }
+      },
+    },
   })
   const worldServer = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch: async request => await handleWorldModuleApi(request, new URL(request.url), world) ?? new Response('Not found', { status: 404 }) })
-  const deployment = createDeploymentRuntime({ providerConfig: stubProviderConfig, providerSetup: makeStubSetup(makeStubGateway()) })
+  const modelRequests: ChatRequest[] = []
+  const deployment = createDeploymentRuntime({ providerConfig: stubProviderConfig, providerSetup: makeStubSetup({ ...makeStubGateway(),
+    stream: async function* (request) {
+      modelRequests.push(structuredClone(request))
+      yield { delta: 'Scoped fixture response.', done: false }
+      yield { delta: '', done: true, tokensUsed: { prompt: 10, completion: 4 } }
+    },
+  }) })
   deployment.sharedToolRegistry.register(createPassTool())
   const agentsState = createAgentsModuleState()
   let agents!: ReturnType<typeof createWorkspaceRuntimeRegistry>
@@ -114,10 +131,25 @@ test('real Host, World and Agents establish three separate pictures and exclude 
     for (const picture of pictures) { expect(catalog).not.toContain(picture.admitted.roomAdmission.room.id); expect(catalog).not.toContain(picture.admitted.roomAdmission.actualAgentId) }
     const privateRead = await invoke('agents.room.inspect', pictures[0]!.admitted.roomAdmission.room, {}, { kind: 'ai', id: template.id })
     expect(privateRead.status).toBe(403)
-    for (const picture of pictures) {
+    for (const [index, picture] of pictures.entries()) {
       const room = runtime.rooms.getRoom(picture.admitted.roomAdmission.room.id)!
-      room.setPaused(true); room.post({ senderId: participant.id, content: `PRIVATE_${picture.admitted.roomAdmission.room.id}`, type: 'chat' })
+      room.post({ senderId: participant.id, content: `PRIVATE_PICTURE_${index}: give a concise situation report.`, type: 'chat' })
     }
+    const until = Date.now() + 5_000
+    while (pictures.some(picture => !runtime.rooms.getRoom(picture.admitted.roomAdmission.room.id)!.getRetainedMessages().some(message => message.senderId === picture.admitted.roomAdmission.actualAgentId)) && Date.now() < until) await Bun.sleep(10)
+    expect(modelRequests).toHaveLength(3)
+    for (const [index, picture] of pictures.entries()) {
+      const request = modelRequests.find(request => JSON.stringify(request.messages).includes(`PRIVATE_PICTURE_${index}`))
+      expect(request).toBeDefined()
+      for (const other of [0, 1, 2].filter(other => other !== index)) {
+        expect(JSON.stringify(request)).not.toContain(`PRIVATE_PICTURE_${other}`)
+        expect(JSON.stringify(request)).not.toContain(pictures[other]!.admitted.roomAdmission.room.id)
+        expect(JSON.stringify(request)).not.toContain(pictures[other]!.admitted.roomAdmission.actualAgentId)
+      }
+      const messages = runtime.rooms.getRoom(picture.admitted.roomAdmission.room.id)!.getRetainedMessages()
+      expect(messages.some(message => message.senderId === picture.admitted.roomAdmission.actualAgentId && message.content.includes('Scoped fixture response.'))).toBe(true)
+    }
+    expect(JSON.stringify(modelRequests.find(request => JSON.stringify(request.messages).includes('PRIVATE_PICTURE_0')))).not.toContain('unit:red-recce-1')
     const list = await runtime.toolRegistry.get('list_rooms')!.execute({}, { callerId: template.id, callerName: template.name })
     expect(list.data).toEqual([])
     const target = pictures[0]!
