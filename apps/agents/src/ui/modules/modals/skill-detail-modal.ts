@@ -137,8 +137,8 @@ export const renderSkillDetailInto = (
       .then((data: { description?: string; body?: string; tools?: string[]; editable?: boolean; owner?: { kind: string; id?: string } } | null) => {
         if (!data) return
         if (data.editable === false) {
-          descInput.disabled = true
-          bodyArea.disabled = true
+          descInput.readOnly = true
+          bodyArea.readOnly = true
           btnRow.hidden = true
           const notice = document.createElement('p')
           notice.className = 'text-xs text-text-muted mb-3'

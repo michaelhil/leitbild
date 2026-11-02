@@ -282,7 +282,7 @@ export const showGenerationInspector = (options: {
       if (parent) host.appendChild(createButton({ label: 'Inspect owning tool attempt', onClick: () => inspectRecorded(parent) }))
       else note(host, `The owning tool attempt ${record.parentToolCallId} is unavailable in this execution index.`)
     }
-    if (execution.turn.status === 'interrupted' && execution.turn.finishedAt !== undefined && record.completedAt !== undefined && record.completedAt >= execution.turn.finishedAt) note(host, 'This actual model outcome was observed after the turn was interrupted. It did not reopen the turn or post a cancelled answer.')
+    if (execution.turn.status === 'interrupted' && execution.turn.finishedAt !== undefined && record.completedAt !== undefined && record.completedAt > execution.turn.finishedAt) note(host, 'This actual model outcome was observed after the turn was interrupted. It did not reopen the turn or post a cancelled answer.')
     if (record.contextCheckpointId) {
       const checkpoint = recordedCheckpointEvent(allEvents, execution.turn.id, record.contextCheckpointId)
       if (checkpoint) host.appendChild(createButton({ label: 'Inspect context checkpoint', onClick: () => inspectRecorded(checkpoint) }))

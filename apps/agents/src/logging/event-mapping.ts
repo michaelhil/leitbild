@@ -31,7 +31,7 @@ const senderActor = (m: Message, kind: LogActor['kind']): LogActor | undefined =
   m.senderName !== undefined
     ? { kind, id: m.senderId, name: m.senderName }
     : m.senderId !== undefined
-      ? { kind: 'unknown', id: m.senderId }
+      ? { kind, id: m.senderId }
       : undefined
 
 const systemActor: LogActor = { kind: 'system' }
