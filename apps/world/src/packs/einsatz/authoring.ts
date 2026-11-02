@@ -31,7 +31,7 @@ const side = (description: string): PackScenarioAuthoringField => ({
 
 export const einsatzAuthoring: PackScenarioAuthoringContribution = {
   configuration: {
-    beforeStart: "Declare unitTypes, taskTemplates, counted load classes, properties, groups, lexicon and authority before authoring unit/task references. Units reference unitType; tasks reference template. Durations and rates use their owning schema units. Once groups exist, non-public units require a group; side and group side must agree. This is counted operational load, not Ambulance individual patient custody.",
+    beforeStart: "Declare unitTypes, taskTemplates, counted load classes, properties, groups, lexicon and authority before authoring unit/task references. Units reference unitType; tasks reference template. Durations and rates use their owning schema units. Once groups exist, non-public units require a group; side and group side must agree. Load is counted per declared load class; the configuration defines its meaning.",
     liveChanges: "Exact world.einsatz.unit/task/site command schemas support dispatch, queue/hold/recall, readiness/property/load adjustments, task creation/closure and receiving-site changes. The selected configuration/authority constrains them. Role/sided Runs currently refuse AI callers; configuration does not override that boundary.",
     requiresNewRevision: "Replacing unit/task type definitions, lexicon, groups, authority, sides or role declarations requires a new Scenario Revision and Run. Runtime commands do not hot-replace the configuration language or admitted role picture.",
   },

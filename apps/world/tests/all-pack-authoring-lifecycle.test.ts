@@ -127,10 +127,13 @@ test('all eight owner selections survive discovered schema, preview, published s
     expect((await registry.compiledScenarioForRun(run.id)).packConfigs.drone).toMatchObject({ stepIntervalMs: 25 })
     expect((await invoke('world.physical-layout.design.describe', { design: source.packs.find(pack => pack.id === 'physical-layout')!.items[0]!.design }, 'ai')).body.result.liveDesignReplacement).toBe(false)
     expect((await invoke('world.process-plant.models.describe', {}, 'ai')).body.result.liveModelReplacement).toBe(false)
-    const frozen = run.snapshot().objects
+    // Restore retains the persisted JSON value. IEEE signed zero in runtime
+    // telemetry is encoded as 0 on that boundary, so compare the complete JSON
+    // objects rather than requiring a non-persistable -0 distinction.
+    const frozen = JSON.stringify(run.snapshot().objects)
     await registry.close(run.id)
     const restored = await registry.load(run.id)
-    expect(restored.snapshot().objects).toEqual(frozen)
+    expect(JSON.parse(JSON.stringify(restored.snapshot().objects))).toEqual(JSON.parse(frozen))
     expect((await invoke('world.situation-monitor.status', {}, 'ai', { resource })).body.result.config.sources).toEqual([])
     expect((await invoke('world.ambulance.object', { objectId: 'example:ambulance' }, 'ai', { resource })).body.result.object.packData.crewReady).toBe(false)
     expect((await invoke('world.simulation-run.read-object', { objectId: 'example:weather' }, 'ai', { resource })).body.result.packData.definition.enabled).toBe(false)
