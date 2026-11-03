@@ -5,7 +5,7 @@ import { configureActiveWorkspace } from '../src/ui/workspace-context.ts'
 import { configureActiveRoleSet, currentActiveRoleSet } from '../src/ui/roles/role-session.ts'
 
 test('clearing, closing, reconnecting or manual camera interruption prevents a suspended old cue from applying later', async () => {
-  for (const action of ['clear', 'supersede-visual', 'stop', 'reconnect', 'manual-camera'] as const) {
+  for (const action of ['clear', 'stop', 'reconnect', 'manual-camera'] as const) {
     const oldFetch = globalThis.fetch, oldWindow = Object.getOwnPropertyDescriptor(globalThis, 'window'), oldLocation = Object.getOwnPropertyDescriptor(globalThis, 'location'), priorRoles = currentActiveRoleSet()
     const subject = { workspaceId: '00000000-0000-4000-8000-000000000001', moduleId: 'world', type: 'world.simulation-run', id: 'run' }
     const recipient = { subject, clientId: 'client', documentId: 'document', leaseId: 'lease', expiresAt: new Date(Date.now() + 60_000).toISOString() }
@@ -37,7 +37,6 @@ test('clearing, closing, reconnecting or manual camera interruption prevents a s
       const applying = session.accept(); await entered.promise
       let reconnecting: Promise<void> | undefined
       if (action === 'clear') session.clearCue()
-      if (action === 'supersede-visual') session.clearVisualCue()
       if (action === 'stop') session.stop()
       if (action === 'reconnect') reconnecting = session.reconnect()
       if (action === 'manual-camera') session.manualCamera()

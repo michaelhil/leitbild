@@ -1,5 +1,4 @@
 import { rawObjectReadPolicy } from '../packs/inspection.ts'
-import { isAgentInspectionActor } from './actors.ts'
 import { audienceVisibleTo } from '../model/audience.ts'
 import { createQueryReadPolicy, unrestrictedQueryReadPolicy, type QueryReadPolicy } from '../../simulation/query-read-policy.ts'
 import type { WorkspaceId } from '@leitbild/contracts'
@@ -1218,14 +1217,13 @@ export const createSimulationRunRuntime = async (config: {
     assertCommitAvailable()
     const active = runtimeCapabilities.get(invocation.capabilityId)
     if (!active) throw new Error(`Simulation Capability is not active: ${invocation.capabilityId}`)
-    if (actor.readOnlyAgent === true && active.capability.kind === 'command') throw Object.assign(new Error('This admitted Agent projection is read-only'), { code: 'perspective_commands_unsupported', status: 403 })
     if (invocation.scheduled === true && active.capability.schedulable !== true) {
       throw new Error(`Simulation Capability is not schedulable: ${invocation.capabilityId}`)
     }
     const input = active.capability.input.parse(invocation.input)
     const currentRestrictions = state.snapshot().scenario?.agentRestrictions
     const assertAllowed = (effect: 'inspect' | 'change', objectIds: ReadonlyArray<ObjectId>): void => {
-      if (!isAgentInspectionActor(actor) || !currentRestrictions) return
+      if (actor.role !== 'ai_agent' || !currentRestrictions) return
       if (currentRestrictions.operationIds.includes(active.capability.id)) {
         throw Object.assign(new Error(`AI access to operation ${active.capability.id} is restricted for this Run`), { code: 'agent_access_restricted' })
       }
@@ -1239,15 +1237,15 @@ export const createSimulationRunRuntime = async (config: {
       const inspected = active.capability.inspectObjectIds?.(input) ?? []
       if (active.capability.readScope === 'object' && inspected.length === 0) throw new Error(`Object query ${active.capability.id} resolved no inspection target`)
       assertAllowed('inspect', inspected)
-      const readPolicy = createQueryReadPolicy(`${config.id}:${actor.id}:${actor.role}:${actor.readOnlyAgent === true ? 'ai-read' : 'ordinary'}:${currentRestrictions?.revision ?? 0}`,
-        isAgentInspectionActor(actor) ? currentRestrictions?.objects.filter(entry => entry.deny.includes('inspect')).map(entry => entry.objectId) ?? [] : [])
+      const readPolicy = createQueryReadPolicy(`${config.id}:${actor.id}:${actor.role}:${currentRestrictions?.revision ?? 0}`,
+        actor.role === 'ai_agent' ? currentRestrictions?.objects.filter(entry => entry.deny.includes('inspect')).map(entry => entry.objectId) ?? [] : [])
       const viewer = viewerForActor(runRoles, actor)
       const result = await config.runtimeConnection.invokeQuery({
         capabilityId: active.capability.id,
         input, readPolicy,
         ...(viewer === undefined ? {} : { viewer }),
       })
-      if (isAgentInspectionActor(actor) && state.snapshot().scenario?.agentRestrictions.revision !== currentRestrictions?.revision) {
+      if (actor.role === 'ai_agent' && state.snapshot().scenario?.agentRestrictions.revision !== currentRestrictions?.revision) {
         throw Object.assign(new Error('AI inspection policy changed while the query ran; acquire a new result'), { code: 'query_policy_superseded', status: 409 })
       }
       return { kind: 'query', result: active.capability.output.parse(result) }
@@ -1509,10 +1507,10 @@ export const createSimulationRunRuntime = async (config: {
     const restrictions = snapshot.scenario?.agentRestrictions
     const viewer = viewerForActor(runRoles, actor)
     const denied = [
-      ...(isAgentInspectionActor(actor) ? restrictions?.objects.filter(entry => entry.deny.includes('inspect')).map(entry => String(entry.objectId)) ?? [] : []),
+      ...(actor.role === 'ai_agent' ? restrictions?.objects.filter(entry => entry.deny.includes('inspect')).map(entry => String(entry.objectId)) ?? [] : []),
       ...snapshot.objects.filter(object => !audienceVisibleTo(object.audience, viewer?.sees ?? 'all')).map(object => String(object.id)),
     ]
-    const key = `${config.id}:${actor.id}:${actor.role}:${actor.readOnlyAgent === true ? 'ai-read' : 'ordinary'}:${actor.roleIds?.join(',') ?? ''}:${restrictions?.revision ?? 0}:${snapshot.seq}`
+    const key = `${config.id}:${actor.id}:${actor.role}:${actor.roleIds?.join(',') ?? ''}:${restrictions?.revision ?? 0}:${snapshot.seq}`
     const policy = rawObjectReadPolicy(createQueryReadPolicy(key, denied), snapshot.objects, config.packs ?? [])
     const present = new Set(snapshot.objects.map(object => String(object.id)))
     return Object.freeze({ ...policy, canInspect: (id: string) => present.has(id) && policy.canInspect(id) })

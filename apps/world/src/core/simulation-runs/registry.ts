@@ -47,8 +47,6 @@ import { readGuideAttempt, type GuideFile } from '../guides/store.ts'
 import { guideAttemptIdSchema, guideAttemptSchema } from '../guides/attempt.ts'
 import { createPresentationDelivery, type PresentationDelivery } from '../guides/presentation.ts'
 import type { GuidePromptEvidenceReader } from '../guides/prompt-evidence.ts'
-import { createPerspectiveStore } from '../perspectives/store.ts'
-import { createWorldPerspectiveService, type WorldPerspectivePilotConfig, type WorldPerspectiveService } from '../perspectives/service.ts'
 import { writeAtomic } from '../storage/atomic-write.ts'
 
 const maxRestoredEventHistoryBytes = 8 * 1024 * 1024
@@ -146,7 +144,6 @@ export interface SimulationRunRegistry {
   /** Participant progress is read by opaque attempt identity, never broadcast with the Run snapshot. */
   readonly guideFile: (id: SimulationRunId, attemptId: string) => GuideFile
   readonly presentation: PresentationDelivery
-  readonly perspectives?: WorldPerspectiveService
   readonly readGuidePromptEvidence: GuidePromptEvidenceReader
   readonly get: (id: SimulationRunId) => SimulationRunRuntime | undefined
   readonly list: () => ReadonlyArray<SimulationRunRuntime>
@@ -198,7 +195,6 @@ export const createSimulationRunRegistry = (config: {
   readonly idleRuntimeCloseTimer?: IdleRuntimeCloseTimer
   readonly procedureSourceService?: ProcedureSourceService
   readonly readGuidePromptEvidence?: GuidePromptEvidenceReader
-  readonly perspectivePilot?: WorldPerspectivePilotConfig
 }): SimulationRunRegistry => {
   const simulationRuns = new Map<SimulationRunId, SimulationRunRuntime>()
   /**
@@ -229,11 +225,6 @@ export const createSimulationRunRegistry = (config: {
   const workspacePaths = worldWorkspacePaths(config.dataDir, config.workspaceId)
   const workspaceRoot = workspacePaths.root
   const storageBudget = config.storageBudget ?? createStorageBudget({ root: config.dataDir })
-  let perspectives: WorldPerspectiveService | undefined
-  const perspectiveStore = config.perspectivePilot === undefined ? undefined : createPerspectiveStore({
-    workspaceId: config.workspaceId, workspaceRoot, directory: join(workspaceRoot, 'perspectives'), storageBudget,
-    runExists: async id => Boolean(await manifestStoreFor(id).load()),
-  })
   const simulationRunRoot = workspacePaths.simulationRuns
   const scenarioLibrary = config.scenarioLibrary ?? createLocalScenarioLibrary({
     workspaceId: config.workspaceId,
@@ -1076,14 +1067,13 @@ export const createSimulationRunRegistry = (config: {
     leasesBySimulationRun.delete(id)
     await runtime.close()
     presentation.clear(runSubject(id))
-    perspectives?.clearRunPresentation(id)
     simulationRuns.delete(id)
     loadedCompiledScenarios.delete(id)
     return true
   }
   const close = (id: SimulationRunId): Promise<boolean> => lifecycle.run(id, () => closeLoaded(id))
 
-  const resetWithinLifecycle = (id: SimulationRunId): Promise<SimulationRunRuntime> => lifecycle.run(id, async () => {
+  const reset = (id: SimulationRunId): Promise<SimulationRunRuntime> => lifecycle.run(id, async () => {
     await assertSimulationRunRecoveryNotRequired(join(simulationRunRoot, id, 'snapshot.json'))
     await settleCompletingMaximumPace(id)
     const leases = leaseSummary(id).leasesByKind
@@ -1091,7 +1081,6 @@ export const createSimulationRunRegistry = (config: {
     if (leases['maximum-pace'] > 0) throw Object.assign(new Error('Simulation Run is playing at maximum pace; pause it before resetting'), { code: 'simulation_run_busy' })
     const manifest = await manifestStoreFor(id).load()
     if (!manifest) throw new Error(`Simulation Run not found: ${id}`)
-    await perspectives?.invalidateRun(id)
     const existing = simulationRuns.get(id)
     const resetEvent = existing
       ? await existing.publishResetBoundary({ scenarioId: manifest.scenario.id })
@@ -1113,15 +1102,9 @@ export const createSimulationRunRegistry = (config: {
       ...(resetEvent === undefined ? {} : { initialSeq: resetEvent.seq + 1 }),
     })
   })
-  const reset = async (id: SimulationRunId): Promise<SimulationRunRuntime> => {
-    const runtime = await resetWithinLifecycle(id)
-    await perspectives?.notifyRunPeers(id, 'The owning Run was reset')
-    return runtime
-  }
 
   // Serialized with execution changes too, so none persists into a deleted Run's directory.
-  const deleteWithinLifecycle = (id: SimulationRunId): Promise<boolean> => executionOperations.run(id, () => lifecycle.run(id, async () => {
-    await perspectives?.invalidateRun(id)
+  const deleteSimulationRun = (id: SimulationRunId): Promise<boolean> => executionOperations.run(id, () => lifecycle.run(id, async () => {
     awaitingFirstScreen.delete(id)
     const maximumPaceJob = maximumPaceJobs.get(id)
     if (maximumPaceJob) {
@@ -1146,11 +1129,6 @@ export const createSimulationRunRegistry = (config: {
     if (existedOnDisk) await rm(runDir, { recursive: true, force: true })
     return wasLoaded || existedOnDisk
   }))
-  const deleteSimulationRun = async (id: SimulationRunId): Promise<boolean> => {
-    const deleted = await deleteWithinLifecycle(id)
-    await perspectives?.notifyRunPeers(id, 'The owning Run was deleted')
-    return deleted
-  }
 
   const listPersistedIds = (): Promise<ReadonlyArray<SimulationRunId>> => listStoredSimulationRunIds(simulationRunRoot)
 
@@ -1324,10 +1302,6 @@ export const createSimulationRunRegistry = (config: {
     leases: leaseSummaries(),
   })
 
-  if (perspectiveStore !== undefined && config.perspectivePilot !== undefined) perspectives = createWorldPerspectiveService({
-    store: perspectiveStore, pilot: config.perspectivePilot,
-    runs: { workspaceId: config.workspaceId, load, runRoles, acquireLease, presentation },
-  })
   return {
     workspaceId: config.workspaceId,
     scenarioAuthoringCatalog: {
@@ -1367,7 +1341,6 @@ export const createSimulationRunRegistry = (config: {
       }
     },
     presentation,
-    ...(perspectives === undefined ? {} : { perspectives }),
     readGuidePromptEvidence: config.readGuidePromptEvidence ?? (async () => { throw Object.assign(new Error('This World instance has no Agents evidence reader'), { domain: 'world-guidance', code: 'guide_prompt_evidence_unavailable', status: 503 }) }),
     guideFile: (id, rawAttemptId) => {
       const attemptId = guideAttemptIdSchema.parse(rawAttemptId)

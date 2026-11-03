@@ -27,8 +27,6 @@ export interface GuidanceSession {
   decline: () => Promise<void>
   explore: () => void
   clearCue: () => void
-  /** Another current receiver owns the visual cue; preserve actual prompt causality. */
-  clearVisualCue: () => void
   stop: () => void
   receive: (event: MessageEvent) => void
   manualCamera: () => void
@@ -273,11 +271,6 @@ export const createGuidanceSession = (config: {
     decline: async () => { const request = screen.suggestion; if (!request) return; update({ suggestion: null }); await finish(request, { status: 'declined', reason: 'You declined this attention suggestion' }) },
     explore: () => update({ explored: true }),
     clearCue: () => { const id = screen.cue?.id; if (id) clear(request => request.id === id) },
-    clearVisualCue: () => {
-      for (const application of applications.values()) application.abort('cue-superseded')
-      applications.clear()
-      if (screen.cue) { config.clear(screen.cue); update({ cue: null }) }
-    },
     manualCamera: () => { cameraHeld = true; if (screen.cue?.action.kind === 'focus' || screen.cue?.action.kind === 'reveal' && screen.cue.target.type === 'world.object') applications.get(screen.cue.id)?.abort('manual-camera') },
     receive,
     stop: () => {
