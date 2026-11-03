@@ -15,19 +15,17 @@
 // === Connect + Reconnect ===
 
 import { workspaceRealtimeUrl } from './api-client.ts'
-import { perspectiveView } from './perspective-view.ts'
 
 const BACKOFF_SCHEDULE_MS = [1_000, 2_000, 4_000, 8_000, 16_000, 30_000]
 
 export interface WSClient {
   send: (data: unknown) => void
-  resume?: () => void
 }
 
 export const createWSClient = (
   sessionToken: string,
   onMessage: (msg: unknown) => void,
-  onStatusChange: (connected: boolean, terminalReason?: 'workspace-unavailable' | 'perspective-unavailable') => void,
+  onStatusChange: (connected: boolean, terminalReason?: 'workspace-unavailable') => void,
 ): WSClient => {
   let ws: WebSocket | null = null
   let attempt = 0
@@ -38,10 +36,7 @@ export const createWSClient = (
 
   const connect = () => {
     const current = ++generation
-    let lease: ReturnType<typeof perspectiveView.requireLease>
-    try { lease = perspectiveView.requireLease() }
-    catch { onStatusChange(false, 'perspective-unavailable'); return }
-    ws = new WebSocket(workspaceRealtimeUrl(sessionToken), lease === undefined ? [] : ['leitbild-perspective', lease.token])
+    ws = new WebSocket(workspaceRealtimeUrl(sessionToken))
 
     ws.onopen = () => {
       if (current !== generation) return
@@ -52,7 +47,7 @@ export const createWSClient = (
     ws.onclose = (event) => {
       if (current !== generation) return
       if (event.code === 4004) {
-        onStatusChange(false, perspectiveView.privateIntent ? 'perspective-unavailable' : 'workspace-unavailable')
+        onStatusChange(false, 'workspace-unavailable')
         return
       }
       onStatusChange(false)
@@ -75,10 +70,6 @@ export const createWSClient = (
   connect()
 
   return {
-    resume: () => {
-      if (ws?.readyState === WebSocket.OPEN || ws?.readyState === WebSocket.CONNECTING) return
-      generation++; ws?.close(4003, 'Document view reconnecting'); attempt = 0; connect()
-    },
     send: (data: unknown) => {
       if (ws?.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify(data))

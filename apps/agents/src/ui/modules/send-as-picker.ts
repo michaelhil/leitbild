@@ -4,15 +4,10 @@ import { apiFetch } from "./api-client.ts"
 // first, then others); selecting one sets the per-room poster and re-fires
 // the post. If no humans exist anywhere, falls through to createHumanInline.
 
-import { $agents, $agentListView, $rooms, $selectedHumanByRoom, type AgentInfo } from './stores.ts'
+import { $agents, $agentListView, $selectedHumanByRoom, type AgentInfo } from './stores.ts'
 import { roomIdToName } from './identity-lookups.ts'
 import { send } from './ws-send.ts'
 import { showToast } from './toast.ts'
-import { perspectiveView } from './perspective-view.ts'
-
-const privateComposer = (roomId: string): boolean => perspectiveView.privateIntent || $rooms.get()[roomId]?.perspective !== undefined
-const missingPrivateSender = (): void => showToast(document.body,
-  'No existing human sender is available. Choose or create a human in the Workspace before reopening this Assistant.', { type: 'error', position: 'fixed' })
 
 export interface SendAsPickerDeps {
   readonly chatInput: HTMLTextAreaElement | HTMLInputElement
@@ -27,7 +22,6 @@ export const createHumanInline = async (
   content: string,
   deps: SendAsPickerDeps,
 ): Promise<void> => {
-  if (privateComposer(roomId)) { missingPrivateSender(); return }
   const name = window.prompt('Name for the new human:')?.trim()
   if (!name) return
   const roomName = roomIdToName(roomId)
@@ -68,10 +62,8 @@ export const openSendAsPicker = async (
   const memberSet = new Set($agentListView.get().roomMemberIds)
   const roomName = roomIdToName(roomId)
   if (!roomName) return
-  const privateRoom = privateComposer(roomId)
 
   if (humans.length === 0) {
-    if (privateRoom) { missingPrivateSender(); return }
     await createHumanInline(roomId, content, deps)
     return
   }
@@ -110,11 +102,11 @@ export const openSendAsPicker = async (
     nameSpan.textContent = h.name
     const tagSpan = document.createElement('span')
     tagSpan.className = 'text-[10px] uppercase tracking-wide text-text-subtle'
-    tagSpan.textContent = privateRoom ? 'post as' : needsAdd ? 'add to room' : 'in room'
+    tagSpan.textContent = needsAdd ? 'add to room' : 'in room'
     row.appendChild(nameSpan)
     row.appendChild(tagSpan)
     row.onclick = async () => {
-      if (needsAdd && !privateRoom) {
+      if (needsAdd) {
         const { confirmModal } = await import('./modals/confirm-modal.ts')
         if (!(await confirmModal({
           title: 'Add to room',
@@ -140,17 +132,15 @@ export const openSendAsPicker = async (
 
   const footer = document.createElement('div')
   footer.className = 'px-6 py-3 border-t border-border flex justify-between gap-2'
-  if (!privateRoom) {
-    const newBtn = document.createElement('button')
-    newBtn.className = 'px-3 py-1 text-xs border border-border-strong rounded hover:bg-surface-muted'
-    newBtn.textContent = '+ New human'
-    newBtn.onclick = async () => { close(); await createHumanInline(roomId, content, deps) }
-    footer.appendChild(newBtn)
-  }
+  const newBtn = document.createElement('button')
+  newBtn.className = 'px-3 py-1 text-xs border border-border-strong rounded hover:bg-surface-muted'
+  newBtn.textContent = '+ New human'
+  newBtn.onclick = async () => { close(); await createHumanInline(roomId, content, deps) }
   const cancel = document.createElement('button')
   cancel.className = 'px-3 py-1 text-xs text-text-muted'
   cancel.textContent = 'Cancel'
   cancel.onclick = close
+  footer.appendChild(newBtn)
   footer.appendChild(cancel)
   card.appendChild(body)
   card.appendChild(footer)

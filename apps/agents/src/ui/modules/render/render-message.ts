@@ -24,8 +24,6 @@ import { mountMessageComparisons } from '../message-comparisons.ts'
 import { mountProposalCards } from '../proposal-card/index.ts'
 import { applyDisplayReply, displayReplyCaptionElement, displayRequestRow, isDisplayReply, offersDisplayRequest } from '../display-request.ts'
 import { PROPOSAL_RESUME_CAUSE, proposalResumeCaption } from '../../../core/proposal-resume.ts'
-import { perspectiveView } from '../perspective-view.ts'
-import { perspectiveMarkdown } from './perspective-markdown.ts'
 
 // Clipboard writes use the current Async Clipboard API. Returns false when
 // the browser or document context does not permit clipboard access.
@@ -42,18 +40,6 @@ const writeClipboard = async (text: string): Promise<boolean> => {
 // Render Markdown content safely, then post-process diagrams and source links.
 const renderMarkdownContent = (el: HTMLElement, text: string): void => {
   el.className += ' msg-prose'
-  if (perspectiveView.privateIntent) {
-    // The bounded pilot admits text, Markdown and code, not model-authored
-    // auto-loading resources. Relative image/CSS URLs are outbound too.
-    el.innerHTML = DOMPurify.sanitize(perspectiveMarkdown(text), {
-      ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'del', 'blockquote', 'pre', 'code', 'ul', 'ol', 'li', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'a', 'hr', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'span'],
-      ALLOWED_ATTR: ['href', 'title'], ALLOW_DATA_ATTR: false,
-    })
-    for (const link of el.querySelectorAll<HTMLAnchorElement>('a')) {
-      link.rel = 'noreferrer noopener'; link.target = '_blank'
-    }
-    return // No rich-fence, HTML, map, iframe, diagram or Pack processors.
-  }
   el.innerHTML = DOMPurify.sanitize(marked.parse(text) as string)
   decorateProductSourceReferences(el)
   for (const proc of getPostRenderProcessors()) void proc(el)
@@ -342,7 +328,7 @@ export const renderMessage = (opts: RenderMessageOptions): void => {
         header.appendChild(ctxBtn)
       }
 
-      if (onBookmark && !perspectiveView.privateIntent) {
+      if (onBookmark) {
         const bmBtn = document.createElement('button')
         bmBtn.className = 'icon-btn opacity-0 group-hover:opacity-100'
         bmBtn.title = 'Bookmark message'
@@ -352,7 +338,7 @@ export const renderMessage = (opts: RenderMessageOptions): void => {
         header.appendChild(bmBtn)
       }
 
-      if (onDelete && !perspectiveView.privateIntent) {
+      if (onDelete) {
         const delBtn = document.createElement('button')
         delBtn.className = 'text-border-strong hover:text-danger text-xs opacity-0 group-hover:opacity-100'
         delBtn.textContent = '×'
@@ -435,10 +421,10 @@ export const renderMessage = (opts: RenderMessageOptions): void => {
 
     // Offer to show this answer as a live display. The row stays empty unless
     // the author holds the display Skill.
-    if (!perspectiveView.privateIntent && sender && offersDisplayRequest(msg, sender)) div.appendChild(displayRequestRow(msg, sender.name))
+    if (sender && offersDisplayRequest(msg, sender)) div.appendChild(displayRequestRow(msg, sender.name))
 
     // An answer whose turn proposed a plant operation shows World's status for it (proposal-card/index.ts).
-    if (!perspectiveView.privateIntent) mountProposalCards(div, msg)
+    mountProposalCards(div, msg)
 
     // If a script is active in this room, append the whisper attached to
     // THIS specific message (looked up by messageId in stepLogs). No-op
@@ -470,9 +456,9 @@ export const renderMessage = (opts: RenderMessageOptions): void => {
 
   container.appendChild(div)
 
-  if (!perspectiveView.privateIntent && isDisplayReply(msg)) applyDisplayReply(container, msg)
+  if (isDisplayReply(msg)) applyDisplayReply(container, msg)
 
-  if (!perspectiveView.privateIntent && msg.generationTraceId && msg.roomId && msg.type === 'chat') {
+  if (msg.generationTraceId && msg.roomId && msg.type === 'chat') {
     mountMessageComparisons(div, msg, renderMarkdownContent)
   }
 
