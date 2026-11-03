@@ -34,8 +34,8 @@ import { createOperationScope } from '@leitbild/module-runtime'
 //
 // === buildWorkspaceRuntime ordering (subtle; was the source of 5d73a8e) ===
 // Inside buildWorkspaceRuntime(id):
-//   1. createAgentsWorkspaceRuntime(...)           — new in-memory AgentsWorkspaceRuntime, no events wired.
-//   2. loadSnapshot + restoreFromSnapshot  — agents rehydrated.
+//   1. loadWorkspaceModuleSnapshots(...)   — strict validation before opening execution storage.
+//   2. createAgentsWorkspaceRuntime + restore — agents rehydrated, no events wired.
 //   3. buildAutoSaver              — debounced snapshot writer.
 //   4. opts.onWorkspaceRuntimeCreated(...)   — caller's wiring runs HERE.
 //   5. seedWorkspaceIdentity(system) (if no snapshot) — You only.
@@ -347,6 +347,9 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
   const buildWorkspaceRuntime = async (id: WorkspaceId): Promise<{ system: AgentsWorkspaceRuntime; autoSaver: ModuleAutoSaver }> => {
     const paths = workspaceModulePaths(id)
     if (!await opts.moduleState.has(id)) throw new Error(`Agents Workspace not provisioned: ${id}`)
+    // Reject unsupported documents before runtime construction can mark old
+    // execution turns interrupted or otherwise open mutable Workspace stores.
+    const snapshots = await loadWorkspaceModuleSnapshots(paths)
     let autoSaver: ModuleAutoSaver | undefined
     const system = createAgentsWorkspaceRuntime({
       persistConfiguration: async () => {
@@ -365,9 +368,6 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
     })
 
     try {
-      // Rooms and Agent runtime data remain separate strict documents inside
-      // the Agents Module. Corrupt or obsolete state fails the load.
-      const snapshots = await loadWorkspaceModuleSnapshots(paths)
       await restoreWorkspaceModuleSnapshots(system, snapshots)
 
       autoSaver = createModuleAutoSaver(system, paths)
