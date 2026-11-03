@@ -93,7 +93,6 @@
   let scenarioEditorFrame = $state<HTMLIFrameElement | null>(null)
   let scenarioEditorDirty = $state(false)
   let scenarioEditorSubject = $state<WorkspaceSubjectReference | null>(null)
-  let composer = $state<WorkspaceComposer | null>(null)
   const workspaceTitle = $derived(workspace ? workspaceLabel(workspace, 'header') : 'Workspace')
   const showingComposer = $derived(selectedWorldRunId !== null || selectedAgentsRoomId !== null)
   const continuing = $derived(continueItems(resources))
@@ -488,11 +487,6 @@
   // offers it too.
   const runAssistantAvailable = $derived(workspace !== null && selectedWorldResource !== undefined && selectedRunFamily !== undefined
     && assistantCapability !== undefined && !runDeclaresRoles(selectedWorldResource))
-  const restrictedRun = $derived(selectedWorldResource !== undefined && runDeclaresRoles(selectedWorldResource))
-  const perspectiveAssistantAvailable = $derived(restrictedRun
-    && capabilities.some(capability => capability.id === 'world.perspective.prepare')
-    && capabilities.some(capability => capability.id === 'agents.perspective-room.prepare'))
-  const agentTemplates = $derived(resources.filter(resource => resource.ref.moduleId === 'agents' && resource.ref.type === 'agents.agent'))
   // Shows the shown Run's Assistant room: the room shown when it serves the
   // Run, else one that does, else a family room whose scope is widened to the
   // Run, else a new one. It never hides the room, so the World page may ask
@@ -658,8 +652,6 @@
       {#if selectedWorldResource}
         {#if !runDeclaresRoles(selectedWorldResource)}
           <AssistantLauncher label={agentsVisible ? 'Assistant' : 'Ask'} disabled={assistantCapability === undefined} toggle={toggleRunAssistant} active={agentsVisible} onError={message => { error = message }} />
-        {:else if perspectiveAssistantAvailable}
-          <button class="nav-link" onclick={() => composer?.requestPerspectiveAssistant()}>Ask</button>
         {/if}
       {:else}
         <AssistantLauncher label="Ask" disabled={assistantCapability === undefined} submit={openAssistant} />
@@ -708,9 +700,8 @@
     {#each catalogFailures as outcome (outcome.moduleId)}{#if outcome.status === 'failed'}<p class="notice error" role="alert">{moduleTitle(outcome.moduleId)}: {outcome.failure.message}</p>{/if}{/each}
     {#if refreshError}<p class="notice error" role="alert">Catalog refresh failed: {refreshError}</p>{/if}
     {#if showingComposer}
-    <WorkspaceComposer bind:this={composer} workspaceId={workspace.id} worldRunId={selectedWorldRunId} {focusedSubjects} agentsRoomId={selectedAgentsRoomId} {agentsVisible} onShowAgents={showRunAssistant}
+    <WorkspaceComposer workspaceId={workspace.id} worldRunId={selectedWorldRunId} {focusedSubjects} agentsRoomId={selectedAgentsRoomId} {agentsVisible} onShowAgents={showRunAssistant}
       {runRefusal} onOpenRun={runId => switchWorldRun(runId)} {runAssistantAvailable} onOpenRunAssistant={openRunAssistant}
-      {restrictedRun} {perspectiveAssistantAvailable} {agentTemplates}
       onError={message => { error = message }} bind:worldPane />
     {#if peopleShown && people && peopleState?.chat}<PeopleChat session={people} chat={peopleState.chat} notice={peopleState.notice} outboxSaved={peopleState.outboxSaved} anchor={worldPane}
       focusRequest={chatFocusRequest} onClose={closePeopleChat} />{/if}

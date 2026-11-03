@@ -7,7 +7,6 @@ import {
   moduleIdSchema,
   newRequestId,
   platformError,
-  perspectiveOriginSchema,
   renameWorkspaceInputSchema,
   workspaceIdSchema,
   workspaceCapabilityInvocationRequestSchema,
@@ -15,7 +14,6 @@ import {
 import { isHostError } from './errors.ts'
 import type { WorkspaceHost } from './host.ts'
 import { knowledgeResponse } from './knowledge-api.ts'
-import { openPerspectiveView, setupPerspectiveAssistant } from './perspective-delivery.ts'
 
 const contentTypeFor = (path: string): string => {
   if (path.endsWith('.html')) return 'text/html; charset=utf-8'
@@ -84,37 +82,11 @@ const parseJson = async (request: Request): Promise<unknown> => {
 // Deleting a Workspace waits on every Module's removal under the same budget.
 const capabilityInvokeIdleSeconds = 35
 
-// This service seam accepts relationship metadata from trusted local Modules.
-// It is disabled in normal boot and blocked by the public reverse proxies.
-// Public actor attribution never supplies execution provenance.
-const internalPerspectiveRequestSchema = workspaceCapabilityInvocationRequestSchema.safeExtend({
-  actor: workspaceCapabilityInvocationRequestSchema.shape.actor.unwrap(),
-  perspectiveOrigin: perspectiveOriginSchema,
-}).strict().superRefine((value, context) => {
-  const origin = value.perspectiveOrigin
-  if (origin.kind === 'execution' && (value.actor.kind !== 'ai' || value.actor.id !== origin.actualAgentId)) {
-    context.addIssue({ code: 'custom', path: ['actor'], message: 'Execution attribution must name its actual Agent' })
-  }
-  if (origin.kind === 'owner' && (value.actor.kind !== 'system' || value.actor.id !== origin.moduleId)) {
-    context.addIssue({ code: 'custom', path: ['actor'], message: 'Owner verification must name its Module service' })
-  }
-})
-
-// This transport carries only the concrete Perspective handshake. It is not
-// another generic system-actor invocation endpoint or a permission service.
-const perspectiveOwnerPorts = {
-  host: new Set(['world.perspective.read', 'world.perspective.bind', 'world.perspective.revoke', 'world.perspective.presentation.verify',
-    'agents.perspective-room.prepare', 'agents.perspective-room.read', 'agents.perspective-room.bind', 'agents.perspective-room.revoke', 'agents.perspective-room.view-open', 'agents.perspective-room.view-close']),
-  world: new Set(['agents.perspective-room.read', 'agents.perspective-room.revoke']),
-  agents: new Set(['world.perspective.read', 'world.perspective.revoke']),
-} as const
-
 export const createWorkspaceHostServer = (config: {
   readonly host: WorkspaceHost
   readonly port?: number
   readonly bindHost?: string
   readonly uiDistPath?: string
-  readonly perspectivePilot?: { readonly enabled: true }
 }) => {
   const uiDistPath = resolve(config.uiDistPath ?? `${import.meta.dir}/ui/dist`)
   return Bun.serve({
@@ -156,53 +128,12 @@ export const createWorkspaceHostServer = (config: {
           return Response.json({ workspace: await config.host.create(input) }, { status: 201 })
         }
 
-        const perspectiveUi = url.pathname.match(/^\/api\/workspaces\/([^/]+)\/(perspective-assistant|perspective-view)$/)
-        if (perspectiveUi && request.method === 'POST') {
-          if (config.perspectivePilot?.enabled !== true) return jsonError(404, 'route_not_found', 'Route not found')
-          server.timeout(request, capabilityInvokeIdleSeconds)
-          const workspaceId = workspaceIdSchema.parse(decodeURIComponent(perspectiveUi[1]!))
-          const raw = await parseJson(request)
-          const invoke = async (id: string, input: Parameters<WorkspaceHost['invoke']>[2]) => {
-            request.signal.throwIfAborted()
-            const result = await config.host.invoke(workspaceId, capabilityIdSchema.parse(id), input, accessContextSchema.parse({
-              workspaceId, requestId: newRequestId(), actor: { kind: 'system', id: 'host' },
-              client: { id: 'workspace-host', kind: 'service' }, perspectiveOrigin: { kind: 'owner', moduleId: 'host' },
-            }), request.signal)
-            request.signal.throwIfAborted()
-            return result
-          }
-          // Only these two checked browser workflows create owner verification metadata.
-          // The body selects neither an origin nor the Room for private view delivery.
-          const result = perspectiveUi[2] === 'perspective-assistant'
-            ? await setupPerspectiveAssistant(workspaceId, raw, invoke)
-            : await openPerspectiveView(workspaceId, raw, invoke)
-          return Response.json(result, { headers: { 'Cache-Control': 'no-store' } })
-        }
-
-        const internalPerspective = url.pathname.startsWith('/internal/')
-        if (internalPerspective && config.perspectivePilot?.enabled !== true) return jsonError(404, 'route_not_found', 'Route not found')
-        if (internalPerspective) {
-          const address = server.requestIP(request)?.address
-          const loopback = address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1'
-          if (!loopback || request.headers.has('forwarded') || request.headers.has('x-forwarded-for')) return jsonError(404, 'route_not_found', 'Route not found')
-        }
-        const invocationMatch = url.pathname.match(/^\/(?:api|internal)\/workspaces\/([^/]+)\/capabilities\/([^/]+)\/invoke$/)
+        const invocationMatch = url.pathname.match(/^\/api\/workspaces\/([^/]+)\/capabilities\/([^/]+)\/invoke$/)
         if (invocationMatch && request.method === 'POST') {
           server.timeout(request, capabilityInvokeIdleSeconds)
           const workspaceId = workspaceIdSchema.parse(decodeURIComponent(invocationMatch[1] ?? ''))
           const capabilityId = capabilityIdSchema.parse(decodeURIComponent(invocationMatch[2] ?? ''))
-          const raw = await parseJson(request)
-          const requestInput = internalPerspective ? internalPerspectiveRequestSchema.parse(raw) : workspaceCapabilityInvocationRequestSchema.parse(raw)
-          const perspectiveOrigin = internalPerspective ? internalPerspectiveRequestSchema.parse(raw).perspectiveOrigin : undefined
-          if (perspectiveOrigin?.kind === 'owner' && !perspectiveOwnerPorts[perspectiveOrigin.moduleId].has(capabilityId)) {
-            return jsonError(403, 'perspective_owner_port_required', 'This owner relationship is limited to its exact Perspective admission ports')
-          }
-          if (perspectiveOrigin?.kind === 'execution' && (!capabilityId.startsWith('world.perspective.')
-            || requestInput.definition !== undefined || requestInput.resource?.workspaceId !== workspaceId
-            || requestInput.resource?.moduleId !== 'world' || requestInput.resource.type !== 'world.perspective'
-            || requestInput.resource.id !== perspectiveOrigin.perspectiveId)) {
-            return jsonError(403, 'perspective_execution_subject_required', 'This execution transport requires its exact World Perspective subject')
-          }
+          const requestInput = workspaceCapabilityInvocationRequestSchema.parse(await parseJson(request))
           const input = {
             ...(requestInput.definition === undefined ? {} : { definition: requestInput.definition }),
             ...(requestInput.resource === undefined ? {} : { resource: requestInput.resource }),
@@ -215,7 +146,6 @@ export const createWorkspaceHostServer = (config: {
             requestId: newRequestId(),
             actor: requestInput.actor ?? { kind: 'anonymous' },
             client: { id: 'workspace-host', kind: 'service' },
-            ...(perspectiveOrigin === undefined ? {} : { perspectiveOrigin }),
           })
           return Response.json(await config.host.invoke(workspaceId, capabilityId, input, access, request.signal))
         }
