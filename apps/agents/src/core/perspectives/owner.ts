@@ -73,7 +73,14 @@ export const createPerspectiveRooms = (deps: PerspectiveRoomsDeps) => {
     return room?.profile.perspective === undefined ? fail('perspective_room_unavailable', 'Perspective Room is unavailable') : room
   }
   const stateOf = (roomId: string): PerspectiveRoomState => requireRoom(roomId).profile.perspective!
-  const read = (roomId: string): AgentsPerspectiveRoomAdmission => structuredClone(stateOf(roomId).admission)
+  const read = (roomId: string): AgentsPerspectiveRoomAdmission => {
+    const state = stateOf(roomId), admission = state.admission
+    const available = deps.enabled() && admission.status !== 'revoked' && live.has(admission.runtimeGeneration)
+      && deps.team.getAgent(admission.actualAgentId) !== undefined && requireRoom(roomId).hasMember(admission.actualAgentId)
+      && state.tools.every(witness => deps.tools.getEntry(witness.name) === admittedTools.get(admission.runtimeGeneration)?.get(witness.name) && toolWitness(deps.tools, witness.name) === witness.digest)
+      && state.skills.every(witness => skillWitness(deps.skills, witness.name) === witness.digest)
+    return { ...structuredClone(admission), runtimeAvailability: { status: available ? 'available' : 'unavailable' } }
+  }
   const save = async (room: Room) => {
     deps.changed()
     try { await deps.persist() }
@@ -113,7 +120,7 @@ export const createPerspectiveRooms = (deps: PerspectiveRoomsDeps) => {
     signal?.throwIfAborted()
     const latest = assertLocal(roomId)
     if (!sameBinding(bindingOf(admitted), bindingOf(latest))) fail('perspective_binding_changed', 'The captured runtime binding is no longer current')
-    if (world.status !== 'active' || world.binding === undefined || !sameBinding(bindingOf(admitted), world.binding)) {
+    if (world.status !== 'active' || world.runtimeAvailability?.status !== 'available' || world.binding === undefined || !sameBinding(bindingOf(admitted), world.binding)) {
       const room = requireRoom(roomId)
       invalidate(room, 'World perspective authority was revoked or replaced')
       await save(room)
@@ -187,7 +194,7 @@ export const createPerspectiveRooms = (deps: PerspectiveRoomsDeps) => {
         await save(requireRoom(existing.id))
         return read(existing.id)
       }
-      if (world === undefined || world.status !== 'pending' || world.admissionGeneration !== input.admissionGeneration || JSON.stringify(world.resource) !== JSON.stringify(input.perspective)) fail('perspective_not_pending', 'World Perspective is not the requested pending admission')
+      if (world === undefined || world.status !== 'pending' || world.runtimeAvailability?.status !== 'available' || world.admissionGeneration !== input.admissionGeneration || JSON.stringify(world.resource) !== JSON.stringify(input.perspective)) fail('perspective_not_pending', 'World Perspective is not the requested available pending admission')
       const template = deps.team.getAgent(input.templateId), ai = template === undefined ? undefined : asAIAgent(template)
       if (ai === undefined) return fail('perspective_template_unavailable', 'Choose an existing public AI Agent template')
       const config = structuredClone(ai.getConfig())
@@ -247,7 +254,7 @@ export const createPerspectiveRooms = (deps: PerspectiveRoomsDeps) => {
       return serial.run(async () => {
       const { room, state } = current(roomId, expectedRevision)
       if (state.admission.status !== 'prepared' || !live.has(state.admission.runtimeGeneration) || !sameBinding(bindingOf(captured), bindingOf(state.admission))) fail('perspective_room_not_prepared', 'The captured prepared runtime is no longer current')
-      if (world.status !== 'active' || world.binding === undefined || !sameBinding(bindingOf(state.admission), world.binding)) fail('perspective_world_not_bound', 'World has not activated this exact Room/runtime binding')
+      if (world.status !== 'active' || world.runtimeAvailability?.status !== 'available' || world.binding === undefined || !sameBinding(bindingOf(state.admission), world.binding)) fail('perspective_world_not_bound', 'World has not activated this exact available Room/runtime binding')
       room.setPerspectiveState({ ...state, admission: { ...state.admission, status: 'bound', revision: expectedRevision + 1, updatedAt: new Date().toISOString() } }, expectedRevision)
       room.setPaused(false)
       await save(room)

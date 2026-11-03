@@ -308,7 +308,12 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
   const closeAgents = (system: AgentsWorkspaceRuntime): void => {
     for (const agent of system.team.listAgents()) {
       const ai = asAIAgent(agent)
-      if (ai) ai.close() // Human Agents take no turns.
+      if (ai) {
+        ai.close() // Human Agents take no turns.
+        // A private runtime being withdrawn cannot start a paid continuation
+        // while its old provider call unwinds. Actual settlement is separate.
+        if (system.perspectiveRooms?.isPrivateAgent(agent.id)) ai.cancelGeneration()
+      }
     }
   }
 
@@ -338,6 +343,11 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
       const finalTimeout = new Promise<void>(res => setTimeout(res, 100))
       await Promise.all(aiAgents.map(a => Promise.race([a.whenIdle(), finalTimeout])))
     }
+  }
+  const privateAgents = (system: AgentsWorkspaceRuntime) => {
+    const ids = new Set(system.rooms.listAllRooms().flatMap(profile => profile.perspective === undefined ? [] : [profile.perspective.admission.actualAgentId]))
+    // A preparation that failed before constructing its runtime has no calls.
+    return system.team.listByKind('ai').filter(agent => ids.has(agent.id)).map(agent => asAIAgent(agent)!)
   }
 
   // Build the per-Workspace autosaver. Callback wiring (which schedules
@@ -434,6 +444,8 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
   }
 
   const ownsAutonomousWork = (system: AgentsWorkspaceRuntime): boolean =>
+    privateAgents(system).some(agent => agent.hasInFlightTurns())
+    ||
     system.scriptRunner.listRuns().some(run => !run.ended)
     || system.team.listAgents().some(agent => agent.state.get() === 'generating' || asAIAgent(agent)?.hasQueuedTurn() || agent.getTriggers?.().some(trigger => trigger.enabled))
     || system.rooms.listAllRooms().some(profile => {
@@ -559,6 +571,13 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
     }
 
     const evictionPromise = (async (): Promise<void> => {
+      const flush = async (): Promise<void> => {
+        try { await entry.autoSaver.flush() }
+        catch (error) {
+          if (entry.system.rooms.listAllRooms().some(profile => profile.perspective !== undefined)) throw Object.assign(new Error('Private runtime withdrawal changed state but its snapshot save is unconfirmed; retain the Workspace and retry teardown'), { code: 'perspective_teardown_outcome_unknown' })
+          throw error
+        }
+      }
       try {
         // Quiesce producers before draining consumers and publishing the final generation.
         entry.system.triggerScheduler.stop()
@@ -569,7 +588,15 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
         closeAgents(entry.system)
         await Promise.all(entry.system.scriptRunner.listRuns().map(run => entry.system.scriptRunner.stop(run.roomId)))
         await drainAgents(entry.system)
-        await entry.autoSaver.flush()
+        try { await Promise.all(privateAgents(entry.system).map(agent => agent.whenSettled(drainMs))) }
+        catch (error) {
+          // Keep snapshots and the open execution store available for admitted
+          // late outcomes. No Module files are removed on an unsettled turn.
+          await flush()
+          if (error instanceof Error && 'code' in error && error.code === 'agent_turns_unsettled') throw Object.assign(new Error('Private Agent calls have not settled; retain this Workspace and retry deletion after their actual outcomes arrive'), { code: 'perspective_calls_unsettled' })
+          throw error
+        }
+        await flush()
         await entry.system.logging.configure({ enabled: false })
         opts.onWorkspaceRuntimeEvicted?.(entry.system, id)
         entry.system.captureRegistry.clearAll()

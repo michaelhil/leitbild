@@ -13,7 +13,9 @@ export const perspectiveRoomStateSchema = z.object({
   responseFormat: z.string(),
   tools: z.array(witness),
   skills: z.array(witness.extend({ description: z.string(), body: z.string(), allowedToolNames: z.array(z.string()) })),
-}).strict()
+}).strict().superRefine((state, context) => {
+  if (state.admission.runtimeAvailability !== undefined) context.addIssue({ code: 'custom', path: ['admission', 'runtimeAvailability'], message: 'Runtime availability is derived on read and is never persisted' })
+})
 export type PerspectiveRoomState = z.infer<typeof perspectiveRoomStateSchema>
 
 export const perspectiveMessageProvenanceSchema = z.object({

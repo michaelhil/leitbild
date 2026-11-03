@@ -200,6 +200,10 @@ export const createWorkspaceHostServer = (config: {
           const raw = await parseJson(request)
           const requestInput = internalPerspective ? internalPerspectiveRequestSchema.parse(raw) : workspaceCapabilityInvocationRequestSchema.parse(raw)
           const perspectiveOrigin = internalPerspective ? internalPerspectiveRequestSchema.parse(raw).perspectiveOrigin : undefined
+          // Agents uses World owner-read as its live dispatch verification.
+          // Closing Host admission cannot let that request masquerade as
+          // operator reconciliation merely because it is read-only.
+          if (!pilot.enabled && perspectiveOrigin?.kind === 'owner' && perspectiveOrigin.moduleId === 'agents') return jsonError(404, 'capability_not_found', 'Capability not found')
           if ((capabilityId.startsWith('world.perspective.') || capabilityId.startsWith('agents.perspective-room.'))
             && (!pilotManaged(workspaceId) || !pilot.enabled && (!cleanupPorts.has(capabilityId) || internalPerspective && perspectiveOrigin?.kind !== 'owner'))) return jsonError(404, 'capability_not_found', 'Capability not found')
           if (perspectiveOrigin?.kind === 'owner' && !perspectiveOwnerPorts[perspectiveOrigin.moduleId].has(capabilityId)) {

@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, access } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -31,7 +31,7 @@ import { createModuleGateway } from '../../../apps/leitbild/src/module-gateway.t
 import { createWorkspaceHostServer } from '../../../apps/leitbild/src/server.ts'
 import { createWorkspaceStore } from '../../../apps/leitbild/src/store.ts'
 
-test('real Host, World and Agents establish three separate pictures and exclude an ordinary fourth Agent', async () => {
+for (const mode of ['settlement', 'settlement-save-failed', 'host-closed', 'world-closed', 'agents-withdrawal', 'open-control'] as const) test(`real three-owner compartments, no cross-access and ${mode} lifecycle`, async () => {
   const directory = await mkdtemp(join(tmpdir(), 'perspective-combined-')), previousHome = process.env.LEITBILD_HOME
   process.env.LEITBILD_HOME = join(directory, 'agents')
   // Activation selects an existing dedicated Workspace, never every Workspace
@@ -51,7 +51,7 @@ test('real Host, World and Agents establish three separate pictures and exclude 
     return body.result
   }
   const routing = createDirectRoutingAdapter(), assembly = createWorldApplicationAssembly({ routing })
-  const world = createWorldWorkspaceRuntimeRegistry({ dataDir: join(directory, 'world'), moduleState: createWorldModuleState({ dataDir: join(directory, 'world') }),
+  const worldConfig: Parameters<typeof createWorldWorkspaceRuntimeRegistry>[0] = { dataDir: join(directory, 'world'), moduleState: createWorldModuleState({ dataDir: join(directory, 'world') }),
     runtimeAdapters: assembly.runtimeAdapters, workspaceCapabilities: assembly.packs.flatMap(pack => pack.workspaceCapabilities ?? []),
     scenarioDefinitions: [], scenarioRuntimeResolver: createScenarioRuntimeResolver({ packs: assembly.packs }), scenarioAuthoringCatalog: scenarioAuthoringCatalogFor(assembly.packs),
     compileScenarioDefinition: source => compileScenarioDefinition(source, assembly.packs, { routing }),
@@ -65,12 +65,31 @@ test('real Host, World and Agents establish three separate pictures and exclude 
         catch (error) { const latest = await read(); if (latest.status === 'revoked') return latest; throw error }
       },
     },
-  })
-  const worldServer = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch: async request => await handleWorldModuleApi(request, new URL(request.url), world) ?? new Response('Not found', { status: 404 }) })
+  }
+  let world = createWorldWorkspaceRuntimeRegistry(worldConfig)
+  let worldServer = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch: async request => await handleWorldModuleApi(request, new URL(request.url), world) ?? new Response('Not found', { status: 404 }) })
   const modelRequests: ChatRequest[] = []
+  const lateEntered = Promise.withResolvers<void>(), lateRelease = Promise.withResolvers<void>()
+  let lateSignal: AbortSignal | undefined
+  let lateAgent: ReturnType<typeof asAIAgent>
+  let restoreFlush: (() => void) | undefined
   const deployment = createDeploymentRuntime({ providerConfig: stubProviderConfig, providerSetup: makeStubSetup({ ...makeStubGateway(),
-    stream: async function* (request) {
+    stream: async function* (request, signal) {
       modelRequests.push(structuredClone(request))
+      if (JSON.stringify(request.messages).includes('NEXT_MODEL_POLICY_CASE') && !request.messages.some(message => message.role === 'tool')) {
+        lateSignal = signal; lateEntered.resolve(); await lateRelease.promise
+        // Current-conversation evidence only: no World tool or new World
+        // content is necessary to trigger the next paid model decision.
+        yield { delta: '', done: true, toolCalls: [{ id: 'localRead123', function: { name: 'conversation_read', arguments: {} } }], tokensUsed: { prompt: 11, completion: 2 } }
+        return
+      }
+      if (JSON.stringify(request.messages).includes('LATE_PRIVATE_DISPOSAL')) {
+        lateSignal = signal; lateEntered.resolve()
+        await lateRelease.promise // Deliberately ignore cancellation until actual completion.
+        yield { delta: 'Late private disposal response.', done: false }
+        yield { delta: '', done: true, tokensUsed: { prompt: 17, completion: 9 }, billing: { generationId: 'local-disposal-fixture', costUsd: 0.125 } }
+        return
+      }
       yield { delta: 'Scoped fixture response.', done: false }
       yield { delta: '', done: true, tokensUsed: { prompt: 10, completion: 4 } }
     },
@@ -83,9 +102,9 @@ test('real Host, World and Agents establish three separate pictures and exclude 
     moduleRegistrationSchema.parse({ moduleId: 'world', internalBaseUrl: worldServer.url.origin, manifestPath: '/.well-known/workspace-module' }),
     moduleRegistrationSchema.parse({ moduleId: 'agents', internalBaseUrl: agentsServer.url.origin, manifestPath: '/.well-known/workspace-module' }),
   ] }) })
-  const hostServer = createWorkspaceHostServer({ host, bindHost: '127.0.0.1', port: 0, perspectivePilot: pilot })
+  let hostServer = createWorkspaceHostServer({ host, bindHost: '127.0.0.1', port: 0, perspectivePilot: pilot })
   hostUrl = hostServer.url.origin
-  agents = createWorkspaceRuntimeRegistry({ deployment, moduleState: agentsState, workspaceHostUrl: hostUrl, perspectivePilot: pilot, idleMs: 1_000_000 })
+  agents = createWorkspaceRuntimeRegistry({ deployment, moduleState: agentsState, workspaceHostUrl: hostUrl, perspectivePilot: pilot, idleMs: 1_000_000, drainMs: 5 })
   try {
     for (const [moduleId, url] of [['world', worldServer.url.origin], ['agents', agentsServer.url.origin]] as const) {
       expect((await fetch(`${url}/internal/workspaces/${workspaceId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workspaceId }) })).status).toBe(201)
@@ -165,7 +184,74 @@ test('real Host, World and Agents establish three separate pictures and exclude 
     const after = await runtime.toolRegistry.get('workspace_explore')!.execute({ view: 'scope' }, target.context)
     expect(after.success).toBe(false)
     expect(JSON.stringify(after)).not.toContain('PRIVATE_')
+
+    const retained = pictures[1]!.admitted.roomAdmission, privateRoom = runtime.rooms.getRoom(retained.room.id)!
+    const actual = asAIAgent(runtime.team.getAgent(retained.actualAgentId)!)!
+    lateAgent = actual
+    if (!mode.startsWith('settlement')) {
+      privateRoom.post({ senderId: participant.id, content: 'NEXT_MODEL_POLICY_CASE', type: 'chat' })
+      await lateEntered.promise
+      const localVerification = () => fetch(`${hostUrl}/internal/workspaces/${workspaceId}/capabilities/world.perspective.read/invoke`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ resource: retained.perspective, input: {}, actor: { kind: 'system', id: 'agents' }, perspectiveOrigin: { kind: 'owner', moduleId: 'agents' } }),
+      })
+      if (mode === 'host-closed') {
+        const port = hostServer.port!; await hostServer.stop(true)
+        hostServer = createWorkspaceHostServer({ host, bindHost: '127.0.0.1', port, perspectivePilot: { ...pilot, enabled: false } })
+        expect((await localVerification()).status).toBe(404)
+      } else if (mode === 'world-closed') {
+        const port = worldServer.port!; await worldServer.stop(true); await world.shutdown()
+        world = createWorldWorkspaceRuntimeRegistry({ ...worldConfig, perspectivePilot: { ...worldConfig.perspectivePilot!, enabled: false } })
+        worldServer = Bun.serve({ hostname: '127.0.0.1', port, fetch: async request => await handleWorldModuleApi(request, new URL(request.url), world) ?? new Response('Not found', { status: 404 }) })
+        const reading = await localVerification()
+        expect(reading.status).toBe(200)
+        expect(perspectiveAdmissionSchema.parse((await reading.json() as { result: unknown }).result).runtimeAvailability?.status).toBe('unavailable')
+      } else if (mode === 'agents-withdrawal') {
+        await expect(agents.shutdown()).rejects.toMatchObject({ code: 'perspective_calls_unsettled' })
+        expect(lateSignal?.aborted).toBe(true)
+      }
+      lateRelease.resolve()
+      await actual.whenSettled(2_000)
+      expect(modelRequests).toHaveLength(mode === 'open-control' ? 5 : 4)
+      const replies = privateRoom.getRetainedMessages().filter(message => message.senderId === retained.actualAgentId)
+      expect(replies).toHaveLength(mode === 'open-control' ? 2 : 1)
+      return
+    }
+    privateRoom.post({ senderId: participant.id, content: 'LATE_PRIVATE_DISPOSAL', type: 'chat' })
+    await lateEntered.promise
+    privateRoom.post({ senderId: participant.id, content: 'Queued work must never dispatch during removal', type: 'chat' })
+    actual.cancelGeneration() // Apparent idle while the old epoch still owns a real provider Promise.
+    await actual.whenIdle()
+    expect(actual.hasInFlightTurns()).toBe(true)
+    const oldTurn = runtime.executionStore.listTurns(privateRoom.profile.id)[0]!
+    if (mode === 'settlement-save-failed') {
+      const saver = agents.autoSaverFor(workspaceId)!, original = saver.flush
+      Object.assign(saver, { flush: async () => { throw new Error('Injected private snapshot save failure') } })
+      restoreFlush = () => Object.assign(saver, { flush: original })
+    }
+    const incomplete = await fetch(`${hostUrl}/api/workspaces/${workspaceId}`, { method: 'DELETE' })
+    expect(incomplete.status).toBe(502)
+    expect((await incomplete.json() as { error: { code: string } }).error.code).toBe('workspace_delete_incomplete')
+    expect(await agentsState.has(workspaceId)).toBe(true)
+    expect(runtime.executionStore.getTurn(privateRoom.profile.id, oldTurn.id)?.status).toBe('interrupted')
+    expect(runtime.executionStore.modelEvidence(privateRoom.profile.id, oldTurn.id).models[0]?.status).toBe('running')
+    expect(lateSignal?.aborted).toBe(true)
+    restoreFlush?.(); restoreFlush = undefined
+    expect(() => actual.requestTurn!(privateRoom.profile.id, { instruction: 'No new turn after removal starts', inReplyTo: [], requireView: false, cause: { kind: 'display-request', name: 'Fixture' } })).toThrow('immutable')
+    lateRelease.resolve()
+    await actual.whenSettled(2_000)
+    expect(actual.hasInFlightTurns()).toBe(false)
+    expect(runtime.executionStore.getModelCall(privateRoom.profile.id, oldTurn.id, 'model_1')?.response?.metrics.costUsd).toBe(0.125)
+    expect(privateRoom.getRetainedMessages().some(message => message.content.includes('Late private disposal response.'))).toBe(false)
+    expect(modelRequests).toHaveLength(4) // The queued prompt and requested turn never dispatched.
+    const removed = await fetch(`${hostUrl}/api/workspaces/${workspaceId}`, { method: 'DELETE' })
+    expect(removed.status).toBe(204)
+    expect((await fetch(`${hostUrl}/api/workspaces/${workspaceId}`)).status).toBe(404)
+    expect(await agentsState.has(workspaceId)).toBe(false)
+    expect(await access(join(directory, 'agents', 'workspaces', workspaceId, 'agents')).then(() => true, () => false)).toBe(false)
   } finally {
+    restoreFlush?.()
+    lateRelease.resolve()
+    await lateAgent?.whenSettled(2_000)
     const outcomes = await Promise.allSettled([agents.shutdown(), world.shutdown()])
     hostServer.stop(true); agentsServer.stop(true); worldServer.stop(true); store.close(); deployment.providerSetup.dispose()
     if (previousHome === undefined) delete process.env.LEITBILD_HOME; else process.env.LEITBILD_HOME = previousHome

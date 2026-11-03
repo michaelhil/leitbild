@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -28,7 +28,7 @@ const setup = async (enabled = true, selected = true) => {
   let beforePeerRead: (() => Promise<void>) | undefined
   let beforePeerRevoke: (() => Promise<void>) | undefined
   let peerRevokeFails = false
-  const workspaces = createWorldWorkspaceRuntimeRegistry({ dataDir: directory, moduleState: createWorldModuleState({ dataDir: directory }),
+  const workspaceConfig: Parameters<typeof createWorldWorkspaceRuntimeRegistry>[0] = { dataDir: directory, moduleState: createWorldModuleState({ dataDir: directory }),
     runtimeAdapters: assembly.runtimeAdapters, workspaceCapabilities: assembly.packs.flatMap(pack => pack.workspaceCapabilities ?? []),
     scenarioRuntimeResolver: createScenarioRuntimeResolver({ packs: assembly.packs }), scenarioDefinitions: [],
     compileScenarioDefinition: source => compileScenarioDefinition(source, assembly.packs, { routing }), scenarioAuthoringCatalog: scenarioAuthoringCatalogFor(assembly.packs),
@@ -46,7 +46,8 @@ const setup = async (enabled = true, selected = true) => {
       peers.set(binding.room.id, revoked)
       return structuredClone(revoked)
     } } } : {}),
-  })
+  }
+  let workspaces = createWorldWorkspaceRuntimeRegistry(workspaceConfig)
   await workspaces.provision(workspaceId)
   const registry = (await workspaces.getOrLoad(workspaceId)).simulationRuns
   const source = scenarioDefinitionSchema.parse(border)
@@ -73,7 +74,7 @@ const setup = async (enabled = true, selected = true) => {
       actualAgentId: `actual-${crypto.randomUUID()}`, runtimeGeneration: crypto.randomUUID(), templateId: 'safe-template', templateRevision: 'safe-revision',
     }
     const now = new Date().toISOString()
-    peers.set(binding.room.id, agentsPerspectiveRoomAdmissionSchema.parse({ ...binding, status: 'prepared', revision: 0, createdAt: now, updatedAt: now }))
+    peers.set(binding.room.id, agentsPerspectiveRoomAdmissionSchema.parse({ ...binding, status: 'prepared', revision: 0, createdAt: now, updatedAt: now, runtimeAvailability: { status: 'available' } }))
     const result = await invoke('world.perspective.bind', pending.resource, { expectedRevision: 0, binding }, 'human', owner)
     expect(result.status).toBe(200)
     if (bound) peers.set(binding.room.id, { ...peers.get(binding.room.id)!, status: 'bound', revision: 1 })
@@ -87,6 +88,11 @@ const setup = async (enabled = true, selected = true) => {
     return await response!.json() as Record<string, unknown>
   }
   return { invoke, get, prepare, bind, owner, registry, run, runRef, peers,
+    storedAdmission: (id: string) => readFile(join(directory, 'workspaces', workspaceId, 'world', 'perspectives', 'admissions', `${id}.json`), 'utf8'),
+    reopenPolicy: async (open: boolean) => {
+      await workspaces.shutdown()
+      workspaces = createWorldWorkspaceRuntimeRegistry({ ...workspaceConfig, perspectivePilot: { ...workspaceConfig.perspectivePilot!, enabled: open } })
+    },
     waitOnPeer: (wait: () => Promise<void>) => { beforePeerRead = wait },
     duringPeerRevoke: (wait: () => Promise<void>) => { beforePeerRevoke = wait },
     failPeerRevoke: (fail: boolean) => { peerRevokeFails = fail },
@@ -102,6 +108,38 @@ test('a pilot selected for another Workspace neither advertises nor admits this 
     const response = await fixture.invoke('world.perspective.prepare', fixture.runRef, { roleIds: ['controller'], requestId: crypto.randomUUID() })
     expect(response.status).toBe(404)
     expect(fixture.registry.perspectives).toBeUndefined()
+  } finally { await fixture.close() }
+})
+
+test('closed World derives unavailable owner verification while retaining actual admission facts for revocation', async () => {
+  const fixture = await setup()
+  try {
+    const blue = await fixture.bind(await fixture.prepare(['group:blue-recce']))
+    expect(await fixture.storedAdmission(blue.admission.resource.id)).not.toContain('runtimeAvailability')
+    await fixture.reopenPolicy(false)
+    const reading = await fixture.invoke('world.perspective.read', blue.admission.resource, {}, 'human', fixture.owner)
+    expect(reading.status).toBe(200)
+    expect(perspectiveAdmissionSchema.parse(reading.body.result)).toMatchObject({ status: 'active', revision: 1, runtimeAvailability: { status: 'unavailable' } })
+    expect(await fixture.storedAdmission(blue.admission.resource.id)).not.toContain('runtimeAvailability')
+    expect(JSON.stringify(await fixture.get('capabilities'))).not.toContain('world.perspective.')
+    const ended = await fixture.invoke('world.perspective.revoke', blue.admission.resource, { expectedRevision: 1, reason: 'Close pilot', roleIds: ['group:blue-recce'] })
+    expect(ended.status).toBe(200)
+    expect(perspectiveAdmissionSchema.parse(ended.body.result).status).toBe('revoked')
+  } finally { await fixture.close() }
+})
+
+test('missing or locally closed Agents availability never makes a persisted bound peer callable', async () => {
+  const fixture = await setup()
+  try {
+    const blue = await fixture.bind(await fixture.prepare(['group:blue-recce']))
+    const peer = fixture.peers.get(blue.binding.room.id)!
+    for (const runtimeAvailability of [undefined, { status: 'unavailable' as const }]) {
+      const { runtimeAvailability: _derived, ...facts } = peer
+      fixture.peers.set(blue.binding.room.id, { ...facts, ...(runtimeAvailability === undefined ? {} : { runtimeAvailability }) })
+      const response = await fixture.invoke('world.perspective.context.read', blue.admission.resource, {}, 'ai', blue.origin)
+      expect(response.status).toBe(409)
+      expect(response.body.error?.code).toBe('perspective_runtime_unavailable')
+    }
   } finally { await fixture.close() }
 })
 
@@ -272,7 +310,7 @@ test('binding verification races cannot reactivate a revoked pending admission',
       room: workspaceResourceReferenceSchema.parse({ workspaceId: pending.resource.workspaceId, moduleId: 'agents', type: 'agents.room', id: 'pending-private-room' }),
       actualAgentId: 'pending-actual-agent', runtimeGeneration: crypto.randomUUID(), templateId: 'safe-template', templateRevision: 'safe-revision' }
     const at = new Date().toISOString()
-    fixture.peers.set(binding.room.id, agentsPerspectiveRoomAdmissionSchema.parse({ ...binding, status: 'prepared', revision: 0, createdAt: at, updatedAt: at }))
+    fixture.peers.set(binding.room.id, agentsPerspectiveRoomAdmissionSchema.parse({ ...binding, status: 'prepared', revision: 0, createdAt: at, updatedAt: at, runtimeAvailability: { status: 'available' } }))
     const bindingCall = fixture.invoke('world.perspective.bind', pending.resource, { expectedRevision: 0, binding }, 'human', fixture.owner)
     await waiting
     const revoked = await fixture.invoke('world.perspective.revoke', pending.resource, { expectedRevision: 0, reason: 'Cancelled setup after changing the screen', roleIds: ['group:blue-recce'] })
@@ -293,7 +331,8 @@ test('runtime retirement is explicit derived unavailability; reset ends old inca
     expect(perspectiveAdmissionSchema.parse(unavailable.body.result)).toMatchObject({ status: 'active', revision: 1, runtimeAvailability: { status: 'unavailable' } })
     const owner = await fixture.invoke('world.perspective.read', blue.admission.resource, {}, 'human', fixture.owner)
     expect(perspectiveAdmissionSchema.parse(owner.body.result)).toMatchObject({ status: 'active', revision: 1 })
-    expect(perspectiveAdmissionSchema.parse(owner.body.result).runtimeAvailability).toBeUndefined()
+    // Owner availability is local only: it never queries Agents recursively.
+    expect(perspectiveAdmissionSchema.parse(owner.body.result).runtimeAvailability).toEqual({ status: 'available' })
     expect((await fixture.invoke('world.perspective.context.read', blue.admission.resource, {}, 'ai', blue.origin)).status).toBe(409)
     await fixture.registry.reset(fixture.run.id)
     const ended = await fixture.invoke('world.perspective.read', blue.admission.resource, { roleIds: ['group:blue-recce'] })

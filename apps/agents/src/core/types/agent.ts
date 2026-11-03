@@ -82,6 +82,10 @@ export type IncludeContext = Partial<Record<ContextSection, boolean>>
 
 export interface AIAgent extends Agent {
   readonly whenIdle: (timeoutMs?: number) => Promise<void>
+  /** Actual admitted turn lifetimes, including cancelled epochs whose external
+   * calls have not unwound. Close first when no new turns may be admitted. */
+  readonly hasInFlightTurns: () => boolean
+  readonly whenSettled: (timeoutMs: number) => Promise<void>
   readonly updatePersona: (persona: string) => void
   readonly getPersona: () => string
   readonly updateModel: (model: string) => void

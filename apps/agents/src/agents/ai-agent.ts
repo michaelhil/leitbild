@@ -160,6 +160,24 @@ export const createAIAgent = (
   const focusedSubjectsByRoom = new Map<string, ReadonlyArray<WorkspaceSubjectReference>>()
 
   const cm = createConcurrencyManager(agentId)
+  const turnRuns = new Set<Promise<void>>()
+  const trackTurn = (run: Promise<void>): Promise<void> => {
+    turnRuns.add(run)
+    void run.then(() => { turnRuns.delete(run) }, () => { turnRuns.delete(run) })
+    return run
+  }
+  const whenSettled = async (timeoutMs: number): Promise<void> => {
+    if (!Number.isFinite(timeoutMs) || timeoutMs < 0) throw new Error('Turn settlement timeout must be a nonnegative finite number')
+    const deadline = performance.now() + timeoutMs
+    while (turnRuns.size > 0) {
+      let timer: ReturnType<typeof setTimeout> | undefined
+      try {
+        await Promise.race([Promise.allSettled([...turnRuns]), new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(() => reject(Object.assign(new Error('Admitted Agent turns have not settled; cancellation is not provider completion'), { code: 'agent_turns_unsettled' })), Math.max(0, deadline - performance.now()))
+        })])
+      } finally { if (timer !== undefined) clearTimeout(timer) }
+    }
+  }
 
   let currentPersona: string = config.persona
   let currentModel: string = config.model
@@ -775,7 +793,7 @@ export const createAIAgent = (
         }
       }
     }
-    void run()
+    void trackTurn(run()).catch(error => console.error(`[${config.name}] Turn lifetime failed:`, error))
   }
 
   // --- Receive ---
@@ -861,6 +879,8 @@ export const createAIAgent = (
       agentHistory.rooms.delete(roomId)
     },
     whenIdle: cm.whenIdle,
+    hasInFlightTurns: () => turnRuns.size > 0,
+    whenSettled,
     getTags: () => currentTags,
     updateTags: (tags: ReadonlyArray<string>) => {
       currentTags = tags
@@ -1054,7 +1074,7 @@ export const createAIAgent = (
     // eval completes — so a user post mid-trigger still gets processed.
     // The trigger prompt is never persisted: not in incoming, not in room
     // history. action='pass' suppresses posting (handles "report only changes").
-    fireTriggerExecute: async (prompt: string, roomId: string): Promise<void> => {
+    fireTriggerExecute: (prompt: string, roomId: string): Promise<void> => trackTurn((async () => {
       if (cm.isBusy()) return  // defensive; scheduler should have skipped
 
       const heldIncoming = agentHistory.incoming.splice(0, agentHistory.incoming.length)
@@ -1117,6 +1137,6 @@ export const createAIAgent = (
           }
         }
       }
-    },
+    })()),
   }
 }

@@ -61,7 +61,7 @@ export const createWorldPerspectiveService = (config: { store: PerspectiveStore;
   }
   const verifyPeer = async (binding: PerspectiveRuntimeBinding, statuses: ReadonlyArray<AgentsPerspectiveRoomAdmission['status']>): Promise<void> => {
     const peer = agentsPerspectiveRoomAdmissionSchema.parse(await config.pilot.readAgentsAdmission(binding))
-    if (!statuses.includes(peer.status) || !sameBinding(peer, binding)) throw perspectiveFailure('perspective_runtime_unavailable', 'The exact scoped Agents runtime is unavailable; prepare a fresh admission', 409)
+    if (!statuses.includes(peer.status) || peer.runtimeAvailability?.status !== 'available' || !sameBinding(peer, binding)) throw perspectiveFailure('perspective_runtime_unavailable', 'The exact scoped Agents runtime is unavailable; prepare a fresh admission', 409)
   }
   const fresh = async (record: StoredPerspective, peer = true): Promise<StoredPerspective> => {
     requireEnabled()
@@ -145,7 +145,8 @@ export const createWorldPerspectiveService = (config: { store: PerspectiveStore;
       const record = remember(await config.store.read(id))
       if (access.perspectiveOrigin?.kind !== 'owner') await requireHuman(record, access, roleIds)
       const admission = await config.store.admission(record)
-      if (access.perspectiveOrigin?.kind === 'owner' || admission.status !== 'active' || admission.binding === undefined) return admission
+      if (access.perspectiveOrigin?.kind === 'owner' || admission.status !== 'active' || admission.binding === undefined) return { ...admission,
+        runtimeAvailability: { status: enabled() && admission.status !== 'revoked' ? 'available' : 'unavailable' } }
       try {
         await fresh(record)
         return { ...admission, runtimeAvailability: { status: 'available' } }

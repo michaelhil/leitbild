@@ -110,6 +110,8 @@ describe('Leitbild server', () => {
     expect((await fetch(`${closed.url.origin}/internal/workspaces/${workspace.id}/capabilities/world.perspective.context.read/invoke`, { method: 'POST', body: JSON.stringify(body) })).status).toBe(404)
     const cleanup = { resource: { workspaceId: workspace.id, moduleId: 'agents', type: 'agents.room', id: 'existing-room' }, input: {}, actor: { kind: 'system', id: 'world' }, perspectiveOrigin: { kind: 'owner', moduleId: 'world' } }
     expect((await fetch(`${closed.url.origin}/internal/workspaces/${workspace.id}/capabilities/agents.perspective-room.read/invoke`, { method: 'POST', body: JSON.stringify(cleanup) })).status).toBe(200)
+    const liveRead = { resource: body.resource, input: {}, actor: { kind: 'system', id: 'agents' }, perspectiveOrigin: { kind: 'owner', moduleId: 'agents' } }
+    expect((await fetch(`${closed.url.origin}/internal/workspaces/${workspace.id}/capabilities/world.perspective.read/invoke`, { method: 'POST', body: JSON.stringify(liveRead) })).status).toBe(404)
     expect(received).toHaveLength(2)
   })
 

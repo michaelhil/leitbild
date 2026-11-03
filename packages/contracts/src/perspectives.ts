@@ -18,6 +18,7 @@ const generation = z.string().uuid()
 const revision = z.number().int().nonnegative()
 const stamp = z.string().datetime({ offset: true })
 const roles = z.array(identity).min(1).max(32).refine(ids => new Set(ids).size === ids.length, 'Each held role is named once')
+const runtimeAvailability = z.object({ status: z.enum(['available', 'unavailable']), reason: z.string().min(1).max(500).optional() }).strict()
 
 export const worldPerspectiveReferenceSchema = workspaceResourceReferenceSchema.refine(reference => reference.moduleId === 'world' && reference.type === 'world.perspective', 'An exact World Perspective Resource is required')
 export type WorldPerspectiveReference = z.infer<typeof worldPerspectiveReferenceSchema>
@@ -50,8 +51,9 @@ export const perspectiveAdmissionSchema = z.object({
   createdAt: stamp,
   updatedAt: stamp,
   revokedReason: z.string().min(1).max(500).optional(),
-  // Derived on a holder's read, never a replacement for World lifecycle/CAS.
-  runtimeAvailability: z.object({ status: z.enum(['available', 'unavailable']), reason: z.string().min(1).max(500).optional() }).strict().optional(),
+  // Derived for the current reader, never persisted or a replacement for CAS.
+  // Owner reads derive local policy/incarnation readiness without peer recursion.
+  runtimeAvailability: runtimeAvailability.optional(),
 }).strict().superRefine((admission, context) => {
   if (admission.status === 'pending' && admission.binding !== undefined || admission.status === 'active' && admission.binding === undefined) context.addIssue({ code: 'custom', path: ['binding'], message: 'Only an activated Perspective has a runtime binding' })
   const binding = admission.binding
@@ -69,6 +71,7 @@ export const perspectivePresentationVerificationSchema = z.object({
 export const agentsPerspectiveRoomAdmissionSchema = perspectiveRuntimeBindingSchema.safeExtend({
   status: z.enum(['prepared', 'bound', 'revoked']), revision, createdAt: stamp, updatedAt: stamp,
   revokedReason: z.string().min(1).max(500).optional(),
+  runtimeAvailability: runtimeAvailability.optional(),
 })
 export type AgentsPerspectiveRoomAdmission = z.infer<typeof agentsPerspectiveRoomAdmissionSchema>
 

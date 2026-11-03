@@ -1050,6 +1050,8 @@ export const handleAgentsModuleApi = async (
     return null
     })
   } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'perspective_calls_unsettled') return apiError(409, error.code, error.message, true)
+    if (error instanceof Error && 'code' in error && error.code === 'perspective_teardown_outcome_unknown') return apiError(503, error.code, error.message, true)
     if (error instanceof Error && 'code' in error && error.code === 'workspace_closing') return apiError(409, 'workspace_closing', error.message, true)
     // Admission recovers when data is removed or the operator policy changes.
     if (error instanceof Error && 'code' in error && error.code === 'storage_budget_exceeded') return apiError(507, 'storage_budget_exceeded', error.message, true)

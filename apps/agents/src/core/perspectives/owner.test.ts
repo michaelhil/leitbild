@@ -26,7 +26,8 @@ const fixture = async (enabled = true, persist: () => Promise<void> = async () =
   const deployment = createDeploymentRuntime({ providerConfig: stubProviderConfig, providerSetup: makeStubSetup(options.gateway ?? makeStubGateway()) })
   deployment.sharedToolRegistry.register(createPassTool())
   const worlds = new Map<string, PerspectiveAdmission>()
-  let readWorld: (id: string) => Promise<PerspectiveAdmission> = async id => structuredClone(worlds.get(id)!)
+  const currentWorld = (id: string): PerspectiveAdmission => ({ ...structuredClone(worlds.get(id)!), runtimeAvailability: { status: worlds.get(id)!.status === 'revoked' ? 'unavailable' : 'available' } })
+  let readWorld: (id: string) => Promise<PerspectiveAdmission> = async id => currentWorld(id)
   const runtime = createAgentsWorkspaceRuntime({ deployment, workspaceId, workspaceHostUrl: options.hostBaseUrl ?? 'http://127.0.0.1:1',
     ...(options.executionsFile === undefined ? {} : { executionsFile: options.executionsFile }),
     perspectivePilot: { enabled, workspaceIds: [workspaceId] }, persistConfiguration: persist,
@@ -48,7 +49,7 @@ const fixture = async (enabled = true, persist: () => Promise<void> = async () =
     worlds.set(prepared.perspective.id, perspectiveAdmissionSchema.parse({ ...worlds.get(prepared.perspective.id), status: 'active', revision: 1, binding: bindingOf(prepared) }))
     return runtime.perspectiveRooms!.bind(prepared.room.id, prepared.revision)
   }
-  return { runtime, deployment, template, human, worlds, workspaceId, input, prepare, bind,
+  return { runtime, deployment, template, human, worlds, currentWorld, workspaceId, input, prepare, bind,
     setRead: (read: typeof readWorld) => { readWorld = read },
     close: async () => { for (const agent of runtime.team.listByKind('ai')) { const ai = asAIAgent(agent)!; ai.close(); ai.cancelGeneration() }; await runtime.comparisons.close(); runtime.executionStore.close(); deployment.providerSetup.dispose() },
   }
@@ -216,7 +217,7 @@ test('exact view renewals survive an owner await, while local revoke and replace
     const lease = await owner.viewOpen(admission.room.id, admission.revision, document)
     const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>()
     let suspended = true
-    f.setRead(async id => { if (suspended) { entered.resolve(); await release.promise }; return structuredClone(f.worlds.get(id)!) })
+    f.setRead(async id => { if (suspended) { entered.resolve(); await release.promise }; return f.currentWorld(id) })
     const pending = owner.viewAuthorize(lease.token)
     await entered.promise
     suspended = false
@@ -273,7 +274,7 @@ test('revoke completes while bind verifies its peer; stale continuation cannot r
     const prepared = await f.prepare(), owner = f.runtime.perspectiveRooms!
     f.worlds.set(prepared.perspective.id, perspectiveAdmissionSchema.parse({ ...f.worlds.get(prepared.perspective.id), status: 'active', revision: 1, binding: bindingOf(prepared) }))
     const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>()
-    f.setRead(async id => { entered.resolve(); await release.promise; return structuredClone(f.worlds.get(id)!) })
+    f.setRead(async id => { entered.resolve(); await release.promise; return f.currentWorld(id) })
     const binding = owner.bind(prepared.room.id, prepared.revision)
     await entered.promise
     const revoked = await owner.revoke(prepared.room.id, prepared.revision, 'Role changed while bind awaited World')
@@ -372,6 +373,45 @@ for (const peerStop of [true, false]) test(`World revoke ${peerStop ? 'with' : '
   }
 }, 10_000)
 
+test('settlement retains every cancelled epoch, even when the newest turn finishes first', async () => {
+  const entered = [Promise.withResolvers<void>(), Promise.withResolvers<void>()]
+  const released = [Promise.withResolvers<void>(), Promise.withResolvers<void>()]
+  let calls = 0
+  const gateway: ProviderGateway = { ...makeStubGateway(),
+    modelInfo: async model => ({ id: model, provider: 'stub', contextMax: 128_000, source: 'fixture' }),
+    stream: async function* () {
+      const index = calls++; entered[index]!.resolve(); await released[index]!.promise
+      yield { delta: `Old epoch ${index} must not publish`, done: false }
+      yield { delta: '', done: true, tokensUsed: { prompt: 2, completion: 3 } }
+    },
+  }
+  const host = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch: () => Response.json({ result: { context: { text: 'Current permitted fixture picture', at: new Date().toISOString(), clock: 'simulation' } } }) })
+  const f = await fixture(true, async () => {}, { gateway, hostBaseUrl: host.url.origin })
+  let actual: ReturnType<typeof asAIAgent>
+  try {
+    const bound = await f.bind(), room = f.runtime.rooms.getRoom(bound.room.id)!
+    actual = asAIAgent(f.runtime.team.getAgent(bound.actualAgentId)!)!
+    room.post({ senderId: f.human.id, content: 'First epoch', type: 'chat' }); await entered[0]!.promise
+    actual.cancelGeneration(); await actual.whenIdle()
+    expect(actual.hasInFlightTurns()).toBe(true)
+    room.post({ senderId: f.human.id, content: 'Second epoch', type: 'chat' }); await entered[1]!.promise
+    actual.close(); actual.cancelGeneration(); await actual.whenIdle()
+    released[1]!.resolve()
+    await eventually('the newer model outcome', () => f.runtime.executionStore.listTurns(room.profile.id).some(turn => f.runtime.executionStore.getModelCall(room.profile.id, turn.id, 'model_1')?.response?.content.includes('epoch 1')))
+    await expect(actual.whenSettled(1)).rejects.toMatchObject({ code: 'agent_turns_unsettled' })
+    expect(actual.hasInFlightTurns()).toBe(true)
+    released[0]!.resolve(); await actual.whenSettled(2_000)
+    expect(actual.hasInFlightTurns()).toBe(false)
+    room.post({ senderId: f.human.id, content: 'Closed runtime must not start this turn', type: 'chat' })
+    expect(calls).toBe(2)
+    expect(room.getRetainedMessages().filter(message => message.senderId === actual!.id)).toEqual([])
+    expect(f.runtime.executionStore.listTurns(room.profile.id).map(turn => turn.status)).toEqual(['interrupted', 'interrupted'])
+  } finally {
+    for (const release of released) release.resolve()
+    await actual?.whenSettled(2_000); await f.close(); await host.stop(true)
+  }
+})
+
 for (const admissionOpen of [true, false]) test(`restored private data stays fenced with admission ${admissionOpen ? 'open' : 'closed'}; management remains possible`, async () => {
   const f = await fixture()
   let restored: ReturnType<typeof createAgentsWorkspaceRuntime> | undefined
@@ -383,8 +423,10 @@ for (const admissionOpen of [true, false]) test(`restored private data stays fen
     room.post({ senderId: f.human.id, type: 'chat', content: 'RESTORED_PRIVATE_CANARY' })
     const lease = await f.runtime.perspectiveRooms!.viewOpen(room.profile.id, admission.revision, crypto.randomUUID())
     restored = createAgentsWorkspaceRuntime({ deployment, workspaceId: f.workspaceId, workspaceHostUrl: 'http://127.0.0.1:1',
-      perspectivePilot: { enabled: admissionOpen, workspaceIds: [f.workspaceId] }, perspectiveWorldRead: async reference => structuredClone(f.worlds.get(reference.id)!) })
+      perspectivePilot: { enabled: admissionOpen, workspaceIds: [f.workspaceId] }, perspectiveWorldRead: async reference => f.currentWorld(reference.id) })
     await restoreWorkspaceModuleSnapshots(restored, serializeModuleSnapshots(f.runtime))
+    expect(serializeModuleSnapshots(f.runtime).rooms!.rooms.find(item => item.profile.id === room.profile.id)!.profile.perspective!.admission.runtimeAvailability).toBeUndefined()
+    expect(restored.perspectiveRooms!.read(room.profile.id).runtimeAvailability?.status).toBe('unavailable')
     expect(restored.perspectiveRooms!.isLocallyReady(room.profile.id)).toBe(false)
     expect(restored.perspectiveRooms!.invalidateRestored()).toBe(true)
     expect(restored.perspectiveRooms!.read(room.profile.id).status).toBe('revoked')
