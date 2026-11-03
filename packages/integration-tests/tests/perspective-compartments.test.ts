@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
-  agentsPerspectiveRoomAdmissionSchema, moduleRegistrationSchema, perspectiveAdmissionSchema,
+  agentsPerspectiveRoomAdmissionSchema, moduleRegistrationSchema, moduleIdSchema, perspectiveAdmissionSchema,
   perspectiveAssistantSetupResultSchema, workspaceIdSchema, workspaceResourceReferenceSchema,
   type PerspectiveRuntimeBinding, type WorkspaceResourceReference,
 } from '@leitbild/contracts'
@@ -34,6 +34,12 @@ import { createWorkspaceStore } from '../../../apps/leitbild/src/store.ts'
 test('real Host, World and Agents establish three separate pictures and exclude an ordinary fourth Agent', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'perspective-combined-')), previousHome = process.env.LEITBILD_HOME
   process.env.LEITBILD_HOME = join(directory, 'agents')
+  // Activation selects an existing dedicated Workspace, never every Workspace
+  // a server may create later. Provision both real core Modules below.
+  const store = createWorkspaceStore(':memory:')
+  const workspace = store.create({ name: 'Private exercise fixture', moduleIds: [moduleIdSchema.parse('world'), moduleIdSchema.parse('agents')] })
+  const workspaceId = workspace.id
+  const pilot = { enabled: true, workspaceIds: [workspaceId] }
   let hostUrl = ''
   const ownerInvoke = async (workspaceId: string, operation: string, resource: WorkspaceResourceReference, input: unknown = {}) => {
     const response = await fetch(`${hostUrl}/internal/workspaces/${workspaceId}/capabilities/${operation}/invoke`, {
@@ -49,7 +55,7 @@ test('real Host, World and Agents establish three separate pictures and exclude 
     runtimeAdapters: assembly.runtimeAdapters, workspaceCapabilities: assembly.packs.flatMap(pack => pack.workspaceCapabilities ?? []),
     scenarioDefinitions: [], scenarioRuntimeResolver: createScenarioRuntimeResolver({ packs: assembly.packs }), scenarioAuthoringCatalog: scenarioAuthoringCatalogFor(assembly.packs),
     compileScenarioDefinition: source => compileScenarioDefinition(source, assembly.packs, { routing }),
-    perspectivePilot: { enabled: true,
+    perspectivePilot: { ...pilot,
       readAgentsAdmission: async (binding: PerspectiveRuntimeBinding) => agentsPerspectiveRoomAdmissionSchema.parse(await ownerInvoke(binding.room.workspaceId, 'agents.perspective-room.read', binding.room)),
       revokeAgentsAdmission: async (binding, reason) => {
         const read = async () => agentsPerspectiveRoomAdmissionSchema.parse(await ownerInvoke(binding.room.workspaceId, 'agents.perspective-room.read', binding.room))
@@ -73,18 +79,19 @@ test('real Host, World and Agents establish three separate pictures and exclude 
   const agentsState = createAgentsModuleState()
   let agents!: ReturnType<typeof createWorkspaceRuntimeRegistry>
   const agentsServer = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch: async request => await handleAgentsModuleApi(request, new URL(request.url), { registry: agents, state: agentsState }) ?? new Response('Not found', { status: 404 }) })
-  const store = createWorkspaceStore(':memory:')
   const host = createWorkspaceHost({ store, modules: createModuleGateway({ registrations: [
     moduleRegistrationSchema.parse({ moduleId: 'world', internalBaseUrl: worldServer.url.origin, manifestPath: '/.well-known/workspace-module' }),
     moduleRegistrationSchema.parse({ moduleId: 'agents', internalBaseUrl: agentsServer.url.origin, manifestPath: '/.well-known/workspace-module' }),
   ] }) })
-  const hostServer = createWorkspaceHostServer({ host, bindHost: '127.0.0.1', port: 0, perspectivePilot: { enabled: true } })
+  const hostServer = createWorkspaceHostServer({ host, bindHost: '127.0.0.1', port: 0, perspectivePilot: pilot })
   hostUrl = hostServer.url.origin
-  agents = createWorkspaceRuntimeRegistry({ deployment, moduleState: agentsState, workspaceHostUrl: hostUrl, perspectivePilot: { enabled: true }, idleMs: 1_000_000 })
+  agents = createWorkspaceRuntimeRegistry({ deployment, moduleState: agentsState, workspaceHostUrl: hostUrl, perspectivePilot: pilot, idleMs: 1_000_000 })
   try {
-    const created = await fetch(`${hostUrl}/api/workspaces`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Private exercise fixture' }) })
-    expect(created.status).toBe(201)
-    const workspaceId = workspaceIdSchema.parse((await created.json() as { workspace: { id: string } }).workspace.id)
+    for (const [moduleId, url] of [['world', worldServer.url.origin], ['agents', agentsServer.url.origin]] as const) {
+      expect((await fetch(`${url}/internal/workspaces/${workspaceId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workspaceId }) })).status).toBe(201)
+      store.setModuleState(workspaceId, { moduleId: moduleIdSchema.parse(moduleId), status: 'ready', updatedAt: new Date().toISOString() })
+    }
+    expect((await fetch(`${hostUrl}/api/workspaces/${workspaceId}`)).status).toBe(200)
     const registry = (await world.getOrLoad(workspaceId)).simulationRuns, runtime = await agents.getOrLoad(workspaceId)
     const source = scenarioDefinitionSchema.parse(border)
     await registry.createScenario(source)

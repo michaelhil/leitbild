@@ -410,12 +410,17 @@ describe('Agents Workspace Module API', () => {
     expect(registry.tryGetLive(workspaceId)).toBeUndefined()
     await registry.shutdown()
     registry = createWorkspaceRuntimeRegistry({ deployment: withAssistantCatalog(createDeploymentRuntime()), moduleState: state,
-      perspectivePilot: { enabled: true }, workspaceHostUrl: 'http://host.test', idleMs: 1_000_000 })
+      perspectivePilot: { enabled: true, workspaceIds: [workspaceId] }, workspaceHostUrl: 'http://host.test', idleMs: 1_000_000 })
     const pilot = await capabilities()
     expect(pilot.filter(descriptor => descriptor.id.startsWith('agents.perspective-room.')).map(descriptor => String(descriptor.id)).sort()).toEqual([
       'agents.perspective-room.bind', 'agents.perspective-room.prepare', 'agents.perspective-room.read',
       'agents.perspective-room.revoke', 'agents.perspective-room.view-close', 'agents.perspective-room.view-open',
     ])
+    const outside = newWorkspaceId()
+    await request('PUT', `/internal/workspaces/${outside}`, { workspaceId: outside })
+    const outsideCatalog = moduleCapabilityCollectionSchema.parse(await (await request('GET', `/internal/workspaces/${outside}/capabilities`)).json())
+    expect(outsideCatalog.capabilities.some(item => item.id.startsWith('agents.perspective-room.'))).toBe(false)
+    expect((await request('POST', `/internal/workspaces/${outside}/capabilities/agents.perspective-room.prepare/invoke`, {})).status).toBe(404)
     expect(registry.list()).toHaveLength(0)
     expect(registry.tryGetLive(workspaceId)).toBeUndefined()
   })

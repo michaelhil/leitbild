@@ -1,6 +1,17 @@
 import { z } from 'zod'
 import { moduleCapabilityDescriptorSchema, moduleResourceDescriptorSchema, workspaceResourceReferenceSchema } from './resources.ts'
 import { presentationRecipientSchema } from './presentation.ts'
+import { workspaceIdSchema } from './ids.ts'
+
+/** Operator-owned deployment envelope. A closed pilot retains its exact
+ * managed Workspace for owner read/revoke; an empty list manages nothing. */
+export const perspectivePilotPolicySchema = z.object({
+  enabled: z.boolean(),
+  workspaceIds: z.array(workspaceIdSchema).max(1).readonly(),
+}).strict().superRefine((policy, context) => {
+  if (policy.enabled && policy.workspaceIds.length !== 1) context.addIssue({ code: 'custom', path: ['workspaceIds'], message: 'An enabled pilot names exactly one dedicated Workspace' })
+}).readonly()
+export type PerspectivePilotPolicy = z.infer<typeof perspectivePilotPolicySchema>
 
 const identity = z.string().min(1).max(256)
 const generation = z.string().uuid()

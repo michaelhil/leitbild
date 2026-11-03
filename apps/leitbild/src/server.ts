@@ -8,6 +8,7 @@ import {
   newRequestId,
   platformError,
   perspectiveOriginSchema,
+  perspectivePilotPolicySchema, type PerspectivePilotPolicy,
   renameWorkspaceInputSchema,
   workspaceIdSchema,
   workspaceCapabilityInvocationRequestSchema,
@@ -114,8 +115,12 @@ export const createWorkspaceHostServer = (config: {
   readonly port?: number
   readonly bindHost?: string
   readonly uiDistPath?: string
-  readonly perspectivePilot?: { readonly enabled: true }
+  readonly perspectivePilot?: PerspectivePilotPolicy
 }) => {
+  const pilot = perspectivePilotPolicySchema.parse(config.perspectivePilot ?? { enabled: false, workspaceIds: [] })
+  const pilotManaged = (id: string): boolean => pilot.workspaceIds.some(workspaceId => workspaceId === id)
+  const pilotEnabled = (id: string): boolean => pilot.enabled && pilotManaged(id)
+  const cleanupPorts = new Set(['world.perspective.read', 'world.perspective.revoke', 'agents.perspective-room.read', 'agents.perspective-room.revoke', 'agents.perspective-room.view-close'])
   const uiDistPath = resolve(config.uiDistPath ?? `${import.meta.dir}/ui/dist`)
   return Bun.serve({
     port: config.port ?? 3100,
@@ -158,7 +163,7 @@ export const createWorkspaceHostServer = (config: {
 
         const perspectiveUi = url.pathname.match(/^\/api\/workspaces\/([^/]+)\/(perspective-assistant|perspective-view)$/)
         if (perspectiveUi && request.method === 'POST') {
-          if (config.perspectivePilot?.enabled !== true) return jsonError(404, 'route_not_found', 'Route not found')
+          if (!pilotEnabled(perspectiveUi[1]!)) return jsonError(404, 'route_not_found', 'Route not found')
           server.timeout(request, capabilityInvokeIdleSeconds)
           const workspaceId = workspaceIdSchema.parse(decodeURIComponent(perspectiveUi[1]!))
           const raw = await parseJson(request)
@@ -180,8 +185,9 @@ export const createWorkspaceHostServer = (config: {
         }
 
         const internalPerspective = url.pathname.startsWith('/internal/')
-        if (internalPerspective && config.perspectivePilot?.enabled !== true) return jsonError(404, 'route_not_found', 'Route not found')
         if (internalPerspective) {
+          const managed = url.pathname.match(/^\/internal\/workspaces\/([^/]+)\//)
+          if (!managed || !pilotManaged(managed[1]!)) return jsonError(404, 'route_not_found', 'Route not found')
           const address = server.requestIP(request)?.address
           const loopback = address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1'
           if (!loopback || request.headers.has('forwarded') || request.headers.has('x-forwarded-for')) return jsonError(404, 'route_not_found', 'Route not found')
@@ -194,6 +200,8 @@ export const createWorkspaceHostServer = (config: {
           const raw = await parseJson(request)
           const requestInput = internalPerspective ? internalPerspectiveRequestSchema.parse(raw) : workspaceCapabilityInvocationRequestSchema.parse(raw)
           const perspectiveOrigin = internalPerspective ? internalPerspectiveRequestSchema.parse(raw).perspectiveOrigin : undefined
+          if ((capabilityId.startsWith('world.perspective.') || capabilityId.startsWith('agents.perspective-room.'))
+            && (!pilotManaged(workspaceId) || !pilot.enabled && (!cleanupPorts.has(capabilityId) || internalPerspective && perspectiveOrigin?.kind !== 'owner'))) return jsonError(404, 'capability_not_found', 'Capability not found')
           if (perspectiveOrigin?.kind === 'owner' && !perspectiveOwnerPorts[perspectiveOrigin.moduleId].has(capabilityId)) {
             return jsonError(403, 'perspective_owner_port_required', 'This owner relationship is limited to its exact Perspective admission ports')
           }
@@ -236,7 +244,9 @@ export const createWorkspaceHostServer = (config: {
         if (capabilitiesMatch && request.method === 'GET') {
           const workspaceId = workspaceIdSchema.parse(decodeURIComponent(capabilitiesMatch[1] ?? ''))
           const moduleId = url.searchParams.has('moduleId') ? moduleIdSchema.parse(url.searchParams.get('moduleId')) : undefined
-          return revalidatedJson(request, JSON.stringify(await config.host.capabilities(workspaceId, moduleId)), 'private, no-cache')
+          const collection = await config.host.capabilities(workspaceId, moduleId)
+          return revalidatedJson(request, JSON.stringify(pilotEnabled(workspaceId) ? collection : { ...collection,
+            capabilities: collection.capabilities.filter(capability => !capability.id.startsWith('world.perspective.') && !capability.id.startsWith('agents.perspective-room.')) }), 'private, no-cache')
         }
 
         const moduleMatch = url.pathname.match(/^\/api\/workspaces\/([^/]+)\/modules\/([^/]+)(\/retry)?$/)

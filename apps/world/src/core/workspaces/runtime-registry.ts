@@ -1,4 +1,4 @@
-import type { WorkspaceId } from '@leitbild/contracts'
+import { perspectivePilotPolicySchema, type WorkspaceId } from '@leitbild/contracts'
 import type { GuidePromptEvidenceReader } from '../guides/prompt-evidence.ts'
 import type { WorldPerspectivePilotConfig } from '../perspectives/service.ts'
 import { createOperationScope, createStorageBudget } from '@leitbild/module-runtime'
@@ -64,6 +64,8 @@ export const createWorldWorkspaceRuntimeRegistry = (config: {
   readonly readGuidePromptEvidence?: GuidePromptEvidenceReader
   readonly perspectivePilot?: WorldPerspectivePilotConfig
 }): WorldWorkspaceRuntimeRegistry => {
+  const pilot = config.perspectivePilot === undefined ? undefined : { ...config.perspectivePilot,
+    ...perspectivePilotPolicySchema.parse({ enabled: config.perspectivePilot.enabled, workspaceIds: config.perspectivePilot.workspaceIds }) }
   const loaded = new Map<WorkspaceId, WorldWorkspaceRuntime>()
   const storageBudget = createStorageBudget({ root: config.dataDir })
   const operations = new Map<WorkspaceId, ReturnType<typeof createOperationScope>>()
@@ -84,7 +86,7 @@ export const createWorldWorkspaceRuntimeRegistry = (config: {
       scenarioAuthoringCatalog: config.scenarioAuthoringCatalog,
       runtimeAdapters: config.runtimeAdapters,
       ...(config.readGuidePromptEvidence === undefined ? {} : { readGuidePromptEvidence: config.readGuidePromptEvidence }),
-      ...(config.perspectivePilot === undefined ? {} : { perspectivePilot: config.perspectivePilot }),
+      ...(pilot === undefined || !pilot.workspaceIds.includes(workspaceId) ? {} : { perspectivePilot: pilot }),
       ...(config.workspaceCapabilities === undefined ? {} : { workspaceCapabilities: config.workspaceCapabilities }),
       ...(config.idleRuntimeCloseDelayMs === undefined ? {} : { idleRuntimeCloseDelayMs: config.idleRuntimeCloseDelayMs }),
       ...(config.procedureSourceService === undefined ? {} : { procedureSourceService: config.procedureSourceService }),

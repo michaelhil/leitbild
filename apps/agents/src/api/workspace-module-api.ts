@@ -1038,11 +1038,13 @@ export const handleAgentsModuleApi = async (
       return json(moduleResourceCollectionSchema.parse({ resources: await resourcesFor(workspaceId, config.registry) }))
     }
     if (collection === 'capabilities' && request.method === 'GET') {
-      const capabilities = config.registry.perspectivePilotEnabled() ? allCapabilityDescriptors
+      const capabilities = config.registry.perspectivePilotEnabled(workspaceId) ? allCapabilityDescriptors
         : allCapabilityDescriptors.filter(descriptor => !descriptor.id.startsWith('agents.perspective-room.'))
       return json(moduleCapabilityCollectionSchema.parse({ capabilities }))
     }
     if (capabilityId !== undefined && request.method === 'POST') {
+      if (capabilityId.startsWith('agents.perspective-room.') && (!config.registry.perspectivePilotManaged(workspaceId)
+        || !config.registry.perspectivePilotEnabled(workspaceId) && !['agents.perspective-room.read', 'agents.perspective-room.revoke', 'agents.perspective-room.view-close'].includes(capabilityId))) return apiError(404, 'capability_not_found', 'Capability not found')
       return await invoke(capabilityId, workspaceId, await readJson(request), config.registry)
     }
     return null

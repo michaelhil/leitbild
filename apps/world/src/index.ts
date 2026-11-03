@@ -10,6 +10,8 @@ import { createConfiguredProcedureSourceService } from './procedure-sources.ts'
 import { createRoutingAdapterFromEnv } from './routing/config.ts'
 import { builtinScenarioDefinitions } from './scenarios/definitions.ts'
 import { builtinFeaturedScenarioDefinitions } from './scenarios/featured.ts'
+import { perspectivePilotPolicySchema } from '@leitbild/contracts'
+import { createPerspectiveAgentsOwner } from './core/perspectives/agents-owner.ts'
 
 const routing = createRoutingAdapterFromEnv()
 const assembly = createWorldApplicationAssembly({ routing })
@@ -22,8 +24,10 @@ if (workspaceHostUrl === undefined) {
   throw new Error('WORKSPACE_HOST_URL is required: World is entered through the Workspace Host')
 }
 const moduleState = createWorldModuleState({ dataDir })
+const perspectivePilot = perspectivePilotPolicySchema.parse(JSON.parse(process.env.LEITBILD_PERSPECTIVE_PILOT ?? '{"enabled":false,"workspaceIds":[]}'))
 const workspaces = createWorldWorkspaceRuntimeRegistry({
   dataDir,
+  perspectivePilot: { ...perspectivePilot, ...createPerspectiveAgentsOwner(workspaceHostUrl) },
   readGuidePromptEvidence: createGuidePromptEvidenceReader(workspaceHostUrl),
   moduleState,
   scenarioRuntimeResolver,

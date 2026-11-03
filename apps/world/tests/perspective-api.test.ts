@@ -21,7 +21,7 @@ import border from '../src/scenarios/halden-border-human-red.scenario.json'
 import { actorIdSchema, objectIdSchema } from '../src/core/model/ids.ts'
 
 // The published Agents owner port is an explicit contract double in this World-only test.
-const setup = async (enabled = true) => {
+const setup = async (enabled = true, selected = true) => {
   const directory = await mkdtemp(join(tmpdir(), 'world-perspective-api-')), workspaceId = newWorkspaceId()
   const routing = createDirectRoutingAdapter(), assembly = createWorldApplicationAssembly({ routing })
   const peers = new Map<string, AgentsPerspectiveRoomAdmission>()
@@ -32,7 +32,7 @@ const setup = async (enabled = true) => {
     runtimeAdapters: assembly.runtimeAdapters, workspaceCapabilities: assembly.packs.flatMap(pack => pack.workspaceCapabilities ?? []),
     scenarioRuntimeResolver: createScenarioRuntimeResolver({ packs: assembly.packs }), scenarioDefinitions: [],
     compileScenarioDefinition: source => compileScenarioDefinition(source, assembly.packs, { routing }), scenarioAuthoringCatalog: scenarioAuthoringCatalogFor(assembly.packs),
-    ...(enabled ? { perspectivePilot: { enabled: true as const, readAgentsAdmission: async (binding: PerspectiveRuntimeBinding) => {
+    ...(enabled ? { perspectivePilot: { enabled: true as const, workspaceIds: [selected ? workspaceId : newWorkspaceId()], readAgentsAdmission: async (binding: PerspectiveRuntimeBinding) => {
       const wait = beforePeerRead; beforePeerRead = undefined; await wait?.()
       const peer = peers.get(binding.room.id)
       if (!peer) throw Error('The actual scoped runtime is unavailable')
@@ -94,6 +94,16 @@ const setup = async (enabled = true) => {
     close: async () => { await workspaces.shutdown(); await rm(directory, { recursive: true, force: true }) },
   }
 }
+
+test('a pilot selected for another Workspace neither advertises nor admits this Run', async () => {
+  const fixture = await setup(true, false)
+  try {
+    expect(JSON.stringify(await fixture.get('capabilities'))).not.toContain('world.perspective.')
+    const response = await fixture.invoke('world.perspective.prepare', fixture.runRef, { roleIds: ['controller'], requestId: crypto.randomUUID() })
+    expect(response.status).toBe(404)
+    expect(fixture.registry.perspectives).toBeUndefined()
+  } finally { await fixture.close() }
+})
 
 test('disabled pilot advertises no adapters, while canonical role-Run AI stays refused', async () => {
   const fixture = await setup(false)

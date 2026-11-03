@@ -30,7 +30,7 @@ export const perspectiveRoomCapabilities = <Context extends { readonly runtime: 
       id: `agents.perspective-room.${spec.name}`, moduleId: 'agents', kind: spec.query ? 'query' : 'command',
       scope: spec.workspace ? { kind: 'workspace' } : { kind: 'resource', resourceType: 'agents.room' },
       title: `Perspective Room ${spec.name}`,
-      description: 'Narrow internal admission owner port. Public actor attribution, Room IDs and presentation offers do not grant access. Runtime activation is disabled unless explicitly assembled by the construction fixture.',
+      description: 'Narrow internal admission owner port. Public actor attribution, Room IDs and presentation offers do not grant access. Admission requires the explicit operator policy for this exact dedicated Workspace.',
       risk: spec.query ? 'read' : 'write', idempotent: spec.name === 'read' || spec.name === 'prepare' || spec.name === 'view-close',
       inputSchema: z.toJSONSchema(spec.input),
       outputSchema: spec.name === 'view-open' ? z.toJSONSchema(perspectiveViewLeaseSchema) : spec.name === 'view-close' ? { type: 'object' } : z.toJSONSchema(agentsPerspectiveRoomAdmissionSchema),

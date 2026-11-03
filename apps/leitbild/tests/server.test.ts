@@ -62,11 +62,11 @@ const gateway = (): ModuleGateway => ({
   }] : [] }) }),
 })
 
-const startHost = (uiDistPath?: string, modules: ModuleGateway = gateway(), perspectivePilot = false) => {
+const startHost = (uiDistPath?: string, modules: ModuleGateway = gateway()) => {
   const store = createWorkspaceStore(':memory:')
   stores.push(store)
   const host = createWorkspaceHost({ store, modules })
-  const server = createWorkspaceHostServer({ host, port: 0, bindHost: '127.0.0.1', ...(uiDistPath === undefined ? {} : { uiDistPath }), ...(perspectivePilot ? { perspectivePilot: { enabled: true } } : {}) })
+  const server = createWorkspaceHostServer({ host, port: 0, bindHost: '127.0.0.1', ...(uiDistPath === undefined ? {} : { uiDistPath }) })
   servers.push(server)
   return { host, baseUrl: `http://127.0.0.1:${server.port}` }
 }
@@ -85,8 +85,11 @@ describe('Leitbild server', () => {
 
   test('a trusted direct pilot invocation retains exact runtime provenance and rejects substituted attribution or proxy ingress', async () => {
     const received: unknown[] = []
-    const { host, baseUrl } = startHost(undefined, { ...gateway(), invoke: async (_module, invocation) => { received.push(invocation); return { ok: true, value: { result: null } } } }, true)
+    const { host } = startHost(undefined, { ...gateway(), invoke: async (_module, invocation) => { received.push(invocation); return { ok: true, value: { result: null } } } })
     const workspace = await host.create({ name: null })
+    const server = createWorkspaceHostServer({ host, port: 0, bindHost: '127.0.0.1', perspectivePilot: { enabled: true, workspaceIds: [workspace.id] } })
+    servers.push(server)
+    const baseUrl = server.url.origin
     const origin = { kind: 'execution', roomId: 'room-a', actualAgentId: 'agent-a', runtimeGeneration: crypto.randomUUID(), turnId: 'turn-a', perspectiveId: 'perspective-a', admissionGeneration: crypto.randomUUID() }
     const body = { resource: { workspaceId: workspace.id, moduleId: 'world', type: 'world.perspective', id: origin.perspectiveId }, input: {}, actor: { kind: 'ai', id: 'agent-a' }, perspectiveOrigin: origin }
     const url = `${baseUrl}/internal/workspaces/${workspace.id}/capabilities/world.perspective.context.read/invoke`
@@ -99,6 +102,15 @@ describe('Leitbild server', () => {
     expect((await fetch(url, { method: 'POST', body: JSON.stringify(owner) })).status).toBe(403)
     expect((await fetch(`${baseUrl}/internal/workspaces/${workspace.id}/capabilities/agents.agent.configuration.read/invoke`, { method: 'POST', body: JSON.stringify(owner) })).status).toBe(403)
     expect(received).toHaveLength(1)
+    const outside = await host.create({ name: 'Outside the pilot' })
+    expect((await fetch(`${baseUrl}/internal/workspaces/${outside.id}/capabilities/world.perspective.context.read/invoke`, { method: 'POST', body: JSON.stringify({ ...body, resource: { ...body.resource, workspaceId: outside.id } }) })).status).toBe(404)
+    for (const route of ['perspective-assistant', 'perspective-view']) expect((await fetch(`${baseUrl}/api/workspaces/${outside.id}/${route}`, { method: 'POST', body: '{}' })).status).toBe(404)
+    const closed = createWorkspaceHostServer({ host, port: 0, bindHost: '127.0.0.1', perspectivePilot: { enabled: false, workspaceIds: [workspace.id] } })
+    servers.push(closed)
+    expect((await fetch(`${closed.url.origin}/internal/workspaces/${workspace.id}/capabilities/world.perspective.context.read/invoke`, { method: 'POST', body: JSON.stringify(body) })).status).toBe(404)
+    const cleanup = { resource: { workspaceId: workspace.id, moduleId: 'agents', type: 'agents.room', id: 'existing-room' }, input: {}, actor: { kind: 'system', id: 'world' }, perspectiveOrigin: { kind: 'owner', moduleId: 'world' } }
+    expect((await fetch(`${closed.url.origin}/internal/workspaces/${workspace.id}/capabilities/agents.perspective-room.read/invoke`, { method: 'POST', body: JSON.stringify(cleanup) })).status).toBe(200)
+    expect(received).toHaveLength(2)
   })
 
   test('revalidates capability catalogs with an exact content ETag', async () => {

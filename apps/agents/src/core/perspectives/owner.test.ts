@@ -29,7 +29,7 @@ const fixture = async (enabled = true, persist: () => Promise<void> = async () =
   let readWorld: (id: string) => Promise<PerspectiveAdmission> = async id => structuredClone(worlds.get(id)!)
   const runtime = createAgentsWorkspaceRuntime({ deployment, workspaceId, workspaceHostUrl: options.hostBaseUrl ?? 'http://127.0.0.1:1',
     ...(options.executionsFile === undefined ? {} : { executionsFile: options.executionsFile }),
-    perspectivePilot: { enabled }, persistConfiguration: persist,
+    perspectivePilot: { enabled, workspaceIds: [workspaceId] }, persistConfiguration: persist,
     perspectiveWorldRead: async reference => readWorld(reference.id),
   })
   const template = asAIAgent(await runtime.spawnAIAgent({ name: 'Public template', model: 'stub:mock-model', persona: 'Read the current permitted view.', tools: [] }))!
@@ -372,7 +372,7 @@ for (const peerStop of [true, false]) test(`World revoke ${peerStop ? 'with' : '
   }
 }, 10_000)
 
-test('restored private data stays fenced and the old runtime generation cannot resume or reopen a view', async () => {
+for (const admissionOpen of [true, false]) test(`restored private data stays fenced with admission ${admissionOpen ? 'open' : 'closed'}; management remains possible`, async () => {
   const f = await fixture()
   let restored: ReturnType<typeof createAgentsWorkspaceRuntime> | undefined
   const deployment = createDeploymentRuntime({ providerConfig: stubProviderConfig, providerSetup: makeStubSetup() })
@@ -383,16 +383,18 @@ test('restored private data stays fenced and the old runtime generation cannot r
     room.post({ senderId: f.human.id, type: 'chat', content: 'RESTORED_PRIVATE_CANARY' })
     const lease = await f.runtime.perspectiveRooms!.viewOpen(room.profile.id, admission.revision, crypto.randomUUID())
     restored = createAgentsWorkspaceRuntime({ deployment, workspaceId: f.workspaceId, workspaceHostUrl: 'http://127.0.0.1:1',
-      perspectivePilot: { enabled: true }, perspectiveWorldRead: async reference => structuredClone(f.worlds.get(reference.id)!) })
+      perspectivePilot: { enabled: admissionOpen, workspaceIds: [f.workspaceId] }, perspectiveWorldRead: async reference => structuredClone(f.worlds.get(reference.id)!) })
     await restoreWorkspaceModuleSnapshots(restored, serializeModuleSnapshots(f.runtime))
     expect(restored.perspectiveRooms!.isLocallyReady(room.profile.id)).toBe(false)
     expect(restored.perspectiveRooms!.invalidateRestored()).toBe(true)
     expect(restored.perspectiveRooms!.read(room.profile.id).status).toBe('revoked')
+    expect((await restored.perspectiveRooms!.revoke(room.profile.id, admission.revision + 1, 'Closed-pilot management retry')).status).toBe('revoked')
+    await expect(restored.logging.configure({ enabled: true })).rejects.toMatchObject({ code: 'perspective_logging_disabled' })
     expect(restored.rooms.getRoom(room.profile.id)!.getRetainedMessages()[0]?.content).toBe('RESTORED_PRIVATE_CANARY')
     expect(createRuntimeAccessView(restored).rooms.listAllRooms()).toEqual([])
     expect(createRuntimeAccessView(restored).team.getAgent(admission.actualAgentId)).toBeUndefined()
     await expect(restored.perspectiveRooms!.viewAuthorize(lease.token)).rejects.toMatchObject({ code: 'perspective_view_unavailable' })
-    await expect(restored.perspectiveRooms!.viewOpen(room.profile.id, admission.revision + 1, crypto.randomUUID())).rejects.toMatchObject({ code: 'perspective_room_not_bound' })
+    await expect(restored.perspectiveRooms!.viewOpen(room.profile.id, admission.revision + 1, crypto.randomUUID())).rejects.toMatchObject({ code: admissionOpen ? 'perspective_room_not_bound' : 'perspective_pilot_disabled' })
     expect(restored.rooms.getRoom(room.profile.id)!.paused).toBe(true)
     expect(restored.executionStore.listTurns(room.profile.id)).toEqual([])
   } finally {

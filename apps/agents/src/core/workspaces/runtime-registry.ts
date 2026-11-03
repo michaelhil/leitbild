@@ -64,7 +64,7 @@ import { workspaceModulePaths, isValidWorkspaceId, sharedPaths } from '../paths.
 import { readdir, stat } from 'node:fs/promises'
 import { asAIAgent } from '../../agents/shared.ts'
 import { seedWorkspaceIdentity } from './seed-workspace.ts'
-import type { WorkspaceId } from '@leitbild/contracts'
+import { perspectivePilotPolicySchema, type PerspectivePilotPolicy, type WorkspaceId } from '@leitbild/contracts'
 import type { AgentsModuleState } from './module-state.ts'
 import { createPeopleDirectory, type PeopleDirectory } from '../people/people-directory.ts'
 import { createPeopleMetrics, type PeopleMetrics, type PeopleMetricsSnapshot } from '../people/people-metrics.ts'
@@ -125,7 +125,7 @@ interface WorkspaceRuntimeEntry {
 }
 
 export interface WorkspaceRuntimeRegistryOptions {
-  readonly perspectivePilot?: { readonly enabled: boolean }
+  readonly perspectivePilot?: PerspectivePilotPolicy
   readonly deployment: DeploymentRuntime
   readonly moduleState: AgentsModuleState
   readonly workspaceHostUrl?: string
@@ -159,7 +159,8 @@ export interface WorkspaceRuntimeRegistryOptions {
 
 export interface WorkspaceRuntimeRegistry {
   /** Explicit construction gate; reading availability never loads a Workspace runtime. */
-  readonly perspectivePilotEnabled: () => boolean
+  readonly perspectivePilotEnabled: (workspaceId: WorkspaceId) => boolean
+  readonly perspectivePilotManaged: (workspaceId: WorkspaceId) => boolean
   readonly withWorkspace: <T>(id: WorkspaceId, work: () => Promise<T>) => Promise<T>
   readonly definitionsFor: (id: WorkspaceId) => RoomDefinitionLibrary
   // The People of a Workspace, independent of its Agents runtime: opening it
@@ -206,6 +207,8 @@ export interface WorkspaceRuntimeRegistry {
 // ============================================================================
 
 export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOptions): WorkspaceRuntimeRegistry => {
+  const pilot = perspectivePilotPolicySchema.parse(opts.perspectivePilot ?? { enabled: false, workspaceIds: [] })
+  if (pilot.workspaceIds.length > 0 && opts.workspaceHostUrl === undefined) throw new Error('Managed Perspective Workspaces require the direct Workspace Host owner transport')
   // Definition writes must share one queue even across Room-runtime eviction.
   // Keeping this lightweight service separate also keeps catalog reads lazy.
   const definitionLibraries = new Map<WorkspaceId, RoomDefinitionLibrary>()
@@ -363,7 +366,7 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
         return await work()
       }),
       ...(opts.workspaceHostUrl === undefined ? {} : { workspaceId: id, workspaceHostUrl: opts.workspaceHostUrl }),
-      ...(opts.perspectivePilot === undefined ? {} : { perspectivePilot: opts.perspectivePilot }),
+      perspectivePilot: pilot,
       vectorsFile: paths.agents.vectors,
       executionsFile: paths.agents.executions,
     })
@@ -692,7 +695,8 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
   }
 
   return {
-    perspectivePilotEnabled: () => opts.perspectivePilot?.enabled === true,
+    perspectivePilotEnabled: id => pilot.enabled && pilot.workspaceIds.includes(id),
+    perspectivePilotManaged: id => pilot.workspaceIds.includes(id),
     withWorkspace,
     getOrLoad,
     definitionsFor,

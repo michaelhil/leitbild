@@ -1,7 +1,21 @@
 import { expect, test } from 'bun:test'
 import { accessContextSchema } from './access.ts'
 import { workspaceCapabilityInvocationRequestSchema } from './resources.ts'
-import { agentsPerspectiveRoomAdmissionSchema, perspectiveAdmissionSchema, perspectiveRuntimeBindingSchema, perspectivePrepareInputSchema } from './perspectives.ts'
+import { agentsPerspectiveRoomAdmissionSchema, perspectiveAdmissionSchema, perspectiveRuntimeBindingSchema, perspectivePrepareInputSchema, perspectivePilotPolicySchema } from './perspectives.ts'
+
+test('pilot deployment policy is strict, immutable and selects one existing Workspace explicitly', () => {
+  const ids = [crypto.randomUUID()]
+  const parsed = perspectivePilotPolicySchema.parse({ enabled: true, workspaceIds: ids })
+  ids[0] = crypto.randomUUID()
+  expect(parsed.workspaceIds).not.toEqual(ids)
+  expect(Object.isFrozen(parsed)).toBe(true)
+  expect(Object.isFrozen(parsed.workspaceIds)).toBe(true)
+  expect(perspectivePilotPolicySchema.safeParse({ enabled: true, workspaceIds: [] }).success).toBe(false)
+  expect(perspectivePilotPolicySchema.safeParse({ enabled: true, workspaceIds: [crypto.randomUUID(), crypto.randomUUID()] }).success).toBe(false)
+  expect(perspectivePilotPolicySchema.safeParse({ enabled: true, workspaceIds: ['*'] }).success).toBe(false)
+  expect(perspectivePilotPolicySchema.safeParse({ enabled: true, workspaceIds: ids, roleIds: ['controller'] }).success).toBe(false)
+  expect(perspectivePilotPolicySchema.parse({ enabled: false, workspaceIds: ids }).enabled).toBe(false)
+})
 
 const workspaceId = '0e87af46-37b1-4ffa-a654-eb2a28de09a3'
 const generation = '90c45f17-2b5b-4c21-b76d-d65b4b65c803'

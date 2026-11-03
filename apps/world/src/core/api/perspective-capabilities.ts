@@ -180,4 +180,4 @@ for (const kind of Object.keys(perspectivePresentationInputs) as Array<keyof typ
 }
 
 export const perspectiveCapabilityRegistry = createModuleCapabilityRegistry(moduleId, registrations)
-export const perspectiveCapabilityDescriptors = (registry: SimulationRunRegistry): ReadonlyArray<ModuleCapabilityDescriptor> => registry.perspectives === undefined ? [] : perspectiveCapabilityRegistry.descriptors
+export const perspectiveCapabilityDescriptors = (registry: SimulationRunRegistry): ReadonlyArray<ModuleCapabilityDescriptor> => registry.perspectives?.enabled() === true ? perspectiveCapabilityRegistry.descriptors : []

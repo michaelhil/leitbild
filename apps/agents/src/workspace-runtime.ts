@@ -102,7 +102,7 @@ import { isPerspectiveScope } from './core/rooms/perspective-scope.ts'
 import { createPerspectiveRooms, type PerspectiveRooms } from './core/perspectives/owner.ts'
 import { createPerspectiveWorldClient } from './core/perspectives/world-client.ts'
 import { createRoomAccessView, createTeamAccessView } from './core/rooms/access-view.ts'
-import { publishedContextSchema } from '@leitbild/contracts'
+import { publishedContextSchema, perspectivePilotPolicySchema, type PerspectivePilotPolicy } from '@leitbild/contracts'
 import {
   mkDeliveryModeChanged, mkEvalEvent,
   mkMembershipChanged, mkMessagePosted, mkModeAutoSwitched,
@@ -274,8 +274,8 @@ export interface LoggingHandle {
 }
 
 export interface CreateAgentsWorkspaceRuntimeOptions {
-  /** Construction dependency only. Production assembly omits this gate. */
-  readonly perspectivePilot?: { readonly enabled: boolean }
+  /** Explicit operator deployment envelope; absent policy admits no Workspace. */
+  readonly perspectivePilot?: PerspectivePilotPolicy
   readonly perspectiveWorldRead?: import('./core/perspectives/owner.ts').PerspectiveRoomsDeps['readWorld']
   /** Workspace registry supplies a durable path. Ephemeral standalone/test runtimes use memory. */
   readonly executionsFile?: string
@@ -302,6 +302,8 @@ export interface CreateAgentsWorkspaceRuntimeOptions {
 }
 
 export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRuntimeOptions = {}): AgentsWorkspaceRuntime => {
+  const pilot = perspectivePilotPolicySchema.parse(options.perspectivePilot ?? { enabled: false, workspaceIds: [] })
+  const managedPilot = options.workspaceId !== undefined && pilot.workspaceIds.includes(options.workspaceId)
   if ((options.workspaceId === undefined) !== (options.workspaceHostUrl === undefined)) {
     throw new Error('workspaceId and workspaceHostUrl must be configured together')
   }
@@ -974,7 +976,7 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
       })
     }
     const perspectiveRooms = options.workspaceId === undefined || perspectiveWorld === undefined ? undefined : createPerspectiveRooms({
-      workspaceId: options.workspaceId, enabled: () => options.perspectivePilot?.enabled === true,
+      workspaceId: options.workspaceId, enabled: () => pilot.enabled && managedPilot,
       rooms, team, tools: toolRegistry, skills: skillStore, workspacePrompt: settings.getPrompt, responseFormat: settings.getResponseFormat,
       createRoom: async (perspective, initialize) => (await createRoomWithBudget({ scope: { kind: 'resource', resource: perspective }, name: 'Perspective Assistant', createdBy: 'perspective-owner' }, initialize)).value,
       // Resolve at admission time: bootstrap wraps the published spawn port
@@ -1063,6 +1065,7 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
       }),
       configure: async (partial: Partial<LogConfig>): Promise<void> => {
         validateLogConfig(partial)
+        if ((managedPilot || rooms.listAllRooms().some(profile => isPerspectiveScope(profile.scope))) && partial.enabled === true) throw Object.assign(new Error('Research logging is disabled for the dedicated Perspective pilot Workspace'), { code: 'perspective_logging_disabled' })
         const next: LogConfig = {
           enabled: partial.enabled ?? loggingState.config.enabled,
           dir: partial.dir ?? loggingState.config.dir,

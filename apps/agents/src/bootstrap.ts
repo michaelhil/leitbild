@@ -60,7 +60,7 @@ import {
   createProductKnowledgeTools,
 } from './tools/built-in/index.ts'
 import { createAgentsModuleState } from './core/workspaces/module-state.ts'
-import { newWorkspaceId, type WorkspaceId } from '@leitbild/contracts'
+import { newWorkspaceId, perspectivePilotPolicySchema, type WorkspaceId } from '@leitbild/contracts'
 import { createPackManager, type PackManager } from './packs/manager.ts'
 import { createWorkspacePackScrubber } from './packs/workspace-pack-scrubber.ts'
 
@@ -70,6 +70,7 @@ export const bootstrap = async (): Promise<void> => {
   const headless = process.argv.includes('--headless')
   const ephemeral = process.env.LEITBILD_EPHEMERAL === '1'
   const workspaceHostUrl = process.env.WORKSPACE_HOST_URL
+  const perspectivePilot = perspectivePilotPolicySchema.parse(JSON.parse(process.env.LEITBILD_PERSPECTIVE_PILOT ?? '{"enabled":false,"workspaceIds":[]}'))
   if (!headless && workspaceHostUrl === undefined) {
     throw new Error('WORKSPACE_HOST_URL is required: Leitbild is entered through the Workspace Host')
   }
@@ -262,6 +263,7 @@ export const bootstrap = async (): Promise<void> => {
     deployment,
     moduleState,
     ...(workspaceHostUrl === undefined ? {} : { workspaceHostUrl }),
+    perspectivePilot,
     // Lazy validateBootstrap: fires once on the first successful getOrLoad.
     // Replaces the boot-time call against a throwaway boot system. Contract
     // still runs before any traffic actually reaches a System; we just
@@ -280,7 +282,7 @@ export const bootstrap = async (): Promise<void> => {
       // that adds Workspace-bound built-ins on top. See workspace-runtime.ts createAgentsWorkspaceRuntime.
       // Configure logging from env template.
       try {
-        await system.logging.configure(bootLogConfig)
+        await system.logging.configure(perspectivePilot.workspaceIds.includes(id) ? { ...bootLogConfig, enabled: false } : bootLogConfig)
       } catch (err) {
         console.error(`[logging] failed to apply boot config: ${err instanceof Error ? err.message : String(err)}`)
       }

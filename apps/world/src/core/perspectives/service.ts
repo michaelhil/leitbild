@@ -2,6 +2,7 @@ import {
   agentsPerspectiveRoomAdmissionSchema, perspectiveRuntimeBindingSchema,
   type AccessContext, type AgentsPerspectiveRoomAdmission, type PerspectiveAdmission,
   type PerspectiveRuntimeBinding, type WorkspaceResourceReference,
+  perspectivePilotPolicySchema, type PerspectivePilotPolicy,
 } from '@leitbild/contracts'
 import type { Actor } from '../simulation-runs/actors.ts'
 import type { SimulationRunRegistry } from '../simulation-runs/registry.ts'
@@ -13,8 +14,7 @@ import { perspectiveRoleDigest, type PerspectiveStore } from './store.ts'
 import { mapWithConcurrency, workspaceFanOutLimit } from '../storage/bounded-fan-out.ts'
 
 /** Supplying this explicit owner dependency is construction/test admission, not product activation. */
-export interface WorldPerspectivePilotConfig {
-  readonly enabled: true
+export interface WorldPerspectivePilotConfig extends PerspectivePilotPolicy {
   readonly readAgentsAdmission: (binding: PerspectiveRuntimeBinding) => Promise<AgentsPerspectiveRoomAdmission>
   /** A revoked response confirms closed admission and requested cooperative cancellation,
    * never that an uncooperative provider stopped or prior effects rolled back. */
@@ -37,6 +37,9 @@ const bindingKey = (binding: PerspectiveRuntimeBinding): string => JSON.stringif
 const sameBinding = (a: PerspectiveRuntimeBinding, b: PerspectiveRuntimeBinding): boolean => bindingKey(a) === bindingKey(b)
 
 export const createWorldPerspectiveService = (config: { store: PerspectiveStore; runs: RunPort; pilot: WorldPerspectivePilotConfig }) => {
+  const pilot = perspectivePilotPolicySchema.parse({ enabled: config.pilot.enabled, workspaceIds: config.pilot.workspaceIds })
+  const enabled = (): boolean => pilot.enabled && pilot.workspaceIds.includes(config.runs.workspaceId)
+  const requireEnabled = (): void => { if (!enabled()) throw perspectiveFailure('perspective_pilot_disabled', 'Perspective admission is closed for this Workspace', 404) }
   const known = new Map<string, StoredPerspective>()
   const invalidated = new Set<string>()
   const remember = (record: StoredPerspective): StoredPerspective => { known.set(record.admission.resource.id, record); return record }
@@ -61,6 +64,7 @@ export const createWorldPerspectiveService = (config: { store: PerspectiveStore;
     if (!statuses.includes(peer.status) || !sameBinding(peer, binding)) throw perspectiveFailure('perspective_runtime_unavailable', 'The exact scoped Agents runtime is unavailable; prepare a fresh admission', 409)
   }
   const fresh = async (record: StoredPerspective, peer = true): Promise<StoredPerspective> => {
+    requireEnabled()
     const latest = remember(await config.store.read(record.admission.resource.id))
     await config.store.assertCurrent(latest)
     if (latest.admission.status !== 'active' || latest.admission.revision !== record.admission.revision || latest.admission.binding === undefined
@@ -126,7 +130,9 @@ export const createWorldPerspectiveService = (config: { store: PerspectiveStore;
     }
   }
   return {
+    enabled,
     prepare: async (runId: SimulationRunId, input: { roleIds: ReadonlyArray<string>; requestId: string }, access: AccessContext): Promise<PerspectiveAdmission> => {
+      requireEnabled()
       if (access.actor.kind !== 'human' || access.perspectiveOrigin?.kind === 'execution') throw perspectiveFailure('perspective_prepare_for_people', 'Only the human screen prepares a held-role Perspective')
       const roleIds = await rolesOf(runId, input.roleIds)
       const record = remember(await config.store.prepare({ runId, roleIds, requestId: input.requestId }))
@@ -148,6 +154,7 @@ export const createWorldPerspectiveService = (config: { store: PerspectiveStore;
       }
     },
     bind: async (id: string, input: { expectedRevision: number; binding: PerspectiveRuntimeBinding }, access: AccessContext): Promise<PerspectiveAdmission> => {
+      requireEnabled()
       requireOwner(access, ['host'])
       const record = remember(await config.store.read(id)), binding = perspectiveRuntimeBindingSchema.parse(input.binding)
       await config.store.assertCurrent(record)
