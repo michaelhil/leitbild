@@ -2,11 +2,9 @@ import type { Tool, ToolDefinition, ToolRegistry } from '../core/types/tool.ts'
 import { owningPackFor } from '../core/types/tool-pack.ts'
 import { toolsToDefinitions } from '../llm/tool-capability.ts'
 import { effectiveActivePackSet } from '../packs/activation.ts'
-import { isPerspectiveScope } from '../core/rooms/perspective-scope.ts'
 
 export interface RoomActivation {
   readonly getActivePacks: () => ReadonlyArray<string>
-  readonly profile?: { readonly scope: import('@leitbild/contracts').WorkspaceRoomScope }
 }
 export type GetRoomActivation = (roomId: string) => RoomActivation | undefined
 
@@ -24,7 +22,6 @@ export const createToolSurface = (deps: {
     return new Set(deps.requestedTools.filter(name => {
       const entry = deps.registry.getEntry(name)
       if (!entry) return false
-      if (room?.profile !== undefined && isPerspectiveScope(room.profile.scope) && entry.tool.compartmentAccess === undefined) return false
       const pack = owningPackFor(entry)
       return pack === undefined || active === undefined || active.has(pack)
     }))

@@ -39,10 +39,13 @@ export const diagnosticRoutes: RouteEntry[] = [
       const url = new URL(req.url)
       const limit = Number(url.searchParams.get('limit') ?? '20')
       const agent = url.searchParams.get('agent') ?? undefined
+      // The in-memory ring is bounded. Resolve Room existence before paging,
+      // including late events retained after their Room was removed.
       const records = system.evalBuffer.listRecent({
-        limit: Number.isFinite(limit) && limit > 0 ? Math.min(limit, 100) : 20,
+        limit: Infinity,
         ...(agent ? { agent } : {}),
-      })
+      }).filter(record => record.roomId === undefined || system.rooms.getRoom(record.roomId) !== undefined)
+        .slice(0, Number.isFinite(limit) && limit > 0 ? Math.min(limit, 100) : 20)
       return json({ records })
     },
   },
@@ -52,7 +55,7 @@ export const diagnosticRoutes: RouteEntry[] = [
     handler: (_req, match, { system }) => {
       const traceId = decodeURIComponent(match[1]!)
       const rec = system.evalBuffer.getByTraceId(traceId)
-      if (!rec) return errorResponse(`trace "${traceId}" not found`, 404)
+      if (!rec || rec.roomId !== undefined && system.rooms.getRoom(rec.roomId) === undefined) return errorResponse(`trace "${traceId}" not found`, 404)
       return json(rec)
     },
   },

@@ -65,7 +65,7 @@ const stubFetch = (dim: number): typeof globalThis.fetch => {
 }
 
 describe('memory-indexer', () => {
-  test('private and unavailable Rooms never resolve providers, send plaintext or enter shared recall', async () => {
+  test('unavailable Rooms never resolve providers, send plaintext or enter recall', async () => {
     const { path, cleanup } = await tempPath()
     try {
       const store = createVectorStore(path)
@@ -76,7 +76,7 @@ describe('memory-indexer', () => {
         getProviders: () => { providerReads++; throw new Error('Private content must not reach provider resolution') },
         getRoomName: () => { throw new Error('Private metadata must not enter shared memory') },
       })
-      await indexer.handleCompressionStart('private-room', [mkMsg({ content: 'RED_PRIVATE_CANARY' })], 'private summary')
+      await indexer.handleCompressionStart('removed-room', [mkMsg({ content: 'REMOVED_ROOM_CANARY' })], 'removed summary')
       expect(providerReads).toBe(0)
       expect(store.count().live).toBe(0)
       expect(await Bun.file(path).exists()).toBe(false)

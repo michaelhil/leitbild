@@ -54,8 +54,6 @@ export interface ProgressEvidence {
 }
 
 export interface Message {
-  /** Owner-stamped at the Room boundary, never accepted from PostParams. */
-  readonly perspective?: import('./perspective-room.ts').PerspectiveMessageProvenance
   readonly id: string
   readonly senderId: string
   readonly senderName?: string        // human-readable sender name, set at post time
@@ -148,7 +146,6 @@ export interface ToolTraceEntry {
 // === Profiles — what agents know about rooms and other agents ===
 
 export interface RoomProfile {
-  readonly perspective?: import('./perspective-room.ts').PerspectiveRoomState
   readonly scope: import('@leitbild/contracts').WorkspaceRoomScope
   readonly scopeRevision: number
   readonly id: string
@@ -212,7 +209,7 @@ export interface MessageTarget {
 // agentName). This is intentional — callers that need those fields set them; others
 // leave them undefined.
 
-export type PostParams = Omit<Message, 'id' | 'roomId' | 'timestamp' | 'perspective'> & {
+export type PostParams = Omit<Message, 'id' | 'roomId' | 'timestamp'> & {
   // Transient per-browser Resource focus for the Agent turn triggered by this
   // post. Room removes it before creating/persisting the Message.
   readonly focusedSubjects?: ReadonlyArray<import('@leitbild/contracts').WorkspaceSubjectReference>

@@ -14,7 +14,6 @@ import type { RoomDirectory } from './rooms/directory.ts'
 import type { TriggerScheduler } from './triggers/scheduler.ts'
 import { addAgentToRoom, removeAgentFromRoom } from '../agents/actions.ts'
 import { asAIAgent } from '../agents/shared.ts'
-import { isPerspectiveScope } from './rooms/perspective-scope.ts'
 
 export interface RoomOperationsDeps {
   readonly team: Team
@@ -38,9 +37,6 @@ export const createRoomOperations = (deps: RoomOperationsDeps): RoomOperations =
     const agent = team.getAgent(agentId)
     const room = rooms.getRoom(roomId)
     if (!agent || !room) return
-    const ownerRoomId = asAIAgent(agent)?.getConfig().ownerRoomId
-    const ownerRoom = ownerRoomId === undefined ? undefined : rooms.getRoom(ownerRoomId)
-    if (isPerspectiveScope(room.profile.scope) || ownerRoom !== undefined && isPerspectiveScope(ownerRoom.profile.scope)) throw Object.assign(new Error('Perspective membership is immutable; prepare a new empty compartment'), { code: 'perspective_membership_immutable' })
     await addAgentToRoom(agentId, agent.name, roomId, invitedBy, team, routeMessage, rooms)
     onMembershipChanged(roomId, room.profile.name, agentId, agent.name, 'added')
   }

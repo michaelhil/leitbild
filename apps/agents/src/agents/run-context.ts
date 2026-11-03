@@ -17,7 +17,7 @@ const TIMEOUT_MS = 3_000
 export type RunContextFetcher = (
   roomId: string,
   focused: ReadonlyArray<WorkspaceSubjectReference>,
-  caller: { readonly id: string; readonly name: string; readonly executionTurnId?: string },
+  caller: { readonly id: string; readonly name: string },
   signal: AbortSignal,
 ) => Promise<string | undefined>
 

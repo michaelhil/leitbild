@@ -125,7 +125,6 @@ interface WorkspaceRuntimeEntry {
 }
 
 export interface WorkspaceRuntimeRegistryOptions {
-  readonly perspectivePilot?: { readonly enabled: boolean }
   readonly deployment: DeploymentRuntime
   readonly moduleState: AgentsModuleState
   readonly workspaceHostUrl?: string
@@ -158,8 +157,6 @@ export interface WorkspaceRuntimeRegistryOptions {
 }
 
 export interface WorkspaceRuntimeRegistry {
-  /** Explicit construction gate; reading availability never loads a Workspace runtime. */
-  readonly perspectivePilotEnabled: () => boolean
   readonly withWorkspace: <T>(id: WorkspaceId, work: () => Promise<T>) => Promise<T>
   readonly definitionsFor: (id: WorkspaceId) => RoomDefinitionLibrary
   // The People of a Workspace, independent of its Agents runtime: opening it
@@ -363,7 +360,6 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
         return await work()
       }),
       ...(opts.workspaceHostUrl === undefined ? {} : { workspaceId: id, workspaceHostUrl: opts.workspaceHostUrl }),
-      ...(opts.perspectivePilot === undefined ? {} : { perspectivePilot: opts.perspectivePilot }),
       vectorsFile: paths.agents.vectors,
       executionsFile: paths.agents.executions,
     })
@@ -373,10 +369,8 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
       // the Agents Module. Corrupt or obsolete state fails the load.
       const snapshots = await loadWorkspaceModuleSnapshots(paths)
       await restoreWorkspaceModuleSnapshots(system, snapshots)
-      const invalidatedPerspectiveRuntimes = system.perspectiveRooms?.invalidateRestored() ?? false
 
       autoSaver = createModuleAutoSaver(system, paths)
-      if (invalidatedPerspectiveRuntimes) await autoSaver.flush()
 
       // Notify the registry's caller (e.g. WS broadcast wiring). autoSaver
       // is passed explicitly because the map entry isn't installed until
@@ -692,7 +686,6 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
   }
 
   return {
-    perspectivePilotEnabled: () => opts.perspectivePilot?.enabled === true,
     withWorkspace,
     getOrLoad,
     definitionsFor,

@@ -588,7 +588,7 @@ export const bootstrap = async (): Promise<void> => {
     snapshot: () => ({
       workspaces: registry.list().map(meta => {
         const sys = registry.tryGetLive(meta.id)
-        const aiAgents = (sys?.team.listByKind('ai') ?? []).filter(agent => !sys?.perspectiveRooms?.isPrivateAgent(agent.id))
+        const aiAgents = sys?.team.listByKind('ai') ?? []
         return {
           id: meta.id,
           wired: wsManager.isWired(meta.id),

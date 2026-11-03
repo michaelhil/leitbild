@@ -21,7 +21,6 @@ import { handleAgentsModuleApi } from './workspace-module-api.ts'
 import { CAPABILITY_INVOKE_IDLE_SECONDS, isCapabilityInvokeRequest } from './capability-invoke-timeout.ts'
 import type { PackManager } from '../packs/manager.ts'
 import { serveAgentsUiAsset } from './ui-assets.ts'
-import { isPerspectiveScope } from '../core/rooms/perspective-scope.ts'
 
 interface ServerConfig {
   readonly registry: WorkspaceRuntimeRegistry
@@ -157,21 +156,8 @@ export const createServer = (config: ServerConfig) => {
         const sessionToken = url.searchParams.get('session') ?? crypto.randomUUID()
         wsManager.releaseSessionForWorkspaceSwitch(sessionToken, applicationPath.workspaceId)
         const focusedRoomId = url.searchParams.get('room')?.trim() || undefined
-        const protocols = (request.headers.get('sec-websocket-protocol') ?? '').split(',').map(value => value.trim()).filter(Boolean)
-        const privateProtocol = protocols.includes('leitbild-perspective')
-        const perspectiveViewToken = privateProtocol && protocols.length === 2 && protocols[0] === 'leitbild-perspective' ? protocols[1] : undefined
-        if (privateProtocol && (perspectiveViewToken === undefined || !/^[0-9a-f-]{36}$/i.test(perspectiveViewToken))) return secure(new Response('Invalid Perspective view protocol', { status: 400 }))
-        const runtime = await registry.getOrLoad(applicationPath.workspaceId)
-        if (perspectiveViewToken !== undefined) {
-          try {
-            const view = await runtime.perspectiveRooms?.viewAuthorize(perspectiveViewToken)
-            if (view === undefined || view.room.id !== focusedRoomId) return secure(new Response('Perspective view unavailable', { status: 403 }))
-          } catch { return secure(new Response('Perspective view unavailable', { status: 403 })) }
-        } else if (focusedRoomId !== undefined && runtime.rooms.getRoom(focusedRoomId)?.profile.scope !== undefined
-          && isPerspectiveScope(runtime.rooms.getRoom(focusedRoomId)!.profile.scope)) return secure(new Response('Perspective view required', { status: 403 }))
         const upgraded = bunServer.upgrade(request, {
-          ...(privateProtocol ? { headers: { 'Sec-WebSocket-Protocol': 'leitbild-perspective' } } : {}),
-          data: { sessionToken, workspaceId: applicationPath.workspaceId, ...(focusedRoomId ? { focusedRoomId } : {}), ...(perspectiveViewToken === undefined ? {} : { perspectiveViewToken }) },
+          data: { sessionToken, workspaceId: applicationPath.workspaceId, ...(focusedRoomId ? { focusedRoomId } : {}) },
         })
         return upgraded ? undefined : secure(new Response('WebSocket upgrade failed', { status: 500 }))
       }
@@ -211,12 +197,11 @@ export const createServer = (config: ServerConfig) => {
       async open(ws) {
         await registry.getOrLoad(ws.data.workspaceId)
         const existing = wsManager.sessions.get(ws.data.sessionToken)
-        const sameView = existing?.focusedRoomId === ws.data.focusedRoomId && existing?.perspectiveViewToken === ws.data.perspectiveViewToken
+        const sameView = existing?.focusedRoomId === ws.data.focusedRoomId
         const session = existing && sameView ? existing : {
           workspaceId: ws.data.workspaceId,
           sessionToken: ws.data.sessionToken,
           ...(ws.data.focusedRoomId ? { focusedRoomId: ws.data.focusedRoomId } : {}),
-          ...(ws.data.perspectiveViewToken === undefined ? {} : { perspectiveViewToken: ws.data.perspectiveViewToken }),
           lastActivity: Date.now(),
         }
         wsManager.sessions.set(ws.data.sessionToken, session)

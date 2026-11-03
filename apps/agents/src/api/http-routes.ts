@@ -40,8 +40,6 @@ import { diagnosticRoutes } from './routes/diagnostics.ts'
 import { productSourceRoutes } from './routes/product-sources.ts'
 import type { RouteContext } from './routes/types.ts'
 import type { AccessContext, WorkspaceId } from '@leitbild/contracts'
-import { createRuntimeAccessView } from '../core/workspaces/runtime-access.ts'
-import { isPerspectiveScope } from '../core/rooms/perspective-scope.ts'
 
 // Route helpers live in ./routes/helpers.ts to keep http-routes.ts cycle-free.
 
@@ -151,27 +149,13 @@ export const handleAPI = async (
   accessContext: AccessContext,
   deps: RouteDeps,
 ): Promise<Response | null> => {
-  try {
-  const token = req.headers.get('X-Leitbild-Perspective-View')
-  const lease = token === null ? undefined : await (system.perspectiveRooms?.viewAuthorize(token)
-    ?? Promise.reject(Object.assign(new Error('Perspective view is unavailable'), { code: 'perspective_view_unavailable' })))
-  if (lease !== undefined && req.method !== 'GET' && !(pathname === '/messages' && req.method === 'POST')) return json({ error: 'This Perspective pilot permits conversation submission and inspection; configuration and shared writes are unavailable', code: 'perspective_view_read_only' }, 403)
-  if (pathname === '/logging' && system.rooms.listAllRooms().some(profile => isPerspectiveScope(profile.scope))) return json({ error: 'Research log administration is an operator surface while private compartments exist', code: 'perspective_operator_required' }, 403)
-  const view = createRuntimeAccessView(system, lease?.room.id)
-  const ctx: RouteContext = { system: view, workspaceId, accessContext, ...deps }
+  const ctx: RouteContext = { system, workspaceId, accessContext, ...deps }
+
   for (const route of allRoutes) {
     if (route.method !== req.method) continue
     const match = pathname.match(route.pattern)
-    if (match) {
-      const response = await route.handler(req, match, ctx)
-      if (lease !== undefined) await system.perspectiveRooms!.viewAuthorize(lease.token)
-      return response
-    }
+    if (match) return route.handler(req, match, ctx)
   }
+
   return null
-  } catch (error) {
-    const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : undefined
-    if (code === 'conversation_access_denied' || code?.startsWith('perspective_')) return json({ error: error instanceof Error ? error.message : 'Perspective view is unavailable', code }, code === 'perspective_authority_unavailable' ? 503 : 403)
-    throw error
-  }
 }

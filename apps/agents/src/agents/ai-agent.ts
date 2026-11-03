@@ -72,8 +72,6 @@ export interface AgentProgress {
 }
 
 export interface AIAgentOptions {
-  readonly isolatedRoomId?: string
-  readonly assertTurnAllowed?: (roomId: string, signal?: AbortSignal) => Promise<void>
   readonly onTurnStart?: (input: AgentTurnStart) => Promise<void>
   readonly onTurnFinished?: (executionTurnId: string) => void
   // Posts a turn's progress line to its Room at once, as this Agent's own
@@ -318,9 +316,6 @@ export const createAIAgent = (
     instruction?: string,
     trailingPrompt?: string,
   ) => {
-    const capturedTurnId = activeTurn?.traceId
-    await options?.assertTurnAllowed?.(roomId, signal)
-    if (!cm.isEpochCurrent(epoch) || signal.aborted) return undefined
     const resolved = resolveEffective
       ? resolveEffective(turnConfiguration().model)
       : { model: turnConfiguration().model, fallback: false, reason: 'preferred_available' }
@@ -335,15 +330,11 @@ export const createAIAgent = (
     }
     const info = await llmProvider.modelInfo?.(effectiveModel)
     if (!cm.isEpochCurrent(epoch) || signal.aborted) return undefined
-    await options?.assertTurnAllowed?.(roomId, signal)
-    if (!cm.isEpochCurrent(epoch) || signal.aborted) return undefined
     describedModel = { requested: effectiveModel, info: info ?? { id: effectiveModel, provider: 'unknown', contextMax: 0, source: 'unavailable' } }
     // A scripted turn's context is the script's alone, so it reads no Run context.
     const runContext = getScriptContext?.(roomId, config.name) === undefined
-      ? await options?.fetchRunContext?.(roomId, focusedSubjectsByRoom.get(roomId) ?? [], { id: agentId, name: config.name, ...(options?.isolatedRoomId === undefined || capturedTurnId === undefined ? {} : { executionTurnId: capturedTurnId }) }, signal)
+      ? await options?.fetchRunContext?.(roomId, focusedSubjectsByRoom.get(roomId) ?? [], { id: agentId, name: config.name }, signal)
       : undefined
-    if (!cm.isEpochCurrent(epoch) || signal.aborted) return undefined
-    await options?.assertTurnAllowed?.(roomId, signal)
     if (!cm.isEpochCurrent(epoch) || signal.aborted) return undefined
     const effectiveToolDefs = effectiveToolsForRoom(roomId)
     const baseDeps = contextDeps(effectiveModel, effectiveToolDefs, instruction)
@@ -501,7 +492,6 @@ export const createAIAgent = (
       }
     })
     const evalOpts = {
-      ...(options?.assertTurnAllowed === undefined ? {} : { beforeModelDispatch: () => options.assertTurnAllowed!(triggerRoomId, signal) }),
       executionTurnId: traceId,
       ...(evalToolDefs ? { toolDefinitions: evalToolDefs } : {}),
       ...(inReplyTo ? { inReplyTo } : {}),
@@ -616,10 +606,6 @@ export const createAIAgent = (
         admitted.maxToolIterations, triggerRoomId, { ...evalOpts, onEvent: captureEvent, modelObserver, workingContext },
       )
       await pendingStages
-      // The provider may complete after World has ended this perspective but
-      // before its peer-stop notification arrives. Retain the actual model
-      // response/cost first, then close the turn under fresh authority.
-      await options?.assertTurnAllowed?.(triggerRoomId, signal)
       if (retaining) store.finishTurn(traceId, signal.aborted ? 'interrupted' : result.decision.response.action === 'error' ? 'failed' : 'completed',
         result.decision.response.action === 'error' ? result.decision.response.message : undefined)
       return result
@@ -708,8 +694,6 @@ export const createAIAgent = (
           preparationStages,
         )
         if (!cm.isEpochCurrent(epoch)) return  // cancelled — discard stale result
-        await options?.assertTurnAllowed?.(triggerRoomId, abortController.signal)
-        if (!cm.isEpochCurrent(epoch) || abortController.signal.aborted) return
 
         wasRespond = decision.response.action === 'respond'
 
@@ -720,12 +704,6 @@ export const createAIAgent = (
         outcome = decision.response.action
       } catch (err) {
         if (!cm.isEpochCurrent(epoch)) return  // cancelled, ignore error
-        try { await options?.assertTurnAllowed?.(triggerRoomId, abortController.signal) }
-        catch {
-          options?.executionStore?.finishTurn(traceId, 'interrupted', 'Perspective authority was unavailable before answer publication')
-          return // Authority loss cannot publish an answer or error into a new picture.
-        }
-        if (!cm.isEpochCurrent(epoch) || abortController.signal.aborted) return
         // Unexpected throw — evaluate() catches LLM-layer errors and converts
         // them to action='error' decisions, so this branch is rare (programmer
         // error, OOM, etc.). Without a synthetic decision, the agent silently
@@ -785,7 +763,6 @@ export const createAIAgent = (
   // messages the turn answers.
 
   const receive = (message: Message): void => {
-    if (options?.isolatedRoomId !== undefined && message.roomId !== options.isolatedRoomId) throw Object.assign(new Error('Message belongs to another compartment'), { code: 'perspective_message_scope_mismatch' })
     extractProfile(message, agentId, agentHistory.agentProfiles)
 
     if (message.senderId === agentId) {
@@ -807,7 +784,6 @@ export const createAIAgent = (
   // so opening an assistant must not spend an extra model call summarising it.
 
   const join = async (room: Room): Promise<void> => {
-    if (options?.isolatedRoomId !== undefined && room.profile.id !== options.isolatedRoomId) throw Object.assign(new Error('This runtime belongs to one immutable Perspective Room'), { code: 'perspective_runtime_room_mismatch' })
     // Initialise context — profile available here, before messages arrive.
     // Use a getter so the stored profile tracks the Room live (room name and
     // roomPrompt can change after the agent joins; stale snapshots broke the
@@ -1086,8 +1062,6 @@ export const createAIAgent = (
           undefined, undefined, captured, preparationStages,
         )
         if (!cm.isEpochCurrent(epoch)) return  // cancelled
-        await options?.assertTurnAllowed?.(roomId, abortController.signal)
-        if (!cm.isEpochCurrent(epoch) || abortController.signal.aborted) return
         // A scheduled "nothing changed" stays quiet. Its observed model/tool
         // evidence remains in Room execution history without inventing a posted
         // message or a message-owned comparison/delegation attachment.

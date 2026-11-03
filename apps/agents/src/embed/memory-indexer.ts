@@ -48,7 +48,7 @@ export const createMemoryIndexer = (deps: MemoryIndexerDeps): MemoryIndexer => {
     candidates: ReadonlyArray<Message>,
     _newSummaryText: string,
   ): Promise<void> => {
-    if (!deps.mayIndexRoom(roomId)) return // Explicit owner exclusion, not a failed indexing fallback.
+    if (!deps.mayIndexRoom(roomId)) return // Removed Rooms must not resolve providers or enter recall.
     // Only embed chat messages — skip prior room_summary entries (they
     // would re-embed compressed-of-compressed text, which is fine in
     // theory but rarely useful for recall — recall wants original speech).
@@ -84,7 +84,7 @@ export const createMemoryIndexer = (deps: MemoryIndexerDeps): MemoryIndexer => {
       return
     }
 
-    if (!deps.mayIndexRoom(roomId)) return // Room removal/scope change during embedding cannot publish into shared memory.
+    if (!deps.mayIndexRoom(roomId)) return // Room removal during embedding cannot publish a late entry.
     const foldId = crypto.randomUUID()
     const ts = Date.now()
     const roomName = deps.getRoomName(roomId)

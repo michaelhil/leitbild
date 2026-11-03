@@ -65,7 +65,6 @@ export interface Room {
   readonly getMessageCount: () => number
   readonly setRoomPrompt: (prompt: string) => void
   readonly setScope: (scope: WorkspaceRoomScope, expectedRevision: number) => number
-  readonly setPerspectiveState: (state: import('./perspective-room.ts').PerspectiveRoomState, expectedRevision?: number) => void
   readonly deleteMessage: (messageId: string) => boolean
   readonly clearMessages: () => void
   readonly setGenerationQuery: (messageId: string, traceId: string, query: GenerationQuery) => void

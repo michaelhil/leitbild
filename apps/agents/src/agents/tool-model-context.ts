@@ -11,7 +11,6 @@ export const createToolModelContext = (options: {
   provider: LLMProvider
   settings: Pick<ChatRequest, 'model' | 'seed' | 'think' | 'reasoningEffort'> | undefined
   signal: AbortSignal
-  beforeDispatch?: () => Promise<void>
   callId?: string
   observer?: (identity: { id: string; ordinal: number }) => Observer
 }): { context: Pick<ToolContext, 'llm' | 'llmStream'>; calls: NonNullable<ToolResult['nestedModelCalls']> } => {
@@ -23,7 +22,7 @@ export const createToolModelContext = (options: {
     const identity = { id: `nested_${parent}_${++ordinal}`, ordinal }
     const observer = options.observer?.(identity)
     let accounting: (typeof calls)[number] | undefined
-    return { signal: options.signal, ...(options.beforeDispatch === undefined ? {} : { beforeDispatch: options.beforeDispatch }), observer: {
+    return { signal: options.signal, observer: {
       started: async request => {
         options.signal.throwIfAborted()
         await observer?.started(request)

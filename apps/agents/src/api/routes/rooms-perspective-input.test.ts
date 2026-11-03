@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { newWorkspaceId, worldPerspectiveReferenceSchema } from '@leitbild/contracts'
+import { newWorkspaceId, workspaceResourceReferenceSchema } from '@leitbild/contracts'
 import { createRoomDirectory } from '../../core/rooms/directory.ts'
 import type { AgentsWorkspaceRuntime } from '../../workspace-runtime.ts'
 import { roomRoutes } from './rooms.ts'
@@ -22,7 +22,7 @@ const fixture = () => {
 
 test('legacy Room creation refuses any supplied scope without creating a public or private Room', async () => {
   const f = fixture()
-  const perspective = worldPerspectiveReferenceSchema.parse({ workspaceId: newWorkspaceId(), moduleId: 'world', type: 'world.perspective', id: 'pending-perspective' })
+  const perspective = workspaceResourceReferenceSchema.parse({ workspaceId: newWorkspaceId(), moduleId: 'world', type: 'world.perspective', id: 'retired-perspective' })
   for (const scope of [{}, { kind: 'resource', resource: perspective }, { kind: 'workspace' }, null]) {
     const response = await f.post({ name: 'Must not become public', roomPrompt: 'Private intended prompt', scope })
     expect(response.status).toBe(400)

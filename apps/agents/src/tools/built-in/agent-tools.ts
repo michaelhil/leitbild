@@ -5,7 +5,6 @@ import type { Tool, ToolContext } from '../../core/types/tool.ts'
 
 export const createPassTool = (): Tool => ({
   name: 'pass',
-  compartmentAccess: 'current-conversation',
   description: 'Decline to respond. Use when the message is not directed at you or has been answered.',
   parameters: {
     type: 'object',

@@ -399,25 +399,30 @@ describe('Agents Workspace Module API', () => {
     expect(keyed.status).toBe(400)
     expect(registry.tryGetLive(workspaceId)).toBeUndefined()
   })
-  test('cold capability discovery advertises Perspective owner ports only under the explicit construction gate', async () => {
+  test('cold discovery has no retired private owner ports and private-scope Room creation refuses without mutation', async () => {
     const workspaceId = newWorkspaceId()
     await request('PUT', `/internal/workspaces/${workspaceId}`, { workspaceId })
-    const capabilities = async () => moduleCapabilityCollectionSchema.parse(await (await request('GET', `/internal/workspaces/${workspaceId}/capabilities`)).json()).capabilities
-    const ordinary = await capabilities()
-    expect(ordinary.some(descriptor => descriptor.id === 'agents.room.create')).toBe(true)
-    expect(ordinary.some(descriptor => descriptor.id.startsWith('agents.perspective-room.'))).toBe(false)
-    expect(registry.list()).toHaveLength(0)
+    const catalog = moduleCapabilityCollectionSchema.parse(await (await request('GET', `/internal/workspaces/${workspaceId}/capabilities`)).json())
+    expect(catalog.capabilities.some(capability => capability.id === 'agents.assistance.open')).toBe(true)
+    expect(catalog.capabilities.some(capability => capability.id.startsWith('agents.perspective-room.'))).toBe(false)
     expect(registry.tryGetLive(workspaceId)).toBeUndefined()
-    await registry.shutdown()
-    registry = createWorkspaceRuntimeRegistry({ deployment: withAssistantCatalog(createDeploymentRuntime()), moduleState: state,
-      perspectivePilot: { enabled: true }, workspaceHostUrl: 'http://host.test', idleMs: 1_000_000 })
-    const pilot = await capabilities()
-    expect(pilot.filter(descriptor => descriptor.id.startsWith('agents.perspective-room.')).map(descriptor => String(descriptor.id)).sort()).toEqual([
-      'agents.perspective-room.bind', 'agents.perspective-room.prepare', 'agents.perspective-room.read',
-      'agents.perspective-room.revoke', 'agents.perspective-room.view-close', 'agents.perspective-room.view-open',
-    ])
-    expect(registry.list()).toHaveLength(0)
-    expect(registry.tryGetLive(workspaceId)).toBeUndefined()
+    const response = await request('POST', `/internal/workspaces/${workspaceId}/capabilities/agents.room.create/invoke`, invokeBody(workspaceId, 'agents.room.create', {
+      name: 'Retired', scope: { kind: 'resource', resource: { workspaceId, moduleId: 'world', type: 'world.perspective', id: 'retired' } },
+    }))
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({ error: { code: 'invalid_request' } })
+    expect(registry.tryGetLive(workspaceId)?.rooms.listAllRooms()).toEqual([])
+    const room = registry.tryGetLive(workspaceId)!.rooms.createRoom({ name: 'Ordinary', createdBy: 'fixture' })
+    const body = invokeBody(workspaceId, 'agents.room.scope.set', {
+      expectedRevision: 0, scope: { kind: 'resource', resource: { workspaceId, moduleId: 'world', type: 'world.perspective', id: 'retired' } },
+    }, { resource: { type: 'agents.room', id: room.profile.id } })
+    const set = await request('POST', `/internal/workspaces/${workspaceId}/capabilities/agents.room.scope.set/invoke`, {
+      ...body, access: { ...body.access, actor: { kind: 'human', id: 'fixture' } },
+    })
+    expect(set.status).toBe(400)
+    expect(await set.json()).toMatchObject({ error: { code: 'retired_private_state' } })
+    expect(room.profile.scope).toEqual({ kind: 'workspace' })
+    expect(room.profile.scopeRevision).toBe(0)
   })
   test('definition writes reject unavailable Packs, tools and scripts before persistence', async () => {
     const workspaceId = newWorkspaceId()

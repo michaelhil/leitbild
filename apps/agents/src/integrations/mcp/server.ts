@@ -19,8 +19,6 @@ import type { AgentsWorkspaceRuntime } from '../../workspace-runtime.ts'
 import type { OnDeliveryModeChanged, OnTurnChanged } from '../../core/types/room.ts'
 import { registerAllMCPTools } from './tools/index.ts'
 import { registerMCPResources } from './resources.ts'
-import { createRuntimeAccessView } from '../../core/workspaces/runtime-access.ts'
-import { isPerspectiveScope } from '../../core/rooms/perspective-scope.ts'
 
 // === Factory ===
 
@@ -30,9 +28,8 @@ export const createMCPServer = (system: AgentsWorkspaceRuntime, version = '0.0.0
     { capabilities: { resources: {}, tools: {}, logging: {} } },
   )
 
-  const publicView = createRuntimeAccessView(system)
-  registerAllMCPTools(mcpServer, publicView)
-  registerMCPResources(mcpServer, publicView)
+  registerAllMCPTools(mcpServer, system)
+  registerMCPResources(mcpServer, system)
 
   return mcpServer
 }
@@ -48,14 +45,12 @@ export const wireEventNotifications = (system: AgentsWorkspaceRuntime, mcpServer
 
   const onTurnChanged: OnTurnChanged = (roomId, agentId, waitingForHuman) => {
     const room = system.rooms.getRoom(roomId)
-    if (room === undefined || isPerspectiveScope(room.profile.scope)) return // The ordinary MCP stream has no private document admission.
     const agent = agentId ? system.team.getAgent(agentId) : undefined
     sendNotification({ type: 'turn_changed', roomName: room?.profile.name, agentName: agent?.name, waitingForHuman })
   }
 
   const onDeliveryModeChanged: OnDeliveryModeChanged = (roomId, mode) => {
     const room = system.rooms.getRoom(roomId)
-    if (room === undefined || isPerspectiveScope(room.profile.scope)) return
     sendNotification({ type: 'delivery_mode_changed', roomName: room?.profile.name, mode })
   }
 

@@ -38,8 +38,7 @@ import { deliverBroadcast } from './delivery-modes.ts'
 import { attachMessageFocus } from '../message-focus.ts'
 import { attachMessagePresentation } from '../message-presentation.ts'
 import { workspaceRoomScopeSchema } from '@leitbild/contracts'
-import { perspectiveRoomStateSchema } from '../types/perspective-room.ts'
-import { isPerspectiveScope } from './perspective-scope.ts'
+import { assertNoRetiredProvenance, assertSupportedRoomScope } from './retired-private-state.ts'
 
 export interface RoomCallbacks {
   /** Required owner cleanup runs before mutation; failure aborts removal. Undefined ID clears all history. */
@@ -71,6 +70,8 @@ export const createRoom = (
   initialProfile: RoomProfile,
   callbacks?: RoomCallbacks,
 ): Room => {
+  assertSupportedRoomScope(initialProfile.scope)
+  assertNoRetiredProvenance(initialProfile)
   let profile = initialProfile
   const messages: Message[] = []
   const generationQueries = new Map<string, GenerationQueryRecord>()
@@ -111,11 +112,8 @@ export const createRoom = (
   // --- Post helpers ---
 
   const createRoomMessage = (params: PostParams): Message => {
-    const admission = profile.perspective?.admission
-    if (isPerspectiveScope(profile.scope) && admission?.status !== 'bound') throw Object.assign(new Error('Perspective Room is not admitted'), { code: 'perspective_room_not_bound' })
-    if (admission !== undefined && params.senderId !== admission.actualAgentId && params.senderId !== SYSTEM_SENDER_ID
-      && resolveKind?.(params.senderId) !== 'human') throw Object.assign(new Error('Perspective messages require the actual runtime or an existing public human author'), { code: 'perspective_sender_unavailable' })
-    const { focusedSubjects, presentationRecipient, perspective: _untrustedScope, ...persisted } = params as PostParams & { perspective?: unknown }
+    assertNoRetiredProvenance(params)
+    const { focusedSubjects, presentationRecipient, ...persisted } = params
     const message: Message = {
       // Caller-supplied Message fields flow through untouched. Browser focus
       // is deliberately excluded because it is not durable conversation data.
@@ -123,10 +121,6 @@ export const createRoom = (
       id: crypto.randomUUID(),
       roomId: profile.id,
       timestamp: Date.now(),
-      ...(admission === undefined ? {} : { perspective: {
-        perspectiveId: admission.perspective.id, admissionGeneration: admission.admissionGeneration,
-        actualAgentId: admission.actualAgentId, runtimeGeneration: admission.runtimeGeneration,
-      } }),
     }
     attachMessageFocus(message, focusedSubjects)
     attachMessagePresentation(message, presentationRecipient)
@@ -163,9 +157,7 @@ export const createRoom = (
     callbacks?.onMessagePosted?.(profile.id, message)
     callbacks?.onScriptMessage?.(profile.id, message)
 
-    // A scoped human is an attributed author, not another execution member.
-    // Posting must never enrol a caller or another AI into the private runtime.
-    if (!isPerspectiveScope(profile.scope) && params.senderId !== SYSTEM_SENDER_ID && params.type !== 'join' && params.type !== 'leave') {
+    if (params.senderId !== SYSTEM_SENDER_ID && params.type !== 'join' && params.type !== 'leave') {
       members.add(params.senderId)
     }
 
@@ -281,7 +273,6 @@ export const createRoom = (
       profile = { ...profile, roomPrompt: prompt }
     },
     setScope: (scope, expectedRevision): number => {
-      if (isPerspectiveScope(profile.scope) || isPerspectiveScope(scope)) throw Object.assign(new Error('Perspective scope is immutable; prepare a new empty Room'), { code: 'perspective_scope_immutable' })
       const currentRevision = profile.scopeRevision
       if (expectedRevision !== currentRevision) {
         throw Object.assign(new Error(`Room Scope changed: expected ${expectedRevision}, current ${currentRevision}`), {
@@ -289,26 +280,10 @@ export const createRoom = (
         })
       }
       const parsedScope = workspaceRoomScopeSchema.parse(scope)
+      assertSupportedRoomScope(parsedScope)
       const nextRevision = currentRevision + 1
       profile = { ...profile, scope: parsedScope, scopeRevision: nextRevision }
       return nextRevision
-    },
-    setPerspectiveState: (raw, expectedRevision) => {
-      const state = perspectiveRoomStateSchema.parse(raw)
-      const previous = profile.perspective
-      if (!isPerspectiveScope(profile.scope) || profile.scope.kind !== 'resource'
-        || JSON.stringify(profile.scope.resource) !== JSON.stringify(state.admission.perspective)
-        || state.admission.room.id !== profile.id) throw Object.assign(new Error('Perspective admission does not match this exact Room scope'), { code: 'perspective_room_identity_mismatch' })
-      if (previous !== undefined) {
-        if (expectedRevision !== previous.admission.revision) throw Object.assign(new Error('Perspective Room admission changed'), { code: 'perspective_room_revision_conflict' })
-        const immutable = (value: typeof state) => {
-          const { status: _status, revision: _revision, updatedAt: _updated, revokedReason: _reason, ...binding } = value.admission
-          return JSON.stringify({ ...value, admission: binding })
-        }
-        if (immutable(previous) !== immutable(state) || state.admission.revision !== previous.admission.revision + 1) throw Object.assign(new Error('Perspective binding and admitted template are immutable'), { code: 'perspective_room_binding_immutable' })
-        if (previous.admission.status === 'revoked') throw Object.assign(new Error('Revoked Perspective Room cannot be rebound'), { code: 'perspective_room_revoked' })
-      } else if (expectedRevision !== undefined || state.admission.status !== 'prepared' || state.admission.revision !== 0) throw Object.assign(new Error('A new Perspective Room starts prepared'), { code: 'perspective_room_preparation_required' })
-      profile = { ...profile, perspective: structuredClone(state) }
     },
     deleteMessage: (messageId: string): boolean => {
       const idx = messages.findIndex(m => m.id === messageId)
@@ -378,6 +353,7 @@ export const createRoom = (
     getMutedIds: (): ReadonlySet<string> => new Set(muted),
 
     injectMessages: (msgs: ReadonlyArray<Message>): void => {
+      for (const msg of msgs) assertNoRetiredProvenance(msg)
       for (const msg of msgs) messages.push(msg)
     },
 
@@ -399,12 +375,15 @@ export const createRoom = (
       const previousSummary = messages.find(message => message.type === 'room_summary' && !compressedIds.has(message.id))
       if (previousSummary) compressedIds.add(previousSummary.id)
       for (const id of oldestIds) compressedIds.add(id)
-      const summaryMessage = createRoomMessage({
+      const summaryMessage: Message = {
+        id: crypto.randomUUID(),
+        roomId: profile.id,
         senderId: SYSTEM_SENDER_ID,
         senderName: 'System',
         content: newText,
+        timestamp: Date.now(),
         type: 'room_summary',
-      })
+      }
       messages.unshift(summaryMessage)
       callbacks?.onSummaryUpdated?.(profile.id, 'compression')
       return summaryMessage

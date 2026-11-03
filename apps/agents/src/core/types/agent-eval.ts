@@ -70,7 +70,6 @@ export type EvalEvent = EvalEventCore & { readonly traceId?: string }
 // presentation data; transport and diagnostics correlate by immutable ids.
 // roomId is absent only for provider events emitted outside an active turn.
 export interface EvalEventScope {
-  readonly perspective?: import('./perspective-room.ts').PerspectiveMessageProvenance
   readonly agentId: string
   readonly agentName: string
   readonly roomId?: string
