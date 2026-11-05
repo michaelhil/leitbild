@@ -219,8 +219,9 @@
           {#if guidance.instruction}<div class="current-instruction"><strong>{guidance.instruction.title}</strong><p>{guidance.instruction.message}</p></div>{/if}
           <button type="button" onclick={() => {
             setGuidance(guidance.visible ? 'paused' : 'running')
-            if (!guidance.visible) close(true)
-          }}>{guidance.visible ? 'Pause updates' : 'Show latest update'}</button>
+            if (!guidance.visible && !raised) close(true)
+          }}>{guidance.visible ? 'Pause map updates' : raised ? 'Resume map updates' : 'Show on map'}</button>
+          {#if raised}<small>Map updates appear when you return to the map.</small>{/if}
         </details>
       {/if}
     </section>
@@ -243,7 +244,7 @@
   button:hover:not(:disabled), button[aria-pressed='true'], .view-launchers button[aria-expanded='true'] { background: color-mix(in srgb, var(--accent) 12%, var(--panel)); border-color: var(--accent); }
   .view-sheet { box-sizing: border-box; pointer-events: auto; width: min(460px, 100%); max-height: var(--sheet-height); overflow: auto; overscroll-behavior: contain; padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); box-shadow: 0 8px 28px rgb(0 0 0 / 20%); }
   .guide-options { width: min(520px, 100%); }
-  .view-sheet:focus { outline: none; }
+  .view-sheet:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   header { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
   h2 { font-size: 16px; margin: 0; }
   h3 { font-size: 13px; margin: 0; }
