@@ -108,9 +108,7 @@
       for (const target of current) if (!observed.has(target)) { observed.add(target); observer.observe(target) }
       let bottom = Math.max(clear.bottom, bounds.bottom - visibleBottom)
       const inset = 12
-      const maxCovered = Math.max(0, bounds.width - 240)
-      const scale = clear.left + clear.right > maxCovered ? maxCovered / Math.max(1, clear.left + clear.right) : 1
-      let left = clear.left * scale, right = clear.right * scale
+      let navigationLeft = 0, navigationRight = 0
       for (const obstacle of obstacles) {
         const rect = obstacle.getBoundingClientRect()
         if (rect.width <= 0 || rect.height <= 0 || rect.right <= bounds.left || rect.left >= bounds.right) continue
@@ -118,10 +116,17 @@
           // Navigation stays beside the launcher; the attribution and status
           // stay below it. A tall zoom control must not push the whole sheet
           // out of a short viewport (for example beside an open keyboard).
-          if (obstacle.closest('.maplibregl-ctrl-bottom-right')) right = Math.max(right, bounds.right - rect.left)
-          else left = Math.max(left, rect.right - bounds.left)
+          if (obstacle.closest('.maplibregl-ctrl-bottom-right')) navigationRight = Math.max(navigationRight, bounds.right - rect.left)
+          else navigationLeft = Math.max(navigationLeft, rect.right - bounds.left)
         } else bottom = Math.max(bottom, bounds.bottom - rect.top)
       }
+      // Preserve the zoom controls. Fit optional Pack clearance in the space
+      // left after reserving room to read the sheet on a narrow pane.
+      const extraLeft = Math.max(0, clear.left - navigationLeft)
+      const extraRight = Math.max(0, clear.right - navigationRight)
+      const coverBudget = Math.max(0, bounds.width - 2 * inset - 240 - navigationLeft - navigationRight)
+      const scale = Math.min(1, coverBudget / Math.max(1, extraLeft + extraRight))
+      const left = navigationLeft + extraLeft * scale, right = navigationRight + extraRight * scale
       let top = clear.top
       if (instruction) {
         top = Math.max(top, instruction.getBoundingClientRect().bottom - bounds.top)
