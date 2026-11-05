@@ -274,6 +274,12 @@
   const structuredGuideVisible = $derived(Boolean(guidanceScreen.guide && !guidanceScreen.explored && (!guidanceScreen.guide.attemptId || guidanceScreen.guide.status === 'active')))
   const guidanceOverlayVisible = $derived(Boolean(scenarioState?.guidance && guidancePreferences.mode === 'running' && guidancePreferences.dismissedId !== scenarioState.guidance.id && (!structuredGuideVisible || timedCardRequested)))
   const guidanceUnread = $derived(Boolean(scenarioState?.guidance && guidancePreferences.presentedId !== scenarioState.guidance.id))
+  const guideBadge = $derived.by((): 'Start' | 'Resume' | 'Suggestion' | undefined => {
+    if (guidanceScreen.suggestion) return 'Suggestion'
+    const guide = guidanceScreen.guide
+    if (guide?.status === 'paused' || guide?.status === 'active' && guidanceScreen.restored) return 'Resume'
+    if (guide && !guide.attemptId && !guidanceScreen.explored) return 'Start'
+  })
   let alarmStripVisible = $state(false)
   let layoutControlsVisible = $state(false)
   let viewPreferencesKey = $state<string | null>(null)
@@ -564,11 +570,10 @@
   const visiblePointObjects = (): ReadonlyArray<OperationalObject> => objects.filter(object => object.spatial.position !== undefined && !hiddenObjectCategoryIds.includes(presentationFor(object).categoryId))
   const fitSelectedTarget = $derived(fitObjectsTarget(selectedControllerId === null ? [] : objects.filter(object => object.id === selectedControllerId)))
   const viewCamera = $derived([
-    { id: 'home', label: 'Home view', ...(!mapReady ? { disabledReason: 'Map is not ready' } : {}) },
+    { id: 'home', label: 'Home', ...(!mapReady ? { disabledReason: 'Map is not ready' } : {}) },
     { id: 'fit-selected', label: 'Fit selection', ...(!mapReady ? { disabledReason: 'Map is not ready' } : !fitSelectedTarget ? { disabledReason: 'Select an object with a map position' } : {}) },
-    { id: 'fit-visible', label: 'Fit visible objects', ...(!mapReady ? { disabledReason: 'Map is not ready' } : !objects.some(object => object.spatial.position !== undefined && !hiddenObjectCategoryIds.includes(presentationFor(object).categoryId)) ? { disabledReason: 'No visible object positions' } : {}) },
+    { id: 'fit-visible', label: 'Fit all visible', ...(!mapReady ? { disabledReason: 'Map is not ready' } : !objects.some(object => object.spatial.position !== undefined && !hiddenObjectCategoryIds.includes(presentationFor(object).categoryId)) ? { disabledReason: 'No visible object positions' } : {}) },
     { id: 'north', label: 'North up', ...(!mapReady || !panelMapView ? { disabledReason: 'Map is not ready' } : {}) },
-    ...(activePhysicalLayoutBindings.length > 0 ? [{ id: 'physical-controls', label: 'Plan / 3D and floors' }] : []),
   ])
   const viewResetDisabledReason = $derived(viewPanels.find(panel => panel.disabledReason)?.disabledReason)
   const viewAlarmCount = $derived(alertRows(objects, object => ({ label: object.label, categoryId: presentationFor(object).categoryId })).filter(row => row.priority !== 'none' && unacknowledged(row)).length)
@@ -587,7 +592,6 @@
       focusMapTarget(target)
     }
     else if (id === 'north' && panelMapView) focusMapTarget({ kind: 'view', center: panelMapView.center, zoom: panelMapView.zoom, bearing: 0 })
-    else if (id === 'physical-controls') layoutControlsVisible = true
     else throw new Error(`View action is unavailable: ${id}`)
   }
   const setViewChoice = (id: string, visible: boolean): void => {
@@ -650,13 +654,18 @@
       if (!exactSubject(request.target.subject) || !recipient || !exactSubject(recipient.subject) || recipient.leaseId !== request.recipient.leaseId || recipient.documentId !== request.recipient.documentId) throw new Error('This presentation request no longer owns the current World document')
     }
     current()
+    const requireWorldControls = (): void => {
+      if (foregroundProcedure) throw new Error('Close Procedures to use World controls')
+    }
     const target = request.target, action = request.action
     const bounds = surfaceShell?.getBoundingClientRect()
     if (document.hidden || !bounds || bounds.width <= 0 || bounds.height <= 0) throw new Error('The World surface is not visible; reopen it and request Show again')
     if (action.kind === 'explain') {
+      requireWorldControls()
       await viewControls?.reveal('guide', false)
       await tick()
       current()
+      requireWorldControls()
       const cue = document.querySelector<HTMLElement>('[aria-label="Current presentation cue"]')
       if (!cue) throw new Error('The explanation card did not mount')
       cue.scrollIntoView({ block: 'nearest', behavior: 'instant' })
@@ -670,6 +679,7 @@
         return waitForPresentation(request, signal, presentationDisplayWaiters, displayWindowRequestSequence)
       }
       if (!['view', 'guide', 'alarms'].includes(target.id)) throw new Error('This World control is unavailable')
+      requireWorldControls()
       if (action.kind === 'reveal') {
         if (target.id === 'alarms') alarmStripVisible = true
         else await viewControls?.reveal(target.id as 'view' | 'guide')
@@ -678,6 +688,7 @@
       if (action.kind !== 'reveal' && action.kind !== 'highlight') throw new Error('This control supports reveal or highlight')
       await tick()
       current()
+      requireWorldControls()
       const element = document.getElementById(`run-${target.id}-trigger`)
       if (!element) throw new Error('The World control is not mounted')
       if (action.kind === 'highlight') markPresentation(request, element)
@@ -723,21 +734,10 @@
     const runId = simulationRunId, epoch = perspectiveEpoch, roles = JSON.stringify([...(heldRoleIds ?? [])].sort()), ready = richOperationalUiReady && activePack !== null && scenarioDefinition !== null
     void epoch
     if (!runId || !ready) return
-    let priorGuideStatus: string | undefined
     const session = untrack(() => createGuidanceSession({
       runId, perspective: roles,
       apply: applyPresentation, clear: clearPresentation,
-      changed: screen => {
-        const status = screen.guide?.status
-        if (status !== priorGuideStatus) {
-          if (status === 'paused') setGuidanceMode('paused')
-          if (status === 'stopped') setGuidanceMode('stopped')
-          if (status === 'active') timedCardRequested = false
-          if (status === 'active' && (priorGuideStatus === 'paused' || priorGuideStatus === 'stopped')) setGuidanceMode('running')
-          priorGuideStatus = status
-        }
-        guidanceScreen = screen
-      },
+      changed: screen => { guidanceScreen = screen },
       post: message => window.parent.postMessage(message, location.origin),
       storage: { getItem: key => sessionStorage.getItem(key), setItem: (key, value) => sessionStorage.setItem(key, value), removeItem: key => sessionStorage.removeItem(key) },
     }))
@@ -1294,6 +1294,7 @@
       return plantId === null || provider === undefined ? [] : [{ ...entry, object, plantId, provider, index }]
     }),
   )
+  const foregroundProcedure = $derived(Boolean(ProcedureSystemModal && simulationRunId && procedureSession && procedureSystemWindowModels.length))
 
   $effect(() => {
     const liveObjectIds = new Set(objects.map(object => object.id))
@@ -2450,8 +2451,7 @@
         reset={resetLocalView} resetDisabledReason={viewResetDisabledReason} alarms={viewAlarmCount} alarmsVisible={alarmStripVisible} showAlarms={visible => alarmStripVisible = visible}
         guidance={{ available: Boolean(scenarioState?.guidance), visible: guidanceOverlayVisible, unread: guidanceUnread, mode: guidancePreferences.mode, instruction: scenarioState?.guidance ?? null }} setGuidance={mode => { timedCardRequested = mode === 'running'; setGuidanceMode(mode) }}
         clear={mapCameraPadding} ready={mapReady} raised={displayWindowOpen && (Boolean(scenarioState?.guidance) && guidancePreferences.mode !== 'stopped' || Boolean(guidanceScreen.guide) || Boolean(guidanceScreen.suggestion) || Boolean(guidanceScreen.cue))}
-        hasGuide={Boolean(guidanceScreen.guide)} guideNotice={Boolean(guidanceScreen.suggestion) || Boolean(guidanceScreen.cue) || Boolean(guidanceScreen.guide && !guidanceScreen.guide.attemptId && !guidanceScreen.explored)}
-        guideOpenKey={guidanceScreen.guide && !guidanceScreen.guide.attemptId && !guidanceScreen.explored ? guidanceScreen.guide.title : null}>
+        hasGuide={Boolean(guidanceScreen.guide)} {guideBadge} {foregroundProcedure}>
         {#snippet guideContent()}
           <GuidePanel screen={guidanceScreen} session={guidanceSession} explore={() => { guidanceSession?.explore(); viewControls?.dismiss() }} />
         {/snippet}

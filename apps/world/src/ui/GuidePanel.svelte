@@ -1,97 +1,148 @@
 <script lang="ts">
   import type { GuidanceScreen, GuidanceSession } from './guidance-session.ts'
+
   let { screen, session, explore }: { screen: GuidanceScreen; session: GuidanceSession | null; explore: () => void } = $props()
+  const guide = $derived(screen.guide)
+  const step = $derived(guide?.step)
+  const finished = $derived(guide?.status === 'completed' || guide?.status === 'stopped')
+  const resumeHere = $derived(!finished && (guide?.status === 'paused' || screen.restored))
+  const workingStep = $derived(guide?.status === 'active' && !resumeHere)
+  const isPrompt = $derived(step?.completion === 'prompt-response')
+  const sentPrompt = $derived(Boolean(guide?.prompt?.evidence?.submission))
+  const mayShow = $derived(workingStep && Boolean(step?.effects.length) && !sentPrompt)
+  const receiptFor = (effectId: string) => guide?.receipts?.find(record => record.effectId === effectId)?.receipt
+  const failedEffect = $derived(step?.effects.find(effect => {
+    const status = receiptFor(effect.id)?.status ?? effect.delivery
+    return status !== undefined && ['unavailable', 'expired', 'superseded', 'cancelled', 'declined'].includes(status)
+  }))
+  const applied = $derived(step?.effects.filter(effect => receiptFor(effect.id)?.status === 'applied').length ?? 0)
+  const nextLabel = $derived(isPrompt && guide?.prompt?.status !== 'responded'
+    ? 'Check for reply'
+    : step?.completion === 'condition' || step?.completion === 'presentation'
+      ? 'Check and continue' : 'Continue')
 </script>
 
 <div class="guide-content">
-  {#if screen.error}<p class="problem" role="status">{screen.error}</p>{/if}
-  {#if !screen.recipient}<p>Presentation receiver is unavailable. Guide progress remains in World.</p><button type="button" disabled={screen.busy} onclick={() => void session?.reconnect()}>Reconnect this screen</button>{/if}
+  {#if guide}
+    {#if guide.attemptId && !finished && step}
+      <p class="meta step-number">{guide.title} · Step {(guide.completed?.length ?? 0) + 1}</p>
+      <h3 aria-live="polite">{step.title}</h3>
+      <p class="instruction">{step.instruction}</p>
+    {:else}
+      <h3>{guide.title}</h3>
+      {#if finished}
+        <p>{guide.status === 'completed' ? 'You finished this guide.' : 'You ended this guide.'} Keep exploring this Run, or start a new attempt.</p>
+      {:else if !guide.attemptId}
+        <p>{guide.description ?? 'Learn this Run one step at a time.'}</p>
+      {/if}
+    {/if}
+  {/if}
+
+  {#if screen.error || guide?.problem}<p class="notice" role="status">{screen.error ?? guide?.problem}</p>{/if}
+  {#if workingStep && failedEffect && !screen.error && !guide?.problem}
+    <p class="notice" role="status">This step couldn’t show one of its cues.</p>
+  {/if}
+  {#if workingStep && step?.completion === 'condition' && guide?.condition}
+    <p class="status" role="status">{guide.condition.status === 'satisfied' ? 'The current Run meets this check.' : guide.condition.reason}</p>
+  {/if}
+  {#if workingStep && isPrompt && guide?.prompt}
+    <p class="status" role="status">{guide.prompt.status === 'responded' ? 'The Assistant replied. You can continue.'
+      : guide.prompt.status === 'unavailable' ? guide.prompt.reason
+      : sentPrompt ? 'Waiting for an Assistant reply.' : 'Send the suggested prompt from the Assistant when you’re ready.'}</p>
+  {/if}
+
+  {#if !screen.recipient && (guide || screen.error || screen.busy)}
+    <div class="actions">
+      <button class="primary" type="button" disabled={screen.busy || !session} onclick={() => void session?.reconnect()}>{screen.busy ? 'Connecting…' : 'Reconnect guide'}</button>
+      {#if guide && !guide.attemptId}<button class="quiet" type="button" onclick={explore}>Explore on my own</button>{/if}
+    </div>
+  {:else if guide}
+    <div class="actions">
+      {#if !guide.attemptId || finished}
+        <button class="primary" type="button" disabled={screen.busy} onclick={() => void session?.action('start')}>{finished ? 'Start a new attempt' : 'Start guide'}</button>
+        <button class="quiet" type="button" onclick={explore}>{finished ? 'Back to the Run' : 'Explore on my own'}</button>
+      {:else if resumeHere}
+        <button class="primary" type="button" disabled={screen.busy} onclick={() => void session?.action('resume', true)}>{screen.restored ? 'Resume on this screen' : 'Resume guide'}</button>
+      {:else if !step}
+        <button class="primary" type="button" disabled={screen.busy} onclick={() => void session?.read()}>Reload current step</button>
+      {:else}
+        <button class="primary" type="button" disabled={screen.busy} onclick={() => void session?.action('next')}>{nextLabel}</button>
+        {#if mayShow}
+          <button class="quiet" type="button" disabled={screen.busy} onclick={() => void session?.action('show')}>{isPrompt ? 'Show prompt' : failedEffect ? 'Try showing again' : applied > 0 ? 'Show again' : 'Show this step'}</button>
+        {/if}
+        {#if isPrompt}<button class="quiet" type="button" disabled={screen.busy} onclick={() => void session?.action('skip')}>Skip this step</button>{/if}
+      {/if}
+    </div>
+    {#if guide.attemptId && !finished && !screen.restored}
+      <details class="secondary">
+        <summary>Guide options</summary>
+        <div class="actions">
+          {#if workingStep}
+            {#if !isPrompt}<button class="quiet" type="button" disabled={screen.busy || !screen.recipient} onclick={() => void session?.action('skip')}>Skip this step</button>{/if}
+            <button class="quiet" type="button" disabled={screen.busy || !screen.recipient} onclick={() => void session?.action('pause')}>Pause guide</button>
+            {#if screen.cue?.mode === 'guide' && screen.cue.action.kind !== 'explain'}<button class="quiet" type="button" onclick={() => session?.clearCue()}>Clear cue</button>{/if}
+          {/if}
+          <button class="quiet" type="button" disabled={screen.busy || !screen.recipient} onclick={() => void session?.action('stop')}>End guide</button>
+        </div>
+        <p class="meta">Pause and End affect this guide. Use the Run’s time controls for the simulation.</p>
+      </details>
+    {/if}
+    {#if guide.attemptId}
+      <details class="secondary">
+        <summary>{finished ? 'Attempt details' : 'Step details'}</summary>
+        {#if step?.help}<p>{step.help}</p>{/if}
+        {#if !finished && step?.effects.length}
+          <ul aria-label="Guide cue outcomes">
+            {#each step.effects as effect (effect.id)}
+              {@const receipt = receiptFor(effect.id)}
+              <li>{effect.action.kind} · {effect.id} · {receipt?.status ?? effect.delivery ?? 'waiting for delivery'}{#if receipt} · {new Date(receipt.at).toLocaleTimeString()}{/if}{#if receipt?.reason ?? effect.reason} — {receipt?.reason ?? effect.reason}{/if}</li>
+            {/each}
+          </ul>
+        {/if}
+        {#if !finished && guide.prompt?.evidence?.submission}
+          <p class="meta">Message {guide.prompt.evidence.submission.messageId} · {guide.prompt.evidence.responses.length} linked responses</p>
+        {/if}
+        <p class="meta reference">Attempt {guide.attemptId}</p>
+      </details>
+    {/if}
+  {/if}
+
   {#if screen.suggestion}
-    <section class="suggestion" aria-label="Attention suggestion">
-      <strong>{screen.suggestion.source.label}</strong>
+    <section class="separate" aria-label="Presentation suggestion">
+      <h3>Suggestion from {screen.suggestion.source.label}</h3>
       <p>{screen.suggestion.purpose}</p>
       <p class="meta">{screen.suggestion.action.kind} · {screen.suggestion.target.type.replace('world.', '')} · {screen.suggestion.target.id}</p>
-      <div class="actions"><button type="button" onclick={() => void session?.accept()}>Show suggestion</button><button type="button" onclick={() => void session?.decline()}>Decline</button></div>
+      <div class="actions"><button type="button" onclick={() => void session?.accept()}>Show suggestion</button><button class="quiet" type="button" onclick={() => void session?.decline()}>Dismiss</button></div>
     </section>
   {/if}
-  {#if screen.guide}
-    <h4>{screen.guide.title}</h4>
-    {#if screen.guide.problem}<p class="problem" role="status">{screen.guide.problem}</p>{/if}
-    {#if !screen.guide.attemptId}
-      <p>{screen.guide.description ?? 'Follow the guide, or explore this Run at your own pace.'}</p>
-      <div class="actions"><button type="button" disabled={screen.busy || !screen.recipient} onclick={() => void session?.action('start')}>Guide me</button><button type="button" onclick={explore}>Explore</button></div>
-      <p class="meta">Guide progress belongs to your attempt. Explore leaves playback to the Run’s Play and Advance controls.</p>
-      {#if screen.explored}<p role="status">Explore selected. Open Guide any time to begin an eligible attempt.</p>{/if}
-    {:else}
-      <p class="meta">{screen.guide.status}{screen.restored ? ' · restored; actions will wait for Show here' : ''}</p>
-      {#if screen.guide.step}
-        <strong>{screen.guide.step.title}</strong>
-        <p class="instruction">{screen.guide.step.instruction}</p>
-        {#if screen.guide.step.help}<details><summary>Help</summary><p>{screen.guide.step.help}</p></details>{/if}
-        {#if screen.guide.condition}<p class="evidence">{screen.guide.condition.status}: {screen.guide.condition.reason}</p>{/if}
-        {#if screen.guide.prompt}
-          <section class="evidence" aria-label="Prompt task evidence">
-            <strong>{screen.guide.prompt.status}</strong><p>{screen.guide.prompt.reason}</p>
-            {#if screen.guide.prompt.evidence?.submission}
-              <p class="meta">Submitted by {screen.guide.prompt.evidence.submission.senderName ?? screen.guide.prompt.evidence.submission.senderId} · Message {screen.guide.prompt.evidence.submission.messageId}</p>
-              <p class="meta">{screen.guide.prompt.evidence.responses.length} causal responses. Inserting a draft is separate from sending it.</p>
-            {/if}
-          </section>
-        {/if}
-        {#if screen.guide.step.effects.length > 0}
-        {@const applied = screen.guide.step.effects.filter(effect => screen.guide?.receipts?.some(record => record.effectId === effect.id && record.receipt.status === 'applied')).length}
-        {@const unavailable = screen.guide.step.effects.some(effect => effect.delivery === 'unavailable' || screen.guide?.receipts?.some(record => record.effectId === effect.id && ['unavailable', 'expired', 'superseded', 'cancelled', 'declined'].includes(record.receipt.status)))}
-        {#if unavailable}<p class="problem" role="status">A presentation action did not complete. Open outcomes for its reason, use Show here to retry, or skip this step.</p>{/if}
-        <details><summary>Presentation outcomes · {applied} of {screen.guide.step.effects.length} applied</summary>
-        <ul aria-label="Guide action outcomes">
-          {#each screen.guide.step.effects as effect (effect.id)}
-            {@const record = screen.guide.receipts?.find(receipt => receipt.effectId === effect.id)}
-            <li>{effect.action.kind} · {effect.id}: <strong>{record?.receipt.status ?? effect.delivery ?? 'not delivered'}</strong>{#if record}<span class="meta"> · delivery at {new Date(record.receipt.at).toLocaleTimeString()}</span>{/if}{#if record?.receipt.reason ?? effect.reason} — {record?.receipt.reason ?? effect.reason}{/if}</li>
-          {/each}
-        </ul></details>
-        {/if}
-      {/if}
-      <div class="actions">
-        {#if !screen.guide.step || screen.error}<button type="button" disabled={screen.busy} onclick={() => void session?.read()}>Read current guide</button>{/if}
-        {#if screen.guide.status === 'active'}
-          <button type="button" disabled={screen.busy} onclick={() => void session?.action('show')}>Show here</button>
-          <button type="button" disabled={screen.busy || screen.restored} onclick={() => void session?.action('next')}>{screen.guide.step?.completion === 'acknowledge' ? 'I understand · Next' : 'Check and continue'}</button>
-          <button type="button" disabled={screen.busy || screen.restored} onclick={() => void session?.action('skip')}>Skip step</button>
-          <button type="button" disabled={screen.busy} onclick={() => void session?.action('pause')}>Pause guide</button>
-        {:else if screen.guide.status === 'paused'}
-          <button type="button" disabled={screen.busy} onclick={() => void session?.action('resume', true)}>Resume here</button>
-        {/if}
-        {#if screen.guide.status === 'active' || screen.guide.status === 'paused'}
-          <button type="button" disabled={screen.busy} onclick={() => void session?.action('stop')}>Stop guide</button>
-        {:else}
-          <button type="button" disabled={screen.busy} onclick={() => void session?.action('start')}>Start new attempt</button>
-        {/if}
-      </div>
-      {#if screen.restored}<button type="button" disabled={screen.busy} onclick={() => void session?.action('show', true)}>Take over this attempt here</button>{/if}
-      <p class="meta">Guide Pause/Stop affects instructions, never shared simulation playback. A displayed cue does not prove understanding or physical success.</p>
-      <details><summary>Attempt reference</summary><p class="reference">{screen.guide.attemptId}</p><p class="meta">This opaque reference resumes this attempt in this Run and perspective. It is not a Person identity.</p></details>
-    {/if}
-  {:else if !screen.error}
-    <p>This Run has no authored step guide. Current scenario instructions remain available above.</p>
-  {/if}
   {#if screen.cue && (screen.cue.mode === 'suggest' || screen.cue.action.kind === 'explain')}
-    <section class="cue" aria-label="Current presentation cue"><strong>{screen.cue.source.label}</strong><p>{screen.cue.action.kind === 'explain' ? screen.cue.action.title : screen.cue.purpose}</p>{#if screen.cue.action.kind === 'explain'}<p>{screen.cue.action.text}</p>{/if}<button type="button" onclick={() => session?.clearCue()}>Clear cue</button></section>
-  {:else if screen.cue}<button type="button" onclick={() => session?.clearCue()}>Clear current cue</button>{/if}
+    <section class="separate" aria-label="Current presentation cue">
+      <p class="meta">{screen.cue.source.label}</p>
+      <h3>{screen.cue.action.kind === 'explain' ? screen.cue.action.title : screen.cue.purpose}</h3>
+      {#if screen.cue.action.kind === 'explain'}<p>{screen.cue.action.text}</p>{/if}
+      <button class="quiet" type="button" onclick={() => session?.clearCue()}>Clear cue</button>
+    </section>
+  {/if}
 </div>
 
 <style>
-  .guide-content { border-top: 1px solid var(--border); margin-top: 12px; padding-top: 10px; }
-  h4 { margin: 0 0 8px; font-size: 14px; }
-  p { line-height: 1.5; margin: 8px 0; white-space: pre-line; }
-  .meta { color: var(--muted); font-size: 12px; }
-  .problem, .evidence, .suggestion, .cue { padding: 10px; border: 1px solid var(--border); border-radius: 7px; background: var(--panel-strong); overflow-wrap: anywhere; }
-  .problem { border-style: dashed; }
-  .actions { display: flex; flex-wrap: wrap; gap: 6px; margin-block: 10px; }
+  .guide-content { min-width: 0; overflow-wrap: anywhere; }
+  h3 { margin: 4px 0 8px; font-size: 16px; }
+  p { line-height: 1.45; margin: 6px 0 8px; white-space: pre-line; }
+  .meta, .secondary, .status { color: var(--muted); font-size: 12px; }
+  .step-number { margin-top: 0; }
+  .instruction { margin-bottom: 10px; }
+  .notice { border-inline-start: 2px solid var(--accent); padding-inline-start: 8px; font-size: 13px; }
+  .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 8px 0; }
   button { min-height: 38px; padding: 7px 10px; font: inherit; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: var(--text); cursor: pointer; }
+  .primary { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--panel)); font-weight: 650; }
+  .quiet { border-color: transparent; background: transparent; }
+  .quiet:hover:not(:disabled) { background: var(--panel-strong); }
   button:disabled { opacity: .65; cursor: default; }
   button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  ul { padding-left: 18px; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
-  summary { cursor: pointer; min-height: 32px; }
-  .reference { overflow-wrap: anywhere; font-family: monospace; }
+  ul { padding-inline-start: 18px; line-height: 1.45; }
+  summary { cursor: pointer; min-height: 28px; display: list-item; align-content: center; }
+  .reference { font-family: monospace; }
+  .separate { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
   @media (pointer: coarse) { button, summary { min-height: 44px; } }
 </style>

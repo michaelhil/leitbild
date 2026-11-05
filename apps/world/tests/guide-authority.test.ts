@@ -65,6 +65,26 @@ test('stale-CAS Resume cannot steal a current lease or retire pending effects be
   expect(registry.presentation.pending(blue)).toEqual(before)
 })
 
+test('resuming an active guide in a new document preserves its already applied cue', async () => {
+  const { registry, runtime, blueCall, blue, started } = await setup()
+  const cue = registry.presentation.pending(blue)[0]!
+  const recorded = guideReadingSchema.parse(await runGuideOperation('receipt', {
+    attemptId: started.attemptId, stepAttemptId: started.stepAttemptId, effectId: 'unit', recipient: blue,
+    receipt: { requestId: cue.id, documentId: blue.documentId, at: new Date().toISOString(), status: 'applied' },
+  }, blueCall))
+  const other = presentationRecipientSchema.parse(await runPresentationOperation('register', { clientId: 'returning-learner', documentId: 'new-document' }, blueCall))
+  const sequence = runtime.snapshot().seq
+  const resumed = guideReadingSchema.parse(await runGuideOperation('advance', {
+    attemptId: started.attemptId, expectedRevision: recorded.revision, recipient: other, action: 'resume', takeover: true,
+  }, blueCall))
+  expect(resumed.status).toBe('active')
+  expect(resumed.stepAttemptId).toBe(recorded.stepAttemptId)
+  expect(resumed.receipts).toEqual(recorded.receipts)
+  expect(registry.presentation.pending(other)).toEqual([])
+  expect(() => registry.presentation.assertGuide(started.attemptId!, other)).not.toThrow()
+  expect(runtime.snapshot().seq).toBe(sequence)
+})
+
 
 test('a guide read cannot return a now-hidden authored target after its asynchronous deciding observation is refused', async () => {
   const { registry, runtime, blueCall } = await setup()
