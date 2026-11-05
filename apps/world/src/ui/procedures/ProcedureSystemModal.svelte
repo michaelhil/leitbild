@@ -209,7 +209,10 @@
   let pendingOffPath = $state<{ readonly from: ProcedureStep; readonly branch: ProcedureBranch } | null>(null)
   let procedureToast = $state<ProcedureToast | null>(null)
   let loadStages = $state<Record<LoadStageId, LoadStage>>(createLoadStages())
+  const procedureListId = $props.id()
   let procedureTocMode = $state<ProcedureTocMode>('detail')
+  let procedureListElement = $state<HTMLElement | null>(null)
+  let procedureTocButton = $state<HTMLButtonElement | null>(null)
   let procedureFontScale = $state(1)
   let windowBounds = $state<FloatingWindowBounds>({ x: 48, y: 48, width: 1500, height: 940 })
   let windowDragState = $state<ProcedureWindowDragState | null>(null)
@@ -288,8 +291,32 @@
     })
   }
 
-  const cycleProcedureTocMode = (): void => {
-    if (windowBounds.width <= compactProcedureWidth) { procedureTocMode = procedureTocMode === 'collapsed' ? 'detail' : 'collapsed'; return }
+  const closeCompactProcedurePicker = (): void => {
+    procedureTocMode = 'collapsed'
+    procedureTocButton?.focus({ preventScroll: true })
+  }
+
+  const dismissCompactProcedurePicker = (event: KeyboardEvent): boolean => {
+    if (event.key !== 'Escape' || event.defaultPrevented || windowBounds.width > compactProcedureWidth || procedureTocMode === 'collapsed') return false
+    event.preventDefault()
+    event.stopPropagation()
+    closeCompactProcedurePicker()
+    return true
+  }
+
+  const cycleProcedureTocMode = async (): Promise<void> => {
+    if (windowBounds.width <= compactProcedureWidth) {
+      if (procedureTocMode !== 'collapsed') { closeCompactProcedurePicker(); return }
+      const trigger = procedureTocButton
+      trigger?.focus({ preventScroll: true })
+      procedureTocMode = 'detail'
+      await tick()
+      if (!trigger || disposed || windowBounds.width > compactProcedureWidth || procedureTocMode !== 'detail' || window.document.activeElement !== trigger) return
+      const option = procedureListElement?.querySelector<HTMLButtonElement>('button[tabindex="0"]')
+        ?? procedureListElement?.querySelector('button')
+      option?.focus()
+      return
+    }
     if (procedureTocMode === 'detail') {
       procedureTocMode = 'compact'
       return
@@ -840,6 +867,7 @@
   }
 
   const moveInProcedureList = (event: KeyboardEvent): void => {
+    if (dismissCompactProcedurePicker(event)) return
     if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
     const current = event.currentTarget as HTMLButtonElement
     const items = [...(current.closest('.procedure-list')?.querySelectorAll<HTMLButtonElement>('button') ?? [])]
@@ -1778,7 +1806,7 @@
     {:else}
       <div class="procedure-layout toc-{procedureTocMode}">
         {#if procedureTocMode !== 'collapsed'}
-        <aside class="procedure-list" aria-label="Procedure list">
+        <aside id={procedureListId} class="procedure-list" aria-label="Procedure list" bind:this={procedureListElement}>
             {#each catalogCategories as category (category.id)}
               <section>
                 <h3>{category.label}</h3>
@@ -1812,7 +1840,11 @@
           class="procedure-toc-handle"
           title={procedureTocModeLabel()}
           aria-label={procedureTocModeLabel()}
+          aria-expanded={procedureTocMode !== 'collapsed'}
+          aria-controls={procedureTocMode !== 'collapsed' ? procedureListId : undefined}
+          bind:this={procedureTocButton}
           onclick={cycleProcedureTocMode}
+          onkeydown={dismissCompactProcedurePicker}
         >
           {#if procedureTocMode === 'collapsed'}
             <ChevronRight size={17} aria-hidden="true" />
