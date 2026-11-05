@@ -217,11 +217,14 @@
         <details class="view-section timed-cards" bind:open={updateExpanded}>
           <summary>Scenario update{guidance.unread ? ' · new' : ''}</summary>
           {#if guidance.instruction}<div class="current-instruction"><strong>{guidance.instruction.title}</strong><p>{guidance.instruction.message}</p></div>{/if}
-          <button type="button" onclick={() => {
-            setGuidance(guidance.visible ? 'paused' : 'running')
-            if (!guidance.visible && !raised) close(true)
-          }}>{guidance.visible ? 'Pause map updates' : raised ? 'Resume map updates' : 'Show on map'}</button>
-          {#if raised}<small>Map updates appear when you return to the map.</small>{/if}
+          {#if raised}
+            <small>Map update controls are available when you return to the map.</small>
+          {:else}
+            <button type="button" onclick={() => {
+              setGuidance(guidance.visible ? 'paused' : 'running')
+              if (!guidance.visible) close(true)
+            }}>{guidance.visible ? 'Pause map updates' : 'Show on map'}</button>
+          {/if}
         </details>
       {/if}
     </section>
