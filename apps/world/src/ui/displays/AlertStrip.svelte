@@ -15,7 +15,7 @@
   // display with its first-out selected (W2.8). It acknowledges,
   // shelves and suppresses nothing. Whether the viewer keeps it folded is that
   // viewer's own convenience, in browser storage.
-  let { objects, categoryOf, openDisplay, theme, belowRoles, railWidth, clear, onBounds = () => {}, onClose }: {
+  let { objects, categoryOf, openDisplay, theme, belowRoles, railWidth, clear, raised = false, onBounds = () => {}, onClose }: {
     objects: ReadonlyArray<OperationalObject>
     categoryOf: (object: OperationalObject) => string
     /** What opens an object's process display, selecting this element of it; undefined where it has none. */
@@ -26,6 +26,8 @@
     railWidth: number
     /** What the strip keeps clear of: the map covers open surface panels declare on either side, and the briefing card's bottom edge above it. */
     clear: { readonly left: number; readonly right: number; readonly top: number }
+    /** An explicitly opened strip can be read over a process display. */
+    raised?: boolean
     /** Actual viewport cover, so map inspection controls can stand below the alarm strip. */
     onBounds?: (box: { readonly bottom: number } | null) => void
     onClose?: () => void
@@ -73,18 +75,26 @@
     detail: `${group.counts.unack} unack${group.counts.standing > 0 ? ` · ${group.counts.standing} standing` : ''}${group.counts.advisory > 0 ? ` · ${group.counts.advisory} advisory` : ''}`,
   })
   const rule = 'Read-only: acknowledge, shelve and suppress where each alarm is raised. The Assistant may acknowledge alarms where a Pack lets it; a row says "acknowledged by Assistant" where its Pack records who acknowledged.'
+  const key = (event: KeyboardEvent): void => {
+    if (event.key !== 'Escape' || !onClose || event.defaultPrevented) return
+    event.preventDefault()
+    event.stopPropagation()
+    onClose()
+  }
 </script>
 
 <svelte:window bind:innerHeight bind:innerWidth />
 
-{#if strip.groups.length > 0}
-  <section bind:this={stripElement} class="alert-strip" class:below={belowRoles} style:left={`${span.left}px`} style:width={`${span.width}px`} style:--clear-top={`${clear.top}px`} aria-label="Alarms">
+<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+  <section id="run-alert-strip" bind:this={stripElement} class="alert-strip" class:below={belowRoles} style:left={`${span.left}px`} style:width={`${span.width}px`} style:z-index={raised ? 94 : undefined} style:--clear-top={`${clear.top}px`} aria-label="Alarms" tabindex="-1" onkeydown={key}>
     <header title={rule}>
-      <span>Alarms · {strip.groups.length} {strip.groups.length === 1 ? 'group' : 'groups'} · {unack} unacknowledged</span>
+      <span>Alarms{#if strip.groups.length > 0} · {strip.groups.length} {strip.groups.length === 1 ? 'group' : 'groups'} · {unack} unacknowledged{/if}</span>
       {#if onClose}<button type="button" aria-label="Hide alarm strip" onclick={onClose}>×</button>{/if}
-      <button type="button" aria-expanded={!folded} onclick={fold}>{folded ? 'Show' : 'Fold'}</button>
+      {#if strip.groups.length > 0}<button type="button" aria-expanded={!folded} onclick={fold}>{folded ? 'Show' : 'Fold'}</button>{/if}
     </header>
-    {#if !folded}
+    {#if strip.groups.length === 0}
+      <p class="empty">No alarms in this view.</p>
+    {:else if !folded}
       {#each strip.groups.filter(group => !group.collapsed) as group (group.key)}
         {@const others = otherFirstOuts(group)}
         {@const opens = openDisplay(group.rows[0]!.objectId)}
@@ -109,13 +119,14 @@
       {/if}
     {/if}
   </section>
-{/if}
 
 <style>
   /* Beside the rail and clear of declared covers on both sides (alertStripSpan: left and width), below the briefing
      card, but never below half the pane and never past its bottom. */
   .alert-strip { --strip-top: min(max(var(--top-min, 12px), calc(var(--clear-top) + 8px)), 50vh); position: fixed; z-index: 16; top: var(--strip-top); box-sizing: border-box; max-height: min(50vh, calc(100vh - var(--strip-top) - 12px)); overflow-y: auto; container: alert-strip / inline-size; display: flex; flex-direction: column; gap: 2px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px; background: color-mix(in srgb, var(--panel) 96%, transparent); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.16); color: var(--text); font-size: 12px; }
   .alert-strip.below { --top-min: 52px; }
+  .alert-strip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .empty { margin: 3px 0; color: var(--muted); }
   @media (max-width: 599px) { .alert-strip { max-height: min(70vh, calc(100vh - var(--strip-top) - 12px)); } }
   header { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-weight: 650; }
   header button { min-height: 24px; padding: 0 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--panel); color: var(--text); font-size: 12px; cursor: pointer; }

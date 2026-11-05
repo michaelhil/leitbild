@@ -1,12 +1,12 @@
 <script lang="ts">
-  import { tick, type Snippet } from 'svelte'
-  import type { RunViewChoice } from './run-view-actions.ts'
+  import { tick, untrack, type Snippet } from 'svelte'
+  import { arrangeRunViewCamera, type RunViewCameraAction, type RunViewChoice } from './run-view-actions.ts'
   import type { RunViewPreferences } from './run-view-preferences.ts'
   import type { MapCover } from './surface-panel-contract.ts'
   import { runOnMount } from './svelte-lifecycle.svelte.ts'
 
   interface Props {
-    camera: ReadonlyArray<{ readonly id: string; readonly label: string; readonly disabledReason?: string }>
+    camera: ReadonlyArray<RunViewCameraAction>
     layers: ReadonlyArray<RunViewChoice>
     panels: ReadonlyArray<RunViewChoice>
     act: (id: string) => void
@@ -16,50 +16,82 @@
     alarms: number
     alarmsVisible: boolean
     showAlarms: (visible: boolean) => void
-    guidance: { readonly available: boolean; readonly visible: boolean; readonly unread: boolean; readonly mode: RunViewPreferences['guidance']['mode']; readonly instruction: { readonly title: string; readonly message: string } | null }
+    guidance: { readonly available: boolean; readonly visible: boolean; readonly unread: boolean; readonly instruction: { readonly id: string; readonly title: string; readonly message: string } | null }
     setGuidance: (mode: RunViewPreferences['guidance']['mode']) => void
+    onReadUpdate: (id: string) => void
     clear: MapCover
     ready: boolean
     /** The World shell keeps active guidance reachable over a live display. */
     raised: boolean
+    foregroundProcedure?: boolean
     guideContent?: Snippet
     hasGuide?: boolean
-    guideNotice?: boolean
-    guideOpenKey?: string | null
+    guideBadge?: 'Start' | 'Resume' | 'Suggestion'
   }
-  let { camera, layers, panels, act, toggle, reset, resetDisabledReason, alarms, alarmsVisible, showAlarms, guidance, setGuidance, clear, ready, raised, guideContent, hasGuide = false, guideNotice = false, guideOpenKey = null }: Props = $props()
+  let { camera, layers, panels, act, toggle, reset, resetDisabledReason, alarms, alarmsVisible, showAlarms, guidance, setGuidance, onReadUpdate, clear, ready, raised, foregroundProcedure = false, guideContent, hasGuide = false, guideBadge }: Props = $props()
   let root = $state<HTMLDivElement | null>(null)
   let viewTrigger = $state<HTMLButtonElement | null>(null)
+  let alarmsTrigger = $state<HTMLButtonElement | null>(null)
   let guideTrigger = $state<HTMLButtonElement | null>(null)
   let sheet = $state<HTMLElement | null>(null)
   let open = $state<'view' | 'guide' | null>(null)
-  let group = $state<'camera' | 'layers' | 'panels'>('camera')
-  let geometry = $state({ left: 12, right: 12, bottom: 52, height: 300 })
+  let updateExpanded = $state(false)
+  let geometry = $state({ left: 12, right: 12, bottom: 52, height: 300, short: false })
   let remeasure: (() => void) | null = null
-  let openedGuideKey: string | null = null
-  $effect(() => { if (guideOpenKey && guideOpenKey !== openedGuideKey) { openedGuideKey = guideOpenKey; void disclose('guide') } })
+  const cameraActions = $derived(arrangeRunViewCamera(camera))
+  const guideStatus = $derived(guideBadge ?? (guidance.unread ? 'Update' : undefined))
+  $effect(() => {
+    void geometry
+    const instruction = guidance.instruction
+    if (open === 'guide' && !foregroundProcedure && updateExpanded && instruction && sheet && sheet.clientWidth > 0 && sheet.clientHeight > 0) {
+      untrack(() => onReadUpdate(instruction.id))
+    }
+  })
 
   const close = (returnFocus = false): void => {
     const trigger = open === 'guide' ? guideTrigger : viewTrigger
     open = null
-    if (returnFocus) trigger?.focus({ preventScroll: true })
+    if (returnFocus && !foregroundProcedure) trigger?.focus({ preventScroll: true })
   }
   export const dismiss = (): void => close(true)
-  export const reveal = async (which: 'view' | 'guide', focus = true): Promise<void> => { if (open !== which) await disclose(which, focus) }
+  export const reveal = async (which: 'view' | 'guide', focus = true): Promise<void> => {
+    if (foregroundProcedure) throw new Error('Close the procedure window to use the World controls.')
+    if (open !== which) await disclose(which, focus)
+  }
   const disclose = async (which: 'view' | 'guide', focus = true): Promise<void> => {
     if (open === which) { close(true); return }
+    if (which === 'guide') updateExpanded = !hasGuide
     open = which
     await tick()
-    if (focus) sheet?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus({ preventScroll: true })
+    if (open !== which || foregroundProcedure) return
+    if (focus) sheet?.focus({ preventScroll: true })
     remeasure?.()
   }
-  const outside = (event: PointerEvent): void => { if (open && event.target instanceof Node && !root?.contains(event.target)) close() }
+  const toggleAlarms = async (): Promise<void> => {
+    const visible = !alarmsVisible
+    const focusOwner = document.activeElement
+    if (visible) close()
+    showAlarms(visible)
+    if (!visible) return
+    await tick()
+    const currentFocus = document.activeElement
+    if (!foregroundProcedure && (currentFocus === focusOwner || currentFocus === alarmsTrigger || currentFocus === document.body)) {
+      document.getElementById('run-alert-strip')?.focus({ preventScroll: true })
+    }
+  }
+  const openDockSheet = (which: 'view' | 'guide'): void => {
+    if (alarmsVisible && open !== which) showAlarms(false)
+    void disclose(which)
+  }
+  // Guide is a working surface while the person operates the map or a panel.
+  // View remains a quick disclosure that can be dismissed by leaving it.
+  const outside = (event: PointerEvent): void => { if (open === 'view' && event.target instanceof Node && !root?.contains(event.target)) close() }
   const key = (event: KeyboardEvent): void => {
     if (open && event.key === 'Escape' && !event.defaultPrevented) { event.preventDefault(); event.stopPropagation(); close(true) }
   }
   const ownKeys = (event: KeyboardEvent): void => { key(event); event.stopPropagation() }
-  const focusout = (event: FocusEvent): void => { if (open && event.relatedTarget instanceof Node && !root?.contains(event.relatedTarget)) close() }
-  $effect(() => { void clear; void ready; void guidance; remeasure?.() })
+  const focusout = (event: FocusEvent): void => { if (open === 'view' && event.relatedTarget instanceof Node && !root?.contains(event.relatedTarget)) close() }
+  $effect(() => { void clear; void ready; void guidance; void foregroundProcedure; remeasure?.() })
 
   runOnMount(() => {
     const element = root, main = element?.parentElement
@@ -110,7 +142,7 @@
       // The active disclosure can temporarily cover an instruction when the
       // viewport is too short for both. Guide Pause/Resume remains reachable.
       const clearTop = Math.min(top, Math.max(0, availableHeight - minimumSheet))
-      geometry = { left: inset + left, right: inset + right, bottom: bottom + verticalInset, height: Math.max(minimumSheet, availableHeight - clearTop) }
+      geometry = { left: inset + left, right: inset + right, bottom: bottom + verticalInset, height: Math.max(minimumSheet, availableHeight - clearTop), short: visibleHeight <= 280 }
     }
     const observer = new ResizeObserver(measure)
     observer.observe(main); observer.observe(element)
@@ -134,89 +166,109 @@
 </script>
 
 <svelte:window onpointerdown={outside} />
-<!-- A nonmodal disclosure: Tab may leave it; Escape returns to its own trigger. -->
+
+{#snippet cameraButtons(actions: ReadonlyArray<RunViewCameraAction>)}
+  <div class="camera-actions">
+    {#each actions as action (action.id)}
+      <button type="button" title={action.disabledReason} disabled={Boolean(action.disabledReason)} onclick={() => act(action.id)}>
+        {action.label}
+        {#if action.disabledReason}<small>{action.disabledReason}</small>{/if}
+      </button>
+    {/each}
+  </div>
+{/snippet}
+
+{#snippet viewChoices(choices: ReadonlyArray<RunViewChoice>)}
+  {#each choices as choice (choice.id)}
+    <label title={choice.disabledReason}>
+      <input type="checkbox" checked={choice.visible} disabled={Boolean(choice.disabledReason)} onchange={event => toggle(choice.id, event.currentTarget.checked)} />
+      <span>{choice.label}{#if choice.disabledReason}<small>{choice.disabledReason}</small>{/if}</span>
+    </label>
+  {/each}
+{/snippet}
+
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="run-view-tools" data-world-disclosure bind:this={root} onfocusout={focusout} onkeydown={ownKeys} style:left={`${geometry.left}px`} style:right={`${geometry.right}px`} style:bottom={`${geometry.bottom}px`} style:z-index={raised ? 94 : 26} style:--sheet-height={`${geometry.height}px`}>
+<div class="run-view-tools" class:short-pane={geometry.short} data-world-disclosure bind:this={root} hidden={foregroundProcedure} inert={foregroundProcedure} onfocusout={focusout} onkeydown={ownKeys} style:left={`${geometry.left}px`} style:right={`${geometry.right}px`} style:bottom={`${geometry.bottom}px`} style:z-index={raised && !foregroundProcedure ? 94 : 26} style:--sheet-height={`${geometry.height}px`}>
   {#if open === 'view'}
-    <section id="run-view-sheet" class="view-sheet" aria-label="Run view" bind:this={sheet}>
-      <header><strong>View</strong><button class="close" type="button" aria-label="Close View controls" onclick={() => close(true)}>×</button></header>
-      <div class="groups" aria-label="View groups">
-        <button type="button" aria-pressed={group === 'camera'} onclick={() => group = 'camera'}>Camera</button>
-        <button type="button" aria-pressed={group === 'layers'} onclick={() => group = 'layers'}>Layers</button>
-        <button type="button" aria-pressed={group === 'panels'} onclick={() => group = 'panels'}>Panels</button>
-      </div>
-      <div class="choices">
-        {#if group === 'camera'}
-          <div class="camera-actions">{#each camera as action (action.id)}<button type="button" title={action.disabledReason ?? ''} disabled={Boolean(action.disabledReason)} onclick={() => act(action.id)}>{action.label}{#if action.disabledReason}<small>{action.disabledReason}</small>{/if}</button>{/each}</div>
-        {:else}
-          {@const choices = group === 'layers' ? layers : panels}
-          {#if choices.length === 0}<p>No {group} are available in this Run.</p>{/if}
-          {#each choices as choice (choice.id)}
-            <label title={choice.disabledReason ?? ''}><input type="checkbox" checked={choice.visible} disabled={Boolean(choice.disabledReason)} onchange={event => toggle(choice.id, event.currentTarget.checked)} /><span>{choice.label}{#if choice.disabledReason}<small>{choice.disabledReason}</small>{/if}</span></label>
-          {/each}
-        {/if}
-      </div>
-      <footer><button type="button" disabled={Boolean(resetDisabledReason)} title={resetDisabledReason ?? 'Restore local camera, layers and panels; the simulation and guide are unchanged'} onclick={reset}>Reset local view</button>{#if resetDisabledReason}<small>{resetDisabledReason}</small>{/if}</footer>
+    <section id="run-view-sheet" class="view-sheet" aria-label="Run view" tabindex="-1" bind:this={sheet}>
+      <header><h2>View</h2><button class="close" type="button" aria-label="Close View controls" onclick={() => close(true)}>×</button></header>
+      {@render cameraButtons(cameraActions.quick)}
+      {#if panels.length > 0}
+        <div class="view-section">
+          <h3>Panels</h3>
+          {@render viewChoices(panels)}
+        </div>
+      {/if}
+      {#if layers.length > 0}
+        <details class="view-section"><summary>Map layers</summary>{@render viewChoices(layers)}</details>
+      {/if}
+      <details class="view-section">
+        <summary>More view controls</summary>
+        {@render cameraButtons(cameraActions.more)}
+        <button type="button" disabled={Boolean(resetDisabledReason)} onclick={reset}>Reset local view</button>
+        <small>{resetDisabledReason ?? 'Restore the default map view, layers and panels.'}</small>
+      </details>
     </section>
   {:else if open === 'guide'}
-    <section id="run-guide-options" class="view-sheet guide-options" aria-label="Guidance options" bind:this={sheet}>
-      <header><strong>Guide</strong><button class="close" type="button" aria-label="Close guidance options" onclick={() => close(true)}>×</button></header>
-      {#if guidance.available}
-      <details class="timed-cards" open={!hasGuide}><summary>Timed scenario cards{guidance.unread ? ' · new' : ''}</summary>
-      {#if guidance.instruction}<div class="current-instruction"><strong>{guidance.instruction.title}</strong><p>{guidance.instruction.message}</p></div>{/if}
-      <p>{guidance.available ? guidance.unread ? 'A new scenario instruction is available.' : 'Show the current scenario instruction again.' : hasGuide ? 'An authored guide is available below.' : 'This Run has no current scenario instruction.'}</p>
-      <div class="camera-actions"><button type="button" disabled={!guidance.available} onclick={() => { setGuidance('running'); close(true) }}>{hasGuide ? 'Show current card' : 'Resume guidance'}</button><button type="button" disabled={guidance.mode === 'paused'} onclick={() => { setGuidance('paused'); close(true) }}>{hasGuide ? 'Pause timed cards' : 'Pause guidance'}</button><button type="button" disabled={guidance.mode === 'stopped'} onclick={() => { setGuidance('stopped'); close(true) }}>{hasGuide ? 'Stop timed cards' : 'Stop guidance'}</button></div>
-      <p class="help">Pause and Stop hide instructions on this screen. The simulation keeps its current playback. Resume remains available.</p>
-      </details>
-      {:else if !hasGuide}<p>This Run has no current scenario instruction.</p>{/if}
+    <section id="run-guide-options" class="view-sheet guide-options" aria-label="Guide" tabindex="-1" bind:this={sheet}>
+      <header><h2>Guide</h2><button class="close" type="button" aria-label="Close Guide" onclick={() => close(true)}>×</button></header>
       {#if guideContent}{@render guideContent()}{/if}
+      {#if guidance.available}
+        <details class="view-section timed-cards" bind:open={updateExpanded}>
+          <summary>Scenario update{guidance.unread ? ' · new' : ''}</summary>
+          {#if guidance.instruction}<div class="current-instruction"><strong>{guidance.instruction.title}</strong><p>{guidance.instruction.message}</p></div>{/if}
+          <button type="button" onclick={() => {
+            setGuidance(guidance.visible ? 'paused' : 'running')
+            if (!guidance.visible) close(true)
+          }}>{guidance.visible ? 'Pause updates' : 'Show latest update'}</button>
+        </details>
+      {/if}
     </section>
   {/if}
-  <nav class="view-launchers" aria-label="World Run presentation">
-    {#if raised}<span class="world-context" title="These controls belong to the World map. The display window has its own controls.">World</span>{/if}
-    <button id="run-view-trigger" bind:this={viewTrigger} type="button" aria-label="View" aria-expanded={open === 'view'} aria-controls={open === 'view' ? 'run-view-sheet' : undefined} onclick={() => void disclose('view')}>View <span aria-hidden="true">{open === 'view' ? '⌄' : '⌃'}</span></button>
-    <button id="run-alarms-trigger" type="button" aria-label={`${alarms} unacknowledged ${alarms === 1 ? 'alarm' : 'alarms'}; ${alarmsVisible ? 'hide' : 'show'} alarm strip`} aria-pressed={alarmsVisible} onclick={() => showAlarms(!alarmsVisible)}>Alarms <strong>{alarms}</strong></button>
-    <button id="run-guide-trigger" bind:this={guideTrigger} type="button" aria-label={`Guide${guidance.unread || guideNotice ? ': new instruction' : ''}${guidance.mode !== 'running' ? `; ${guidance.mode}` : ''}`} aria-expanded={open === 'guide'} aria-controls={open === 'guide' ? 'run-guide-options' : undefined} onclick={() => void disclose('guide')}>Guide{#if guidance.unread || guideNotice}<span class="new">New</span>{:else if guidance.mode !== 'running'}<small>{guidance.mode}</small>{/if}</button>
+  <nav class="view-launchers" aria-label="World controls">
+    <button id="run-view-trigger" bind:this={viewTrigger} type="button" aria-label="View" aria-expanded={open === 'view'} aria-controls={open === 'view' ? 'run-view-sheet' : undefined} onclick={() => openDockSheet('view')}>View <span aria-hidden="true">{open === 'view' ? '⌄' : '⌃'}</span></button>
+    <button id="run-alarms-trigger" bind:this={alarmsTrigger} type="button" aria-label={`Alarms · ${alarms} unacknowledged`} aria-expanded={alarmsVisible} aria-controls={alarmsVisible ? 'run-alert-strip' : undefined} onclick={() => void toggleAlarms()}>Alarms <strong>{alarms}</strong></button>
+    <button id="run-guide-trigger" bind:this={guideTrigger} type="button" aria-label={guideStatus ? `Guide · ${guideStatus}` : 'Guide'} aria-expanded={open === 'guide'} aria-controls={open === 'guide' ? 'run-guide-options' : undefined} onclick={() => openDockSheet('guide')}>Guide{#if guideStatus}<span class="guide-badge">{guideStatus}</span>{/if}</button>
   </nav>
 </div>
 
 <style>
   .run-view-tools { position: absolute; z-index: 26; display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none; font-size: 13px; color: var(--text); }
-  .view-launchers { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; pointer-events: auto; padding: 3px; border: 1px solid var(--border); border-radius: 20px; background: color-mix(in srgb, var(--panel) 86%, transparent); box-shadow: 0 3px 12px rgb(0 0 0 / 12%); }
+  .run-view-tools[hidden] { display: none; }
+  .view-launchers { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; pointer-events: auto; padding: 3px; max-width: 100%; box-sizing: border-box; border: 1px solid var(--border); border-radius: 20px; background: color-mix(in srgb, var(--panel) 96%, transparent); box-shadow: 0 3px 12px rgb(0 0 0 / 12%); }
   button { font: inherit; color: inherit; cursor: pointer; border: 1px solid var(--border); border-radius: 7px; background: var(--panel); min-height: 38px; padding: 7px 11px; }
   button:disabled { opacity: .65; cursor: default; }
   button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .view-launchers button { border-color: transparent; border-radius: 16px; background: transparent; display: inline-flex; gap: 6px; align-items: center; }
-  .world-context { align-self: center; padding-inline: 8px 2px; color: var(--muted); font-size: 11px; font-weight: 650; }
   button:hover:not(:disabled), button[aria-pressed='true'], .view-launchers button[aria-expanded='true'] { background: color-mix(in srgb, var(--accent) 12%, var(--panel)); border-color: var(--accent); }
-  .view-sheet { box-sizing: border-box; pointer-events: auto; width: min(640px, 100%); max-height: var(--sheet-height); overflow: auto; padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); box-shadow: 0 8px 28px rgb(0 0 0 / 20%); }
-  header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .view-sheet { box-sizing: border-box; pointer-events: auto; width: min(460px, 100%); max-height: var(--sheet-height); overflow: auto; overscroll-behavior: contain; padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); box-shadow: 0 8px 28px rgb(0 0 0 / 20%); }
+  .guide-options { width: min(520px, 100%); }
+  .view-sheet:focus { outline: none; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+  h2 { font-size: 16px; margin: 0; }
+  h3 { font-size: 13px; margin: 0; }
   .close { font-size: 20px; line-height: 1; min-width: 38px; padding: 2px 8px; background: transparent; }
-  .groups { display: flex; flex-wrap: wrap; gap: 6px; padding: 7px 0; border-bottom: 1px solid var(--border); }
-  .groups button { flex: 1 1 80px; }
-  .choices { padding-block: 10px; }
+  .view-section { border-top: 1px solid var(--border); margin-top: 10px; padding-top: 9px; }
   .camera-actions { display: flex; flex-wrap: wrap; gap: 7px; }
-  .camera-actions button { flex: 1 1 135px; }
-  label { display: flex; align-items: flex-start; gap: 10px; padding: 8px 4px; min-height: 24px; cursor: pointer; }
+  .camera-actions:empty { display: none; }
+  .camera-actions button { flex: 1 1 92px; }
+  .view-section .camera-actions { margin-bottom: 7px; }
+  label { display: flex; align-items: flex-start; gap: 10px; padding: 8px 4px; min-height: 24px; cursor: pointer; border-radius: 6px; }
+  label:hover { background: var(--panel-strong); }
+  label:has(input:disabled) { cursor: default; }
   label span { min-width: 0; overflow-wrap: anywhere; }
   input[type='checkbox'] { flex: none; width: 18px; height: 18px; margin: 0; padding: 0; accent-color: var(--accent); }
   small { display: block; color: var(--muted); font-size: 11px; line-height: 1.4; }
-  footer { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; border-top: 1px solid var(--border); padding-top: 9px; }
-  p { margin: 8px 0 12px; line-height: 1.5; }
-  .help { color: var(--muted); font-size: 12px; margin-bottom: 0; }
-  .timed-cards summary { cursor: pointer; min-height: 32px; line-height: 1.5; }
-  @media (pointer: coarse) { .timed-cards summary { min-height: 44px; } }
-  .current-instruction { padding: 10px; border: 1px solid var(--border); border-radius: 7px; background: var(--panel-strong); }
+  summary { cursor: pointer; min-height: 32px; line-height: 1.5; font-weight: 650; }
+  summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .current-instruction { padding: 10px; margin-bottom: 8px; border: 1px solid var(--border); border-radius: 7px; background: var(--panel-strong); }
   .current-instruction p { margin-bottom: 0; }
-  .new { border-radius: 8px; padding: 1px 5px; background: var(--accent); color: var(--panel); font-size: 10px; }
-  @media (pointer: coarse) { button { min-height: 44px; } label { min-height: 28px; padding-block: 10px; } }
+  .guide-badge { border-radius: 8px; padding: 1px 5px; background: color-mix(in srgb, var(--accent) 12%, var(--panel)); color: var(--text); font-size: 10px; }
+  @media (pointer: coarse) { button, summary { min-height: 44px; } label { min-height: 28px; padding-block: 10px; } }
   /* A short World split needs a single reachable launcher row. Status stays in
      accessible names; keyboard focus can scroll the row on narrower surfaces. */
-  @media (max-height: 280px) {
-    .view-launchers { flex-wrap: nowrap; justify-content: flex-start; max-width: 100%; box-sizing: border-box; overflow-x: auto; gap: 2px; }
-    .view-launchers button { flex: none; padding-inline: 6px; }
-    .view-launchers small { display: none; }
-    .view-launchers .new { width: 7px; height: 7px; padding: 0; font-size: 0; }
-  }
+  .short-pane .view-launchers { flex-wrap: nowrap; justify-content: flex-start; overflow-x: auto; gap: 2px; }
+  .short-pane .view-launchers button { flex: none; padding-inline: 6px; }
+  .short-pane .guide-badge { width: 6px; height: 6px; padding: 0; font-size: 0; background: var(--accent); }
   @media (prefers-reduced-transparency: reduce), (forced-colors: active) { .view-launchers { background: var(--panel); } }
 </style>
