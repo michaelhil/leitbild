@@ -4345,7 +4345,8 @@ body.rail-resizing {
 }
 
 .procedure-column p,
-.procedure-column ol {
+.procedure-column ol,
+.procedure-column ul {
   margin: 0 0 8px;
   color: #1f2937;
   font-size: calc(14px * var(--procedure-font-scale));
@@ -4359,6 +4360,11 @@ body.rail-resizing {
   font-size: calc(11px * var(--procedure-font-scale));
   letter-spacing: 0.06em;
 }
+
+.procedure-column .procedure-instruction-label { margin-bottom: 3px; }
+.procedure-instruction-list { padding-inline-start: 1.25em; }
+.procedure-instruction-list li + li { margin-top: 4px; }
+.procedure-decision-basis summary { cursor: pointer; }
 
 .block-caution {
   color: #9a3412 !important;

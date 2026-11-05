@@ -1478,8 +1478,16 @@
           {#each procedureStepItems(step) as item}
             <div class="procedure-column" class:response={!item.primary}>
               {#if item.kind === 'block'}
-                <p class="block-{item.block.kind}">{#if item.block.kind !== 'text'}<b>{procedureBlockLabel(item.block.kind)}</b>{/if} {@render procedureText(item.block.text, item.block.tagIds)}</p>
-                {#if item.block.paths?.length}<ol>{#each item.block.paths as path}<li>{@render procedureText(path, item.block.tagIds)}</li>{/each}</ol>{/if}
+                {@const first = item.blocks[0]}
+                {#if item.blocks.length > 1}
+                  <p class="procedure-instruction-label"><b>{procedureBlockLabel(first.kind)}</b></p>
+                  <ul class="procedure-instruction-list" aria-label={procedureBlockLabel(first.kind)}>
+                    {#each item.blocks as block}<li>{@render procedureText(block.text, block.tagIds)}</li>{/each}
+                  </ul>
+                {:else}
+                  <p class="block-{first.kind}">{#if first.kind !== 'text'}<b>{procedureBlockLabel(first.kind)}</b>{/if} {@render procedureText(first.text, first.tagIds)}</p>
+                  {#if first.paths?.length}<ol>{#each first.paths as path}<li>{@render procedureText(path, first.tagIds)}</li>{/each}</ol>{/if}
+                {/if}
               {:else}
                 {@const taken = state?.decision !== undefined && state.decision.branchIndex === step.branches.indexOf(item.branch) ? state.decision : undefined}
                 <button
@@ -1507,9 +1515,14 @@
                 {#if taken && (taken.basis !== undefined || (taken.evidence?.length ?? 0) > 0)}
                   <div class="procedure-decision-basis" class:ai={procedureActorIsAi(taken.selectedBy)}>
                     {#if taken.basis}<p>{taken.basis}</p>{/if}
-                    {#each taken.evidence ?? [] as evidence (evidence.tagId)}
-                      <div class="procedure-evidence-row"><b>{evidence.tagId}</b><span>{evidence.reading}</span></div>
-                    {/each}
+                    {#if taken.evidence?.length}
+                      <details>
+                        <summary>Recorded readings ({taken.evidence.length})</summary>
+                        {#each taken.evidence as evidence (evidence.tagId)}
+                          <div class="procedure-evidence-row"><b>{evidence.tagId}</b><span>{evidence.reading}</span></div>
+                        {/each}
+                      </details>
+                    {/if}
                   </div>
                 {/if}
                 {#if item.branch.because}<p class="procedure-branch-rationale"><b>Because</b> {@render procedureText(item.branch.because, item.branch.tagIds)}</p>{/if}

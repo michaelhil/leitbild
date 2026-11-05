@@ -68,7 +68,7 @@ Action: End.
 ` })
   const step = document.steps[0]!
   const items = procedureStepItems(step)
-  expect(items.map(item => item.kind === 'branch' ? item.branch.label : item.block.kind)).toEqual([
+  expect(items.map(item => item.kind === 'branch' ? item.branch.label : item.blocks[0].kind)).toEqual([
     'check', 'Not verified', 'action', 'decision', 'caution', 'Verified',
   ])
   expect(items.map(item => item.primary)).toEqual([true, false, true, true, true, false])
@@ -76,8 +76,8 @@ Action: End.
   expect(branches[0]!.branch).toBe(step.branches[0]!)
   expect(branches[1]!.branch).toBe(step.branches[1]!)
   expect(branches[0]!.branch).toMatchObject({ because: 'Read «WHY».', against: 'Consider «CONFLICT».' })
-  const decision = items.find(item => item.kind === 'block' && item.block.kind === 'decision')!
-  expect(decision.kind === 'block' && decision.block.paths).toEqual(['Inspect «PATH».', 'Ask if uncertain.'])
+  const decision = items.find(item => item.kind === 'block' && item.blocks[0].kind === 'decision')!
+  expect(decision.kind === 'block' && decision.blocks[0].paths).toEqual(['Inspect «PATH».', 'Ask if uncertain.'])
 })
 
 test('tag links require parsed references and do not activate fenced or inline examples', () => {
@@ -121,9 +121,11 @@ RNO: Retain the failed response.
 Unknown: Retain uncertain evidence.
 ` })
   const items = procedureStepItems(document.steps[0]!)
-  expect(items.filter(item => item.primary).map(item => item.kind === 'block' && item.block.kind))
-    .toEqual(['caution', 'check', 'check', 'action', 'note', 'expected'])
-  expect(items.filter(item => !item.primary).map(item => item.kind === 'block' && item.block.kind))
+  expect(items.filter(item => item.primary).map(item => item.kind === 'block' && item.blocks[0].kind))
+    .toEqual(['caution', 'check', 'action', 'note', 'expected'])
+  expect(items[1]?.kind === 'block' && items[1].blocks.map(block => block.text))
+    .toEqual(['Confirm the first prerequisite.', 'Confirm the second prerequisite.'])
+  expect(items.filter(item => !item.primary).map(item => item.kind === 'block' && item.blocks[0].kind))
     .toEqual(['rno', 'unknown'])
 })
 

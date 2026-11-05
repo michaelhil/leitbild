@@ -2,15 +2,31 @@ import type { ProcedureBranch, ProcedureCatalogItem, ProcedureDocument, Procedur
 import type { ProcedureSourceEvidenceRequest } from './procedure-client.ts'
 
 const primaryKinds = new Set(['check', 'action', 'expected', 'decision', 'when', 'until', 'within', 'concurrent', 'caution', 'note', 'text'])
+const listKinds = new Set(['check', 'action', 'expected'])
 type StepItem =
-  | { readonly kind: 'block'; readonly block: ProcedureTextBlock; readonly primary: boolean; readonly sourceLine: number }
+  | { readonly kind: 'block'; readonly blocks: readonly [ProcedureTextBlock, ...ProcedureTextBlock[]]; readonly primary: boolean; readonly sourceLine: number }
   | { readonly kind: 'branch'; readonly branch: ProcedureBranch; readonly primary: false; readonly sourceLine: number }
 
-/** Source order is also reading order. Keep original branch objects for command identity. */
-export const procedureStepItems = (step: ProcedureStep): ReadonlyArray<StepItem> => [
-  ...step.blocks.map(block => ({ kind: 'block' as const, block, primary: primaryKinds.has(block.kind), sourceLine: block.sourceLine })),
-  ...step.branches.map(branch => ({ kind: 'branch' as const, branch, primary: false as const, sourceLine: branch.sourceLine })),
-].sort((left, right) => left.sourceLine - right.sourceLine)
+/** Group consecutive instructions without moving a caution, qualification or branch. */
+export const procedureStepItems = (step: ProcedureStep): ReadonlyArray<StepItem> => {
+  const ordered: StepItem[] = [
+    ...step.blocks.map(block => ({ kind: 'block' as const, blocks: [block] as const, primary: primaryKinds.has(block.kind), sourceLine: block.sourceLine })),
+    ...step.branches.map(branch => ({ kind: 'branch' as const, branch, primary: false as const, sourceLine: branch.sourceLine })),
+  ]
+  ordered.sort((left, right) => left.sourceLine - right.sourceLine)
+  const items: StepItem[] = []
+  for (const item of ordered) {
+    const previous = items.at(-1)
+    if (previous?.kind === 'block' && item.kind === 'block' &&
+        listKinds.has(item.blocks[0].kind) && previous.blocks[0].kind === item.blocks[0].kind &&
+        previous.blocks.every(block => !block.paths?.length) && !item.blocks[0].paths?.length) {
+      items[items.length - 1] = { ...previous, blocks: [...previous.blocks, ...item.blocks] }
+    } else {
+      items.push(item)
+    }
+  }
+  return items
+}
 
 export type ProcedureTextSegment =
   | { readonly kind: 'text' | 'tag'; readonly text: string }
