@@ -1481,9 +1481,15 @@
                 {@const first = item.blocks[0]}
                 {#if item.blocks.length > 1}
                   <p class="procedure-instruction-label"><b>{procedureBlockLabel(first.kind)}</b></p>
-                  <ul class="procedure-instruction-list" aria-label={procedureBlockLabel(first.kind)}>
-                    {#each item.blocks as block}<li>{@render procedureText(block.text, block.tagIds)}</li>{/each}
-                  </ul>
+                  {#if first.kind === 'action'}
+                    <ol class="procedure-instruction-list" aria-label={procedureBlockLabel(first.kind)}>
+                      {#each item.blocks as block}<li>{@render procedureText(block.text, block.tagIds)}</li>{/each}
+                    </ol>
+                  {:else}
+                    <ul class="procedure-instruction-list" aria-label={procedureBlockLabel(first.kind)}>
+                      {#each item.blocks as block}<li>{@render procedureText(block.text, block.tagIds)}</li>{/each}
+                    </ul>
+                  {/if}
                 {:else}
                   <p class="block-{first.kind}">{#if first.kind !== 'text'}<b>{procedureBlockLabel(first.kind)}</b>{/if} {@render procedureText(first.text, first.tagIds)}</p>
                   {#if first.paths?.length}<ol>{#each first.paths as path}<li>{@render procedureText(path, first.tagIds)}</li>{/each}</ol>{/if}
