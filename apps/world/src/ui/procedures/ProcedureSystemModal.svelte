@@ -163,7 +163,9 @@
     close,
   }: Props = $props()
 
-  const compactProcedureWidth = 600
+  // In a split pane a catalogue stacked above the document consumes most of
+  // the reading area. Use the existing catalogue picker at the window's width.
+  const compactProcedureWidth = 980
   const minWindowWidth = 48
   const minWindowHeight = 32
   const viewportMargin = 12
@@ -2139,6 +2141,8 @@
   :global(.procedure-modal.compact-procedure .procedure-layout:not(.toc-collapsed)) { grid-template-rows: minmax(0, 1fr) auto; }
   :global(.procedure-modal.compact-procedure .procedure-layout:not(.toc-collapsed) .procedure-document) { display: none; }
   :global(.procedure-modal.compact-procedure .procedure-list) { max-height: none; }
+  :global(.procedure-modal.compact-procedure .procedure-two-column) { grid-template-columns: minmax(0, 1fr); }
+  :global(.procedure-modal.compact-procedure .procedure-column.response) { grid-column: 1; padding-left: 0; border-left: 0; }
   :global(.procedure-modal.compact-procedure .procedure-toc-handle) { width: 100%; min-height: 44px; display: flex; align-items: center; justify-content: flex-start; gap: 4px; padding: 0 8px; }
   :global(.procedure-modal.compact-procedure .procedure-toc-label) { display: inline; }
 </style>
