@@ -422,7 +422,7 @@
       {
         "id": "orient",
         "title": "Find Unit 1",
-        "instruction": "This is a modelled power complex. Locate Halden Unit 1; View contains local Camera, Layers and Panels. The shared clock is paused. Continue does not start the fault.",
+        "instruction": "Find Halden Unit 1. Use View to frame the map or show layers and panels. Continue keeps the Run paused.",
         "effects": [
           {
             "id": "unit-location",
