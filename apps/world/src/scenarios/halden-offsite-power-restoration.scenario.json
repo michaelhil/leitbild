@@ -318,7 +318,7 @@
             "guidance": {
               "id": "offsite-power-briefing",
               "title": "A switchyard fault is scheduled in two minutes",
-              "message": "Open View at the bottom, choose Panels, and turn on Grid operations to follow the grid frequency. To jump ahead, press Advance\u2026 next to the clock and choose +2 min. You can close this briefing with \u00d7 and read it again from Guide.",
+              "message": "Open View at the bottom and turn on Grid operations to follow the grid frequency. To jump ahead, press Advance\u2026 next to the clock and choose +2 min. You can close this briefing with \u00d7 and read it again from Guide.",
               "objectIds": [
                 "grid:halden-four-unit",
                 "plant:halden-1",
@@ -393,7 +393,7 @@
             "guidance": {
               "id": "switchyard-busbar-fault",
               "title": "Inspect the switchyard fault outcome",
-              "message": "The scheduled switchyard fault cue was attempted. Inspect circuit positions, each unit\u2019s indications and the grid frequency before drawing conclusions. Check the cue notice for incomplete or uncertain actions. View \u2192 Panels \u2192 Grid operations \u2192 Assets lets you inspect Hasle circuit 1 and its current switching controls. The Assistant can help explain observed changes.",
+              "message": "The scheduled switchyard fault cue was attempted. Inspect circuit positions, each unit\u2019s indications and the grid frequency before drawing conclusions. Check the cue notice for incomplete or uncertain actions. In View, turn on Grid operations and open Assets to inspect Hasle circuit 1 and its switching controls. The Assistant can help explain observed changes.",
               "objectIds": [
                 "grid:halden-four-unit",
                 "plant:halden-1",
