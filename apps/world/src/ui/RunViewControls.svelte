@@ -241,7 +241,7 @@
   button:disabled { opacity: .65; cursor: default; }
   button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .view-launchers button { border-color: transparent; border-radius: 16px; background: transparent; display: inline-flex; gap: 6px; align-items: center; }
-  button:hover:not(:disabled), button[aria-pressed='true'], .view-launchers button[aria-expanded='true'] { background: color-mix(in srgb, var(--accent) 12%, var(--panel)); border-color: var(--accent); }
+  button:hover:not(:disabled), .view-launchers button[aria-expanded='true'] { background: color-mix(in srgb, var(--accent) 12%, var(--panel)); border-color: var(--accent); }
   .view-sheet { box-sizing: border-box; pointer-events: auto; width: min(460px, 100%); max-height: var(--sheet-height); overflow: auto; overscroll-behavior: contain; padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); box-shadow: 0 8px 28px rgb(0 0 0 / 20%); }
   .guide-options { width: min(520px, 100%); }
   .view-sheet:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
