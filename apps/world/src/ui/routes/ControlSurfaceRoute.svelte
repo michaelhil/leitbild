@@ -621,7 +621,7 @@
     guidancePreferences = { ...guidancePreferences, mode, ...(mode === 'running' ? { dismissedId: null } : {}) }
   }
   const markGuidancePresented = (id: string): void => {
-    if (guidancePreferences.presentedId !== id) guidancePreferences = { ...guidancePreferences, presentedId: id }
+    if (scenarioState?.guidance?.id === id && guidancePreferences.presentedId !== id) guidancePreferences = { ...guidancePreferences, presentedId: id }
   }
 
   const clearPresentation = (request: PresentationRequest): void => {
@@ -682,14 +682,16 @@
       requireWorldControls()
       if (action.kind === 'reveal') {
         if (target.id === 'alarms') alarmStripVisible = true
-        else await viewControls?.reveal(target.id as 'view' | 'guide')
+        else await viewControls?.reveal(target.id as 'view' | 'guide', false)
         current()
       }
       if (action.kind !== 'reveal' && action.kind !== 'highlight') throw new Error('This control supports reveal or highlight')
       await tick()
       current()
       requireWorldControls()
-      const element = document.getElementById(`run-${target.id}-trigger`)
+      const controlId = action.kind === 'highlight' ? `run-${target.id}-trigger`
+        : target.id === 'view' ? 'run-view-sheet' : target.id === 'guide' ? 'run-guide-options' : 'run-alert-strip'
+      const element = document.getElementById(controlId)
       if (!element) throw new Error('The World control is not mounted')
       if (action.kind === 'highlight') markPresentation(request, element)
       return { status: 'applied' }
@@ -2444,13 +2446,13 @@
           </div>
         </section>
       {/if}
-      {#if activePack && alarmStripVisible}
-        <AlertStrip onClose={() => alarmStripVisible = false} {objects} categoryOf={object => presentationFor(object).categoryId} openDisplay={openStripDisplay} {theme} onBounds={setAlarmStripBounds} belowRoles={Boolean(runRoles && heldRoleIds)} railWidth={railVisible ? railLayout.width : 0} clear={{ left: mapCameraPadding.left, right: mapCameraPadding.right, top: guidanceOverlayVisible && scenarioState?.guidance ? guidanceBottom : 0 }} />
+      {#if activePack && alarmStripVisible && !foregroundProcedure}
+        <AlertStrip onClose={() => { alarmStripVisible = false; document.getElementById('run-alarms-trigger')?.focus({ preventScroll: true }) }} {objects} categoryOf={object => presentationFor(object).categoryId} openDisplay={openStripDisplay} {theme} raised={displayWindowOpen} onBounds={setAlarmStripBounds} belowRoles={Boolean(runRoles && heldRoleIds)} railWidth={railVisible ? railLayout.width : 0} clear={{ left: mapCameraPadding.left, right: mapCameraPadding.right, top: guidanceOverlayVisible && scenarioState?.guidance ? guidanceBottom : 0 }} />
       {/if}
       <RunViewControls bind:this={viewControls} camera={viewCamera} layers={viewLayers} panels={viewPanels} act={actOnView} toggle={setViewChoice}
         reset={resetLocalView} resetDisabledReason={viewResetDisabledReason} alarms={viewAlarmCount} alarmsVisible={alarmStripVisible} showAlarms={visible => alarmStripVisible = visible}
-        guidance={{ available: Boolean(scenarioState?.guidance), visible: guidanceOverlayVisible, unread: guidanceUnread, mode: guidancePreferences.mode, instruction: scenarioState?.guidance ?? null }} setGuidance={mode => { timedCardRequested = mode === 'running'; setGuidanceMode(mode) }}
-        clear={mapCameraPadding} ready={mapReady} raised={displayWindowOpen && (Boolean(scenarioState?.guidance) && guidancePreferences.mode !== 'stopped' || Boolean(guidanceScreen.guide) || Boolean(guidanceScreen.suggestion) || Boolean(guidanceScreen.cue))}
+        guidance={{ available: Boolean(scenarioState?.guidance), visible: guidanceOverlayVisible, unread: guidanceUnread, instruction: scenarioState?.guidance ?? null }} setGuidance={mode => { timedCardRequested = mode === 'running'; setGuidanceMode(mode) }}
+        clear={mapCameraPadding} ready={mapReady} raised={displayWindowOpen} onReadUpdate={markGuidancePresented}
         hasGuide={Boolean(guidanceScreen.guide)} {guideBadge} {foregroundProcedure}>
         {#snippet guideContent()}
           <GuidePanel screen={guidanceScreen} session={guidanceSession} explore={() => { guidanceSession?.explore(); viewControls?.dismiss() }} />

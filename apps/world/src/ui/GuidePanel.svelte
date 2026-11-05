@@ -20,6 +20,32 @@
     ? 'Check for reply'
     : step?.completion === 'condition' || step?.completion === 'presentation'
       ? 'Check and continue' : 'Continue')
+  const showLabel = $derived(isPrompt ? 'Show prompt' : failedEffect ? 'Try showing again' : applied > 0 ? 'Show again' : 'Show this step')
+  type PrimaryAction = 'reconnect' | 'read' | 'start' | 'resume' | 'next' | 'show'
+  const primary = $derived.by((): { action: PrimaryAction; label: string } | null => {
+    if (!screen.recipient && (guide || screen.error || screen.busy)) return { action: 'reconnect', label: screen.busy ? 'Connecting…' : 'Reconnect guide' }
+    if (!guide) return null
+    if (!guide.attemptId || finished) return { action: 'start', label: finished ? 'Start a new attempt' : 'Start guide' }
+    if (resumeHere) return { action: 'resume', label: screen.restored ? 'Resume on this screen' : 'Resume guide' }
+    if (!step) return { action: 'read', label: 'Reload current step' }
+    if (step.completion === 'presentation' && step.effects.length === 1 && failedEffect) return { action: 'show', label: showLabel }
+    return { action: 'next', label: nextLabel }
+  })
+  let primaryButton = $state<HTMLButtonElement | null>(null)
+  const runPrimary = (): void => {
+    if (screen.busy || !primary || !session) return
+    const { action } = primary
+    if (action === 'reconnect') void session.reconnect()
+    else if (action === 'read') void session.read()
+    else void session.action(action, action === 'resume')
+  }
+  const changeStep = (action: 'skip' | 'pause' | 'stop', event: MouseEvent): void => {
+    if (screen.busy || !screen.recipient || !session) return
+    // This option can disappear when the command returns. Move its keyboard
+    // focus to the stable primary action while the learner is still here.
+    if (document.activeElement === event.currentTarget) primaryButton?.focus({ preventScroll: true })
+    void session.action(action)
+  }
 </script>
 
 <div class="guide-content">
@@ -36,6 +62,8 @@
         <p>{guide.description ?? 'Learn this Run one step at a time.'}</p>
       {/if}
     {/if}
+  {:else if !screen.busy && !screen.error && !screen.suggestion && !screen.cue}
+    <p class="meta">This Run has no step-by-step guide.</p>
   {/if}
 
   {#if screen.error || guide?.problem}<p class="notice" role="status">{screen.error ?? guide?.problem}</p>{/if}
@@ -51,38 +79,30 @@
       : sentPrompt ? 'Waiting for an Assistant reply.' : 'Send the suggested prompt from the Assistant when you’re ready.'}</p>
   {/if}
 
-  {#if !screen.recipient && (guide || screen.error || screen.busy)}
+  {#if primary}
     <div class="actions">
-      <button class="primary" type="button" disabled={screen.busy || !session} onclick={() => void session?.reconnect()}>{screen.busy ? 'Connecting…' : 'Reconnect guide'}</button>
-      {#if guide && !guide.attemptId}<button class="quiet" type="button" onclick={explore}>Explore on my own</button>{/if}
-    </div>
-  {:else if guide}
-    <div class="actions">
-      {#if !guide.attemptId || finished}
-        <button class="primary" type="button" disabled={screen.busy} onclick={() => void session?.action('start')}>{finished ? 'Start a new attempt' : 'Start guide'}</button>
+      <button class="primary" type="button" bind:this={primaryButton} aria-disabled={screen.busy || !session} onclick={runPrimary}>{primary.label}</button>
+      {#if guide && (!guide.attemptId || finished)}
         <button class="quiet" type="button" onclick={explore}>{finished ? 'Back to the Run' : 'Explore on my own'}</button>
-      {:else if resumeHere}
-        <button class="primary" type="button" disabled={screen.busy} onclick={() => void session?.action('resume', true)}>{screen.restored ? 'Resume on this screen' : 'Resume guide'}</button>
-      {:else if !step}
-        <button class="primary" type="button" disabled={screen.busy} onclick={() => void session?.read()}>Reload current step</button>
-      {:else}
-        <button class="primary" type="button" disabled={screen.busy} onclick={() => void session?.action('next')}>{nextLabel}</button>
-        {#if mayShow}
-          <button class="quiet" type="button" disabled={screen.busy} onclick={() => void session?.action('show')}>{isPrompt ? 'Show prompt' : failedEffect ? 'Try showing again' : applied > 0 ? 'Show again' : 'Show this step'}</button>
+      {:else if screen.recipient && workingStep && step}
+        {#if mayShow && primary.action !== 'show'}
+          <button class="quiet" type="button" disabled={screen.busy} onclick={() => void session?.action('show')}>{showLabel}</button>
         {/if}
-        {#if isPrompt}<button class="quiet" type="button" disabled={screen.busy} onclick={() => void session?.action('skip')}>Skip this step</button>{/if}
+        {#if isPrompt}<button class="quiet" type="button" disabled={screen.busy} onclick={event => changeStep('skip', event)}>Skip this step</button>{/if}
       {/if}
     </div>
+  {/if}
+  {#if guide}
     {#if guide.attemptId && !finished && !screen.restored}
       <details class="secondary">
         <summary>Guide options</summary>
         <div class="actions">
           {#if workingStep}
-            {#if !isPrompt}<button class="quiet" type="button" disabled={screen.busy || !screen.recipient} onclick={() => void session?.action('skip')}>Skip this step</button>{/if}
-            <button class="quiet" type="button" disabled={screen.busy || !screen.recipient} onclick={() => void session?.action('pause')}>Pause guide</button>
+            {#if !isPrompt}<button class="quiet" type="button" disabled={screen.busy || !screen.recipient} onclick={event => changeStep('skip', event)}>Skip this step</button>{/if}
+            <button class="quiet" type="button" disabled={screen.busy || !screen.recipient} onclick={event => changeStep('pause', event)}>Pause guide</button>
             {#if screen.cue?.mode === 'guide' && screen.cue.action.kind !== 'explain'}<button class="quiet" type="button" onclick={() => session?.clearCue()}>Clear cue</button>{/if}
           {/if}
-          <button class="quiet" type="button" disabled={screen.busy || !screen.recipient} onclick={() => void session?.action('stop')}>End guide</button>
+          <button class="quiet" type="button" disabled={screen.busy || !screen.recipient} onclick={event => changeStep('stop', event)}>End guide</button>
         </div>
         <p class="meta">Pause and End affect this guide. Use the Run’s time controls for the simulation.</p>
       </details>
@@ -111,7 +131,6 @@
     <section class="separate" aria-label="Presentation suggestion">
       <h3>Suggestion from {screen.suggestion.source.label}</h3>
       <p>{screen.suggestion.purpose}</p>
-      <p class="meta">{screen.suggestion.action.kind} · {screen.suggestion.target.type.replace('world.', '')} · {screen.suggestion.target.id}</p>
       <div class="actions"><button type="button" onclick={() => void session?.accept()}>Show suggestion</button><button class="quiet" type="button" onclick={() => void session?.decline()}>Dismiss</button></div>
     </section>
   {/if}
@@ -138,7 +157,7 @@
   .primary { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--panel)); font-weight: 650; }
   .quiet { border-color: transparent; background: transparent; }
   .quiet:hover:not(:disabled) { background: var(--panel-strong); }
-  button:disabled { opacity: .65; cursor: default; }
+  button:disabled, button[aria-disabled='true'] { opacity: .65; cursor: default; }
   button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   ul { padding-inline-start: 18px; line-height: 1.45; }
   summary { cursor: pointer; min-height: 28px; display: list-item; align-content: center; }
