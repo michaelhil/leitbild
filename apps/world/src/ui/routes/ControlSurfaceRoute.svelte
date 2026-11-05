@@ -1297,6 +1297,7 @@
     }),
   )
   const foregroundProcedure = $derived(Boolean(ProcedureSystemModal && simulationRunId && procedureSession && procedureSystemWindowModels.length))
+  const mapGuidanceVisible = $derived(guidanceOverlayVisible && !displayWindowOpen && !foregroundProcedure)
 
   $effect(() => {
     const liveObjectIds = new Set(objects.map(object => object.id))
@@ -2447,11 +2448,11 @@
         </section>
       {/if}
       {#if activePack && alarmStripVisible && !foregroundProcedure}
-        <AlertStrip onClose={() => { alarmStripVisible = false; document.getElementById('run-alarms-trigger')?.focus({ preventScroll: true }) }} {objects} categoryOf={object => presentationFor(object).categoryId} openDisplay={openStripDisplay} {theme} raised={displayWindowOpen} onBounds={setAlarmStripBounds} belowRoles={Boolean(runRoles && heldRoleIds)} railWidth={railVisible ? railLayout.width : 0} clear={{ left: mapCameraPadding.left, right: mapCameraPadding.right, top: guidanceOverlayVisible && scenarioState?.guidance ? guidanceBottom : 0 }} />
+        <AlertStrip onClose={() => { alarmStripVisible = false; document.getElementById('run-alarms-trigger')?.focus({ preventScroll: true }) }} {objects} categoryOf={object => presentationFor(object).categoryId} openDisplay={openStripDisplay} {theme} raised={displayWindowOpen} onBounds={setAlarmStripBounds} belowRoles={Boolean(runRoles && heldRoleIds)} railWidth={railVisible ? railLayout.width : 0} clear={{ left: mapCameraPadding.left, right: mapCameraPadding.right, top: mapGuidanceVisible ? guidanceBottom : 0 }} />
       {/if}
       <RunViewControls bind:this={viewControls} camera={viewCamera} layers={viewLayers} panels={viewPanels} act={actOnView} toggle={setViewChoice}
         reset={resetLocalView} resetDisabledReason={viewResetDisabledReason} alarms={viewAlarmCount} alarmsVisible={alarmStripVisible} showAlarms={visible => alarmStripVisible = visible}
-        guidance={{ available: Boolean(scenarioState?.guidance), visible: guidanceOverlayVisible, unread: guidanceUnread, instruction: scenarioState?.guidance ?? null }} setGuidance={mode => { timedCardRequested = mode === 'running'; setGuidanceMode(mode) }}
+        guidance={{ available: Boolean(scenarioState?.guidance), visible: mapGuidanceVisible, unread: guidanceUnread, instruction: scenarioState?.guidance ?? null }} setGuidance={mode => { timedCardRequested = mode === 'running'; setGuidanceMode(mode) }}
         clear={mapCameraPadding} ready={mapReady} raised={displayWindowOpen} onReadUpdate={markGuidancePresented}
         hasGuide={Boolean(guidanceScreen.guide)} {guideBadge} {foregroundProcedure}>
         {#snippet guideContent()}
@@ -2482,7 +2483,7 @@
       {/if}
     </main>
 
-    {#if guidanceOverlayVisible && scenarioState?.guidance}
+    {#if mapGuidanceVisible && scenarioState?.guidance}
     {#key scenarioState.guidance.id}
     <ScenarioGuidance
       bind:bottom={guidanceBottom}
