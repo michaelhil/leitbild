@@ -26,7 +26,7 @@
     foregroundProcedure?: boolean
     guideContent?: Snippet
     hasGuide?: boolean
-    guideBadge?: 'Start' | 'Resume' | 'Suggestion'
+    guideBadge: 'Start' | 'Resume' | 'Suggestion' | undefined
   }
   let { camera, layers, panels, act, toggle, reset, resetDisabledReason, alarms, alarmsVisible, showAlarms, guidance, setGuidance, onReadUpdate, clear, ready, raised, foregroundProcedure = false, guideContent, hasGuide = false, guideBadge }: Props = $props()
   let root = $state<HTMLDivElement | null>(null)
