@@ -1,4 +1,4 @@
-import type { ParsedProcedure, ProcedureBranch, ProcedureStep, ProcedureTag, ProcedureTextBlock } from './types.ts'
+import type { ParsedProcedure, ProcedureBranch, ProcedureResponsePair, ProcedureStep, ProcedureTag, ProcedureTextBlock } from './types.ts'
 import { assessmentLeaves, parseProcedureAssessment } from './assessment.ts'
 import { parseProcedureDecisions } from './decisions.ts'
 
@@ -182,6 +182,17 @@ export const parseProcedure = (rawMarkdown: string): ParsedProcedure => {
       continue
     }
     activeBranch = undefined
+    if (/^Pair:/i.test(text)) {
+      const pair = /^Pair:\s*\[id:\s*([a-z0-9][a-z0-9-]*)(?:,\s*criterion:\s*(0|[1-9]\d*))?\]$/i.exec(text)
+      if (!pair) throw new Error(`Line ${sourceLine}: Pair requires [id: name] and optionally criterion: branchIndex`)
+      const id = pair[1]!
+      const advisoryBranchIndex = pair[2] === undefined ? undefined : Number(pair[2])
+      if (advisoryBranchIndex !== undefined && !Number.isSafeInteger(advisoryBranchIndex)) throw new Error(`Line ${sourceLine}: invalid Pair criterion index`)
+      if (current.pairs?.some(item => item.id === id)) throw new Error(`Line ${sourceLine}: duplicate Pair id ${id}`)
+      const entry: ProcedureResponsePair = { id, sourceLine, ...(advisoryBranchIndex === undefined ? {} : { advisoryBranchIndex }) }
+      current.pairs = [...(current.pairs ?? []), entry]
+      continue
+    }
     const branch = text.match(/^[-*]\s+(.+?)\s*→\s*(.+)$/)
     if (branch) {
       if ((text.match(/→/g) ?? []).length !== 1) throw new Error(`Line ${sourceLine}: branch requires exactly one arrow`)
@@ -243,6 +254,22 @@ export const parseProcedure = (rawMarkdown: string): ParsedProcedure => {
     if (step.assessment && assessmentLeaves(step.assessment.condition).some(leaf => leaf.type === 'not-acquired')) throw new Error(`Step ${step.id}: not-acquired is a branch criterion, not step assessment`)
     for (const decision of step.decisions ?? []) if (decision.condition !== undefined && step.branches[decision.branchIndex]!.outcome !== 'unknown'
       && assessmentLeaves(decision.condition).some(leaf => leaf.type === 'not-acquired')) throw new Error(`Step ${step.id}: not-acquired criterion requires an [outcome: unknown] branch (branchIndex ${decision.branchIndex})`)
+    const pairCriteria = new Set<number>()
+    for (const [index, pair] of (step.pairs ?? []).entries()) {
+      const next = step.pairs?.[index + 1]?.sourceLine ?? Infinity
+      const instructions = step.blocks.filter(block => block.sourceLine > pair.sourceLine && block.sourceLine < next)
+      const hasExpected = instructions.some(block => block.kind === 'check' || block.kind === 'expected')
+      if (!hasExpected && !instructions.some(block => block.kind === 'action')) throw new Error(`Line ${pair.sourceLine}: Pair requires a Check, Expected or Action instruction`)
+      const branchIndex = pair.advisoryBranchIndex
+      if (branchIndex === undefined) continue
+      const decision = step.decisions?.find(item => item.branchIndex === branchIndex)
+      if (!hasExpected || step.branches[branchIndex]?.outcome !== 'normal' || decision === undefined
+        || (decision.condition !== undefined && assessmentLeaves(decision.condition).some(leaf => leaf.type !== 'comparison'))) {
+        throw new Error(`Line ${pair.sourceLine}: Pair criterion requires a Check or Expected instruction and a deterministic normal branch`)
+      }
+      if (pairCriteria.has(branchIndex)) throw new Error(`Line ${pair.sourceLine}: duplicate Pair criterion ${branchIndex}`)
+      pairCriteria.add(branchIndex)
+    }
     for (const branch of step.branches) if (branch.targetKind === 'step' && !steps.some(candidate => candidate.id === branch.target)) warn(branch.sourceLine, `unresolved step target #${branch.target}; no transition inferred`)
   }
   return { procedureId, title, rawMarkdown,
