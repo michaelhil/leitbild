@@ -2091,7 +2091,6 @@
         longTaskMonitor = null
         removePlacementGlobalEvents()
         railLayout.stopResize()
-        clearStartupAutoDismissTimer()
       }
     }
     if (window.self === window.top) {
@@ -2102,7 +2101,6 @@
         longTaskMonitor = null
         removePlacementGlobalEvents()
         railLayout.stopResize()
-        clearStartupAutoDismissTimer()
       }
     }
     // Before any awaited startup: the Host may relay displays as soon as this page listens.

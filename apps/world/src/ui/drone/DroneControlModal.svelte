@@ -37,6 +37,8 @@
   import DroneFlightHud from './DroneFlightHud.svelte'
   import DroneSettingsRail from './DroneSettingsRail.svelte'
 
+  type DroneMotionFrameConsumer = (frames: ReadonlyArray<DroneMotionFrame>) => void
+
   interface Props {
     readonly simulationRunId: SimulationRunId
     readonly object: OperationalObject
