@@ -237,7 +237,6 @@
   let latestProcedureLoadRequest = 0
   let observationScopeKey: string | undefined
   let disposed = false
-  let releasePrefetch: (() => void) | null = null
   let scrollFrame: number | null = null
   let catalogRequest = 0
   let procedureDocumentBodyElement = $state<HTMLDivElement | null>(null)
@@ -626,8 +625,6 @@
   const loadCatalogAndRuns = async (refresh = false): Promise<void> => {
     const request = ++catalogRequest
     try {
-      releasePrefetch?.()
-      releasePrefetch = null
       loading = document === null
       refreshing = refresh
       error = null
@@ -711,7 +708,6 @@
       if (windowBounds.width <= compactProcedureWidth) procedureTocMode = 'collapsed'
       documentScope = targetScope
       loading = false
-      if (catalog && !releasePrefetch) releasePrefetch = session.retainPrefetch(catalog)
       loadingProcedureId = null
       setLoadStage('document', 'done', `${nextDocument.steps.length} steps`)
       if (sourceConfig.restorePosition !== false) await restoreProcedurePosition(nextDocument, targetScope, requestId, unitChanged)
@@ -1443,7 +1439,6 @@
       latestProcedureLoadRequest++
       catalogRequest++
       basisReadGeneration++
-      releasePrefetch?.()
       unsubscribe()
       if (scrollFrame !== null) window.cancelAnimationFrame(scrollFrame)
       window.clearInterval(interval)

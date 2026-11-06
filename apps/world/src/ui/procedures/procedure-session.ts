@@ -37,9 +37,6 @@ export const createProcedureSession = (config: {
   let catalogLoad: Promise<ProcedureCatalog> | null = null
   let runsLoad: Promise<void> | null = null
   let refreshQueued = false
-  let prefetchConsumers = 0
-  let prefetchGeneration = 0
-  let prefetchRevision = ''
   let disposed = false
   const assertOpen = (): void => { if (disposed) throw new Error('procedure session is closed') }
   const snapshot = (): SessionSnapshot => ({ runs, documents: new Map(documents) })
@@ -69,8 +66,7 @@ export const createProcedureSession = (config: {
           sourceId: document.source.sourceId, sourceRevision: document.source.revision,
           sourcePath: document.sourcePath, procedureId: document.procedureId,
         }), document)
-        // Prefetch alone does not rerender every open window. Only summaries of
-        // actual Runs need reactive document enrichment.
+        // Only summaries of actual Runs need reactive document enrichment.
         if (runs.some(run => procedureRunDocumentKey(run) === procedureRunDocumentKey({
           sourceId: document.source.sourceId, sourceRevision: document.source.revision,
           sourcePath: document.sourcePath, procedureId: document.procedureId,
@@ -110,23 +106,6 @@ export const createProcedureSession = (config: {
     try { await loading }
     finally { if (runsLoad === loading) runsLoad = null }
   }
-  const warm = (nextCatalog: ProcedureCatalog): void => {
-    const revision = `${nextCatalog.source.sourceId}:${nextCatalog.source.revision}`
-    if (prefetchRevision === revision) return
-    prefetchRevision = revision
-    const generation = ++prefetchGeneration
-    let cursor = 0
-    const worker = async (): Promise<void> => {
-      while (!disposed && prefetchConsumers > 0 && generation === prefetchGeneration) {
-        const item = nextCatalog.procedures[cursor++]
-        if (!item) return
-        try { await readDocument({ ...item, sourceRevision: nextCatalog.source.revision }) }
-        catch (error) { report(error) } // A foreground selection can retry a failed prefetch.
-      }
-    }
-    // Four requests keep the source busy without flooding the shared HTTP service.
-    void Promise.all(Array.from({ length: Math.min(4, nextCatalog.procedures.length) }, worker))
-  }
   return {
     snapshot, readCatalog, readDocument, refreshRuns,
     cachedDocument: (request: ProcedureDocumentRequest) => {
@@ -137,17 +116,8 @@ export const createProcedureSession = (config: {
       assertOpen(); listeners.add(listener); listener(snapshot())
       return () => { listeners.delete(listener) }
     },
-    retainPrefetch: (nextCatalog: ProcedureCatalog): (() => void) => {
-      assertOpen(); prefetchConsumers++; warm(nextCatalog)
-      let released = false
-      return () => {
-        if (released) return
-        released = true
-        if (--prefetchConsumers === 0) { prefetchGeneration++; prefetchRevision = '' }
-      }
-    },
     dispose: (): void => {
-      disposed = true; prefetchGeneration++; abort.abort(); listeners.clear(); documents.clear()
+      disposed = true; abort.abort(); listeners.clear(); documents.clear()
     },
   }
 }

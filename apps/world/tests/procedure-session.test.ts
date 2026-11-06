@@ -72,28 +72,32 @@ describe('route-owned procedure session', () => {
     } finally { session.dispose() }
   })
 
-  test('shares four prefetch workers, stops scheduling when the last window closes, foreground still works', async () => {
-    const catalog = procedureTestCatalog(Array.from({ length: 10 }, (_, i) => `PROC-${i}`))
-    const pending = new Map<string, ReturnType<typeof deferred<ProcedureDocument>>>()
-    let calls = 0
+  test('loads only the selected document, pinned Run documents and requested transfer target', async () => {
+    const catalog = procedureTestCatalog(['E-0', 'ACTIVE', 'TARGET', 'UNOPENED'])
+    const pinnedRevision = 'b'.repeat(40)
+    const active = { ...procedureTestRun(), procedureId: 'ACTIVE', sourceRevision: pinnedRevision,
+      sourcePath: 'wiki/procedures/ACTIVE.md' }
+    const reads: Array<{ id: string; revision: string | undefined }> = []
     const session = createProcedureSession({ simulationRunId: procedureTestRunId, onError: () => {},
-      readDocument: async (_run, id) => { calls++; const result = deferred<ProcedureDocument>(); pending.set(id, result); return await result.promise } })
+      readCatalog: async () => catalog,
+      readRuns: async () => ({ runs: [active] }),
+      readDocument: async (_run, id, config) => {
+        reads.push({ id, revision: config?.sourceRevision })
+        return procedureTestDocument(id, config?.sourceRevision)
+      } })
     try {
-      const releaseA = session.retainPrefetch(catalog)
-      const releaseB = session.retainPrefetch(catalog)
-      expect(calls).toBe(4)
-      releaseA()
-      pending.get('PROC-0')!.resolve(procedureTestDocument('PROC-0'))
+      const [manifest] = await Promise.all([session.readCatalog(), session.refreshRuns()])
+      await session.readDocument({ ...manifest.procedures[0]!, sourceRevision: manifest.source.revision })
+      await session.readCatalog(true)
       await settle()
-      expect(calls).toBe(5)
-      releaseB(); releaseB()
-      for (const [id, result] of pending) result.resolve(procedureTestDocument(id))
-      await settle()
-      expect(calls).toBe(5)
-      const foreground = session.readDocument(request('PROC-9'))
-      expect(calls).toBe(6)
-      pending.get('PROC-9')!.resolve(procedureTestDocument('PROC-9'))
-      await foreground
+      const required = [
+        { id: 'ACTIVE', revision: pinnedRevision },
+        { id: 'E-0', revision: manifest.source.revision },
+      ]
+      expect(reads).toEqual(required)
+      await session.readDocument({ ...request('TARGET'), sourceRevision: pinnedRevision })
+      expect(reads).toEqual([...required, { id: 'TARGET', revision: pinnedRevision }])
+      expect(session.cachedDocument(request('UNOPENED'))).toBeUndefined()
     } finally { session.dispose() }
   })
 
