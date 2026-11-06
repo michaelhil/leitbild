@@ -230,7 +230,9 @@ fn a_repeated_holding_loss_changes_nothing() {
     let mut y = from_bits(&state["y_bits"]);
     let t0 = state["t_s"].as_f64().expect("t_s");
     // The manual reactor trip: the rods open at the command and the opening
-    // is reported to the SG owner and the PZR block as the holding loss.
+    // is reported to the SG owner and the PZR block as the holding loss. The
+    // report is receipt-only for the PZR block (R4-PZR-PI's master included).
+    let pzr_before = joined.discrete_state()["pzr"].clone();
     let manual = joined
         .command(t0, &mut y, Command::ManualReactorTrip)
         .expect("the manual reactor trip");
@@ -251,6 +253,11 @@ fn a_repeated_holding_loss_changes_nothing() {
             .reactor_trip_time(),
         Some(t0),
         "armed at the opening"
+    );
+    assert_eq!(
+        joined.discrete_state()["pzr"],
+        pzr_before,
+        "the report changes nothing in the PZR block"
     );
     // The acquired protection's holding loss, one frame later.
     let (y_before, discrete_before) = (y.clone(), joined.discrete_state());
