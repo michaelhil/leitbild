@@ -260,7 +260,7 @@ describe('Leitbild Workspace Host', () => {
       world.state.catalogueReply = () => { queries++; return new Response('unavailable', { status: 503 }) }
       for (const query of [host.definitions, host.resources, host.capabilities]) {
         const combined = await query(workspace.id)
-        expect(combined.modules.map(outcome => [outcome.moduleId, outcome.status])).toEqual([['agents', 'ready'], ['world', 'failed']])
+        expect(combined.modules.map(outcome => `${outcome.moduleId}:${outcome.status}`)).toEqual(['agents:ready', 'world:failed'])
         expect((await query(workspace.id, world.registration.moduleId)).modules).toEqual(combined.modules.slice(1))
       }
       expect(queries).toBe(0)
@@ -268,7 +268,7 @@ describe('Leitbild Workspace Host', () => {
       world.state.available = true
       await host.retryModule(workspace.id, world.registration.moduleId)
       for (const query of [host.definitions, host.resources, host.capabilities]) {
-        expect((await query(workspace.id)).modules.map(outcome => [outcome.moduleId, outcome.status])).toEqual([['agents', 'ready'], ['world', 'failed']])
+        expect((await query(workspace.id)).modules.map(outcome => `${outcome.moduleId}:${outcome.status}`)).toEqual(['agents:ready', 'world:failed'])
       }
       expect(queries).toBe(3)
     } finally { store.close() }

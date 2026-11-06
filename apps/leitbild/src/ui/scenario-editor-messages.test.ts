@@ -11,7 +11,7 @@ const editor = { origin, source, documentId, workspaceId }
 const subject = scenarioEditorRevisionSchema.parse({
   workspaceId, moduleId: 'world', type: 'world.scenario', id: 'my-scenario', revisionId: revision('a'),
 })
-const data = { type: 'leitbild:scenario-start', documentId, requestId: 1, subject }
+const data = { type: 'leitbild:scenario-start', documentId, requestId: 1, subject } as const
 
 test('editor start must come from the active same-origin Workspace document', () => {
   expect(readScenarioEditorMessage({ origin, source, data }, editor)).toEqual(data)
