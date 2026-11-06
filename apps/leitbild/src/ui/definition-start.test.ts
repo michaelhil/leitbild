@@ -230,6 +230,8 @@ describe('start failures are explicit', () => {
   test.each([
     ['lost browser reply', () => { throw new TypeError('Failed to fetch') }],
     ['invalid Module receipt', () => hostError(502, 'module_contract_invalid', 'Invalid receipt')],
+    ['Host internal error', () => hostError(500, 'internal_error', 'Internal Workspace Host error')],
+    ['unexplained proxy failure', () => new Response('unavailable', { status: 503 })],
     ['invalid JSON', () => new Response('truncated', { status: 201 })],
     ['missing Run', () => json({ result: {} }, 201)],
     ['wrong Workspace', () => json({ result: {}, createdResources: [{ ...runRef, workspaceId: otherWorkspace }] }, 201)],

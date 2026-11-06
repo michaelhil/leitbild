@@ -39,12 +39,13 @@ export const invokeDefinitionStart = async ({
   } catch (cause) {
     if (signal?.aborted) return { kind: 'aborted', cause }
     const { code, status } = plainError(cause)
-    // A gateway failure or invalid Module result can lose the acknowledgment after creation.
-    if (status === null || status === 504 || (status === 502 && code === null)
-      || code === 'module_outcome_unknown' || code === 'module_contract_invalid') {
+    if (code === 'workspace_capacity_exceeded') return { kind: 'capacity', cause }
+    // An unexplained server failure can arrive after creation. The Host's
+    // module_unavailable error comes from discovery before forwarding the POST.
+    if (code !== 'module_unavailable' && (status === null || status >= 500 || code === 'module_outcome_unknown')) {
       return { kind: 'outcome-unknown', cause }
     }
-    return { kind: code === 'workspace_capacity_exceeded' || status === 503 ? 'capacity' : 'failed', cause }
+    return { kind: 'failed', cause }
   }
   if (signal?.aborted) return { kind: 'aborted', cause: signal.reason }
   const parsed = moduleCapabilityInvocationResultSchema.safeParse(value)

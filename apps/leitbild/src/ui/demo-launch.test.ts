@@ -381,7 +381,7 @@ describe('Start demo: the invoke', () => {
     const second = ready()
     second.host.on('POST', invokePath(OLD), hostError(500, 'internal_error', 'TypeError: x is undefined at run.ts:12'))
     const raw = await failure(launchDemo({ demo: KEY }, second.ports))
-    expect(launchFailureView(raw).text).toBe('Something went wrong. Try again.')
+    expect(launchFailureView(raw)).toEqual({ text: 'The demo may have started. Open Grid study to check.', actions: ['open'] })
   })
 })
 
