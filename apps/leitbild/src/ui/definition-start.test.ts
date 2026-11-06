@@ -11,6 +11,9 @@ const capabilitiesPath = `/api/workspaces/${WS}/capabilities?moduleId=world`
 const invokePath = `/api/workspaces/${WS}/capabilities/world.scenario.start/invoke`
 const ready = [{ moduleId: 'world', status: 'ready' }]
 const target: StartTarget = { key: 'row:supply-run', workspaceId: WS, definition: { moduleId: 'world', type: 'world.scenario', id: 'supply-run' } }
+const runRef = { workspaceId: WS, moduleId: 'world', type: 'world.simulation-run', id: 'run-1' }
+const otherWorkspace = '0b4b9a52-2f7e-4c1a-9d3e-00000000000b'
+const started = () => json({ result: {}, createdResources: [runRef] }, 201)
 
 const fakeScheduler = () => {
   let now = 0
@@ -33,6 +36,24 @@ const catalogHost = (definitions = [scenario('supply-run', { currentRevisionId: 
   fakeFetch()
     .on('GET', definitionsPath, json({ workspaceId: WS, modules: ready, definitions }))
     .on('GET', capabilitiesPath, json({ workspaceId: WS, modules: ready, capabilities }))
+
+const agentsStart = (type: string, result: Response) => {
+  const definition = { moduleId: 'agents', type, id: 'definition-1' }
+  const capability = { ...startCapability, id: `${type}.start`, moduleId: 'agents', scope: { kind: 'definition', definitionType: type } }
+  const modules = [{ moduleId: 'agents', status: 'ready' }]
+  const host = fakeFetch()
+    .on('GET', `/api/workspaces/${WS}/definitions?moduleId=agents`, json({
+      workspaceId: WS, modules, definitions: [{
+        ...scenario('supply-run'),
+        ref: { ...definition, workspaceId: WS },
+        capabilityIds: [capability.id],
+        primaryCapabilityId: capability.id,
+      }],
+    }))
+    .on('GET', `/api/workspaces/${WS}/capabilities?moduleId=agents`, json({ workspaceId: WS, modules, capabilities: [capability] }))
+    .on('POST', `/api/workspaces/${WS}/capabilities/${capability.id}/invoke`, result)
+  return createStartRunner({ fetch: host.fetch }).start({ ...target, definition })
+}
 
 const quietConsole = () => {
   const error = console.error
@@ -61,9 +82,7 @@ describe('starting a scenario from the Workspace page', () => {
   quietConsole()
 
   test('re-reads the Definition, invokes its declared primary Capability with the current revision, and opens the Run', async () => {
-    const host = catalogHost().on('POST', invokePath, json({
-      result: {}, createdResources: [{ workspaceId: WS, moduleId: 'world', type: 'world.simulation-run', id: 'run-1' }],
-    }, 201))
+    const host = catalogHost().on('POST', invokePath, started())
     const runner = createStartRunner({ fetch: host.fetch, scheduler: fakeScheduler().scheduler })
     const seen: string[] = []
     runner.subscribe(state => { if (state.phase === 'busy') seen.push(state.step) })
@@ -78,37 +97,41 @@ describe('starting a scenario from the Workspace page', () => {
   })
 
   test('a featured demo starts its featured revision, also when this Workspace edited it', async () => {
-    const host = catalogHost().on('POST', invokePath, json({ result: {}, createdResources: [] }, 201))
+    const host = catalogHost().on('POST', invokePath, started())
     const runner = createStartRunner({ fetch: host.fetch, scheduler: fakeScheduler().scheduler })
-    expect(await runner.start({ ...target, featured: true, revisionId: revision('a') })).toEqual({ destination: null })
+    expect(await runner.start({ ...target, featured: true, revisionId: revision('a') })).toEqual({ destination: `/workspaces/${WS}?world=run-1` })
     expect((host.calls[2]?.body as { definition: { revisionId: string } }).definition.revisionId).toBe(revision('a'))
   })
 
   test('a created conversation opens in the Agents pane', async () => {
-    const host = catalogHost().on('POST', invokePath, json({
+    const receipt = json({
       result: {}, createdResources: [{ workspaceId: WS, moduleId: 'agents', type: 'agents.room', id: 'room-1' }],
-    }, 201))
-    expect(await createStartRunner({ fetch: host.fetch }).start(target)).toEqual({ destination: `/workspaces/${WS}?agents=room-1` })
+    }, 201)
+    expect(await agentsStart('agents.room-definition', receipt)).toEqual({ destination: `/workspaces/${WS}?agents=room-1` })
+  })
+
+  test('a generic Definition may succeed without creating something to open', async () => {
+    expect(await agentsStart('agents.custom-definition', json({ result: {} }))).toEqual({ destination: null })
   })
 
   test('only one start runs at a time', async () => {
     let release: () => void = () => {}
     const host = catalogHost().on('POST', invokePath, () => new Promise<Response>(resolve => {
-      release = () => resolve(json({ result: {}, createdResources: [] }, 201))
+      release = () => resolve(started())
     }))
     const runner = createStartRunner({ fetch: host.fetch, scheduler: fakeScheduler().scheduler })
     const first = runner.start(target)
     expect(await runner.start({ ...target, key: 'row:other' })).toBeNull()
     await Bun.sleep(0)
     release()
-    expect(await first).toEqual({ destination: null })
+    expect(await first).toEqual({ destination: `/workspaces/${WS}?world=run-1` })
     expect(host.calls.filter(call => call.method === 'POST')).toHaveLength(1)
   })
 
   test('says when it is slow, at 8 s and at 30 s, and stops the timers when done', async () => {
     let release: () => void = () => {}
     const host = catalogHost().on('POST', invokePath, () => new Promise<Response>(resolve => {
-      release = () => resolve(json({ result: {}, createdResources: [] }, 201))
+      release = () => resolve(started())
     }))
     const clock = fakeScheduler()
     const runner = createStartRunner({ fetch: host.fetch, scheduler: clock.scheduler })
@@ -123,16 +146,32 @@ describe('starting a scenario from the Workspace page', () => {
     expect(clock.pending.size).toBe(0)
   })
 
-  test('cancel stops waiting and never reports a result later', async () => {
-    const host = catalogHost().on('POST', invokePath, call => new Promise<Response>((_, reject) => {
-      call.signal?.addEventListener('abort', () => reject(new DOMException('The operation was aborted.', 'AbortError')))
+  test('stopping before dispatch leaves no unknown outcome', async () => {
+    const host = catalogHost()
+    const runner = createStartRunner({ fetch: host.fetch, scheduler: fakeScheduler().scheduler })
+    runner.subscribe(state => {
+      if (state.phase === 'busy' && state.step === 'starting') runner.cancel()
+    })
+    expect(await runner.start(target)).toBeNull()
+    expect(runner.state()).toEqual({ phase: 'idle' })
+    expect(host.calls.filter(call => call.method === 'POST')).toHaveLength(0)
+  })
+
+  test('stopping after dispatch warns to check and ignores a late receipt', async () => {
+    let release: () => void = () => {}
+    const host = catalogHost().on('POST', invokePath, () => new Promise<Response>(resolve => {
+      release = () => resolve(started())
     }))
     const runner = createStartRunner({ fetch: host.fetch, scheduler: fakeScheduler().scheduler })
     const pending = runner.start(target)
     await Bun.sleep(0)
     runner.cancel()
+    expect(runner.state()).toMatchObject({ phase: 'failed', step: 'starting', action: 'check' })
+    release()
     expect(await pending).toBeNull()
-    expect(runner.state()).toEqual({ phase: 'idle' })
+    expect(runner.state()).toMatchObject({ phase: 'failed', step: 'starting', action: 'check' })
+    expect(await runner.retry()).toBeNull()
+    expect(host.calls.filter(call => call.method === 'POST')).toHaveLength(1)
   })
 })
 
@@ -170,6 +209,38 @@ describe('start failures are explicit', () => {
     const runner = createStartRunner({ fetch: catalogHost().on('POST', invokePath, hostError(504, 'module_outcome_unknown', 'lost')).fetch })
     await runner.start(target)
     expect(failed(runner)).toMatchObject({ step: 'starting', action: 'check', text: 'The simulation may have started. Check Continue on this page before starting it again.' })
+  })
+
+  test('a transport failure during the catalog read still allows retry', async () => {
+    const host = catalogHost().on('GET', definitionsPath, () => { throw new TypeError('Failed to fetch') })
+    const runner = createStartRunner({ fetch: host.fetch })
+    expect(await runner.start(target)).toBeNull()
+    expect(failed(runner)).toMatchObject({ step: 'checking', action: 'try-again' })
+    expect(host.calls.filter(call => call.method === 'POST')).toHaveLength(0)
+  })
+
+  test('an invalid requested revision is refused before dispatch', async () => {
+    const host = catalogHost()
+    const runner = createStartRunner({ fetch: host.fetch })
+    expect(await runner.start({ ...target, revisionId: 'not a revision' })).toBeNull()
+    expect(failed(runner)).toMatchObject({ action: 'try-again', text: 'The selected Definition revision is invalid.' })
+    expect(host.calls.filter(call => call.method === 'POST')).toHaveLength(0)
+  })
+
+  test.each([
+    ['lost browser reply', () => { throw new TypeError('Failed to fetch') }],
+    ['invalid Module receipt', () => hostError(502, 'module_contract_invalid', 'Invalid receipt')],
+    ['invalid JSON', () => new Response('truncated', { status: 201 })],
+    ['missing Run', () => json({ result: {} }, 201)],
+    ['wrong Workspace', () => json({ result: {}, createdResources: [{ ...runRef, workspaceId: otherWorkspace }] }, 201)],
+    ['ambiguous Run', () => json({ result: {}, createdResources: [runRef, { ...runRef, id: 'run-2' }] }, 201)],
+  ] as const)('%s after dispatch asks to check without another POST', async (_label, answer) => {
+    const host = catalogHost().on('POST', invokePath, answer)
+    const runner = createStartRunner({ fetch: host.fetch })
+    expect(await runner.start(target)).toBeNull()
+    expect(failed(runner)).toMatchObject({ step: 'starting', action: 'check' })
+    expect(await runner.retry()).toBeNull()
+    expect(host.calls.filter(call => call.method === 'POST')).toHaveLength(1)
   })
 
   test('capacity asks to wait; other refusals keep their plain text and Try again restarts from the check', async () => {

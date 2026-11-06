@@ -7,8 +7,9 @@
 import type { ModuleCapabilityDescriptor, ModuleDefinitionDescriptor } from '@leitbild/contracts'
 import { cardCapability } from './card-actions.ts'
 import { errorDiagnostic, plainError, type ErrorAction } from './error-text.ts'
-import { launchDestination, type CreatedResourceRef } from './launch-destination.ts'
+import { launchDestination } from './launch-destination.ts'
 import { readHostJson } from './launch-workspace.ts'
+import { invokeDefinitionStart } from './start-invocation.ts'
 
 type FetchLike = (input: string, init?: RequestInit) => Promise<Response>
 
@@ -70,9 +71,9 @@ export interface StartRunner {
   subscribe(listener: (state: StartState) => void): () => void
   /** Null when another start is in flight, it failed (see `state()`) or it was cancelled. */
   start(target: StartTarget): Promise<StartResult | null>
-  /** Try again: restarts from the check, with the same target. */
+  /** Restarts from the check only when the current failure offers Try again. */
   retry(): Promise<StartResult | null>
-  /** Stops waiting on the client; the Module may still finish. */
+  /** Stops waiting on the client and offers a check if the Module may still finish. */
   cancel(): void
   /** Clears a failure. */
   dismiss(): void
@@ -83,9 +84,6 @@ const startError = (text: string, action: StartFailureAction, cause?: unknown): 
   Object.assign(new Error(text, cause === undefined ? undefined : { cause }), { startText: text, startAction: action })
 const isStartError = (error: unknown): error is StartError =>
   error instanceof Error && typeof (error as Partial<StartError>).startText === 'string'
-const isAbort = (error: unknown): boolean =>
-  typeof error === 'object' && error !== null && (error as { name?: unknown }).name === 'AbortError'
-
 export const notAvailableText = (target: Pick<StartTarget, 'featured' | 'definition'>): string =>
   target.featured
     ? 'This demo is not available in this Workspace right now.'
@@ -105,12 +103,17 @@ const browserScheduler: StartScheduler = {
   clearTimeout: handle => globalThis.clearTimeout(handle as ReturnType<typeof setTimeout>),
 }
 
+interface PendingStart {
+  readonly controller: AbortController
+  dispatched: boolean
+}
+
 export const createStartRunner = (ports: StartRunnerPorts): StartRunner => {
   const scheduler = ports.scheduler ?? browserScheduler
   const listeners = new Set<(state: StartState) => void>()
   let current: StartState = { phase: 'idle' }
   let lastTarget: StartTarget | null = null
-  let controller: AbortController | null = null
+  let pending: PendingStart | null = null
   let timers: unknown[] = []
 
   // Read through a function: the callbacks below change `current` behind the compiler's narrowing.
@@ -133,7 +136,9 @@ export const createStartRunner = (ports: StartRunnerPorts): StartRunner => {
   const getJson = async (path: string, signal: AbortSignal): Promise<unknown> =>
     readHostJson(await ports.fetch(path, { method: 'GET', signal }))
 
-  const run = async (target: StartTarget, signal: AbortSignal): Promise<StartResult> => {
+  const run = async (target: StartTarget, attempt: PendingStart): Promise<StartResult> => {
+    const { signal } = attempt.controller
+    signal.throwIfAborted()
     const workspace = encodeURIComponent(target.workspaceId)
     const module = encodeURIComponent(target.definition.moduleId)
     const [definitionBody, capabilityBody] = await Promise.all([
@@ -159,30 +164,29 @@ export const createStartRunner = (ports: StartRunnerPorts): StartRunner => {
     }
     if (capability === undefined) throw startError(cannotStartText(target), 'try-again')
 
+    signal.throwIfAborted()
     step(target, 'starting')
-    let response: { readonly createdResources?: ReadonlyArray<CreatedResourceRef> }
-    try {
-      response = await readHostJson(await ports.fetch(`/api/workspaces/${workspace}/capabilities/${encodeURIComponent(capability.id)}/invoke`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          definition: { ...descriptor.ref, revisionId: target.revisionId ?? descriptor.currentRevisionId },
-          input: {},
-          actor: { kind: 'human' },
-        }),
-        signal,
-      })) as typeof response
-    } catch (error) {
-      if (isAbort(error)) throw error
-      console.error(errorDiagnostic(error))
-      const plain = plainError(error)
-      // World refuses idempotency keys, so a lost answer is never retried blindly.
-      if (plain.code === 'module_outcome_unknown') throw startError(outcomeUnknownText(target), 'check', error)
-      throw startError(plain.text, plain.action, error)
+    const requiredResource = descriptor.ref.type === 'world.scenario' ? 'world.simulation-run'
+      : descriptor.ref.type === 'agents.room-definition' ? 'agents.room' : undefined
+    const receipt = await invokeDefinitionStart({
+      workspaceId: target.workspaceId,
+      definition: { ...descriptor.ref, revisionId: target.revisionId ?? descriptor.currentRevisionId },
+      capabilityId: capability.id,
+      fetch: ports.fetch, signal,
+      onDispatch: () => { attempt.dispatched = true },
+      requiredResource,
+    })
+    if (receipt.kind !== 'accepted') {
+      if (receipt.kind === 'aborted') throw receipt.cause
+      console.error(errorDiagnostic(receipt.cause))
+      if (receipt.kind === 'outcome-unknown') throw startError(outcomeUnknownText(target), 'check', receipt.cause)
+      const plain = plainError(receipt.cause)
+      throw startError(plain.text, plain.action, receipt.cause)
     }
 
+    signal.throwIfAborted()
     step(target, 'opening')
-    const created = response.createdResources ?? []
+    const { created } = receipt
     const opens = created.some(resource =>
       (resource.moduleId === 'world' && resource.type === 'world.simulation-run') || (resource.moduleId === 'agents' && resource.type === 'agents.room'))
     return { destination: opens ? launchDestination(target.workspaceId, created) : null }
@@ -191,20 +195,20 @@ export const createStartRunner = (ports: StartRunnerPorts): StartRunner => {
   const start = async (target: StartTarget): Promise<StartResult | null> => {
     if (current.phase === 'busy') return null
     lastTarget = target
-    const ownController = new AbortController()
-    controller = ownController
+    const attempt = { controller: new AbortController(), dispatched: false }
+    pending = attempt
     clearTimers()
-    set({ phase: 'busy', key: target.key, moduleId: target.definition.moduleId, step: 'checking', slow: 'none' })
     timers = [
       scheduler.setTimeout(() => slow('still'), STILL_STARTING_MS),
       scheduler.setTimeout(() => slow('long'), LONG_START_MS),
     ]
+    set({ phase: 'busy', key: target.key, moduleId: target.definition.moduleId, step: 'checking', slow: 'none' })
     try {
-      const result = await run(target, ownController.signal)
-      if (controller !== ownController) return null
+      const result = await run(target, attempt)
+      if (pending !== attempt) return null
       return result
     } catch (error) {
-      if (controller !== ownController || isAbort(error)) return null
+      if (pending !== attempt || attempt.controller.signal.aborted) return null
       const state = now()
       const failedStep = state.phase === 'busy' ? state.step : 'checking'
       if (isStartError(error)) {
@@ -216,9 +220,9 @@ export const createStartRunner = (ports: StartRunnerPorts): StartRunner => {
       }
       return null
     } finally {
-      if (controller === ownController) {
+      if (pending === attempt) {
         clearTimers()
-        controller = null
+        pending = null
       }
     }
   }
@@ -231,14 +235,19 @@ export const createStartRunner = (ports: StartRunnerPorts): StartRunner => {
     },
     start,
     retry: () => {
-      if (lastTarget === null || current.phase === 'busy') return Promise.resolve(null)
+      if (lastTarget === null || current.phase !== 'failed'
+        || (current.action !== 'try-again' && current.action !== 'wait')) return Promise.resolve(null)
       return start(lastTarget)
     },
     cancel: () => {
-      controller?.abort()
-      controller = null
+      const stopped = pending
+      pending = null
+      stopped?.controller.abort()
       clearTimers()
-      set({ phase: 'idle' })
+      if (stopped?.dispatched && current.phase === 'busy' && lastTarget !== null) {
+        const { key, moduleId, step } = current
+        set({ phase: 'failed', key, moduleId, step, text: `Stopped waiting. ${outcomeUnknownText(lastTarget)}`, action: 'check' })
+      } else set({ phase: 'idle' })
     },
     dismiss: () => {
       if (current.phase === 'failed') set({ phase: 'idle' })
