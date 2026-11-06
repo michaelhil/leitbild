@@ -2558,6 +2558,10 @@
       unitStatus={statusPresentationFor(windowEntry.object)}
       unitContexts={procedureUnitContexts}
       session={procedureSession}
+      {clock}
+      {realtimeAttached}
+      checkEvidenceRevision={`${procedureRevision}:${packDataRevisions[windowEntry.object.packId] ?? 0}`}
+      checkEvidenceObject={windowEntry.object}
       initialProcedureId={windowEntry.initialProcedureId}
       windowOffsetIndex={windowEntry.index}
       focusRequest={windowEntry.focusRequest ?? 0}

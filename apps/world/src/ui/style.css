@@ -4325,23 +4325,92 @@ body.rail-resizing {
   font-weight: 700;
 }
 
-.procedure-two-column {
+.procedure-operator-rows {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(260px, 0.72fr);
-  gap: 0 14px;
-  /* Non-dense row placement preserves the source-ordered DOM across columns. */
-  grid-auto-flow: row;
+  gap: 9px;
+  container-type: inline-size;
+}
+
+.procedure-response-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border: 1px solid var(--border);
+  border-radius: 5px;
+}
+
+.procedure-response-pair.single {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .procedure-column {
   min-width: 0;
-  grid-column: 1;
+  overflow-wrap: anywhere;
+}
+
+.procedure-response-pair > .procedure-column {
+  padding: 9px 12px;
 }
 
 .procedure-column.response {
-  grid-column: 2;
-  padding-left: 14px;
-  border-left: 1px solid #d8e0ea;
+  border-inline-start: 1px solid var(--border);
+}
+
+.procedure-column.procedure-pair-note {
+  grid-column: 1 / -1;
+  border-top: 1px solid var(--border);
+}
+
+.procedure-column h4 {
+  margin: 0 0 9px;
+  color: #475569;
+  font-size: calc(11px * var(--procedure-font-scale));
+  font-weight: 750;
+  text-transform: uppercase;
+  letter-spacing: 0.065em;
+}
+
+.procedure-column h4 span {
+  display: inline-block;
+  margin-inline-end: 0.6em;
+  color: #0f172a;
+  text-transform: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.procedure-response-pair > .procedure-column > :last-child {
+  margin-bottom: 0;
+}
+
+.procedure-current-check,
+.procedure-technical-basis,
+.procedure-branch-explanation {
+  margin: 4px 0 8px;
+  color: #475569;
+  font-size: calc(12px * var(--procedure-font-scale));
+}
+
+.procedure-technical-basis { margin-top: 8px; }
+.procedure-current-check summary,
+.procedure-technical-basis summary,
+.procedure-branch-explanation summary { cursor: pointer; }
+.procedure-current-check summary { font-weight: 650; }
+.procedure-current-check summary.supported .procedure-check-glyph { color: var(--success); }
+.procedure-current-check summary.contradicted .procedure-check-glyph { color: var(--critical); }
+.procedure-check-glyph { display: inline-block; min-width: 1em; text-align: center; font-weight: 800; }
+.procedure-current-check p:first-of-type,
+.procedure-technical-basis > div { margin-top: 6px; }
+.procedure-reference-banner {
+  margin: 0;
+  padding: 6px 12px;
+  color: #334155;
+  border-block-end: 1px solid var(--border);
+  font-size: calc(12px * var(--procedure-font-scale));
+}
+.procedure-reference-label { font-weight: 600; }
+
+@container (max-width: 650px) {
+  .procedure-response-pair { grid-template-columns: minmax(0, 1fr); }
+  .procedure-response-pair > .procedure-column.response { border-inline-start: 0; border-top: 1px solid var(--border); }
 }
 
 .procedure-column p,
@@ -4378,8 +4447,7 @@ body.rail-resizing {
   margin-bottom: 9px;
   padding: 8px 9px;
   background: #ffffff;
-  border: 1px solid #2563eb;
-  box-shadow: inset 3px 0 0 #2563eb;
+  border: 1px solid var(--border);
   color: inherit;
   font-size: calc(13px * var(--procedure-font-scale));
   text-align: left;
@@ -4471,8 +4539,7 @@ body.rail-resizing {
 }
 
 .procedure-branch:disabled {
-  cursor: not-allowed;
-  opacity: 0.64;
+  cursor: default;
 }
 
 .procedure-branch strong {

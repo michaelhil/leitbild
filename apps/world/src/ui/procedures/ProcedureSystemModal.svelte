@@ -5,9 +5,13 @@
   import { currentProcedureInput, procedureInputDocumentMatches, procedureInputFocusFor, resolveProcedureInputFocus, type ProcedureInputFocus } from './procedure-input.ts'
   import { procedureBindingStatusWord, procedureComparisonText, procedureCsfChip, procedureDescriptionText, procedureDisplayReading, procedureElapsedText, procedureStepBindingSummary } from './procedure-view.ts'
   import { readProcedureTagValue } from './procedure-client.ts'
-  import { procedureViewKey, procedureCategories, procedureStepItems, procedureStepTagBindings, procedureTextSegments, procedureBlockLabel, procedureObservationEvidence, procedureObservationBasis, procedureObservationLabel, procedureSourceEvidenceRequest, procedureUnitJump } from './procedure-view.ts'
+  import type { ProcedureChecksView } from '../../features/procedures/checks-view.ts'
+  import { simulationTimeAt } from '../simulation-clock.ts'
+  import { procedureViewKey, procedureCategories, procedureOperatorRows, type StepItem, procedureStepTagBindings, procedureTextSegments, procedureBlockLabel, procedureObservationEvidence, procedureObservationBasis, procedureObservationLabel, procedureSourceEvidenceRequest, procedureUnitJump } from './procedure-view.ts'
   import type {
     SimulationRunId,
+    SimulationClockState,
+    OperationalObject,
     ObjectId,
     ProcedureAssessment,
     ProcedureCatalog,
@@ -38,6 +42,7 @@
     transitionProcedureRun,
     evaluateProcedureCsfs,
     readProcedureSourceEvidence,
+    readProcedureChecks,
     resetProcedureRun,
     startProcedureRun,
     updateProcedureStep,
@@ -88,6 +93,10 @@
     readonly unitStatus?: PackObjectStatusPresentation
     readonly unitContexts?: ReadonlyArray<ProcedureUnitContext>
     readonly session: ProcedureSession
+    readonly clock?: SimulationClockState | undefined
+    readonly realtimeAttached?: boolean
+    readonly checkEvidenceRevision?: string
+    readonly checkEvidenceObject?: OperationalObject
     readonly initialProcedureId?: ProcedureId | undefined
     readonly windowOffsetIndex?: number
     /** Raised by the route when this unit's procedures are opened again: focus this window (and its requested procedure). */
@@ -153,6 +162,10 @@
     unitStatus = undefined,
     unitContexts = [],
     session,
+    clock = undefined,
+    realtimeAttached = false,
+    checkEvidenceRevision = '',
+    checkEvidenceObject = undefined,
     initialProcedureId = undefined,
     windowOffsetIndex = 0,
     focusRequest = 0,
@@ -262,6 +275,97 @@
   const currentProcedureStep = $derived(document && selectedProcedureRun
     ? procedureCurrentStep(selectedProcedureRun, document)
     : null)
+  let visibleCheckStep = $state<ProcedureStepId | undefined>()
+  let checkClockTick = $state(0)
+  let checkSample = $state.raw<{
+    readonly view: ProcedureChecksView
+    readonly revision: string
+    readonly object?: OperationalObject | undefined
+  }>()
+  const checkVersion = $derived(`${checkEvidenceRevision}:${clock?.paused}:${clock?.paused ? clock.currentTime : ''}`)
+  const checkRequest = $derived.by(() => {
+    const step = currentProcedureStep?.step
+    if (!activeRun || !document || step === undefined || step.id !== visibleCheckStep
+      || activeRun.currentStepId !== step.id || activeRun.sourceRevision !== document.source.revision || activeRun.sourcePath !== document.sourcePath
+      || !step.pairs?.some(pair => pair.advisoryBranchIndex !== undefined) || !realtimeAttached || clock === undefined) return null
+    return { runId: activeRun.runId, stepId: step.id, sourceId: document.source.sourceId, sourceRevision: document.source.revision, sourcePath: document.sourcePath }
+  })
+
+  const observeCheckStep = (element: HTMLElement, initial: ProcedureStepId | undefined) => {
+    let stepId: ProcedureStepId | undefined
+    let observer: IntersectionObserver | undefined
+    const clear = () => {
+      observer?.disconnect()
+      observer = undefined
+      if (stepId !== undefined && visibleCheckStep === stepId) visibleCheckStep = undefined
+    }
+    const update = (next: ProcedureStepId | undefined) => {
+      if (stepId === next) return
+      clear()
+      stepId = next
+      if (next === undefined) return
+      observer = new IntersectionObserver((entries, source) => {
+        if (observer !== source) return
+        if (entries.some(entry => entry.isIntersecting)) visibleCheckStep = next
+        else if (visibleCheckStep === next) visibleCheckStep = undefined
+      })
+      observer.observe(element)
+    }
+    update(initial)
+    return { update, destroy: clear }
+  }
+
+  $effect(() => {
+    const request = checkRequest
+    const runId = simulationRunId
+    checkSample = undefined
+    if (!request) return
+    const abort = new AbortController()
+    let inFlight = false
+    let lastRead = 0
+    let lastVersion: string | undefined
+    let lastObject: OperationalObject | undefined
+    let readFailed = false
+    const refresh = async () => {
+      const now = Date.now()
+      const currentClock = clock
+      checkClockTick = now
+      if (window.document.hidden || !currentClock || inFlight || now - lastRead < 750) return
+      const revision = checkVersion
+      const object = checkEvidenceObject
+      if (currentClock.paused && lastVersion === revision && lastObject === object && (!readFailed || now - lastRead < 4000)) return
+      lastVersion = revision
+      lastObject = object
+      lastRead = now
+      inFlight = true
+      try {
+        const view = await readProcedureChecks(runId, request, abort.signal)
+        if (!abort.signal.aborted && view.plantId === plantId && checkVersion === revision && checkEvidenceObject === object) {
+          checkSample = { view, revision, object }
+          readFailed = false
+        }
+      } catch {
+        readFailed = true
+        if (!abort.signal.aborted) checkSample = undefined
+      } finally {
+        inFlight = false
+      }
+    }
+    untrack(() => void refresh())
+    const timer = window.setInterval(() => void refresh(), 250)
+    return () => { window.clearInterval(timer); abort.abort() }
+  })
+
+  const activeCheck = (branchIndex: number) => {
+    const sample = checkSample
+    if (!sample || !checkRequest || sample.view.runId !== checkRequest.runId || sample.view.stepId !== checkRequest.stepId
+      || sample.revision !== checkVersion || sample.object !== checkEvidenceObject) return undefined
+    const value = sample.view.checks.find(item => item.branchIndex === branchIndex)
+    const currentTime = simulationTimeAt(clock, checkClockTick)
+    if (!value || !currentTime || Date.parse(currentTime) < Date.parse(sample.view.simulationTime)) return undefined
+    if (value.status !== 'unknown' && (value.validThrough === undefined || Date.parse(currentTime) > Date.parse(value.validThrough))) return undefined
+    return { value, time: sample.view.simulationTime }
+  }
   const driverView = $derived(procedureDriverView(selectedProcedureRun))
   const requestedInputRun = $derived(selectedProcedureRun && currentProcedureInput(selectedProcedureRun) ? selectedProcedureRun : null)
   const displayedInputFocus = $derived(requestedInputRun ? procedureInputFocusFor(simulationRunId, requestedInputRun) : null)
@@ -813,6 +917,14 @@
     }
     return procedureBranchActionText({ currentDocument: document, branch,
       ...(targetDocument === undefined ? {} : { targetDocument }) })
+  }
+
+  const operatorDestination = (branch: ProcedureBranch): string => {
+    if (branch.targetKind === 'step' && document) {
+      const destination = procedureStepById(document, branch.target)
+      if (destination) return `Go to Step ${destination.label}`
+    }
+    return branchActionTextFor(branch)
   }
 
   const showProcedureToast = (
@@ -1467,10 +1579,105 @@
   </div>
 {/snippet}
 
+{#snippet operatorItem(step: ProcedureStep, state: ProcedureStepRunState | undefined, item: StepItem, paired: boolean)}
+  {#if item.kind === 'block'}
+    {@const first = item.blocks[0]}
+    {#if item.blocks.length > 1}
+      {#if !paired}<p class="procedure-instruction-label"><b>{procedureBlockLabel(first.kind)}</b></p>{/if}
+      {#if first.kind === 'rno'}
+        {#each item.blocks as block}<p>{@render procedureText(block.text, block.tagIds)}</p>{/each}
+      {:else if first.kind === 'action'}
+        <ol class="procedure-instruction-list" aria-label={procedureBlockLabel(first.kind)}>
+          {#each item.blocks as block}<li>{@render procedureText(block.text, block.tagIds)}</li>{/each}
+        </ol>
+      {:else}
+        <ul class="procedure-instruction-list" aria-label={procedureBlockLabel(first.kind)}>
+          {#each item.blocks as block}<li>{@render procedureText(block.text, block.tagIds)}</li>{/each}
+        </ul>
+      {/if}
+    {:else}
+      <p class="block-{first.kind}">{#if !paired || !['check', 'action', 'expected', 'rno', 'text'].includes(first.kind)}{#if first.kind !== 'text'}<b>{procedureBlockLabel(first.kind)}</b>{/if}{/if} {@render procedureText(first.text, first.tagIds)}</p>
+      {#if first.paths?.length}<ol>{#each first.paths as path}<li>{@render procedureText(path, first.tagIds)}</li>{/each}</ol>{/if}
+    {/if}
+  {:else}
+    {@const taken = state?.decision !== undefined && state.decision.branchIndex === step.branches.indexOf(item.branch) ? state.decision : undefined}
+    <button
+      type="button"
+      class="procedure-branch {taken ? `taken tone-${procedureDecisionTone(taken)}` : ''}"
+      class:untaken={state?.decision !== undefined && taken === undefined}
+      class:off-path={activeRun !== null && branchIsOffPath(step)}
+      class:busy={busy}
+      disabled={!activeRun || busy || item.branch.targetKind === 'unknown'}
+      title={!selectedRun ? 'Start the procedure to use branch actions' : branchIsOffPath(step) ? `Step ${step.label} is not the current step: asks before moving ${document?.procedureId ?? 'the Run'}` : branchActionTextFor(item.branch)}
+      onclick={() => void requestBranch(step, item.branch)}
+    >
+      <strong>{#if taken}<span class="procedure-taken-mark" aria-hidden="true">✓</span>{/if}{item.branch.label}</strong>
+      <span>{operatorDestination(item.branch)}</span>
+      {#if pendingControl === branchControlKey(step, item.branch)}{@render recordingNote()}{/if}
+      {#if taken}
+        {@const who = procedureActorLabel(taken.selectedBy, taken.selectedByLabel)}
+        {#if procedureActorIsAi(taken.selectedBy)}
+          <small class="procedure-decision-line ai">Taken by AI{who === 'AI' ? '' : ` · ${who}`} · {procedurePlantTime(taken.simulationTime)}</small>
+        {:else}
+          <small class="procedure-decision-line">Taken {procedurePlantTime(taken.simulationTime)} · {who}</small>
+        {/if}
+      {/if}
+    </button>
+    {#if taken && (taken.basis !== undefined || (taken.evidence?.length ?? 0) > 0)}
+      <div class="procedure-decision-basis" class:ai={procedureActorIsAi(taken.selectedBy)}>
+        {#if taken.basis}<p>{taken.basis}</p>{/if}
+        {#if taken.evidence?.length}
+          <details>
+            <summary>Recorded readings ({taken.evidence.length})</summary>
+            {#each taken.evidence as evidence (evidence.tagId)}
+              <div class="procedure-evidence-row"><b>{evidence.tagId}</b><span>{evidence.reading}</span></div>
+            {/each}
+          </details>
+        {/if}
+      </div>
+    {/if}
+    {#if item.branch.because || item.branch.against}
+      <details class="procedure-branch-explanation">
+        <summary>Decision basis</summary>
+        {#if item.branch.because}<p>{@render procedureText(item.branch.because, item.branch.tagIds)}</p>{/if}
+        {#if item.branch.against}<p>{@render procedureText(item.branch.against, item.branch.tagIds)}</p>{/if}
+      </details>
+    {/if}
+  {/if}
+{/snippet}
+
+{#snippet currentCheck(branchIndex: number)}
+  {@const check = activeCheck(branchIndex)}
+  {@const tone = check?.value.status ?? 'unknown'}
+  <details class="procedure-current-check">
+    <summary class={tone}>
+      <span class="procedure-check-glyph" aria-hidden="true">{tone === 'supported' ? '✓' : tone === 'contradicted' ? '×' : '—'}</span>
+      <span>{tone === 'supported' ? 'Criteria met' : tone === 'contradicted' ? 'Criteria unmet' : 'Criteria not established'}</span>
+    </summary>
+    <p>Current indications only. Confirm the response before continuing.</p>
+    {#if check}
+      <p>Read at {procedurePlantTime(check.time)} simulation time.</p>
+      {#each check.value.readings as reading}
+        {@const label = document?.tags.find(tag => tag.id === reading.tagId)?.description ?? reading.description ?? reading.tagId ?? 'Indication'}
+        <p><strong>{label}:</strong> {reading.value ?? 'unavailable'} {reading.unit ?? ''}{#if reading.operator && reading.expected !== undefined} · test {reading.operator} {reading.expected}{/if}{#if reading.quality && reading.quality !== 'good'} · {reading.quality}{/if}</p>
+      {/each}
+      {#if check.value.observation}
+        {#each procedureObservationEvidence(check.value.observation.result) as evidence}
+          <p><strong>{evidence.label}:</strong> {evidence.value} · test {evidence.criterion}{evidence.reason ? ` · ${evidence.reason}` : ''}</p>
+        {/each}
+      {/if}
+      {#each check.value.reasons as reason}<p>{reason}</p>{/each}
+    {:else}
+      <p>No current automatic reading is available.</p>
+    {/if}
+  </details>
+{/snippet}
+
 {#snippet stepArticle(step: ProcedureStep, role: 'current' | 'decided' | 'open')}
+  {@const operator = procedureOperatorRows(step)}
   {@const state = stepStates.get(step.id)}
   {@const observation = selectedProcedureRun?.observations?.find(item => item.stepId === step.id)}
-  <article data-procedure-step-id={step.id} class="procedure-step {role}" class:complete={state?.assessment === 'complete'} class:failed={state?.assessment === 'failed'} class:unknown={state?.assessment === 'unknown'}>
+  <article use:observeCheckStep={role === 'current' && step.pairs?.some(pair => pair.advisoryBranchIndex !== undefined) ? step.id : undefined} data-procedure-step-id={step.id} class="procedure-step {role}" class:complete={state?.assessment === 'complete'} class:failed={state?.assessment === 'failed'} class:unknown={state?.assessment === 'unknown'}>
     <div class="procedure-step-main">
       <button
         type="button"
@@ -1504,69 +1711,47 @@
           </span>
         </h3>
         {#if openStepInfoId === step.id}{@render stepInfoPanel(step)}{/if}
-        <div class="procedure-two-column">
-          {#each procedureStepItems(step) as item}
-            <div class="procedure-column" class:response={!item.primary}>
-              {#if item.kind === 'block'}
-                {@const first = item.blocks[0]}
-                {#if item.blocks.length > 1}
-                  <p class="procedure-instruction-label"><b>{procedureBlockLabel(first.kind)}</b></p>
-                  {#if first.kind === 'action'}
-                    <ol class="procedure-instruction-list" aria-label={procedureBlockLabel(first.kind)}>
-                      {#each item.blocks as block}<li>{@render procedureText(block.text, block.tagIds)}</li>{/each}
-                    </ol>
-                  {:else}
-                    <ul class="procedure-instruction-list" aria-label={procedureBlockLabel(first.kind)}>
-                      {#each item.blocks as block}<li>{@render procedureText(block.text, block.tagIds)}</li>{/each}
-                    </ul>
-                  {/if}
-                {:else}
-                  <p class="block-{first.kind}">{#if first.kind !== 'text'}<b>{procedureBlockLabel(first.kind)}</b>{/if} {@render procedureText(first.text, first.tagIds)}</p>
-                  {#if first.paths?.length}<ol>{#each first.paths as path}<li>{@render procedureText(path, first.tagIds)}</li>{/each}</ol>{/if}
+        <div class="procedure-operator-rows">
+          {#each operator.rows as row, rowIndex}
+            {#if row.kind === 'pair'}
+              <div class="procedure-response-pair" class:single={row.expected.length === 0 || row.rno.length === 0} data-response-pair={row.id}>
+                {#if row.expected.length > 0}
+                  <section class="procedure-column">
+                    <h4>{#if (step.pairs?.length ?? 0) > 1}<span>{step.label}{String.fromCharCode(97 + rowIndex - (operator.rows[0]?.kind === 'sequence' ? 1 : 0))}</span>{/if}Action / Expected Response</h4>
+                    {#each row.expected.filter(item => item.kind === 'block') as item}{@render operatorItem(step, state, item, true)}{/each}
+                    {#if role === 'current' && row.advisoryBranchIndex !== undefined}
+                      {@render currentCheck(row.advisoryBranchIndex)}
+                    {/if}
+                    {#each row.expected.filter(item => item.kind === 'branch') as item}{@render operatorItem(step, state, item, true)}{/each}
+                  </section>
                 {/if}
-              {:else}
-                {@const taken = state?.decision !== undefined && state.decision.branchIndex === step.branches.indexOf(item.branch) ? state.decision : undefined}
-                <button
-                  type="button"
-                  class="procedure-branch {taken ? `taken tone-${procedureDecisionTone(taken)}` : ''}"
-                  class:untaken={state?.decision !== undefined && taken === undefined}
-                  class:off-path={activeRun !== null && branchIsOffPath(step)}
-                  class:busy={busy}
-                  disabled={!activeRun || busy || item.branch.targetKind === 'unknown'}
-                  title={!selectedRun ? 'Start the procedure to use branch actions' : branchIsOffPath(step) ? `Step ${step.label} is not the current step: asks before moving ${document?.procedureId ?? 'the Run'}` : branchActionTextFor(item.branch)}
-                  onclick={() => void requestBranch(step, item.branch)}
-                >
-                  <strong>{#if taken}<span class="procedure-taken-mark" aria-hidden="true">✓</span>{/if}{item.branch.label}</strong>
-                  <span>{branchActionTextFor(item.branch)}</span>
-                  {#if pendingControl === branchControlKey(step, item.branch)}{@render recordingNote()}{/if}
-                  {#if taken}
-                    {@const who = procedureActorLabel(taken.selectedBy, taken.selectedByLabel)}
-                    {#if procedureActorIsAi(taken.selectedBy)}
-                      <small class="procedure-decision-line ai">Taken by AI{who === 'AI' ? '' : ` · ${who}`} · {procedurePlantTime(taken.simulationTime)}</small>
-                    {:else}
-                      <small class="procedure-decision-line">Taken {procedurePlantTime(taken.simulationTime)} · {who}</small>
-                    {/if}
-                  {/if}
-                </button>
-                {#if taken && (taken.basis !== undefined || (taken.evidence?.length ?? 0) > 0)}
-                  <div class="procedure-decision-basis" class:ai={procedureActorIsAi(taken.selectedBy)}>
-                    {#if taken.basis}<p>{taken.basis}</p>{/if}
-                    {#if taken.evidence?.length}
-                      <details>
-                        <summary>Recorded readings ({taken.evidence.length})</summary>
-                        {#each taken.evidence as evidence (evidence.tagId)}
-                          <div class="procedure-evidence-row"><b>{evidence.tagId}</b><span>{evidence.reading}</span></div>
-                        {/each}
-                      </details>
-                    {/if}
+                {#if row.rno.length > 0}
+                  <section class="procedure-column response">
+                    <h4>Response Not Obtained</h4>
+                    {#each row.rno as item}{@render operatorItem(step, state, item, true)}{/each}
+                  </section>
+                {/if}
+                {#if row.other.length > 0}
+                  <div class="procedure-column procedure-pair-note">
+                    {#each row.other as item}{@render operatorItem(step, state, item, false)}{/each}
                   </div>
                 {/if}
-                {#if item.branch.because}<p class="procedure-branch-rationale"><b>Because</b> {@render procedureText(item.branch.because, item.branch.tagIds)}</p>{/if}
-                {#if item.branch.against}<p class="procedure-branch-rationale"><b>Against</b> {@render procedureText(item.branch.against, item.branch.tagIds)}</p>{/if}
-              {/if}
-            </div>
+              </div>
+            {:else}
+              <div class="procedure-column procedure-operator-sequence">
+                {#each row.items as item}{@render operatorItem(step, state, item, false)}{/each}
+              </div>
+            {/if}
           {/each}
         </div>
+        {#if operator.basis.length > 0}
+          <details class="procedure-technical-basis">
+            <summary>Technical basis</summary>
+            <div class="procedure-column">
+              {#each operator.basis as item}{@render operatorItem(step, state, item, false)}{/each}
+            </div>
+          </details>
+        {/if}
         {#if step.assessment}
           <details class="procedure-observation">
             <summary>Evaluation criteria — authored specification</summary>
@@ -1827,7 +2012,7 @@
                       <BookOpen size={15} aria-hidden="true" />
                     </span>
                     <span>{item.procedureId}</span>
-                    <small>{item.title}</small>
+                    <small>{item.title}{#if item.sourcePath.startsWith('archive/')} <span class="procedure-reference-label">Reference</span>{/if}</small>
                   </button>
                 {/each}
               </section>
@@ -1916,6 +2101,9 @@
             </div>
           </div>
           {@render errorStrips()}
+          {#if document.sourcePath.startsWith('archive/')}
+            <p class="procedure-reference-banner"><strong>Reference procedure</strong> · Check applicability before use.</p>
+          {/if}
           {#if driverView}
             <div class="procedure-driver-band {driverView.kind}" role="status">
               {#if driverView.kind === 'ai'}
@@ -2174,8 +2362,8 @@
   :global(.procedure-modal.compact-procedure .procedure-layout:not(.toc-collapsed)) { grid-template-rows: minmax(0, 1fr) auto; }
   :global(.procedure-modal.compact-procedure .procedure-layout:not(.toc-collapsed) .procedure-document) { display: none; }
   :global(.procedure-modal.compact-procedure .procedure-list) { max-height: none; }
-  :global(.procedure-modal.compact-procedure .procedure-two-column) { grid-template-columns: minmax(0, 1fr); }
-  :global(.procedure-modal.compact-procedure .procedure-column.response) { grid-column: 1; padding-left: 0; border-left: 0; }
+  :global(.procedure-modal.compact-procedure .procedure-response-pair) { grid-template-columns: minmax(0, 1fr); }
+  :global(.procedure-modal.compact-procedure .procedure-column.response) { border-inline-start: 0; border-top: 1px solid var(--border); }
   :global(.procedure-modal.compact-procedure .procedure-toc-handle) { width: 100%; min-height: 44px; display: flex; align-items: center; justify-content: flex-start; gap: 4px; padding: 0 8px; }
   :global(.procedure-modal.compact-procedure .procedure-toc-label) { display: inline; }
 </style>

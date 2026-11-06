@@ -2,8 +2,8 @@ import type { ProcedureBranch, ProcedureCatalogItem, ProcedureDocument, Procedur
 import type { ProcedureSourceEvidenceRequest } from './procedure-client.ts'
 
 const primaryKinds = new Set(['check', 'action', 'expected', 'decision', 'when', 'until', 'within', 'concurrent', 'caution', 'note', 'text'])
-const listKinds = new Set(['check', 'action', 'expected'])
-type StepItem =
+const listKinds = new Set(['check', 'action', 'expected', 'rno'])
+export type StepItem =
   | { readonly kind: 'block'; readonly blocks: readonly [ProcedureTextBlock, ...ProcedureTextBlock[]]; readonly primary: boolean; readonly sourceLine: number }
   | { readonly kind: 'branch'; readonly branch: ProcedureBranch; readonly primary: false; readonly sourceLine: number }
 
@@ -19,6 +19,7 @@ export const procedureStepItems = (step: ProcedureStep): ReadonlyArray<StepItem>
     const previous = items.at(-1)
     if (previous?.kind === 'block' && item.kind === 'block' &&
         listKinds.has(item.blocks[0].kind) && previous.blocks[0].kind === item.blocks[0].kind &&
+        !step.pairs?.some(pair => previous.sourceLine < pair.sourceLine && pair.sourceLine < item.sourceLine) &&
         previous.blocks.every(block => !block.paths?.length) && !item.blocks[0].paths?.length) {
       items[items.length - 1] = { ...previous, blocks: [...previous.blocks, ...item.blocks] }
     } else {
@@ -26,6 +27,68 @@ export const procedureStepItems = (step: ProcedureStep): ReadonlyArray<StepItem>
     }
   }
   return items
+}
+
+type OperatorRow =
+  | { readonly kind: 'sequence'; readonly items: ReadonlyArray<StepItem> }
+  | { readonly kind: 'pair'; readonly id: string; readonly advisoryBranchIndex?: number; readonly expected: ReadonlyArray<StepItem>; readonly rno: ReadonlyArray<StepItem>; readonly other: ReadonlyArray<StepItem> }
+
+const itemColumn = (item: StepItem): 'expected' | 'rno' | 'other' => {
+  if (item.kind === 'branch') {
+    return item.branch.outcome === 'normal' ? 'expected' : item.branch.outcome === 'rno' ? 'rno' : 'other'
+  }
+  if (item.blocks[0].kind === 'rno') return 'rno'
+  return item.primary ? 'expected' : 'other'
+}
+
+/** An authored pair, or one unambiguous unmarked response. Complex retained steps keep source order. */
+export const procedureOperatorRows = (step: ProcedureStep): { readonly rows: ReadonlyArray<OperatorRow>; readonly basis: ReadonlyArray<StepItem> } => {
+  const all = procedureStepItems(step)
+  const isBasis = (item: StepItem) => item.kind === 'block' && item.blocks[0].kind === 'basis'
+  const items = all.filter(item => !isBasis(item))
+  const basis = all.filter(isBasis)
+  const makePair = (id: string, rowItems: ReadonlyArray<StepItem>, advisoryBranchIndex?: number): OperatorRow => ({
+    kind: 'pair', id, ...(advisoryBranchIndex === undefined ? {} : { advisoryBranchIndex }),
+    expected: rowItems.filter(item => itemColumn(item) === 'expected'),
+    rno: rowItems.filter(item => itemColumn(item) === 'rno'),
+    other: rowItems.filter(item => itemColumn(item) === 'other'),
+  })
+  if (step.pairs?.length) {
+    const assigned = new Map(step.pairs.flatMap(pair => pair.advisoryBranchIndex === undefined
+      ? []
+      : [[step.branches[pair.advisoryBranchIndex]!, pair.id] as const]))
+    const groups = new Map<string, StepItem[]>(step.pairs.map(pair => [pair.id, []]))
+    const before: StepItem[] = []
+    let active: string | undefined
+    let next = 0
+    for (const item of items) {
+      while (next < step.pairs.length && step.pairs[next]!.sourceLine < item.sourceLine) {
+        active = step.pairs[next++]!.id
+      }
+      const owner = item.kind === 'branch' ? assigned.get(item.branch) ?? active : active
+      if (owner !== undefined) groups.get(owner)!.push(item)
+      else before.push(item)
+    }
+    return {
+      rows: [
+        ...(before.length ? [{ kind: 'sequence' as const, items: before }] : []),
+        ...step.pairs.map(pair => makePair(pair.id, groups.get(pair.id)!, pair.advisoryBranchIndex)),
+      ],
+      basis,
+    }
+  }
+  // A control or prerequisite after an RNO must never be silently moved before it.
+  let sawResponse = false
+  let single = true
+  for (const item of items) {
+    if (item.kind === 'branch') continue
+    if (itemColumn(item) === 'other' && item.blocks[0].kind !== 'unknown') single = false
+    if (itemColumn(item) === 'rno') sawResponse = true
+    else if (sawResponse && itemColumn(item) === 'expected') single = false
+  }
+  const firstBranch = items.findIndex(item => item.kind === 'branch')
+  if (firstBranch !== -1 && items.slice(firstBranch).some(item => item.kind === 'block')) single = false
+  return { rows: items.length === 0 ? [] : single ? [makePair('step', items)] : [{ kind: 'sequence', items }], basis }
 }
 
 export type ProcedureTextSegment =
@@ -73,19 +136,42 @@ export const procedureBlockLabel = (kind: ProcedureTextBlock['kind']): string =>
 
 export const procedureObservationEvidence = (result: Record<string, unknown>): ReadonlyArray<{
   readonly label: string; readonly value: string; readonly criterion: string; readonly status: string; readonly reason?: string
-}> => Array.isArray(result.evidence) ? result.evidence.map(value => {
-  const item = typeof value === 'object' && value !== null ? value as Record<string, unknown> : {}
-  const signal = typeof item.signal === 'object' && item.signal !== null ? item.signal as Record<string, unknown> : {}
-  const variable = typeof item.variable === 'object' && item.variable !== null ? item.variable as Record<string, unknown> : {}
-  const comparison = typeof item.comparison === 'object' && item.comparison !== null ? item.comparison as Record<string, unknown> : {}
-  return {
-    label: typeof signal.label === 'string' ? signal.label : typeof signal.path === 'string' ? signal.path : 'Unavailable signal',
-    value: variable.value === undefined ? 'unavailable' : `${String(variable.value)}${typeof variable.unit === 'string' ? ` ${variable.unit}` : ''}`,
-    criterion: `${String(comparison.operator ?? '?')} ${String(comparison.value ?? '?')}${typeof comparison.unit === 'string' ? ` ${comparison.unit}` : ''}`,
-    status: typeof item.status === 'string' ? item.status : 'unknown',
-    ...(typeof item.reason === 'string' ? { reason: item.reason } : {}),
-  }
-}) : []
+}> => {
+  const frame = Array.isArray(result.evidence) ? result : evidenceRecord(result.current)
+  if (!Array.isArray(frame.evidence)) return []
+  return frame.evidence.map(value => {
+    const item = evidenceRecord(value)
+    const status = typeof item.status === 'string' ? item.status : 'unknown'
+    const reason = typeof item.reason === 'string' ? { reason: item.reason } : {}
+    if (typeof item.ruleId === 'string' && (item.field === 'active' || item.field === 'latched')) {
+      const label = typeof item.label === 'string' ? item.label : item.ruleId
+      return {
+        label: `${label} · ${item.field}`,
+        value: indicationState(item.value),
+        criterion: indicationState(item.expected),
+        status, ...reason,
+      }
+    }
+    const facts = Number.isSafeInteger(item.readingIndex)
+      ? evidenceRecord(Array.isArray(frame.readings) ? frame.readings[item.readingIndex as number] : undefined)
+      : item
+    const signal = evidenceRecord(facts.signal)
+    const reference = evidenceRecord(item.reference)
+    const variable = evidenceRecord(facts.variable)
+    const comparison = evidenceRecord(item.comparison)
+    return {
+      label: [signal.label, signal.path, reference.tagId, reference.path].find((label): label is string => typeof label === 'string') ?? 'Unavailable indication',
+      value: variable.value === undefined ? 'unavailable' : `${String(variable.value)}${typeof variable.unit === 'string' ? ` ${variable.unit}` : ''}`,
+      criterion: `${String(comparison.operator ?? '?')} ${String(comparison.value ?? '?')}${typeof comparison.unit === 'string' ? ` ${comparison.unit}` : ''}`,
+      status, ...reason,
+    }
+  })
+}
+
+const evidenceRecord = (value: unknown): Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {}
+
+const indicationState = (value: unknown) => value === true ? 'On' : value === false ? 'Off' : 'unavailable'
 
 export const procedureObservationBasis = (result: Record<string, unknown>): string => {
   const basis = typeof result.basis === 'object' && result.basis !== null ? result.basis as Record<string, unknown> : {}
