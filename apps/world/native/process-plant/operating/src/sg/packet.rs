@@ -327,11 +327,12 @@ pub struct Bypass {
 }
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
 pub enum BypassMode {
-    /// R4-DUMP (owner 1 Nov): with forced circulation, the Tavg mode from
-    /// the reactor trip on, on the no-load average temperature; closed
-    /// before it (the at-power band does not open at the full-power header).
-    #[serde(rename = "noLoadTavgAfterReactorTrip")]
-    NoLoadTavgAfterReactorTrip,
+    /// R4-DUMP (owner 1 Nov; arming, lead's judgement 7 Nov): with forced
+    /// circulation, the Tavg mode from the later of the reactor trip and the
+    /// turbine trip on, on the no-load average temperature; closed before it
+    /// (the at-power band does not open at the full-power header).
+    #[serde(rename = "noLoadTavgAfterReactorAndTurbineTrip")]
+    NoLoadTavgAfterReactorAndTurbineTrip,
 }
 /// R4-DUMP: the Tavg mode's input channel.
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]

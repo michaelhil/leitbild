@@ -639,7 +639,7 @@ pub trait Secondary<P> {
     }
     /// R4-DUMP hook (lane DUMP): the own rows reading the post-trip Tavg
     /// mode's loop-average input (sorted; a fixed pattern, values zero until
-    /// the reactor trip arms it), empty for an owner without the mode.
+    /// the mode arms), empty for an owner without the mode.
     fn loop_average_rows(&self) -> Vec<usize> {
         Vec::new()
     }

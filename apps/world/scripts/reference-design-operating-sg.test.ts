@@ -12,7 +12,7 @@ const relief:ReturnType<typeof parseSgRelief>={valves:[{role:'relief',crackPress
   backPressure_Pa:101325,descendingSwitch:'inletAtFullLift',
   rating:{fractionOfNominalFlow:.6,nominalFlow_kg_s:819.818983,fluid:'saturatedVapor',inletPressure_Pa:7000000}}
 const travel={sgIsolation_s:2,turbineStop_s:.3,reheaterIsolation_s:.3,admission_s:1,bypass_s:2}
-const noLoad={mode:'noLoadTavgAfterReactorTrip',noLoadAverageTemperature_K:564.816667,noLoadPressure_Pa:7623997,
+const noLoad={mode:'noLoadTavgAfterReactorAndTurbineTrip',noLoadAverageTemperature_K:564.816667,noLoadPressure_Pa:7623997,
   tavgInput:'cvcsLoopAverageLag',tavgDeadBand_K:0,tavgBandWidth_K:15,withoutForcedCirculation:'noLoadPressureAfterTurbineTrip'}
 const control={bandStart_Pa:6413140,bandFull_Pa:6713140,sample_s:.1,availableBelow_Pa:12000,headerEvidenceAge_s:.5,
   rating:{fractionOfTotalSteam:.5,inletPressure_Pa:6000000,fluid:'saturatedVapor',outlet:'nominalCondenser'}}
@@ -38,10 +38,10 @@ test('relief, travel and S2 boundaries parse from their owners only, strictly',(
   expect(()=>parseSteamValveTravel(edit('"turbineStop_s":0.3','"turbineStop_s":0'))).toThrow()
   expect(()=>parseSgRelief(edit('"seatLagTimeConstants":10,',''))).toThrow()
   // R12-B1 / R4-DUMP: the post-trip modes take the band width and rating fraction from ld01-bypass-control.
-  expect(bypassNoLoad(admission())).toEqual({mode:'noLoadTavgAfterReactorTrip',noLoadAverageTemperature_K:564.816667,
+  expect(bypassNoLoad(admission())).toEqual({mode:'noLoadTavgAfterReactorAndTurbineTrip',noLoadAverageTemperature_K:564.816667,
     noLoadPressure_Pa:7623997,bandWidth_Pa:300000,fractionOfNominalSteam:.5,tavgInput:'cvcsLoopAverageLag',tavgDeadBand_K:0,
     tavgBandWidth_K:15,withoutForcedCirculation:'noLoadPressureAfterTurbineTrip'})
-  expect(()=>bypassNoLoad(edit('"mode":"noLoadTavgAfterReactorTrip"','"mode":"noLoadPressureAfterTurbineTrip"'))).toThrow()
+  expect(()=>bypassNoLoad(edit('"mode":"noLoadTavgAfterReactorAndTurbineTrip"','"mode":"noLoadPressureAfterTurbineTrip"'))).toThrow()
   expect(()=>bypassNoLoad(edit('"tavgDeadBand_K":0','"tavgDeadBand_K":-1'))).toThrow()
   expect(()=>bypassNoLoad(edit('"tavgBandWidth_K":15','"tavgBandWidth_K":0'))).toThrow()
   expect(()=>bypassNoLoad(edit('"tavgInput":"cvcsLoopAverageLag"','"tavgInput":"rodControlTavg"'))).toThrow()

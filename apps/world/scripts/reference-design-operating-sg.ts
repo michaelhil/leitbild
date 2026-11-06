@@ -112,7 +112,7 @@ function guards(thermodynamics:string,volume_m3:number){
 }
 
 /** The G1 stand-in's post-trip modes: R4-DUMP's Tavg mode after the reactor
- * trip with forced circulation, and R12-B1's no-load pressure mode after the
+ * and turbine trips with forced circulation, and R12-B1's no-load pressure mode after the
  * turbine trip without it, with the selected band width and rating fraction
  * of `ld01-bypass-control` (one numeric owner each). */
 export function bypassNoLoad(admission:string){

@@ -1,6 +1,6 @@
 //! R4-DUMP (plan r4, lane DUMP) zero-time check of the post-trip Tavg mode's
-//! exact partials: at a saved state (`LD01_S3_STATE`) the reactor trip arms
-//! the mode (the dump then opens on the at-power Tavg), and
+//! exact partials: at a saved state (`LD01_S3_STATE`) both trips arm the
+//! mode (the dump then opens on the at-power Tavg), and
 //! - the block Jacobian (the solver's assembly) equals the colored joined
 //!   Jacobian (the seeded evaluation) entry by entry, and
 //! - the CVCS loop-average column's secondary entries equal a central
@@ -72,16 +72,16 @@ fn tavg_mode_partials_at_the_reactor_trip() {
     let (mut y, yp) = (from_bits(&state["y_bits"]), from_bits(&state["yp_bits"]));
     let t0 = state["t_s"].as_f64().expect("t_s");
     assert_eq!(y.len(), joined.dimension(), "state layout");
-    // The reactor trip arms the Tavg mode at the state. Only the SG owner
-    // takes it here, so the rods stay held and every other block is the
-    // state's: the whole matrix then isolates this change.
-    let receipts = vec![
+    // Both trips arm the Tavg mode at the state. Only the SG owner takes
+    // them here, so the rods stay held and every other block is the state's:
+    // the whole matrix then isolates this change.
+    let receipts = [Command::HoldingLoss, Command::TurbineTrip].map(|c| {
         joined
             .secondary_mut()
             .expect("the SG owner")
-            .command(t0, Command::HoldingLoss)
-            .expect("the reactor trip"),
-    ];
+            .command(t0, c)
+            .expect("a trip")
+    });
     let secondary = joined.secondary().expect("the SG owner");
     assert_eq!(secondary.reactor_trip_time(), Some(t0), "armed");
     let o = joined.offsets();
@@ -192,7 +192,7 @@ fn tavg_mode_partials_at_the_reactor_trip() {
 /// R4-DUMP (WORLD4's review 1): every owner sees the reactor trip once. A
 /// manual reactor trip opens the holding circuit at the command, and the
 /// joined operator reports that opening as the holding loss (the SG owner
-/// arms there); the acquired protection's own holding loss then arrives
+/// receives it there); the acquired protection's own holding loss then arrives
 /// later and is acknowledged with no change by every owner: the
 /// coordinates and every discrete state stay bitwise. The record goes to a
 /// new path (`LD01_DUMP_REPEAT_RECEIPT`).
@@ -252,7 +252,7 @@ fn a_repeated_holding_loss_changes_nothing() {
             .expect("the SG owner")
             .reactor_trip_time(),
         Some(t0),
-        "armed at the opening"
+        "received at the opening"
     );
     assert_eq!(
         joined.discrete_state()["pzr"],
@@ -282,7 +282,8 @@ fn a_repeated_holding_loss_changes_nothing() {
     assert!(
         repeat
             .iter()
-            .any(|r| r.receipt["owner"] == "secondary" && r.receipt["armedSince_s"] == json!(t0)),
+            .any(|r| r.receipt["owner"] == "secondary"
+                && r.receipt["reactorTripSince_s"] == json!(t0)),
         "the SG owner acknowledges: {repeat:?}"
     );
     let record = json!({
@@ -298,4 +299,107 @@ fn a_repeated_holding_loss_changes_nothing() {
         "discrete_state_unchanged": true,
     });
     std::fs::write(&out, serde_json::to_vec_pretty(&record).unwrap()).expect("record");
+}
+
+/// The steam every SG's pickup passes at `(t, y, yp)`, kg/s.
+fn pickup_steam(
+    joined: &mut leitbild_operating_plant::joined::operator::Joined<leitbild_operating_water::If97>,
+    t: f64,
+    y: &[f64],
+    yp: &[f64],
+) -> Vec<f64> {
+    joined.evaluate(t, y, yp, None, 0., None).expect("evaluate");
+    joined
+        .secondary()
+        .expect("the SG owner")
+        .account()
+        .crossings
+        .iter()
+        .filter(|c| c.port.ends_with(".steam"))
+        .map(|c| -c.mass_kg_s)
+        .collect()
+}
+
+/// R4-DUMP (lead's ruling, 7 Nov): the Tavg mode arms at the later of the
+/// reactor trip and the turbine trip. In either order the first trip alone
+/// leaves the dump closed (the steam bitwise the at-power steam) and the
+/// second opens it at `u = (T_lag - T_nl) / w`.
+#[test]
+#[ignore = "R4-DUMP zero-time check: requires the joined CVCS packet, a saved state (LD01_S3_STATE), the wiki, IF97 and stock IDA/KLU"]
+fn the_tavg_mode_arms_at_the_later_trip_in_either_order() {
+    let water = leitbild_operating_water::WaterMethod::parse(
+        &std::env::var("LD01_S3_WATER").unwrap_or_else(|_| "sbtl".into()),
+    )
+    .unwrap_or_else(|e| panic!("{e}"));
+    leitbild_operating_water::select_water_method(water).unwrap_or_else(|e| panic!("{e}"));
+    let state_path = std::env::var("LD01_S3_STATE").expect("LD01_S3_STATE");
+    let state: Value =
+        serde_json::from_slice(&std::fs::read(&state_path).expect("state")).expect("state json");
+    let packet: Value = serde_json::from_slice(&common::packet_bytes().1).expect("packet json");
+    let bypass = &packet["secondary"]["bypass"];
+    let (t_nl, w, fraction) = (
+        bypass["noLoadAverageTemperature_K"].as_f64().unwrap(),
+        bypass["tavgBandWidth_K"].as_f64().unwrap(),
+        bypass["fractionOfNominalSteam"].as_f64().unwrap(),
+    );
+    for order in [
+        [Command::HoldingLoss, Command::TurbineTrip],
+        [Command::TurbineTrip, Command::HoldingLoss],
+    ] {
+        let mut s = leitbild_operating_water::unit::spine::started_full_composition_with_singles(
+            &common::spine(),
+            &[],
+        )
+        .expect("the S2 composition");
+        let joined = &mut s.joined;
+        joined.declare_feed_gate().expect("feed gate");
+        if !state["discrete_state"].is_null() {
+            joined
+                .restore_discrete_state(&state["discrete_state"]["operator"])
+                .expect("discrete state");
+        }
+        let (y, yp) = (from_bits(&state["y_bits"]), from_bits(&state["yp_bits"]));
+        let t0 = state["t_s"].as_f64().expect("t_s");
+        let at_power = pickup_steam(joined, t0, &y, &yp);
+        let demand: Vec<f64> = at_power.clone();
+        let command = |joined: &mut leitbild_operating_plant::joined::operator::Joined<_>,
+                       c: Command| {
+            joined
+                .secondary_mut()
+                .expect("the SG owner")
+                .command(t0, c)
+                .expect("a trip")
+        };
+        let first = command(joined, order[0]);
+        assert_eq!(
+            first.receipt["bypass"],
+            json!("closed: the Tavg mode arms when both trips are received (R4-DUMP)"),
+            "{order:?}"
+        );
+        let one_trip = pickup_steam(joined, t0, &y, &yp);
+        assert_eq!(
+            one_trip.iter().map(|m| m.to_bits()).collect::<Vec<_>>(),
+            at_power.iter().map(|m| m.to_bits()).collect::<Vec<_>>(),
+            "one trip leaves the dump closed: {order:?}"
+        );
+        let second = command(joined, order[1]);
+        assert_eq!(
+            second.receipt["bypass"],
+            json!("Tavg mode armed (R4-DUMP): both trips received"),
+            "{order:?}"
+        );
+        let both = pickup_steam(joined, t0, &y, &yp);
+        let o = joined.offsets();
+        let tavg = o.cvcs + leitbild_operating_plant::joined::cvcs::TAVG;
+        let lag = y[tavg] * joined.scales()[tavg];
+        let u = (lag - t_nl) / w;
+        assert!(u > 0. && u < 1., "the dump opens inside its band: {u}");
+        for (k, m) in both.iter().enumerate() {
+            let expected = demand[k] + fraction * demand[k] * u;
+            assert!(
+                (m - expected).abs() <= 1e-9 * expected,
+                "{order:?}, SG {k}: {m} against {expected}"
+            );
+        }
+    }
 }

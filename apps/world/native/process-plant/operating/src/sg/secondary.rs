@@ -20,9 +20,11 @@
 //! stand-in) also passes `fraction × demand × u` per SG at `h_g(p)`; it is
 //! not turbine admission, and the account counts it in the SG's steam port.
 //! With forced circulation (R4-DUMP, owner 1 Nov) `u` is the Tavg mode's
-//! demand from the reactor trip on, common to every SG: `u = clamp((T_lag -
-//! T_nl - b) / w, 0, 1)` on the CVCS's loop-average lag `T_lag`, a trial
-//! input the joined operator sets before every evaluation. With no RCP
+//! demand, common to every SG: `u = clamp((T_lag - T_nl - b) / w, 0, 1)` on
+//! the CVCS's loop-average lag `T_lag`, a trial input the joined operator
+//! sets before every evaluation. It arms at the later of the reactor trip
+//! and the turbine trip (lead's judgement, 7 Nov): armed at the reactor trip
+//! alone, a rod trip's worst frame reached 1.27. With no RCP
 //! supplied (a held input the routing sets at its restarts) `u` is R12-B1's
 //! no-load pressure mode from the turbine trip on, linear from 0 at the
 //! no-load pressure to 1 one band width above it. The reliefs discharge the same gas
@@ -68,8 +70,8 @@
 //! guards, the pressure mode's two kinks (no-load pressure and full
 //! opening), armed from the TRIP on without forced circulation: a crossing
 //! changes no state. After the feed roots, the Tavg mode's two common kinks
-//! (opening start and full opening), armed from the reactor trip on with
-//! forced circulation, likewise. A closing
+//! (opening start and full opening), armed once both trips are received
+//! with forced circulation, likewise. A closing
 //! disc seats at its declared seat lift: the transaction sets the lift to
 //! exactly zero and the seated valve has neither flow nor nozzle evaluation
 //! until crack reopens it. Then the crown's first
@@ -437,8 +439,8 @@ pub struct Secondaries {
     /// side arms only the reverse crossing, so a restart that puts the
     /// pressure back a hair across the kink does not fire it again.
     bypass_side: Vec<[Option<bool>; 2]>,
-    /// R4-DUMP: the reactor trip (the holding circuit's opening) that arms
-    /// the Tavg mode, once received.
+    /// R4-DUMP: the reactor trip (the holding circuit's opening), once
+    /// received; with the TRIP it arms the Tavg mode.
     reactor_trip_s: Option<f64>,
     /// R4-DUMP: whether any RCP is supplied (the routing's held input;
     /// `true` as prepared). Without it the bypass is in R12-B1's pressure
@@ -840,10 +842,24 @@ impl Secondaries {
             t,
         ))
     }
-    /// R4-DUMP: whether the Tavg mode is armed at `t` (forced circulation
-    /// and the reactor trip received).
+    /// R4-DUMP: the instant the Tavg mode arms, the later of the reactor
+    /// trip and the turbine trip, once both are received (lead's judgement,
+    /// 7 Nov). With one trip alone it does not arm.
+    pub fn tavg_arming(&self) -> Option<f64> {
+        Some(self.reactor_trip_s?.max(self.trip_s?))
+    }
+    /// R4-DUMP: whether the Tavg mode is armed at `t`, with forced
+    /// circulation.
     fn tavg_armed(&self, t: f64) -> bool {
-        self.forced_circulation && self.reactor_trip_s.is_some_and(|t0| t >= t0)
+        self.forced_circulation && self.tavg_arming().is_some_and(|t0| t >= t0)
+    }
+    /// R4-DUMP: what a trip command leaves the bypass in, for its receipt.
+    fn arming_note(&self) -> &'static str {
+        match (self.forced_circulation, self.tavg_arming()) {
+            (false, _) => "no RCP supplied: the no-load pressure mode (R12-B1)",
+            (true, Some(_)) => "Tavg mode armed (R4-DUMP): both trips received",
+            (true, None) => "closed: the Tavg mode arms when both trips are received (R4-DUMP)",
+        }
     }
     /// R4-DUMP: the loop-average input of this evaluation.
     fn loop_average_input(&self) -> Result<Scalar, Failure> {
@@ -955,8 +971,8 @@ impl Secondaries {
         self.turbine_load
     }
     /// The bypass stand-in's opening at `t` and SG pressure `p`: with forced
-    /// circulation the Tavg mode from the reactor trip on (R4-DUMP), zero
-    /// before it; without, the pressure mode from the TRIP on (R12-B1).
+    /// circulation the Tavg mode from its arming on (R4-DUMP), zero before
+    /// it; without, the pressure mode from the TRIP on (R12-B1).
     pub fn bypass_opening(&self, t: f64, p: Scalar) -> Result<Scalar, Failure> {
         if self.forced_circulation {
             if self.tavg_armed(t) {
@@ -966,7 +982,7 @@ impl Secondaries {
         }
         Ok(pressure_opening(&self.bypass, self.trip_s, t, p))
     }
-    /// R4-DUMP: the reactor trip that armed the Tavg mode, if received.
+    /// R4-DUMP: the reactor trip, if received.
     pub fn reactor_trip(&self) -> Option<f64> {
         self.reactor_trip_s
     }
@@ -1848,9 +1864,9 @@ impl<P: Properties> Secondary<P> for Secondaries {
                 i += FEED_ROOTS;
             }
         }
-        // R4-DUMP: the Tavg mode's kinks, armed from the reactor trip on
+        // R4-DUMP: the Tavg mode's kinks, armed once both trips are received
         // with forced circulation (the accepted state is after the arming).
-        if self.forced_circulation && self.reactor_trip_s.is_some() {
+        if self.forced_circulation && self.tavg_arming().is_some() {
             let tavg = self.loop_average_input()?.value;
             let b = &self.bypass;
             let start = b.no_load_average_temperature_k + b.tavg_dead_band_k;
@@ -2032,7 +2048,7 @@ impl<P: Properties> Secondary<P> for Secondaries {
         for (offset, name) in [(0, "Tavg opening start"), (1, "Tavg full opening")] {
             let d = directions[last + offset];
             if d != 0 {
-                if !(self.forced_circulation && self.reactor_trip_s.is_some()) {
+                if !(self.forced_circulation && self.tavg_arming().is_some()) {
                     return Err(fatal(format!(
                         "R4-DUMP: the {name} root crossed while disarmed"
                     )));
@@ -2084,14 +2100,15 @@ impl<P: Properties> Secondary<P> for Secondaries {
                     "steamDemand":"held at the constant A/B values (G7, declared boundary)"}),
             }),
             // R4-DUMP: the reactor trip (the holding circuit's opening, one
-            // event for every owner) arms the Tavg mode; the steam demand is
-            // unchanged by it. A second report is acknowledged unchanged.
+            // event for every owner); with the TRIP it arms the Tavg mode.
+            // The steam demand is unchanged by it. A second report is
+            // acknowledged unchanged.
             Command::HoldingLoss => {
                 if let Some(t0) = self.reactor_trip_s {
                     return Ok(Transaction {
                         deposits: Vec::new(),
                         receipt: json!({"owner":"secondary","command":"HoldingLoss","t_s":t,
-                            "armedSince_s":t0,"bypass":"unchanged (the Tavg mode is already armed)"}),
+                            "reactorTripSince_s":t0,"bypass":"unchanged (the reactor trip is already received)"}),
                     });
                 }
                 if !t.is_finite() {
@@ -2108,8 +2125,7 @@ impl<P: Properties> Secondary<P> for Secondaries {
                     deposits: Vec::new(),
                     receipt: json!({"owner":"secondary","command":"HoldingLoss","t_s":t,
                         "steamDemand":"unchanged (the holding circuit is not the steam owner's)",
-                        "bypass": if self.forced_circulation { "Tavg mode armed (R4-DUMP)" }
-                            else { "no RCP supplied: the no-load pressure mode (R12-B1)" }}),
+                        "bypass": self.arming_note()}),
                 })
             }
             Command::TurbineTrip | Command::TurbineTripAcquired => {
@@ -2132,7 +2148,8 @@ impl<P: Properties> Secondary<P> for Secondaries {
                     deposits: Vec::new(),
                     receipt: json!({"owner":"secondary","command":command,"t_s":t,
                         "stopTravel_s":self.stop_travel_s,"rampEnd_s":t + self.stop_travel_s,
-                        "steamDemand_kg_s":self.sgs.iter().map(|g| g.steam_demand_kg_s).collect::<Vec<_>>()}),
+                        "steamDemand_kg_s":self.sgs.iter().map(|g| g.steam_demand_kg_s).collect::<Vec<_>>(),
+                        "bypass": self.arming_note()}),
                 })
             }
         }
@@ -2209,7 +2226,7 @@ fn compile(
         return Err(fatal("SG feed boundary or steam admission travel"));
     }
     let b = &section.bypass;
-    if b.mode != packet::BypassMode::NoLoadTavgAfterReactorTrip
+    if b.mode != packet::BypassMode::NoLoadTavgAfterReactorAndTurbineTrip
         || b.tavg_input != packet::TavgInput::CvcsLoopAverageLag
         || b.without_forced_circulation != packet::PressureMode::NoLoadPressureAfterTurbineTrip
         || ![

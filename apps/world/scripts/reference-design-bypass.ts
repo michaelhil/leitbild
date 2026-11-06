@@ -18,8 +18,9 @@ const controlSchema=z.object({bandStart_Pa:pos,bandFull_Pa:pos,sample_s:pos,avai
  * pressure at it (the page shows the derivation; the native SG owner checks
  * it against its runtime saturation). R4-DUMP: with forced circulation the
  * post-trip mode holds that temperature on the CVCS's loop-average channel
- * (dead band and band width, judgement); without it, R12-B1's pressure mode. */
-const noLoadSchema=z.object({mode:z.literal('noLoadTavgAfterReactorTrip'),noLoadAverageTemperature_K:pos,noLoadPressure_Pa:pos,
+ * (dead band and band width, judgement) from the later of the two trips (lead's
+ * judgement); without it, R12-B1's pressure mode. */
+const noLoadSchema=z.object({mode:z.literal('noLoadTavgAfterReactorAndTurbineTrip'),noLoadAverageTemperature_K:pos,noLoadPressure_Pa:pos,
   tavgInput:z.literal('cvcsLoopAverageLag'),tavgDeadBand_K:z.number().finite().nonnegative(),tavgBandWidth_K:pos,
   withoutForcedCirculation:z.literal('noLoadPressureAfterTurbineTrip')}).strict()
 export const parseBypassControl=(admission:string)=>
