@@ -10,7 +10,7 @@ import {
 } from '@leitbild/contracts'
 import { createServer } from '../src/core/api/server.ts'
 import { handleWorldModuleApi } from '../src/core/api/workspace-module-api.ts'
-import type { SimulationRunId } from '../src/core/model/index.ts'
+import { actorIdSchema, type SimulationRunId } from '../src/core/model/index.ts'
 import type { WorldWorkspaceRuntimeRegistry } from '../src/core/workspaces/runtime-registry.ts'
 import type { WorldPack } from '../src/core/packs/protocol.ts'
 import { weatherPack } from '../src/packs/weather/pack.ts'
@@ -320,7 +320,7 @@ test('live drone steering uses server identity, socket order and receipt lifetim
   expect(await nextOf(first.messages, 'runtime.input.error', mark)).toMatchObject({ message: 'unknown drone object: unit:one' })
   await waitForSteering('accepted steering projection', () => control().inputSource?.label === 'accepted')
   const firstControl = control()
-  expect(firstControl.pilotActorId).toBe('actor:operator')
+  expect(firstControl.pilotActorId).toBe(actorIdSchema.parse('actor:operator'))
   expect(firstControl.inputSource?.clientId).toMatch(/^realtime:/)
   expect(firstControl.manualAxes).toBeUndefined()
   expect(Date.parse(firstControl.inputExpiresAt!) - Date.parse(firstControl.lastCommandAt!)).toBe(droneManualIntentTtlMs)
