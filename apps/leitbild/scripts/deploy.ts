@@ -170,18 +170,20 @@ export const publicSourceRefusal = (input: {
   return null
 }
 
-/**
- * Only a clean release with public corresponding source may ship the World bundle.
- */
-export const assertPublicWorldSource = async (root: string, publicRepository: string): Promise<{ readonly baseCommit: string; readonly containingRefs: ReadonlyArray<string> }> => {
-  const baseCommit = await cleanRevision(root)
+const publicSourceRefs = async (root: string, publicRepository: string, baseCommit: string): Promise<ReadonlyArray<string>> => {
   const codeRepository = (await capture(['git', 'remote', 'get-url', 'origin'], root)).trim()
-  await capture(['git', 'fetch', '--quiet', 'origin'], root)
+  await capture(['git', 'fetch', '--quiet', '--prune', 'origin'], root)
   const containingRefs = (await capture(['git', 'for-each-ref', `--contains=${baseCommit}`, '--format=%(refname)', 'refs/remotes/origin/'], root))
     .split('\n').filter(ref => ref !== '' && ref !== 'refs/remotes/origin/HEAD')
   const sourceRefusal = publicSourceRefusal({ publicRepository, codeRepository, baseCommit, containingRefs })
   if (sourceRefusal !== null) throw new Error(sourceRefusal)
-  return { baseCommit, containingRefs }
+  return containingRefs
+}
+
+/** Only a clean release with public corresponding source may ship the World bundle. */
+export const assertPublicWorldSource = async (root: string, publicRepository: string): Promise<{ readonly baseCommit: string; readonly containingRefs: ReadonlyArray<string> }> => {
+  const baseCommit = await cleanRevision(root)
+  return { baseCommit, containingRefs: await publicSourceRefs(root, publicRepository, baseCommit) }
 }
 
 const directoryFiles = async (root: string, child: string): Promise<string[]> => {
@@ -614,25 +616,26 @@ const confirmMutation = (id: string, yes: boolean): void => {
   if (prompt(`Deploy Leitbild ${id} to production? Type "deploy" to continue:`) !== 'deploy') throw new Error('Deployment cancelled')
 }
 
-const observeActiveRelease = async (baseCommit: string, install: boolean): Promise<string | null> => {
+const observeActiveRelease = async (baseCommit: string, install: boolean) => {
   const current = shellQuote(CURRENT_LINK)
   const output = await capture(['ssh', SSH_HOST, `set -eu
 if test -L ${current}; then
-  jq -ce '{releaseId,baseCommit,dirty}' ${current}/DEPLOYMENT.json
+  jq -ce '{releaseId,baseCommit,knowledgeRevision,dirty}' ${current}/DEPLOYMENT.json
 elif test -e ${current}; then
   echo 'current must be a release symlink' >&2; exit 1
 else
   echo null
 fi`])
-  const active = JSON.parse(output) as { releaseId?: string; baseCommit?: string; dirty?: boolean } | null
+  const active = JSON.parse(output) as { releaseId?: string; baseCommit?: string; knowledgeRevision?: string; dirty?: boolean } | null
   if (active === null && install) return null
-  if (active?.dirty !== false || !active.releaseId || !active.baseCommit || !/^[a-f0-9]{40}$/.test(active.baseCommit)) {
-    throw new Error('Active release lacks a clean code identity')
+  if (active?.dirty !== false || !active.releaseId || !active.baseCommit || !active.knowledgeRevision
+    || !/^[a-f0-9]{40}$/.test(active.baseCommit) || !/^[a-f0-9]{40}$/.test(active.knowledgeRevision)) {
+    throw new Error('Active release lacks clean code and knowledge identities')
   }
   await capture(['git', 'merge-base', '--is-ancestor', active.baseCommit, baseCommit]).catch(error => {
     throw new Error(`Active release ${active.releaseId} is not an ancestor of the candidate`, { cause: error })
   })
-  return active.releaseId
+  return { releaseId: active.releaseId, knowledgeRevision: active.knowledgeRevision }
 }
 
 const main = async (): Promise<void> => {
@@ -642,9 +645,18 @@ const main = async (): Promise<void> => {
   const { baseCommit } = await assertPublicWorldSource(WORKSPACE_ROOT, PUBLIC_CODE_REPOSITORY)
   const activeRelease = options.dryRun ? null : await observeActiveRelease(baseCommit, options.install)
   const branch = (await capture(['git', 'branch', '--show-current'])).trim() || '(detached)'
+  const knowledgeRoot = knowledgeRepositoryPath(WORKSPACE_ROOT)
   const artifact = await withPreparedPlatform({
-    codeRoot: WORKSPACE_ROOT, knowledgeRoot: knowledgeRepositoryPath(WORKSPACE_ROOT), codeRevision: baseCommit, full: true,
-  }, (root, revision, knowledge) => createArtifact(root, revision, branch, knowledge))
+    codeRoot: WORKSPACE_ROOT, knowledgeRoot, codeRevision: baseCommit, full: true,
+  }, async (root, revision, knowledge) => {
+    if (activeRelease !== null) {
+      await capture(['git', 'merge-base', '--is-ancestor', activeRelease.knowledgeRevision, knowledge.revision], knowledgeRoot).catch(error => {
+        throw new Error(`Active knowledge ${activeRelease.knowledgeRevision} is not an ancestor of the candidate`, { cause: error })
+      })
+    }
+    await publicSourceRefs(WORKSPACE_ROOT, PUBLIC_CODE_REPOSITORY, revision)
+    return await createArtifact(root, revision, branch, knowledge)
+  })
   try {
     console.log(`\nRelease: ${artifact.manifest.releaseId}`)
     console.log(`Dirty worktree: ${artifact.manifest.dirty ? 'yes' : 'no'}`)
@@ -654,7 +666,7 @@ const main = async (): Promise<void> => {
     await run('Production preflight', ['ssh', SSH_HOST, remotePreflight(options.install)])
     const remoteArchive = `/tmp/leitbild-${artifact.manifest.releaseId}.tgz`
     await run('Upload immutable Leitbild artifact', ['scp', artifact.archivePath, `${SSH_HOST}:${remoteArchive}`])
-    await run('Activate Leitbild release', ['ssh', SSH_HOST, remoteDeploy(artifact, remoteArchive, options.install, activeRelease)])
+    await run('Activate Leitbild release', ['ssh', SSH_HOST, remoteDeploy(artifact, remoteArchive, options.install, activeRelease?.releaseId ?? null)])
     console.log(`✓ Release activation and ${PUBLIC_HEALTH_URL} verified on the host`)
   } finally {
     await artifact.cleanup()
