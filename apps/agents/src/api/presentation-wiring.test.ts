@@ -101,8 +101,14 @@ test('real human WS post carries only transient recipient to actual dispatch and
     expect(JSON.stringify(modelRequests.at(-1))).toContain('no_recipient')
     await registry.autoSaverFor(workspaceId)!.flush()
     // Turn-completion evidence capture releases its Workspace operation asynchronously.
-    await Bun.sleep(10)
-    await registry.evictOne(workspaceId)
+    const evictionDeadline = performance.now() + 5_000
+    for (;;) {
+      try { await registry.evictOne(workspaceId); break }
+      catch (error) {
+        if ((error as { code?: string }).code !== 'workspace_busy' || performance.now() >= evictionDeadline) throw error
+      }
+      await Bun.sleep(5)
+    }
     const restored = await registry.getOrLoad(workspaceId)
     const restoredPrompt = restored.rooms.getRoom(room.profile.id)!.getRetainedMessages().find(message => message.id === prompt.id)!
     expect(messagePresentation(restoredPrompt)).toBeUndefined()
