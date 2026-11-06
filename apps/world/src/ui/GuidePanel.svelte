@@ -16,11 +16,10 @@
     return status !== undefined && ['unavailable', 'expired', 'superseded', 'cancelled', 'declined'].includes(status)
   }))
   const applied = $derived(step?.effects.filter(effect => receiptFor(effect.id)?.status === 'applied').length ?? 0)
-  const nextLabel = $derived(isPrompt && guide?.prompt?.status !== 'responded'
-    ? 'Check for reply'
-    : step?.completion === 'condition' || step?.completion === 'presentation'
-      ? 'Check and continue' : 'Continue')
-  const showLabel = $derived(isPrompt ? 'Show prompt' : failedEffect ? 'Try showing again' : applied > 0 ? 'Show again' : 'Show this step')
+  const draftInserted = $derived(step?.effects.some(effect => effect.action.kind === 'draft' && receiptFor(effect.id)?.status === 'applied') ?? false)
+  const nextLabel = $derived(step?.completion === 'condition' || step?.completion === 'presentation' ? 'Check and continue' : 'Continue')
+  const showLabel = $derived(isPrompt ? (draftInserted ? 'Show prompt again' : 'Show suggested prompt')
+    : failedEffect ? 'Try showing again' : applied > 0 ? 'Show again' : 'Show this step')
   type PrimaryAction = 'reconnect' | 'read' | 'start' | 'resume' | 'next' | 'show'
   const primary = $derived.by((): { action: PrimaryAction; label: string } | null => {
     if (!screen.recipient && (guide || screen.error || screen.busy)) return { action: 'reconnect', label: screen.busy ? 'Connecting…' : 'Reconnect guide' }
@@ -28,7 +27,10 @@
     if (!guide.attemptId || finished) return { action: 'start', label: finished ? 'Start a new attempt' : 'Start guide' }
     if (resumeHere) return { action: 'resume', label: screen.restored ? 'Resume on this screen' : 'Resume guide' }
     if (!step) return { action: 'read', label: 'Reload current step' }
-    if (step.completion === 'presentation' && step.effects.length === 1 && failedEffect) return { action: 'show', label: showLabel }
+    if (isPrompt && guide.prompt?.status !== 'responded') return sentPrompt
+      ? { action: 'read', label: 'Refresh reply status' }
+      : { action: 'show', label: showLabel }
+    if (step.completion === 'presentation' && step.effects.length === 1 && applied === 0) return { action: 'show', label: showLabel }
     return { action: 'next', label: nextLabel }
   })
   let primaryButton = $state<HTMLButtonElement | null>(null)
@@ -76,7 +78,9 @@
   {#if workingStep && isPrompt && guide?.prompt}
     <p class="status" role="status">{guide.prompt.status === 'responded' ? 'The Assistant replied. You can continue.'
       : guide.prompt.status === 'unavailable' ? guide.prompt.reason
-      : sentPrompt ? 'Waiting for an Assistant reply.' : 'Send the suggested prompt from the Assistant when you’re ready.'}</p>
+      : sentPrompt ? 'Waiting for an Assistant reply.'
+      : draftInserted ? 'Review and send the draft in the Assistant when you’re ready.'
+      : 'Review the suggestion in the Assistant. Choose whether to add it to your draft.'}</p>
   {/if}
 
   {#if primary}

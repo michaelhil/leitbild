@@ -1876,7 +1876,7 @@
                   </div>
                   {#if windowBounds.width <= compactProcedureWidth}
                     <div class="procedure-mode-actions">
-                      {@render procedureRunActions()}
+                      {#if activeRun || completedRun}{@render procedureRunActions()}{/if}
                       <button type="button" onclick={() => document && void loadBasis({ sourceId: document.source.sourceId, sourceRevision: document.source.revision, sourcePath: document.sourcePath, lineCount: 100 })}>Read retained procedure source</button>
                     </div>
                     <p><b>{document.procedureId} — {document.title}</b></p>
@@ -1912,7 +1912,7 @@
                   >step {currentProcedureStep.step.label}/{document.steps.length}</button>
                 {/if}
               </span>
-              {#if windowBounds.width > compactProcedureWidth}{@render procedureRunActions()}{/if}
+              {#if windowBounds.width > compactProcedureWidth || (!activeRun && !completedRun)}{@render procedureRunActions()}{/if}
             </div>
           </div>
           {@render errorStrips()}
