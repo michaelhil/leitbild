@@ -2225,6 +2225,12 @@
               <br />
               <strong>{transitionToLabel(pendingTransition)}</strong>
             </p>
+            {#if pendingTransition.targetProcedure.sourcePath.startsWith('archive/')}
+              <p><strong>Reference procedure.</strong> Check applicability before transferring.</p>
+            {/if}
+            {#if driverView?.kind === 'ai' && pendingTransition.branch.outcome === 'rno'}
+              <p>The AI will remain the driver. To handle recovery yourself, cancel and select <strong>Take over</strong> first.</p>
+            {/if}
             <p>{transitionReturnText(pendingTransition)}</p>
           {:else}
             <p>{confirmationBody()}</p>
