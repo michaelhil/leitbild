@@ -23,6 +23,7 @@ const createModule = (moduleId: ModuleId) => {
     manifestRequests: number
     invokeFailure?: { readonly status: number; readonly code: string; readonly message: string }
     invokeDelayMs?: number
+    catalogueReply?: (kind: string, workspaceId: string) => Response
     featured: unknown
     activity: unknown
     activityStatus: number | undefined
@@ -65,6 +66,8 @@ const createModule = (moduleId: ModuleId) => {
         state.workspaces.delete(decodeURIComponent(root[1] ?? ''))
         return new Response(null, { status: 204 })
       }
+      const collection = url.pathname.match(new RegExp(`^/internal/${moduleId}/workspaces/([^/]+)/(definitions|resources|capabilities)$`))
+      if (collection && state.catalogueReply) return state.catalogueReply(collection[2]!, decodeURIComponent(collection[1]!))
       const resources = url.pathname.match(new RegExp(`^/internal/${moduleId}/workspaces/([^/]+)/resources$`))
       if (resources) {
         const workspaceId = decodeURIComponent(resources[1] ?? '')
@@ -245,6 +248,51 @@ describe('Leitbild Workspace Host', () => {
     expect((await host.resources(workspace.id, agentsId)).modules.map(item => item.moduleId)).toEqual([agentsId])
     expect((await host.definitions(workspace.id, agentsId)).modules.map(item => item.moduleId)).toEqual([agentsId])
     store.close()
+  })
+
+  test('the Workspace catalogues skip unready Modules and preserve partial failures and order', async () => {
+    const { modules, host, store } = createFixture()
+    try {
+      const world = modules.find(item => item.registration.moduleId === 'world')!
+      world.state.available = false
+      const workspace = await host.create({ name: null })
+      let queries = 0
+      world.state.catalogueReply = () => { queries++; return new Response('unavailable', { status: 503 }) }
+      for (const query of [host.definitions, host.resources, host.capabilities]) {
+        const combined = await query(workspace.id)
+        expect(combined.modules.map(outcome => [outcome.moduleId, outcome.status])).toEqual([['agents', 'ready'], ['world', 'failed']])
+        expect((await query(workspace.id, world.registration.moduleId)).modules).toEqual(combined.modules.slice(1))
+      }
+      expect(queries).toBe(0)
+
+      world.state.available = true
+      await host.retryModule(workspace.id, world.registration.moduleId)
+      for (const query of [host.definitions, host.resources, host.capabilities]) {
+        expect((await query(workspace.id)).modules.map(outcome => [outcome.moduleId, outcome.status])).toEqual([['agents', 'ready'], ['world', 'failed']])
+      }
+      expect(queries).toBe(3)
+    } finally { store.close() }
+  })
+
+  test('each Workspace catalogue keeps its own ownership check', async () => {
+    const { modules, host, store } = createFixture()
+    try {
+      const world = modules.find(item => item.registration.moduleId === 'world')!
+      const workspace = await host.create({ name: null })
+      const foreign = newWorkspaceId()
+      const definitions = (await host.definitions(workspace.id, world.registration.moduleId)).definitions
+      const resources = (await host.resources(workspace.id, world.registration.moduleId)).resources
+      const agents = moduleIdSchema.parse('agents')
+      const capabilities = (await host.capabilities(workspace.id, agents)).capabilities
+      world.state.catalogueReply = kind => Response.json({
+        [kind]: kind === 'definitions' ? definitions.map(definition => ({ ...definition, ref: { ...definition.ref, workspaceId: foreign } }))
+          : kind === 'resources' ? resources.map(resource => ({ ...resource, ref: { ...resource.ref, workspaceId: foreign } }))
+          : capabilities,
+      })
+      await expect(host.definitions(workspace.id)).rejects.toMatchObject({ code: 'module_contract_invalid', message: expect.stringContaining('Definition') })
+      await expect(host.resources(workspace.id)).rejects.toMatchObject({ code: 'module_contract_invalid', message: expect.stringContaining('Resource') })
+      await expect(host.capabilities(workspace.id)).rejects.toMatchObject({ code: 'module_contract_invalid', message: expect.stringContaining('Capability') })
+    } finally { store.close() }
   })
 
   test('preserves a Module capability error across the Host boundary', async () => {

@@ -20,6 +20,7 @@ import {
   type InvokeCapabilityInput,
   type ModuleId,
   type ModuleProvisioningState,
+  type ModuleQueryOutcome,
   type RenameWorkspaceInput,
   type Workspace,
   type WorkspaceActivityCatalog,
@@ -30,7 +31,7 @@ import {
   type WorkspaceResourceCatalog,
 } from '@leitbild/contracts'
 import { hostError } from './errors.ts'
-import type { ModuleGateway, ModuleOperationResult } from './module-gateway.ts'
+import type { ModuleCallResult, ModuleGateway, ModuleOperationResult } from './module-gateway.ts'
 import type { WorkspaceStore } from './store.ts'
 
 export interface WorkspaceHost {
@@ -108,6 +109,27 @@ export const createWorkspaceHost = (config: {
     code: 'module_not_ready',
     message: `Module lifecycle is ${item.status}`,
     retryable: item.status === 'provisioning' || item.status === 'removing',
+  }
+
+  const readWorkspaceModules = async <T>(
+    rawId: WorkspaceId, requestedModuleId: ModuleId | undefined,
+    query: (moduleId: ModuleId, workspaceId: WorkspaceId) => Promise<ModuleCallResult<T>>,
+  ) => {
+    const id = workspaceIdSchema.parse(rawId)
+    const workspace = requireWorkspace(id)
+    const moduleId = requestedModuleId === undefined ? undefined : moduleIdSchema.parse(requestedModuleId)
+    if (moduleId !== undefined) requireInstalledModule(moduleId)
+    const selected = moduleId === undefined ? workspace.modules : workspace.modules.filter(item => item.moduleId === moduleId)
+    const results = await Promise.all(selected.map(async item => ({
+      moduleId: item.moduleId,
+      result: item.status === 'ready'
+        ? await query(item.moduleId, id)
+        : { ok: false as const, failure: unavailableModuleFailure(item) },
+    })))
+    const outcomes: ModuleQueryOutcome[] = results.map(item => item.result.ok
+      ? { moduleId: item.moduleId, status: 'ready' }
+      : { moduleId: item.moduleId, status: 'failed', failure: item.result.failure })
+    return { id, outcomes, results }
   }
 
   const invokeCapability = async (
@@ -211,20 +233,7 @@ export const createWorkspaceHost = (config: {
       throw hostError({ status: 409, code: 'module_not_retryable', message: `Module lifecycle is not failed: ${moduleId}` })
     },
     definitions: async (rawId, requestedModuleId) => {
-      const id = workspaceIdSchema.parse(rawId)
-      const workspace = requireWorkspace(id)
-      const moduleId = requestedModuleId === undefined ? undefined : moduleIdSchema.parse(requestedModuleId)
-      if (moduleId !== undefined) requireInstalledModule(moduleId)
-      const modules = moduleId === undefined ? workspace.modules : workspace.modules.filter(item => item.moduleId === moduleId)
-      const results = await Promise.all(modules.map(async item => {
-        if (item.status !== 'ready') {
-          return { moduleId: item.moduleId, result: { ok: false as const, failure: unavailableModuleFailure(item) } }
-        }
-        return { moduleId: item.moduleId, result: await config.modules.definitions(item.moduleId, id) }
-      }))
-      const outcomes = results.map(item => item.result.ok
-        ? { moduleId: item.moduleId, status: 'ready' as const }
-        : { moduleId: item.moduleId, status: 'failed' as const, failure: item.result.failure })
+      const { id, outcomes, results } = await readWorkspaceModules(rawId, requestedModuleId, config.modules.definitions)
       const definitions = results.flatMap(item => {
         if (!item.result.ok) return []
         const invalid = item.result.value.definitions.find(definition =>
@@ -241,20 +250,7 @@ export const createWorkspaceHost = (config: {
       return workspaceDefinitionCatalogSchema.parse({ workspaceId: id, modules: outcomes, definitions })
     },
     resources: async (rawId, requestedModuleId) => {
-      const id = workspaceIdSchema.parse(rawId)
-      const workspace = requireWorkspace(id)
-      const moduleId = requestedModuleId === undefined ? undefined : moduleIdSchema.parse(requestedModuleId)
-      if (moduleId !== undefined) requireInstalledModule(moduleId)
-      const modules = moduleId === undefined ? workspace.modules : workspace.modules.filter(item => item.moduleId === moduleId)
-      const results = await Promise.all(modules.map(async item => {
-        if (item.status !== 'ready') {
-          return { moduleId: item.moduleId, result: { ok: false as const, failure: unavailableModuleFailure(item) } }
-        }
-        return { moduleId: item.moduleId, result: await config.modules.resources(item.moduleId, id) }
-      }))
-      const outcomes = results.map(item => item.result.ok
-        ? { moduleId: item.moduleId, status: 'ready' as const }
-        : { moduleId: item.moduleId, status: 'failed' as const, failure: item.result.failure })
+      const { id, outcomes, results } = await readWorkspaceModules(rawId, requestedModuleId, config.modules.resources)
       const resources = results.flatMap(item => {
         if (!item.result.ok) return []
         const invalid = item.result.value.resources.find(resource =>
@@ -271,20 +267,7 @@ export const createWorkspaceHost = (config: {
       return workspaceResourceCatalogSchema.parse({ workspaceId: id, modules: outcomes, resources })
     },
     capabilities: async (rawId, requestedModuleId) => {
-      const id = workspaceIdSchema.parse(rawId)
-      const workspace = requireWorkspace(id)
-      const moduleId = requestedModuleId === undefined ? undefined : moduleIdSchema.parse(requestedModuleId)
-      if (moduleId !== undefined) requireInstalledModule(moduleId)
-      const modules = moduleId === undefined ? workspace.modules : workspace.modules.filter(item => item.moduleId === moduleId)
-      const results = await Promise.all(modules.map(async item => {
-        if (item.status !== 'ready') {
-          return { moduleId: item.moduleId, result: { ok: false as const, failure: unavailableModuleFailure(item) } }
-        }
-        return { moduleId: item.moduleId, result: await config.modules.capabilities(item.moduleId, id) }
-      }))
-      const outcomes = results.map(item => item.result.ok
-        ? { moduleId: item.moduleId, status: 'ready' as const }
-        : { moduleId: item.moduleId, status: 'failed' as const, failure: item.result.failure })
+      const { id, outcomes, results } = await readWorkspaceModules(rawId, requestedModuleId, config.modules.capabilities)
       const capabilities = results.flatMap(item => {
         if (!item.result.ok) return []
         const invalid = item.result.value.capabilities.find(capability => capability.moduleId !== item.moduleId)
