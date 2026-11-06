@@ -119,6 +119,7 @@ describe('Leitbild Assistant skills', () => {
     expect(runner.body).toContain('placekeeping, not measured confirmation')
     expect(runner.body).toContain('never use them to recover from a refused/unknown branch')
     expect(runner.body).toContain('no arbitrary step quota')
+    expect(runner.body).toContain('For "through" a named step, stop after its accepted transition leaves it or ends the Run. Match `decision.event.stepId` to that step.')
     expect(runner.body).not.toContain('25 transitions')
     expect(runner.body).not.toContain('take the normal-path branch when no reading contradicts it')
     // Current step completion and permission for a guarded source-owned action
