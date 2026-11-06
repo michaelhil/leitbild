@@ -131,7 +131,7 @@ const fixture = async (fault: string, install = false, fresh = false) => {
     await put(`package/apps/leitbild/deploy/${service}`, `next ${service}\n`)
   }
   for (const module of ['world', 'agents']) await put(`proc/leitbild-${module}/environ`, `WORKSPACE_HOST_URL=${fault === 'routing' ? 'wrong' : 'http://127.0.0.1:3100'}\0`)
-  await put('package/apps/leitbild/deploy/sites/leitbild.caddy', 'next site\n')
+  await put('package/apps/leitbild/deploy/sites/leitbild.caddy', fault === 'unchanged' ? 'previous site\n' : 'next site\n')
   await put('package/apps/world/package.json', '{}')
   await put('package/apps/agents/package.json', '{}')
   await put('package/DEPLOYMENT.json', JSON.stringify({ app: 'leitbild-platform', releaseId: 'next' }))
@@ -202,6 +202,19 @@ test('refuses a candidate when the active release changed during validation', as
     expect(result.stderr).toContain('Active release changed during validation')
     expect(await readlink(join(f.root, 'deploy/current'))).toBe(f.oldRelease)
     expect(await readdir(join(f.root, 'deploy/releases'))).not.toContain('next')
+  } finally { await f.dispose() }
+})
+
+test('an ordinary activation leaves an identical Caddy snippet and proxy process alone', async () => {
+  const f = await fixture('unchanged')
+  try {
+    const result = await f.run()
+    expect(result.code, result.stderr).toBe(0)
+    expect(result.stdout).toContain('Leitbild Caddy snippet unchanged; skipping reload')
+    expect(result.stdout).toContain('activated_release=next')
+    expect(await readlink(join(f.root, 'deploy/current'))).toBe(f.newRelease)
+    expect(await readFile(join(f.root, 'caddy/managed-sites/leitbild.caddy'), 'utf8')).toBe('previous site\n')
+    expect(await readFile(join(f.root, 'commands'), 'utf8')).not.toContain('reload caddy.service')
   } finally { await f.dispose() }
 })
 

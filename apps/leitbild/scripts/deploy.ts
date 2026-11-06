@@ -357,16 +357,21 @@ export const caddySnippetPreflight = (): string => `if ! grep -Fxq 'import /etc/
 fi`
 
 /** Called inside the activation transaction; the shared lock stays held through rollback. */
-export const caddySnippetDeployment = (): string => `exec 8>/run/lock/caddy-config.lock
+const caddySnippetDeployment = (install: boolean): string => `exec 8>/run/lock/caddy-config.lock
 flock -w 60 8 || { echo "Another Caddy configuration update is active" >&2; exit 1; }
 ${caddySnippetPreflight()}
 caddy_site=/etc/caddy/managed-sites/leitbild.caddy
-cp -a "$caddy_site" "$activation_backup/leitbild.caddy"
-install -o root -g root -m 0644 "$release_dir/apps/leitbild/deploy/sites/leitbild.caddy" "/etc/caddy/leitbild.next-$release_id"
-caddy_changed=1
-mv -f "/etc/caddy/leitbild.next-$release_id" "$caddy_site"
-caddy validate --config /etc/caddy/Caddyfile
-systemctl reload caddy.service`
+candidate_site="$release_dir/apps/leitbild/deploy/sites/leitbild.caddy"
+if test ${install ? '1' : '0'} -eq 0 && ! test -L "$caddy_site" && cmp -s "$candidate_site" "$caddy_site"; then
+  echo "Leitbild Caddy snippet unchanged; skipping reload"
+else
+  cp -a "$caddy_site" "$activation_backup/leitbild.caddy"
+  install -o root -g root -m 0644 "$candidate_site" "/etc/caddy/leitbild.next-$release_id"
+  caddy_changed=1
+  mv -f "/etc/caddy/leitbild.next-$release_id" "$caddy_site"
+  caddy validate --config /etc/caddy/Caddyfile
+  systemctl reload caddy.service
+fi`
 
 /** One success boundary for release selection, services, install configuration and site routing.
  * The caller owns preparation and defines cleanup(); persistent application data is never restored.
@@ -516,7 +521,7 @@ if ! curl -fsS http://127.0.0.1:3100/api/knowledge/index | jq -e --arg revision 
   echo "Knowledge publication does not match the release" >&2
   exit 1
 fi
-${caddySnippetDeployment()}
+${caddySnippetDeployment(install)}
 public_ready=0
 for attempt in $(seq 1 60); do
   if curl -fsS -o /dev/null ${shellQuote(PUBLIC_HEALTH_URL)}; then public_ready=1; break; fi
