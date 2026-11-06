@@ -191,6 +191,7 @@
   let realtimeAttached = $state(false)
   let routeRevision = $state(0)
   let procedureRevision = $state(0)
+  let procedureEvidenceRevision = $state(0)
   let packDataRevisions = $state<Record<string, number>>({})
   let packPanelSelections = $state<Record<string, string | null>>({})
   // Role Runs only: the role set this screen plays, a switch awaiting its fresh
@@ -1726,6 +1727,7 @@
           return
         }
         realtimeAttached = true
+        procedureEvidenceRevision += 1
         if (parsed.clock) clock = clockOrder.published(parsed.clock)
         if (parsed.perspective) adoptPerspective(parsed.perspective)
         status = 'Connected'
@@ -1750,6 +1752,9 @@
         if (applied.routesChanged) {
           routeRevision += 1
         }
+        // Some commands update a Pack's I&C state while paused without
+        // upserting its object or moving the simulation clock.
+        if (parsed.events.some(event => event.type === 'command.result' && event.result.ok)) procedureEvidenceRevision += 1
         if (parsed.events.some(event => event.type.startsWith('procedure.') || event.type === 'object.deleted')) {
           // Only a live batch opens a window: the snapshot and Run reads never do.
           for (const runId of procedureAiStartedRunIds(parsed.events)) aiStartedProcedureRunIds.add(runId)
@@ -2560,7 +2565,7 @@
       session={procedureSession}
       {clock}
       {realtimeAttached}
-      checkEvidenceRevision={`${procedureRevision}:${packDataRevisions[windowEntry.object.packId] ?? 0}`}
+      checkEvidenceRevision={`${procedureRevision}:${procedureEvidenceRevision}:${packDataRevisions[windowEntry.object.packId] ?? 0}`}
       checkEvidenceObject={windowEntry.object}
       initialProcedureId={windowEntry.initialProcedureId}
       windowOffsetIndex={windowEntry.index}

@@ -139,6 +139,7 @@ export const createRealtimeConnectionController = (): RealtimeConnectionControll
         callbacks.onError('WebSocket error')
       }
       nextSocket.onmessage = (message) => {
+        if (socket !== nextSocket) return
         let parsed
         try {
           parsed = parseSimulationRunWebSocketMessage(message.data as string)

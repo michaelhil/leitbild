@@ -326,10 +326,14 @@
     let lastVersion: string | undefined
     let lastObject: OperationalObject | undefined
     let readFailed = false
+    let previousTime: number | undefined
     const refresh = async () => {
       const now = Date.now()
       const currentClock = clock
       checkClockTick = now
+      const currentTime = Date.parse(simulationTimeAt(currentClock, now) ?? '')
+      if (previousTime !== undefined && currentTime < previousTime) checkSample = undefined
+      previousTime = Number.isFinite(currentTime) ? currentTime : undefined
       if (window.document.hidden || !currentClock || inFlight || now - lastRead < 750) return
       const revision = checkVersion
       const object = checkEvidenceObject
