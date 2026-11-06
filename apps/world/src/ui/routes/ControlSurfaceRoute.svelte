@@ -214,6 +214,7 @@
   let startupDismissed = $state(false)
   let startupStatusModalOpen = $state(false)
   let settingsModalOpen = $state(false)
+  let resettingScenario = false
   let executionState = $state<RunExecutionState | null>(null)
   // The types of the components loaded on demand: a type query loads nothing.
   type OperationalMapComponent = typeof import('../OperationalMap.svelte').default
@@ -1414,7 +1415,9 @@
     settingsModalOpen = false
   }
 
-  const resetStartupForJoin = (): void => {
+  const prepareRunStartup = (nextStatus: 'Starting' | 'Resetting'): void => {
+    realtimeConnection.disconnect()
+    realtimeAttached = false
     resetStartupDebug()
     surfaceLoadGeneration += 1
     postReadyPreloadStarted = false
@@ -1422,6 +1425,12 @@
     latestMapRuntimeDiagnostics = null
     latestDroneMotionFrames = []
     startupSteps = resetStartupStepsAfter(startupSteps, 'simulation-run')
+    snapshotReady = false
+    mapReady = false
+    scenarioDefinition = null
+    activePack = null
+    status = nextStatus
+    startStep('simulation-run')
   }
 
   const activeRoute = () => parseControlSurfaceRoute(location.pathname)
@@ -1430,9 +1439,6 @@
     const route = activeRoute()
     return route.workspaceId
   }
-
-  const scenarioIdForReset = (): string | undefined =>
-    scenarioState?.scenarioId
 
   const loadScenarioDefinitionAndPack = async (scenarioId: string): Promise<CompiledScenario> => {
     markStartup('scenario-fetch:start')
@@ -1865,6 +1871,7 @@
 
   const requestRoleChange = (change: RoleSetChange): void => {
     if (change.kind === 'unchanged') return
+    if (resettingScenario) return
     if (change.kind === 'refused') {
       commandFeedback = noteAction(commandFeedback, change.reason)
       return
@@ -1974,15 +1981,8 @@
   }
 
   const joinSimulationRun = async (): Promise<void> => {
-    realtimeConnection.disconnect()
-    realtimeAttached = false
-    resetStartupForJoin()
-    snapshotReady = false
-    mapReady = false
-    scenarioDefinition = null
-    activePack = null
-    status = 'Starting'
-    startStep('simulation-run')
+    if (resettingScenario) return
+    prepareRunStartup('Starting')
     let activeStartupStep: StartupStepId = 'simulation-run'
     try {
       const id = simulationRunIdFromPath()
@@ -2030,23 +2030,16 @@
   }
 
   const resetScenario = async (): Promise<void> => {
-    if (!simulationRunId) return
-    if (switchUnderWay()) return
-    realtimeConnection.disconnect()
-    realtimeAttached = false
-    resetStartupForJoin()
-    snapshotReady = false
-    mapReady = false
-    scenarioDefinition = null
-    activePack = null
-    status = 'Resetting'
+    if (!simulationRunId || resettingScenario || switchUnderWay()) return
+    resettingScenario = true
+    closeSettings()
     const reset = beginAction(commandFeedback, 'Resetting scenario')
     commandFeedback = reset.feedback
-    startStep('simulation-run')
-    let activeStartupStep: StartupStepId = 'simulation-run'
+    let activeStartupStep: StartupStepId | null = null
     try {
-      expectedRealtimeScenarioId = scenarioIdForReset() ?? null
       const body = await resetSimulationRun(simulationRunId)
+      activeStartupStep = 'simulation-run'
+      prepareRunStartup('Resetting')
       await completeStartupFromResponse(body, {
         setActiveStartupStep: id => {
           activeStartupStep = id
@@ -2054,8 +2047,10 @@
       })
       commandFeedback = completeAction(commandFeedback, reset.actionId)
     } catch (err) {
-      failStep(activeStartupStep, err)
+      if (activeStartupStep !== null) failStep(activeStartupStep, err)
       commandFeedback = failAction(commandFeedback, reset.actionId, err instanceof Error ? err.message : String(err))
+    } finally {
+      resettingScenario = false
     }
   }
 
