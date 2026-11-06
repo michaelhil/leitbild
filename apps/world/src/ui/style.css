@@ -4397,6 +4397,25 @@ body.rail-resizing {
 .procedure-current-check summary.supported .procedure-check-glyph { color: var(--success); }
 .procedure-current-check summary.contradicted .procedure-check-glyph { color: var(--critical); }
 .procedure-check-glyph { display: inline-block; min-width: 1em; text-align: center; font-weight: 800; }
+.procedure-check-glyph.supported { color: var(--success); }
+.procedure-check-glyph.contradicted { color: var(--critical); }
+.procedure-check-glyph.unknown { color: var(--muted); }
+.procedure-line-check summary { cursor: pointer; list-style: none; }
+.procedure-line-check summary::-webkit-details-marker { display: none; }
+.procedure-line-check summary .procedure-check-glyph { margin-inline-start: 0.4em; }
+.procedure-line-check summary:hover > span:first-child,
+.procedure-line-check summary:focus-visible > span:first-child { text-decoration: underline; }
+.procedure-line-check dl {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, auto);
+  gap: 4px 12px;
+  margin: 5px 0 8px;
+  padding: 6px 8px;
+  border-inline-start: 2px solid var(--border);
+  font-size: calc(12px * var(--procedure-font-scale));
+}
+.procedure-line-check dd { margin: 0; font-variant-numeric: tabular-nums; }
+.procedure-line-check dd small { display: block; color: #475569; }
 .procedure-current-check p:first-of-type,
 .procedure-technical-basis > div { margin-top: 6px; }
 .procedure-reference-banner {

@@ -7,7 +7,7 @@
   import { readProcedureTagValue } from './procedure-client.ts'
   import type { ProcedureChecksView } from '../../features/procedures/checks-view.ts'
   import { simulationTimeAt } from '../simulation-clock.ts'
-  import { procedureViewKey, procedureCategories, procedureOperatorRows, type StepItem, procedureStepTagBindings, procedureTextSegments, procedureBlockLabel, procedureObservationEvidence, procedureObservationBasis, procedureObservationLabel, procedureSourceEvidenceRequest, procedureUnitJump } from './procedure-view.ts'
+  import { procedureViewKey, procedureCategories, procedureOperatorRows, procedureLineChecks, procedureLineCheckEvidence, type ProcedureLineCheck, type StepItem, procedureStepTagBindings, procedureTextSegments, procedureBlockLabel, procedureObservationEvidence, procedureObservationBasis, procedureObservationLabel, procedureSourceEvidenceRequest, procedureUnitJump } from './procedure-view.ts'
   import type {
     SimulationRunId,
     SimulationClockState,
@@ -368,7 +368,24 @@
     const currentTime = simulationTimeAt(clock, checkClockTick)
     if (!value || !currentTime || Date.parse(currentTime) < Date.parse(sample.view.simulationTime)) return undefined
     if (value.status !== 'unknown' && (value.validThrough === undefined || Date.parse(currentTime) > Date.parse(value.validThrough))) return undefined
-    return { value, time: sample.view.simulationTime }
+    return { value, time: sample.view.simulationTime, currentTime }
+  }
+  const lineReadKey = (tagId: string) => JSON.stringify([simulationRunId, plantId, document?.source.revision, document?.sourcePath, tagId])
+  let lineReadings = $state<Record<string, string>>({})
+  const readLineIndications = async (line: ProcedureLineCheck): Promise<void> => {
+    const unit = currentUnitContext
+    await Promise.all(line.comparisons.map(async ({ tagId }) => {
+      const tag = tagFor(tagId)
+      if (!tag) return
+      const key = lineReadKey(tagId)
+      let formatted: string
+      try {
+        formatted = procedureDisplayReading((await readProcedureTagValue(simulationRunId, unit.plantId, tag, unit.provider ?? provider)).formatted)
+      } catch {
+        formatted = 'Unavailable'
+      }
+      if (!disposed && key === lineReadKey(tagId)) lineReadings = { ...lineReadings, [key]: formatted }
+    }))
   }
   const driverView = $derived(procedureDriverView(selectedProcedureRun))
   const requestedInputRun = $derived(selectedProcedureRun && currentProcedureInput(selectedProcedureRun) ? selectedProcedureRun : null)
@@ -1588,7 +1605,46 @@
   </div>
 {/snippet}
 
-{#snippet operatorItem(step: ProcedureStep, state: ProcedureStepRunState | undefined, item: StepItem, paired: boolean)}
+{#snippet lineCheck(line: ProcedureLineCheck, branchIndex: number | undefined)}
+  {@const check = branchIndex === undefined ? undefined : activeCheck(branchIndex)}
+  {@const evidence = procedureLineCheckEvidence(line, check?.value.readings ?? [], check?.currentTime)}
+  {@const status = evidence.status === 'supported' ? 'Met' : evidence.status === 'contradicted' ? 'Unmet' : 'Not established'}
+  <details class="procedure-line-check" ontoggle={(event) => {
+    if (event.currentTarget.open && branchIndex === undefined) void readLineIndications(line)
+  }}>
+    <summary
+      title={`${status}. Open live indications.`}
+      aria-label={`${line.text} ${status}. Show live indications.`}
+      onkeydown={(event) => {
+        if (event.key === 'Escape' && event.currentTarget.parentElement instanceof HTMLDetailsElement && event.currentTarget.parentElement.open) {
+          event.stopPropagation()
+          event.currentTarget.parentElement.open = false
+        }
+      }}
+    >
+      <span>{line.text}</span>
+      <span class="procedure-check-glyph {evidence.status}" aria-hidden="true">{evidence.status === 'supported' ? '✓' : evidence.status === 'contradicted' ? '×' : '—'}</span>
+    </summary>
+    <dl aria-label="Live indications">
+      {#each evidence.operands as { comparison, reading } (comparison.tagId)}
+        {@const tag = document?.tags.find(item => item.id === comparison.tagId)}
+        <dt><button type="button" class="procedure-basis-link" onclick={() => { openTagId = comparison.tagId as ProcedureTagId }}>{tag?.description ?? comparison.tagId}</button></dt>
+        <dd>
+          {#if reading?.value !== undefined && reading.status !== 'unknown'}
+            {typeof reading.value === 'boolean' ? (reading.value ? 'On' : 'Off') : `${reading.value} ${reading.unit === 'percent' ? '%' : reading.unit ?? ''}`}
+            {#if reading.sampledAt}<small>{procedurePlantTime(reading.sampledAt)}</small>{/if}
+          {:else if branchIndex === undefined}
+            {lineReadings[lineReadKey(comparison.tagId)] ?? 'Reading…'}
+          {:else}
+            {reading?.reason ?? 'No current reading'}
+          {/if}
+        </dd>
+      {/each}
+    </dl>
+  </details>
+{/snippet}
+
+{#snippet operatorItem(step: ProcedureStep, state: ProcedureStepRunState | undefined, item: StepItem, paired: boolean, lines?: ReadonlyMap<number, ProcedureLineCheck>, checkIndex?: number)}
   {#if item.kind === 'block'}
     {@const first = item.blocks[0]}
     {#if item.blocks.length > 1}
@@ -1601,11 +1657,16 @@
         </ol>
       {:else}
         <ul class="procedure-instruction-list" aria-label={procedureBlockLabel(first.kind)}>
-          {#each item.blocks as block}<li>{@render procedureText(block.text, block.tagIds)}</li>{/each}
+          {#each item.blocks as block}
+            {@const line = lines?.get(block.sourceLine)}
+            <li>{#if line}{@render lineCheck(line, checkIndex)}{:else}{@render procedureText(block.text, block.tagIds)}{/if}</li>
+          {/each}
         </ul>
       {/if}
     {:else}
-      <p class="block-{first.kind}">{#if !paired || !['check', 'action', 'expected', 'rno', 'text'].includes(first.kind)}{#if first.kind !== 'text'}<b>{procedureBlockLabel(first.kind)}</b>{/if}{/if} {@render procedureText(first.text, first.tagIds)}</p>
+      {@const line = lines?.get(first.sourceLine)}
+      {#if line}{@render lineCheck(line, checkIndex)}
+      {:else}<p class="block-{first.kind}">{#if !paired || !['check', 'action', 'expected', 'rno', 'text'].includes(first.kind)}{#if first.kind !== 'text'}<b>{procedureBlockLabel(first.kind)}</b>{/if}{/if} {@render procedureText(first.text, first.tagIds)}</p>{/if}
       {#if first.paths?.length}<ol>{#each first.paths as path}<li>{@render procedureText(path, first.tagIds)}</li>{/each}</ol>{/if}
     {/if}
   {:else}
@@ -1723,14 +1784,17 @@
         <div class="procedure-operator-rows">
           {#each operator.rows as row, rowIndex}
             {#if row.kind === 'pair'}
+              {@const lines = procedureLineChecks(step, row)}
               <div class="procedure-response-pair" class:single={row.expected.length === 0 || row.rno.length === 0} data-response-pair={row.id}>
                 {#if row.expected.length > 0}
                   <section class="procedure-column">
                     <h4>{#if (step.pairs?.length ?? 0) > 1}<span>{step.label}{String.fromCharCode(97 + rowIndex - (operator.rows[0]?.kind === 'sequence' ? 1 : 0))}</span>{/if}Action / Expected Response</h4>
-                    {#each row.expected.filter(item => item.kind === 'block') as item}{@render operatorItem(step, state, item, true)}{/each}
-                    {#if role === 'current' && row.advisoryBranchIndex !== undefined}
+                    {#if lines.size === 0 && role === 'current' && row.advisoryBranchIndex !== undefined}
                       {@render currentCheck(row.advisoryBranchIndex)}
                     {/if}
+                    {#each row.expected.filter(item => item.kind === 'block') as item}
+                      {@render operatorItem(step, state, item, true, lines, role === 'current' ? row.advisoryBranchIndex : undefined)}
+                    {/each}
                     {#each row.expected.filter(item => item.kind === 'branch') as item}{@render operatorItem(step, state, item, true)}{/each}
                   </section>
                 {/if}

@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import { parseProcedureMarkdown } from '../src/features/procedures/procmd.ts'
-import { procedureBlockLabel, procedureObservationBasis, procedureObservationEvidence, procedureObservationLabel, procedureOperatorRows, procedureSourceEvidenceRequest, procedureStepItems, procedureStepTagBindings, procedureTextSegments, procedureUnitJump } from '../src/ui/procedures/procedure-view.ts'
+import { procedureBlockLabel, procedureLineCheckEvidence, procedureLineChecks, procedureObservationBasis, procedureObservationEvidence, procedureObservationLabel, procedureOperatorRows, procedureSourceEvidenceRequest, procedureStepItems, procedureStepTagBindings, procedureTextSegments, procedureUnitJump } from '../src/ui/procedures/procedure-view.ts'
+import { procedureCriterionReadingSchema } from '../src/core/model/procedure-criteria.ts'
 import { procedureTestSource } from './procedure-fixtures.ts'
 import { procedureBindingStatusWord, procedureComparisonText, procedureCsfChip, procedureDescriptionText, procedureDisplayReading, procedureElapsedText, procedureStepBindingSummary } from '../src/ui/procedures/procedure-view.ts'
 
@@ -121,6 +122,52 @@ test('explicit response pairs preserve alternate route identity and keep technic
   expect(second.rno.at(-1)).toMatchObject({ branch: step.branches[1] })
   expect(second.other[0]).toMatchObject({ blocks: [{ kind: 'unknown' }] })
   expect(basis[0]).toMatchObject({ blocks: [{ kind: 'basis' }] })
+})
+
+test('a note after both routes remains after the two columns without breaking their pairing', () => {
+  const document = parseProcedureMarkdown({ source: procedureTestSource, sourcePath: 'fixture.md', sourceUrl: 'https://example.test/fixture.md', rawMarkdown: [
+    '---', 'type: procedure', 'procedure-md: 0.7', 'procedure-id: FIXTURE', 'title: Fixture', '---',
+    '## Step 1 [id: first]', 'Check: Read the indication.',
+    '- Response obtained [outcome: normal] → END',
+    '- Response not obtained [outcome: rno] → ↻',
+    'Note: Continuing monitoring is required.',
+  ].join('\n') })
+  const step = document.steps[0]!
+  const [row, footer] = procedureOperatorRows(step).rows
+  if (row?.kind !== 'pair') throw new Error('Expected aligned normal and RNO columns')
+  expect(row.expected.at(-1)).toMatchObject({ branch: step.branches[0] })
+  expect(row.rno.at(-1)).toMatchObject({ branch: step.branches[1] })
+  expect(footer).toMatchObject({ kind: 'sequence', items: [{ blocks: [{ kind: 'note' }] }] })
+})
+
+test('a line for two breakers has its own scoped verdict and does not treat missing or stale data as open', () => {
+  const declarations = ['A', 'B', 'P'].map(tagId => ({ type: 'comparison', tagId,
+    operator: '==', value: false, unit: 'boolean', evidence: 'engineering-diagnostic', source: 'basis.md', maxAgeSeconds: 2,
+  }))
+  const authored = (type: string) => parseProcedureMarkdown({ source: procedureTestSource, sourcePath: 'fixture.md', sourceUrl: 'https://example.test/fixture.md', rawMarkdown: [
+    '---', 'type: procedure', 'procedure-md: 0.7', 'procedure-id: FIXTURE', 'title: Fixture', '---',
+    '## Step 1 [id: first]', 'Pair: [id: trip, criterion: 0]',
+    'Check: Both breakers open. «A» «B»', 'Check: Other indication off. «P»',
+    '```procedure-decisions', JSON.stringify([{ branchIndex: 0, condition: { type, conditions: declarations } }]), '```',
+    '- Response obtained [outcome: normal] → END',
+  ].join('\n') }).steps[0]!
+  const step = authored('all')
+  const [pair] = procedureOperatorRows(step).rows
+  if (pair?.kind !== 'pair') throw new Error('Expected the trip pair')
+  const [breakers, other] = [...procedureLineChecks(step, pair).values()]
+  expect(breakers?.text).toBe('Both breakers open.')
+  const sample = '2026-07-12T04:00:00.000Z'
+  const reading = (tagId: string, status: string) => procedureCriterionReadingSchema.parse({ tagId, status, sampledAt: sample, source: 'basis.md' })
+  const two = [reading('A', 'supported'), reading('B', 'supported')]
+  expect(procedureLineCheckEvidence(breakers!, two, sample).status).toBe('supported')
+  expect(procedureLineCheckEvidence(other!, two, sample).status).toBe('unknown')
+  expect(procedureLineCheckEvidence(breakers!, [two[0]!], sample).status).toBe('unknown')
+  expect(procedureLineCheckEvidence(breakers!, [reading('B', 'contradicted')], sample).status).toBe('contradicted')
+  expect(procedureLineCheckEvidence(breakers!, two, '2026-07-12T04:00:02.001Z').status).toBe('unknown')
+  const alternate = authored('any')
+  const [alternatePair] = procedureOperatorRows(alternate).rows
+  if (alternatePair?.kind !== 'pair') throw new Error('Expected the alternate pair')
+  expect(procedureLineChecks(alternate, alternatePair).size).toBe(0)
 })
 
 test('tag links require parsed references and do not activate fenced or inline examples', () => {

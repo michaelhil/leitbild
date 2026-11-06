@@ -1,4 +1,6 @@
 import type { ProcedureBranch, ProcedureCatalogItem, ProcedureDocument, ProcedureRunScope, ProcedureStep, ProcedureTag, ProcedureTextBlock } from '../../core/model/index.ts'
+import type { ProcedureCriterionReading } from '../../core/model/procedure-criteria.ts'
+import type { ProcedureAssessmentCondition } from '@leitbild/procmd'
 import type { ProcedureSourceEvidenceRequest } from './procedure-client.ts'
 
 const primaryKinds = new Set(['check', 'action', 'expected', 'decision', 'when', 'until', 'within', 'concurrent', 'caution', 'note', 'text'])
@@ -41,6 +43,8 @@ const itemColumn = (item: StepItem): 'expected' | 'rno' | 'other' => {
   return item.primary ? 'expected' : 'other'
 }
 
+const isNote = (item: StepItem) => item.kind === 'block' && item.blocks[0].kind === 'note'
+
 /** An authored pair, or one unambiguous unmarked response. Complex retained steps keep source order. */
 export const procedureOperatorRows = (step: ProcedureStep): { readonly rows: ReadonlyArray<OperatorRow>; readonly basis: ReadonlyArray<StepItem> } => {
   const all = procedureStepItems(step)
@@ -80,15 +84,82 @@ export const procedureOperatorRows = (step: ProcedureStep): { readonly rows: Rea
   // A control or prerequisite after an RNO must never be silently moved before it.
   let sawResponse = false
   let single = true
-  for (const item of items) {
+  let end = items.length
+  const firstBranch = items.findIndex(item => item.kind === 'branch')
+  if (firstBranch !== -1) while (end > firstBranch && isNote(items[end - 1]!)) end--
+  const instructions = items.slice(0, end)
+  for (const item of instructions) {
     if (item.kind === 'branch') continue
     if (itemColumn(item) === 'other' && item.blocks[0].kind !== 'unknown') single = false
     if (itemColumn(item) === 'rno') sawResponse = true
     else if (sawResponse && itemColumn(item) === 'expected') single = false
   }
-  const firstBranch = items.findIndex(item => item.kind === 'branch')
-  if (firstBranch !== -1 && items.slice(firstBranch).some(item => item.kind === 'block')) single = false
-  return { rows: items.length === 0 ? [] : single ? [makePair('step', items)] : [{ kind: 'sequence', items }], basis }
+  if (firstBranch !== -1 && instructions.slice(firstBranch).some(item => item.kind === 'block')) single = false
+  return {
+    rows: items.length === 0 ? [] : single
+      ? [makePair('step', instructions), ...(end < items.length ? [{ kind: 'sequence' as const, items: items.slice(end) }] : [])]
+      : [{ kind: 'sequence', items }],
+    basis,
+  }
+}
+
+type Comparison = Extract<ProcedureAssessmentCondition, { type: 'comparison' }>
+export interface ProcedureLineCheck {
+  readonly text: string
+  readonly comparisons: ReadonlyArray<Comparison>
+}
+
+const comparisonConjunction = (condition: ProcedureAssessmentCondition): ReadonlyArray<Comparison> | null => {
+  if (condition.type === 'comparison') return [condition]
+  if (condition.type !== 'all') return null
+  const groups = condition.conditions.map(comparisonConjunction)
+  return groups.some(group => group === null) ? null : groups.flatMap(group => group ?? [])
+}
+
+/** Trailing authored tags associate each Check line with exact, unique comparisons in its paired all-of. */
+export const procedureLineChecks = (step: ProcedureStep, row: Extract<OperatorRow, { kind: 'pair' }>): ReadonlyMap<number, ProcedureLineCheck> => {
+  const lines = new Map<number, ProcedureLineCheck>()
+  if (row.advisoryBranchIndex === undefined) return lines
+  const condition = step.decisions?.find(decision => decision.branchIndex === row.advisoryBranchIndex)?.condition
+  const comparisons = condition && comparisonConjunction(condition)
+  if (!comparisons?.length || new Set(comparisons.map(item => item.tagId)).size !== comparisons.length) return lines
+  const remaining = new Map(comparisons.map(item => [item.tagId, item]))
+  for (const item of row.expected) {
+    if (item.kind !== 'block') continue
+    for (const block of item.blocks) {
+      if (block.kind !== 'check') continue
+      const suffix = /(?:\s+«[A-Za-z0-9][A-Za-z0-9._/-]*»)+\s*$/.exec(block.text)
+      if (suffix === null) continue
+      const text = block.text.slice(0, suffix.index).trimEnd()
+      if (!text || text.includes('«')) return new Map()
+      const bound: Comparison[] = []
+      for (const match of suffix[0].matchAll(/«([^»]+)»/g)) {
+        const comparison = remaining.get(match[1]!)
+        if (!comparison) return new Map()
+        remaining.delete(comparison.tagId)
+        bound.push(comparison)
+      }
+      lines.set(block.sourceLine, { text, comparisons: bound })
+    }
+  }
+  return remaining.size === 0 ? lines : new Map()
+}
+
+export const procedureLineCheckEvidence = (
+  line: ProcedureLineCheck,
+  readings: ReadonlyArray<ProcedureCriterionReading>,
+  currentTime: string | undefined,
+) => {
+  const now = Date.parse(currentTime ?? '')
+  const operands = line.comparisons.map(comparison => {
+    const reading = readings.find(item => item.tagId === comparison.tagId)
+    const acquired = Date.parse(reading?.sampledAt ?? '')
+    const current = reading !== undefined && acquired <= now && now - acquired <= comparison.maxAgeSeconds * 1000
+    return { comparison, reading: current ? reading : undefined }
+  })
+  const status = operands.some(item => item.reading?.status === 'contradicted') ? 'contradicted'
+    : operands.every(item => item.reading?.status === 'supported') ? 'supported' : 'unknown'
+  return { status, operands }
 }
 
 export type ProcedureTextSegment =
