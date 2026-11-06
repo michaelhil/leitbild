@@ -499,14 +499,19 @@
   const updateWindowDrag = (event: PointerEvent): void => {
     const drag = windowDragState
     if (!drag || drag.pointerId !== event.pointerId) return
-    windowBounds = nextBoundsForDrag(drag, event)
+    applyWindowBounds(nextBoundsForDrag(drag, event))
   }
 
   const finishWindowDrag = (event: PointerEvent): void => {
     const drag = windowDragState
     if (!drag || drag.pointerId !== event.pointerId) return
-    windowBounds = nextBoundsForDrag(drag, event)
+    applyWindowBounds(nextBoundsForDrag(drag, event))
     windowDragState = null
+  }
+
+  const applyWindowBounds = (bounds: FloatingWindowBounds): void => {
+    if (windowBounds.width > compactProcedureWidth && bounds.width <= compactProcedureWidth) procedureTocMode = 'collapsed'
+    windowBounds = bounds
   }
 
   const increaseProcedureFontSize = (): void => {
@@ -1410,7 +1415,7 @@
       void refreshCsfStatus()
     }, 2_000)
     const handleResize = (): void => {
-      windowBounds = clampWindowBounds(windowBounds)
+      applyWindowBounds(clampWindowBounds(windowBounds))
     }
     window.addEventListener('resize', handleResize)
     for (const type of interactionEvents) windowElement.addEventListener(type, noteInteraction, { capture: true, passive: true })
@@ -2016,7 +2021,7 @@
                       <BookOpen size={15} aria-hidden="true" />
                     </span>
                     <span>{item.procedureId}</span>
-                    <small>{item.title}{#if item.sourcePath.startsWith('archive/')} <span class="procedure-reference-label">Reference</span>{/if}</small>
+                    <small>{item.sourcePath.startsWith('archive/') ? `Reference · ${item.title}` : item.title}</small>
                   </button>
                 {/each}
               </section>

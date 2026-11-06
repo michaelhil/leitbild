@@ -4406,7 +4406,6 @@ body.rail-resizing {
   border-block-end: 1px solid var(--border);
   font-size: calc(12px * var(--procedure-font-scale));
 }
-.procedure-reference-label { font-weight: 600; }
 
 @container (max-width: 650px) {
   .procedure-response-pair { grid-template-columns: minmax(0, 1fr); }

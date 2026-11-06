@@ -1754,7 +1754,7 @@
         }
         // Some commands update a Pack's I&C state while paused without
         // upserting its object or moving the simulation clock.
-        if (parsed.events.some(event => event.type === 'command.result' && event.result.ok)) procedureEvidenceRevision += 1
+        if (parsed.events.some(event => event.type === 'command.result' && event.result?.ok === true)) procedureEvidenceRevision += 1
         if (parsed.events.some(event => event.type.startsWith('procedure.') || event.type === 'object.deleted')) {
           // Only a live batch opens a window: the snapshot and Run reads never do.
           for (const runId of procedureAiStartedRunIds(parsed.events)) aiStartedProcedureRunIds.add(runId)
