@@ -6,9 +6,9 @@ Read the [knowledge wiki](https://leitbild.app/wiki) for concepts, architecture,
 
 ## Development
 
-Use Bun 1.4.0. Run `bun install`, `bun run check`, and `bun run test`. Module scripts are declared in their `package.json` files. Build a local wiki publication with `bun run knowledge:publish /path/to/Leitbild-wiki`.
+Use Bun 1.4.0. From clean code and wiki checkouts, run `bun run verify /path/to/Leitbild-wiki` for a frozen install, build and three-service smoke in a temporary checkout. The command prints the exact pair and checks that the Host and World serve that publication. For working-tree development, use `bun install` and `bun run validate` for checks, tests and builds, and `bun run knowledge:publish /path/to/Leitbild-wiki` to build a local publication.
 
-Deployment runs `bun run deploy -- --dry-run` or `bun run deploy -- --yes`. It requires a clean knowledge repository at `../Leitbild-wiki` or `LEITBILD_KNOWLEDGE_REPOSITORY`, and records the exact code and knowledge revisions. No Forgejo service is required.
+Deployment runs `bun run deploy -- --dry-run` or `bun run deploy -- --yes`. It uses the same preparation path with full validation and packages the exact checked code, UI builds and publication. Both commands default to the wiki checkout at `../Leitbild-wiki` or `LEITBILD_KNOWLEDGE_REPOSITORY`.
 
 Source owners are `apps/leitbild`, `apps/world`, and `apps/agents`. Shared contracts are in `packages/contracts`; `packages/procmd` parses procedure documents; `packages/knowledge` provides immutable reference reads without owning simulation or conversation state.
 

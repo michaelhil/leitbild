@@ -54,6 +54,19 @@ test('preflight fails before runtime startup when built artifacts are missing', 
   finally { await rm(empty, { recursive: true }) }
 })
 
+test('preflight refuses a prepared stack with the wrong wiki revision', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'leitbild-preflight-wiki-'))
+  const revision = 'a'.repeat(40)
+  try {
+    for (const path of ['apps/leitbild/src/ui/dist/index.html', 'apps/world/src/ui/dist/index.html', 'apps/agents/src/ui/dist/index.html', 'apps/agents/src/ui/dist/app.js', 'apps/agents/src/ui/dist.css']) {
+      await Bun.write(join(root, path), '')
+    }
+    await Bun.write(join(root, 'knowledge/snapshot.json'), JSON.stringify({ revision, documents: [] }))
+    expect(await preflightLocalStack(root, revision)).toBe(revision)
+    await expect(preflightLocalStack(root, 'b'.repeat(40))).rejects.toThrow('Publish the selected wiki before starting')
+  } finally { await rm(root, { recursive: true }) }
+})
+
 test('loopback proxy retains HTTP path/query/body and forwards WebSocket frames both ways', async () => {
   const upstream = Bun.serve({
     hostname: '127.0.0.1', port: 0,

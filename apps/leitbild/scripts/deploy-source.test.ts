@@ -5,12 +5,9 @@ import { dirname, join } from 'node:path'
 import { LEITBILD_SOURCE_URL } from '../../world/src/ui/embed/openbridge-notice.ts'
 import {
   assertPublicWorldSource,
-  isWorldBundleInput,
   normalizedRepositoryUrl,
-  parsePorcelainZ,
   PUBLIC_CODE_REPOSITORY,
   publicSourceRefusal,
-  worldBundleRefusal,
 } from './deploy.ts'
 
 // World's browser bundle contains AGPL-3.0-only OpenBridge: a release may only
@@ -19,31 +16,6 @@ import {
 describe('deploy source guards', () => {
   test('the deploy requires the repository the bundle notice names as its corresponding source', () => {
     expect(PUBLIC_CODE_REPOSITORY).toBe(LEITBILD_SOURCE_URL)
-  })
-
-  test('reads every porcelain entry, renames by their new path', () => {
-    expect(parsePorcelainZ(' M apps/world/src/ui/a.ts\0?? apps/world/src/ui/new file.ts\0R  apps/world/src/b.ts\0apps/world/src/old.ts\0 D bun.lock\0')).toEqual([
-      { status: ' M', path: 'apps/world/src/ui/a.ts' },
-      { status: '??', path: 'apps/world/src/ui/new file.ts' },
-      { status: 'R ', path: 'apps/world/src/b.ts' },
-      { status: ' D', path: 'bun.lock' },
-    ])
-    expect(parsePorcelainZ('')).toEqual([])
-    expect(() => parsePorcelainZ('Mapps/x\0')).toThrow('Unreadable git status entry')
-  })
-
-  test('World bundle inputs are its source, build configuration, manifest and the lockfile, not its tests', () => {
-    expect(isWorldBundleInput('apps/world/src/ui/embed/embed.css')).toBe(true)
-    expect(isWorldBundleInput('apps/world/src/packs/process-plant/displays/compose.ts')).toBe(true)
-    expect(isWorldBundleInput('apps/world/vite.config.ts')).toBe(true)
-    expect(isWorldBundleInput('apps/world/package.json')).toBe(true)
-    expect(isWorldBundleInput('bun.lock')).toBe(true)
-    expect(isWorldBundleInput('apps/world/src/ui/thing.test.ts')).toBe(false)
-    expect(isWorldBundleInput('apps/world/tests/display-zoom.test.ts')).toBe(false)
-    expect(isWorldBundleInput('apps/agents/src/main.ts')).toBe(false)
-    expect(worldBundleRefusal([{ status: ' M', path: 'apps/agents/src/main.ts' }])).toBeNull()
-    expect(worldBundleRefusal([{ status: ' M', path: 'apps/world/src/ui/a.ts' }, { status: '??', path: 'apps/world/src/ui/b.ts' }]))
-      .toBe("Refusing to deploy: World's browser bundle contains AGPL-3.0-only OpenBridge and must be built from committed, public source, but these inputs are dirty or untracked: M apps/world/src/ui/a.ts, ?? apps/world/src/ui/b.ts. Commit and push them first.")
   })
 
   test('the base commit must be on a branch of the public origin', () => {
@@ -69,7 +41,7 @@ describe('deploy source guards on a repository', () => {
     await writeFile(join(root, path), content)
   }
 
-  test('refuses dirty or untracked World bundle inputs and a base commit the public origin lacks, a clean pushed one passes', async () => {
+  test('refuses dirty or untracked input across Modules and requires a publicly reachable commit', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'leitbild-deploy-source-'))
     try {
       const origin = join(directory, 'public.git')
@@ -88,15 +60,14 @@ describe('deploy source guards on a repository', () => {
 
       // A dirty World UI file.
       await put(work, 'apps/world/src/ui/embed/embed.css', ':root { color: red }\n')
-      await expect(guard()).rejects.toThrow('dirty or untracked: M apps/world/src/ui/embed/embed.css')
+      await expect(guard()).rejects.toThrow('Commit or move outstanding files')
       await git(work, 'checkout', '--', 'apps/world/src/ui/embed/embed.css')
       // An untracked one.
       await put(work, 'apps/world/src/packs/new-panel.ts', 'export {}\n')
-      await expect(guard()).rejects.toThrow('?? apps/world/src/packs/new-panel.ts')
+      await expect(guard()).rejects.toThrow('Commit or move outstanding files')
       await rm(join(work, 'apps/world/src/packs'), { recursive: true })
-      // Changes outside World's bundle are another rule's business (root AGENTS.md).
       await put(work, 'apps/agents/src/main.ts', 'export const changed = true\n')
-      expect((await guard()).baseCommit).toBe(head)
+      await expect(guard()).rejects.toThrow('Commit or move outstanding files')
       await git(work, 'checkout', '--', 'apps/agents/src/main.ts')
 
       // Committed but not pushed: the public origin lacks the base commit.
