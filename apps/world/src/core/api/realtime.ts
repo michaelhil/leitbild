@@ -13,7 +13,7 @@ type RealtimeMessageContext = Omit<RealtimeReadyMessage, 'type' | 'clock' | 'epo
  * A role-Run connection's perspective: the role set it holds and the epoch
  * that set began. Every message it receives carries that epoch, so a screen
  * can tell messages of its current role set from late ones of an older set.
- * A connection to a Run without roles has none, and its messages are unchanged.
+ * A connection to a Run without roles has no perspective epoch.
  */
 export interface ClientPerspective {
   readonly roleIds: ReadonlyArray<string>
@@ -114,7 +114,7 @@ const realtimeStatusFromClients = <Client>(
 export const createSimulationRunRealtimeManager = <Client>(config: {
   readonly registry: SimulationRunRegistry
   readonly send: (client: Client, message: RealtimeOutboundMessage) => void
-  readonly sendReady: (client: Client, message: RealtimeReadyMessage) => void
+  readonly sendReady: (client: Client, message: RealtimeReadyMessage, runtime: RealtimeSubscription['runtime']) => void
   readonly perspectiveOf: (client: Client) => ClientPerspective | null
 }): SimulationRunRealtimeManager<Client> => {
   const clientsBySimulationRun = new Map<SimulationRunId, Set<Client>>()
@@ -279,7 +279,7 @@ export const createSimulationRunRealtimeManager = <Client>(config: {
   ): void => {
     const clients = clientsBySimulationRun.get(simulationRunId)
     if (!clients) return
-    for (const client of clients) config.sendReady(client, readyMessageForRuntime(simulationRunId, runtime, client))
+    for (const client of clients) sendReadyToClient(simulationRunId, runtime, client)
   }
 
   const sendReadyToClient = (
@@ -287,7 +287,7 @@ export const createSimulationRunRealtimeManager = <Client>(config: {
     runtime: NonNullable<ReturnType<SimulationRunRegistry['get']>>,
     client: Client,
   ): void => {
-    config.sendReady(client, readyMessageForRuntime(simulationRunId, runtime, client))
+    config.sendReady(client, readyMessageForRuntime(simulationRunId, runtime, client), runtime)
   }
 
   /**

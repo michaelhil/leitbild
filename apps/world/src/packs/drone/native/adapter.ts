@@ -3,7 +3,8 @@ import { commandResultSchema,geoJsonPointSchema,geoJsonPolygonSchema,nowIso,obje
 import { z } from 'zod'
 import { createSimulationClock } from '../../../core/model/time.ts'
 import { defineSimulationCommandCapability } from '../../../simulation/capabilities.ts'
-import type { PackRuntimeAdapter,PackRuntimeConnection,PackRuntimeEmission,PackRuntimeEvent,PackRuntimeEventHandler,PackRuntimeQuery,PackRuntimeRealtimeMessage,PackRuntimeSnapshot } from '../../../simulation/protocol.ts'
+import { rejectCapabilityInput, rejectCapabilityTarget } from '../../../simulation/capability-rejection.ts'
+import type { PackRuntimeAdapter,PackRuntimeConnection,PackRuntimeEmission,PackRuntimeEvent,PackRuntimeEventHandler,PackRuntimeQuery,PackRuntimeRealtimeInput,PackRuntimeRealtimeMessage,PackRuntimeSnapshot } from '../../../simulation/protocol.ts'
 import {
   armDroneCommandKind,
   armDronePayloadSchema,
@@ -20,6 +21,7 @@ import {
   landDroneCommandKind,
   manualControlCommandKind,
   manualControlPayloadSchema,
+  type ManualControlPayload,
   navigateDroneCommandKind,
   navigateDronePayloadSchema,
   pauseDroneMissionCommandKind,
@@ -44,8 +46,8 @@ import { answerDroneQuery,droneQueryCapabilities } from '../query.ts'
 import {
   droneManualIntentPayloadSchema,
   droneManualIntentRealtimeInputType,
+  droneManualIntentTtlMs,
   droneMotionFramesRealtimeMessage,
-  type DroneManualIntentPayload,
   type DroneMotionFrame,
 } from '../realtime.ts'
 import { horizontalDistanceM,movePointByMeters } from '../spatial.ts'
@@ -137,6 +139,7 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
     const missionPlans = new Map<string, NativeMissionPlan>()
     const geofences = new Map<string, ReadonlyArray<GeoJsonPolygon>>()
     const droneRecords = new Map<string, DroneRuntimeRecord>()
+    const liveManualInputs = new Map<string, Pick<PackRuntimeRealtimeInput, 'clientId' | 'isCurrent'>>()
     const rawCheckpoint = await config.runtimeStateStore?.load() ?? null
     if (config.initialObjects && config.runtimeStateStore && rawCheckpoint === null) {
       throw new Error('Drone runtime checkpoint is missing; private mission and geofence state cannot be reconstructed')
@@ -161,6 +164,7 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
       const data = parseDroneObject(object)
       if (!data) {
         droneRecords.delete(object.id)
+        liveManualInputs.delete(object.id)
         return null
       }
       return setRuntimeDrone(object, data)
@@ -170,6 +174,7 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
       objects.delete(objectId)
       worldObjects.delete(objectId)
       droneRecords.delete(objectId)
+      liveManualInputs.delete(objectId)
       homePoints.delete(objectId)
       missionPlans.delete(objectId)
       geofences.delete(objectId)
@@ -221,7 +226,26 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
     let lastMotionFrameMs = 0
     let motionFrameSequence = restoredCheckpoint?.motionFrameSequence ?? 0
 
+    const releaseExpiredLiveInput = ({ object, data }: DroneRuntimeRecord, at: IsoTimestamp): DronePackData => {
+      const input = liveManualInputs.get(object.id)
+      if (!input) return data
+      if (data.control.inputSource?.clientId !== input.clientId || data.navigation.kind !== 'manual') {
+        liveManualInputs.delete(object.id)
+        return data
+      }
+      if (input.isCurrent() && data.control.inputExpiresAt !== undefined && data.control.inputExpiresAt > at) return data
+      liveManualInputs.delete(object.id)
+      const inputExpiresAt = data.control.inputExpiresAt !== undefined && data.control.inputExpiresAt < at
+        ? data.control.inputExpiresAt : at
+      return { ...data, control: { ...data.control, manualAxes: undefined, inputExpiresAt } }
+    }
+
     const checkpoint = async (requireNoManualControl = true): Promise<void> => {
+      const at = nowIso()
+      for (const record of droneRecords.values()) {
+        const next = releaseExpiredLiveInput(record, at)
+        if (next !== record.data) setRuntimeDrone(withDronePackData(record.object, next, at), next)
+      }
       if (requireNoManualControl && [...droneRecords.values()].some(({ data }) => data.control.manualAxes !== undefined)) {
         throw new Error('Release active drone manual controls before copying the Simulation Run')
       }
@@ -251,6 +275,14 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
 
     const liveDroneRecords = (): ReadonlyArray<DroneRuntimeRecord> =>
       [...droneRecords.values()].filter(record => record.data.health.state !== 'destroyed')
+
+    const projectDrone = (object: OperationalObject): OperationalObject => {
+      const data = droneRecords.get(object.id)?.data
+      if (!data || !liveManualInputs.has(object.id) || data.control.manualAxes === undefined) return object
+      // A copied or restored Run has no socket. Publish attribution and expiry,
+      // while the live axes stay private to this runtime and connection.
+      return { ...object, packData: { ...data, control: { ...data.control, manualAxes: undefined } } }
+    }
 
     const motionFrameFor = (object: OperationalObject, data: DronePackData): DroneMotionFrame => ({
       objectId: object.id,
@@ -284,7 +316,7 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
     ): void => {
       emit([{
         type: 'object.upserted',
-        object,
+        object: projectDrone(object),
         at,
         history,
         provenance: {
@@ -328,10 +360,10 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
       if (stepPlan.steps.length === 0) return
       for (const step of stepPlan.steps) {
         const at = nowIso()
-        for (const { object, data } of liveDroneRecords()) {
+        for (const record of liveDroneRecords()) {
           const next = stepDroneObject({
-            object,
-            data,
+            object: record.object,
+            data: releaseExpiredLiveInput(record, at),
             nowMs: step.nowMs,
             dtSeconds: step.dtSeconds,
             at,
@@ -349,7 +381,7 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
       const projectedRecords = liveDroneRecords()
       emit(projectedRecords.map(({ object }) => ({
         type: 'object.upserted' as const,
-        object,
+        object: projectDrone(object),
         at,
         history: 'snapshot-only' as const,
         provenance: {
@@ -377,8 +409,9 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
     })
 
     const applyManualIntent = (input: {
-      readonly payload: DroneManualIntentPayload
+      readonly payload: Pick<ManualControlPayload, 'droneId' | 'axes' | 'inputSource'>
       readonly at: IsoTimestamp
+      readonly expiresAtMs: number
       readonly actorId?: CommandEnvelope['actorId']
       readonly clientId?: CommandEnvelope['clientId']
       readonly command?: CommandEnvelope
@@ -387,8 +420,7 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
       const { payload, at } = input
       const { object, data } = droneRecord(payload.droneId)
       const readiness = droneManualControlReadiness(data)
-      if (!readiness.ready) throw new Error(readiness.reason ?? 'manual flight is not ready')
-      const expiresAtMs = Date.now() + payload.commandTtlMs
+      if (!readiness.ready) return rejectCapabilityInput(readiness.reason ?? 'manual flight is not ready')
       const next = {
         ...setDroneNavigation(data, 'manual', 'manual', at),
         control: {
@@ -400,10 +432,11 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
             ...(input.clientId === undefined ? {} : { clientId: input.clientId }),
           },
           lastCommandAt: at,
-          inputExpiresAt: new Date(expiresAtMs).toISOString() as IsoTimestamp,
+          inputExpiresAt: new Date(input.expiresAtMs).toISOString() as IsoTimestamp,
         },
       }
       if (input.emitProjectedObject) {
+        liveManualInputs.delete(payload.droneId)
         updateObject(object, next, at, 'snapshot-only', input.command)
         return
       }
@@ -462,6 +495,7 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
         applyManualIntent({
           payload,
           at: nowIso(),
+          expiresAtMs: Date.now() + payload.commandTtlMs,
           actorId: command.actorId,
           ...(command.clientId === undefined ? {} : { clientId: command.clientId }),
           command,
@@ -780,7 +814,7 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
     return {
       getSnapshot: async (): Promise<PackRuntimeSnapshot> => ({
         simulationRunId: config.simulationRunId,
-        objects: [...objects.values()],
+        objects: [...objects.values()].map(projectDrone),
         capturedAt: nowIso(),
       }),
       subscribe: (handler: PackRuntimeEventHandler): (() => void) => {
@@ -800,13 +834,30 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
       },
       receiveRealtimeInput: async (input): Promise<void> => {
         if (input.type !== droneManualIntentRealtimeInputType) throw new Error(`unsupported drone realtime input type: ${input.type}`)
+        const expiresAtMs = Date.parse(input.at) + droneManualIntentTtlMs
+        if (!input.isCurrent() || Date.now() >= expiresAtMs) return
+        const payload = droneManualIntentPayloadSchema.parse(input.payload)
+        const record = droneRecords.get(payload.droneId)
+        if (!record || record.object.lifecycle !== 'active') return rejectCapabilityTarget(`unknown drone object: ${payload.droneId}`)
+        if (Object.values(payload.axes).every(value => value === 0)) {
+          // Release only this connection's control. Another pilot or a discrete
+          // command may have taken over since the browser sent its last sample.
+          if (liveManualInputs.get(payload.droneId)?.clientId !== input.clientId) return
+          liveManualInputs.delete(payload.droneId)
+          const at = nowIso()
+          const next = { ...record.data, control: { ...record.data.control, manualAxes: undefined, inputExpiresAt: at } }
+          setRuntimeDrone(withDronePackData(record.object, next, at), next)
+          return
+        }
         applyManualIntent({
-          payload: droneManualIntentPayloadSchema.parse(input.payload),
+          payload,
           at: input.at,
-          ...(input.actorId === undefined ? {} : { actorId: input.actorId }),
-          ...(input.clientId === undefined ? {} : { clientId: input.clientId }),
+          expiresAtMs,
+          actorId: input.actorId,
+          clientId: input.clientId,
           emitProjectedObject: false,
         })
+        liveManualInputs.set(payload.droneId, input)
       },
       invokeQuery: async (request: PackRuntimeQuery): Promise<unknown> =>
         answerDroneQuery({ request, objects: [...worldObjects.values()], models: runtimeConfig.models }),
@@ -814,6 +865,9 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
         for (const event of events) {
           if (event.simulationRunId !== config.simulationRunId) continue
           if (event.type === 'object.upserted') {
+            const current = droneRecords.get(event.object.id)
+            // A committed echo may be older than the current private sample.
+            if (event.provenance.adapterId === droneNativeAdapterId && current && current.object.revision >= event.object.revision) continue
             const record = upsertRuntimeObject(event.object)
             if (record && !homePoints.has(event.object.id)) homePoints.set(event.object.id, record.data.pose.point)
           }

@@ -69,28 +69,6 @@ describe('simulation run event helpers', () => {
     }))).toBeNull()
   })
 
-  test('parses realtime Capability result messages', () => {
-    const parsed = parseSimulationRunWebSocketMessage(JSON.stringify({
-      type: 'capability.result',
-      ...messageScope,
-      requestId: 'rtcmd:test',
-      outcome: {
-        kind: 'command',
-        replayed: false,
-        result: {
-          ok: true,
-          commandId: 'command:test',
-          acceptedAt: '2026-01-01T10:00:00.000Z',
-        },
-      },
-    }))
-
-    expect(parsed?.type).toBe('capability.result')
-    if (parsed?.type !== 'capability.result') throw new Error('expected Capability result message')
-    expect(parsed.requestId).toBe('rtcmd:test')
-    expect(parsed.outcome.kind).toBe('command')
-  })
-
   test('parses runtime realtime messages separately from event batches', () => {
     const parsed = parseSimulationRunWebSocketMessage(JSON.stringify({
       type: 'runtime.realtime',

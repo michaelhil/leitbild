@@ -304,7 +304,7 @@ export const createRuntimeHub = (adapters: ReadonlyArray<PackRuntimeAdapter>): P
           await target.connection.receiveRealtimeInput(input)
           markHealthy(target.adapter.id, input.type)
         } catch (error) {
-          markFailure(target.adapter.id, input.type, error)
+          if (!isExpectedCapabilityRejection(error)) markFailure(target.adapter.id, input.type, error)
           throw error
         }
       }

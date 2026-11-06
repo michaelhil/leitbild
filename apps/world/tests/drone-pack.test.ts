@@ -1,7 +1,7 @@
 import { unrestrictedQueryReadPolicy } from '../src/simulation/query-read-policy.ts'
 import { describe, expect, test } from 'bun:test'
 import type { ActorId, CommandEnvelope, SimulationRunId, GeoJsonPoint, IsoTimestamp, ObjectId, OperationalObject, PackId } from '../src/core/model/index.ts'
-import { geoPointFromLonLat } from '../src/core/model/index.ts'
+import { clientIdSchema, geoPointFromLonLat, nowIso } from '../src/core/model/index.ts'
 import {
   armDroneCommandKind,
   createDroneCommandKind,
@@ -442,14 +442,12 @@ describe('drone pack native runtime', () => {
       const projectedBeforeInput = projectedEvents.length
       await connection.receiveRealtimeInput({
         type: droneManualIntentRealtimeInputType,
-        at,
+        at: nowIso(),
+        actorId, clientId: clientIdSchema.parse('realtime:test'), isCurrent: () => true,
         payload: {
           droneId: initial.id,
           axes: { forward: 1, right: 0, vertical: 1, yaw: 0 },
           inputSource: { kind: 'keyboard', label: 'Keyboard' },
-          commandTtlMs: 500,
-          sampledAtMs: 0,
-          sequence: 1,
         },
       })
       expect(projectedEvents).toHaveLength(projectedBeforeInput)
@@ -508,14 +506,12 @@ describe('drone pack native runtime', () => {
         const target = fleet[sequence % fleet.length]!
         await connection.receiveRealtimeInput({
           type: droneManualIntentRealtimeInputType,
-          at,
+          at: nowIso(),
+          actorId, clientId: clientIdSchema.parse('realtime:test'), isCurrent: () => true,
           payload: {
             droneId: target.id,
             axes: { forward: 1, right: sequence % 2 === 0 ? 0.25 : -0.25, vertical: 0.35, yaw: sequence % 3 === 0 ? 0.18 : 0 },
             inputSource: { kind: 'keyboard', label: 'Keyboard stress test' },
-            commandTtlMs: 350,
-            sampledAtMs: sequence * 8,
-            sequence,
           },
         })
         await Bun.sleep(4)

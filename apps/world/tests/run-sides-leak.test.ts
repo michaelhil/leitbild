@@ -99,15 +99,10 @@ describe('the wire oracle on a sided fixture Run', () => {
       await (await registry()).setExecution(oracle.runId(), { playback: 'playing' })
       await waitForCondition('the Pack writes the refused unit on its own', () => faults() > before)
       await (await registry()).setExecution(oracle.runId(), { playback: 'paused' })
-      // Blue commands over HTTP and over its realtime connection.
       expect(await command(blue, fixtureCommandIds.setPriority, { taskId: names.blueTask.id, priority: 'high' })).toMatchObject({ result: { ok: true } })
-      expect(await blue.connection.invokeCapability(oracle.runId(), { capabilityId: fixtureCommandIds.setPriority, input: { taskId: names.blueTask.id, priority: 'low' } })).toMatchObject({ result: { ok: true } })
-      let deleteRefusal: unknown
-      try { await blue.connection.invokeCapability(oracle.runId(), { capabilityId: 'world.object.delete', input: { objectId: names.redUnit.id } }) }
-      catch (error) { deleteRefusal = error }
-      expect(deleteRefusal).toBeInstanceOf(Error)
-      const refusal = blue.ws.slice(marks.blue).find(entry => entry.type === 'capability.error')
-      expect(refusal === undefined ? null : (JSON.parse(refusal.text) as { readonly code?: string }).code).toBe('role_controller_only')
+      expect(await command(blue, fixtureCommandIds.setPriority, { taskId: names.blueTask.id, priority: 'low' })).toMatchObject({ result: { ok: true } })
+      await expect(command(blue, 'world.object.delete', { objectId: names.redUnit.id })).rejects.toThrow()
+      expect(blue.http.slice(marks.blueHttp).some(entry => entry.body.includes('role_controller_only'))).toBe(true)
       // Blue asks the Pack for a Red object by id: the Pack answers as if it did not exist.
       expect(await asScreen(blue, async () => await querySimulationRunCapability<{ readonly object: unknown }>(oracle.runId(), fixtureQueryIds.object, { objectId: names.redUnit.id }))).toEqual({ object: null })
     } finally { logged.mockRestore() }
@@ -187,7 +182,6 @@ describe('the wire oracle on a sided fixture Run', () => {
     expect(recommended(await recommendAs(red, einsatz.redTask.id))).toEqual([einsatz.redCarrier.id])
     const send = { units: [einsatz.redCarrier.id], to: { taskId: einsatz.blueTask.id } }
     expect(refusalOf(await command(blue, einsatzCommandIds.send, send))).toBe('not_in_picture: Not in your picture')
-    expect(await blue.connection.invokeCapability(oracle.runId(), { capabilityId: einsatzCommandIds.send, input: send })).toMatchObject({ result: { ok: false, reason: 'not_in_picture: Not in your picture' } })
     // A side role commands no public unit: Blue's command on the public site is refused within Blue's picture.
     const refused = await command(blue, einsatzCommandIds.siteSet, { siteId: einsatz.site.id, accepting: false })
     if (refused.kind !== 'command' || refused.result.ok) throw new Error(`Expected Blue's command on the public site to be refused: ${JSON.stringify(refused)}`)
@@ -377,7 +371,9 @@ describe('the wire oracle on a sided fixture Run', () => {
     const runPath = `/api/workspaces/${oracle.workspaceId()}/world/simulation-runs/${oracle.runId()}`
     const allowed = (screen: Screen) => new RegExp(`^${runPath.replaceAll('.', '\\.')}(/snapshot|/presence|/capabilities/world\\.(fixture|einsatz)\\.[a-z.-]+/invoke)?\\?roles=${encodeURIComponent(screen.roleIds.join(','))}$`)
     for (const screen of [red, blue]) {
-      expect(screen.http.map(entry => entry.url).filter(url => !allowed(screen).test(url))).toEqual([])
+      const probe = `${runPath}/capabilities/world.object.delete/invoke?roles=${encodeURIComponent(screen.roleIds.join(','))}`
+      const refused = (entry: typeof screen.http[number]) => entry.url === probe && entry.status === 403
+      expect(screen.http.filter(entry => !allowed(screen).test(entry.url) && !refused(entry))).toEqual([])
       expect(screen.http.some(entry => entry.url.includes('/scenarios/'))).toBe(false)
     }
     // The routes a side view never reaches, asked directly.
@@ -411,12 +407,16 @@ describe('a Run without sides on the WebSocket', () => {
       expect(ready.snapshot.scenario.highlightedObjectIds).toEqual([`unit:redunit-${nonce}`])
       expect(ready.compiledScenario.initialObjects).toHaveLength(6)
       expect(ready.compiledScenario.timeline).toBeDefined()
-      socket.send(JSON.stringify({ type: 'capability.invoke', requestId: 'loose', capabilityId: fixtureCommandIds.createItem, invocation: { input: { item: { type: 'unit', id: `unit:unsided-${nonce}`, label: `unsided ${nonce}`, position: [10.74, 59.92], speedMps: 10 } } } }))
-      socket.send(JSON.stringify({ type: 'capability.invoke', requestId: 'announce', capabilityId: fixtureCommandIds.announce, invocation: { input: { text: 'all hear this' } } }))
+      const invoke = async (id: string, input: unknown) => {
+        const response = await oracle.originalFetch(`${oracle.base()}/api/workspaces/${oracle.workspaceId()}/world/simulation-runs/${unsidedId}/capabilities/${id}/invoke?roles=red-lead`, {
+          method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ input }),
+        })
+        expect(response.status).toBe(200)
+        expect(await response.json()).toMatchObject({ result: { ok: true } })
+      }
+      await invoke(fixtureCommandIds.createItem, { item: { type: 'unit', id: `unit:unsided-${nonce}`, label: `unsided ${nonce}`, position: [10.74, 59.92], speedMps: 10 } })
+      await invoke(fixtureCommandIds.announce, { text: 'all hear this' })
       await waitForCondition('unsided runtime message', () => received.some(message => message.type === 'runtime.realtime'))
-      // Each request is answered on its own: the announce's runtime message says nothing of when the earlier loose request's result arrives.
-      await waitForCondition('the loose request answered', () => received.some(message => message.type === 'capability.result' && message.requestId === 'loose'))
-      expect(received.find(message => message.requestId === 'loose')).toMatchObject({ type: 'capability.result', outcome: { result: { ok: true } } })
       const types = () => received.filter(message => message.type === 'events').flatMap(message => (message.events as Array<{ type: string }>).map(event => event.type))
       await waitForCondition('the loose command\'s events', () => ['command.issued', 'object.upserted', 'command.result'].every(type => types().includes(type)))
       expect(types()).toEqual(expect.arrayContaining(['command.issued', 'object.upserted', 'command.result']))

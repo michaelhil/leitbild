@@ -26,7 +26,6 @@
     readonly keyBindings: DroneKeyBindingMap
     readonly bindingCaptureAction: DroneKeyBindingAction | null
     readonly scenePerformance: DroneScenePerformanceSnapshot | null
-    readonly lastCommandRoundTripMs: number | null
     readonly commandRateHz: number
     readonly mouseControlEnabled: boolean
     readonly mouseCaptured: boolean
@@ -60,7 +59,6 @@
     keyBindings,
     bindingCaptureAction,
     scenePerformance,
-    lastCommandRoundTripMs,
     commandRateHz,
     mouseControlEnabled,
     mouseCaptured,
@@ -177,8 +175,7 @@
           <span>PR {scenePerformance ? scenePerformance.pixelRatio.toFixed(2) : '-'}</span>
           <span>QL {scenePerformance?.quality ?? '-'}</span>
           <span>SCN {scenePerformance ? scenePerformance.activeScenes : '-'}</span>
-          <span>RTT {lastCommandRoundTripMs === null ? '-' : Math.round(lastCommandRoundTripMs)} ms</span>
-          <span>CMD {commandRateHz.toFixed(1)} Hz</span>
+          <span>INPUT {commandRateHz.toFixed(1)} Hz</span>
           <span>LOD {scenePerformance?.worldFeatures.sceneryStage ?? '-'}</span>
           <span>TILE {scenePerformance ? scenePerformance.worldFeatures.tiles : '-'}</span>
           <span>POLY {scenePerformance ? scenePerformance.worldFeatures.polygons : '-'}</span>

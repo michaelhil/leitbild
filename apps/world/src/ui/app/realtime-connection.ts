@@ -7,8 +7,6 @@ import {
 } from '../simulation-run-events.ts'
 import { createPerspectiveGate, type PerspectiveGate, type RealtimePerspective } from '../roles/perspective.ts'
 import { roleSetQueryParameter } from '../roles/role-session.ts'
-import type { SimulationRunCapabilityRequest } from '../simulation-run-client.ts'
-import type { CapabilityInvocationResponse } from '../types.ts'
 import { workspaceApiPath } from '../workspace-context.ts'
 import { activeWorkspaceId } from '../workspace-context.ts'
 
@@ -37,31 +35,19 @@ export interface RealtimeConnectionController {
   /**
    * Asks the Run to swap this connection's role set in place; a ready message
    * of a new epoch or a role refusal answers. One switch at a time: until it is
-   * answered, a second switch and every capability invocation are refused.
+   * answered, a second switch is refused.
    */
   readonly setRoles: (id: SimulationRunId, roleIds: ReadonlyArray<string>) => void
   readonly disconnect: () => void
   readonly canCarry: (id: SimulationRunId) => boolean
   readonly statusFor: (id: SimulationRunId) => 'open' | 'connecting' | 'other'
-  readonly invokeCapability: (id: SimulationRunId, invocation: SimulationRunCapabilityRequest) => Promise<CapabilityInvocationResponse>
   readonly sendRuntimeInput: (id: SimulationRunId, input: RuntimeInputRequest) => void
 }
 
 export interface RuntimeInputRequest {
   readonly type: string
-  readonly actorId?: string
-  readonly clientId?: string
   readonly payload: unknown
 }
-
-/**
- * The Run answers each invocation in the epoch the invocation arrived in. An
- * answer from an epoch this screen has since left is never applied; the
- * invocation settles with these words instead, which say what is known.
- */
-export const staleResultMessage = 'Answered under the previous role set, so its result is not shown; it may have been applied'
-export const staleRefusalMessage = 'Refused under the previous role set'
-export const switchUnderWayMessage = 'Switching roles; issue this again once the switch completes'
 
 export const createRealtimeConnectionController = (): RealtimeConnectionController => {
   let socket: WebSocket | null = null
@@ -69,44 +55,12 @@ export const createRealtimeConnectionController = (): RealtimeConnectionControll
   let gate: PerspectiveGate = createPerspectiveGate()
   // The epoch a sent `role.set` left; null when no switch awaits its answer.
   let switchFromEpoch: number | null = null
-  const pendingInvocations = new Map<string, {
-    readonly resolve: (response: CapabilityInvocationResponse) => void
-    readonly reject: (err: Error) => void
-    readonly timeoutId: number
-  }>()
-
+  let inputSequence = 0
+  let inputSession: string | undefined
   const canCarry = (id: SimulationRunId): boolean =>
     socket !== null
     && socketId === id
     && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)
-
-  const rejectPendingInvocations = (message: string): void => {
-    for (const [requestId, pending] of pendingInvocations) {
-      clearTimeout(pending.timeoutId)
-      pending.reject(new Error(message))
-      pendingInvocations.delete(requestId)
-    }
-  }
-
-  const resolveInvocation = (requestId: string, response: CapabilityInvocationResponse): void => {
-    const pending = pendingInvocations.get(requestId)
-    if (!pending) return
-    clearTimeout(pending.timeoutId)
-    pendingInvocations.delete(requestId)
-    pending.resolve(response)
-  }
-
-  const rejectInvocation = (requestId: string | undefined, message: string): void => {
-    if (requestId === undefined) {
-      rejectPendingInvocations(message)
-      return
-    }
-    const pending = pendingInvocations.get(requestId)
-    if (!pending) return
-    clearTimeout(pending.timeoutId)
-    pendingInvocations.delete(requestId)
-    pending.reject(new Error(message))
-  }
 
   return {
     connect: (id, callbacks, roleIds): void => {
@@ -120,6 +74,8 @@ export const createRealtimeConnectionController = (): RealtimeConnectionControll
       // Epochs count per connection.
       gate = createPerspectiveGate()
       switchFromEpoch = null
+      inputSequence = 0
+      inputSession = undefined
       const connectionGate = gate
 
       nextSocket.onopen = () => {
@@ -131,7 +87,7 @@ export const createRealtimeConnectionController = (): RealtimeConnectionControll
         socket = null
         socketId = null
         switchFromEpoch = null
-        rejectPendingInvocations('Realtime capability channel closed')
+        inputSession = undefined
         callbacks.onClose()
       }
       nextSocket.onerror = () => {
@@ -158,27 +114,11 @@ export const createRealtimeConnectionController = (): RealtimeConnectionControll
             // The first ready of a newer epoch answers the outstanding switch.
             if (switchFromEpoch !== null && parsed.perspective.epoch > switchFromEpoch) switchFromEpoch = null
           }
+          inputSession = parsed.perspective === undefined ? parsed.inputSession : undefined
           callbacks.onReady(parsed)
           return
         }
-        // An invocation's fate follows the epoch of its own answer: one asked
-        // before a switch but answered after it settles without its result.
-        if ((parsed.type === 'capability.result' || parsed.type === 'capability.error')
-          && parsed.requestId !== undefined
-          && parsed.epoch !== undefined
-          && parsed.epoch < connectionGate.epoch()) {
-          rejectInvocation(parsed.requestId, parsed.type === 'capability.result' ? staleResultMessage : staleRefusalMessage)
-          return
-        }
         if (!connectionGate.admits(parsed.epoch)) return
-        if (parsed.type === 'capability.result') {
-          resolveInvocation(parsed.requestId, parsed.outcome)
-          return
-        }
-        if (parsed.type === 'capability.error') {
-          rejectInvocation(parsed.requestId, parsed.message)
-          return
-        }
         if (parsed.type === 'role.refused') {
           switchFromEpoch = null
           callbacks.onRoleRefused(parsed)
@@ -189,7 +129,7 @@ export const createRealtimeConnectionController = (): RealtimeConnectionControll
           return
         }
         if (parsed.type === 'runtime.input.error') {
-          callbacks.onError(`${parsed.inputType ?? 'Runtime input'} rejected: ${parsed.message}`)
+          callbacks.onInvalidMessage(`${parsed.inputType ?? 'Runtime input'} rejected: ${parsed.message}`)
           return
         }
         callbacks.onEvent(parsed)
@@ -200,7 +140,7 @@ export const createRealtimeConnectionController = (): RealtimeConnectionControll
       socket = null
       socketId = null
       switchFromEpoch = null
-      rejectPendingInvocations('Realtime capability channel disconnected')
+      inputSession = undefined
     },
     setRoles: (id, roleIds): void => {
       if (socketId !== id || socket === null || socket.readyState !== WebSocket.OPEN) {
@@ -218,40 +158,14 @@ export const createRealtimeConnectionController = (): RealtimeConnectionControll
       if (socket.readyState === WebSocket.CONNECTING) return 'connecting'
       return 'other'
     },
-    invokeCapability: async (id, invocation): Promise<CapabilityInvocationResponse> => {
-      if (socketId !== id || socket === null || socket.readyState !== WebSocket.OPEN) {
-        throw new Error('Realtime capability channel is not open')
-      }
-      // The Run applies a switch as soon as it arrives, so an invocation sent
-      // now would act under a role set this screen does not show yet.
-      if (switchFromEpoch !== null) throw new Error(switchUnderWayMessage)
-      const activeSocket = socket
-      const requestId = `rtcmd:${crypto.randomUUID()}`
-      return await new Promise<CapabilityInvocationResponse>((resolve, reject): void => {
-        const timeoutId = window.setTimeout(() => {
-          pendingInvocations.delete(requestId)
-          reject(new Error('Realtime capability invocation timed out'))
-        }, 2_500)
-        pendingInvocations.set(requestId, { resolve, reject, timeoutId })
-        activeSocket.send(JSON.stringify({
-          type: 'capability.invoke',
-          requestId,
-          capabilityId: invocation.capabilityId,
-          invocation: {
-            input: invocation.input,
-            ...(invocation.expectedRevision === undefined ? {} : { expectedRevision: invocation.expectedRevision }),
-            ...(invocation.idempotencyKey === undefined ? {} : { idempotencyKey: invocation.idempotencyKey }),
-          },
-        }))
-      })
-    },
     sendRuntimeInput: (id, input): void => {
-      if (socketId !== id || socket === null || socket.readyState !== WebSocket.OPEN) {
-        throw new Error('Realtime input channel is not open')
+      if (inputSession === undefined || socketId !== id || socket === null || socket.readyState !== WebSocket.OPEN) {
+        throw new Error('Steering requires a connected open Run')
       }
+      if (socket.bufferedAmount > 0) throw new Error('Steering connection is busy')
       socket.send(JSON.stringify({
         type: 'runtime.input',
-        input,
+        input: { type: input.type, session: inputSession, sequence: ++inputSequence, payload: input.payload },
       }))
     },
   }

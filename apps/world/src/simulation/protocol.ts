@@ -48,8 +48,10 @@ export interface PackRuntimeRealtimeMessage {
 export interface PackRuntimeRealtimeInput {
   readonly type: string
   readonly at: IsoTimestamp
-  readonly actorId?: ActorId
-  readonly clientId?: ClientId
+  readonly actorId: ActorId
+  readonly clientId: ClientId
+  /** World-owned fence for the exact connection, perspective and loaded Run. */
+  readonly isCurrent: () => boolean
   readonly payload: unknown
 }
 

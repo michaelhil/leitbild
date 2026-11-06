@@ -1566,11 +1566,6 @@
       : [...mapAssignmentChoiceIds, id]
   }
 
-  const invokeRealtimeCapability = async (invocation: Parameters<typeof realtimeConnection.invokeCapability>[1]) => {
-    if (!simulationRunId) throw new Error('simulation run is not ready')
-    return await realtimeConnection.invokeCapability(simulationRunId, invocation)
-  }
-
   const sendRealtimeInput = (input: Parameters<typeof realtimeConnection.sendRuntimeInput>[1]): void => {
     if (!simulationRunId) throw new Error('simulation run is not ready')
     realtimeConnection.sendRuntimeInput(simulationRunId, input)
@@ -2458,7 +2453,7 @@
       {simulationRunId}
       object={windowEntry.object}
       {objects}
-      {invokeRealtimeCapability}
+      steeringConnected={realtimeAttached}
       {sendRealtimeInput}
       subscribeMotionFrames={subscribeDroneMotionFrames}
       windowOffsetIndex={windowEntry.index}
