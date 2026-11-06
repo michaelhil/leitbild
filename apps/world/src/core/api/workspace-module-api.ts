@@ -1,6 +1,7 @@
 import { objectInspectionReferences } from '../packs/inspection.ts'
 import { isQueryReadRefusal } from '../../simulation/query-read-policy.ts'
 import { procedureRunsListInputSchema, procedureRunsListResultSchema, projectProcedureRuns } from '../../features/procedures/run-list.ts'
+import { procedureChecksReadInputSchema, procedureChecksViewSchema, readProcedureChecks } from '../../features/procedures/checks-view.ts'
 import { procedureDecisionReadInputSchema, procedureTransitionDecisionSchema, retainedProcedureDecision } from '../../features/procedures/transition-receipt.ts'
 import { runHistorianStatusSchema } from '../../features/historian/policy.ts'
 import {
@@ -1651,6 +1652,37 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
         return apiError(403, 'agent_access_restricted', `AI inspection access is restricted for: ${decision.run.scope.plantId}`)
       }
       return json({ result: decision })
+    },
+  },
+  {
+    descriptor: {
+      id: 'world.procedure.run.checks.read',
+      moduleId: WORLD_MODULE_ID,
+      kind: 'query',
+      scope: { kind: 'resource', resourceType: 'world.simulation-run' },
+      title: 'Read current procedure checks',
+      description: 'Reads advisory model evidence for the criteria explicitly paired with instructions on the exact current step of an active pinned procedure Run. Evidence uses simulation time and does not record an assessment, authorize a branch, or change the Run. Use procedure.run.step.read for complete branch eligibility and deciding facts.',
+      risk: 'read',
+      idempotent: true,
+      inputSchema: z.toJSONSchema(procedureChecksReadInputSchema, { io: 'input' }),
+      outputSchema: capabilityJsonSchema(procedureChecksViewSchema),
+    },
+    invoke: async (registry, invocation) => {
+      const input = procedureChecksReadInputSchema.parse(invocation.input)
+      const runtime = await registry.load(requireSimulationRunResource(invocation))
+      const actor = buildSimulationRunActorForAccess(invocation.access)
+      try {
+        return json({ result: await readProcedureChecks({
+          input, snapshot: runtime.snapshot,
+          canInspect: plantId => runtime.inspectionPolicy(actor).canInspect(plantId),
+          document: ({ sourceId, sourceRevision, sourcePath, procedureId }) => runtime.procedureDocument({ sourceId, sourceRevision, sourcePath, procedureId }),
+          observations: plantId => runtime.procedureObservations(actor, plantId),
+        }) })
+      } catch (error) {
+        const failure = error as Error & { status?: number; code?: string }
+        if (typeof failure.status === 'number' && typeof failure.code === 'string') return apiError(failure.status, failure.code, failure.message)
+        throw error
+      }
     },
   },
   {

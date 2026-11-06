@@ -93,6 +93,11 @@ export const procedureStepSchema = z.object({
   title: z.string().min(1),
   level: z.number().int().min(2).max(6),
   blocks: z.array(procedureTextBlockSchema).default([]),
+  pairs: z.array(z.object({
+    id: procedureStepIdSchema,
+    sourceLine: z.number().int().positive(),
+    advisoryBranchIndex: z.number().int().nonnegative().optional(),
+  }).strict()).optional(),
   branches: z.array(procedureBranchSchema).default([]),
   tagIds: z.array(procedureTagIdSchema).default([]),
   sourceLine: z.number().int().positive(),

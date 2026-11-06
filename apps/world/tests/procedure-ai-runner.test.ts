@@ -114,6 +114,28 @@ const invoker = (registry: WorldWorkspaceRuntimeRegistry, workspaceId: Workspace
   }
 
 describe('the AI procedure runner through the World Module API', () => {
+  test('the advisory query reads an exact current Run and makes no change for a step without paired criteria', async () => {
+    const { registry, workspaceId, run, plantId } = await setup()
+    const invoke = invoker(registry, workspaceId, run.id)
+    const operator = access(workspaceId, { kind: 'human', id: 'operator' })
+    const started = await invoke('world.procedure.run.start', { procedureId: 'E-0', scope: { plantId } }, operator)
+    expect(started.status).toBe(200)
+    const before = run.snapshot()
+    const current = before.procedures!.runs[0]!
+    const input = {
+      runId: current.runId, stepId: current.currentStepId!, sourceId: current.sourceId,
+      sourceRevision: current.sourceRevision, sourcePath: current.sourcePath,
+    }
+    const response = await invoke('world.procedure.run.checks.read', input, operator)
+    expect(response.status).toBe(200)
+    expect(response.body.result).toEqual({ ...input, plantId, sequence: before.seq, simulationTime: before.clock!.currentTime, checks: [] })
+    const superseded = await invoke('world.procedure.run.checks.read', { ...input, stepId: 'verify-turbine-trip' }, operator)
+    expect(superseded.status).toBe(409)
+    expect(superseded.body.error.code).toBe('procedure_checks_superseded')
+    expect(run.snapshot()).toMatchObject({ seq: before.seq, clock: { currentTime: before.clock!.currentTime },
+      procedures: before.procedures, objects: before.objects })
+  })
+
   test('state-only transition acknowledgement leaves admission, canonical proof and command payload unchanged without post-commit Pack reads', async () => {
     const { registry, workspaceId, run, plantId } = await setup(), invoke = invoker(registry, workspaceId, run.id)
     const ai = access(workspaceId, { kind: 'ai', id: 'assistant' })
