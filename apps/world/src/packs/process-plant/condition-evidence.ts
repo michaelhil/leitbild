@@ -124,7 +124,7 @@ export const evaluateProcessPlantProcedureCondition = (config: {
         : failure !== undefined ? `I&C rule evidence is unavailable: ${failure.message}` : undefined
       const actual = state?.[condition.field]
       const status = reason === undefined && typeof actual === 'boolean' ? actual === condition.value ? 'satisfied' : 'challenged' : 'unknown'
-      evidence.push({ type: 'ic-rule-state', ruleId: condition.ruleId, ...(rule === undefined ? {} : { label: rule.label }), field: condition.field, expected: condition.value, source: condition.source,
+      evidence.push({ type: 'ic-rule-state', ruleId: condition.ruleId, ...(rule?.label === undefined ? {} : { label: rule.label }), field: condition.field, expected: condition.value, source: condition.source,
         ...(actual === undefined ? {} : { value: actual }), status, ...(reason === undefined ? {} : { reason }) })
       return status
     }
