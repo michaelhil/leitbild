@@ -315,6 +315,7 @@
     return { update, destroy: clear }
   }
 
+  let refreshVisibleCheck: (() => Promise<void>) | undefined
   $effect(() => {
     const request = checkRequest
     const runId = simulationRunId
@@ -355,9 +356,9 @@
         inFlight = false
       }
     }
+    refreshVisibleCheck = refresh
     untrack(() => void refresh())
-    const timer = window.setInterval(() => void refresh(), 250)
-    return () => { window.clearInterval(timer); abort.abort() }
+    return () => { refreshVisibleCheck = undefined; abort.abort() }
   })
 
   const activeCheck = (branchIndex: number) => {
@@ -1431,6 +1432,7 @@
       csfPresentationTime = Date.now()
       void refreshCsfStatus()
     }, 2_000)
+    const checkInterval = window.setInterval(() => void refreshVisibleCheck?.(), 250)
     const handleResize = (): void => {
       applyWindowBounds(clampWindowBounds(windowBounds))
     }
@@ -1445,6 +1447,7 @@
       unsubscribe()
       if (scrollFrame !== null) window.cancelAnimationFrame(scrollFrame)
       window.clearInterval(interval)
+      window.clearInterval(checkInterval)
       window.removeEventListener('resize', handleResize)
       for (const type of interactionEvents) windowElement.removeEventListener(type, noteInteraction, { capture: true })
       if (toastTimer !== null) window.clearTimeout(toastTimer)
