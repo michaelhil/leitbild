@@ -51,6 +51,5 @@ export const completeControlSurfaceStartupFromSnapshot = async (
   config.startStep('map')
   await config.loadSurfaceForScenario(snapshot.scenario.scenarioId)
   config.setActiveStartupStep('objects')
-  config.startStep('objects')
   await config.completeObjectsWhenReady()
 }

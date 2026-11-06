@@ -5849,11 +5849,6 @@ body.rail-resizing {
   gap: 8px;
 }
 
-.startup-modal-frame.fading .modal-backdrop {
-  opacity: 0;
-  transition: opacity 250ms ease;
-}
-
 .startup-steps li {
   display: grid;
   grid-template-columns: 18px minmax(0, 1fr) auto;
