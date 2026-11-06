@@ -2144,9 +2144,10 @@
   .procedure-input-band summary { cursor: pointer; }
   .procedure-input-band button { flex: 0 0 auto; min-height: 44px; border: 1px solid #d6c5a0; border-radius: 5px; padding: 6px 10px; color: inherit; background: #fff; cursor: pointer; }
   .procedure-toc-label { display: none; }
-  :global(.procedure-modal.compact-procedure .procedure-document-toolbar) { flex-direction: row; flex-wrap: nowrap; gap: 6px; padding: 2px 6px; flex-shrink: 0; }
-  :global(.procedure-modal.compact-procedure .procedure-document-title) { flex: 1; gap: 4px; }
-  :global(.procedure-modal.compact-procedure .procedure-document-title h2) { margin: 0; font-size: 14px; line-height: 1.2; }
+  :global(.procedure-modal.compact-procedure .procedure-document-toolbar) { flex-direction: row; flex-wrap: wrap; gap: 4px 6px; padding: 2px 6px; flex-shrink: 0; }
+  :global(.procedure-modal.compact-procedure .procedure-document-title) { flex: 1 1 auto; gap: 4px; }
+  :global(.procedure-modal.compact-procedure .procedure-document-title h2) { flex: none; margin: 0; font-size: 14px; line-height: 1.2; }
+  :global(.procedure-modal.compact-procedure .procedure-unit-chip) { flex: 0 1 auto; min-width: 0; white-space: normal; overflow-wrap: anywhere; }
   :global(.procedure-modal.compact-procedure .procedure-mode-actions) { flex: 0 0 auto; flex-wrap: nowrap; gap: 4px; }
   :global(.procedure-modal.compact-procedure .procedure-info-button) { min-width: 44px; min-height: 44px; cursor: pointer; }
   :global(.procedure-modal.compact-procedure .procedure-info-shell) { position: static; }

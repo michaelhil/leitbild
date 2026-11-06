@@ -27,7 +27,7 @@
     if (!guide.attemptId || finished) return { action: 'start', label: finished ? 'Start a new attempt' : 'Start guide' }
     if (resumeHere) return { action: 'resume', label: screen.restored ? 'Resume on this screen' : 'Resume guide' }
     if (!step) return { action: 'read', label: 'Reload current step' }
-    if (isPrompt && guide.prompt?.status !== 'responded') return sentPrompt
+    if (isPrompt && guide.prompt?.status !== 'responded') return sentPrompt || draftInserted || guide.prompt?.status === 'unavailable'
       ? { action: 'read', label: 'Refresh reply status' }
       : { action: 'show', label: showLabel }
     if (step.completion === 'presentation' && step.effects.length === 1 && applied === 0) return { action: 'show', label: showLabel }
@@ -85,7 +85,7 @@
 
   {#if primary}
     <div class="actions">
-      <button class="primary" type="button" bind:this={primaryButton} aria-disabled={screen.busy || !session} onclick={runPrimary}>{primary.label}</button>
+      <button class:primary={!(isPrompt && primary.action === 'read')} class:quiet={isPrompt && primary.action === 'read'} type="button" bind:this={primaryButton} aria-disabled={screen.busy || !session} onclick={runPrimary}>{primary.label}</button>
       {#if guide && (!guide.attemptId || finished)}
         <button class="quiet" type="button" onclick={explore}>{finished ? 'Back to the Run' : 'Explore on my own'}</button>
       {:else if screen.recipient && workingStep && step}
