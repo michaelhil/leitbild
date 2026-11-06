@@ -82,6 +82,35 @@ describe('published knowledge', () => {
     expect(fixture().search('cooling', { includeQuality: true }).total).toBe(2)
     expect(fixture().search('', { limit: 1 }).nextOffset).toBe(1)
   })
+  test('workflow search prefers a useful instruction to incidental mentions', () => {
+    const knowledge = createKnowledge({ revision, documents: [
+      { path: 'archive/pwr/clock.md', content: '# Archived experiment\n\nHere is how to copy a Run for the historical experiment.' },
+      { path: 'engineering-analysis/studies.md', content: '# Proposed studies\n\nCopy the observation. Start a fresh Run.' },
+      { path: 'user-interface/people.md', content: '# People\n\nA copy of a Run has its own list of people.' },
+      { path: 'world/time-and-copies.md', content: '# Time and copies\n\n## Copies\nTo copy a Run, choose More.' },
+      { path: 'licensing.md', content: '# Credits\n\nA copyright may apply.' },
+    ] })
+    const results = knowledge.search('How do I copy a Run?')
+    expect(results.matches[0]).toMatchObject({ path: 'world/time-and-copies.md', section: 'copies' })
+    expect(knowledge.search('copy').matches.map(match => match.path)).not.toContain('licensing.md')
+  })
+  test('exact and scoped research finds designs, archive, and opted-in quality', () => {
+    const procedure = (title: string) => `---\ntype: procedure\nprocedure-md: 0.7\nprocedure-id: ECA-0.0\ntitle: ${title}\n---\n# ${title}\n\n## Step 1 [id: check]\nAction: Check the evidence.\n- Continue → END`
+    const knowledge = createKnowledge({ revision, documents: [
+      { path: 'world/packs/process-plant/procedures/ECA-0.0.md', content: procedure('Current PWR procedure') },
+      { path: 'archive/pwr/procedures/ECA-0.0.md', content: procedure('PWR reference procedure') },
+      { path: 'world/packs/process-plant/reference-designs/ld-01/procedures/blackout.md', content: '# LD-01 blackout procedure\n\nAn operating task for LD-01.' },
+      { path: 'quality/blackout.md', content: '# Blackout qualification\n\nReviewed ECA-0.0 and recorded the limits.' },
+    ] })
+    const firstPath = (query: string, options?: Parameters<typeof knowledge.search>[1]) => knowledge.search(query, options).matches[0]?.path
+    expect(firstPath('ECA-0.0')).toBe('world/packs/process-plant/procedures/ECA-0.0.md')
+    expect(firstPath('archived PWR ECA-0.0')).toBe('archive/pwr/procedures/ECA-0.0.md')
+    expect(firstPath('knowledge/archive/pwr/procedures/ECA-0.0.md')).toBe('archive/pwr/procedures/ECA-0.0.md')
+    expect(firstPath('LD-01 operating procedure')).toBe('world/packs/process-plant/reference-designs/ld-01/procedures/blackout.md')
+    expect(firstPath('blackout qualification', { prefix: 'quality/' })).toBeUndefined()
+    expect(firstPath('blackout qualification', { prefix: 'quality/', includeQuality: true })).toBe('quality/blackout.md')
+    expect(knowledge.read('archive/pwr/procedures/ECA-0.0.md', { revision }).content).toBe(procedure('PWR reference procedure'))
+  })
   test('unavailable revisions, paths and sections fail honestly', () => {
     expect(() => fixture().read('index.md', { revision: 'b'.repeat(40) })).toThrow('revision')
     expect(() => fixture().read('../secret.md')).toThrow('not found')
