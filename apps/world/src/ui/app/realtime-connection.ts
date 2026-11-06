@@ -7,8 +7,7 @@ import {
 } from '../simulation-run-events.ts'
 import { createPerspectiveGate, type PerspectiveGate, type RealtimePerspective } from '../roles/perspective.ts'
 import { roleSetQueryParameter } from '../roles/role-session.ts'
-import { workspaceApiPath } from '../workspace-context.ts'
-import { activeWorkspaceId } from '../workspace-context.ts'
+import { activeWorkspaceId, workspaceApiPath } from '../workspace-context.ts'
 
 export interface RealtimeReadyMessage {
   readonly simulationRunId: SimulationRunId
@@ -39,8 +38,6 @@ export interface RealtimeConnectionController {
    */
   readonly setRoles: (id: SimulationRunId, roleIds: ReadonlyArray<string>) => void
   readonly disconnect: () => void
-  readonly canCarry: (id: SimulationRunId) => boolean
-  readonly statusFor: (id: SimulationRunId) => 'open' | 'connecting' | 'other'
   readonly sendRuntimeInput: (id: SimulationRunId, input: RuntimeInputRequest) => void
 }
 
@@ -150,13 +147,6 @@ export const createRealtimeConnectionController = (): RealtimeConnectionControll
       if (switchFromEpoch !== null) throw new Error('A role switch is already under way')
       socket.send(JSON.stringify({ type: 'role.set', roles: roleIds }))
       switchFromEpoch = gate.epoch()
-    },
-    canCarry,
-    statusFor: (id): 'open' | 'connecting' | 'other' => {
-      if (socketId !== id || socket === null) return 'other'
-      if (socket.readyState === WebSocket.OPEN) return 'open'
-      if (socket.readyState === WebSocket.CONNECTING) return 'connecting'
-      return 'other'
     },
     sendRuntimeInput: (id, input): void => {
       if (inputSession === undefined || socketId !== id || socket === null || socket.readyState !== WebSocket.OPEN) {
