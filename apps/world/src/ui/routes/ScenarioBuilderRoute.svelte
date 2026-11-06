@@ -1,5 +1,8 @@
 <script lang="ts">
-  import { workspaceDefinitionRevisionReferenceSchema } from '@leitbild/contracts'
+  import {
+    moduleCapabilityInvocationResultSchema, scenarioEditorRevisionSchema, scenarioEditorStartIssueSchema,
+    workspaceDefinitionRevisionReferenceSchema, type ScenarioEditorMessage,
+  } from '@leitbild/contracts'
   import { untrack } from 'svelte'
   import type { ObjectId } from '../../core/model/index.ts'
   import { scenarioAuthoringCatalogSchema, type ScenarioAuthoringCatalog } from '../../core/scenarios/authoring.ts'
@@ -32,7 +35,6 @@
 
   interface InvocationResponse {
     readonly result: unknown
-    readonly createdResources?: ReadonlyArray<{ readonly moduleId: string; readonly type: string; readonly id: string }>
   }
 
   type CreateResult = import('zod').z.infer<typeof scenarioWriteResultSchema>
@@ -44,6 +46,9 @@
   const workspaceId = route.workspaceId
   const query = new URLSearchParams(location.search)
   const embedded = query.get('embed') === '1'
+  const hosted = embedded && window.parent !== window
+  const documentId = crypto.randomUUID()
+  const workspaceUrl = `/workspaces/${encodeURIComponent(workspaceId)}`
   const definitionId = query.get('definition')
   const requestedRevisionId = query.get('revision')
 
@@ -54,9 +59,12 @@
   let packToAdd = $state('')
   let loading = $state(true)
   let saving = $state(false)
+  let pendingStart = $state<number | null>(null)
+  let checkStart = $state(false)
+  let nextStartRequest = 0
   let error = $state<string | null>(null)
-  let saved = $state<CreateResult | null>(null)
-  let editing = $state<CreateResult['definition'] | null>(null)
+  let saved = $state.raw<CreateResult | null>(null)
+  let editing = $state.raw<CreateResult['definition'] | null>(null)
   let preview = $state<ScenarioPreview | null>(null)
   let previewError = $state<string | null>(null)
   let systemEndpointKey = $state('')
@@ -76,9 +84,18 @@
         body: JSON.stringify({ input, ...(definition ? { definition } : {}), actor: { kind: 'human' } }),
       },
     )
-    const body = await response.json() as T & { error?: { message?: string } }
-    if (!response.ok) throw new Error(body.error?.message ?? `Request failed: ${response.status}`)
+    const body = await response.json().catch(() => undefined) as (T & { error?: { message?: string; code?: string } }) | undefined
+    if (!response.ok) {
+      throw Object.assign(new Error(body?.error?.message ?? `Request failed: ${response.status}`), {
+        status: response.status, code: body?.error?.code,
+      })
+    }
+    if (body === undefined) throw new Error('The request returned an unreadable response.')
     return body
+  }
+
+  const notifyHost = (message: ScenarioEditorMessage): void => {
+    if (hosted) window.parent.postMessage(message, location.origin)
   }
 
   const loadEditor = async (): Promise<void> => {
@@ -94,7 +111,7 @@
             }),
       ])
       const { detail: _detail, ...editorCatalog } = catalogResponse.result as Record<string, unknown>
-      catalog = scenarioAuthoringCatalogSchema.parse(editorCatalog)
+      const nextCatalog = scenarioAuthoringCatalogSchema.parse(editorCatalog)
       if (definitionResponse) {
         if (requestedRevisionId !== null && requestedRevisionId !== definitionResponse.revisionId) {
           throw new Error('This Scenario has changed. Reopen the editor from the Workspace homepage.')
@@ -109,6 +126,7 @@
           revisionId: definitionResponse.revisionId,
         })
       }
+      catalog = nextCatalog
       savedDocument = JSON.stringify(draft)
     } catch (cause) {
       error = cause instanceof Error ? cause.message : String(cause)
@@ -280,11 +298,38 @@
   }
 
   const launchSaved = async (): Promise<void> => {
-    if (!saved) return
-    const started = await invoke<InvocationResponse>('world.scenario.start', {}, saved.definition)
-    const run = started.createdResources?.find(resource => resource.type === 'world.simulation-run')
-    if (!run) throw new Error('Scenario was saved, but the Simulation Run was not returned')
-    window.parent.location.href = `/workspaces/${encodeURIComponent(workspaceId)}?world=${encodeURIComponent(run.id)}`
+    if (!saved || dirty || saving || pendingStart !== null || checkStart) return
+    const subject = saved.definition, requestId = ++nextStartRequest
+    pendingStart = requestId
+    error = null
+    if (hosted) {
+      notifyHost({ type: 'leitbild:scenario-start', documentId, requestId, subject })
+      return
+    }
+    try {
+      const receipt = moduleCapabilityInvocationResultSchema.parse(await invoke('world.scenario.start', {}, subject))
+      const created = receipt.createdResources ?? []
+      const runs = created.filter(resource => resource.type === 'world.simulation-run')
+      if (created.some(resource => resource.workspaceId !== workspaceId) || runs.length !== 1) {
+        throw new Error('The start did not identify one simulation in this Workspace.')
+      }
+      if (dirty) {
+        checkStart = true
+        error = 'The simulation started. Open it from Continue after finishing your edits.'
+        return
+      }
+      location.assign(`${workspaceUrl}?world=${encodeURIComponent(runs[0]!.id)}`)
+    } catch (cause) {
+      const failure = cause as { status?: number; code?: string } | null
+      const refused = failure?.code === 'workspace_capacity_exceeded' || failure?.code === 'module_unavailable'
+        || (failure?.status !== undefined && failure.status < 500 && failure.code !== 'module_outcome_unknown')
+      checkStart = !refused
+      error = refused && cause instanceof Error
+        ? cause.message
+        : 'The simulation may have started. Check Continue before starting it again.'
+    } finally {
+      pendingStart = null
+    }
   }
 
   const setMapView = (center: [number, number], zoom: number): void => {
@@ -380,28 +425,38 @@
   }
 
   const save = async (start: boolean): Promise<void> => {
+    if (saving || pendingStart !== null || (start && checkStart)) return
+    if (start && saved && !dirty) { await launchSaved(); return }
     const invalid = validationError()
     if (invalid) { error = invalid; return }
     saving = true
     error = null
+    let launchAfterSave = false
     try {
       draft.title = draft.title.trim()
       if (draft.description?.trim()) draft.description = draft.description.trim()
       else delete draft.description
       const document = JSON.stringify(draft)
+      const source = JSON.parse(document) as ScenarioDraft
       const response = editing === null
-        ? await invoke<InvocationResponse>('world.scenario.create', { source: JSON.parse(document) })
-        : await invoke<InvocationResponse>('world.scenario.update', { source: JSON.parse(document) }, editing)
-      saved = scenarioWriteResultSchema.parse(response.result)
+        ? await invoke<InvocationResponse>('world.scenario.create', { source })
+        : await invoke<InvocationResponse>('world.scenario.update', { source }, editing)
+      const acknowledged = scenarioWriteResultSchema.parse(response.result)
+      const subject = scenarioEditorRevisionSchema.parse(acknowledged.definition)
+      if (subject.workspaceId !== workspaceId || subject.id !== source.id) throw new Error('The save returned another Scenario.')
+      if (saved?.definition.revisionId !== subject.revisionId || saved?.definition.id !== subject.id) checkStart = false
+      saved = acknowledged
       savedDocument = document
-      editing = saved.definition
-      window.parent.postMessage({ type: 'leitbild:scenario-saved', subject: saved.definition }, location.origin)
-      if (start) await launchSaved()
+      editing = subject
+      notifyHost({ type: 'leitbild:scenario-saved', documentId, subject, dirty })
+      launchAfterSave = start && !dirty
+      if (start && dirty) error = 'The revision was saved. Save your newer edits before starting it.'
     } catch (cause) {
       error = cause instanceof Error ? cause.message : String(cause)
     } finally {
       saving = false
     }
+    if (launchAfterSave) await launchSaved()
   }
 
   const reset = (): void => {
@@ -413,7 +468,9 @@
     placementItemId = null
     saved = null
     error = null
+    checkStart = false
     savedDocument = JSON.stringify(draft)
+    notifyHost({ type: 'leitbild:scenario-saved', documentId, subject: null, dirty: false })
   }
 
   const previews = createLatestPreview({
@@ -441,16 +498,29 @@
     untrack(() => previews.schedule(deepCopy(draft)))
   })
 
-  $effect(() => { window.parent.postMessage({ type: 'leitbild:scenario-dirty', dirty }, location.origin) })
+  $effect(() => { notifyHost({ type: 'leitbild:scenario-dirty', documentId, dirty }) })
   runOnMount(() => {
     void loadEditor()
     const warn = (event: BeforeUnloadEvent) => { if (dirty) { event.preventDefault(); event.returnValue = '' } }
+    const receiveStartIssue = (event: MessageEvent): void => {
+      if (!hosted || event.origin !== location.origin || event.source !== window.parent) return
+      const parsed = scenarioEditorStartIssueSchema.safeParse(event.data)
+      if (!parsed.success || parsed.data.documentId !== documentId || parsed.data.requestId !== pendingStart) return
+      pendingStart = null
+      error = parsed.data.message
+      checkStart = parsed.data.action === 'check'
+    }
     window.addEventListener('beforeunload', warn)
-    return () => { previews.dispose(); window.removeEventListener('beforeunload', warn) }
+    window.addEventListener('message', receiveStartIssue)
+    return () => {
+      previews.dispose()
+      window.removeEventListener('beforeunload', warn)
+      window.removeEventListener('message', receiveStartIssue)
+    }
   })
 </script>
 
-<main class:embedded class="scenario-builder">
+<main class:embedded class="scenario-builder" data-scenario-editor-document={documentId}>
   <header class="scenario-builder-header">
     <div><p class="eyebrow">World</p><h1>{editing ? 'Edit scenario' : 'Build a scenario'}</h1><p>Choose Packs, place items, then save the result as a reusable card.</p></div>
     {#if !embedded}<a class="command-button" href={`/workspaces/${encodeURIComponent(workspaceId)}`}>Workspace home</a>{/if}
@@ -462,16 +532,17 @@
     <section class="builder-message error">{error ?? 'Scenario authoring is unavailable.'}</section>
   {:else}
     <section class="builder-toolbar">
-      <label>Scenario title <input maxlength="160" value={draft.title} oninput={event => { draft.title = event.currentTarget.value; draft = { ...draft } }} /></label>
-      <label class="feature-picker">Add Pack <select bind:value={packToAdd}><option value="">Choose…</option>{#each availablePacks() as pack (pack.id)}<option value={pack.id}>{pack.title}</option>{/each}</select></label>
-      <button disabled={!packToAdd} onclick={addPack}>Add</button>
+      <label>Scenario title <input maxlength="160" disabled={pendingStart !== null} value={draft.title} oninput={event => { draft.title = event.currentTarget.value; draft = { ...draft } }} /></label>
+      <label class="feature-picker">Add Pack <select disabled={pendingStart !== null} bind:value={packToAdd}><option value="">Choose…</option>{#each availablePacks() as pack (pack.id)}<option value={pack.id}>{pack.title}</option>{/each}</select></label>
+      <button disabled={!packToAdd || pendingStart !== null} onclick={addPack}>Add</button>
       <span class="builder-spacer"></span>
-      <button class="primary" disabled={saving || guideInvalid} onclick={() => void save(false)}>{editing ? 'Save revision' : 'Save'}</button>
-      <button disabled={saving || guideInvalid} onclick={() => void save(true)}>Save & start</button>
+      <button class="primary" disabled={saving || guideInvalid || pendingStart !== null} onclick={() => void save(false)}>{editing ? 'Save revision' : 'Save'}</button>
+      <button disabled={saving || guideInvalid || pendingStart !== null || checkStart} onclick={() => void save(true)}>Save & start</button>
     </section>
-    {#if error}<p class="builder-inline-error">{error}</p>{/if}
-    {#if saved}<p role="status">Saved: {saved.title}{dirty ? ' · Unsaved changes' : ''}. <button disabled={saving || dirty} onclick={async () => { saving = true; error = null; try { await launchSaved() } catch (cause) { error = cause instanceof Error ? cause.message : String(cause) } finally { saving = false } }}>Start saved revision</button> <button onclick={() => { if (!dirty || confirm('Discard unsaved changes?')) reset() }}>Build another</button></p>{/if}
-    <section class="builder-workbench">
+    {#if error}<p class="builder-inline-error" role="alert">{error}</p>{/if}
+    {#if checkStart}<p><a href={workspaceUrl} target="_blank" rel="noopener">Check Workspace Runs</a></p>{/if}
+    {#if saved}<p role="status">Saved: {saved.title}{dirty ? ' · Unsaved changes' : ''}. {pendingStart === null ? '' : 'Starting saved revision…'} <button disabled={saving || dirty || pendingStart !== null || checkStart} onclick={() => void launchSaved()}>Start saved revision</button> <button disabled={saving || pendingStart !== null} onclick={() => { if (!dirty || confirm('Discard unsaved changes?')) reset() }}>Build another</button></p>{/if}
+    <section class="builder-workbench" inert={pendingStart !== null}>
       <aside class="builder-outline">
         <button class:active={selection.kind === 'scenario'} onclick={() => { selection = { kind: 'scenario' }; cancelPlacement() }}><strong>Scenario</strong><small>Starting view</small></button>
         {#each activePacks() as pack (pack.id)}
