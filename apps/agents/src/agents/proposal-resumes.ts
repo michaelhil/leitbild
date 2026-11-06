@@ -20,14 +20,14 @@
 // continues as before.
 // ============================================================================
 
-import type { ExecutionStore, ExecutionCall } from '../core/executions/store.ts'
+import type { ExecutionStore } from '../core/executions/store.ts'
 import type { RoomDirectory } from '../core/rooms/directory.ts'
 import type { Room } from '../core/types/room.ts'
 import type { AIAgent, RequestedTurn, Team } from '../core/types/agent.ts'
-import { workspaceResourceReferenceSchema, type WorkspaceResourceReference } from '@leitbild/contracts'
+import type { WorkspaceResourceReference } from '@leitbild/contracts'
 import { PROCEDURE_RUNNER_SKILL, PROPOSAL_RESUME_CAUSE } from '../core/proposal-resume.ts'
-import { collectTurnOperations, type TurnOperation } from './operation-claims.ts'
 import { actorWords, PROPOSALS_OPERATION_ID, proposedOperationsOf, type ProposalCardReader, type ProposedOperation, type WorldProposal } from './proposal-cards.ts'
+import { readRetainedWorkspaceResults, type RetainedWorkspaceResult } from './retained-workspace-call.ts'
 import { asAIAgent } from './shared.ts'
 
 /** Operations of a procedure Run (World); a turn that calls one works a procedure. */
@@ -110,51 +110,26 @@ const proposalResumeInstruction = (approved: ReadonlyArray<Approved>, answerId: 
     + 'Continue the procedure as you would on "continue": read where it stands, say what changed that you did not do, and carry on.'
 }
 
-const callsOf = (executions: ProposalResumeDeps['executions'], roomId: string, turnId: string): ReadonlyArray<ExecutionCall> =>
-  executions.listCalls(roomId, turnId).flatMap(summary => {
-    const call = executions.getCall(roomId, turnId, summary.id)
-    return call === undefined ? [] : [call]
-  })
-
-const operationsOf = (calls: ReadonlyArray<ExecutionCall>): ReadonlyArray<TurnOperation> => {
-  const operations: TurnOperation[] = []
-  for (const call of calls) if (call.result !== undefined) collectTurnOperations(operations, call.tool, call.arguments, call.result)
-  return operations
-}
-
-const worksProcedure = (operations: ReadonlyArray<TurnOperation>): boolean =>
-  operations.some(operation => operation.operationId.startsWith(PROCEDURE_OPERATION_PREFIX))
-
 const record = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
 const ownerKey = (resource: WorkspaceResourceReference, plantId: string): string =>
   JSON.stringify([resource.workspaceId, resource.moduleId, resource.type, resource.id, plantId])
 
 /** Actual matched results retain the Resource and World-owned Run identity;
  * a successful read is useful for identity, never proof of progression. */
-const procedureResults = (calls: ReadonlyArray<ExecutionCall>) => calls.flatMap(call => {
-  if (call.tool !== 'workspace_call' || call.result?.success !== true || !record(call.arguments) || !Array.isArray(call.arguments.calls)
-    || !record(call.result.data) || !Array.isArray(call.result.data.results)) return []
-  const args = call.arguments.calls
-  return call.result.data.results.flatMap(entry => {
-    if (!record(entry) || entry.success !== true || typeof entry.operationId !== 'string' || !entry.operationId.startsWith(PROCEDURE_OPERATION_PREFIX)
-      || !record(entry.data)) return []
-    const arg = args.find(value => record(value) && value.key === entry.key && value.operationId === entry.operationId)
-    const resource = record(entry.target) && entry.target.kind === 'resource' ? workspaceResourceReferenceSchema.safeParse(entry.target.ref) : undefined
-    if (!record(arg) || !record(arg.input) || !resource?.success) return []
-    const view = record(entry.data.next) ? entry.data.next : entry.data
-    const run = record(view.run) ? view.run : undefined
-    const inputScope = record(arg.input.scope) ? arg.input.scope : undefined
-    const pinned = record(entry.data.pinned) ? entry.data.pinned : undefined
-    return [{ operationId: entry.operationId, input: arg.input, data: entry.data, resource: resource.data,
-      startedAt: call.startedAt, at: call.completedAt,
-      plantId: typeof run?.plantId === 'string' ? run.plantId : typeof inputScope?.plantId === 'string' ? inputScope.plantId : undefined,
-      runId: typeof arg.input.runId === 'string' ? arg.input.runId : typeof run?.runId === 'string' ? run.runId : typeof pinned?.runId === 'string' ? pinned.runId : undefined }]
-  })
+const procedureResults = (entries: ReadonlyArray<RetainedWorkspaceResult>) => entries.flatMap(({ operationId, success, resource, data, input, startedAt, completedAt }) => {
+  if (!success || !operationId.startsWith(PROCEDURE_OPERATION_PREFIX) || !resource || !record(input) || !record(data)) return []
+  const view = record(data.next) ? data.next : data
+  const run = record(view.run) ? view.run : undefined
+  const inputScope = record(input.scope) ? input.scope : undefined
+  const pinned = record(data.pinned) ? data.pinned : undefined
+  return [{ operationId, data, resource, startedAt, at: completedAt,
+    plantId: typeof run?.plantId === 'string' ? run.plantId : typeof inputScope?.plantId === 'string' ? inputScope.plantId : undefined,
+    runId: typeof input.runId === 'string' ? input.runId : typeof run?.runId === 'string' ? run.runId : typeof pinned?.runId === 'string' ? pinned.runId : undefined }]
 })
 
-const procedureRunsOf = (calls: ReadonlyArray<ExecutionCall>): ReadonlyMap<string, ReadonlySet<string>> => {
+const procedureRunsOf = (entries: ReadonlyArray<RetainedWorkspaceResult>): ReadonlyMap<string, ReadonlySet<string>> => {
   const runs = new Map<string, Set<string>>()
-  for (const result of procedureResults(calls)) {
+  for (const result of procedureResults(entries)) {
     if (result.plantId === undefined || result.runId === undefined) continue
     const key = ownerKey(result.resource, result.plantId), ids = runs.get(key) ?? new Set<string>()
     ids.add(result.runId); runs.set(key, ids)
@@ -169,28 +144,22 @@ const progressionOperations: ReadonlySet<string> = new Set([
 
 /** An exact earlier read can prove approval before the watch's next poll.
  * Equal or missing times are uncertain, never fabricated causal ordering. */
-const approvedReadBefore = (calls: ReadonlyArray<ExecutionCall>, approved: Approved, startedAt: number): boolean => calls.some(call => {
-  if (call.completedAt === undefined || call.completedAt >= startedAt || call.tool !== 'workspace_call' || call.result?.success !== true
-    || !record(call.arguments) || !Array.isArray(call.arguments.calls) || !record(call.result.data) || !Array.isArray(call.result.data.results)) return false
-  const args = call.arguments.calls
-  return call.result.data.results.some(entry => {
-    if (!record(entry) || entry.operationId !== PROPOSALS_OPERATION_ID || entry.success !== true || !record(entry.data) || !Array.isArray(entry.data.proposals)) return false
-    const arg = args.find(value => record(value) && value.key === entry.key && value.operationId === PROPOSALS_OPERATION_ID)
-    const resource = record(entry.target) && entry.target.kind === 'resource' ? workspaceResourceReferenceSchema.safeParse(entry.target.ref) : undefined
-    if (!record(arg) || !record(arg.input) || arg.input.plantId !== approved.operation.plantId || !resource?.success
-      || ownerKey(resource.data, approved.operation.plantId) !== ownerKey(approved.operation.outcome.resource, approved.operation.plantId)) return false
-    return entry.data.proposals.some(value => record(value) && record(value.proposal)
-      && value.proposal.id === approved.operation.outcome.proposalId && value.proposal.status === 'approved')
-  })
+const approvedReadBefore = (entries: ReadonlyArray<RetainedWorkspaceResult>, approved: Approved, startedAt: number): boolean => entries.some(entry => {
+  const { completedAt, operationId, success, resource, input, data } = entry
+  if (completedAt === undefined || completedAt >= startedAt || operationId !== PROPOSALS_OPERATION_ID || !success || !resource
+    || !record(data) || !Array.isArray(data.proposals) || !record(input) || input.plantId !== approved.operation.plantId
+    || ownerKey(resource, approved.operation.plantId) !== ownerKey(approved.operation.outcome.resource, approved.operation.plantId)) return false
+  return data.proposals.some(value => record(value) && record(value.proposal)
+    && value.proposal.id === approved.operation.outcome.proposalId && value.proposal.status === 'approved')
 })
 
-const committedProgression = (calls: ReadonlyArray<ExecutionCall>, results: ReturnType<typeof procedureResults>, watch: Watch, approved: Approved): boolean => {
+const committedProgression = (entries: ReadonlyArray<RetainedWorkspaceResult>, results: ReturnType<typeof procedureResults>, watch: Watch, approved: Approved): boolean => {
   return results.some(result => {
     if (!progressionOperations.has(result.operationId) || result.data.ok !== true || typeof result.data.commandId !== 'string' || result.data.commandId.length === 0
       || result.at === undefined) return false
     // A completed response does not locate its command after an approval.
     // Require that the attempt began after an actually observed approval.
-    if (result.startedAt <= approved.observedAt && !approvedReadBefore(calls, approved, result.startedAt)) return false
+    if (result.startedAt <= approved.observedAt && !approvedReadBefore(entries, approved, result.startedAt)) return false
     const plantId = result.plantId ?? results.find(read => read.runId === result.runId && ownerKey(read.resource, '') === ownerKey(result.resource, ''))?.plantId
     if (plantId === undefined) return false
     const owner = ownerKey(result.resource, plantId)
@@ -244,8 +213,8 @@ export const createProposalResumes = (deps: ProposalResumeDeps) => {
       for (const turn of page) {
         if (turn.startedAt < watch.startedAt) return taken
         if (turn.agentId !== watch.agentId || turn.id === watch.turnId) continue
-        const calls = callsOf(deps.executions, watch.roomId, turn.id), results = procedureResults(calls)
-        for (const approved of watch.approved) if (committedProgression(calls, results, watch, approved)) taken.add(approved.operation.outcome.proposalId)
+        const entries = readRetainedWorkspaceResults(deps.executions, watch.roomId, turn.id), results = procedureResults(entries)
+        for (const approved of watch.approved) if (committedProgression(entries, results, watch, approved)) taken.add(approved.operation.outcome.proposalId)
         if (taken.size === watch.approved.length) return taken
       }
       if (page.length < TURNS_PAGE) return taken
@@ -339,7 +308,10 @@ export const createProposalResumes = (deps: ProposalResumeDeps) => {
      * An answer of `executionTurnId` was posted. Watches the turn's recorded
      * proposals made for a procedure. Never throws: the answer is delivered.
      */
-    answered: (input: { readonly executionTurnId: string; readonly roomId: string; readonly messageId: string }): void => {
+    answered: (
+      input: { readonly executionTurnId: string; readonly roomId: string; readonly messageId: string },
+      readEntries = () => readRetainedWorkspaceResults(deps.executions, input.roomId, input.executionTurnId),
+    ): void => {
       if (disposed || watchedTurns.has(input.executionTurnId)) return
       try {
         const turn = deps.executions.getTurn(input.roomId, input.executionTurnId)
@@ -352,13 +324,13 @@ export const createProposalResumes = (deps: ProposalResumeDeps) => {
           && message.senderId === turn.agentId && message.generationTraceId === turn.id && message.type === 'error'
           && String(message.errorCode) === 'response_validation_failed') === true
         if (!room || (turn.status !== 'completed' && !validatedFailure)) return
-        const calls = callsOf(deps.executions, turn.roomId, turn.id)
-        const recorded = proposedOperationsOf(calls)
+        const entries = readEntries()
+        const recorded = proposedOperationsOf(entries)
           .filter((operation): operation is Watched['operation'] => operation.outcome.kind === 'recorded')
         if (recorded.length === 0) return
         const agent = deps.team.getAgent(turn.agentId)
         const runner = agent !== undefined && asAIAgent(agent)?.getSkills().includes(PROCEDURE_RUNNER_SKILL) === true
-          && worksProcedure(operationsOf(calls))
+          && entries.some(entry => entry.operationId.startsWith(PROCEDURE_OPERATION_PREFIX))
         const forProcedure = recorded.filter(operation => operation.procedureStep !== undefined || runner)
         if (forProcedure.length === 0) return
         watchedTurns.add(turn.id)
@@ -367,7 +339,7 @@ export const createProposalResumes = (deps: ProposalResumeDeps) => {
           roomId: turn.roomId,
           agentId: turn.agentId,
           answerId: input.messageId,
-          startedAt: turn.startedAt, scopeRevision: room.profile.scopeRevision, abort: new AbortController(), procedureRuns: procedureRunsOf(calls),
+          startedAt: turn.startedAt, scopeRevision: room.profile.scopeRevision, abort: new AbortController(), procedureRuns: procedureRunsOf(entries),
           watched: new Map(forProcedure.map(operation => [operation.outcome.proposalId, { operation }])),
           approved: [],
         })

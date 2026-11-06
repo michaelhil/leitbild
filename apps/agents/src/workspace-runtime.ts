@@ -82,6 +82,7 @@ import { createRunContextFetcher } from './agents/run-context.ts'
 import { displayRequestOffered, requestDisplay, type DisplayRequestDeps } from './agents/display-requests.ts'
 import { createProposalCardReader, proposedOperationsOf, type ProposalCard } from './agents/proposal-cards.ts'
 import { createProposalResumes, type ProposalResumes } from './agents/proposal-resumes.ts'
+import { readRetainedWorkspaceResults, type RetainedWorkspaceResult } from './agents/retained-workspace-call.ts'
 import type { DisplayRequestAccepted } from './core/display-request.ts'
 // Native-only tool calling — no capability probing needed
 import { type SkillStore } from './skills/loader.ts'
@@ -897,8 +898,10 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
         onTurnStart: comparisons.capture,
         onTurnMessageLinked: input => {
           // Absent without a Workspace Host (see proposalResumes above).
-          proposalResumes?.answered(input)
-          procedureResumes?.answered(input)
+          let entries: ReadonlyArray<RetainedWorkspaceResult> | undefined
+          const readEntries = () => entries ??= readRetainedWorkspaceResults(executionStore, input.roomId, input.executionTurnId)
+          proposalResumes?.answered(input, readEntries)
+          procedureResumes?.answered(input, readEntries)
           comparisons.link(input)
         },
         onTurnFinished: comparisons.discard,
@@ -1099,7 +1102,7 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
         if (!room) throw Object.assign(new Error('Room not found'), { code: 'room_not_found' })
         const turn = executionStore.getTurn(room.profile.id, turnId)
         if (!turn) throw Object.assign(new Error('Execution turn not found'), { code: 'turn_not_found' })
-        const operations = proposedOperationsOf(executionStore.listCalls(room.profile.id, turn.id).map(call => executionStore.getCall(room.profile.id, turn.id, call.id)!))
+        const operations = proposedOperationsOf(readRetainedWorkspaceResults(executionStore, room.profile.id, turn.id))
         if (operations.length === 0) return []
         if (proposalCards === undefined) throw Object.assign(new Error('This Agents runtime has no Workspace Host to read proposals from'), { code: 'workspace_host_unavailable' })
         // An agent removed from the Workspace since is named by its id.

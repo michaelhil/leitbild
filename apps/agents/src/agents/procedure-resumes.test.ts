@@ -7,6 +7,7 @@ import type { MessageErrorCode } from '../core/types/messaging.ts'
 import type { AIAgent, RequestedTurn } from '../core/types/agent.ts'
 import { createTeam } from './team.ts'
 import { createProcedureResumes, createProcedureResumeReader, procedureDelegationsOf, type ProcedureResumeChange, type ProcedureResumeView } from './procedure-resumes.ts'
+import { retainedWorkspaceResults } from './retained-workspace-call.ts'
 
 const workspaceId = '6f1c4b8e-3a2d-4c1b-9f0e-1a2b3c4d5e6f' as WorkspaceId
 const resource = workspaceResourceReferenceSchema.parse({ workspaceId, moduleId: 'world', type: 'world.simulation-run', id: 'run-1' })
@@ -244,11 +245,16 @@ describe('delegated procedure continuation', () => {
   })
 
   test('plain reads and failed commands do not delegate a procedure', () => {
-    const s = setup();
-    expect(procedureDelegationsOf([{ id: 'read', tool: 'workspace_call', arguments: { calls: [{ key: 'r', input: {} }] },
-      result: { success: true, data: { results: [{ key: 'r', operationId: 'world.procedure.run.step.read', target: { kind: 'resource', ref: resource }, success: true, data: baseView() }] } },
-    } as any])).toEqual([])
-    s.resumes.dispose(); s.store.close()
+    const read = { key: 'r', operationId: 'world.procedure.run.step.read', input: {} }
+    const start = { key: 's', operationId: 'world.procedure.run.start', input: {} }
+    const entries = retainedWorkspaceResults([{ id: 'read', tool: 'workspace_call', startedAt: 1, completedAt: 2, argumentBytes: 1,
+      arguments: { calls: [read, start] }, result: { success: true, data: { results: [
+        { ...read, target: { kind: 'resource', ref: resource }, success: true, data: baseView() },
+        { ...start, success: false, error: 'refused' },
+      ] } },
+    }])
+    expect(entries).toHaveLength(2)
+    expect(procedureDelegationsOf(entries)).toEqual([])
   })
 
   test('reader uses the exact receipt Resource and AI actor, and long-polls events without advancing time', async () => {
