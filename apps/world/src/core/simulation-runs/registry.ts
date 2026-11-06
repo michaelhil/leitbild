@@ -1,8 +1,8 @@
-import { semanticVersionSchema,type WorkspaceId } from '@leitbild/contracts'
+import { semanticVersionSchema,workspaceResourceReferenceSchema,type WorkspaceId } from '@leitbild/contracts'
 import { createOperationScope, createStorageBudget, type StorageBudget } from '@leitbild/module-runtime'
 import { createCaptureAdmission } from '../../features/historian/capture-admission.ts'
 import { readDashboards, writeDashboards, type DashboardFile } from '../../features/displays/dashboards/store.ts'
-import { lstat,readdir,rm } from 'node:fs/promises'
+import { lstat,mkdir,readdir,rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z,ZodError } from 'zod'
 import { openRunHistorian, recordedHistoryOf } from '../../features/historian/store.ts'
@@ -43,6 +43,11 @@ import { createSimulationRunRuntime,type ActiveSimulationCapability,type Simulat
 import { assertSimulationRunRecoveryNotRequired,createSimulationRunSnapshotStore } from './snapshot-store.ts'
 import { createSimulationRunStateStore } from './state-store.ts'
 import { createKeyedOperations } from '../storage/keyed-operations.ts'
+import { readGuideAttempt, type GuideFile } from '../guides/store.ts'
+import { guideAttemptIdSchema, guideAttemptSchema } from '../guides/attempt.ts'
+import { createPresentationDelivery, type PresentationDelivery } from '../guides/presentation.ts'
+import type { GuidePromptEvidenceReader } from '../guides/prompt-evidence.ts'
+import { writeAtomic } from '../storage/atomic-write.ts'
 
 const maxRestoredEventHistoryBytes = 8 * 1024 * 1024
 
@@ -136,6 +141,10 @@ export interface SimulationRunRegistry {
   readonly rename: (id: SimulationRunId, name: string | null, expectedTitle: string) => Promise<SimulationRunSummary>
   /** The Run's stored dashboards (runs/<id>/dashboards.json): read when asked, never on load; a change is one step of the Run's lifecycle. */
   readonly dashboards: (id: SimulationRunId) => DashboardFile
+  /** Participant progress is read by opaque attempt identity, never broadcast with the Run snapshot. */
+  readonly guideFile: (id: SimulationRunId, attemptId: string) => GuideFile
+  readonly presentation: PresentationDelivery
+  readonly readGuidePromptEvidence: GuidePromptEvidenceReader
   readonly get: (id: SimulationRunId) => SimulationRunRuntime | undefined
   readonly list: () => ReadonlyArray<SimulationRunRuntime>
   readonly listKnown: () => Promise<ReadonlyArray<SimulationRunSummary>>
@@ -175,6 +184,7 @@ export const createSimulationRunRegistry = (config: {
   readonly dataDir: string
   readonly workspaceId: WorkspaceId
   readonly runtimeAdapters: ReadonlyArray<PackRuntimeAdapter>
+  readonly workspaceCapabilities?: ReadonlyArray<PackWorkspaceCapability>
   readonly scenarioRuntimeResolver: ScenarioRuntimeResolver
   readonly scenarioDefinitions: ReadonlyArray<ScenarioDefinition>
   readonly compileScenarioDefinition: (source: unknown) => Promise<CompiledScenario>
@@ -184,6 +194,7 @@ export const createSimulationRunRegistry = (config: {
   readonly idleRuntimeCloseDelayMs?: number
   readonly idleRuntimeCloseTimer?: IdleRuntimeCloseTimer
   readonly procedureSourceService?: ProcedureSourceService
+  readonly readGuidePromptEvidence?: GuidePromptEvidenceReader
 }): SimulationRunRegistry => {
   const simulationRuns = new Map<SimulationRunId, SimulationRunRuntime>()
   /**
@@ -194,6 +205,8 @@ export const createSimulationRunRegistry = (config: {
   const awaitingFirstScreen = new Set<SimulationRunId>()
   const loadedCompiledScenarios = new Map<SimulationRunId, CompiledScenario>()
   const lifecycle = createKeyedOperations<SimulationRunId>()
+  const presentation = createPresentationDelivery()
+  const runSubject = (id: SimulationRunId) => workspaceResourceReferenceSchema.parse({ workspaceId: config.workspaceId, moduleId: 'world', type: 'world.simulation-run', id })
   let shuttingDown = false
   let closeRequested = false
   const definitionOperations = createOperationScope('World scenario library')
@@ -648,7 +661,7 @@ export const createSimulationRunRegistry = (config: {
     // A new Run whose players choose roles waits, paused, for the first of them
     // (`screenJoined`). Reloading the Run, after an idle close, keeps the mark;
     // only a choice, a join that started it, or a delete clears it.
-    const awaitsScreen = !restoredSnapshot && scenarioRoles !== null
+    const awaitsScreen = !restoredSnapshot && scenarioRoles !== null && scenarioRuntime.scenario.guide?.startPaused !== true
     if (awaitsScreen) awaitingFirstScreen.add(id)
     let runtime
     try {
@@ -661,7 +674,7 @@ export const createSimulationRunRegistry = (config: {
         snapshotStore,
         ...(interactionHandlers.length === 0 ? {} : { interactionHandlers }),
         ...(restoredSnapshot ? { restoredSnapshot } : {}),
-        ...(awaitsScreen ? { startPaused: true } : {}),
+        ...(!restoredSnapshot && (awaitsScreen || scenarioRuntime.scenario.guide?.startPaused === true) ? { startPaused: true } : {}),
         ...(restoredEvents.length === 0 ? {} : { restoredEvents }),
         ...(createConfig?.initialSeq === undefined && maxEventSeq === 0 ? {} : { initialSeq: Math.max(createConfig.initialSeq ?? 0, maxEventSeq) }),
         scenario: {
@@ -1053,6 +1066,7 @@ export const createSimulationRunRegistry = (config: {
     clearIdleRuntimeCloseTimer(id)
     leasesBySimulationRun.delete(id)
     await runtime.close()
+    presentation.clear(runSubject(id))
     simulationRuns.delete(id)
     loadedCompiledScenarios.delete(id)
     return true
@@ -1081,6 +1095,7 @@ export const createSimulationRunRegistry = (config: {
       rm(join(runDir, 'history.sqlite-wal'), { force: true }),
       rm(join(runDir, 'history.sqlite-shm'), { force: true }),
       rm(join(runDir, 'execution.json'), { force: true }),
+      rm(join(runDir, 'guides'), { recursive: true, force: true }),
     ])
     return createRuntime({
       manifest,
@@ -1297,7 +1312,7 @@ export const createSimulationRunRegistry = (config: {
       })),
     },
     installedCapabilities,
-    workspaceCapabilities: config.runtimeAdapters.flatMap(adapter => adapter.workspaceCapabilities ?? []),
+    workspaceCapabilities: [...config.workspaceCapabilities ?? [], ...config.runtimeAdapters.flatMap(adapter => adapter.workspaceCapabilities ?? [])],
     create,
     copy: copyRun,
     isAdvancing: id => {
@@ -1321,6 +1336,28 @@ export const createSimulationRunRegistry = (config: {
         change: apply => lifecycle.run(id, async () => {
           const { next, result } = apply(await readDashboards(path))
           if (next !== undefined) await writeDashboards(path, next)
+          return result
+        }),
+      }
+    },
+    presentation,
+    readGuidePromptEvidence: config.readGuidePromptEvidence ?? (async () => { throw Object.assign(new Error('This World instance has no Agents evidence reader'), { domain: 'world-guidance', code: 'guide_prompt_evidence_unavailable', status: 503 }) }),
+    guideFile: (id, rawAttemptId) => {
+      const attemptId = guideAttemptIdSchema.parse(rawAttemptId)
+      const directory = join(simulationRunRoot, id, 'guides')
+      const path = join(directory, `${attemptId}.json`)
+      return {
+        read: () => readGuideAttempt(path),
+        change: apply => lifecycle.run(id, async () => {
+          if (!await manifestStoreFor(id).load()) throw new Error(`Simulation Run not found: ${id}`)
+          const { next, result } = apply(await readGuideAttempt(path))
+          const parsed = guideAttemptSchema.parse(next)
+          if (parsed.id !== attemptId) throw new Error('Guide attempt identity does not match its stored file')
+          const text = `${JSON.stringify(parsed)}\n`
+          await storageBudget.withGrowth(workspaceRoot, Buffer.byteLength(text), async () => {
+            await mkdir(directory, { recursive: true })
+            await writeAtomic(path, text)
+          })
           return result
         }),
       }

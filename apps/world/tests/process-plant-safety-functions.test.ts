@@ -1,3 +1,4 @@
+import { unrestrictedQueryReadPolicy } from '../src/simulation/query-read-policy.ts'
 import { describe, expect, test } from 'bun:test'
 import { answerProcessPlantQuery, commandsForProcessPlantAction, compileProcessPlant, createProcessPlantRampRunner, createPwrReferencePlantDefinition } from '../src/packs/process-plant/index.ts'
 import { createProcessPlantProtectionRunner, createProcessPlantRuntime, processPlantIcConfigSchema, type ProcessPlantRuntime } from '../src/packs/process-plant/runtime/index.ts'
@@ -187,7 +188,7 @@ describe('critical safety function status trees', () => {
   test('the assessments capability returns every function with its path, labelled reference-model criteria, and refuses an undeclared one', () => {
     const instance: ProcessPlantRuntimeInstance = { plant, runtime: after(null, 2), ramps: createProcessPlantRampRunner({ runtime: createProcessPlantRuntime({ system: plant }) }), performance: createProcessPlantRuntimePerformance() }
     const capability = processPlantCapabilities.find(item => item.id === 'world.process-plant.assessments.evaluate')!
-    const answer = (input: Record<string, unknown>) => answerProcessPlantQuery({ request: { capabilityId: capability.id, input: capability.input.parse(input) }, plants: new Map([[plant.id, instance]]), objects: new Map() })
+    const answer = (input: Record<string, unknown>) => answerProcessPlantQuery({ request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId: capability.id, input: capability.input.parse(input) }, plants: new Map([[plant.id, instance]]), objects: new Map() })
     const result = capability.output.parse(answer({ plantId: plant.id })) as { assessments: ReadonlyArray<Record<string, unknown>> }
     expect(result.assessments.map(row => row.status)).toEqual(['not-monitored', 'green', 'green', 'green', 'green', 'green'])
     expect(result.assessments[2]).toMatchObject({ id: 'heat-sink', title: 'Heat sink', qualification: 'reference-model-criteria', automaticCsfQualified: false, instrumentationValidity: 'not-established', modelDigest: plant.modelDigest })
@@ -202,7 +203,7 @@ describe('critical safety function status trees', () => {
     const instance: ProcessPlantRuntimeInstance = { plant, runtime, ramps: createProcessPlantRampRunner({ runtime }), performance: createProcessPlantRuntimePerformance() }
     const capability = processPlantCapabilities.find(item => item.id === 'world.process-plant.assessments.evaluate')!
     const answer = (input: Record<string, unknown>) => capability.output.parse(answerProcessPlantQuery({
-      request: { capabilityId: capability.id, input: capability.input.parse(input) }, plants: new Map([[plant.id, instance]]), objects: new Map(),
+      request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId: capability.id, input: capability.input.parse(input) }, plants: new Map([[plant.id, instance]]), objects: new Map(),
     })) as { detail: string; assessments: ReadonlyArray<Record<string, unknown>>; inspect?: { capabilityId: string; input: Record<string, unknown> } }
     const before = runtime.elapsedMs()
     const full = answer({ plantId: plant.id })
@@ -248,7 +249,7 @@ describe('critical safety function status trees', () => {
       runtime: failed, ramps: createProcessPlantRampRunner({ runtime: failed }), performance: createProcessPlantRuntimePerformance() }
     const capability = processPlantCapabilities.find(item => item.id === 'world.process-plant.assessments.evaluate')!
     const answer = (input: Record<string, unknown>) => capability.output.parse(answerProcessPlantQuery({
-      request: { capabilityId: capability.id, input: capability.input.parse(input) }, plants: new Map([[plant.id, instance]]), objects: new Map(),
+      request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId: capability.id, input: capability.input.parse(input) }, plants: new Map([[plant.id, instance]]), objects: new Map(),
     })) as { assessments: ReadonlyArray<Record<string, any>>; inspect?: { input: Record<string, unknown> } }
     const row = answer({ plantId: plant.id, detail: 'summary' }).assessments[0]!
     expect(row.status).toBe('green')

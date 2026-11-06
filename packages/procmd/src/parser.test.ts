@@ -22,6 +22,32 @@ describe('frozen pwr-ops corpus: immutable IDs and persisted branch-index meanin
 })
 
 describe('one supported procmd format', () => {
+  test('pairs reference an exact deterministic normal branch without changing branch identity or adding steps', () => {
+    const source = `---\ntype: procedure\nprocedure-md: 0.7\nprocedure-id: TEST\ntitle: Response\n---\n## Step 1 [id: first]
+Pair: [id: initial, criterion: 0]
+Check: Expected indication «P».
+RNO: Correct the response.
+Pair: [id: recovery]
+Check: Recheck the indication.
+RNO: Hold if the response remains unestablished.
+\`\`\`procedure-decisions
+[{"branchIndex":0,"condition":{"type":"comparison","tagId":"P","operator":">","value":1,"unit":"bar","bound":"value","evidence":"instrument","source":"basis.md","maxAgeSeconds":2}}]
+\`\`\`
+- Response obtained [outcome: normal] → END
+- Review failed [outcome: rno] → ↻`
+    const step = parseProcedure(source).steps[0]!
+    expect(step.pairs?.map(({ id, advisoryBranchIndex }) => [id, advisoryBranchIndex])).toEqual([['initial', 0], ['recovery', undefined]])
+    expect(step.branches.map(branch => branch.targetKind)).toEqual(['end', 'retry'])
+    expect(step.blocks.map(block => block.kind)).toEqual(['check', 'rno', 'check', 'rno'])
+    for (const invalid of [
+      source.replace('criterion: 0', 'criterion: 1'),
+      source.replace('criterion: 0', 'criterion: 2'),
+      source.replace('id: recovery]', 'id: recovery, criterion: 0]'),
+      source.replace('id: recovery]', 'id: initial]'),
+      source.replace('Check: Recheck the indication.\n', ''),
+    ]) expect(() => parseProcedure(invalid)).toThrow()
+  })
+
   test('canonical dotted, underscored and hierarchical tag identities are preserved exactly', () => {
     const ids = ['LD01.SG.A.NR1', 'LD01/SUPPORT_1.READY', '1-CHANNEL', 'LD01.PCCTank.LT']
     const source = `---\ntype: procedure\nprocedure-md: 0.7\nprocedure-id: IDENTITY\ntitle: Identity\n---\n## Step 1 [id: read]\nCheck: ${ids.map(id => `«${id}»`).join(' and ')}\n- «LD01.SG.A.NR1» established → END\n## Tags\n${ids.map(id => `- id: ${id}`).join('\n')}`

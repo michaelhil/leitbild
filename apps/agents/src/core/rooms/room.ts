@@ -36,7 +36,9 @@ import { SYSTEM_SENDER_ID } from '../types/constants.ts'
 import { parseAddressedAgents } from './addressing.ts'
 import { deliverBroadcast } from './delivery-modes.ts'
 import { attachMessageFocus } from '../message-focus.ts'
+import { attachMessagePresentation } from '../message-presentation.ts'
 import { workspaceRoomScopeSchema } from '@leitbild/contracts'
+import { assertNoRetiredProvenance, assertSupportedRoomScope } from './retired-private-state.ts'
 
 export interface RoomCallbacks {
   /** Required owner cleanup runs before mutation; failure aborts removal. Undefined ID clears all history. */
@@ -68,6 +70,8 @@ export const createRoom = (
   initialProfile: RoomProfile,
   callbacks?: RoomCallbacks,
 ): Room => {
+  assertSupportedRoomScope(initialProfile.scope)
+  assertNoRetiredProvenance(initialProfile)
   let profile = initialProfile
   const messages: Message[] = []
   const generationQueries = new Map<string, GenerationQueryRecord>()
@@ -108,7 +112,8 @@ export const createRoom = (
   // --- Post helpers ---
 
   const createRoomMessage = (params: PostParams): Message => {
-    const { focusedSubjects, ...persisted } = params
+    assertNoRetiredProvenance(params)
+    const { focusedSubjects, presentationRecipient, ...persisted } = params
     const message: Message = {
       // Caller-supplied Message fields flow through untouched. Browser focus
       // is deliberately excluded because it is not durable conversation data.
@@ -118,6 +123,7 @@ export const createRoom = (
       timestamp: Date.now(),
     }
     attachMessageFocus(message, focusedSubjects)
+    attachMessagePresentation(message, presentationRecipient)
     return message
   }
 
@@ -274,6 +280,7 @@ export const createRoom = (
         })
       }
       const parsedScope = workspaceRoomScopeSchema.parse(scope)
+      assertSupportedRoomScope(parsedScope)
       const nextRevision = currentRevision + 1
       profile = { ...profile, scope: parsedScope, scopeRevision: nextRevision }
       return nextRevision
@@ -346,6 +353,7 @@ export const createRoom = (
     getMutedIds: (): ReadonlySet<string> => new Set(muted),
 
     injectMessages: (msgs: ReadonlyArray<Message>): void => {
+      for (const msg of msgs) assertNoRetiredProvenance(msg)
       for (const msg of msgs) messages.push(msg)
     },
 

@@ -1,3 +1,4 @@
+import { unrestrictedQueryReadPolicy } from '../src/simulation/query-read-policy.ts'
 import { describe, expect, test } from 'bun:test'
 import { gridCloseBranchCommandKind, gridOpenBranchCommandKind } from '../src/packs/electric-grid/commands/branch.ts'
 import {
@@ -85,7 +86,7 @@ const queryCapability = (id: string) => electricGridQueryCapabilities.find(capab
 /** Answers a query the way the Host does: the Pack answer, then the published output schema. */
 const query = (grid: GridRuntimeInstance, capabilityId: string, input: Readonly<Record<string, unknown>> = {}) =>
   queryCapability(capabilityId).output.parse(answerElectricGridQuery({
-    request: { capabilityId, input: { gridId: grid.definition.gridId, ...input } },
+    request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId, input: { gridId: grid.definition.gridId, ...input } },
     grids: new Map([[grid.definition.gridId, grid]]),
   })) as Record<string, any>
 

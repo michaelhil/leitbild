@@ -23,6 +23,14 @@ export interface ProcedureBranch {
   readonly sourceLine: number
 }
 
+/** A presentation boundary within a Step. It has no placekeeping or execution state. */
+export interface ProcedureResponsePair {
+  readonly id: string
+  readonly sourceLine: number
+  /** Existing criterion which exactly expresses the paired expected response. */
+  readonly advisoryBranchIndex?: number
+}
+
 export interface ProcedureStep {
   readonly id: string
   readonly label: string
@@ -34,6 +42,7 @@ export interface ProcedureStep {
   readonly tagIds: ReadonlyArray<string>
   readonly sourceLine: number
   readonly sourceEndLine: number
+  readonly pairs?: ReadonlyArray<ProcedureResponsePair>
   /** Engineering criteria; no live binding or automatic execution is implied. */
   readonly assessment?: ProcedureAssessment
   /** Explicit eligibility for source-ordered branches; absent branches are unestablished. */

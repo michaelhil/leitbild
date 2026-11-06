@@ -1,3 +1,4 @@
+import { unavailableQueryReadScope } from '../../simulation/query-read-policy.ts'
 import { z } from 'zod'
 import {
   geoPointFromLonLat,
@@ -51,6 +52,7 @@ const statsSchema = z
   .strict()
 export const weatherQueryCapabilities: ReadonlyArray<SimulationCapability> = [
   defineSimulationQueryCapability({
+    readScope: 'collection',
     id: 'world.weather.sample-at-point',
     title: 'Sample weather at point',
     description:
@@ -59,6 +61,7 @@ export const weatherQueryCapabilities: ReadonlyArray<SimulationCapability> = [
     output: weatherSampleSchema,
   }),
   defineSimulationQueryCapability({
+    readScope: 'collection',
     id: 'world.weather.sample-points',
     title: 'Sample weather at points',
     description: 'Up to 512 points from the same field revision. Read-only; never advances simulation.',
@@ -66,6 +69,7 @@ export const weatherQueryCapabilities: ReadonlyArray<SimulationCapability> = [
     output: samplesSchema,
   }),
   defineSimulationQueryCapability({
+    readScope: 'collection',
     id: 'world.weather.sample-along-route',
     title: 'Sample weather along route',
     description:
@@ -74,6 +78,7 @@ export const weatherQueryCapabilities: ReadonlyArray<SimulationCapability> = [
     output: z.object({ samples: samplesSchema, summary: summarySchema, intervalM: z.number() }).strict(),
   }),
   defineSimulationQueryCapability({
+    readScope: 'collection',
     id: 'world.weather.summarize-area',
     title: 'Summarize weather area',
     description:
@@ -84,6 +89,7 @@ export const weatherQueryCapabilities: ReadonlyArray<SimulationCapability> = [
       .strict(),
   }),
   defineSimulationQueryCapability({
+    readScope: 'collection',
     id: 'world.weather.map-features',
     title: 'Read weather map features',
     description:
@@ -92,6 +98,7 @@ export const weatherQueryCapabilities: ReadonlyArray<SimulationCapability> = [
     output: z.object({ features: z.array(packMapFeatureSchema), metadata: statsSchema }).strict(),
   }),
   defineSimulationQueryCapability({
+    readScope: 'collection',
     id: 'world.weather.field-stats',
     title: 'Inspect weather field',
     description: 'Current field size, simulation time, revision and model fidelity.',
@@ -99,6 +106,7 @@ export const weatherQueryCapabilities: ReadonlyArray<SimulationCapability> = [
     output: statsSchema,
   }),
   defineSimulationQueryCapability({
+    readScope: 'catalog',
     id: 'world.weather.describe',
     title: 'Describe weather model',
     description:
@@ -134,6 +142,7 @@ const summarize = (samples: ReadonlyArray<ReturnType<typeof sampleWeather>>) => 
 }
 export const answerWeatherQuery = (field: WeatherField, request: PackRuntimeQuery): unknown => {
   const input = weatherQueryCapabilities.find((c) => c.id === request.capabilityId)?.input.parse(request.input)
+  if (request.capabilityId !== 'world.weather.describe' && field.influences.some(influence => !request.readPolicy.canInspect(influence.objectId))) return unavailableQueryReadScope('This merged Weather field includes restricted forcing; its physical contributions cannot be separated for this caller')
   if (!input) throw new Error('Unknown Weather query: ' + request.capabilityId)
   if (request.capabilityId === 'world.weather.sample-at-point')
     return sampleWeather(field, (input as { point: GeoJsonPoint }).point)

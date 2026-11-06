@@ -6,14 +6,14 @@ export const precipitationTypeSchema = z.enum(['none', 'rain', 'snow', 'sleet', 
 const fraction = z.number().finite().min(0).max(1)
 export const weatherAtmosphereSchema = z
   .object({
-    airTemperatureC: z.number().finite().min(-100).max(70),
-    humidity: fraction,
-    windSpeedMps: z.number().finite().min(0).max(150),
-    windDirectionDeg: z.number().finite().min(0).max(360),
-    visibilityM: z.number().finite().min(0).max(100_000),
-    cloudCover: fraction,
+    airTemperatureC: z.number().finite().min(-100).max(70).describe('Air temperature in degrees Celsius.'),
+    humidity: fraction.describe('Relative humidity as a fraction from 0 to 1.'),
+    windSpeedMps: z.number().finite().min(0).max(150).describe('Wind speed in metres per second.'),
+    windDirectionDeg: z.number().finite().min(0).max(360).describe('Meteorological direction wind comes FROM, degrees clockwise from north; 0 and 360 both mean north.'),
+    visibilityM: z.number().finite().min(0).max(100_000).describe('Visibility in metres.'),
+    cloudCover: fraction.describe('Cloud cover fraction from 0 to 1.'),
     precipitation: z
-      .object({ type: precipitationTypeSchema, intensityMmPerHour: z.number().finite().min(0).max(500) })
+      .object({ type: precipitationTypeSchema, intensityMmPerHour: z.number().finite().min(0).max(500).describe('Precipitation rate in millimetres per hour; type none requires zero.') })
       .strict()
       .refine(value => value.type !== 'none' || value.intensityMmPerHour === 0, 'No precipitation requires a zero rate'),
   })
@@ -56,7 +56,7 @@ export const initialGround: WeatherSurface = {
 }
 export const weatherPackConfigSchema = z
   .object({
-    gridResolution: z.number().int().min(0).max(11).default(8),
+    gridResolution: z.number().int().min(0).max(11).default(8).describe('H3 ground-cell resolution (dimensionless index). Higher resolution increases cell work. Fixed for a Run; change through a new Scenario Revision and Run.'),
     atmosphere: weatherAtmosphereSchema.default(backgroundAtmosphere),
     surface: weatherSurfaceSchema.default(initialGround),
   })

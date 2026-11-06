@@ -118,9 +118,9 @@ export const createRecallTool = (deps: RecallToolDeps): Tool => ({
 
     const hits = deps.vectorStore.search(queryVector, 'memory', {
       k,
-      filter: scopedRoomId
-        ? ({ metadata }) => metadata.roomId === scopedRoomId
-        : undefined,
+      filter: ({ metadata }) => typeof metadata.roomId === 'string'
+        && deps.rooms.getRoom(metadata.roomId) !== undefined
+        && (scopedRoomId === undefined || metadata.roomId === scopedRoomId),
     })
 
     return {

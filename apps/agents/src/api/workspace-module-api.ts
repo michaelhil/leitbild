@@ -1,5 +1,7 @@
+import { agentConfigurationUpdateSchema } from '../agents/configuration.ts'
 import { z } from 'zod'
 import {
+  presentationPromptEvidenceInputSchema, presentationPromptEvidenceSchema,
   inspectionViewSchema,
   moduleActivitySchema,
   moduleCapabilityCollectionSchema,
@@ -668,6 +670,24 @@ const agentsCapabilities = createModuleCapabilityRegistry<{ runtime: AgentsWorks
   },
   {
     descriptor: {
+      id: 'agents.room.prompt-evidence.read', moduleId: AGENTS_MODULE_ID,
+      kind: 'query', scope: { kind: 'resource', resourceType: 'agents.room' },
+      title: 'Read actual suggested-prompt evidence',
+      description: 'Read one explicitly submitted prompt and actual causal Agent replies from canonical Room messages and execution records. The Room must be scoped to the exact World subject or a current allowed collection member. Insertion is not submission; a reply is not comprehension or physical outcome.',
+      risk: 'read', idempotent: true,
+      inputSchema: z.toJSONSchema(presentationPromptEvidenceInputSchema), outputSchema: z.toJSONSchema(presentationPromptEvidenceSchema),
+    },
+    invoke: async ({ runtime }, invocation) => {
+      const input = presentationPromptEvidenceInputSchema.parse(invocation.input)
+      try { return json({ result: await runtime.readPromptEvidence(requireResourceId(invocation, 'agents.room'), input) }) }
+      catch (error) {
+        if (error instanceof Error && 'code' in error && typeof error.code === 'string') return apiError(error.code === 'room_not_found' ? 404 : 422, error.code, error.message)
+        throw error
+      }
+    },
+  },
+  {
+    descriptor: {
       id: 'agents.room.post-message',
       moduleId: AGENTS_MODULE_ID,
       kind: 'command',
@@ -858,6 +878,36 @@ const agentsCapabilities = createModuleCapabilityRegistry<{ runtime: AgentsWorks
   },
   {
     descriptor: {
+      id: 'agents.agent.configuration.read', moduleId: AGENTS_MODULE_ID, kind: 'query', scope: { kind: 'resource', resourceType: 'agents.agent' },
+      title: 'Read Agent configuration', description: 'Reads desired Profile settings, the effective active-turn snapshot, pending next-turn changes, canonical concurrency revision and latest actor-attributed saved receipt.',
+      risk: 'read', idempotent: true, inputSchema: z.toJSONSchema(emptyInputSchema), outputSchema: { type: 'object' },
+    },
+    invoke: async ({ runtime }, invocation) => {
+      emptyInputSchema.parse(invocation.input)
+      try { return json({ result: await runtime.agentConfiguration.read(requireResourceId(invocation, 'agents.agent')) }) }
+      catch (error) {
+        const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : 'configuration_read_failed'
+        return apiError(code === 'agent_not_found' ? 404 : 500, code, error instanceof Error ? error.message : String(error))
+      }
+    },
+  },
+  {
+    descriptor: {
+      id: 'agents.agent.configuration.update', moduleId: AGENTS_MODULE_ID, kind: 'command', scope: { kind: 'resource', resourceType: 'agents.agent' },
+      title: 'Update Agent configuration', description: 'Validates and saves exact Profile changes against expectedRevision from configuration.read. Null clears optional reasoning, history-token budget or tool check-in. Changes apply next turn; every new tool dispatch still obeys live ownership, Room Pack and scope restrictions. This does not administer Room scope, World restrictions, credentials or codegen policy.',
+      risk: 'write', idempotent: false, inputSchema: z.toJSONSchema(agentConfigurationUpdateSchema), outputSchema: { type: 'object' },
+    },
+    invoke: async ({ runtime }, invocation) => {
+      const input = agentConfigurationUpdateSchema.parse(invocation.input)
+      try { return json({ result: await runtime.agentConfiguration.update(requireResourceId(invocation, 'agents.agent'), input.changes, invocation.access.actor, input.expectedRevision) }) }
+      catch (error) {
+        const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : 'invalid_configuration'
+        return json({ error: { code, message: error instanceof Error ? error.message : String(error), ...(error && typeof error === 'object' && 'details' in error ? { details: error.details } : {}) } }, code === 'configuration_conflict' ? 409 : code === 'configuration_outcome_unknown' ? 503 : code === 'agent_not_found' ? 404 : 400)
+      }
+    },
+  },
+  {
+    descriptor: {
       id: 'agents.agent.create',
       moduleId: AGENTS_MODULE_ID,
       kind: 'command',
@@ -989,6 +1039,7 @@ export const handleAgentsModuleApi = async (
     if (error instanceof Error && 'code' in error && error.code === 'storage_budget_exceeded') return apiError(507, 'storage_budget_exceeded', error.message, true)
     if (error instanceof Error && 'code' in error && error.code === 'workspace_capacity_exceeded') return apiError(503, 'workspace_capacity_exceeded', error.message)
     if (error instanceof SyntaxError) return apiError(400, 'invalid_json', error.message)
+    if (error instanceof Error && 'code' in error && error.code === 'retired_private_state') return apiError(400, 'retired_private_state', error.message)
     if (error instanceof z.ZodError) return apiError(400, 'invalid_request', error.message)
     if (error instanceof Error && error.message.includes('Workspace not found:')) return apiError(404, 'workspace_not_found', 'Module Workspace not found')
     if (error instanceof Error && (error.message.startsWith('Capability requires') || error.message.includes('not provisioned'))) {

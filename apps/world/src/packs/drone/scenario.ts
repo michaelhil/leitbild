@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { rejectCapabilityInput } from '../../simulation/capability-rejection.ts'
 import {
   geoPointFromLonLat,
   objectIdSchema,
@@ -52,7 +53,7 @@ export const droneVehicleModelsFromPackConfigs = (
 export const droneScenarioSupport: PackScenarioSupport = {
   validateInitialObjects: (objects, config) => {
     const limit = dronePackConfigSchema.parse(config).maxDrones
-    if (objects.filter(object => object.packId === 'drone').length > limit) throw new Error(`Drone selection exceeds its configured maximum of ${limit} vehicles`)
+    if (objects.filter(object => object.packId === 'drone').length > limit) return rejectCapabilityInput(`Drone selection exceeds its configured maximum of ${limit} vehicles`)
   },
   itemSchemas: { drone: droneSpecSchema },
   expandItem: (rawSpec: PackScenarioItemSpec, context) => {

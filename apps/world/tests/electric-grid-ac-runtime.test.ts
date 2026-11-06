@@ -1,3 +1,4 @@
+import { unrestrictedQueryReadPolicy } from '../src/simulation/query-read-policy.ts'
 import { describe, expect, test } from 'bun:test'
 import type { ActorId, CommandId, IsoTimestamp, ObjectId, SimulationRunId } from '../src/core/model/index.ts'
 import { gridCloseBranchCommandKind, gridOpenBranchCommandKind } from '../src/packs/electric-grid/commands/branch.ts'
@@ -252,7 +253,7 @@ describe('HVDC converters on an island whose AC load flow does not converge', ()
     expect(grid.hvdcLinks.get('hvdc:weak-de')).toMatchObject({ state: 'deblocked', transferMw: -40, trip: null })
     // The HVDC import still enters the DC balance, which closes exactly.
     expect(largestIslandInjectionSumMw(grid)).toBeLessThan(1e-6)
-    const listed = answerElectricGridQuery({ request: { capabilityId: 'world.electric-grid.islands.list', input: { gridId: grid.definition.gridId } }, grids: new Map([[grid.definition.gridId, grid]]) }) as { islands: ReadonlyArray<{ hvdcImportMw: number; flowModel: string | null }> }
+    const listed = answerElectricGridQuery({ request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.electric-grid.islands.list', input: { gridId: grid.definition.gridId } }, grids: new Map([[grid.definition.gridId, grid]]) }) as { islands: ReadonlyArray<{ hvdcImportMw: number; flowModel: string | null }> }
     expect(listed.islands[0]).toMatchObject({ hvdcImportMw: 40 * 0.98, flowModel: 'dc' })
   })
 })

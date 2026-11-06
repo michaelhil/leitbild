@@ -274,6 +274,7 @@ export const compileScenarioDefinition = async (
     view: startingView(source.view, activePacks),
     recording: source.packs.flatMap(selection => selection.recording ? [{ packId: selection.id, ...selection.recording }] : []),
     ...(timeline === undefined ? {} : { timeline }),
+    ...(source.guide === undefined ? {} : { guide: source.guide }),
   }) as CompiledScenario
   createScenarioRuntimeResolver({ packs }).resolve(compiled)
   return compiled

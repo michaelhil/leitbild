@@ -69,8 +69,7 @@ describe('Leitbild Assistant skills', () => {
     expect(assistance.body).toContain('when review is requested or an explicitly restricted Plant requires it')
     expect(assistance.body).not.toContain('ask their reason before proposing anything')
     // Archived reference recovery rules must not override the current scoped task.
-    expect(assistance.body).toContain('For ES-0.1, use the pinned current task and its Basis')
-    expect(assistance.body).toContain('archived no-load targets, off-scale rules and reset guidance do not override its criteria')
+    expect(assistance.body).toContain('archived guidance does not override it')
     expect(assistance.body).toContain('A target or elapsed time alone proves neither recovery nor sustained stability')
     expect(assistance.body).not.toContain('Tavg falls below its no-load value')
     expect(assistance.body).not.toContain('With every narrow-range level off scale its criterion is total feed')
@@ -110,7 +109,7 @@ describe('Leitbild Assistant skills', () => {
     expect(runner.body).toContain('Missing/manual/unestablished criteria remain unknown, not normal')
     expect(runner.body).toContain('An authored unknown outcome also needs its own supported criterion')
     expect(runner.body).toContain('onComplete: "pause"')
-    expect(runner.body).toContain("Follow the step's pause/review instructions; otherwise, playing: wait")
+    expect(runner.body).toContain('Follow the operating time bounds')
     expect(runner.body).toContain('shared Run advances')
     expect(runner.body).toContain('Never start unlimited execution')
     expect(runner.body).toContain('world.procedure.run.request-input')
@@ -119,6 +118,7 @@ describe('Leitbild Assistant skills', () => {
     expect(runner.body).toContain('placekeeping, not measured confirmation')
     expect(runner.body).toContain('never use them to recover from a refused/unknown branch')
     expect(runner.body).toContain('no arbitrary step quota')
+    expect(runner.body).toContain('For "through" a named step, stop after its accepted transition leaves it or ends the Run. Match `decision.event.stepId` to that step.')
     expect(runner.body).not.toContain('25 transitions')
     expect(runner.body).not.toContain('take the normal-path branch when no reading contradicts it')
     // Current step completion and permission for a guarded source-owned action
@@ -177,38 +177,10 @@ describe('Leitbild Assistant skills', () => {
     // Source-linked Basis already owns duties omitted from a branch comparison.
     expect(assistance).toContain('Read linked Basis before new phases; reuse same-pin sections')
     expect(assistance).toContain('`stepId` for missing exact queries/basis')
-    expect(assistance).toContain('When source separates current checkpoints from due sampled reviews')
-    expect(assistance).toContain('resolve pinned `step.definition` once')
-    // Use the exact authored current condition, not a hand-built signal subset
-    // or a new projection of the native sampled criterion. This recipe is
-    // explicitly conditional on the source's distinct checkpoint duty.
-    expect(assistance).toContain("From Process Plant's authored response input")
-    expect(assistance).toContain('`world.process-plant.procedure-condition.evaluate` with `{targetObjectId:run.scope.plantId,condition:input.condition,basis:input.basis}` unchanged')
-    expect(assistance).toContain('Acquire current condition, summary CSFs, controller/receiver/source facts and capture health')
-    expect(assistance).toContain('Before each note update read fresh driver/source/step and complete prior note from canonical `next` or `world.procedure.run.read`')
-    // Actual initial-settling evidence existed only in raw tool history in the
-    // failed provider rehearsal. Future source-required records need an explicit
-    // transferable home, without adding a plant criterion or a note language.
-    expect(assistance).toContain('Record required fields in `world.procedure.step.update` comments, not tool history')
-    // Source-required initial rows and cumulative checkpoints remain intact,
-    // while one unchanged lineup's acquisition is not recopied into every row.
-    expect(assistance).toContain('Keep unchanged lineup/acquisition refs once per note')
-    expect(assistance).toContain('Use exact IDs/exact earlier durable record refs, not prefixes')
-    expect(assistance).toContain('not cached notes/plain receipts')
-    expect(assistance).toContain('Source controls current frame counts/older history refs')
-    expect(assistance).toContain('Share headers/full-precision rows')
-    expect(assistance).toContain('keep required timestamps/counts/proofs/duties and Human text verbatim')
-    expect(assistance).not.toContain('preserve every prior timestamp/count/proof/duty')
-    expect(assistance).toContain('Never truncate or round')
-    expect(assistance).toContain('`observationsAcquired:false` is state, not physical evidence or atomic note-write protection')
-    expect(assistance).toContain('At each source cadence durably update checkpoint note and report chat progress')
-    expect(assistance).toContain('clock-only wait to receipt target with `afterSequence`, omitting `procedureRunId` (full branch history)')
-    expect(assistance).toContain('Source due: invoke the whole pinned normal response with all required history/current criteria; select with `nextDetail:"state"`')
-    expect(assistance).toContain('That acknowledgement adds no physical evidence')
     expect(assistance).toContain('Current checks never satisfy a historical branch')
-    // Exact dated frame arithmetic is distinct from the recorder's retained
-    // left boundary. The pure optional helper neither acquires nor qualifies it.
-    expect(assistance).toContain('Use actual dated frame endpoints; if offered, `sample_changes` computes math absent there, not physical proof')
+    expect(assistance).toContain('missing, stale or incomplete history is not proof')
+    expect(assistance).toContain('preserve operator notes')
+    expect(assistance).not.toMatch(/ES-0\.1|FR-H\.[15]|nextDetail:"state"/)
     expect(assistance).toContain('Read linked Basis before new phases; reuse same-pin sections')
     expect(assistance).toContain('Justify criteria/actions via pinned `world.procedure.source.read` Basis sections')
     expect(assistance).toContain('For full step reads, `includeGuidance:false` omits static text, not history')

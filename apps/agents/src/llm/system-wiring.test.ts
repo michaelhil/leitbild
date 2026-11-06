@@ -64,6 +64,7 @@ const makeSetup = (gateways: Record<string, ProviderGateway>, order: string[]): 
   const router = createProviderRouter(gateways, { order })
   return {
     router,
+    isDiscoveryEnabled: name => router.getOrder().includes(name),
     gateways,
     monitors: {},
     dispose: () => router.dispose(),

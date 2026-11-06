@@ -1,3 +1,4 @@
+import { unrestrictedQueryReadPolicy } from '../src/simulation/query-read-policy.ts'
 import { describe, expect, test } from 'bun:test'
 import { norwayRuntimeTestOperatingPointRef } from './fixtures/grid-operating-point.ts'
 import { expression, latest, validateStyleMin } from '@maplibre/maplibre-gl-style-spec'
@@ -247,7 +248,7 @@ const norway = compileGridDefinition(gridDefinitionSchema.parse({
 /** The query result as the browser receives it: answered, validated by the Host, sent as JSON. */
 const wire = (grid: GridRuntimeInstance, capabilityId: string): unknown => JSON.parse(JSON.stringify(
   electricGridQueryCapabilities.find(capability => capability.id === capabilityId)!.output.parse(answerElectricGridQuery({
-    request: { capabilityId, input: { gridId: grid.definition.gridId } },
+    request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId, input: { gridId: grid.definition.gridId } },
     grids: new Map([[grid.definition.gridId, grid]]),
   })),
 ))
@@ -417,7 +418,7 @@ describe('Grid live layer: geometry and state from the map queries', () => {
     // A hand-built model has no geometry artifact: it draws bus to bus.
     const geometryFor = createGridMapGeometry({ artifactsFor: () => [], readArtifact: file => { throw new Error(`no artifact ${file}`) } })
     const answer = (query: ReturnType<typeof createGridMapStateQuery>): unknown => JSON.parse(JSON.stringify(query.capability.output.parse(
-      query.answer({ gridId: run.grid.definition.gridId }, new Map([[run.grid.definition.gridId, run.grid]])))))
+      query.answer({ gridId: run.grid.definition.gridId }, new Map([[run.grid.definition.gridId, run.grid]]), undefined, unrestrictedQueryReadPolicy))))
     const geometry = gridLiveMapLayer.loadGeometry(answer(createGridMapGeometryQuery(geometryFor)))
     const state = geometry.presentState(answer(createGridMapStateQuery(geometryFor)))
     const fid = (branchId: string) => corridorModel.branches.findIndex(branch => branch.id === branchId)

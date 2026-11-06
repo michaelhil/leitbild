@@ -12,7 +12,7 @@ export const situationStatusSchema = z.object({
 export const recordsPageSchema = z.object({ records: z.array(externalRecordSchema), total: z.number().int(), hasMore: z.boolean(), retainedWindowOnly: z.literal(true) }).strict()
 export const replaceConfigSchema = z.object({ expectedRevision: z.number().int().nonnegative(), config: situationConfigSchema }).strict()
 export const refreshSourceSchema = z.object({ sourceId: sourceIdSchema }).strict()
-const query = (id: string, title: string, description: string, input: z.ZodType, output: z.ZodType): SimulationCapability => ({ id: 'world.situation-monitor.' + id, title, description, kind: 'query', risk: 'read', idempotent: true, input, output })
+const query = (id: string, title: string, description: string, input: z.ZodType, output: z.ZodType): SimulationCapability => ({ id: 'world.situation-monitor.' + id, title, description, kind: 'query', readScope: 'catalog', risk: 'read', idempotent: true, input, output })
 const command = (id: string, title: string, description: string, input: z.ZodType): SimulationCapability => ({ id: 'world.situation-monitor.' + id, title, description, kind: 'command', risk: 'write', idempotent: false, input, output: commandResultSchema, buildCommand: payload => ({ targetObjectIds: [], payload }) })
 export const situationCapabilities: ReadonlyArray<SimulationCapability> = [
   query('map.features', 'Map external records', 'Return bounded native map geometry for the retained source window. Located records only; rendering truncation is explicit, not evidence of complete coverage.', z.object({ bounds: boundsSchema, limit: z.number().int().min(1).max(2000).default(1000) }).strict(), z.object({ features: z.array(packMapFeatureSchema), truncated: z.boolean() }).strict()),

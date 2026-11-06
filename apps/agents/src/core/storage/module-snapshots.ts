@@ -1,7 +1,8 @@
 import { mkdir, rename, rm } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { z } from 'zod'
-import { workspaceRoomScopeSchema } from '@leitbild/contracts'
+import { presentationPromptLinkSchema, workspaceRoomScopeSchema } from '@leitbild/contracts'
+import { isRetiredPerspectiveScope } from '../rooms/retired-private-state.ts'
 import type { Agent, AIAgentConfig } from '../types/agent.ts'
 import type { DeliveryMode, Message, RoomProfile } from '../types/messaging.ts'
 import type { GenerationQueryRecord, Room } from '../types/room.ts'
@@ -111,7 +112,7 @@ const triggerSchema = z.object({
 }).strict()
 
 const roomProfileSchema = z.object({
-  scope: workspaceRoomScopeSchema,
+  scope: workspaceRoomScopeSchema.refine(scope => !isRetiredPerspectiveScope(scope), { message: 'Retired private Room scope is unsupported' }),
   scopeRevision: z.number().int().nonnegative(),
   id: z.string(),
   name: z.string(),
@@ -151,6 +152,7 @@ const messageSchema = z.object({
   correlationId: z.string().optional(),
   inReplyTo: z.array(z.string()).optional(),
   cause: messageCauseSchema.optional(),
+  presentationPrompt: presentationPromptLinkSchema.optional(),
   progress: z.literal(true).optional(),
   progressEvidence: z.object({
     turnId: z.string().min(1), callId: z.string().min(1), callIds: z.array(z.string().min(1)).min(1), operationKey: z.string().min(1).optional(),
@@ -467,7 +469,19 @@ const committedSnapshotSchema = z.object({
   rooms: roomsSnapshotSchema.nullable(),
   agents: agentsSnapshotSchema.nullable(),
   inspections: generationInspectionSnapshotSchema.nullable(),
-}).strict()
+}).strict().superRefine((snapshots, ctx) => {
+  const roomIds = new Set(snapshots.rooms?.rooms.map(room => room.profile.id) ?? [])
+  for (const [index, agent] of (snapshots.agents?.agents ?? []).entries()) {
+    if (agent.config.ownerRoomId !== undefined && !roomIds.has(agent.config.ownerRoomId)) ctx.addIssue({
+      code: 'custom', path: ['agents', 'agents', index, 'config', 'ownerRoomId'], message: 'Owned Agent requires its existing Room; orphan state is unsupported',
+    })
+  }
+  for (const [index, inspection] of (snapshots.inspections?.rooms ?? []).entries()) {
+    if (!roomIds.has(inspection.roomId)) ctx.addIssue({
+      code: 'custom', path: ['inspections', 'rooms', index, 'roomId'], message: 'Inspection evidence requires its existing Room; orphan state is unsupported',
+    })
+  }
+})
 type SnapshotPaths = {
   readonly rooms: Pick<WorkspaceModulePaths['rooms'], 'snapshot'>
   readonly agents: Pick<WorkspaceModulePaths['agents'], 'root' | 'snapshot' | 'inspections'>
@@ -505,11 +519,11 @@ const loadStrict = async <T>(path: string, schema: z.ZodType<T>): Promise<T | nu
 const readSnapshots = async (paths: SnapshotPaths): Promise<WorkspaceModuleSnapshots> => {
   const committed = await loadStrict(commitPath(paths), committedSnapshotSchema)
   if (committed) return committed
-  return {
+  return committedSnapshotSchema.parse({
     rooms: await loadStrict(paths.rooms.snapshot, roomsSnapshotSchema),
     agents: await loadStrict(paths.agents.snapshot, agentsSnapshotSchema),
     inspections: await loadStrict(paths.agents.inspections, generationInspectionSnapshotSchema),
-  }
+  })
 }
 
 export const loadWorkspaceModuleSnapshots = (paths: WorkspaceModulePaths): Promise<WorkspaceModuleSnapshots> =>
@@ -540,6 +554,7 @@ export const restoreWorkspaceModuleSnapshots = async (
   runtime: RestorableRuntime,
   snapshots: WorkspaceModuleSnapshots,
 ): Promise<void> => {
+  snapshots = committedSnapshotSchema.parse(snapshots)
   const roomMap = new Map<string, Room>()
   const rooms = snapshots.rooms
   if (rooms) {

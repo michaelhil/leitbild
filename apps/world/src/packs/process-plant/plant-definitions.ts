@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { rejectCapabilityInput } from '../../simulation/capability-rejection.ts'
 import { assemblePwrReferencePlantGraph,pwrReferenceParametersSchema } from './assembly/pwr-reference-assembly.ts'
 import type {
   ProcessPlantAutomationSelection,
@@ -85,7 +86,7 @@ const resolveLd01Model = (selection: ProcessPlantModelSelection): PlantGraphSpec
 export const resolveProcessPlantModel = (selection: ProcessPlantModelSelection): PlantGraphSpec => {
   if (selection.ref === processPlantLd01ModelRef) return resolveLd01Model(selection)
   if (selection.ref !== processPlantPwrReferenceModelRef) {
-    throw new Error(`unknown process plant model: ${selection.ref}`)
+    return rejectCapabilityInput(`unknown process plant model: ${selection.ref}`)
   }
   return assemblePwrReferencePlantGraph(pwrReferenceParametersSchema.parse(selection.parameters))
 }
@@ -102,10 +103,10 @@ export const resolveProcessPlantOperatingPoint = (
     return { parameterOverrides: {}, valueOverrides: {} }
   }
   if (selection.ref !== processPlantPwrFullPowerOperatingPointRef) {
-    throw new Error(`unknown process plant operating point: ${selection.ref}`)
+    return rejectCapabilityInput(`unknown process plant operating point: ${selection.ref}`)
   }
   if (modelRef !== processPlantPwrReferenceModelRef) {
-    throw new Error(`operating point ${selection.ref} is not compatible with process plant model ${modelRef}`)
+    return rejectCapabilityInput(`operating point ${selection.ref} is not compatible with process plant model ${modelRef}`)
   }
   // Operating conditions belong to the selected operating point, not to a
   // scenario or the topology template. Resolve every selected loop by kind.
@@ -130,10 +131,10 @@ export const resolveProcessPlantAutomation = (
     return resolution.artifact.automation
   }
   if (selection.ref !== processPlantPwrReferenceAutomationRef) {
-    throw new Error(`unknown process plant automation: ${selection.ref}`)
+    return rejectCapabilityInput(`unknown process plant automation: ${selection.ref}`)
   }
   if (modelRef !== processPlantPwrReferenceModelRef) {
-    throw new Error(`automation ${selection.ref} is not compatible with process plant model ${modelRef}`)
+    return rejectCapabilityInput(`automation ${selection.ref} is not compatible with process plant model ${modelRef}`)
   }
   return pressurizedWaterReactorReferenceIcForGraph(graph)
 }
@@ -142,7 +143,7 @@ export const processPlantDefinitionCatalog = (): ProcessPlantDefinitionCatalogVi
   models: [{
     id: processPlantPwrReferenceModelRef,
     title: 'Reference pressurized-water reactor',
-    description: 'Validated two- through six-loop PWR training model with coupled primary, secondary, safety, containment, and electrical systems.',
+    description: 'Simplified two- through six-loop PWR training model with coupled primary, secondary, safety, containment, and electrical systems. Regression-tested model behavior is not qualification as a plant simulator.',
     parameters: z.toJSONSchema(pwrReferenceParametersSchema),
   }],
   operatingPoints: [{

@@ -843,7 +843,7 @@ export const createProviderRouter = (
 
   const models = async (): Promise<string[]> => {
     const results = await Promise.allSettled(
-      order.map(async name => {
+      order.filter(isEnabled).map(async name => {
         const timeout = new Promise<never>((_, reject) =>
           setTimeout(() => reject(new Error('models timeout')), 3000))
         const list = await Promise.race([providers[name]!.models(), timeout])

@@ -328,6 +328,10 @@ export const renderAgentInspector = (container: HTMLElement, agentName: string):
         },
       )
       container.appendChild(promptContainer)
+      const applyNotice = document.createElement('p')
+      applyNotice.className = 'text-xs text-text-muted mb-3'
+      applyNotice.textContent = 'Configuration edits apply when the next turn begins.'
+      container.appendChild(applyNotice)
 
       // Context & Prompts — per-agent toggles for what gets injected into the LLM
       renderPromptToggles(container, {

@@ -1,3 +1,4 @@
+import { unrestrictedQueryReadPolicy } from '../src/simulation/query-read-policy.ts'
 import { describe, expect, test } from 'bun:test'
 import type {
   ActorId,
@@ -61,7 +62,7 @@ const scenarioWithPlants = (plants: ReadonlyArray<OperationalObject> = [basePlan
   runtimeConfig: {},
 })
 
-const query = (capabilityId: string, input: unknown = {}): PackRuntimeQuery => ({
+const query = (capabilityId: string, input: unknown = {}): PackRuntimeQuery => ({ readPolicy: unrestrictedQueryReadPolicy,
   capabilityId,
   input,
 })

@@ -72,6 +72,28 @@ const startHost = (uiDistPath?: string, modules: ModuleGateway = gateway()) => {
 }
 
 describe('Leitbild server', () => {
+  test('retired private setup and internal invocation routes never reach Modules', async () => {
+    let calls = 0
+    const { host, baseUrl } = startHost(undefined, { ...gateway(), invoke: async () => { calls++; return { ok: true, value: { result: null } } } })
+    const workspace = await host.create({ name: null })
+    for (const path of [
+      '/internal',
+      `/internal/workspaces/${workspace.id}/capabilities/world.context.read/invoke`,
+      `/api/workspaces/${workspace.id}/perspective-assistant`,
+      `/api/workspaces/${workspace.id}/perspective-view`,
+    ]) {
+      for (const method of ['GET', 'POST']) {
+        const response = await fetch(`${baseUrl}${path}`, { method, ...(method === 'POST' ? { body: '{}' } : {}) })
+        expect(response.status).toBe(404)
+      }
+    }
+    const forged = { input: {}, actor: { kind: 'system', id: 'world' }, perspectiveOrigin: { kind: 'owner', moduleId: 'world' } }
+    expect((await fetch(`${baseUrl}/api/workspaces/${workspace.id}/capabilities/world.context.read/invoke`, {
+      method: 'POST', body: JSON.stringify(forged),
+    })).status).toBe(400)
+    expect(calls).toBe(0)
+  })
+
   test('revalidates capability catalogs with an exact content ETag', async () => {
     const {host,baseUrl}=startHost()
     const workspace=await host.create({name:null})

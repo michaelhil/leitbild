@@ -13,6 +13,23 @@ const mkEvent = (session: string, kind: string, i: number): LogEvent => ({
 })
 
 describe('createJsonlFileSink — round-trip', () => {
+  test('a physical file has one owner and Workspace files retain the aggregate study ceiling', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'log-owner-'))
+    const a = await createJsonlFileSink({ dir: join(dir, 'one'), budgetRoot: dir, sessionId: 'study', maxDirectoryBytes: 300, rotateAtBytes: 150 })
+    const b = await createJsonlFileSink({ dir: join(dir, 'two'), budgetRoot: dir, sessionId: 'study', maxDirectoryBytes: 300, rotateAtBytes: 150 })
+    try {
+      await expect(createJsonlFileSink({ dir: join(dir, 'one'), budgetRoot: dir, sessionId: 'study', maxDirectoryBytes: 300, rotateAtBytes: 150 })).rejects.toThrow('active owner')
+      for (let i = 0; i < 4; i++) {
+        a.write({ ts: i, kind: 'test', session: 'study', payload: { text: 'a'.repeat(30) } })
+        b.write({ ts: i, kind: 'test', session: 'study', payload: { text: 'b'.repeat(30) } })
+        await Promise.all([a.flush(), b.flush()])
+      }
+      expect(a.stats().currentFile).not.toBe(b.stats().currentFile)
+      expect(a.stats().currentFileBytes).toBeLessThanOrEqual(150)
+      expect(b.stats().currentFileBytes).toBeLessThanOrEqual(150)
+      expect(a.stats().droppedCount + b.stats().droppedCount).toBeGreaterThan(0)
+    } finally { await a.close(); await b.close(); await rm(dir, { recursive: true, force: true }) }
+  })
   test('aggregate directory ceiling covers older sessions without deleting them', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'log-directory-budget-'))
     const first = await createJsonlFileSink({ dir, sessionId: 'old', maxDirectoryBytes: 400, rotateAtBytes: 400 })

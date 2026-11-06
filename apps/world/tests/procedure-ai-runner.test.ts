@@ -82,13 +82,13 @@ const setup = async (sourceCount = 1, scenarioId = 'test-plant', secondarySource
   const dataDir = await mkdtemp(join(tmpdir(), 'world-procedure-ai-runner-'))
   directories.push(dataDir)
   const knowledge = createKnowledge({ revision, documents: [{ path: 'procedures/E-0.md', content: e0 }, { path: 'procedures/ES-0.1.md', content: secondarySource }, { path: 'basis.md', content: '# Basis\n## Runner fixture\nRepresentative positive pressure diagnostic for framework tests, not an E-0 operating criterion.' }] })
+  const procedureSourceService = createProcedureSourceService({
+    sources: ['runner-test', 'runner-other'].slice(0, sourceCount).map(sourceId => ({ sourceId, label: 'Runner fixture', repository: 'test', ref: 'publication', procedurePath: 'procedures' })),
+    retentionDirectory: join(dataDir, 'procedure-publications'), loadKnowledge: async () => knowledge,
+  })
   const registry = createWorldWorkspaceRuntimeRegistry({
     dataDir, moduleState: createWorldModuleState({ dataDir }), scenarioRuntimeResolver: createTestScenarioRuntimeResolver(), ...testScenarioAuthoring(),
-    runtimeAdapters: createTestPackRuntimeAdapters(),
-    procedureSourceService: createProcedureSourceService({
-      sources: ['runner-test', 'runner-other'].slice(0, sourceCount).map(sourceId => ({ sourceId, label: 'Runner fixture', repository: 'test', ref: 'publication', procedurePath: 'procedures' })),
-      retentionDirectory: join(dataDir, 'procedure-publications'), loadKnowledge: async () => knowledge,
-    }),
+    runtimeAdapters: createTestPackRuntimeAdapters(), procedureSourceService,
   })
   registries.push(registry)
   const workspaceId = newWorkspaceId()
@@ -97,7 +97,7 @@ const setup = async (sourceCount = 1, scenarioId = 'test-plant', secondarySource
   const run = await registry.getLoaded(workspaceId)!.simulationRuns.create({ scenarioId })
   await run.setClock({ paused: true })
   const plant = run.snapshot().objects.find(object => object.packId === 'process-plant')!
-  return { registry, workspaceId, run, plantId: plant.id }
+  return { registry, workspaceId, run, plantId: plant.id, procedureSourceService }
 }
 
 const access = (workspaceId: WorkspaceId, actor: { kind: 'ai' | 'human'; id?: string; displayName?: string }) =>
@@ -114,6 +114,32 @@ const invoker = (registry: WorldWorkspaceRuntimeRegistry, workspaceId: Workspace
   }
 
 describe('the AI procedure runner through the World Module API', () => {
+  test('the advisory query reads an exact current Run and makes no change for a step without paired criteria', async () => {
+    const { registry, workspaceId, run, plantId, procedureSourceService } = await setup()
+    const invoke = invoker(registry, workspaceId, run.id)
+    const operator = access(workspaceId, { kind: 'human', id: 'operator' })
+    const started = await invoke('world.procedure.run.start', { procedureId: 'E-0', scope: { plantId } }, operator)
+    expect(started.status).toBe(200)
+    const before = run.snapshot()
+    const current = before.procedures!.runs[0]!
+    const input = {
+      runId: current.runId, stepId: current.currentStepId!, sourceId: current.sourceId,
+      sourceRevision: current.sourceRevision, sourcePath: current.sourcePath,
+    }
+    const loadSource = spyOn(procedureSourceService, 'readDocument')
+    try {
+      const response = await invoke('world.procedure.run.checks.read', input, operator)
+      expect(response.status).toBe(200)
+      expect(response.body.result).toEqual({ ...input, plantId, sequence: before.seq, simulationTime: before.clock!.currentTime, checks: [] })
+      expect(loadSource).not.toHaveBeenCalled()
+    } finally { loadSource.mockRestore() }
+    const superseded = await invoke('world.procedure.run.checks.read', { ...input, stepId: 'verify-turbine-trip' }, operator)
+    expect(superseded.status).toBe(409)
+    expect(superseded.body.error.code).toBe('procedure_checks_superseded')
+    expect(run.snapshot()).toMatchObject({ seq: before.seq, clock: { currentTime: before.clock!.currentTime },
+      procedures: before.procedures, objects: before.objects })
+  })
+
   test('state-only transition acknowledgement leaves admission, canonical proof and command payload unchanged without post-commit Pack reads', async () => {
     const { registry, workspaceId, run, plantId } = await setup(), invoke = invoker(registry, workspaceId, run.id)
     const ai = access(workspaceId, { kind: 'ai', id: 'assistant' })

@@ -48,6 +48,7 @@ const buildWorkspaceRuntime = async (
   const system = {
     providersStorePath: storePath,
     providerKeys,
+    isProviderDiscoveryEnabled: (name: string) => providerKeys.isEnabled(name),
     providerConfig: { baseUrls: {} as Record<string, string | undefined> },
     gateways: {},
     llm: { getOrder: () => [] },
@@ -160,4 +161,17 @@ describe('/providers/fallback', () => {
     expect(stored.providers.openai.apiKey).toBe('stored-key')
     expect(stored.defaults.modelFallback).toEqual(['openai:gpt-5.4-mini'])
   })
+})
+
+
+test('disabling a configured provider does not trigger an implicit model-list request; re-enabling does', async () => {
+  const { system } = await buildWorkspaceRuntime({ openai: { apiKey: 'fixture-key', enabled: true } }, 'OPENAI_API_KEY', '')
+  let refreshed = 0
+  system.gateways.openai = { refreshModels: async () => { refreshed++ } } as never
+  const { handler, match } = findHandler('PUT', '/providers/openai')
+  const update = (enabled: boolean) => handler(new Request('http://localhost/providers/openai', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled }) }), match, { system, broadcastAllWorkspaces: () => {} } as never)
+  expect((await update(false)).status).toBe(200)
+  expect(refreshed).toBe(0)
+  expect((await update(true)).status).toBe(200)
+  expect(refreshed).toBe(1)
 })

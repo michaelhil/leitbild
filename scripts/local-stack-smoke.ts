@@ -2,7 +2,7 @@ import { workspaceResourceCatalogSchema } from '../packages/contracts/src/index.
 
 /** Deterministic integration smoke, not a numerical, maps or LLM qualification.
  * Every operation goes through the public proxy and real production services. */
-export const smokeLocalStack = async (origin: string): Promise<void> => {
+export const smokeLocalStack = async (origin: string, knowledgeRevision: string): Promise<void> => {
   const firstFrame = (path: string): Promise<any> => new Promise((resolve, reject) => {
     const socket = new WebSocket(`${origin.replace('http:', 'ws:')}${path}`)
     const timer = setTimeout(() => finish(new Error('WebSocket readiness timed out')), 5_000)
@@ -23,8 +23,8 @@ export const smokeLocalStack = async (origin: string): Promise<void> => {
     return text ? JSON.parse(text) : undefined
   }
   await request('/health')
-  const knowledge = await request('/api/knowledge/read?path=index.md')
-  if (!knowledge.content) throw new Error('Knowledge read returned no content')
+  const knowledge = await request(`/api/knowledge/read?path=index.md&revision=${encodeURIComponent(knowledgeRevision)}`)
+  if (knowledge.revision !== knowledgeRevision || !knowledge.content) throw new Error('Host knowledge does not match the prepared publication')
   const { workspace } = await request('/api/workspaces', { name: 'Local stack smoke' })
   const base = `/api/workspaces/${workspace.id}`
   const invoke = (id: string, body: unknown) => request(`${base}/capabilities/${id}/invoke`, body)
@@ -42,6 +42,17 @@ export const smokeLocalStack = async (origin: string): Promise<void> => {
     await invoke('world.simulation-run.execution.set', { resource, input: { playback: 'paused' } })
     const before = (await invoke('world.simulation-run.execution.read', { resource, input: {} })).result
     if (before.playback !== 'paused' || !Number.isFinite(Date.parse(before.currentSimulationTime))) throw new Error('Run execution unavailable')
+    const procedureCatalog = (await invoke('world.procedure.catalog.list', { resource, input: { sourceId: 'leitbild' } })).result
+    const entry = procedureCatalog.procedures.find((item: { procedureId: string }) => item.procedureId === 'E-0')
+    if (procedureCatalog.source.revision !== knowledgeRevision || entry?.sourcePath !== 'world/packs/process-plant/procedures/E-0.md') {
+      throw new Error('World procedure catalog does not match the prepared PWR publication')
+    }
+    const procedure = (await invoke('world.procedure.document.read', { resource, input: {
+      sourceId: entry.sourceId, procedureId: entry.procedureId, sourcePath: entry.sourcePath, sourceRevision: knowledgeRevision,
+    } })).result
+    if (procedure.source.revision !== knowledgeRevision || procedure.sourcePath !== entry.sourcePath || !procedure.steps.length) {
+      throw new Error('World did not return the exact prepared E-0 procedure')
+    }
     const context = (await invoke('world.simulation-run.context', { resource, input: {} })).result
     if (!context) throw new Error('Run context unavailable')
     const ready = await firstFrame(`${base}/world/ws?simulationRun=${resource.id}`)

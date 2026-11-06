@@ -99,6 +99,8 @@
     readonly onObjectSeen: (object: OperationalObject) => void
     readonly onMapReady: () => void
     readonly onMapView?: (view: MapView) => void
+    readonly onFocusResult?: (revision: number, status: 'applied' | 'superseded') => void
+    readonly onCameraGesture?: () => void
     readonly onMapError: (message: string) => void
     readonly onMapDiagnostic?: (snapshot: MapRuntimeDiagnosticsSnapshot) => void
     readonly simulationRunId?: string | null
@@ -117,6 +119,7 @@
     readonly packFeatureLayers?: ReadonlyArray<MapLayerId>
     readonly packFeatureSourcePackIds?: ReadonlyArray<string>
     readonly focusRequest?: MapFocusRequest | null
+    readonly cancelFocusRevision?: number | null
     readonly packDataRevisionKey?: string
     /** A role Run's perspective epoch: a hover card of an earlier one is never left showing. */
     readonly perspectiveEpoch?: number
@@ -183,6 +186,8 @@
     onObjectSeen,
     onMapReady,
     onMapView = () => {},
+    onFocusResult = () => {},
+    onCameraGesture = () => {},
     onMapError,
     onMapDiagnostic = () => undefined,
     simulationRunId = null,
@@ -200,6 +205,7 @@
     packFeatureLayers = [],
     packFeatureSourcePackIds = [],
     focusRequest = null,
+    cancelFocusRevision = null,
     packDataRevisionKey = '',
     perspectiveEpoch = 0,
     onPackFeatureSelected = () => {},
@@ -227,6 +233,8 @@
   const packFeatureLayer = createPackFeatureLayer(selection => { clickHandled = true; featureSelection = selection }, message => onMapError(message))
   const syncPackFeatures = () => { if (runtime) packFeatureLayer.update(runtime.map, cachedPackMapFeatures, visibleFamilies()) }
   let appliedTheme: ThemeMode | null = null
+  let cameraMoveStarted: { at: number; user: boolean } | null = null
+  let pendingFocus: number | null = null
   let appliedCameraKey: string | null = null
   /** The camera still shows the Starting View: neither the operator nor a focus request has moved it. */
   let startingCamera = true
@@ -454,16 +462,35 @@
     const request = focusRequest
     const current = runtime?.map
     if (!request || !current || request.revision === appliedFocusRevision) return
+    if (request.revision === cancelFocusRevision) { appliedFocusRevision = request.revision; return }
+    if (pendingFocus !== null) onFocusResult(pendingFocus, 'superseded')
+    pendingFocus = null
+    current.stop()
+    pendingFocus = request.revision
     appliedFocusRevision = request.revision
     startingCamera = false
+    const duration = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 650
+    if (request.target.kind === 'view') {
+      const container = current.getContainer()
+      current.flyTo({ center: [...request.target.center], zoom: request.target.fitToAvailableArea ? startingZoomFor(request.target.zoom, { width: container.clientWidth, height: container.clientHeight }, cameraPadding) : request.target.zoom, bearing: request.target.bearing, padding: { ...cameraPadding }, duration })
+      return
+    }
     if (request.target.kind === 'point') {
-      current.flyTo({ center: [request.target.center[0], request.target.center[1]], zoom: Math.max(current.getZoom(), 9), duration: 650 })
+      current.flyTo({ center: [request.target.center[0], request.target.center[1]], zoom: Math.max(current.getZoom(), 9), padding: { ...cameraPadding }, duration })
       return
     }
     current.fitBounds(
       [[request.target.bounds[0][0], request.target.bounds[0][1]], [request.target.bounds[1][0], request.target.bounds[1][1]]],
-      { padding: 80, maxZoom: 10, duration: 650 },
+      { padding: { ...cameraPadding }, maxZoom: 10, duration },
     )
+  })
+
+  $effect(() => {
+    const revision = cancelFocusRevision, current = runtime?.map
+    if (revision === null || !current || pendingFocus !== revision) return
+    // Cancel only this still-owned flight at its current position. A newer human or Home move wins.
+    pendingFocus = null
+    current.stop()
   })
 
   const currentDisplayTime = (): IsoTimestamp | undefined =>
@@ -626,13 +653,16 @@
           })
         },
         onMoveStart: event => {
-          if (event.originalEvent !== undefined) startingCamera = false
+          cameraMoveStarted = { at: performance.now(), user: event.originalEvent !== undefined }
+          if (event.originalEvent !== undefined) { startingCamera = false; onCameraGesture(); if (pendingFocus !== null) { onFocusResult(pendingFocus, 'superseded'); pendingFocus = null } }
           stackChooser.hide()
           packOverlayController.setCameraGestureActive(true)
           packOverlayController.abort('map camera moved before pack map-area query completed')
           popupController.hide()
         },
         onMoveEnd: () => {
+          if (cameraMoveStarted !== null) { mapPerformanceDiagnostics.record('camera', 'moveend', performance.now() - cameraMoveStarted.at, { userGesture: cameraMoveStarted.user }); cameraMoveStarted = null }
+          if (pendingFocus !== null) { onFocusResult(pendingFocus, 'applied'); pendingFocus = null }
           if (runtime) onMapView(readMapView(runtime.map))
           packOverlayController.setCameraGestureActive(false)
           void packOverlayController.refresh()

@@ -1,3 +1,4 @@
+import { unrestrictedQueryReadPolicy } from '../src/simulation/query-read-policy.ts'
 import { expect, test } from 'bun:test'
 import { isoTimestampSchema } from '../src/core/model/index.ts'
 import { parseProcedureTagValue } from '../src/features/procedures/pack-observations.ts'
@@ -15,7 +16,7 @@ const fixture = (): ProcessPlantRuntimeInstance => {
   return { plant, runtime, ramps: createProcessPlantRampRunner({ runtime }), operations: createPlantOperations({ graph: plant.graph }), performance: createProcessPlantRuntimePerformance() }
 }
 const query = (instance: ProcessPlantRuntimeInstance, id: string, input: Record<string, unknown>): any => {
-  const result = answerProcessPlantQuery({ request: { capabilityId: id, input: { plantId: plant.id, ...input } },
+  const result = answerProcessPlantQuery({ request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId: id, input: { plantId: plant.id, ...input } },
     plants: new Map([[plant.id, instance]]), objects: new Map(), simulationTime: at })
   expect(processPlantCapabilities.find(row => row.id === id)!.output.parse(result)).toEqual(result)
   return result
@@ -124,6 +125,6 @@ test('values cannot reveal injected faults or fault truth, repair invalid refere
   for (const detail of ['compact', null, true]) expect(capability.input.safeParse({ plantId: plant.id, signals: [{ tagId: 'PT-455' }], detail }).success).toBe(false)
   expect(capability.input.safeParse({ plantId: plant.id, signals: [{ tagId: 'PT-455', path: 'pressurizer.pressureMPa' }], detail: 'values' }).success).toBe(false)
   expect(capability.output.safeParse({ plantId: plant.id, detail: 'full', signals: [] }).success).toBe(false)
-  expect(() => answerProcessPlantQuery({ request: { capabilityId: capability.id, input: { plantId: plant.id, signals: [{ tagId: 'PT-455' }], detail: 'values', evidence: true } },
+  expect(() => answerProcessPlantQuery({ request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId: capability.id, input: { plantId: plant.id, signals: [{ tagId: 'PT-455' }], detail: 'values', evidence: true } },
     plants: new Map([[plant.id, instance]]), objects: new Map() })).toThrow('needs the Run time')
 })

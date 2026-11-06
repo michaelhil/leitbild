@@ -393,5 +393,112 @@
       ],
       "zoom": 11
     }
+  },
+  "guide": {
+    "id": "guide:complex",
+    "title": "Inspect the four-unit complex",
+    "description": "Advanced systems tour and reusable library template; there are no scripted failures.",
+    "startPaused": true,
+    "steps": [
+      {
+        "id": "identities",
+        "title": "Keep the units distinct",
+        "instruction": "Open Unit 1 and locate Units 2, 3 and 4. Use their exact identities when reading or changing state; labels alone are not a cross-Run binding.",
+        "effects": [
+          {
+            "id": "unit",
+            "target": {
+              "kind": "object",
+              "objectId": "plant:halden-1"
+            },
+            "action": {
+              "kind": "reveal"
+            }
+          }
+        ],
+        "completion": {
+          "kind": "presentation",
+          "effectId": "unit"
+        }
+      },
+      {
+        "id": "shared-grid",
+        "title": "Trace the grid tie",
+        "instruction": "Open Grid operations and inspect each connection, station-service exchange and shared reserves.",
+        "effects": [
+          {
+            "id": "grid",
+            "target": {
+              "kind": "panel",
+              "panelId": "electric-grid.overview"
+            },
+            "action": {
+              "kind": "reveal"
+            }
+          }
+        ],
+        "completion": {
+          "kind": "acknowledge"
+        }
+      },
+      {
+        "id": "weather",
+        "title": "Separate weather from coupling",
+        "instruction": "Read the ground probe and the declared scenario configuration. A weather field does not imply an automatic electrical or plant fault.",
+        "effects": [
+          {
+            "id": "probe",
+            "target": {
+              "kind": "object",
+              "objectId": "weather-probe:halden-complex"
+            },
+            "action": {
+              "kind": "reveal"
+            }
+          }
+        ],
+        "completion": {
+          "kind": "acknowledge"
+        }
+      },
+      {
+        "id": "physical",
+        "title": "Inspect retained physical context",
+        "instruction": "Open Unit 1 physical context from the object. Inspect equipment ownership and its declared binding to process elements. Physical layout and process truth have different owners.",
+        "effects": [
+          {
+            "id": "layout",
+            "target": {
+              "kind": "object",
+              "objectId": "layout:halden-1"
+            },
+            "action": {
+              "kind": "reveal"
+            }
+          }
+        ],
+        "completion": {
+          "kind": "acknowledge"
+        }
+      },
+      {
+        "id": "cross-pack",
+        "title": "Change and read back on a copy",
+        "instruction": "Create a copy, verify its identity and make one supported unit change. Read the plant response and grid exchange at the same time. Report any unavailable evidence rather than assuming a cross-pack effect.",
+        "effects": [],
+        "completion": {
+          "kind": "acknowledge"
+        }
+      },
+      {
+        "id": "explore",
+        "title": "Continue exploring",
+        "instruction": "This guide is finished. The same Run remains available. Pause or stop guidance whenever you wish; those controls do not pause the shared simulation. Copy the Run before trying a different intervention. Acknowledgements record your choice to continue, not a qualification.",
+        "effects": [],
+        "completion": {
+          "kind": "acknowledge"
+        }
+      }
+    ]
   }
 }

@@ -30,34 +30,11 @@ export const handleAgentCommand = async (msg: WSInbound, ctx: CommandContext): P
       return true
     }
     case 'update_agent': {
-      const agent = system.team.getAgent(msg.name)
-      const aiAgent = agent ? asAIAgent(agent) : undefined
-      if (aiAgent) {
-        if (msg.persona) aiAgent.updatePersona(msg.persona)
-        if (msg.model) aiAgent.updateModel(msg.model)
-        if (msg.reasoningEffort !== undefined) aiAgent.updateReasoningEffort(msg.reasoningEffort ?? undefined)
-        if (msg.historyTokenBudget !== undefined) aiAgent.updateHistoryTokenBudget(msg.historyTokenBudget ?? undefined)
-        if (msg.includePrompts) aiAgent.updateIncludePrompts(msg.includePrompts)
-        if (msg.includeContext) aiAgent.updateIncludeContext(msg.includeContext)
-        if (typeof msg.includeTools === 'boolean') aiAgent.updateIncludeTools(msg.includeTools)
-        if (msg.maxToolIterations === null) aiAgent.updateMaxToolIterations(undefined)
-        else if (typeof msg.maxToolIterations === 'number') aiAgent.updateMaxToolIterations(msg.maxToolIterations)
-        if (Array.isArray(msg.tools)) {
-          const known = new Set(system.toolRegistry.list().map(t => t.name))
-          const resolved = msg.tools.filter(n => known.has(n))
-          aiAgent.updateTools?.(resolved)
-          await system.refreshAllAgentTools()
-        }
-        if (Array.isArray(msg.skills)) {
-          const missing = msg.skills.filter(name => system.skillStore.get(name) === undefined)
-          if (missing.length > 0) {
-            sendError(wsManager, ws, `Unknown Skills: ${missing.join(', ')}`)
-            return true
-          }
-          aiAgent.updateSkills([...new Set(msg.skills)])
-        }
-        system.notifyAgentSettingsChanged()
-      }
+      const agent = requireAgent(wsManager, ws, system, msg.name)
+      if (!agent) return true
+      const { type: _type, name: _name, ...changes } = msg
+      try { await system.agentConfiguration.update(agent.id, changes, { kind: 'human', displayName: 'Browser viewer' }) }
+      catch (error) { sendError(wsManager, ws, error instanceof Error ? error.message : String(error)) }
       return true
     }
     case 'cancel_generation': {

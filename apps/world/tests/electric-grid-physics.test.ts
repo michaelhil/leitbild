@@ -1,3 +1,4 @@
+import { unrestrictedQueryReadPolicy } from '../src/simulation/query-read-policy.ts'
 import { describe, expect, test } from 'bun:test'
 import { norwayRuntimeTestOperatingPointRef } from './fixtures/grid-operating-point.ts'
 import type { ActorId, CommandId, IsoTimestamp, ObjectId, SimulationRunId } from '../src/core/model/index.ts'
@@ -298,7 +299,7 @@ describe('electric grid physics invariants', () => {
     const stageShedMw = Object.entries(stages[operated[0]!]!.shedFractionByLoad).reduce((sum, [loadId, fraction]) => sum + fraction * run.grid.loads.get(loadId)!.demandMw, 0)
     // islands.list publishes each stage's latch, so an operator sees what to restore and re-arm.
     const listedStages = () => (answerElectricGridQuery({
-      request: { capabilityId: 'world.electric-grid.islands.list', input: { gridId: 'grid:test' } },
+      request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.electric-grid.islands.list', input: { gridId: 'grid:test' } },
       grids: new Map([[run.grid.definition.gridId, run.grid]]),
     }) as { readonly islands: ReadonlyArray<{ readonly id: string; readonly lfddStages: ReadonlyArray<{ readonly id: string; readonly status: string; readonly disconnectedMw: number }> }> })
       .islands.find(candidate => candidate.id === island.id)!.lfddStages
@@ -514,7 +515,7 @@ describe('synchro-check on closing a loop', () => {
     }
     const dcDegrees = (): number => Math.abs(run.grid.busStates.get('bus:a')!.angleRad - run.grid.busStates.get('bus:b')!.angleRad) * 180 / Math.PI
     const evaluate = (actions: ReadonlyArray<Readonly<Record<string, unknown>>>) => answerElectricGridQuery({
-      request: { capabilityId: 'world.electric-grid.remedial-actions.evaluate', input: { gridId: 'grid:test', contingencies: 'all-branches', actions } },
+      request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.electric-grid.remedial-actions.evaluate', input: { gridId: 'grid:test', contingencies: 'all-branches', actions } },
       grids: new Map([[run.grid.definition.gridId, run.grid]]),
     }) as Promise<{ readonly after: { readonly baseCase: { readonly overloadedCount: number } } }>
     const converged = (): boolean => run.grid.acOutcomeByIsland.get(run.grid.islandPlan!.islands[0]!.id)!.converged

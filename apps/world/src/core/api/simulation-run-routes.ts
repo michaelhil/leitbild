@@ -1,3 +1,4 @@
+import { isQueryReadRefusal } from '../../simulation/query-read-policy.ts'
 import { sourceDocumentPathSchema,sourceRevisionSchema,type AccessContext } from '@leitbild/contracts'
 import { z } from 'zod'
 import { actorIdSchema,clientIdSchema,interactionEndpointSchema,interactionSignalSchema,isSideView,nowIso,objectIdSchema,procedureIdSchema,procedureSourceIdSchema,runRolesOf,simulationRunIdSchema,type CompiledScenario,type InteractionSignal,type RoleSees,type SimulationRunId } from '../model/index.ts'
@@ -12,6 +13,9 @@ import { runCopyInputSchema } from '../simulation-runs/execution.ts'
 import { recordingSeriesQuerySchema } from '../model/recording.ts'
 import { displayRunOf, handleDashboard, handleDisplayRoute, handleLayoutDisplay } from './display-capabilities.ts'
 import { displayRuntimeIdentity } from './display-provenance.ts'
+import { guideInputs, presentationInputs, runGuideOperation, runPresentationOperation } from '../guides/operations.ts'
+import { guideReadingSchema, presentationOutputs } from '../guides/wire.ts'
+import { isGuidanceFailure } from '../guides/errors.ts'
 
 const defaultOperatorActorId = actorIdSchema.parse('actor:operator')
 
@@ -40,6 +44,7 @@ const isOpenRunRoute = (method: string, suffix: string): boolean =>
 const isSideViewRunRoute = (method: string, suffix: string): boolean =>
   (method === 'GET' && (suffix === '' || suffix === '/snapshot' || suffix === '/presence'))
   || (method === 'POST' && /^\/capabilities\/[^/]+\/invoke$/.test(suffix))
+  || (method === 'POST' && /^\/(guide|presentation)\/[a-z]+$/.test(suffix))
 
 interface RouteView {
   readonly perspective: RunPerspective
@@ -188,6 +193,27 @@ const handleSimulationRunApiInner = async (
   if (!url.pathname.startsWith(`${apiPrefix}/`)) return null
   const pathname = url.pathname.slice(apiPrefix.length)
   const { perspective, sees } = await runRouteView(req, url, pathname, config.registry)
+
+  const guidanceMatch = pathname.match(/^\/simulation-runs\/([^/]+)\/(guide|presentation)\/([a-z]+)$/)
+  if (guidanceMatch && req.method === 'POST') {
+    const runId = simulationRunIdSchema.parse(decodeURIComponent(guidanceMatch[1]!))
+    const family = guidanceMatch[2]!, operation = guidanceMatch[3]!
+    const call = { registry: config.registry, runId, actor: actorForPerspective(buildSimulationRunActorForAccess(config.accessContext), perspective) }
+    try {
+      const input = await readJson(req)
+      if (family === 'guide' && Object.hasOwn(guideInputs, operation)) return json({ result: guideReadingSchema.parse(await runGuideOperation(operation as keyof typeof guideInputs, input, call)) })
+      if (family === 'presentation' && Object.hasOwn(presentationInputs, operation)) {
+        const kind = operation as keyof typeof presentationInputs
+        return json({ result: presentationOutputs[kind].parse(await runPresentationOperation(kind, input, call)) })
+      }
+      return apiError(404, 'guidance_operation_not_found', 'This guidance operation is not supported')
+    } catch (error) {
+      if (isGuidanceFailure(error)) return apiError(error.status, error.code, error.message)
+      if (error instanceof z.ZodError) return apiError(400, 'invalid_guidance_input', zodReason(error))
+      if (isRoleGateRefusal(error)) return apiError(error.status, error.code, error.message, error.details)
+      throw error
+    }
+  }
 
   const scenarioMatch = pathname.match(/^\/scenarios\/([^/]+)$/)
   if (scenarioMatch && req.method === 'GET') {
@@ -371,6 +397,8 @@ const handleSimulationRunApiInner = async (
       return json(outcome)
     } catch (error) {
       const reason = error instanceof z.ZodError ? zodReason(error) : error instanceof Error ? error.message : String(error)
+      if (isQueryReadRefusal(error)) return apiError(error.status, error.code, reason)
+      if (error instanceof Error && 'code' in error && error.code === 'agent_access_restricted') return apiError(403, 'agent_access_restricted', reason)
       if (isRoleGateRefusal(error)) return apiError(error.status, error.code, reason, error.details)
       if (error instanceof CommandIdempotencyConflictError) {
         return apiError(error.status, error.code, reason)

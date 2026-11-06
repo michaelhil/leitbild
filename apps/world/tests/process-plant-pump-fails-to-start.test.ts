@@ -1,3 +1,4 @@
+import { unrestrictedQueryReadPolicy } from '../src/simulation/query-read-policy.ts'
 import { newWorkspaceId } from '@leitbild/contracts'
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
@@ -80,7 +81,7 @@ describe('the instructor fails a motor-driven AFW pump to start', () => {
     expect(plantDeclaration(PLANT_ID as ObjectId, plant, null).observables.some(observable => observable.ref.endsWith('.startFailureActive'))).toBe(false)
     const runtime = createProcessPlantRuntime({ system: plant })
     const system: ProcessPlantRuntimeInstance = { plant, runtime, ramps: createProcessPlantRampRunner({ runtime }), performance: createProcessPlantRuntimePerformance() }
-    const ask = (capabilityId: string, input: unknown): unknown => answerProcessPlantQuery({ request: { capabilityId, input }, plants: new Map([[PLANT_ID, system]]), objects: new Map(), simulationTime: '2026-10-23T10:00:00.000Z' as IsoTimestamp, recordedSeriesIds: new Set() })
+    const ask = (capabilityId: string, input: unknown): unknown => answerProcessPlantQuery({ request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId, input }, plants: new Map([[PLANT_ID, system]]), objects: new Map(), simulationTime: '2026-10-23T10:00:00.000Z' as IsoTimestamp, recordedSeriesIds: new Set() })
     const found = (text: string) => (ask('world.process-plant.signals.search', { plantId: PLANT_ID, limit: 500, text }) as { readonly signals: ReadonlyArray<{ readonly signal: { readonly path: string } }> }).signals.map(entry => entry.signal.path)
     for (const text of ['fails to start', 'start', 'MD AFW A', 'auxiliary feedwater pump']) expect(found(text).filter(path => path.endsWith('.startFailureActive'))).toEqual([])
     expect(() => ask('world.process-plant.signals.read', { plantId: PLANT_ID, signals: [{ path: 'auxFeedwaterPumpMotor.startFailureActive' }] })).toThrow('is a fault the scenario injects')

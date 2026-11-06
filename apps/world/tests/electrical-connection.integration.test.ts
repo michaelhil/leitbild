@@ -1,3 +1,4 @@
+import { unrestrictedQueryReadPolicy } from '../src/simulation/query-read-policy.ts'
 import { describe,expect,test } from 'bun:test'
 import {
   electricalPortFromObject,
@@ -55,8 +56,9 @@ const connectScenario = (scenario: CompiledScenario) => {
 describe('electrical Pack connection', () => {
   test('Weather composes without modifying Plant/Grid definitions or their electrical connections', async () => {
     const source = testScenarioDefinitions.find(candidate => candidate.id === 'halden-power-complex')!
+    const { guide: _guide, ...domainSource } = source // The connection comparison intentionally removes Weather and its tutorial targets.
     const withoutWeather = {
-      ...source,
+      ...domainSource,
       packs: source.packs.filter(pack => pack.id !== 'weather'),
     }
     const standalone = await compileScenarioDefinition(withoutWeather, packs, { routing: createDirectRoutingAdapter() })
@@ -67,7 +69,7 @@ describe('electrical Pack connection', () => {
     expect(combined.view.rail.sections.map(section => section.categoryId)).toContain('weather')
     const connection = await connectScenario(standalone)
     try {
-      const result = await connection.invokeQuery({ capabilityId: 'world.process-plant.plants.list', input: {} }) as { plants: unknown[] }
+      const result = await connection.invokeQuery({ readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.process-plant.plants.list', input: {} }) as { plants: unknown[] }
       expect(result.plants).toHaveLength(4)
     } finally { await connection.close() }
   })
@@ -143,7 +145,7 @@ describe('electrical Pack connection', () => {
       const gridBefore = before.objects.find(object => object.id === 'grid:halden-four-unit' as ObjectId)
       const plantBefore = before.objects.find(object => object.id === 'plant:halden-1' as ObjectId)
       if (!gridBefore || !plantBefore) throw new Error('connected runtime snapshot is incomplete')
-      const weather = weatherSampleSchema.parse(await connection.invokeQuery({
+      const weather = weatherSampleSchema.parse(await connection.invokeQuery({ readPolicy: unrestrictedQueryReadPolicy,
         capabilityId: 'world.weather.sample-at-point', input: { point: plantBefore.spatial.position!.point },
       }))
       expect(weather.activeInfluenceIds).toContain('weather:halden-complex')
@@ -155,14 +157,14 @@ describe('electrical Pack connection', () => {
       expect(plantPortBefore?.state?.activePowerMw).toBeGreaterThan(800)
       expect(gridPortBefore?.state?.activePowerMw).toBeLessThan(-800)
 
-      const beforeQuery = await connection.invokeQuery({
+      const beforeQuery = await connection.invokeQuery({ readPolicy: unrestrictedQueryReadPolicy,
         capabilityId: 'world.electric-grid.connection-points.list',
         input: { gridId: 'grid:halden-four-unit' },
       })
       const beforePoints = (beforeQuery as { connectionPoints: ReadonlyArray<{ connected: boolean; systemActivePowerMw: number }> }).connectionPoints
       expect(beforePoints).toHaveLength(4)
       expect(beforePoints.every(point => point.connected && point.systemActivePowerMw > 1000)).toBe(true)
-      const summaryBefore = await connection.invokeQuery({ capabilityId: 'world.electric-grid.grid.summary', input: { gridId: 'grid:halden-four-unit' } })
+      const summaryBefore = await connection.invokeQuery({ readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.electric-grid.grid.summary', input: { gridId: 'grid:halden-four-unit' } })
       const projectionBefore = (summaryBefore as { projection: { activeAlarmCount: number; frequencyHz: number | null; frequencyBasis: string; highestBranchLoadingPercent: number; totalGenerationMw: number } }).projection
       // The four units' surplus over the island's demand is exported over the real 420 kV ties to the
       // Nordic synchronous equivalent, so the island holds the Nordic normal band (±0.1 Hz).
@@ -186,13 +188,13 @@ describe('electrical Pack connection', () => {
       const plantAfter = after.objects.find(object => object.id === 'plant:halden-1' as ObjectId)
       if (!plantAfter) throw new Error('tripped Plant disappeared')
       expect(electricalPortFromObject(plantAfter, 'grid-420kv')?.state?.activePowerMw).toBeLessThan(plantPortBefore!.state!.activePowerMw * 0.45)
-      const afterQuery = await connection.invokeQuery({
+      const afterQuery = await connection.invokeQuery({ readPolicy: unrestrictedQueryReadPolicy,
         capabilityId: 'world.electric-grid.connection-points.list',
         input: { gridId: 'grid:halden-four-unit' },
       })
       const afterPoints = (afterQuery as { connectionPoints: ReadonlyArray<{ system: { objectId: string }; systemActivePowerMw: number }> }).connectionPoints
       expect(afterPoints.find(point => point.system.objectId === 'plant:halden-1')?.systemActivePowerMw).toBeLessThan(beforePoints[0]!.systemActivePowerMw * 0.45)
-      const summaryAfter = await connection.invokeQuery({ capabilityId: 'world.electric-grid.grid.summary', input: { gridId: 'grid:halden-four-unit' } })
+      const summaryAfter = await connection.invokeQuery({ readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.electric-grid.grid.summary', input: { gridId: 'grid:halden-four-unit' } })
       const projectionAfter = (summaryAfter as { projection: { frequencyHz: number | null; totalGenerationMw: number } }).projection
       // The lost infeed is contained by the island's and the Nordic equivalent's inertia and FCR:
       // frequency falls but stays above the 49.0 Hz reference-incident minimum.
@@ -279,7 +281,7 @@ describe('electrical Pack connection', () => {
     if (!scenario) throw new Error('missing Halden four-unit scenario')
     const connection = await connectScenario(scenario)
     try {
-      const before = await connection.invokeQuery({
+      const before = await connection.invokeQuery({ readPolicy: unrestrictedQueryReadPolicy,
         capabilityId: 'world.electric-grid.connection-points.list',
         input: { gridId: 'grid:halden-four-unit' },
       })
@@ -298,14 +300,14 @@ describe('electrical Pack connection', () => {
         objectId: 'plant:halden-1' as ObjectId,
       }])
 
-      const plants = await connection.invokeQuery({
+      const plants = await connection.invokeQuery({ readPolicy: unrestrictedQueryReadPolicy,
         capabilityId: 'world.process-plant.plants.list',
         input: {},
       })
       expect((plants as { plants: ReadonlyArray<{ id: string }> }).plants.map(plant => plant.id))
         .toEqual(['plant:halden-2', 'plant:halden-3', 'plant:halden-4'])
 
-      const after = await connection.invokeQuery({
+      const after = await connection.invokeQuery({ readPolicy: unrestrictedQueryReadPolicy,
         capabilityId: 'world.electric-grid.connection-points.list',
         input: { gridId: 'grid:halden-four-unit' },
       })
@@ -318,7 +320,7 @@ describe('electrical Pack connection', () => {
       if (!grid) throw new Error('Grid disappeared after connected Plant deletion')
       expect(electricalPortFromObject(grid, 'unit-1-420kv')?.state).toMatchObject({ connected: false, activePowerMw: 0 })
 
-      const switchyard = await connection.invokeQuery({
+      const switchyard = await connection.invokeQuery({ readPolicy: unrestrictedQueryReadPolicy,
         capabilityId: 'world.electric-grid.asset.get',
         input: { gridId: 'grid:halden-four-unit', assetId: 'bus:curated-halden-pwr-switchyard@420' },
       })

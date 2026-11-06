@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { agentRestrictionsAreEmpty, agentRestrictionsInRoleRunMessage, agentRestrictionsSchema, electricalConnectionSpecSchema, idSchema, objectContextSchema, objectIdSchema, roleDeclarationIssues, scenarioRecordingSelectionSchema, scenarioRolePresetSchema, scenarioRoleSchema, scenarioSideSchema } from '../model/index.ts'
 import { issueParams, scenarioTimelineSchema } from '../model/scenario.ts'
+import { guideDefinitionSchema } from '../guides/model.ts'
 
 const lonLatSchema = z.tuple([
   z.number().finite().min(-180).max(180),
@@ -62,6 +63,7 @@ export const scenarioDefinitionSchema = z.object({
   view: scenarioViewSchema,
   connections: z.array(electricalConnectionSpecSchema).default([]),
   timeline: scenarioTimelineSchema.optional(),
+  guide: guideDefinitionSchema.optional(),
 }).strict().superRefine((source, ctx) => {
   const checkIds = (values: ReadonlyArray<string>, path: Array<string | number>) => {
     const seen = new Set<string>()

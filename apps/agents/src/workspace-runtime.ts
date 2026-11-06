@@ -1,3 +1,6 @@
+import { readPromptEvidence } from './agents/prompt-evidence.ts'
+import { createAgentConfiguration, createConfigurationReceipts, type AgentConfiguration } from './agents/configuration.ts'
+import { createSkillAuthoring, type SkillAuthoring } from './skills/authoring.ts'
 // ============================================================================
 // Leitbild Agents workspace runtime factory.
 //
@@ -105,6 +108,7 @@ import {
 } from './logging/event-mapping.ts'
 
 export interface AgentsWorkspaceRuntime {
+  readonly readPromptEvidence: (roomId: string, input: unknown) => Promise<import('@leitbild/contracts').PresentationPromptEvidence>
   readonly comparisons: import('./agents/comparisons.ts').Comparisons
   readonly executionStore: ExecutionStore
   readonly setOnMessagesRemoved: (cb: NonNullable<RoomDirectoryCallbacks['onMessagesRemoved']>) => void
@@ -143,6 +147,7 @@ export interface AgentsWorkspaceRuntime {
   // Refresh the cached available-models snapshot used by per-call effective-
   // model resolution. Called at boot and after any provider config change so
   // agents picking up a fallback get the latest list (no boot-time freeze).
+  readonly isProviderDiscoveryEnabled: ProviderSetupResult['isDiscoveryEnabled']
   readonly refreshAvailableModels: () => Promise<void>
   // Per-Workspace ring buffer of recent agent evals — fuel for
   // /api/diagnostics/evals/*. Subscribes via addEvalEventListener so
@@ -155,13 +160,14 @@ export interface AgentsWorkspaceRuntime {
   readonly refreshAllAgentTools: () => Promise<void>
   readonly skillStore: SkillStore
   readonly skillsDir: string
+  readonly skillAuthoring: SkillAuthoring
+  readonly agentConfiguration: AgentConfiguration
   readonly scriptStore: ScriptStore
   readonly scriptsDir: string
   readonly scriptRunner: ScriptRunner
   readonly setOnScriptEvent: (cb: ScriptEventEmitter) => void
   // Multi-subscriber observer slot (lateBinding.add). Returns an unsubscribe.
   readonly addScriptEventListener: (cb: ScriptEventEmitter) => () => void
-  readonly knowledgeDir: string
   readonly providersStorePath: string
   // Trigger scheduler — REST handlers call invalidate() after mutating an
   // agent's trigger list so the cached "any triggers exist" flag stays
@@ -264,6 +270,7 @@ export interface LoggingHandle {
 export interface CreateAgentsWorkspaceRuntimeOptions {
   /** Workspace registry supplies a durable path. Ephemeral standalone/test runtimes use memory. */
   readonly executionsFile?: string
+  readonly persistConfiguration?: () => Promise<void>
   /** Registry-owned admissions (including autonomous tools) must drain on removal. */
   readonly runWorkspaceOperation?: <T>(work: () => Promise<T>) => Promise<T>
   // Pre-built deployment runtime. When passed, createAgentsWorkspaceRuntime skips internal
@@ -495,6 +502,7 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
           vectorStore,
           getProviders: () => buildEmbeddingProvidersFromKeys(providerKeys),
           getRoomName: (roomId) => rooms.getRoom(roomId)?.profile.name,
+          mayIndexRoom: roomId => rooms.getRoom(roomId) !== undefined,
         })
       : undefined
 
@@ -715,6 +723,7 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
     const scriptsDir = sharedPaths.scripts()
     const skillStore = deployment.sharedSkillStore
     const scriptStore = deployment.sharedScriptStore
+    const skillAuthoring = createSkillAuthoring({ store: skillStore, root: skillsDir, registry: deployment.sharedToolRegistry, refresh: () => refreshAllAgentTools() })
 
     // Agent Skill Selection is exact. Room Pack activation is an independent
     // availability gate for Pack-owned skills, just as it is for Pack tools.
@@ -741,10 +750,12 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
     const getActiveSkillsDeclarationsForRoom = (skillNames: ReadonlyArray<string>, roomId: string): ReadonlyArray<{
       readonly name: string
       readonly declaredTools: ReadonlyArray<string>
+      readonly unavailable?: string
     }> => {
-      return selectedSkillsForRoom(skillNames, roomId)
-        .filter(s => s.allowedToolNames.length > 0)
-        .map(s => ({ name: s.name, declaredTools: s.allowedToolNames }))
+      return [
+        ...selectedSkillsForRoom(skillNames, roomId).map(s => ({ name: s.name, declaredTools: s.allowedToolNames })),
+        ...skillNames.filter(name => !skillStore.get(name)).map(name => ({ name, declaredTools: [], unavailable: `Selected Skill "${name}" is unavailable or retired; edit the Agent's Skill selection.` })),
+      ]
     }
 
     const refreshAllAgentTools = async (): Promise<void> => {
@@ -757,8 +768,9 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
           {
             id: ai.id,
             name: ai.name,
-            currentLLMSettings: () => ai.getConfig(),
+            currentLLMSettings: () => ai.getEffectiveConfig?.() ?? ai.getConfig(),
             focusedSubjects: roomId => ai.getFocusedSubjects(roomId),
+            presentationRecipient: (roomId, turnId) => ai.getPresentationRecipient?.(roomId, turnId),
           },
           llm,
           // Pack-aware filter must survive a hot reload — without re-passing
@@ -928,23 +940,24 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
     // the logging system cares about. Each native-callback signature is
     // translated into a unified LogEvent envelope via src/logging/event-mapping.
     // Returns an aggregate unsubscribe.
+    const loggingWorkspaceId = options.workspaceId ?? options.workspaceLabel ?? `ephemeral-${crypto.randomUUID()}`
     const addEventObserver = (
       observer: (event: LogEvent) => void,
       sessionIdRef: { readonly current: string },
     ): (() => void) => {
       const sid = () => sessionIdRef.current
       const safe = (makeEvent: () => LogEvent) => {
-        try { observer(makeEvent()) } catch { /* observer errors already caught in proxy */ }
+        try { observer({ ...makeEvent(), workspaceId: loggingWorkspaceId }) } catch { /* observer errors already caught in proxy */ }
       }
       const unsubs: Array<() => void> = [
-        messagePosted.add((roomId, message) => safe(() => mkMessagePosted(sid(), roomId, message))),
+        messagePosted.add((roomId, message) => safe(() => mkMessagePosted(sid(), roomId, message, team.getAgent(message.senderId)?.kind ?? (message.senderId === 'system' ? 'system' : 'unknown')))),
         deliveryModeChanged.add((roomId, mode) => safe(() => mkDeliveryModeChanged(sid(), roomId, mode))),
         modeAutoSwitched.add((roomId, toMode, reason) => safe(() => mkModeAutoSwitched(sid(), roomId, toMode, reason))),
         roomCreated.add((profile) => safe(() => mkRoomCreated(sid(), profile))),
         roomDeleted.add((roomId, roomName) => safe(() => mkRoomDeleted(sid(), roomId, roomName))),
         membershipChanged.add((roomId, roomName, agentId, agentName, action) =>
           safe(() => mkMembershipChanged(sid(), roomId, roomName, agentId, agentName, action))),
-        evalEvent.add((scope, event) => safe(() => mkEvalEvent(sid(), scope.agentName, event))),
+        evalEvent.add((scope, event) => safe(() => mkEvalEvent(sid(), scope, event))),
         providerBound.add((agentId, model, oldProvider, newProvider) =>
           safe(() => mkProviderBound(sid(), agentId, model, oldProvider, newProvider))),
         providerAllFailed.add((agentId, model, attempts, summary) =>
@@ -988,7 +1001,7 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
 
         // Tear down current sink (if any). session.end bracket before flush.
         if (loggingState.sink) {
-          try { loggingState.sink.write(mkSessionEnd(loggingState.config.sessionId, 'reconfigure')) } catch { /* best-effort */ }
+          try { loggingState.sink.write({ ...mkSessionEnd(loggingState.config.sessionId, 'reconfigure'), workspaceId: loggingWorkspaceId }) } catch { /* best-effort */ }
           try { await loggingState.sink.close() } catch { /* sink already errored */ }
           loggingState.sink = null
         }
@@ -1006,12 +1019,12 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
         // B1: awaited so the sink's seedBytes() completes before the first
         // write — without it, the rotation check skipped on a pre-existing
         // file and the log grew past the configured cap.
-        const sink = await createJsonlFileSink({ dir: next.dir, sessionId: next.sessionId })
+        const sink = await createJsonlFileSink({ dir: join(next.dir, 'workspaces', encodeURIComponent(loggingWorkspaceId).replaceAll('.', '%2E')), budgetRoot: next.dir, workspaceId: loggingWorkspaceId, sessionId: next.sessionId })
         const filtered = (event: LogEvent) => {
           if (matchesKindFilter(event.kind, next.kinds)) sink.write(event)
         }
         loggingState.unsub = addEventObserver(filtered, loggingState.sessionRef)
-        sink.write(mkSessionStart(next.sessionId, { dir: next.dir, kinds: next.kinds }))
+        sink.write({ ...mkSessionStart(next.sessionId, { dir: next.dir, kinds: next.kinds }), workspaceId: loggingWorkspaceId })
         loggingState.sink = sink
       },
     }
@@ -1031,20 +1044,33 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
       })
     }
 
+    const configurationReceipts = createConfigurationReceipts(options.executionsFile === undefined ? undefined : join(dirname(options.executionsFile), 'configuration'), executionGrowth)
+    const agentConfiguration = createAgentConfiguration({ team, tools: toolRegistry, skills: skillStore, refresh: refreshAllAgentTools,
+      persist: async () => {
+        if (options.persistConfiguration) return options.persistConfiguration()
+        if (options.executionsFile !== undefined) throw new Error('Durable configuration persistence is not wired')
+        // Standalone/test runtimes intentionally retain only memory.
+      },
+      receipts: configurationReceipts, changed: () => agentSettingsChanged.proxy(), durable: options.executionsFile !== undefined })
+
     const system: AgentsWorkspaceRuntime = {
       rooms, createRoom, settings, bookmarks, team, routeMessage, executionStore, comparisons,
+      readPromptEvidence: (roomId, input) => {
+        if (options.workspaceId === undefined) throw Object.assign(new Error('Prompt evidence requires a Workspace identity'), { code: 'workspace_required' })
+        return readPromptEvidence({ workspaceId: options.workspaceId, rooms, executionStore, ...(options.workspaceHostUrl === undefined ? {} : { hostBaseUrl: options.workspaceHostUrl }) }, roomId, input)
+      },
       llm, llmService, ollama, providerConfig, providerKeys, gateways, monitors,
       providerPolicy: deployment.providerPolicy,
       refreshAvailableModels,
+      isProviderDiscoveryEnabled: providerSetup.isDiscoveryEnabled,
       captureRegistry,
       packCatalog: deployment.packCatalog,
       evalBuffer,
-      toolRegistry, refreshAllAgentTools, skillStore, skillsDir,
+      toolRegistry, refreshAllAgentTools, skillStore, skillsDir, skillAuthoring, agentConfiguration,
       scriptStore, scriptsDir,
       scriptRunner,
       setOnScriptEvent: scriptEvent.set,
       addScriptEventListener: scriptEvent.add,
-      knowledgeDir: sharedPaths.knowledge(),
       providersStorePath: sharedPaths.providers(),
       triggerScheduler,
       ollamaUrls,

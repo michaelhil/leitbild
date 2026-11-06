@@ -1,27 +1,42 @@
 [
   {
     "scenarioId": "halden-normal-operation",
-    "summary": "Four simulated nuclear units run at full power on Norway's grid as slow rain drifts over Halden; the weather does not affect them. Nothing else is scripted: add faults with Instructor actions.",
-    "tags": ["Nuclear plant + grid", "No scripted faults"]
+    "summary": "Start paused with four simulated nuclear units and a calm orientation guide; inspect live displays and try the Assistant before adding faults yourself.",
+    "tags": [
+      "Plant + grid",
+      "First-use guide"
+    ]
   },
   {
     "scenarioId": "nordic-frequency-event",
     "summary": "Norway's largest hydropower station trips on a winter morning; watch inertia and the reserves stop the frequency fall and bring it back to 50 Hz.",
-    "tags": ["Power grid", "Event at 2 min"]
+    "tags": [
+      "Power grid",
+      "Event at 2 min"
+    ]
   },
   {
     "scenarioId": "supply-run",
     "summary": "Keep kitchens, shelters, a clinic and a pumping station in fictional Halden supplied with trucks of different sizes from two depots.",
-    "tags": ["Logistics", "30 min"]
+    "tags": [
+      "Logistics",
+      "30 min"
+    ]
   },
   {
     "scenarioId": "halden-rhr-cooling-chain",
     "summary": "Establish the PWR’s RHR → CCW → service-water heat path after a primary release, then inspect cooled injection and loss of cooling.",
-    "tags": ["Nuclear plant", "RHR cooling"]
+    "tags": [
+      "Nuclear plant",
+      "RHR cooling"
+    ]
   },
   {
     "scenarioId": "halden-cold-leg-recirculation",
     "summary": "Transfer the PWR’s ECCS source from RWST to the sump through cooled RHR and same-train SI piggyback paths, with actual cold-leg delivery and a continuing-duty handoff.",
-    "tags": ["Nuclear plant", "Source transfer"]
+    "tags": [
+      "Nuclear plant",
+      "Source transfer"
+    ]
   }
 ]

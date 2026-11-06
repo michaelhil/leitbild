@@ -252,7 +252,7 @@ describe('the See hook for Packs', () => {
     provenance: { source: 'simulator' },
     timestamps: { createdAt: nowIso(), updatedAt: nowIso() },
   }
-  const packWith = (id: string, present: (context: PackObjectPresentationContext) => boolean): WorldPack => ({
+  const packWith = (id: string, present: (context: PackObjectPresentationContext) => boolean): WorldPack => ({ inspectionReferences: () => [],
     descriptor: createWorldPackDescriptor({ id, version: '1.0.0', name: id, description: 'Test Pack.', contributions: ['presentation'] }),
     scenarioConfigSchema: emptyPackScenarioConfigSchema,
     presentation: {

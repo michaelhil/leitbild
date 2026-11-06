@@ -206,6 +206,8 @@ export const createServer = (config: ServerConfig) => {
         }
         wsManager.sessions.set(ws.data.sessionToken, session)
         session.lastActivity = Date.now()
+        const replaced = wsManager.wsConnections.get(ws.data.sessionToken)
+        if (replaced !== undefined && replaced !== ws) replaced.close(4003, 'View document replaced')
         wsManager.wsConnections.set(ws.data.sessionToken, ws)
         const snapshot = wsManager.buildSnapshot(ws.data.workspaceId, ws.data.sessionToken)
         if (!snapshot) {
@@ -215,6 +217,7 @@ export const createServer = (config: ServerConfig) => {
         wsManager.safeSend(ws, JSON.stringify(snapshot))
       },
       async message(ws, raw) {
+        if (wsManager.wsConnections.get(ws.data.sessionToken) !== ws) { ws.close(4003, 'View document replaced'); return }
         const session = wsManager.sessions.get(ws.data.sessionToken)
         if (!session) return
         if (session.workspaceId !== ws.data.workspaceId) {

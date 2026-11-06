@@ -1,3 +1,4 @@
+import { unrestrictedQueryReadPolicy } from '../src/simulation/query-read-policy.ts'
 import { afterEach, describe, expect, test } from 'bun:test'
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
@@ -19,7 +20,7 @@ const plants = new Map([[plant.id, { plant } as ProcessPlantRuntimeInstance]])
 const identity = { plantId: plant.id, artifact: 'authored-spec' }
 const output = processPlantCapabilities.find(item => item.id === 'world.process-plant.artifact.read')!.output
 const read = (input: Record<string, unknown>) => {
-  const result = answerProcessPlantQuery({ request: { capabilityId: 'world.process-plant.artifact.read', input: { ...identity, ...input } }, plants, objects: new Map() })
+  const result = answerProcessPlantQuery({ request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.process-plant.artifact.read', input: { ...identity, ...input } }, plants, objects: new Map() })
   expect(output.parse(result)).toEqual(result)
   return result
 }

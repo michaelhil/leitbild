@@ -402,6 +402,7 @@ export const backFrom = (returns: DeckReturns, deck: ReadonlyArray<DeckEntry>, k
  * first-out, W2.8), on a listed display (chat), or on a subject's default (a proposal's element, Q23).
  */
 export type DisplayWindowTarget =
+  | { readonly kind: 'dashboard' }
   | { readonly kind: 'asset'; readonly objectId: string; readonly select?: string }
   | { readonly kind: 'listing'; readonly listing: EmbeddedViewListing }
   | { readonly kind: 'subject'; readonly runId: string; readonly subject: string; readonly title: string }
@@ -420,6 +421,7 @@ export const requestedDeckEntry = (
   simulationRunId: string,
   target: Exclude<DisplayWindowTarget, { readonly kind: 'subject' }>,
 ): DeckEntry | null => {
+  if (target.kind === 'dashboard') return deck.find(entry => entry.source === 'dashboard') ?? null
   if (target.kind === 'asset') {
     return deck.find(entry => entry.source === 'asset' && entry.asset.objectId === target.objectId) ?? null
   }

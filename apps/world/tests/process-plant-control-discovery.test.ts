@@ -1,3 +1,4 @@
+import { unrestrictedQueryReadPolicy } from '../src/simulation/query-read-policy.ts'
 import { expect, test } from 'bun:test'
 import { answerProcessPlantQuery, compileProcessPlant, createPwrReferencePlantDefinition, createProcessPlantRampRunner } from '../src/packs/process-plant/index.ts'
 import { createProcessPlantRuntime } from '../src/packs/process-plant/runtime/index.ts'
@@ -10,7 +11,7 @@ test('a refused control-item guess supplies canonical identities without accepti
   const instance: ProcessPlantRuntimeInstance = { plant, runtime, ramps: createProcessPlantRampRunner({ runtime }), performance: createProcessPlantRuntimePerformance() }
   const capability = processPlantCapabilities.find(row => row.id === 'world.process-plant.controls.list')!
   const read = (input: Record<string, unknown>) => answerProcessPlantQuery({
-    request: { capabilityId: capability.id, input: capability.input.parse(input) }, plants: new Map([[plant.id, instance]]), objects: new Map(),
+    request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId: capability.id, input: capability.input.parse(input) }, plants: new Map([[plant.id, instance]]), objects: new Map(),
   })
   const time = runtime.elapsedMs()
   let refusal: Error & { code?: string; status?: number } | undefined

@@ -1,3 +1,4 @@
+import { unrestrictedQueryReadPolicy } from '../src/simulation/query-read-policy.ts'
 import { expect, test } from 'bun:test'
 import type { SimulationRunId } from '../src/core/model/index.ts'
 import {
@@ -20,7 +21,7 @@ const fixture = (): ProcessPlantRuntimeInstance => {
     ramps: createProcessPlantRampRunner({ runtime }), performance: createProcessPlantRuntimePerformance() }
 }
 const list = (instance: ProcessPlantRuntimeInstance, input: Record<string, unknown>) => capability.output.parse(answerProcessPlantQuery({
-  request: { capabilityId: capability.id, input: capability.input.parse({ plantId: plant.id, ...input }) },
+  request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId: capability.id, input: capability.input.parse({ plantId: plant.id, ...input }) },
   plants: new Map([[plant.id, instance]]), objects: new Map(),
 })) as { plantId: string; plantElapsedMs: number; items: Array<ListedItem>; resets: Array<ListedReset> }
 

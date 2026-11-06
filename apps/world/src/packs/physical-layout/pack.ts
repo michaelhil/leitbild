@@ -9,6 +9,7 @@ import { physicalCoverageIssues } from './coverage.ts'
 import { validatePhysicalConnections } from './connections.ts'
 import { physicalLayoutDependencyFailure } from './dependencies.ts'
 import { physicalDesignTargets } from './targets.ts'
+import { physicalLayoutWorkspaceCapabilities } from './workspace-capabilities.ts'
 
 export const physicalLayoutScenarioItemSchema = z.object({
   pack: z.literal(physicalLayoutPackId), type: z.literal('site-layout'), id: objectIdSchema,
@@ -19,10 +20,17 @@ export const physicalLayoutScenarioItemSchema = z.object({
 }).strict()
 
 export const physicalLayoutPack: WorldPack = {
+  inspectionReferences: object => { const data = physicalLayoutDataSchema.parse(object.packData); return [data.owner.objectId, ...'relatedMembers' in data ? data.relatedMembers.map(member => member.objectId) : []] },
   ...physicalLayoutPackView,
   scenarioConfigSchema: emptyPackScenarioConfigSchema,
+  workspaceCapabilities: physicalLayoutWorkspaceCapabilities,
   knowledge: { wikiRefs: [{ name: 'Physical layouts', url: '/wiki?path=world%2Fphysical-layouts%2Findex.md' }] },
-  authoring: { itemTypes: [{
+  authoring: {
+    configuration: {
+      beforeStart: "Pack configuration is intentionally empty. Discover world.physical-layout.designs.list then design.describe with an exact id/revision/digest pin. Bind every required member role to an admitted object with the exact required model/digest and geography. bearing is degrees; group applies only to admitted explorer profiles. The manifest reports correspondence/source/compiler pins.",
+      liveChanges: "No live Design/source/correspondence replacement capability is supported. Layout inspection and rendering read its retained admitted Design and operational owner; they do not own or advance owner physics.",
+      requiresNewRevision: "Changing Design, membership, placement or correspondence requires a new Scenario Revision and Run. Existing and restored Runs retain their source, binding and compiler identity; an unsupported pin is refused, never upgraded.",
+    }, itemTypes: [{
     id: 'site-layout', label: 'Physical site layout',
     description: 'An exact retained physical Design Revision bound to its declared owner and related member roles. Existing Runs keep their admitted revision.',
     idPrefix: 'layout', defaultItem: { design: pwrOperatorUnitPhysicalDesignRef, members: {}, bearing: 0 },

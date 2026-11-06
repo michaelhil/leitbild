@@ -1,3 +1,4 @@
+import { unrestrictedQueryReadPolicy } from '../src/simulation/query-read-policy.ts'
 import { describe, expect, test } from 'bun:test'
 import { objectIdSchema, type PackId } from '../src/core/model/index.ts'
 import type { PackRuntimeQuery } from '../src/simulation/protocol.ts'
@@ -159,7 +160,7 @@ describe('process plant discovery', () => {
   test('makes an unknown Plant identity a discoverable caller error', () => {
     try {
       answerProcessPlantQuery({
-        request: { capabilityId: 'world.process-plant.alarms.summary', input: { plantId: 'unit2' } },
+        request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.process-plant.alarms.summary', input: { plantId: 'unit2' } },
         plants: new Map(),
         objects: new Map(),
       })
@@ -175,7 +176,7 @@ describe('process plant discovery', () => {
     const plantId = objectIdSchema.parse(plant.id)
     const runtime = createProcessPlantRuntime({ system: plant })
     const response = answerProcessPlantQuery({
-      request: { capabilityId: 'world.process-plant.plants.list', input: {} },
+      request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.process-plant.plants.list', input: {} },
       plants: new Map([[plant.id, {
         plant,
         runtime,
@@ -235,7 +236,7 @@ describe('process plant discovery', () => {
       { capabilityId: 'world.process-plant.variables.read', input: { plantId: plant.id, paths: ['missing.value'] } },
     ]) {
       try {
-        answerProcessPlantQuery({ request, plants, objects: new Map() })
+        answerProcessPlantQuery({ request: { ...request, readPolicy: unrestrictedQueryReadPolicy }, plants, objects: new Map() })
         throw new Error('expected the query to reject an unknown identity')
       } catch (error) {
         expect(error).toMatchObject({ code: 'capability_target_not_found' })
@@ -248,7 +249,7 @@ describe('process plant discovery', () => {
     const plant = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'plant:component-discovery' }))
     const plants = new Map([[plant.id, { plant } as ProcessPlantRuntimeInstance]])
     const compact = answerProcessPlantQuery({
-      request: { capabilityId: 'world.process-plant.components.search', input: { plantId: plant.id, query: 'core' } },
+      request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.process-plant.components.search', input: { plantId: plant.id, query: 'core' } },
       plants,
       objects: new Map(),
     }) as { components: ReadonlyArray<Record<string, unknown>>; totalComponents: number; matchedComponents: number }
@@ -257,7 +258,7 @@ describe('process plant discovery', () => {
     expect(compact.components[0]).not.toHaveProperty('parameters')
 
     const expanded = answerProcessPlantQuery({
-      request: { capabilityId: 'world.process-plant.components.search', input: { plantId: plant.id, componentIds: ['core'], includeParameters: true } },
+      request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.process-plant.components.search', input: { plantId: plant.id, componentIds: ['core'], includeParameters: true } },
       plants,
       objects: new Map(),
     }) as { components: ReadonlyArray<Record<string, unknown>> }
@@ -274,11 +275,11 @@ describe('process plant discovery', () => {
   })
 
   test('answers catalog discovery without exposing implementation source files', () => {
-    const request: PackRuntimeQuery = {
+    const request: PackRuntimeQuery = { readPolicy: unrestrictedQueryReadPolicy,
       capabilityId: 'world.process-plant.catalog.list',
       input: {},
     }
-    const response = answerProcessPlantQuery({ request, plants: new Map(), objects: new Map() })
+    const response = answerProcessPlantQuery({ request: { ...request, readPolicy: unrestrictedQueryReadPolicy }, plants: new Map(), objects: new Map() })
     expect(response).toMatchObject({
       models: [{ id: processPlantPwrReferenceModelRef }],
     })
@@ -289,12 +290,12 @@ describe('process plant discovery', () => {
 
   test('links Plant specification components to their behavior and calculation source', () => {
     const plant = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'plant:source-inspection' }))
-    const request: PackRuntimeQuery = {
+    const request: PackRuntimeQuery = { readPolicy: unrestrictedQueryReadPolicy,
       capabilityId: 'world.process-plant.artifact.read',
       input: { plantId: plant.id, artifact: 'authored-spec', mode: 'full' },
     }
     const plants = new Map([[plant.id, { plant } as ProcessPlantRuntimeInstance]])
-    const response = answerProcessPlantQuery({ request, plants, objects: new Map() })
+    const response = answerProcessPlantQuery({ request: { ...request, readPolicy: unrestrictedQueryReadPolicy }, plants, objects: new Map() })
 
     const result = response as {
       readonly components: ReadonlyArray<{
@@ -324,7 +325,7 @@ describe('process plant discovery', () => {
 
   test('validates procedure tags in one tolerant query', () => {
     const plant = compileProcessPlant(createPwrReferencePlantDefinition({ id: 'plant:procedure-tags' }))
-    const request: PackRuntimeQuery = {
+    const request: PackRuntimeQuery = { readPolicy: unrestrictedQueryReadPolicy,
       capabilityId: 'world.process-plant.procedure-tags.validate',
       input: {
         plantId: plant.id,
@@ -351,7 +352,7 @@ describe('process plant discovery', () => {
       },
     }
     const plants = new Map([[plant.id, { plant } as ProcessPlantRuntimeInstance]])
-    const response = answerProcessPlantQuery({ request, plants, objects: new Map() })
+    const response = answerProcessPlantQuery({ request: { ...request, readPolicy: unrestrictedQueryReadPolicy }, plants, objects: new Map() })
 
     expect(response).toMatchObject({
       plantId: plant.id,
@@ -382,7 +383,7 @@ describe('process plant discovery', () => {
     }]])
 
     const variables = answerProcessPlantQuery({
-      request: { capabilityId: 'world.process-plant.variables.search', input: { plantId: plant.id, offset: 1, limit: 2 } },
+      request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.process-plant.variables.search', input: { plantId: plant.id, offset: 1, limit: 2 } },
       plants,
       objects: new Map(),
     }) as { total: number; offset: number; returned: number; hasMore: boolean; variables: ReadonlyArray<{ plantId: string; variable: unknown }> }
@@ -392,7 +393,7 @@ describe('process plant discovery', () => {
     expect(variables.variables.every(entry => entry.plantId === plant.id)).toBe(true)
 
     const signals = answerProcessPlantQuery({
-      request: { capabilityId: 'world.process-plant.signals.search', input: { plantId: plant.id, offset: 0, limit: 2 } },
+      request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.process-plant.signals.search', input: { plantId: plant.id, offset: 0, limit: 2 } },
       plants,
       objects: new Map(),
     }) as { total: number; returned: number; hasMore: boolean; signals: ReadonlyArray<{ plantId: string; signal: unknown }> }
@@ -401,7 +402,7 @@ describe('process plant discovery', () => {
     expect(signals.signals.every(entry => entry.plantId === plant.id)).toBe(true)
 
     const rcpSignals = answerProcessPlantQuery({
-      request: { capabilityId: 'world.process-plant.signals.search', input: { plantId: plant.id, text: 'RCP running', limit: 10 } },
+      request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.process-plant.signals.search', input: { plantId: plant.id, text: 'RCP running', limit: 10 } },
       plants,
       objects: new Map(),
     }) as { signals: ReadonlyArray<{ signal: { path: string } }> }

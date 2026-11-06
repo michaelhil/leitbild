@@ -4,15 +4,12 @@ import { chmod, copyFile, lstat, mkdir, mkdtemp, readlink, readdir, rm, symlink,
 import { tmpdir } from 'node:os'
 import { dirname, join, relative, resolve } from 'node:path'
 import { validateKnowledgeSources } from '@leitbild/knowledge/publish'
-import { publishPlatformKnowledge } from '../../../scripts/publish-platform-knowledge.ts'
+import { cleanRevision, knowledgeRepositoryPath, withPreparedPlatform } from '../../../scripts/prepare-platform.ts'
 import type { KnowledgeSnapshot } from '@leitbild/knowledge'
 
 const APP_ID = 'leitbild-platform'
 const SSH_HOST = process.env.LEITBILD_SSH_HOST ?? 'samsinn'
 const WORKSPACE_ROOT = resolve(import.meta.dir, '../../..')
-const HOST_ROOT = resolve(import.meta.dir, '..')
-const WORLD_ROOT = resolve(WORKSPACE_ROOT, 'apps/world')
-const AGENTS_ROOT = resolve(WORKSPACE_ROOT, 'apps/agents')
 export const PRODUCTION_DEPENDENCY_WORKSPACE_PATHS = [
   'packages/contracts',
   'packages/module-runtime',
@@ -22,10 +19,6 @@ export const PRODUCTION_DEPENDENCY_WORKSPACE_PATHS = [
 export const INSTALL_MANIFEST_ONLY_WORKSPACE_PATHS = [
   'packages/integration-tests',
 ] as const
-const PRODUCTION_DEPENDENCY_WORKSPACES = PRODUCTION_DEPENDENCY_WORKSPACE_PATHS.map(target => ({
-  source: resolve(WORKSPACE_ROOT, target),
-  target,
-}))
 const DEPLOY_ROOT = '/opt/leitbild'
 const CURRENT_LINK = `${DEPLOY_ROOT}/current`
 const RELEASES_DIR = `${DEPLOY_ROOT}/releases`
@@ -115,7 +108,7 @@ const capture = async (command: ReadonlyArray<string>, cwd = WORKSPACE_ROOT): Pr
 }
 
 const trackedFiles = async (root: string): Promise<string[]> => {
-  const raw = await capture(['git', 'ls-files', '-z', '--cached', '--others', '--exclude-standard'], root)
+  const raw = await capture(['git', 'ls-files', '-z', '--cached'], root)
   return raw.split('\0').filter(Boolean).sort()
 }
 
@@ -153,48 +146,6 @@ export const isProductKnowledgePath = (path: string): boolean =>
   || /^apps\/[^/]+\/README\.md$/.test(path)
   || /^packages\/[^/]+\/README\.md$/.test(path)
 
-/** One entry of `git status --porcelain=v1 -z`: its two status letters and its path (the new path of a rename or copy). */
-export interface WorktreeEntry {
-  readonly status: string
-  readonly path: string
-}
-
-export const parsePorcelainZ = (raw: string): ReadonlyArray<WorktreeEntry> => {
-  const fields = raw.split('\0')
-  const entries: WorktreeEntry[] = []
-  for (let index = 0; index < fields.length; index += 1) {
-    const field = fields[index]!
-    if (field === '') continue
-    if (field.length < 4 || field[2] !== ' ') throw new Error(`Unreadable git status entry: ${JSON.stringify(field)}`)
-    const status = field.slice(0, 2)
-    entries.push({ status, path: field.slice(3) })
-    // A rename or copy names its original path in the next field.
-    if (status.includes('R') || status.includes('C')) index += 1
-  }
-  return entries
-}
-
-/**
- * What World's browser bundle is built from: World's source (its UI imports
- * pack display code from all of src), its build configuration and package
- * manifest, and the lockfile that pins OpenBridge. The bundle contains
- * AGPL-3.0-only OpenBridge, so it may be built only from committed, public
- * source: a change here that is not committed would ship without its
- * corresponding source.
- */
-export const isWorldBundleInput = (path: string): boolean =>
-  path === 'bun.lock'
-  || path === 'apps/world/package.json'
-  || path === 'apps/world/vite.config.ts'
-  || (path.startsWith('apps/world/src/') && !isDevelopmentOnlyPath(path.slice('apps/world/'.length)))
-
-/** Why World's bundle inputs cannot be deployed as they stand, or null: any of them dirty or untracked. */
-export const worldBundleRefusal = (entries: ReadonlyArray<WorktreeEntry>): string | null => {
-  const changed = entries.filter(entry => isWorldBundleInput(entry.path))
-  if (changed.length === 0) return null
-  return `Refusing to deploy: World's browser bundle contains AGPL-3.0-only OpenBridge and must be built from committed, public source, but these inputs are dirty or untracked: ${changed.map(entry => `${entry.status.trim()} ${entry.path}`).join(', ')}. Commit and push them first.`
-}
-
 /** A Git remote URL in one form, so an SSH and an HTTPS remote of the same repository compare equal. */
 export const normalizedRepositoryUrl = (url: string): string => url.trim()
   .replace(/^git@([^:]+):/, 'https://$1/')
@@ -219,22 +170,20 @@ export const publicSourceRefusal = (input: {
   return null
 }
 
-/**
- * Refuses a release whose World bundle would ship without public
- * corresponding source: World bundle inputs dirty or untracked, or a base
- * commit no branch of the public origin contains (after fetching origin).
- */
-export const assertPublicWorldSource = async (root: string, publicRepository: string): Promise<{ readonly baseCommit: string; readonly containingRefs: ReadonlyArray<string> }> => {
-  const bundleRefusal = worldBundleRefusal(parsePorcelainZ(await capture(['git', 'status', '--porcelain=v1', '-z', '--untracked-files=all'], root)))
-  if (bundleRefusal !== null) throw new Error(bundleRefusal)
-  const baseCommit = (await capture(['git', 'rev-parse', 'HEAD'], root)).trim()
+const publicSourceRefs = async (root: string, publicRepository: string, baseCommit: string): Promise<ReadonlyArray<string>> => {
   const codeRepository = (await capture(['git', 'remote', 'get-url', 'origin'], root)).trim()
-  await capture(['git', 'fetch', '--quiet', 'origin'], root)
+  await capture(['git', 'fetch', '--quiet', '--prune', 'origin'], root)
   const containingRefs = (await capture(['git', 'for-each-ref', `--contains=${baseCommit}`, '--format=%(refname)', 'refs/remotes/origin/'], root))
     .split('\n').filter(ref => ref !== '' && ref !== 'refs/remotes/origin/HEAD')
   const sourceRefusal = publicSourceRefusal({ publicRepository, codeRepository, baseCommit, containingRefs })
   if (sourceRefusal !== null) throw new Error(sourceRefusal)
-  return { baseCommit, containingRefs }
+  return containingRefs
+}
+
+/** Only a clean release with public corresponding source may ship the World bundle. */
+export const assertPublicWorldSource = async (root: string, publicRepository: string): Promise<{ readonly baseCommit: string; readonly containingRefs: ReadonlyArray<string> }> => {
+  const baseCommit = await cleanRevision(root)
+  return { baseCommit, containingRefs: await publicSourceRefs(root, publicRepository, baseCommit) }
 }
 
 const directoryFiles = async (root: string, child: string): Promise<string[]> => {
@@ -319,79 +268,78 @@ export const referencedInspectionEntries = async (
   return additions
 }
 
-const createArtifact = async () => {
+const createArtifact = async (root: string, baseCommit: string, branch: string, knowledge: KnowledgeSnapshot) => {
   const tempRoot = await mkdtemp(join(tmpdir(), 'leitbild-release-'))
-  const stageRoot = join(tempRoot, 'stage')
-  const archivePath = join(tempRoot, 'release.tgz')
-  await mkdir(stageRoot)
-  const hostEntries = await entriesFor(HOST_ROOT, 'apps/leitbild', 'host', await directoryFiles(HOST_ROOT, 'src/ui/dist'))
-  const worldEntries = await entriesFor(WORLD_ROOT, 'apps/world', 'world', await directoryFiles(WORLD_ROOT, 'src/ui/dist'))
-  const agentsEntries = await entriesFor(AGENTS_ROOT, 'apps/agents', 'agents', [
-    'src/ui/dist.css',
-    ...await directoryFiles(AGENTS_ROOT, 'src/ui/dist'),
-  ])
-  const rootEntries: ArtifactEntry[] = ['package.json', 'bun.lock', 'LICENSE', 'NOTICE.md'].map(path => ({ source: join(WORKSPACE_ROOT, path), target: path }))
-  const knowledgeRepository = process.env.LEITBILD_KNOWLEDGE_REPOSITORY ?? resolve(WORKSPACE_ROOT, '../Leitbild-wiki')
-  const knowledge = await publishPlatformKnowledge(knowledgeRepository, WORKSPACE_ROOT)
-  const knowledgeFile = join(tempRoot, 'knowledge-snapshot.json')
-  await writeFile(knowledgeFile, JSON.stringify(knowledge))
-  const knowledgeEntries: ArtifactEntry[] = [{ source: knowledgeFile, target: 'knowledge/snapshot.json' }]
-  const productKnowledgeEntries: ArtifactEntry[] = (await trackedFiles(WORKSPACE_ROOT))
-    .filter(path => isProductKnowledgePath(path) && !isDevelopmentOnlyPath(path))
-    .map(path => ({ source: join(WORKSPACE_ROOT, path), target: path }))
-  const installManifestEntries: ArtifactEntry[] = INSTALL_MANIFEST_ONLY_WORKSPACE_PATHS.map(path => ({
-    source: join(WORKSPACE_ROOT, path, 'package.json'),
-    target: join(path, 'package.json'),
-  }))
-  const dependencyPackageEntries = (await Promise.all(
-    PRODUCTION_DEPENDENCY_WORKSPACES.map(workspace => entriesFor(workspace.source, workspace.target, 'package')),
-  )).flat()
-  const entries = [
-    ...rootEntries,
-    ...knowledgeEntries,
-    ...productKnowledgeEntries,
-    ...hostEntries,
-    ...worldEntries,
-    ...agentsEntries,
-    ...dependencyPackageEntries,
-    ...installManifestEntries,
-  ]
-  // A wiki may inspect a research/build script without making its directory a
-  // production dependency. Ship exactly its allowed, validated code references.
-  entries.push(...await referencedInspectionEntries(WORKSPACE_ROOT, knowledge, entries))
-  const sourceDigest = await digestEntries(entries)
-  const dependencyPackagesDigest = await digestEntries(dependencyPackageEntries)
-  const createdAt = new Date().toISOString()
-  // Checked again as packaged: the checks, tests and builds that ran since must not have changed a World bundle input.
-  const { baseCommit } = await assertPublicWorldSource(WORKSPACE_ROOT, PUBLIC_CODE_REPOSITORY)
-  const branch = (await capture(['git', 'branch', '--show-current'])).trim() || '(detached)'
-  const worktreeStatus = (await capture(['git', 'status', '--porcelain=v1', '--untracked-files=all'])).split('\n').filter(Boolean)
-  const manifest: DeploymentManifest = {
-    schemaVersion: 1,
-    app: APP_ID,
-    releaseId: `${createdAt.replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z')}-${baseCommit.slice(0, 10)}-${sourceDigest.slice(0, 10)}`,
-    createdAt,
-    baseCommit,
-    codeRepository: (await capture(['git', 'remote', 'get-url', 'origin'])).trim().replace(/\.git$/, ''),
-    knowledgeRevision: knowledge.revision,
-    branch,
-    dirty: worktreeStatus.length > 0,
-    worktreeStatus,
-    sourceDigest,
-    dependencyPackagesDigest,
-    fileCount: entries.length,
-    persistentRootsExcluded: [STATE_ROOT],
-  }
-  await copyEntries(entries, stageRoot)
-  await validateKnowledgeSources(knowledge, stageRoot)
-  await writeFile(join(stageRoot, 'DEPLOYMENT.json'), `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o644 })
-  await run('Create immutable Leitbild artifact', ['tar', '--no-mac-metadata', '--no-xattrs', '-czf', archivePath, '-C', stageRoot, '.'])
-  return {
-    archivePath,
-    archiveChecksum: await sha256File(archivePath),
-    lockChecksum: await sha256File(join(WORKSPACE_ROOT, 'bun.lock')),
-    manifest,
-    cleanup: () => rm(tempRoot, { recursive: true, force: true }),
+  try {
+    const stageRoot = join(tempRoot, 'stage')
+    const archivePath = join(tempRoot, 'release.tgz')
+    await mkdir(stageRoot)
+    const hostRoot = join(root, 'apps/leitbild')
+    const worldRoot = join(root, 'apps/world')
+    const agentsRoot = join(root, 'apps/agents')
+    const hostEntries = await entriesFor(hostRoot, 'apps/leitbild', 'host', await directoryFiles(hostRoot, 'src/ui/dist'))
+    const worldEntries = await entriesFor(worldRoot, 'apps/world', 'world', await directoryFiles(worldRoot, 'src/ui/dist'))
+    const agentsEntries = await entriesFor(agentsRoot, 'apps/agents', 'agents', [
+      'src/ui/dist.css',
+      ...await directoryFiles(agentsRoot, 'src/ui/dist'),
+    ])
+    const rootEntries: ArtifactEntry[] = ['package.json', 'bun.lock', 'LICENSE', 'NOTICE.md', 'knowledge/snapshot.json'].map(path => ({ source: join(root, path), target: path }))
+    const productKnowledgeEntries: ArtifactEntry[] = (await trackedFiles(root))
+      .filter(path => isProductKnowledgePath(path) && !isDevelopmentOnlyPath(path))
+      .map(path => ({ source: join(root, path), target: path }))
+    const installManifestEntries: ArtifactEntry[] = INSTALL_MANIFEST_ONLY_WORKSPACE_PATHS.map(path => ({
+      source: join(root, path, 'package.json'),
+      target: join(path, 'package.json'),
+    }))
+    const dependencyPackageEntries = (await Promise.all(
+      PRODUCTION_DEPENDENCY_WORKSPACE_PATHS.map(path => entriesFor(join(root, path), path, 'package')),
+    )).flat()
+    const entries = [
+      ...rootEntries,
+      ...productKnowledgeEntries,
+      ...hostEntries,
+      ...worldEntries,
+      ...agentsEntries,
+      ...dependencyPackageEntries,
+      ...installManifestEntries,
+    ]
+    // A wiki may inspect a research/build script without making its directory a
+    // production dependency. Ship exactly its allowed, validated code references.
+    entries.push(...await referencedInspectionEntries(root, knowledge, entries))
+    const sourceDigest = await digestEntries(entries)
+    const dependencyPackagesDigest = await digestEntries(dependencyPackageEntries)
+    const createdAt = new Date().toISOString()
+    if ((await capture(['git', 'status', '--porcelain', '--untracked-files=no'], root)).trim()) throw new Error('Validation modified committed release inputs')
+    const manifest: DeploymentManifest = {
+      schemaVersion: 1,
+      app: APP_ID,
+      releaseId: `${createdAt.replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z')}-${baseCommit.slice(0, 10)}-${sourceDigest.slice(0, 10)}`,
+      createdAt,
+      baseCommit,
+      codeRepository: PUBLIC_CODE_REPOSITORY,
+      knowledgeRevision: knowledge.revision,
+      branch,
+      dirty: false,
+      worktreeStatus: [],
+      sourceDigest,
+      dependencyPackagesDigest,
+      fileCount: entries.length,
+      persistentRootsExcluded: [STATE_ROOT],
+    }
+    await copyEntries(entries, stageRoot)
+    await validateKnowledgeSources(knowledge, stageRoot)
+    await writeFile(join(stageRoot, 'DEPLOYMENT.json'), `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o644 })
+    await run('Create immutable Leitbild artifact', ['tar', '--no-mac-metadata', '--no-xattrs', '-czf', archivePath, '-C', stageRoot, '.'])
+    return {
+      archivePath,
+      archiveChecksum: await sha256File(archivePath),
+      lockChecksum: await sha256File(join(root, 'bun.lock')),
+      manifest,
+      cleanup: () => rm(tempRoot, { recursive: true, force: true }),
+    }
+  } catch (error) {
+    await rm(tempRoot, { recursive: true, force: true })
+    throw error
   }
 }
 
@@ -409,16 +357,21 @@ export const caddySnippetPreflight = (): string => `if ! grep -Fxq 'import /etc/
 fi`
 
 /** Called inside the activation transaction; the shared lock stays held through rollback. */
-export const caddySnippetDeployment = (): string => `exec 8>/run/lock/caddy-config.lock
+const caddySnippetDeployment = (install: boolean): string => `exec 8>/run/lock/caddy-config.lock
 flock -w 60 8 || { echo "Another Caddy configuration update is active" >&2; exit 1; }
 ${caddySnippetPreflight()}
 caddy_site=/etc/caddy/managed-sites/leitbild.caddy
-cp -a "$caddy_site" "$activation_backup/leitbild.caddy"
-install -o root -g root -m 0644 "$release_dir/apps/leitbild/deploy/sites/leitbild.caddy" "/etc/caddy/leitbild.next-$release_id"
-caddy_changed=1
-mv -f "/etc/caddy/leitbild.next-$release_id" "$caddy_site"
-caddy validate --config /etc/caddy/Caddyfile
-systemctl reload caddy.service`
+candidate_site="$release_dir/apps/leitbild/deploy/sites/leitbild.caddy"
+if test ${install ? '1' : '0'} -eq 0 && ! test -L "$caddy_site" && cmp -s "$candidate_site" "$caddy_site"; then
+  echo "Leitbild Caddy snippet unchanged; skipping reload"
+else
+  cp -a "$caddy_site" "$activation_backup/leitbild.caddy"
+  install -o root -g root -m 0644 "$candidate_site" "/etc/caddy/leitbild.next-$release_id"
+  caddy_changed=1
+  mv -f "/etc/caddy/leitbild.next-$release_id" "$caddy_site"
+  caddy validate --config /etc/caddy/Caddyfile
+  systemctl reload caddy.service
+fi`
 
 /** One success boundary for release selection, services, install configuration and site routing.
  * The caller owns preparation and defines cleanup(); persistent application data is never restored.
@@ -568,7 +521,7 @@ if ! curl -fsS http://127.0.0.1:3100/api/knowledge/index | jq -e --arg revision 
   echo "Knowledge publication does not match the release" >&2
   exit 1
 fi
-${caddySnippetDeployment()}
+${caddySnippetDeployment(install)}
 public_ready=0
 for attempt in $(seq 1 60); do
   if curl -fsS -o /dev/null ${shellQuote(PUBLIC_HEALTH_URL)}; then public_ready=1; break; fi
@@ -591,7 +544,7 @@ if test ${install ? '0' : '1'} -eq 1; then
 fi
 `
 
-export const remoteDeploy = (artifact: Pick<Awaited<ReturnType<typeof createArtifact>>, 'manifest' | 'lockChecksum' | 'archiveChecksum'>, remoteArchive: string, install: boolean): string => {
+export const remoteDeploy = (artifact: Pick<Awaited<ReturnType<typeof createArtifact>>, 'manifest' | 'lockChecksum' | 'archiveChecksum'>, remoteArchive: string, install: boolean, expectedActiveRelease: string | null): string => {
   const id = artifact.manifest.releaseId
   return `set -euo pipefail
 exec 9>/run/lock/leitbild-deploy.lock
@@ -608,6 +561,12 @@ if test -e ${shellQuote(CURRENT_LINK)} && ! test -L ${shellQuote(CURRENT_LINK)};
 if test -L ${shellQuote(CURRENT_LINK)}; then previous="$(readlink -f ${shellQuote(CURRENT_LINK)})"; fi
 cleanup() { rm -rf -- "$incoming"; rm -f -- "$archive"; }
 trap cleanup EXIT
+active_release=""
+if test -n "$previous"; then active_release="$(jq -er '.releaseId | strings' "$previous/DEPLOYMENT.json")"; fi
+if test "$active_release" != ${shellQuote(expectedActiveRelease ?? '')}; then
+  echo "Active release changed during validation. Recheck and prepare again." >&2
+  exit 1
+fi
 if test ${install ? '1' : '0'} -eq 1; then
   # Provisioning is retained on activation failure; never remove application data.
   id -u ${SERVICE_USER} >/dev/null 2>&1 || useradd --system --home-dir /nonexistent --shell /usr/sbin/nologin ${SERVICE_USER}
@@ -629,7 +588,7 @@ if test ! -d "$dep_dir/node_modules"; then
   cp "$incoming/apps/leitbild/package.json" "$dep_tmp/apps/leitbild/"
   cp "$incoming/apps/world/package.json" "$dep_tmp/apps/world/"
   cp "$incoming/apps/agents/package.json" "$dep_tmp/apps/agents/"
-  ${PRODUCTION_DEPENDENCY_WORKSPACES.map(workspace => `cp -a "$incoming/${workspace.target}" "$dep_tmp/packages/"`).join('\n  ')}
+  ${PRODUCTION_DEPENDENCY_WORKSPACE_PATHS.map(path => `cp -a "$incoming/${path}" "$dep_tmp/packages/"`).join('\n  ')}
   ${INSTALL_MANIFEST_ONLY_WORKSPACE_PATHS.map(path => `mkdir -p "$dep_tmp/${path}"; cp "$incoming/${path}/package.json" "$dep_tmp/${path}/"`).join('\n  ')}
   chown -R ${SERVICE_USER}:${SERVICE_USER} "$dep_tmp"
   sudo -u ${SERVICE_USER} sh -c 'cd "$1" && exec "$2" install --frozen-lockfile --production' sh "$dep_tmp" ${shellQuote(BUN_BIN)}
@@ -642,8 +601,17 @@ ln -s "$dep_dir/apps/agents/node_modules" "$incoming/apps/agents/node_modules"
 mv "$incoming" "$release_dir"
 ${releaseActivation(install, artifact.manifest.knowledgeRevision)}
 # Retention is maintenance after the activation commit, never a rollback trigger.
-find ${shellQuote(RELEASES_DIR)} -mindepth 1 -maxdepth 1 -type d ! -path "$release_dir" -exec rm -rf -- {} + || echo "Release retention cleanup failed" >&2
-find ${shellQuote(DEPS_DIR)} -mindepth 1 -maxdepth 1 -type d ! -path "$dep_dir" -exec rm -rf -- {} + || echo "Dependency retention cleanup failed" >&2
+previous_dep=""
+if test -n "$previous"; then
+  previous_modules="$(readlink -f "$previous/node_modules" || true)"
+  if ! test -d "$previous_modules" || [[ "$previous_modules" != ${shellQuote(DEPS_DIR)}/*/node_modules ]]; then
+    echo "Prior release dependencies could not be identified. Skipping retention cleanup." >&2
+    exit 0
+  fi
+  previous_dep="\${previous_modules%/node_modules}"
+fi
+find ${shellQuote(RELEASES_DIR)} -mindepth 1 -maxdepth 1 -type d ! -path "$release_dir" ! -path "$previous" -exec rm -rf -- {} + || echo "Release retention cleanup failed" >&2
+find ${shellQuote(DEPS_DIR)} -mindepth 1 -maxdepth 1 -type d ! -path "$dep_dir" ! -path "$previous_dep" -exec rm -rf -- {} + || echo "Dependency retention cleanup failed" >&2
 `
 }
 
@@ -653,17 +621,47 @@ const confirmMutation = (id: string, yes: boolean): void => {
   if (prompt(`Deploy Leitbild ${id} to production? Type "deploy" to continue:`) !== 'deploy') throw new Error('Deployment cancelled')
 }
 
+const observeActiveRelease = async (baseCommit: string, install: boolean) => {
+  const current = shellQuote(CURRENT_LINK)
+  const output = await capture(['ssh', SSH_HOST, `set -eu
+if test -L ${current}; then
+  jq -ce '{releaseId,baseCommit,knowledgeRevision,dirty}' ${current}/DEPLOYMENT.json
+elif test -e ${current}; then
+  echo 'current must be a release symlink' >&2; exit 1
+else
+  echo null
+fi`])
+  const active = JSON.parse(output) as { releaseId?: string; baseCommit?: string; knowledgeRevision?: string; dirty?: boolean } | null
+  if (active === null && install) return null
+  if (active?.dirty !== false || !active.releaseId || !active.baseCommit || !active.knowledgeRevision
+    || !/^[a-f0-9]{40}$/.test(active.baseCommit) || !/^[a-f0-9]{40}$/.test(active.knowledgeRevision)) {
+    throw new Error('Active release lacks clean code and knowledge identities')
+  }
+  await capture(['git', 'merge-base', '--is-ancestor', active.baseCommit, baseCommit]).catch(error => {
+    throw new Error(`Active release ${active.releaseId} is not an ancestor of the candidate`, { cause: error })
+  })
+  return { releaseId: active.releaseId, knowledgeRevision: active.knowledgeRevision }
+}
+
 const main = async (): Promise<void> => {
   const options = parseDeployArgs(process.argv.slice(2))
   if (Bun.version !== REQUIRED_BUN_VERSION) throw new Error(`Bun ${REQUIRED_BUN_VERSION} required; found ${Bun.version}`)
   // Before anything is built: a release whose World bundle would lack public corresponding source is refused, a dry run too.
-  await assertPublicWorldSource(WORKSPACE_ROOT, PUBLIC_CODE_REPOSITORY)
-  await run('Platform checks', ['bun', 'run', 'check'])
-  await run('Platform tests', ['bun', 'run', 'test'])
-  await run('Build Leitbild host UI', ['bun', 'run', 'build:ui'], HOST_ROOT)
-  await run('Build World UI', ['bun', 'run', 'build:ui'], WORLD_ROOT)
-  await run('Build Agents UI', ['bun', 'run', 'build:ui'], AGENTS_ROOT)
-  const artifact = await createArtifact()
+  const { baseCommit } = await assertPublicWorldSource(WORKSPACE_ROOT, PUBLIC_CODE_REPOSITORY)
+  const activeRelease = options.dryRun ? null : await observeActiveRelease(baseCommit, options.install)
+  const branch = (await capture(['git', 'branch', '--show-current'])).trim() || '(detached)'
+  const knowledgeRoot = knowledgeRepositoryPath(WORKSPACE_ROOT)
+  const artifact = await withPreparedPlatform({
+    codeRoot: WORKSPACE_ROOT, knowledgeRoot, codeRevision: baseCommit, full: true,
+  }, async (root, revision, knowledge) => {
+    if (activeRelease !== null) {
+      await capture(['git', 'merge-base', '--is-ancestor', activeRelease.knowledgeRevision, knowledge.revision], knowledgeRoot).catch(error => {
+        throw new Error(`Active knowledge ${activeRelease.knowledgeRevision} is not an ancestor of the candidate`, { cause: error })
+      })
+    }
+    await publicSourceRefs(WORKSPACE_ROOT, PUBLIC_CODE_REPOSITORY, revision)
+    return await createArtifact(root, revision, branch, knowledge)
+  })
   try {
     console.log(`\nRelease: ${artifact.manifest.releaseId}`)
     console.log(`Dirty worktree: ${artifact.manifest.dirty ? 'yes' : 'no'}`)
@@ -673,7 +671,7 @@ const main = async (): Promise<void> => {
     await run('Production preflight', ['ssh', SSH_HOST, remotePreflight(options.install)])
     const remoteArchive = `/tmp/leitbild-${artifact.manifest.releaseId}.tgz`
     await run('Upload immutable Leitbild artifact', ['scp', artifact.archivePath, `${SSH_HOST}:${remoteArchive}`])
-    await run('Activate Leitbild release', ['ssh', SSH_HOST, remoteDeploy(artifact, remoteArchive, options.install)])
+    await run('Activate Leitbild release', ['ssh', SSH_HOST, remoteDeploy(artifact, remoteArchive, options.install, activeRelease?.releaseId ?? null)])
     console.log(`✓ Release activation and ${PUBLIC_HEALTH_URL} verified on the host`)
   } finally {
     await artifact.cleanup()

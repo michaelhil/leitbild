@@ -20,12 +20,14 @@ import { createEinsatzSidedRuntimeAdapter } from '../src/packs/einsatz/fixtures/
 import { einsatzPack } from '../src/packs/einsatz/pack.ts'
 import { createWireOracle, sideVisibleEventTypes, type Screen } from './fixtures/wire-oracle.ts'
 import { waitForCondition } from './helpers.ts'
+import { withoutScenarioGuide } from './fixtures/scenario-domain.ts'
 
 /**
  * The Definition with every item id suffixed by the nonce, every reference
  * to an item rewritten to match, and every item and cue-created label given
  * a suffix of its own, so no label is another's prefix. Groups, types and
- * templates are configuration and keep their ids.
+ * templates are configuration and keep their ids. This domain wire oracle
+ * omits the authored tutorial, whose targets use the original identities.
  */
 const withNonce = (source: ScenarioDefinition, nonce: string) => {
   const [selection] = source.packs
@@ -38,7 +40,7 @@ const withNonce = (source: ScenarioDefinition, nonce: string) => {
   }
   const suffix = (label: string, tag: string) => `${label} ${nonce}-${tag}`
   return {
-    ...source,
+    ...withoutScenarioGuide(source),
     packs: [{
       ...selection!,
       items: selection!.items.map((item, index) => ({ ...item, id: ids.get(item.id)! as typeof item.id, label: suffix(item.label, `i${String(index).padStart(2, '0')}`) })),

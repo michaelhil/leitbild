@@ -36,7 +36,8 @@ export interface ExecutionModelResponse {
 export interface ExecutionModelCallSummary {
   readonly id: string
   readonly ordinal: number
-  readonly phase: 'initial' | 'tool-response' | 'correction'
+  readonly phase: 'initial' | 'tool-response' | 'correction' | 'nested'
+  readonly parentToolCallId?: string
   readonly startedAt: number
   readonly completedAt?: number
   readonly status: 'running' | 'completed' | 'failed' | 'cancelled'
@@ -86,7 +87,7 @@ const id = (value: string): string => {
 }
 const hashSchema = z.string().regex(/^[a-f0-9]{64}$/)
 const modelSummarySchema = z.object({
-  id: z.string().min(1), ordinal: z.number().int().positive(), phase: z.enum(['initial', 'tool-response', 'correction']), startedAt: z.number().finite(),
+  id: z.string().min(1), ordinal: z.number().int().positive(), phase: z.enum(['initial', 'tool-response', 'correction', 'nested']), parentToolCallId: z.string().min(1).optional(), startedAt: z.number().finite(),
   completedAt: z.number().finite().optional(), status: z.enum(['running', 'completed', 'failed', 'cancelled']), requestedModel: z.string(),
   model: z.string().optional(), provider: z.string().optional(), contextCheckpointId: z.string().min(1).optional(), requestBytes: z.number().int().nonnegative(), responseBytes: z.number().int().nonnegative().optional(),
   messageCount: z.number().int().nonnegative(), toolCount: z.number().int().nonnegative(), metrics: z.record(z.string(), z.union([z.string(), z.number()])).optional(),

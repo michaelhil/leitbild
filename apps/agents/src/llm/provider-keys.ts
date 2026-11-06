@@ -11,7 +11,7 @@
 // UI disables editing in that case).
 // ============================================================================
 
-import type { CloudProviderName } from './providers-config.ts'
+import { isLocal, type CloudProviderName } from './providers-config.ts'
 import type { MergedProviders } from './providers-store.ts'
 
 export interface ProviderKeys {
@@ -32,11 +32,12 @@ export const createProviderKeys = (initial: MergedProviders): ProviderKeys => {
   const state = new Map<string, Entry>()
   for (const [name, entry] of Object.entries(initial.cloud)) {
     const apiKey = entry?.apiKey ?? ''
+    // Local providers retain explicit enablement even without a key. Cloud
     // userEnabled defaults to TRUE unless the provider has a stored/env key
     // and is explicitly disabled. A provider with no source hasn't been
     // configured yet — it's "enabled in intent" so that pasting a key
     // activates it immediately without the user having to click the dot.
-    const userEnabled = (entry?.source === 'stored' || entry?.source === 'env')
+    const userEnabled = (isLocal(name) || entry?.source === 'stored' || entry?.source === 'env')
       ? (entry.enabled ?? true)
       : true
     state.set(name, { apiKey, userEnabled })

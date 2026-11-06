@@ -63,6 +63,7 @@ export interface Message {
   readonly roomId: string             // every message lives in a room
   readonly correlationId?: string     // shared across multi-target deliveries
   readonly inReplyTo?: ReadonlyArray<string>  // IDs of messages this response is causally derived from
+  readonly presentationPrompt?: import('@leitbild/contracts').PresentationPromptLink
   readonly cause?: MessageCause       // see MessageCause docstring above
   // A line an AI Agent posted while its turn still runs, saying what it just
   // did (workspace_call `say`); the turn's answer follows as an ordinary
@@ -212,6 +213,7 @@ export type PostParams = Omit<Message, 'id' | 'roomId' | 'timestamp'> & {
   // Transient per-browser Resource focus for the Agent turn triggered by this
   // post. Room removes it before creating/persisting the Message.
   readonly focusedSubjects?: ReadonlyArray<import('@leitbild/contracts').WorkspaceSubjectReference>
+  readonly presentationRecipient?: import('@leitbild/contracts').PresentationRecipient
 }
 
 // === Delivery — callback for Room to deliver messages to agents ===

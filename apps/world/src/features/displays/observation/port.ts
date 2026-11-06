@@ -190,6 +190,7 @@ export const requestPort = (port: ObservationPort): ObservationPort => {
   const leads = new Map<string, Promise<ReadonlyArray<string>>>()
   const readings = new Map<string, Observation>()
   const unread = new Set<string>()
+  const refusals = new Map<ObjectId, ObservationRefusal>()
   const once = <K, V>(asked: Map<K, Promise<V>>, key: K, ask: () => Promise<V>): Promise<V> => {
     const known = asked.get(key) ?? ask()
     asked.set(key, known)
@@ -207,22 +208,23 @@ export const requestPort = (port: ObservationPort): ObservationPort => {
     read: async request => {
       // Only what the request has not read yet goes to the Packs, in one read; the answer keeps the order asked.
       const asked = [...new Set(request.refs ?? [])]
-      const fresh = asked.filter(ref => !readings.has(ref) && !unread.has(ref))
+      const fresh = asked.filter(ref => !readings.has(ref) && !unread.has(ref) && !refusals.has(refObjectId(ref)))
       const freshLeads = [...new Map((request.leads ?? []).filter(lead => !leads.has(leadKey(lead))).map(lead => [leadKey(lead), lead] as const)).values()]
-      let refused: ReadonlyArray<ObservationRefusal> = []
       if (fresh.length > 0 || freshLeads.length > 0) {
         const answer = port.read({ refs: fresh, leads: freshLeads }).then(read => {
           for (const observation of read.observations) readings.set(observation.ref, observation)
           for (const ref of read.unknown) unread.add(ref)
+          for (const refused of read.refused) refusals.set(refused.objectId, refused)
           return read
         })
         freshLeads.forEach((lead, at) => leads.set(leadKey(lead), answer.then(read => read.leads[at]!)))
-        refused = (await answer).refused
+        await answer
       }
       const led = await Promise.all((request.leads ?? []).map(lead => leads.get(leadKey(lead))!))
       return {
         observations: [...new Set([...asked, ...led.flat()])].flatMap(ref => readings.get(ref) ?? []),
-        unknown: asked.filter(ref => unread.has(ref)), refused, leads: led,
+        unknown: asked.filter(ref => unread.has(ref)),
+        refused: [...new Set([...asked.map(refObjectId), ...(request.leads ?? []).map(lead => lead.objectId)])].flatMap(id => refusals.get(id) ?? []), leads: led,
       }
     },
     topology: objectId => once(topologies, objectId, () => port.topology(objectId)),

@@ -65,6 +65,18 @@ export type SimulationRunEvent =
   | (EventEnvelopeBase & {
       readonly type: 'scenario.cue.started'
       readonly cueId: string
+      readonly actionCount?: number
+    })
+  | (EventEnvelopeBase & {
+      readonly type: 'scenario.cue.action'
+      readonly cueId: string
+      readonly actionIndex: number
+      readonly outcome: 'unknown' | 'accepted' | 'failed'
+    })
+  | (EventEnvelopeBase & {
+      readonly type: 'scenario.cue.finished'
+      readonly cueId: string
+      readonly outcome: 'complete' | 'failed'
     })
   | (EventEnvelopeBase & {
       readonly type: 'scenario.guidance.shown'
@@ -173,6 +185,14 @@ export const simulationRunEventSchema = z.discriminatedUnion('type', [
   eventBaseSchema.extend({
     type: z.literal('scenario.cue.started'),
     cueId: z.string().min(1),
+    actionCount: z.number().int().nonnegative().optional(),
+  }),
+  eventBaseSchema.extend({
+    type: z.literal('scenario.cue.action'), cueId: z.string().min(1),
+    actionIndex: z.number().int().nonnegative(), outcome: z.enum(['unknown', 'accepted', 'failed']),
+  }),
+  eventBaseSchema.extend({
+    type: z.literal('scenario.cue.finished'), cueId: z.string().min(1), outcome: z.enum(['complete', 'failed']),
   }),
   eventBaseSchema.extend({
     type: z.literal('scenario.guidance.shown'),

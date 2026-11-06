@@ -104,16 +104,19 @@ export interface DisplayFrameFill {
  * display with its first-out selected, W2.8): its item outlined and its faceplate open.
  */
 export interface DisplayFrameSelect {
+  readonly requestId?: string
   readonly type: 'world:display-select'
   readonly objectId: string
   readonly elementId: string
 }
 
 export const parseDisplayFrameSelect = (value: unknown): DisplayFrameSelect | null =>
-  isRecord(value) && value.type === 'world:display-select' && hasKeys(value, ['type', 'objectId', 'elementId']) && text(value.objectId, 200) && text(value.elementId, 200)
-    ? { type: 'world:display-select', objectId: value.objectId, elementId: value.elementId } : null
+  isRecord(value) && value.type === 'world:display-select' && hasKeys(value, ['type', 'objectId', 'elementId', ...('requestId' in value ? ['requestId'] : [])]) && (!('requestId' in value) || text(value.requestId, 256)) && text(value.objectId, 200) && text(value.elementId, 200)
+    ? { type: 'world:display-select', objectId: value.objectId, elementId: value.elementId, ...(typeof value.requestId === 'string' ? { requestId: value.requestId } : {}) } : null
 
-export type DisplayFrameMessage = DisplayFrameReady | DisplayFrameExtent | DisplayFrameZoomRequest | DisplayFrameOpen | DisplayFrameMap | DisplayFrameBack | DisplayFrameFill
+export interface DisplayFrameSelected { readonly type: 'world:display-selected'; readonly requestId: string; readonly objectId: string; readonly elementId: string; readonly applied: boolean }
+
+export type DisplayFrameMessage = DisplayFrameSelected | DisplayFrameReady | DisplayFrameExtent | DisplayFrameZoomRequest | DisplayFrameOpen | DisplayFrameMap | DisplayFrameBack | DisplayFrameFill
 
 /** The longest state and title an open request carries (a detail's state is far shorter). */
 const OPEN_STATE_MAX = 4_096
@@ -151,6 +154,7 @@ export const parseDisplayFramePresentation = (value: unknown): DisplayFramePrese
 
 export const parseDisplayFrameMessage = (value: unknown): DisplayFrameMessage | null => {
   if (!isRecord(value)) return null
+  if (value.type === 'world:display-selected') return hasKeys(value, ['type', 'requestId', 'objectId', 'elementId', 'applied']) && text(value.requestId, 256) && text(value.objectId, 200) && text(value.elementId, 200) && typeof value.applied === 'boolean' ? { type: 'world:display-selected', requestId: value.requestId, objectId: value.objectId, elementId: value.elementId, applied: value.applied } : null
   if (value.type === 'world:display-frame-ready') return hasKeys(value, ['type']) ? { type: 'world:display-frame-ready' } : null
   if (value.type === 'world:display-extent') {
     if (!hasKeys(value, ['type', 'kind', 'minWidth', 'width', 'height', ...('fit' in value ? ['fit'] : [])])) return null

@@ -23,6 +23,9 @@
   let action = $state<HTMLElement | null>(null)
   const steps = $derived(startSteps(progress.moduleId))
   const index = $derived(steps.findIndex(step => step.id === progress.step))
+  const headingText = $derived(progress.phase === 'busy' ? `Starting ${title}`
+    : progress.action === 'check' && progress.step !== 'checking' ? `Check the start of ${title}`
+    : `Could not start ${title}`)
 
   // Focus moves to the progress before the Start button disappears (a11y M2),
   // and to the first action when it fails.
@@ -33,7 +36,7 @@
 </script>
 
 <div class="start-progress" class:failed={progress.phase === 'failed'}>
-  <p class="heading" tabindex="-1" bind:this={heading}>{progress.phase === 'failed' ? `Could not start ${title}` : `Starting ${title}`}</p>
+  <p class="heading" tabindex="-1" bind:this={heading}>{headingText}</p>
   <ol>
     {#each steps as step, position (step.id)}
       {@const done = position < index}

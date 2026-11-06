@@ -18,6 +18,12 @@ leitbild.app, leitbild.ai {
 		-Server
 	}
 
+	# Internal Module provenance is accepted only on the trusted loopback service path.
+	@moduleInternal path /internal /internal/*
+	handle @moduleInternal {
+		respond "Not found" 404
+	}
+
 	@world path_regexp world ^(?:/workspaces/[^/]+/world(?:/.*)?|/api/workspaces/[^/]+/world(?:/.*)?|/assets/world/.*|/map/.*)$
 	handle @world {
 		reverse_proxy 127.0.0.1:4177

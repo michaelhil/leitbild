@@ -19,7 +19,7 @@
 // ============================================================================
 
 import type { DeliveryMode, Message, RoomProfile } from '../core/types/messaging.ts'
-import type { EvalEvent } from '../core/types/agent-eval.ts'
+import type { EvalEvent, EvalEventScope } from '../core/types/agent-eval.ts'
 import type { SummaryTarget } from '../core/types/room.ts'
 import type { SummaryConfig } from '../core/types/summary.ts'
 import type { ProviderAttempt, ProviderAllFailedSummary } from '../core/types/llm.ts'
@@ -27,23 +27,23 @@ import type { LogActor, LogEvent } from './types.ts'
 
 // --- actor constructors ---
 
-const senderActor = (m: Message): LogActor | undefined =>
+const senderActor = (m: Message, kind: LogActor['kind']): LogActor | undefined =>
   m.senderName !== undefined
-    ? { kind: m.senderId?.startsWith('agent-') ? 'ai' : 'unknown', id: m.senderId, name: m.senderName }
+    ? { kind, id: m.senderId, name: m.senderName }
     : m.senderId !== undefined
-      ? { kind: 'unknown', id: m.senderId }
+      ? { kind, id: m.senderId }
       : undefined
 
 const systemActor: LogActor = { kind: 'system' }
 
 // --- per-kind constructors ---
 
-export const mkMessagePosted = (sessionId: string, roomId: string, message: Message): LogEvent => ({
+export const mkMessagePosted = (sessionId: string, roomId: string, message: Message, senderKind: LogActor['kind'] = 'unknown'): LogEvent => ({
   ts: message.timestamp,
   kind: 'message.posted',
   session: sessionId,
   roomId,
-  ...(senderActor(message) ? { actor: senderActor(message)! } : {}),
+  ...(senderActor(message, senderKind) ? { actor: senderActor(message, senderKind)! } : {}),
   payload: { message },
 })
 
@@ -95,11 +95,12 @@ export const mkMembershipChanged = (
   payload: { roomName, agentId, agentName, action },
 })
 
-export const mkEvalEvent = (sessionId: string, agentName: string, event: EvalEvent): LogEvent => ({
+export const mkEvalEvent = (sessionId: string, scope: EvalEventScope, event: EvalEvent): LogEvent => ({
   ts: Date.now(),
   kind: 'agent.eval_event',
   session: sessionId,
-  actor: { kind: 'ai', name: agentName },
+  actor: { kind: 'ai', id: scope.agentId, name: scope.agentName },
+  ...(scope.roomId === undefined ? {} : { roomId: scope.roomId }),
   payload: { event: event.kind === 'context_ready' ? {
     ...event,
     messages: undefined,

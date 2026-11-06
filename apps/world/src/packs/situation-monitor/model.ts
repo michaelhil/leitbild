@@ -23,8 +23,8 @@ export const sourceMapStyleSchema = z.object({
 }).strict()
 const common = {
   id: sourceIdSchema, name: z.string().trim().min(1).max(120), enabled: z.boolean().default(true),
-  intervalSeconds: z.number().int().min(60).max(86400).default(300),
-  retentionHours: z.number().int().min(1).max(168).default(24),
+  intervalSeconds: z.number().int().min(60).max(86400).default(300).describe('Wall-clock seconds between bounded source acquisitions. Independent of simulation clock speed or pause; retained-record reads do not trigger acquisition.'),
+  retentionHours: z.number().int().min(1).max(168).default(24).describe('Wall-clock hours to retain acquired evidence. Retrieval/freshness time is distinct from provider publication, observation and validity times.'),
   credentialRef: sourceIdSchema.optional(),
   attribution: z.string().max(300).default(''),
   map: sourceMapStyleSchema.default({ visible: true, opacity: .18, lineWidth: 2 }),

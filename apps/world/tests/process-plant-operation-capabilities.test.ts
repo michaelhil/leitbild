@@ -1,3 +1,4 @@
+import { unrestrictedQueryReadPolicy } from '../src/simulation/query-read-policy.ts'
 import { newWorkspaceId } from '@leitbild/contracts'
 import { describe, expect, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
@@ -301,7 +302,7 @@ describe('a pending proposal across a restore', () => {
       if (emission.type === 'event.emission') for (const event of emission.events) if (event.type === 'interaction.signal') emitted.push(event.signal.type)
     })
     try {
-      const read = async () => ((await restored.invokeQuery({ capabilityId: 'world.process-plant.control.proposals', input: { plantId: String(plant.id) } })) as { readonly proposals: ReadonlyArray<{ readonly proposal: ProcessPlantProposal }> }).proposals[0]!.proposal.status
+      const read = async () => ((await restored.invokeQuery({ readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.process-plant.control.proposals', input: { plantId: String(plant.id) } })) as { readonly proposals: ReadonlyArray<{ readonly proposal: ProcessPlantProposal }> }).proposals[0]!.proposal.status
       expect(await read()).toBe('pending')
       const advance = async (ms: number) => {
         const next = { ...clock.read(), currentTime: new Date(Date.parse(clock.read().currentTime) + ms).toISOString() as IsoTimestamp }

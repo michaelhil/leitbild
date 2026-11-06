@@ -25,6 +25,8 @@ export interface ToolResult {
   /** Trusted invocation metadata, never a model declaration or physical proof. */
   readonly effects?: ReadonlyArray<ToolExecutionEffect>
   /** Runtime-owned selector into this actual execution's immutable outcome. */
+  /** Runtime-owned nested call accounting. Each id is aggregated at most once. */
+  readonly nestedModelCalls?: ReadonlyArray<{ readonly id: string; readonly metrics: { readonly promptTokens?: number; readonly completionTokens?: number; readonly cacheCreation?: number; readonly cacheRead?: number; readonly cacheMiss?: number; readonly costUsd?: number; readonly provider?: string; readonly model?: string } }>
   readonly recall?: { readonly turnId: string; readonly toolCallId: string; readonly part: 'result' }
 }
 
@@ -59,6 +61,9 @@ export interface ToolContext {
   readonly signal?: AbortSignal
   /** Execution-evidence id of this call within the current turn; absent for standalone executors. */
   readonly executionCallId?: string
+  readonly executionTurnId?: string
+  /** Trusted initiating browser offer; never a model-selected address or Resource grant. */
+  readonly presentationRecipient?: import('@leitbild/contracts').PresentationRecipient
   readonly contextCheckpoint?: (input: unknown) => Promise<unknown>
   readonly callerId: string
   readonly callerName: string

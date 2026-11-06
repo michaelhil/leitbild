@@ -1,3 +1,4 @@
+import { unrestrictedQueryReadPolicy } from '../src/simulation/query-read-policy.ts'
 import { expect, test, spyOn } from 'bun:test'
 import { mkdtemp, rm, readFile } from 'node:fs/promises'
 import { mkdirSync, renameSync } from 'node:fs'
@@ -150,6 +151,7 @@ test('regression: pause longer than peer TTL preserves electrical connection on 
   const registry = createSimulationRunRegistry({ dataDir,workspaceId,...testScenarioAuthoring(),runtimeAdapters:createTestPackRuntimeAdapters(),scenarioRuntimeResolver:createTestScenarioRuntimeResolver(),idleRuntimeCloseDelayMs:-1 })
   try {
     const run = await registry.create({scenarioId:'halden-power-complex'})
+    await run.setClock({paused:false}) // The guided Definition deliberately starts paused; this regression needs advancing peers.
     // Each Pack tick commits events and exchanges connection states; a loaded machine delays ticks, so wait for them.
     const ticked = (label: string, afterSeq: number) => waitForCondition(label, () => run.snapshot().seq > afterSeq, { timeoutMs: 20_000 })
     await Bun.sleep(2100)
@@ -196,11 +198,11 @@ test('regression: unrelated observation does not clear health during a persisten
   })}
   const hub = await createRuntimeHub([adapter as never]).connect({simulationRunId:'audit-health' as never,scenario:{scenarioId:'audit',runtimeIds:[adapter.id],world:{startsAt:'2026-09-02T00:00:00.000Z' as never,environment:{}},initialObjects:[],connections:[],runtimeConfig:{}}})
   try {
-    await expect(hub.invokeQuery({capabilityId:'world.audit.status',input:{}})).rejects.toThrow('solver permanently stopped')
+    await expect(hub.invokeQuery({ readPolicy: unrestrictedQueryReadPolicy, capabilityId:'world.audit.status',input:{}})).rejects.toThrow('solver permanently stopped')
     expect(hub.health?.()[0]?.state).toBe('degraded')
     await hub.observeCommittedEvents([])
     expect(hub.health?.()[0]?.state).toBe('degraded')
-    await expect(hub.invokeQuery({capabilityId:'world.audit.status',input:{}})).rejects.toThrow('solver permanently stopped')
+    await expect(hub.invokeQuery({ readPolicy: unrestrictedQueryReadPolicy, capabilityId:'world.audit.status',input:{}})).rejects.toThrow('solver permanently stopped')
   } finally {await hub.close()}
 })
 

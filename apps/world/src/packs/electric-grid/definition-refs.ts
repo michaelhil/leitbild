@@ -1,4 +1,5 @@
 import type { GridConnectionPointDefinition, GridModelFidelity } from './grid-model.ts'
+import { rejectCapabilityInput } from '../../simulation/capability-rejection.ts'
 
 // The one Electric Grid Definition catalog. Authoring, scenario expansion, recording estimates
 // and the catalog query read it without loading or compiling a model: it does no filesystem
@@ -178,7 +179,7 @@ export const catalogEntriesById = <Entry extends { readonly id: string }>(entrie
   }
   return id => {
     const entry = byId.get(id)
-    if (entry === undefined) throw new Error(`unknown ${kind}: ${id}`)
+    if (entry === undefined) return rejectCapabilityInput(`unknown ${kind}: ${id}`)
     return entry
   }
 }

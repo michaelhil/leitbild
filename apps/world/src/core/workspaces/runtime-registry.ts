@@ -1,7 +1,8 @@
 import type { WorkspaceId } from '@leitbild/contracts'
+import type { GuidePromptEvidenceReader } from '../guides/prompt-evidence.ts'
 import { createOperationScope, createStorageBudget } from '@leitbild/module-runtime'
 import type { ProcedureSourceService } from '../../features/procedures/source.ts'
-import type { PackRuntimeAdapter } from '../../simulation/protocol.ts'
+import type { PackRuntimeAdapter, PackWorkspaceCapability } from '../../simulation/protocol.ts'
 import type { CompiledScenario } from '../model/index.ts'
 import type { ScenarioAuthoringCatalog } from '../scenarios/authoring.ts'
 import type { ScenarioDefinition } from '../scenarios/definition.ts'
@@ -55,9 +56,11 @@ export const createWorldWorkspaceRuntimeRegistry = (config: {
   readonly compileScenarioDefinition: (source: unknown) => Promise<CompiledScenario>
   readonly scenarioAuthoringCatalog: ScenarioAuthoringCatalog
   readonly runtimeAdapters: ReadonlyArray<PackRuntimeAdapter>
+  readonly workspaceCapabilities?: ReadonlyArray<PackWorkspaceCapability>
   readonly idleRuntimeCloseDelayMs?: number
   readonly procedureSourceService?: ProcedureSourceService
   readonly maxLoadedWorkspaces?: number
+  readonly readGuidePromptEvidence?: GuidePromptEvidenceReader
 }): WorldWorkspaceRuntimeRegistry => {
   const loaded = new Map<WorkspaceId, WorldWorkspaceRuntime>()
   const storageBudget = createStorageBudget({ root: config.dataDir })
@@ -78,6 +81,8 @@ export const createWorldWorkspaceRuntimeRegistry = (config: {
       compileScenarioDefinition: config.compileScenarioDefinition,
       scenarioAuthoringCatalog: config.scenarioAuthoringCatalog,
       runtimeAdapters: config.runtimeAdapters,
+      ...(config.readGuidePromptEvidence === undefined ? {} : { readGuidePromptEvidence: config.readGuidePromptEvidence }),
+      ...(config.workspaceCapabilities === undefined ? {} : { workspaceCapabilities: config.workspaceCapabilities }),
       ...(config.idleRuntimeCloseDelayMs === undefined ? {} : { idleRuntimeCloseDelayMs: config.idleRuntimeCloseDelayMs }),
       ...(config.procedureSourceService === undefined ? {} : { procedureSourceService: config.procedureSourceService }),
     }),

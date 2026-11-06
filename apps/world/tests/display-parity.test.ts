@@ -1,3 +1,4 @@
+import { unrestrictedQueryReadPolicy } from '../src/simulation/query-read-policy.ts'
 import { describe, expect, test } from 'bun:test'
 import { join } from 'node:path'
 import type { Observable, Observation } from '../src/core/observation/model.ts'
@@ -39,7 +40,7 @@ const ref = (path: string): string => `${PLANT_ID}#${path}`
 const READ_AT_ONCE = 64
 const read = (instance: ProcessPlantRuntimeInstance, refs: ReadonlyArray<string>): ReadonlyMap<string, Observation> => new Map(Array.from({ length: Math.ceil(refs.length / READ_AT_ONCE) }, (_, at) => refs.slice(at * READ_AT_ONCE, (at + 1) * READ_AT_ONCE))
   .flatMap(chunk => (answerProcessPlantObservationQuery({
-    request: { capabilityId: 'world.process-plant.observation.read', input: { refs: chunk } }, plants: new Map([[PLANT_ID, instance]]), simulationTime: SIMULATION_TIME, recording: null,
+    request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.process-plant.observation.read', input: { refs: chunk } }, plants: new Map([[PLANT_ID, instance]]), simulationTime: SIMULATION_TIME, recording: null,
   }) as { readonly observations: ReadonlyArray<Observation> }).observations).map(observation => [observation.ref, observation]))
 
 /**

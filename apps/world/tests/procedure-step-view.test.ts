@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import type { ActorId, CommandId, IsoTimestamp, ProcedureDocument, ProcedureRunState } from '../src/core/model/index.ts'
+import { procedureDocumentSchema, type ActorId, type CommandId, type IsoTimestamp, type ProcedureDocument, type ProcedureRunState } from '../src/core/model/index.ts'
+import type { ProcedureCriterionStatus } from '../src/core/model/procedure-criteria.ts'
 import { parseProcedureTagValue, type ProcedureCsfEvaluation, type ProcedureObservationPort, type ProcedureTagValue } from '../src/features/procedures/pack-observations.ts'
 import { parseProcedureMarkdown } from '../src/features/procedures/procmd.ts'
 import { composeProcedureRunView, composeProcedureRunReadView, composeProcedureStepView, projectProcedureStepGuidance, procedureStepReadViewSchema, procedureRunReadViewSchema, procedureStepNotFoundCode, type ProcedureStepViewPorts } from '../src/features/procedures/step-view.ts'
+import { readProcedureChecks } from '../src/features/procedures/checks-view.ts'
 
 const source = {
   sourceId: 'pwr-ops', label: 'PWR operations procedures', repository: 'leitbild-wikis/pwr-ops', ref: 'main',
@@ -96,6 +98,109 @@ const ports = (config: {
       return config.csfs ?? new Map()
     },
   }),
+})
+
+describe('current procedure checks', () => {
+  const current = run()
+  const input = { runId: current.runId, stepId: current.currentStepId!, sourceId: current.sourceId, sourceRevision: current.sourceRevision, sourcePath: current.sourcePath }
+  const clock = { currentTime: plantTime, paused: true, updatedAt: plantTime }
+  const fixture = document()
+  const condition = { type: 'comparison', tagId: 'TRIP-BKR-A', operator: '==', value: false, unit: 'boolean',
+    evidence: 'engineering-diagnostic', source: 'owner.md#trip', maxAgeSeconds: 2 } as const
+  const doc = procedureDocumentSchema.parse({
+    ...fixture, steps: [{ ...fixture.steps[0], pairs: [{ id: 'shutdown', sourceLine: 10, advisoryBranchIndex: 0 }], decisions: [
+      { branchIndex: 0, condition },
+      { branchIndex: 1, observation: { capabilityId: 'world.test.history.evaluate', input: {}, source: 'owner.md#alternate', maxAgeSeconds: 2 } },
+    ] }, fixture.steps[1]],
+  })
+  const config = {
+    input,
+    snapshot: () => ({ seq: 42, clock, procedures: { runs: [current] } }),
+    canInspect: () => true,
+    document: async () => doc,
+  }
+
+  test('reads only explicitly paired native facts and expires them in simulation time', async () => {
+    const evidence = { kind: 'engineering-diagnostic', provenance: 'runtime-model', sampledAt: '2026-10-13T08:00:59.000Z' as IsoTimestamp } as const
+    const feedback = value(condition.tagId, 'false', { value: false, unit: 'boolean', scopeId: current.scope.plantId,
+      signalTagId: condition.tagId, writable: false, evidence })
+    const fresh = '2026-10-13T08:01:01.000Z' as IsoTimestamp
+    const cases: ReadonlyArray<{ reading: ProcedureTagValue | 'missing'; status: ProcedureCriterionStatus; validThrough?: IsoTimestamp; reason?: string }> = [
+      { reading: feedback, status: 'supported', validThrough: fresh },
+      { reading: { ...feedback, value: true }, status: 'contradicted', validThrough: fresh },
+      { reading: { ...feedback, evidence: { ...evidence, sampledAt: '2026-10-13T08:00:57.999Z' as IsoTimestamp } }, status: 'unknown', reason: 'stale' },
+      { reading: { ...feedback, scopeId: 'plant:other' }, status: 'unknown', reason: 'plant scope' },
+      { reading: { ...feedback, writable: true }, status: 'unknown', reason: 'feedback is required' },
+      { reading: 'missing' as const, status: 'unknown', reason: 'not bound' },
+    ]
+    for (const scenario of cases) {
+      const calls: string[] = []
+      const result = await readProcedureChecks({ ...config, observations: plantId => {
+        expect(plantId).toBe(current.scope.plantId)
+        const port = ports({ reads: { [condition.tagId]: scenario.reading }, calls }).observations()
+        return { ...port, readObservation: async () => { calls.push('Unexpected historical acquisition'); return {} } }
+      } })
+      expect(result).toEqual({ ...input, plantId: current.scope.plantId, sequence: 42, simulationTime: plantTime, checks: [{
+        branchIndex: 0, status: scenario.status, reasons: scenario.reason === undefined ? [] : expect.arrayContaining([expect.stringContaining(scenario.reason)]),
+        readings: scenario.reason === 'plant scope' ? [] : [expect.objectContaining({ tagId: condition.tagId, status: scenario.status })],
+        ...(scenario.validThrough === undefined ? {} : { validThrough: scenario.validThrough }),
+      }] })
+      expect(calls).toEqual(scenario.reading === 'missing' ? [] : [condition.tagId])
+    }
+  })
+
+  test('leaves unannotated guidance empty and manual evidence unknown', async () => {
+    const observations = () => { throw new Error('No observations required') }
+    expect((await readProcedureChecks({ ...config, document: async () => fixture, observations })).checks).toEqual([])
+    const step = doc.steps[0]!
+    const manual = { ...doc, steps: [{ ...step, decisions: [{ branchIndex: 0, condition: {
+      type: 'manual' as const, description: 'Judge actual response', tagIds: [], source: 'owner.md#manual',
+    } }] }] }
+    expect((await readProcedureChecks({ ...config, document: async () => manual, observations })).checks).toEqual([
+      { branchIndex: 0, status: 'unknown', reasons: ['Human judgment required: Judge actual response'],
+        readings: [expect.objectContaining({ description: 'Judge actual response', status: 'unknown' })] },
+    ])
+  })
+
+  test('uses the exact declared Pack observation and ages its own evidence timestamp', async () => {
+    const observation = { capabilityId: 'world.test.check.evaluate', input: { condition: 'exact' }, source: 'owner.md#check', maxAgeSeconds: 2 }
+    const observed = { ...doc, steps: [{ ...doc.steps[0]!, decisions: [{ branchIndex: 0, observation }] }] }
+    const calls: unknown[] = []
+    const result = await readProcedureChecks({
+      ...config, document: async () => observed,
+      observations: plantId => ({
+        ...ports().observations(),
+        readObservation: async binding => {
+          calls.push({ plantId, binding })
+          return { status: 'challenged', targetObjectId: plantId, evidenceKind: 'engineering-diagnostic', provenance: 'runtime-model',
+            simulationTime: '2026-10-13T08:00:59.000Z' }
+        },
+      }),
+    })
+    expect(calls).toEqual([{ plantId: current.scope.plantId, binding: observation }])
+    expect(result.checks).toEqual([{ branchIndex: 0, status: 'contradicted', reasons: [], readings: [],
+      observation: { result: expect.objectContaining({ status: 'challenged', targetObjectId: current.scope.plantId }) },
+      validThrough: '2026-10-13T08:01:01.000Z' as IsoTimestamp }])
+  })
+
+  test('refuses a mismatched pin, inaccessible scope, or superseded observation', async () => {
+    const observations = () => { throw new Error('Must check the requested scope before acquiring') }
+    await expect(readProcedureChecks({ ...config, input: { ...input, sourceRevision: 'd'.repeat(40) }, observations }))
+      .rejects.toMatchObject({ status: 409, code: 'procedure_checks_superseded' })
+    await expect(readProcedureChecks({ ...config, input: { ...input, stepId: 'verify-turbine-trip' }, observations }))
+      .rejects.toMatchObject({ status: 409, code: 'procedure_checks_superseded' })
+    await expect(readProcedureChecks({ ...config, canInspect: () => false, observations }))
+      .rejects.toMatchObject({ status: 403, code: 'agent_access_restricted' })
+
+    let sequence = 42
+    await expect(readProcedureChecks({
+      ...config, snapshot: () => ({ ...config.snapshot(), seq: sequence }),
+      observations: () => {
+        const port = ports().observations()
+        return { ...port, readTags: async tags => { sequence++; return await port.readTags(tags) } }
+      },
+    })).rejects.toMatchObject({ status: 409, code: 'procedure_checks_superseded' })
+  })
 })
 
 describe('procedure step view', () => {

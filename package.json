@@ -11,6 +11,7 @@
   "scripts": {
     "dev:stack": "bun --no-env-file run scripts/local-stack.ts",
     "dev:smoke": "bun --no-env-file run scripts/local-stack.ts --smoke --port=0",
+    "verify": "bun --no-env-file run scripts/prepare-platform.ts",
     "knowledge:publish": "bun run scripts/publish-knowledge.ts",
     "check:knowledge": "bun run --cwd packages/knowledge check",
     "test:knowledge": "bun run --cwd packages/knowledge test",
@@ -35,7 +36,8 @@
     "build:host": "bun run --cwd apps/leitbild build:ui",
     "build:world": "bun run --cwd apps/world build:ui",
     "build:agents": "bun run --cwd apps/agents build:ui",
-    "build": "bun run build:host && bun run build:world && bun run build:agents"
+    "build": "bun run build:host && bun run build:world && bun run build:agents",
+    "validate": "bun run check && bun run test && bun run build:world && bun run build:agents"
   },
   "engines": {
     "bun": "1.4.0"

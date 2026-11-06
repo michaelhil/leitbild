@@ -19,6 +19,7 @@ export interface LogEvent {
   readonly ts: number          // ms epoch
   readonly kind: string        // dotted: 'message.posted', 'agent.eval_event', 'room.created'
   readonly session: string     // opaque session id
+  readonly workspaceId?: string // Actual Workspace (or explicit ephemeral runtime) identity
   readonly actor?: LogActor
   readonly roomId?: string
   readonly payload: Record<string, unknown>

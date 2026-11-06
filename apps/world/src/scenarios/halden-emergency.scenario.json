@@ -409,19 +409,188 @@
       {
         "id": "exercise-end",
         "at": {"kind": "after_scenario_start", "seconds": 1800},
-        "title": "End of the exercise",
+        "title": "Scheduled call sequence complete",
         "actions": [
           {
             "type": "show_guidance",
             "guidance": {
               "id": "exercise-end",
               "title": "End of the exercise",
-              "message": "30 minutes in, the exercise is over. Check the objectives: every P1 call reached within 8 minutes, a fire engine at the guest harbour car fire within 4, and every P2 call reached within 12.",
+              "message": "The authored 30-minute call sequence has ended; existing work and the simulation may continue. Derive actual arrival times from history and compare with the authored objectives: P1 within 8 min, the guest harbour car fire within 4 min and P2 within 12 min. This card is not a completion score.",
               "dismissible": true,
               "tone": "update"
             }
           }
         ]
+      }
+    ]
+  },
+  "guide": {
+    "id": "guide:emergency",
+    "title": "Dispatch and verify a response",
+    "description": "Human role exercise. Choose a desk before starting its guide. AI assistance remains unavailable in role Runs.",
+    "startPaused": true,
+    "entry": {
+      "kind": "clock",
+      "beforeSeconds": 40
+    },
+    "steps": [
+      {
+        "id": "readiness",
+        "title": "Agree the shared start",
+        "instruction": "Controller: keep time paused while each desk selects its role and checks the Board. Participants tell the controller when ready. The controller explicitly starts the shared clock after agreement; one person advancing this guide never starts everybody. Guide progress remains independent.",
+        "effects": [],
+        "completion": {
+          "kind": "acknowledge"
+        }
+      },
+      {
+        "id": "controller",
+        "title": "Run the exercise",
+        "instruction": "Confirm each desk is ready before Play. Use the Board and shared clock to pace new calls; inspect assignments and arrival histories before debriefing.",
+        "effects": [
+          {
+            "id": "board",
+            "target": {
+              "kind": "panel",
+              "panelId": "einsatz.board"
+            },
+            "action": {
+              "kind": "reveal"
+            }
+          }
+        ],
+        "completion": {
+          "kind": "acknowledge"
+        },
+        "roles": [
+          "controller"
+        ]
+      },
+      {
+        "id": "ems-board",
+        "title": "Find the waiting call",
+        "instruction": "Inspect the waiting Tistedal fall call, its urgency and suggested eligible units. Dispatch A4 with the real Board action; follow the assignment result.",
+        "effects": [
+          {
+            "id": "board",
+            "target": {
+              "kind": "panel",
+              "panelId": "einsatz.board"
+            },
+            "action": {
+              "kind": "reveal"
+            }
+          },
+          {
+            "id": "call",
+            "target": {
+              "kind": "object",
+              "objectId": "task:tistedal-fall"
+            },
+            "action": {
+              "kind": "focus"
+            }
+          }
+        ],
+        "completion": {
+          "kind": "acknowledge"
+        },
+        "roles": [
+          "group:ambulance"
+        ]
+      },
+      {
+        "id": "ems-arrival",
+        "title": "Verify the response",
+        "instruction": "Advance in small intervals, then pause when A4 is on task. This gate observes the actual A4 phase, not the dispatch click. If you chose another unit or passed the phase, inspect history and Skip explicitly.",
+        "effects": [
+          {
+            "id": "unit",
+            "target": {
+              "kind": "object",
+              "objectId": "unit:amb-4"
+            },
+            "action": {
+              "kind": "reveal"
+            }
+          }
+        ],
+        "completion": {
+          "kind": "condition",
+          "condition": {
+            "kind": "object-status",
+            "objectId": "unit:amb-4",
+            "status": "on-task"
+          }
+        },
+        "roles": [
+          "group:ambulance"
+        ]
+      },
+      {
+        "id": "police",
+        "title": "Work the police desk",
+        "instruction": "Inspect Patrol 1 and eligible calls in your Board. Dispatch through the supported action, then verify assignment and actual arrival history.",
+        "effects": [
+          {
+            "id": "patrol",
+            "target": {
+              "kind": "object",
+              "objectId": "unit:patrol-1"
+            },
+            "action": {
+              "kind": "reveal"
+            }
+          }
+        ],
+        "completion": {
+          "kind": "acknowledge"
+        },
+        "roles": [
+          "group:police"
+        ]
+      },
+      {
+        "id": "fire",
+        "title": "Work the fire desk",
+        "instruction": "Inspect Engine 1 and eligible calls in your Board. Check required capacity, dispatch through the supported action and follow actual arrival history.",
+        "effects": [
+          {
+            "id": "engine",
+            "target": {
+              "kind": "object",
+              "objectId": "unit:engine-1"
+            },
+            "action": {
+              "kind": "reveal"
+            }
+          }
+        ],
+        "completion": {
+          "kind": "acknowledge"
+        },
+        "roles": [
+          "group:fire"
+        ]
+      },
+      {
+        "id": "debrief",
+        "title": "Review the queue",
+        "instruction": "Continue the shared exercise. At a stopping point derive urgent waits and outcomes from actual histories and authored objectives. Closing a guide card never closes a call or proves arrival.",
+        "effects": [],
+        "completion": {
+          "kind": "acknowledge"
+        }
+      },
+      {
+        "id": "explore",
+        "title": "Continue exploring",
+        "instruction": "This guide is finished. The same Run remains available. Pause or stop guidance whenever you wish; those controls do not pause the shared simulation. Copy the Run before trying a different intervention. Acknowledgements record your choice to continue, not a qualification.",
+        "effects": [],
+        "completion": {
+          "kind": "acknowledge"
+        }
       }
     ]
   }

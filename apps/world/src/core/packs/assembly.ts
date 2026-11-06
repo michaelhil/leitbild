@@ -48,6 +48,7 @@ const capabilityContract = (capability: PackRuntimeAdapter['capabilities'][numbe
   idempotent: capability.idempotent,
   schedulable: capability.schedulable ?? false,
   audience: capability.audience ?? null,
+  readScope: capability.readScope ?? null,
   inputSchema: capabilityJsonSchema(capability.input),
   outputSchema: capabilityJsonSchema(capability.output),
 })
@@ -92,6 +93,18 @@ export const validateWorldAssembly = (config: {
 }): ValidatedWorldAssembly => {
   assertUnique(config.packs.map(pack => pack.descriptor.id), 'Pack id')
   assertUnique(config.runtimeAdapters.map(adapter => adapter.id), 'Pack Runtime id')
+  const workspaceCapabilities = [...config.packs.flatMap(pack => pack.workspaceCapabilities ?? []), ...config.runtimeAdapters.flatMap(adapter => adapter.workspaceCapabilities ?? [])]
+  assertUnique(workspaceCapabilities.map(capability => capability.id), 'Workspace Capability id across owners')
+  const runtimeCapabilityIds = new Set(config.runtimeAdapters.flatMap(adapter => adapter.capabilities.map(capability => capability.id)))
+  for (const capability of workspaceCapabilities) if (runtimeCapabilityIds.has(capability.id)) throw new Error('Capability exists in both Workspace and Run scope: ' + capability.id)
+  for (const pack of config.packs) {
+    for (const capability of pack.workspaceCapabilities ?? []) {
+      if (!capability.id.startsWith(`world.${pack.descriptor.id}.`)) throw new Error('Workspace Capability is not owned by its Pack: ' + capability.id)
+      if (!capability.title.trim() || !capability.description.trim()) throw new Error('Workspace Capability has incomplete metadata: ' + capability.id)
+      capabilityJsonSchema(capability.input); capabilityJsonSchema(capability.output)
+      if (capability.kind === 'query' && (capability.risk !== 'read' || !capability.idempotent)) throw new Error('Workspace query must be read-only and idempotent: ' + capability.id)
+    }
+  }
 
   const adaptersById = new Map(config.runtimeAdapters.map(adapter => [adapter.id, adapter]))
   const packsById = new Map(config.packs.map(pack => [pack.descriptor.id, pack]))
@@ -109,6 +122,8 @@ export const validateWorldAssembly = (config: {
       if (!capability.id.startsWith(`world.${adapter.packId}.`)) throw new Error('Workspace Capability is not owned by its Pack: ' + capability.id)
     }
     for (const capability of adapter.capabilities) {
+      if (capability.kind === 'query' && !['catalog', 'object', 'collection'].includes(capability.readScope!)) throw new Error(`Query Capability ${capability.id} must declare its read scope`)
+      if (capability.kind === 'query' && capability.readScope === 'object' && !capability.inspectObjectIds) throw new Error(`Object query ${capability.id} must declare exact input targets`)
       if (capability.id.trim() === '' || capability.title.trim() === '' || capability.description.trim() === '') {
         throw new Error(`Pack Runtime ${adapter.id} has incomplete ${capability.kind} capability metadata`)
       }

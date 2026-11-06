@@ -2,7 +2,7 @@ import type { IncludeContext, IncludePrompts } from '../../core/types/agent.ts'
 import type { MessageAttachment, MessageTarget } from '../../core/types/messaging.ts'
 import { validateSummaryConfig } from '../../core/types/summary.ts'
 import type { BiometricSignalWire, WSInbound } from '../../core/types/ws-protocol.ts'
-import { workspaceSubjectReferenceSchema, type WorkspaceSubjectReference } from '@leitbild/contracts'
+import { presentationPromptLinkSchema, presentationRecipientSchema, workspaceSubjectReferenceSchema, type WorkspaceSubjectReference } from '@leitbild/contracts'
 import { REASONING_EFFORTS } from '../../core/types/llm.ts'
 
 type ValidationResult<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly error: string }
@@ -188,6 +188,10 @@ export const validateWSInbound = (raw: unknown): ValidationResult<WSInbound> => 
       if (!senderId.ok) return senderId
       const attachments = validateAttachments(raw.attachments)
       if (!attachments.ok) return attachments
+      const recipient = raw.presentationRecipient === undefined ? undefined : presentationRecipientSchema.safeParse(raw.presentationRecipient)
+      if (recipient !== undefined && !recipient.success) return { ok: false, error: 'presentationRecipient must be an exact browser delivery offer' }
+      const draft = raw.presentationDraft === undefined ? undefined : presentationPromptLinkSchema.safeParse(raw.presentationDraft)
+      if (draft !== undefined && !draft.success) return { ok: false, error: 'presentationDraft must name the explicitly chosen prompt source' }
       const focusedSubjects = validateFocusedSubjects(raw.focusedSubjects)
       if (!focusedSubjects.ok) return focusedSubjects
       return {
@@ -199,6 +203,8 @@ export const validateWSInbound = (raw: unknown): ValidationResult<WSInbound> => 
           ...(senderId.value ? { senderId: senderId.value } : {}),
           ...(attachments.value.length > 0 ? { attachments: attachments.value } : {}),
           ...(focusedSubjects.value === undefined ? {} : { focusedSubjects: focusedSubjects.value }),
+          ...(recipient?.success === true ? { presentationRecipient: recipient.data } : {}),
+          ...(draft?.success === true ? { presentationDraft: draft.data } : {}),
         },
       }
     }

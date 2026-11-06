@@ -29,19 +29,23 @@ export const createWSClient = (
 ): WSClient => {
   let ws: WebSocket | null = null
   let attempt = 0
+  let generation = 0
 
   const nextDelayMs = (): number =>
     BACKOFF_SCHEDULE_MS[Math.min(attempt, BACKOFF_SCHEDULE_MS.length - 1)]!
 
   const connect = () => {
+    const current = ++generation
     ws = new WebSocket(workspaceRealtimeUrl(sessionToken))
 
     ws.onopen = () => {
+      if (current !== generation) return
       attempt = 0  // reset backoff on successful connect
       onStatusChange(true)
     }
 
     ws.onclose = (event) => {
+      if (current !== generation) return
       if (event.code === 4004) {
         onStatusChange(false, 'workspace-unavailable')
         return
@@ -52,10 +56,11 @@ export const createWSClient = (
       if (event.code === 4003) return
       const delay = nextDelayMs()
       attempt++
-      setTimeout(connect, delay)
+      setTimeout(() => { if (current === generation) connect() }, delay)
     }
 
     ws.onmessage = (e) => {
+      if (current !== generation) return
       try {
         onMessage(JSON.parse(e.data))
       } catch { /* ignore parse errors */ }

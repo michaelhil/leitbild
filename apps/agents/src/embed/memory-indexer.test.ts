@@ -65,6 +65,49 @@ const stubFetch = (dim: number): typeof globalThis.fetch => {
 }
 
 describe('memory-indexer', () => {
+  test('unavailable Rooms never resolve providers, send plaintext or enter recall', async () => {
+    const { path, cleanup } = await tempPath()
+    try {
+      const store = createVectorStore(path)
+      let providerReads = 0
+      const indexer = createMemoryIndexer({
+        vectorStore: store,
+        mayIndexRoom: () => false,
+        getProviders: () => { providerReads++; throw new Error('Private content must not reach provider resolution') },
+        getRoomName: () => { throw new Error('Private metadata must not enter shared memory') },
+      })
+      await indexer.handleCompressionStart('removed-room', [mkMsg({ content: 'REMOVED_ROOM_CANARY' })], 'removed summary')
+      expect(providerReads).toBe(0)
+      expect(store.count().live).toBe(0)
+      expect(await Bun.file(path).exists()).toBe(false)
+    } finally { await cleanup() }
+  })
+
+  test('a Room excluded while embedding awaits cannot publish a late shared index entry', async () => {
+    const previousFetch = globalThis.fetch
+    const { path, cleanup } = await tempPath()
+    let admitted = true
+    const fetched: string[] = []
+    globalThis.fetch = (async (url, init) => {
+      fetched.push(String(init?.body))
+      admitted = false
+      return stubFetch(8)(url, init)
+    }) as typeof globalThis.fetch
+    try {
+      const store = createVectorStore(path)
+      const indexer = createMemoryIndexer({
+        vectorStore: store,
+        mayIndexRoom: () => admitted,
+        getProviders: () => buildEmbeddingProvidersFromKeys(mkProviderKeys({ openai: 'fixture-only' })),
+        getRoomName: () => 'ordinary',
+      })
+      await indexer.handleCompressionStart('r1', [mkMsg({ content: 'ordinary before exclusion' })], 'summary')
+      expect(fetched).toHaveLength(1)
+      expect(store.count().live).toBe(0)
+      expect(await Bun.file(path).exists()).toBe(false)
+    } finally { globalThis.fetch = previousFetch; await cleanup() }
+  })
+
   test('embeds chat messages and writes vectors with rich metadata', async () => {
     const origFetch = globalThis.fetch
     globalThis.fetch = stubFetch(8)
@@ -74,6 +117,7 @@ describe('memory-indexer', () => {
         const store = createVectorStore(path)
         const indexer = createMemoryIndexer({
           vectorStore: store,
+          mayIndexRoom: () => true,
           getProviders: () => buildEmbeddingProvidersFromKeys(mkProviderKeys({ openai: 'sk-test' })),
           getRoomName: () => 'general',
           log: () => { /* silent */ },
@@ -121,6 +165,7 @@ describe('memory-indexer', () => {
         const store = createVectorStore(path)
         const indexer = createMemoryIndexer({
           vectorStore: store,
+          mayIndexRoom: () => true,
           getProviders: () => buildEmbeddingProvidersFromKeys(mkProviderKeys({ openai: 'sk-test' })),
           getRoomName: () => 'r1',
           log: () => {},
@@ -147,6 +192,7 @@ describe('memory-indexer', () => {
       const logCalls: string[] = []
       const indexer = createMemoryIndexer({
         vectorStore: store,
+          mayIndexRoom: () => true,
         getProviders: () => buildEmbeddingProvidersFromKeys(mkProviderKeys({})),  // no keys
         getRoomName: () => 'r1',
         log: (msg) => logCalls.push(msg),
@@ -175,6 +221,7 @@ describe('memory-indexer', () => {
         const store = createVectorStore(path)
         const indexer = createMemoryIndexer({
           vectorStore: store,
+          mayIndexRoom: () => true,
           getProviders: () => buildEmbeddingProvidersFromKeys(mkProviderKeys({ openai: 'sk-test' })),
           getRoomName: () => 'r1',
           log: () => {},
@@ -205,6 +252,7 @@ describe('memory-indexer', () => {
         const storeB = createVectorStore(b.path)
         const mkIndexer = (store: typeof storeA) => createMemoryIndexer({
           vectorStore: store,
+          mayIndexRoom: () => true,
           getProviders: () => buildEmbeddingProvidersFromKeys(mkProviderKeys({ openai: 'sk-test' })),
           getRoomName: () => 'r1',
           log: () => {},

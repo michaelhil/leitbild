@@ -1,3 +1,4 @@
+import { unrestrictedQueryReadPolicy } from '../src/simulation/query-read-policy.ts'
 import { describe,expect,test } from 'bun:test'
 import {
   commandEnvelopeSchema,
@@ -247,9 +248,9 @@ describe('authoritative Weather field', () => {
     const field = fieldWith()
     advanceWeather(field, later(3))
     const before = checkpointWeatherField(field)
-    const sample = answerWeatherQuery(field, { capabilityId: 'world.weather.sample-at-point', input: { point } })
+    const sample = answerWeatherQuery(field, { readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.weather.sample-at-point', input: { point } })
     expect(sample).toEqual(sampleWeather(field, point))
-    const batch = answerWeatherQuery(field, { capabilityId: 'world.weather.sample-points', input: { points: [point] } })
+    const batch = answerWeatherQuery(field, { readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.weather.sample-points', input: { points: [point] } })
     expect(batch).toEqual([{ point, sample }])
     expect(checkpointWeatherField(field)).toEqual(before)
     for (const cap of weatherQueryCapabilities) expect(cap.output).toBeDefined()
@@ -272,7 +273,7 @@ describe('authoritative Weather field', () => {
     interveneGround(field, [cell], { ice: 0.8 })
     expect(sampleWeather(field, hexCellCenter(cell)).state.surface.ice).toBe(0.8)
     expect(sampleWeather(field, geoPointFromLonLat(11, 60)).state.surface.ice).toBe(0)
-    const result = answerWeatherQuery(field, {
+    const result = answerWeatherQuery(field, { readPolicy: unrestrictedQueryReadPolicy,
       capabilityId: 'world.weather.summarize-area',
       input: { area: hexCellBoundary(cell) },
     }) as { cellCount: number }
@@ -285,7 +286,7 @@ describe('authoritative Weather field', () => {
     expect(() => advanceWeather(field, at)).toThrow('backward')
     expect(() => advanceWeather(field, later(8000))).toThrow('budget')
     expect(() =>
-      answerWeatherQuery(field, {
+      answerWeatherQuery(field, { readPolicy: unrestrictedQueryReadPolicy,
         capabilityId: 'world.weather.sample-along-route',
         input: {
           route: {
@@ -306,7 +307,7 @@ describe('authoritative Weather field', () => {
     advanceWeather(field, later(10))
     const before = checkpointWeatherField(field)
     for (const zoom of [5, 10, 16]) {
-      const result = answerWeatherQuery(field, {
+      const result = answerWeatherQuery(field, { readPolicy: unrestrictedQueryReadPolicy,
         capabilityId: 'world.weather.map-features',
         input: {
           viewport: polygon(10.6, 59.8, 10.9, 60),
@@ -328,7 +329,7 @@ describe('Weather runtime controls and lifecycle', () => {
     })])
     try {
       await connection.setClock({ currentTime: later(150), updatedAt: nowIso(), paused: true })
-      const sample = () => connection.invokeQuery({ capabilityId: 'world.weather.sample-at-point', input: { point } })
+      const sample = () => connection.invokeQuery({ readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.weather.sample-at-point', input: { point } })
       expect(weatherSampleSchema.parse(await sample()).state.atmosphere.windSpeedMps).toBe(7)
       const current = (await connection.getSnapshot()).objects.find(item => item.id === 'weather:rain')!
       const data = weatherPackDataSchema.parse(current.packData)
@@ -367,7 +368,7 @@ describe('Weather runtime controls and lifecycle', () => {
       expect(sample.state.atmosphere.windSpeedMps).toBe(15)
       expect(sample).toEqual(
         weatherSampleSchema.parse(
-          await connection.invokeQuery({ capabilityId: 'world.weather.sample-at-point', input: { point } }),
+          await connection.invokeQuery({ readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.weather.sample-at-point', input: { point } }),
         ),
       )
       const obj = snapshot.objects.find((o) => o.id === 'weather:rain')!
@@ -378,7 +379,7 @@ describe('Weather runtime controls and lifecycle', () => {
       expect(result.ok).toBe(true)
       expect(
         weatherSampleSchema.parse(
-          await connection.invokeQuery({ capabilityId: 'world.weather.sample-at-point', input: { point } }),
+          await connection.invokeQuery({ readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.weather.sample-at-point', input: { point } }),
         ).state.atmosphere.windSpeedMps,
       ).toBe(3)
       expect(
@@ -403,12 +404,12 @@ describe('Weather runtime controls and lifecycle', () => {
     }
     const connection = await connect([object()], { runtimeStateStore: store })
     await connection.setClock({ currentTime: later(20), updatedAt: nowIso(), paused: true })
-    const sample = await connection.invokeQuery({ capabilityId: 'world.weather.sample-at-point', input: { point } })
+    const sample = await connection.invokeQuery({ readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.weather.sample-at-point', input: { point } })
     const snapshot = await connection.getSnapshot()
     await connection.close()
     const restored = await connect([], { runtimeStateStore: store, initialObjects: snapshot.objects })
     try {
-      expect(await restored.invokeQuery({ capabilityId: 'world.weather.sample-at-point', input: { point } })).toEqual(
+      expect(await restored.invokeQuery({ readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.weather.sample-at-point', input: { point } })).toEqual(
         sample,
       )
     } finally {

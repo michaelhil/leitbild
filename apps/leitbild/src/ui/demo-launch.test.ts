@@ -347,6 +347,22 @@ describe('Start demo: the invoke', () => {
     expect(error.kind).toBe('outcome-unknown')
   })
 
+  test('a receipt with an additional foreign Run cannot open either Run', async () => {
+    const { host, ports } = ready()
+    host.on('POST', invokePath(OLD), json({
+      result: {},
+      createdResources: [
+        { workspaceId: OLD, moduleId: 'world', type: 'world.simulation-run', id: 'run-1' },
+        { workspaceId: NEW, moduleId: 'world', type: 'world.simulation-run', id: 'run-2' },
+      ],
+    }, 201))
+
+    const error = await failure(launchDemo({ demo: KEY }, ports))
+
+    expect(error).toMatchObject({ kind: 'outcome-unknown', invoked: true })
+    expect(launchFailureView(error).actions).toEqual(['open'])
+  })
+
   test('capacity (503) asks to try again in a minute', async () => {
     const { host, ports } = ready()
     host.on('POST', invokePath(OLD), hostError(503, 'workspace_capacity_exceeded', 'Too many active Workspaces'))
@@ -365,7 +381,7 @@ describe('Start demo: the invoke', () => {
     const second = ready()
     second.host.on('POST', invokePath(OLD), hostError(500, 'internal_error', 'TypeError: x is undefined at run.ts:12'))
     const raw = await failure(launchDemo({ demo: KEY }, second.ports))
-    expect(launchFailureView(raw).text).toBe('Something went wrong. Try again.')
+    expect(launchFailureView(raw)).toEqual({ text: 'The demo may have started. Open Grid study to check.', actions: ['open'] })
   })
 })
 

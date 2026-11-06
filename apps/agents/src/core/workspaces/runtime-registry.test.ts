@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, spyOn } from 'bun:test'
-import { mkdtemp, rm, stat } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm, stat } from 'node:fs/promises'
+import { Database } from 'bun:sqlite'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createWorkspaceRuntimeRegistry, type WorkspaceRuntimeRegistry } from './runtime-registry.ts'
@@ -10,6 +11,7 @@ import { createAgentsModuleState, type AgentsModuleState } from './module-state.
 import { makeStubGateway, makeStubSetup, stubProviderConfig } from '../../api/__fixtures__/stub-gateway.ts'
 import { asAIAgent } from '../../agents/shared.ts'
 import { agentsActivity } from './workspace-activity.ts'
+import { createExecutionStore } from '../executions/store.ts'
 
 // Phase D registry tests use the LEITBILD_HOME env var to redirect all paths
 // into a per-test tmpdir. The shared runtime is built with no providers
@@ -65,6 +67,49 @@ describe('WorkspaceRuntimeRegistry', () => {
   })
 
   // --- Validity ---
+
+  it('rejects retired snapshots before opening or changing unfinished execution evidence', async () => {
+    const id = newWorkspaceId()
+    await provision(id)
+    const paths = workspaceModulePaths(id)
+    const store = createExecutionStore(paths.agents.executions)
+    try {
+      store.beginTurn({ id: 'unfinished', roomId: 'retired-room', agentId: 'retired-runtime', startedAt: 1 })
+      store.recordAttempt('unfinished', { id: 'uncertain-call', tool: 'workspace_call', arguments: { exact: 'retained' }, startedAt: 2 })
+      store.beginModelCapture('unfinished', 'retired-room')
+      store.recordModelStart('unfinished', { id: 'model-1', ordinal: 1, phase: 'initial', startedAt: 3, status: 'running', requestedModel: 'fixture' }, {
+        model: 'fixture', messages: [{ role: 'user', content: 'Retained private request; no provider is called.' }],
+      })
+    } finally { store.close() }
+    await Bun.write(paths.rooms.snapshot, JSON.stringify({
+      schemaVersion: 3, savedAt: '2026-11-03T00:00:00.000Z', rooms: [{
+        profile: { id: 'retired-room', name: 'Retired', createdBy: 'fixture', createdAt: 1, scopeRevision: 0,
+          scope: { kind: 'resource', resource: { workspaceId: id, moduleId: 'world', type: 'world.perspective', id: 'retired-perspective' } } },
+        messages: [], members: ['retired-runtime'], deliveryMode: 'manual', paused: true, muted: [], activePacks: [],
+      }], humanActors: [], bookmarks: [],
+    }))
+    const files = async () => {
+      const result: Record<string, string> = {}
+      for (const name of (await readdir(paths.agents.root, { recursive: true })).sort()) {
+        const file = join(paths.agents.root, name)
+        if ((await stat(file)).isFile()) result[name] = (await readFile(file)).toString('base64')
+      }
+      return result
+    }
+    const rows = () => {
+      const db = new Database(paths.agents.executions, { readonly: true })
+      try { return { turns: db.query('SELECT * FROM turns').all(), calls: db.query('SELECT * FROM calls').all() } }
+      finally { db.close() }
+    }
+    const beforeFiles = await files(), beforeRows = rows()
+    expect(beforeRows.turns).toMatchObject([{ status: 'running', finished_at: null }])
+    expect(Object.keys(beforeFiles).some(name => name.startsWith('executions.sqlite.models/'))).toBe(true)
+    await expect(registry.getOrLoad(id)).rejects.toThrow('Retired private')
+    expect(registry.tryGetLive(id)).toBeUndefined()
+    expect(registry.list()).toEqual([])
+    expect(rows()).toEqual(beforeRows)
+    expect(await files()).toEqual(beforeFiles)
+  })
 
   it('new Room admission fails before mutation and old runtimes cannot create after eviction', async () => {
     const id = newWorkspaceId()

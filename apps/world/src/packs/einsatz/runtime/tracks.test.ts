@@ -7,6 +7,7 @@ import { blue, red } from '../fixtures/combat-harness.ts'
 import scripted from '../../../scenarios/halden-border.scenario.json'
 import { openRun, screenOf, type OpenRun, type RoleRunDeclaration } from '../fixtures/run-harness.ts'
 import { einsatzPackId } from '../ids.ts'
+import { withoutScenarioGuide } from '../../../../tests/fixtures/scenario-domain.ts'
 
 /**
  * Tracks as the Einsatz runtime publishes them in a sided Run (§7.1, §7.2),
@@ -30,9 +31,9 @@ const scoutOf = (side: string): { readonly typeId: string; readonly group: strin
 const scout = (id: string, side: string, position: readonly [number, number]) =>
   ({ type: 'unit', id, label: id.toUpperCase(), unitType: scoutOf(side).typeId, side, group: scoutOf(side).group, position })
 
-/** halden-border's roles, sides and configuration over a scene, without its timeline. */
+/** halden-border's roles, sides and configuration over a scene, without its timeline or guide. */
 const definitionWith = (items: ReadonlyArray<Record<string, unknown>>, configuration: unknown = config) => ({
-  ...scripted,
+  ...withoutScenarioGuide(scripted),
   packs: [{ ...scripted.packs[0]!, config: configuration, items }],
   timeline: undefined,
 })

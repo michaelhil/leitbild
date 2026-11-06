@@ -69,13 +69,13 @@ export const renderSkillDetailInto = (
   if (!isNew) {
     const delBtn = createButton({
       variant: 'danger',
-      label: 'Delete',
+      label: 'Retire',
       onClick: async () => {
         const { confirmModal } = await import('./confirm-modal.ts')
         if (!(await confirmModal({
-          title: 'Delete skill',
-          body: `Delete skill "${skillName}"? This removes the skill directory.`,
-          confirmLabel: 'Delete',
+          title: 'Retire skill',
+          body: `Retire skill "${skillName}"? New calls stop using its contributions. Its source files are retained.`,
+          confirmLabel: 'Retire',
         }))) return
         await safeFetch(`/skills/${encodeURIComponent(skillName)}`, { method: 'DELETE' })
         onDone?.()
@@ -134,8 +134,17 @@ export const renderSkillDetailInto = (
   if (!isNew && toolsContainer) {
     apiFetch(`/skills/${encodeURIComponent(skillName)}`)
       .then(r => r.ok ? r.json() : null)
-      .then((data: { description?: string; body?: string; tools?: string[] } | null) => {
+      .then((data: { description?: string; body?: string; tools?: string[]; editable?: boolean; owner?: { kind: string; id?: string } } | null) => {
         if (!data) return
+        if (data.editable === false) {
+          descInput.readOnly = true
+          bodyArea.readOnly = true
+          btnRow.hidden = true
+          const notice = document.createElement('p')
+          notice.className = 'text-xs text-text-muted mb-3'
+          notice.textContent = data.owner?.kind === 'pack' ? `Owned by Pack ${data.owner.id}; update through the Pack owner or create an authored copy.` : 'Bundled guidance; create an authored copy to edit.'
+          body.prepend(notice)
+        }
         descInput.value = data.description ?? ''
         bodyArea.value = data.body ?? ''
         savedDesc = descInput.value

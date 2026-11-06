@@ -1,3 +1,4 @@
+import { ambulanceInspectionReferences } from './read-policy.ts'
 import type { PackScenarioAuthoringField, WorldPack } from '../../core/packs/protocol.ts'
 import { ambulanceRecordingProfiles, observationsFor } from './recording.ts'
 import { createIncidentObservationHandler } from './interactions.ts'
@@ -19,12 +20,18 @@ const responseUnitFields: ReadonlyArray<PackScenarioAuthoringField> = [locationF
 ]
 
 export const ambulancePack: WorldPack = {
+  inspectionReferences: ambulanceInspectionReferences,
   ...ambulancePackView,
   scenarioConfigSchema: ambulancePackConfigSchema,
   recording: { profiles: ambulanceRecordingProfiles, estimateSeries: objects => objects.reduce((sum, object) => sum + observationsFor(object).length, 0) },
   scenario: ambulanceScenarioSupport,
   interactions: { handlers: [createIncidentObservationHandler()] },
   authoring: {
+    configuration: {
+      beforeStart: "Author units, incidents, individual patients and receiving sites. Coordinates are [longitude, latitude]; patientCapacity counts people; mobilizationSeconds, sceneSeconds and handoverSeconds are simulation-second operational assumptions. A patient requires an incidentId; optional atObject copies an existing positioned asset location at creation. Configure roadWeather only when the Scenario includes its Weather provider.",
+      liveChanges: "Use exact world.ambulance.* commands: create-item, set-unit-readiness, set-care-site, set-patient-assessment, set-patient-disposition and assignment/stop/cancel operations. These validate custody, capabilities, capacity and current plans; they do not replace Pack configuration.",
+      requiresNewRevision: "Road-weather policy and authored starting assumptions require a new Scenario Revision and Run. Editing a Scenario does not rewrite an existing Run or its patient custody.",
+    },
     configFields: roadWeatherFields,
     itemTypes: [{
       id: 'ambulance', label: 'Ambulance', idPrefix: 'ambulance',

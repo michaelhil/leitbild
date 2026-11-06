@@ -1,10 +1,13 @@
 <script lang="ts">
   import { packDataChangedSchema } from '../../core/packs/protocol.ts'
   import type { MapFocusTarget, MapView } from '../map-view.ts'
-  import { workspaceResourceReferenceSchema } from '@leitbild/contracts'
-  import type { EmbeddedViewListing, UiControl } from '@leitbild/contracts'
-  import { initialRunViewPreferences, readRunViewPreferences, runViewPreferencesKey, writeRunViewPreferences } from '../run-view-preferences.ts'
-  import { createRunViewHost } from '../run-view-host.ts'
+  import type { EmbeddedViewListing } from '@leitbild/contracts'
+  import { initialRunViewPreferences, readRunViewPreferences, runViewPreferencesKey, writeRunViewPreferences, type RunViewPreferences } from '../run-view-preferences.ts'
+  import RunViewControls from '../RunViewControls.svelte'
+  import GuidePanel from '../GuidePanel.svelte'
+  import { createGuidanceSession, type GuidanceSession, type GuidanceScreen, type PresentationApplication } from '../guidance-session.ts'
+  import type { PresentationRequest } from '@leitbild/contracts'
+  import { fitObjectsTarget, homeMapTarget, type RunViewChoice } from '../run-view-actions.ts'
   import { alertRows, unacknowledged } from '../../features/displays/alerts/rows.ts'
   import type { Component } from 'svelte'
   import { tick, untrack } from 'svelte'
@@ -53,7 +56,7 @@
   import { roleSetText, type RoleCommandsDescriber, type RoleSetChange } from '../roles/role-controller.ts'
   import { hiddenOnceHeld, roleDialogChange, seenRoleIdsFor, type RoleDialogResult } from '../roles/role-dialog.ts'
   import { perspectiveKey, storesForPerspective, type RealtimePerspective } from '../roles/perspective.ts'
-  import { configureActiveRoleSet, currentActiveRoleSet, hiddenRolesStorageKey, initialRoleSet, readStoredHiddenRoles, roleSetFromSearch, roleSetStorageKey, searchWithRoleSet, writeStoredHiddenRoles, writeStoredRoleSet } from '../roles/role-session.ts'
+  import { configureActiveRoleSet, currentActiveRoleSet, hiddenRolesStorageKey, initialRoleSet, readStoredHiddenRoles, roleSetFromSearch, roleSetStorageKey, sameRoleSet, searchWithRoleSet, writeStoredHiddenRoles, writeStoredRoleSet } from '../roles/role-session.ts'
   import { beginAction, completeAction, commandFeedbackText, emptyCommandFeedback, failAction, noteAction, settleCommand, type CommandFeedback } from '../command-feedback.ts'
   import { parseDroneMotionFramesRealtimeMessage, type DroneMotionFrame } from '../../packs/drone/realtime.ts'
   import { createMapFeatureLoader } from '../app/map-feature-loader.ts'
@@ -188,6 +191,7 @@
   let realtimeAttached = $state(false)
   let routeRevision = $state(0)
   let procedureRevision = $state(0)
+  let procedureEvidenceRevision = $state(0)
   let packDataRevisions = $state<Record<string, number>>({})
   let packPanelSelections = $state<Record<string, string | null>>({})
   // Role Runs only: the role set this screen plays, a switch awaiting its fresh
@@ -238,6 +242,14 @@
   let displayWindowOpen = $state(false)
   // Whether the Host offers the Run's Assistant room on this page (`run-assistant-messages.ts`).
   let runAssistantOffered = $state(false)
+  let guidanceSession: GuidanceSession | null = $state.raw(null)
+  let guidanceScreen: GuidanceScreen = $state.raw({ recipient: null, guide: null, suggestion: null, cue: null, busy: false, error: null, restored: false, explored: false })
+  let viewControls: { reveal: (which: 'view' | 'guide', focus?: boolean) => Promise<void>; dismiss: () => void } | null = $state(null)
+  let presentationObjectIds: ReadonlyArray<string> = $state([])
+  let presentationElement: HTMLElement | null = null
+  let presentationOwner: string | null = null
+  const presentationMapWaiters = new Map<number, (result: PresentationApplication) => void>()
+  const presentationDisplayWaiters = new Map<number, (result: PresentationApplication) => void>()
   let displayWindowRequest = $state.raw<DisplayWindowRequest | null>(null)
   let conversationDisplays = $state.raw<ReadonlyArray<EmbeddedViewListing>>([])
   let displayWindowRequestSequence = 0
@@ -258,11 +270,20 @@
   let displayWindowLoadPromise: Promise<DisplayWindowComponent> | null = null
   const surfacePanelLoadPromises = new Map<string, Promise<Component<SurfacePanelProps>>>()
   let surfacePanelOpen = $state<Record<string, boolean>>({})
-  let guidanceOverlayVisible = $state(true)
+  let guidancePreferences = $state<RunViewPreferences['guidance']>(initialRunViewPreferences().guidance)
+  let timedCardRequested = $state(false)
+  const structuredGuideVisible = $derived(Boolean(guidanceScreen.guide && !guidanceScreen.explored && (!guidanceScreen.guide.attemptId || guidanceScreen.guide.status === 'active')))
+  const guidanceOverlayVisible = $derived(Boolean(scenarioState?.guidance && guidancePreferences.mode === 'running' && guidancePreferences.dismissedId !== scenarioState.guidance.id && (!structuredGuideVisible || timedCardRequested)))
+  const guidanceUnread = $derived(Boolean(scenarioState?.guidance && guidancePreferences.presentedId !== scenarioState.guidance.id))
+  const guideBadge = $derived.by((): 'Start' | 'Resume' | 'Suggestion' | undefined => {
+    if (guidanceScreen.suggestion) return 'Suggestion'
+    const guide = guidanceScreen.guide
+    if (guide?.status === 'paused' || guide?.status === 'active' && guidanceScreen.restored) return 'Resume'
+    if (guide && !guide.attemptId && !guidanceScreen.explored) return 'Start'
+  })
   let alarmStripVisible = $state(false)
   let layoutControlsVisible = $state(false)
   let viewPreferencesKey = $state<string | null>(null)
-  let runViewHost = $state.raw<ReturnType<typeof createRunViewHost> | null>(null)
   let appliedSurfacePanelKey = ''
   let procedureSystemModalLoadPromise: Promise<ProcedureSystemModalComponent> | null = null
   let droneControlModalLoadPromise: Promise<DroneControlModalComponent> | null = null
@@ -276,6 +297,7 @@
   let latestMapRuntimeDiagnostics = $state<MapRuntimeDiagnosticsSnapshot | null>(null)
   let mapFocusRequest = $state<MapFocusRequest | null>(null)
   let mapFocusRevision = 0
+  let cancelledMapFocusRevision = $state<number | null>(null)
   let mapAssignment = $state<MapAssignmentState | null>(null)
   let mapAssignmentPicker = $state<MapAssignmentPicker | null>(null)
   let mapAssignmentChoiceIds = $state<ReadonlyArray<string>>([])
@@ -383,7 +405,7 @@
   const debugStartup = new URLSearchParams(location.search).get('debugStartup') === '1'
   const categoryRows = $derived<ReadonlyArray<CategoryRow>>(categoryRowsForStartingView(allCategoryRows, railConfig))
   const objectById = $derived(new Map(objects.map(object => [object.id, object])))
-  const mapHighlightedObjectIds = $derived(scenarioState?.highlightedObjectIds ?? emptyStringArray)
+  const mapHighlightedObjectIds = $derived([...new Set([...(scenarioState?.highlightedObjectIds ?? emptyStringArray), ...presentationObjectIds])])
   $effect(() => {
     const rows = categoryRows
     untrack(() => {
@@ -538,29 +560,206 @@
     return presentationComposer.present(object, options)
   }
 
-  const viewControls = $derived<ReadonlyArray<UiControl>>([
-    { id: 'scenario-briefing', label: 'Scenario briefing', visible: guidanceOverlayVisible && Boolean(scenarioState?.guidance), ...(scenarioState?.guidance ? {} : { disabledReason: 'This Run has no scenario briefing' }) },
-    { id: 'alarm-strip', label: 'Alarm strip', visible: alarmStripVisible },
-    { id: 'layout-controls', label: 'Layout controls', visible: layoutControlsVisible, ...(activePhysicalLayoutBindings.length > 0 ? {} : { disabledReason: 'This Run has no physical layout' }) },
+  const viewPanels = $derived<ReadonlyArray<RunViewChoice>>([
+    ...(activePhysicalLayoutBindings.length > 0 ? [{ id: 'layout-controls', label: 'Physical layout controls', visible: layoutControlsVisible }] : []),
     ...surfacePanels.map(panel => ({ id: `panel:${panel.id}`, label: panel.label, visible: isSurfacePanelOpen(panel), ...(mapTargetPanelContribution?.id === panel.id && (selectedControllerObject?.packId === mapTargetPanel?.packId || panelMapPrompts[panel.id] != null) ? { disabledReason: 'Finish or cancel the current map operation before hiding this panel' } : {}) })),
   ])
+  const viewLayers = $derived<ReadonlyArray<RunViewChoice>>([
+    ...activeMapLayerGroups.map(layer => ({ id: `layer:${layer.id}`, label: layer.label, visible: mapLayerGroupVisibility[layer.id] ?? layer.defaultVisible })),
+    ...(mapConfig?.layers.includes('weather') ? [{ id: 'weather', label: 'Weather', visible: weatherLayerVisible }] : []),
+  ])
+  const visiblePointObjects = (): ReadonlyArray<OperationalObject> => objects.filter(object => object.spatial.position !== undefined && !hiddenObjectCategoryIds.includes(presentationFor(object).categoryId))
+  const fitSelectedTarget = $derived(fitObjectsTarget(selectedControllerId === null ? [] : objects.filter(object => object.id === selectedControllerId)))
+  const viewCamera = $derived([
+    { id: 'home', label: 'Home', ...(!mapReady ? { disabledReason: 'Map is not ready' } : {}) },
+    { id: 'fit-selected', label: 'Fit selection', ...(!mapReady ? { disabledReason: 'Map is not ready' } : !fitSelectedTarget ? { disabledReason: 'Select an object with a map position' } : {}) },
+    { id: 'fit-visible', label: 'Fit all visible', ...(!mapReady ? { disabledReason: 'Map is not ready' } : !objects.some(object => object.spatial.position !== undefined && !hiddenObjectCategoryIds.includes(presentationFor(object).categoryId)) ? { disabledReason: 'No visible object positions' } : {}) },
+    { id: 'north', label: 'North up', ...(!mapReady || !panelMapView ? { disabledReason: 'Map is not ready' } : {}) },
+  ])
+  const viewResetDisabledReason = $derived(viewPanels.find(panel => panel.disabledReason)?.disabledReason)
   const viewAlarmCount = $derived(alertRows(objects, object => ({ label: object.label, categoryId: presentationFor(object).categoryId })).filter(row => row.priority !== 'none' && unacknowledged(row)).length)
-  $effect(() => {
-    void viewControls; void viewAlarmCount
-    runViewHost?.publish()
-  })
   $effect(() => {
     const key = viewPreferencesKey
     if (key === null) return
-    const preferences = { briefing: guidanceOverlayVisible, alarms: alarmStripVisible, layout: layoutControlsVisible, panels: surfacePanelOpen }
-    try { writeRunViewPreferences(sessionStorage, key, preferences) } catch { /* Browser storage may be disabled. */ }
+    try { writeRunViewPreferences(sessionStorage, key, { guidance: guidancePreferences, alarms: alarmStripVisible, layout: layoutControlsVisible, panels: surfacePanelOpen }) } catch { /* A denied storage getter must not prevent local presentation. */ }
   })
-  const setViewControl = (id: string, visible: boolean): void => {
-    if (id === 'scenario-briefing') guidanceOverlayVisible = visible
-    else if (id === 'alarm-strip') alarmStripVisible = visible
-    else if (id === 'layout-controls') layoutControlsVisible = visible
-    else if (id.startsWith('panel:')) setSurfacePanelOpen(id.slice('panel:'.length), visible)
+  const actOnView = (id: string): void => {
+    if (['home', 'fit-selected', 'fit-visible', 'north'].includes(id)) guidanceSession?.manualCamera()
+    if (id === 'home' && mapConfig) focusMapTarget(homeMapTarget(mapConfig))
+    else if (id === 'fit-selected' && fitSelectedTarget) focusMapTarget(fitSelectedTarget)
+    else if (id === 'fit-visible') {
+      const target = fitObjectsTarget(visiblePointObjects())
+      if (!target) throw new Error('No visible object positions')
+      focusMapTarget(target)
+    }
+    else if (id === 'north' && panelMapView) focusMapTarget({ kind: 'view', center: panelMapView.center, zoom: panelMapView.zoom, bearing: 0 })
+    else throw new Error(`View action is unavailable: ${id}`)
   }
+  const setViewChoice = (id: string, visible: boolean): void => {
+    const panel = viewPanels.find(choice => choice.id === id)
+    if (panel) {
+      if (panel.disabledReason) { status = panel.disabledReason; return }
+      if (id === 'layout-controls') layoutControlsVisible = visible
+      else setSurfacePanelOpen(id.slice('panel:'.length), visible)
+      return
+    }
+    if (id === 'weather') { weatherLayerVisible = visible; return }
+    const layer = activeMapLayerGroups.find(layer => `layer:${layer.id}` === id)
+    if (!layer) throw new Error(`View choice is unavailable: ${id}`)
+    mapLayerGroupVisibility = { ...mapLayerGroupVisibility, [layer.id]: visible }
+  }
+  const resetLocalView = (): void => {
+    if (viewResetDisabledReason) { status = viewResetDisabledReason; return }
+    alarmStripVisible = false
+    layoutControlsVisible = false
+    surfacePanelOpen = {}
+    mapLayerGroupVisibility = Object.fromEntries(activeMapLayerGroups.map(layer => [layer.id, layer.defaultVisible]))
+    categoryMapVisibility = {}
+    weatherLayerVisible = true
+    if (mapConfig && mapReady) { guidanceSession?.manualCamera(); focusMapTarget(homeMapTarget(mapConfig)) }
+  }
+  const setGuidanceMode = (mode: RunViewPreferences['guidance']['mode']): void => {
+    guidancePreferences = { ...guidancePreferences, mode, ...(mode === 'running' ? { dismissedId: null } : {}) }
+  }
+  const markGuidancePresented = (id: string): void => {
+    if (scenarioState?.guidance?.id === id && guidancePreferences.presentedId !== id) guidancePreferences = { ...guidancePreferences, presentedId: id }
+  }
+
+  const clearPresentation = (request: PresentationRequest): void => {
+    if (presentationOwner !== request.id) return
+    presentationObjectIds = []
+    presentationElement?.classList.remove('world-presentation-target')
+    presentationElement = null
+    presentationOwner = null
+  }
+  const markPresentation = (request: PresentationRequest, element: HTMLElement): void => {
+    presentationElement?.classList.remove('world-presentation-target')
+    presentationElement = element
+    presentationOwner = request.id
+    element.classList.add('world-presentation-target')
+  }
+  const waitForPresentation = (request: PresentationRequest, signal: AbortSignal, waiters: Map<number, (result: PresentationApplication) => void>, sequence: number): Promise<PresentationApplication> => new Promise(resolve => {
+    const finish = (result: PresentationApplication): void => { clearTimeout(timer); signal.removeEventListener('abort', aborted); waiters.delete(sequence); resolve(result) }
+    const aborted = (): void => { if (waiters === presentationMapWaiters) cancelledMapFocusRevision = sequence; finish({ status: signal.reason === 'manual-camera' ? 'superseded' : signal.reason === 'expired' ? 'expired' : 'cancelled', reason: 'The owning presentation cue was interrupted' }) }
+    const timer = setTimeout(() => finish({ status: 'unavailable', reason: 'The target did not confirm presentation before the request expired' }), Math.max(0, Date.parse(request.expiresAt) - Date.now()))
+    waiters.set(sequence, finish)
+    signal.addEventListener('abort', aborted, { once: true })
+    if (signal.aborted) aborted()
+  })
+  const applyPresentation = async (request: PresentationRequest, signal: AbortSignal, cameraAllowed: boolean): Promise<PresentationApplication> => {
+    const current = (): void => {
+      signal.throwIfAborted()
+      if (Date.parse(request.expiresAt) <= Date.now()) throw new Error('This presentation request expired before the target became ready')
+      const recipient = guidanceScreen.recipient
+      const exactSubject = (subject: PresentationRequest['target']['subject']): boolean => subject.workspaceId === request.recipient.subject.workspaceId && subject.moduleId === request.recipient.subject.moduleId && subject.type === request.recipient.subject.type && subject.id === request.recipient.subject.id
+      if (!exactSubject(request.target.subject) || !recipient || !exactSubject(recipient.subject) || recipient.leaseId !== request.recipient.leaseId || recipient.documentId !== request.recipient.documentId) throw new Error('This presentation request no longer owns the current World document')
+    }
+    current()
+    const requireWorldControls = (): void => {
+      if (foregroundProcedure) throw new Error('Close Procedures to use World controls')
+    }
+    const target = request.target, action = request.action
+    const bounds = surfaceShell?.getBoundingClientRect()
+    if (document.hidden || !bounds || bounds.width <= 0 || bounds.height <= 0) throw new Error('The World surface is not visible; reopen it and request Show again')
+    if (action.kind === 'explain') {
+      requireWorldControls()
+      await viewControls?.reveal('guide', false)
+      await tick()
+      current()
+      requireWorldControls()
+      const cue = document.querySelector<HTMLElement>('[aria-label="Current presentation cue"]')
+      if (!cue) throw new Error('The explanation card did not mount')
+      cue.scrollIntoView({ block: 'nearest', behavior: 'instant' })
+      return { status: 'applied' }
+    }
+    if (target.type === 'world.control') {
+      if (target.id === 'assistant') throw new Error('Use a composer draft to open the exact Run Assistant with acknowledged delivery; this control cannot confirm opening')
+      if (target.id === 'dashboard') {
+        if (action.kind !== 'reveal') throw new Error('The dashboard control supports reveal; highlight an exact displayed object or element')
+        requestDisplayWindow({ kind: 'dashboard' }, false)
+        return waitForPresentation(request, signal, presentationDisplayWaiters, displayWindowRequestSequence)
+      }
+      if (!['view', 'guide', 'alarms'].includes(target.id)) throw new Error('This World control is unavailable')
+      requireWorldControls()
+      if (action.kind === 'reveal') {
+        if (target.id === 'alarms') alarmStripVisible = true
+        else await viewControls?.reveal(target.id as 'view' | 'guide', false)
+        current()
+      }
+      if (action.kind !== 'reveal' && action.kind !== 'highlight') throw new Error('This control supports reveal or highlight')
+      await tick()
+      current()
+      requireWorldControls()
+      const controlId = action.kind === 'highlight' ? `run-${target.id}-trigger`
+        : target.id === 'view' ? 'run-view-sheet' : target.id === 'guide' ? 'run-guide-options' : 'run-alert-strip'
+      const element = document.getElementById(controlId)
+      if (!element) throw new Error('The World control is not mounted')
+      if (action.kind === 'highlight') markPresentation(request, element)
+      return { status: 'applied' }
+    }
+    if (target.type === 'world.panel') {
+      const panel = surfacePanels.find(panel => panel.id === target.id)
+      if (!panel || !richOperationalUiReady) throw new Error('This declared Pack panel is unavailable')
+      if (action.kind !== 'reveal' && action.kind !== 'highlight') throw new Error('This panel supports reveal or highlight')
+      await loadSurfacePanel(panel.id)
+      current()
+      setSurfacePanelOpen(panel.id, true)
+      await tick()
+      current()
+      const element = document.getElementById(`world-panel-${panel.id}`)?.firstElementChild
+      if (!(element instanceof HTMLElement)) throw new Error('The Pack panel did not mount')
+      if (action.kind === 'highlight') markPresentation(request, element)
+      return { status: 'applied' }
+    }
+    if (target.type !== 'world.object') throw new Error('This World target is unsupported')
+    const object = objects.find(object => object.id === target.id)
+    if (!object) throw new Error('The target is not available in this inspection picture')
+    if (action.kind === 'reveal' && observedAssetObjects.some(asset => asset.id === object.id) || target.part !== undefined && (action.kind === 'highlight' || action.kind === 'reveal')) {
+      if (!observedAssetObjects.some(asset => asset.id === object.id)) throw new Error('This object has no default display in the current Run')
+      // The display itself confirms mounting and exact element selection, independently of admission.
+      requestDisplayWindow({ kind: 'asset', objectId: object.id, ...(target.part === undefined ? {} : { select: target.part }) }, false)
+      return waitForPresentation(request, signal, presentationDisplayWaiters, displayWindowRequestSequence)
+    }
+    if (target.part !== undefined) throw new Error('An equipment element supports display reveal or highlight; its geometry is owned by the display')
+    if (!mapReady || !mapVisible || !object.spatial.position || hiddenObjectCategoryIds.includes(presentationFor(object).categoryId)) throw new Error('The object has no currently visible map position')
+    if (action.kind === 'highlight') { presentationOwner = request.id; presentationObjectIds = [object.id]; await tick(); current(); return { status: 'applied' } }
+    if (action.kind === 'focus' || action.kind === 'reveal') {
+      if (!cameraAllowed) return { status: 'superseded', reason: 'Your map gesture took priority; use Show to request another camera move' }
+      if (viewResetDisabledReason) throw new Error('Finish or cancel the current map operation before a guided camera move')
+      if (action.kind === 'reveal') { presentationOwner = request.id; presentationObjectIds = [object.id] }
+      const position = object.spatial.position.point.coordinates
+      focusMapTarget({ kind: 'view', center: [position[0], position[1]], zoom: (action.kind === 'focus' ? action.zoom : undefined) ?? Math.max(9, panelMapView?.zoom ?? 9), bearing: panelMapView?.bearing ?? 0 })
+      return waitForPresentation(request, signal, presentationMapWaiters, mapFocusRevision)
+    }
+    throw new Error('This object action is unsupported')
+  }
+  $effect(() => {
+    const runId = simulationRunId, epoch = perspectiveEpoch, roles = JSON.stringify([...(heldRoleIds ?? [])].sort()), ready = richOperationalUiReady && activePack !== null && scenarioDefinition !== null
+    void epoch
+    if (!runId || !ready) return
+    const session = untrack(() => createGuidanceSession({
+      runId, perspective: roles,
+      apply: applyPresentation, clear: clearPresentation,
+      changed: screen => { guidanceScreen = screen },
+      post: message => window.parent.postMessage(message, location.origin),
+      storage: { getItem: key => sessionStorage.getItem(key), setItem: (key, value) => sessionStorage.setItem(key, value), removeItem: key => sessionStorage.removeItem(key) },
+    }))
+    guidanceSession = session
+    return () => {
+      session.stop()
+      for (const settle of presentationMapWaiters.values()) settle({ status: 'unavailable', reason: 'The Run or perspective changed' })
+      for (const settle of presentationDisplayWaiters.values()) settle({ status: 'unavailable', reason: 'The Run or perspective changed' })
+      guidanceSession = null
+      guidanceScreen = { recipient: null, guide: null, suggestion: null, cue: null, busy: false, error: null, restored: false, explored: false }
+    }
+  })
+
+  let previousPresentationFilter: string | null = null
+  $effect(() => {
+    const key = JSON.stringify(seenRoleIds)
+    if (previousPresentationFilter !== null && previousPresentationFilter !== key) untrack(() => guidanceSession?.invalidateSurface())
+    previousPresentationFilter = key
+  })
 
   const detailPresentationFor = async (object: OperationalObject): Promise<PackObjectPresentation> => {
     const presentation = presentationFor(object, { tier: 'detail' })
@@ -966,6 +1165,7 @@
   }
 
   const closeDisplayWindow = (): void => {
+    for (const settle of presentationDisplayWaiters.values()) settle({ status: 'unavailable', reason: 'You closed the display before it confirmed presentation' })
     displayWindowOpen = false
     displayWindowRequest = null
     const returnFocus = displayWindowReturnFocus
@@ -985,10 +1185,12 @@
     displayWindowRequestSequence += 1
     displayWindowRequest = { sequence: displayWindowRequestSequence, target, focus }
     displayWindowOpen = true
+    const requestedSequence = displayWindowRequestSequence, requestedEpoch = perspectiveEpoch
     void (async (): Promise<void> => {
       try {
         await loadDisplayWindow()
       } catch (err) {
+        if (requestedEpoch !== perspectiveEpoch || displayWindowRequest?.sequence !== requestedSequence) return
         closeDisplayWindow()
         status = `Could not open the process display window: ${err instanceof Error ? err.message : String(err)}`
       }
@@ -1095,6 +1297,8 @@
       return plantId === null || provider === undefined ? [] : [{ ...entry, object, plantId, provider, index }]
     }),
   )
+  const foregroundProcedure = $derived(Boolean(ProcedureSystemModal && simulationRunId && procedureSession && procedureSystemWindowModels.length))
+  const mapGuidanceVisible = $derived(guidanceOverlayVisible && !displayWindowOpen && !foregroundProcedure)
 
   $effect(() => {
     const liveObjectIds = new Set(objects.map(object => object.id))
@@ -1159,12 +1363,12 @@
   ))
 
   const openProcedureInputRequest = async (request: ProcedureInputView): Promise<boolean> => {
-    const id = simulationRunId, session = procedureSession, object = objectById.get(request.objectId)
+    const id = simulationRunId, epoch = perspectiveEpoch, session = procedureSession, object = objectById.get(request.objectId)
     const scope = object ? procedureScopeForObject(object) : null
     if (!id || !session || !object || !scope) { status = 'The unit for this procedure request is no longer available.'; return false }
     const current = () => {
       const unit = objectById.get(request.objectId), latestScope = unit ? procedureScopeForObject(unit) : null
-      return simulationRunId === id && procedureSession === session && latestScope ? resolveProcedureInputFocus(session.snapshot().runs, request.focus, latestScope, id) : null
+      return simulationRunId === id && perspectiveEpoch === epoch && procedureSession === session && latestScope ? resolveProcedureInputFocus(session.snapshot().runs, request.focus, latestScope, id) : null
     }
     const unavailable = (): false => { status = 'This procedure input request is no longer current. No step was opened.'; return false }
     if (!current()) return unavailable()
@@ -1176,7 +1380,7 @@
       openProcedureWindowAt(object, run.procedureId, request.focus)
       return true
     } catch (error) {
-      status = `Could not open the requested procedure step: ${error instanceof Error ? error.message : String(error)}`
+      if (perspectiveEpoch === epoch) status = `Could not open the requested procedure step: ${error instanceof Error ? error.message : String(error)}`
       return false
     }
   }
@@ -1523,6 +1727,7 @@
           return
         }
         realtimeAttached = true
+        procedureEvidenceRevision += 1
         if (parsed.clock) clock = clockOrder.published(parsed.clock)
         if (parsed.perspective) adoptPerspective(parsed.perspective)
         status = 'Connected'
@@ -1547,6 +1752,9 @@
         if (applied.routesChanged) {
           routeRevision += 1
         }
+        // Some commands update a Pack's I&C state while paused without
+        // upserting its object or moving the simulation clock.
+        if (parsed.events.some(event => event.type === 'command.result' && event.result?.ok === true)) procedureEvidenceRevision += 1
         if (parsed.events.some(event => event.type.startsWith('procedure.') || event.type === 'object.deleted')) {
           // Only a live batch opens a window: the snapshot and Run reads never do.
           for (const runId of procedureAiStartedRunIds(parsed.events)) aiStartedProcedureRunIds.add(runId)
@@ -1579,6 +1787,21 @@
 
   /** A fresh snapshot of a new perspective replaces every Run-scoped store; the map view and panel sizes stay. */
   const adoptPerspective = (perspective: RealtimePerspective): void => {
+    if (heldRoleIds !== null && !sameRoleSet(heldRoleIds, perspective.roleIds)) {
+      guidanceSession?.forgetAttemptReference()
+      // A same-id public object does not make an earlier role's rich inspection safe to retain.
+      displayWindowReturnFocus = null
+      closeDisplayWindow()
+      conversationDisplays = []
+      droneControlWindows = []
+      droneProfileEditorWindows = []
+      procedureSystemWindows = []
+      procedureSession?.dispose()
+      procedureRuns = []
+      procedureRunDocuments = new Map()
+      aiStartedProcedureRunIds.clear()
+      status = 'The exercise role changed. Private windows were closed.'
+    }
     const declaration = runRolesOf(perspective.compiledScenario)
     const perspectiveContext: PackTargetContext = declaration !== null
       ? { objects: perspective.snapshot.objects, viewer: viewerForRoleSet(declaration, perspective.roleIds) }
@@ -1924,26 +2147,11 @@
     const key = runViewPreferencesKey(workspaceId, route.simulationRunId)
     let preferences = initialRunViewPreferences()
     try { preferences = readRunViewPreferences(sessionStorage, key) } catch { /* Storage can be denied. */ }
-    guidanceOverlayVisible = preferences.briefing
+    guidancePreferences = preferences.guidance
     alarmStripVisible = preferences.alarms
     layoutControlsVisible = preferences.layout
     surfacePanelOpen = { ...preferences.panels }
     viewPreferencesKey = key
-    const viewHost = createRunViewHost({
-      subject: workspaceResourceReferenceSchema.parse({ workspaceId, moduleId: 'world', type: 'world.simulation-run', id: route.simulationRunId }),
-      post: message => window.parent.postMessage(message, location.origin),
-      controls: () => viewControls,
-      notification: () => objects.length === 0 ? undefined : { count: viewAlarmCount, label: `${viewAlarmCount} unacknowledged ${viewAlarmCount === 1 ? 'alarm' : 'alarms'}` },
-      set: setViewControl,
-      error: message => { status = message },
-    })
-    runViewHost = viewHost
-    const receiveViewControls = (event: MessageEvent): void => {
-      if (event.origin !== location.origin || event.source !== window.parent) return
-      viewHost.receive(event.data)
-    }
-    window.addEventListener('message', receiveViewControls)
-    viewHost.ready()
     const receiveDisplayWindowMessage = (event: MessageEvent): void => {
       const message = readDisplayWindowHostMessage(event, { origin: location.origin, parent: window.parent, workspaceId })
       if (message === null) return
@@ -1973,6 +2181,8 @@
       }
       runAssistantOffered = offer.available
     }
+    const receivePresentationMessage = (event: MessageEvent): void => guidanceSession?.receive(event)
+    window.addEventListener('message', receivePresentationMessage)
     window.addEventListener('message', receiveDisplayWindowMessage)
     window.addEventListener('message', receiveRunAssistantOffer)
     window.parent.postMessage(displayWindowReadyMessage(), location.origin)
@@ -1982,8 +2192,8 @@
     void joinSimulationRun()
     const executionPoll = window.setInterval(() => { void refreshExecution() }, 1_000)
     return () => {
-      window.removeEventListener('message', receiveViewControls)
-      viewHost.close(); runViewHost = null; viewPreferencesKey = null
+      viewPreferencesKey = null
+      window.removeEventListener('message', receivePresentationMessage)
       window.removeEventListener('message', receiveDisplayWindowMessage)
       window.removeEventListener('message', receiveRunAssistantOffer)
       cleanupInternalDiagnosticsGlobal()
@@ -2039,6 +2249,7 @@
 
   $effect(() => {
     const id = simulationRunId
+    void perspectiveEpoch
     if (!id) return
     const next = createProcedureSession({
       simulationRunId: id,
@@ -2171,6 +2382,8 @@
           onObjectSeen={markSeen}
           onMapReady={handleMapReady}
           onMapView={view => panelMapView = view}
+          onFocusResult={(revision, status) => presentationMapWaiters.get(revision)?.({ status, ...(status === 'superseded' ? { reason: 'Your camera interaction took priority' } : {}) })}
+          onCameraGesture={() => guidanceSession?.manualCamera()}
           onMapError={handleMapError}
           onMapDiagnostic={handleMapDiagnostic}
           {simulationRunId}
@@ -2191,6 +2404,7 @@
           packFeatureLayers={activePackFeatureLayers}
           packFeatureSourcePackIds={activePackFeatureSourcePackIds}
           focusRequest={mapFocusRequest}
+          cancelFocusRevision={cancelledMapFocusRevision}
           assignmentActive={mapAssignment !== null}
           assignmentAnchor={mapAssignmentAnchor}
           assignmentHandles={mapAssignmentHandles}
@@ -2238,8 +2452,20 @@
           </div>
         </section>
       {/if}
-      {#if activePack && alarmStripVisible}
-        <AlertStrip onClose={() => alarmStripVisible = false} {objects} categoryOf={object => presentationFor(object).categoryId} openDisplay={openStripDisplay} {theme} onBounds={setAlarmStripBounds} belowRoles={Boolean(runRoles && heldRoleIds)} railWidth={railVisible ? railLayout.width : 0} clear={{ left: mapCameraPadding.left, right: mapCameraPadding.right, top: guidanceOverlayVisible && scenarioState?.guidance ? guidanceBottom : 0 }} />
+      {#if activePack && alarmStripVisible && !foregroundProcedure}
+        <AlertStrip onClose={() => { alarmStripVisible = false; document.getElementById('run-alarms-trigger')?.focus({ preventScroll: true }) }} {objects} categoryOf={object => presentationFor(object).categoryId} openDisplay={openStripDisplay} {theme} raised={displayWindowOpen} onBounds={setAlarmStripBounds} belowRoles={Boolean(runRoles && heldRoleIds)} railWidth={railVisible ? railLayout.width : 0} clear={{ left: mapCameraPadding.left, right: mapCameraPadding.right, top: mapGuidanceVisible ? guidanceBottom : 0 }} />
+      {/if}
+      <RunViewControls bind:this={viewControls} camera={viewCamera} layers={viewLayers} panels={viewPanels} act={actOnView} toggle={setViewChoice}
+        reset={resetLocalView} resetDisabledReason={viewResetDisabledReason} alarms={viewAlarmCount} alarmsVisible={alarmStripVisible} showAlarms={visible => alarmStripVisible = visible}
+        guidance={{ available: Boolean(scenarioState?.guidance), visible: mapGuidanceVisible, unread: guidanceUnread, instruction: scenarioState?.guidance ?? null }} setGuidance={mode => { timedCardRequested = mode === 'running'; setGuidanceMode(mode) }}
+        clear={mapCameraPadding} ready={mapReady} raised={displayWindowOpen} onReadUpdate={markGuidancePresented}
+        hasGuide={Boolean(guidanceScreen.guide)} {guideBadge} {foregroundProcedure}>
+        {#snippet guideContent()}
+          <GuidePanel screen={guidanceScreen} session={guidanceSession} explore={() => { guidanceSession?.explore(); viewControls?.dismiss() }} />
+        {/snippet}
+      </RunViewControls>
+      {#if scenarioState?.timeline?.executions?.some(cue => cue.status !== 'complete')}
+        <div class="timeline-outcome" role="status">Scenario cue actions are incomplete or uncertain. {scenarioState.timeline.executions.filter(cue => cue.status !== 'complete').map(cue => `${cue.cueId}: ${cue.status}; ${cue.actions.filter(action => action === 'accepted').length}/${cue.actions.length} accepted`).join(' · ')}</div>
       {/if}
       <WorldStatusLine {clock} execution={executionState} feedback={commandFeedback.line} placementHint={placement.placementText()} />
       {#if runRoles && heldRoleIds}
@@ -2255,19 +2481,22 @@
         {#each surfacePanels as panel (panel.id)}
           {@const Panel = surfacePanelComponents[panel.id]}
           {#if (surfacePanelOpen[panel.id] ?? false) && Panel}
-            <Panel {simulationRunId} {objects} {seenRoleIds} mapView={panelMapView} dataRevision={packDataRevisions[panel.id.split('.')[0]! ] ?? 0} selectedItemId={packPanelSelections[panel.id] ?? null} onSelectItem={(itemId: string | null) => { packPanelSelections = { ...packPanelSelections, [panel.id]: itemId } }} onClose={() => setSurfacePanelOpen(panel.id, false)} onFocusMap={focusMapTarget} currentTime={currentPackTime} selectedObjectId={selectedControllerId} onSelectObject={selectObjectById} connectInteraction={(interaction: SurfacePanelInteraction) => connectPanelInteraction(panel, interaction)} keysActive={panelKeysActive} roleSet={panelRoleSet} onMapCover={(cover: MapCover) => { panelMapCovers = { ...panelMapCovers, [panel.id]: assertMapCover(panel.id, cover) } }} onMapPrompt={(prompt: MapPrompt | null) => { panelMapPrompts = { ...panelMapPrompts, [panel.id]: prompt } }} />
+            <div id={`world-panel-${panel.id}`} class="presentation-panel-host"><Panel {simulationRunId} {objects} {seenRoleIds} mapView={panelMapView} dataRevision={packDataRevisions[panel.id.split('.')[0]! ] ?? 0} selectedItemId={packPanelSelections[panel.id] ?? null} onSelectItem={(itemId: string | null) => { packPanelSelections = { ...packPanelSelections, [panel.id]: itemId } }} onClose={() => setSurfacePanelOpen(panel.id, false)} onFocusMap={focusMapTarget} currentTime={currentPackTime} selectedObjectId={selectedControllerId} onSelectObject={selectObjectById} connectInteraction={(interaction: SurfacePanelInteraction) => connectPanelInteraction(panel, interaction)} keysActive={panelKeysActive} roleSet={panelRoleSet} onMapCover={(cover: MapCover) => { panelMapCovers = { ...panelMapCovers, [panel.id]: assertMapCover(panel.id, cover) } }} onMapPrompt={(prompt: MapPrompt | null) => { panelMapPrompts = { ...panelMapPrompts, [panel.id]: prompt } }} /></div>
           {/if}
         {/each}
         {/key}
       {/if}
     </main>
 
-    {#if guidanceOverlayVisible && scenarioState?.guidance}
+    {#if mapGuidanceVisible && scenarioState?.guidance}
+    {#key scenarioState.guidance.id}
     <ScenarioGuidance
       bind:bottom={guidanceBottom}
       guidance={scenarioState.guidance}
-      close={() => guidanceOverlayVisible = false}
+      presented={markGuidancePresented}
+      close={() => { if (scenarioState?.guidance?.dismissible) { guidancePreferences = { ...guidancePreferences, dismissedId: scenarioState.guidance.id }; document.getElementById('run-guide-trigger')?.focus({ preventScroll: true }) } }}
     />
+    {/key}
     {/if}
   </div>
 {/if}
@@ -2307,6 +2536,7 @@
     statusOf={statusPresentationFor}
     listings={conversationDisplays}
     request={displayWindowRequest}
+    onPresentation={(sequence, applied, reason) => presentationDisplayWaiters.get(sequence)?.({ status: applied ? 'applied' : 'unavailable', ...(reason ? { reason } : {}) })}
     runsProcedures={object => procedureScopeForObject(object) !== null}
     procedureSummariesFor={procedureSummariesForObject}
     {openProcedureWindowAt}
@@ -2333,6 +2563,10 @@
       unitStatus={statusPresentationFor(windowEntry.object)}
       unitContexts={procedureUnitContexts}
       session={procedureSession}
+      {clock}
+      {realtimeAttached}
+      checkEvidenceRevision={`${perspectiveEpoch}:${procedureEvidenceRevision}:${packDataRevisions[windowEntry.object.packId] ?? 0}`}
+      checkEvidenceObject={windowEntry.object}
       initialProcedureId={windowEntry.initialProcedureId}
       windowOffsetIndex={windowEntry.index}
       focusRequest={windowEntry.focusRequest ?? 0}
@@ -2404,4 +2638,10 @@
 {/if}
 
 <style>
+  .timeline-outcome { position: absolute; inset: 8px 12px auto auto; z-index: 27; max-width: min(440px, 80%); padding: 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); font-size: 12px; }
+  /* Pack panels measure their immediate surface. Keep its real geometry while lending pointer input only to the panel. */
+  .presentation-panel-host { position: absolute; inset: 0; pointer-events: none; }
+  :global(:where(.presentation-panel-host) > :where(*)) { pointer-events: auto; }
+  :global(.world-presentation-target) { outline: 3px solid var(--accent) !important; outline-offset: 3px; }
+
 </style>

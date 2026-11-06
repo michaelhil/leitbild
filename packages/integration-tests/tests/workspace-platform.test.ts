@@ -178,6 +178,13 @@ describe('Workspace Host with real Modules', () => {
     expect(BUNDLED_ROOM_DEFINITIONS.map(definition => definition.id)).toEqual(['leitbild-assistant'])
     expect(BUNDLED_ROOM_DEFINITIONS[0]?.room.agents[0]).not.toHaveProperty('toolGrants')
     expect(capabilityIds).toContain('agents.assistance.open')
+    expect([...capabilityIds].filter(id => id.startsWith('world.perspective.') || id.startsWith('agents.perspective-room.'))).toEqual([])
+
+    for (const path of ['perspective-assistant', 'perspective-view']) {
+      expect((await fetch(`${baseUrl}/api/workspaces/${workspace.id}/${path}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+      })).status).toBe(404)
+    }
 
     const definitionCatalog = await fetch(`${baseUrl}/api/workspaces/${workspace.id}/definitions`)
     expect(definitionCatalog.status).toBe(200)
@@ -469,6 +476,29 @@ describe('Workspace Host with real Modules', () => {
     expect(await onSupplyRun('world.einsatz.unit.send', { units: proposal, to: { taskId: otherTaskId } }))
       .toMatchObject({ success: false, error: expect.stringContaining('unit_committed:') })
 
+    // Human role exercises remain available; the ordinary AI path must still
+    // refuse them rather than silently acquiring another side's picture.
+    const rolesCatalog = workspaceDefinitionCatalogSchema.parse(await (await fetch(`${baseUrl}/api/workspaces/${workspace.id}/definitions?moduleId=world`)).json())
+    const rolesScenario = rolesCatalog.definitions.find(definition => definition.ref.id === 'halden-border-human-red')!
+    expect(rolesScenario).toBeDefined()
+    const roleStart = await fetch(`${baseUrl}/api/workspaces/${workspace.id}/capabilities/world.scenario.start/invoke`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ definition: { ...rolesScenario.ref, revisionId: rolesScenario.currentRevisionId }, input: {}, actor: { kind: 'human' } }),
+    })
+    expect(roleStart.status).toBe(200)
+    const roleRunId = (await roleStart.json() as { result: { id: string } }).result.id
+    const roleTarget = { kind: 'resource' as const, ref: { workspaceId: workspace.id, moduleId: 'world', type: 'world.simulation-run', id: roleRunId } }
+    const roleRead = await invoke!.execute({ calls: [{ key: 'role-read', operationId: 'world.simulation-run.read', target: roleTarget, input: {} }] }, workspaceAssistantContext)
+    expect(roleRead).toMatchObject({ success: true, data: { results: [{ success: false, error: expect.stringContaining('ai_role_run_unsupported') }] } })
+    const retired = await fetch(`${baseUrl}/api/workspaces/${workspace.id}/capabilities/world.perspective.prepare/invoke`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ resource: { ...roleTarget.ref, type: 'world.perspective', id: 'retired-unregistered' }, input: {} }),
+    })
+    expect(retired.status).toBe(404)
+    expect((await fetch(`${baseUrl}/api/workspaces/${workspace.id}/capabilities/world.simulation-run.delete/invoke`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ resource: roleTarget.ref, input: {} }),
+    })).status).toBe(200)
+
     const deleteRun = await fetch(
       `${baseUrl}/api/workspaces/${workspace.id}/capabilities/world.simulation-run.delete/invoke`,
       {
@@ -697,14 +727,25 @@ describe('Workspace Host with real Modules', () => {
     expect(started.status).toBe(200)
     const runId = (await started.json() as { result: { id: string } }).result.id
     expect(await activityOf(workspace.id)).toEqual([
+      { moduleId: 'world', key: 'simulations', label: '1 simulation', count: 1, active: false },
+    ])
+
+    // Guided exercises wait for an explicit shared-clock start.
+    const resources = workspaceResourceCatalogSchema.parse(await (await fetch(`${baseUrl}/api/workspaces/${workspace.id}/resources?moduleId=world`)).json())
+    const run = resources.resources.find(resource => resource.ref.type === 'world.simulation-run' && resource.ref.id === runId)!
+    expect(run.capabilityIds.map(String)).toContain('world.simulation-run.execution.set')
+    const playing = await fetch(`${baseUrl}/api/workspaces/${workspace.id}/capabilities/world.simulation-run.execution.set/invoke`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ resource: run.ref, input: { playback: 'playing' }, actor: { kind: 'human' } }),
+    })
+    expect(playing.status).toBe(200)
+    expect(await activityOf(workspace.id)).toEqual([
       { moduleId: 'world', key: 'simulations-running', label: '1 simulation running', count: 1, active: true },
       { moduleId: 'world', key: 'simulations', label: '1 simulation', count: 1, active: false },
     ])
 
     // Paused through the Run's own published Capability, it is stored but no longer running.
-    const resources = workspaceResourceCatalogSchema.parse(await (await fetch(`${baseUrl}/api/workspaces/${workspace.id}/resources?moduleId=world`)).json())
-    const run = resources.resources.find(resource => resource.ref.type === 'world.simulation-run' && resource.ref.id === runId)!
-    expect(run.capabilityIds.map(String)).toContain('world.simulation-run.execution.set')
     const paused = await fetch(`${baseUrl}/api/workspaces/${workspace.id}/capabilities/world.simulation-run.execution.set/invoke`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

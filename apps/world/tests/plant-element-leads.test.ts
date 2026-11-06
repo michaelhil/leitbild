@@ -1,3 +1,4 @@
+import { unrestrictedQueryReadPolicy } from '../src/simulation/query-read-policy.ts'
 import { describe, expect, test } from 'bun:test'
 import type { IsoTimestamp } from '../src/core/model/index.ts'
 import { observationDeclarationSchema } from '../src/core/observation/capabilities.ts'
@@ -19,7 +20,7 @@ guardPlantTests()
 // the trip has acted, which World reads each sample.
 
 const declare = (instance: ProcessPlantRuntimeInstance) => (answerProcessPlantObservationQuery({
-  request: { capabilityId: 'world.process-plant.observation.declarations', input: { objectIds: [PLANT_ID] } },
+  request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.process-plant.observation.declarations', input: { objectIds: [PLANT_ID] } },
   plants: new Map([[PLANT_ID, instance]]), simulationTime: SIMULATION_TIME as IsoTimestamp, recording: null,
 }) as { readonly declarations: ReadonlyArray<any> }).declarations[0]!
 

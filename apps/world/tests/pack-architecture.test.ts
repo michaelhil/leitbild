@@ -57,7 +57,7 @@ describe('pack architecture', () => {
       packData: {},
     }
     let contextualFieldCalls = 0
-    const basePack: WorldPack = {
+    const basePack: WorldPack = { inspectionReferences: () => [],
       descriptor: createWorldPackDescriptor({
         id: 'base-pack', version: '1.0.0', name: 'Base Pack', description: 'Test Pack.', contributions: ['presentation'],
       }),
@@ -142,7 +142,7 @@ describe('pack architecture', () => {
     }
     const objects = [object, weatherObject]
     const currentTime = nowIso()
-    const pack: WorldPack = {
+    const pack: WorldPack = { inspectionReferences: () => [],
       descriptor: createWorldPackDescriptor({
         id: fixturePackId, version: '1.0.0', name: 'Indexed Presenter', description: 'Test Pack.', contributions: ['presentation'],
       }),
@@ -215,7 +215,7 @@ describe('pack architecture', () => {
   })
 
   test('keeps runtime-free Packs active without inventing no-op runtimes', () => {
-    const passivePack: WorldPack = {
+    const passivePack: WorldPack = { inspectionReferences: () => [],
       descriptor: createWorldPackDescriptor({
         id: 'passive', version: '1.0.0', name: 'Passive', description: 'Test Pack.', contributions: ['presentation'],
       }),

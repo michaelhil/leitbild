@@ -1,3 +1,4 @@
+import { unrestrictedQueryReadPolicy } from './query-read-policy.ts'
 import type { CommandEnvelope,CommandResult,OperationalObject,SimulationRunEvent } from '../core/model/index.ts'
 import { nowIso } from '../core/model/index.ts'
 import { capabilityIds } from './capabilities.ts'
@@ -103,13 +104,13 @@ export const createRuntimeHub = (adapters: ReadonlyArray<PackRuntimeAdapter>): P
       )
       const queries = {
         has: (id: string) => availableQueries.has(id),
-        invoke: async (query: Omit<PackRuntimeQuery, 'viewer'>): Promise<unknown> => {
+        invoke: async (query: Omit<PackRuntimeQuery, 'viewer' | 'readPolicy'>): Promise<unknown> => {
           const reader = readers.get(query.capabilityId)
           if (!reader) throw new Error('Active query provider is not ready: ' + query.capabilityId)
           assertAvailable(reader.runtimeId)
           const input = reader.capability.input.parse(query.input)
           // Forward exactly the Capability and its input, so a Pack cannot pass a viewer of its own.
-          return reader.capability.output.parse(await reader.connection.invokeQuery({ capabilityId: query.capabilityId, input }))
+          return reader.capability.output.parse(await reader.connection.invokeQuery({ capabilityId: query.capabilityId, input, readPolicy: unrestrictedQueryReadPolicy }))
         },
       }
       const connectionResults = await Promise.allSettled(

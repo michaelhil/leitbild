@@ -54,6 +54,19 @@ test('preflight fails before runtime startup when built artifacts are missing', 
   finally { await rm(empty, { recursive: true }) }
 })
 
+test('preflight refuses a prepared stack with the wrong wiki revision', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'leitbild-preflight-wiki-'))
+  const revision = 'a'.repeat(40)
+  try {
+    for (const path of ['apps/leitbild/src/ui/dist/index.html', 'apps/world/src/ui/dist/index.html', 'apps/agents/src/ui/dist/index.html', 'apps/agents/src/ui/dist/app.js', 'apps/agents/src/ui/dist.css']) {
+      await Bun.write(join(root, path), '')
+    }
+    await Bun.write(join(root, 'knowledge/snapshot.json'), JSON.stringify({ revision, documents: [] }))
+    expect(await preflightLocalStack(root, revision)).toBe(revision)
+    await expect(preflightLocalStack(root, 'b'.repeat(40))).rejects.toThrow('Publish the selected wiki before starting')
+  } finally { await rm(root, { recursive: true }) }
+})
+
 test('loopback proxy retains HTTP path/query/body and forwards WebSocket frames both ways', async () => {
   const upstream = Bun.serve({
     hostname: '127.0.0.1', port: 0,
@@ -85,5 +98,18 @@ test('loopback proxy retains HTTP path/query/body and forwards WebSocket frames 
         }
       })
     })
+  } finally { proxy.stop(true); upstream.stop(true) }
+})
+
+test('the public development proxy never forwards internal Module invocation paths', async () => {
+  let calls = 0
+  const upstream = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch: () => { calls++; return new Response('unexpected') } })
+  const proxy = startLocalProxy(localRoutes(caddy), { host: upstream.port!, agents: upstream.port!, world: upstream.port! })
+  try {
+    for (const path of ['/internal', '/internal/workspaces/w/capabilities/world.context.read/invoke']) {
+      const response = await fetch(`http://127.0.0.1:${proxy.port}${path}`, { method: 'POST', body: '{}' })
+      expect(response.status).toBe(404)
+    }
+    expect(calls).toBe(0)
   } finally { proxy.stop(true); upstream.stop(true) }
 })

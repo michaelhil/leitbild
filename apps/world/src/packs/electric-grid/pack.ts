@@ -17,11 +17,17 @@ import { gridObservationTopologyQuery } from './observation/topology.ts'
 import { describeElectricGridPhysicalTargets } from './physical-targets.ts'
 
 export const electricGridPack: WorldPack = {
+  inspectionReferences: () => [],
   ...electricGridPackView,
   physicalTargets: describeElectricGridPhysicalTargets,
   scenarioConfigSchema: electricGridPackConfigSchema,
   referenceData: { builders: [], datasetIds: electricGridPackView.referenceData?.datasetIds ?? [] },
   authoring: {
+    configuration: {
+      beforeStart: "Pack configuration is intentionally empty. Each grid item selects a model, compatible operatingPoint and automation. Load and generation-availability scales are dimensionless multipliers; location is [longitude, latitude]. Model choices are admitted catalogs; external plant connections name exact published connection points.",
+      liveChanges: "Discover world.electric-grid.* command schemas for breaker, dispatch, storage, load and automation operations supported by the selected model. They mutate runtime state through validated commands, not model topology or the authored operating point.",
+      requiresNewRevision: "Replacing topology/model, starting operatingPoint, automation selection or cross-Pack connection definitions requires a new Scenario Revision and Run. Restored Runs keep their admitted model identity and saved operating state.",
+    },
     itemTypes: [{
       id: 'grid',
       label: 'Electric grid',

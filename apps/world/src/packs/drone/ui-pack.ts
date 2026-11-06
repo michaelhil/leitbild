@@ -118,14 +118,15 @@ export const dronePackView = {
       : [],
     presentObject: (object, context): PackObjectPresentation => {
       const data = parseDroneData(object)
-      const contacts = data ? droneSensorContacts(context.objects, object.id) : []
+      const contactPage = data ? droneSensorContacts(context.objects, object.id, { limit: 6 }) : { contacts: [], hasMore: false }
+      const contacts = contactPage.contacts
       return {
         categoryId: 'drones',
         icon: 'drone',
         color: data?.vehicle.visual.color ?? '#4669ff',
         summary: data ? droneSummary(data) : object.operational.status,
         status: data ? droneStatus(data) : packStatus('error', 'Invalid drone data'),
-        fields: data ? [...droneFields(data), packField('contacts', 'Sensor contacts', contacts.length ? contacts.slice(0, 6).map(contact => `${contact.targetLabel} ${Math.round(contact.distanceM)} m`).join(', ') : 'None in range')] : [packField('error', 'Error', 'Invalid drone pack data')],
+        fields: data ? [...droneFields(data), packField('contacts', 'Sensor contacts', contacts.length ? contacts.map(contact => `${contact.targetLabel} ${Math.round(contact.distanceM)} m`).join(', ') + (contactPage.hasMore ? ' · more contacts' : '') : 'None in range')] : [packField('error', 'Error', 'Invalid drone pack data')],
         mapIconSizePx: data ? Math.max(22, Math.round(24 * data.vehicle.visual.scale)) : 24,
         noteworthyUpdates: data?.health.state === 'degraded' || data?.health.state === 'critical' || data?.health.state === 'failed' || data?.health.state === 'destroyed',
       }

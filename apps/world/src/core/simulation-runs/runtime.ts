@@ -1,3 +1,6 @@
+import { rawObjectReadPolicy } from '../packs/inspection.ts'
+import { audienceVisibleTo } from '../model/audience.ts'
+import { createQueryReadPolicy, unrestrictedQueryReadPolicy, type QueryReadPolicy } from '../../simulation/query-read-policy.ts'
 import type { WorkspaceId } from '@leitbild/contracts'
 import { randomUUID } from 'node:crypto'
 import type { RunHistorian, SeriesSamplesQuery } from '../../features/historian/store.ts'
@@ -7,7 +10,7 @@ import { prepareProcedureCommand } from '../../features/procedures/run-state.ts'
 import { procedureTransitionDecision, publishProcedureTransitionDecision } from '../../features/procedures/transition-receipt.ts'
 import { createProcedureObservationPort,type ProcedureObservationPort } from '../../features/procedures/pack-observations.ts'
 import { createObservationCache, createObservationPort, observationProviderFor, type ObservationPort } from '../../features/displays/observation/port.ts'
-import { createProcedureSourceService,type ProcedureSourceService, type ProcedureEvidenceRequest, type ProcedureEvidence } from '../../features/procedures/source.ts'
+import { createProcedureSourceService,type ProcedureSourceService, type ProcedureDocumentRequest, type ProcedureEvidenceRequest, type ProcedureEvidence } from '../../features/procedures/source.ts'
 import type { CommandOrigin,PackRuntimeConnection,PackRuntimeEmission,PackRuntimeEvent,PackRuntimeHealth,PackRuntimeRealtimeInput,PackRuntimeRealtimeMessage,SimulationCapability } from '../../simulation/protocol.ts'
 import type { AgentRestrictions,RunRoles,ScenarioSide,CommandEnvelope,CommandResult,EventId,InteractionEffect,InteractionHandler,InteractionSignal,IsoTimestamp,ObjectId,OperationalObject,ProcedureCatalog,ProcedureDocument,ProcedureId,ProcedureSourceId,Provenance,RecordedSample,RecordingProfileDescriptor,RecordingSeriesDescriptor,RecordingSeriesQuery,ScenarioExecutionState,ScenarioRecordingSelection,ScenarioTimeline,ScenarioTimelineAction,ScenarioTimelineCue,SimulationClockState,SimulationClockUpdate,SimulationRunEvent,SimulationRunId } from '../model/index.ts'
 import { procedureObservationUpdatedEventSchema, objectIdSchema, actorIdSchema,agentRestrictionsSchema,commandEnvelopeSchema,deleteObjectCommandKind,deleteObjectPayloadSchema,interactionEffectSchema,interactionSignalSchema,isSideView,notificationIdSchema,nowIso,sidedObjectAudienceIssue,simulationClockUpdateSchema,type AudienceIssue } from '../model/index.ts'
@@ -62,6 +65,8 @@ export interface SimulationRunRuntime {
   readonly id: SimulationRunId
   readonly capabilities: () => SimulationRunCapabilities
   readonly snapshot: () => SimulationRunStateSnapshot
+  /** Caller-qualified complete-object visibility at this exact projection/policy boundary; refresh before a later dispatch. */
+  readonly inspectionPolicy: (actor: Actor) => QueryReadPolicy
   /** The roles this Run declares, fixed for its lifetime; null in open mode. */
   readonly roles: () => RunRoles | null
   readonly setClock: (update: SimulationClockUpdate) => Promise<SimulationClockState>
@@ -540,6 +545,8 @@ export const createSimulationRunRuntime = async (config: {
   // The owning Pack evaluates physical conditions. World only schedules scoped,
   // read-only queries and retains their evidence; it never interprets plant logic.
   const procedureDocuments = new Map<string, ProcedureDocument>()
+  const procedureDocumentKey = ({ sourceId, sourceRevision, sourcePath, procedureId }: ProcedureDocumentRequest) =>
+    JSON.stringify([sourceId, sourceRevision, sourcePath, procedureId])
   const pendingObservationAcquisitions = new Map<string, Promise<unknown>>()
   const acquireObservation = async <T>(key: string, acquire: () => Promise<T>, budget: { readonly deadline: number; exhausted: boolean }): Promise<T> => {
     const timeoutReason = `Observation acquisition pass exceeded its ${observationAcquisitionTimeoutMs} ms wall-time transport budget; original read is still pending.`
@@ -572,13 +579,12 @@ export const createSimulationRunRuntime = async (config: {
     // multiply the time for which this read-side observer occupies the queue.
     const acquisitionBudget = { deadline: performance.now() + observationAcquisitionTimeoutMs, exhausted: false }
     const runs = state.snapshot().procedures?.runs ?? []
-    const keyFor = (run: typeof runs[number]) => JSON.stringify([run.sourceId, run.sourceRevision, run.sourcePath, run.procedureId])
-    const livePins = new Set(runs.filter(run => run.status === 'active' || run.status === 'transferred').map(keyFor))
+    const livePins = new Set(runs.filter(run => run.status === 'active' || run.status === 'transferred').map(procedureDocumentKey))
     for (const key of procedureDocuments.keys()) if (!livePins.has(key)) procedureDocuments.delete(key)
     for (const run of runs) {
       if (closing) return
       if (run.status !== 'active' && run.status !== 'transferred') continue
-      const key = keyFor(run)
+      const key = procedureDocumentKey(run)
       let document = procedureDocuments.get(key)
       if (!document) {
         try {
@@ -615,7 +621,7 @@ export const createSimulationRunRuntime = async (config: {
           }
           const acquisitionKey = JSON.stringify(['query', binding.capabilityId, input])
           const raw = active.capability.output.parse(await acquireObservation(acquisitionKey,
-            async () => await config.runtimeConnection.invokeQuery({ capabilityId: binding.capabilityId, input }), acquisitionBudget))
+            async () => await config.runtimeConnection.invokeQuery({ capabilityId: binding.capabilityId, input, readPolicy: unrestrictedQueryReadPolicy }), acquisitionBudget))
           result = procedureObservationUpdatedEventSchema.shape.observation.shape.result.parse(raw)
         } catch (error) {
           // Failed acquisition is explicit unknown evidence, never the last green.
@@ -723,6 +729,7 @@ export const createSimulationRunRuntime = async (config: {
     ...nextScenarioBase(at),
     type: 'scenario.cue.started',
     cueId: cue.id,
+    actionCount: cue.actions.length,
   })
 
   const scenarioCueFailedEvent = (cue: ScenarioTimelineCue, error: unknown, at: IsoTimestamp): SimulationRunEvent => ({
@@ -1227,13 +1234,21 @@ export const createSimulationRunRuntime = async (config: {
       }
     }
     if (active.capability.kind === 'query') {
-      assertAllowed('inspect', active.capability.inspectObjectIds?.(input) ?? [])
+      if (!active.capability.readScope) throw new Error(`Query Capability ${active.capability.id} has no read scope`)
+      const inspected = active.capability.inspectObjectIds?.(input) ?? []
+      if (active.capability.readScope === 'object' && inspected.length === 0) throw new Error(`Object query ${active.capability.id} resolved no inspection target`)
+      assertAllowed('inspect', inspected)
+      const readPolicy = createQueryReadPolicy(`${config.id}:${actor.id}:${actor.role}:${currentRestrictions?.revision ?? 0}`,
+        actor.role === 'ai_agent' ? currentRestrictions?.objects.filter(entry => entry.deny.includes('inspect')).map(entry => entry.objectId) ?? [] : [])
       const viewer = viewerForActor(runRoles, actor)
       const result = await config.runtimeConnection.invokeQuery({
         capabilityId: active.capability.id,
-        input,
+        input, readPolicy,
         ...(viewer === undefined ? {} : { viewer }),
       })
+      if (actor.role === 'ai_agent' && state.snapshot().scenario?.agentRestrictions.revision !== currentRestrictions?.revision) {
+        throw Object.assign(new Error('AI inspection policy changed while the query ran; acquire a new result'), { code: 'query_policy_superseded', status: 409 })
+      }
       return { kind: 'query', result: active.capability.output.parse(result) }
     }
     const built = active.capability.buildCommand?.(input)
@@ -1275,14 +1290,14 @@ export const createSimulationRunRuntime = async (config: {
   const executeScenarioCue = async (cue: ScenarioTimelineCue, at: IsoTimestamp): Promise<void> => {
     await publishOneGenerated(() => scenarioCueStartedEvent(cue, at))
 
-    for (const action of cue.actions) {
+    for (const [actionIndex, action] of cue.actions.entries()) {
+      // Journal uncertainty before dispatch: a crash after domain acceptance must not imply safe retry.
+      await publishOneGenerated(() => ({ ...nextScenarioBase(at), type: 'scenario.cue.action', cueId: cue.id, actionIndex, outcome: 'unknown' }))
       if (action.type === 'emit_signal') {
         await enqueuePublish(async () => {
           await handleInteractionSignalNow(scenarioSignalForAction(action, at), { source: 'system' })
         })
-        continue
-      }
-      if (action.type === 'invoke_capability') {
+      } else if (action.type === 'invoke_capability') {
         const outcome = await invokeCapabilityThroughRuntime(scenarioRunnerActor, {
           capabilityId: action.capabilityId,
           input: action.input,
@@ -1290,11 +1305,14 @@ export const createSimulationRunRuntime = async (config: {
           issuedAt: at,
         }, 'system')
         if (outcome.kind !== 'command') throw new Error(`Scenario cannot invoke query Capability: ${action.capabilityId}`)
-        if (!outcome.result.ok) throw new Error(outcome.result.reason)
-        continue
-      }
-      await publishGenerated(() => simulationRunEventsForScenarioActions([action], at))
+        if (!outcome.result.ok) {
+          await publishOneGenerated(() => ({ ...nextScenarioBase(at), type: 'scenario.cue.action', cueId: cue.id, actionIndex, outcome: 'failed' }))
+          throw new Error(outcome.result.reason)
+        }
+      } else await publishGenerated(() => simulationRunEventsForScenarioActions([action], at))
+      await publishOneGenerated(() => ({ ...nextScenarioBase(at), type: 'scenario.cue.action', cueId: cue.id, actionIndex, outcome: 'accepted' }))
     }
+    await publishOneGenerated(() => ({ ...nextScenarioBase(at), type: 'scenario.cue.finished', cueId: cue.id, outcome: 'complete' }))
   }
 
   let cueQueue: Promise<void> = Promise.resolve()
@@ -1304,7 +1322,10 @@ export const createSimulationRunRuntime = async (config: {
     const pending = cueQueue.then(async () => {
       if (state.snapshot().scenario?.timeline?.firedCueIds.includes(cue.id)) return
       try { await executeScenarioCue(cue, at) }
-      catch (error) { await publishOneGenerated(() => scenarioCueFailedEvent(cue, error, nowIso())) }
+      catch (error) {
+        await publishOneGenerated(() => ({ ...nextScenarioBase(runClock.read().currentTime), type: 'scenario.cue.finished', cueId: cue.id, outcome: 'failed' }))
+        await publishOneGenerated(() => scenarioCueFailedEvent(cue, error, runClock.read().currentTime))
+      }
     }).finally(() => { pendingCues-- })
     cueQueue = pending.catch(() => {})
     return pending
@@ -1337,10 +1358,10 @@ export const createSimulationRunRuntime = async (config: {
         return Math.max(0, dueAtMs - nowMs)
       },
       onCueDue: async (cue): Promise<void> => {
-        await publishScenarioCue(cue, nowIso())
+        await publishScenarioCue(cue, runClock.read().currentTime)
       },
       onCueFailed: async (cue, error): Promise<void> => {
-        await publishOneGenerated(() => scenarioCueFailedEvent(cue, error, nowIso()))
+        await publishOneGenerated(() => scenarioCueFailedEvent(cue, error, runClock.read().currentTime))
       },
     })
     scenarioRunner?.start()
@@ -1479,6 +1500,21 @@ export const createSimulationRunRuntime = async (config: {
       const packId = runtimeCapabilities.get(capabilityId)?.packId
       if (packId === undefined || !roleAwarePackIds.has(packId)) throw roleViewNotSupportedRefusal(`Capability ${capabilityId}`)
     }
+  }
+
+  const inspectionPolicy = (actor: Actor): QueryReadPolicy => {
+    assertRunCapabilityAllowed(runRoles, actor, 'world.simulation-run.read-object')
+    const snapshot = committedState.snapshot()
+    const restrictions = snapshot.scenario?.agentRestrictions
+    const viewer = viewerForActor(runRoles, actor)
+    const denied = [
+      ...(actor.role === 'ai_agent' ? restrictions?.objects.filter(entry => entry.deny.includes('inspect')).map(entry => String(entry.objectId)) ?? [] : []),
+      ...snapshot.objects.filter(object => !audienceVisibleTo(object.audience, viewer?.sees ?? 'all')).map(object => String(object.id)),
+    ]
+    const key = `${config.id}:${actor.id}:${actor.role}:${actor.roleIds?.join(',') ?? ''}:${restrictions?.revision ?? 0}:${snapshot.seq}`
+    const policy = rawObjectReadPolicy(createQueryReadPolicy(key, denied), snapshot.objects, config.packs ?? [])
+    const present = new Set(snapshot.objects.map(object => String(object.id)))
+    return Object.freeze({ ...policy, canInspect: (id: string) => present.has(id) && policy.canInspect(id) })
   }
 
   const invokeCapability = async (
@@ -1717,6 +1753,7 @@ export const createSimulationRunRuntime = async (config: {
       recording: config.capabilities?.recording ?? { selections: [], profiles: [] },
     }),
     snapshot: () => snapshotWithCurrentClock(),
+    inspectionPolicy,
     roles: () => runRoles,
     setClock,
     setAgentRestrictions,
@@ -1737,7 +1774,10 @@ export const createSimulationRunRuntime = async (config: {
     invokeCapability,
     receiveRealtimeInput,
     procedureCatalog: async (catalogConfig = {}) => await procedureSourceService.readCatalog(catalogConfig),
-    procedureDocument: async (documentConfig) => await procedureSourceService.readDocument(documentConfig),
+    // An active exact pin is already loaded by the procedure observer. Use it
+    // for focused reads without repeatedly parsing and syncing the publication.
+    procedureDocument: async documentConfig =>
+      procedureDocuments.get(procedureDocumentKey(documentConfig)) ?? await procedureSourceService.readDocument(documentConfig),
     procedureEvidence: async evidenceConfig => await procedureSourceService.readEvidence(evidenceConfig),
     procedureObservations,
     observations,

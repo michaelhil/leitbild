@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount, tick, untrack } from 'svelte'
   import {
-    type UiControlsOfferMessage,
+    workspaceResourceReferenceSchema,
     type FeaturedDefinitionCatalog,
     type InspectionView,
     type ModuleCapabilityDescriptor,
@@ -16,7 +16,7 @@
   import JsonTree from './JsonTree.svelte'
   import WikiLink from './WikiLink.svelte'
   import WorkspaceComposer from './WorkspaceComposer.svelte'
-  import ViewControls from './ViewControls.svelte'
+  import { createRunAssistantOpening, type RunAssistantResolution } from './run-assistant-opening.ts'
   import SimulationRunControls from './SimulationRunControls.svelte'
   import AssistantLauncher from './AssistantLauncher.svelte'
   import RunRoomControls from './RunRoomControls.svelte'
@@ -69,8 +69,6 @@
   const initialSelection = new URLSearchParams(location.search)
   const initialAgentsVisible = initialSelection.get('agents') !== null
   let selectedWorldRunId = $state(initialSelection.get('world'))
-  let uiControlsOffer = $state.raw<UiControlsOfferMessage | null>(null)
-  let workspaceComposer = $state<{ setViewControl: (id: string, visible: boolean) => void } | null>(null)
   let selectedAgentsRoomId = $state(initialSelection.get('agents'))
   let agentsVisible = $state(initialAgentsVisible)
   // A conversation the Getting started guide opened links back to it (plan v2 §2).
@@ -495,70 +493,63 @@
   // for it as often as it likes.
   // One open at a time, whoever asks (the toolbar launcher or a World page): a second click
   // while the first is still finding or creating the room waits for it, so no second room is made.
-  let runAssistantOpening: Promise<void> | null = null
-  const openRunAssistant = (): Promise<void> => {
-    runAssistantOpening ??= openRunAssistantRoom().finally(() => { runAssistantOpening = null })
-    return runAssistantOpening
-  }
-  const openRunAssistantRoom = async (): Promise<void> => {
-    if (!runAssistantAvailable || !workspace || !selectedWorldResource || !selectedRunFamily || !assistantCapability) {
-      throw new Error('Run Assistant is unavailable for this Run')
-    }
-    const existing = selectedAgentsResource && roomSelectsRun(selectedAgentsResource, selectedWorldResource)
-      ? selectedAgentsResource
-      : applicableRunRooms[0]
-    if (existing) {
-      selectedAgentsRoomId = existing.ref.id
-    } else if (familyRunRooms[0]) {
-      const room = familyRunRooms[0]
-      const capabilityId = 'agents.room.scope.set'
-      if (!capabilities.some(capability => capability.id === capabilityId)) throw new Error('Room scope controls are unavailable')
-      const expectedRevision = Number(room.summary.find(item => item.key === 'scope-revision')?.value ?? 0)
-      await request(
-        `/api/workspaces/${workspace.id}/capabilities/${encodeURIComponent(capabilityId)}/invoke`,
-        jsonRequest('POST', {
-          resource: room.ref,
-          input: {
-            scope: roomScopeIncludingRun(room, selectedRunFamily, selectedWorldResource.ref),
-            expectedRevision,
-          },
-          actor: { kind: 'human' },
-        }),
-      )
-      selectedAgentsRoomId = room.ref.id
-      agentsVisible = true
-      const url = new URL(location.href)
-      url.searchParams.set('agents', selectedAgentsRoomId)
-      history.replaceState(null, '', url)
-      void refreshResources(workspace.id).catch(cause => { refreshError = String(cause) })
-      return
-    } else {
-      const response = await request<InvocationResponse & { result: { resource: ModuleResourceDescriptor['ref']; uiPath: string; reused: boolean } }>(
-        `/api/workspaces/${workspace.id}/capabilities/${encodeURIComponent(assistantCapability.id)}/invoke`,
-        jsonRequest('POST', {
-          input: {
-            scope: { kind: 'collection', collection: selectedRunFamily, members: { mode: 'all', except: [] } },
-            title: selectedWorldResource.title,
-            focusedSubjects: [selectedWorldResource.ref],
-          },
-          actor: { kind: 'human' },
-        }),
-      )
-      selectedAgentsRoomId = response.result.resource.id
-      agentsVisible = true
-      const url = new URL(location.href)
-      url.searchParams.set('agents', selectedAgentsRoomId)
-      history.replaceState(null, '', url)
-      void refreshResources(workspace.id).catch(cause => { refreshError = String(cause) })
-      return
-    }
+  const resolveRunAssistant = createRunAssistantOpening({
+    current: () => workspace && selectedWorldResource?.ref.workspaceId === workspace.id ? selectedWorldResource.ref : null,
+    resolve: (run, assertCurrent) => openRunAssistantRoom(run, assertCurrent),
+  })
+  const openRunAssistant = async (signal?: AbortSignal, assertDelivery?: () => void): Promise<RunAssistantResolution> => {
+    signal?.throwIfAborted(); assertDelivery?.()
+    const priorRoom = selectedAgentsRoomId
+    const resolved = await resolveRunAssistant()
+    signal?.throwIfAborted(); assertDelivery?.()
+    if (workspace?.id !== resolved.run.workspaceId || selectedWorldRunId !== resolved.run.id) throw new Error('The Run changed while its Assistant was opening')
+    if (selectedAgentsRoomId !== priorRoom && selectedAgentsRoomId !== resolved.room.id) throw new Error('A different Room was selected while this Assistant was opening')
+    selectedAgentsRoomId = resolved.room.id
     agentsVisible = true
     const url = new URL(location.href)
-    url.searchParams.set('agents', selectedAgentsRoomId!)
+    url.searchParams.set('agents', resolved.room.id)
     history.replaceState(null, '', url)
+    return resolved
+  }
+  const openRunAssistantRoom = async (run: WorkspaceResourceReference, assertCurrent: () => void): Promise<RunAssistantResolution> => {
+    assertCurrent()
+    if (!runAssistantAvailable || !workspace || !selectedWorldResource || !selectedRunFamily || !assistantCapability) throw new Error('Run Assistant is unavailable for this Run')
+    // Capture the operation's accepted scope before suspension. Later UI selection is never its return value.
+    const openedWorkspace = workspace, resource = selectedWorldResource, family = selectedRunFamily, capability = assistantCapability
+    const existing = selectedAgentsResource && roomSelectsRun(selectedAgentsResource, resource) ? selectedAgentsResource : applicableRunRooms[0]
+    const familyRoom = familyRunRooms[0]
+    let room: WorkspaceResourceReference
+    let changed = false
+    if (existing) room = existing.ref
+    else if (familyRoom) {
+      const capabilityId = 'agents.room.scope.set'
+      if (!capabilities.some(capability => capability.id === capabilityId)) throw new Error('Room scope controls are unavailable')
+      const expectedRevision = Number(familyRoom.summary.find(item => item.key === 'scope-revision')?.value ?? 0)
+      await request(`/api/workspaces/${openedWorkspace.id}/capabilities/${encodeURIComponent(capabilityId)}/invoke`, jsonRequest('POST', {
+        resource: familyRoom.ref,
+        input: { scope: roomScopeIncludingRun(familyRoom, family, run), expectedRevision },
+        actor: { kind: 'human' },
+      }))
+      assertCurrent()
+      room = familyRoom.ref
+      changed = true
+    } else {
+      const response = await request<InvocationResponse & { result: { resource: ModuleResourceDescriptor['ref']; uiPath: string; reused: boolean } }>(
+        `/api/workspaces/${openedWorkspace.id}/capabilities/${encodeURIComponent(capability.id)}/invoke`, jsonRequest('POST', {
+          input: { scope: { kind: 'collection', collection: family, members: { mode: 'all', except: [] } }, title: resource.title, focusedSubjects: [run] }, actor: { kind: 'human' },
+        }),
+      )
+      assertCurrent()
+      room = workspaceResourceReferenceSchema.parse(response.result.resource)
+      changed = true
+    }
+    assertCurrent()
+    if (room.workspaceId !== run.workspaceId || room.moduleId !== 'agents' || room.type !== 'agents.room') throw new Error('The Run Assistant did not return an Agents Room in this Workspace')
+    if (changed) void refreshResources(openedWorkspace.id).catch(cause => { if (workspace?.id === openedWorkspace.id && selectedWorldRunId === run.id) refreshError = String(cause) })
+    return { run, room }
   }
   const toggleRunAssistant = async (): Promise<void> => {
-    if (!agentsVisible) return openRunAssistant()
+    if (!agentsVisible) { await openRunAssistant(); return }
     agentsVisible = false
     const url = new URL(location.href)
     url.searchParams.delete('agents')
@@ -630,7 +621,6 @@
       {#if fromGuide}<a class="guide-back" href={guideHref('ask')}>← Getting started</a>{/if}</div>
     <div class="workspace-actions">
       {#if selectedWorldResource}
-        <ViewControls offer={uiControlsOffer?.subject.id === selectedWorldRunId ? uiControlsOffer : null} set={(id, visible) => workspaceComposer?.setViewControl(id, visible)} />
         <SimulationRunControls
           workspaceId={workspace.id}
           resource={selectedWorldResource}
@@ -710,7 +700,7 @@
     {#each catalogFailures as outcome (outcome.moduleId)}{#if outcome.status === 'failed'}<p class="notice error" role="alert">{moduleTitle(outcome.moduleId)}: {outcome.failure.message}</p>{/if}{/each}
     {#if refreshError}<p class="notice error" role="alert">Catalog refresh failed: {refreshError}</p>{/if}
     {#if showingComposer}
-    <WorkspaceComposer bind:this={workspaceComposer} onUiControls={offer => { uiControlsOffer = offer }} workspaceId={workspace.id} worldRunId={selectedWorldRunId} {focusedSubjects} agentsRoomId={selectedAgentsRoomId} {agentsVisible} onShowAgents={showRunAssistant}
+    <WorkspaceComposer workspaceId={workspace.id} worldRunId={selectedWorldRunId} {focusedSubjects} agentsRoomId={selectedAgentsRoomId} {agentsVisible} onShowAgents={showRunAssistant}
       {runRefusal} onOpenRun={runId => switchWorldRun(runId)} {runAssistantAvailable} onOpenRunAssistant={openRunAssistant}
       onError={message => { error = message }} bind:worldPane />
     {#if peopleShown && people && peopleState?.chat}<PeopleChat session={people} chat={peopleState.chat} notice={peopleState.notice} outboxSaved={peopleState.outboxSaved} anchor={worldPane}

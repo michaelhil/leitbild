@@ -15,6 +15,17 @@ export const safeDocumentPath = (path: string): boolean =>
   path.endsWith('.md') && !path.includes('\\') && !path.includes('\0')
   && path.split('/').every(segment => segment.length > 0 && segment !== '.' && segment !== '..' && !segment.startsWith('.'))
 
+const searchStopWords = new Set('a an and are as at be by can could do does for from how i in is it me of on or see that the this to use was what when where which with would you your'.split(' '))
+const searchWord = '[\\p{L}\\p{N}_]'
+// A phrase may vary its articles and helper words. Keep linking words such
+// as “of” significant so “copy of a Run” isn't ranked as an instruction.
+const searchPhraseSeparator = '[^\\p{L}\\p{N}_]+(?:(?:a|an|are|be|can|do|is|see|the|this|to|use)[^\\p{L}\\p{N}_]+)*'
+const wholeSearchTerm = (pattern: string): RegExp => new RegExp(`(?<!${searchWord})${pattern}(?!${searchWord})`, 'u')
+const escapeSearchTerm = (term: string): string => term.replaceAll('.', '\\.')
+const isReferencePage = (path: string): boolean =>
+  path.startsWith('archive/') || path.startsWith('engineering-analysis/') || path.startsWith('quality/')
+  || path.includes('/reference-designs/') || path.startsWith('world/packs/lfr-1/')
+
 export const createKnowledge = (input: unknown) => {
   const snapshot = snapshotSchema.parse(input)
   const paths = new Set<string>()
@@ -72,26 +83,48 @@ export const createKnowledge = (input: unknown) => {
     }
   }
   const search = (query: string, options: { readonly prefix?: string; readonly offset?: number; readonly limit?: number; readonly includeQuality?: boolean } = {}) => {
-    const terms = [...new Set(query.toLowerCase().split(/[^\p{L}\p{N}_-]+/u).filter(Boolean))]
+    const normalizedQuery = query.trim().toLowerCase()
+    // Keep engineering identifiers such as LD-01 and ECA-0.0 intact.
+    const words = normalizedQuery.match(/[\p{L}\p{N}_]+(?:[.-][\p{L}\p{N}_]+)*/gu) ?? []
+    const meaningful = words.filter(word => !searchStopWords.has(word))
+    const terms = [...new Set(meaningful.length ? meaningful : words)]
+    const patterns = terms.map(term => wholeSearchTerm(escapeSearchTerm(term)))
+    const countMatches = (value: string): number => patterns.filter(pattern => pattern.test(value)).length
+    const archiveRequested = terms.includes('archive') || terms.includes('archived')
+    const phrase = meaningful.length > 1 && terms.length > 1
+      ? wholeSearchTerm(terms.map(escapeSearchTerm).join(searchPhraseSeparator))
+      : undefined
     const matches = documents.filter(document =>
       (!options.prefix || document.path.startsWith(options.prefix))
       && (options.includeQuality || !document.path.startsWith('quality/')),
     ).flatMap(document => {
-      const lower = `${document.path}\n${document.title}\n${document.content}`.toLowerCase()
-      const score = terms.reduce((sum, term) => sum + (lower.includes(term) ? 1 : 0) + (document.title.toLowerCase().includes(term) ? 2 : 0), 0)
-      if (terms.length > 0 && score === 0) return []
+      const path = document.path.toLowerCase()
+      const title = document.title.toLowerCase()
+      const coverage = countMatches(`${path}\n${title}\n${document.content.toLowerCase()}`)
+      const exactPath = normalizedQuery === path || normalizedQuery === `knowledge/${path}`
+      if (terms.length > 0 && coverage === 0 && !exactPath) return []
+
       let best = 0; let bestScore = -1
-      document.lines.forEach((line, index) => {
-        const lineScore = terms.filter(term => line.toLowerCase().includes(term)).length
+      if (terms.length) document.lines.forEach((line, index) => {
+        const lower = line.toLowerCase()
+        const lineScore = countMatches(lower) + (phrase?.test(lower) ? terms.length : 0)
         if (lineScore > bestScore) { best = index; bestScore = lineScore }
       })
       const heading = document.headings.filter(candidate => candidate.line <= best + 1).at(-1)
       const excerpt = document.lines[best] ?? ''
-      const positions = terms.map(term => excerpt.toLowerCase().indexOf(term)).filter(position => position >= 0)
+      const lowerExcerpt = excerpt.toLowerCase()
+      const positions = patterns.map(pattern => lowerExcerpt.search(pattern)).filter(position => position >= 0)
       const excerptStart = Math.max(0, (positions.length ? Math.min(...positions) : 0) - 120)
       // Search previews are bounded, not the document. Exact lines and sections
       // remain readable through the returned reference.
       const snippet = excerpt.slice(excerptStart, excerptStart + 1200)
+      // Prefer useful co-located matches and explicit identities. Current guidance
+      // wins close general matches without excluding design or retained sources.
+      const procedure = document.procedureId?.toLowerCase()
+      const scope = archiveRequested ? Number(path.startsWith('archive/')) * 8 : Number(!isReferencePage(path)) * 3
+      const score = exactPath ? Number.POSITIVE_INFINITY : terms.length === 0 ? 0
+        : coverage * 4 + bestScore * 2 + countMatches(path) * 3 + countMatches(title) * 2 + scope
+          + (procedure !== undefined && terms.includes(procedure) ? 15 : 0)
       return [{ path: document.path, title: document.title, line: best + 1, section: heading?.anchor,
         snippet, snippetTruncated: excerptStart > 0 || excerpt.length > excerptStart + snippet.length, score }]
     }).sort((a, b) => b.score - a.score || a.path.localeCompare(b.path))

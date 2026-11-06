@@ -41,6 +41,8 @@ export const eventReach = (
     case 'interaction.signal.received':
     case 'notification.emitted':
     case 'scenario.cue.started':
+    case 'scenario.cue.action':
+    case 'scenario.cue.finished':
     case 'scenario.objects.highlighted':
     case 'scenario.highlights.cleared':
     case 'scenario.agent-restrictions.set':

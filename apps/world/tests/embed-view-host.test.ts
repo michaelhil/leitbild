@@ -507,3 +507,15 @@ describe('a generated drawing is measured only in the size it was drawn for', ()
     expect(drawingMeasurable(redrawn, viewport)).toBe(true)
   })
 })
+
+test('element presentation acknowledgement comes from the actual drawing, correlated to one request', () => {
+  const page = framedPage()
+  let acknowledge: ((applied: boolean) => void) | undefined
+  page.host.subscribeSelect(select => { acknowledge = select.acknowledge })
+  page.host.listen()
+  page.fromWindow({ type: 'world:display-select', requestId: 'selection-1', objectId: 'plant:1', elementId: 'pump' })
+  expect(page.posted.filter(item => item.message.type === 'world:display-selected')).toHaveLength(0)
+  acknowledge?.(true)
+  expect(page.posted.at(-1)?.message).toEqual({ type: 'world:display-selected', requestId: 'selection-1', objectId: 'plant:1', elementId: 'pump', applied: true })
+  expect(parseDisplayFrameMessage({ type: 'world:display-selected', requestId: 'selection-1', objectId: 'plant:1', elementId: 'pump', applied: 'yes' })).toBeNull()
+})

@@ -1,3 +1,4 @@
+import { unrestrictedQueryReadPolicy } from '../src/simulation/query-read-policy.ts'
 import { describe, expect, test } from 'bun:test'
 import { recordingSeriesIdFor, type ObjectId } from '../src/core/model/index.ts'
 import { observationDeclarationSchema, type ObservationDeclaration } from '../src/core/observation/capabilities.ts'
@@ -185,7 +186,7 @@ describe('plant observation declarations (P2)', () => {
 
   test('the Capability answers a known revision unchanged and narrows to named elements', () => {
     const plants = new Map([[objectId, { plant, runtime: createProcessPlantRuntime({ system: plant }) } as unknown as ProcessPlantRuntimeInstance]])
-    const ask = (input: unknown) => answerProcessPlantObservationQuery({ request: { capabilityId: processPlantObservationCapabilityIds.declarations, input }, plants, recording }) as { declarations: ReadonlyArray<any> }
+    const ask = (input: unknown) => answerProcessPlantObservationQuery({ request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId: processPlantObservationCapabilityIds.declarations, input }, plants, recording }) as { declarations: ReadonlyArray<any> }
     // Its revision names the mode's lead lists (Q22): at its initial state the unit is in power operation.
     const revision = declarationRevision(plant, recording, 'powerOperation')
     expect(ask({ objectIds: [objectId], known: { [objectId]: revision } }).declarations).toEqual([{ objectId, revision, unchanged: true }])

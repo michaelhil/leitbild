@@ -48,7 +48,6 @@ export const sharedPaths = {
   skills: (): string => join(authoringRoot(), 'skills'),
   scripts: (): string => join(authoringRoot(), 'scripts'),
   tools: (): string => join(authoringRoot(), 'tools'),
-  knowledge: (): string => join(leitbildHome(), 'knowledge'),
   geodata: (): string => join(authoringRoot(), 'geodata'),
   adminLog: (): string => join(leitbildHome(), 'logs', 'admin.jsonl'),
   workspacesRoot: (): string => join(leitbildHome(), 'workspaces'),

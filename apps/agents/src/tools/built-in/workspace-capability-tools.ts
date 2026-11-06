@@ -100,9 +100,21 @@ const schemaForModel = (schema: Readonly<Record<string, unknown>>): Readonly<Rec
   return constraints
 }
 
+const operationInputSchemaForModel = (operation: ModuleCapabilityDescriptor): Readonly<Record<string, unknown>> => {
+  const schema = schemaForModel(operation.inputSchema)
+  if (operation.acceptsPresentationRecipient !== true) return schema
+  const reserved = new Set(['recipient', ...(operation.publishes?.includes('presentation') ? ['requestId', 'executionId', 'initiatingRoom'] : [])])
+  const properties = schema.properties
+  return { ...schema,
+    ...(properties !== null && typeof properties === 'object' && !Array.isArray(properties)
+      ? { properties: Object.fromEntries(Object.entries(properties).filter(([key]) => !reserved.has(key))) } : {}),
+    ...(Array.isArray(schema.required) ? { required: schema.required.filter(key => typeof key !== 'string' || !reserved.has(key)) } : {}),
+  }
+}
+
 const refusedInputSchema = (refusal: ToolResult, operation: ModuleCapabilityDescriptor): Record<string, unknown> => {
   if ((refusal.data as { code?: unknown }).code !== 'invalid_request') return {}
-  const inputSchema = schemaForModel(operation.inputSchema)
+  const inputSchema = operationInputSchemaForModel(operation)
   const bytes = new TextEncoder().encode(JSON.stringify(inputSchema)).byteLength
   return bytes <= MAX_REFUSAL_SCHEMA_BYTES
     ? { inputSchema }
@@ -666,7 +678,7 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
               operationId: id,
               ...(queries.length > 0 ? { matchedQueries: matched.map(match => match.query) } : {}),
               ...(matchedTerms.length > 0 ? { matchedTerms } : {}),
-              ...(params.includeInputSchema === true ? { inputSchema: schemaForModel(inputSchema) } : {}),
+              ...(params.includeInputSchema === true ? { inputSchema: operationInputSchemaForModel(operation) } : {}),
               ...(params.includeOutputSchema === true ? { outputSchema: schemaForModel(outputSchema) } : {}),
             }
           }),
@@ -741,6 +753,41 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
               error: 'say_not_for_reads: say reports a change; call this read again without say',
             }
           }
+          let input = entry.input
+          if (entry.operation?.acceptsPresentationRecipient === true) {
+            // Expiry in the captured offer is not a local deadline: the
+            // same exact lease may be renewed during a long Agent turn. Its
+            // owner decides whether that immutable address remains live.
+            const recipient = context.presentationRecipient
+            if (recipient === undefined) return {
+              key: entry.key, operationId: entry.operationId, success: false,
+              error: 'no_recipient: This turn has no current initiating World browser; offer an attributed suggestion instead',
+            }
+            if (entry.target?.kind !== 'resource' || referenceKey(recipient.subject) !== referenceKey(entry.target.ref)) return {
+              key: entry.key, operationId: entry.operationId, success: false,
+              error: 'presentation_recipient_mismatch: The initiating browser belongs to another Resource',
+            }
+            if (input === null || typeof input !== 'object' || Array.isArray(input)) return {
+              key: entry.key, operationId: entry.operationId, success: false, error: 'invalid_tool_input: Presentation arguments must be an object',
+            }
+            // A model may describe an action, never select its recipient or
+            // attribute it to another execution/Room. The owner checks its
+            // current lease and target policy again after this bridge.
+            const { recipient: _modelRecipient, ...argumentsForOwner } = input as Record<string, unknown>
+            input = { ...argumentsForOwner, recipient }
+            if (entry.operation.publishes?.includes('presentation')) {
+              if (context.executionCallId === undefined || context.roomId === undefined) return {
+                key: entry.key, operationId: entry.operationId, success: false,
+                error: 'presentation_execution_required: No actual tool execution and initiating Room are available',
+              }
+              const { requestId: _requestId, executionId: _executionId, initiatingRoom: _room, ...action } = argumentsForOwner
+              input = { ...action, recipient,
+                requestId: `presentation:${context.executionTurnId ?? context.executionCallId}:${context.executionCallId}:${entry.key}`,
+                executionId: context.executionTurnId ?? context.executionCallId,
+                initiatingRoom: { workspaceId: deps.workspaceId, moduleId: 'agents', type: 'agents.room', id: context.roomId },
+              }
+            }
+          }
           try {
             // After dispatch begins, an HTTP, transport or response-contract
             // failure cannot establish that a requested change did not happen.
@@ -754,7 +801,7 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
                 ...(entry.target?.kind === 'resource' ? { resource: entry.target.ref } : {}),
                 ...(entry.expectedRevision === undefined ? {} : { expectedRevision: entry.expectedRevision }),
                 ...(entry.idempotencyKey === undefined ? {} : { idempotencyKey: entry.idempotencyKey }),
-                input: entry.input,
+                input,
                 actor: { kind: 'ai', id: context.callerId, displayName: context.callerName },
               }),
             })

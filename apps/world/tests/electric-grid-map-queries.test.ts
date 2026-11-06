@@ -1,3 +1,4 @@
+import { unrestrictedQueryReadPolicy } from '../src/simulation/query-read-policy.ts'
 import { describe, expect, test } from 'bun:test'
 import { norwayRuntimeTestOperatingPointRef } from './fixtures/grid-operating-point.ts'
 import type { ActorId, CommandEnvelope, CommandId, IsoTimestamp, ObjectId, SimulationRunId } from '../src/core/model/index.ts'
@@ -40,7 +41,7 @@ const capability = (id: string) => electricGridQueryCapabilities.find(candidate 
 
 /** Answers like the Host: the Pack answer, then the published output schema. */
 const ask = <Result>(grid: GridRuntimeInstance, id: string): Result => capability(id).output.parse(answerElectricGridQuery({
-  request: { capabilityId: id, input: { gridId: grid.definition.gridId } },
+  request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId: id, input: { gridId: grid.definition.gridId } },
   grids: new Map([[grid.definition.gridId, grid]]),
 })) as Result
 
@@ -255,7 +256,7 @@ describe('Grid map query Capabilities', () => {
     const geometryFor = createGridMapGeometry({ artifactsFor: () => [], readArtifact: file => { throw new Error(`no artifact ${file}`) } })
     const stateQuery = createGridMapStateQuery(geometryFor)
     const grids = new Map([[grid.definition.gridId, grid]])
-    const answer = () => JSON.stringify(stateQuery.capability.output.parse(structuredClone(stateQuery.answer({ gridId: grid.definition.gridId }, grids))))
+    const answer = () => JSON.stringify(stateQuery.capability.output.parse(structuredClone(stateQuery.answer({ gridId: grid.definition.gridId }, grids, undefined, unrestrictedQueryReadPolicy))))
     withinQuietBudget(answer, 15, 20)
   })
 })
@@ -312,8 +313,8 @@ describe('Grid geometry artifact', () => {
       readArtifact: file => { files.push(file); return artifactFor(model) },
     })
     const query = createGridMapGeometryQuery(geometryFor)
-    const result = query.answer({ gridId: grid.definition.gridId }, new Map([[grid.definition.gridId, grid]])) as GridMapGeometryResult
-    query.answer({ gridId: grid.definition.gridId }, new Map([[grid.definition.gridId, grid]]))
+    const result = query.answer({ gridId: grid.definition.gridId }, new Map([[grid.definition.gridId, grid]]), undefined, unrestrictedQueryReadPolicy) as GridMapGeometryResult
+    query.answer({ gridId: grid.definition.gridId }, new Map([[grid.definition.gridId, grid]]), undefined, unrestrictedQueryReadPolicy)
     expect(files).toEqual(['electric-grid.test.v2.geometry.json'])
     expect(result.simplificationMeters).toBe(50)
     expect(result.branches.map(branch => [branch.pathSource, branch.path.length])).toEqual([['mapped-route', 3], ['mapped-route', 3]])

@@ -177,7 +177,7 @@ export const registerAgentTools = (mcpServer: McpServer, system: AgentsWorkspace
         if (agent.kind !== 'ai' || !('updatePersona' in agent)) {
           return errorResult('Only AI agents can be updated')
         }
-        ;(agent as AIAgent).updatePersona(persona)
+        await system.agentConfiguration.update(agent.id, { persona }, { kind: 'ai', displayName: 'External MCP client' })
         return textResult({ updated: true, name: agent.name })
       } catch (err) {
         return errorResult(err instanceof Error ? err.message : 'Failed to update agent')
@@ -213,10 +213,10 @@ export const registerAgentTools = (mcpServer: McpServer, system: AgentsWorkspace
         if (agent.kind !== 'ai' || !('updateIncludePrompts' in ai)) {
           return errorResult('Only AI agents can be updated')
         }
-        if (includePrompts) ai.updateIncludePrompts(includePrompts)
-        if (includeContext) ai.updateIncludeContext(includeContext)
-        if (typeof includeTools === 'boolean') ai.updateIncludeTools(includeTools)
-        if (typeof maxToolIterations === 'number') ai.updateMaxToolIterations(maxToolIterations)
+        await system.agentConfiguration.update(agent.id, {
+          ...(includePrompts === undefined ? {} : { includePrompts }), ...(includeContext === undefined ? {} : { includeContext }),
+          ...(includeTools === undefined ? {} : { includeTools }), ...(maxToolIterations === undefined ? {} : { maxToolIterations }),
+        }, { kind: 'ai', displayName: 'External MCP client' })
         return textResult({
           updated: true,
           name: agent.name,

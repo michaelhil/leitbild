@@ -1,4 +1,7 @@
+import { objectInspectionReferences } from '../packs/inspection.ts'
+import { isQueryReadRefusal } from '../../simulation/query-read-policy.ts'
 import { procedureRunsListInputSchema, procedureRunsListResultSchema, projectProcedureRuns } from '../../features/procedures/run-list.ts'
+import { procedureChecksReadInputSchema, procedureChecksViewSchema, readProcedureChecks } from '../../features/procedures/checks-view.ts'
 import { procedureDecisionReadInputSchema, procedureTransitionDecisionSchema, retainedProcedureDecision } from '../../features/procedures/transition-receipt.ts'
 import { runHistorianStatusSchema } from '../../features/historian/policy.ts'
 import {
@@ -30,6 +33,8 @@ import { assembleRunContext } from '../../features/displays/context/run-context.
 import { storedDashboards } from '../../features/displays/dashboards/dashboards.ts'
 import { observablesSearchInputSchema, observablesSearchOutputSchema, searchObservables } from '../../features/displays/observation/search.ts'
 import { displayCapabilities } from './display-capabilities.ts'
+import { guidanceCapabilities } from './guidance-capabilities.ts'
+import { isGuidanceFailure } from '../guides/errors.ts'
 import { isCapabilityRejection } from '../../simulation/capability-rejection.ts'
 import {
   isoTimestampSchema,
@@ -60,7 +65,7 @@ import {
   simulationRunIdSchema,
   type OperationalObject
 } from '../model/index.ts'
-import { describeScenarioAuthoring, scenarioAuthoringCatalogSchema, scenarioAuthoringDescriptionSchema, scenarioAuthoringDetailSchema } from '../scenarios/authoring.ts'
+import { describeScenarioAuthoring, scenarioAuthoringCatalogSchema, scenarioAuthoringDescriptionSchema, scenarioAuthoringDetailSchema, scenarioAuthoringSelectionSchema } from '../scenarios/authoring.ts'
 import { scenarioDefinitionSchema } from '../scenarios/definition.ts'
 import { scenarioRevisionIdSchema } from '../scenarios/library.ts'
 import { CommandIdempotencyConflictError } from '../simulation-runs/command-idempotency.ts'
@@ -176,7 +181,11 @@ const emptyInputSchema = z.object({}).strict()
 const scenarioAuthoringDescribeInputSchema = z.object({
   packIds: z.array(z.string().trim().min(1).max(128)).min(1).optional(),
   detail: scenarioAuthoringDetailSchema.default('catalog'),
-}).strict()
+  selection: scenarioAuthoringSelectionSchema.optional(),
+}).strict().superRefine((input, context) => {
+  if (input.detail === 'semantic' && input.packIds?.length !== 1) context.addIssue({ code: 'custom', path: ['packIds'], message: 'Semantic detail requires exactly one selected Pack' })
+  if (input.selection !== undefined && input.detail !== 'semantic') context.addIssue({ code: 'custom', path: ['selection'], message: 'Selection applies only to semantic detail' })
+})
 const runScenarioSourceSchema = z.object({ source: scenarioDefinitionSchema, definition: workspaceDefinitionRevisionReferenceSchema }).strict()
 const readObjectInputSchema = z.object({
   objectId: z.string().trim().min(1).max(128),
@@ -661,10 +670,12 @@ type ApiInvocation = z.infer<typeof moduleCapabilityInvocationSchema>
 
 // Projections must respect the same exact-subject inspection boundary as live
 // queries. A procedure's comments and branch evidence can contain plant readings.
-const deniedInspectionSubjects = (runtime: ApiRunRuntime, invocation: ApiInvocation): ReadonlySet<string> =>
-  new Set(invocation.access.actor.kind === 'ai'
-    ? runtime.snapshot().scenario?.agentRestrictions.objects.filter(entry => entry.deny.includes('inspect')).map(entry => entry.objectId) ?? []
-    : [])
+const deniedInspectionSubjects = (runtime: ApiRunRuntime, invocation: ApiInvocation): ReadonlySet<string> => {
+  const snapshot = runtime.snapshot()
+  const policy = runtime.inspectionPolicy(buildSimulationRunActorForAccess(invocation.access))
+  const direct = invocation.access.actor.kind === 'ai' ? snapshot.scenario?.agentRestrictions.objects.filter(entry => entry.deny.includes('inspect')).map(entry => String(entry.objectId)) ?? [] : []
+  return new Set([...direct, ...snapshot.objects.filter(object => !policy.canInspect(object.id)).map(object => String(object.id))])
+}
 
 const visibleProcedureState = (runtime: ApiRunRuntime, invocation: ApiInvocation) => {
   const procedures = runtime.snapshot().procedures ?? { runs: [] }
@@ -820,11 +831,11 @@ const readableChangeEvents = (
 ): { readonly events: ReturnType<ApiRunRuntime['events']>; readonly withheld: number } => {
   const withheld = withheldCommands(registry, runtime, invocation)
   const kept = withheld.size === 0 ? page : page.filter(event => !(event.type === 'command.issued' && withheld.has(event.command.id)) && !(event.type === 'command.result' && withheld.has(event.result.commandId)))
-  return { events: visibleChangeEvents(runtime, invocation, kept), withheld: page.length - kept.length }
+  return { events: visibleChangeEvents(registry, runtime, invocation, kept), withheld: page.length - kept.length }
 }
 
 const visibleChangeEvents = (
-  runtime: ApiRunRuntime, invocation: ApiInvocation,
+  registry: SimulationRunRegistry, runtime: ApiRunRuntime, invocation: ApiInvocation,
   page: ReturnType<ApiRunRuntime['events']>,
 ): ReturnType<ApiRunRuntime['events']> => {
   const denied = deniedInspectionSubjects(runtime, invocation)
@@ -838,7 +849,8 @@ const visibleChangeEvents = (
   }
   const deniedCommands = new Set(journal.filter(event => {
     if (event.type !== 'command.issued') return false
-    if (event.command.targetObjectIds.some(id => denied.has(id))) return true
+    const capability = registry.installedCapabilities.find(active => active.capability.id === event.command.kind)?.capability
+    if ([...event.command.targetObjectIds, ...capability?.historyObjectIds?.(event.command.payload) ?? []].some(id => denied.has(id))) return true
     // Older procedure command envelopes did not declare their plant target.
     if (!event.command.kind.startsWith('world.procedure.') || typeof event.command.payload !== 'object' || event.command.payload === null) return false
     const payload = event.command.payload as { runId?: string; scope?: { plantId?: string } }
@@ -846,13 +858,20 @@ const visibleChangeEvents = (
     return scope !== undefined && denied.has(scope)
   }).flatMap(event => event.type === 'command.issued' ? [event.command.id] : []))
   return page.filter(event => {
+    if (event.type === 'scenario.agent-restrictions.set') return false // Administrative subjects are not observation history.
+    if (event.type === 'scenario.guidance.shown') return event.guidance.objectIds.every(id => !denied.has(id))
+    if (event.type === 'scenario.objects.highlighted' || event.type === 'scenario.highlights.cleared') return (event.objectIds ?? []).every(id => !denied.has(id))
     if (event.type === 'procedure.run.started') return !denied.has(event.run.scope.plantId)
     if (event.type === 'procedure.run.reset') return !denied.has(event.scope.plantId)
     if (event.type.startsWith('procedure.') && 'runId' in event) {
       const scope = scopes.get(event.runId)
       return scope !== undefined && !denied.has(scope)
     }
-    if (event.type === 'object.upserted') return !denied.has(event.object.id)
+    if (event.type === 'object.upserted') {
+      const owner = runtime.packs().find(pack => pack.descriptor.id === event.object.packId)
+      if (!owner) throw new Error(`No inspection owner for Pack ${event.object.packId}`)
+      return !denied.has(event.object.id) && objectInspectionReferences(event.object, owner).every(id => !denied.has(id))
+    }
     if (event.type === 'object.deleted' || event.type === 'telemetry.sampled') return !denied.has(event.objectId)
     if (event.type === 'command.issued') return !deniedCommands.has(event.command.id)
     if (event.type === 'command.result') return !deniedCommands.has(event.result.commandId)
@@ -865,6 +884,7 @@ const visibleChangeEvents = (
 }
 
 const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, Response>(WORLD_MODULE_ID, [
+  ...guidanceCapabilities(),
   {
     descriptor: {
       id: 'world.map.symbols', moduleId: WORLD_MODULE_ID, kind: 'query', scope: { kind: 'workspace' },
@@ -880,7 +900,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       kind: 'query',
       scope: { kind: 'workspace' },
       title: 'Describe Scenario Authoring',
-      description: 'Discovers World Pack scenario inputs. The default catalog is compact; request authoring for machine schemas of selected Packs or editor for UI form metadata.',
+      description: 'Discovers World Pack scenario inputs. Default catalog is compact; authoring returns machine schemas of selected Packs; editor returns form metadata. semantic requires exactly one packId and returns owner configuration/lifecycle guidance and one selected item or configuration schema; optional selection.itemTypeId and selection.path narrow to an item or field. Includes defaults/examples, schema units/limits and compatible choices without form layout. Preserves advanced fields through the Scenario source JSON.',
       risk: 'read',
       idempotent: true,
       inputSchema: z.toJSONSchema(scenarioAuthoringDescribeInputSchema, { io: 'input' }),
@@ -895,7 +915,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
         packs: registry.scenarioAuthoringCatalog.packs.filter(pack => requested.has(pack.id)),
         commands: registry.scenarioAuthoringCatalog.commands.filter(command => requested.has(command.packId)),
       })
-      return json({ result: scenarioAuthoringDescriptionSchema.parse(describeScenarioAuthoring(catalog, input.detail)) })
+      return json({ result: scenarioAuthoringDescriptionSchema.parse(describeScenarioAuthoring(catalog, input.detail, input.selection)) })
     },
   },
   {
@@ -1137,7 +1157,8 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       ])
       const snapshot = runtime.snapshot()
       const leaseSummary = registry.leaseSummary(simulationRunId)
-      const assetSummaries = snapshot.objects.map(object => ({
+      const denied = deniedInspectionSubjects(runtime, invocation)
+      const assetSummaries = snapshot.objects.filter(object => !denied.has(object.id)).map(object => ({
         id: object.id,
         label: object.label,
         kind: object.kind,
@@ -1168,7 +1189,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
           data: {
             sequence: snapshot.seq,
             clock: snapshot.clock ?? null,
-            scenario: snapshot.scenario ?? null,
+            scenario: invocation.access.actor.kind === 'ai' ? { scenarioId: snapshot.scenario?.scenarioId } : snapshot.scenario ?? null,
             runtimeHealth: runtime.health(),
             historian: runtime.recordingStatus(),
             execution,
@@ -1183,7 +1204,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
             byKind: countBy(assetSummaries.map(object => String(object.kind))),
             objects: assetSummaries,
           },
-        }, ...scenarioSections(definition)],
+        }, ...scenarioSections({ ...definition, initialObjects: definition.initialObjects.filter(object => !denied.has(object.id)), connections: definition.connections.filter(connection => !denied.has(connection.system.objectId) && !denied.has(connection.network.objectId)) })],
       }) })
     },
   },
@@ -1477,6 +1498,8 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
     invoke: async (registry, invocation) => {
       const runtime = await registry.load(requireSimulationRunResource(invocation))
       const input = readObjectInputSchema.parse(invocation.input)
+      const denied = deniedInspectionSubjects(runtime, invocation)
+      if (denied.has(input.objectId)) return apiError(403, 'agent_access_restricted', 'This object contains restricted evidence for this caller')
       const object = runtime.snapshot().objects.find(candidate => candidate.id === input.objectId)
       return object
         ? json({ result: object })
@@ -1629,6 +1652,37 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
         return apiError(403, 'agent_access_restricted', `AI inspection access is restricted for: ${decision.run.scope.plantId}`)
       }
       return json({ result: decision })
+    },
+  },
+  {
+    descriptor: {
+      id: 'world.procedure.run.checks.read',
+      moduleId: WORLD_MODULE_ID,
+      kind: 'query',
+      scope: { kind: 'resource', resourceType: 'world.simulation-run' },
+      title: 'Read current procedure checks',
+      description: 'Reads advisory model evidence for the criteria explicitly paired with instructions on the exact current step of an active pinned procedure Run. Evidence uses simulation time and does not record an assessment, authorize a branch, or change the Run. Use procedure.run.step.read for complete branch eligibility and deciding facts.',
+      risk: 'read',
+      idempotent: true,
+      inputSchema: z.toJSONSchema(procedureChecksReadInputSchema, { io: 'input' }),
+      outputSchema: capabilityJsonSchema(procedureChecksViewSchema),
+    },
+    invoke: async (registry, invocation) => {
+      const input = procedureChecksReadInputSchema.parse(invocation.input)
+      const runtime = await registry.load(requireSimulationRunResource(invocation))
+      const actor = buildSimulationRunActorForAccess(invocation.access)
+      try {
+        return json({ result: await readProcedureChecks({
+          input, snapshot: runtime.snapshot,
+          canInspect: plantId => runtime.inspectionPolicy(actor).canInspect(plantId),
+          document: ({ sourceId, sourceRevision, sourcePath, procedureId }) => runtime.procedureDocument({ sourceId, sourceRevision, sourcePath, procedureId }),
+          observations: plantId => runtime.procedureObservations(actor, plantId),
+        }) })
+      } catch (error) {
+        const failure = error as Error & { status?: number; code?: string }
+        if (typeof failure.status === 'number' && typeof failure.code === 'string') return apiError(failure.status, failure.code, failure.message)
+        throw error
+      }
     },
   },
   {
@@ -1832,8 +1886,8 @@ const scriptRedacted: ReadonlySet<string> = new Set(['world.scenario.read', 'wor
 const scriptHidden = (message: string): Response => apiError(403, 'scenario_script_hidden', message)
 
 const withoutTimeline = (value: unknown): unknown => {
-  if (typeof value !== 'object' || value === null || !('timeline' in value)) return value
-  const { timeline: _timeline, ...rest } = value as Record<string, unknown>
+  if (typeof value !== 'object' || value === null) return value
+  const { timeline: _timeline, guide: _guide, ...rest } = value as Record<string, unknown>
   return rest
 }
 /** A script-bearing result as an AI caller reads it: a source without its timeline; an inspection without its timeline section or the timeline in the source it shows. */
@@ -1842,19 +1896,24 @@ const withoutScript = async (response: Response): Promise<Response> => {
   const body = await response.json() as { readonly result: Record<string, unknown> }
   const sections = body.result.sections as ReadonlyArray<{ readonly id: string; readonly data?: unknown }> | undefined
   const result = sections === undefined ? { ...body.result, source: withoutTimeline(body.result.source) }
-    : { ...body.result, sections: sections.filter(section => section.id !== 'timeline').map(section => ({ ...section, ...(section.data === undefined ? {} : { data: withoutTimeline(section.data) }) })) }
+    : { ...body.result, sections: sections.filter(section => section.id !== 'timeline' && section.id !== 'guide').map(section => ({ ...section, ...(section.data === undefined ? {} : { data: withoutTimeline(section.data) }) })) }
   return json({ ...body, result }, { status: response.status })
 }
 /** An AI caller's Scenario update: the stored timeline kept where it sends none; refused where it would replace one. */
 const scriptKept = async (registry: SimulationRunRegistry, invocation: ApiInvocation): Promise<ApiInvocation | Response> => {
   const input = createScenarioInputSchema.parse(invocation.input)
-  const stored = (await registry.currentScenario(requireScenarioDefinitionId(invocation)))?.document.timeline
-  if (stored === undefined) return invocation
+  const document = (await registry.currentScenario(requireScenarioDefinitionId(invocation)))?.document
+  const stored = document?.timeline
+  const guide = document?.guide
+  if (stored === undefined && guide === undefined) return invocation
   // One it sends unchanged (a source it wrote whole) it already knows.
   if (input.source.timeline !== undefined && JSON.stringify(input.source.timeline) !== JSON.stringify(stored)) {
     return scriptHidden('This Scenario\'s timeline is hidden from AI callers; an update from one keeps it as people wrote it and may not replace it')
   }
-  return { ...invocation, input: { ...input, source: { ...input.source, timeline: stored } } }
+  if (guide !== undefined && input.source.guide !== undefined && JSON.stringify(input.source.guide) !== JSON.stringify(guide)) {
+    return scriptHidden('This Scenario\'s guide source is hidden from AI callers; an update keeps it unchanged')
+  }
+  return { ...invocation, input: { ...input, source: { ...input.source, ...(stored === undefined ? {} : { timeline: stored }), ...(guide === undefined ? {} : { guide }) } } }
 }
 
 const invokeCapability = async (
@@ -1908,7 +1967,10 @@ const invokeCapability = async (
     if (ai && scriptRefused.has(capabilityId)) return scriptHidden('A Run\'s pinned Scenario source carries its timeline, which is hidden from AI callers; world.simulation-run.inspect describes the Run without it')
     const granted = ai && capabilityId === 'world.scenario.update' ? await scriptKept(registry, invocation) : invocation
     if (granted instanceof Response) return granted
+    const readRuntime = ai && invocation.resource?.type === 'world.simulation-run' && worldCapabilities.descriptors.find(descriptor => descriptor.id === capabilityId)?.kind === 'query' ? await registry.load(requireSimulationRunResource(invocation)) : undefined
+    const readRevision = readRuntime?.snapshot().scenario?.agentRestrictions.revision
     const response = await worldCapabilities.invoke(capabilityId, registry, granted)
+    if (response && readRuntime && readRuntime.snapshot().scenario?.agentRestrictions.revision !== readRevision) return apiError(409, 'query_policy_superseded', 'AI inspection policy changed while the query ran; acquire a new result')
     if (response) return ai && scriptRedacted.has(capabilityId) ? await withoutScript(response) : response
 
     const workspaceCapability = registry.workspaceCapabilities.find(capability => capability.id === capabilityId)
@@ -2030,6 +2092,8 @@ export const handleWorldModuleApi = async (
 
     return null
   } catch (error) {
+    if (isQueryReadRefusal(error)) return apiError(error.status, error.code, error.message)
+    if (isGuidanceFailure(error)) return apiError(error.status, error.code, error.message)
     if (isCapabilityRejection(error)) return apiError(error.status, error.code, error.message)
     if (isRoleGateRefusal(error)) return apiError(error.status, error.code, error.message, error.details)
     if (error instanceof Error && 'code' in error && error.code === 'storage_budget_exceeded') return apiError(507, 'storage_budget_exceeded', error.message)

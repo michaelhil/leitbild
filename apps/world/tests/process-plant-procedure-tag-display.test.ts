@@ -1,3 +1,4 @@
+import { unrestrictedQueryReadPolicy } from '../src/simulation/query-read-policy.ts'
 import { describe, expect, test } from 'bun:test'
 import type { IsoTimestamp } from '../src/core/model/index.ts'
 import type { PackProcedureTagValidation } from '../src/core/packs/protocol.ts'
@@ -31,7 +32,7 @@ const system = plant()
 const graph = system.plant.graph
 const plants = new Map([[system.plant.id, system]])
 const ask = (capabilityId: string, input: unknown): unknown => answerProcessPlantQuery({
-  request: { capabilityId, input },
+  request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId, input },
   plants,
   objects: new Map(),
   simulationTime: '2026-10-13T10:00:00.000Z' as IsoTimestamp,

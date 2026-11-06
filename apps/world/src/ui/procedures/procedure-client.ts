@@ -22,6 +22,7 @@ import type {
 import { invokeSimulationRunCapability, querySimulationRunCapability } from '../simulation-run-client.ts'
 import { activeWorkspaceId, workspaceApiPath } from '../workspace-context.ts'
 import type { PackProcedureContribution } from '../../core/packs/protocol.ts'
+import { procedureChecksViewSchema, type ProcedureChecksView } from '../../features/procedures/checks-view.ts'
 import {
   createProcedureObservationPort,
   type ProcedureCsfEvaluation,
@@ -101,6 +102,29 @@ export const readProcedureSourceEvidence = async (
 const readJson = async <T>(response: Response, message: string): Promise<T> => {
   if (!response.ok) throw new Error(`${message}: ${response.status}`)
   return await response.json() as T
+}
+
+export const readProcedureChecks = async (
+  simulationRunId: SimulationRunId,
+  request: Pick<ProcedureChecksView, 'runId' | 'stepId' | 'sourceId' | 'sourceRevision' | 'sourcePath'>,
+  signal: AbortSignal,
+): Promise<ProcedureChecksView | undefined> => {
+  const workspaceId = activeWorkspaceId()
+  const response = await fetch(`/api/workspaces/${encodeURIComponent(workspaceId)}/capabilities/world.procedure.run.checks.read/invoke`, {
+    method: 'POST', cache: 'no-store', signal, headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ resource: { workspaceId, moduleId: 'world', type: 'world.simulation-run', id: simulationRunId }, input: request, actor: { kind: 'human' } }),
+  })
+  if (response.status === 409) {
+    const failure = await response.json()
+    if (failure?.error?.code === 'procedure_checks_superseded') return undefined
+    throw new Error('procedure check read failed: 409')
+  }
+  const body = await readJson<{ readonly result: unknown }>(response, 'procedure check read failed')
+  const result = procedureChecksViewSchema.parse(body.result)
+  if (Object.entries(request).some(([key, value]) => result[key as keyof typeof request] !== value)) {
+    throw new Error('procedure check identity does not match the current step')
+  }
+  return result
 }
 
 export const readProcedureCatalog = async (

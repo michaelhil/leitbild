@@ -11,6 +11,7 @@ export interface MapView {
 export type MapFocusTarget =
   | { readonly kind: 'point'; readonly center: readonly [number, number] }
   | { readonly kind: 'bounds'; readonly bounds: readonly [readonly [number, number], readonly [number, number]] }
+  | { readonly kind: 'view'; readonly center: readonly [number, number]; readonly zoom: number; readonly bearing: number; readonly fitToAvailableArea?: boolean }
 export const readMapView = (map: MapLibreMap): MapView => {
   const area = map.getBounds(), point = map.getCenter()
   const wrap = (value: number) => ((value + 180) % 360 + 360) % 360 - 180

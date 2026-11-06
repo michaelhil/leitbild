@@ -42,6 +42,7 @@ import { processPlantIdForObject,processPlantPackId,processPlantUnitPackDataSche
 import { answerProcessPlantQuery } from '../query.ts'
 import { defaultSimulationRunRuntimePolicy } from '../../../core/simulation-runs/runtime-persistence-policy.ts'
 import { createRuntimeStateWriter } from '../../../simulation/runtime-state-writer.ts'
+import { unavailableQueryReadScope } from '../../../simulation/query-read-policy.ts'
 import { createProcessPlantRecordingPlan } from '../recording.ts'
 import type { ProcessPlantRuntimeInstance } from '../runtime-instance.ts'
 import type { ProcessVariableValue, VariablePath } from '../graph/index.ts'
@@ -829,12 +830,19 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
       },
       invokeQuery: async (request: PackRuntimeQuery): Promise<unknown> => {
         if (runtimeFailureReason !== null) throw new Error(`Process Plant runtime has stopped after a runtime failure: ${runtimeFailureReason}`)
-        const input = request.input as { readonly plantId?: unknown; readonly objectId?: unknown } | null | undefined
-        const target = typeof input?.plantId === 'string' ? input.plantId : typeof input?.objectId === 'string' ? input.objectId : undefined
-        const unavailableTarget = target === undefined ? undefined : unavailable.get(target)
+        const capability = processPlantCapabilities.find(capability => capability.id === request.capabilityId)
+        const targets = capability?.kind === 'query' ? capability.inspectObjectIds?.(request.input) ?? [] : []
+        if (targets.some(target => !request.readPolicy.canInspect(target))) unavailableQueryReadScope('Inspection of the requested Process Plant target is not permitted')
+        // Native failures are owner data too: qualify them before exact lookup,
+        // collection availability checks or formatting any diagnostic.
+        const visibleUnavailable = new Map([...unavailable].filter(([plantId]) => request.readPolicy.canInspect(plantId)))
+        const unavailableTarget = targets.map(target => visibleUnavailable.get(target)).find(entry => entry !== undefined)
         if (unavailableTarget !== undefined) throw new Error(unavailableTarget.reason)
-        if (plants.size === 0) {
-          throw new Error(unavailable.size === 0 ? 'Process Plant runtime is not active for this Scenario' : `No Process Plant engine runs in this Run: ${[...unavailable.values()].map(entry => entry.reason).join('; ')}`)
+        if (capability?.readScope !== 'catalog') {
+          if (![...plants.keys()].some(plantId => request.readPolicy.canInspect(plantId)) && visibleUnavailable.size > 0) {
+            throw new Error(`No Process Plant engine runs in this Run: ${[...visibleUnavailable.values()].map(entry => entry.reason).join('; ')}`)
+          }
+          if (plants.size === 0 && unavailable.size === 0) throw new Error('Process Plant runtime is not active for this Scenario')
         }
         return answerProcessPlantQuery({
           request,

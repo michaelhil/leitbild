@@ -164,7 +164,8 @@
   })
   const groundSpeedMps = $derived(data ? Math.hypot(data.velocity.eastMps, data.velocity.northMps) : 0)
   const batteryPercent = $derived(data?.battery.remainingPercent ?? 0)
-  const sensorContacts = $derived(droneSensorContacts(objects).filter(contact => contact.droneId === selectedObject.id).slice(0, 4))
+  const sensorContactPage = $derived(droneSensorContacts(objects, selectedObject.id, { limit: 4 }))
+  const sensorContacts = $derived(sensorContactPage.contacts)
   const footerStatus = $derived.by(() =>
     [commandStatus, sceneryStatus, sceneStatus]
       .filter(part => part.trim().length > 0)
@@ -907,6 +908,7 @@
       {gamepads}
       {selectedGamepadIndex}
       {sensorContacts}
+      sensorContactsHasMore={sensorContactPage.hasMore}
       {targetOptions}
       {selectedTargetId}
       onToggleCollapsed={toggleControlPanel}

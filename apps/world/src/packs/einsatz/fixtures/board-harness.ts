@@ -18,6 +18,7 @@ import { einsatzPackView } from '../ui-pack.ts'
 import { createMapOrders } from '../ui/map-orders.ts'
 import { borderDefinitions, groupOf } from './border-harness.ts'
 import { operator, type OpenRun } from './run-harness.ts'
+import { withoutScenarioGuide } from '../../../../tests/fixtures/scenario-domain.ts'
 
 /**
  * Test-only driver for the Einsatz Board: a "screen" is a Board controller
@@ -288,11 +289,12 @@ export const civilRolesWith = (items: ReadonlyArray<Record<string, unknown>>): u
 
 /**
  * halden-border with other items and no timeline: its roles, sides, groups
- * and configuration over a scene a test builds. A sided unit that names no
- * group joins the group the Definition gives its side's units of its type.
+ * and configuration over a scene a test builds, without the original guide.
+ * A sided unit that names no group joins the group the Definition gives its
+ * side's units of its type.
  */
 export const borderWith = (items: ReadonlyArray<Record<string, unknown>>): unknown => ({
-  ...border,
+  ...withoutScenarioGuide(border),
   packs: [{
     ...border.packs[0]!,
     items: items.map(item => item.type === 'unit' && typeof item.side === 'string' && item.group === undefined

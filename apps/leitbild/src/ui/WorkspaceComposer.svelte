@@ -1,10 +1,10 @@
 <script lang="ts">
-  import { onDestroy, untrack } from 'svelte'
-  import { workspaceResourceReferenceSchema } from '@leitbild/contracts'
-  import type { UiControlsOfferMessage, WorkspaceResourceReference, WorkspaceSubjectReference } from '@leitbild/contracts'
+  import { onDestroy, untrack, tick } from 'svelte'
+  import type { WorkspaceResourceReference, WorkspaceSubjectReference } from '@leitbild/contracts'
   import { createViewRelay, type WorldPane } from './view-relay.ts'
-  import { createUiControlsBridge } from './ui-controls-bridge.ts'
   import { createRunAssistantBridge } from './run-assistant-bridge.ts'
+  import { createPresentationBridge } from './presentation-bridge.ts'
+  import type { RunAssistantResolution } from './run-assistant-opening.ts'
   import { workspaceSubjectFocusMessage } from './workspace-focus.ts'
 
   interface Props {
@@ -21,9 +21,8 @@
     /** Whether the shown Run offers its Assistant, as the Host's own launcher does; its World page may then offer it too. */
     readonly runAssistantAvailable: boolean
     /** Shows the shown Run's Assistant room, creating it where none serves the Run; it never hides the room. */
-    readonly onOpenRunAssistant: () => Promise<void>
+    readonly onOpenRunAssistant: (signal?: AbortSignal, assertDelivery?: () => void) => Promise<RunAssistantResolution>
     readonly onError: (message: string) => void
-    readonly onUiControls: (offer: UiControlsOfferMessage | null) => void
     /** The World pane, for overlays anchored to it (the people chat); null without a Run. */
     worldPane?: HTMLElement | null
   }
@@ -36,7 +35,7 @@
 
   let {
     workspaceId, worldRunId, focusedSubjects, agentsRoomId, agentsVisible, onShowAgents, runRefusal, onOpenRun,
-    runAssistantAvailable, onOpenRunAssistant, onError, onUiControls, worldPane = $bindable(null),
+    runAssistantAvailable, onOpenRunAssistant, onError, worldPane = $bindable(null),
   }: Props = $props()
   let splitPercent = $state(initialSplit)
   let lastOpenSplit = $state(initialSplit)
@@ -155,48 +154,61 @@
     worldRunId: () => worldRunId,
     available: () => runAssistantAvailable,
     postToWorld: message => worldFrame?.contentWindow?.postMessage(message, location.origin),
-    openAssistant: () => onOpenRunAssistant(),
+    openAssistant: async () => { await onOpenRunAssistant() },
     showAgents: () => { if (collapsedPane === 'agents') restoreSplit() },
     reportError: message => onError(message),
   })
 
-  const uiControls = createUiControlsBridge({
-    subject: () => worldRunId === null ? null : workspaceResourceReferenceSchema.parse({ workspaceId, moduleId: 'world', type: 'world.simulation-run', id: worldRunId }),
-    post: message => worldFrame?.contentWindow?.postMessage(message, location.origin),
-    offer: offer => onUiControls(offer),
+  const roomReference = (): WorkspaceResourceReference | null => agentsRoomId === null ? null : { workspaceId, moduleId: 'agents', type: 'agents.room', id: agentsRoomId } as WorkspaceResourceReference
+  const presentation = createPresentationBridge({
+    subject: () => worldRunId === null ? null : { workspaceId, moduleId: 'world', type: 'world.simulation-run', id: worldRunId } as WorkspaceResourceReference,
+    room: roomReference,
+    openAssistant: async (signal, assertDelivery) => {
+      assertDelivery()
+      if (!runAssistantAvailable) throw new Error('This Run offers no Assistant')
+      const expectedRun = worldRunId, expectedWorkspace = workspaceId
+      const resolved = await onOpenRunAssistant(signal, assertDelivery)
+      await tick()
+      signal.throwIfAborted()
+      assertDelivery()
+      if (workspaceId !== expectedWorkspace || worldRunId !== expectedRun || resolved.run.workspaceId !== expectedWorkspace || resolved.run.moduleId !== 'world' || resolved.run.type !== 'world.simulation-run' || resolved.run.id !== expectedRun) throw new Error('The Run changed while its Assistant was opening')
+      const room = resolved.room
+      if (room.workspaceId !== expectedWorkspace || room.moduleId !== 'agents' || room.type !== 'agents.room' || agentsRoomId !== room.id) throw new Error('The resolved Run Assistant Room is no longer the one shown')
+      onShowAgents()
+      if (collapsedPane === 'agents') restoreSplit()
+      return room
+    },
+    postToWorld: message => worldFrame?.contentWindow?.postMessage(message, location.origin),
+    postToAgents: message => agentsFrame?.contentWindow?.postMessage(message, location.origin),
     error: message => onError(message),
+    timer: (ms, action) => { const timer = setTimeout(action, ms); return () => clearTimeout(timer) },
   })
-  export const setViewControl = (id: string, visible: boolean): void => uiControls.set(id, visible)
-  onDestroy(() => uiControls.clear())
+  onDestroy(() => presentation.dispose())
 
   // The World document that last said it listens; a frame that loads another
   // document (a reload, or the World start page) no longer listens.
   let listeningWorldDocument: Document | null = null
-  let listeningControlsDocument: Document | null = null
 
   // Only the two frames' own documents take part in the window's protocol.
   const receiveViewMessage = (event: MessageEvent): void => {
     if (event.origin !== location.origin || event.source === null) return
-    if (event.source === agentsFrame?.contentWindow) relay.fromAgents(event.data)
+    if (event.source === agentsFrame?.contentWindow) { relay.fromAgents(event.data); presentation.fromAgents(event.data) }
     else if (event.source === worldFrame?.contentWindow) {
       if ((event.data as { readonly type?: unknown } | null)?.type === 'leitbild:view-window-ready') listeningWorldDocument = worldFrame?.contentDocument ?? null
       relay.fromWorld(event.data)
       assistantBridge.fromWorld(event.data)
-      if (uiControls.receive(event.data)) listeningControlsDocument = worldFrame?.contentDocument ?? null
+      presentation.fromWorld(event.data)
     }
   }
 
   // World says it listens as its route mounts, which can be before or after the
   // frame's load event: only a load of a document other than the listening one ends it.
   const worldFrameLoaded = (): void => {
-    if (worldFrame?.contentDocument !== listeningControlsDocument) {
-      listeningControlsDocument = null
-      uiControls.clear()
-    }
     if (worldFrame?.contentDocument === listeningWorldDocument) return
     listeningWorldDocument = null
     relay.worldFrameUnloaded()
     assistantBridge.worldFrameUnloaded()
+    presentation.worldUnloaded()
   }
 
   // A new Run gives the World frame a new document (or none), which listens only
@@ -207,8 +219,7 @@
     untrack(() => {
       relay.worldFrameUnloaded()
       assistantBridge.worldFrameUnloaded()
-      uiControls.clear()
-      listeningControlsDocument = null
+    presentation.worldUnloaded()
     })
   })
 
@@ -221,12 +232,13 @@
   // Another Room or a closed chat ends the Agents document that listed the displays.
   $effect(() => {
     agentsRoomId
-    untrack(() => relay.agentsFrameUnloaded())
+    untrack(() => { relay.agentsFrameUnloaded(); presentation.agentsUnloaded() })
   })
 
   const agentsFrameLoaded = (): void => {
     publishResourceFocus()
     relay.agentsFrameLoaded()
+    presentation.agentsLoaded()
   }
 
   const resizeWithKeyboard = (event: KeyboardEvent): void => {

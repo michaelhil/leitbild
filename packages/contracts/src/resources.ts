@@ -95,7 +95,7 @@ const jsonSchemaSchema = z.record(z.string(), z.unknown())
 // publication in the result's `view` (embedded-views.ts), which an Agent can
 // present with its answer; `context` is a read whose result is a
 // publishedContext an Agent may pre-fetch for its Room's Resource each turn.
-export const capabilityPublicationSchema = z.enum(['embedded-view', 'context'])
+export const capabilityPublicationSchema = z.enum(['embedded-view', 'context', 'presentation'])
 export type CapabilityPublication = z.infer<typeof capabilityPublicationSchema>
 
 /** A context publication: bounded text about the Resource, and the time and clock it describes. */
@@ -130,11 +130,16 @@ export const moduleCapabilityDescriptorSchema = z.object({
   // Present only when the transport accepts a caller-supplied key for an
   // uncertain retry. This is distinct from semantic repeat safety.
   acceptsIdempotencyKey: z.literal(true).optional(),
+  // The caller supplies this from the initiating browser context, never from Agent configuration or model text.
+  acceptsPresentationRecipient: z.literal(true).optional(),
   schedulable: z.boolean().optional(),
   publishes: z.array(capabilityPublicationSchema).min(1).optional(),
   inputSchema: jsonSchemaSchema,
   outputSchema: jsonSchemaSchema,
 }).strict().superRefine((capability, ctx) => {
+  if (capability.acceptsPresentationRecipient && capability.scope.kind !== 'resource') {
+    ctx.addIssue({ code: 'custom', path: ['acceptsPresentationRecipient'], message: 'A browser presentation recipient belongs to one Resource' })
+  }
   if (capability.publishes !== undefined && new Set(capability.publishes).size !== capability.publishes.length) {
     ctx.addIssue({ code: 'custom', path: ['publishes'], message: 'A Capability names each publication once' })
   }
@@ -143,6 +148,9 @@ export const moduleCapabilityDescriptorSchema = z.object({
   }
   if (capability.publishes?.includes('context') && (capability.scope.kind !== 'resource' || capability.kind !== 'query')) {
     ctx.addIssue({ code: 'custom', path: ['publishes'], message: 'A context is published by a query about the Resource it is invoked on' })
+  }
+  if (capability.publishes?.includes('presentation') && (capability.scope.kind !== 'resource' || capability.kind !== 'command')) {
+    ctx.addIssue({ code: 'custom', path: ['publishes'], message: 'Presentation requests are commands about their Resource and require a transient browser recipient' })
   }
   if (!capability.id.startsWith(`${capability.moduleId}.`)) {
     ctx.addIssue({ code: 'custom', path: ['id'], message: 'Capability id must be namespaced by its owning Module' })

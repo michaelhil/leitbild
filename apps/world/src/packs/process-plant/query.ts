@@ -39,7 +39,13 @@ export const answerProcessPlantQuery = (config: {
   readonly recordingIntervalMs?: number
   /** What the Run's historian holds of them, which observations read their history from. */
   readonly recordedHistory?: PackRuntimeRecordedHistory
-}): unknown => answerProcessPlantCatalogQuery(config)
+}): unknown => {
+  const policy = config.request.readPolicy
+  config = !policy.restricted ? config : { ...config,
+    plants: new Map([...config.plants].filter(([id]) => policy.canInspect(id))),
+    objects: new Map([...config.objects].filter(([id]) => policy.canInspect(id))),
+  }
+  return answerProcessPlantCatalogQuery(config)
   ?? answerProcessPlantCredibilityQuery(config)
   ?? answerProcessPlantIcQuery(config)
   ?? answerProcessPlantGraphQuery(config)
@@ -53,3 +59,5 @@ export const answerProcessPlantQuery = (config: {
     recording: config.recordedSeriesIds === undefined || config.recordingIntervalMs === undefined ? null : { seriesIds: config.recordedSeriesIds, intervalMs: config.recordingIntervalMs },
   })
   ?? failure(`Process Plant does not support query Capability: ${config.request.capabilityId}`)
+
+}

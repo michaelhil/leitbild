@@ -1,3 +1,4 @@
+import { unrestrictedQueryReadPolicy } from '../../simulation/query-read-policy.ts'
 import { describe, expect, test } from 'bun:test'
 import { geoJsonPointSchema, geoPointFromLonLat, packIdSchema, type OperationalObject } from '../../core/model/index.ts'
 import { scenarioAuthoringCatalogFor } from '../../core/scenarios/authoring.ts'
@@ -20,7 +21,7 @@ const build = (items: readonly unknown[] = [incidentItem, unitItem, patientItem,
   for (const item of items) objects.push(createAmbulanceItem(ambulanceItemSchema.parse(item), { at, simulationTimeMs: start, objectById: id => objects.find(object => object.id === id) }))
   return objects
 }
-const query = (kind: string, objects = build(), input: unknown = {}) => answerAmbulanceQuery({ request: { capabilityId: 'world.ambulance.' + kind, input }, objects, at, simulationTimeMs: start + 30_000 })
+const query = (kind: string, objects = build(), input: unknown = {}) => answerAmbulanceQuery({ request: { readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.ambulance.' + kind, input }, objects, at, simulationTimeMs: start + 30_000 })
 const update = (object: OperationalObject, patch: Record<string, unknown>): OperationalObject => ({ ...object, packData: { ...ambulanceDataOf(object), ...patch } })
 const route = { geometry: { type: 'LineString' as const, coordinates: [[11.01, 59], [11, 59]] }, durationMs: 10_000, distanceM: 100, provider: 'test' }
 const pickupStop = { kind: 'pickup' as const, targetId: 'incident:a', patientIds: ['patient:a'], route }

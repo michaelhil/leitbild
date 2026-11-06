@@ -12,6 +12,7 @@ import { showToast } from './toast.ts'
 export interface SendAsPickerDeps {
   readonly chatInput: HTMLTextAreaElement | HTMLInputElement
   readonly resetChatInputHeight: () => void
+  readonly submitAs?: (senderId: string) => void
 }
 
 // Quick "create human" path used when no humans exist anywhere. Inline
@@ -39,9 +40,12 @@ export const createHumanInline = async (
     const { id } = await res.json() as { id: string }
     $selectedHumanByRoom.setKey(roomId, id)
     if (content) {
-      send({ type: 'post_message', target: { rooms: [roomName] }, content, senderId: id })
-      deps.chatInput.value = ''
-      deps.resetChatInputHeight()
+      if (deps.submitAs !== undefined) deps.submitAs(id)
+      else {
+        send({ type: 'post_message', target: { rooms: [roomName] }, content, senderId: id })
+        deps.chatInput.value = ''
+        deps.resetChatInputHeight()
+      }
     }
   } catch {
     showToast(document.body, 'Create failed', { type: 'error', position: 'fixed' })
@@ -88,8 +92,9 @@ export const openSendAsPicker = async (
   document.addEventListener('keydown', onEsc)
 
   const buildRow = (h: AgentInfo, needsAdd: boolean): HTMLElement => {
-    const row = document.createElement('div')
-    row.className = 'py-2 flex items-center gap-2 border-b border-border last:border-b-0 cursor-pointer hover:bg-surface-muted px-2 -mx-2 rounded'
+    const row = document.createElement('button')
+    row.type = 'button'
+    row.className = 'w-full text-left py-2 flex items-center gap-2 border-b border-border last:border-b-0 cursor-pointer hover:bg-surface-muted px-2 -mx-2 rounded'
     // Build via DOM so h.name (user-controlled — validateName allows `<>`)
     // never reaches innerHTML as a raw string.
     const nameSpan = document.createElement('span')
@@ -112,9 +117,12 @@ export const openSendAsPicker = async (
         send({ type: 'add_to_room', roomName, agentName: h.name })
       }
       $selectedHumanByRoom.setKey(roomId, h.id)
-      send({ type: 'post_message', target: { rooms: [roomName] }, content, senderId: h.id })
-      deps.chatInput.value = ''
-      deps.resetChatInputHeight()
+      if (deps.submitAs !== undefined) deps.submitAs(h.id)
+      else {
+        send({ type: 'post_message', target: { rooms: [roomName] }, content, senderId: h.id })
+        deps.chatInput.value = ''
+        deps.resetChatInputHeight()
+      }
       close()
     }
     return row

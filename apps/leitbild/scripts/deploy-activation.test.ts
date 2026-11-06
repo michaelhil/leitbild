@@ -109,9 +109,14 @@ const fixture = async (fault: string, install = false, fresh = false) => {
   await put('deploy/runtime/bun', '#!/bin/sh\necho 1.4.0\n')
   await chmod(join(root, 'deploy/runtime/bun'), 0o755)
   await put('deploy/releases/previous/marker', 'prior release')
+  await put('deploy/releases/previous/DEPLOYMENT.json', JSON.stringify({ releaseId: 'previous' }))
   await put('deploy/deps/previous/marker', 'prior dependencies')
+  await put('deploy/releases/expired/marker', 'expired release')
+  await put('deploy/deps/expired/marker', 'expired dependencies')
   await put('state-data/marker', 'persistent data must survive')
   for (const path of ['locks', 'env', 'systemd', 'deploy/deps/lock-packages/node_modules', 'deploy/deps/lock-packages/apps/leitbild/node_modules', 'deploy/deps/lock-packages/apps/world/node_modules', 'deploy/deps/lock-packages/apps/agents/node_modules']) await mkdir(join(root, path), { recursive: true })
+  await mkdir(join(root, 'deploy/deps/previous/node_modules'))
+  await symlink(join(root, 'deploy/deps/previous/node_modules'), join(oldRelease, 'node_modules'))
   if (!fresh) {
     await symlink(oldRelease, join(root, 'deploy/current'))
     await put('env/platform.env', 'previous env\n')
@@ -126,7 +131,7 @@ const fixture = async (fault: string, install = false, fresh = false) => {
     await put(`package/apps/leitbild/deploy/${service}`, `next ${service}\n`)
   }
   for (const module of ['world', 'agents']) await put(`proc/leitbild-${module}/environ`, `WORKSPACE_HOST_URL=${fault === 'routing' ? 'wrong' : 'http://127.0.0.1:3100'}\0`)
-  await put('package/apps/leitbild/deploy/sites/leitbild.caddy', 'next site\n')
+  await put('package/apps/leitbild/deploy/sites/leitbild.caddy', fault === 'unchanged' ? 'previous site\n' : 'next site\n')
   await put('package/apps/world/package.json', '{}')
   await put('package/apps/agents/package.json', '{}')
   await put('package/DEPLOYMENT.json', JSON.stringify({ app: 'leitbild-platform', releaseId: 'next' }))
@@ -137,7 +142,7 @@ const fixture = async (fault: string, install = false, fresh = false) => {
     archiveChecksum: 'fixture', lockChecksum: 'lock',
     manifest: { schemaVersion: 1, app: 'leitbild-platform', releaseId: 'next', createdAt: '', baseCommit: '', codeRepository: '', knowledgeRevision: 'wiki-next', branch: '', dirty: false, worktreeStatus: [], sourceDigest: '', dependencyPackagesDigest: 'packages', fileCount: 0, persistentRootsExcluded: [] },
   }
-  const script = remoteDeploy(artifact, archive, install)
+  const script = remoteDeploy(artifact, archive, install, fresh ? null : fault === 'stale' ? 'other-release' : 'previous')
     .replaceAll('/opt/leitbild', `${root}/deploy`)
     .replaceAll('/etc/leitbild', `${root}/env`)
     .replaceAll('/etc/systemd/system', `${root}/systemd`)
@@ -166,11 +171,15 @@ for (const install of [false, true]) {
         expect(await readFile(join(f.root, 'caddy/managed-sites/other.caddy'), 'utf8')).toBe('foreign site\n')
         expect(await readFile(join(f.root, 'caddy/managed-sites/leitbild.caddy'), 'utf8')).toBe(fault === 'success' ? 'next site\n' : 'previous site\n')
         expect(await readFile(join(f.root, 'state-data/marker'), 'utf8')).toBe('persistent data must survive')
+        expect(await readFile(join(f.root, 'deploy/releases/previous/marker'), 'utf8')).toBe('prior release')
+        expect(await readFile(join(f.root, 'deploy/deps/previous/marker'), 'utf8')).toBe('prior dependencies')
+        if (fault === 'success') {
+          expect(await readdir(join(f.root, 'deploy/releases'))).not.toContain('expired')
+          expect(await readdir(join(f.root, 'deploy/deps'))).not.toContain('expired')
+        }
         if (fault !== 'success') {
           expect(result.stderr).toContain('Previous activation restored')
           expect(result.stdout).not.toContain('activated_release=')
-          expect(await readFile(join(f.root, 'deploy/releases/previous/marker'), 'utf8')).toBe('prior release')
-          expect(await readFile(join(f.root, 'deploy/deps/previous/marker'), 'utf8')).toBe('prior dependencies')
           expect(await readFile(join(f.root, 'env/platform.env'), 'utf8')).toBe('previous env\n')
           expect((await stat(join(f.root, 'env/platform.env'))).mode & 0o777).toBe(0o640)
           for (const [index, service] of services.entries()) {
@@ -184,6 +193,30 @@ for (const install of [false, true]) {
     })
   }
 }
+
+test('refuses a candidate when the active release changed during validation', async () => {
+  const f = await fixture('stale')
+  try {
+    const result = await f.run()
+    expect(result.code).toBe(1)
+    expect(result.stderr).toContain('Active release changed during validation')
+    expect(await readlink(join(f.root, 'deploy/current'))).toBe(f.oldRelease)
+    expect(await readdir(join(f.root, 'deploy/releases'))).not.toContain('next')
+  } finally { await f.dispose() }
+})
+
+test('an ordinary activation leaves an identical Caddy snippet and proxy process alone', async () => {
+  const f = await fixture('unchanged')
+  try {
+    const result = await f.run()
+    expect(result.code, result.stderr).toBe(0)
+    expect(result.stdout).toContain('Leitbild Caddy snippet unchanged; skipping reload')
+    expect(result.stdout).toContain('activated_release=next')
+    expect(await readlink(join(f.root, 'deploy/current'))).toBe(f.newRelease)
+    expect(await readFile(join(f.root, 'caddy/managed-sites/leitbild.caddy'), 'utf8')).toBe('previous site\n')
+    expect(await readFile(join(f.root, 'commands'), 'utf8')).not.toContain('reload caddy.service')
+  } finally { await f.dispose() }
+})
 
 test('failed first installation restores absent files, absent selection and inactive services', async () => {
   const f = await fixture('public', true, true)

@@ -399,6 +399,31 @@ describe('Agents Workspace Module API', () => {
     expect(keyed.status).toBe(400)
     expect(registry.tryGetLive(workspaceId)).toBeUndefined()
   })
+  test('cold discovery has no retired private owner ports and private-scope Room creation refuses without mutation', async () => {
+    const workspaceId = newWorkspaceId()
+    await request('PUT', `/internal/workspaces/${workspaceId}`, { workspaceId })
+    const catalog = moduleCapabilityCollectionSchema.parse(await (await request('GET', `/internal/workspaces/${workspaceId}/capabilities`)).json())
+    expect(catalog.capabilities.some(capability => capability.id === 'agents.assistance.open')).toBe(true)
+    expect(catalog.capabilities.some(capability => capability.id.startsWith('agents.perspective-room.'))).toBe(false)
+    expect(registry.tryGetLive(workspaceId)).toBeUndefined()
+    const response = await request('POST', `/internal/workspaces/${workspaceId}/capabilities/agents.room.create/invoke`, invokeBody(workspaceId, 'agents.room.create', {
+      name: 'Retired', scope: { kind: 'resource', resource: { workspaceId, moduleId: 'world', type: 'world.perspective', id: 'retired' } },
+    }))
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({ error: { code: 'invalid_request' } })
+    expect(registry.tryGetLive(workspaceId)?.rooms.listAllRooms()).toEqual([])
+    const room = registry.tryGetLive(workspaceId)!.rooms.createRoom({ name: 'Ordinary', createdBy: 'fixture' })
+    const body = invokeBody(workspaceId, 'agents.room.scope.set', {
+      expectedRevision: 0, scope: { kind: 'resource', resource: { workspaceId, moduleId: 'world', type: 'world.perspective', id: 'retired' } },
+    }, { resource: { type: 'agents.room', id: room.profile.id } })
+    const set = await request('POST', `/internal/workspaces/${workspaceId}/capabilities/agents.room.scope.set/invoke`, {
+      ...body, access: { ...body.access, actor: { kind: 'human', id: 'fixture' } },
+    })
+    expect(set.status).toBe(400)
+    expect(await set.json()).toMatchObject({ error: { code: 'retired_private_state' } })
+    expect(room.profile.scope).toEqual({ kind: 'workspace' })
+    expect(room.profile.scopeRevision).toBe(0)
+  })
   test('definition writes reject unavailable Packs, tools and scripts before persistence', async () => {
     const workspaceId = newWorkspaceId()
     await request('PUT', `/internal/workspaces/${workspaceId}`, { workspaceId })
@@ -426,6 +451,32 @@ describe('Agents Workspace Module API', () => {
     expect(writes.map(response => response.status).sort()).toEqual([200, 409])
     await registry.evictOne(workspaceId)
     expect(registry.definitionsFor(workspaceId)).toBe(library)
+  })
+
+  test('AI configuration discovery, revision refusal and actor-attributed receipts survive eviction', async () => {
+    const workspaceId = newWorkspaceId()
+    await request('PUT', `/internal/workspaces/${workspaceId}`, { workspaceId })
+    const created = await request('POST', `/internal/workspaces/${workspaceId}/capabilities/agents.agent.create/invoke`, invokeBody(workspaceId, 'agents.agent.create', { name: 'Configurable', model: 'test-model', persona: 'Original' }))
+    const id = (await created.json() as { result: { id: string } }).result.id
+    const target = { resource: { type: 'agents.agent', id } }
+    const read = async () => {
+      const response = await request('POST', `/internal/workspaces/${workspaceId}/capabilities/agents.agent.configuration.read/invoke`, invokeBody(workspaceId, 'agents.agent.configuration.read', {}, target))
+      expect(response.status).toBe(200)
+      return (await response.json() as { result: { revision: string; desired: { persona: string }; latestReceipt?: { actor: { id: string }; targetId: string }; persistence: string } }).result
+    }
+    const initial = await read()
+    const update = async (expectedRevision: string, persona: string) => request('POST', `/internal/workspaces/${workspaceId}/capabilities/agents.agent.configuration.update/invoke`, invokeBody(workspaceId, 'agents.agent.configuration.update', { expectedRevision, changes: { persona, historyTokenBudget: 12345 } }, target))
+    expect((await update(initial.revision, 'Updated by peer')).status).toBe(200)
+    expect((await update(initial.revision, 'Stale overwrite')).status).toBe(409)
+    const after = await read()
+    expect(after.desired.persona).toBe('Updated by peer')
+    expect(after.latestReceipt).toMatchObject({ actor: { id: 'agent:operator' }, targetId: id })
+    expect(after.persistence).toBe('workspace')
+    await registry.evictOne(workspaceId)
+    const restored = await read()
+    expect(restored.revision).toBe(after.revision)
+    expect(restored.desired).toEqual(after.desired)
+    expect(restored.latestReceipt).toEqual(after.latestReceipt)
   })
 
   test('publishes one strict Agents manifest', async () => {

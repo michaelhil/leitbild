@@ -1,9 +1,10 @@
+import { createToolModelContext } from './tool-model-context.ts'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { createComparisonStorage } from './comparison-storage.ts'
 import { workspaceDefinitionCatalogSchema, workspaceResourceCatalogSchema, type WorkspaceId } from '@leitbild/contracts'
 import type { AgentTurnStart } from './ai-agent.ts'
-import { evaluate, callLLM, streamLLM, type EvalOptions, type LLMCallMetrics } from './evaluation.ts'
+import { evaluate, type EvalOptions, type LLMCallMetrics } from './evaluation.ts'
 import { createToolExecutor, type ExecutionGrowth, type RunToolOperation } from './spawn.ts'
 import { estimateTokens } from './context-builder.ts'
 import { OUTPUT_RESERVE, SAFETY_MARGIN } from './budget.ts'
@@ -238,23 +239,19 @@ export const createComparisons = (deps: Dependencies) => {
           fail: async (id, error, cancelled, partial) => { await stages; await retainModel(Buffer.byteLength(error) + (partial === undefined ? 0 : Buffer.byteLength(JSON.stringify(partial))) + 4096, () => modelEvidence.fail(alternative.id, id, error, cancelled, partial)) },
         }
         const config = {...source.config,model}
-        const nestedProvider:typeof provider = {...provider,
-          chat:async request=>{
-            (alternative.nestedQueries ??= []).push(structuredClone(request))
-            controller.signal.throwIfAborted()
-            return provider.chat(request)
-          },
-          ...(provider.stream?{stream:(request:GenerationQuery)=>{
-            (alternative.nestedQueries ??= []).push(structuredClone(request))
-            return provider.stream!(request,controller.signal)
-          }}:{}),
-        }
         const nestedSettings={model,...(config.seed===undefined?{}:{seed:config.seed}),...(config.thinking===undefined?{}:{think:config.thinking}),...(config.reasoningEffort===undefined?{}:{reasoningEffort:config.reasoningEffort})}
-        const context:ToolContext = {callerId:source.agentId,callerName:config.name,roomId,focusedSubjects:source.focusedSubjects,comparison:source.boundary,
-          llm:request=>callLLM(nestedProvider,{...request,...nestedSettings}),
-          llmStream:request=>streamLLM(nestedProvider,{...request,...nestedSettings}),
-        }
-        const executor = createToolExecutor(deps.registry,tools.map(t=>t.function.name),context,id=>deps.rooms.getRoom(id),()=>source.focusedSubjects,undefined,undefined,deps.runOperation)
+        const context:ToolContext = {callerId:source.agentId,callerName:config.name,roomId,focusedSubjects:source.focusedSubjects,comparison:source.boundary}
+        const executor = createToolExecutor(deps.registry,tools.map(t=>t.function.name),context,id=>deps.rooms.getRoom(id),()=>source.focusedSubjects,undefined,undefined,deps.runOperation,
+          invocation => createToolModelContext({ provider, settings: nestedSettings, signal: invocation.signal, ...(invocation.callId === undefined ? {} : { callId: invocation.callId }),
+            observer: ({ id, ordinal }) => ({
+              started: async request => {
+                await stages
+                await retainModel(Buffer.byteLength(JSON.stringify(request)) + 4096, () => modelEvidence.start(alternative.id, { id, ordinal, phase: 'nested', parentToolCallId: invocation.callId!, startedAt: Date.now(), status: 'running', requestedModel: request.model }, request))
+              },
+              completed: async response => { assertSource(); modelEvidence.complete(alternative.id, id, response, response.toolCalls?.map(call => ({ tool: call.function.name, ...(call.id === undefined ? {} : { providerCallId: call.id }) }))) },
+              failed: async (error, partial) => { assertSource(); modelEvidence.fail(alternative.id, id, error instanceof Error ? error.message : String(error), invocation.signal.aborted, partial) },
+            }),
+          }))
         const assertActive = () => {
           controller.signal.throwIfAborted()
           assertSource()

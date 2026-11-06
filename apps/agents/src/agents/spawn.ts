@@ -18,7 +18,7 @@ import type { Tool, ToolContext, ToolDefinition, ToolExecutor, ToolRegistry, Too
 import { owningPackFor } from '../core/types/tool-pack.ts'
 import { createAIAgent } from './ai-agent.ts'
 import type { AgentProgress, AgentTurnStart, Decision } from './ai-agent.ts'
-import { callLLM, streamLLM } from './evaluation.ts'
+import { createToolModelContext } from './tool-model-context.ts'
 import { addAgentToRoom } from './actions.ts'
 import { createToolSurface } from '../tool-surface/index.ts'
 import { WORKSPACE_CAPABILITY_TOOL_NAMES } from '../tools/built-in/workspace-capability-tools.ts'
@@ -35,6 +35,7 @@ interface AgentToolContextRef {
   name: string
   currentLLMSettings?: () => Pick<AIAgentConfig, 'model' | 'seed' | 'thinking' | 'reasoningEffort'>
   focusedSubjects?: (roomId: string) => ReadonlyArray<WorkspaceSubjectReference>
+  presentationRecipient?: (roomId: string, turnId?: string) => import('@leitbild/contracts').PresentationRecipient | undefined
 }
 
 // --- Tool executor ---
@@ -51,14 +52,17 @@ export const createToolExecutor = (
   executionStore?: ExecutionStore,
   executionGrowth?: ExecutionGrowth,
   runToolOperation?: RunToolOperation,
+  modelContext?: (invocation: { signal: AbortSignal; turnId?: string; callId?: string; roomId?: string }) => { context: Pick<ToolContext, 'llm' | 'llmStream'>; calls: NonNullable<ToolResult['nestedModelCalls']> },
+  getPresentationRecipient?: AgentToolContextRef['presentationRecipient'],
 ): ToolExecutor => {
   const allowed = new Set(allowedTools)
 
   return async (calls, roomId, signal, executionTurnId, controls): Promise<ReadonlyArray<ToolResult>> => {
     const results: ToolResult[] = []
     const mixedCheckpoint = calls.length !== 1 && calls.some(call => call.tool === CONTEXT_CHECKPOINT_TOOL)
+    const recipient = roomId === undefined ? undefined : getPresentationRecipient?.(roomId, executionTurnId)
     const callContext: ToolContext = roomId
-      ? { ...context, roomId, focusedSubjects: getFocusedSubjects?.(roomId) ?? [] }
+      ? { ...context, roomId, focusedSubjects: getFocusedSubjects?.(roomId) ?? [], ...(recipient === undefined ? {} : { presentationRecipient: recipient }) }
       : context
 
     // Two access gates: Agent Tool Selection and, where applicable, Room
@@ -73,6 +77,7 @@ export const createToolExecutor = (
     for (const call of calls) {
       signal?.throwIfAborted()
       let dispatched = false
+      let invocationModels: ReturnType<NonNullable<typeof modelContext>> | undefined
       // Standalone/test executors intentionally need no persistent Workspace.
       // Runtime executors must have a turn identity before any dispatch.
       if (executionStore && (!executionTurnId || !call.callId)) throw new Error('Execution turn and call identity are required before dispatch')
@@ -89,11 +94,13 @@ export const createToolExecutor = (
         if (executionGrowth) await executionGrowth(new TextEncoder().encode(JSON.stringify(call)).byteLength + 4096, attempt)
         else await attempt() // Isolated in-memory tests have no Workspace budget.
       }
-      const retainOutcome = (result: ToolResult): ToolResult => {
+      const retainOutcome = (raw: ToolResult): ToolResult => {
+        const { nestedModelCalls: _untrustedAccounting, ...result } = raw
         // Never quota-reject known evidence after an action already happened.
-        if (!executionStore) return result // Standalone results make no archive/recall claim.
+        if (!executionStore) return { ...result, ...(invocationModels?.calls.length ? { nestedModelCalls: [...invocationModels.calls] } : {}) } // Standalone results make no archive/recall claim.
         const kind = registry.getEntry(call.tool)?.tool.contextEffect ?? 'unknown'
         const retained: ToolResult = { ...result,
+          ...(invocationModels?.calls.length ? { nestedModelCalls: [...invocationModels.calls] } : {}),
           effects: result.effects ?? [{ kind, outcome: !dispatched ? 'not-dispatched' : !result.success && kind !== 'read' ? 'unknown' : 'returned' }],
           recall: { turnId: executionTurnId!, toolCallId: call.callId!, part: 'result' },
         }
@@ -139,7 +146,8 @@ export const createToolExecutor = (
           }
           let result: ToolResult
           dispatched = true
-          try { result = await entry.tool.execute(call.arguments, { ...callContext, signal: callSignal, ...(call.callId === undefined ? {} : { executionCallId: call.callId }),
+          invocationModels = modelContext?.({ signal: callSignal, ...(executionTurnId === undefined ? {} : { turnId: executionTurnId }), ...(call.callId === undefined ? {} : { callId: call.callId }), ...(roomId === undefined ? {} : { roomId }) })
+          try { result = await entry.tool.execute(call.arguments, { ...callContext, ...invocationModels?.context, signal: callSignal, ...(call.callId === undefined ? {} : { executionCallId: call.callId }), ...(executionTurnId === undefined ? {} : { executionTurnId }),
             ...(controls === undefined ? {} : { contextCheckpoint: input => controls.checkpoint(call, input) }),
           }) }
           catch (err) {
@@ -257,14 +265,6 @@ export const buildToolSupport = async (
   const lazyContext: ToolContext = {
     get callerId() { return agentRef.id },
     get callerName() { return agentRef.name },
-    llm: (request) => callLLM(llmProvider, {
-      ...request,
-      ...currentLLMSettings(),
-    }),
-    llmStream: (request) => streamLLM(llmProvider, {
-      ...request,
-      ...currentLLMSettings(),
-    }),
   }
   const surface = createToolSurface({
     registry,
@@ -280,6 +280,29 @@ export const buildToolSupport = async (
     executionStore,
     executionGrowth,
     runToolOperation,
+    // Pure standalone tool callers need no model settings; attempting a helper
+    // without them still fails explicitly at that helper boundary.
+    invocation => createToolModelContext({ provider: llmProvider, settings: agentRef.currentLLMSettings === undefined ? undefined : currentLLMSettings(), signal: invocation.signal,
+      ...(invocation.callId === undefined ? {} : { callId: invocation.callId }),
+      observer: ({ id, ordinal }) => ({
+        started: async request => {
+          if (executionStore && invocation.turnId && invocation.callId && invocation.roomId) {
+            const start = async () => {
+              invocation.signal.throwIfAborted()
+              if (executionStore.modelEvidence(invocation.roomId!, invocation.turnId!).modelCapture === 'unavailable') executionStore.beginModelCapture(invocation.turnId!, invocation.roomId!)
+              executionStore.recordModelStart(invocation.turnId!, { id, ordinal, phase: 'nested', parentToolCallId: invocation.callId!, startedAt: Date.now(), status: 'running', requestedModel: request.model }, request)
+            }
+            if (executionGrowth) await executionGrowth(Buffer.byteLength(JSON.stringify(request)) + 4096, start)
+            else await start()
+          }
+        },
+        // Retain actual outcomes after accepted provider work. Next admission
+        // observes the physical size; cancellation cannot erase known evidence.
+        completed: async response => { if (executionStore && invocation.turnId) executionStore.recordModelComplete(invocation.turnId, id, response, response.toolCalls?.map(call => ({ tool: call.function.name, ...(call.id === undefined ? {} : { providerCallId: call.id }) }))) },
+        failed: async (error, partial) => { if (executionStore && invocation.turnId) executionStore.recordModelFailure(invocation.turnId, id, error instanceof Error ? error.message : String(error), invocation.signal.aborted, partial) },
+      }),
+    }),
+    (roomId, turnId) => agentRef.presentationRecipient?.(roomId, turnId),
   )
 
   // Initial projection has no Room context. Each evaluation reads activation.
@@ -569,6 +592,7 @@ export const spawnAIAgent = async (
       }
       return profiles
     },
+    ...(toolRegistry === undefined ? {} : { getUnavailableSelectedTools: (names: ReadonlyArray<string>) => names.filter(name => !toolRegistry.has(name)) }),
     getSkills: spawnOptions?.getSkills,
     ...(spawnOptions?.getActiveSkillsDeclarations ? { getActiveSkillsDeclarations: spawnOptions.getActiveSkillsDeclarations } : {}),
     getScriptContext: spawnOptions?.getScriptContext,
@@ -580,8 +604,9 @@ export const spawnAIAgent = async (
   // Fill agentRef so the lazy ToolContext in resolveAgentTools resolves correctly
   agentRef.id = agent.id
   agentRef.name = agent.name
-  agentRef.currentLLMSettings = agent.getConfig
+  agentRef.currentLLMSettings = () => agent.getEffectiveConfig?.() ?? agent.getConfig()
   agentRef.focusedSubjects = agent.getFocusedSubjects
+  agentRef.presentationRecipient = agent.getPresentationRecipient
 
   team.addAgent(agent)
 

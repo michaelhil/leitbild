@@ -1,3 +1,4 @@
+import { unrestrictedQueryReadPolicy } from '../src/simulation/query-read-policy.ts'
 import { describe,expect,test } from 'bun:test'
 import { worldPacks } from '../src/app-assembly.ts'
 import {
@@ -67,10 +68,10 @@ const command = (kind: string, payload: unknown): CommandEnvelope =>
     payload,
   }) as CommandEnvelope
 const dispatchCommand = () => command('world.ambulance.assign', { unitId: 'amb:response', incidentId: 'incident:response', patientIds: ['patient:response'] })
-const providerSamples = (request: PackRuntimeQuery, visibilityM = 700) => (request.input as { points: unknown[] }).points.map(point => ({
+const providerSamples = (request: Omit<PackRuntimeQuery, 'viewer' | 'readPolicy'>, visibilityM = 700) => (request.input as { points: unknown[] }).points.map(point => ({
   point, sample: { state: { atmosphere: { visibilityM }, surface: { wetness: 0, ice: 0, snow: 0 } }, quality: { validAt: compiled.world.startsAt } },
 }))
-const isolatedConnection = (invoke: (query: PackRuntimeQuery) => Promise<unknown>, enabled = true, extra: Partial<PackRuntimeConnectionConfig> = {}) => createLocalAmbulancePackRuntimeAdapter({ routing }).connect({
+const isolatedConnection = (invoke: (query: Omit<PackRuntimeQuery, 'viewer' | 'readPolicy'>) => Promise<unknown>, enabled = true, extra: Partial<PackRuntimeConnectionConfig> = {}) => createLocalAmbulancePackRuntimeAdapter({ routing }).connect({
   ...config, scenario: { ...config.scenario, runtimeConfig: { roadWeather: { enabled } } },
   runClock: { read: () => ({ currentTime: compiled.world.startsAt, updatedAt: nowIso(), paused: true }) },
   queries: { has: () => true, invoke }, ...extra,
@@ -214,7 +215,7 @@ describe('Ambulance weather preparation boundaries', () => {
     try {
       expect((await connection.sendCommand(dispatchCommand(), {})).ok).toBe(true)
       expect((await connection.sendCommand(command('world.ambulance.set-road-weather-policy', { enabled: true }), {})).ok).toBe(false)
-      expect(await connection.invokeQuery({ capabilityId: 'world.ambulance.road-weather-policy', input: {} })).toMatchObject({ enabled: false })
+      expect(await connection.invokeQuery({ readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.ambulance.road-weather-policy', input: {} })).toMatchObject({ enabled: false })
       expect(persisted).toEqual([])
       expect(connection.health?.()[0]?.state).toBe('ready')
     } finally { await connection.close() }
@@ -247,7 +248,7 @@ describe('Ambulance weather preparation boundaries', () => {
       release()
       expect((await update).ok).toBe(true)
       expect(refreshCalls).toBe(1)
-      expect(await connection.invokeQuery({ capabilityId: 'world.ambulance.road-weather-policy', input: {} })).toMatchObject({ lowVisibilityFactor: .2 })
+      expect(await connection.invokeQuery({ readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.ambulance.road-weather-policy', input: {} })).toMatchObject({ lowVisibilityFactor: .2 })
       if (failRefresh) expect(connection.health?.()[0]).toMatchObject({ state: 'failed', lastFailure: { operation: 'apply-road-weather-policy' } })
       else expect((await connection.getSnapshot()).objects.find(object => object.id === 'amb:response')!.spatial.route?.impacts?.[0]?.speedFactor).toBe(.2)
     } finally { release(); await connection.close() }
@@ -374,12 +375,12 @@ test('combined restart preserves Weather ground and the configured vehicle polic
   await connection.setClock({ currentTime: compiled.world.startsAt, updatedAt: nowIso(), paused: true })
   expect((await connection.sendCommand(command('world.ambulance.set-road-weather-policy', { enabled: true, iceFactor: .11 }), {})).ok).toBe(true)
   const point = { type: 'Point', coordinates: [11.41, 59.13] }
-  const sample = await connection.invokeQuery({ capabilityId: 'world.weather.sample-at-point', input: { point } })
+  const sample = await connection.invokeQuery({ readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.weather.sample-at-point', input: { point } })
   const snapshot = await connection.getSnapshot()
   await connection.close()
   const restored = await hub.connect({ ...config, initialObjects: snapshot.objects, runtimeStateStores: stores })
   try {
-    expect(await restored.invokeQuery({ capabilityId: 'world.weather.sample-at-point', input: { point } })).toEqual(sample)
-    expect(await restored.invokeQuery({ capabilityId: 'world.ambulance.road-weather-policy', input: {} })).toMatchObject({ enabled: true, iceFactor: .11 })
+    expect(await restored.invokeQuery({ readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.weather.sample-at-point', input: { point } })).toEqual(sample)
+    expect(await restored.invokeQuery({ readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.ambulance.road-weather-policy', input: {} })).toMatchObject({ enabled: true, iceFactor: .11 })
   } finally { await restored.close() }
 })

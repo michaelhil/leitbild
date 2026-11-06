@@ -56,11 +56,15 @@ export const localRoutes = (caddy: string): ((path: string) => ModuleName) => {
   return path => patterns.find(([, pattern]) => pattern.test(path))?.[0] ?? 'host'
 }
 
-export const preflightLocalStack = async (root: string): Promise<void> => {
+export const preflightLocalStack = async (root: string, expectedKnowledgeRevision?: string): Promise<string> => {
   for (const path of ['apps/leitbild/src/ui/dist/index.html', 'apps/world/src/ui/dist/index.html', 'apps/agents/src/ui/dist/index.html', 'apps/agents/src/ui/dist/app.js', 'apps/agents/src/ui/dist.css']) {
     if (!await Bun.file(join(root, path)).exists()) throw new Error(`Missing ${path}; run bun run build before dev:stack`)
   }
-  await loadKnowledge(join(root, 'knowledge/snapshot.json'))
+  const { revision } = await loadKnowledge(join(root, 'knowledge/snapshot.json'))
+  if (expectedKnowledgeRevision !== undefined && revision !== expectedKnowledgeRevision) {
+    throw new Error(`Knowledge snapshot is ${revision}; expected ${expectedKnowledgeRevision}. Publish the selected wiki before starting.`)
+  }
+  return revision
 }
 
 const reservePort = async () => {
@@ -76,6 +80,7 @@ export const startLocalProxy = (route: (path: string) => ModuleName, ports: Reco
   hostname: loopback, port,
   async fetch(request, server) {
     const url = new URL(request.url)
+    if (url.pathname === '/internal' || url.pathname.startsWith('/internal/')) return new Response('Not found', { status: 404 })
     url.hostname = loopback; url.port = String(ports[route(url.pathname)])
     if (request.headers.get('upgrade')?.toLowerCase() === 'websocket') {
       url.protocol = 'ws:'
@@ -111,11 +116,11 @@ export const startLocalProxy = (route: (path: string) => ModuleName, ports: Reco
 })
 
 /** `ld01Artifact`: a local LD-01 native artifact directory for World (LD01_UNIT_ARTIFACT); absent, World runs no LD-01 Plant, as on production. */
-export interface LocalStackOptions { readonly port?: number; readonly models?: boolean; readonly osrm?: string; readonly ld01Artifact?: string }
+export interface LocalStackOptions { readonly port?: number; readonly models?: boolean; readonly osrm?: string; readonly ld01Artifact?: string; readonly knowledgeRevision?: string }
 
-export const startLocalStack = async ({ port = 43100, models = false, osrm, ld01Artifact }: LocalStackOptions = {}) => {
+export const startLocalStack = async ({ port = 43100, models = false, osrm, ld01Artifact, knowledgeRevision: expectedKnowledgeRevision }: LocalStackOptions = {}) => {
   // Validate prerequisites before starting any child or creating a data directory.
-  await preflightLocalStack(repository)
+  const knowledgeRevision = await preflightLocalStack(repository, expectedKnowledgeRevision)
   if (osrm !== undefined) await preflightOsrm(osrm)
   const route = localRoutes(await Bun.file(join(repository, 'apps/leitbild/deploy/sites/leitbild.caddy')).text())
   const directory = await mkdtemp(join(tmpdir(), 'leitbild-local-'))
@@ -148,7 +153,7 @@ export const startLocalStack = async ({ port = 43100, models = false, osrm, ld01
     // provider keys, user MCP configuration or a real deployment's data paths.
     const env = {
       PATH: process.env.PATH ?? '', NODE_ENV: 'production',
-      WORKSPACE_HOST_URL: origin, LEITBILD_BIND_HOST: loopback, BIND_HOST: loopback,
+      WORKSPACE_HOST_URL: `http://${loopback}:${ports.host}`, LEITBILD_BIND_HOST: loopback, BIND_HOST: loopback,
       WORKSPACE_HOST_HOME: join(directory, 'host'), LEITBILD_HOME: join(directory, 'agents'),
       LEITBILD_DATA_DIR: join(directory, 'world'), LEITBILD_MAP_ROOT: join(directory, 'maps'),
       LEITBILD_REFERENCE_ROOT: join(directory, 'reference'), ...localRoutingEnvironment(osrm),
@@ -187,8 +192,8 @@ export const startLocalStack = async ({ port = 43100, models = false, osrm, ld01
         await sleep(100)
       }
     }
-    console.log(`Leitbild local stack: ${origin}\n${models ? 'Provider environment explicitly enabled.' : 'No model credentials loaded.'} No external MCP servers or map/reference artifacts loaded. ${osrm === undefined ? 'Direct straight-line routing is a development limitation.' : `OSRM routing at ${osrm}.`}`)
-    return { origin, directory, ports, stop: async () => { await stop(); process.off('SIGINT', onSignal); process.off('SIGTERM', onSignal) } }
+    console.log(`Leitbild local stack: ${origin}\nKnowledge revision: ${knowledgeRevision}\n${models ? 'Provider environment explicitly enabled.' : 'No model credentials loaded.'} No external MCP servers or map/reference artifacts loaded. ${osrm === undefined ? 'Direct straight-line routing is a development limitation.' : `OSRM routing at ${osrm}.`}`)
+    return { origin, directory, ports, knowledgeRevision, stop: async () => { await stop(); process.off('SIGINT', onSignal); process.off('SIGTERM', onSignal) } }
   } catch (error) {
     await stop(); process.off('SIGINT', onSignal); process.off('SIGTERM', onSignal)
     throw error
@@ -200,12 +205,14 @@ if (import.meta.main) {
   const portArg = args.find(argument => argument.startsWith('--port='))
   const osrmArg = args.find(argument => argument.startsWith('--osrm='))
   const ld01Arg = args.find(argument => argument.startsWith('--ld01-artifact='))
-  if (args.some(argument => argument !== '--smoke' && argument !== '--models' && argument !== portArg && argument !== osrmArg && argument !== ld01Arg)) throw new Error('Usage: bun run dev:stack [--smoke] [--models] [--osrm=http://127.0.0.1:5055] [--ld01-artifact=<dir>] [--port=43100]')
+  const knowledgeArg = args.find(argument => argument.startsWith('--knowledge-revision='))
+  const knowledgeRevision = knowledgeArg?.slice('--knowledge-revision='.length)
+  if (args.some(argument => argument !== '--smoke' && argument !== '--models' && argument !== portArg && argument !== osrmArg && argument !== ld01Arg && argument !== knowledgeArg)) throw new Error('Usage: bun run dev:stack [--smoke] [--models] [--osrm=http://127.0.0.1:5055] [--ld01-artifact=<dir>] [--port=43100] [--knowledge-revision=<commit>]')
   const port = portArg ? Number(portArg.slice(7)) : 43100
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('Invalid loopback port')
-  const stack = await startLocalStack({ port, models: args.includes('--models'), ...(osrmArg === undefined ? {} : { osrm: osrmArg.slice(7) }), ...(ld01Arg === undefined ? {} : { ld01Artifact: resolve(ld01Arg.slice('--ld01-artifact='.length)) }) })
+  const stack = await startLocalStack({ port, models: args.includes('--models'), ...(osrmArg === undefined ? {} : { osrm: osrmArg.slice(7) }), ...(ld01Arg === undefined ? {} : { ld01Artifact: resolve(ld01Arg.slice('--ld01-artifact='.length)) }), ...(knowledgeRevision === undefined ? {} : { knowledgeRevision }) })
   if (args.includes('--smoke')) {
-    try { await smokeLocalStack(stack.origin); console.log('Local stack smoke passed') }
+    try { await smokeLocalStack(stack.origin, stack.knowledgeRevision); console.log('Local stack smoke passed') }
     finally { await stack.stop() }
   }
 }

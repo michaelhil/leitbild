@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { rejectCapabilityInput } from '../../simulation/capability-rejection.ts'
 import {
   actorIdSchema,
   clientIdSchema,
@@ -481,7 +482,7 @@ export const requireDroneVehicleModel = (
   models: ReadonlyArray<DroneVehicleModel> = defaultDroneVehicleModels,
 ): DroneVehicleModel => {
   const model = droneVehicleModelMap(models).get(modelId)
-  if (!model) throw new Error(`unknown drone vehicle model: ${modelId}`)
+  if (!model) return rejectCapabilityInput(`unknown drone vehicle model: ${modelId}`)
   return model
 }
 

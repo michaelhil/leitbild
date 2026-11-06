@@ -54,6 +54,8 @@ export const answerElectricGridQuery = (config: {
 }): unknown => {
   const query = queryById.get(config.request.capabilityId)
   if (!query) throw new Error(`unsupported Electric Grid query Capability: ${config.request.capabilityId}`)
-  const answer = query.answer(config.request.input, config.grids, config.recording)
+  const policy = config.request.readPolicy
+  const grids = !policy.restricted ? config.grids : new Map([...config.grids].filter(([id]) => policy.canInspect(id)))
+  const answer = query.answer(config.request.input, grids, config.recording, policy)
   return answer instanceof Promise ? clonedWhenSettled(answer) : structuredClone(answer)
 }

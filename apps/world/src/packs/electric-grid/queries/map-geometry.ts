@@ -316,6 +316,7 @@ export const gridMapGeometryFor = createGridMapGeometry({
 })
 
 export const createGridMapGeometryQuery = (geometryFor: (model: GridModelDefinition) => GridMapGeometry): ElectricGridQuery => defineGridQuery({
+  readScope: 'object',
   id: 'world.electric-grid.map.geometry',
   title: 'Get Grid map geometry',
   description: 'Returns the static map geometry of one Grid in model order: buses (boundary buses with their external system), branches and HVDC links with their path from fromBus to toBus and how it is drawn, generators, and loads per bus. world.electric-grid.map.state publishes live state as arrays in the same order; refetch this only when its geometryDigest changes.',

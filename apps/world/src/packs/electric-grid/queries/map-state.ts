@@ -84,6 +84,7 @@ const stateFor = (grid: GridRuntimeInstance, geometry: GridMapGeometry): Omit<Gr
 }
 
 export const createGridMapStateQuery = (geometryFor: (model: GridModelDefinition) => GridMapGeometry): ElectricGridQuery => defineGridQuery({
+  readScope: 'object',
   id: 'world.electric-grid.map.state',
   title: 'Get Grid map state',
   description: 'Returns compact live state of one Grid as arrays in world.electric-grid.map.geometry order: branch loading, flow, switching state (closed, or tripped by protection) and availability; bus island and energisation; generator dispatch and state; load demand, served and shed summed per bus; HVDC link state, transfer and set-point. Fetch it when the Grid object revision changes.',

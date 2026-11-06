@@ -42,4 +42,4 @@ export const isCapabilityRejection = (error: unknown): error is CapabilityReject
 /** Caller mistakes are valid runtime interactions. They must be returned to the
  * caller without falsely degrading an otherwise healthy Pack Runtime. */
 export const isExpectedCapabilityRejection = (error: unknown): boolean =>
-  error instanceof z.ZodError || isCapabilityRejection(error)
+  error instanceof z.ZodError || isCapabilityRejection(error) || (error instanceof Error && 'code' in error && ['agent_access_restricted', 'query_policy_superseded', 'query_read_scope_unavailable'].includes(String(error.code)))

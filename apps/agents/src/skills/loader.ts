@@ -20,6 +20,7 @@ import type { ToolRegistry } from '../core/types/tool.ts'
 import { VALID_NAME, loadToolDirectory } from '../tools/loader.ts'
 import { readdir, readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
+import { RETIRED_SKILL_MARKER } from './authoring.ts'
 
 export interface Skill {
   readonly name: string                 // registry key — `<pack>/<raw>` for pack skills, else raw
@@ -127,7 +128,7 @@ const parseYAMLArrayField = (
 const unquote = (raw: string): string => {
   const t = raw.trim()
   if (t.length >= 2 && ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith("'") && t.endsWith("'")))) {
-    return t.slice(1, -1)
+    return t.startsWith('"') ? JSON.parse(t) as string : t.slice(1, -1)
   }
   return t
 }
@@ -217,6 +218,13 @@ export const loadSkills = async (
       if (!s.isDirectory()) continue
     } catch { continue }
 
+    try {
+      await stat(join(dirPath, RETIRED_SKILL_MARKER))
+      skipped.push(`${entry}: retired; source retained`)
+      continue
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') { errors.push(`${entry}: retirement state unreadable: ${String(error)}`); continue }
+    }
     const skillPath = join(dirPath, 'SKILL.md')
     let content: string
     try {

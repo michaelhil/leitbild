@@ -23,6 +23,7 @@ import { processPlantObservationCapabilityIds } from './observation/query.ts'
 import { processPlantSimAdapterId } from './sim/constants.ts'
 import { processPlantPackView } from './ui-pack.ts'
 import { describeProcessPlantPhysicalTargets } from './physical-targets.ts'
+import { processPlantWorkspaceCapabilities } from './workspace-capabilities.ts'
 
 const processPlantScenarioItemSchema = z.object({
   pack: z.literal('process-plant'),
@@ -122,10 +123,17 @@ const expandPlantObject = (spec: PackScenarioItemSpec, at: IsoTimestamp): Operat
 }
 
 export const processPlantPack: WorldPack = {
+  inspectionReferences: () => [],
   ...processPlantPackView,
   scenarioConfigSchema: processPlantPackConfigSchema,
+  workspaceCapabilities: processPlantWorkspaceCapabilities,
   physicalTargets: describeProcessPlantPhysicalTargets,
   authoring: {
+    configuration: {
+      beforeStart: "Pack configuration is intentionally empty. A plant item selects model, compatible operatingPoint and automation. world.process-plant.models.describe exposes pre-run parameter semantics; model.parameters.loopCount is a required integer from 2 to 6, with 4 in the editor example. Sparse initial parameter/value overrides are explicit advanced JSON data.",
+      liveChanges: "Discover the selected Plant control/action capabilities and writable signal metadata. Validated control writes and alarm/I&C lifecycle actions change current runtime state. aiOperation selects direct operation or explicit proposal review for AI commands.",
+      requiresNewRevision: "Changing model parameters/topology, initial operatingPoint/overrides or the automation selection requires a new Scenario Revision and Run. Existing Runs restore saved state instead of reapplying authored initial conditions.",
+    },
     itemTypes: [{
       id: 'plant',
       label: 'Process plant',

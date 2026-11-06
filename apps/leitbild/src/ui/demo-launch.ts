@@ -35,6 +35,7 @@ import {
 } from './launch-workspace.ts'
 import { demoKey } from './modal-url.ts'
 import { readFeaturedCatalogue } from './featured-catalogue.ts'
+import { invokeDefinitionStart } from './start-invocation.ts'
 import { WEBGL_MISSING_TEXT } from './webgl-support.ts'
 import type { WorkspaceMemory } from './workspace-memory.ts'
 
@@ -152,8 +153,8 @@ const readWorkspaceCatalogue = async (
   return { definitions: definitions.definitions, capabilities: capabilities.capabilities }
 }
 
-/** Steps 4–7 in a known Workspace; the Workspace page's Start uses this directly. */
-export const startFeaturedInWorkspace = async (
+/** Steps 4–7 once the launch has resolved its Workspace. */
+const startFeaturedInWorkspace = async (
   workspace: Workspace,
   featured: Launchable,
   catalogue: WorkspaceCatalogue,
@@ -172,40 +173,20 @@ export const startFeaturedInWorkspace = async (
   if (!capability) throw launchError('cannot-start', at)
   const original = descriptor.currentRevisionId !== featured.revisionId
   ports.onstep?.({ kind: 'starting', workspace, original })
-  const path = `/api/workspaces/${encodeURIComponent(workspace.id)}/capabilities/${encodeURIComponent(capability.id)}/invoke`
-  const body = JSON.stringify({
+  let invoked = false
+  const receipt = await invokeDefinitionStart({
+    workspaceId: workspace.id,
     definition: { ...descriptor.ref, revisionId: featured.revisionId },
-    input: {},
-    actor: { kind: 'human' },
+    capabilityId: capability.id,
+    fetch: ports.fetch,
+    signal: ports.signal,
+    onDispatch: () => { invoked = true },
+    requiredResource: 'world.simulation-run',
   })
-  const sent = { ...at, invoked: true }
-  let response: Response
-  try {
-    response = await ports.fetch(path, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body,
-      ...(ports.signal === undefined ? {} : { signal: ports.signal }),
-    })
-  } catch (error) {
-    // The request may have reached the Host: the outcome is unknown.
-    throw launchError(isAbort(error, ports.signal) ? 'aborted' : 'outcome-unknown', sent, error)
-  }
-  let result: unknown
-  try {
-    result = await readHostJson(response)
-  } catch (error) {
-    if (isAbort(error, ports.signal)) throw launchError('aborted', sent, error)
-    const { code, status } = plainError(error)
-    if (code === 'module_outcome_unknown' || status === 504) throw launchError('outcome-unknown', sent, error)
-    if (code === 'workspace_capacity_exceeded' || status === 503) throw launchError('capacity', sent, error)
-    throw launchError('failed', sent, error)
-  }
-  const { moduleCapabilityInvocationResultSchema } = await contracts()
-  const parsed = moduleCapabilityInvocationResultSchema.safeParse(result)
-  const run = parsed.success
-    ? parsed.data.createdResources?.find(resource => resource.workspaceId === workspace.id && resource.type === 'world.simulation-run')
-    : undefined
-  if (!run) throw launchError('outcome-unknown', sent, parsed.success ? new Error('The start reported no Run') : parsed.error)
-  if (ports.signal?.aborted) throw launchError('aborted', sent)
+  const reached = { ...at, invoked }
+  if (receipt.kind !== 'accepted') throw launchError(receipt.kind, reached, receipt.cause)
+  if (ports.signal?.aborted) throw launchError('aborted', reached)
+  const run = receipt.created.find(resource => resource.type === 'world.simulation-run')!
   const destination = workspaceUrl(workspace.id, { world: run.id })
   ports.memory.remember(workspace.id, 'launched')
   ports.onstep?.({ kind: 'opening', workspace, destination })
