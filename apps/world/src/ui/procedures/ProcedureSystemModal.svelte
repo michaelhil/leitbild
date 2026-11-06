@@ -282,13 +282,19 @@
     readonly object?: OperationalObject | undefined
   }>()
   const checkVersion = $derived(`${checkEvidenceRevision}:${clock?.paused}:${clock?.paused ? clock.currentTime : ''}`)
-  const checkRequest = $derived.by(() => {
+  // Running plant projections are telemetry, not a change of evidence context.
+  const pausedCheckObject = $derived(clock?.paused ? checkEvidenceObject : undefined)
+  const checkStepId = $derived.by(() => {
     const step = currentProcedureStep?.step
     if (!activeRun || !document || step === undefined || step.id !== visibleCheckStep
       || activeRun.currentStepId !== step.id || activeRun.sourceRevision !== document.source.revision || activeRun.sourcePath !== document.sourcePath
       || !step.pairs?.some(pair => pair.advisoryBranchIndex !== undefined) || !realtimeAttached || clock === undefined) return null
-    return { runId: activeRun.runId, stepId: step.id, sourceId: document.source.sourceId, sourceRevision: document.source.revision, sourcePath: document.sourcePath }
+    return step.id
   })
+  const checkRunId = $derived(activeRun?.runId)
+  const checkRequest = $derived(checkRunId && checkStepId && document
+    ? { runId: checkRunId, stepId: checkStepId, sourceId: document.source.sourceId, sourceRevision: document.source.revision, sourcePath: document.sourcePath }
+    : null)
 
   const observeCheckStep = (element: HTMLElement, initial: ProcedureStepId | undefined) => {
     let stepId: ProcedureStepId | undefined
@@ -336,7 +342,7 @@
       previousTime = Number.isFinite(currentTime) ? currentTime : undefined
       if (window.document.hidden || !currentClock || inFlight || now - lastRead < 750) return
       const revision = checkVersion
-      const object = checkEvidenceObject
+      const object = pausedCheckObject
       if (currentClock.paused && lastVersion === revision && lastObject === object && (!readFailed || now - lastRead < 4000)) return
       lastVersion = revision
       lastObject = object
@@ -344,7 +350,11 @@
       inFlight = true
       try {
         const view = await readProcedureChecks(runId, request, abort.signal)
-        if (!abort.signal.aborted && view.plantId === plantId && checkVersion === revision && checkEvidenceObject === object) {
+        if (!view) {
+          // A racing update cancelled this read. The previous sample still has its original expiry.
+          readFailed = true
+        } else if (!abort.signal.aborted && view.plantId === plantId && checkVersion === revision && pausedCheckObject === object) {
+          checkClockTick = Date.now()
           checkSample = { view, revision, object }
           readFailed = false
         }
@@ -363,7 +373,7 @@
   const activeCheck = (branchIndex: number) => {
     const sample = checkSample
     if (!sample || !checkRequest || sample.view.runId !== checkRequest.runId || sample.view.stepId !== checkRequest.stepId
-      || sample.revision !== checkVersion || sample.object !== checkEvidenceObject) return undefined
+      || sample.revision !== checkVersion || sample.object !== pausedCheckObject) return undefined
     const value = sample.view.checks.find(item => item.branchIndex === branchIndex)
     const currentTime = simulationTimeAt(clock, checkClockTick)
     if (!value || !currentTime || Date.parse(currentTime) < Date.parse(sample.view.simulationTime)) return undefined

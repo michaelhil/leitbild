@@ -2565,7 +2565,7 @@
       session={procedureSession}
       {clock}
       {realtimeAttached}
-      checkEvidenceRevision={`${procedureRevision}:${procedureEvidenceRevision}:${packDataRevisions[windowEntry.object.packId] ?? 0}`}
+      checkEvidenceRevision={`${perspectiveEpoch}:${procedureEvidenceRevision}:${packDataRevisions[windowEntry.object.packId] ?? 0}`}
       checkEvidenceObject={windowEntry.object}
       initialProcedureId={windowEntry.initialProcedureId}
       windowOffsetIndex={windowEntry.index}
