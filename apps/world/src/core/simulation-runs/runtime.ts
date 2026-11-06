@@ -10,7 +10,7 @@ import { prepareProcedureCommand } from '../../features/procedures/run-state.ts'
 import { procedureTransitionDecision, publishProcedureTransitionDecision } from '../../features/procedures/transition-receipt.ts'
 import { createProcedureObservationPort,type ProcedureObservationPort } from '../../features/procedures/pack-observations.ts'
 import { createObservationCache, createObservationPort, observationProviderFor, type ObservationPort } from '../../features/displays/observation/port.ts'
-import { createProcedureSourceService,type ProcedureSourceService, type ProcedureEvidenceRequest, type ProcedureEvidence } from '../../features/procedures/source.ts'
+import { createProcedureSourceService,type ProcedureSourceService, type ProcedureDocumentRequest, type ProcedureEvidenceRequest, type ProcedureEvidence } from '../../features/procedures/source.ts'
 import type { CommandOrigin,PackRuntimeConnection,PackRuntimeEmission,PackRuntimeEvent,PackRuntimeHealth,PackRuntimeRealtimeInput,PackRuntimeRealtimeMessage,SimulationCapability } from '../../simulation/protocol.ts'
 import type { AgentRestrictions,RunRoles,ScenarioSide,CommandEnvelope,CommandResult,EventId,InteractionEffect,InteractionHandler,InteractionSignal,IsoTimestamp,ObjectId,OperationalObject,ProcedureCatalog,ProcedureDocument,ProcedureId,ProcedureSourceId,Provenance,RecordedSample,RecordingProfileDescriptor,RecordingSeriesDescriptor,RecordingSeriesQuery,ScenarioExecutionState,ScenarioRecordingSelection,ScenarioTimeline,ScenarioTimelineAction,ScenarioTimelineCue,SimulationClockState,SimulationClockUpdate,SimulationRunEvent,SimulationRunId } from '../model/index.ts'
 import { procedureObservationUpdatedEventSchema, objectIdSchema, actorIdSchema,agentRestrictionsSchema,commandEnvelopeSchema,deleteObjectCommandKind,deleteObjectPayloadSchema,interactionEffectSchema,interactionSignalSchema,isSideView,notificationIdSchema,nowIso,sidedObjectAudienceIssue,simulationClockUpdateSchema,type AudienceIssue } from '../model/index.ts'
@@ -545,6 +545,8 @@ export const createSimulationRunRuntime = async (config: {
   // The owning Pack evaluates physical conditions. World only schedules scoped,
   // read-only queries and retains their evidence; it never interprets plant logic.
   const procedureDocuments = new Map<string, ProcedureDocument>()
+  const procedureDocumentKey = ({ sourceId, sourceRevision, sourcePath, procedureId }: ProcedureDocumentRequest) =>
+    JSON.stringify([sourceId, sourceRevision, sourcePath, procedureId])
   const pendingObservationAcquisitions = new Map<string, Promise<unknown>>()
   const acquireObservation = async <T>(key: string, acquire: () => Promise<T>, budget: { readonly deadline: number; exhausted: boolean }): Promise<T> => {
     const timeoutReason = `Observation acquisition pass exceeded its ${observationAcquisitionTimeoutMs} ms wall-time transport budget; original read is still pending.`
@@ -577,13 +579,12 @@ export const createSimulationRunRuntime = async (config: {
     // multiply the time for which this read-side observer occupies the queue.
     const acquisitionBudget = { deadline: performance.now() + observationAcquisitionTimeoutMs, exhausted: false }
     const runs = state.snapshot().procedures?.runs ?? []
-    const keyFor = (run: typeof runs[number]) => JSON.stringify([run.sourceId, run.sourceRevision, run.sourcePath, run.procedureId])
-    const livePins = new Set(runs.filter(run => run.status === 'active' || run.status === 'transferred').map(keyFor))
+    const livePins = new Set(runs.filter(run => run.status === 'active' || run.status === 'transferred').map(procedureDocumentKey))
     for (const key of procedureDocuments.keys()) if (!livePins.has(key)) procedureDocuments.delete(key)
     for (const run of runs) {
       if (closing) return
       if (run.status !== 'active' && run.status !== 'transferred') continue
-      const key = keyFor(run)
+      const key = procedureDocumentKey(run)
       let document = procedureDocuments.get(key)
       if (!document) {
         try {
@@ -1773,7 +1774,10 @@ export const createSimulationRunRuntime = async (config: {
     invokeCapability,
     receiveRealtimeInput,
     procedureCatalog: async (catalogConfig = {}) => await procedureSourceService.readCatalog(catalogConfig),
-    procedureDocument: async (documentConfig) => await procedureSourceService.readDocument(documentConfig),
+    // An active exact pin is already loaded by the procedure observer. Use it
+    // for focused reads without repeatedly parsing and syncing the publication.
+    procedureDocument: async documentConfig =>
+      procedureDocuments.get(procedureDocumentKey(documentConfig)) ?? await procedureSourceService.readDocument(documentConfig),
     procedureEvidence: async evidenceConfig => await procedureSourceService.readEvidence(evidenceConfig),
     procedureObservations,
     observations,
