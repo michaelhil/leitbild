@@ -3,6 +3,7 @@ use leitbild_operating_plant::thermal::{
     Film, Scalar, WET_CONTACT_PRESSURE_MAX_PA, WallLaw, WallMaterial, liquid_wall,
 };
 use leitbild_operating_water::If97;
+use leitbild_operating_water::frame::same_instant;
 use leitbild_operating_water::ida::{
     Advance, Failure, Ida, Initial, System, TIME_STOPPED, WeightGroups,
 };
@@ -1254,4 +1255,121 @@ fn a_refused_wall_stops_time_by_name_within_a_few_steps() {
             "IDA handle is fail-stopped"
         );
     }
+}
+
+/// One coordinate at unit rate with one root, `t - at`.
+struct TimeRoot {
+    at: f64,
+}
+impl System for TimeRoot {
+    fn multiplicities(&self) -> Option<Vec<f64>> {
+        None
+    }
+    fn dimension(&self) -> usize {
+        1
+    }
+    fn nonzeros(&self) -> usize {
+        1
+    }
+    fn root_count(&self) -> usize {
+        1
+    }
+    fn roots(&mut self, t: f64, _: &[f64], _: &[f64], out: &mut [f64]) -> Result<(), Failure> {
+        out[0] = t - self.at;
+        Ok(())
+    }
+    fn residual(&mut self, _: f64, _: &[f64], yp: &[f64], out: &mut [f64]) -> Result<(), Failure> {
+        out[0] = yp[0] - 1.;
+        Ok(())
+    }
+    fn jacobian(
+        &mut self,
+        _: f64,
+        cj: f64,
+        _: &[f64],
+        _: &[f64],
+        data: &mut [f64],
+        rows: &mut [i64],
+        pointers: &mut [i64],
+    ) -> Result<(), Failure> {
+        data[0] = cj;
+        rows[0] = 0;
+        pointers.copy_from_slice(&[0, 1]);
+        Ok(())
+    }
+}
+
+fn time_root(clock_s: f64, at: f64) -> (Ida<TimeRoot>, [f64; 1], [f64; 1]) {
+    let (y, yp) = ([0.], [1.]);
+    let ida = Ida::new(
+        TimeRoot { at },
+        Initial {
+            time: clock_s,
+            y: &y,
+            yp: &yp,
+            differential: &[1.],
+            absolute_tolerance: &[1e-6],
+            relative_tolerance: 1e-5,
+        },
+    )
+    .unwrap();
+    (ida, y, yp)
+}
+
+#[test]
+fn an_unacted_root_at_a_steps_end_is_not_stopped_time() {
+    // R4-TIME-STOPPED: after a root the driver does not act on, stock returns
+    // the rest of the step it already took. Put the root that close to the
+    // step's end and the rest is the same instant to stock, though the step
+    // was not; only a step that short may stop the integration.
+    let clock_s = 5272.;
+    let (steps, target) = (6, clock_s + 1e5);
+    let (mut ida, mut y, mut yp) = time_root(clock_s, clock_s + 1e9);
+    for _ in 0..steps {
+        ida.step(target, &mut y, &mut yp).unwrap();
+    }
+    let (end, step) = (ida.stats().unwrap().internal_time, ida.stats().unwrap().last_step);
+    assert!(!same_instant(end, end + step), "{step} s is a real step");
+    let mut same = 0;
+    for ulps in (10..=200).step_by(10) {
+        let (mut ida, mut y, mut yp) =
+            time_root(clock_s, end - f64::from(ulps) * f64::EPSILON * end);
+        let root = loop {
+            match ida.step(target, &mut y, &mut yp).unwrap() {
+                Advance::Root { time, .. } => break time,
+                Advance::Reached(_) => {}
+            }
+        };
+        let Advance::Reached(rest) = ida.step(target, &mut y, &mut yp).unwrap() else {
+            panic!("no rest of the step after the root {ulps} ulps from its end");
+        };
+        // Stock places a root that close on the step's end, and then there
+        // is no rest: the next return is a new step.
+        if root.to_bits() == end.to_bits() {
+            continue;
+        }
+        assert_eq!(rest.to_bits(), end.to_bits(), "the rest ends the step taken");
+        if same_instant(root, rest) {
+            same += 1;
+        }
+    }
+    assert!(same > 0, "no root stood within stock's fuzz of the step's end");
+}
+
+#[test]
+fn a_restart_starts_its_own_clock_of_steps() {
+    // R4-TIME-STOPPED at a restart: stock's last step reads zero until the
+    // new segment's first step, and that first step is a real one.
+    let clock_s = 5272.;
+    let (mut ida, mut y, mut yp) = time_root(clock_s, clock_s + 1e9);
+    for _ in 0..3 {
+        ida.step(clock_s + 1e5, &mut y, &mut yp).unwrap();
+    }
+    let t = ida.stats().unwrap().internal_time;
+    ida.reinitialize(t, &y, &yp).unwrap();
+    assert_eq!(ida.stats().unwrap().last_step, 0.);
+    let Advance::Reached(next) = ida.step(clock_s + 1e5, &mut y, &mut yp).unwrap() else {
+        panic!("no root is armed");
+    };
+    assert!(!same_instant(t, next), "the restart's first step {t} to {next}");
 }
