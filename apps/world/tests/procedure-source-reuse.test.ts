@@ -67,7 +67,7 @@ test('mutating returned catalog, document and evidence data never poisons subseq
 
   const evidence = await service.readEvidence({ sourceRevision: revision, sourcePath: 'evidence.md' })
   // JavaScript callers can mutate returned values despite readonly type annotations.
-  const headings = evidence.headings as Array<{ title: string }>
+  const headings = evidence.headings as unknown as Array<{ title: string }>
   headings[0]!.title = 'Caller heading'
   headings.length = 0
   evidence.children.length = 0
