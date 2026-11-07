@@ -355,6 +355,17 @@ pub fn momentum_residual(
     Ok(residual)
 }
 
+/// R4-VAPOR-IMPULSE: the impulse rate a free vapor path gives up with the mass
+/// leaving its inertia, `min(I', 0) Q`. Leaving mass takes the path's velocity,
+/// so `I Q' = F` while `I` falls. Arriving mass is born at rest and adds no term.
+pub fn leaving_impulse_rate(inertia_rate: Scalar, flow: Scalar) -> Scalar {
+    if inertia_rate.value < 0. {
+        inertia_rate * flow
+    } else {
+        s(0.)
+    }
+}
+
 /// A cold-path limit is an explicit caller-owned physical selection, not a
 /// universal zero-current default for a face without phase mass.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

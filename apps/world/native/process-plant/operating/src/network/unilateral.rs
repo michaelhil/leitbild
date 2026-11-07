@@ -384,6 +384,25 @@ impl<P: Properties> Network<P> {
     /// SURGE's vapor vanishes; a donor inside the path's inertia bounds
     /// `|w| <= |Π|/∫ds/A`, as on a path whose donor is a support. `None`
     /// off that path, without L1, locked, or with no bubbles at the port.
+    /// R4-VAPOR-IMPULSE: the rate of a path's support inertia. `rate` is each
+    /// support region's `M' - M V'/V`, the rate of the phase density's
+    /// numerator; `M'` is the row's own `y'`, also where the vapor mass is an
+    /// equilibrium cell's algebraic coordinate (owner, 7 Nov).
+    pub(super) fn support_inertia_rate(
+        &self,
+        face: usize,
+        rate: impl Fn(usize) -> Scalar,
+        volume: impl Fn(usize) -> Scalar,
+    ) -> Scalar {
+        self.faces[face]
+            .supports
+            .iter()
+            .fold(Scalar::constant(0.), |sum, support| {
+                sum + rate(support.region) * Scalar::constant(support.inverse_area_length_per_m)
+                    / volume(support.region)
+            })
+    }
+
     pub(super) fn mouth_inertance(&self, li: usize, cells: &[flow::Cell]) -> Option<Scalar> {
         let (mouth, per_m) = self.mouth?;
         let free = self
