@@ -737,7 +737,7 @@ fn s3_settle_with_the_feed_train() {
         unit::{
             plant::{self, Plant},
             profile::Solver,
-            turbine::{self, Turbine},
+            turbine::Turbine,
         },
     };
     let started = process_cpu_s();
@@ -823,14 +823,11 @@ fn s3_settle_with_the_feed_train() {
     let gen_watt_at = n
         + leitbild_operating_water::electrical::N
         + leitbild_operating_plant::turbine::governor::W;
-    let mut request_w = unit.ida.system().governor.as_ref().map(|g| g.held.to_w);
-    let request0_w = request_w;
+    let request_w = unit.ida.system().governor.as_ref().map(|g| g.held.to_w);
     let opening_at = gen_watt_at - leitbild_operating_plant::turbine::governor::W
         + leitbild_operating_plant::turbine::governor::A;
     let integral_at = gen_watt_at - leitbild_operating_plant::turbine::governor::W
         + leitbild_operating_plant::turbine::governor::I;
-    let mut rebases: Vec<Value> = Vec::new();
-    let mut last_rebase_s = f64::NEG_INFINITY;
     assert_eq!(
         request_w.is_some(),
         turbine.is_some(),
@@ -947,10 +944,9 @@ fn s3_settle_with_the_feed_train() {
             let offset = (high - request).abs().max((low - request).abs());
             json!({"request_w": request, "range_w": range, "offset_w": offset, "bound_w": bound,
                 "opening": plant.y[opening_at], "integral": plant.y[integral_at],
-                "range_holds": range <= bound, "holds": range <= bound && offset <= bound})
+                "holds": range <= bound && offset <= bound})
         });
         let gen_holds = gen_wt.as_ref().is_none_or(|g| g["holds"] == true);
-        let gen_range_holds = gen_wt.as_ref().is_some_and(|g| g["range_holds"] == true);
         // Per SG over the window: the unfiltered SG pressure range and the
         // largest |FW.FT − FT.STEAM| among the feed record's frames.
         let frames: Vec<&Vec<[f64; 9]>> = feed
@@ -1004,31 +1000,7 @@ fn s3_settle_with_the_feed_train() {
                 process_cpu_s() - started
             );
         }
-        let others_hold = rs.iter().all(|r| r.2) && feed_holds;
-        // The lead's ruling B: every line holds but the offset (the request is
-        // out of the full-open valve's reach), so the load reference re-bases
-        // to the settled GEN.WT through the Grid's request path, as a case's
-        // exchange would; never below that value, no headroom added.
-        if others_hold && gen_range_holds && !gen_holds {
-            let settled_w = plant.y[gen_watt_at];
-            let decided =
-                turbine::grid_request(&mut plant.driver, plant.ida.system(), t, settled_w);
-            let applied = decided.and_then(|what| {
-                rebases.push(json!({"t_s": t, "from_request_w": request_w, "to_request_w": settled_w,
-                    "opening": plant.y[opening_at], "integral": plant.y[integral_at], "decision": what}));
-                let mut extra: [&mut dyn Client<_>; 1] = [&mut feed];
-                plant.apply_due(&mut extra)
-            });
-            if let Err(e) = applied {
-                failure = Some(format!("the re-base at {t} s: {e}"));
-                break;
-            }
-            request_w = Some(settled_w);
-            last_rebase_s = t;
-            continue;
-        }
-        // Accepted on a whole window after the last re-base.
-        if others_hold && gen_holds && t - last_rebase_s >= window_s {
+        if rs.iter().all(|r| r.2) && feed_holds && gen_holds {
             verdict = json!({"settled_at_s": t, "settled_after_s": t - t0, "window_s": window_s, "checks": last});
             break;
         }
@@ -1051,8 +1023,6 @@ fn s3_settle_with_the_feed_train() {
         "composition": composition["composition"], "from": state_path});
     if let Some(sha) = &ic_sha256 {
         settled["governed_ic_section"] = json!({"path": inputs.ic_path, "sha256": sha});
-        settled["governed_request"] =
-            json!({"composed_w": request0_w, "request_w": request_w, "rebases": rebases});
     }
     let state_bytes = serde_json::to_vec(&settled).unwrap();
     std::fs::write(dir.join("s3-settled-state.json"), &state_bytes).unwrap();
@@ -1074,9 +1044,7 @@ fn s3_settle_with_the_feed_train() {
     });
     if let Some(sha) = &ic_sha256 {
         receipt["governed"] = json!({"rule": "R4-REPIN-GOV-SETTLE (lead 1 Nov): the governor composed as in the governed cases; acceptance adds GEN.WT's window range and largest offset from the request, each <= settling.corePowerRelative x the request (judgement: the core-power settling threshold applied to generator output)",
-            "ic_section": {"path": inputs.ic_path, "sha256": sha},
-            "request": {"composed_w": request0_w, "request_w": request_w, "rebases": rebases,
-                "rule": "lead's ruling B: when every line holds but the offset, the load reference re-bases to the settled GEN.WT by turbine::grid_request; accepted on a whole window after the last re-base; no headroom, no reference below the settled value"}});
+            "ic_section": {"path": inputs.ic_path, "sha256": sha}});
     }
     std::fs::write(
         dir.join("receipt.json"),
