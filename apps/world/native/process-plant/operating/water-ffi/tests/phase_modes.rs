@@ -492,8 +492,10 @@ fn mouth_path_block_replay_matches_the_colored_assembly() {
                 worst = worst.max((cv[q] - bv[q]).abs() / scale);
             }
         }
-        report.push(json!({"state": name, "cj": cj, "column_relative_max": worst, "bitwise": bitwise,
-            "entries": pattern.nonzeros(), "port_column_entries": pzr_columns}));
+        report.push(
+            json!({"state": name, "cj": cj, "column_relative_max": worst, "bitwise": bitwise,
+            "entries": pattern.nonzeros(), "port_column_entries": pzr_columns}),
+        );
         assert!(worst < 1e-10, "{name}: block against colored {worst:e}");
     }
     println!("{}", json!({"mouth_path_block_vs_colored": report}));

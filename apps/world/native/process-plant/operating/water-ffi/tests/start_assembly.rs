@@ -94,7 +94,11 @@ fn a_start_assembly_fills_what_the_full_assembly_fills() {
                 } else {
                     0.
                 };
-                assert_eq!(limited[p].to_bits(), want.to_bits(), "column {j}, entry {p}");
+                assert_eq!(
+                    limited[p].to_bits(),
+                    want.to_bits(),
+                    "column {j}, entry {p}"
+                );
             }
         }
     }
@@ -107,7 +111,9 @@ fn a_start_assembly_fills_what_the_full_assembly_fills() {
 #[test]
 #[ignore = "zero-time check: requires the joined CVCS packet, the wiki, the water tables and stock IDA/KLU; prints the pattern hashes"]
 fn pattern_hash() {
-    use leitbild_operating_plant::{digest::sha256, joined::presence::VaporPresence, sparse::Pattern};
+    use leitbild_operating_plant::{
+        digest::sha256, joined::presence::VaporPresence, sparse::Pattern,
+    };
     let water = leitbild_operating_water::WaterMethod::parse(
         &std::env::var("LD01_S3_WATER").unwrap_or_else(|_| "sbtl".into()),
     )
@@ -139,4 +145,3 @@ fn pattern_hash() {
     println!("PATTERN widest {:?}", hash(&widest.pattern));
     println!("PATTERN colored {:?}", hash(colored));
 }
-

@@ -50,7 +50,10 @@ impl<P: Properties> Network<P> {
         // R4-MOUTH-INERTIA: the surge mouth's free vapor path reads the port
         // view's vapor. Every row that reads this Q already reads the port
         // through the face's flux, so the pattern does not change.
-        if self.mouth.is_some_and(|(li, _)| self.face_layout[li].face == face) {
+        if self
+            .mouth
+            .is_some_and(|(li, _)| self.face_layout[li].face == face)
+        {
             out.extend(self.cell_coordinates(self.pzr.cell));
         }
     }
