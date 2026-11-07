@@ -3286,10 +3286,7 @@ fn drive(
         .map(|(_, l)| {
             l.labels
                 .iter()
-                .filter_map(|x| {
-                    x.strip_prefix("y[")
-                        .map(|v| v.trim_end_matches(']').to_string())
-                })
+                .filter_map(|x| x.strip_prefix("y[").map(group_leader))
                 .enumerate()
                 .map(|(i, id)| (id, i))
                 .collect()
@@ -3341,6 +3338,16 @@ fn drive(
     }
 }
 
+/// The cluster a rod position label names: the layout labels a coordinate
+/// `y[<first member>x<members>]`, one per group of identical rods, and the
+/// timeline's seat records name each member.
+fn group_leader(label: &str) -> String {
+    let label = label.trim_end_matches(']');
+    let (id, members) = label.rsplit_once('x').expect("y[<id>x<members>]");
+    assert!(members.parse::<usize>().is_ok(), "rod label {label}");
+    id.to_string()
+}
+
 /// Each cluster's first seat by cluster index, absolute (S2's G9 and rule
 /// E's rod timing): a body that lifts off and seats again (C4, after the
 /// hot births) keeps its first seat time. `seats` is the timeline's, in log
@@ -3357,6 +3364,12 @@ fn first_seats(
         }
     }
     out
+}
+
+#[test]
+fn a_rod_label_names_its_group_by_the_first_member() {
+    assert_eq!(group_leader("LD01.CR.001x52]"), "LD01.CR.001");
+    assert_eq!(group_leader("LD01.CR.004x1]"), "LD01.CR.004");
 }
 
 #[test]
