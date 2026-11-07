@@ -1,6 +1,6 @@
 import {describe,expect,test} from 'bun:test'
 import {canonical,digest,parseTimeL,quietCpuS,relativeDifference} from './ld01-receipts'
-import {TRAJECTORY_SECTIONS,environmentMismatch,judgeSpan,median} from './ld01-tier'
+import {TRAJECTORY_SECTIONS,builtS3Cases,environmentMismatch,judgePairs,judgeSpan,median} from './ld01-tier'
 
 const TIME_L=`       17.52 real        16.70 user         0.48 sys
            396132352  maximum resident set size
@@ -12,11 +12,27 @@ const TIME_L=`       17.52 real        16.70 user         0.48 sys
 `
 
 describe('LD-01 receipt tooling',()=>{
- test('R4-COST-RESOLUTION on T1: the median of three runs is judged against the 1 % band',()=>{
+ test('T1LOCK: the median of three paired differences is judged against the 1 % limit',()=>{
   expect(median([4.948e9,4.918e9,4.919e9])).toBe(4.919e9)
-  const pin={instructions:4.919e9,digest:'d'}
-  expect(judgeSpan(pin,{instructions:median([4.98e9,4.92e9,4.93e9]),digest:'d'}).verdict).toBe('pass')
-  expect(judgeSpan(pin,{instructions:median([4.98e9,4.92e9,4.93e9]),digest:'a repeat differs'}).verdict).toBe('fail')
+  const pin={instructions:4.936e9,digest:'d'}
+  const pair=(test:number,control:number,digest='d',controlDigest='d')=>({test:{instructions:test,digest},control:{instructions:control,digest:controlDigest}})
+  // The machine lifts both runs 2.6 % above the pin: no rise.
+  const lifted=judgePairs(pin,[pair(5.07e9,5.06e9),pair(5.04e9,5.05e9),pair(5.06e9,5.06e9)])
+  expect(lifted.verdict).toBe('pass')
+  expect(lifted.instructions_relative_difference).toBe(0)
+  // One outlying pair does not decide; a rise in the median does.
+  expect(judgePairs(pin,[pair(5.2e9,4.95e9),pair(4.95e9,4.95e9),pair(4.96e9,4.95e9)]).verdict).toBe('pass')
+  expect(judgePairs(pin,[pair(5.01e9,4.95e9),pair(5.00e9,4.95e9),pair(4.96e9,4.95e9)]).verdict).toBe('fail')
+  expect(judgePairs(pin,[pair(5.06e9,4.95e9)]).verdict).toBe('fail')
+  expect(judgePairs(pin,[pair(4.87e9,4.95e9)]).verdict).toBe('fail')
+  // Every digest counts, the control's too.
+  expect(judgePairs(pin,[pair(4.95e9,4.95e9),pair(4.95e9,4.95e9,'x'),pair(4.95e9,4.95e9)]).verdict).toBe('fail')
+  expect(judgePairs(pin,[pair(4.95e9,4.95e9),pair(4.95e9,4.95e9,'d','x'),pair(4.95e9,4.95e9)]).verdict).toBe('fail')
+  expect(judgePairs(undefined,[pair(1,1)]).verdict).toBe('no pin')
+ })
+ test('T1 takes the test binary from cargo\'s --no-run report and refuses without one',()=>{
+  expect(builtS3Cases('  Executable tests/matrix_rebuild.rs (/t/deps/matrix_rebuild-1)\n  Executable tests/s3_cases.rs (/t/deps/s3_cases-2)\n')).toBe('/t/deps/s3_cases-2')
+  expect(()=>builtS3Cases('Finished')).toThrow('no tests/s3_cases.rs')
  })
  test('time -l reports are summed over the test binaries of one cargo invocation',()=>{
   const r=parseTimeL(TIME_L)
