@@ -726,6 +726,10 @@ impl<S: JoinedSystem> Driver<S> {
             quadratures,
         })
     }
+    /// The I&C frame period.
+    pub fn frame_period_s(&self) -> f64 {
+        self.frame.period_s()
+    }
     /// R4-ENDED: the last accepted step's `y'`, when one is held.
     pub fn accepted_rates(&self) -> Option<&[f64]> {
         (!self.step_yp.is_empty()).then_some(&self.step_yp[..])

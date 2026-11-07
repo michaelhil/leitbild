@@ -1455,7 +1455,7 @@ impl Unit {
             .system()
             .integrated()
             .joined
-            .named_end(cause, p.driver.integrator_s(), yp)
+            .named_end(cause, p.driver.integrator_s(), p.driver.frame_period_s(), yp)
     }
 
     fn command(&mut self, v: &Value) -> Result<Value, String> {

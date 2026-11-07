@@ -1370,7 +1370,13 @@ impl<P: Properties + WaterProperties> Joined<P> {
     }
     /// R4-ENDED: the named end of a stop with this cause after the accepted
     /// state `(t, y')`, or `None`: a failure ([`domain_end`]'s table).
-    pub fn named_end(&self, cause: &str, accepted_s: f64, yp: &[f64]) -> Option<DomainEnd> {
+    pub fn named_end(
+        &self,
+        cause: &str,
+        accepted_s: f64,
+        frame_s: f64,
+        yp: &[f64],
+    ) -> Option<DomainEnd> {
         let i = self.network.pzr.base + stratified::VAPOR_MASS;
         let rate = yp.get(i)? * self.network.scales().get(i)?;
         domain_end::named_end(&domain_end::Stop {
@@ -1380,6 +1386,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
             neck: self.rods().map(|r| r.neck_cell()),
             accepted_s,
             vapor_mass_rate_kg_s: rate,
+            frame_s,
         })
     }
     pub fn roots(&mut self, t: f64, y: &[f64], yp: &[f64], out: &mut [f64]) -> Result<(), Failure> {

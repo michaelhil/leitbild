@@ -930,7 +930,8 @@ fn operator_trip_delay(case: Case, spec: &Value) -> Result<Option<f64>, String> 
 }
 
 /// S3-D39's labelled end: zone R's mass `m` (kg), draining at `rate`
-/// (kg/s), reaches exhaustion within the `step` (s) the solver attempts next.
+/// (kg/s), reaches exhaustion within `step` (s): the I&C frame, since the step
+/// the solver attempts next collapses to zero at a wall.
 fn zone_r_exhausts_within(m: f64, rate: f64, step: f64) -> bool {
     rate < 0. && step > 0. && m + rate * step <= 0.
 }
@@ -2821,8 +2822,7 @@ fn drive(
     driver.close_segment(ida, until).unwrap();
     let mut failure = outcome.as_ref().err().cloned();
     // S3-D39's labelled end (C3): a run that stops while the PZR's resident
-    // zone R drains to exhaustion within the step the solver attempts next
-    // ends there, labelled, at its last accepted step (as S3-D17 for C4);
+    // zone R drains to exhaustion within the I&C frame ends there, labelled, at its last accepted step (as S3-D17 for C4);
     // any other stop stays a failure.
     let mut labelled_end = Value::Null;
     if failure.is_some() && spec.get("labelledEnd").is_some() {
@@ -2836,7 +2836,7 @@ fn drive(
                 + leitbild_operating_plant::network::stratified::RESIDENT_MASS;
             let scale = joined.scales()[i];
             let (m, rate) = (ys[i] * scale, yps[i] * scale);
-            let exhausting = zone_r_exhausts_within(m, rate, s.current_step);
+            let exhausting = zone_r_exhausts_within(m, rate, driver.frame_period_s());
             labelled_end = json!({"declared": spec["labelledEnd"], "zone_r_mass_kg": m, "zone_r_rate_kg_s": rate,
                 "next_step_s": s.current_step, "last_accepted_s": t_last, "last_accepted_after_zero_s": t_last - zero,
                 "applies": exhausting, "refusal": failure});
