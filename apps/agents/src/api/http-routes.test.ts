@@ -150,16 +150,10 @@ describe('HTTP Routes', () => {
     expect(data[0]!.name).toBe('TestRoom')
   })
 
-  test('POST /rooms creates room with 201', async () => {
-    const res = await call(system, req('POST', '/rooms', { name: 'NewRoom' }), '/rooms')
-    expect(res?.status).toBe(201)
-    const data = await res!.json() as { value: { profile: { name: string } } }
-    expect(data.value.profile.name).toBe('NewRoom')
-  })
-
-  test('POST /rooms missing name returns 400', async () => {
-    const res = await call(system, req('POST', '/rooms', {}), '/rooms')
-    expect(res?.status).toBe(400)
+  test('the retired direct Room creation route cannot create a Room', async () => {
+    const res = await call(system, req('POST', '/rooms', { name: 'NewRoom', scope: { kind: 'resource' } }), '/rooms')
+    expect(res).toBeNull()
+    expect(system.rooms.listAllRooms()).toHaveLength(1)
   })
 
   test('GET /rooms/:name returns room', async () => {
