@@ -765,8 +765,12 @@ fn s3_settle_with_the_feed_train() {
                 .unwrap_or_else(|| panic!("settling.{}", c.key))
         })
         .collect();
-    let sg_threshold = settling["sgPressure_Pa"].as_f64().expect("settling.sgPressure_Pa");
-    let gen_fraction = settling["corePowerRelative"].as_f64().expect("settling.corePowerRelative");
+    let sg_threshold = settling["sgPressure_Pa"]
+        .as_f64()
+        .expect("settling.sgPressure_Pa");
+    let gen_fraction = settling["corePowerRelative"]
+        .as_f64()
+        .expect("settling.corePowerRelative");
     let cap_s = env_f64("LD01_S3_SETTLE_CAP_S");
     let cpu_cap_s = env_f64("LD01_S3_SETTLE_CPU_CAP_S");
     let dir = PathBuf::from(env("LD01_S3_SETTLE_DIR"));
@@ -816,12 +820,20 @@ fn s3_settle_with_the_feed_train() {
     let (t0, n) = (unit.t0, unit.n);
     // The governed acceptance reads GEN.WT, the governor's lagged power
     // coordinate, against the load request in force.
-    let gen_watt_at = n + leitbild_operating_water::electrical::N + leitbild_operating_plant::turbine::governor::W;
+    let gen_watt_at = n
+        + leitbild_operating_water::electrical::N
+        + leitbild_operating_plant::turbine::governor::W;
     let request_w = unit.ida.system().governor.as_ref().map(|g| g.held.to_w);
-    assert_eq!(request_w.is_some(), turbine.is_some(), "the governor composed as asked");
-    let ic_sha256 = turbine
-        .is_some()
-        .then(|| leitbild_operating_plant::digest::sha256(&std::fs::read(&inputs.ic_path).expect("the IC section")));
+    assert_eq!(
+        request_w.is_some(),
+        turbine.is_some(),
+        "the governor composed as asked"
+    );
+    let ic_sha256 = turbine.is_some().then(|| {
+        leitbild_operating_plant::digest::sha256(
+            &std::fs::read(&inputs.ic_path).expect("the IC section"),
+        )
+    });
     let mut gen_watts: std::collections::VecDeque<f64> = std::collections::VecDeque::new();
     let packet_json: Value = inputs.spine.packet_json().expect("packet json");
     let section: leitbild_operating_plant::sg::packet::Section =
@@ -861,7 +873,8 @@ fn s3_settle_with_the_feed_train() {
         &plant.y[..n],
         &plant.yp[..n],
     );
-    let mut window: std::collections::VecDeque<Vec<Vec<f64>>> = std::collections::VecDeque::from([first]);
+    let mut window: std::collections::VecDeque<Vec<Vec<f64>>> =
+        std::collections::VecDeque::from([first]);
     if request_w.is_some() {
         gen_watts.push_back(plant.y[gen_watt_at]);
     }
@@ -876,7 +889,9 @@ fn s3_settle_with_the_feed_train() {
             break;
         }
         if t - t0 >= cap_s {
-            failure = Some(format!("simulated cap {cap_s} s reached before the thresholds held"));
+            failure = Some(format!(
+                "simulated cap {cap_s} s reached before the thresholds held"
+            ));
             break;
         }
         k += 1;
@@ -965,8 +980,18 @@ fn s3_settle_with_the_feed_train() {
             history.push(last.clone());
             eprintln!(
                 "S3 feed settle t = {t:.1} s: SG ranges {:?}, feed - steam {:?}, CPU {:.1} s",
-                last["per_sg"].as_array().unwrap().iter().map(|s| s["sg_pressure_range_pa"].as_f64().unwrap()).collect::<Vec<_>>(),
-                last["per_sg"].as_array().unwrap().iter().map(|s| s["feed_minus_steam_max_kg_s"].as_f64().unwrap()).collect::<Vec<_>>(),
+                last["per_sg"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|s| s["sg_pressure_range_pa"].as_f64().unwrap())
+                    .collect::<Vec<_>>(),
+                last["per_sg"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|s| s["feed_minus_steam_max_kg_s"].as_f64().unwrap())
+                    .collect::<Vec<_>>(),
                 process_cpu_s() - started
             );
         }
@@ -1016,7 +1041,18 @@ fn s3_settle_with_the_feed_train() {
         receipt["governed"] = json!({"rule": "R4-REPIN-GOV-SETTLE (lead 1 Nov): the governor composed as in the governed cases; acceptance adds GEN.WT's window range and largest offset from the request, each <= settling.corePowerRelative x the request (judgement: the core-power settling threshold applied to generator output)",
             "ic_section": {"path": inputs.ic_path, "sha256": sha}});
     }
-    std::fs::write(dir.join("receipt.json"), serde_json::to_vec_pretty(&receipt).unwrap()).unwrap();
-    println!("{}", json!({"verdict": receipt["verdict"], "failure": receipt["failure"], "reached_s": t, "cpu": total_cpu_s}));
-    assert!(receipt["failure"].is_null(), "the S3 feed settle failed: {:?}", receipt["failure"]);
+    std::fs::write(
+        dir.join("receipt.json"),
+        serde_json::to_vec_pretty(&receipt).unwrap(),
+    )
+    .unwrap();
+    println!(
+        "{}",
+        json!({"verdict": receipt["verdict"], "failure": receipt["failure"], "reached_s": t, "cpu": total_cpu_s})
+    );
+    assert!(
+        receipt["failure"].is_null(),
+        "the S3 feed settle failed: {:?}",
+        receipt["failure"]
+    );
 }
