@@ -31,8 +31,7 @@ import type { PressTarget } from './display-dom.ts'
 import { createStackApi } from './stack-api.ts'
 
 const MATURE_SHARE = 0.97
-/** The display generations' sample requests: today's vignette and the pre-swap composed display. */
-const SAMPLE_URL = String.raw`/displays/sample|display\.sample/invoke`
+const SAMPLE_URL = '/displays/sample'
 
 const mature = async (origin: string, workspaceId: string, definitionId: string): Promise<void> => {
   const api = createStackApi(origin, workspaceId)
@@ -181,7 +180,6 @@ const mainThread = (events: ReadonlyArray<any>, origin: string) => {
 /** R3's drawing names an item's magnifier by its short name. */
 const SHORT_NAMES: Readonly<Record<string, string>> = { 'Steam Generator A': 'SG A', Pressurizer: 'PZR', 'Reactor Core': 'Core', 'Reactor Coolant Pump A': 'RCP A' }
 const VIGNETTE_ITEMS = ['Steam Generator A', 'Pressurizer', 'Reactor Core', 'Reactor Coolant Pump A']
-const OLD_ITEMS = ['Quick look: SG A', 'Control · Quick look: PZR', 'Control · Quick look: Core', 'Control · Quick look: RCP A']
 
 const measure = async (origin: string, workspaceId: string, runId: string, out: string, argv: ReturnType<typeof options>): Promise<void> => {
   const api = createStackApi(origin, workspaceId)
@@ -222,8 +220,9 @@ const measure = async (origin: string, workspaceId: string, runId: string, out: 
     const opened = Date.now()
     await page.click({ sel: 'button', text: 'Open process display for Halden Unit 1' })
     const firstOpenMs = await paintedAfter(page, opened, 'Halden Unit 1', 120_000)
-    const generation = await page.eval<string>(`(() => { const shown = ${SHOWN_EMBED}; return shown === null ? 'none' : shown.doc.querySelector('article.vignette') ? 'vignette' : 'old' })()`)
-    result.generation = generation
+    const showsVignette = await page.eval<boolean>(`Boolean((${SHOWN_EMBED})?.doc.querySelector('article.vignette'))`)
+    if (!showsVignette) throw new Error('Expected the current vignette display')
+    result.generation = 'vignette'
     result.firstOpenMs = Math.round(firstOpenMs)
     await page.shot(join(shots, '1-first-open.png'))
 
@@ -298,10 +297,10 @@ const measure = async (origin: string, workspaceId: string, runId: string, out: 
     }
     await page.shot(join(shots, '2-after-play.png'))
 
-    // Pop-overs (the pre-swap display's faceplates) on four drawn items.
+    // Faceplates on four drawn items.
     const popoverMs: Array<{ item: string; shownMs: number; contentMs?: number; paintedMs: number | null; words?: string }> = []
-    for (const item of generation === 'vignette' ? VIGNETTE_ITEMS : OLD_ITEMS) {
-      const target = generation === 'vignette' ? { sel: `.flow [role=button][aria-label^="${item}"]` } : { sel: `button[aria-label^="${item}"]` }
+    for (const item of VIGNETTE_ITEMS) {
+      const target = { sel: `.flow [role=button][aria-label^="${item}"]` }
       // An item scrolled out of the frame (the narrow window) is scrolled into view first, as a person would.
       await page.eval(`(() => { const shown = ${SHOWN_EMBED}; const el = shown && shown.doc.querySelector(${JSON.stringify(target.sel)}); if (el) el.scrollIntoView({ block: 'center', inline: 'center' }); return el !== null })()`)
       await sleep(300)
@@ -309,8 +308,8 @@ const measure = async (origin: string, workspaceId: string, runId: string, out: 
       // Its magnifier: the one on the same drawn item as the body that names it, or the one under the item's short
       // name on the drawing (a symbol's body carries no item of its own); scrolled into view first.
       const magnifierOf = (targets: ReadonlyArray<PressTarget>, bodyItem: string | null | undefined) => targets.find(entry => entry.kind === 'magnifier' && ((bodyItem != null && entry.item === bodyItem) || entry.name === SHORT_NAMES[item]))
-      const body = generation === 'vignette' ? (await targetsOf(page)).find(entry => entry.kind === 'item' && entry.name.startsWith(item)) : undefined
-      const first = generation === 'vignette' ? magnifierOf(await targetsOf(page), body?.item) : undefined
+      const body = (await targetsOf(page)).find(entry => entry.kind === 'item' && entry.name.startsWith(item))
+      const first = magnifierOf(await targetsOf(page), body?.item)
       if (first !== undefined) {
         await page.eval(`(() => { const shown = ${SHOWN_EMBED}; const el = shown && [...shown.doc.querySelectorAll('[data-magnifier]')].find(m => m.getAttribute('data-magnifier') === ${JSON.stringify(first.item ?? '')} || ((m.getAttribute('aria-label') || m.getAttribute('title') || '').replace(/^(Open|Faceplate:|Quick look:?)\\s+/i, '').startsWith(${JSON.stringify(SHORT_NAMES[item] ?? item)}))); if (el) el.scrollIntoView({ block: 'center', inline: 'center' }); return !!el })()`)
         await sleep(300)
@@ -327,7 +326,7 @@ const measure = async (origin: string, workspaceId: string, runId: string, out: 
       const contentMs = shownMs < 0 ? -1 : await page.until(`(() => { const pop = ${card}; return pop !== null && pop.querySelector('.section, section, table, .status:not(:empty), .readings, obc-readout-list') !== null && !/Reading the element|Reading [^\\n]{1,40}…/.test(pop.innerText) })()`, 30_000, 20).then(ms => ms + shownMs, () => -1)
       const words = shownMs < 0 ? null : await page.eval<string | null>(`(() => { const pop = ${card}; const status = pop && pop.querySelector('.status'); return status ? status.textContent.trim().slice(0, 160) : null })()`)
       // Its first own sample painted: the pop-over's view, not the window's.
-      const paintedMs = generation === 'vignette' && contentMs >= 0 ? await paintedAfter(page, at, undefined, 10_000, true).then(Math.round, () => null) : null
+      const paintedMs = contentMs >= 0 ? await paintedAfter(page, at, undefined, 10_000, true).then(Math.round, () => null) : null
       popoverMs.push({ item, shownMs, contentMs, paintedMs, ...(words === null ? {} : { words }) })
       await page.shot(join(shots, `3-popover-${item.replace(/[^A-Za-z0-9]+/g, '-')}.png`))
       await page.key('Escape')

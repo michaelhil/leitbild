@@ -3,7 +3,7 @@
  * presses) stay in containment.ts; the chat card at 480 px is chat-cards.ts.
  *
  *   bun scripts/display-eval/render-matrix.ts --origin=http://127.0.0.1:<port> --workspace=<id> --runA=<Run A> --runB=<Run B>
- *       --out=<dir> [--label=<stack>] [--sizes=1920,1440,1280,1046] [--themes=day,dusk] [--runs=A,B]
+ *       --out=<dir> [--label=<stack>] [--sizes=1920x1080,1440x900,1280x800,1920x1080+chat] [--themes=day,dusk] [--runs=A,B]
  *       [--details=Pressurizer,Steam Generator A,Reactor Core,deck:4] [--port=<CDP port>] [--unit="Halden Unit 1"]
  * A detail "deck:<n>" is the n-th display after the overview in the window's deck (deck:4: the grid, W9.3).
  *
@@ -216,7 +216,7 @@ if (import.meta.main) {
   const label = argv.get('label') ?? new URL(origin).port
   const port = Number(argv.get('port') ?? 44334)
   const unit = argv.get('unit') ?? 'Halden Unit 1'
-  const sizes = (argv.get('sizes') ?? '1920,1440,1280,1046').split(',').map(sizeSpec)
+  const sizes = (argv.get('sizes') ?? '1920x1080,1440x900,1280x800,1920x1080+chat').split(',').map(sizeSpec)
   const themes = (argv.get('themes') ?? 'day,dusk').split(',') as Theme[]
   const runs = (argv.get('runs') ?? 'A,B').split(',') as RunName[]
   const details = (argv.get('details') ?? 'Pressurizer,Steam Generator A,Reactor Core,deck:4').split(',').filter(Boolean)

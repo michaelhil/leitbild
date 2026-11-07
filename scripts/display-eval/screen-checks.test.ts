@@ -141,21 +141,22 @@ describe('what a press opened', () => {
 })
 
 describe('the rendering matrix', () => {
-  test('sizes: the legacy names and <w>x<h>[+chat]', () => {
-    expect(sizeSpec('1046')).toEqual({ name: '1046', width: 1920, height: 1080, chat: true })
+  test('sizes use explicit dimensions and an optional chat flag', () => {
+    expect(sizeSpec('1920x1080+chat')).toEqual({ name: '1920x1080+chat', width: 1920, height: 1080, chat: true })
     expect(sizeSpec('1440x900+chat')).toEqual({ name: '1440x900+chat', width: 1440, height: 900, chat: true })
     expect(() => sizeSpec('wide')).toThrow()
+    expect(() => sizeSpec('1046')).toThrow()
   })
   test("CSF row: production's chips under the title fail; R2's on the title row within 560 px pass", () => {
-    expect(csfRow(production, sizeSpec('1920'), 'B').pass).toBe(false)
+    expect(csfRow(production, sizeSpec('1920x1080'), 'B').pass).toBe(false)
     const compact = screen(r2.lines.map(entry => entry.region === 'header' && entry.text !== 'Halden Unit 1' ? { ...entry, x: 1400, w: 60 } : entry))
-    expect(csfRow(compact, sizeSpec('1920'), 'B').pass).toBe(true)
+    expect(csfRow(compact, sizeSpec('1920x1080'), 'B').pass).toBe(true)
   })
   test('viewport: leads, the count and three rows on screen', () => {
     const state = { leads: [{ label: 'AFW header flow', value: '113 kg/s' }, { label: 'PZR pressure', value: '13.66 MPa' }] } as unknown as DisplayState
-    expect(viewport(state, r2, sizeSpec('1046')).pass).toBe(true)
+    expect(viewport(state, r2, sizeSpec('1920x1080+chat')).pass).toBe(true)
     const off = screen(r2.lines.map(entry => entry.region === 'alerts' ? { ...entry, on: false, valueOn: false } : entry))
-    expect(viewport(state, off, sizeSpec('1046')).pass).toBe(false)
+    expect(viewport(state, off, sizeSpec('1920x1080+chat')).pass).toBe(false)
   })
 })
 

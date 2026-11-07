@@ -1,7 +1,6 @@
 /** Reads what the display window shows, in the page, for the acceptance scripts: the frame's clock word, the
  * worst chip, the lead rows, the alerts, the drawn items an alert frames, and every value with whether its box
- * holds it (plan v5 §5.1, §5.5). Two display generations are read: today's vignette (`display.vignette`, base and
- * later) and the pre-swap composed display (`process-plant.display`, OLD 724ae2ac8), each by its own markup.
+ * holds it (plan v5 §5.1, §5.5).
  *
  * Containment: a value's text (every text node under it, through shadow roots and slots, not a hidden spacer) must
  * lie inside every ancestor that does not let overflow show, as CSS clips it (an absolutely placed box escapes the
@@ -15,7 +14,7 @@
 import type { Page } from './browser.ts'
 
 /** Opens a unit's overview from the rail's monitor button and waits for its frame. A press the page takes before it
- * is ready opens nothing (seen on the pre-swap display), so it presses again, at most three times. */
+ * is ready can open nothing, so it presses again, at most three times. */
 export const openUnitDisplay = async (page: Page, unit: string): Promise<void> => {
   const shown = `lb.documents().some(d => d.frame && /\\/world\\/embed\\//.test(d.frame.getAttribute('src') || '') && lb.shown(d.frame))`
   for (let attempt = 1; attempt <= 3; attempt += 1) {
@@ -43,7 +42,7 @@ export interface ValueBox {
   readonly px?: number
 }
 export interface DisplayState {
-  readonly generation: 'vignette' | 'old' | 'none'
+  readonly generation: 'vignette' | 'none'
   readonly frame: { readonly width: number; readonly height: number } | null
   readonly title: string | null
   /** LIVE, PAUSED or FROZEN, as the frame says it. */
@@ -216,40 +215,6 @@ const READER = `(scope) => {
     }
   }
 
-  if (doc.querySelector('article.card')) {
-    // The pre-swap composed display (OLD): its banner, state chip, lead column, alarm list, mimic and quick looks.
-    const card = doc.querySelector('article.card')
-    const look = doc.querySelector('.popover[aria-label]')
-    const root = scope === 'popover' ? look : card
-    if (!root) return { ...empty, generation: 'old' }
-    const values = []
-    // Lead readouts, the mimic's value and state rows, a quick look's values (ul.rows) and a faceplate's cells.
-    for (const el of root.querySelectorAll('ul.readouts .reading, ul.readouts .state, .value-row, .state-row, ul.rows .value, li.line .reading, li.line obc-status-indicator')) {
-      if (scope === 'window' && el.closest('.popover, [role=dialog]')) continue
-      const where = el.closest('.popover, [role=dialog]') ? 'popover' : el.closest('.mimic-panel') ? 'drawing' : el.closest('ul.readouts') ? 'column' : 'card'
-      const label = text(el.closest('li')?.querySelector('.head .name, :scope > .name, .tag') ?? el.closest('.stack')?.querySelector('.tag'))
-      values.push(valueBox(el, where, label, where === 'drawing' ? el.closest('.stack') : undefined))
-    }
-    const leads = [...card.querySelectorAll('section[aria-label="Lead values"] ul.readouts > li')].map(li => ({ label: text(li.querySelector('.head .name')), value: deepText(li.querySelector('.reading, .state') ?? doc.createElement('i')) }))
-    const alarms = card.querySelector('section.alarms')
-    const banner = card.querySelector('.banner')
-    const framed = [...card.querySelectorAll('.mimic-panel .item')].filter(item => item.querySelector('.frame-box')).map((item, index) => ({ item: String(index), tone: (item.querySelector('.flap-line')?.className ?? '').replace('flap-line', '').trim() || 'alert', name: text(item.querySelector('.stack .tag')) }))
-    return {
-      generation: 'old',
-      frame: { width: Math.round(frameRect.width), height: Math.round(frameRect.height) },
-      title: text(card.querySelector('.unit, h1')),
-      word: text(card.querySelector('.chip')).toUpperCase() || null,
-      sim: text(card.querySelector('.clock')) || null,
-      worst: banner && banner.classList.contains('trip') ? text(banner) : null,
-      chips: [...card.querySelectorAll('.csf')].map(chip => ({ label: chip.getAttribute('aria-label') || '', value: text(chip) })),
-      leads,
-      alerts: alarms ? { heading: text(alarms.querySelector('h2')) || text(alarms.querySelector('.empty')), rows: [...alarms.querySelectorAll('li')].map(text), more: text(alarms.querySelector('.more')) || null } : null,
-      framed, framedSymbols: framed.length, outlined: [],
-      values,
-      text: text(card),
-      popover: look ? { title: look.getAttribute('aria-label') || '', ready: look.querySelector('section') !== null } : null,
-    }
-  }
   return empty
 }`
 

@@ -192,20 +192,11 @@ const PAGE_DIALOG_CLOSE = `(() => {
   return null
 })()`
 
-/** A screen size of the rendering matrix (§5.5): the viewport and whether the Assistant's chat is open. The legacy
- * names stay: 1920 (1920 × 1080), 1046 (1920 × 1080 with the chat open, which leaves the display 1046 px), 1440
- * (1440 × 900) and 1280 (1280 × 800); any other is `<w>x<h>` with an optional `+chat`. */
+/** A viewport and whether the Assistant's chat is open. */
 export interface SizeSpec { readonly name: string; readonly width: number; readonly height: number; readonly chat: boolean }
 export const sizeSpec = (name: string): SizeSpec => {
-  const legacy: Record<string, SizeSpec> = {
-    '1920': { name, width: 1920, height: 1080, chat: false },
-    '1046': { name, width: 1920, height: 1080, chat: true },
-    '1440': { name, width: 1440, height: 900, chat: false },
-    '1280': { name, width: 1280, height: 800, chat: false },
-  }
-  if (legacy[name]) return legacy[name]!
-  const match = name.match(/^(\d+)x(\d+)(\+chat)?$/)
-  if (!match) throw new Error(`size ${name}: use 1920, 1046, 1440, 1280 or <w>x<h>[+chat]`)
+  const match = name.match(/^([1-9]\d*)x([1-9]\d*)(\+chat)?$/)
+  if (!match) throw new Error(`size ${name}: use <width>x<height>[+chat]`)
   return { name, width: Number(match[1]), height: Number(match[2]), chat: match[3] !== undefined }
 }
 

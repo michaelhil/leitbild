@@ -47,10 +47,11 @@ export const csfRow = (screen: Screen, size: SizeSpec, run: 'A' | 'B'): MatrixCh
   const cut = chips.filter(chip => !chip.on)
   const onTitleRow = title !== undefined && chips.some(chip => Math.abs(chip.y - title.y) <= 12)
   const width = Math.round(right - left)
-  const widthOk = size.name !== '1920' || run !== 'B' || width <= 560
+  const checkWidth = size.width === 1920 && size.height === 1080 && !size.chat && run === 'B'
+  const widthOk = !checkWidth || width <= 560
   return {
     id: `csf-row-${size.name}-run-${run}`, release: 'R2', pass: onTitleRow && widthOk && cut.length === 0,
-    detail: `${chips.length} chips, ${width} px wide in ${tops} row${tops === 1 ? '' : 's'}; ${onTitleRow ? 'on the title row' : `not on the title row (title at y ${title?.y ?? '?'}, chips from y ${Math.min(...chips.map(chip => chip.y))})`}${cut.length > 0 ? `; cut: ${cut.slice(0, 4).map(chip => `"${chip.text.slice(0, 24)}"`).join(', ')}` : '; none cut'}${size.name === '1920' && run === 'B' ? `; ${width <= 560 ? '≤' : '>'} 560 px` : ''}`,
+    detail: `${chips.length} chips, ${width} px wide in ${tops} row${tops === 1 ? '' : 's'}; ${onTitleRow ? 'on the title row' : `not on the title row (title at y ${title?.y ?? '?'}, chips from y ${Math.min(...chips.map(chip => chip.y))})`}${cut.length > 0 ? `; cut: ${cut.slice(0, 4).map(chip => `"${chip.text.slice(0, 24)}"`).join(', ')}` : '; none cut'}${checkWidth ? `; ${width <= 560 ? '≤' : '>'} 560 px` : ''}`,
   }
 }
 
