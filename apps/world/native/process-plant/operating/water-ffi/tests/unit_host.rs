@@ -158,8 +158,41 @@ fn frame(payload: &[u8]) -> Frame {
     }
 }
 
-fn advance(host: &mut Host, t1: f64) -> (Vec<u8>, f64) {
-    let r = host.ok(ADVANCE, &t1.to_le_bytes());
+/// Wall time of each ADVANCE as a host sees it: request to reply, `(t1, s)`.
+#[derive(Default)]
+struct AdvanceWalls(Vec<(f64, f64)>);
+
+impl AdvanceWalls {
+    /// One ADVANCE, timed.
+    fn timed(&mut self, host: &mut Host, t1: f64) -> Reply {
+        let started = Instant::now();
+        let reply = host.request(ADVANCE, &t1.to_le_bytes());
+        self.0.push((t1, started.elapsed().as_secs_f64()));
+        reply
+    }
+    /// The worst ADVANCE and the worst run of `per_second` consecutive ones,
+    /// the wall of one 1 s exchange, with the series.
+    fn receipt(&self, per_second: usize) -> Value {
+        let longer = |w: (f64, f64), a: (f64, f64)| if a.1 > w.1 { a } else { w };
+        let worst = self.0.iter().copied().fold((0., 0.), longer);
+        let window = self
+            .0
+            .windows(per_second.max(1))
+            .map(|w| (w[w.len() - 1].0, w.iter().map(|a| a.1).sum::<f64>()))
+            .fold((0., 0.), longer);
+        json!({"count": self.0.len(), "worst_s": worst.1, "worst_t1": worst.0,
+            "worst_1s_exchange_s": window.1, "worst_1s_exchange_ending_t1": window.0, "series": self.0})
+    }
+}
+
+fn advance(host: &mut Host, walls: &mut AdvanceWalls, t1: f64) -> (Vec<u8>, f64) {
+    let r = walls.timed(host, t1);
+    assert_eq!(
+        r.status,
+        0,
+        "ADVANCE to {t1} s refused: {}",
+        String::from_utf8_lossy(&r.payload)
+    );
     (r.payload, r.cpu_s)
 }
 
@@ -223,6 +256,7 @@ fn a_restored_copy_continues_bitwise_and_the_protocol_refuses_explicitly() {
     let loaded = a.json(LOAD, &serde_json::to_vec(&load).unwrap());
     let t0 = bits_of(&loaded["t_bits"]);
     let period = loaded["frame_s"].as_f64().expect("frame_s");
+    let exchanges_per_second = (1. / period).round() as usize;
     let k0 = (t0 / period).round() as u64;
     let instant = |k: u64| (k0 + k) as f64 * period;
     let channels = a.json(CHANNELS, &[]);
@@ -331,8 +365,9 @@ fn a_restored_copy_continues_bitwise_and_the_protocol_refuses_explicitly() {
     let mut operated = Vec::new();
     let mut trace = Vec::new();
     let mut a_cpu = 0.;
+    let (mut a_walls, mut b_walls) = (AdvanceWalls::default(), AdvanceWalls::default());
     for k in 1..=copy_at {
-        let (p, cpu) = advance(&mut a, instant(k));
+        let (p, cpu) = advance(&mut a, &mut a_walls, instant(k));
         a_cpu += cpu;
         let f = frame(&p);
         for (_, command, accepted) in operator.iter().filter(|(at, ..)| *at == k) {
@@ -363,7 +398,7 @@ fn a_restored_copy_continues_bitwise_and_the_protocol_refuses_explicitly() {
     let mut a_frames = Vec::new();
     let mut a_failed: Option<(u64, String)> = None;
     for k in copy_at + 1..=end {
-        let r = a.request(ADVANCE, &instant(k).to_le_bytes());
+        let r = a_walls.timed(&mut a, instant(k));
         a_cpu += r.cpu_s;
         if r.status != 0 {
             a_failed = Some((k, String::from_utf8_lossy(&r.payload).into_owned()));
@@ -394,7 +429,7 @@ fn a_restored_copy_continues_bitwise_and_the_protocol_refuses_explicitly() {
     let mut b_failed: Option<(u64, String)> = None;
     let last = a_failed.as_ref().map_or(end, |f| f.0);
     for k in copy_at + 1..=last {
-        let r = b.request(ADVANCE, &instant(k).to_le_bytes());
+        let r = b_walls.timed(&mut b, instant(k));
         b_cpu += r.cpu_s;
         if r.status != 0 {
             b_failed = Some((k, String::from_utf8_lossy(&r.payload).into_owned()));
@@ -464,6 +499,7 @@ fn a_restored_copy_continues_bitwise_and_the_protocol_refuses_explicitly() {
         "channels": ids.len(),
         "cpu_s": {"a_advance": a_cpu, "a_copy_point": copy_cpu, "b_restore": restore_cpu, "b_advance": b_cpu},
         "wall_s": started.elapsed().as_secs_f64(),
+        "advance_wall_s": {"a": a_walls.receipt(exchanges_per_second), "b": b_walls.receipt(exchanges_per_second)},
         "a_status": a_status, "refusals": refusals, "operated": operated, "trace_to_copy_point": trace,
         "load": load,
     });
@@ -529,9 +565,10 @@ fn a_refused_state_stops_the_unit_by_name() {
     host.ok(COMMAND, &serde_json::to_vec(&open).unwrap());
     // The cause arrives as a refusal, or in the `ended` event once a named
     // domain end holds the unit (R4-ENDED): the same text either way.
+    let mut walls = AdvanceWalls::default();
     let cause = (2..800)
         .find_map(|k| {
-            let r = host.request(ADVANCE, &((k0 + k) as f64 * period).to_le_bytes());
+            let r = walls.timed(&mut host, (k0 + k) as f64 * period);
             if r.status != 0 {
                 return Some(String::from_utf8(r.payload).expect("UTF-8 cause"));
             }
@@ -540,6 +577,11 @@ fn a_refused_state_stops_the_unit_by_name() {
         })
         .expect("the relief's run ends in a refused state");
     std::fs::write(receipts.join("time-stopped.cause.txt"), &cause).expect("receipt");
+    std::fs::write(
+        receipts.join("advance-wall.json"),
+        serde_json::to_vec_pretty(&walls.receipt((1. / period).round() as usize)).unwrap(),
+    )
+    .expect("receipt");
     assert!(cause.contains("solver time stopped"), "{cause}");
     assert!(cause.contains("the solid-PZR structural limit"), "{cause}");
     // Fail-stop: the next ADVANCE carries the same cause; STATUS and CLOSE work.
