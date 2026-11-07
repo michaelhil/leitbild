@@ -38,7 +38,7 @@
       "algebraic_before": 109,
       "clusters": 52,
       "constraint_rate_within_bound": true,
-      "opening_transactions": 1,
+      "opening_transactions": 3,
       "placements": 0,
       "projection_passes": 0,
       "rate_passes": 1,
@@ -71,7 +71,7 @@
   "environment": {
     "if97_revision": "0be7b51f35c47e59e6f91f4f0f47108bf997e50c",
     "metastable_page_sha256": "a5372c930399eae3535e2924e2e6c51001d51f1578f77456df6c3679eb51ff6c",
-    "packet_sha256": "9e1e6aa94dd980544c3af6cdda6ad662ce90f660fb33e987ea812ff3018c13b1",
+    "packet_sha256": "e1bc9d898945ce6235534ea1c77ad445b39711d0b7230db58e4eeee6470c4303",
     "s1_gates_sha256": "708aca3b870d6b561a40fa1a6c1c923db8caed40bc5b3a2e72ebf17a86a4c91a",
     "sundials_version": "7.5.0",
     "water_adapter_sha256": "a10b1fd75e8b9ce58d060193e1e8330bc5abdc7e3bfd1205cc562840688e5dd0"
