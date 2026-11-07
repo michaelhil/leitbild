@@ -111,9 +111,11 @@ pub struct ConsistentPair {
 /// own rows, `(dF_d/dy') y' = -F_d(y, 0)` over every rate including the
 /// algebraic ones, and the algebraic rows are the constraints' time
 /// derivative, `(dg/dy) y' = 0`. The constraints (EOS and volume rows) are
-/// autonomous, so there is no `dg/dt` term. The rows are linear in `y'`, so
-/// one pass is exact; at most `passes` passes are taken as a check. Refuses,
-/// Fatal and naming the row, when a bound is missed.
+/// autonomous, so there is no `dg/dt` term. The rows are linear in `y'` but
+/// for R4-VAPOR-IMPULSE's `min(I', 0) Q`, which needs a second pass: no row
+/// reads an impulse's rate, so the first gives every rate `I'` reads. At most
+/// `passes` passes are taken. Refuses, Fatal and naming the row, when a bound
+/// is missed.
 pub fn consistent_rates<S: ConsistentSystem>(
     system: &mut S,
     t: f64,

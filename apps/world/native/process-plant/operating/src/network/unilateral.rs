@@ -376,14 +376,6 @@ impl<P: Properties> Network<P> {
     pub(super) fn unilateral_locked(&self, li: usize) -> bool {
         self.unilateral.as_ref().is_some_and(|u| u.is_locked(li))
     }
-    /// R4-MOUTH-INERTIA: the inertia of the vapor the free surge-mouth path
-    /// must accelerate on the PZR side, `(αρ)_port ∫ds/A`, with the port
-    /// view's own `αρ`, the factor of the path's mass flow when the PZR is
-    /// its donor. With S3-D37's donor outside face 34's supports, `Q = Π/I`
-    /// on the SURGE supports alone makes `w = (αρ)_port Π/I` unbounded as
-    /// SURGE's vapor vanishes; a donor inside the path's inertia bounds
-    /// `|w| <= |Π|/∫ds/A`, as on a path whose donor is a support. `None`
-    /// off that path, without L1, locked, or with no bubbles at the port.
     /// R4-VAPOR-IMPULSE: the rate of a path's support inertia. `rate` is each
     /// support region's `M' - M V'/V`, the rate of the phase density's
     /// numerator; `M'` is the row's own `y'`, also where the vapor mass is an
@@ -403,6 +395,14 @@ impl<P: Properties> Network<P> {
             })
     }
 
+    /// R4-MOUTH-INERTIA: the inertia of the vapor the free surge-mouth path
+    /// must accelerate on the PZR side, `(αρ)_port ∫ds/A`, with the port
+    /// view's own `αρ`, the factor of the path's mass flow when the PZR is
+    /// its donor. With S3-D37's donor outside face 34's supports, `Q = Π/I`
+    /// on the SURGE supports alone makes `w = (αρ)_port Π/I` unbounded as
+    /// SURGE's vapor vanishes; a donor inside the path's inertia bounds
+    /// `|w| <= |Π|/∫ds/A`, as on a path whose donor is a support. `None`
+    /// off that path, without L1, locked, or with no bubbles at the port.
     pub(super) fn mouth_inertance(&self, li: usize, cells: &[flow::Cell]) -> Option<Scalar> {
         let (mouth, per_m) = self.mouth?;
         let free = self
