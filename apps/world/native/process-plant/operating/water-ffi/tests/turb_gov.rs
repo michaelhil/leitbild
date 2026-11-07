@@ -16,6 +16,9 @@
 //! requests from the fraction in force at `from`, merged with the steps),
 //! `LD01_TURB_OUT`, `LD01_TURB_STATE_OUT` (optional: the end state, in the
 //! saved S3 state's form, governed; written once, only after a full run).
+//!
+//! The `governor_start` tests compose only: `LD01_S3_STATE` ungoverned, and
+//! `LD01_TURB_GOVERNED_STATE` a saved governed state of the same tuple.
 #![cfg(all(feature = "ida", target_os = "macos"))]
 mod common;
 #[allow(dead_code)]
@@ -782,4 +785,132 @@ fn turb_gov_jacobian_columns() {
         "turb_gov_jacobian_columns: {} columns, worst relative difference {worst:e}",
         columns.len()
     );
+}
+
+/// R4-TURB-VALVE-MARGIN: a governed composition on the ungoverned state.
+fn governed_start() -> (Inputs, Value, Turbine) {
+    let inputs = Inputs::from_env().unwrap_or_else(|e| panic!("{e}"));
+    let state: Value =
+        serde_json::from_slice(&std::fs::read(env("LD01_S3_STATE")).unwrap()).unwrap();
+    assert!(
+        saved_governor(&state).is_none(),
+        "LD01_S3_STATE is governed: a saved governor is restored, never started"
+    );
+    let turbine = Turbine::from_wiki(&env("LD01_TURB_WIKI")).unwrap_or_else(|e| panic!("{e}"));
+    (inputs, state, turbine)
+}
+
+/// The state's saved governor, as the composition reads it.
+fn saved_governor(state: &Value) -> Option<&Value> {
+    state
+        .pointer("/discrete_state/appended/electrical/governor")
+        .filter(|v| !v.is_null())
+}
+
+/// The composed unit's ADM opening.
+fn start_opening(unit: &s3::S3Unit) -> f64 {
+    use leitbild_operating_plant::turbine::governor;
+    unit.y[unit.n + electrical::N + governor::A]
+}
+
+#[test]
+#[ignore = "needs the S3 unit's environment, an ungoverned LD01_S3_STATE and LD01_TURB_WIKI"]
+fn governor_start_passes_the_start_steam() {
+    use leitbild_operating_plant::turbine::governor;
+    let (inputs, state, turbine) = governed_start();
+    let unit = s3::compose_governed(&inputs, &state, Solver::STOCK, &turbine)
+        .unwrap_or_else(|e| panic!("{e}"));
+    let (t, n) = (unit.t0, unit.n);
+    let opening = start_opening(&unit);
+    let sys = unit.ida.system();
+    let joined = &sys.integrated().joined;
+    let secondary = joined.secondary().expect("the SG owner");
+    let (o, scales) = (joined.offsets().secondary, joined.scales());
+    let full_open: f64 = secondary
+        .admission_terms(t)
+        .expect("the valve law")
+        .iter()
+        .map(|(i, c)| c * unit.y[o + i] * scales[o + i])
+        .sum();
+    let steam = secondary
+        .admitted_steam_kg_s(t)
+        .expect("the SG owner's steam");
+    assert!(
+        (opening * full_open - steam).abs() <= 1e-9 * steam,
+        "ADM {opening} of the full-open {full_open} kg/s does not pass the start's {steam} kg/s"
+    );
+    assert!(opening < 1., "ADM {opening} leaves the valve no margin");
+    let g = sys.governor.as_ref().expect("the governor");
+    assert_eq!(
+        g.held.scale_w.to_bits(),
+        (g.held.to_w / opening).to_bits(),
+        "the load reference's scale is the start's export over the opening"
+    );
+    // The tracking transfer: the law's demand at the start is the opening.
+    let law = g.law(
+        t,
+        g.held.to_w,
+        unit.y[n + slice::OMEGA],
+        unit.y[n + electrical::N + governor::I],
+    );
+    assert!(
+        (law.raw - opening).abs() <= 1e-12,
+        "the law's demand {} at ADM {opening}",
+        law.raw
+    );
+}
+
+/// The refusal both ways about the margin at which the start's steam is
+/// exactly the full-open valve.
+#[test]
+#[ignore = "needs the S3 unit's environment, an ungoverned LD01_S3_STATE and LD01_TURB_WIKI"]
+fn governor_start_refuses_beyond_the_full_open_valve() {
+    let (inputs, state, mut turbine) = governed_start();
+    let unit = s3::compose_governed(&inputs, &state, Solver::STOCK, &turbine)
+        .unwrap_or_else(|e| panic!("{e}"));
+    let margin = turbine.valve_margin.margin().unwrap();
+    let limit = margin * start_opening(&unit);
+    drop(unit);
+    assert!(
+        limit > 1.,
+        "this state's SG pressures are at or above the anchor, so no margin refuses it: {limit}"
+    );
+    let nominal = turbine.valve_margin.turbine_nominal_output_kw;
+    turbine.valve_margin.generator_rated_output_kw = nominal * limit * (1. + 1e-6);
+    let inside = s3::compose_governed(&inputs, &state, Solver::STOCK, &turbine)
+        .unwrap_or_else(|e| panic!("{e}"));
+    let opening = start_opening(&inside);
+    assert!(
+        opening <= 1. && opening > 1. - 2e-6,
+        "just inside the valve, ADM {opening}"
+    );
+    drop(inside);
+    turbine.valve_margin.generator_rated_output_kw = nominal * limit * (1. - 1e-6);
+    let Err(cause) = s3::compose_governed(&inputs, &state, Solver::STOCK, &turbine) else {
+        panic!("a start beyond the full-open valve composed");
+    };
+    assert!(cause.contains("beyond the full-open valve"), "{cause}");
+}
+
+/// A saved governed state restores as saved: a margin that refuses a start
+/// on the ungoverned state does not reach it.
+#[test]
+#[ignore = "needs the S3 unit's environment, LD01_TURB_WIKI and LD01_TURB_GOVERNED_STATE"]
+fn governor_start_leaves_a_saved_governed_state_as_saved() {
+    let (inputs, _, mut turbine) = governed_start();
+    let saved: Value =
+        serde_json::from_slice(&std::fs::read(env("LD01_TURB_GOVERNED_STATE")).unwrap()).unwrap();
+    let held = saved_governor(&saved).expect("LD01_TURB_GOVERNED_STATE is governed");
+    turbine.valve_margin.generator_rated_output_kw = turbine.valve_margin.turbine_nominal_output_kw;
+    let unit = s3::compose_governed(&inputs, &saved, Solver::STOCK, &turbine)
+        .unwrap_or_else(|e| panic!("{e}"));
+    assert!(
+        unit.receipt["governor"]["start"]["mode"]
+            .as_str()
+            .is_some_and(|m| m.starts_with("as saved")),
+        "{}",
+        unit.receipt["governor"]["start"]
+    );
+    let g = unit.ida.system().governor.as_ref().expect("the governor");
+    assert_eq!(serde_json::to_value(g.held).unwrap(), *held);
 }
