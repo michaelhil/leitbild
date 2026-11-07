@@ -69,8 +69,8 @@ pub mod guide;
 
 use crate::{
     joined::block::{
-        CellVolume, Class, Command, Coordinates, Fluid, Layout, OwnerAccount, Receipts, Rods,
-        Structure, Transaction, restored_time, snapshot_object, snapshot_time,
+        CellVolume, Class, Command, Coordinates, Crossing, Fluid, Layout, OwnerAccount, Receipts,
+        Rods, Structure, Transaction, restored_time, snapshot_object, snapshot_time,
     },
     local_flow::Phase,
     network::{Failure, Properties, Water, packet::Packet},
@@ -1910,7 +1910,7 @@ impl<P: Properties> Rods<P> for RodBlock {
         if rows.len() != self.layout.len() || x.len() != self.layout.len() {
             return Err(fatal("rods: account layout"));
         }
-        let (mut energy, mut rate) = (0., 0.);
+        let (mut energy, mut rate, mut drive) = (0., 0., 0.);
         // E-NUC: each motion class counts its members.
         for c in 0..self.groups.len() {
             let base = Self::base(c);
@@ -1926,11 +1926,28 @@ impl<P: Properties> Rods<P> for RodBlock {
                 Mode::Held | Mode::Driven | Mode::Seated => 0.,
             };
             rate += m * (self.mass * v * acceleration + self.mass * self.gravity * travel);
+            // R4-DRIVE-LEDGER: a driven class's `M g u` is the drive line's
+            // work, which crosses the unit's envelope. A ledger entry: no row
+            // reads it.
+            if self.modes[c] == Mode::Driven {
+                drive += m * self.mass * self.gravity * travel;
+            }
         }
+        let crossings = if drive == 0. {
+            Vec::new()
+        } else {
+            vec![Crossing {
+                port: "rod drive line".into(),
+                volume: 0,
+                mass_kg_s: 0.,
+                energy_w: drive,
+                tracer_kg_s: 0.,
+            }]
+        };
         Ok(OwnerAccount {
             mechanical_j: energy,
             mechanical_rate_w: rate,
-            crossings: Vec::new(),
+            crossings,
             received_heat_w: Vec::new(),
             power: self.captured,
         })
