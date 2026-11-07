@@ -1,26 +1,30 @@
 {
  "kind": "ld01-tier1-expectation",
  "platform": "macos-aarch64",
- "reason": "interim, R4-PZR-PI (lead 1 Nov, lane PZRP): the continuous PZR pressure master (PT1 lag, integral, spray stem as PZR coordinates), live spray (S-b) with the low-Reynolds restriction; packets pzrp-5b7a0eb-1, state carried by tests/pzr_state.rs",
- "recorded_from": "/Users/hilde/Documents/ChatGPT/Leitbild-research/reference-designs/property-candidates/operating-joined-spine-s2/resume-2026-10-14/tiers/t1-84bbcffea-20261102T002449Z",
- "app": "84bbcffea",
+ "reason": "R4-DUMP, R4-DUMP-ARM and R4-DUMP-TRANSFER: the post-trip bypass's Tavg mode, armed at the later of the reactor and turbine trips and held through a live bus transfer; ld01-bypass-no-load gains its mode and keys, so the packets differ from r4p's only in /secondary/bypass, /secondary/scope and provenance, and r4p's S3 state is carried bitwise. Interim (env-r4q.sh, wiki ca8510c): the single combined re-pin follows REPIN's re-settle. Control recorded under T1LOCK.",
+ "recorded_from": "/Users/hilde/Documents/ChatGPT/Leitbild-research/reference-designs/property-candidates/operating-joined-spine-s2/resume-2026-10-14/r4-world/t1-record-r4q-f9900ca70",
+ "app": "f9900ca70",
  "environment": {
-  "packet_sha256": "9e1e6aa94dd980544c3af6cdda6ad662ce90f660fb33e987ea812ff3018c13b1",
-  "state_sha256": "54e4df7ddfa5b5c8a231f0f5b10c42fc28b496ee3007924b4273ce4e94e3fa06",
+  "packet_sha256": "e1bc9d898945ce6235534ea1c77ad445b39711d0b7230db58e4eeee6470c4303",
+  "state_sha256": "29a728b62b1be9ee22b8e05abf946e4260b1d75e288c8b8e3f9defc8fc930719",
   "elec_packet_sha256": "f91fc8e5929c78ceddbb7355dc12a0785292cae59725794f2d52306d1326e6f7",
-  "wiki_commit": "620186f",
+  "wiki_commit": "ca8510c",
   "water_lib_dir": "/Users/hilde/Documents/ChatGPT/Leitbild-research/reference-designs/property-candidates/operating-water-sbtl-repin-97ad4d5",
   "sundials_prefix": "/Users/hilde/Documents/ChatGPT/Leitbild-research/reference-designs/property-candidates/idas-klu-7.5.0/prefix"
  },
  "instruction_tolerance": 0.01,
  "spans": {
   "C2@0": {
-   "instructions": 4936091702,
+   "instructions": 5194659448,
    "digest": "95b970b28fe75741a2590e69c318695764486857f211741d22233cda6911f132"
   },
   "C2@2.5": {
-   "instructions": 10508672685,
-   "digest": "f09ffc1fad5313890dfeab73503dda13a2333211733f9d903b534c734b0a6ada"
+   "instructions": 11547825931,
+   "digest": "d822fc390ed884e1a2f2c0db275fdd5cb3394da86d049dad8a3ee7e8eec044f6"
   }
+ },
+ "control": {
+  "binary": "/Users/hilde/Documents/ChatGPT/Leitbild-research/reference-designs/property-candidates/operating-joined-spine-s2/resume-2026-10-14/r4-world/t1-record-r4q-f9900ca70/control-s3_cases",
+  "sha256": "c973991090b50cb4bf91a9c3a15721fdfd51975aebc37ed5cb544a8775181c04"
  }
 }
