@@ -27,6 +27,15 @@ const evaluate = (condition: ProcessPlantProcedureCondition, target = plant) => 
 }
 
 describe('read-only procedure condition evidence', () => {
+  test('a setting is explicit configuration evidence and cannot substitute for achieved physical feedback', () => {
+    const setting = { type: 'setting', signal: processPlantSignalReferenceSchema.parse({ tagId: 'TURB-BYP-AUTO' }), operator: '==', value: true, unit: 'boolean' } as const
+    expect(processPlantProcedureConditionSchema.safeParse(setting).success).toBe(true)
+    expect(evaluate(setting)).toMatchObject({ status: 'satisfied', evidence: [{ type: 'setting', signal: { writable: true }, settingOperation: { available: false } }] })
+    expect(evaluate({ ...setting, type: 'comparison' })).toMatchObject({ status: 'unknown', evidence: [{ reason: expect.stringContaining('Writable commands') }] })
+    expect(evaluate({ type: 'setting', signal: processPlantSignalReferenceSchema.parse({ path: 'core.powerMw' }), operator: '>', value: 0, unit: 'MW' }))
+      .toMatchObject({ status: 'unknown', evidence: [{ reason: expect.stringContaining('requires a writable') }] })
+  })
+
   test('retains actual values, native metadata, model identity and simulation time without accepting any actuation', () => {
     const before = runtime.checkpoint()
     const result = evaluate(power(1))

@@ -19,7 +19,9 @@ export const answerProcessPlantResponseQuery = (config: {
   const input = processPlantResponseQuerySchema.parse(config.request.input)
   const plant = requirePlant(config.plants, input.targetObjectId)
   refuseInjectedFaultsIn(plant.plant.graph, input.condition)
+  refuseInjectedFaultsIn(plant.plant.graph, input.startingCondition)
   refuseInjectedFaultsIn(plant.plant.graph, input.comparisons)
   refuseInjectedFaultsIn(plant.plant.graph, input.afterOperations)
+  refuseInjectedFaultsIn(plant.plant.graph, input.unchangedSettings)
   return evaluateProcessPlantResponse({ ...config, plant, input })
 }

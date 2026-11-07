@@ -7,19 +7,21 @@ import type { ProcessPlantSignalReference, ProcessPlantSignalQuality } from './s
 import { processPlantEvidenceSignal, processPlantEvidenceVariable, normalizeProcessPlantProcedureEvidence, type ProcessPlantEvidenceSignal, type ProcessPlantEvidenceVariable } from './procedure-evidence-facts.ts'
 import type { ProcessPlantRuntimeInstance } from './runtime-instance.ts'
 import type { ProcessPlantVariableSnapshot } from './runtime/model.ts'
+import type { OperationRecord } from './operations/plant-operations.ts'
 import { processPlantIcComparisonOperatorSchema, type ProcessPlantIcComparisonOperator, type ProcessPlantIcSnapshot } from './runtime/ic/control-protection-model.ts'
 
 export type ProcedureConditionStatus = 'satisfied' | 'challenged' | 'unknown'
 export type ProcessPlantProcedureCondition =
   | { readonly type: 'ic-rule-state'; readonly ruleId: string; readonly field: 'active' | 'latched'; readonly value: boolean; readonly source: string }
   | { readonly type: 'comparison'; readonly signal: ProcessPlantSignalReference; readonly operator: ProcessPlantIcComparisonOperator; readonly value: number | boolean; readonly unit: ProcessUnit }
+  | { readonly type: 'setting'; readonly signal: ProcessPlantSignalReference; readonly operator: ProcessPlantIcComparisonOperator; readonly value: number | boolean; readonly unit: ProcessUnit }
   | { readonly type: 'all' | 'any'; readonly conditions: ReadonlyArray<ProcessPlantProcedureCondition> }
   | { readonly type: 'not'; readonly condition: ProcessPlantProcedureCondition }
   | { readonly type: 'vote'; readonly required: number; readonly conditions: ReadonlyArray<ProcessPlantProcedureCondition> }
 
 const conditionTreeSchema: z.ZodType<ProcessPlantProcedureCondition> = z.lazy(() => z.union([
   z.object({ type: z.literal('ic-rule-state'), ruleId: z.string().min(1), field: z.enum(['active', 'latched']), value: z.boolean(), source: z.string().min(1) }).strict(),
-  z.object({ type: z.literal('comparison'), signal: processPlantSignalReferenceSchema, operator: processPlantIcComparisonOperatorSchema, value: z.union([z.number().finite(), z.boolean()]), unit: processUnitSchema }).strict(),
+  z.object({ type: z.enum(['comparison', 'setting']), signal: processPlantSignalReferenceSchema, operator: processPlantIcComparisonOperatorSchema, value: z.union([z.number().finite(), z.boolean()]), unit: processUnitSchema }).strict(),
   z.object({ type: z.enum(['all', 'any']), conditions: z.array(conditionTreeSchema).min(1).max(128) }).strict(),
   z.object({ type: z.literal('not'), condition: conditionTreeSchema }).strict(),
   z.object({ type: z.literal('vote'), required: z.number().int().positive(), conditions: z.array(conditionTreeSchema).min(1).max(128) }).strict().refine(value => value.required <= value.conditions.length, 'vote required count cannot exceed condition count'),
@@ -58,6 +60,9 @@ export const processPlantProcedureBasisSchema = z.object({
 export type ProcessPlantProcedureBasis = z.infer<typeof processPlantProcedureBasisSchema>
 
 export interface ProcessPlantProcedureEvidence {
+  /** A configuration comparison never establishes achieved physical response. */
+  readonly type?: 'setting'
+  readonly settingOperation?: { readonly available: boolean; readonly latest?: OperationRecord }
   readonly reference: ProcessPlantSignalReference
   readonly signal?: ProcessPlantEvidenceSignal
   readonly variable?: ProcessPlantEvidenceVariable
@@ -128,10 +133,11 @@ export const evaluateProcessPlantProcedureCondition = (config: {
         ...(actual === undefined ? {} : { value: actual }), status, ...(reason === undefined ? {} : { reason }) })
       return status
     }
-    if (condition.type === 'comparison') {
+    if (condition.type === 'comparison' || condition.type === 'setting') {
       const binding = findProcessPlantSignalBinding(plant.plant.graph, condition.signal)
       const comparison = { operator: condition.operator, value: condition.value, unit: condition.unit }
-      const base = { reference: condition.signal, comparison, provenance: 'runtime-model' as const, instrumentationValidity: 'not-established' as const }
+      const base = { reference: condition.signal, comparison, provenance: 'runtime-model' as const, instrumentationValidity: 'not-established' as const,
+        ...(condition.type === 'setting' ? { type: 'setting' as const } : {}) }
       if (binding === undefined) {
         evidence.push({ ...base, quality: { status: 'unavailable', reason: 'Signal is absent from the current Plant graph.' }, status: 'unknown', rangeValidity: 'unavailable', reason: 'Signal is absent from the current Plant graph.' })
         return 'unknown'
@@ -158,14 +164,18 @@ export const evaluateProcessPlantProcedureCondition = (config: {
         ? variable.value < hardRange.min || variable.value > hardRange.max ? 'outside-declared-range' as const : 'within-declared-range' as const
         : 'no-declared-range' as const
       const reason = quality.status === 'unavailable' ? quality.reason
-        : binding.writable !== false || variable.writable !== false ? 'Writable commands/demands cannot establish physical response; use read-only feedback.'
+        : condition.type === 'setting' && (binding.writable !== true || variable.writable !== true) ? 'A setting comparison requires a writable configuration signal; it does not establish physical response.'
+        : condition.type === 'comparison' && (binding.writable !== false || variable.writable !== false) ? 'Writable commands/demands cannot establish physical response; use read-only feedback.'
         : variable.unit !== condition.unit ? `Condition unit ${condition.unit} does not match native signal unit ${variable.unit}.`
         : typeof variable.value !== typeof condition.value ? 'Condition value type does not match the signal value type.'
           : typeof variable.value === 'number' && !Number.isFinite(variable.value) ? 'Signal value is not finite.'
             : rangeValidity === 'outside-declared-range' ? 'Signal value is outside its declared hard range; no qualified range-bound interpretation is available.'
               : typeof variable.value === 'boolean' && condition.operator !== '==' && condition.operator !== '!=' ? 'Ordered comparisons require numeric values.' : undefined
       const status = reason === undefined ? compare(variable.value, condition.operator, condition.value) ? 'satisfied' : 'challenged' : 'unknown'
-      evidence.push({ ...base, signal: processPlantEvidenceSignal(binding), variable: processPlantEvidenceVariable(variable), quality, rangeValidity, status, ...(reason === undefined ? {} : { reason }) })
+      const latest = condition.type === 'setting' ? plant.operations?.latest(binding.path) : undefined
+      evidence.push({ ...base, signal: processPlantEvidenceSignal(binding), variable: processPlantEvidenceVariable(variable), quality, rangeValidity, status,
+        ...(condition.type === 'setting' ? { settingOperation: { available: plant.operations !== undefined, ...(latest === undefined ? {} : { latest }) } } : {}),
+        ...(reason === undefined ? {} : { reason }) })
       return status
     }
     if (condition.type === 'not') {
