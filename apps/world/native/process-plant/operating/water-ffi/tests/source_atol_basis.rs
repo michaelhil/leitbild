@@ -33,9 +33,13 @@ fn write_the_source_atol_basis() {
     let state_path = env("LD01_SOURCE_ATOL_STATE");
     let out = env("LD01_SOURCE_ATOL_OUT");
     assert!(!std::path::Path::new(&out).exists(), "never overwritten");
-    let state: Value = serde_json::from_slice(&std::fs::read(&state_path).expect("state"))
-        .expect("state json");
-    assert_eq!(state["packet"].as_str(), Some(packet_path.as_str()), "the state is of the spine's packet");
+    let state: Value =
+        serde_json::from_slice(&std::fs::read(&state_path).expect("state")).expect("state json");
+    assert_eq!(
+        state["packet"].as_str(),
+        Some(packet_path.as_str()),
+        "the state is of the spine's packet"
+    );
     let ids: Vec<&str> = packet["rods"]["clusters"]
         .as_array()
         .expect("clusters")
@@ -47,7 +51,11 @@ fn write_the_source_atol_basis() {
         .filter(|s| !s.is_empty())
         .map(|s| {
             s.split(',')
-                .map(|id| ids.iter().position(|c| *c == id.trim()).unwrap_or_else(|| panic!("{id}")))
+                .map(|id| {
+                    ids.iter()
+                        .position(|c| *c == id.trim())
+                        .unwrap_or_else(|| panic!("{id}"))
+                })
                 .collect()
         })
         .unwrap_or_default();
@@ -59,12 +67,19 @@ fn write_the_source_atol_basis() {
         .iter()
         .map(|x| f64::from_bits(u64::from_str_radix(x.as_str().expect("hex"), 16).expect("hex")))
         .collect();
-    assert_eq!(y.len(), started.joined.dimension(), "the state is of the composition's layout");
+    assert_eq!(
+        y.len(),
+        started.joined.dimension(),
+        "the state is of the composition's layout"
+    );
     let classes = ["RegionalPopulation", "Precursor"];
     let values = source_atol::basis_values(&started.joined, &y, &classes);
     for (label, v) in values.as_object().expect("values") {
         let v = v.as_f64().expect("number");
-        assert!(v.is_finite() && v > 0., "{label}: basis value {v} is not positive");
+        assert!(
+            v.is_finite() && v > 0.,
+            "{label}: basis value {v} is not positive"
+        );
     }
     let block = json!({
         "rule": "R4-NUC-SOURCE-ATOL", "budgetFraction": 0.25, "classes": classes,
@@ -75,5 +90,8 @@ fn write_the_source_atol_basis() {
         "values": values,
     });
     std::fs::write(&out, serde_json::to_vec(&block).unwrap()).unwrap();
-    eprintln!("ld01-source-atol basis: {} values written to {out}", block["values"].as_object().unwrap().len());
+    eprintln!(
+        "ld01-source-atol basis: {} values written to {out}",
+        block["values"].as_object().unwrap().len()
+    );
 }
