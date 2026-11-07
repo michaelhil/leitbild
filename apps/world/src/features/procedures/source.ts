@@ -84,19 +84,28 @@ const retain = async (directory: string, path: string, contents: string): Promis
 const bundleFor = (source: ProcedureSourceConfig, knowledge: Knowledge, retained = false) => {
   const prefix = `${source.procedurePath.replace(/\/$/, '')}/`
   const entries = knowledge.navigation()
+  const contents = new Map<string, string>()
+  const readContent = (path: string): string => {
+    let content = contents.get(path)
+    if (content === undefined) {
+      content = knowledge.read(path).content
+      contents.set(path, content)
+    }
+    return content
+  }
   const membership = source.documentPaths === undefined ? undefined : new Set(source.documentPaths)
   if (!retained && membership !== undefined) {
     if (membership.size === 0 || membership.size !== source.documentPaths!.length) throw new Error('Procedure source documentPaths must be nonempty and unique')
     const byPath = new Map(entries.map(entry => [entry.path, entry]))
     for (const path of membership) {
       const entry = byPath.get(path)
-      if (!entry || entry.hub || !isProcedureMarkdown(knowledge.read(path).content)) throw new Error(`Invalid procedure source member: ${path}`)
+      if (!entry || entry.hub || !isProcedureMarkdown(readContent(path))) throw new Error(`Invalid procedure source member: ${path}`)
     }
   }
   const selected = entries.filter(entry => (retained || (membership ? membership.has(entry.path) : entry.path.startsWith(prefix) && !entry.hub))
-    && isProcedureMarkdown(knowledge.read(entry.path).content))
+    && isProcedureMarkdown(readContent(entry.path)))
     .sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0)
-    .map(entry => ({ path: entry.path, content: knowledge.read(entry.path).content }))
+    .map(entry => ({ path: entry.path, content: readContent(entry.path) }))
   const snapshot: KnowledgeSnapshot = {
     revision: knowledge.revision,
     // A retained bundle is already the exact selected source, independent of
@@ -116,8 +125,10 @@ const bundleFor = (source: ProcedureSourceConfig, knowledge: Knowledge, retained
   // Retain direct technical Basis owners, not the transitive wiki. Explicit
   // step links keep this closure small, auditable and tied to authored evidence.
   const evidence = new Map(selected.map(document => [document.path, document]))
-  for (const document of documents) for (const step of document.steps) {
-    const hrefs = [
+  const checkedReferences = new Set<string>()
+  for (const document of documents) {
+    const tagReferences = document.tags.flatMap(tag => tag.source && /\.md(?:#[^\s]+)?$/.test(tag.source) ? [tag.source] : [])
+    const hrefs = document.steps.flatMap((step, index) => [
       ...step.blocks.filter(block => block.kind === 'basis').flatMap(block => [...block.text.matchAll(/\[[^\]]+\]\(([^)]+)\)/g)].map(match => match[1]!)),
       ...(step.assessment ? assessmentLeaves(step.assessment.condition).map(leaf => leaf.source) : []),
       ...(step.decisions ?? []).flatMap(decision => [
@@ -125,14 +136,21 @@ const bundleFor = (source: ProcedureSourceConfig, knowledge: Knowledge, retained
         ...(decision.observation ? [decision.observation.source] : []),
         ...(decision.applicability ? [decision.applicability.source] : []),
       ]),
-      ...document.tags.flatMap(tag => tag.source && /\.md(?:#[^\s]+)?$/.test(tag.source) ? [tag.source] : []),
-    ]
+      // Tags belong to the document. Validate them once, at their original
+      // position after the first step's references, rather than at every step.
+      ...(index === 0 ? tagReferences : []),
+    ])
     for (const href of hrefs) {
       if (/^[a-z][a-z0-9+.-]*:|^\//i.test(href)) continue
-      const [relative, section] = href.split('#')
+      const [relative, fragment] = href.split('#')
       const path = relative ? posix.normalize(posix.join(posix.dirname(document.sourcePath), decodeURIComponent(relative))) : document.sourcePath
-      const reference = knowledge.read(path, section ? { section: decodeURIComponent(section) } : {})
-      if (!evidence.has(path)) evidence.set(path, { path, content: knowledge.read(reference.path).content })
+      const section = fragment ? decodeURIComponent(fragment) : undefined
+      const key = JSON.stringify([path, section])
+      if (checkedReferences.has(key)) continue
+      // A retained path does not prove that a separately cited section exists.
+      if (section !== undefined) knowledge.read(path, { section })
+      if (!evidence.has(path)) evidence.set(path, { path, content: readContent(path) })
+      checkedReferences.add(key)
     }
   }
   snapshot.documents = [...evidence.values()].sort((a, b) => a.path.localeCompare(b.path))
@@ -177,6 +195,30 @@ export const createProcedureSourceService = (config: {
   const publicationPath = (source: ProcedureSourceConfig, revision: string) =>
     join(directory!, `${procedureSourceIdSchema.parse(source.sourceId)}-${sourceRevisionSchema.parse(revision)}.json`)
 
+  // One current and one retained publication per service, never a revision
+  // history. Immutable Knowledge identity and verified retained bytes are the
+  // reuse boundaries; the same revision with replacement bytes is not a hit.
+  let current: { readonly source: ProcedureSourceConfig; readonly knowledge: Knowledge; readonly bundle: ReturnType<typeof bundleFor> } | undefined
+  const currentBundle = (source: ProcedureSourceConfig, knowledge: Knowledge) => {
+    if (current?.source === source && current.knowledge === knowledge) return current.bundle
+    const bundle = bundleFor(source, knowledge)
+    current = { source, knowledge, bundle }
+    return bundle
+  }
+  let retained: { readonly source: ProcedureSourceConfig; readonly raw: string; readonly knowledge: Knowledge; bundle?: ReturnType<typeof bundleFor> } | undefined
+  const retainedPublication = (source: ProcedureSourceConfig, revision: string, raw: string) => {
+    if (retained?.source === source && retained.knowledge.revision === revision && retained.raw === raw) return retained
+    const knowledge = createKnowledge(JSON.parse(raw) as unknown)
+    if (knowledge.revision !== revision) throw new Error('Retained procedure publication revision does not match its pin')
+    retained = { source, raw, knowledge }
+    return retained
+  }
+  const freshResult = <T extends ProcedureCatalog | ProcedureDocument>(value: T): T => {
+    const result = structuredClone(value)
+    result.source.fetchedAt = nowIso()
+    return result
+  }
+
   // The configured directory is directly beneath the existing World dataDir.
   // Every first-use writer awaits directory + parent persistence, even if mkdir
   // was won by another writer or a previous attempt failed during fsync.
@@ -198,7 +240,7 @@ export const createProcedureSourceService = (config: {
   return {
     assertTargetApplicable: (document, object) => sourceFor(document.source.sourceId).assertTargetApplicable?.(document, object),
     listSources: () => [...sources],
-    readCatalog: async (request = {}) => bundleFor(sourceFor(request.sourceId), await load()).catalog,
+    readCatalog: async (request = {}) => freshResult(currentBundle(sourceFor(request.sourceId), await load()).catalog),
     readEvidence: async request => {
       // Evidence is pinned to one source's retained publication: with several sources, which one is never guessed.
       if (request.sourceId === undefined && sources.length > 1) {
@@ -210,16 +252,15 @@ export const createProcedureSourceService = (config: {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
         return rejectCapabilityInput(`Procedure source ${source.sourceId} has no retained publication at revision ${request.sourceRevision}: read evidence at a revision a procedure run of this source pinned.`)
       }
-      const retained = createKnowledge(JSON.parse(raw) as unknown)
-      if (retained.revision !== request.sourceRevision) throw new Error('Retained procedure publication revision does not match its pin')
+      const { knowledge } = retainedPublication(source, request.sourceRevision, raw)
       // A path, section or line range the retained publication does not hold is the caller's input, not a fault.
       try {
-        return retained.read(request.sourcePath, {
+        return structuredClone(knowledge.read(request.sourcePath, {
           revision: request.sourceRevision,
           ...(request.section === undefined ? {} : { section: request.section }),
           ...(request.startLine === undefined ? {} : { startLine: request.startLine }),
           ...(request.lineCount === undefined ? {} : { lineCount: request.lineCount }),
-        })
+        }))
       } catch (error) {
         return rejectCapabilityInput(error instanceof Error ? error.message : String(error))
       }
@@ -235,9 +276,8 @@ export const createProcedureSourceService = (config: {
           if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
         }
         if (raw !== undefined) {
-          const retained = createKnowledge(JSON.parse(raw) as unknown)
-          if (retained.revision !== request.sourceRevision) throw new Error('Retained procedure publication revision does not match its pin')
-          bundle = bundleFor(source, retained, true)
+          const publication = retainedPublication(source, request.sourceRevision, raw)
+          bundle = publication.bundle ??= bundleFor(source, publication.knowledge, true)
         }
       }
       if (!bundle) {
@@ -245,7 +285,7 @@ export const createProcedureSourceService = (config: {
         if (request.sourceRevision !== undefined && current.revision !== request.sourceRevision) {
           return rejectCapabilityTarget(`Procedure source ${source.sourceId} revision ${request.sourceRevision} is unavailable; it is not retained or currently published`)
         }
-        bundle = bundleFor(source, current)
+        bundle = currentBundle(source, current)
       }
       const document = bundle.documents.find(candidate => candidate.procedureId === request.procedureId)
       if (!document) return rejectCapabilityTarget(`Procedure ${request.procedureId} not found in source ${source.sourceId} at ${bundle.snapshot.revision}`)
@@ -256,7 +296,7 @@ export const createProcedureSourceService = (config: {
       // need a different document after deployment has replaced the latest wiki.
       await prepareDirectory()
       await retain(directory!, publicationPath(source, bundle.snapshot.revision), `${JSON.stringify(bundle.snapshot)}\n`)
-      return document
+      return freshResult(document)
     },
   }
 }
