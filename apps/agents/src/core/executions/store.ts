@@ -35,6 +35,20 @@ export interface ExecutionCall extends ExecutionCallSummary {
   readonly result?: ToolResult
 }
 
+/** Only the retained operation/schema facts used by the next-turn discovery
+ * memo. Full call arguments and outcomes remain available through getCall. */
+export interface ExecutionDiscoveryEvidence {
+  readonly operationId: string
+  readonly used: boolean
+  readonly target?: unknown
+  readonly inputSchema?: unknown
+}
+
+interface DiscoveryRow {
+  tool: 'workspace_call' | 'workspace_explore'
+  result_json: string
+}
+
 interface TurnRow {
   id: string; room_id: string; agent_id: string; started_at: number
   status: ExecutionTurn['status']; finished_at: number | null; reason: string | null; message_id: string | null
@@ -57,6 +71,9 @@ const callSummary = (row: CallSummaryRow): ExecutionCallSummary => ({
   ...(row.completed_at === null ? {} : { completedAt: row.completed_at }),
   ...(row.result_bytes === null ? {} : { resultBytes: row.result_bytes }),
 })
+const record = (value: unknown): Readonly<Record<string, unknown>> | undefined =>
+  typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Readonly<Record<string, unknown>> : undefined
+
 const encode = (value: unknown): string => {
   const encoded = JSON.stringify(value)
   if (encoded === undefined) throw new Error('Execution evidence must be JSON serializable')
@@ -192,6 +209,32 @@ export const createExecutionStore = (path: string) => {
       ).get(roomId, turnId, callId)
       if (!row) return undefined
       return { ...callSummary(row), arguments: JSON.parse(row.arguments_json), ...(row.result_json === null ? {} : { result: JSON.parse(row.result_json) as ToolResult }) }
+    },
+    readDiscoveryEvidence: (roomId: string, turnId: string): ExecutionDiscoveryEvidence[] => {
+      // Read outcomes together without arguments or per-call lookups. Keep
+      // JSON decoding in JS so exact strings, keys and nulls stay unchanged.
+      const rows = db.query<DiscoveryRow, [string, string]>(
+        `SELECT c.tool,c.result_json FROM calls c JOIN turns t ON t.id=c.turn_id
+         WHERE t.room_id=? AND t.id=? AND c.tool IN ('workspace_explore','workspace_call')
+           AND c.result_json IS NOT NULL ORDER BY c.started_at,c.rowid`,
+      ).all(roomId, turnId)
+      const evidence: ExecutionDiscoveryEvidence[] = []
+      for (const row of rows) {
+        const result = JSON.parse(row.result_json) as ToolResult | null
+        if (result?.success !== true) continue
+        const data = record(result.data)
+        const entries = row.tool === 'workspace_explore' ? data?.operations : data?.results
+        for (const value of Array.isArray(entries) ? entries : []) {
+          const entry = record(value)
+          if (typeof entry?.operationId !== 'string') continue
+          const used = row.tool === 'workspace_call' && entry.success === true
+          evidence.push({ operationId: entry.operationId, used,
+            ...(used && entry.target !== undefined ? { target: entry.target } : {}),
+            ...(entry.inputSchema === undefined ? {} : { inputSchema: entry.inputSchema }),
+          })
+        }
+      }
+      return evidence
     },
     deleteMessage: (roomId: string, messageId: string): void => {
       const turns = db.query<{ id: string }, [string, string]>('SELECT id FROM turns WHERE room_id=? AND message_id=?').all(roomId, messageId)

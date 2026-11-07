@@ -16,6 +16,37 @@ const identity = { id: 'turn-1', roomId: 'room-1', agentId: 'agent-1', startedAt
 const attempt = { id: 'call-1', tool: 'workspace_call', arguments: { exact: ['opaque:identifier', 12.123456789] }, providerCallId: 'provider-local', startedAt: 1001 }
 
 describe('durable execution evidence', () => {
+  test('discovery projects only operation evidence, preserves exact JSON subtrees, and leaves full recall intact', () => {
+    const store = open(path())
+    store.beginTurn(identity)
+    const target = { z: 'Østfold\u0000', nested: { second: 2, first: 1 }, numbers: [1e21, 1e-7, 1.2345678901234567] }
+    const inputSchema = { type: 'object', properties: { z: { const: null }, a: { enum: [false, 0, ''] } } }
+    const result = { success: true, data: { results: [
+      { operationId: 'accepted', success: true, target, inputSchema, data: 'full-output-'.repeat(1000) },
+      { operationId: 'refused', success: false, target: { ignored: true }, inputSchema: null },
+      { operationId: 'missing', success: true },
+      { operationId: 'numeric-success', success: 1, inputSchema: false },
+      { operationId: 'x\ud800y\u0000z', success: true },
+      null, 'not JSON text', [], 4, { operationId: 5, success: true },
+    ] } }
+    store.recordAttempt(identity.id, attempt)
+    store.recordOutcome(identity.id, attempt.id, result)
+    const projected = store.readDiscoveryEvidence(identity.roomId, identity.id)
+    expect(projected).toEqual([
+      { operationId: 'accepted', used: true, target, inputSchema },
+      { operationId: 'refused', used: false, inputSchema: null },
+      { operationId: 'missing', used: true },
+      { operationId: 'numeric-success', used: false, inputSchema: false },
+      { operationId: 'x\ud800y\u0000z', used: true },
+    ])
+    expect(JSON.stringify(projected[0]!.target)).toBe(JSON.stringify(target))
+    expect(JSON.stringify(projected[0]!.inputSchema)).toBe(JSON.stringify(inputSchema))
+    expect(JSON.stringify(projected)).not.toContain('full-output-')
+    expect(store.readDiscoveryEvidence('another-room', identity.id)).toEqual([])
+    expect(store.getCall(identity.roomId, identity.id, attempt.id)).toMatchObject({ arguments: attempt.arguments, result })
+    store.deleteRoom(identity.roomId)
+    expect(store.readDiscoveryEvidence(identity.roomId, identity.id)).toEqual([])
+  })
   test('process kill preserves committed outcome and unfinished attempt without inventing a result', async () => {
     const file = path()
     const child = Bun.spawn({ cmd: [process.execPath, '-e', `
