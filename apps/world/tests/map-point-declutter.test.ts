@@ -107,9 +107,11 @@ describe('fanning out map icons that would overlap', () => {
     const depot = Array.from({ length: 12 }, (_, index) => item(`d${index}`, 1010, 510))
     const row = Array.from({ length: 8 }, (_, index) => item(`r${index}`, 220 + index * 6, 740 + index * 2))
     const items = [...spread, ...depot, ...row]
-    const started = performance.now()
+    // fanOut is synchronous. Keep its compute budget independent of host scheduling.
+    const started = process.threadCpuUsage()
     const places = fanOut(items)
-    expect(performance.now() - started).toBeLessThan(100)
+    const { user, system } = process.threadCpuUsage(started)
+    expect((user + system) / 1_000).toBeLessThan(100)
     const drawn = placed(items, places)
     const near = (entry: FanItem) => Math.abs(entry.x - 1010) < 200 && Math.abs(entry.y - 510) < 200 || Math.abs(entry.x - 240) < 200 && Math.abs(entry.y - 747) < 200
     expect(closest(drawn.filter(near))).toBeGreaterThanOrEqual(apart - settled)
