@@ -1236,20 +1236,26 @@ impl<S: System> Ida<S> {
         result
     }
     /// R4-TIME-STOPPED: a state the model refuses is a wall no step can
-    /// cross, so stock IDA's step collapses onto it. Below the resolution of
-    /// `t` stock still accepts (`t + h == t`): its failure count is per step,
-    /// `hmin` is 0 and `mxstep` does not reach one-step mode, so success
-    /// would return forever with time unmoved. That is the failure, by name,
-    /// with the refusal that caused it. An exact comparison: no constant.
+    /// cross, so stock IDA's step collapses onto it. Stock keeps accepting
+    /// such steps: its failure count is per step, `hmin` is 0 and `mxstep`
+    /// does not reach one-step mode, so success would return forever. A step
+    /// stock could not tell from no step is the failure, by name, with the
+    /// refusal that caused it. [`crate::frame::same_instant`], stock's own
+    /// time fuzz, is the test, not `t + h == t`: a slow approach still moves
+    /// `t` by a few ulps per step and would creep for ever. It reads the step
+    /// stock took, because after an unacted root stock returns the rest of an
+    /// earlier step, which can be as short and is no failure.
     fn time_moved(&self, before: f64, status: c_int) -> Result<()> {
-        if status != IDA_SUCCESS || self.time > before {
+        if status != IDA_SUCCESS || !crate::frame::same_instant(before, self.time) {
+            return Ok(());
+        }
+        let step = self.stats()?.last_step;
+        if !crate::frame::same_instant(self.time, self.time + step) {
             return Ok(());
         }
         Err(format!(
-            "{TIME_STOPPED} at {} s: stock IDA accepted a step of {:e} s that does not advance time; last unavailable trial: {:?}",
-            self.time,
-            self.stats()?.last_step,
-            self.context.last_trial
+            "{TIME_STOPPED} at {} s: stock IDA accepted a step of {step:e} s, the same instant to stock; last unavailable trial: {:?}",
+            self.time, self.context.last_trial
         ))
     }
     /// Dense output (S3-D1 #7): stock IDAGetDky, the `k`-th derivative at

@@ -1217,38 +1217,41 @@ impl System for RefusedWall {
 
 #[test]
 fn a_refused_wall_stops_time_by_name_within_a_few_steps() {
-    // R4-TIME-STOPPED: the -25 % step's clock and approach rate, on the wall
-    // the law states. Without the name this loop never ends.
-    let rate_pa_s = 4e4;
-    let (mut y, mut yp) = ([WET_CONTACT_PRESSURE_MAX_PA - 2e3], [rate_pa_s]);
-    let mut ida = Ida::new(
-        RefusedWall { rate_pa_s },
-        Initial {
-            time: 5272.,
-            y: &y,
-            yp: &yp,
-            differential: &[1.],
-            absolute_tolerance: &[1.],
-            relative_tolerance: 1e-5,
-        },
-    )
-    .unwrap();
-    let mut stopped = None;
-    let mut accepted = 0;
-    while accepted < 1000 && stopped.is_none() {
-        match ida.step(6000., &mut y, &mut yp) {
-            Ok(_) => accepted += 1,
-            Err(e) => stopped = Some(e),
+    // R4-TIME-STOPPED, on the wall the law states. The unit's clock at the
+    // -25 % step's approach rate freezes `t`. The other two never reach
+    // `t + h == t`: a step still moves `t`, by a few ulps, for ever, so an
+    // exact comparison would never end them.
+    for (clock_s, rate_pa_s) in [(5272., 4e4), (3000., 1e3), (100., 4e4)] {
+        let (mut y, mut yp) = ([WET_CONTACT_PRESSURE_MAX_PA - 2e3], [rate_pa_s]);
+        let mut ida = Ida::new(
+            RefusedWall { rate_pa_s },
+            Initial {
+                time: clock_s,
+                y: &y,
+                yp: &yp,
+                differential: &[1.],
+                absolute_tolerance: &[1.],
+                relative_tolerance: 1e-5,
+            },
+        )
+        .unwrap();
+        let mut stopped = None;
+        let mut accepted = 0;
+        while accepted < 1000 && stopped.is_none() {
+            match ida.step(clock_s + 1e5, &mut y, &mut yp) {
+                Ok(_) => accepted += 1,
+                Err(e) => stopped = Some(e),
+            }
         }
+        let cause = stopped.expect("the wall stops the integration");
+        assert!(cause.starts_with(TIME_STOPPED), "{cause}");
+        assert!(cause.contains("hot thermal wet-contact domain"), "{cause}");
+        assert!(accepted < 200, "{accepted} accepted steps before the stop");
+        assert!(y[0] <= WET_CONTACT_PRESSURE_MAX_PA);
+        // The handle is fail-stopped: the failure cannot be stepped past.
+        assert_eq!(
+            ida.step(clock_s + 1e5, &mut y, &mut yp).unwrap_err(),
+            "IDA handle is fail-stopped"
+        );
     }
-    let cause = stopped.expect("the wall stops the integration");
-    assert!(cause.starts_with(TIME_STOPPED), "{cause}");
-    assert!(cause.contains("hot thermal wet-contact domain"), "{cause}");
-    assert!(accepted < 200, "{accepted} accepted steps before the stop");
-    assert!(y[0] <= WET_CONTACT_PRESSURE_MAX_PA);
-    // The handle is fail-stopped: the failure cannot be stepped past.
-    assert_eq!(
-        ida.step(6000., &mut y, &mut yp).unwrap_err(),
-        "IDA handle is fail-stopped"
-    );
 }
