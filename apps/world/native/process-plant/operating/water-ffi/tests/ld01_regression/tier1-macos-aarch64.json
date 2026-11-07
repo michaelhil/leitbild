@@ -1,30 +1,30 @@
 {
  "kind": "ld01-tier1-expectation",
  "platform": "macos-aarch64",
- "reason": "The one combined re-settle (lane REPIN, lead 7 Nov), wiki d714de9, new packets and states, six items. (1) R4-PZR-PI: the PZR PI master with live spray. (2) R4-DUMP, R4-DUMP-ARM, R4-DUMP-TRANSFER: the post-trip bypass's Tavg mode. (3) R4-NUC-POISON-EQ with the critical boron: joint root 1,537.199 ppm-eq at -0.016 K, poisons within 7.4e-5 of equilibrium at the settled state. (4) R4-REPIN-GOV-SETTLE: a governed twin of the feed-train settle; the load reference re-based 1,010.28 -> 1,003.412 MW through the Grid request path (lead's ruling B), recorded in the settle receipt; the valve is in effect fully open with no upward margin, so H1 and S2's return to the request start saturated, and in a 60 s hold GEN.WT leaves the 68.2 kW bound at +22 s; no headroom added. (5) R4-NUC-SOURCE-ATOL (lead 1 Nov): derived absolute tolerances on the nuclear populations and precursors (Solver.source_atol = derived, ld01-source-atol); error weights at power move by about 1e-3 relative, so trajectories and digests move at step level; no packet change; correctness fix, C2 worst 0.5 s +3.1 % accepted (lead), steady -18 %. On this tuple it also raises C5's worst 0.5 s 0.2075 (stock atol) -> 0.2198 (+5.9 %) and its worst frame 0.569 -> 0.697 at +135.7 s, accepted by the lead on the same reasoning. (6) R4-START-ASSEMBLY: digest-equal (C2 9d2fbc86, T2 655aa23b, C3 and C5 equal with and without it); WORLD5's shadow check 1,637 assemblies, 21,039,896 entries, 0 different. Instructions against the previous pin (b2b0d528f, r4q, 5.195 and 11.548 G): C2@0 5.195 -> 5.169 G (-0.5 %), C2@2.5 11.548 -> 11.279 G (-2.3 %). Why, one-run-set attribution, medians of 3 at load 5: C2@0 does not move with the code, the tuple, source atol or start assembly (5.163 to 5.174 G across the settings); the -0.5 % against the pin is within its run-to-run spread. C2@2.5: new code on the old tuple +0.1 %, the new tuple -2.6 % (11.243 G; the prepared state's share, not separated further), source atol +2.1 % (11.476 G), start assembly -1.7 %. RESTART's measure of the rises the previous pin already held: C2@0 +0.228 G entirely the wiki provenance hash (wiki 336 -> 462 files, tree_hash twice per process); C2@2.5 +1.049 G 22 % that hash, 77 % DUMP's trajectory inside the span. Cost against b2b0d528f, 3 a side, worst 0.5 s: C2 0.300 -> 0.232, C3 0.261 -> 0.235 (B-prod met), C5 0.207 -> 0.205; worst frames 0.643, 0.533, 0.524; steady (600 s) keeps 0.0038, 0.0039, 0.0026. Control recorded under T1LOCK.",
- "recorded_from": "r4-repin/t1-record-r4r",
- "app": "ed2aef23c",
+ "reason": "The valve-margin re-pin (lane REPIN, lead 7 Nov), on main 374cff427 + R4-VAPOR-IMPULSE, wiki f580470. (1) R4-TURB-VALVE-MARGIN (owner 7 Nov, \"Use 3.17 %, labelled\"): full-open admission 1,237,500/1,199,500 x the D2 anchor, DCD T10.2-1 over T10.1-1, a generator rating applied to steam flow as a labelled judgement because the DCD gives no valves-wide-open flow; it replaces the lead's ruling B, whose re-base is removed from the governed settle, and the request returns to the start's export, 1,010.282 MW. Governed compositions only: T1-T5 60 s digests equal with and without it (9d2fbc86, 655aa23b, c7947e69, 864fc4b4, 6bc5d524). (2) The packet pin moves to the landed wiki: ad64a0bf -> e79f5496, provenance only; the ungoverned settled state's y is bitwise r4r's, boron 1,537.199 unchanged. (3) R4-VAPOR-IMPULSE: digest-equal on these spans. Instructions against the previous pin (eb8fe7a75, r4r, 5.169 and 11.279 G): C2@0 5.169 -> 5.374 G (+4.0 %), C2@2.5 11.279 -> 11.477 G (+1.8 %), digests c6957835 and 1ff8c15f, unchanged. Why: the wiki provenance hash, 462 -> 509 files with the landed wiki (RESTART's measure: tree_hash twice per process). Medians of 3, one run set, load 12-40: base binary on the old tuple 5.200 and 11.366 G, on the new tuple 5.289 and 11.468 G (+0.089, +0.102 G); the valve-margin binary on the new tuple 5.306 and 11.462 G, within the run-to-run spread, as a governed-only change must be. The rest of the move against the pin is the machine's load at the record (the previous pin was recorded at load about 3); the kernel's share of the count moves with it (T1LOCK). Cost against the base 9014033ec (same native trajectory), 3 a side, every line keeps: worst 0.5 s C2 0.234, C3 0.236, C5 0.206; worst frames 0.65, 0.54, 0.53; steady (600 s) 0.0038, 0.0039, 0.0026. Governed start: opening 0.98308, full open 834.1 against 820 kg/s, GEN.WT offset 7.4 kW and range 5.3 kW at the accepted state, poisons within 9.0e-5. Control recorded under T1LOCK.",
+ "recorded_from": "r4-repin/t1-record-r4s-2",
+ "app": "924993811",
  "environment": {
-  "packet_sha256": "ad64a0bf641f1dd1fe1421531eafa875de0848034b6d850fb7dd482b9655f5cf",
-  "state_sha256": "a05ec2a2eadce30f502d222897135ca7c8daa4f00f3c92ae06334217be519558",
+  "packet_sha256": "e79f54964342c5cb437e20da5119650dec14f0196a16dc448a26298b1a76a543",
+  "state_sha256": "84b13de0a221deeb0bb42913539d3d320fb67a1f7b060409971117f9f2dc41f8",
   "elec_packet_sha256": "1e4f579e39d4a3e83f423d2a02229b5eccd7fdb1a2d977fb82c425b3d58b7f84",
-  "wiki_commit": "d714de9",
+  "wiki_commit": "f580470",
   "water_lib_dir": "../../operating-water-sbtl-repin-dd021f1",
   "sundials_prefix": "../../idas-klu-7.5.0/prefix"
  },
  "instruction_tolerance": 0.01,
  "spans": {
   "C2@0": {
-   "instructions": 5169475832,
+   "instructions": 5373983623,
    "digest": "c6957835d3e00894429c6d4f890a39a888b1b9470a9d41e2401d4926363ab819"
   },
   "C2@2.5": {
-   "instructions": 11278870739,
+   "instructions": 11476877788,
    "digest": "1ff8c15f51867d460ab34eb24fcd84aaf9d6c4dc11f6d9d8cd3e2a8d4e5bca99"
   }
  },
  "control": {
-  "binary": "r4-repin/t1-record-r4r/control-s3_cases",
-  "sha256": "bdf881cee61b1c0d9a208953bc64aeeddc22c287bbe723398feae4c5c8de5392"
+  "binary": "r4-repin/t1-record-r4s-2/control-s3_cases",
+  "sha256": "804619a529c932ff17df2f78b89c44957b057852bb2604c0af386ace388c510a"
  }
 }
