@@ -244,9 +244,9 @@ fn equilibrate_the_poisons() {
         model
             .rates(&eq, law.input(own.0, own.1), &mut at_own)
             .unwrap_or_else(|e| panic!("{e}"));
-        for k in 0..4 {
+        for (k, rate) in at_own.iter().enumerate() {
             let i = block.index(g, POISON0 + k);
-            yp[i] = at_own[k] / block.scales[i];
+            yp[i] = rate / block.scales[i];
         }
         groups.push(json!({"group": g, "fissions_per_s": f, "exposure_per_m2_s": phi,
             "before": before, "equilibrium": eq,
