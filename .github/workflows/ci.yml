@@ -28,6 +28,7 @@ jobs:
         with:
           bun-version-file: .bun-version
       - run: cargo test --locked
+      - run: cargo test --locked --release --test heater_shared_thermal_digest
       - run: cargo clippy --locked --all-targets -- -D warnings
       - run: cargo fmt --all -- --check
       - run: bun run tests/build-boundary.ts
