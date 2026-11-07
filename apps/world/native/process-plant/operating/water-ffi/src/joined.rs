@@ -591,9 +591,11 @@ pub fn consistent_start_exempting<P: Properties + WaterProperties>(
     lu.factor(&matrix)
         .map_err(|e| fatal(format!("rates: {e}")))?;
     report.factor_s.push(started.elapsed().as_secs_f64());
-    // The rows are linear in y', so one pass is exact; further passes, at
-    // most `passes`, only remove the first solve's round-off, as the
-    // network's dense consistent_rates does.
+    // The rows are linear in y' but for R4-VAPOR-IMPULSE's min(I', 0) Q, which
+    // these matrices at y' = 0 do not hold. No row reads an impulse's rate, so
+    // the first pass gives every rate I' reads and the second takes the term
+    // into the impulse rows; further passes, at most `passes`, only remove
+    // round-off.
     let mut yp = vec![0.; n];
     let mut residual = rows.clone();
     let constraint_rate = |yp: &[f64]| {

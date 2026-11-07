@@ -12,7 +12,8 @@
 //!   turbine trip at `t0 + 1 s`, advances in 0.1 s exchanges, snapshots at
 //!   `t_c` (`LD01_UNIT_HOST_COPY_EXCHANGE` exchanges after t0; the plan's
 //!   gate: 30, `t0 + 3 s`; the copy point is a restart in place) and
-//!   continues to `t_c + 30 s`. A refusal of the source after the copy point
+//!   continues to `t_c + 30 s`, or `LD01_UNIT_HOST_SPAN` exchanges past it.
+//!   A refusal of the source after the copy point
 //!   ends both runs there; the copy must refuse identically, and the gate
 //!   still fails. Process B restores the snapshot and makes the same
 //!   exchanges. Every exchange's reply payload (time, counts, the
@@ -175,7 +176,13 @@ fn a_restored_copy_continues_bitwise_and_the_protocol_refuses_explicitly() {
     let copy_at: u64 = env("LD01_UNIT_HOST_COPY_EXCHANGE")
         .parse()
         .expect("LD01_UNIT_HOST_COPY_EXCHANGE: a whole number of exchanges after t0");
-    let end = copy_at + 300;
+    // LD01_UNIT_HOST_SPAN: exchanges past the copy point, for a case the unit
+    // ends sooner.
+    let end = copy_at
+        + std::env::var("LD01_UNIT_HOST_SPAN").map_or(300, |v| {
+            v.parse()
+                .expect("LD01_UNIT_HOST_SPAN: a whole number of exchanges")
+        });
     std::fs::create_dir_all(&receipts).expect("receipt directory");
     // R4-FREE-STEPS: the LOAD request's stepping (free, the unit's default,
     // unless LD01_UNIT_HOST_STEPPING names frame-stops for the control run).
@@ -285,8 +292,8 @@ fn a_restored_copy_continues_bitwise_and_the_protocol_refuses_explicitly() {
     );
     // R4-DUMP (WORLD4's review 2): LD01_UNIT_HOST_COMMAND=<kind>@<exchange>
     // names the trip before the copy point, TurbineTripAcquired or
-    // ManualReactorTrip; unset, the acquired turbine trip at exchange 10.
-    // Any other form refuses.
+    // ManualReactorTrip, or the relief malfunction ReliefStuckOpen; unset,
+    // the acquired turbine trip at exchange 10. Any other form refuses.
     let (trip_kind, trip_at) = match std::env::var("LD01_UNIT_HOST_COMMAND") {
         Err(_) => ("TurbineTripAcquired".to_string(), 10_u64),
         Ok(v) => {
@@ -294,8 +301,8 @@ fn a_restored_copy_continues_bitwise_and_the_protocol_refuses_explicitly() {
                 .split_once('@')
                 .unwrap_or_else(|| panic!("LD01_UNIT_HOST_COMMAND={v}: <kind>@<exchange>"));
             assert!(
-                ["TurbineTripAcquired", "ManualReactorTrip"].contains(&kind),
-                "LD01_UNIT_HOST_COMMAND={v}: TurbineTripAcquired or ManualReactorTrip"
+                ["TurbineTripAcquired", "ManualReactorTrip", "ReliefStuckOpen"].contains(&kind),
+                "LD01_UNIT_HOST_COMMAND={v}: TurbineTripAcquired, ManualReactorTrip or ReliefStuckOpen"
             );
             let at: u64 = at
                 .parse()

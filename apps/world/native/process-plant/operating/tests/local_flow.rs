@@ -468,9 +468,6 @@ fn cancelling_signed_mass_is_not_an_empty_phase_onset() {
     }
 }
 
-/// R4-MOUTH-INERTIA: inertia held outside the supports adds to `I`, so a
-/// path whose supports empty keeps a finite `Q`; with none it is the plain
-/// law bit for bit.
 #[test]
 fn leaving_mass_takes_the_path_velocity() {
     use leitbild_operating_plant::local_flow::leaving_impulse_rate;
@@ -488,6 +485,9 @@ fn leaving_mass_takes_the_path_velocity() {
     }
 }
 
+/// R4-MOUTH-INERTIA: inertia held outside the supports adds to `I`, so a
+/// path whose supports empty keeps a finite `Q`; with none it is the plain
+/// law bit for bit.
 #[test]
 fn inertia_beyond_the_supports_keeps_the_flow_finite() {
     use leitbild_operating_plant::local_flow::{
