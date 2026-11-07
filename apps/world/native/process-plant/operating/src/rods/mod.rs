@@ -2295,7 +2295,9 @@ impl<P: Properties> Rods<P> for RodBlock {
             return Err(fatal("rods: reader layout"));
         }
         if cells.iter().any(|c| {
-            *c < self.regular && [self.lower, self.upper, self.main].contains(c) && moved(fluid, *c)
+            *c < self.regular
+                && [self.lower, self.upper, self.main, self.neck].contains(c)
+                && moved(fluid, *c)
         }) {
             out.extend(0..2 * self.groups.len());
         }
