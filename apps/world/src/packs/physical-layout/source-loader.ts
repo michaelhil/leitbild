@@ -52,5 +52,5 @@ export const loadPhysicalSourceAsset = async (data: RetainedPhysicalLayoutData):
   if (body === undefined) throw new Error('Live physical source discovery lost its intrinsic delivery')
   return { ...body, id: data.design.id, revision: data.design.digest, targetObjectId: data.owner.objectId,
     anchor: data.placement.anchor, bearing: data.placement.bearing,
-    ...('group' in data && data.group !== undefined ? {group:data.group} : {}) }
+    ...(data.group !== undefined ? {group:data.group} : {}) }
 }

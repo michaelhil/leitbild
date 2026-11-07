@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import type { Map as MapLibreMap } from 'maplibre-gl'
 import { packPhysicalSceneSchema, type PackPhysicalScene, type PhysicalSceneObject } from '../src/core/packs/scene.ts'
-import { resolvePhysicalDesign, currentPwrPhysicalDesignRef } from '../src/packs/physical-layout/design.ts'
-import { compilePhysicalObjects, physicalObjectsBounds } from '../src/packs/physical-layout/native/compile-scene.ts'
+import { resolvePhysicalDesign, pwrShutdownCoolingUnitPhysicalDesignRef } from '../src/packs/physical-layout/design.ts'
+import { compilePhysicalScene } from '../src/packs/physical-layout/native/drafting/compile-scene.ts'
 import { createPhysicalSceneController as createProductionPhysicalSceneController, detailEligible } from '../src/ui/map/physical-scene/controller.ts'
 import { preparePhysicalGeometry } from '../src/ui/map/physical-scene/preparation.ts'
 import { buildVisibleMeshes } from '../src/ui/map/physical-scene/geometry.ts'
@@ -121,17 +121,17 @@ describe('Physical scene validation, projection and inspection fragments', () =>
   })
 
   test('the real saved PWR delivery produces distinct credible lower and operating plans without source mutation', async () => {
-    const data = await resolvePhysicalDesign(currentPwrPhysicalDesignRef), objects = compilePhysicalObjects(data)
-    const real: PackPhysicalScene = { ...scene(objects), bounds: physicalObjectsBounds(objects), levels: data.source.levels.map(level => ({ ...level, cutHeight: level.elevation + level.cutHeight })) }
+    const data = await resolvePhysicalDesign(pwrShutdownCoolingUnitPhysicalDesignRef)
+    const real = compilePhysicalScene('unit', { ...data, owner: { objectId: 'plant:a' }, placement: { anchor: [11.47, 59.087], bearing: 0 } })
     const before = JSON.stringify(real)
     const lower = buildVisibleMeshes(real, defaultPhysicalSceneView(real.levels)), upper = buildVisibleMeshes(real, { ...defaultPhysicalSceneView(real.levels), levelId: 'operating' })
     expect(lower.some(mesh => mesh.object.subjectIds.includes('condenser'))).toBe(true)
     expect(upper.some(mesh => mesh.object.subjectIds.includes('turbine'))).toBe(true)
     expect(lower.some(mesh => mesh.object.kind === 'roof')).toBe(false)
-    expect(lower.filter(mesh => mesh.object.kind === 'slab').every(mesh => mesh.object.levelId === 'lower')).toBe(true)
+    expect(lower.filter(mesh => mesh.object.kind === 'slab').every(mesh => mesh.levelId === 'lower')).toBe(true)
     expect(lower.every(mesh => Number.isFinite(mesh.planPriority))).toBe(true)
     expect(lower.some(mesh => mesh.bounds.max[2] > mesh.bounds.min[2])).toBe(true)
-    expect(lower.filter(mesh => mesh.object.kind === 'door').some(mesh => mesh.lines.length > 0)).toBe(true)
+    expect(real.planDrawing?.views.find(view => view.levelId === 'lower')?.primitives.some(primitive => primitive.occurrenceId?.startsWith('door/'))).toBe(true)
     expect(lower.length).not.toBe(upper.length)
     expect(JSON.stringify(real)).toBe(before)
   })

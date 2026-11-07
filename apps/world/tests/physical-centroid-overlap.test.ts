@@ -4,7 +4,7 @@ import type {PhysicalSceneBounds} from '../src/core/packs/scene.ts'
 import {createPhysicalSpatialIndex,visitPhysicalSpatialBounds,physicalSpatialBoundsOverlap} from '../src/ui/map/physical-scene/spatial-index.ts'
 import {preparePhysicalSurfaceOwnership as before} from './fixtures/physical-layout/surface-ownership-before-centroid.ts'
 import {preparePhysicalSurfaceOwnership as current} from '../src/ui/map/physical-scene/surface-ownership.ts'
-import {resolvePhysicalDesign,pwrManifoldUnitPhysicalDesignRef,pwrManifoldCampusPhysicalDesignRef} from '../src/packs/physical-layout/design.ts'
+import {resolvePhysicalDesign,pwrShutdownCoolingUnitPhysicalDesignRef,pwrShutdownCoolingCampusPhysicalDesignRef} from '../src/packs/physical-layout/design.ts'
 import {compilePhysicalScene} from '../src/packs/physical-layout/native/drafting/compile-scene.ts'
 import {buildVisibleMeshes,type PhysicalMesh} from '../src/ui/map/physical-scene/geometry.ts'
 import {physicalSurfaceAnnotations} from '../src/ui/map/physical-scene/surface-annotations.ts'
@@ -42,9 +42,9 @@ const compare=(meshes:readonly PhysicalMesh[])=>{const a=before(meshes),b=curren
 // Register the source-derived view matrix as individual native cases. Scene
 // preparation is shared per Design, while each complete byte comparison has the
 // existing timeout and reports its own ref/floor/cut/scope on failure.
-for(const ref of[pwrManifoldUnitPhysicalDesignRef,pwrManifoldCampusPhysicalDesignRef]){
- const data=await resolvePhysicalDesign(ref);if(data.profile!=='drafting')throw Error('Expected exact R6 drafting source')
- describe(`actual R6 ${ref.id} preserves frozen ownership, render and picking bytes`,()=>{
+for(const ref of[pwrShutdownCoolingUnitPhysicalDesignRef,pwrShutdownCoolingCampusPhysicalDesignRef]){
+ const data=await resolvePhysicalDesign(ref);if(data.profile!=='drafting')throw Error('Expected current drafting source')
+ describe(`current ${ref.id} preserves frozen ownership, render and picking bytes`,()=>{
   let scene:ReturnType<typeof compilePhysicalScene>|undefined
   beforeAll(()=>{
    scene=compilePhysicalScene('equivalence',{...data,owner:{objectId:'owner'},placement:{anchor:[0,0],bearing:0}})

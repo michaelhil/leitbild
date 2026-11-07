@@ -1,20 +1,21 @@
 import { z } from 'zod'
 import { physicalSceneBoundsSchema, physicalSceneScopeSchema } from '../../core/packs/scene.ts'
-import { physicalSourceSchema } from './native/source.ts'
-import { physicalSourceSchema as campusPhysicalSourceSchema } from './native/campus/source.ts'
-import { physicalSourceSchema as explorerPhysicalSourceSchema } from './native/explorer/source.ts'
-import { physicalSourceSchema as architecturePhysicalSourceSchema } from './native/architecture/source.ts'
-import { physicalSourceSchema as draftingPhysicalSourceSchema } from './native/drafting/source.ts'
-import { draftingPhysicalCompilerRef, architecturePhysicalCompilerRef, campusPhysicalCompilerRef, explorerPhysicalCompilerRef, physicalCompilerRef } from './compiler-identity.ts'
+import { physicalSourceSchema } from './native/drafting/source.ts'
+import { draftingPhysicalCompilerRef } from './compiler-identity.ts'
 import { physicalCoverageEvidenceSchema, physicalCoverageIssues } from './coverage.ts'
-import { physicalDesignRequirementsSchema, physicalResolvedMemberSchema, physicalExplorerRequirementsSchema, physicalExplorerResolvedMemberSchema } from './requirements.ts'
+import { physicalDesignRequirementsSchema, physicalResolvedMemberSchema } from './requirements.ts'
+
+import { design as currentUnitDesign } from './pwr-full-unit-shutdown-cooling.design.json'
+import { design as currentCampusDesign } from './pwr-campus-shutdown-cooling.design.json'
 
 export const physicalLayoutPackId = 'physical-layout' as const
 const id = z.string().min(1).max(200)
 const digest = z.string().regex(/^[a-f0-9]{64}$/)
 export const physicalDesignRefSchema = z.object({ id, revision: id, digest }).strict()
-export const turbineIslandCorrespondenceSchema = z.object({ physicalElementId: id, elementId: id, relation: z.enum(['represents', 'partOf']) }).strict()
-export const physicalCorrespondenceSchema = turbineIslandCorrespondenceSchema.extend({ relation: z.enum(['represents', 'partOf', 'houses']) }).strict()
+export const isCurrentPhysicalDesign = (design: z.infer<typeof physicalDesignRefSchema>): boolean =>
+  [currentUnitDesign, currentCampusDesign].some(({ id, revision, digest }) =>
+    design.id === id && design.revision === revision && design.digest === digest)
+export const physicalCorrespondenceSchema = z.object({ physicalElementId: id, elementId: id, relation: z.enum(['represents', 'partOf', 'houses']) }).strict()
 const layoutShape = {
   type: z.literal('physical-layout'),
   design: physicalDesignRefSchema,
@@ -43,48 +44,25 @@ const validateCoverage = (data: CoverageInput, context: z.core.$RefinementCtx, a
   if (new Set(coverage).size !== coverage.length || coverage.length !== data.coverage.totalSubjects) issue('Coverage must partition the owner subjects')
 }
 
-/** Immutable original artifact profile, also the type imported by its frozen compiler. */
-export const turbineIslandLayoutDataSchema = z.object({ ...layoutShape,
-  bindings: z.array(turbineIslandCorrespondenceSchema).max(10_000),
-  compiler: z.object({ id: z.literal(physicalCompilerRef.id), digest: z.literal(physicalCompilerRef.digest) }).strict(),
-  source: physicalSourceSchema,
-}).strict().superRefine(validateCoverage)
-export type PhysicalLayoutData = z.infer<typeof turbineIslandLayoutDataSchema>
-
-export const campusLayoutDataSchema = z.object({ ...layoutShape,
-  compiler: z.object({ id: z.literal(campusPhysicalCompilerRef.id), digest: z.literal(campusPhysicalCompilerRef.digest) }).strict(),
-  source: campusPhysicalSourceSchema,
-  coverageDigest: digest,
-  coverageEvidence: physicalCoverageEvidenceSchema,
-  requirements: physicalDesignRequirementsSchema,
-  relatedMembers: z.array(physicalResolvedMemberSchema).max(64),
-}).strict().superRefine((data, context) => {
-  validateCoverage(data, context)
-  const issue = (message: string): void => context.addIssue({ code: 'custom', message })
-  if (data.owner.packId !== data.requirements.ownerPackId) issue('The retained owner Pack differs from the Design requirement')
-  if (data.coverageEvidence.modelRequirement.modelRef !== data.owner.modelRef || data.coverageEvidence.modelRequirement.modelDigest !== data.owner.modelDigest) issue('Coverage evidence names a different owner model')
-  for (const message of physicalCoverageIssues({ evidence: data.coverageEvidence, physicalIds: data.source.elements.map(element => element.id), ownerSubjectIds: [...data.coverage.representedSubjectIds, ...data.coverage.unplacedSubjectIds], bindings: data.bindings })) issue(message)
-  const required = data.requirements.relatedMembers
-  if (data.relatedMembers.length !== required.length || new Set(data.relatedMembers.map(member => member.role)).size !== required.length) issue('Related member resolution must match every Design role')
-  for (const requirement of required) {
-    const member = data.relatedMembers.find(member => member.role === requirement.role)
-    if (!member) { issue(`Related member does not satisfy its Design requirement: ${requirement.role}`); continue }
-    const { objectId: _objectId, ...resolution } = member
-    if (canonicalPhysicalJson(resolution) !== canonicalPhysicalJson(requirement)) issue(`Related member does not satisfy its Design requirement: ${requirement.role}`)
-  }
-  if (new Set([data.owner.objectId, ...data.relatedMembers.map(member => member.objectId)]).size !== data.relatedMembers.length + 1) issue('Design member roles must resolve to distinct owner objects')
-  const placement = data.requirements.placement
-  if (placement && (canonicalPhysicalJson(data.placement.anchor) !== canonicalPhysicalJson(placement.anchor) || data.placement.bearing !== placement.bearing || canonicalPhysicalJson(data.source.siteAnchor) !== canonicalPhysicalJson(placement.anchor))) issue('The fixed site source and admitted placement differ')
-  if (data.source.siteAnchor && !placement) issue('A georeferenced site requires an explicit placement requirement')
-})
-
-export type CampusPhysicalLayoutData = z.infer<typeof campusLayoutDataSchema>
 export const physicalApplicabilitySchema = z.object({ sourceDigest: digest, geometryDigest: digest, digest }).strict()
 export const physicalPresentationSchema = z.object({ scopes: z.array(physicalSceneScopeSchema), layers: z.array(z.object({ id, label: z.string().min(1).max(300), defaultVisible: z.boolean() }).strict()) }).strict()
 export const physicalPlacementGroupSchema = z.object({ id, label: z.string().min(1).max(300) }).strict()
-const validateExplorer = (data: Omit<z.infer<typeof explorerLayoutShape>, 'compiler'>, context: z.core.$RefinementCtx, additionalPhysicalIds: ReadonlyArray<string> = []): void => {
+const layoutDataShape = z.object({ ...layoutShape,
+  compiler: z.object({ id: z.literal(draftingPhysicalCompilerRef.id), digest: z.literal(draftingPhysicalCompilerRef.digest) }).strict(),
+  source: physicalSourceSchema,
+  coverageDigest: digest, coverageEvidence: physicalCoverageEvidenceSchema,
+  requirements: physicalDesignRequirementsSchema, relatedMembers: z.array(physicalResolvedMemberSchema).max(64),
+  physicalApplicability: physicalApplicabilitySchema,
+  presentation: physicalPresentationSchema, presentationDigest: digest,
+  group: physicalPlacementGroupSchema.optional(),
+}).strict()
+export const physicalLayoutDataSchema = layoutDataShape.superRefine((data, context) => {
+  const additionalPhysicalIds = data.source.routing?.connections.map(connection => connection.id) ?? []
   validateCoverage(data, context, additionalPhysicalIds)
   const issue = (message: string): void => context.addIssue({ code: 'custom', message })
+  if (!isCurrentPhysicalDesign(data.design)) {
+    issue(`Unsupported physical Design Revision: ${data.design.id}/${data.design.revision}`)
+  }
   if (data.owner.packId !== data.requirements.ownerPackId) issue('The retained owner Pack differs from the Design requirement')
   if (data.coverageEvidence.modelRequirement.modelRef !== data.owner.modelRef || data.coverageEvidence.modelRequirement.modelDigest !== data.owner.modelDigest) issue('Coverage evidence names a different owner model')
   for (const message of physicalCoverageIssues({ evidence: data.coverageEvidence, physicalIds: [...data.source.elements.map(element => element.id), ...additionalPhysicalIds], ownerSubjectIds: [...data.coverage.representedSubjectIds, ...data.coverage.unplacedSubjectIds], bindings: data.bindings })) issue(message)
@@ -113,45 +91,18 @@ const validateExplorer = (data: Omit<z.infer<typeof explorerLayoutShape>, 'compi
       ancestors.add(parent); parent = scopes.get(parent)?.parentId
     }
   }
-}
-const explorerLayoutShape = z.object({ ...layoutShape,
-  compiler: z.object({ id: z.literal(explorerPhysicalCompilerRef.id), digest: z.literal(explorerPhysicalCompilerRef.digest) }).strict(),
-  source: explorerPhysicalSourceSchema,
-  coverageDigest: digest, coverageEvidence: physicalCoverageEvidenceSchema,
-  requirements: physicalExplorerRequirementsSchema, relatedMembers: z.array(physicalExplorerResolvedMemberSchema).max(64),
-  physicalApplicability: physicalApplicabilitySchema,
-  presentation: physicalPresentationSchema, presentationDigest: digest,
-  group: physicalPlacementGroupSchema.optional(),
-}).strict()
-export const explorerLayoutDataSchema = explorerLayoutShape.superRefine(validateExplorer)
-export type ExplorerPhysicalLayoutData = z.infer<typeof explorerLayoutDataSchema>
-export const architectureLayoutDataSchema = explorerLayoutShape.extend({ compiler: z.object({ id: z.literal(architecturePhysicalCompilerRef.id), digest: z.literal(architecturePhysicalCompilerRef.digest) }).strict(), source: architecturePhysicalSourceSchema }).superRefine(validateExplorer)
-export type ArchitecturePhysicalLayoutData = z.infer<typeof architectureLayoutDataSchema>
-export const draftingLayoutDataSchema = explorerLayoutShape.extend({ compiler: z.object({ id: z.literal(draftingPhysicalCompilerRef.id), digest: z.literal(draftingPhysicalCompilerRef.digest) }).strict(), source: draftingPhysicalSourceSchema }).superRefine((data, context) => {
-  validateExplorer(data, context, data.source.routing?.connections.map(connection => connection.id) ?? [])
   if(data.source.routing && !data.requirements.includeGraphConnections)context.addIssue({code:'custom',message:'Routed graph connections require explicit owner connection coverage'})
   for(const dependency of data.source.sourceDependencies??[]){const member=data.requirements.relatedMembers.find(member=>member.role===dependency.role);if(!member?.physicalLayout||member.physicalLayout.physical.id!==dependency.sourceId)context.addIssue({code:'custom',message:`Derived source witness needs its exact physical member requirement: ${dependency.role}`})}
   for(const member of data.requirements.relatedMembers)if(member.physicalLayout&&!data.source.sourceDependencies?.some(witness=>witness.role===member.role))context.addIssue({code:'custom',message:`Physical member dependency needs an authored source/shape witness: ${member.role}`})
 })
-export type DraftingPhysicalLayoutData = z.infer<typeof draftingLayoutDataSchema>
-export type RetainedPhysicalLayoutData = PhysicalLayoutData | CampusPhysicalLayoutData | ExplorerPhysicalLayoutData | ArchitecturePhysicalLayoutData | DraftingPhysicalLayoutData
-const compilerMarkerSchema = z.object({ compiler: z.object({ id: z.enum([physicalCompilerRef.id, campusPhysicalCompilerRef.id, explorerPhysicalCompilerRef.id, architecturePhysicalCompilerRef.id, draftingPhysicalCompilerRef.id]) }).passthrough() }).passthrough()
-/** Select a known artifact before walking a large source; an unknown compiler never falls through. */
-export const physicalLayoutDataSchema = z.unknown().transform((input, context): RetainedPhysicalLayoutData => {
-  const marker = compilerMarkerSchema.safeParse(input)
-  if (!marker.success) { for (const issue of marker.error.issues) context.addIssue({ code: 'custom', path: issue.path, message: issue.message }); return z.NEVER }
-  const result = marker.data.compiler.id === physicalCompilerRef.id ? turbineIslandLayoutDataSchema.safeParse(input)
-    : marker.data.compiler.id === campusPhysicalCompilerRef.id ? campusLayoutDataSchema.safeParse(input) : marker.data.compiler.id === architecturePhysicalCompilerRef.id ? architectureLayoutDataSchema.safeParse(input) : marker.data.compiler.id === draftingPhysicalCompilerRef.id ? draftingLayoutDataSchema.safeParse(input) : explorerLayoutDataSchema.safeParse(input)
-  if (!result.success) { for (const issue of result.error.issues) context.addIssue({ code: 'custom', path: issue.path, message: issue.message }); return z.NEVER }
-  return result.data
-})
+export type RetainedPhysicalLayoutData = z.infer<typeof physicalLayoutDataSchema>
 
 /** Exact source authority; resolved Run member IDs are separate from reusable Design identity. */
 export const physicalDesignManifest = (data: RetainedPhysicalLayoutData) => ({
   sourceDigest: data.sourceDigest, bindingDigest: data.bindingDigest,
   modelRequirement: { modelRef: data.owner.modelRef, modelDigest: data.owner.modelDigest }, compiler: data.compiler,
-  ...('coverageDigest' in data ? { coverageDigest: data.coverageDigest, requirements: data.requirements } : {}),
-  ...('physicalApplicability' in data ? { physicalApplicability: data.physicalApplicability, presentationDigest: data.presentationDigest } : {}),
+  coverageDigest: data.coverageDigest, requirements: data.requirements,
+  physicalApplicability: data.physicalApplicability, presentationDigest: data.presentationDigest,
 })
 
 /** Stable JSON equality/hash input; arrays retain their authored order. */

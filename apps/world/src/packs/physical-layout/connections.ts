@@ -4,7 +4,6 @@ import type { RetainedPhysicalLayoutData } from './model.ts'
 
 /** Roles resolve within this admitted layout; physical drawings never infer a bay from a label. */
 export const physicalRequiredConnections = (data: RetainedPhysicalLayoutData): NonNullable<PackPhysicalSceneDescriptor['requiredConnections']> => {
-  if (!('requirements' in data)) return []
   const members = new Map([[data.requirements.ownerRole, data.owner.objectId], ...data.relatedMembers.map(member => [member.role, member.objectId] as const)])
   const objectFor = (role: string): string => members.get(role) ?? (() => { throw new Error(`Unresolved physical connection role: ${role}`) })()
   return data.requirements.connections.map(connection => ({

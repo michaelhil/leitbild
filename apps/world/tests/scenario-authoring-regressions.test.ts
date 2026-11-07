@@ -12,7 +12,7 @@ import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { createTestPackRuntimeAdapters, createTestScenarioRuntimeResolver, testPacks, testScenarioAuthoring } from './helpers.ts'
 import { testScenarioDefinitions } from './fixtures/scenarios.ts'
 import { fixtureDataOf, fixturePackId } from './fixtures/fixture-pack.ts'
-import { draftingLayoutDataSchema, canonicalPhysicalJson } from '../src/packs/physical-layout/model.ts'
+import { physicalLayoutDataSchema, canonicalPhysicalJson } from '../src/packs/physical-layout/model.ts'
 import { pwrShutdownCoolingCampusPhysicalDesignRef, pwrShutdownCoolingUnitPhysicalDesignRef } from '../src/packs/physical-layout/design.ts'
 
 const unitSettings = { speedMps: 15 }
@@ -73,7 +73,7 @@ test('five runtime Packs share one paused startup clock and retain static layout
     expect(run.snapshot().objects).toHaveLength(15)
     const layoutObjects = run.snapshot().objects.filter(object => object.packId === 'physical-layout')
     expect(layoutObjects.map(object => String(object.id)).sort()).toEqual(['layout:halden-1', 'layout:halden-2', 'layout:halden-3', 'layout:halden-4', 'layout:halden-campus'])
-    const campus = draftingLayoutDataSchema.parse(layoutObjects.find(object => object.id === 'layout:halden-campus')!.packData)
+    const campus = physicalLayoutDataSchema.parse(layoutObjects.find(object => object.id === 'layout:halden-campus')!.packData)
     expect(campus.design).toEqual(pwrShutdownCoolingCampusPhysicalDesignRef)
     expect(campus.source.planAnnotations!.length).toBeGreaterThan(0)
     expect(campus.owner.objectId).toBe('grid:halden-four-unit')

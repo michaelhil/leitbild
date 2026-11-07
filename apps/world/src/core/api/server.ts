@@ -453,6 +453,7 @@ export const createServer = (config: ServerConfig): { readonly stop: () => Promi
           if ((err as Error).message.startsWith('World Module not provisioned:')) return secure(apiError(404, 'workspace_not_found', 'World is not enabled in this Workspace'))
           if (err instanceof Error && 'code' in err && err.code === 'workspace_closing') return secure(apiError(409, 'workspace_closing', err.message))
           if (err instanceof Error && 'code' in err && err.code === 'workspace_capacity_exceeded') return secure(apiError(503, 'workspace_capacity_exceeded', err.message))
+          if (err instanceof Error && 'code' in err && err.code === 'simulation_run_failed') return secure(apiError(409, 'simulation_run_failed', err.message))
           throw err
         }
       }
