@@ -100,6 +100,18 @@ pub struct Report {
     pub analyze_s: Vec<f64>,
     pub factor_s: Vec<f64>,
     pub solve_s: Vec<f64>,
+    /// R4-CLIMB: the matrices this start leaves for the climb after it.
+    pub climb: Option<ClimbMatrices>,
+}
+
+/// R4-CLIMB: a start's `dF/dy` and `dF/dy'`, kept for the climb after a restart
+/// while a regular cell is in equilibrium mode. No case without vapor outside
+/// the PZR reads them.
+#[derive(Clone, Debug)]
+pub struct ClimbMatrices {
+    a: Vec<f64>,
+    b: Vec<f64>,
+    last_cj: f64,
 }
 
 /// The correction of the coordinates a start exempts from its WRMS guard:
@@ -497,6 +509,17 @@ pub fn consistent_start_exempting<P: Properties + WaterProperties>(
         false,
         None,
     )?;
+    let equilibrium = joined
+        .network
+        .cell_modes()
+        .contains(&leitbild_operating_plant::network::CellMode::Equilibrium);
+    if equilibrium && matches!(matrices, Matrices::Blocks { .. }) {
+        report.climb = Some(ClimbMatrices {
+            a: a.clone(),
+            b: ab.iter().zip(&a).map(|(x, y)| x - y).collect(),
+            last_cj: f64::INFINITY,
+        });
+    }
     // Each row's magnitude of terms from its linearization at the state:
     // `sum_j |dF/dy_ij y_j|`, and with rates `sum_j |dF/dy'_ij y'_j|`.
     let magnitude = |matrix: &dyn Fn(usize) -> f64, v: &[f64]| {
@@ -955,7 +978,7 @@ mod integrated {
             block::{Command, Transaction},
             blocks::{
                 Classes, JoinedJacobian, Profile, jacobian_blocks, jacobian_blocks_on_base,
-                jacobian_blocks_profiled,
+                jacobian_blocks_profiled, jacobian_blocks_start,
             },
             operator::Joined,
             presence::{PatternCache, PresenceKey, VaporPresence, pattern_cells},
@@ -1420,7 +1443,7 @@ mod integrated {
             },
             Assembly::Colored => Matrices::Colored,
         };
-        let (yp, report) = super::consistent_start_exempting(
+        let (yp, mut report) = super::consistent_start_exempting(
             joined,
             matrices,
             t,
@@ -1504,6 +1527,7 @@ mod integrated {
         ida.reinitialize(t, y_all, &yp)?;
         ida.set_differential(&ids)?;
         restart.configure(ida)?;
+        ida.system_mut().integrated_mut().climb = report.climb.take();
         let first_step_s = match first_step_policy {
             FirstStep::LastStep { divisor } if last_step > 0. => {
                 let h = last_step / divisor;
@@ -1780,6 +1804,8 @@ mod integrated {
     /// Jacobian and the symbolic analyses its block restarts reuse. A
     /// partial composition (a prepared port) is refused.
     pub struct Integrated<P: Properties> {
+        /// R4-CLIMB: the last start's matrices, while its climb lasts.
+        climb: Option<super::ClimbMatrices>,
         pub joined: Joined<P>,
         rows: Vec<i64>,
         pointers: Vec<i64>,
@@ -1880,6 +1906,7 @@ mod integrated {
                 analyses: Analyses::default(),
                 presence: None,
                 first_step: FirstStep::Declared,
+                climb: None,
                 base: Base::new(),
             })
         }
@@ -1921,6 +1948,7 @@ mod integrated {
                 analyses,
                 presence: None,
                 first_step: FirstStep::Declared,
+                climb: None,
                 base: Base::new(),
             })
         }
@@ -1979,6 +2007,7 @@ mod integrated {
                 assembly: Assembly::Blocks(Box::new(structure)),
                 analyses,
                 first_step: FirstStep::Declared,
+                climb: None,
                 base: Base::new(),
                 presence: Some(Following {
                     cache,
@@ -2078,6 +2107,67 @@ mod integrated {
             &self.analyses
         }
     }
+    impl<P: Properties + WaterProperties> Integrated<P> {
+        /// R4-CLIMB: while `cj` falls after a restart, the iteration matrix is
+        /// the start's `A + cj B`, with the equilibrium columns refreshed at
+        /// the climb's first state. A request that does not lower `cj`, Newton's
+        /// own retry after a failed solve among them, ends the climb and
+        /// assembles in full. Returns whether `data` is filled.
+        fn climb_matrix(
+            &mut self,
+            time: f64,
+            cj: f64,
+            y: &[f64],
+            yp: &[f64],
+            data: &mut [f64],
+        ) -> Result<bool, Failure> {
+            let Some(mut climb) = self.climb.take() else {
+                return Ok(false);
+            };
+            let Assembly::Blocks(structure) = &self.assembly else {
+                return Ok(false);
+            };
+            if cj >= climb.last_cj || climb.a.len() != data.len() {
+                return Ok(false);
+            }
+            if climb.last_cj.is_finite() {
+                for (d, (a, b)) in data.iter_mut().zip(climb.a.iter().zip(&climb.b)) {
+                    *d = a + cj * b;
+                }
+            } else {
+                let columns = self.joined.network.equilibrium_columns(y.len());
+                crate::basis_assembly(true);
+                leitbild_operating_plant::network::heaters::hold_endpoints(true);
+                let result = jacobian_blocks_start(
+                    &mut self.joined,
+                    structure,
+                    time,
+                    cj,
+                    y,
+                    yp,
+                    data,
+                    None,
+                    Some(&columns),
+                );
+                crate::basis_assembly(false);
+                leitbild_operating_plant::network::heaters::hold_endpoints(false);
+                result.map_err(failure)?;
+                for (j, refreshed) in columns.iter().enumerate() {
+                    for q in self.pointers[j] as usize..self.pointers[j + 1] as usize {
+                        if *refreshed {
+                            climb.a[q] = data[q] - cj * climb.b[q];
+                        } else {
+                            data[q] = climb.a[q] + cj * climb.b[q];
+                        }
+                    }
+                }
+            }
+            climb.last_cj = cj;
+            self.climb = Some(climb);
+            self.base.held = false;
+            Ok(true)
+        }
+    }
     impl<P: Properties + WaterProperties> System for Integrated<P> {
         fn dimension(&self) -> usize {
             self.joined.dimension()
@@ -2162,6 +2252,9 @@ mod integrated {
             rows[..n].copy_from_slice(&self.rows);
             pointers.copy_from_slice(&self.pointers);
             let data = &mut data[..n];
+            if self.climb_matrix(time, cj, y, yp, data)? {
+                return Ok(());
+            }
             match &self.assembly {
                 Assembly::Colored => self.joined.jacobian(time, cj, y, yp, data),
                 Assembly::Blocks(structure) => {

@@ -857,6 +857,31 @@ impl<P: Properties> Network<P> {
         let l = self.cell_layout[node];
         (l.mass[k], l.energy[k])
     }
+    /// R4-CLIMB: the columns a climb refreshes: every stock of a regular cell
+    /// in equilibrium mode, and the impulses of the faces touching one, whose
+    /// entries move fastest while a vapor stock is small.
+    pub fn equilibrium_columns(&self, n: usize) -> Vec<bool> {
+        let mut columns = vec![false; n];
+        let equilibrium: Vec<bool> = (0..self.pzr.cell)
+            .map(|c| self.modes[c] == CellMode::Equilibrium)
+            .collect();
+        for c in (0..self.pzr.cell).filter(|c| equilibrium[*c]) {
+            let l = self.cell_layout[c];
+            columns[l.base] = true;
+            for k in 0..2 {
+                columns[l.mass[k]] = true;
+                columns[l.energy[k]] = true;
+            }
+        }
+        for l in &self.face_layout {
+            let f = &self.faces[l.face];
+            let touches = |c: usize| equilibrium.get(c).copied().unwrap_or(false);
+            if touches(f.from) || touches(f.to) {
+                columns[l.index] = true;
+            }
+        }
+        columns
+    }
     /// Every retained mass and tracer coordinate, regular cells and the PZR:
     /// the stocks an integrator constrains to be nonnegative. An equilibrium
     /// cell's vapor mass is algebraic (the flash): its sign is the

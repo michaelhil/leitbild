@@ -456,6 +456,11 @@ fn mouth_path_block_replay_matches_the_colored_assembly() {
     let mouth = 2 * face + 1;
     assert_eq!(net.face_layout[mouth].phase, 1);
     assert_eq!(net.unilateral().unwrap().paths[mouth], Lock::Free);
+    // R4-CLIMB: SURGE's five stocks and the four paths of its two faces.
+    let climbing = net.equilibrium_columns(y.len());
+    assert!(climbing[b] && climbing[m1] && climbing[e1]);
+    assert!(climbing[net.face_layout[mouth].index]);
+    assert_eq!(climbing.iter().filter(|c| **c).count(), 9);
     let colored = net.sparse_jacobian().expect("colored structure");
     let blocks = net.block_jacobian().expect("block structure");
     assert_eq!(blocks.pattern, colored.pattern, "one pattern for both");
