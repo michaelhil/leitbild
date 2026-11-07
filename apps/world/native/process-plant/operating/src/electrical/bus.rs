@@ -438,6 +438,21 @@ impl Distribution {
             frequency_hz: s.frequency_hz,
         })
     }
+    /// R4-DUMP: whether the RCPs `consumers` keep forced circulation: any is
+    /// supplied, or has its contactor closed on a bus in transfer (the buses
+    /// are dead from the GCB's opening to the reserve's closure and the pumps
+    /// only coast). A loss of offsite power or a failed transfer ends at Idle
+    /// (no control power, or the closure aborted), so the hold ends with it.
+    pub fn forced_circulation(&self, consumers: &[String]) -> bool {
+        consumers.iter().any(|id| {
+            self.support(id)
+                .is_some_and(|s| s.energized && s.contactor_closed)
+                || self
+                    .motors
+                    .get(id)
+                    .is_some_and(|m| m.contactor && self.buses[m.bus].transfer != Transfer::Idle)
+        })
+    }
     fn supports(&self) -> Vec<(bool, bool)> {
         self.motors
             .keys()
@@ -966,6 +981,66 @@ mod tests {
         assert!(!s.contactor_closed, "{s:?}");
         d.advance(20.).unwrap();
         assert!(!d.support("LD01.P.A1").unwrap().contactor_closed);
+    }
+    const RCPS: [&str; 4] = ["LD01.P.A1", "LD01.P.A2", "LD01.P.B1", "LD01.P.B2"];
+    fn forced(d: &Distribution) -> bool {
+        d.forced_circulation(&RCPS.map(String::from))
+    }
+    /// R4-DUMP: a healthy reserve transfer holds forced circulation through
+    /// the buses' dead interval, at every instant of it.
+    #[test]
+    fn a_healthy_transfer_holds_forced_circulation() {
+        let mut d = Distribution::prepared(params(), [LIVE, LIVE], [true, true], 0.).unwrap();
+        assert!(forced(&d));
+        d.set_source(10.37, Source::Unit, SourceState::DEAD)
+            .unwrap();
+        assert!(
+            !d.support("LD01.P.A1").unwrap().energized,
+            "the buses are dead"
+        );
+        assert!(forced(&d));
+        let mut instants = 0;
+        while let Some(n) = d.next_event().filter(|n| *n < 10.9) {
+            d.advance(n).unwrap();
+            assert!(forced(&d), "at {n}");
+            instants += 1;
+        }
+        assert!(instants > 0);
+        assert!(d.support("LD01.P.A1").unwrap().energized, "reserve closed");
+        assert!(d.buses.iter().all(|b| b.transfer == Transfer::Idle));
+        assert!(forced(&d));
+    }
+    /// R4-DUMP: a loss of offsite power leaves no control power, so the
+    /// transfer the unit's loss began ends at Idle the same instant: no hold.
+    #[test]
+    fn a_loss_of_offsite_power_ends_forced_circulation_at_once() {
+        let mut d = Distribution::prepared(params(), [LIVE, LIVE], [true, true], 0.).unwrap();
+        d.set_source(10.37, Source::Unit, SourceState::DEAD)
+            .unwrap();
+        d.set_source(10.37, Source::Reserve, SourceState::DEAD)
+            .unwrap();
+        assert!(d.buses.iter().all(|b| b.transfer == Transfer::Idle));
+        assert!(!forced(&d));
+        d.advance(12.).unwrap();
+        assert!(!forced(&d));
+    }
+    /// R4-DUMP: a reserve lost during the transfer ends the hold at that
+    /// instant, and the aborted transfer ends at Idle with the buses dead.
+    #[test]
+    fn a_failed_transfer_ends_forced_circulation() {
+        let mut d = Distribution::prepared(params(), [LIVE, LIVE], [true, true], 0.).unwrap();
+        d.set_source(10.37, Source::Unit, SourceState::DEAD)
+            .unwrap();
+        d.advance(10.6).unwrap();
+        assert_ne!(d.buses[0].transfer, Transfer::Idle);
+        assert!(forced(&d));
+        d.set_source(10.6, Source::Reserve, SourceState::DEAD)
+            .unwrap();
+        assert!(!forced(&d));
+        d.advance(12.).unwrap();
+        assert!(d.buses.iter().all(|b| b.transfer == Transfer::Idle));
+        assert!(!d.support("LD01.P.A1").unwrap().energized);
+        assert!(!forced(&d));
     }
     /// S3-D19: mid-transfer state (a source dead, the open interval
     /// running, motors in their dropout ride-through) round-trips through
