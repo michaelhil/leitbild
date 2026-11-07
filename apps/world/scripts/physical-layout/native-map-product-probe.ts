@@ -20,9 +20,8 @@ const highRatePlan=process.env.LEITBILD_NATIVE_HIGH_RATE_PLAN==='1'
 if(highRatePlan&&(!minimalPlanObserver||process.env.LEITBILD_NATIVE_SITE_PLAN_ONLY!=='1'||replayPath))throw Error('Higher-rate input is one named minimal-observer site-Plan diagnostic without replay')
 const visibilityCensus=process.env.LEITBILD_NATIVE_VISIBILITY_CENSUS==='1'
 const matchedCamera=process.env.LEITBILD_NATIVE_MATCHED_CAMERA==='1',resourceDiagnostic=process.env.LEITBILD_NATIVE_RESOURCE_DIAGNOSTIC==='1'
-const opacityWindows=process.env.LEITBILD_NATIVE_OPACITY_WINDOWS==='1',fractionalOnly=process.env.LEITBILD_NATIVE_FRACTIONAL_ONLY==='1'
 const diagnosticControls=process.env.LEITBILD_NATIVE_DIAGNOSTIC_CONTROLS==='1',controlSelections:any[]=[]
-const allLayersOn=process.env.LEITBILD_NATIVE_ALL_LAYERS_ON==='1',fractionalLiveOff=process.env.LEITBILD_NATIVE_FRACTIONAL_LIVE_OFF==='1',planLiveOff=process.env.LEITBILD_NATIVE_PLAN_LIVE_OFF==='1'
+const allLayersOn=process.env.LEITBILD_NATIVE_ALL_LAYERS_ON==='1',planLiveOff=process.env.LEITBILD_NATIVE_PLAN_LIVE_OFF==='1'
 const layerSelections:any[]=[]
 let gpuSource='';if(gpuDiagnostic){const gpu=await Bun.build({entrypoints:[resolve(import.meta.dir,'../../tests/browser/physical-scene/native-map-gpu-instrumentation.ts')],target:'browser',format:'iife',minify:false});if(!gpu.success)throw new AggregateError(gpu.logs,'GPU diagnostic observer build failed');gpuSource=await gpu.outputs[0]!.text()}
 let wallSource='';if(glWallDiagnostic){const wall=await Bun.build({entrypoints:[resolve(import.meta.dir,'../../tests/browser/physical-scene/native-map-gl-wall-instrumentation.ts')],target:'browser',format:'iife',minify:false});if(!wall.success)throw new AggregateError(wall.logs,'GL wall observer build failed');wallSource=await wall.outputs[0]!.text()}
@@ -62,12 +61,6 @@ const enableAllDeclaredLayers=async()=>{
   }
   await inWorld(`d.querySelector('.explorer-controls .scope').click()`);await until(`return [...d.querySelectorAll('.scopes button')].some(b=>b.textContent.trim()==='All available layouts')`,'collection return');await inWorld(`[...d.querySelectorAll('.scopes button')].find(b=>b.textContent.trim()==='All available layouts').click()`);await settled(5)
 }
-const opacity=async(value:number)=>{
-  await button('View')
-  await inWorld(`for(const label of ['Wall opacity','Floor opacity']){const input=d.querySelector('input[aria-label="'+label+'"]');if(!input)throw Error('Missing '+label);input.value=${value};input.dispatchEvent(new w.Event('input',{bubbles:true}))}`)
-  await until(`const text=d.querySelector('.explorer-controls .evidence')?.textContent??'';if(text.includes('Architecture transparency unavailable'))throw Error(text);return q.bspPending===0&&!text.includes('Preparing architecture transparency')`,'applied architecture opacity')
-  await button('View');await settled()
-}
 const collectionFloorMenu = async () => { await inWorld(`if(!d.querySelector('.collection-floor'))d.querySelector('.floors-toggle')?.click()`);await until(`return Boolean(d.querySelector('.collection-floor'))`,'grouped floor choices') }
 const collectionFloor = async (label:string,restore=false) => {
   await collectionFloorMenu()
@@ -106,7 +99,6 @@ const movement=async(name:string,selector:string,orbit:boolean,playing:boolean,k
   if((matchedCamera||replay)&&!value.inputButtons.length)throw Error('Diagnostic captured no trusted DOM input evidence');if(!value.frames||!(value.rafMedianMs>0)||processWindows||value.pending||value.errors.length)throw Error(`Invalid actual native-map motion window ${name}: ${JSON.stringify({frames:value.frames,rafMedianMs:value.rafMedianMs,processWindows,pending:value.pending,errors:value.errors})}`)
   if(mapOnly&&(value.physicalDraws.length||value.baseDraws.calls||value.orderedDraws.calls))throw Error('Named map-only control still submitted physical geometry')
   if(allLayersOn&&!name.includes('plan')&&!mapOnly){if(!value.physicalDraws.length)throw Error('No current physical VBO draw witnessed');for(const draw of value.physicalDraws){const family=value.declaredSources.find((source:any)=>draw.key.startsWith(source.geometryKey+'/[')),parts=JSON.parse(draw.key.slice(draw.key.lastIndexOf('/[')+1)),coverage=parts.find((part:any)=>part&&typeof part==='object'&&!Array.isArray(part)&&Array.isArray(part.layers))?.layers;if(!family||!coverage||family.meshLayerIds.some((id:string)=>!coverage.includes(id)))throw Error(`Actual GPU draw ${draw.key} does not cover every requested source mesh layer`)}}
-  if(name.includes('fractional')&&(!value.orderedDraws.calls||value.bspPending||!value.bspResponses.some((response:any)=>response.responseKind==='prepared'&&response.keyMatches)))throw Error('Fractional window lacks an actual admitted ordered architecture draw')
   if(name.includes('plan')&&!value.draftingCanvases.some((canvas:any)=>canvas.width>0&&canvas.height>0))throw Error(`Plan window ${name} did not allocate its applicable drafting surface`)
   if(name.includes('room-plan')||name.includes('return-plan')){
     const required=['HP','LP 1','GEN','TURBINE HALL']
@@ -151,37 +143,41 @@ try{
   await inWorld(`[...d.querySelectorAll('.scopes button')].find(b=>b.textContent.trim()==='All available layouts').click()`)
   await settled(5)
   if(allLayersOn)await enableAllDeclaredLayers()
-  if(!sitePlanOnly){await collectionFloor('Turbine and main control');await collectionFloor('Stack',true)
-  if(!fractionalOnly){
-  if(diagnosticControls){
-    await mapOnlyControl(false);await mapOnlyControl(true)
-    await setting('Reveal detail as needed',true);await setting('Live status',false)
-    await movement('control-physical-live-off-paused','.maplibregl-canvas',true,false)
-    await movement('control-physical-live-off-playing','.maplibregl-canvas',true,true)
-    await setting('Live status',true)
-  }else{
-  await movement('map-site-3d-paused','.maplibregl-canvas',true,false)
-  await movement('map-site-3d-playing','.maplibregl-canvas',true,true)
+  if (!sitePlanOnly) {
+    await collectionFloor('Turbine and main control'); await collectionFloor('Stack', true)
+    if (diagnosticControls) {
+      await mapOnlyControl(false); await mapOnlyControl(true)
+      await setting('Reveal detail as needed', true); await setting('Live status', false)
+      await movement('control-physical-live-off-paused', '.maplibregl-canvas', true, false)
+      await movement('control-physical-live-off-playing', '.maplibregl-canvas', true, true)
+      await setting('Live status', true)
+    } else {
+      await movement('map-site-3d-paused', '.maplibregl-canvas', true, false)
+      await movement('map-site-3d-playing', '.maplibregl-canvas', true, true)
+    }
   }
+  if (!site3dOnly) {
+    await execution('paused'); await button('Plan'); await settled(5)
+    if (planLiveOff) await setting('Live status', false)
+    await shot('site-plan.png')
+    await movement(`map-site-plan${planLiveOff ? '-live-off' : ''}-paused`, '.maplibregl-canvas', false, false)
+    if (!highRatePlan) await movement(`map-site-plan${planLiveOff ? '-live-off' : ''}-playing`, '.maplibregl-canvas', false, true)
+    if (!sitePlanOnly) {
+      await execution('paused'); await scope(); await floor('Turbine and main control'); await button('3D'); await home(); await shot('room-3d.png')
+      await movement('map-room-3d-paused', '.maplibregl-canvas', true, false)
+      await movement('map-room-3d-playing', '.maplibregl-canvas', true, true)
+      await execution('paused'); await button('Plan'); await home(); await shot('room-plan.png')
+      await movement('map-room-plan-paused', '.maplibregl-canvas', false, false)
+      await movement('map-room-plan-playing', '.maplibregl-canvas', false, true)
+    }
+    await execution('paused')
   }
-  if(opacityWindows||fractionalOnly){await execution('paused');await opacity(.5);if(fractionalLiveOff)await setting('Live status',false);await movement(`map-site-3d-fractional${fractionalLiveOff?'-live-off':''}-paused`,'.maplibregl-canvas',true,false);await movement(`map-site-3d-fractional${fractionalLiveOff?'-live-off':''}-playing`,'.maplibregl-canvas',true,true);await execution('paused');await opacity(1);if(fractionalLiveOff)await setting('Live status',true)}}
-  if(!site3dOnly){await execution('paused');if(!fractionalOnly){await button('Plan');await settled(5);if(planLiveOff)await setting('Live status',false);await shot('site-plan.png')
-  await movement(`map-site-plan${planLiveOff?'-live-off':''}-paused`,'.maplibregl-canvas',false,false)
-  if(!highRatePlan)await movement(`map-site-plan${planLiveOff?'-live-off':''}-playing`,'.maplibregl-canvas',false,true)}
-  if(!sitePlanOnly){await execution('paused');await scope();await floor('Turbine and main control');await button('3D');await home();await shot('room-3d.png')
-  if(!fractionalOnly){await movement('map-room-3d-paused','.maplibregl-canvas',true,false)
-  await movement('map-room-3d-playing','.maplibregl-canvas',true,true)}
-  if(opacityWindows||fractionalOnly){await execution('paused');await opacity(.5);if(fractionalLiveOff)await setting('Live status',false);await movement(`map-room-3d-fractional${fractionalLiveOff?'-live-off':''}-paused`,'.maplibregl-canvas',true,false);await movement(`map-room-3d-fractional${fractionalLiveOff?'-live-off':''}-playing`,'.maplibregl-canvas',true,true);await execution('paused');await opacity(1);if(fractionalLiveOff)await setting('Live status',true)}
-  if(!fractionalOnly){await execution('paused');await button('Plan');await home();await shot('room-plan.png')
-  await movement('map-room-plan-paused','.maplibregl-canvas',false,false)
-  await movement('map-room-plan-playing','.maplibregl-canvas',false,true)}}
-  await execution('paused')}
   }
   const beforeExit=await snapshot(),metadata=await inWorld('return {userAgent:w.navigator.userAgent,reportedLogicalCpus:w.navigator.hardwareConcurrency,dpr:w.devicePixelRatio}')
   await call('Page.navigate',{url:'about:blank'});let physicalWorkerTargets:any[]=[];const stopAt=performance.now()+10000
-  do{physicalWorkerTargets=(await call('Target.getTargets')).targetInfos.filter((item:any)=>item.type==='worker'&&/preparation-worker|source-compile|architecture-bsp-worker/.test(item.url));if(!physicalWorkerTargets.length)break;await Bun.sleep(50)}while(performance.now()<stopAt)
+  do{physicalWorkerTargets=(await call('Target.getTargets')).targetInfos.filter((item:any)=>item.type==='worker'&&/preparation-worker|source-compile/.test(item.url));if(!physicalWorkerTargets.length)break;await Bun.sleep(50)}while(performance.now()<stopAt)
   if(physicalWorkerTargets.length||events.length)throw Error('Native map page close left physical worker targets or exceptions')
-  const result={testedAppCommit,runnerSha256,runnerCommit:Bun.spawnSync(['git','rev-parse','HEAD'],{cwd:repository}).stdout.toString().trim(),instrumentationSha256:createHash('sha256').update(instrumentation).digest('hex'),earlyPlanOnly,sitePlanOnly,site3dOnly,matchedCamera,visibilityCensus,minimalPlanObserver,highRatePlan,resourceDiagnostic,gpuDiagnostic,glWallDiagnostic,diagnosticControls,controlSelections,replayInput:replayPath?{path:resolve(replayPath),sha256:createHash('sha256').update(new Uint8Array(await Bun.file(resolve(replayPath)).arrayBuffer())).digest('hex'),method:'Original move counts and position formula; original event timestamps were not recorded, so commands are spaced uniformly over the original4second interval.'}:null,profiledWindow:process.env.LEITBILD_NATIVE_PROFILE_WINDOW??null,run:info,metadata,startup,opacityWindows,fractionalOnly,fractionalLiveOff,planLiveOff,allLayersOn,layerSelections,collectionFloors,phases,beforeExit,physicalWorkerTargetsAfterExit:physicalWorkerTargets,exceptions:events,limits:['Actual built Host/World on one native geographic map and one isolated local Run. No product browser or alternate camera; no production Run commands.','View/floor settlement follows actual loading/owner evidence and two painted scheduling frames; no fixed helper settlement sleeps. Motion windows use actual input and RAF, not GPU execution timers.','Canvas fillText records are actual drafting calls. Readable room Plan requires authored HP/LP1/GEN/room captions; whole-site fitting may legitimately reject text that exceeds actual building envelopes. Backing-store counters include observed float32/MSAA renderbuffers and resolve texture, plus Canvas2D RGBA lower bounds; they exclude driver/process overhead.','Resource observers retain primitive metadata and weak resource keys only. Instrumentation adds overhead; annotation spy time is recorded, other callback overhead is not separately attributed. Optional CPU profiling is a separate diagnostic run, not a clean performance sample.',...(gpuDiagnostic?['GPU elapsed queries and per-pass observers make this a diagnostic run, not a clean frame-budget qualification. Draw/resolve intervals are distinct; clear/composite are excluded and unsupported/disjoint/busy/aborted states are retained.']:[]),...(diagnosticControls?['Named map-only controls use the public Reveal detail as needed checkbox. They require zero physical draw witnesses; saved physical MVPs are last observed before hiding and are not a camera observation while hidden. Home is applied before hiding and no camera action is injected by the toggle. Live-off controls keep all geometry/routes enabled via the public Live status checkbox.']:[]),...(glWallDiagnostic?['Native GL walltime hooks and outer observer timers perturb command pacing. This run is diagnostic only; no clean frame-budget verdict is issued. Per-phase native and combined observer overhead retain their separate definitions.']:[]),'DPR and hardware are recorded per run. This is not WAN, constrained-device or human usability qualification.']}
+  const result={testedAppCommit,runnerSha256,runnerCommit:Bun.spawnSync(['git','rev-parse','HEAD'],{cwd:repository}).stdout.toString().trim(),instrumentationSha256:createHash('sha256').update(instrumentation).digest('hex'),earlyPlanOnly,sitePlanOnly,site3dOnly,matchedCamera,visibilityCensus,minimalPlanObserver,highRatePlan,resourceDiagnostic,gpuDiagnostic,glWallDiagnostic,diagnosticControls,controlSelections,replayInput:replayPath?{path:resolve(replayPath),sha256:createHash('sha256').update(new Uint8Array(await Bun.file(resolve(replayPath)).arrayBuffer())).digest('hex'),method:'Original move counts and position formula; original event timestamps were not recorded, so commands are spaced uniformly over the original4second interval.'}:null,profiledWindow:process.env.LEITBILD_NATIVE_PROFILE_WINDOW??null,run:info,metadata,startup,planLiveOff,allLayersOn,layerSelections,collectionFloors,phases,beforeExit,physicalWorkerTargetsAfterExit:physicalWorkerTargets,exceptions:events,limits:['Actual built Host/World on one native geographic map and one isolated local Run. No product browser or alternate camera; no production Run commands.','View/floor settlement follows actual loading/owner evidence and two painted scheduling frames; no fixed helper settlement sleeps. Motion windows use actual input and RAF, not GPU execution timers.','Canvas fillText records are actual drafting calls. Readable room Plan requires authored HP/LP1/GEN/room captions; whole-site fitting may legitimately reject text that exceeds actual building envelopes. Backing-store counters include observed float32/MSAA renderbuffers and resolve texture, plus Canvas2D RGBA lower bounds; they exclude driver/process overhead.','Resource observers retain primitive metadata and weak resource keys only. Instrumentation adds overhead; annotation spy time is recorded, other callback overhead is not separately attributed. Optional CPU profiling is a separate diagnostic run, not a clean performance sample.',...(gpuDiagnostic?['GPU elapsed queries and per-pass observers make this a diagnostic run, not a clean frame-budget qualification. Draw/resolve intervals are distinct; clear/composite are excluded and unsupported/disjoint/busy/aborted states are retained.']:[]),...(diagnosticControls?['Named map-only controls use the public Reveal detail as needed checkbox. They require zero physical draw witnesses; saved physical MVPs are last observed before hiding and are not a camera observation while hidden. Home is applied before hiding and no camera action is injected by the toggle. Live-off controls keep all geometry/routes enabled via the public Live status checkbox.']:[]),...(glWallDiagnostic?['Native GL walltime hooks and outer observer timers perturb command pacing. This run is diagnostic only; no clean frame-budget verdict is issued. Per-phase native and combined observer overhead retain their separate definitions.']:[]),'DPR and hardware are recorded per run. This is not WAN, constrained-device or human usability qualification.']}
   await writeFile(join(folder,'receipt.json'),JSON.stringify(result,null,2));console.log('DONE',folder)
 }catch(error){const failure:any={error:String(error),testedAppCommit,runnerSha256,instrumentationSha256:createHash('sha256').update(instrumentation).digest('hex'),phases,events};try{failure.snapshot=await snapshot()}catch(diagnosticError){failure.diagnosticError=String(diagnosticError)}await writeFile(join(folder,'failure.json'),JSON.stringify(failure,null,2));throw error}
 finally{try{await execution('paused')}finally{socket?.close();chrome.kill();await chrome.exited;await rm(profile,{recursive:true,force:true})}}

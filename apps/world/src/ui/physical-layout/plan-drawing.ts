@@ -4,7 +4,6 @@ import { physicalScopeMembers } from '../map/physical-scene/scopes.ts'
 import { physicalScopeRegions } from '../map/physical-scene/scope-regions.ts'
 import { physicalPlanContinuations } from './plan-continuations.ts'
 import { compilePhysicalPlanPaint, type PhysicalPlanPaint } from './plan-paint-stream.ts'
-import { physicalArchitectureOpacity } from '../map/physical-scene/architecture-opacity.ts'
 
 type Point = { readonly x: number; readonly y: number }
 const selections = new WeakMap<PackPhysicalScene, { readonly key: string; readonly primitives: ReadonlyArray<PhysicalPlanPrimitive> }>()
@@ -161,10 +160,6 @@ export const drawPhysicalPlanDrawing = (context: CanvasRenderingContext2D, input
     worldTransform(); context.lineJoin = 'round'; context.lineCap = 'round'; context.textBaseline = 'middle'
     for (const command of stream) {
       if (!visible(command.kind === 'text' ? command.primitive.bounds : command.bounds)) continue
-      const occurrenceId = command.kind === 'text' ? command.primitive.occurrenceId : command.paint.occurrenceId
-      const object = occurrenceId ? objects.get(occurrenceId) : undefined
-      const architectureOpacity = object ? physicalArchitectureOpacity(object, input.view) : 1
-      if (architectureOpacity === 0) continue
       setClip(command.kind === 'geometry' && command.clip && scope.regions.length > 0)
       if (command.kind === 'text') {
         const p = command.primitive, { x, y, angle } = physicalPlanTextFrame(p, frame, scale)
@@ -173,14 +168,14 @@ export const drawPhysicalPlanDrawing = (context: CanvasRenderingContext2D, input
         const nextFont = String(p.height * scale) + 'px ' + input.fontFamily, nextAlign = p.align === 'middle' ? 'center' : p.align
         if (font !== nextFont) { context.font = nextFont; font = nextFont }
         if (align !== nextAlign) { context.textAlign = nextAlign; align = nextAlign }
-        opacity(architectureOpacity)
+        opacity(1)
         if (p.halo) { strokeInk(ink(p.halo)); lineWidth((p.haloWidth ?? 0) * scale * 2); context.strokeText(p.text, 0, 0) }
         fillInk(ink(p.material)); context.fillText(p.text, 0, 0)
         continue
       }
       worldTransform()
       const p = command.paint, path = command.path, fillRule = p.fillRule ?? 'nonzero'
-      opacity((p.opacity ?? 1) * architectureOpacity)
+      opacity(p.opacity ?? 1)
       if (dash !== command.dashKey) { context.setLineDash(p.dash ?? []); dash = command.dashKey }
       if (p.fill) { fillInk(ink(p.fill)); context.fill(path, fillRule) }
       if (p.hatch) {

@@ -1,6 +1,5 @@
 import type { PhysicalSceneLevel } from '../../core/packs/scene.ts'
 import type { PhysicalScenePresentation, PhysicalSceneView } from '../map/physical-scene/types.ts'
-import { requestedPhysicalLayoutView } from './view-intent.ts'
 
 export interface PhysicalCollectionFloorGroup {
   readonly key: string
@@ -28,11 +27,11 @@ export const physicalCollectionFloorGroups = (scenes: ReadonlyArray<PhysicalScen
 }
 export const physicalCollectionFloorChanges = (group: PhysicalCollectionFloorGroup, levelId: string): ReadonlyArray<{ readonly sceneId: string; readonly view: PhysicalSceneView }> => {
   if (levelId === 'all' ? group.scenes.some(scene => scene.view.mode !== '3d') : !group.levels.some(level => level.id === levelId)) throw new Error(`Unknown collection floor: ${levelId}`)
-  return group.scenes.map(scene => ({ sceneId: scene.descriptor.id, view: { ...requestedPhysicalLayoutView(scene), levelId } }))
+  return group.scenes.map(scene => ({ sceneId: scene.descriptor.id, view: { ...scene.view, levelId } }))
 }
-export type PhysicalMixedViewSetting = 'live' | 'cutaway' | 'detail' | 'separation' | 'wallOpacity' | 'floorOpacity'
+export type PhysicalMixedViewSetting = 'live' | 'cutaway' | 'detail' | 'separation'
 export const physicalCollectionMixedSettings = (scenes: ReadonlyArray<PhysicalScenePresentation>): ReadonlyArray<PhysicalMixedViewSetting> =>
-  (['live', 'cutaway', 'detail', 'separation', 'wallOpacity', 'floorOpacity'] as const).filter(key => new Set(scenes.map(scene => { const view = requestedPhysicalLayoutView(scene); return key === 'wallOpacity' || key === 'floorOpacity' ? view[key] ?? 1 : view[key] })).size > 1)
+  (['live', 'cutaway', 'detail', 'separation'] as const).filter(key => new Set(scenes.map(scene => scene.view[key])).size > 1)
 /** A Stack-to-Plan change restores each source's own valid floor. */
 export const physicalPlanLevelAfterModeChange = (scene: PhysicalScenePresentation, remembered?: string): string => {
   if (scene.view.levelId !== 'all') return scene.view.levelId

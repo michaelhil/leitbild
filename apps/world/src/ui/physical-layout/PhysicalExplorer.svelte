@@ -33,7 +33,6 @@
   import { drawPhysicalPlanDrawing, visiblePhysicalPlanDrawing } from './plan-drawing.ts'
   import { retryablePhysicalLayouts } from './retry.ts'
   import { physicalLayerPreparationText } from './layer-preparation.ts'
-  import { requestedPhysicalLayoutView } from './view-intent.ts'
   import { resolvePhysicalSubjectOperation, type PhysicalSubjectOperation } from './operation.ts'
   import { physicalOperationContext, physicalOperationBadgeWord } from './operation-presentation.ts'
   import { physicalRouteInspectionPaths, createPhysicalRouteScreenMarks } from './route-marks.ts'
@@ -71,8 +70,7 @@
   const annotationScenes = $derived.by(() => { void annotationSceneKey; return untrack(() => scenes) })
   // Controller reconciliation can emit a new presentation array without
   // changing any painted fact. Raw array identity is not a paint request.
-  const paintSceneKey = $derived(JSON.stringify([annotationSceneKey, scenes.map(scene => [scene.view.wallOpacity ?? 1, scene.view.floorOpacity ?? 1])]))
-  const paintScenes = $derived.by(() => { void paintSceneKey; return untrack(() => scenes) })
+  const paintScenes = $derived.by(() => { void annotationSceneKey; return untrack(() => scenes) })
   let paintRevision = $state(0)
   let focusedId = $state<string | null>(null)
   let focusedScopeId = $state<string | null>(null)
@@ -292,7 +290,7 @@
     const current = controller, target = draftingCanvas, colors = draftingColors, palette = draftingPalette, width = size.width, height = size.height
     if (!target || !current || !colors || !palette) { paintQueue.cancel(); return }
     const sceneViews = paintScenes, marks = flowMarks, selection = highlighted, scopeId = focusedScopeId
-    const intent = { scene: paintSceneKey, screen: screenRevision, style: paintRevision, focus: focusedId, group: focusedGroupId, active, suspended, documentVisible, theme, runId, perspectiveEpoch, objects, bindings, hiddenCategoryIds, covers: controlCovers }
+    const intent = { scene: annotationSceneKey, screen: screenRevision, style: paintRevision, focus: focusedId, group: focusedGroupId, active, suspended, documentVisible, theme, runId, perspectiveEpoch, objects, bindings, hiddenCategoryIds, covers: controlCovers }
     const pose = JSON.stringify(current.cameraPose()), ratio = window.devicePixelRatio || 1
     const covers = controlCovers
     const drafting = !active || suspended || !documentVisible ? [] : sceneViews.flatMap(presentation => {
@@ -305,7 +303,7 @@
       // A promise or source event can supersede an intent before the next
       // reactive effect replaces it. Never combine old ink/evidence with the
       // controller's newly changed source or camera projection.
-      if (paintSceneKey !== intent.scene || screenRevision !== intent.screen || paintRevision !== intent.style
+      if (annotationSceneKey !== intent.scene || screenRevision !== intent.screen || paintRevision !== intent.style
         || focusedId !== intent.focus || focusedGroupId !== intent.group || focusedScopeId !== scopeId
         || active !== intent.active || suspended !== intent.suspended || documentVisible !== intent.documentVisible
         || theme !== intent.theme || draftingPalette !== palette || draftingColors !== colors
@@ -550,7 +548,7 @@
       if (levelId === null) { scopeFloorChoice = { key: choice.key, sceneId, label: choice.label, levelIds: levels }; return }
       collectionInspection = false; focusedId = sceneId; focusedScopeId = choice.scopeId ?? null; focusedGroupId = scene.descriptor.group?.id ?? null
       controller?.selectScope(sceneId, choice.scopeId)
-      if (scene.view.levelId !== levelId) controller?.setView(sceneId, { ...requestedPhysicalLayoutView(scene), mode: levelId === 'all' ? '3d' : scene.view.mode, levelId })
+      if (scene.view.levelId !== levelId) controller?.setView(sceneId, { ...scene.view, mode: levelId === 'all' ? '3d' : scene.view.mode, levelId })
       void afterPanels(() => controller?.focus(sceneId, { scopeId: choice.scopeId, levelId, preservePose: true }))
     }
     else { collectionInspection = true; focusedId = null; focusedScopeId = null; focusedGroupId = choice?.groupId ?? null; void afterPanels(() => controller?.fitAll(choice?.sceneIds)) }
@@ -560,19 +558,18 @@
     const scene = focused
     if (!scene) return
     const changedRepresentation = scene.view.mode !== next.mode, changedFloor = scene.view.levelId !== next.levelId
-    const opacityOnly = requested !== undefined && Object.keys(requested).every(key => key === 'wallOpacity' || key === 'floorOpacity')
-    pendingCameraFocus = null; if (!opacityOnly) closeInspection(); hover = null
+    pendingCameraFocus = null; closeInspection(); hover = null
     if (next.mode === '2d') { navigation = 'pan'; controller?.setNavigationTool('pan') }
     if (changedRepresentation) {
       const selected = new Set(collectionScenes.map(scene => scene.descriptor.id))
       for (const current of scenes) {
         if (current.view.mode === '2d') rememberedPlanFloor.set(current.descriptor.id, current.view.levelId)
         const levelId = next.mode === '2d' ? physicalPlanLevelAfterModeChange(current, rememberedPlanFloor.get(current.descriptor.id)) : focusedId === null && selected.has(current.descriptor.id) ? 'all' : current.view.levelId
-        controller?.setView(current.descriptor.id, { ...requestedPhysicalLayoutView(current), mode: next.mode, levelId })
+        controller?.setView(current.descriptor.id, { ...current.view, mode: next.mode, levelId })
       }
     } else if (focusedId === null) {
-      const patch = Object.fromEntries((['live', 'cutaway', 'detail', 'separation', 'wallOpacity', 'floorOpacity'] as const).filter(key => requested ? key in requested : next[key] !== requestedPhysicalLayoutView(scene)[key]).map(key => [key, next[key]]))
-      for (const current of collectionScenes) controller?.setView(current.descriptor.id, { ...requestedPhysicalLayoutView(current), ...patch })
+      const patch = Object.fromEntries((['live', 'cutaway', 'detail', 'separation'] as const).filter(key => requested ? key in requested : next[key] !== scene.view[key]).map(key => [key, next[key]]))
+      for (const current of collectionScenes) controller?.setView(current.descriptor.id, { ...current.view, ...patch })
     } else {
       if (scene.view.mode === '2d') rememberedPlanFloor.set(scene.descriptor.id, scene.view.levelId)
       controller?.setView(scene.descriptor.id, next)
@@ -611,7 +608,7 @@
     pendingCameraFocus = { sceneId, occurrenceId, levelId: level, mode }
     if (scene.status !== 'ready') controller?.focus(sceneId, { preservePose: true })
     else controller?.selectScope(sceneId)
-    controller?.setView(sceneId, { ...requestedPhysicalLayoutView(scene), mode, levelId: level })
+    controller?.setView(sceneId, { ...scene.view, mode, levelId: level })
   }
   const focusComponent = (sceneId: string, subjectId: string, label: string): void => {
     collectionInspection = false
@@ -760,7 +757,7 @@
       {#snippet cameraNavigation()}
         <CameraControls bind:this={cameraControls} {navigation} pitch={cameraReadout.pitch} bearing={cameraReadout.bearing} onnavigation={tool => { if (!suspended) { navigation = tool; controller?.setNavigationTool(tool) } }} ontilt={degrees => { if (!suspended) controller?.tiltBy(degrees) }} onturn={degrees => { if (!suspended) controller?.turnBy(degrees) }} onzoom={delta => { if (!suspended) controller?.zoomBy(delta) }} onfit={fit} onhome={home} />
       {/snippet}
-      <Controls bind:this={controls} title={scopeTitle} path={scopePath} {choices} {scopeKey} levels={scopeLevels} layers={focusedId === null ? [] : focused.descriptor.layers ?? []} {collectionLayerChoices} floorGroups={collectionFloorGroups} {mixedSettings} onfloorchange={changeCollectionFloor} oncollectionlayerchange={changeCollectionLayer} view={requestedPhysicalLayoutView(focused)} status={statusText} {suspended} {retryLabel} onretry={retryableLayouts.length > 0 ? retryFailedLayouts : undefined}
+      <Controls bind:this={controls} title={scopeTitle} path={scopePath} {choices} {scopeKey} levels={scopeLevels} layers={focusedId === null ? [] : focused.descriptor.layers ?? []} {collectionLayerChoices} floorGroups={collectionFloorGroups} {mixedSettings} onfloorchange={changeCollectionFloor} oncollectionlayerchange={changeCollectionLayer} view={focused.view} status={statusText} {suspended} {retryLabel} onretry={retryableLayouts.length > 0 ? retryFailedLayouts : undefined}
           onscope={chooseScope} onviewchange={changeView} onfit={fit} onhome={home} onoverview={focusedId === null ? undefined : () => overview(focused)} onfind={() => { componentsOpen = !componentsOpen; componentScope = null }}
           navigationControls={focused.view.mode === '3d' ? cameraNavigation : undefined} onclose={() => { controlsOpen = false; componentsOpen = false }} />
       {#if componentsOpen}

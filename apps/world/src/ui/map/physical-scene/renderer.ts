@@ -12,10 +12,6 @@ import type { PhysicalLayerEntry } from './layer.ts'
 import { physicalScopeMembers } from './scopes.ts'
 import { localMercatorMatrix, multiply, transform, type Vector3 } from './math.ts'
 import { pickPhysicalMesh, type PhysicalPickEntry } from './picking.ts'
-import { physicalArchitectureOpacity } from './architecture-opacity.ts'
-import { createPhysicalArchitectureBackend } from './architecture-backend.ts'
-import type { PhysicalArchitectureBsp } from './architecture-bsp-types.ts'
-import type { PhysicalArchitectureBspFrame } from './architecture-cohort.ts'
 import { pickPhysicalPlan, physicalPlanOccurrenceBounds, type PhysicalPlanPickInput } from './plan-picking.ts'
 import {createPhysicalOccurrenceMeshIndex,visitPhysicalSpatialPoints} from './occurrence-projection.ts'
 import { physicalPlanFrame } from '../../physical-layout/plan-drawing.ts'
@@ -26,19 +22,15 @@ export const createPhysicalSceneRenderer = (gl: WebGL2RenderingContext, entries:
   const initial = captureSceneGlState(gl)
   let backend: ReturnType<typeof createPhysicalBackend>
   try { backend = createPhysicalBackend(gl, palette) } finally { restoreSceneGlState(gl, initial) }
-  const architectureBackend = createPhysicalArchitectureBackend(gl, palette)
   const cpu = createPhysicalPreparedResidency()
   const stylesFor=createPhysicalSceneStyleCache()
   let renderPass: ReturnType<typeof createPhysicalRenderPass> | null = null
   let depthNear = 0
   let highlight: PhysicalSceneHighlight | null = null
-  let architectureFrame: PhysicalArchitectureBspFrame | null = null
   let disposed = false, failed = false, picking: PhysicalPickEntry[] = []
   let planPicking: ReadonlyArray<{ readonly entry: PhysicalLayerEntry; readonly input: PhysicalPlanPickInput }> = []
   const occurrenceMeshes=createPhysicalOccurrenceMeshIndex()
   let renderedRectangle={width:0,height:0}
-  const architecturePicks = new WeakMap<PhysicalPickEntry['meshes'], Map<string, PhysicalPickEntry['meshes']>>()
-  const architectureVisibility = new WeakMap<PhysicalPickEntry['meshes'], Map<string, PhysicalPickEntry['meshes']>>()
   const pick = (point: { x: number; y: number }): PhysicalSceneHit | null => {
     if (disposed || failed) return null
     for (let index = planPicking.length - 1; index >= 0; index--) {
@@ -93,42 +85,21 @@ export const createPhysicalSceneRenderer = (gl: WebGL2RenderingContext, entries:
       const rosters = new Map<PhysicalLayerEntry, PhysicalLayerEntry['meshes']>()
       const current = presented.filter(entry => !ink.includes(entry)).map(entry => {
         const boundary = visiblePhysicalInspectionBoundaries(entry.meshes, multiply(mainMatrix, localMercatorMatrix(entry.scene.anchor, entry.scene.bearing)))
-        // Invisible architecture is no longer a surface owner. Select its
-        // retained alternatives before using the SAME set for colour/picks.
-        let visible = boundary
-        if (entry.view.wallOpacity === 0 || entry.view.floorOpacity === 0) {
-          let selections = architectureVisibility.get(boundary)
-          if (!selections) { selections = new Map(); architectureVisibility.set(boundary, selections) }
-          const key = JSON.stringify([entry.view.wallOpacity === 0, entry.view.floorOpacity === 0])
-          const cached = selections.get(key)
-          if (cached) visible = cached
-          else { visible = boundary.filter(mesh => physicalArchitectureOpacity(mesh.object, entry.view) > 0); selections.set(key, visible) }
-        }
-        const selected = { ...entry, meshes: visiblePhysicalSurfaceOwners(visible) }
+        const selected = { ...entry, meshes: visiblePhysicalSurfaceOwners(boundary) }
         rosters.set(selected, entry.meshes)
         return selected
       }), plan = current.length > 0 && current.every(entry => entry.view.mode === '2d')
-      const baseProjection = plan ? projectPhysicalPlan(current, mainMatrix, architectureFrame?.planDepth) : current.map(entry => ({ entry, matrix: multiply(mainMatrix, localMercatorMatrix(entry.scene.anchor, entry.scene.bearing)), meshes: entry.meshes }))
+      const projected = plan ? projectPhysicalPlan(current, mainMatrix) : current.map(entry => ({ entry, matrix: multiply(mainMatrix, localMercatorMatrix(entry.scene.anchor, entry.scene.bearing)), meshes: entry.meshes }))
       depthNear = plan ? 0 : physicalPerspectiveNear(mainMatrix)
-      const projected = baseProjection
       for (const { entry, matrix, meshes } of projected) {
-        let pickable = meshes
-        if ((entry.view.wallOpacity ?? 1) < 1 || (entry.view.floorOpacity ?? 1) < 1) {
-          const key = JSON.stringify([(entry.view.wallOpacity ?? 1) === 1, (entry.view.floorOpacity ?? 1) === 1])
-          let selections = architecturePicks.get(meshes)
-          if (!selections) { selections = new Map(); architecturePicks.set(meshes, selections) }
-          const cached = selections.get(key)
-          if (cached) pickable = cached
-          else { pickable = meshes.filter(mesh => mesh.object.subjectIds.length > 0 || physicalArchitectureOpacity(mesh.object, entry.view) === 1); selections.set(key, pickable) }
-        }
         // Solid Plan has its own semantic-band offsets. 3D retains the exact
         // pre-camera roster's hierarchy and filters active leaves at pick time.
         const roster = plan ? meshes : rosters.get(entry)
         if (!roster) throw Error('Physical picking lost its displayed spatial roster')
-        picking.push({ sceneId: entry.scene.id, meshes: pickable, roster, matrix })
+        picking.push({ sceneId: entry.scene.id, meshes, roster, matrix })
         const drawMatrix = new Float32Array(matrix)
         if (!entry.asset) throw new Error('Physical render entry has no prepared GPU asset')
-        draws.push({ sceneId: entry.scene.id, asset: entry.asset, meshes, matrix: drawMatrix, flat: entry.view.mode === '2d', architecture: entry.view, styles:stylesFor(entry.asset,entry.status,entry.view.live), ...(highlight?.sceneId === entry.scene.id ? { highlight } : {}) })
+        draws.push({ asset: entry.asset, meshes, matrix: drawMatrix, flat: entry.view.mode === '2d', styles:stylesFor(entry.asset,entry.status,entry.view.live), ...(highlight?.sceneId === entry.scene.id ? { highlight } : {}) })
       }
       // Native vector Plan draws and picks its own ink. An empty GL pass
       // must neither query shared state nor composite a blank target.
@@ -138,16 +109,7 @@ export const createPhysicalSceneRenderer = (gl: WebGL2RenderingContext, entries:
       const pixels = target.kind === 'offscreen' ? target : { width: before!.viewport[2], height: before!.viewport[3] }
       offscreenTouched = target.kind === 'offscreen'
       renderPass ??= createPhysicalRenderPass(gl); renderPass.begin(pixels.width, pixels.height)
-      let architectureMatrix: Float32Array | undefined
-      if (architectureFrame) {
-        const common = multiply(mainMatrix, architectureFrame.matrix)
-        if (plan && projected.length) {
-          common[8] = common[9] = common[11] = common[2] = common[6] = 0
-          common[10] = projected[0]!.matrix[10]!; common[14] = projected[0]!.matrix[14]!
-        }
-        architectureMatrix = new Float32Array(common)
-      }
-      backend.draw(architectureBackend.opaqueDraws(draws), depthNear); architectureBackend.draw(draws, depthNear, architectureMatrix)
+      backend.draw(draws, depthNear)
       if (before) renderPass.composite(before.drawFramebuffer, before.readFramebuffer, before.viewport)
       else renderPass.resolve()
       return true
@@ -169,13 +131,6 @@ export const createPhysicalSceneRenderer = (gl: WebGL2RenderingContext, entries:
     },
     invalidatePicks(): void { preparedColor = false; picking = []; planPicking = [] }, pick, cheapProject,
     setHighlight(value: PhysicalSceneHighlight | null): void { preparedColor = false; highlight = value },
-    setArchitectureBsp(value: PhysicalArchitectureBsp | null, frame: PhysicalArchitectureBspFrame | null): void {
-      preparedColor = false
-      if (value && (!frame || frame.matrix.length !== 16 || !frame.matrix.every(Number.isFinite))) throw Error('Architecture cohort requires its actual common-basis placement')
-      if (frame?.planDepth && (!Object.values(frame.planDepth).every(Number.isFinite) || frame.planDepth.span <= 0 || frame.planDepth.domain <= 0)) throw Error('Architecture cohort has an invalid Plan depth domain')
-      architectureFrame = value ? { matrix: frame!.matrix.slice(), ...(frame!.planDepth ? { planDepth: { ...frame!.planDepth } } : {}) } : null
-      architectureBackend.setAsset(value)
-    },
     visitOccurrencePoints(sceneId: string, occurrenceId: string, points: ReadonlyArray<Vector3>, visit: PhysicalProjectedPointVisitor, levelId?: string): void {
       if (disposed || failed) return
       const plan = planPicking.find(candidate => candidate.entry.scene.id === sceneId)
@@ -192,21 +147,17 @@ export const createPhysicalSceneRenderer = (gl: WebGL2RenderingContext, entries:
     },
     visibleAt(sceneId: string, occurrenceId: string, point: { x: number; y: number }): boolean { const hit = pick(point); return hit?.sceneId === sceneId && hit.occurrenceId === occurrenceId },
     project(sceneId: string, occurrenceId: string, levelId?: string): PhysicalProjectedPoint | null { const point = cheapProject(sceneId, occurrenceId, levelId); return point ? { ...point, visible: point.visible && this.visibleAt(sceneId, occurrenceId, point) } : null },
-    setPalette(value: PhysicalScenePalette): void { preparedColor = false; backend.setPalette(value); architectureBackend.setPalette(value) },
+    setPalette(value: PhysicalScenePalette): void { preparedColor = false; backend.setPalette(value) },
     retainGeometryIdentities(identities: ReadonlySet<string>): void { preparedColor = false; cpu.retainIdentities(identities); const before = captureSceneGlState(gl); try { backend.retainGeometryIdentities(identities) } finally { restoreSceneGlState(gl, before) } },
     metrics: () => {
-      const owned = renderPass?.metrics(), base = backend.metrics, architecture = architectureBackend.metrics()
-      return { ...base, architecture, cpuResidency: cpu.metrics(), renderPass: owned ?? null, depthNear,
-        geometryUploads: base.geometryUploads + architecture.geometryUploads, geometryBytes: base.geometryBytes + architecture.geometryBytes + architecture.orderBytes,
-        instanceBytes: base.instanceBytes + architecture.instanceBytes, instanceUploads: base.instanceUploads + architecture.instanceUploads,
-        statusUploads: base.statusUploads + architecture.statusUploads, paletteUploads: base.paletteUploads + architecture.paletteUploads, draws: base.draws + architecture.draws,
-        residentCpuBytes: cpu.metrics().residentBytes + base.residentCpuBytes + architecture.residentCpuBytes, buffers: base.buffers + architecture.buffers,
-        programs: base.programs + architecture.programs + (owned?.programs ?? 0), textures: base.textures + architecture.textures + (owned?.textures ?? 0), textureBytes: base.textureBytes + architecture.textureBytes + (owned?.textureBytes ?? 0),
-        liveBuffersAfterDisposal: base.liveBuffersAfterDisposal === null ? null : base.liveBuffersAfterDisposal + (architecture.liveBuffersAfterDisposal ?? 0),
-        liveProgramsAfterDisposal: base.liveProgramsAfterDisposal === null ? null : base.liveProgramsAfterDisposal + (architecture.liveProgramsAfterDisposal ?? 0) + (owned?.livePrograms ?? 0),
-        liveTexturesAfterDisposal: base.liveTexturesAfterDisposal === null ? null : base.liveTexturesAfterDisposal + (architecture.liveTexturesAfterDisposal ?? 0) + (owned?.liveTextures ?? 0) }
+      const owned = renderPass?.metrics(), base = backend.metrics, cpuResidency = cpu.metrics()
+      return { ...base, cpuResidency, renderPass: owned ?? null, depthNear,
+        residentCpuBytes: cpuResidency.residentBytes + base.residentCpuBytes,
+        programs: base.programs + (owned?.programs ?? 0), textures: base.textures + (owned?.textures ?? 0), textureBytes: base.textureBytes + (owned?.textureBytes ?? 0),
+        liveProgramsAfterDisposal: base.liveProgramsAfterDisposal === null ? null : base.liveProgramsAfterDisposal + (owned?.livePrograms ?? 0),
+        liveTexturesAfterDisposal: base.liveTexturesAfterDisposal === null ? null : base.liveTexturesAfterDisposal + (owned?.liveTextures ?? 0) }
     },
-    dispose(): void { if (disposed) return; preparedColor = false; disposed = true; backend.dispose(); architectureBackend.dispose(); renderPass?.dispose(); cpu.clear(); picking = []; planPicking = [] },
+    dispose(): void { if (disposed) return; preparedColor = false; disposed = true; backend.dispose(); renderPass?.dispose(); cpu.clear(); picking = []; planPicking = [] },
   }
 }
 
