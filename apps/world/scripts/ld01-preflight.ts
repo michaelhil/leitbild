@@ -110,7 +110,11 @@ async function preflight(receiptDir: string, wiki: string, wikiRepository: strin
   for (const [name, hash] of Object.entries(solverBuild.libraries_sha256)) {
     const library = join(solver, 'lib', name)
     requireHash(library, hash)
-    requireEqual(`SUNDIALS ${name} link target`, realpathSync(library.replace(/\.\d+\.\d+\.\d+\.dylib$/, '.dylib')), realpathSync(library))
+    const target = realpathSync(library)
+    for (const suffix of ['.dylib', '.$1.dylib']) {
+      const alias = library.replace(/\.(\d+)\.\d+\.\d+\.dylib$/, suffix)
+      requireEqual(`SUNDIALS ${alias} link target`, realpathSync(alias), target)
+    }
   }
   for (const [name, target] of Object.entries(solverBuild.klu_links)) {
     requireEqual(`SuiteSparse ${name} target`, realpathSync(join(solver, 'lib', name)), realpathSync(target))
