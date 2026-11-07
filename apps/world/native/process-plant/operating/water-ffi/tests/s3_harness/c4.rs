@@ -6,7 +6,9 @@
 //! line the run cannot decide is reported as such, never passed.
 use serde_json::{Value, json};
 
-pub const FENCE: &str = "ld01-s3-cases-c4";
+/// Revision 4 (owner, 7 November, after result). Revision 3 stays pinned under
+/// its own fence for C3's chattering check.
+pub const FENCE: &str = "ld01-s3-cases-c4-r4";
 
 /// A regular cell's declared volume class.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -584,7 +586,7 @@ pub fn judge(lines: &Value, run: &Run<'_>, zero: f64) -> Vec<Value> {
             }
             "O3" => {
                 let low: Vec<(usize, f64)> =
-                    causes(run.divisions, "LD01.PROT.PZR.LOW_PRESSURE").collect();
+                    causes(run.divisions, "LD01.PROT.PZR.S_PRESSURE").collect();
                 let mut missing = Vec::new();
                 for (i, t) in &low {
                     let req = run.divisions[*i]["requests"]
@@ -594,7 +596,7 @@ pub fn judge(lines: &Value, run: &Run<'_>, zero: f64) -> Vec<Value> {
                     for want in ["CMT injection", "PRHR"] {
                         let has = req.iter().any(|r| {
                             r["request"] == want
-                                && r["by"] == "LD01.PROT.PZR.LOW_PRESSURE"
+                                && r["by"] == "LD01.PROT.PZR.S_PRESSURE"
                                 && r["t_s"].as_f64().is_some_and(|x| same(x, *t))
                         });
                         if !has {
@@ -778,11 +780,12 @@ pub fn judge(lines: &Value, run: &Run<'_>, zero: f64) -> Vec<Value> {
     out
 }
 
-/// Pass only when every judged must and must-not line passes.
+/// Pass only when every judged must and must-not line passes; a may line
+/// and a diagnostic (N4′, R11-3a) never decide.
 pub fn all_pass(judged: &[Value]) -> bool {
     judged
         .iter()
-        .filter(|l| l["kind"] != "may")
+        .filter(|l| l["kind"] != "may" && l["kind"] != "diagnostic")
         .all(|l| l["verdict"] == "pass")
 }
 
@@ -1197,7 +1200,7 @@ pub fn primary_mass(d: &Value) -> Row {
         ledger["bound_local_tolerance_units"].as_f64(),
         worst["max_units"].as_f64(),
         last,
-        receipts["values"]["pzr_relief_attribution_kg"].as_f64(),
+        receipts["values"]["primary_mass_kg"].as_f64(),
         ledger["final"]["t_s"].as_f64(),
         receipts["t_s"].as_f64(),
     ) else {
@@ -1226,8 +1229,10 @@ pub fn primary_mass(d: &Value) -> Row {
         Some(worst_units <= bound && change < 0. && relief_units <= bound),
         json!({"bound_units": bound, "bound_source": "ld01-s2-gates ledger.boundLocalToleranceUnits",
             "closure_max_units": worst_units, "closure_at_t_s": worst["at_t_s"],
-            "last_closure_t_s": t, "inventory_change_kg": change, "integrated_relief_kg": attribution,
-            "against_relief_units": relief_units, "tolerance_kg": tolerance,
+            "last_closure_t_s": t, "inventory_change_kg": change,
+            "integrated_relief_less_cvcs_net_kg": attribution,
+            "integrated_relief_kg": receipts["values"]["pzr_relief_attribution_kg"],
+            "against_relief_less_cvcs_net_units": relief_units, "tolerance_kg": tolerance,
             "span": "rule D's ledgers from the run's start (q0 = 0) to its last closure"}),
     )
 }

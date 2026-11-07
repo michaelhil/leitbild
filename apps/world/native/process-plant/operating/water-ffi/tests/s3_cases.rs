@@ -646,6 +646,9 @@ const C1C3_R3_8: &str = include_str!("s3_harness/fixtures/ld01-s3-cases-c1c3-r3.
 const C1C3_R3_8_SHA256: &str = "7291821074f5f28193491ecef597deb6ff42cdb2118db4a74649ea584951f3e7";
 const C4_R3: &str = include_str!("s3_harness/fixtures/ld01-s3-cases-c4-r3.json");
 const C4_R3_SHA256: &str = "6b4958c8aff62554f88ee90e4143df86336a36df049d873335673e5874bdc261";
+/// Revision 4 (R4-C4-REV4, owner-approved after result): C4 runs on it.
+const C4_R4: &str = include_str!("s3_harness/fixtures/ld01-s3-cases-c4-r4.json");
+const C4_R4_SHA256: &str = "44eab84f6ead4ed811d1ff9302e749ef416e38bc50ef92ec0c562e9a1ebfdb1c";
 /// The revisions the r8 wiki supersedes, refused by name.
 const SUPERSEDED: [(&str, &str, &str); 2] = [
     (
@@ -660,13 +663,14 @@ const SUPERSEDED: [(&str, &str, &str); 2] = [
     ),
 ];
 /// The pin a block must carry for a gate run on the r8 wiki, by fence.
-const REQUIRED: [(&str, &str, &str); 2] = [
+const REQUIRED: [(&str, &str, &str); 3] = [
     (
         "ld01-s3-cases-c1c3",
         C1C3_R3_8_SHA256,
         "RP1-pin-s3-c1c3-r3.8",
     ),
     ("ld01-s3-cases-c4", C4_R3_SHA256, "RP1-pin-s3-c4-r3"),
+    (s3_harness::c4::FENCE, C4_R4_SHA256, "RP1-pin-s3-c4-r4"),
 ];
 
 /// Refuses a superseded block revision by name, and any C1–C3 or C4 block
@@ -1326,12 +1330,30 @@ fn the_window_cap_holds_only_inside_the_declared_window() {
     assert!(cap_removed_at(548.1 + 20., zero, 20.));
 }
 
+/// Block r4 (R4-C4-REV4): its declared hash, and what it changed against r3.
+#[test]
+fn c4_revision_4_pins_and_names_the_owner_approved_changes() {
+    let b = Block::from_json(s3_harness::c4::FENCE, C4_R4).unwrap();
+    assert_eq!(guards::declared_sha256(&b).unwrap(), C4_R4_SHA256);
+    let lines = b.whole("/cases/C4/lines");
+    assert!(
+        lines["O3"]["action"]
+            .as_str()
+            .unwrap()
+            .contains("S_PRESSURE")
+    );
+    assert_eq!(lines["N4"]["kind"], "diagnostic");
+    assert_eq!(b.whole("/cases/C4/stepping/record"), "free");
+    let r3 = Block::from_json("ld01-s3-cases-c4", C4_R3).unwrap();
+    assert_eq!(guards::declared_sha256(&r3).unwrap(), C4_R3_SHA256);
+}
+
 #[test]
 fn c4s_clock_windows_and_operator_trip_are_read_from_its_block() {
     // C4's revision 2 (superseded by r3 for a run, refused there by name):
     // its clock, windows and register mechanics, which r3 keeps.
     let b = Block::from_json(
-        s3_harness::c4::FENCE,
+        "ld01-s3-cases-c4",
         include_str!("s3_harness/fixtures/ld01-s3-cases-c4-r2.json"),
     )
     .unwrap();
@@ -2215,11 +2237,6 @@ fn drive(
     // window's end, the exchanges' interval ends and the run's end) are
     // exact stops; the frame chunks below are observation marks.
     if ask.config.solver.stepping == leitbild_operating_water::frame::Stepping::Free {
-        // C4 serves no 1.0 case and reads its frames at exact chunk stops.
-        assert!(
-            case != Case::C4,
-            "C4 refuses free stepping: compose it with LD01_S3_STEPPING=frame-stops"
-        );
         assert_eq!(
             driver.stepping,
             leitbild_operating_water::frame::Stepping::Free
@@ -2444,6 +2461,14 @@ fn drive(
                 let s0 = process_cpu_s();
                 let classes = c4_classes.as_ref().unwrap();
                 if c4_observe {
+                    // Block r4: under free stepping the integrator may stand
+                    // past the mark; the frame is stock's dense output there.
+                    let free = driver.stepping == leitbild_operating_water::frame::Stepping::Free;
+                    let (mut at, mut rate) = (y.to_vec(), yp.to_vec());
+                    if free && ida.dense_output(*b, &mut at, &mut rate).is_err() {
+                        at.copy_from_slice(y);
+                        rate.copy_from_slice(yp);
+                    }
                     match c4_frame(
                         ida,
                         n,
@@ -2454,8 +2479,8 @@ fn drive(
                         &recorder.sg,
                         c4_lift,
                         *b,
-                        y,
-                        yp,
+                        &at,
+                        &rate,
                     ) {
                         Ok((f, row)) => {
                             c4.frames.push(f);
@@ -3788,12 +3813,12 @@ fn s3_case_run() {
         |e| json!({"pinned": false, "error": e, "declared_sha256": guards::declared_sha256(&d.block).ok()}),
     );
     let tbd = d.tbd().unwrap();
-    // C4 runs on its pinned block r3 only (RP1-pin-s3-c4-r3, the r8 wiki).
+    // C4 runs on its pinned block r4 only (RP1-pin-s3-c4-r4).
     if case == Case::C4 {
         assert_eq!(
             guards::declared_sha256(&d.block).ok().as_deref(),
-            Some(C4_R3_SHA256),
-            "the C4 block is not RP1-pin-s3-c4-r3"
+            Some(C4_R4_SHA256),
+            "the C4 block is not RP1-pin-s3-c4-r4"
         );
     }
     let mut refusals = declaration::case_refusals(case, &pin, &tbd);
@@ -4030,7 +4055,10 @@ fn s3_case_run() {
                 .chain(verdicts.iter().map(String::as_str)),
         );
         g_cost["c4_later_windows"] = json!(later);
-        g_cost["verdict"] = json!(overall);
+        // Block r4: the owner's 31 October rule decides, read by ld01-cost.ts
+        // from the frame record; these budgets are reported.
+        g_cost["reported_budgets_verdict"] = json!(overall);
+        g_cost["verdict"] = json!("judged by ld01-cost.ts on the 31 October rule");
     }
     g_cost["measured_on"] = json!(if cost_drive.is_some() {
         "the ungated cost drive (same trajectory; frames compared, in the verdict)"
@@ -4173,8 +4201,9 @@ fn s3_case_run() {
         // references are the tolerance-proportionality series rtol/10, /30
         // and /100 (every atol scaled with it), each over the whole span;
         // consecutive levels are compared below (`series`).
-        let series_on = std::env::var("LD01_PHYS_SERIES").as_deref() == Ok("1")
-            && matches!(case, Case::C2 | Case::C3 | Case::C5);
+        let series_on = case == Case::C4
+            || (std::env::var("LD01_PHYS_SERIES").as_deref() == Ok("1")
+                && matches!(case, Case::C2 | Case::C3 | Case::C5));
         let asks = if series_on {
             [10., 30., 100.]
                 .into_iter()
@@ -4412,7 +4441,10 @@ fn s3_case_run() {
             if end < w + post {
                 h1a["truncated_by_rule_i"] = json!(true);
             }
-            checks.insert("h1a_convergence".into(), h1a);
+            // Block r4 moved C4's refinement to the tolerance series.
+            if case != Case::C4 {
+                checks.insert("h1a_convergence".into(), h1a);
+            }
         }
         let verdict = s3_harness::families::overall_of(
             comparisons
@@ -4570,7 +4602,9 @@ fn s3_case_run() {
             Case::C4 => "1 s after each phase change and at the declared part's end (C4, S3-D52)",
         });
         if case == Case::C4 {
-            k["c4_states"] = json!(run.c4_states);
+            k = json!({"family": "K spectra", "verdict": "dropped",
+                "reason": "block r4: R11-3a keeps rule K at equilibria only, and C4 has none",
+                "c4_states": run.c4_states});
         }
         families.insert("K_spectra".into(), k);
         // Rule B (S3-D50), with the chattering criterion as data.
