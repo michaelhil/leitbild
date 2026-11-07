@@ -140,7 +140,9 @@ pub(super) fn capacity(
     let u = v.abs();
     let sv = v.signum();
     let big = (alpha * alpha + 2. * r * a_v.abs() * u).sqrt();
-    let dbig = (alpha * dalpha + dr * a_v.abs() * u + r * a_v.signum() * da * u + r * a_v.abs() * sv * dv) / big;
+    let dbig =
+        (alpha * dalpha + dr * a_v.abs() * u + r * a_v.signum() * da * u + r * a_v.abs() * sv * dv)
+            / big;
     let (den, dden) = (alpha + big, dalpha + dbig);
     let (num, dnum) = (2. * v * p, 2. * dv * p + 2. * v * dp_a);
     let q = num / den;
@@ -483,7 +485,11 @@ impl<P: Properties> Network<P> {
         let x = self
             .spray_x
             .ok_or_else(|| Failure::Fatal("spray valve opening not evaluated".into()))?;
-        let x = if seeded_opening { x } else { Scalar::constant(x.value) };
+        let x = if seeded_opening {
+            x
+        } else {
+            Scalar::constant(x.value)
+        };
         let (c, re_t) = (s.valve.full_area_m2(), s.valve.low_reynolds_transition());
         let cap = capacity(x, c, drive, rho, mu, re_t)?;
         // The row's partial in the opening at this evaluation's values.
@@ -511,10 +517,12 @@ impl<P: Properties> Network<P> {
         let s = self
             .spray
             .ok_or_else(|| Failure::Fatal("the continuous spray stem needs a spray path".into()))?;
-        if !self.spray_continuous && !(s.closed && s.stem.closing() && s.stem.closed_at(s.stem.arrival())?)
+        if !self.spray_continuous
+            && !(s.closed && s.stem.closing() && s.stem.closed_at(s.stem.arrival())?)
         {
             return Err(Failure::Fatal(
-                "the continuous spray stem starts from the held stem at rest on its closed lock".into(),
+                "the continuous spray stem starts from the held stem at rest on its closed lock"
+                    .into(),
             ));
         }
         self.spray_continuous = true;
@@ -547,7 +555,9 @@ impl<P: Properties> Network<P> {
     /// closed, its release root armed.
     pub fn set_spray_lock(&mut self, t: f64, closed: bool) -> Result<Value, Failure> {
         if !self.spray_continuous {
-            return Err(Failure::Fatal("a located spray lock change needs the continuous stem".into()));
+            return Err(Failure::Fatal(
+                "a located spray lock change needs the continuous stem".into(),
+            ));
         }
         let drive = self.spray.map(|s| self.face_drive[s.valve_face][0].value);
         let s = self
@@ -560,16 +570,20 @@ impl<P: Properties> Network<P> {
             )));
         }
         let drive = drive.filter(|d| d.is_finite()).ok_or_else(|| {
-            Failure::Fatal(format!("spray valve lock change at {t} s without the path's drive"))
+            Failure::Fatal(format!(
+                "spray valve lock change at {t} s without the path's drive"
+            ))
         })?;
         let check_before = s.check_closed;
         s.closed = closed;
         if !closed && s.check_closed && drive > 0. {
             s.check_closed = false;
         }
-        Ok(json!({"owner":"spray valve","t_s":t,"stem":"continuous (PZR owner, R4-PZR-PI)",
+        Ok(
+            json!({"owner":"spray valve","t_s":t,"stem":"continuous (PZR owner, R4-PZR-PI)",
             "event": if closed { "stem reached 0: valve path locked" } else { "master demand above the spray start: valve path released" },
-            "closed":s.closed,"check_closed_before":check_before,"check_closed":s.check_closed,"forward_drive_pa":drive}))
+            "closed":s.closed,"check_closed_before":check_before,"check_closed":s.check_closed,"forward_drive_pa":drive}),
+        )
     }
     /// The stem's opening at `t`, kept for this evaluation's restriction
     /// row (and the block replay of it).
@@ -745,8 +759,20 @@ mod tests {
         // Laminar at a vanishing drive: Q = Δp/a, a bounded slope.
         let a_v = 0.3 * c;
         let a = re_t * mu.value * std::f64::consts::PI.sqrt() / (4. * a_v.powf(1.5));
-        let tiny = capacity(Scalar::constant(0.3), c, Scalar::new(1e-9, 1.), rho, mu, re_t).unwrap();
-        assert!((tiny.direction * a - 1.).abs() < 1e-6, "{}", tiny.direction * a);
+        let tiny = capacity(
+            Scalar::constant(0.3),
+            c,
+            Scalar::new(1e-9, 1.),
+            rho,
+            mu,
+            re_t,
+        )
+        .unwrap();
+        assert!(
+            (tiny.direction * a - 1.).abs() < 1e-6,
+            "{}",
+            tiny.direction * a
+        );
         // The directions agree with central differences in every input.
         let base = (0.3, 5e3, rho.value, mu.value);
         let f = |x: f64, dp: f64, r: f64, m: f64| {
@@ -780,7 +806,10 @@ mod tests {
             lo[k] -= h;
             hi[k] += h;
             let fd = (f(hi[0], hi[1], hi[2], hi[3]) - f(lo[0], lo[1], lo[2], lo[3])) / (2. * h);
-            assert!((at - fd).abs() <= 1e-6 * fd.abs().max(1e-12), "input {k}: {at} vs {fd}");
+            assert!(
+                (at - fd).abs() <= 1e-6 * fd.abs().max(1e-12),
+                "input {k}: {at} vs {fd}"
+            );
         }
     }
 }

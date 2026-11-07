@@ -265,9 +265,10 @@ impl<P: Properties> Network<P> {
         self.spray_opening_at(t)?;
         // R4-PZR-SPRAY-LAMINAR: the line liquid's viscosity with its
         // direction, for the valve's low-Reynolds branch.
-        self.spray_mu = self.spray.and_then(|sp| points[sp.region][0]).map(|(q, dq)| {
-            thermal::Scalar::new(q.viscosity_pa_s, dq.viscosity_pa_s)
-        });
+        self.spray_mu = self
+            .spray
+            .and_then(|sp| points[sp.region][0])
+            .map(|(q, dq)| thermal::Scalar::new(q.viscosity_pa_s, dq.viscosity_pa_s));
         self.compose_sections(y, yp, seed, cj, &points)?;
         self.compose_momentum(t, y, yp, seed, cj, &phase_mass)?;
         self.compose_stocks(y, yp, seed, cj, &points, reuse)?;

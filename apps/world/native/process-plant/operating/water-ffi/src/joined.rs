@@ -486,7 +486,17 @@ pub fn consistent_start_exempting<P: Properties + WaterProperties>(
     let mut a = vec![0.; nnz];
     assemble(joined, &matrices, t, 0., y, &mut a, &mut report, true, None)?;
     let mut ab = vec![0.; nnz];
-    assemble(joined, &matrices, t, 1., y, &mut ab, &mut report, false, None)?;
+    assemble(
+        joined,
+        &matrices,
+        t,
+        1.,
+        y,
+        &mut ab,
+        &mut report,
+        false,
+        None,
+    )?;
     // Each row's magnitude of terms from its linearization at the state:
     // `sum_j |dF/dy_ij y_j|`, and with rates `sum_j |dF/dy'_ij y'_j|`.
     let magnitude = |matrix: &dyn Fn(usize) -> f64, v: &[f64]| {
@@ -1092,7 +1102,17 @@ mod integrated {
         relative: f64,
         restart: &Restart,
     ) -> Result<Restarted, String> {
-        restart_or_continue(ida, t, discrete, y_all, network_ids, absolute_all, relative, restart, false)
+        restart_or_continue(
+            ida,
+            t,
+            discrete,
+            y_all,
+            network_ids,
+            absolute_all,
+            relative,
+            restart,
+            false,
+        )
     }
 
     /// E-EVT (plan r4): [`discrete_restart`], or, for a command or an owner
@@ -1112,7 +1132,17 @@ mod integrated {
         relative: f64,
         restart: &Restart,
     ) -> Result<Restarted, String> {
-        restart_or_continue(ida, t, discrete, y_all, network_ids, absolute_all, relative, restart, true)
+        restart_or_continue(
+            ida,
+            t,
+            discrete,
+            y_all,
+            network_ids,
+            absolute_all,
+            relative,
+            restart,
+            true,
+        )
     }
 
     #[allow(clippy::too_many_arguments)] // One restart: event, state, identity and tolerances.
@@ -1226,9 +1256,7 @@ mod integrated {
                 let mut event = directions.to_vec();
                 let mut w = vec![0.; y.len()];
                 rule.weights(y, relative, absolute, &mut w)?;
-                joined
-                    .coincident(y, &w, &mut event)
-                    .map_err(message)?;
+                joined.coincident(y, &w, &mut event).map_err(message)?;
                 joined.transact(t, &event, y).map_err(message)?
             }
             Discrete::TimeEvent => Vec::new(),
@@ -1248,7 +1276,9 @@ mod integrated {
         if allow_noop
             && !presence_changed
             && appended_done.is_empty()
-            && y.iter().zip(&before).all(|(a, b)| a.to_bits() == b.to_bits())
+            && y.iter()
+                .zip(&before)
+                .all(|(a, b)| a.to_bits() == b.to_bits())
             && integrated.joined.differential(network_ids) == identity_before
             && integrated.joined.network.cell_modes() == modes_before.as_slice()
         {
@@ -2115,7 +2145,9 @@ mod integrated {
                     // state stands; with the relief shut its rows are those
                     // of the assembly's reuse evaluation bit for bit (only a
                     // lifted relief's restriction is held with partials).
-                    let on_base = self.base.matches(time, y, yp, self.joined.counters.residuals)
+                    let on_base = self
+                        .base
+                        .matches(time, y, yp, self.joined.counters.residuals)
                         && self.joined.network.pzr_boundary().is_none_or(|(b, _)| {
                             b.relief.as_ref().is_none_or(|r| r.lift.value == 0.)
                         });

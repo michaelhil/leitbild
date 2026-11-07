@@ -604,7 +604,11 @@ impl<S: leitbild_operating_water::joined::JoinedSystem> leitbild_operating_water
             rows.push(json!({"t_s": t, "values": readings.values(y)?}));
         }
         if let Some((base, scales, rows)) = self.cvcs.as_mut() {
-            let x: Vec<f64> = scales.iter().enumerate().map(|(k, s)| y[*base + k] * s).collect();
+            let x: Vec<f64> = scales
+                .iter()
+                .enumerate()
+                .map(|(k, s)| y[*base + k] * s)
+                .collect();
             rows.push(json!([t, x]));
         }
         let travel: Vec<f64> = self.rods.iter().map(|(i, s)| y[*i] * s).collect();
@@ -1537,7 +1541,10 @@ impl CaseConfig {
             water: leitbild_operating_water::WaterMethod::parse(&var("LD01_S3_WATER", "sbtl"))?,
             // R4-NUC-SOURCE-ATOL: derived (the composition of record) or
             // stock (unset: derived).
-            source_atol: leitbild_operating_water::unit::profile::SourceAtol::parse(&var("LD01_S3_SOURCE_ATOL", "derived"))?,
+            source_atol: leitbild_operating_water::unit::profile::SourceAtol::parse(&var(
+                "LD01_S3_SOURCE_ATOL",
+                "derived",
+            ))?,
         };
         // The r4 baseline (BASELINE-r4.md): stock matrix management unless
         // MR-1 is asked.
@@ -1574,12 +1581,16 @@ impl CaseConfig {
         let single: Option<&'static str> = std::env::var("LD01_S3_SINGLE")
             .ok()
             .map(|id| &*Box::leak(id.into_boxed_str()));
-        let stuck = match var("LD01_S3_STUCK", "off").as_str() {
-            "on" if single.is_some() => true,
-            "on" => return Err("LD01_S3_STUCK=on needs LD01_S3_SINGLE (a stuck cluster is composed singly)".into()),
-            "off" => false,
-            v => return Err(format!("LD01_S3_STUCK={v}: on or off")),
-        };
+        let stuck =
+            match var("LD01_S3_STUCK", "off").as_str() {
+                "on" if single.is_some() => true,
+                "on" => return Err(
+                    "LD01_S3_STUCK=on needs LD01_S3_SINGLE (a stuck cluster is composed singly)"
+                        .into(),
+                ),
+                "off" => false,
+                v => return Err(format!("LD01_S3_STUCK={v}: on or off")),
+            };
         let rod_trip = match var("LD01_S3_TRIP", "turbine").as_str() {
             "turbine" => false,
             "rod" => true,
@@ -1806,7 +1817,11 @@ fn drive(
         common::feed_control::FeedClient::commission(joined, &section, unit.y.len())
             .unwrap_or_else(|e| panic!("{e}"))
     };
-    assert_eq!(feed.is_some(), unit.feed_train, "the composition's feed train");
+    assert_eq!(
+        feed.is_some(),
+        unit.feed_train,
+        "the composition's feed train"
+    );
     // The case's kinetics end rule (P1, owner R11): A4's D3 (a) for the S3
     // blocks, the hot-standby admission under P1 (`case_kinetics`).
     let extension = match case_kinetics(d).unwrap_or_else(|e| panic!("{e}"))["ruleI"].as_str() {
@@ -2205,7 +2220,10 @@ fn drive(
             case != Case::C4,
             "C4 refuses free stepping: compose it with LD01_S3_STEPPING=frame-stops"
         );
-        assert_eq!(driver.stepping, leitbild_operating_water::frame::Stepping::Free);
+        assert_eq!(
+            driver.stepping,
+            leitbild_operating_water::frame::Stepping::Free
+        );
         for b in bounds.iter().filter(|b| **b > t0 && **b <= until) {
             driver
                 .declare_stop(*b)
@@ -2224,10 +2242,15 @@ fn drive(
     let operator_trip = operator_trip_delay(case, spec).unwrap();
     let mut operator_trip_record = Value::Null;
     let mut declared_end_state: Option<(String, String, &'static str)> = None;
-    let state_at_request: Option<(f64, String)> = std::env::var("LD01_S3_STATE_AT_AFTER_ZERO_S").ok().map(|v| {
-        (v.parse::<f64>().expect("LD01_S3_STATE_AT_AFTER_ZERO_S"),
-            std::env::var("LD01_S3_STATE_AT_OUT").expect("LD01_S3_STATE_AT_AFTER_ZERO_S needs LD01_S3_STATE_AT_OUT"))
-    });
+    let state_at_request: Option<(f64, String)> = std::env::var("LD01_S3_STATE_AT_AFTER_ZERO_S")
+        .ok()
+        .map(|v| {
+            (
+                v.parse::<f64>().expect("LD01_S3_STATE_AT_AFTER_ZERO_S"),
+                std::env::var("LD01_S3_STATE_AT_OUT")
+                    .expect("LD01_S3_STATE_AT_AFTER_ZERO_S needs LD01_S3_STATE_AT_OUT"),
+            )
+        });
     let mut state_at: Option<(String, String, f64)> = None;
     // S3-D52: the last frame stop that rule I admits, kept while the window
     // runs, for a rule-I end before the window's end (A4 admits no state
@@ -2673,9 +2696,16 @@ fn drive(
                     "composition": composition["composition"],
                     "from": format!("{} at {} s after zero (R4-NUC-SOURCE-ATOL basis, record only)", case.key(), *b - zero)});
                 let bytes = serde_json::to_vec(&s).unwrap();
-                assert!(!std::path::Path::new(path).exists(), "states are never overwritten");
+                assert!(
+                    !std::path::Path::new(path).exists(),
+                    "states are never overwritten"
+                );
                 std::fs::write(path, &bytes).unwrap();
-                state_at = Some((path.clone(), leitbild_operating_plant::digest::sha256(&bytes), *b));
+                state_at = Some((
+                    path.clone(),
+                    leitbild_operating_plant::digest::sha256(&bytes),
+                    *b,
+                ));
             }
             // Rule K's post-event state (S3-D52): the declared part's end,
             // the window's end or rule I's end, whichever first, the
@@ -4249,9 +4279,14 @@ fn s3_case_run() {
             std::fs::write(&path, serde_json::to_vec(&out).unwrap()).expect("LD01_S3_CREDITED_OUT");
         }
         if let Ok(path) = std::env::var("LD01_S3_E0_AGAINST") {
-            let v: Value = serde_json::from_slice(&std::fs::read(&path).expect("LD01_S3_E0_AGAINST"))
-                .expect("LD01_S3_E0_AGAINST: credited outputs");
-            assert_eq!(v["zero"].as_f64(), Some(run.zero), "LD01_S3_E0_AGAINST: another event zero");
+            let v: Value =
+                serde_json::from_slice(&std::fs::read(&path).expect("LD01_S3_E0_AGAINST"))
+                    .expect("LD01_S3_E0_AGAINST: credited outputs");
+            assert_eq!(
+                v["zero"].as_f64(),
+                Some(run.zero),
+                "LD01_S3_E0_AGAINST: another event zero"
+            );
             let other = compare::Credited {
                 t: serde_json::from_value(v["t"].clone()).expect("credited t"),
                 outputs: serde_json::from_value(v["outputs"].clone()).expect("credited outputs"),

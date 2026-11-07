@@ -541,11 +541,7 @@ impl Pzr {
                         "continuousControl: the prepared roof pressure {prepared_roof_pressure_pa} Pa"
                     )));
                 }
-                let installed: f64 = heaters
-                    .banks()
-                    .iter()
-                    .map(|b| b.nominal_capacity_w)
-                    .sum();
+                let installed: f64 = heaters.banks().iter().map(|b| b.nominal_capacity_w).sum();
                 if installed != c.heater_capacity_w {
                     return Err(fatal(format!(
                         "continuousControl: the law modulates {} W, the banks install {installed} W",
@@ -908,7 +904,12 @@ impl Pzr {
     /// [`DISARMED`] when it cannot act).
     pub fn root_count(&self) -> usize {
         let relief = if self.relief.is_some() { 2 } else { 0 };
-        relief + if self.stem_coordinate().is_some() { 2 } else { 0 }
+        relief
+            + if self.stem_coordinate().is_some() {
+                2
+            } else {
+                0
+            }
     }
     /// The roots at the roof pressure and the block's physical coordinates.
     pub fn roots(&self, roof_pressure_pa: f64, x: &[f64], out: &mut [f64]) -> Result<(), Failure> {
@@ -1059,7 +1060,9 @@ impl Pzr {
             v
         });
         if self.control == Control::Continuous {
-            let spray = self.spray_mode().map_or(serde_json::Value::Null, |m| json!(m.name()));
+            let spray = self
+                .spray_mode()
+                .map_or(serde_json::Value::Null, |m| json!(m.name()));
             return json!({"heater_control": "continuous", "spray": spray, "relief": relief});
         }
         json!({
@@ -1079,12 +1082,15 @@ impl Pzr {
             &["heater_request_w", "bank_power_w", "relief"]
         };
         let o = snapshot_object(state, "pzr", keys)?;
-        if continuous && (o["heater_control"] != json!("continuous") || self.continuous.is_none())
-        {
+        if continuous && (o["heater_control"] != json!("continuous") || self.continuous.is_none()) {
             return Err(fatal(format!(
                 "snapshot: heater control {} on a block {} continuous control",
                 o["heater_control"],
-                if self.continuous.is_some() { "with" } else { "without" }
+                if self.continuous.is_some() {
+                    "with"
+                } else {
+                    "without"
+                }
             )));
         }
         let bits = |v: &serde_json::Value| -> Result<f64, Failure> {

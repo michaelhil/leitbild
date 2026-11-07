@@ -411,7 +411,10 @@ impl<P: Properties + WaterProperties> Joined<P> {
                 fatal("the PZR owner's pzrMetal section needs its steady steel (pzrSteel, S3-D36)")
             })?),
             network.pzr_saturation_temperature_k(),
-            network_packet.preparation.operating_point.pzr_roof_pressure_pa,
+            network_packet
+                .preparation
+                .operating_point
+                .pzr_roof_pressure_pa,
             // R4-PZR-PI (S-b): with the spray path the continuous master
             // owns the stem, at the valve's stroke rate.
             network.spray().map(|s| s.stem.strokes_per_second()),
@@ -1130,10 +1133,8 @@ impl<P: Properties + WaterProperties> Joined<P> {
         {
             let i = o.pzr + k;
             let scale = self.blocks.pzr.layout().scales[k];
-            self.network.set_spray_opening(Scalar::new(
-                y[i] * scale,
-                seed.map_or(0., |d| d[i] * scale),
-            ));
+            self.network
+                .set_spray_opening(Scalar::new(y[i] * scale, seed.map_or(0., |d| d[i] * scale)));
         }
         // The rod owner's moving volumes; a prepared pose lists none, so every
         // cell keeps its compiled volume. Taken out for the call, so the

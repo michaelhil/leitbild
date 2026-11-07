@@ -433,9 +433,10 @@ fn channels(plant: &Plant, inputs: &Inputs) -> Result<Vec<Channel>, String> {
             }
             Quantity::PumpSpeed { .. } => ("1", "RCP shaft speed over the drive's reference speed"),
             Quantity::CvcsFlow { .. } => ("kg/s", "CVCS branch flow delivered at COLD.A (signed)"),
-            Quantity::BankPosition { .. } => {
-                ("1", "mean rod stem travel over the normal stroke (0 seated)")
-            }
+            Quantity::BankPosition { .. } => (
+                "1",
+                "mean rod stem travel over the normal stroke (0 seated)",
+            ),
             Quantity::StopValvePosition { .. } => ("%", "turbine stop valve stroke (100 open)"),
             // PHYS2 (lead ruling 1 Nov): only in a section declaring the governor.
             Quantity::AdmissionPosition => ("%", "turbine admission valve stroke (100 open)"),
@@ -443,13 +444,23 @@ fn channels(plant: &Plant, inputs: &Inputs) -> Result<Vec<Channel>, String> {
             // ld01-sg-flow-channels, ld01-vessel-dp-channels,
             // ld01-core-exit-channels), in the units the section compiles.
             Quantity::SgPressure { .. } => ("Pa", "SG total secondary pressure (absolute)"),
-            Quantity::SgFlowLag { flow: SgFlow::Steam, .. } => {
-                ("1", "SG pickup steam flow over the one-SG nominal feed flow m0")
-            }
-            Quantity::SgFlowLag { flow: SgFlow::Feed, .. } => {
-                ("1", "SG branch feed flow over the one-SG nominal feed flow m0")
-            }
-            Quantity::VesselDp { .. } => ("Pa", "core differential pressure (lower minus upper interface)"),
+            Quantity::SgFlowLag {
+                flow: SgFlow::Steam,
+                ..
+            } => (
+                "1",
+                "SG pickup steam flow over the one-SG nominal feed flow m0",
+            ),
+            Quantity::SgFlowLag {
+                flow: SgFlow::Feed, ..
+            } => (
+                "1",
+                "SG branch feed flow over the one-SG nominal feed flow m0",
+            ),
+            Quantity::VesselDp { .. } => (
+                "Pa",
+                "core differential pressure (lower minus upper interface)",
+            ),
             Quantity::PlenumDp { .. } => ("Pa", "upper plenum mixture head"),
             Quantity::CoreExitTemperature { .. } => ("degC", "core-exit liquid temperature"),
         };
@@ -474,13 +485,22 @@ fn channels(plant: &Plant, inputs: &Inputs) -> Result<Vec<Channel>, String> {
     }
     let reports = plant.protection.protection.delivered_reports();
     if reports.len() != section.reports.len()
-        || reports.iter().zip(&section.reports).any(|(d, r)| d.0 != r.id)
+        || reports
+            .iter()
+            .zip(&section.reports)
+            .any(|(d, r)| d.0 != r.id)
     {
         return Err("the protection's reports are not the section's".into());
     }
     for (i, r) in section.reports.iter().enumerate() {
         let source = format!("{}: delivered state report (supply {})", r.id, r.supply);
-        out.push(channel(&r.id, "1", "state report: 1 reported, 0 not", &source, Reading::IcReport(i)));
+        out.push(channel(
+            &r.id,
+            "1",
+            "state report: 1 reported, 0 not",
+            &source,
+            Reading::IcReport(i),
+        ));
         out.push(channel(
             format!("{}.QUALITY", r.id),
             "1",
@@ -996,16 +1016,28 @@ fn parse_load(load: &Value) -> Result<(Inputs, String, Solver), String> {
         text(i, "pzr_control_wiki", "LOAD inputs")?,
         text(i, "elec", "LOAD inputs")?,
     )?;
-    exactly(&o["solver"], "LOAD solver", &["weights", "first_step", "stepping", "water", "source_atol"])?;
+    exactly(
+        &o["solver"],
+        "LOAD solver",
+        &["weights", "first_step", "stepping", "water", "source_atol"],
+    )?;
     let solver = Solver {
         weights: Weights::parse(text(&o["solver"], "weights", "LOAD solver")?)?,
         first_step: parse_first_step(text(&o["solver"], "first_step", "LOAD solver")?)?,
         stepping: parse_stepping(text(&o["solver"], "stepping", "LOAD solver")?)?,
         // The water method (owner decision 1 Nov): a required LOAD key, in
         // the identity a restore checks.
-        water: leitbild_operating_water::WaterMethod::parse(text(&o["solver"], "water", "LOAD solver")?)?,
+        water: leitbild_operating_water::WaterMethod::parse(text(
+            &o["solver"],
+            "water",
+            "LOAD solver",
+        )?)?,
         // R4-NUC-SOURCE-ATOL: a required LOAD key, in the identity.
-        source_atol: leitbild_operating_water::unit::profile::SourceAtol::parse(text(&o["solver"], "source_atol", "LOAD solver")?)?,
+        source_atol: leitbild_operating_water::unit::profile::SourceAtol::parse(text(
+            &o["solver"],
+            "source_atol",
+            "LOAD solver",
+        )?)?,
     };
     Ok((inputs, text(load, "state", "LOAD")?.to_string(), solver))
 }

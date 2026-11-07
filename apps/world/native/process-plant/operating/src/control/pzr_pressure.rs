@@ -125,7 +125,11 @@ impl Master {
         use crate::control::cvcs::sclamp;
         let (c, b) = (self.heater_capacity_w, self.heater_band_pa);
         let f = sclamp(-d, [0., b], self.smoothing_width_pa) / sc(b);
-        let f = if f.value > 1. { Scalar::new(1., f.direction) } else { f };
+        let f = if f.value > 1. {
+            Scalar::new(1., f.direction)
+        } else {
+            f
+        };
         sc(c) * f
     }
     /// The spray demand at `d` while the valve is open (`d ≥ s0`, the
@@ -164,7 +168,11 @@ impl Master {
     /// gives `e^a = expm1(r)/(−expm1(r − β))` and `D = −w a`. Refused outside
     /// `(0, C)`: zero heat or full heat has no unique demand.
     pub fn demand_for_request(&self, request_w: f64) -> Result<f64, Failure> {
-        let (c, b, w) = (self.heater_capacity_w, self.heater_band_pa, self.smoothing_width_pa);
+        let (c, b, w) = (
+            self.heater_capacity_w,
+            self.heater_band_pa,
+            self.smoothing_width_pa,
+        );
         if !(request_w.is_finite() && request_w > 0. && request_w < c) {
             return Err(fatal(format!(
                 "a prepared heater request {request_w} W outside (0, {c}) W has no master demand"
@@ -359,7 +367,11 @@ mod tests {
         assert!(m.heater_request(sc(50_000.)).value < 1e-9);
         assert!(close(m.heater_request(sc(-200_000.)).value, 3e6, 1e-6));
         // The D = 0 corner: (C/B) w ln 2 = 20.79 kW.
-        assert!(close(m.heater_request(sc(0.)).value, 30. * 1000. * 2f64.ln(), 1e-6));
+        assert!(close(
+            m.heater_request(sc(0.)).value,
+            30. * 1000. * 2f64.ln(),
+            1e-6
+        ));
         // Spray: exactly 0 at s0, the ramp inside, 1 beyond s1.
         assert_eq!(m.spray_demand(sc(172_369.)).value, 0.);
         let mid = m.spray_demand(Scalar::new(0.5 * (172_369. + 517_107.), 1.));
