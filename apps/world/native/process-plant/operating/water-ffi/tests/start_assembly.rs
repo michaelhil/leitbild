@@ -99,3 +99,44 @@ fn a_start_assembly_fills_what_the_full_assembly_fills() {
         }
     }
 }
+
+/// The block patterns (presence as prepared and every read cell with vapor)
+/// and the colored pattern, hashed: a law that reads new coordinates only
+/// where rows already read them leaves all three, and so KLU's ordering,
+/// unchanged. Compared between two builds of the same tuple.
+#[test]
+#[ignore = "zero-time check: requires the joined CVCS packet, the wiki, the water tables and stock IDA/KLU; prints the pattern hashes"]
+fn pattern_hash() {
+    use leitbild_operating_plant::{digest::sha256, joined::presence::VaporPresence, sparse::Pattern};
+    let water = leitbild_operating_water::WaterMethod::parse(
+        &std::env::var("LD01_S3_WATER").unwrap_or_else(|_| "sbtl".into()),
+    )
+    .unwrap_or_else(|e| panic!("{e}"));
+    leitbild_operating_water::select_water_method(water).unwrap_or_else(|e| panic!("{e}"));
+    let mut s = leitbild_operating_water::unit::spine::started_full_composition_with_singles(
+        &common::spine(),
+        &[],
+    )
+    .expect("the S2 composition");
+    let joined = &mut s.joined;
+    let hash = |p: &Pattern| {
+        let bytes: Vec<u8> = p
+            .pointers()
+            .iter()
+            .chain(p.indices())
+            .flat_map(|v| (*v as u64).to_le_bytes())
+            .collect();
+        (p.nonzeros(), sha256(&bytes))
+    };
+    let (t, y) = (0., s.y.clone());
+    let prepared = JoinedJacobian::compile_for(joined, t, &y, None).expect("structure");
+    let all = VaporPresence {
+        cells: vec![true; joined.network.pzr.cell],
+    };
+    let widest = JoinedJacobian::compile_for(joined, t, &y, Some(&all)).expect("structure");
+    let (colored, _) = joined.structure().expect("colored structure");
+    println!("PATTERN prepared {:?}", hash(&prepared.pattern));
+    println!("PATTERN widest {:?}", hash(&widest.pattern));
+    println!("PATTERN colored {:?}", hash(colored));
+}
+

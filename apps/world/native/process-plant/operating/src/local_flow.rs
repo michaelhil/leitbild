@@ -398,6 +398,33 @@ pub fn phase_path_kinematics<V: Copy + Into<Scalar>>(
     total_force_pa: Scalar,
     onset: ColdOnset,
 ) -> Result<PathKinematics> {
+    phase_path_kinematics_beyond(
+        face,
+        cell_phase_mass,
+        cell_phase_mass_rate,
+        cell_volumes,
+        impulse_pa_s,
+        total_force_pa,
+        onset,
+        None,
+    )
+}
+
+/// [`phase_path_kinematics`] with `beyond`, the inertia of phase held outside
+/// the face's compiled supports that this path must accelerate
+/// (R4-MOUTH-INERTIA: the PZR side of the surge mouth). It adds to `I` and,
+/// with `I` nonzero, the path needs no cold onset.
+#[allow(clippy::too_many_arguments)] // As phase_path_kinematics, with the outside inertia.
+pub fn phase_path_kinematics_beyond<V: Copy + Into<Scalar>>(
+    face: &Face,
+    cell_phase_mass: &[Scalar],
+    cell_phase_mass_rate: &[Scalar],
+    cell_volumes: &[V],
+    impulse_pa_s: Scalar,
+    total_force_pa: Scalar,
+    onset: ColdOnset,
+    beyond: Option<Scalar>,
+) -> Result<PathKinematics> {
     if cell_phase_mass.len() != cell_volumes.len()
         || cell_phase_mass_rate.len() != cell_volumes.len()
     {
@@ -425,6 +452,11 @@ pub fn phase_path_kinematics<V: Copy + Into<Scalar>>(
         let weight = s(support.inverse_area_length_per_m) / v;
         inertia = inertia + cell_phase_mass[i] * weight;
         inertia_rate = inertia_rate + cell_phase_mass_rate[i] * weight;
+    }
+    if let Some(beyond) = beyond {
+        finite(beyond)?;
+        has_nonzero_mass |= beyond.value != 0.;
+        inertia = inertia + beyond;
     }
     finite(inertia)?;
     finite(inertia_rate)?;

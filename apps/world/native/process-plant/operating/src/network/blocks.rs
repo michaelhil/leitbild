@@ -478,16 +478,17 @@ impl<P: Properties> Blocks<'_, P> {
         }
         // L1 (decision 0014): as the residual, a locked path
         // transports nothing.
+        let beyond = net.mouth_inertance(li, &pass.cells);
         let path = if net.path_locked(li) {
             super::unilateral::held_path(inertance)
-        } else if inertance.value == 0. && pi.value == 0. {
+        } else if inertance.value == 0. && pi.value == 0. && beyond.is_none() {
             flow::PathKinematics {
                 inertance_kg_m4: inertance,
                 inertance_rate_kg_m4_s: s(0.),
                 volume_flow_m3_s: s(0.),
             }
         } else {
-            flow::phase_path_kinematics(
+            flow::phase_path_kinematics_beyond(
                 f,
                 &pass.phase_mass[l.phase],
                 &self.zero_rate,
@@ -495,6 +496,7 @@ impl<P: Properties> Blocks<'_, P> {
                 pi,
                 s(0.),
                 flow::ColdOnset::Unavailable,
+                beyond,
             )
             .map_err(recoverable)?
         };
@@ -696,7 +698,7 @@ impl<P: Properties> Blocks<'_, P> {
             return Ok((row, false));
         }
         let pi = self.get(seed, l.index);
-        let path = flow::phase_path_kinematics(
+        let path = flow::phase_path_kinematics_beyond(
             &net.faces[l.face],
             &pass.phase_mass[l.phase],
             &pass.mass_rate[l.phase],
@@ -704,6 +706,7 @@ impl<P: Properties> Blocks<'_, P> {
             pi,
             force + current.pressure_gravity_pa,
             flow::ColdOnset::ProvenRest,
+            net.mouth_inertance(li, &pass.cells),
         )
         .map_err(|e| {
             recoverable(format!(
