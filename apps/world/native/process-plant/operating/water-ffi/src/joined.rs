@@ -19,7 +19,7 @@
 use crate::klu::SparseLu;
 use leitbild_operating_plant::{
     joined::{
-        blocks::{Classes, JoinedJacobian, jacobian_blocks},
+        blocks::{Classes, JoinedJacobian, jacobian_blocks, jacobian_blocks_start},
         operator::Joined,
     },
     network::{CreditedOutput, Failure, Properties},
@@ -248,7 +248,13 @@ pub enum Matrices<'a> {
 }
 
 /// One assembly of `dF/dy + cj dF/dy'` at `(t, y, 0)` into `values`, in the
-/// stored order of the matrices' pattern.
+/// stored order of the matrices' pattern. R4-START-ASSEMBLY (lane RESTART):
+/// `base_stands` says the start's own evaluation of this very `(t, y, 0)` is
+/// the operator's last, so a block assembly with the relief shut stands on it
+/// (R4-JAC-BASE's rule); `columns`, a projection's algebraic columns, limits a
+/// block assembly to the columns its reader takes. Neither changes an entry
+/// read.
+#[allow(clippy::too_many_arguments)] // The stage, the report and the assembly's two limits.
 fn assemble<P: Properties + WaterProperties>(
     joined: &mut Joined<P>,
     matrices: &Matrices<'_>,
@@ -257,15 +263,27 @@ fn assemble<P: Properties + WaterProperties>(
     y: &[f64],
     values: &mut [f64],
     report: &mut Report,
+    base_stands: bool,
+    columns: Option<&[bool]>,
 ) -> Result<(), Failure> {
     let _cost = leitbild_operating_plant::cost::scope("start-jacobian");
     let zero = vec![0.; y.len()];
     let started = Instant::now();
     match matrices {
-        // The block assembly makes its own unseeded evaluation at (t, y, 0)
-        // before the operator's local coupler reads it.
+        // Without a standing base the block assembly makes its own unseeded
+        // evaluation at (t, y, 0) before the operator's local coupler reads it.
         Matrices::Blocks { structure, .. } => {
-            jacobian_blocks(joined, structure, t, cj, y, &zero, values, Classes::ALL)?
+            let shut = joined
+                .network
+                .pzr_boundary()
+                .is_none_or(|(b, _)| b.relief.as_ref().is_none_or(|r| r.lift.value == 0.));
+            let reuse = (base_stands && shut).then(|| joined.network.reuse());
+            // R4-ENDPOINT-ASSEMBLY's hold, as in the integrator's assemblies.
+            leitbild_operating_plant::network::heaters::hold_endpoints(true);
+            let result =
+                jacobian_blocks_start(joined, structure, t, cj, y, &zero, values, reuse, columns);
+            leitbild_operating_plant::network::heaters::hold_endpoints(false);
+            result?
         }
         Matrices::Colored => joined.jacobian(t, cj, y, &zero, values)?,
     }
@@ -382,7 +400,17 @@ pub fn consistent_start_exempting<P: Properties + WaterProperties>(
         && report.projection_passes < passes
     {
         report.projection_passes += 1;
-        assemble(joined, &matrices, t, 0., y, &mut values, &mut report)?;
+        assemble(
+            joined,
+            &matrices,
+            t,
+            0.,
+            y,
+            &mut values,
+            &mut report,
+            true,
+            Some(&algebraic),
+        )?;
         let analyses = match &mut matrices {
             Matrices::Blocks { analyses, .. } => &mut **analyses,
             Matrices::Colored => &mut fresh,
@@ -456,9 +484,9 @@ pub fn consistent_start_exempting<P: Properties + WaterProperties>(
     }
     // 2. The consistent rates: differential rows dF/dy', algebraic rows dg/dy.
     let mut a = vec![0.; nnz];
-    assemble(joined, &matrices, t, 0., y, &mut a, &mut report)?;
+    assemble(joined, &matrices, t, 0., y, &mut a, &mut report, true, None)?;
     let mut ab = vec![0.; nnz];
-    assemble(joined, &matrices, t, 1., y, &mut ab, &mut report)?;
+    assemble(joined, &matrices, t, 1., y, &mut ab, &mut report, false, None)?;
     // Each row's magnitude of terms from its linearization at the state:
     // `sum_j |dF/dy_ij y_j|`, and with rates `sum_j |dF/dy'_ij y'_j|`.
     let magnitude = |matrix: &dyn Fn(usize) -> f64, v: &[f64]| {
