@@ -47,19 +47,19 @@
       "trip_transactions": 3
     },
     "settle": {
-      "convergence_failures": 9,
-      "error_failures": 52,
+      "convergence_failures": 8,
+      "error_failures": 47,
       "failure": null,
-      "jacobians": 206,
-      "last_order": 2,
-      "linear_setups": 206,
-      "nonlinear_iterations": 1623,
+      "jacobians": 190,
+      "last_order": 1,
+      "linear_setups": 190,
+      "nonlinear_iterations": 1584,
       "reached": true,
-      "residuals": 1624,
+      "residuals": 1585,
       "root_restarts": 0,
-      "steps": 1274,
-      "system_jacobians": 206,
-      "system_residuals": 2999
+      "steps": 1265,
+      "system_jacobians": 190,
+      "system_residuals": 2951
     },
     "z1": {
       "constraint_rate_within_bound": true,
@@ -71,7 +71,7 @@
   "environment": {
     "if97_revision": "0be7b51f35c47e59e6f91f4f0f47108bf997e50c",
     "metastable_page_sha256": "a5372c930399eae3535e2924e2e6c51001d51f1578f77456df6c3679eb51ff6c",
-    "packet_sha256": "e1bc9d898945ce6235534ea1c77ad445b39711d0b7230db58e4eeee6470c4303",
+    "packet_sha256": "ad64a0bf641f1dd1fe1421531eafa875de0848034b6d850fb7dd482b9655f5cf",
     "s1_gates_sha256": "708aca3b870d6b561a40fa1a6c1c923db8caed40bc5b3a2e72ebf17a86a4c91a",
     "sundials_version": "7.5.0",
     "water_adapter_sha256": "a10b1fd75e8b9ce58d060193e1e8330bc5abdc7e3bfd1205cc562840688e5dd0"
