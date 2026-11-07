@@ -180,10 +180,6 @@ type HeldState = (Vec<f64>, Vec<f64>, Vec<f64>);
 /// A held-input change applied to the system at an exact stop.
 pub type HeldChange<S> = Box<dyn FnOnce(&mut S) -> Result<(), String>>;
 
-/// A declared event window's step cap and the predicate on a restart's
-/// transaction receipts that starts it ([`Driver::restart_max_step`]).
-pub type WindowCap = (f64, fn(&Value) -> bool);
-
 /// What a decided change does at its due instant.
 pub enum Action<S> {
     /// An owner command applied through `discrete_restart` (class R).
@@ -523,12 +519,6 @@ pub struct Driver<S> {
     quadratures: Option<(f64, Vec<f64>)>,
     /// HOOK (S3GATES): the time an [`Observer`] was last sampled to.
     gate_observed_to: f64,
-    /// HOOK (C4 lane, for KERN): a declared event window's step cap (0015
-    /// E2), set at the restart whose transaction receipts start a window
-    /// (the predicate): stock keeps IDASetMaxStep across IDAReInit and takes
-    /// a new bound only after a reinitialization, before the next step. The
-    /// caller removes it at the window's end (`Ida::remove_max_step`).
-    pub restart_max_step: Option<WindowCap>,
     /// MR-1 (owner, request 7 R7-P): the joined solve's forced
     /// iteration-matrix rebuild, stock IDAS check points every
     /// `rebuildEverySteps` steps of the packet's `matrixRebuild` section
@@ -663,7 +653,6 @@ impl<S: JoinedSystem> Driver<S> {
             solver_reached_s: t0,
             quadratures: None,
             gate_observed_to: t0,
-            restart_max_step: None,
             matrix_rebuild: MatrixRebuild::Packet,
             stepping: Stepping::FrameStops,
             hard_stops: Vec::new(),
@@ -697,12 +686,8 @@ impl<S: JoinedSystem> Driver<S> {
     /// HOOK (WORLD `ld01-unit`): the driver's truth at the stop it stands at
     /// ([`DriverState`]), the carried quadratures read there. Refused while
     /// a held change is pending (its action is code, not data: the caller
-    /// takes the snapshot at a later stop) or an event window's cap is
-    /// armed.
+    /// takes the snapshot at a later stop).
     pub fn state(&self, ida: &Ida<S>) -> Result<DriverState, String> {
-        if self.restart_max_step.is_some() {
-            return Err("an event window's step cap is armed: no driver snapshot".into());
-        }
         let pending = self
             .pending
             .iter()
@@ -1737,23 +1722,6 @@ impl<S: JoinedSystem> Driver<S> {
             // carried (the S2 joined ledger's rule, S2-14 M2).
             ida.reinitialize_quadratures(&q)?;
             self.quadratures = Some((t, q));
-        }
-        // HOOK (C4 lane): a window starting at this restart caps its steps.
-        // HOOK (C5X RC-1, KERN to reconcile): the appended owners' records
-        // at this restart count too, each as `{"appended": record}` (the
-        // slice's "GCB Open" ends C2's fast electrical ramp).
-        if let Some((h, starts)) = self.restart_max_step
-            && (restarted
-                .transactions
-                .iter()
-                .chain(&before)
-                .any(|x| starts(&x.receipt))
-                || restarted
-                    .appended
-                    .iter()
-                    .any(|a| starts(&json!({ "appended": a }))))
-        {
-            ida.set_max_step(h)?;
         }
         yp.copy_from_slice(&restarted.yp);
         self.cpu.restart_s += (self.clock)() - started;
