@@ -2004,15 +2004,11 @@ impl<P: Properties + WaterProperties> Joined<P> {
     fn deposit(&self, done: &[super::block::Transaction], y: &mut [f64]) -> Result<(), Failure> {
         let o = self.blocks.offsets;
         for (store, energy) in done.iter().flat_map(|t| &t.deposits) {
-            let i = self
-                .blocks
-                .solids
-                .passive_store(store)
-                .ok_or_else(|| {
-                    fatal(format!(
-                        "deposit into passive store {store}: unknown or of a replica class (E-NUC)"
-                    ))
-                })?;
+            let i = self.blocks.solids.passive_store(store).ok_or_else(|| {
+                fatal(format!(
+                    "deposit into passive store {store}: unknown or of a replica class (E-NUC)"
+                ))
+            })?;
             let scale = self.blocks.scales[1].coordinates[i];
             y[o.solids + i] += energy / scale;
         }

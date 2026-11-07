@@ -510,8 +510,8 @@ fn one_motion_class_holds_every_cluster_but_the_declared_singles() {
     assert!((m - rho * free * members).abs() < 1e-9 * m, "{m}");
     // Every current starts at zero (DR13-ROD: the consistent start solves).
     assert!(
-        (0..N)
-            .all(|c| prepared[ci(&b, c, LOWER_CURRENT)] == 0. && prepared[ci(&b, c, UPPER_CURRENT)] == 0.)
+        (0..N).all(|c| prepared[ci(&b, c, LOWER_CURRENT)] == 0.
+            && prepared[ci(&b, c, UPPER_CURRENT)] == 0.)
     );
 }
 
@@ -582,9 +582,16 @@ fn z4_force_balance_and_insertion_margins_are_reproduced() {
             // spider's alone. The stem adds its weight less its end faces,
             // which at rest is its weight less its buoyancy in UPPER's water.
             let stem = forces.stem_end.value - stem_mass() * G;
-            let buoyancy = 678.920757 * G * std::f64::consts::PI * STEM_RADIUS * STEM_RADIUS * STEM_LENGTH;
-            assert!((forces.stem_end.value - buoyancy).abs() < 1e-6, "{travel}: stem end");
-            assert!((-(forces.net.value - stem) - net_down).abs() < 0.01, "{travel}: net");
+            let buoyancy =
+                678.920757 * G * std::f64::consts::PI * STEM_RADIUS * STEM_RADIUS * STEM_LENGTH;
+            assert!(
+                (forces.stem_end.value - buoyancy).abs() < 1e-6,
+                "{travel}: stem end"
+            );
+            assert!(
+                (-(forces.net.value - stem) - net_down).abs() < 0.01,
+                "{travel}: net"
+            );
             // The bores' EOS row holds at the prepared water.
             let eos = rows[b.group_index(b.group_of(c), BORE_PRESSURE)].value;
             assert!(eos.abs() < 1e-12, "EOS {eos}");
@@ -993,7 +1000,12 @@ fn trip_release_seat_and_the_stuck_cluster_follow_the_modes() {
     // E-EVT bank seat: a free, descending cluster whose travel is zero
     // within its error weight seats in the same event; one further off, one
     // rising and the held one do not.
-    for (c, travel, speed) in [(1, 3e-9, -2.0), (2, 1e-3, -2.0), (3, 3e-9, 0.5), (5, 0., 0.)] {
+    for (c, travel, speed) in [
+        (1, 3e-9, -2.0),
+        (2, 1e-3, -2.0),
+        (3, 3e-9, 0.5),
+        (5, 0., 0.),
+    ] {
         physical[ci(&b, c, TRAVEL)] = travel;
         physical[ci(&b, c, VELOCITY)] = speed;
     }
@@ -1002,9 +1014,15 @@ fn trip_release_seat_and_the_stuck_cluster_follow_the_modes() {
     let weights = vec![1e8; physical.len()];
     let added = Rods::<Liquid>::coincident(&b, &physical, &weights, &mut directions).unwrap();
     assert_eq!(added, 1);
-    assert_eq!((directions[1], directions[2], directions[3], directions[5]), (-1, 0, 0, 0));
+    assert_eq!(
+        (directions[1], directions[2], directions[3], directions[5]),
+        (-1, 0, 0, 0)
+    );
     let mut no_seat = vec![0; N];
-    assert_eq!(Rods::<Liquid>::coincident(&b, &physical, &weights, &mut no_seat).unwrap(), 0);
+    assert_eq!(
+        Rods::<Liquid>::coincident(&b, &physical, &weights, &mut no_seat).unwrap(),
+        0
+    );
     let seat = Rods::<Liquid>::transact(&mut b, &Liquid, 2.9, &directions, &mut physical).unwrap();
     assert_eq!(b.modes()[0], Mode::Seated);
     assert_eq!(b.modes()[1], Mode::Seated);
@@ -1051,7 +1069,11 @@ fn trip_release_seat_and_the_stuck_cluster_follow_the_modes() {
         let tx = Rods::<Liquid>::command(&mut b, t, c).unwrap();
         assert_eq!(tx.receipt["acknowledged"], true, "{c:?}");
         assert!(tx.deposits.is_empty());
-        assert_eq!(Rods::<Liquid>::discrete_state(&b), before, "{c:?} changes no state");
+        assert_eq!(
+            Rods::<Liquid>::discrete_state(&b),
+            before,
+            "{c:?} changes no state"
+        );
     }
 }
 
@@ -1157,7 +1179,11 @@ fn a_manual_trip_during_a_scheduled_opening_opens_the_circuit_at_once() {
     ] {
         let tx = Rods::<Liquid>::command(&mut b, at, c).unwrap();
         assert_eq!(tx.receipt["acknowledged"], true, "{c:?}");
-        assert_eq!(Rods::<Liquid>::discrete_state(&b), before, "{c:?} changes no state");
+        assert_eq!(
+            Rods::<Liquid>::discrete_state(&b),
+            before,
+            "{c:?} changes no state"
+        );
     }
 }
 
@@ -1327,7 +1353,9 @@ fn the_stuck_cluster_command_keeps_one_grip_closed_at_the_opening() {
     assert!(Rods::<Liquid>::command(&mut b, 1.5, Command::StuckCluster { cluster: 52 }).is_err());
     let mut shared = block_with(SpiderDrag::Omitted, &[5, 7]);
     held(&mut shared, &water, 2.8, 1.3157);
-    assert!(Rods::<Liquid>::command(&mut shared, 1.5, Command::StuckCluster { cluster: 6 }).is_err());
+    assert!(
+        Rods::<Liquid>::command(&mut shared, 1.5, Command::StuckCluster { cluster: 6 }).is_err()
+    );
     Rods::<Liquid>::command(&mut b, 1.5, Command::TurbineTrip).unwrap();
     let open = Rods::<Liquid>::next_time_event(&b, 1.5).unwrap();
     Rods::<Liquid>::command(&mut b, 1.6, Command::StuckCluster { cluster: 7 }).unwrap();
@@ -1717,7 +1745,10 @@ fn a_packet_layout_state_reduces_to_the_bank_exactly_or_is_refused() {
     assert!(spread[1] > 0. && spread[1] < 1e-15);
     // The region's stock is its groups' member-weighted sum.
     let members = |g: usize| old.iter().filter(|o| **o == g).count() as f64;
-    let m: f64 = (0..8).map(|g| (1. + 1e-16 * g as f64) * members(g)).sum::<f64>() / N as f64;
+    let m: f64 = (0..8)
+        .map(|g| (1. + 1e-16 * g as f64) * members(g))
+        .sum::<f64>()
+        / N as f64;
     assert_eq!(y[CLUSTER_COORDINATES + BORE_MASS], m);
     assert_eq!(y[CLUSTER_COORDINATES + BORE_PRESSURE], 0.99);
     // NUC review: groups whose stocks differ beyond round-off are refused in

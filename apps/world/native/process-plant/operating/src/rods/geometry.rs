@@ -128,8 +128,16 @@ impl Profile {
         if top <= bottom {
             return (0., 0.);
         }
-        let d_top = if hi - y < self.s0 + self.h { -self.area(hi - y).0 } else { 0. };
-        let d_bottom = if lo - y > self.s0 { -self.area(lo - y).0 } else { 0. };
+        let d_top = if hi - y < self.s0 + self.h {
+            -self.area(hi - y).0
+        } else {
+            0.
+        };
+        let d_bottom = if lo - y > self.s0 {
+            -self.area(lo - y).0
+        } else {
+            0.
+        };
         (self.integral(top) - self.integral(bottom), d_top - d_bottom)
     }
 }
@@ -170,10 +178,16 @@ mod tests {
         // slopes are continuous at the end crossings y = 1.6, 1.55 and 1.5.
         let spans = [(2.4, 4.), (4., 8.), (8.05, 13.6)];
         for y in [0., 1.5, 1.55, 1.6, 2.0, 0.7, 3.4839, 4.] {
-            let d: Vec<_> = spans.iter().map(|(lo, hi)| p.displaced(*lo, *hi, y)).collect();
+            let d: Vec<_> = spans
+                .iter()
+                .map(|(lo, hi)| p.displaced(*lo, *hi, y))
+                .collect();
             let total: f64 = d.iter().map(|x| x.0).sum();
             let slope: f64 = d.iter().map(|x| x.1).sum();
-            assert!((total + a_s * 0.05 - (vs + a_s * l + ab * y)).abs() < 1e-15, "{y}");
+            assert!(
+                (total + a_s * 0.05 - (vs + a_s * l + ab * y)).abs() < 1e-15,
+                "{y}"
+            );
             assert!((slope - ab).abs() < 1e-15, "{y}");
             // The neck holds the stem's top: its slope is the stem's area.
             assert!((d[2].1 - a_s).abs() < 1e-18, "{y}");
@@ -181,7 +195,10 @@ mod tests {
                 let e = p.displaced(*lo, *hi, y + 1e-6).0;
                 assert!(((e - d[k].0) / 1e-6 - d[k].1).abs() < 1e-7, "{y} {k}");
                 for dy in [-1e-9, 1e-9] {
-                    assert!((p.displaced(*lo, *hi, y + dy).1 - d[k].1).abs() < 1e-8, "{y} {k} {dy}");
+                    assert!(
+                        (p.displaced(*lo, *hi, y + dy).1 - d[k].1).abs() < 1e-8,
+                        "{y} {k} {dy}"
+                    );
                 }
             }
         }

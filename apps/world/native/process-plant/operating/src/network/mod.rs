@@ -678,8 +678,12 @@ impl<P: Properties> Network<P> {
         let elevations: Vec<f64> = geometry.regions.iter().map(|r| r.elevation_m).collect();
         let endpoints = faces.iter().map(|f| (f.from, f.to)).collect();
         // R4-NCHEAD: each SG primary cell's profile on the secondary's fold.
-        let sg_cells: std::collections::BTreeSet<usize> =
-            packet.thermal.sg_segments.iter().map(|g| g.primary).collect();
+        let sg_cells: std::collections::BTreeSet<usize> = packet
+            .thermal
+            .sg_segments
+            .iter()
+            .map(|g| g.primary)
+            .collect();
         let profiles = if sg_cells.is_empty() {
             Vec::new()
         } else {

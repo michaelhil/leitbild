@@ -1230,8 +1230,7 @@ impl<N: Number> PoolFactors<N> {
         } else {
             N::from(1.) - r
         };
-        let fp =
-            N::from(1.73) * r.pow(0.27) + N::from(6.1) * r * r + N::from(0.68) * r * r / denom;
+        let fp = N::from(1.73) * r.pow(0.27) + N::from(6.1) * r * r + N::from(0.68) * r * r / denom;
         let scale = (n * N::from(20000_f64.ln())).exp();
         Self { n, fp, scale }
     }
@@ -1271,8 +1270,8 @@ fn wet<P: WaterProperties, N: Number>(
         }
         let superheat = wall_t - sat.temperature;
         let wall_sensible = h * superheat;
-        let boiling = (wall_sensible.cube() + pool(pressure, superheat, true).cube()).cbrt()
-            - wall_sensible;
+        let boiling =
+            (wall_sensible.cube() + pool(pressure, superheat, true).cube()).cbrt() - wall_sensible;
         let gamma = N::from(f.wall_birth_fraction) * boiling / (sat.vapor.enthalpy - bulk.enthalpy);
         return Ok((sensible + boiling, gamma, onset, sensible));
     }
@@ -1313,8 +1312,8 @@ fn wet<P: WaterProperties, N: Number>(
         return Ok((sensible, N::from(0.), onset, sensible));
     }
     let factors = PoolFactors::new(pressure, ctf);
-    let enhancement = pool_at(&factors, wall_t - sat.temperature)
-        - pool_at(&factors, onset - sat.temperature);
+    let enhancement =
+        pool_at(&factors, wall_t - sat.temperature) - pool_at(&factors, onset - sat.temperature);
     let q = (sensible.cube() + enhancement.cube()).cbrt();
     let qb = q - sensible;
     if let Film::Heater(f) = law.film {
@@ -1958,15 +1957,17 @@ impl FoldPath {
         let rise1 = a2 - eu * (a2 + a * s(rise));
         let q = a2 / s(self.radius * self.radius);
         let f = a * (one + ec) / (one + q);
-        let fp = (a2 * (one + ec) * (one + q) - s(arc) * ec * a * (one + q) - s(2.) * a2 * (one + ec))
-            / ((one + q) * (one + q));
+        let fp =
+            (a2 * (one + ec) * (one + q) - s(arc) * ec * a * (one + q) - s(2.) * a2 * (one + ec))
+                / ((one + q) * (one + q));
         let crown0 = eu * f;
         let crown1 = eu * (s(rise) * f - fp);
         let descent0 = -(a * (e2 - el));
         let descent1 = -(e2 * (a2 + a * s(s2)) - el * (a2 + a * s(l)));
         let tail = one - el;
         let j0 = (rise0 + crown0 + descent0) / tail - s(self.outlet() - self.inlet) * eps;
-        let j1 = (rise1 + crown1 + descent1) / (s(l) * tail) - s(self.outlet() - self.centroid()) * eps;
+        let j1 =
+            (rise1 + crown1 + descent1) / (s(l) * tail) - s(self.outlet() - self.centroid()) * eps;
         Ok((j0.finite()?, j1.finite()?))
     }
 }
@@ -2247,8 +2248,16 @@ mod fold_profile {
         for n in [0.3, 1., 1.7, 3., 5., 11.6, 50.] {
             let (j0, j1) = f.profile_moments(s(1. / n)).unwrap();
             let (q0, q1) = quadrature(&f, n);
-            assert!((j0.value - q0).abs() < 1e-8, "N {n}: J0 {} against {q0}", j0.value);
-            assert!((j1.value - q1).abs() < 1e-8, "N {n}: J1 {} against {q1}", j1.value);
+            assert!(
+                (j0.value - q0).abs() < 1e-8,
+                "N {n}: J0 {} against {q0}",
+                j0.value
+            );
+            assert!(
+                (j1.value - q1).abs() < 1e-8,
+                "N {n}: J1 {} against {q1}",
+                j1.value
+            );
         }
     }
 
@@ -2265,9 +2274,18 @@ mod fold_profile {
             let (a0, a1) = f.profile_moments(Scalar::new(eps, 1.)).unwrap();
             let (p0, p1) = f.profile_moments(s(eps + h)).unwrap();
             let (m0, m1) = f.profile_moments(s(eps - h)).unwrap();
-            let (d0, d1) = ((p0.value - m0.value) / (2. * h), (p1.value - m1.value) / (2. * h));
-            assert!((a0.direction - d0).abs() <= 1e-6 * d0.abs().max(1.), "eps {eps}");
-            assert!((a1.direction - d1).abs() <= 1e-6 * d1.abs().max(1.), "eps {eps}");
+            let (d0, d1) = (
+                (p0.value - m0.value) / (2. * h),
+                (p1.value - m1.value) / (2. * h),
+            );
+            assert!(
+                (a0.direction - d0).abs() <= 1e-6 * d0.abs().max(1.),
+                "eps {eps}"
+            );
+            assert!(
+                (a1.direction - d1).abs() <= 1e-6 * d1.abs().max(1.),
+                "eps {eps}"
+            );
         }
         assert!(f.profile_moments(s(-1e-3)).is_err());
     }

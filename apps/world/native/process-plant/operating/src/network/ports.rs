@@ -418,7 +418,9 @@ impl SgProfile {
                 continue;
             }
             if f.from >= regular || f.to >= regular {
-                return Err(bad(format!("face {j} reaches a cell with no regular point")));
+                return Err(bad(format!(
+                    "face {j} reaches a cell with no regular point"
+                )));
             }
             let [segment] = own[..] else {
                 return Err(bad(format!(
@@ -468,17 +470,17 @@ impl SgProfile {
         pass: SgPass,
         out: &mut [Scalar],
     ) -> Result<(), Failure> {
-        let trial = |why: &str| Failure::Recoverable(format!("SG profile of cell {}: {why}", self.cell));
-        let liquid = |node: usize| {
-            points[node][0].ok_or_else(|| trial("a port cell has no liquid point"))
-        };
+        let trial =
+            |why: &str| Failure::Recoverable(format!("SG profile of cell {}: {why}", self.cell));
+        let liquid =
+            |node: usize| points[node][0].ok_or_else(|| trial("a port cell has no liquid point"));
         if points[self.cell][1].is_some() {
             return Err(trial("the profile is a liquid cell's"));
         }
         let (q, d) = liquid(self.cell)?;
         let rho = rec(q.density_kg_m3, d.density_kg_m3);
-        let rho_h = -(rho * rec(q.expansion_per_k, d.expansion_per_k))
-            / rec(q.cp_j_kg_k, d.cp_j_kg_k);
+        let rho_h =
+            -(rho * rec(q.expansion_per_k, d.expansion_per_k)) / rec(q.cp_j_kg_k, d.cp_j_kg_k);
         let h_cell = rec(q.enthalpy_j_kg, d.enthalpy_j_kg);
         // Inflow mass and donor enthalpy flow at each end (the solids' rule).
         let (mut m, mut mh) = ([s(0.); 2], [s(0.); 2]);
@@ -501,7 +503,9 @@ impl SgProfile {
         let mut delta = [s(0.); 2];
         if total.value > 0. {
             if !(pass.conductance_w_k.value > 0. && pass.capacity_w_k.value >= 0.) {
-                return Err(trial("needs a positive conductance and a nonnegative capacity"));
+                return Err(trial(
+                    "needs a positive conductance and a nonnegative capacity",
+                ));
             }
             let eps = pass.capacity_w_k / pass.conductance_w_k;
             let (f0, f1) = self.forward.profile_moments(eps).map_err(trial)?;
@@ -557,11 +561,13 @@ mod sg_profile {
                 volume_m3: 1.,
             }],
             pressure_segments: segments
-                .map(|(region, path_length_m, elevation_change_m)| PressureSegment {
-                    region,
-                    path_length_m,
-                    elevation_change_m,
-                })
+                .map(
+                    |(region, path_length_m, elevation_change_m)| PressureSegment {
+                        region,
+                        path_length_m,
+                        elevation_change_m,
+                    },
+                )
                 .to_vec(),
         }
     }
@@ -640,7 +646,8 @@ mod sg_profile {
         ];
         let charts = [[Some(chart(m)), None], [Some(chart(m)), None]];
         let mut out = vec![s(0.); 4];
-        q.drives(&f, &cells, &points, &charts, pass, &mut out).unwrap();
+        q.drives(&f, &cells, &points, &charts, pass, &mut out)
+            .unwrap();
         assert_eq!((out[1].value, out[3].value), (0., 0.), "no vapor drive");
         // Head = −drive / share; the liquid share of each face is 1.
         [-out[0].value, -out[2].value]
@@ -681,12 +688,19 @@ mod sg_profile {
             let (a, b) = (at(sign * 1e-6), at(sign * 1e-9));
             for k in 0..2 {
                 assert!(a[k].abs() < 1e-5, "{a:?}");
-                assert!((b[k] - 1e-3 * a[k]).abs() <= 1e-6 * a[k].abs(), "{a:?} {b:?}");
+                assert!(
+                    (b[k] - 1e-3 * a[k]).abs() <= 1e-6 * a[k].abs(),
+                    "{a:?} {b:?}"
+                );
             }
         }
         // Reversed, the outlet end leads: its port takes the start deviation.
         let [inlet, outlet] = at(-2e3);
-        let (j0, j1) = fold().reversed().unwrap().profile_moments(s(5400. * 2e3 / 2e7)).unwrap();
+        let (j0, j1) = fold()
+            .reversed()
+            .unwrap()
+            .profile_moments(s(5400. * 2e3 / 2e7))
+            .unwrap();
         let k = G * (-720. * 2.9e-3 / 5400.) * (1.35e6 - 1.3e6);
         // The outlet face leaves the cell, so its head is minus the deviation.
         assert!((outlet + k * (j0.value - j1.value)).abs() < 1e-9 * k.abs());

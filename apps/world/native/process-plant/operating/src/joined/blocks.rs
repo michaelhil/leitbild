@@ -78,11 +78,7 @@ pub fn nuclear_partials(
     travel: &[f64],
     out: &mut NuclearPartials,
 ) -> Result<(), Failure> {
-    let (r, a, n) = (
-        nuclear.regions(),
-        nuclear.ports(),
-        nuclear.replica_groups(),
-    );
+    let (r, a, n) = (nuclear.regions(), nuclear.ports(), nuclear.replica_groups());
     let members = nuclear.members();
     let (group_ports, port_count) = (nuclear.group_ports(), nuclear.port_count());
     let k = nuclear.coefficients();
@@ -112,8 +108,8 @@ pub fn nuclear_partials(
         if ports.len() > 1 {
             let mean = fuel[g].value.sqrt();
             for &p in ports {
-                chain[p] = mean * port_count[p] as f64
-                    / (members[g].len() as f64 * fuel_t[p].sqrt());
+                chain[p] =
+                    mean * port_count[p] as f64 / (members[g].len() as f64 * fuel_t[p].sqrt());
             }
         }
     }
@@ -1419,8 +1415,10 @@ fn assemble<P: Properties + WaterProperties>(
                 if let Some(p) = p
                     && (p.conductance_w_k.direction != 0. || p.capacity_w_k.direction != 0.)
                 {
-                    seed.passes
-                        .push((cell, [p.conductance_w_k.direction, p.capacity_w_k.direction]));
+                    seed.passes.push((
+                        cell,
+                        [p.conductance_w_k.direction, p.capacity_w_k.direction],
+                    ));
                 }
             }
             if seed.receipts.is_empty() && seed.volumes.is_empty() && seed.passes.is_empty() {
