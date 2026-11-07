@@ -181,6 +181,19 @@ describe('current procedure checks', () => {
     expect(result.checks).toEqual([{ branchIndex: 0, status: 'contradicted', reasons: [], readings: [],
       observation: { result: expect.objectContaining({ status: 'challenged', targetObjectId: current.scope.plantId }) },
       validThrough: '2026-10-13T08:01:01.000Z' as IsoTimestamp }])
+    const incomplete = await readProcedureChecks({
+      ...config, document: async () => observed,
+      observations: plantId => ({
+        ...ports().observations(),
+        readObservation: async () => ({
+          status: 'unknown', reason: 'Recorded response is incomplete.', targetObjectId: plantId,
+          evidenceKind: 'engineering-diagnostic', provenance: 'runtime-model', simulationTime: '2026-10-13T08:00:59.000Z',
+        }),
+      }),
+    })
+    expect(incomplete.checks).toEqual([{ branchIndex: 0, status: 'unknown', readings: [],
+      reasons: ['Recorded response is incomplete.'], observation: { result: expect.objectContaining({ status: 'unknown' }) },
+      validThrough: '2026-10-13T08:01:01.000Z' as IsoTimestamp }])
   })
 
   test('refuses a mismatched pin, inaccessible scope, or superseded observation', async () => {

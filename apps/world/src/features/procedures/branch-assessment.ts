@@ -119,7 +119,7 @@ export const assessProcedureBranch = (config: CriterionAcquisition & {
                 : result.status !== 'satisfied' && result.status !== 'challenged' && result.status !== 'unknown' ? 'Branch observation returned an unrecognized status.' : undefined)
     status = reason !== undefined ? unknown(reason) : result!.status === 'satisfied' ? 'supported' : result!.status === 'challenged' ? 'contradicted' : unknown(typeof result!.reason === 'string' ? result!.reason : 'Declared branch observation is unestablished.')
     observationApplies = reason === undefined
-    if (status !== 'unknown') validThroughMs = Date.parse(result!.simulationTime as string) + decision.observation.maxAgeSeconds * 1000
+    if (observationApplies) validThroughMs = Date.parse(result!.simulationTime as string) + decision.observation.maxAgeSeconds * 1000
   } else status = decision?.condition === undefined ? unknown('No authored eligibility criterion for this branch; a person may placekeep, but automatic qualification is unestablished.') : evaluate(decision.condition)
   const assessment: ProcedureBranchAssessment = { branchIndex, status, simulationTime: config.simulationTime,
     ...(decision === undefined ? {} : { ...(decision.condition === undefined ? {} : { condition: decision.condition }),
@@ -127,7 +127,7 @@ export const assessProcedureBranch = (config: CriterionAcquisition & {
       ...(decision.applicability === undefined ? {} : { applicability: decision.applicability }) }),
     readings, reasons: [...reasons] }
   // Expire conservatively if any acquired deciding input may age out.
-  if (status === 'unknown' || !Number.isFinite(validThroughMs)) return { assessment, observationApplies }
+  if ((!observationApplies && status === 'unknown') || !Number.isFinite(validThroughMs)) return { assessment, observationApplies }
   const lastIsoTimestampMs = Date.UTC(9999, 11, 31, 23, 59, 59, 999)
   return { assessment, observationApplies, validThrough: new Date(Math.min(validThroughMs, lastIsoTimestampMs)).toISOString() as IsoTimestamp }
 }

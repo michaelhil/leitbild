@@ -382,7 +382,7 @@
     const value = sample.view.checks.find(item => item.branchIndex === branchIndex)
     const currentTime = simulationTimeAt(clock, checkClockTick)
     if (!value || !currentTime || Date.parse(currentTime) < Date.parse(sample.view.simulationTime)) return undefined
-    if (value.status !== 'unknown' && (value.validThrough === undefined || Date.parse(currentTime) > Date.parse(value.validThrough))) return undefined
+    if (value.validThrough ? Date.parse(currentTime) > Date.parse(value.validThrough) : value.status !== 'unknown') return undefined
     return { value, time: sample.view.simulationTime, currentTime }
   }
   const lineReadKey = (tagId: string) => JSON.stringify([simulationRunId, plantId, document?.source.revision, document?.sourcePath, tagId])
@@ -1738,6 +1738,9 @@
   {@const sampled = procedureSampledEvidence(result)}
   {#if sampled.length}
     <h5>Recorded sample checks</h5>
+    {#each new Set(sampled.flatMap(evidence => evidence.window ? [evidence.window] : [])) as window}
+      <p>{window}</p>
+    {/each}
     {#each sampled as evidence}
       <p><strong>{evidence.label}:</strong> {evidence.value} · required {evidence.criterion} · {evidence.status}{evidence.span ? ` · ${evidence.span}` : ''}{evidence.reason ? ` · ${evidence.reason}` : ''}</p>
     {/each}
