@@ -251,6 +251,15 @@ export const parseProcedure = (rawMarkdown: string): ParsedProcedure => {
       ...(step.assessment ? assessmentLeaves(step.assessment.condition).flatMap(leaf => leaf.type === 'comparison' ? [leaf.tagId] : leaf.tagIds) : []),
       ...(step.decisions ?? []).flatMap(decision => (decision.condition === undefined ? [] : assessmentLeaves(decision.condition)).flatMap(leaf => leaf.type === 'comparison' ? [leaf.tagId] : leaf.tagIds))])]
     for (const decision of step.decisions ?? []) if (decision.branchIndex >= step.branches.length) throw new Error(`Step ${step.id}: decision branchIndex ${decision.branchIndex} has no branch`)
+    for (const decision of step.decisions ?? []) {
+      const afterStep = decision.observation?.afterStep
+      if (afterStep === undefined) continue
+      const start = steps.find(candidate => candidate.id === afterStep)
+      if (start === undefined || start === step || !start.branches.some((branch, index) => branch.targetKind === 'step' && branch.target === step.id
+        && start.decisions?.some(candidate => candidate.branchIndex === index && candidate.observation !== undefined))) {
+        throw new Error(`Step ${step.id}: observation afterStep must name a different local step with an observed branch into this step`)
+      }
+    }
     if (step.assessment && assessmentLeaves(step.assessment.condition).some(leaf => leaf.type === 'not-acquired')) throw new Error(`Step ${step.id}: not-acquired is a branch criterion, not step assessment`)
     for (const decision of step.decisions ?? []) if (decision.condition !== undefined && step.branches[decision.branchIndex]!.outcome !== 'unknown'
       && assessmentLeaves(decision.condition).some(leaf => leaf.type === 'not-acquired')) throw new Error(`Step ${step.id}: not-acquired criterion requires an [outcome: unknown] branch (branchIndex ${decision.branchIndex})`)

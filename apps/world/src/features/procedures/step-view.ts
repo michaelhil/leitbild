@@ -307,7 +307,7 @@ export const composeProcedureStepView = async (config: {
     throw Object.assign(new Error(`Procedure ${document.procedureId} has no step ${stepId}; its steps are ${document.steps.map(candidate => candidate.id).join(', ')}.`), { code: procedureStepNotFoundCode })
   }
   const [acquired, csfs] = await Promise.all([
-    readProcedureBranchEvidence({ observations: ports.observations, document, step }),
+    readProcedureBranchEvidence({ observations: ports.observations, document, step, run, events: ports.events() }),
     csfRows(document, ports),
   ])
   const { reads } = acquired

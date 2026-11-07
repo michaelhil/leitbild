@@ -931,6 +931,7 @@ export const createSimulationRunRuntime = async (config: {
             factory: { eventId, nextSeq: () => ++seq },
             observations: plantId => procedureObservations(actor, plantId, evidenceBudget),
             clock: () => runClock.read().currentTime,
+            events: durableEvents,
           })
           if (command.kind === 'world.procedure.run.transition') {
             const selected = events.find((event): event is Extract<SimulationRunEvent, { type: 'procedure.branch.selected' }> => event.type === 'procedure.branch.selected')

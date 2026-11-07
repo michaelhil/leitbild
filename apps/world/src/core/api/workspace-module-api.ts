@@ -1673,6 +1673,7 @@ const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, 
       const actor = buildSimulationRunActorForAccess(invocation.access)
       try {
         return json({ result: await readProcedureChecks({
+          events: () => runtime.events(),
           input, snapshot: runtime.snapshot,
           canInspect: plantId => runtime.inspectionPolicy(actor).canInspect(plantId),
           document: ({ sourceId, sourceRevision, sourcePath, procedureId }) => runtime.procedureDocument({ sourceId, sourceRevision, sourcePath, procedureId }),

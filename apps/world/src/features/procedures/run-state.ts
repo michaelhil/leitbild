@@ -31,6 +31,7 @@ export interface ProcedureCommitContext {
   /** Commit-local admitted reads; they never re-enter the Run execution queue. */
   readonly observations?: (plantId: string) => ProcedureObservationPort
   readonly clock?: () => IsoTimestamp
+  readonly events?: ReadonlyArray<SimulationRunEvent>
 }
 
 const activeRunFor = (procedures: ProcedureControlState | undefined, runId: string): ProcedureRunState => {
@@ -246,7 +247,7 @@ export const prepareProcedureCommand = async (config: {
         observations: () => {
           if (context.observations === undefined) throw new Error('Commit-local procedure observations are unavailable')
           return context.observations(run.scope.plantId)
-        }, document, step, branchIndex: payload.branchIndex,
+        }, document, step, branchIndex: payload.branchIndex, run, ...(context.events === undefined ? {} : { events: context.events }),
       })
       const { reads } = acquired
       const criterion = assessProcedureBranches({ step, reads, observations: acquired.observations, plantId: run.scope.plantId, simulationTime: context.clock?.() ?? context.simulationTime ?? context.at })[payload.branchIndex]!
