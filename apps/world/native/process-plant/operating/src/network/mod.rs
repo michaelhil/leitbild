@@ -271,6 +271,9 @@ pub struct Network<P: Properties> {
     /// L1's lock table once a caller declares L1 active ([`unilateral`]);
     /// `None` composes every impulse row as before (S1, S2).
     unilateral: Option<unilateral::Locks>,
+    /// R4-MOUTH-INERTIA: the surge mouth's vapor path (its layout) and the
+    /// reciprocal-area integral `∫ds/A` of its PZR side, `1/(2 d)`.
+    mouth: Option<(usize, f64)>,
     /// The controlled-spray path (IC-CTRL, S3); `None` composes S1/S2 as
     /// before.
     spray: Option<SprayLayout>,
@@ -403,7 +406,9 @@ impl<P: Properties> Network<P> {
         // restriction, whose lift and receiver a coupled PZR owner supplies
         // through its boundary (`Coupling::pzr_boundary`); without one the
         // relief stays on its seat. The PZR side contributes its port view
-        // only: no support, segment or other face touches the cell.
+        // only: no compiled support, segment or other face touches the cell
+        // (R4-MOUTH-INERTIA adds the free vapor path's inertia ahead of the
+        // mouth, from that same view).
         let surge_ports: Vec<&stratified::Port> = cell
             .ports
             .iter()
@@ -415,6 +420,9 @@ impl<P: Properties> Network<P> {
         let Some(port_face) = port.face else {
             return Err(bad("the surge port needs its face"));
         };
+        // R4-MOUTH-INERTIA: `∫ds/A` ahead of a circular mouth of bore d in
+        // a plane wall, on one side: 1/(2 d), the aperture's exact half.
+        let mouth = Some((2 * port_face + 1, 1. / (2. * port.bore_m)));
         let spray_port = cell
             .ports
             .iter()
@@ -758,6 +766,7 @@ impl<P: Properties> Network<P> {
                 coupled_tracer: vec![s(0.); pzr],
                 coupled_receipts: vec![[[s(0.); 3]; 2]; pzr],
                 unilateral: None,
+                mouth,
                 spray,
                 spray_x: None,
                 spray_continuous: false,

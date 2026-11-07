@@ -467,3 +467,55 @@ fn cancelling_signed_mass_is_not_an_empty_phase_onset() {
         );
     }
 }
+
+/// R4-MOUTH-INERTIA: inertia held outside the supports adds to `I`, so a
+/// path whose supports empty keeps a finite `Q`; with none it is the plain
+/// law bit for bit.
+#[test]
+fn inertia_beyond_the_supports_keeps_the_flow_finite() {
+    use leitbild_operating_plant::local_flow::{
+        ColdOnset, phase_path_kinematics, phase_path_kinematics_beyond,
+    };
+    let face = Face {
+        from: 0,
+        to: 1,
+        flow_area_m2: 0.07,
+        supports: vec![MomentumSupport {
+            region: 0,
+            path_length_m: 8.,
+            inverse_area_length_per_m: 113.,
+            volume_m3: 1.13,
+        }],
+        pressure_segments: vec![],
+    };
+    let run = |mass: f64, beyond: Option<Scalar>| {
+        phase_path_kinematics_beyond(
+            &face,
+            &[Scalar::constant(mass), Scalar::constant(0.)],
+            &[Scalar::constant(0.); 2],
+            &[1.13, 1.],
+            Scalar::constant(-2.),
+            Scalar::constant(0.),
+            ColdOnset::ProvenRest,
+            beyond,
+        )
+        .unwrap()
+    };
+    let plain = phase_path_kinematics(
+        &face,
+        &[Scalar::constant(1e-3), Scalar::constant(0.)],
+        &[Scalar::constant(0.); 2],
+        &[1.13, 1.],
+        Scalar::constant(-2.),
+        Scalar::constant(0.),
+        ColdOnset::ProvenRest,
+    )
+    .unwrap();
+    assert_eq!(
+        plain.volume_flow_m3_s.value.to_bits(),
+        run(1e-3, None).volume_flow_m3_s.value.to_bits()
+    );
+    let beyond = Scalar::constant(1.4);
+    assert_eq!(run(0., Some(beyond)).volume_flow_m3_s.value, -2. / 1.4);
+    assert!(run(1e-3, Some(beyond)).volume_flow_m3_s.value.abs() < 2. / 1.4);
+}

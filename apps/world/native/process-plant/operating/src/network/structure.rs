@@ -47,6 +47,12 @@ impl<P: Properties> Network<P> {
         for support in &self.faces[face].supports {
             out.extend(self.cell_coordinates(support.region));
         }
+        // R4-MOUTH-INERTIA: the surge mouth's free vapor path reads the port
+        // view's vapor. Every row that reads this Q already reads the port
+        // through the face's flux, so the pattern does not change.
+        if self.mouth.is_some_and(|(li, _)| self.face_layout[li].face == face) {
+            out.extend(self.cell_coordinates(self.pzr.cell));
+        }
     }
     /// Transported mass/enthalpy/tracer: Q and either endpoint as donor.
     fn flux_dependencies(&self, face: usize, out: &mut BTreeSet<usize>) {
