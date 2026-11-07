@@ -2,8 +2,9 @@
 // stdin/stdout, a toy unit behind it. Test-only: the native engine's tests spawn it with `bun` in place of the
 // artifact's binary. LOAD's `inputs.packet` names its fixture: the channels with a value and a rate each
 // (value + rate·(t − t0)), the channel a command sets to 1 from its time on, the times at which it kills
-// itself or refuses an ADVANCE, and a wall delay before each ADVANCE reply (a slow exchange).
-import { readFileSync } from 'node:fs'
+// itself, refuses an ADVANCE or stops answering (only the child that claims `hangClaimPath`, if named), and a
+// wall delay before each ADVANCE reply (a slow exchange).
+import { openSync, readFileSync } from 'node:fs'
 
 interface Fixture {
   readonly t0: number
@@ -12,6 +13,19 @@ interface Fixture {
   readonly dieAtS?: number
   readonly refuseAdvanceAtS?: number
   readonly advanceDelayMs?: number
+  readonly hangAdvanceAtS?: number
+  readonly hangClaimPath?: string
+}
+
+/** Whether this child is the one to stop answering: the first to claim the path, or any without one. */
+const claimsHang = (path: string | undefined): boolean => {
+  if (path === undefined) return true
+  try {
+    openSync(path, 'wx')
+    return true
+  } catch {
+    return false
+  }
 }
 
 const bits = (x: number): string => {
@@ -135,6 +149,8 @@ serve: for await (const chunk of Bun.stdin.stream()) {
     }
     const delayMs = op === 3 ? (unit as { fixture: Fixture } | null)?.fixture.advanceDelayMs : undefined
     if (delayMs !== undefined) await Bun.sleep(delayMs)
+    const stalled = op === 3 ? (unit as { fixture: Fixture; t: number } | null) : null
+    if (stalled?.fixture.hangAdvanceAtS !== undefined && stalled.t >= stalled.fixture.hangAdvanceAtS && claimsHang(stalled.fixture.hangClaimPath)) await Bun.sleep(3_600_000)
     process.stdout.write(frame(0, seq, outcome))
   }
 }

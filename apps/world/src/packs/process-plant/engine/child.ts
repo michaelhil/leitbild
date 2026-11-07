@@ -9,9 +9,15 @@ import {
 } from './protocol.ts'
 
 // One `ld01-unit` child process over its stdin/stdout pipes (shell design §1, platform design §4 option i).
-// One request is in flight at a time; nothing is retried. A child that exits other than by CLOSE, or
-// writes a malformed reply, fails: every pending and every later request rejects with that cause, and
-// nothing starts it again.
+// One request is in flight at a time; nothing is retried. A child that exits other than by CLOSE, writes
+// a malformed reply, or leaves an ADVANCE unanswered past the owner's limit fails: it is killed, every
+// pending and every later request rejects with that cause, and nothing starts it again.
+
+/**
+ * The longest one ADVANCE may go without its reply, in wall seconds from its sending. The owner's decision of
+ * 7 November 2026, "10 s limit" (R4-ADVANCE-LIMIT): a hang detector, not a real-time judge.
+ */
+export const ld01UnitAdvanceLimitS = 10
 
 /** An explicit refusal by the child (reply status 1): its state is the child's to judge (it may fail-stop). */
 export interface Ld01UnitRefusal extends Error {
@@ -118,13 +124,22 @@ export const spawnLd01UnitChild = (config: {
     seq += 1
     const requestSeq = seq
     const reply = new Promise<Ld01UnitReply>((resolve, reject) => { pending = { seq: requestSeq, op, resolve, reject } })
+    const sentAt = performance.now()
+    const limit = op !== ld01UnitOps.advance ? null : setTimeout(() => {
+      const t1 = new DataView(payload.buffer, payload.byteOffset, payload.byteLength).getFloat64(0, true)
+      fail(`ld01-unit (pid ${proc.pid}): ADVANCE ${requestSeq} to ${t1} s went ${((performance.now() - sentAt) / 1_000).toFixed(3)} s without a reply, past the ${ld01UnitAdvanceLimitS} s limit`)
+    }, ld01UnitAdvanceLimitS * 1_000)
     try {
       proc.stdin.write(encodeLd01UnitRequest(op, requestSeq, payload))
       await proc.stdin.flush()
     } catch (error) {
       fail(`ld01-unit (pid ${proc.pid}) stdin: ${error instanceof Error ? error.message : String(error)}`)
     }
-    return await reply
+    try {
+      return await reply
+    } finally {
+      if (limit !== null) clearTimeout(limit)
+    }
   }
 
   const request = (op: Ld01UnitOp, payload: Uint8Array): Promise<Ld01UnitReply> => {

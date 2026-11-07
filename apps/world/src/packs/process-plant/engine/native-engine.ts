@@ -18,9 +18,10 @@ import { bindLd01TagMap, convertLd01Channel, ld01ChannelSchema, type Ld01Binding
 
 // The LD-01 Plant's engine: one `ld01-unit` child per Plant (shell design §2). It serves the Pack's
 // synchronous runtime reads from the last observation frame, sends queued commands and one ADVANCE per
-// exchange, and checkpoints by SNAPSHOT at an exchange boundary. A child that dies, or a unit that
-// refuses an exchange, fails the engine "at t": every later read and advance throws with that cause, and
-// nothing restarts it. Copy, checkpoint and close go through SNAPSHOT (platform design §6.1).
+// exchange, and checkpoints by SNAPSHOT at an exchange boundary. A child that dies, a unit that refuses
+// an exchange, or an ADVANCE past the owner's limit (child.ts) fails the engine "at t": every later read
+// and advance throws with that cause, and nothing restarts it. Copy, checkpoint and close go through
+// SNAPSHOT (platform design §6.1).
 
 export const ld01EngineCheckpointFormat = 'ld01-unit' as const
 

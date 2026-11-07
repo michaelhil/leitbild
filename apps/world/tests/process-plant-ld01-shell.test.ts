@@ -290,6 +290,34 @@ describe('an LD-01 Plant in a Run', () => {
     }
   })
 
+  test('whose ADVANCE passes the limit leaves the Run by name and releases the other LD-01 Plant', async () => {
+    const claim = join(await mkdtemp(join(tmpdir(), 'leitbild-ld01-claim-')), 'hang')
+    cleanups.push(async () => { await rm(join(claim, '..'), { recursive: true, force: true }) })
+    process.env[ld01UnitArtifactEnv] = await artifactWith({ hangAdvanceAtS: 101.5, hangClaimPath: claim })
+    const clock = pausedClock()
+    const connection = await connect(expand(), memoryStore(), clock, [expand('plant:ld01-b')])
+    const events: PackRuntimeEvent[] = []
+    connection.subscribe(event => { if (event.type === 'event.emission') events.push(...event.events) })
+    const pressure = async (plantId: string): Promise<unknown> => (await connection.invokeQuery({ readPolicy: unrestrictedQueryReadPolicy, capabilityId: 'world.process-plant.signals.read', input: { plantId, signals: [{ path: 'PROTECTION.pressure' }] } }) as { readonly signals: ReadonlyArray<{ readonly variable: { readonly value: unknown } }> }).signals[0]!.variable.value
+    try {
+      await advance(connection, clock, 1_000)
+      const startedAt = performance.now()
+      await advance(connection, clock, 1_000)
+      expect(performance.now() - startedAt).toBeGreaterThanOrEqual(10_000)
+      const failed = events.filter(event => event.type === 'interaction.signal' && event.signal.type === 'process-plant.engine.failed')
+      expect(failed).toHaveLength(1)
+      expect(failed[0]!.type === 'interaction.signal' && String((failed[0]!.signal.payload as { message: string }).message)).toMatch(/^LD-01 engine failed at t=1\.100 s: ld01-unit \(pid \d+\): ADVANCE \d+ to 10\d\.\d+ s went 10\.\d+ s without a reply, past the 10 s limit/u)
+      const read = await Promise.allSettled(['plant:ld01', 'plant:ld01-b'].map(pressure))
+      const running = read.flatMap(outcome => outcome.status === 'fulfilled' ? [outcome.value as number] : [])
+      expect(running).toHaveLength(1)
+      await advance(connection, clock, 1_000)
+      const later = await Promise.allSettled(['plant:ld01', 'plant:ld01-b'].map(pressure))
+      expect(later.flatMap(outcome => outcome.status === 'fulfilled' ? [outcome.value as number] : [])[0]).toBeGreaterThan(running[0]!)
+    } finally {
+      await connection.close()
+    }
+  }, 30_000)
+
   test('on its compiled graph, serves the generated displays: declarations, topology and reads of the unit\'s frame', async () => {
     const compiled = compileOperatingGraph({ packet, ic, elec, sha8: 'abcdef12' })
     const channels = [...new Set(Object.values(compiled.tagMap.channels).map(ld01ChannelIdOf))].map(id => unitOf(id) === '1'

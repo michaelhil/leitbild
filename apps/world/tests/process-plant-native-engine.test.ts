@@ -3,6 +3,7 @@ import { chmod, mkdir, mkdtemp, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { compileResolvedProcessPlant } from '../src/packs/process-plant/plant-compiler.ts'
+import { ld01UnitAdvanceLimitS } from '../src/packs/process-plant/engine/child.ts'
 import { connectNativeProcessPlantEngine, type NativeEngineFailure } from '../src/packs/process-plant/engine/native-engine.ts'
 import { loadLd01UnitArtifact, resolveLd01UnitArtifact } from '../src/packs/process-plant/engine/artifact.ts'
 import { processPlantEngineKindFor } from '../src/packs/process-plant/engine/port.ts'
@@ -160,6 +161,31 @@ describe('the LD-01 native engine', () => {
     await expect(engine.advance(1_000)).rejects.toThrow(/ld01-unit refused ADVANCE: ADVANCE from 100\.1\d* s to 101\.1\d* s: the test double refuses here/u)
     expect(engine.failure()?.reason).toContain('the test double refuses here')
   })
+
+  test('an ADVANCE past the owner\'s limit fails the engine by name and stops the child; nothing behind it hangs and the last checkpoint restarts', async () => {
+    expect(ld01UnitAdvanceLimitS).toBe(10)
+    const load = await fixtureLoad({ hangAdvanceAtS: 101 })
+    const failures: NativeEngineFailure[] = []
+    const engine = await connect({}, { load, onFailure: failure => { failures.push(failure) } })
+    await engine.advance(500)
+    const lastGood = await engine.checkpoint()
+    const saved = JSON.stringify(lastGood)
+    const startedAt = performance.now()
+    const [hung, behind] = await Promise.allSettled([engine.advance(1_000), engine.checkpoint()])
+    const waitedS = (performance.now() - startedAt) / 1_000
+    expect(waitedS).toBeGreaterThanOrEqual(ld01UnitAdvanceLimitS)
+    expect(hung.status === 'rejected' && String(hung.reason)).toMatch(/LD-01 engine failed at t=0\.600 s: ld01-unit \(pid \d+\): ADVANCE \d+ to 101\.\d+ s went 10\.\d+ s without a reply, past the 10 s limit/u)
+    expect(behind.status === 'rejected' && String(behind.reason)).toContain('past the 10 s limit')
+    expect(failures).toHaveLength(1)
+    await engine.close()
+    const pid = Number(/pid (\d+)/u.exec(failures[0]!.reason)![1])
+    expect(() => process.kill(pid, 0)).toThrow()
+    expect(JSON.stringify(engine.persisted())).toBe(saved)
+    const restarted = await connect({}, { load, restored: lastGood })
+    expect(restarted.runtime.elapsedMs()).toBeCloseTo(600, 9)
+    expect((await restarted.advance(200)).simulatedMs).toBeCloseTo(200, 6)
+    expect(restarted.failure()).toBeNull()
+  }, 30_000)
 
   test('refuses at LOAD a tag map naming a channel the unit does not deliver', async () => {
     const load = await fixtureLoad({ channels: fixtureChannels.filter(channel => channel.id !== 'LD01.PROT.I1.TRIP') })

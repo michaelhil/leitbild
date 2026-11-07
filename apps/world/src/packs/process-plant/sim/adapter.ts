@@ -418,7 +418,7 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
     }
 
     /**
-     * An LD-01 engine failed at its time (its child died, or its unit refused an exchange): the Plant leaves the
+     * An LD-01 engine failed at its time (its child died, its unit refused an exchange, or an ADVANCE passed the limit): the Plant leaves the
      * running Plants with the state it last saved, shows "engine unavailable" with the cause, and nothing
      * restarts it. A person or an agent may restore the Run's last checkpoint.
      */

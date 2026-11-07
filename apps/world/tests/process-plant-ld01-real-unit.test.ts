@@ -1,8 +1,9 @@
 import { afterAll, describe, expect, test } from 'bun:test'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { compileProcessPlant } from '../src/packs/process-plant/plant-compiler.ts'
 import { ld01UnitArtifactEnv, resolveLd01UnitArtifact } from '../src/packs/process-plant/engine/artifact.ts'
+import { ld01UnitAdvanceLimitS } from '../src/packs/process-plant/engine/child.ts'
 import { connectNativeProcessPlantEngine, type NativeAdvanceReceipt, type NativeProcessPlantEngine } from '../src/packs/process-plant/engine/native-engine.ts'
 import type { VariablePath } from '../src/packs/process-plant/graph/index.ts'
 
@@ -113,6 +114,31 @@ describe.skipIf(!enabled)('NOT-EVIDENCE: the LD-01 engine on the real ld01-unit'
     expect(electrical(refused)).toContain('operator AC.A Reserve incoming Closed: rejected')
     expect(engine.failure()).toBeNull()
     recorded.operator = { position, opened: electrical(opened), closed: electrical(closed), refused: electrical(refused) }
+  }, 300_000)
+
+  test('normal exchanges stay inside the owner\'s limit; a unit that stops answering fails by name, and the last checkpoint continues bit for bit', async () => {
+    const pidFile = join(receipts!, 'advance-limit-child.pid')
+    const watched = await connectNativeProcessPlantEngine({ plant: plant(), tagMap: artifact!.tagMap, load: artifact!.load, artifactSha256: artifact!.manifestSha256, command: ['/bin/sh', '-c', `echo $$ > '${pidFile}'; exec "$0"`, artifact!.binary] })
+    engines.push(watched)
+    const normal = await run(watched, 3)
+    expect(Math.max(...normal.map(frame => frame.cost.wallS))).toBeLessThan(ld01UnitAdvanceLimitS)
+    expect(watched.failure()).toBeNull()
+    const checkpoint = await watched.checkpoint()
+    const { engine: control } = await connect(checkpoint)
+    const expected = await run(control, 2)
+    const pid = Number(readFileSync(pidFile, 'utf8').trim())
+    process.kill(pid, 'SIGSTOP')
+    const startedAt = performance.now()
+    await expect(watched.advance(1_000)).rejects.toThrow(/ADVANCE \d+ to [\d.]+ s went 10\.\d+ s without a reply, past the 10 s limit/u)
+    const waitedS = (performance.now() - startedAt) / 1_000
+    expect(waitedS).toBeGreaterThanOrEqual(ld01UnitAdvanceLimitS)
+    await watched.close()
+    expect(() => process.kill(pid, 0)).toThrow()
+    expect(JSON.stringify(watched.persisted())).toBe(JSON.stringify(checkpoint))
+    const { engine: restarted } = await connect(watched.persisted())
+    const continued = await run(restarted, 2)
+    expect(continued.map(frame => bits(frame.frame!.values))).toEqual(expected.map(frame => bits(frame.frame!.values)))
+    recorded.advanceLimit = { limitS: ld01UnitAdvanceLimitS, normal: costOf(normal), failedAfterS: waitedS, reason: watched.failure()?.reason }
   }, 300_000)
 
   test('snapshot, restore in a fresh child, then 30 s more in both: every frame bitwise equal', async () => {
