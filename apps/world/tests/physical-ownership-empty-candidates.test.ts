@@ -18,7 +18,11 @@ type Ownership = ReturnType<typeof preparePhysicalSurfaceOwnership>
 const fingerprint = (owned: Ownership): string => {
   const hash = createHash('sha256'), binary = (values: ArrayBufferView) => hash.update(new Uint8Array(values.buffer, values.byteOffset, values.byteLength))
   const meshes = owned.meshes.map((mesh, index) => ({ ...mesh, assetKey: 'same-exact-source', assetIndex: index }))
-  for (const { object, vertices, lines, ...metadata } of meshes) { hash.update(JSON.stringify([object.id, metadata])); binary(Float64Array.from(vertices)); binary(Float64Array.from(lines)) }
+  for (const { object, vertices, lines, ...metadata } of meshes) {
+    hash.update(JSON.stringify([object.id, metadata]))
+    binary(vertices instanceof Float64Array ? vertices : Float64Array.from(vertices))
+    binary(lines instanceof Float64Array ? lines : Float64Array.from(lines))
+  }
   const buffers = preparePhysicalRenderBuffers(meshes); binary(buffers.vertices); binary(buffers.lines); hash.update(JSON.stringify([buffers.roles, buffers.objectCount]))
   const acceleration = preparePhysicalPickAcceleration(meshes)
   for (const index of [acceleration.meshes, ...acceleration.triangles.map(item => item.triangles)]) for (const values of [index.bounds, index.children, index.ranges, index.order]) binary(values)
@@ -26,13 +30,20 @@ const fingerprint = (owned: Ownership): string => {
   hash.update(JSON.stringify(diagnostics)); return hash.digest('hex')
 }
 const compare = (meshes: ReadonlyArray<PhysicalMesh>, reference = priorOwnership): void => {
-  const prior = reference(meshes), current = preparePhysicalSurfaceOwnership(meshes)
+  // Keep the frozen result's witnesses while releasing its geometry before
+  // preparing the current result and allocating its render/pick buffers.
+  const expected = (() => {
+    const prior = reference(meshes)
+    const { broadPhaseCandidates: _work, ...diagnostics } = prior.diagnostics
+    return { diagnostics, objects: prior.meshes.map(mesh => mesh.object), digest: fingerprint(prior) }
+  })()
+  const current = preparePhysicalSurfaceOwnership(meshes)
   // A conservative hierarchy may visit different false-positive leaves; its
   // exact candidates, ownership and all output/picking bytes must stay equal.
-  const { broadPhaseCandidates: _beforeWork, ...before } = prior.diagnostics, { broadPhaseCandidates: _afterWork, ...after } = current.diagnostics
-  expect(after).toEqual(before); expect(current.meshes.length).toBe(prior.meshes.length)
-  for (let index = 0; index < current.meshes.length; index++) expect(current.meshes[index]!.object).toBe(prior.meshes[index]!.object)
-  expect(fingerprint(current)).toBe(fingerprint(prior))
+  const { broadPhaseCandidates: _work, ...after } = current.diagnostics
+  expect(after).toEqual(expected.diagnostics); expect(current.meshes.length).toBe(expected.objects.length)
+  for (let index = 0; index < current.meshes.length; index++) expect(current.meshes[index]!.object).toBe(expected.objects[index])
+  expect(fingerprint(current)).toBe(expected.digest)
 }
 const mesh = (id: string, faces: ReadonlyArray<readonly [number, number, number]>, material = 0): PhysicalMesh => {
   const vertices = Float64Array.from(faces.flatMap(([x, y, z]) => [x, y, z, -0, 0, 1, material]))
@@ -67,5 +78,5 @@ describe('actual admitted all-layer geometry retains the frozen ownership, rende
     expect(scene.revision).toBe(design.digest)
     const view = { ...defaultPhysicalSceneView(scene.levels), mode: '3d' as const, levelId: 'all', hiddenLayerIds: [] }, demand = physicalMeshDemandScene(scene, view)
     compare(physicalSurfaceAnnotations(demand, view, clipPhysicalMeshesToScope(demand, view, buildVisibleMeshes(demand, view))), beforeTwoLevel)
-  }, 30_000)
+  })
 })
