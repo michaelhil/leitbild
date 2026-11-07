@@ -186,3 +186,35 @@ test('refresh follows the current publication while historical churn preserves t
   expect((await service.readEvidence({ sourceRevision: revision, sourcePath: 'evidence.md', section: 'criterion', startLine: 4, lineCount: 1 })).content).toBe('Original evidence.')
   await expect(service.readEvidence({ sourceRevision: revision, sourcePath: 'evidence.md', section: 'criterion', startLine: 7 })).rejects.toMatchObject({ code: 'capability_input_rejected' })
 })
+
+test('warm retained reads recheck replacement bytes and refuse a deleted publication', async () => {
+  const directory = await workspace()
+  let offline = false
+  const knowledge = publication()
+  const service = createProcedureSourceService({
+    sources: [source], retentionDirectory: directory,
+    loadKnowledge: async () => { if (offline) throw new Error('Current publication offline'); return knowledge },
+  })
+  await service.readDocument({ procedureId: 'ENTRY', sourceRevision: revision })
+  await service.readDocument({ procedureId: 'ENTRY', sourceRevision: revision })
+  await service.readEvidence({ sourceRevision: revision, sourcePath: 'evidence.md', section: 'criterion' })
+  const retainedPath = join(directory, `${source.sourceId}-${revision}.json`)
+  const original = await readFile(retainedPath, 'utf8')
+  try {
+    const replacement = JSON.parse(original) as { revision: string; documents: Array<{ path: string; content: string }> }
+    replacement.documents.find(document => document.path === 'evidence.md')!.content =
+      '# Evidence\n\n## Criterion\nReplacement retained owner.'
+    replacement.documents.find(document => document.path === 'procedures/entry.md')!.content =
+      markdown('ENTRY', 'Replacement retained entry', '[[TARGET]]')
+    await writeFile(retainedPath, JSON.stringify(replacement) + '\n')
+    expect((await service.readEvidence({ sourceRevision: revision, sourcePath: 'evidence.md', section: 'criterion' })).content).toContain('Replacement retained owner.')
+    expect((await service.readDocument({ procedureId: 'ENTRY', sourceRevision: revision })).title).toBe('Replacement retained entry')
+
+    await rm(retainedPath)
+    offline = true
+    await expect(service.readDocument({ procedureId: 'ENTRY', sourceRevision: revision })).rejects.toThrow('Current publication offline')
+    await expect(service.readEvidence({ sourceRevision: revision, sourcePath: 'evidence.md' })).rejects.toThrow('has no retained publication')
+  } finally {
+    await writeFile(retainedPath, original)
+  }
+})
