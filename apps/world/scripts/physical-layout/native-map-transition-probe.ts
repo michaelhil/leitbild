@@ -32,7 +32,7 @@ if(localCertificateSpki!==undefined&&(new URL(info.url).protocol!=='https:'||typ
 const instrumentPath = resolve(import.meta.dir, `../../tests/browser/physical-scene/${detailInventory ? 'detail-latency-instrumentation' : 'native-map-loading-instrumentation'}.ts`)
 const built = await Bun.build({ entrypoints: [instrumentPath], target: 'browser', format: 'iife', minify: false })
 if (!built.success) throw new AggregateError(built.logs, 'Cannot build loading observer')
-const instrumentation = `window.__nativeLoadingConfiguration={planInkOnly:${planFirst||process.env.LEITBILD_NATIVE_PLAN_INK_ONLY==='1'}};\n` + await built.outputs[0]!.text(), profile = await mkdtemp(join(tmpdir(), 'leitbild-loading-chrome-'))
+const instrumentation = 'window.__nativeLoadingConfiguration={planInkOnly:true};\n' + await built.outputs[0]!.text(), profile = await mkdtemp(join(tmpdir(), 'leitbild-loading-chrome-'))
 const chrome = Bun.spawn(['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '--headless=new', '--js-flags=--expose-gc', '--no-first-run', '--no-default-browser-check', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--window-size=1440,1000', `--force-device-scale-factor=${ratio}`, ...(localCertificateSpki===undefined?[]:[`--ignore-certificate-errors-spki-list=${localCertificateSpki}`]), 'about:blank'], { stdout: 'ignore', stderr: Bun.file(join(folder, 'chrome.stderr.log')) })
 let socket: WebSocket | null = null, sequence = 0
 const pending = new Map<number, { resolve: (value: any) => void; reject: (error: unknown) => void }>(), exceptions: unknown[] = [], network = new Map<string, any>(), sockets = new Map<string, string>(), socketFrames: Array<{ id: string; url: string | undefined; at: number; bytes: number }> = []
