@@ -1445,6 +1445,34 @@ mod integrated {
             })
             .collect::<Result<Vec<_>, network::Failure>>()
             .map_err(message)?;
+        // R4-EXHAUST-START: an exhaustion stock IDA can no longer report,
+        // its root already past zero at this consistent state, is located
+        // here: the same instant restarts on it.
+        if let Some(event) = joined.exhaustion_at_start(y, &yp).map_err(message)? {
+            let mut after = restart_or_continue(
+                ida,
+                t,
+                Discrete::Roots(&event),
+                y_all,
+                network_ids,
+                absolute_all,
+                relative,
+                restart,
+                false,
+            )?;
+            done.append(&mut after.transactions);
+            after.transactions = done;
+            let mut all_births = births;
+            all_births.append(&mut after.births);
+            after.births = all_births;
+            let mut all_appended = appended_done;
+            all_appended.append(&mut after.appended);
+            after.appended = all_appended;
+            after.modes_changed = true;
+            after.presence_changed |= presence_changed;
+            after.constraint_at_entry = entry;
+            return Ok(after);
+        }
         // L1 at the segment start (DR S3-REBIRTH, decision 0014): a lock
         // whose drive draws from its holding end at t0+ (at the consistent
         // state, or from an exact zero by its rate) is released now; stock

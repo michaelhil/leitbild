@@ -46,6 +46,12 @@ use serde_json::{Value, json};
 
 use super::properties::Water;
 
+/// R4-EXHAUST-START: an exhaustion root that stock IDA can no longer report at
+/// a segment start: the vapor mass below zero, or at an exact zero and falling.
+pub fn past_zero(vapor_mass: f64, rate: f64) -> bool {
+    vapor_mass < 0. || (vapor_mass == 0. && rate < 0.)
+}
+
 /// A regular cell's phase mode (S3-D-P1).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum CellMode {
@@ -670,4 +676,18 @@ fn saturated_points(sat: &Saturated) -> [(Water, Water); 2] {
         point(&sat.saturation.liquid, sat.liquid_energy),
         point(&sat.saturation.vapor, sat.vapor_energy),
     ]
+}
+
+#[cfg(test)]
+mod start_tests {
+    use super::past_zero;
+
+    #[test]
+    fn an_exhaustion_root_past_zero_reads_its_sign_then_its_rate() {
+        assert!(past_zero(-1e-300, 1.));
+        assert!(past_zero(0., -1e-300));
+        assert!(!past_zero(0., 0.));
+        assert!(!past_zero(0., 1.));
+        assert!(!past_zero(1e-300, -1.));
+    }
 }

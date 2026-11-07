@@ -41,7 +41,7 @@ pub use jacobian::{
     ConsistentPair, ConsistentSystem, CscOut, DensePattern, Largest, Placement, Projection,
     SparseJacobian, consistent_rates, consistent_start, place_on_bounds, project_constraints,
 };
-pub use phase_modes::CellMode;
+pub use phase_modes::{CellMode, past_zero};
 pub use ports::{CellVolume, Coupling, Fluid, Receipts};
 pub use properties::{Band, BandReport, MetastableBand, Properties, Reuse, Water};
 pub use tolerance::{CreditedOutput, ToleranceClasses};

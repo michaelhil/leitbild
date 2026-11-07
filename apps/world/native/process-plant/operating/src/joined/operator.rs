@@ -1657,20 +1657,29 @@ impl<P: Properties + WaterProperties> Joined<P> {
                     continue;
                 }
                 let l = self.network.face_layout[li];
+                if l.phase != 1 {
+                    continue;
+                }
                 let (from, to) = self.network.face_ends(l.face);
                 let flow = self.network.path_flow_sign(y, li);
                 let donor = if flow > 0. {
-                    from
+                    Some(from)
                 } else if flow < 0. {
-                    to
+                    Some(to)
                 } else {
-                    continue;
+                    None
                 };
-                if donor < self.network.pzr.cell
-                    && self.network.cell_modes()[donor] == CellMode::Equilibrium
-                    && l.phase == 1
-                {
-                    modes[2 * donor] = -1;
+                // R4-EXHAUST-START: a root-size vapor mass past zero makes the
+                // path's inertia negative and turns `Q`, so the flow can name
+                // the liquid end while the located root is the vapor cell's
+                // own. An end at or past zero exhausts whichever way it reads.
+                for end in [from, to] {
+                    if end < self.network.pzr.cell
+                        && self.network.cell_modes()[end] == CellMode::Equilibrium
+                        && (donor == Some(end) || self.network.equilibrium_masses(end, y)?.0 <= 0.)
+                    {
+                        modes[2 * end] = -1;
+                    }
                 }
             }
             if let Some(m) = self.mode_transact(t, &modes, y)? {
@@ -1888,6 +1897,30 @@ impl<P: Properties + WaterProperties> Joined<P> {
                 "oneSided":one_sided.iter().map(|(p, f, r)| serde_json::json!({"path":p,"orientedDrive_Pa":f,"orientedRate_Pa_s":r})).collect::<Vec<_>>(),
                 "changes":tx.changes,"stateChanged":!tx.changes.is_empty()}),
         }))
+    }
+    /// R4-EXHAUST-START: the root directions of the exhaustions stock IDA
+    /// cannot report at a segment start `(y, y')`: an equilibrium cell whose
+    /// vapor mass stands below zero, or at an exact zero and falling. Its
+    /// exhaustion root starts on the far side and never crosses. `None` when
+    /// no cell stands there. The root's own sign and rate, the rule of
+    /// [`Joined::unilateral_release_at_start`]: no threshold.
+    pub fn exhaustion_at_start(&self, y: &[f64], yp: &[f64]) -> Result<Option<Vec<i32>>, Failure> {
+        if !self.phase_modes {
+            return Ok(None);
+        }
+        let first = self.root_count() - self.spray_slots() - self.phase_mode_slots();
+        let mut located = None;
+        for c in 0..self.network.pzr.cell {
+            if self.network.cell_modes()[c] != CellMode::Equilibrium {
+                continue;
+            }
+            let (vapor, _) = self.network.equilibrium_masses(c, y)?;
+            let rate = yp[self.network.cell_layout[c].mass[1]];
+            if crate::network::past_zero(vapor, rate) {
+                located.get_or_insert_with(|| vec![0; self.root_count()])[first + 2 * c] = -1;
+            }
+        }
+        Ok(located)
     }
     /// A declared command to every composed owner, in order, followed by
     /// any time event the command makes due at once ([`Joined::time_events`]).
