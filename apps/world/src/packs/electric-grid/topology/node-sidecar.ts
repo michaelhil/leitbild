@@ -178,5 +178,5 @@ export const adaptNodeSidecar = (raw: unknown, sourceId: string): NodeSidecarAda
         break
     }
   }
-  return { input: { sourceId, keyMode: 'osm-node', features, adapterLedger: ledger }, ignoredCategoryCounts: ignored }
+  return { input: { sourceId, features, adapterLedger: ledger }, ignoredCategoryCounts: ignored }
 }

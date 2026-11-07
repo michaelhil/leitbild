@@ -77,7 +77,7 @@ export const compileGridTopology = (
 
   const levelsOfGroup = new Map<string, Set<number>>()
   const junctions = new Map<string, { key: string; kv: number; names: Set<string> }>()
-  const branchContext: Omit<BranchContext, 'busLabel'> = { keyMode: input.keyMode, interconnectors, sourceIds, curationOfFeature: curated.curationOfFeature }
+  const branchContext: Omit<BranchContext, 'busLabel'> = { interconnectors, sourceIds, curationOfFeature: curated.curationOfFeature }
   for (const { link } of accepted) {
     for (const node of [link.a, link.b]) {
       if (node.startsWith('S|')) {
@@ -181,7 +181,6 @@ export const compileGridTopology = (
     sourceId: input.sourceId,
     interconnectorSourceId: interconnectorTable.sourceId,
     curationSourceId: curationSet.sourceId,
-    keyMode: input.keyMode,
     options,
     buses: merged.buses,
     branches: merged.branches,

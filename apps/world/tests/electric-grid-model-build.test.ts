@@ -224,7 +224,7 @@ describe('model build: provenance and serialisation', () => {
     expect(set.records.map(record => [record.kind, record.id])).toEqual([['assert-in-service', 'curation:cable-in-service'], ['add-interconnector-ways', 'curation:link-ways']])
     expect(set.records[0]!.evidence).toEqual(['https://example.org/e (e)'])
     const line = (id: string) => ({ kind: 'line' as const, featureId: id, osmWayIds: [id], name: null, operator: null, lifecycle: 'operational' as const, levels: [], cables: null, coordinates: [], vertexKeys: [], terminalVertexIndices: [] })
-    const input: TopologyInput = { sourceId: 'osm:test', keyMode: 'osm-node', features: [line('way/1'), line('way/3')], adapterLedger: [] }
+    const input: TopologyInput = { sourceId: 'osm:test', features: [line('way/1'), line('way/3')], adapterLedger: [] }
     const ledger = createBuildLedger()
     expect(withoutCuratedExclusions(input, collection, ledger).features.map(feature => feature.featureId)).toEqual(['way/1'])
     expect(ledger.entries().map(entry => entry.reason)).toEqual(['offshore-supply-explained'])

@@ -2,7 +2,6 @@ import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { compileGridTopology } from '../src/packs/electric-grid/topology/compile.ts'
-import { adaptCoordinateSidecar } from '../src/packs/electric-grid/topology/coordinate-sidecar.ts'
 import type { TopologyCurationSet, TopologyInterconnectorTable } from '../src/packs/electric-grid/topology/input.ts'
 import { adaptNodeSidecar } from '../src/packs/electric-grid/topology/node-sidecar.ts'
 import type { TopologyBranch, TopologyResult } from '../src/packs/electric-grid/topology/result.ts'
@@ -161,19 +160,6 @@ describe('electric-grid topology compiler', () => {
     const again = compileNode(table, noCurations, shuffled)
     expect(JSON.stringify(again)).toBe(JSON.stringify(result))
     expect(JSON.stringify(compileNode())).toBe(JSON.stringify(result))
-  })
-
-  test('reads the coordinate-keyed legacy sidecar into the same network', () => {
-    const legacy = compileGridTopology(adaptCoordinateSidecar(fixture('coordinate-sidecar.geojson'), 'osm:fixture-legacy').input, table, noCurations)
-    const shape = (topology: TopologyResult, skip: ReadonlySet<string>) => topology.branches
-      .filter(branch => !branch.osmWayIds.some(wayId => skip.has(wayId)))
-      .map(branch => `${[branch.fromBusId, branch.toBusId].map(id => id.replace(/junction-[^@]+/, 'junction')).sort().join(' ')} ${branch.osmWayIds.join(',')}`)
-      .sort()
-    // The legacy build dropped voltage-less ways, route relations and portals.
-    const differ = new Set(['way/201', 'way/306', 'way/602', 'way/701'])
-    expect(shape(legacy, differ)).toEqual(shape(result, differ))
-    expect(legacy.buses.some(bus => bus.id === 'bus:junction-coordinate-10.1500000_60.0000000@420')).toBe(true)
-    expect(ledgerOf(legacy, 'corridor-dangling').flatMap(entry => entry.elementIds.filter(id => id.startsWith('way/'))).sort()).toEqual(['way/201', 'way/203', 'way/602', 'way/701'])
   })
 
   test('refuses a node sidecar whose tags disagree with its parsed fields', () => {

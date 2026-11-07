@@ -310,7 +310,7 @@ describe('OSM PBF power extraction', () => {
     expect(extraction.ledger['excluded:line:missing-node-coordinates']).toBe(1)
   })
 
-  test('the legacy reference graph still compiles from per-way features', () => {
+  test('the reference dataset audit graph compiles from per-way features', () => {
     const graph = compileGridReferenceGraph(extraction.features, { maxEndpointDistanceKm: 2 })
     expect(graph.branches.find(branch => branch.externalId === 'way/200')).toMatchObject({ voltageKv: [420] })
     expect(graph.nodes.map(node => node.externalId)).toContain('way/100')
