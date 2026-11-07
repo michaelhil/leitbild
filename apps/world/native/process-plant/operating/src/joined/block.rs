@@ -97,6 +97,10 @@ pub enum Class {
     // PZR metal and relief owner (G6).
     PzrMetal,
     PzrReliefLift,
+    // The PZR owner's continuous normal control (R4-PZR-CONTINUOUS): the
+    // PT1 channel lag (differential), only with the section's
+    // `continuousControl`.
+    PzrControl,
     // CVCS owner (plan r4 X4.2).
     InventoryStock,
     InventoryControl,
@@ -633,6 +637,37 @@ pub trait Secondary<P> {
     fn operator_tolerances(&self) -> Vec<(usize, f64)> {
         Vec::new()
     }
+    /// R4-DUMP hook (lane DUMP): the own rows reading the post-trip Tavg
+    /// mode's loop-average input (sorted; a fixed pattern, values zero until
+    /// the mode arms), empty for an owner without the mode.
+    fn loop_average_rows(&self) -> Vec<usize> {
+        Vec::new()
+    }
+    /// R4-DUMP: declare that the composition carries the loop-average
+    /// channel (the CVCS's lag), before any evaluation.
+    fn declare_loop_average(&mut self) -> Result<(), Failure> {
+        Err(Failure::Fatal(
+            "this secondary owner reads no loop-average input".into(),
+        ))
+    }
+    /// R4-DUMP: the loop-average lag (K) of the evaluation that follows
+    /// (a trial input from the CVCS's coordinate) and its seed direction.
+    fn set_loop_average(&mut self, _value_k: f64, _direction: f64) -> Result<(), Failure> {
+        Err(Failure::Fatal(
+            "this secondary owner reads no loop-average input".into(),
+        ))
+    }
+    /// R4-DUMP: whether any RCP is supplied (a held input set at the
+    /// restarts that change a supply).
+    fn set_forced_circulation(&mut self, _forced: bool) -> Result<(), Failure> {
+        Err(Failure::Fatal(
+            "this secondary owner has no forced-circulation input".into(),
+        ))
+    }
+    /// R4-DUMP: the reactor trip this owner has received, if any.
+    fn reactor_trip_time(&self) -> Option<f64> {
+        None
+    }
 }
 
 /// The rod bodies (spider and bodies, H7), their guide passages (F1 (a),
@@ -756,6 +791,11 @@ pub trait Rods<P> {
         y: &mut [f64],
     ) -> Result<Transaction, Failure>;
     fn command(&mut self, t: f64, command: Command) -> Result<Transaction, Failure>;
+    /// R4-DUMP: when the holding circuit opens or opened (the reactor
+    /// trip), once a command or the S2 turbine trip's declared delay has
+    /// set it; the joined operator reports the opening to every owner as
+    /// one holding-loss event.
+    fn holding_opens_at(&self) -> Option<f64>;
     /// B1 (lane ROD): a class whose grip is declared stuck is held while
     /// every other class is seated (the stuck cluster stays out).
     fn stuck_out(&self) -> bool;

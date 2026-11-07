@@ -19,12 +19,21 @@
  * carries G6's cell and the PZR owner's section, so the PZR steel settles
  * with the solids (S3-D36) and the packet carries it as `pzrSteel`.
  *
+ * R4-PZR-CONTINUOUS (PERF3, lead 1 Nov): the packet's `pzrMetal` also
+ * carries `continuousControl` (`pzrContinuousControl`: the normal heater
+ * law's setpoint, capacity and band and the PT1 channel's lag), which the
+ * PZR owner composes as its channel-lag coordinate and the S3 composition's
+ * continuous AUTO. The steady solids settle settles the steel at P4's held
+ * demand, which the channel does not enter, so its input carries the
+ * section without it.
+ *
  * Usage: bun reference-design-operating-joined.ts <wiki root> <pinned IF97 directory> <prepare_steady_solids executable> */
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { ownedBlock } from './reference-design-operating-pzr'
 import { caseSetSections, equipmentOwners, parsePzrHeaterBanks, parsePzrRelief, parsePzrSpray } from './reference-design-operating-pzr-cases'
+import { pzrContinuousControl, pzrControlPages } from './reference-design-operating-pzr-control'
 import { compileOperatingRods } from './reference-design-operating-rods'
 import { prepareOperatingSecondary } from './reference-design-operating-sg'
 import { compileOperatingHotStandby, compileOperatingPostTripDomain } from './reference-design-operating-source'
@@ -116,11 +125,13 @@ export async function prepareOperatingJoined(wiki: string, if97: string, settle:
   const hash = (s: string) => createHash('sha256').update(s).digest('hex')
   const consumed = names.map(([k, name]) => ({ name, sha256: hash(pages[k as keyof typeof pzrMetalPages]) }))
   const g6 = joinedPzrSections(spine.pzr.cell, pages)
+  const control = await pzrControlPages(wiki)
+  const continuousControl = pzrContinuousControl(control.pages)
   const matrixRebuild = matrixRebuildSection(await Bun.file(join(base, matrixRebuildOwner.page)).text())
   return { ...spine, identity: 'LD01-JOINED-SPINE-1', secondary, rods, post_trip_domain: await compileOperatingPostTripDomain(wiki),
     hot_standby_kinetics: await compileOperatingHotStandby(wiki), matrixRebuild,
     pzr: { ...spine.pzr, cell: g6.cell, provenance: { ...spine.pzr.provenance, consumed: [...spine.pzr.provenance.consumed, ...consumed] } },
-    pzrMetal: { ...g6.pzrMetal, provenance: { consumed } }, pzrSteel: steel,
+    pzrMetal: { ...g6.pzrMetal, continuousControl, provenance: { consumed, continuousControl: control.consumed } }, pzrSteel: steel,
     provenance: { ...spine.provenance, joinedSourceSha256: hash(await Bun.file(import.meta.path).text()) },
     scope: 'Joined S2 inputs: the compact spine packet, its PZR cell with the spray and relief ports (G6), with the SG secondary, rod, D3 (a) post-trip domain and PZR metal and relief owners\' strict sections, the PZR steel at its steady state (S3-D36), and MR-1\'s forced matrix-rebuild interval (R7-P). No trajectory admission.' }
 }

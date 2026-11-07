@@ -62,7 +62,7 @@ use leitbild_operating_plant::{
 use leitbild_operating_water::{
     If97,
     electrical::{Configuration, CreditedBudget, Electrified, N},
-    frame::{COUNTER_NAMES, Class, Client, Diagnostic, Driver, Frame, Setup},
+    frame::{COUNTER_NAMES, Client, Diagnostic, Driver, Frame, Setup},
     ida::{Ida, Initial},
     joined::{
         Discrete, Integrated, JoinedSystem, Restart, derived_tolerances, discrete_restart,
@@ -425,10 +425,10 @@ fn s3_settle_state_for_c1() {
         "the control frame is the I&C frame"
     );
     let control_wiki = env("LD01_PZR_CONTROL_WIKI");
-    let channel = pzr_control::channel_block(&control_wiki, &law).expect("the PT1 channel block");
+    let channel = pzr_control::channel_block(&control_wiki).expect("the PT1 channel block");
+    let mut y = y;
     let (mut control, prepared_w, start_w) =
-        pzr_control::commission(&mut joined, &law, channel, Class::S, None, t0, &y, &yp)
-            .expect("commissioning");
+        pzr_control::commission(&mut joined, &law, channel, &mut y).expect("commissioning");
     // L1 and the phase modes armed at the start state.
     let l1 = joined.activate_unilateral(t0, &y).expect("L1");
     joined.activate_phase_modes().expect("phase modes");
@@ -551,7 +551,18 @@ fn s3_settle_state_for_c1() {
     let mut last_ranges: Vec<(f64, f64, bool)> = Vec::new();
     let mut history: Vec<Value> = Vec::new();
     let checks_every = (1. / output_s).round() as u64;
-    let heater = |ida: &Ida<Unit>| ida.system().integrated().joined.pzr().request_w();
+    // R4-PZR-PI: the continuous master's request at the state's lag and
+    // integral.
+    let (law_c, lag, integral) = (control.control, control.lag, control.integral);
+    let heater = |y: &[f64]| {
+        use leitbild_operating_plant::thermal::Scalar;
+        law_c
+            .heater_request(law_c.demand(
+                Scalar::constant(y[lag.0] * lag.1),
+                Scalar::constant(y[integral.0] * integral.1),
+            ))
+            .value
+    };
     {
         let mut clients: Vec<&mut dyn Client<Unit>> = vec![&mut control];
         if let Err(e) = driver.start(&mut clients, t0, &y_all, &yp_all) {
@@ -601,12 +612,12 @@ fn s3_settle_state_for_c1() {
                 if k.is_multiple_of(checks_every * 10) {
                     history.push(json!({"t_s": t, "credited": CREDITED.iter().zip(&c).map(|(q, v)| (q.name.to_string(), json!(v))).collect::<Map<String, Value>>(),
                         "ranges": CREDITED.iter().zip(&rs).map(|(q, r)| (q.name.to_string(), json!([r.0, r.1, r.2]))).collect::<Map<String, Value>>(),
-                        "cpu_s": process_cpu_s() - started, "heater_w": heater(&ida)}));
+                        "cpu_s": process_cpu_s() - started, "heater_w": heater(&y_all)}));
                     eprintln!(
                         "S3 settle t = {t:.1} s: PT1 range {:.1} Pa, P = {:.6e} W, heater {:.0} W, CPU {:.1} s",
                         rs[3].0,
                         c[0][0],
-                        heater(&ida),
+                        heater(&y_all),
                         process_cpu_s() - started
                     );
                 }
@@ -637,8 +648,8 @@ fn s3_settle_state_for_c1() {
         "appended": {"owner": "electrical slice (ELEC)", "y": &y_all[n..], "yp": &yp_all[n..],
             "y_bits": bits(&y_all[n..]), "yp_bits": bits(&yp_all[n..])},
         "discrete_state": snapshot,
-        "pzr_control": {"in_force_w": control.in_force_w, "note": "C1 re-commissions the controller at its start (the heater demand in force is the PZR block's discrete state)"},
-        "composition": "S3-D28 (3): joined + spray closed + SG two-zone + feed gate declared/open + S2-D24r/S3-D16 + L1 + phase modes + PZR control AUTO (S) + ELEC slice connected"});
+        "pzr_control": {"in_force_w": heater(&y_all), "note": "the continuous law on the state's PT1 channel lag (R4-PZR-CONTINUOUS); C1 re-commissions it at its start"},
+        "composition": "S3-D28 (3): joined + spray closed + SG two-zone + feed gate declared/open + S2-D24r/S3-D16 + L1 + phase modes + PZR control AUTO (C, R4-PZR-CONTINUOUS) + ELEC slice connected"});
     let state_bytes = serde_json::to_vec(&state).unwrap();
     let state_file = dir.join("s3-settled-state.json");
     std::fs::write(&state_file, &state_bytes).unwrap();
@@ -662,7 +673,7 @@ fn s3_settle_state_for_c1() {
             "first_step_s": FIRST_STEP_S, "relative_tolerance": rtol, "frame_s": ic.frame_s,
             "integration": "frame driver: stock IDA_ONE_STEP, observation from IDAGetDky, restarts by discrete_restart",
             "derived_tolerances": derived, "stator_rows": stator, "stator_budget": "S3-D23: 10 A, 1 MW",
-            "l1_activation_changes": l1.changes.len(), "pzr_control": {"class": "S (S3-D4)", "prepared_request_w": prepared_w, "start_request_w": start_w},
+            "l1_activation_changes": l1.changes.len(), "pzr_control": {"class": "C (continuous, R4-PZR-CONTINUOUS)", "held_request_replaced_w": prepared_w, "start_request_w": start_w},
             "caps": {"simulated_s": cap_s, "process_cpu_s": cpu_cap_s},
             "measure": {"filter": filter::DECLARED_FILTER, "cutoff_hz": CREDITED_BAND_HZ, "sampled_s": output_s, "window_s": window_s}},
         "start": {"projection_passes": initial.report.projection_passes, "residual": initial.report.residual.value,
@@ -671,7 +682,6 @@ fn s3_settle_state_for_c1() {
         "last_ranges": CREDITED.iter().zip(&last_ranges).map(|(q, r)| (q.name.to_string(), json!({"range": r.0, "threshold": r.1, "holds": r.2}))).collect::<Map<String, Value>>(),
         "state": {"file": "s3-settled-state.json", "sha256": leitbild_operating_plant::digest::sha256(&state_bytes)},
         "counts_by_class": driver.counts.json(), "stock_totals": totals, "observation": driver.observation_json(),
-        "pzr_control_changes": control.schedule.len().saturating_sub(1),
         "cpu": {"process_total_s": total_cpu_s, "preparation_s": preparation_cpu_s, "solver_s": driver.cpu.solver_s,
             "observation_s": driver.cpu.observation_s, "restart_s": driver.cpu.restart_s, "held_s": driver.cpu.held_s,
             "per_simulated_s": (total_cpu_s - preparation_cpu_s) / (t - t0).max(1e-9)},
@@ -727,9 +737,20 @@ fn s3_settle_with_the_feed_train() {
         unit::{
             plant::{self, Plant},
             profile::Solver,
+            turbine::{self, Turbine},
         },
     };
     let started = process_cpu_s();
+    // R4-REPIN-GOV-SETTLE (lead 1 Nov): LD01_TURB_GOV on | off, unset off, as
+    // the cases parse it. On, this settle composes the X4.3 governor as the
+    // governed cases do (a governor-declared IC section; the composition
+    // refuses a mismatch), so governed runs start from the governor's own
+    // equilibrium, restored as saved, not from a tracking transfer.
+    let turbine = match std::env::var("LD01_TURB_GOV").as_deref().unwrap_or("off") {
+        "on" => Some(Turbine::from_wiki(&env("LD01_TURB_WIKI")).unwrap_or_else(|e| panic!("{e}"))),
+        "off" => None,
+        v => panic!("LD01_TURB_GOV={v}: on or off"),
+    };
     let gates_path = env("LD01_S2_GATES_SOURCE");
     let gates_text = std::fs::read_to_string(&gates_path).expect("gates source");
     let gates = gates_block(&gates_text);
@@ -744,7 +765,12 @@ fn s3_settle_with_the_feed_train() {
                 .unwrap_or_else(|| panic!("settling.{}", c.key))
         })
         .collect();
-    let sg_threshold = settling["sgPressure_Pa"].as_f64().expect("settling.sgPressure_Pa");
+    let sg_threshold = settling["sgPressure_Pa"]
+        .as_f64()
+        .expect("settling.sgPressure_Pa");
+    let gen_fraction = settling["corePowerRelative"]
+        .as_f64()
+        .expect("settling.corePowerRelative");
     let cap_s = env_f64("LD01_S3_SETTLE_CAP_S");
     let cpu_cap_s = env_f64("LD01_S3_SETTLE_CPU_CAP_S");
     let dir = PathBuf::from(env("LD01_S3_SETTLE_DIR"));
@@ -781,9 +807,41 @@ fn s3_settle_with_the_feed_train() {
         water,
         ..Solver::STOCK
     };
-    let unit = s3::compose(&inputs, &state, solver).unwrap_or_else(|e| panic!("{e}"));
+    let unit = s3::compose_governed_with(
+        &inputs,
+        &state,
+        s3::Scaling::NONE,
+        solver,
+        turbine.as_ref(),
+        Ok,
+    )
+    .unwrap_or_else(|e| panic!("{e}"));
     assert!(unit.feed_train, "the packet composes the feed train");
     let (t0, n) = (unit.t0, unit.n);
+    // The governed acceptance reads GEN.WT, the governor's lagged power
+    // coordinate, against the load request in force.
+    let gen_watt_at = n
+        + leitbild_operating_water::electrical::N
+        + leitbild_operating_plant::turbine::governor::W;
+    let mut request_w = unit.ida.system().governor.as_ref().map(|g| g.held.to_w);
+    let request0_w = request_w;
+    let opening_at = gen_watt_at - leitbild_operating_plant::turbine::governor::W
+        + leitbild_operating_plant::turbine::governor::A;
+    let integral_at = gen_watt_at - leitbild_operating_plant::turbine::governor::W
+        + leitbild_operating_plant::turbine::governor::I;
+    let mut rebases: Vec<Value> = Vec::new();
+    let mut last_rebase_s = f64::NEG_INFINITY;
+    assert_eq!(
+        request_w.is_some(),
+        turbine.is_some(),
+        "the governor composed as asked"
+    );
+    let ic_sha256 = turbine.is_some().then(|| {
+        leitbild_operating_plant::digest::sha256(
+            &std::fs::read(&inputs.ic_path).expect("the IC section"),
+        )
+    });
+    let mut gen_watts: std::collections::VecDeque<f64> = std::collections::VecDeque::new();
     let packet_json: Value = inputs.spine.packet_json().expect("packet json");
     let section: leitbild_operating_plant::sg::packet::Section =
         serde_json::from_value(packet_json["secondary"].clone()).expect("the secondary section");
@@ -822,7 +880,11 @@ fn s3_settle_with_the_feed_train() {
         &plant.y[..n],
         &plant.yp[..n],
     );
-    let mut window: std::collections::VecDeque<Vec<Vec<f64>>> = std::collections::VecDeque::from([first]);
+    let mut window: std::collections::VecDeque<Vec<Vec<f64>>> =
+        std::collections::VecDeque::from([first]);
+    if request_w.is_some() {
+        gen_watts.push_back(plant.y[gen_watt_at]);
+    }
     let checks_every = (1. / output_s).round() as u64;
     let (mut t, mut k) = (t0, 0_u64);
     let mut verdict = Value::Null;
@@ -834,7 +896,9 @@ fn s3_settle_with_the_feed_train() {
             break;
         }
         if t - t0 >= cap_s {
-            failure = Some(format!("simulated cap {cap_s} s reached before the thresholds held"));
+            failure = Some(format!(
+                "simulated cap {cap_s} s reached before the thresholds held"
+            ));
             break;
         }
         k += 1;
@@ -860,11 +924,33 @@ fn s3_settle_with_the_feed_train() {
         while window.len() > samples_per_window + 1 {
             window.pop_front();
         }
+        if request_w.is_some() {
+            gen_watts.push_back(plant.y[gen_watt_at]);
+            while gen_watts.len() > samples_per_window + 1 {
+                gen_watts.pop_front();
+            }
+        }
         if !(k.is_multiple_of(checks_every) && window.len() == samples_per_window + 1) {
             continue;
         }
         let w: Vec<Vec<Vec<f64>>> = window.iter().cloned().collect();
         let rs = ranges(&w, output_s, &thresholds);
+        // R4-REPIN-GOV-SETTLE (lead's pin, judgement: the core-power settling
+        // threshold applied to generator output): GEN.WT's range over the
+        // window and its largest offset from the request, each <= the
+        // threshold x the request.
+        let gen_wt = request_w.map(|request| {
+            let bound = gen_fraction * request;
+            let high = gen_watts.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+            let low = gen_watts.iter().copied().fold(f64::INFINITY, f64::min);
+            let range = high - low;
+            let offset = (high - request).abs().max((low - request).abs());
+            json!({"request_w": request, "range_w": range, "offset_w": offset, "bound_w": bound,
+                "opening": plant.y[opening_at], "integral": plant.y[integral_at],
+                "range_holds": range <= bound, "holds": range <= bound && offset <= bound})
+        });
+        let gen_holds = gen_wt.as_ref().is_none_or(|g| g["holds"] == true);
+        let gen_range_holds = gen_wt.as_ref().is_some_and(|g| g["range_holds"] == true);
         // Per SG over the window: the unfiltered SG pressure range and the
         // largest |FW.FT − FT.STEAM| among the feed record's frames.
         let frames: Vec<&Vec<[f64; 9]>> = feed
@@ -896,16 +982,53 @@ fn s3_settle_with_the_feed_train() {
         last = json!({"t_s": t,
             "ranges": CREDITED.iter().zip(&rs).map(|(q, r)| (q.name.to_string(), json!({"range": r.0, "threshold": r.1, "holds": r.2}))).collect::<Map<String, Value>>(),
             "per_sg": per_sg});
+        if let Some(g) = gen_wt {
+            last["gen_wt"] = g;
+        }
         if k.is_multiple_of(checks_every * 10) {
             history.push(last.clone());
             eprintln!(
                 "S3 feed settle t = {t:.1} s: SG ranges {:?}, feed - steam {:?}, CPU {:.1} s",
-                last["per_sg"].as_array().unwrap().iter().map(|s| s["sg_pressure_range_pa"].as_f64().unwrap()).collect::<Vec<_>>(),
-                last["per_sg"].as_array().unwrap().iter().map(|s| s["feed_minus_steam_max_kg_s"].as_f64().unwrap()).collect::<Vec<_>>(),
+                last["per_sg"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|s| s["sg_pressure_range_pa"].as_f64().unwrap())
+                    .collect::<Vec<_>>(),
+                last["per_sg"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|s| s["feed_minus_steam_max_kg_s"].as_f64().unwrap())
+                    .collect::<Vec<_>>(),
                 process_cpu_s() - started
             );
         }
-        if rs.iter().all(|r| r.2) && feed_holds {
+        let others_hold = rs.iter().all(|r| r.2) && feed_holds;
+        // The lead's ruling B: every line holds but the offset (the request is
+        // out of the full-open valve's reach), so the load reference re-bases
+        // to the settled GEN.WT through the Grid's request path, as a case's
+        // exchange would; never below that value, no headroom added.
+        if others_hold && gen_range_holds && !gen_holds {
+            let settled_w = plant.y[gen_watt_at];
+            let decided =
+                turbine::grid_request(&mut plant.driver, plant.ida.system(), t, settled_w);
+            let applied = decided.and_then(|what| {
+                rebases.push(json!({"t_s": t, "from_request_w": request_w, "to_request_w": settled_w,
+                    "opening": plant.y[opening_at], "integral": plant.y[integral_at], "decision": what}));
+                let mut extra: [&mut dyn Client<_>; 1] = [&mut feed];
+                plant.apply_due(&mut extra)
+            });
+            if let Err(e) = applied {
+                failure = Some(format!("the re-base at {t} s: {e}"));
+                break;
+            }
+            request_w = Some(settled_w);
+            last_rebase_s = t;
+            continue;
+        }
+        // Accepted on a whole window after the last re-base.
+        if others_hold && gen_holds && t - last_rebase_s >= window_s {
             verdict = json!({"settled_at_s": t, "settled_after_s": t - t0, "window_s": window_s, "checks": last});
             break;
         }
@@ -921,14 +1044,19 @@ fn s3_settle_with_the_feed_train() {
     let total_cpu_s = process_cpu_s() - started;
     let (y, yp) = (&plant.y, &plant.yp);
     let snapshot = plant.ida.system().system_discrete_state();
-    let settled = json!({"t_s": t, "water": water, "packet": packet_path, "packet_sha256": packet_sha256,
+    let mut settled = json!({"t_s": t, "water": water, "packet": packet_path, "packet_sha256": packet_sha256,
         "y": &y[..n], "yp": &yp[..n], "y_bits": bits(&y[..n]), "yp_bits": bits(&yp[..n]),
         "appended": {"owner": "electrical slice (ELEC)", "y": &y[n..], "yp": &yp[n..]},
         "discrete_state": snapshot, "pzr_control": {"in_force_w": plant.control.in_force_w},
         "composition": composition["composition"], "from": state_path});
+    if let Some(sha) = &ic_sha256 {
+        settled["governed_ic_section"] = json!({"path": inputs.ic_path, "sha256": sha});
+        settled["governed_request"] =
+            json!({"composed_w": request0_w, "request_w": request_w, "rebases": rebases});
+    }
     let state_bytes = serde_json::to_vec(&settled).unwrap();
     std::fs::write(dir.join("s3-settled-state.json"), &state_bytes).unwrap();
-    let receipt = json!({
+    let mut receipt = json!({
         "kind": "s3-settle-with-feed-train", "water": water,
         "rule": "R4-HYD-SETTLE-FEED (lead 1 Nov, option 2): the credited outputs' settling thresholds, plus per SG over the window |FW.FT lag - FT.STEAM lag| <= a quarter of the channel (ogb r2 channelRule x 1.5 m0) and the unfiltered SG pressure range <= settling.sgPressure_Pa, A and B separately",
         "status": "NOT evidence: C1's initial condition",
@@ -944,7 +1072,24 @@ fn s3_settle_with_the_feed_train() {
         "history_every_10_s": history,
         "feed_control_first_and_last": [feed.series.first().map(|(k, t, v)| json!([k, t, v])), feed.series.last().map(|(k, t, v)| json!([k, t, v]))],
     });
-    std::fs::write(dir.join("receipt.json"), serde_json::to_vec_pretty(&receipt).unwrap()).unwrap();
-    println!("{}", json!({"verdict": receipt["verdict"], "failure": receipt["failure"], "reached_s": t, "cpu": total_cpu_s}));
-    assert!(receipt["failure"].is_null(), "the S3 feed settle failed: {:?}", receipt["failure"]);
+    if let Some(sha) = &ic_sha256 {
+        receipt["governed"] = json!({"rule": "R4-REPIN-GOV-SETTLE (lead 1 Nov): the governor composed as in the governed cases; acceptance adds GEN.WT's window range and largest offset from the request, each <= settling.corePowerRelative x the request (judgement: the core-power settling threshold applied to generator output)",
+            "ic_section": {"path": inputs.ic_path, "sha256": sha},
+            "request": {"composed_w": request0_w, "request_w": request_w, "rebases": rebases,
+                "rule": "lead's ruling B: when every line holds but the offset, the load reference re-bases to the settled GEN.WT by turbine::grid_request; accepted on a whole window after the last re-base; no headroom, no reference below the settled value"}});
+    }
+    std::fs::write(
+        dir.join("receipt.json"),
+        serde_json::to_vec_pretty(&receipt).unwrap(),
+    )
+    .unwrap();
+    println!(
+        "{}",
+        json!({"verdict": receipt["verdict"], "failure": receipt["failure"], "reached_s": t, "cpu": total_cpu_s})
+    );
+    assert!(
+        receipt["failure"].is_null(),
+        "the S3 feed settle failed: {:?}",
+        receipt["failure"]
+    );
 }

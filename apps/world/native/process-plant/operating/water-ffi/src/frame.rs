@@ -566,7 +566,9 @@ pub enum Stepping {
     /// exact stops are the scheduled changes and commands, owner time
     /// events, located roots, the declared stops ([`Driver::declare_stop`])
     /// and a sampled client's frame where its output changes
-    /// ([`Client::stop_at_frame`], bounded by [`Client::stop_by_next_frame`]).
+    /// ([`Client::stop_at_frame`]); a free step never passes the frame
+    /// after the next unobserved one (R4-PZR-CONTINUOUS: formerly the
+    /// sampled PZR client's [`Client::stop_by_next_frame`]).
     /// A change or command due behind the integrator restarts at its exact
     /// time from the last step's dense output (the late-discovery rule).
     Free,
@@ -1344,7 +1346,13 @@ impl<S: JoinedSystem> Driver<S> {
             );
             if next > t && clients.iter().any(|c| c.stop_at_frame(self.next_frame)) {
                 candidates.push(next);
-            } else if next > t && clients.iter().any(|c| c.stop_by_next_frame(self.next_frame)) {
+            } else if next > t {
+                // R4-PZR-CONTINUOUS (PERF3): a free step runs at most to the
+                // frame after the next unobserved one. A sampled client's
+                // decision at k + 1 is known only after k
+                // ([`Client::stop_by_next_frame`]); without one it is the
+                // driver's own bound, the one the sampled PZR client set on
+                // every run before its law became continuous.
                 candidates.push(self.frame.instant(self.next_frame + 1));
             }
             let first = candidates.iter().copied().fold(f64::INFINITY, f64::min);
@@ -1847,7 +1855,7 @@ fn summary((r, before): &(Restarted, Vec<Transaction>)) -> Value {
     let exempt = rep.exempt.map(
         |e| json!({"coordinates": e.coordinates, "wrms": e.wrms, "max": [e.max.value, e.max.row]}),
     );
-    json!({"transactions": r.transactions.iter().chain(before).map(|t| t.receipt.clone()).collect::<Vec<_>>(),
+    let mut out = json!({"transactions": r.transactions.iter().chain(before).map(|t| t.receipt.clone()).collect::<Vec<_>>(),
         "transacted": r.transacted, "passes_allowed": r.passes_allowed, "placements": r.placements.len(),
         "constraint_at_entry": [r.constraint_at_entry.value, r.constraint_at_entry.row],
         "constraint_before": [rep.constraint_before.value, rep.constraint_before.row],
@@ -1857,7 +1865,13 @@ fn summary((r, before): &(Restarted, Vec<Transaction>)) -> Value {
         "analyses_made": rep.analyses, "assemblies": rep.jacobian_s.len(),
         // HOOK (C4 lane, receipts only; KERN to reconcile): C4.O4 judges the
         // birth's restart on the presence-keyed recompile and the mode change.
-        "presence_changed": r.presence_changed, "modes_changed": r.modes_changed})
+        "presence_changed": r.presence_changed, "modes_changed": r.modes_changed});
+    // R4-RESTART-EQUATION-CHANGE: named only when an owner reported one, so
+    // a receipt without one is unchanged.
+    if !r.equation_changes.is_empty() {
+        out["equation_changes"] = json!(r.equation_changes);
+    }
+    out
 }
 
 #[cfg(test)]

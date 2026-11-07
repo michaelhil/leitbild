@@ -403,6 +403,104 @@ fn phase_modes_block_replay_matches_the_colored_assembly() {
     );
 }
 
+/// R4-MOUTH-INERTIA: with SURGE flashed, bubbles in zone A and L1 active, the
+/// surge mouth's vapor path is free and its inertia reads the port view, so
+/// the PZR columns reach its `Q`. The block replay against the colored
+/// assembly, at rest and with every impulse moving, and the bound on `w`.
+#[test]
+#[ignore = "S3 kernel check, NOT EVIDENCE: needs a joined packet (LD01_PHASE_PACKET), the wiki, the seam-fixed IF97 build"]
+fn mouth_path_block_replay_matches_the_colored_assembly() {
+    use leitbild_operating_plant::network::unilateral::Lock;
+    let i = inputs();
+    let (mut net, prepared) = prepared(&i);
+    let mut y = prepared.y.clone();
+    let surge = i.regions.iter().position(|r| r == "SURGE").unwrap();
+    let [b, m0, e0, m1, e1, _] = slots(&net, surge);
+    let sc = net.scales().to_vec();
+    let p = y[b] * sc[b];
+    let sat = If97.saturation_caloric(s(p)).expect("saturation");
+    let (rf, rg) = (sat.liquid.density.value, sat.vapor.density.value);
+    let (uf, ug) = (
+        sat.liquid.enthalpy.value - p / rf,
+        sat.vapor.enthalpy.value - p / rg,
+    );
+    let v = net.volume(surge);
+    // A small vapor stock in SURGE against a finite zone-A bubble stock.
+    let (mg, mba) = (5e-3, 0.3);
+    let ml = (v - mg / rg) * rf;
+    y[m1] = 0.;
+    y[e1] = 0.;
+    net.birth(surge, &mut y).expect("birth");
+    y[m0] = (ml + mg) / sc[m0];
+    y[e0] = (ml * uf + mg * ug) / sc[e0];
+    y[m1] = mg / sc[m1];
+    y[e1] = mg * ug / sc[e1];
+    let base = net.pzr.base;
+    let (im, iv) = (
+        base + stratified::ADMITTED_BUBBLE_MASS,
+        base + stratified::ADMITTED_BUBBLE_VOLUME,
+    );
+    y[im] = mba / sc[im];
+    y[iv] = mba / rg / sc[iv];
+    let yp = vec![0.; y.len()];
+    net.evaluate(0., &y, &yp, None, 0., None)
+        .expect("evaluation at the flashed state");
+    let presence = net.stock_presence(&y);
+    net.activate_unilateral(&presence).expect("L1");
+    let face = i.raw["mechanics"]["faces"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .position(|f| f["id"] == "SURGE->PZR.SURGE.MOUTH")
+        .unwrap();
+    let mouth = 2 * face + 1;
+    assert_eq!(net.face_layout[mouth].phase, 1);
+    assert_eq!(net.unilateral().unwrap().paths[mouth], Lock::Free);
+    let colored = net.sparse_jacobian().expect("colored structure");
+    let blocks = net.block_jacobian().expect("block structure");
+    assert_eq!(blocks.pattern, colored.pattern, "one pattern for both");
+    let pattern = &blocks.pattern;
+    let mut moving = y.clone();
+    for (k, l) in net.face_layout.iter().enumerate() {
+        moving[l.index] = if moving[l.index] != 0. {
+            moving[l.index] * 1.01
+        } else {
+            1e-3 * if k % 2 == 0 { 1. } else { -1. } / sc[l.index]
+        };
+    }
+    let mut report = Vec::new();
+    for (name, state, cj) in [("rest", &y, 20.), ("moving", &moving, 350.)] {
+        let mut cv = vec![0.; pattern.nonzeros()];
+        let mut bv = vec![0.; pattern.nonzeros()];
+        net.jacobian_colored(0., cj, state, &yp, &colored, &mut cv)
+            .expect("colored assembly");
+        net.jacobian_blocks(0., cj, state, &yp, &blocks, &mut bv)
+            .expect("block assembly (base pass bitwise the residual's)");
+        let (mut worst, mut bitwise, mut pzr_columns) = (0_f64, 0usize, 0usize);
+        for j in 0..pattern.columns() {
+            let range = pattern.pointers()[j]..pattern.pointers()[j + 1];
+            let scale = range
+                .clone()
+                .map(|q| cv[q].abs().max(bv[q].abs()))
+                .fold(0., f64::max);
+            for q in range {
+                pzr_columns += usize::from((j == im || j == iv) && bv[q] != 0.);
+                if cv[q] == bv[q] {
+                    bitwise += 1;
+                    continue;
+                }
+                worst = worst.max((cv[q] - bv[q]).abs() / scale);
+            }
+        }
+        report.push(
+            json!({"state": name, "cj": cj, "column_relative_max": worst, "bitwise": bitwise,
+            "entries": pattern.nonzeros(), "port_column_entries": pzr_columns}),
+        );
+        assert!(worst < 1e-10, "{name}: block against colored {worst:e}");
+    }
+    println!("{}", json!({"mouth_path_block_vs_colored": report}));
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum RootKind {
     Birth(usize),

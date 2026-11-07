@@ -8,8 +8,17 @@
  *   smoke (its own committed expectation);
  *   C2's ungated preview from the saved S3 state at spans 0 s and 2.5 s
  *   after zero (the trip's burst), each against the committed T1
- *   expectation: instructions retired within +-1 % and the trajectory digest
- *   bitwise.
+ *   expectation: instructions retired within +-1 % of the pin's frozen
+ *   control binary, run alternately, and the trajectory digest bitwise.
+ *   T1LOCK (lead, 7 Nov): the counter includes the kernel's work for the
+ *   process, about 18 % of C2@0 is kernel work on provenance's scratch
+ *   repository, and that work moves with what the shared Mac is doing: one
+ *   binary repeats only within 1.2-2.2 %, up to +2.7 % on the pin, digests
+ *   equal. So each span is judged on test/control - 1, which cancels the
+ *   machine's state. R4-COST-RESOLUTION (lead, 1 Nov) stands on those pairs: a span
+ *   whose first pair is within 2 %, digest equal, runs two more pairs and
+ *   the median of 3 is judged against the +-1 % band; outside 2 % the one
+ *   pair decides. The digest stays decisive on every run, control included.
  * - T2, the affected case (<= 10 quiet CPU-min): one case's ungated preview
  *   from the saved S3 state at its declared duration (or a shorter span),
  *   against its golden baseline when one is committed (same two checks).
@@ -33,15 +42,18 @@
  * The default directory is $LD01_RECEIPTS/tiers/<tier>-<commit>-<UTC stamp>.
  * --record writes the measured pins to a new file (never over one), only
  * from a clean tree, carrying the reason; a changed pin is committed with
- * the lead's reason (golden baselines: re-recorded once per gate). A T2
+ * the lead's reason (golden baselines: re-recorded once per gate). A T1
+ * record freezes the run's test binary in its receipt directory as the
+ * control, by path and sha256; a pin without one is not judged. A pin file
+ * is public, so every path in it is relative to $LD01_RECEIPTS. A T2
  * baseline recorded with --closed-step names the receipt of record and
  * refuses unless the span's digest equals that receipt's `run` digest; a
  * later T2 re-checks the receipt's sha256 (the record unchanged). --pins
  * judges against another pin file (a deliberate-failure test seeds one: the
  * tier must FAIL on it and exit 1). */
 import {spawnSync} from 'node:child_process'
-import {existsSync,readFileSync,statSync,writeFileSync} from 'node:fs'
-import {dirname,join,resolve} from 'node:path'
+import {constants,copyFileSync,existsSync,readFileSync,statSync,writeFileSync} from 'node:fs'
+import {dirname,isAbsolute,join,relative,resolve} from 'node:path'
 import {fileURLToPath} from 'node:url'
 import {QUIET_RATIO,digest,newReceiptDir,parseTimeL,quietCpuS,relativeDifference,sha256File,stamp,writeJsonOnce,type TimeReport} from './ld01-receipts'
 
@@ -56,10 +68,15 @@ const platform=`${process.platform==='darwin'?'macos':process.platform}-${proces
  * segment and total counts, the instant classes, the protection log and the
  * event timeline. CPU fields are excluded by construction. */
 export const TRAJECTORY_SECTIONS=['frames','segments','stock_totals','counts_by_class','protection_log','timeline'] as const
+/** T1's limit on a span's paired difference; T2's on its pin. */
 export const INSTRUCTION_TOLERANCE=0.01
 export const T1_BUDGET_QUIET_S=120
 export const T2_BUDGET_QUIET_S=600
 export const T1_SPANS=[0,2.5] as const
+/** R4-COST-RESOLUTION on T1 (lead, 1 Nov): a first pair within this band is
+ * joined by two more and the span is judged on the median of T1_REPEATS. */
+export const RESOLUTION_BAND=0.02
+export const T1_REPEATS=3
 
 const REQUIRED=['LD01_OPERATING_WATER_LIB_DIR','LD01_OPERATING_SUNDIALS_PREFIX','LD01_OPERATING_HOT_SPINE_PACKET','LD01_WIKI_ROOT',
  'LD01_S3_STATE','LD01_S3_DECLARATION','LD01_S3_DECISION_LOG','ELEC_PACKET','CARGO_TARGET_DIR','LD01_RECEIPTS'] as const
@@ -71,8 +88,19 @@ export type SpanPin={instructions:number,digest:string}
 /** A golden baseline's closed step: the receipt of record whose `run`
  * section the span reproduces (V3: closed-step receipts become baselines). */
 export type ClosedStep={receipt:string,receipt_sha256:string,digest:string}
+/** A path as a pin file holds it, relative to $LD01_RECEIPTS: a pin file is public and names no machine. */
+export const pinnedPath=(path:string,receipts:string)=>relative(receipts,path)
+/** A pinned path on this machine. An absolute one is refused: a pin file holds none. */
+export function resolvePinned(path:string,receipts:string){
+ if(isAbsolute(path))throw new Error(`a pin file holds paths relative to $LD01_RECEIPTS, not ${path}`)
+ return resolve(receipts,path)
+}
+/** T1's frozen control: the test binary of the run that recorded the pins. */
+export type Control={binary:string,sha256:string}
+/** One test run and the control run beside it. */
+export type SpanPair={test:SpanPin,control:SpanPin}
 export type Expectation={kind:string,platform:string,reason:string,recorded_from:string,app:string,
- environment:Record<string,string|null>,instruction_tolerance:number,spans:Record<string,SpanPin>,closed_step?:ClosedStep}
+ environment:Record<string,string|null>,instruction_tolerance:number,spans:Record<string,SpanPin>,closed_step?:ClosedStep,control?:Control}
 
 const cargo=(cwd:string,...args:string[]):Pick<Step,'cwd'|'args'>=>({cwd,args:['cargo','test','--release','--offline','--locked',...args]})
 const water=(...a:string[])=>cargo(waterFfi,'--features','quadratures',...a)
@@ -104,9 +132,10 @@ function environment(){
  * and a changed block value changes the digest. */
 function pinEnvironment(env:ReturnType<typeof environment>){
  const file=(k:string)=>env[k]?.sha256??null
+ const path=(k:string)=>{const v=env[k]?.value;return v===undefined?null:pinnedPath(v,process.env.LD01_RECEIPTS??'')}
  return {packet_sha256:file('LD01_OPERATING_HOT_SPINE_PACKET'),state_sha256:file('LD01_S3_STATE'),elec_packet_sha256:file('ELEC_PACKET'),
   wiki_commit:env.LD01_WIKI_COMMIT?.value??null,
-  water_lib_dir:env.LD01_OPERATING_WATER_LIB_DIR?.value??null,sundials_prefix:env.LD01_OPERATING_SUNDIALS_PREFIX?.value??null}
+  water_lib_dir:path('LD01_OPERATING_WATER_LIB_DIR'),sundials_prefix:path('LD01_OPERATING_SUNDIALS_PREFIX')}
 }
 
 function run(out:string,step:Step):StepResult{
@@ -127,10 +156,42 @@ function run(out:string,step:Step):StepResult{
 }
 
 const spanKey=(c:string,s:number|null)=>`${c}@${s===null?'declared':s}`
-function spanStep(out:string,c:string,span:number|null):Step{
- const env:Record<string,string>={LD01_S3_CASE:c,LD01_S3_PREVIEW:'1',LD01_S3_CASE_RECEIPT:join(out,`${spanKey(c,span)}.json`)}
+function spanEnv(out:string,file:string,c:string,span:number|null){
+ const env:Record<string,string>={LD01_S3_CASE:c,LD01_S3_PREVIEW:'1',LD01_S3_CASE_RECEIPT:join(out,`${file}.json`)}
  if(span!==null)env.LD01_S3_PREVIEW_SPAN_S=String(span)
- return {name:`span-${spanKey(c,span)}`,...water('--test','s3_cases','s3_case_run','--','--ignored','--exact','--nocapture'),env,budgeted:true}
+ return env
+}
+function spanStep(out:string,c:string,span:number|null):Step{
+ const key=spanKey(c,span)
+ return {name:`span-${key}`,...water('--test','s3_cases','s3_case_run','--','--ignored','--exact','--nocapture'),env:spanEnv(out,key,c,span),budgeted:true}
+}
+/** One T1 run of a binary, test or control, launched alike: the binary itself
+ * under `time -l`, as cargo's runner would, with no cargo between them. */
+function t1Step(out:string,binary:string,role:'test'|'control',c:string,span:number,run:number):Step{
+ const key=spanKey(c,span),file=`${role==='control'?'control-':''}${key}${run===1?'':`-r${run}`}`
+ const name=role==='control'?file:run===1?`span-${key}`:`repeat-${file}`
+ return {name,cwd:waterFfi,args:['/usr/bin/time','-l',binary,'s3_case_run','--ignored','--exact','--nocapture'],env:spanEnv(out,file,c,span),budgeted:true}
+}
+/** The test binary cargo reports for `--no-run`. */
+export function builtS3Cases(report:string){
+ const found=/Executable tests\/s3_cases\.rs \((.+?)\)/.exec(report)?.[1]
+ if(found===undefined)throw new Error('cargo reported no tests/s3_cases.rs executable')
+ return found
+}
+
+/** A completed span step's measurement: instructions retired and the
+ * trajectory digest of its receipt (null when the step failed). */
+function measureSpan(r:StepResult):{measured:SpanPin,receipt:{verdict?:string}}|null{
+ const path=r.env.LD01_S3_CASE_RECEIPT
+ if(r.exit!==0||path===undefined||!existsSync(path))return null
+ const receipt=JSON.parse(readFileSync(path,'utf8')) as {run:Record<string,unknown>,verdict?:string}
+ return {measured:{instructions:r.time.instructions,digest:digest(receipt.run,TRAJECTORY_SECTIONS)},receipt}
+}
+
+/** The median of an odd number of values. */
+export function median(xs:number[]){
+ const s=[...xs].sort((a,b)=>a-b)
+ return s[(s.length-1)/2] as number
 }
 
 /** A span's measurement against its pin. */
@@ -139,6 +200,16 @@ export function judgeSpan(pin:SpanPin|undefined,measured:SpanPin,tolerance=INSTR
  const d=relativeDifference(measured.instructions,pin.instructions)
  const instructionsOk=Math.abs(d)<=tolerance,digestOk=measured.digest===pin.digest
  return {verdict:instructionsOk&&digestOk?'pass':'fail',pin,measured,instructions_relative_difference:d,instructions_within_tolerance:instructionsOk,digest_equal:digestOk}
+}
+
+/** A span's pairs against its pin: the median of test/control - 1 within the
+ * tolerance, and every run's digest, the control's too, the pin's. */
+export function judgePairs(pin:SpanPin|undefined,pairs:SpanPair[],tolerance=INSTRUCTION_TOLERANCE){
+ if(!pin)return {verdict:'no pin',pin:null,pairs}
+ const differences=pairs.map(p=>relativeDifference(p.test.instructions,p.control.instructions))
+ const d=median(differences)
+ const instructionsOk=Math.abs(d)<=tolerance,digestOk=pairs.every(p=>p.test.digest===pin.digest&&p.control.digest===pin.digest)
+ return {verdict:instructionsOk&&digestOk?'pass':'fail',pin,pairs,differences,instructions_relative_difference:d,instructions_within_tolerance:instructionsOk,digest_equal:digestOk}
 }
 
 /** Environment mismatches between a pin file and this run (a pin judges
@@ -184,7 +255,7 @@ function main(argv:string[]){
   steps.push({name:'guard',...cargo(operating,'--test','solver_prohibitions'),budgeted:true})
   steps.push({name:'unit',...water(...tests(T1_CRATES)),budgeted:true})
   steps.push({name:'smoke',...water('--test','ld01_regression','--','--ignored','--exact','smoke','--test-threads=1','--nocapture'),budgeted:true})
-  for(const s of T1_SPANS)steps.push(spanStep(out,'C2',s))
+  // T1's spans follow, once cargo has named the test binary.
  }else if(tier==='ladder'){
   steps.push({name:'build-water',...water('--test','s3_cases','--no-run'),budgeted:false})
   for(let i=0;i*ladderStep<=ladderTo+1e-9;i++)steps.push(spanStep(out,caseName??'',Number((i*ladderStep).toFixed(6))))
@@ -197,6 +268,8 @@ function main(argv:string[]){
   const r=run(out,step);results.push(r)
   if(r.exit!==0&&r.name.startsWith('build-'))break // a failed build stops the tier
  }
+ const built=tier==='t1'&&results.filter(r=>r.name.startsWith('build-')).every(r=>r.exit===0)
+ const testBinary=built?builtS3Cases(readFileSync(join(out,'build-water.log'),'utf8')):null
 
  const pinFile=pinsArg?resolve(pinsArg):tier==='t1'?join(pinDir,`tier1-${platform}.json`):join(pinDir,'golden',`${spanKey(caseName??'',t2Span)}-${platform}.json`)
  const expectation=existsSync(pinFile)?JSON.parse(readFileSync(pinFile,'utf8')) as Expectation:null
@@ -204,15 +277,56 @@ function main(argv:string[]){
  const closedStep=expectation?.closed_step
  const closedStepCheck=closedStep?{receipt:closedStep.receipt,unchanged:existsSync(closedStep.receipt)&&sha256File(closedStep.receipt)===closedStep.receipt_sha256}:null
  if(closedStepCheck&&!closedStepCheck.unchanged)mismatch.push({key:'closed_step.receipt_sha256',pinned:closedStep?.receipt_sha256??null,current:existsSync(closedStep?.receipt??'')?sha256File(closedStep?.receipt??''):null})
+ const control=tier==='t1'?expectation?.control:undefined
+ const receipts=process.env.LD01_RECEIPTS??''
+ const controlBinary=control===undefined?'':resolvePinned(control.binary,receipts)
+ if(control){
+  const current=existsSync(controlBinary)?sha256File(controlBinary):null
+  if(current!==control.sha256)mismatch.push({key:'control.sha256',pinned:control.sha256,current})
+ }
  const spans:Record<string,unknown>={},measuredPins:Record<string,SpanPin>={}
- for(const r of results.filter(x=>x.name.startsWith('span-'))){
+ const judge=(r:StepResult)=>{
   const key=r.name.slice(5),path=join(out,`${key}.json`)
-  if(r.exit!==0||!existsSync(path)){spans[key]={verdict:'fail',reason:`the span did not complete (exit ${r.exit})`};continue}
-  const receipt=JSON.parse(readFileSync(path,'utf8')) as {run:Record<string,unknown>,verdict?:string,lines?:unknown}
-  const measured={instructions:r.time.instructions,digest:digest(receipt.run,TRAJECTORY_SECTIONS)}
+  const first=measureSpan(r)
+  if(first===null){spans[key]={verdict:'fail',reason:`the span did not complete (exit ${r.exit})`};return}
+  const {measured,receipt}=first
   measuredPins[key]=measured
-  spans[key]={...(mismatch.length?{verdict:'not judged',reason:'the pin was recorded on another tuple',mismatch}:judgeSpan(expectation?.spans[key],measured)),
+  const pin=expectation?.spans[key]
+  // T1LOCK with R4-COST-RESOLUTION: test and control strictly alternate, so a
+  // burst of a few seconds lands on both sides; a first pair within 2 %,
+  // digest equal, is joined by two more.
+  if(tier==='t1'&&!mismatch.length&&pin&&control&&testBinary!==null){
+   const span=Number(r.env.LD01_S3_PREVIEW_SPAN_S),c=r.env.LD01_S3_CASE??''
+   const once=(binary:string,role:'test'|'control',i:number)=>{
+    const rr=run(out,t1Step(out,binary,role,c,span,i));results.push(rr)
+    return measureSpan(rr)?.measured??null
+   }
+   const pairs:SpanPair[]=[]
+   let failed:string|null=null
+   for(let i=1;i<=T1_REPEATS;i++){
+    const test=i===1?measured:once(testBinary,'test',i)
+    const paired=test===null?null:once(controlBinary,'control',i)
+    if(test===null||paired===null){failed=`pair ${i} did not complete`;break}
+    pairs.push({test,control:paired})
+    const decided=test.digest!==pin.digest||paired.digest!==pin.digest||Math.abs(relativeDifference(test.instructions,paired.instructions))>RESOLUTION_BAND
+    if(i===1&&decided)break
+   }
+   if(failed!==null){spans[key]={verdict:'fail',reason:failed,receipt:path,receipt_verdict:receipt.verdict??null};return}
+   spans[key]={...judgePairs(pin,pairs),resolution:{rule:'T1LOCK with R4-COST-RESOLUTION',band:RESOLUTION_BAND},control:control.binary,receipt:path,receipt_verdict:receipt.verdict??null}
+   return
+  }
+  if(tier==='t1'&&!mismatch.length&&!control){
+   spans[key]={verdict:'not judged',reason:'the pin file has no control binary: T1 records one with --record',receipt:path,receipt_verdict:receipt.verdict??null}
+   return
+  }
+  spans[key]={...(mismatch.length?{verdict:'not judged',reason:'the pin was recorded on another tuple',mismatch}:judgeSpan(pin,measured)),
    receipt:path,receipt_verdict:receipt.verdict??null}
+ }
+ for(const r of results.filter(x=>x.name.startsWith('span-')))judge(r)
+ // A T1 span runs here, so its first control run follows it directly.
+ if(testBinary!==null)for(const s of T1_SPANS){
+  const r=run(out,t1Step(out,testBinary,'test','C2',s,1));results.push(r)
+  judge(r)
  }
  const budgetedQuiet=results.filter(r=>r.budgeted).reduce((s,r)=>s+r.quiet_cpu_s,0)
  const budget=tier==='t1'?T1_BUDGET_QUIET_S:T2_BUDGET_QUIET_S // a ladder is measured against T2's
@@ -227,8 +341,13 @@ function main(argv:string[]){
  console.log(`ld01-tier ${tier}: ${verdict}; runs ${budgetedQuiet.toFixed(1)} quiet CPU-s of ${budget}${budgetedQuiet>budget?' (OVER BUDGET)':''}; spans ${JSON.stringify(Object.fromEntries(Object.entries(spans).map(([k,v])=>[k,(v as {verdict:string}).verdict])))}`)
  if(record){
   if(failedSteps.length){console.error('ld01-tier: --record refuses a run with a failed step');process.exit(1)}
-  const pins:Expectation={kind:tier==='t1'?'ld01-tier1-expectation':'ld01-golden-baseline',platform,reason:reason??'',recorded_from:out,app,
+  const pins:Expectation={kind:tier==='t1'?'ld01-tier1-expectation':'ld01-golden-baseline',platform,reason:reason??'',recorded_from:pinnedPath(out,receipts),app,
    environment:pinEnv,instruction_tolerance:INSTRUCTION_TOLERANCE,spans:measuredPins}
+  if(tier==='t1'&&testBinary!==null){
+   const binary=join(out,'control-s3_cases')
+   copyFileSync(testBinary,binary,constants.COPYFILE_EXCL)
+   pins.control={binary:pinnedPath(binary,receipts),sha256:sha256File(binary)}
+  }
   if(closedStepArg){
    const of=JSON.parse(readFileSync(closedStepArg,'utf8')) as {run:Record<string,unknown>}
    const closed={receipt:resolve(closedStepArg),receipt_sha256:sha256File(closedStepArg),digest:digest(of.run,TRAJECTORY_SECTIONS)}

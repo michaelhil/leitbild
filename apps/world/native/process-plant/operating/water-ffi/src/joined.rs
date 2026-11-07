@@ -19,7 +19,7 @@
 use crate::klu::SparseLu;
 use leitbild_operating_plant::{
     joined::{
-        blocks::{Classes, JoinedJacobian, jacobian_blocks},
+        blocks::{Classes, JoinedJacobian, jacobian_blocks, jacobian_blocks_start},
         operator::Joined,
     },
     network::{CreditedOutput, Failure, Properties},
@@ -248,7 +248,13 @@ pub enum Matrices<'a> {
 }
 
 /// One assembly of `dF/dy + cj dF/dy'` at `(t, y, 0)` into `values`, in the
-/// stored order of the matrices' pattern.
+/// stored order of the matrices' pattern. R4-START-ASSEMBLY (lane RESTART):
+/// `base_stands` says the start's own evaluation of this very `(t, y, 0)` is
+/// the operator's last, so a block assembly with the relief shut stands on it
+/// (R4-JAC-BASE's rule); `columns`, a projection's algebraic columns, limits a
+/// block assembly to the columns its reader takes. Neither changes an entry
+/// read.
+#[allow(clippy::too_many_arguments)] // The stage, the report and the assembly's two limits.
 fn assemble<P: Properties + WaterProperties>(
     joined: &mut Joined<P>,
     matrices: &Matrices<'_>,
@@ -257,15 +263,27 @@ fn assemble<P: Properties + WaterProperties>(
     y: &[f64],
     values: &mut [f64],
     report: &mut Report,
+    base_stands: bool,
+    columns: Option<&[bool]>,
 ) -> Result<(), Failure> {
     let _cost = leitbild_operating_plant::cost::scope("start-jacobian");
     let zero = vec![0.; y.len()];
     let started = Instant::now();
     match matrices {
-        // The block assembly makes its own unseeded evaluation at (t, y, 0)
-        // before the operator's local coupler reads it.
+        // Without a standing base the block assembly makes its own unseeded
+        // evaluation at (t, y, 0) before the operator's local coupler reads it.
         Matrices::Blocks { structure, .. } => {
-            jacobian_blocks(joined, structure, t, cj, y, &zero, values, Classes::ALL)?
+            let shut = joined
+                .network
+                .pzr_boundary()
+                .is_none_or(|(b, _)| b.relief.as_ref().is_none_or(|r| r.lift.value == 0.));
+            let reuse = (base_stands && shut).then(|| joined.network.reuse());
+            // R4-ENDPOINT-ASSEMBLY's hold, as in the integrator's assemblies.
+            leitbild_operating_plant::network::heaters::hold_endpoints(true);
+            let result =
+                jacobian_blocks_start(joined, structure, t, cj, y, &zero, values, reuse, columns);
+            leitbild_operating_plant::network::heaters::hold_endpoints(false);
+            result?
         }
         Matrices::Colored => joined.jacobian(t, cj, y, &zero, values)?,
     }
@@ -382,7 +400,17 @@ pub fn consistent_start_exempting<P: Properties + WaterProperties>(
         && report.projection_passes < passes
     {
         report.projection_passes += 1;
-        assemble(joined, &matrices, t, 0., y, &mut values, &mut report)?;
+        assemble(
+            joined,
+            &matrices,
+            t,
+            0.,
+            y,
+            &mut values,
+            &mut report,
+            true,
+            Some(&algebraic),
+        )?;
         let analyses = match &mut matrices {
             Matrices::Blocks { analyses, .. } => &mut **analyses,
             Matrices::Colored => &mut fresh,
@@ -456,9 +484,19 @@ pub fn consistent_start_exempting<P: Properties + WaterProperties>(
     }
     // 2. The consistent rates: differential rows dF/dy', algebraic rows dg/dy.
     let mut a = vec![0.; nnz];
-    assemble(joined, &matrices, t, 0., y, &mut a, &mut report)?;
+    assemble(joined, &matrices, t, 0., y, &mut a, &mut report, true, None)?;
     let mut ab = vec![0.; nnz];
-    assemble(joined, &matrices, t, 1., y, &mut ab, &mut report)?;
+    assemble(
+        joined,
+        &matrices,
+        t,
+        1.,
+        y,
+        &mut ab,
+        &mut report,
+        false,
+        None,
+    )?;
     // Each row's magnitude of terms from its linearization at the state:
     // `sum_j |dF/dy_ij y_j|`, and with rates `sum_j |dF/dy'_ij y'_j|`.
     let magnitude = |matrix: &dyn Fn(usize) -> f64, v: &[f64]| {
@@ -655,6 +693,30 @@ fn transacted_owners(
         })
         .map(|(name, _)| *name)
         .collect()
+}
+
+/// R4-RESTART-EQUATION-CHANGE (lead 1 Nov 2026, on S3-D41's principle):
+/// the owners whose reported row-equation mode changed between `before`
+/// and `after` ([`leitbild_operating_plant::joined::operator::Joined::equation_modes`]).
+/// The reporting owners are the composition's, so both lists name the same
+/// owners in the same order; anything else refuses.
+fn equation_changes(
+    before: &[(&'static str, serde_json::Value)],
+    after: &[(&'static str, serde_json::Value)],
+) -> Result<Vec<&'static str>, String> {
+    if before.len() != after.len() || before.iter().zip(after).any(|(b, a)| b.0 != a.0) {
+        return Err(format!(
+            "the equation-mode owners changed within a restart: {:?} against {:?}",
+            before.iter().map(|b| b.0).collect::<Vec<_>>(),
+            after.iter().map(|a| a.0).collect::<Vec<_>>()
+        ));
+    }
+    Ok(before
+        .iter()
+        .zip(after)
+        .filter(|(b, a)| b.1 != a.1)
+        .map(|(b, _)| b.0)
+        .collect())
 }
 
 /// The derived absolute-tolerance classes on the composition's own rows
@@ -884,7 +946,7 @@ pub use integrated::{
 };
 
 mod integrated {
-    use super::{Analyses, Matrices, Report, transacted_owners};
+    use super::{Analyses, Matrices, Report, equation_changes, transacted_owners};
     use crate::ida::{Failure, Ida, KluOrdering, System, WeightGroups};
     use leitbild_operating_plant::{
         joined::{
@@ -939,9 +1001,12 @@ mod integrated {
         /// from the start's WRMS guard ([`Report::exempt`]).
         pub transacted: Vec<&'static str>,
         /// The start's pass bound: `transaction_passes` after an owner
-        /// transaction or a birth (DR-C3-BIRTH05), `start_passes`
-        /// otherwise.
+        /// transaction, a birth (DR-C3-BIRTH05) or a reported row-equation
+        /// change (R4-RESTART-EQUATION-CHANGE), `start_passes` otherwise.
         pub passes_allowed: usize,
+        /// R4-RESTART-EQUATION-CHANGE: the owners whose reported
+        /// row-equation mode changed at this restart (empty when none).
+        pub equation_changes: Vec<&'static str>,
         /// The declared vapor presence's key changed, so the restart
         /// switched the block structure (S3-D-P3; never without
         /// [`Integrated::following_presence`]).
@@ -1037,7 +1102,17 @@ mod integrated {
         relative: f64,
         restart: &Restart,
     ) -> Result<Restarted, String> {
-        restart_or_continue(ida, t, discrete, y_all, network_ids, absolute_all, relative, restart, false)
+        restart_or_continue(
+            ida,
+            t,
+            discrete,
+            y_all,
+            network_ids,
+            absolute_all,
+            relative,
+            restart,
+            false,
+        )
     }
 
     /// E-EVT (plan r4): [`discrete_restart`], or, for a command or an owner
@@ -1057,7 +1132,17 @@ mod integrated {
         relative: f64,
         restart: &Restart,
     ) -> Result<Restarted, String> {
-        restart_or_continue(ida, t, discrete, y_all, network_ids, absolute_all, relative, restart, true)
+        restart_or_continue(
+            ida,
+            t,
+            discrete,
+            y_all,
+            network_ids,
+            absolute_all,
+            relative,
+            restart,
+            true,
+        )
     }
 
     #[allow(clippy::too_many_arguments)] // One restart: event, state, identity and tolerances.
@@ -1124,6 +1209,7 @@ mod integrated {
         let before = y.to_vec();
         let identity_before = joined.differential(network_ids);
         let modes_before = joined.network.cell_modes().to_vec();
+        let equations_before = joined.equation_modes();
         // HOOK (BIRTH05, DR-C3-BIRTH05; KERN to reconcile): the constraint
         // of the state handed to the restart, before any transaction: the
         // largest algebraic row of one value evaluation at `(t, y, 0)` under
@@ -1170,9 +1256,7 @@ mod integrated {
                 let mut event = directions.to_vec();
                 let mut w = vec![0.; y.len()];
                 rule.weights(y, relative, absolute, &mut w)?;
-                joined
-                    .coincident(y, &w, &mut event)
-                    .map_err(message)?;
+                joined.coincident(y, &w, &mut event).map_err(message)?;
                 joined.transact(t, &event, y).map_err(message)?
             }
             Discrete::TimeEvent => Vec::new(),
@@ -1192,7 +1276,9 @@ mod integrated {
         if allow_noop
             && !presence_changed
             && appended_done.is_empty()
-            && y.iter().zip(&before).all(|(a, b)| a.to_bits() == b.to_bits())
+            && y.iter()
+                .zip(&before)
+                .all(|(a, b)| a.to_bits() == b.to_bits())
             && integrated.joined.differential(network_ids) == identity_before
             && integrated.joined.network.cell_modes() == modes_before.as_slice()
         {
@@ -1231,6 +1317,7 @@ mod integrated {
                     placements: Vec::new(),
                     transacted: Vec::new(),
                     passes_allowed: 0,
+                    equation_changes: Vec::new(),
                     presence_changed,
                     modes_changed: false,
                     equilibrium_classes: Vec::new(),
@@ -1314,11 +1401,16 @@ mod integrated {
                 })
                 .collect()
         };
-        let passes_allowed = if transacted.is_empty() && born.is_empty() {
-            restart.start_passes
-        } else {
-            restart.transaction_passes
-        };
+        // R4-RESTART-EQUATION-CHANGE (S3-D41's principle): a restart at
+        // which an owner reports that an algebraic row changes equation
+        // takes the transaction class's passes, as a birth does.
+        let equation_changes = equation_changes(&equations_before, &joined.equation_modes())?;
+        let passes_allowed =
+            if transacted.is_empty() && born.is_empty() && equation_changes.is_empty() {
+                restart.start_passes
+            } else {
+                restart.transaction_passes
+            };
         let matrices = match assembly {
             Assembly::Blocks(structure) => Matrices::Blocks {
                 structure,
@@ -1404,6 +1496,7 @@ mod integrated {
             placements,
             transacted,
             passes_allowed,
+            equation_changes,
             presence_changed,
             modes_changed,
             equilibrium_classes,
@@ -2052,7 +2145,9 @@ mod integrated {
                     // state stands; with the relief shut its rows are those
                     // of the assembly's reuse evaluation bit for bit (only a
                     // lifted relief's restriction is held with partials).
-                    let on_base = self.base.matches(time, y, yp, self.joined.counters.residuals)
+                    let on_base = self
+                        .base
+                        .matches(time, y, yp, self.joined.counters.residuals)
                         && self.joined.network.pzr_boundary().is_none_or(|(b, _)| {
                             b.relief.as_ref().is_none_or(|r| r.lift.value == 0.)
                         });
@@ -2218,8 +2313,8 @@ mod integrated {
 #[cfg(test)]
 mod tests {
     use super::{
-        CREDITED_GROUP_MAX, ROUNDOFF_FACTOR, correction_wrms, owner_ranges, row_bound,
-        split_credited_groups, transacted_owners,
+        CREDITED_GROUP_MAX, ROUNDOFF_FACTOR, correction_wrms, equation_changes, owner_ranges,
+        row_bound, split_credited_groups, transacted_owners,
     };
     use crate::ida::WeightGroups;
 
@@ -2352,6 +2447,24 @@ mod tests {
         let (same, nothing) = correction_wrms(&y, &start, &weights, &[false; 4]);
         assert_eq!(same.to_bits(), all.to_bits());
         assert_eq!(nothing, None);
+    }
+
+    #[test]
+    fn a_reported_row_equation_change_names_its_owner() {
+        use serde_json::json;
+        let path = "network/spray path";
+        let closed = [(path, json!({"closed": true, "check_closed": false}))];
+        let open = [(path, json!({"closed": false, "check_closed": false}))];
+        let check = [(path, json!({"closed": false, "check_closed": true}))];
+        // No reporting owner, or nothing changed: none.
+        assert!(equation_changes(&[], &[]).unwrap().is_empty());
+        assert!(equation_changes(&closed, &closed).unwrap().is_empty());
+        // The valve's release and the check's release each change the row's equation.
+        assert_eq!(equation_changes(&closed, &open).unwrap(), vec![path]);
+        assert_eq!(equation_changes(&check, &open).unwrap(), vec![path]);
+        // A changed owner list within one restart refuses.
+        assert!(equation_changes(&closed, &[]).is_err());
+        assert!(equation_changes(&closed, &[("rods", json!(null))]).is_err());
     }
 
     #[test]

@@ -21,7 +21,7 @@
 //! | 1 LOAD | JSON `{inputs, state, solver}` | JSON identity, `t`, dimension, channels |
 //! | 2 CHANNELS | — | JSON `[{id, unit, quantity, source}]` |
 //! | 3 ADVANCE | `f64 t1` | `f64 t, f64 solver_t, u32 c, c × u64 counts, u32 v, v × f64 values, u32 m, m bytes JSON events` |
-//! | 4 COMMAND | JSON `{kind, t_apply, …}` | JSON (the applied time and its bits) |
+//! | 4 COMMAND | JSON `{kind, t_apply, …}` | JSON (the applied time and its bits; an operator command also `accepted`) |
 //! | 5 SNAPSHOT | — | JSON snapshot |
 //! | 6 RESTORE | JSON snapshot | as LOAD |
 //! | 7 STATUS | — | JSON counts and cost |
@@ -40,6 +40,21 @@
 //! controller's logs and the electrical slice's log, each with its exact
 //! time.
 //!
+//! **Composition.** The IC section's own declarations choose it: a section
+//! declaring the governor composes the X4.3 governor (`LD01.TG.ADM.POS`), one
+//! declaring the DC groups composes them, report-only (their reports and the
+//! labelled engineering values); the protection client refuses a mismatch.
+//! The pages they read join the identity.
+//!
+//! **Operator commands** (PROC T4, T5, T11; lane ELEC): `IncomingDevice`
+//! `{bus, source, target}`, `StartConsumer` `{consumer}`, `DcDistribution`
+//! `{group, action}` and `DcChargerInput` `{group, bus}`, decided at the
+//! unit's time and applied there, always class R (the protection client's
+//! routing and DC copies refresh only at a restart; class S skips it). A name
+//! the unit does not hold is refused and changes nothing. A request the
+//! equipment's guards refuse is a result, not a refusal: the reply says
+//! `accepted: false`, the electrical log records why, and the unit goes on.
+//!
 //! **Snapshot** (design §6.1, copy = restart boundary). At the unit's time,
 //! with nothing due there and no held change pending: `t`, `y`, `y'` and
 //! the integrator's absolute tolerances as IEEE bits, every owner's discrete
@@ -57,7 +72,7 @@
 //! CLOSE is refused with that cause.
 use leitbild_operating_plant::{
     digest::sha256,
-    electrical::{breaker::Contact, field, slice},
+    electrical::{breaker::Contact, bus, dc_supply, field, slice},
     ic::{
         acquisition::Quality,
         packet::{Quantity, SgFlow},
@@ -68,21 +83,26 @@ use leitbild_operating_plant::{
 };
 use leitbild_operating_water::{
     If97,
+    electrical::Electrified,
     frame::{
         Action, COUNTER_NAMES, Change, Class, Client, Diagnostic, DriverState, MatrixRebuild,
         Stepping, same_instant,
     },
-    joined::{Discrete, JoinedSystem, discrete_restart},
+    joined::{Discrete, Integrated, JoinedSystem, discrete_restart},
     unit::{
         clock,
+        dc::{self, Dc},
         inputs::{Inputs, MODEL, Spine},
         plant::{self, Boundary, Plant},
         profile::{Solver, Weights, parse_first_step, parse_stepping},
         s3, timeline,
+        turbine::{self, Turbine},
     },
 };
 use serde_json::{Map, Value, json};
+use std::cell::Cell;
 use std::io::{BufReader, BufWriter, Read, Write};
+use std::rc::Rc;
 use std::time::Instant;
 
 const KERNEL_SOURCE_SHA256: &str = env!("LD01_KERNEL_SOURCE_SHA256");
@@ -213,6 +233,75 @@ fn command_value(c: Command) -> Value {
     }
 }
 
+/// An operator's local electrical command (PROC T4, T5, T11; lane ELEC).
+enum Operator {
+    Incoming {
+        bus: String,
+        source: bus::Source,
+        target: bus::Contact,
+    },
+    Start {
+        consumer: String,
+    },
+    Dc {
+        group: String,
+        command: dc_supply::Command,
+    },
+    Charger {
+        group: String,
+        bus: String,
+    },
+}
+
+/// An operator command by name, its keys exactly its own; `None` for a kind
+/// that is not one.
+fn operator_of(v: &Value, kind: &str) -> Option<Result<Operator, String>> {
+    let parsed = |keys: &[&str]| -> Result<(), String> {
+        exactly(v, kind, &[&["kind", "t_apply"], keys].concat()).map(|_| ())
+    };
+    let owned = |key: &str| text(v, key, kind).map(str::to_string);
+    Some(match kind {
+        "IncomingDevice" => parsed(&["bus", "source", "target"]).and_then(|()| {
+            Ok(Operator::Incoming {
+                bus: owned("bus")?,
+                source: match text(v, "source", kind)? {
+                    "unit" => bus::Source::Unit,
+                    "reserve" => bus::Source::Reserve,
+                    other => return Err(format!("{kind}: source {other}: unit or reserve")),
+                },
+                target: match text(v, "target", kind)? {
+                    "Open" => bus::Contact::Open,
+                    "Closed" => bus::Contact::Closed,
+                    other => return Err(format!("{kind}: target {other}: Open or Closed")),
+                },
+            })
+        }),
+        "StartConsumer" => parsed(&["consumer"]).and_then(|()| {
+            Ok(Operator::Start {
+                consumer: owned("consumer")?,
+            })
+        }),
+        "DcDistribution" => parsed(&["group", "action"]).and_then(|()| {
+            Ok(Operator::Dc {
+                group: owned("group")?,
+                command: match text(v, "action", kind)? {
+                    "Open" => dc_supply::Command::Open,
+                    "Reset" => dc_supply::Command::Reset,
+                    "Close" => dc_supply::Command::Close,
+                    other => return Err(format!("{kind}: action {other}: Open, Reset or Close")),
+                },
+            })
+        }),
+        "DcChargerInput" => parsed(&["group", "bus"]).and_then(|()| {
+            Ok(Operator::Charger {
+                group: owned("group")?,
+                bus: owned("bus")?,
+            })
+        }),
+        _ => return None,
+    })
+}
+
 // ------------------------------------------------------------------ channels
 
 /// How one observation-frame channel is read.
@@ -228,6 +317,9 @@ enum Reading {
     /// first delivery; or its quality code (0 none, 1 value).
     IcReport(usize),
     IcReportQuality(usize),
+    /// PROC T5's labelled engineering value by id, at the frame; NaN where
+    /// its owner gives none (the depletion estimate while not discharging).
+    Engineering(String),
     /// Divisions with the function's cause latched.
     Latched(String),
     DivisionTrip(usize),
@@ -341,9 +433,10 @@ fn channels(plant: &Plant, inputs: &Inputs) -> Result<Vec<Channel>, String> {
             }
             Quantity::PumpSpeed { .. } => ("1", "RCP shaft speed over the drive's reference speed"),
             Quantity::CvcsFlow { .. } => ("kg/s", "CVCS branch flow delivered at COLD.A (signed)"),
-            Quantity::BankPosition { .. } => {
-                ("1", "mean rod stem travel over the normal stroke (0 seated)")
-            }
+            Quantity::BankPosition { .. } => (
+                "1",
+                "mean rod stem travel over the normal stroke (0 seated)",
+            ),
             Quantity::StopValvePosition { .. } => ("%", "turbine stop valve stroke (100 open)"),
             // PHYS2 (lead ruling 1 Nov): only in a section declaring the governor.
             Quantity::AdmissionPosition => ("%", "turbine admission valve stroke (100 open)"),
@@ -351,13 +444,23 @@ fn channels(plant: &Plant, inputs: &Inputs) -> Result<Vec<Channel>, String> {
             // ld01-sg-flow-channels, ld01-vessel-dp-channels,
             // ld01-core-exit-channels), in the units the section compiles.
             Quantity::SgPressure { .. } => ("Pa", "SG total secondary pressure (absolute)"),
-            Quantity::SgFlowLag { flow: SgFlow::Steam, .. } => {
-                ("1", "SG pickup steam flow over the one-SG nominal feed flow m0")
-            }
-            Quantity::SgFlowLag { flow: SgFlow::Feed, .. } => {
-                ("1", "SG branch feed flow over the one-SG nominal feed flow m0")
-            }
-            Quantity::VesselDp { .. } => ("Pa", "core differential pressure (lower minus upper interface)"),
+            Quantity::SgFlowLag {
+                flow: SgFlow::Steam,
+                ..
+            } => (
+                "1",
+                "SG pickup steam flow over the one-SG nominal feed flow m0",
+            ),
+            Quantity::SgFlowLag {
+                flow: SgFlow::Feed, ..
+            } => (
+                "1",
+                "SG branch feed flow over the one-SG nominal feed flow m0",
+            ),
+            Quantity::VesselDp { .. } => (
+                "Pa",
+                "core differential pressure (lower minus upper interface)",
+            ),
             Quantity::PlenumDp { .. } => ("Pa", "upper plenum mixture head"),
             Quantity::CoreExitTemperature { .. } => ("degC", "core-exit liquid temperature"),
         };
@@ -382,19 +485,46 @@ fn channels(plant: &Plant, inputs: &Inputs) -> Result<Vec<Channel>, String> {
     }
     let reports = plant.protection.protection.delivered_reports();
     if reports.len() != section.reports.len()
-        || reports.iter().zip(&section.reports).any(|(d, r)| d.0 != r.id)
+        || reports
+            .iter()
+            .zip(&section.reports)
+            .any(|(d, r)| d.0 != r.id)
     {
         return Err("the protection's reports are not the section's".into());
     }
     for (i, r) in section.reports.iter().enumerate() {
         let source = format!("{}: delivered state report (supply {})", r.id, r.supply);
-        out.push(channel(&r.id, "1", "state report: 1 reported, 0 not", &source, Reading::IcReport(i)));
+        out.push(channel(
+            &r.id,
+            "1",
+            "state report: 1 reported, 0 not",
+            &source,
+            Reading::IcReport(i),
+        ));
         out.push(channel(
             format!("{}.QUALITY", r.id),
             "1",
             "delivered report quality: 0 none, 1 value",
             &source,
             Reading::IcReportQuality(i),
+        ));
+    }
+    // PROC T5: the labelled engineering values, in a section declaring the
+    // DC groups; for a person's judgement, no criterion reads them.
+    for e in &section.engineering {
+        let unit = match e.unit.as_str() {
+            "W" => "W",
+            "J" => "J",
+            "s" => "s",
+            other => return Err(format!("{}: unit {other}: W, J or s", e.id)),
+        };
+        let source = format!("DC group {} report field {}", e.group, e.field);
+        out.push(channel(
+            &e.id,
+            unit,
+            &e.label,
+            &source,
+            Reading::Engineering(e.id.clone()),
         ));
     }
     for f in &section.functions {
@@ -794,6 +924,9 @@ struct Unit {
     identity: Value,
     channels: Vec<Channel>,
     v_nominal: f64,
+    /// The composed DC groups (their names and charger buses), when the
+    /// section declares them.
+    dc: Option<Dc>,
     /// Receipt cursors: driver, protection, field controller and slice logs.
     seen: [usize; 4],
     failed: Option<String>,
@@ -817,6 +950,17 @@ fn file_identity(
         inputs.control_wiki
     );
     let i = &load["inputs"];
+    let mut pages = vec![page("build-readiness.md")?, page("operating-hot-spine.md")?];
+    // The pages the section's declarations compose from.
+    let declared = [
+        (inputs.ic.governor.declared, turbine::TURBINE_PAGE),
+        (inputs.ic.governor.declared, turbine::ADMISSION_PAGE),
+        (inputs.ic.dc.declared, dc::DC_PAGE),
+    ];
+    for (_, p) in declared.iter().filter(|(on, _)| *on) {
+        let path = format!("{}/{p}", inputs.spine.wiki_root);
+        pages.push(json!({"page": p, "sha256": file_sha256(&path)?}));
+    }
     Ok(json!({
         "packet": {"path": i["packet"], "sha256": file_sha256(&inputs.spine.packet_path)?},
         "ic": {"path": i["ic"], "sha256": file_sha256(&inputs.ic_path)?},
@@ -824,7 +968,7 @@ fn file_identity(
         "pzr_control_channel": {"page": "operational-observations.md", "sha256": file_sha256(&channel_page)?},
         "elec": {"path": i["elec"], "sha256": file_sha256(&inputs.elec_path)?},
         "state": {"path": state, "sha256": file_sha256(state)?},
-        "wiki": {"commit": i["wiki_commit"], "repository": i["wiki_repository"], "pages": [page("build-readiness.md")?, page("operating-hot-spine.md")?]},
+        "wiki": {"commit": i["wiki_commit"], "repository": i["wiki_repository"], "pages": pages},
         "kernel_source_sha256": KERNEL_SOURCE_SHA256,
         "water_library_sha256": WATER_LIBRARY_SHA256,
         "solver": solver,
@@ -872,14 +1016,28 @@ fn parse_load(load: &Value) -> Result<(Inputs, String, Solver), String> {
         text(i, "pzr_control_wiki", "LOAD inputs")?,
         text(i, "elec", "LOAD inputs")?,
     )?;
-    exactly(&o["solver"], "LOAD solver", &["weights", "first_step", "stepping", "water"])?;
+    exactly(
+        &o["solver"],
+        "LOAD solver",
+        &["weights", "first_step", "stepping", "water", "source_atol"],
+    )?;
     let solver = Solver {
         weights: Weights::parse(text(&o["solver"], "weights", "LOAD solver")?)?,
         first_step: parse_first_step(text(&o["solver"], "first_step", "LOAD solver")?)?,
         stepping: parse_stepping(text(&o["solver"], "stepping", "LOAD solver")?)?,
         // The water method (owner decision 1 Nov): a required LOAD key, in
         // the identity a restore checks.
-        water: leitbild_operating_water::WaterMethod::parse(text(&o["solver"], "water", "LOAD solver")?)?,
+        water: leitbild_operating_water::WaterMethod::parse(text(
+            &o["solver"],
+            "water",
+            "LOAD solver",
+        )?)?,
+        // R4-NUC-SOURCE-ATOL: a required LOAD key, in the identity.
+        source_atol: leitbild_operating_water::unit::profile::SourceAtol::parse(text(
+            &o["solver"],
+            "source_atol",
+            "LOAD solver",
+        )?)?,
     };
     Ok((inputs, text(load, "state", "LOAD")?.to_string(), solver))
 }
@@ -909,7 +1067,31 @@ impl Unit {
         let v_nominal = elec["boundary"]["lineVoltage_V"]
             .as_f64()
             .ok_or("the electrical packet's boundary.lineVoltage_V")?;
-        let u = s3::compose(&inputs, &state, solver)?;
+        // The section's declarations choose the composition; the protection
+        // client refuses a mismatch either way.
+        let wiki = &inputs.spine.wiki_root;
+        let governor = inputs
+            .ic
+            .governor
+            .declared
+            .then(|| Turbine::from_wiki(wiki))
+            .transpose()?;
+        let dc = inputs
+            .ic
+            .dc
+            .declared
+            .then(|| Dc::from_wiki(wiki))
+            .transpose()?;
+        let u = s3::compose_dc_with(
+            &inputs,
+            &state,
+            s3::Scaling::NONE,
+            solver,
+            governor.as_ref(),
+            &[],
+            dc.as_ref(),
+            Ok,
+        )?;
         if u.receipt["from_saved_s3_state"] != json!(true) || u.receipt["spray_path"] != json!(true)
         {
             return Err(format!(
@@ -938,6 +1120,7 @@ impl Unit {
             "matrix_rebuild": "stock (r4 baseline: MR-1 off)",
             "stepping": format!("{stepping:?}"),
             "water": solver.water.as_str(),
+            "source_atol": solver.source_atol.as_str(),
         });
         let mut identity = files;
         identity["composition"] = composition;
@@ -956,6 +1139,7 @@ impl Unit {
             identity,
             channels,
             v_nominal,
+            dc,
             seen: [0; 4],
             failed: None,
             exchanges: 0,
@@ -1039,6 +1223,7 @@ impl Unit {
         let reports = p.delivered_reports();
         let divisions = &p.divisions;
         let flag = |b: bool| f64::from(u8::from(b));
+        let engineering = protection.engineering_values(t)?;
         self.channels
             .iter()
             .map(|c| {
@@ -1061,6 +1246,13 @@ impl Unit {
                     Reading::IcReport(i) => match reports[*i].1 {
                         None => f64::NAN,
                         Some((_, v)) => flag(v),
+                    },
+                    Reading::Engineering(id) => match engineering.get(id) {
+                        Some(Value::Null) => f64::NAN,
+                        Some(v) => v
+                            .as_f64()
+                            .ok_or_else(|| format!("{id}: {v} is not a number"))?,
+                        None => return Err(format!("no engineering value {id}")),
                     },
                     Reading::IcReportQuality(i) => flag(reports[*i].1.is_some()),
                     Reading::Latched(f) => divisions.iter().filter(|d| d.latched(f)).count() as f64,
@@ -1186,10 +1378,6 @@ impl Unit {
         let leitbild_operating_water::frame::Reached::Until(t) = reached;
         self.t = t;
         self.exchanges += 1;
-        // The PZR client's per-frame series and schedule are receipts that
-        // grow with the run; the host reports frames instead.
-        self.plant.control.series.clear();
-        self.plant.control.schedule.clear();
         let after = self.counters()?;
         let values = self.values()?;
         let events = self.events()?;
@@ -1230,6 +1418,9 @@ impl Unit {
         if kind == "GridBoundary" {
             return self.grid_boundary(v, t);
         }
+        if let Some(operator) = operator_of(v, kind) {
+            return self.operator(kind, operator?, t);
+        }
         let command = command_of(v)?;
         let keys: &[&str] = match command {
             Command::SupplyLoss { rotor } => {
@@ -1252,6 +1443,93 @@ impl Unit {
         let t = t.max(self.t);
         self.plant.driver.command(t, command)?;
         Ok(json!({"kind": kind, "t_apply": t, "t_apply_bits": bits(t)}))
+    }
+
+    /// PROC T4, T5, T11: an operator's local electrical command, decided and
+    /// applied at the unit's time, class R. A name the unit does not hold is
+    /// refused here, before anything changes.
+    fn operator(&mut self, kind: &str, operator: Operator, t: f64) -> Result<Value, String> {
+        if !same_instant(t, self.t) {
+            return Err(format!(
+                "{kind}: decided at the unit's time {} s, not {t} s",
+                self.t
+            ));
+        }
+        let routing = &self.plant.ida.system().routing;
+        let group_of = |group: &str| -> Result<&_, String> {
+            self.dc
+                .as_ref()
+                .ok_or_else(|| format!("{kind}: no DC groups composed"))?
+                .groups
+                .iter()
+                .find(|g| g.id == group)
+                .ok_or_else(|| format!("{kind}: no DC group {group}"))
+        };
+        match &operator {
+            Operator::Incoming { bus, .. } => {
+                routing
+                    .bus_index(bus)
+                    .ok_or_else(|| format!("{kind}: no bus {bus}"))?;
+            }
+            Operator::Start { consumer } => {
+                routing
+                    .support(consumer)
+                    .ok_or_else(|| format!("{kind}: no consumer {consumer}"))?;
+            }
+            Operator::Dc { group, .. } => {
+                group_of(group)?;
+            }
+            Operator::Charger { group, bus } => {
+                let g = group_of(group)?;
+                let alternate = g
+                    .alternate_bus
+                    .as_ref()
+                    .ok_or_else(|| format!("{kind}: {group} has no selectable charger input"))?;
+                if *bus != g.normal_bus && bus != alternate {
+                    return Err(format!("{kind}: {group} cannot charge from {bus}"));
+                }
+            }
+        }
+        let outcome = Rc::new(Cell::new(None));
+        let result = Rc::clone(&outcome);
+        let due_s = self.t;
+        let change = Change {
+            due_s,
+            class: Class::R,
+            kind: format!("operator: {kind}"),
+            action: Action::Held(Box::new(move |u: &mut Electrified<Integrated<If97>>| {
+                let done = match &operator {
+                    Operator::Incoming {
+                        bus,
+                        source,
+                        target,
+                    } => u.operator_incoming(due_s, bus, *source, *target),
+                    Operator::Start { consumer } => u.operator_start_consumer(due_s, consumer),
+                    Operator::Dc { group, command } => u.operator_dc(due_s, group, *command),
+                    Operator::Charger { group, bus } => {
+                        u.operator_dc_charger_input(due_s, group, bus)
+                    }
+                }?;
+                result.set(Some(done));
+                Ok(())
+            })),
+        };
+        let applied = self
+            .plant
+            .driver
+            .decide(vec![change])
+            .and_then(|()| self.plant.apply_due(&mut []));
+        if let Err(e) = applied {
+            let cause = format!("{kind} at {} s: {e}", self.t);
+            self.failed = Some(cause.clone());
+            return Err(cause);
+        }
+        let accepted = outcome
+            .get()
+            .ok_or_else(|| format!("{kind}: the held change did not run"))?;
+        Ok(
+            json!({"kind": kind, "t_apply": self.t, "t_apply_bits": bits(self.t), "accepted": accepted}),
+        )
     }
 
     /// The Grid's boundary for `[t, until)` through the unit library

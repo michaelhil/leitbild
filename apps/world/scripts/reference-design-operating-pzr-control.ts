@@ -11,7 +11,11 @@
  * - `reference-pzr-pressure-channel`: the PT1 span and its sample, which is
  *   the control frame;
  * - `ld01-pzr-heater-banks`: the banks' nominal capacities must sum to the
- *   heater capacity the law modulates.
+ *   heater capacity the law modulates;
+ * - `ld01-pzr-pressure-master` (R4-PZR-PI, lead 1 Nov 2026): the continuous
+ *   master's integral time, corner width and spray-stem time constant
+ *   (judgement values, each labelled so in the block's table), read only
+ *   into the PZR owner's `continuousControl`.
  *
  * Usage: bun reference-design-operating-pzr-control.ts <wiki root> */
 import { createHash } from 'node:crypto'
@@ -25,6 +29,7 @@ export const pzrControlOwners = {
   thermal: { page: 'systems/primary-coolant/pressurizer-thermal-state.md', heading: 'Normal circulation and required thermal duty', fence: 'reference-pressurizer-normal-thermal' },
   channel: { page: 'systems/instrumentation/operational-observations.md', heading: 'Operating-model observation handoff', fence: 'reference-pzr-pressure-channel' },
   banks: equipmentOwners.heaterBanks,
+  master: { page: 'systems/primary-coolant/pressure-and-inventory.md', heading: 'Ordinary pressure regulation', fence: 'ld01-pzr-pressure-master' },
 } as const
 
 /** What the law block carries, and where the wiki states each value in prose
@@ -40,6 +45,7 @@ const positive = z.number().finite().positive()
 const lawSchema = z.object({ setpoint_Pa: positive, sprayStartAboveSetpoint_Pa: z.number().finite().nonnegative(),
   sprayFullAboveSetpoint_Pa: positive, freshness_s: positive }).strict()
 const thermalSchema = z.object({ heaterCapacity_W: positive, heaterProportionalBand_Pa: positive }).passthrough()
+const masterSchema = z.object({ integralTime_s: positive, smoothingWidth_Pa: positive, sprayStemTimeConstant_s: positive }).strict()
 const channelSchema = z.object({ lag_s: positive, min_pa: z.number().finite(), max_pa: positive, quantum_pa: positive,
   sample_s: positive, transport_s: z.number().finite().nonnegative() }).strict()
 
@@ -79,13 +85,41 @@ export function compileOperatingPzrControl(pages: PzrControlPages) {
   }
 }
 
-export async function prepareOperatingPzrControl(wiki: string) {
+/** R4-PZR-PI (lead 1 Nov 2026, on PERF3's R4-PZR-CONTINUOUS): the PZR
+ * owner's `continuousControl`, the values its continuous pressure master
+ * reads: the law's setpoint, capacity, band and spray offsets, as
+ * `compileOperatingPzrControl` admits them, the channel block's lag and the
+ * master block's integral time, corner width and stem time constant. Rust's
+ * `control::pzr_pressure::Master` admits it strictly. */
+export function pzrContinuousControl(pages: PzrControlPages) {
+  const law = compileOperatingPzrControl(pages)
+  const o = pzrControlOwners
+  const channel = channelSchema.parse(ownedBlock(pages.channel, o.channel.heading, o.channel.fence))
+  if (!hasBlock(pages.master, o.master.fence))
+    throw Error(`Missing strict block ${o.master.fence} under "${o.master.heading}" (${o.master.page}): the continuous master needs its integral time, corner width and stem time constant (R4-PZR-PI)`)
+  const master = masterSchema.parse(ownedBlock(pages.master, o.master.heading, o.master.fence))
+  if (!(law.sprayStartAboveSetpoint_Pa > 0))
+    throw Error('The continuous master needs a spray start above the setpoint (its located root)')
+  return { setpoint_Pa: law.setpoint_Pa, heaterCapacity_W: law.heaterCapacity_W, heaterProportionalBand_Pa: law.heaterProportionalBand_Pa,
+    sprayStartAboveSetpoint_Pa: law.sprayStartAboveSetpoint_Pa, sprayFullAboveSetpoint_Pa: law.sprayFullAboveSetpoint_Pa,
+    lag_s: channel.lag_s, integralTime_s: master.integralTime_s, smoothingWidth_Pa: master.smoothingWidth_Pa,
+    sprayStemTimeConstant_s: master.sprayStemTimeConstant_s }
+}
+
+/** The owners' pages under the LD-01 design root, with what was consumed. */
+export async function pzrControlPages(wiki: string) {
   const base = join(wiki, 'world/packs/process-plant/reference-designs/ld-01')
   const names = Object.entries(pzrControlOwners) as [keyof typeof pzrControlOwners, { page: string, fence: string }][]
   const pages = Object.fromEntries(await Promise.all(names.map(async ([k, o]) => [k, await Bun.file(join(base, o.page)).text()]))) as PzrControlPages
   const hash = (s: string) => createHash('sha256').update(s).digest('hex')
+  return { pages, consumed: names.map(([k, o]) => ({ page: o.page, fence: o.fence, sha256: hash(pages[k]) })) }
+}
+
+export async function prepareOperatingPzrControl(wiki: string) {
+  const { pages, consumed } = await pzrControlPages(wiki)
+  const hash = (s: string) => createHash('sha256').update(s).digest('hex')
   return { ...compileOperatingPzrControl(pages), provenance: {
-    consumed: names.map(([k, o]) => ({ page: o.page, fence: o.fence, sha256: hash(pages[k]) })),
+    consumed,
     sourceSha256: hash(await Bun.file(import.meta.path).text()) } }
 }
 

@@ -376,6 +376,26 @@ impl<P: Properties> Network<P> {
     pub(super) fn unilateral_locked(&self, li: usize) -> bool {
         self.unilateral.as_ref().is_some_and(|u| u.is_locked(li))
     }
+    /// R4-MOUTH-INERTIA: the inertia of the vapor the free surge-mouth path
+    /// must accelerate on the PZR side, `(αρ)_port ∫ds/A`, with the port
+    /// view's own `αρ`, the factor of the path's mass flow when the PZR is
+    /// its donor. With S3-D37's donor outside face 34's supports, `Q = Π/I`
+    /// on the SURGE supports alone makes `w = (αρ)_port Π/I` unbounded as
+    /// SURGE's vapor vanishes; a donor inside the path's inertia bounds
+    /// `|w| <= |Π|/∫ds/A`, as on a path whose donor is a support. `None`
+    /// off that path, without L1, locked, or with no bubbles at the port.
+    pub(super) fn mouth_inertance(&self, li: usize, cells: &[flow::Cell]) -> Option<Scalar> {
+        let (mouth, per_m) = self.mouth?;
+        let free = self
+            .unilateral
+            .as_ref()
+            .is_some_and(|u| u.paths[li] == Lock::Free);
+        if li != mouth || !free {
+            return None;
+        }
+        let a = cells[self.pzr.cell].phase[1]?;
+        Some(a.density * a.fraction * Scalar::constant(per_m))
+    }
     /// Restore a copied lock table (copy/restore of the discrete state).
     pub fn restore_unilateral(&mut self, locks: Locks) -> Result<(), Failure> {
         if locks.paths.len() != self.face_layout.len() {
@@ -578,14 +598,22 @@ impl<P: Properties> Network<P> {
             return Some(0.);
         }
         let supports = &self.faces[face].supports;
-        if !supports.iter().any(|s| s.region == donor) {
-            return None;
-        }
         let density = |c: usize| {
             self.cell_volume
                 .get(c)
                 .map(|v| self.end_mass(y, c, 1) / v.value)
         };
+        if !supports.iter().any(|s| s.region == donor) {
+            // R4-MOUTH-INERTIA: the PZR as donor is in the path's inertia.
+            let (_, per_m) = self.mouth?;
+            let beyond = self.mouth_inertance(2 * face + 1, &self.cells)?.value;
+            let mut inertia = beyond;
+            for s in supports {
+                inertia += density(s.region)? * s.inverse_area_length_per_m;
+            }
+            let flow = impulse * (beyond / per_m) / inertia;
+            return flow.is_finite().then_some(flow);
+        }
         let mut inertia = 0.;
         for s in supports {
             inertia += density(s.region)? * s.inverse_area_length_per_m;

@@ -159,6 +159,8 @@ fn rows_close_mass_and_energy_and_the_trip_ramps_the_demand() {
     );
     // TRIP at t = 1 s: the demand ramps linearly over 0.3 s and stays zero.
     assert_eq!(Secondary::<If97>::next_time_event(&sys.secondary, 0.), None);
+    // R12-B1's pressure mode is the bypass with no RCP supplied (R4-DUMP).
+    Secondary::<If97>::set_forced_circulation(&mut sys.secondary, false).unwrap();
     let tx = Secondary::<If97>::command(&mut sys.secondary, 1., Command::TurbineTrip).unwrap();
     assert_eq!(tx.receipt["rampEnd_s"], json!(1.3));
     // The ramp end is the owner's one time event: declared after the TRIP,

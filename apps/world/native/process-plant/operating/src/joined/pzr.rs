@@ -31,7 +31,37 @@
 //! replaces the demand at frame instants through [`Pzr::apply_control`],
 //! a held-input change between solver segments that the frame driver
 //! classifies (S3-D1: class S under the smallness criterion, else R). The
-//! banks take the request by the equipment's continuous split. The S2
+//! banks take the request by the equipment's continuous split.
+//!
+//! R4-PZR-CONTINUOUS (PERF3, lead 1 Nov, Option A): with the section's
+//! `continuousControl` the block owns the PT1 channel's first-order lag as
+//! its last coordinate, `τ p_L' = p_roof − p_L` (class
+//! [`Class::PzrControl`], differential in every mode). Once commissioned
+//! ([`Pzr::commission_continuous`], the S3 composition's AUTO) the heater
+//! request is the same law as a continuous function of that coordinate,
+//! `C clamp[(p_set − p_L)/B, 0, 1]`
+//! (`control::pzr_pressure::continuous_heater_request`), split over the
+//! banks by the same continuous split with its direction
+//! (`Heaters::bank_split`), inside every evaluation: no sample, no quantum,
+//! no transport and no held-input change. Before commissioning (S2, the
+//! steady solids) the held demand is in force and the lag only follows the
+//! roof pressure.
+//!
+//! R4-PZR-PI (lead 1 Nov 2026): the continuous law is the pressure master
+//! (`control::pzr_pressure::Master`): the block also owns the master
+//! integral `I` (Pa, class [`Class::PzrControl`]), and, when the network
+//! composes the controlled-spray path (S-b), the spray stem fraction `x`
+//! (class [`Class::PzrControl`]). One demand `D = (p_L − p_set) + I` gives the
+//! heater request and the spray demand; `I' = (sclamp(D) − I)/Ti`. The stem
+//! has three modes ([`SprayMode`]): locked closed (`x' = 0`, the network's
+//! valve path locked), tracking (`x' = clamp((u − x)/τ, ±r)`, `r` the
+//! valve's stroke rate) and closing (`x' = −r`, the wiki's rate to 0). The
+//! valve leaves its lock at the located root `D − s0` rising, starts
+//! closing at that root falling, and locks at the located root `x` falling
+//! (class R each; the operator puts the lock change in the network). The
+//! banks take the request by the smooth split (`Heaters::smooth_bank_split`,
+//! the lead's 30 kW corner). Before commissioning `I' = 0` and `x' = 0`.
+//! The S2
 //! network composes no controlled-spray material path (the spray port's
 //! receipt is the network's zero), so a nonzero spray demand refuses here
 //! instead of being dropped.
@@ -44,6 +74,7 @@
 //! lift at rest reports the travel root as the constant [`DISARMED`].
 use super::block::{Class, Coordinates, Layout, Transaction, snapshot_object};
 use crate::{
+    control::pzr_pressure::Master,
     network::{
         Failure,
         heaters::{BanksBlock, Caloric304, ContactBlock, HeaterCase, Heaters},
@@ -88,8 +119,73 @@ pub struct Section {
     /// at the relief device's calibration backpressure.
     #[serde(rename = "reliefBackPressure_Pa")]
     pub relief_back_pressure_pa: f64,
+    /// R4-PZR-CONTINUOUS: the normal pressure control's continuous heater
+    /// law and the PT1 channel's lag, when the packet composes them.
+    #[serde(rename = "continuousControl")]
+    pub continuous_control: Option<ContinuousControl>,
     /// The compiler's consumed pages, for receipts only.
     pub provenance: serde_json::Value,
+}
+
+/// R4-PZR-PI: the packet's `continuousControl` is the pressure master's
+/// values (`control::pzr_pressure::Master`).
+pub type ContinuousControl = Master;
+
+/// R4-PZR-PI (S-b): the controlled-spray stem's mode under the continuous
+/// master.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SprayMode {
+    /// Closed on its lock: `x = 0`, `x' = 0`, the valve path locked.
+    Locked,
+    /// Following the master's spray demand.
+    Tracking,
+    /// The demand returned below the spray start: closing at the stroke
+    /// rate until the stem reaches 0.
+    Closing,
+}
+impl SprayMode {
+    fn name(self) -> &'static str {
+        match self {
+            SprayMode::Locked => "locked",
+            SprayMode::Tracking => "tracking",
+            SprayMode::Closing => "closing",
+        }
+    }
+    fn parse(v: &serde_json::Value) -> Result<Self, Failure> {
+        match v.as_str() {
+            Some("locked") => Ok(SprayMode::Locked),
+            Some("tracking") => Ok(SprayMode::Tracking),
+            Some("closing") => Ok(SprayMode::Closing),
+            _ => Err(fatal(format!("snapshot: spray stem mode {v}"))),
+        }
+    }
+}
+
+/// R4-PZR-PI: the composed continuous master: its values, the coordinates
+/// it owns (the PT1 lag, the integral and, with the spray path, the stem)
+/// and the stem's stroke rate and mode.
+#[derive(Clone, Copy, Debug)]
+struct Continuous {
+    master: Master,
+    lag: usize,
+    integral: usize,
+    stem: Option<Stem>,
+}
+#[derive(Clone, Copy, Debug)]
+struct Stem {
+    index: usize,
+    strokes_per_s: f64,
+    mode: SprayMode,
+}
+
+/// Which heater demand is in force.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Control {
+    /// The held demand: P4's until a control frame replaces it
+    /// ([`Pzr::apply_control`]).
+    Held,
+    /// R4-PZR-CONTINUOUS: the continuous law on the channel lag.
+    Continuous,
 }
 
 /// The packet's `pzrSteel` section (S3-D36): each steel coordinate's
@@ -260,10 +356,17 @@ pub struct Pzr {
     heaters: Heaters,
     walls: Walls,
     relief: Option<Relief>,
-    /// The heater demand in force (W; P4's until a control frame) and each
-    /// bank's delivered power.
+    /// The held heater demand (W; P4's until a control frame) and each
+    /// bank's delivered power, in force under [`Control::Held`].
     request_w: f64,
     bank_power_w: Vec<f64>,
+    /// R4-PZR-CONTINUOUS / R4-PZR-PI: the composed continuous master and
+    /// its coordinates (the layout's last), and which demand is in force.
+    continuous: Option<Continuous>,
+    control: Control,
+    /// R4-PZR-PI: the network's valve-path lock change a transaction
+    /// decided (`Some(closed)`), for the operator to put in force.
+    spray_lock_change: Option<bool>,
     /// `Tsat(p_s)` of the composed cell: P4's demand temperature.
     saturation_temperature_k: f64,
     /// A travel root's lift farther than this from its stop (full strokes)
@@ -283,16 +386,26 @@ pub struct Pzr {
 impl Pzr {
     /// Compose the block on the cell from the packet's section, with P4's
     /// demand at `saturation_temperature_k`, the composed cell's
-    /// `Tsat(p_s)`, and the steel as `steel` prepares it. Refuses a relief
-    /// port whose demand would not read the roof pressure (PT1 below the
-    /// roof), a nonpositive backpressure, a heater demand outside the banks'
-    /// range, and steady steel that is not one store per steel coordinate in
-    /// layout order with its energy's own 304 temperature.
+    /// `Tsat(p_s)`, and the steel as `steel` prepares it; a composed
+    /// continuous control's channel lag is prepared at
+    /// `prepared_roof_pressure_pa`, the cell's prepared roof pressure, its
+    /// integral where the master's request at that lag is P4's demand (a
+    /// demand outside the open heater range refuses), and with the network's
+    /// spray path (`spray_strokes_per_s`, the valve's stroke rate) the stem
+    /// locked at 0.
+    /// Refuses a relief port whose demand would not read the roof pressure
+    /// (PT1 below the roof), a nonpositive backpressure, a heater demand
+    /// outside the banks' range, steady steel that is not one store per
+    /// steel coordinate in layout order with its energy's own 304
+    /// temperature, and a continuous control whose capacity is not the
+    /// banks' or whose values are not positive.
     pub fn new(
         cell: &Cell,
         section: &Section,
         steel: SteelPreparation<'_>,
         saturation_temperature_k: f64,
+        prepared_roof_pressure_pa: f64,
+        spray_strokes_per_s: Option<f64>,
     ) -> Result<Self, Failure> {
         let contact = section.heater_contact;
         let heaters = Heaters::new(
@@ -419,6 +532,75 @@ impl Pzr {
             layout.push(label, Class::PzrMetal, true, *e, *e);
             prepared.push(*e);
         }
+        let continuous = match section.continuous_control {
+            None => None,
+            Some(c) => {
+                c.validate()?;
+                if !(prepared_roof_pressure_pa.is_finite() && prepared_roof_pressure_pa > 0.) {
+                    return Err(fatal(format!(
+                        "continuousControl: the prepared roof pressure {prepared_roof_pressure_pa} Pa"
+                    )));
+                }
+                let installed: f64 = heaters.banks().iter().map(|b| b.nominal_capacity_w).sum();
+                if installed != c.heater_capacity_w {
+                    return Err(fatal(format!(
+                        "continuousControl: the law modulates {} W, the banks install {installed} W",
+                        c.heater_capacity_w
+                    )));
+                }
+                let lag = layout.len();
+                // The channel's state in Pa, at the solver scale of the
+                // commissioned setpoint.
+                layout.push(
+                    "PZR.PT1.lag (Pa)".into(),
+                    Class::PzrControl,
+                    true,
+                    c.setpoint_pa,
+                    c.setpoint_pa,
+                );
+                prepared.push(prepared_roof_pressure_pa);
+                // R4-PZR-PI: the integral where the master's request at the
+                // prepared lag is P4's demand.
+                let integral = layout.len();
+                layout.push(
+                    "PZR pressure master integral I (Pa)".into(),
+                    Class::PzrControl,
+                    true,
+                    c.heater_band_pa,
+                    c.heater_band_pa,
+                );
+                let demand = c.demand_for_request(request_w)?;
+                prepared.push(demand - (prepared_roof_pressure_pa - c.setpoint_pa));
+                let stem = match spray_strokes_per_s {
+                    None => None,
+                    Some(r) => {
+                        if !(r.is_finite() && r > 0.) {
+                            return Err(fatal(format!("continuousControl: spray stroke rate {r}")));
+                        }
+                        let index = layout.len();
+                        layout.push(
+                            "PZR controlled-spray stem x (fraction)".into(),
+                            Class::PzrControl,
+                            true,
+                            1.,
+                            1.,
+                        );
+                        prepared.push(0.);
+                        Some(Stem {
+                            index,
+                            strokes_per_s: r,
+                            mode: SprayMode::Locked,
+                        })
+                    }
+                };
+                Some(Continuous {
+                    master: c,
+                    lag,
+                    integral,
+                    stem,
+                })
+            }
+        };
         layout.validate("pzr")?;
         Ok(Self {
             heaters,
@@ -426,6 +608,9 @@ impl Pzr {
             relief,
             request_w,
             bank_power_w,
+            continuous,
+            control: Control::Held,
+            spray_lock_change: None,
             saturation_temperature_k,
             lift_root_bound: None,
             layout,
@@ -457,10 +642,81 @@ impl Pzr {
     pub fn relief(&self) -> Option<Relief> {
         self.relief
     }
-    /// The heater demand in force, W: P4's prepared demand until a
-    /// controller frame replaces it.
+    /// The held heater demand, W: P4's prepared demand until a controller
+    /// frame replaces it. Under [`Control::Continuous`] it is not in force:
+    /// the demand is the master's ([`Pzr::continuous_outputs`]).
     pub fn request_w(&self) -> f64 {
         self.request_w
+    }
+    /// R4-PZR-CONTINUOUS / R4-PZR-PI: the composed continuous master, if any.
+    pub fn continuous_control(&self) -> Option<&ContinuousControl> {
+        self.continuous.as_ref().map(|c| &c.master)
+    }
+    /// R4-PZR-CONTINUOUS: the channel lag's index in the block's layout.
+    pub fn lag_coordinate(&self) -> Option<usize> {
+        self.continuous.map(|c| c.lag)
+    }
+    /// R4-PZR-PI: the master integral's index in the block's layout.
+    pub fn integral_coordinate(&self) -> Option<usize> {
+        self.continuous.map(|c| c.integral)
+    }
+    /// R4-PZR-PI (S-b): the spray stem's index in the block's layout, when
+    /// the network composes the spray path.
+    pub fn stem_coordinate(&self) -> Option<usize> {
+        self.continuous.and_then(|c| c.stem.map(|s| s.index))
+    }
+    /// R4-PZR-PI (S-b): the spray stem's mode.
+    pub fn spray_mode(&self) -> Option<SprayMode> {
+        self.continuous.and_then(|c| c.stem.map(|s| s.mode))
+    }
+    /// Which demand is in force.
+    pub fn control(&self) -> Control {
+        self.control
+    }
+    /// R4-PZR-PI: the master's demand, heater request (W) and spray demand
+    /// at the block's physical coordinates `x` (layout order).
+    pub fn continuous_outputs(&self, x: &[f64]) -> Result<[f64; 3], Failure> {
+        let c = self
+            .continuous
+            .ok_or_else(|| fatal("no continuous control is composed"))?;
+        if x.len() != self.layout.len() {
+            return Err(fatal("block coordinate layout"));
+        }
+        let d = c.master.demand(s(x[c.lag]), s(x[c.integral]));
+        let u = if d.value >= c.master.spray_start_pa {
+            c.master.spray_demand(d).value
+        } else {
+            0.
+        };
+        Ok([d.value, c.master.heater_request(d).value, u])
+    }
+    /// R4-PZR-PI: set the integral in physical coordinates `x` so the
+    /// master's request at `x`'s lag is `request_w` (the commissioning of a
+    /// held demand); a request outside the open heater range refuses.
+    pub fn integral_for_request(&self, x: &[f64], request_w: f64) -> Result<f64, Failure> {
+        let c = self
+            .continuous
+            .ok_or_else(|| fatal("no continuous control is composed"))?;
+        let d = c.master.demand_for_request(request_w)?;
+        Ok(d - (x[c.lag] - c.master.setpoint_pa))
+    }
+    /// R4-PZR-PI: the valve-path lock change the last transaction decided
+    /// (`Some(true)` lock, `Some(false)` release), taken once.
+    pub fn take_spray_lock_change(&mut self) -> Option<bool> {
+        self.spray_lock_change.take()
+    }
+    /// R4-PZR-CONTINUOUS: put the continuous law in force (the S3
+    /// composition's AUTO, before its consistent start); the held demand
+    /// stops acting. Refused without a composed continuous control.
+    /// Commissioning a commissioned block changes nothing.
+    pub fn commission_continuous(&mut self) -> Result<(), Failure> {
+        if self.continuous.is_none() {
+            return Err(fatal(
+                "the continuous normal control needs the section's continuousControl (R4-PZR-CONTINUOUS)",
+            ));
+        }
+        self.control = Control::Continuous;
+        Ok(())
     }
     /// Put a normal-control frame's demands in force (S3, IC-CTRL): the
     /// heater request by the banks' continuous split
@@ -473,6 +729,11 @@ impl Pzr {
         t: f64,
         demand: &crate::control::pzr_pressure::Demand,
     ) -> Result<ControlApplied, Failure> {
+        if self.control == Control::Continuous {
+            return Err(fatal(format!(
+                "a held heater demand at {t} s, but the continuous law is in force (R4-PZR-CONTINUOUS)"
+            )));
+        }
         if demand.spray_target != 0. {
             return Err(fatal(format!(
                 "controlled-spray demand {} at {t} s, but no controlled-spray material path is composed",
@@ -541,8 +802,24 @@ impl Pzr {
         }
         let base = self.metal_base();
         let segments = self.heaters.segments().len();
+        let metal_end = base + segments + self.walls.elements().len();
         let rod: Vec<Scalar> = (base..base + segments).map(|i| x.value(i)).collect();
-        let wall: Vec<Scalar> = (base + segments..n).map(|i| x.value(i)).collect();
+        let wall: Vec<Scalar> = (base + segments..metal_end).map(|i| x.value(i)).collect();
+        // R4-PZR-CONTINUOUS: the demand in force, each bank's power with
+        // its direction (zero for a held demand), and the lag's row.
+        let demand = self
+            .continuous
+            .map(|c| c.master.demand(x.value(c.lag), x.value(c.integral)));
+        let banks: Vec<Scalar> = match (self.control, self.continuous, demand) {
+            (Control::Continuous, Some(c), Some(d)) => self
+                .heaters
+                .smooth_bank_split(c.master.heater_request(d), c.master.split_width_w())?,
+            (Control::Continuous, _, _) => {
+                return Err(fatal("continuous control without its channel lag"));
+            }
+            (Control::Held, _, _) => self.bank_power_w.iter().map(|p| s(*p)).collect(),
+        };
+        let bank_power_w: Vec<f64> = banks.iter().map(|p| p.value).collect();
         // HOOK (COST2): one property boundary for the call, its turnovers
         // held across calls (every answer the one a fresh query returns).
         let shared = crate::thermal::Shared::with_held(properties, &self.turnovers);
@@ -551,7 +828,7 @@ impl Pzr {
             column,
             &self.heaters,
             &rod,
-            &self.bank_power_w,
+            &bank_power_w,
             &wall,
             &shared,
         )?;
@@ -561,6 +838,42 @@ impl Pzr {
             .chain(rates.wall_metal_rates());
         for (j, source) in sources.enumerate() {
             rows[base + j] = x.rate(base + j) - source;
+        }
+        if let (Some(c), Some(d)) = (self.continuous, demand) {
+            let lag = c.lag;
+            // A rod segment's Joule power is its bank's times its share; the
+            // walls' laws take the bank powers' values, so the direction of
+            // the continuous request enters the steel rows here.
+            if self.control == Control::Continuous {
+                for (j, g) in self.heaters.segments().iter().enumerate() {
+                    rows[base + j] =
+                        rows[base + j] - Scalar::new(0., banks[g.bank].direction * g.power_share);
+                }
+            }
+            rows[lag] = x.rate(lag) - (column.roof_pressure - x.value(lag)) / s(c.master.lag_s);
+            // R4-PZR-PI: the integral and the stem; both held before
+            // commissioning.
+            let i = c.integral;
+            rows[i] = match self.control {
+                Control::Continuous => x.rate(i) - c.master.integral_rate(d, x.value(i)),
+                Control::Held => x.rate(i),
+            };
+            if let Some(st) = c.stem {
+                let k = st.index;
+                rows[k] = match (self.control, st.mode) {
+                    (Control::Held, _) | (_, SprayMode::Locked) => x.rate(k),
+                    (Control::Continuous, SprayMode::Tracking) => {
+                        let u = c.master.spray_demand(d);
+                        let r = st.strokes_per_s;
+                        x.rate(k)
+                            - crate::control::cvcs::clamp(
+                                (u - x.value(k)) / s(c.master.spray_stem_time_constant_s),
+                                [-r, r],
+                            )
+                    }
+                    (Control::Continuous, SprayMode::Closing) => x.rate(k) + s(st.strokes_per_s),
+                };
+            }
         }
         let relief = self.relief.map(|r| {
             rows[0] = x.rate(0) - s(r.device.lift_rate(r.motion));
@@ -585,25 +898,57 @@ impl Pzr {
         Ok(boundary)
     }
 
-    /// Root functions: the relief's demand and travel, none without one.
+    /// Root functions: the relief's demand and travel (with a relief),
+    /// then with the continuous master's spray stem (R4-PZR-PI, S-b) the
+    /// spray root `D − s0` and the closing stem's `x` (each the constant
+    /// [`DISARMED`] when it cannot act).
     pub fn root_count(&self) -> usize {
-        if self.relief.is_some() { 2 } else { 0 }
+        let relief = if self.relief.is_some() { 2 } else { 0 };
+        relief
+            + if self.stem_coordinate().is_some() {
+                2
+            } else {
+                0
+            }
     }
     /// The roots at the roof pressure and the block's physical coordinates.
     pub fn roots(&self, roof_pressure_pa: f64, x: &[f64], out: &mut [f64]) -> Result<(), Failure> {
         if x.len() != self.layout.len() || out.len() != self.root_count() {
             return Err(fatal("root layout"));
         }
+        let mut k = 0;
         if let Some(r) = &self.relief {
-            out.copy_from_slice(&r.roots(roof_pressure_pa, x[0]));
+            out[..2].copy_from_slice(&r.roots(roof_pressure_pa, x[0]));
+            k = 2;
+        }
+        if let Some(c) = self.continuous
+            && let Some(st) = c.stem
+        {
+            let armed = self.control == Control::Continuous;
+            out[k] = if armed {
+                c.master
+                    .spray_root(c.master.demand(s(x[c.lag]), s(x[c.integral])).value)
+            } else {
+                DISARMED
+            };
+            out[k + 1] = if armed && st.mode == SprayMode::Closing {
+                x[st.index]
+            } else {
+                DISARMED
+            };
         }
         if out.iter().any(|v| !v.is_finite()) {
-            return Err(fatal("nonfinite relief root"));
+            return Err(fatal("nonfinite PZR root"));
         }
         Ok(())
     }
-    /// The relief's transaction at located roots on the block's physical
-    /// coordinates `y`; only the lift may change, by the mechanical stop.
+    /// The transactions at located roots on the block's physical
+    /// coordinates `y`: the relief's (only the lift may change, by the
+    /// mechanical stop), then the spray stem's (R4-PZR-PI): the spray root
+    /// rising releases a locked valve or turns a closing stem back to
+    /// tracking, falling starts closing; the closing stem reaching 0 sets it
+    /// exactly to 0 and locks. A lock change is left for the operator
+    /// ([`Pzr::take_spray_lock_change`]).
     pub fn transact(
         &mut self,
         t: f64,
@@ -614,26 +959,23 @@ impl Pzr {
         if directions.len() != self.root_count() || y.len() != self.layout.len() {
             return Err(fatal("transaction layout"));
         }
-        let Some(relief) = self.relief.as_mut() else {
-            return Ok(Transaction {
-                deposits: Vec::new(),
-                receipt: json!({"owner":"pzr","t_s":t,"relief":null}),
-            });
-        };
-        let located = y[0];
-        let bound = match (directions[1], self.lift_root_bound) {
-            (0, _) => 0.,
-            (_, Some(b)) => b,
-            (_, None) => {
-                return Err(fatal(
-                    "a relief travel stop needs the declared lift root bound",
-                ));
-            }
-        };
-        let event = relief.transact([directions[0], directions[1]], &mut y[0], bound)?;
-        Ok(Transaction {
-            deposits: Vec::new(),
-            receipt: json!({"owner":"pzr","t_s":t,"roof_pressure_pa":roof_pressure_pa,
+        let nr = if self.relief.is_some() { 2 } else { 0 };
+        let mut receipt = json!({"owner":"pzr","t_s":t,"relief":null});
+        if let Some(relief) = self.relief.as_mut()
+            && directions[..2].iter().any(|d| *d != 0)
+        {
+            let located = y[0];
+            let bound = match (directions[1], self.lift_root_bound) {
+                (0, _) => 0.,
+                (_, Some(b)) => b,
+                (_, None) => {
+                    return Err(fatal(
+                        "a relief travel stop needs the declared lift root bound",
+                    ));
+                }
+            };
+            let event = relief.transact([directions[0], directions[1]], &mut y[0], bound)?;
+            receipt = json!({"owner":"pzr","t_s":t,"roof_pressure_pa":roof_pressure_pa,
                 "demand_root":directions[0],"travel_root":directions[1],
                 "before":{"demand_open":event.before.0,"motion":format!("{:?}",event.before.1)},
                 "after":{"demand_open":event.after.0,"motion":format!("{:?}",event.after.1)},
@@ -642,40 +984,115 @@ impl Pzr {
                     "motion_after":format!("{:?}",r.motion_after),"lift_before":r.lift_before,
                     "lift_after":r.lift_after,"defect":r.defect})),
                 "lift_rate_per_s":relief.device.lift_rate(relief.motion),
-                "stateChanged":event.before != event.after}),
+                "stateChanged":event.before != event.after});
+        }
+        if let Some(c) = self.continuous.as_mut()
+            && let Some(st) = c.stem.as_mut()
+            && directions[nr..nr + 2].iter().any(|d| *d != 0)
+        {
+            let (spray, arrival) = (directions[nr], directions[nr + 1]);
+            let before = st.mode;
+            let located = y[st.index];
+            let d = c.master.demand(s(y[c.lag]), s(y[c.integral])).value;
+            // The closing stem's arrival first, then the spray root.
+            if arrival < 0 && st.mode == SprayMode::Closing {
+                y[st.index] = 0.;
+                st.mode = SprayMode::Locked;
+                self.spray_lock_change = Some(true);
+            }
+            match (spray.signum(), st.mode) {
+                (1, SprayMode::Locked) => {
+                    if y[st.index] != 0. {
+                        return Err(fatal(format!(
+                            "the locked spray stem at {} on release",
+                            y[st.index]
+                        )));
+                    }
+                    st.mode = SprayMode::Tracking;
+                    // A lock and a release at one instant cancel.
+                    self.spray_lock_change = match self.spray_lock_change {
+                        Some(true) => None,
+                        _ => Some(false),
+                    };
+                }
+                (1, SprayMode::Closing) => st.mode = SprayMode::Tracking,
+                (-1, SprayMode::Tracking) => {
+                    if y[st.index] > 0. {
+                        st.mode = SprayMode::Closing;
+                    } else {
+                        y[st.index] = 0.;
+                        st.mode = SprayMode::Locked;
+                        self.spray_lock_change = Some(true);
+                    }
+                }
+                _ => {}
+            }
+            receipt["spray"] = json!({"spray_root":spray,"arrival_root":arrival,
+                "demand_pa":d,"spray_start_pa":c.master.spray_start_pa,
+                "stem_located":located,"stem_after":y[st.index],
+                "before":before.name(),"after":st.mode.name(),
+                "lock_change":self.spray_lock_change,
+                "stateChanged":before != st.mode});
+        }
+        Ok(Transaction {
+            deposits: Vec::new(),
+            receipt,
         })
     }
     /// The block's copyable discrete state (S5 snapshot, PLATFORM; S3-D19):
-    /// the heater demand in force and each bank's delivered power (a
-    /// control frame changes them, [`Pzr::apply_control`]), as exact IEEE
-    /// bits, and the relief's demand latch and motion (null without a
-    /// relief) — never coordinates or caches.
+    /// the held heater demand and each bank's delivered power (a control
+    /// frame changes them, [`Pzr::apply_control`]), as exact IEEE bits, or
+    /// under the continuous law (R4-PZR-CONTINUOUS) only that it is in force
+    /// (its demand is a function of the lag coordinate); and the relief's
+    /// demand latch and motion (null without a relief) — never coordinates
+    /// or caches.
     pub fn discrete_state(&self) -> serde_json::Value {
         let bits = |v: f64| format!("{:016x}", v.to_bits());
+        let relief = self.relief.map_or(serde_json::Value::Null, |r| {
+            let mut v = json!({"demand_open": r.demand_open, "motion": match r.motion {
+                ReliefMotion::Closed => "closed", ReliefMotion::Opening => "opening",
+                ReliefMotion::Open => "open", ReliefMotion::Closing => "closing",
+            }});
+            // HOOK (C4 lane): the declared malfunction, only once declared.
+            if r.stuck_open {
+                v["stuck_open"] = json!(true);
+            }
+            v
+        });
+        if self.control == Control::Continuous {
+            let spray = self
+                .spray_mode()
+                .map_or(serde_json::Value::Null, |m| json!(m.name()));
+            return json!({"heater_control": "continuous", "spray": spray, "relief": relief});
+        }
         json!({
             "heater_request_w": bits(self.request_w),
             "bank_power_w": self.bank_power_w.iter().map(|v| bits(*v)).collect::<Vec<_>>(),
-            "relief": self.relief.map_or(serde_json::Value::Null, |r| {
-                let mut v = json!({"demand_open": r.demand_open, "motion": match r.motion {
-                    ReliefMotion::Closed => "closed", ReliefMotion::Opening => "opening",
-                    ReliefMotion::Open => "open", ReliefMotion::Closing => "closing",
-                }});
-                // HOOK (C4 lane): the declared malfunction, only once declared.
-                if r.stuck_open {
-                    v["stuck_open"] = json!(true);
-                }
-                v
-            }),
+            "relief": relief,
         })
     }
     /// Restore [`Pzr::discrete_state`] exactly; any layout or key mismatch
-    /// refuses.
+    /// refuses, and so does the continuous form on a block without its
+    /// continuous control.
     pub fn restore_discrete_state(&mut self, state: &serde_json::Value) -> Result<(), Failure> {
-        let o = snapshot_object(
-            state,
-            "pzr",
-            &["heater_request_w", "bank_power_w", "relief"],
-        )?;
+        let continuous = state.get("heater_control").is_some();
+        let keys: &[&str] = if continuous {
+            &["heater_control", "spray", "relief"]
+        } else {
+            &["heater_request_w", "bank_power_w", "relief"]
+        };
+        let o = snapshot_object(state, "pzr", keys)?;
+        if continuous && (o["heater_control"] != json!("continuous") || self.continuous.is_none()) {
+            return Err(fatal(format!(
+                "snapshot: heater control {} on a block {} continuous control",
+                o["heater_control"],
+                if self.continuous.is_some() {
+                    "with"
+                } else {
+                    "without"
+                }
+            )));
+        }
         let bits = |v: &serde_json::Value| -> Result<f64, Failure> {
             v.as_str()
                 .filter(|h| h.len() == 16)
@@ -683,14 +1100,32 @@ impl Pzr {
                 .map(f64::from_bits)
                 .ok_or_else(|| fatal(format!("snapshot: PZR power {v}")))
         };
-        let request_w = bits(&o["heater_request_w"])?;
-        let banks = o["bank_power_w"]
-            .as_array()
-            .filter(|a| a.len() == self.bank_power_w.len())
-            .ok_or_else(|| fatal("snapshot: one power per heater bank"))?
-            .iter()
-            .map(bits)
-            .collect::<Result<Vec<f64>, Failure>>()?;
+        let spray = if continuous {
+            match (self.spray_mode(), &o["spray"]) {
+                (None, serde_json::Value::Null) => None,
+                (Some(_), v) if !v.is_null() => Some(SprayMode::parse(v)?),
+                (_, v) => {
+                    return Err(fatal(format!(
+                        "snapshot: spray stem mode {v} against the block's spray stem"
+                    )));
+                }
+            }
+        } else {
+            None
+        };
+        let held = if continuous {
+            None
+        } else {
+            let request_w = bits(&o["heater_request_w"])?;
+            let banks = o["bank_power_w"]
+                .as_array()
+                .filter(|a| a.len() == self.bank_power_w.len())
+                .ok_or_else(|| fatal("snapshot: one power per heater bank"))?
+                .iter()
+                .map(bits)
+                .collect::<Result<Vec<f64>, Failure>>()?;
+            Some((request_w, banks))
+        };
         match (self.relief.as_mut(), &o["relief"]) {
             (None, serde_json::Value::Null) => {}
             (Some(relief), v) if !v.is_null() => {
@@ -728,13 +1163,28 @@ impl Pzr {
                 )));
             }
         }
-        self.request_w = request_w;
-        self.bank_power_w = banks;
+        match held {
+            // The held demand of a continuous snapshot is not state: it is
+            // the composition's until a held form is restored.
+            None => self.control = Control::Continuous,
+            Some((request_w, banks)) => {
+                self.request_w = request_w;
+                self.bank_power_w = banks;
+                self.control = Control::Held;
+            }
+        }
+        // A held snapshot's stem rests locked (the held form has no spray).
+        if let Some(c) = self.continuous.as_mut()
+            && let Some(st) = c.stem.as_mut()
+        {
+            st.mode = spray.unwrap_or(SprayMode::Locked);
+        }
+        self.spray_lock_change = None;
         Ok(())
     }
-    /// The heater demand changes only at control frames
-    /// ([`Pzr::apply_control`]) and the relief answers its own demand: a
-    /// command changes nothing here.
+    /// The held heater demand changes only at control frames
+    /// ([`Pzr::apply_control`]), the continuous one only with the lag, and
+    /// the relief answers its own demand: a command changes nothing here.
     ///
     /// HOOK (C4 lane, for KERN/G6): [`super::block::Command::ReliefStuckOpen`]
     /// is the relief's own malfunction ([`Relief::stick_open`]); a block
@@ -759,10 +1209,15 @@ impl Pzr {
                     "stateChanged":true}),
             });
         }
+        let receipt = match self.control {
+            Control::Held => json!({"owner":"pzr","t_s":t,"command":command,
+                "heaterDemand_W":self.request_w,"note":"heater demand in force; it changes only at control frames"}),
+            Control::Continuous => json!({"owner":"pzr","t_s":t,"command":command,
+                "heaterDemand":"continuous","note":"the continuous pressure master on the PT1 channel lag and its integral (R4-PZR-PI)"}),
+        };
         Ok(Transaction {
             deposits: Vec::new(),
-            receipt: json!({"owner":"pzr","t_s":t,"command":command,
-                "heaterDemand_W":self.request_w,"note":"heater demand in force; it changes only at control frames"}),
+            receipt,
         })
     }
 }

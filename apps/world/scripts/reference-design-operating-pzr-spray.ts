@@ -5,7 +5,8 @@
  * checks and composes.
  *
  * - `ld01-pzr-spray-line`: source region, route elevations, length, bore,
- *   wall, roughness, stroke rate, inlet check;
+ *   wall, roughness, stroke rate, inlet check, and the valve passage's
+ *   low-Reynolds transition (R4-PZR-SPRAY-LAMINAR, judgement);
  * - `ld01-pzr-spray-port`: the distributor's aggregate effective area and
  *   the entry elevation, which must be the line's outlet;
  * - `reference-pressurizer-normal-thermal`: the valve's sizing point
@@ -37,7 +38,7 @@ export const pzrSprayOwners = {
 const positive = z.number().finite().positive()
 const lineSchema = z.object({ sourceRegion: z.string().min(1), inletElevation_m: z.number().finite(), outletElevation_m: z.number().finite(),
   developedLength_m: positive, insideDiameter_m: positive, wallThickness_m: positive, roughness_m: positive,
-  valveStrokesPerSecond: positive, inletCheck: z.literal('ideal-one-way') }).strict()
+  valveStrokesPerSecond: positive, inletCheck: z.literal('ideal-one-way'), valveLowReynoldsTransition: positive }).strict()
 const sizingSchema = z.object({ sprayReferenceFlow_kg_s: positive, sprayReferenceDifferential_Pa: positive,
   sprayLength_m: positive, sprayInsideDiameter_m: positive, sprayWallThickness_m: positive }).passthrough()
 const densitySchema = z.object({ sourceDensity_kg_m3: positive }).passthrough()
@@ -76,7 +77,7 @@ export function compileOperatingPzrSpray(pages: PzrSprayPages) {
       wallThickness_m: line.wallThickness_m, roughness_m: line.roughness_m, wall: 'circular_churchill' as const },
     halves,
     valve: { face: halves[0]!.face, fullEffectiveArea_m2: valveFull, fullOpenFormLoss: (area / valveFull) ** 2,
-      strokesPerSecond: line.valveStrokesPerSecond, inletCheck: line.inletCheck,
+      strokesPerSecond: line.valveStrokesPerSecond, inletCheck: line.inletCheck, lowReynoldsTransition: line.valveLowReynoldsTransition,
       sizing: { flow_kg_s: sizing.sprayReferenceFlow_kg_s, differential_Pa: sizing.sprayReferenceDifferential_Pa, density_kg_m3: rho } },
     distributor: { face: halves[1]!.face, aggregateEffectiveArea_m2: port.aggregateEffectiveArea_m2, elevation_m: port.elevation_m, formLoss: distributorLoss },
   }

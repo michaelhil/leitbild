@@ -2,8 +2,9 @@
  * `ld01-unit` child loads: the joined packet (mechanics regions and faces, the PZR cell and its ports, the SG
  * segments and secondaries, the fission source's regions, the pumps' hydraulic sections, the rod clusters), the
  * IC section (instrument families and their channels, the protection functions, the holding chain) and the ELEC
- * packet (the turbine-generator, the RCP supply consumers). Every component, link, reading and limit comes from
- * them: regions become coolant volumes, the source's regions one core, each SG's primary region a steam
+ * packet (the turbine-generator, the supply consumers), and with a section declaring the DC groups the wiki's
+ * `ld01-dc-charging` block, which ld01-unit reads too (the charger inputs a person may select). Every component,
+ * link, reading and limit comes from them: regions become coolant volumes, the source's regions one core, each SG's primary region a steam
  * generator, each pump section a pump, the PZR cell a pressurizer; a loop is the regions that lie on a cycle
  * through one SG and no other. Nothing is drawn by hand and nothing lays a Plant out.
  *
@@ -17,6 +18,7 @@ import { join } from 'node:path'
 import { z } from 'zod'
 import { compilePlantGraph, processPlantComponentRegistry, type PlantGraphSpec, type ProcessUnit } from '../src/packs/process-plant/graph/index.ts'
 import { convertLd01Value, ld01ConversionExists, type Ld01Command, type Ld01TagMap } from '../src/packs/process-plant/engine/tag-map.ts'
+import { configurationBlock } from './reference-design-source-laws'
 
 const finite = z.number().finite()
 const index = z.number().int().nonnegative()
@@ -70,6 +72,8 @@ const icSchema = z.object({
       z.object({ cvcs_flow: z.object({ branch: z.string().min(1) }).strict() }).strict(),
       z.object({ bank_position: z.object({ normal_travel_m: finite.positive() }).strict() }).strict(),
       z.object({ stop_valve_position: z.object({ stop_travel_s: finite.positive() }).strict() }).strict(),
+      // PHYS2: only in a section declaring the governor.
+      z.literal('admission_position'),
       z.object({ sg_pressure: z.object({ sg: z.string().min(1) }).strict() }).strict(),
       z.object({ sg_flow_lag: z.object({ sg: z.string().min(1), flow: z.enum(['steam', 'feed']), nominal_kg_s: finite.positive() }).strict() }).strict(),
       z.object({ vessel_dp: z.object({ taps: z.array(z.object({}).passthrough()).min(1) }).strict() }).strict(),
@@ -85,8 +89,16 @@ const icSchema = z.object({
     z.object({ source_available: z.object({ source: z.enum(['unit', 'reserve']) }).strict() }).strict(),
     z.object({ source_qualified: z.object({ source: z.enum(['unit', 'reserve']) }).strict() }).strict(),
     z.object({ incoming_closed: z.object({ bus: z.string().min(1), source: z.enum(['unit', 'reserve']) }).strict() }).strict(),
-    z.object({ incoming_travel_complete: z.object({ bus: z.string().min(1), source: z.enum(['unit', 'reserve']) }).strict() }).strict()]),
+    z.object({ incoming_travel_complete: z.object({ bus: z.string().min(1), source: z.enum(['unit', 'reserve']) }).strict() }).strict(),
+    // PROC T5, ELEC's report-only DC groups: only in a section declaring them.
+    z.object({ dc_output: z.object({ group: z.string().min(1) }).strict() }).strict(),
+    z.object({ dc_charger: z.object({ group: z.string().min(1) }).strict() }).strict(),
+    z.object({ dc_battery: z.object({ group: z.string().min(1) }).strict() }).strict(),
+    z.object({ dc_cause: z.object({ group: z.string().min(1), cause: z.enum(['Overload', 'InsufficientSupply', 'OutputFailure']) }).strict() }).strict()]),
     supply: z.string().min(1) }).passthrough()),
+  // PROC T5's labelled engineering values: for a person's judgement, no criterion reads them.
+  engineering: z.array(z.object({ id: z.string().min(1), group: z.string().min(1), field: z.enum(['requested_w', 'delivered_w', 'energy_j', 'depletion_s']), unit: z.string().min(1), label: z.string().min(1) }).strict()).default([]),
+  dc: z.object({ declared: z.boolean() }).passthrough().optional(),
   functions: z.array(z.object({
     id: z.string().min(1),
     rule: z.record(z.string(), z.object({ family: z.string().min(1).optional(), side: side.optional() }).passthrough()),
@@ -98,6 +110,11 @@ const icSchema = z.object({
     contacts: z.array(z.string().min(1)),
   }).passthrough(),
 }).passthrough()
+
+/** `ld01-dc-charging`: each DC group's normal charging bus, and the alternate a person may select. */
+const dcChargingSchema = z.record(z.string().min(1), z.object({ normal: z.string().min(1), alternate: z.string().min(1).optional() }).strict())
+type DcCharging = z.infer<typeof dcChargingSchema>
+export const parseDcCharging = (dcPage: string): DcCharging => dcChargingSchema.parse(configurationBlock(dcPage, 'ld01-dc-charging'))
 
 const elecSchema = z.object({
   distribution: z.object({ consumers: z.record(z.string().min(1), z.string().min(1)) }).passthrough(),
@@ -163,6 +180,7 @@ const sgOfLevel = (quantity: Family['quantity']): string | null =>
 const familyReading = (family: Family): Omit<Reading, 'path' | 'channel' | 'tagId' | 'limits' | 'label'> & { readonly label: (suffix: string) => string } => {
   const quantity = family.quantity
   if (quantity === 'pzr_roof_pressure') return { kind: 'derived', discipline: 'thermal', quantity: 'pressure', unit: 'MPa', channelUnit: 'Pa', label: suffix => `Pressurizer pressure channel ${suffix}` }
+  if (quantity === 'admission_position') return { kind: 'derived', discipline: 'control', quantity: 'ratio', unit: 'percent', measurand: 'position', channelUnit: '%', label: () => 'Turbine admission valve position channel' }
   if ('pzr_level' in quantity) return { kind: 'derived', discipline: 'hydraulic', quantity: 'length', unit: 'm', channelUnit: 'm', label: suffix => `Pressurizer level channel ${suffix}` }
   const sg = sgOfLevel(quantity)
   if (sg !== null) return { kind: 'derived', discipline: 'hydraulic', quantity: 'length', unit: 'm', channelUnit: 'm', label: suffix => `SG ${sg} narrow-range level channel ${suffix}` }
@@ -191,7 +209,9 @@ const familyReadings = (ic: Ic, family: Family): ReadonlyArray<Reading> => {
     const suffix = typeof family.quantity === 'object' && 'cvcs_flow' in family.quantity ? channel.id.split('.').at(-2)!
       // An SG's steam and feed FTs (LD01.SG.A.FT.STEAM, LD01.FW.A.FT) read on the SG by flow.
       : typeof family.quantity === 'object' && 'sg_flow_lag' in family.quantity ? (family.quantity.sg_flow_lag.flow === 'steam' ? 'FT_STEAM' : 'FW_FT')
-        : lastSegment(channel.id)
+        // ADM's and the STOP's positions (LD01.TG.ADM.POS, LD01.TG.STOP.POS) share their last segment and read on one equipment.
+        : family.quantity === 'admission_position' ? 'ADM_POS'
+          : lastSegment(channel.id)
     const { label, ...rest } = shape
     return [
       { ...rest, path: suffix, label: label(suffix), channel: channel.id, tagId: channel.id, ...(limits === undefined ? {} : { limits }),
@@ -231,7 +251,7 @@ export interface OperatingGraph {
   readonly scope: ReadonlyArray<string>
 }
 
-export const compileOperatingGraph = (input: { readonly packet: unknown; readonly ic: unknown; readonly elec: unknown; readonly sha8: string }): OperatingGraph => {
+export const compileOperatingGraph = (input: { readonly packet: unknown; readonly ic: unknown; readonly elec: unknown; readonly sha8: string; readonly dcCharging?: DcCharging }): OperatingGraph => {
   const packet: Packet = packetSchema.parse(input.packet)
   const ic: Ic = icSchema.parse(input.ic)
   const elec: Elec = elecSchema.parse(input.elec)
@@ -322,8 +342,8 @@ export const compileOperatingGraph = (input: { readonly packet: unknown; readonl
   const pzr = at(regionId(cell.index))
   for (const family of ic.families) {
     const quantity = family.quantity
-    // The STOP's position reads on the turbine-generator, placed with it below.
-    if (typeof quantity === 'object' && 'stop_valve_position' in quantity) continue
+    // The STOP's and ADM's positions read on the turbine-generator, placed with it below.
+    if (quantity === 'admission_position' || (typeof quantity === 'object' && 'stop_valve_position' in quantity)) continue
     const owner = quantity === 'pzr_roof_pressure' || 'pzr_level' in quantity ? pzr
       : sgOfLevel(quantity) !== null ? at(regionId(sgBySecondary.get(sgOfLevel(quantity)!) ?? Number.NaN))
         : 'loop_flow' in quantity ? at(componentOf(packet.mechanics.faces[quantity.loop_flow.face]!.from))
@@ -434,19 +454,24 @@ export const compileOperatingGraph = (input: { readonly packet: unknown; readonl
     keyValues: ['terminalPower', 'shaftSpeed'],
   }
   for (const family of ic.families) {
-    if (typeof family.quantity === 'object' && 'stop_valve_position' in family.quantity) turbine.readings.push(...familyReadings(ic, family))
+    if (family.quantity === 'admission_position' || (typeof family.quantity === 'object' && 'stop_valve_position' in family.quantity)) turbine.readings.push(...familyReadings(ic, family))
   }
   equipment.set(turbine.id, turbine)
   // The IC section's state reports (ld01-unit.rs reads each as a 0/1 channel and its quality): the turbine's
   // retained-trip report on the turbine-generator, the complete-bank inserted report on the core.
-  // PHYS2's electrical reports (the AC routing's state) read on the turbine-generator, beside its offsite-connection
-  // reading: the graph has no distribution equipment; each keeps its own tag id.
+  // PHYS2's electrical reports (the AC routing's and the report-only DC groups' state) read on the turbine-generator,
+  // beside its offsite-connection reading: the graph has no distribution equipment; each keeps its own tag id.
+  const dcLabel = (group: string): string => `DC group ${group.replace(/^LD01\.DC\./, '')}`
   const electricalLabel = (source: Exclude<Ic['reports'][number]['source'], string>): string =>
     'bus_available' in source ? `Bus ${source.bus_available.bus} available report`
       : 'source_available' in source ? `${source.source_available.source === 'unit' ? 'Unit' : 'Reserve'} source available report`
         : 'source_qualified' in source ? `${source.source_qualified.source === 'unit' ? 'Unit' : 'Reserve'} source qualified report`
           : 'incoming_closed' in source ? `Bus ${source.incoming_closed.bus} ${source.incoming_closed.source} incoming breaker closed report`
-            : `Bus ${source.incoming_travel_complete.bus} ${source.incoming_travel_complete.source} incoming breaker travel complete report`
+            : 'incoming_travel_complete' in source ? `Bus ${source.incoming_travel_complete.bus} ${source.incoming_travel_complete.source} incoming breaker travel complete report`
+              : 'dc_output' in source ? `${dcLabel(source.dc_output.group)} output available report`
+                : 'dc_charger' in source ? `${dcLabel(source.dc_charger.group)} charger delivering report`
+                  : 'dc_battery' in source ? `${dcLabel(source.dc_battery.group)} battery available report`
+                    : `${dcLabel(source.dc_cause.group)} opening cause ${source.dc_cause.cause} report`
   for (const report of ic.reports) {
     const electrical = typeof report.source === 'object'
     const owner = report.source === 'turbine_retained_trip' || electrical ? turbine : coreEquipment
@@ -457,6 +482,43 @@ export const compileOperatingGraph = (input: { readonly packet: unknown; readonl
       { ...reading(suffix, `${label} (supply ${report.supply})`, 'discrete', electrical ? 'electrical' : 'control', 'boolean', 'boolean', report.id, '1'), tagId: report.id },
       reading(`${suffix}.quality`, `${label} sample quality`, 'discrete', 'control', 'count', 'count', `${report.id}.QUALITY`, '1'),
     )
+  }
+
+  // PROC T5's engineering values, labelled estimates and indications: no criterion reads them, and each keeps its tag id.
+  const engineeringUnits = { W: ['power', 'kW'], J: ['energy', 'MJ'], s: ['time', 's'] } as const satisfies Record<string, readonly [string, ProcessUnit]>
+  for (const value of ic.engineering) {
+    const units = engineeringUnits[value.unit as keyof typeof engineeringUnits]
+    if (units === undefined) throw new Error(`${value.id}: the graph reads no engineering value in ${value.unit}`)
+    turbine.readings.push({ ...reading(value.id.replace(/^LD01\./, '').split('.').join('-'), `${dcLabel(value.group)}: ${value.label}`, 'derived', 'electrical', units[0], units[1], value.id, value.unit), tagId: value.id })
+  }
+  // The operator's local electrical commands (PROC T4, T11, T5): each incoming device the section reports, each supply
+  // consumer, and each DC group's OPEN, RESET and CLOSE, RESET and CLOSE separate; the selectable charger inputs from `ld01-dc-charging`.
+  const momentary = (path: string, label: string, command: Ld01Command): Command => ({ path, label, actuation: 'command', command, momentary: true })
+  for (const report of ic.reports) {
+    if (typeof report.source !== 'object' || !('incoming_closed' in report.source)) continue
+    const { bus, source } = report.source.incoming_closed
+    for (const [verb, target] of [['open', 'Open'], ['close', 'Closed']] as const) {
+      turbine.commands.push(momentary(`incoming.${bus}.${source}.${verb}`, `${verb === 'open' ? 'Open' : 'Close'} bus ${bus} ${source} incoming breaker`, { kind: 'IncomingDevice', bus, source, target }))
+    }
+  }
+  for (const consumer of Object.keys(elec.distribution.consumers)) {
+    turbine.commands.push(momentary(`start.${consumer}`, `Start ${consumer}`, { kind: 'StartConsumer', consumer }))
+  }
+  if (ic.dc?.declared === true) {
+    if (input.dcCharging === undefined) throw new Error('The section declares the DC groups: the graph needs their ld01-dc-charging block')
+    const groups = [...new Set(ic.reports.flatMap(report => typeof report.source === 'object' && 'dc_output' in report.source ? [report.source.dc_output.group] : []))]
+    for (const group of groups) {
+      const charging = input.dcCharging[group]
+      if (charging === undefined) throw new Error(`${group} has no ld01-dc-charging record`)
+      for (const [verb, action] of [['open', 'Open'], ['reset', 'Reset'], ['close', 'Close']] as const) {
+        turbine.commands.push(momentary(`dc.${group}.${verb}`, `${dcLabel(group)} distribution ${action.toUpperCase()}`, { kind: 'DcDistribution', group, action }))
+      }
+      if (charging.alternate !== undefined) {
+        for (const bus of [charging.normal, charging.alternate]) {
+          turbine.commands.push(momentary(`dc.${group}.charger.${bus}`, `${dcLabel(group)} charger input ${bus}`, { kind: 'DcChargerInput', group, bus }))
+        }
+      }
+    }
   }
 
   // The protection: each function's latch, each division's trip and supply, the permissive contacts, the holding voltage, the requests.
@@ -614,12 +676,13 @@ const sha256 = (bytes: string | Uint8Array): string => createHash('sha256').upda
 
 if (import.meta.main) {
   const [packetPath, icPath, elecPath, outputDirectory, ...rest] = Bun.argv.slice(2)
-  if (!packetPath || !icPath || !elecPath || !outputDirectory || rest.length > 0) {
-    throw new Error('Usage: reference-design-operating-graph <joined packet> <ic section> <elec packet> <new output directory>')
+  if (!packetPath || !icPath || !elecPath || !outputDirectory || rest.length > 1) {
+    throw new Error('Usage: reference-design-operating-graph <joined packet> <ic section> <elec packet> <new output directory> [<DC page, with a section declaring the DC groups>]')
   }
+  const dcPage = rest[0] === undefined ? undefined : readFileSync(rest[0], 'utf8')
   const [packetText, icText, elecText] = [packetPath, icPath, elecPath].map(path => readFileSync(path, 'utf8')) as [string, string, string]
-  const sources = { packet: sha256(packetText), ic: sha256(icText), elec: sha256(elecText) }
-  const compiled = compileOperatingGraph({ packet: JSON.parse(packetText), ic: JSON.parse(icText), elec: JSON.parse(elecText), sha8: sha256(JSON.stringify(sources)).slice(0, 8) })
+  const sources = { packet: sha256(packetText), ic: sha256(icText), elec: sha256(elecText), ...(dcPage === undefined ? {} : { dcPage: sha256(dcPage) }) }
+  const compiled = compileOperatingGraph({ packet: JSON.parse(packetText), ic: JSON.parse(icText), elec: JSON.parse(elecText), sha8: sha256(JSON.stringify(sources)).slice(0, 8), ...(dcPage === undefined ? {} : { dcCharging: parseDcCharging(dcPage) }) })
   const text = `${JSON.stringify({ format: 'ld01-plant-graph', sources, scope: compiled.scope, graph: compiled.graph, tagMap: compiled.tagMap, automation: compiled.automation }, null, 1)}\n`
   if (existsSync(outputDirectory)) throw new Error(`${outputDirectory} exists: the compiler writes only into a new directory`)
   mkdirSync(outputDirectory, { recursive: true })
@@ -630,6 +693,7 @@ if (import.meta.main) {
     `packet ${sources.packet} ${packetPath}`,
     `ic ${sources.ic} ${icPath}`,
     `elec ${sources.elec} ${elecPath}`,
+    ...(rest[0] === undefined ? [] : [`dc page ${sources.dcPage} ${rest[0]}`]),
     `components ${compiled.graph.components.length} connections ${compiled.graph.connections.length} channels ${Object.keys(compiled.tagMap.channels).length} commands ${Object.keys(compiled.tagMap.commands).length}`,
     '',
   ].join('\n'))

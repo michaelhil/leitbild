@@ -84,6 +84,8 @@ fn joined_census_against_table_1_1() {
         &joined_packet.pzr_metal,
         SteelPreparation::Steady(joined_packet.pzr_steel.as_ref().expect("pzrSteel")),
         network.pzr_saturation_temperature_k(),
+        network_packet.preparation.operating_point.pzr_roof_pressure_pa,
+        network.spray().map(|s| s.stem.strokes_per_second()),
     )
     .expect("PZR owner");
     let p_ids = pzr.differential();

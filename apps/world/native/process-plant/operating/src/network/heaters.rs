@@ -804,17 +804,68 @@ impl Heaters {
     /// C_normal)` and `backup = max(P − C_normal, 0)`, in bank order. A
     /// request outside the range is rejected, not reinterpreted.
     pub fn bank_powers(&self, request_w: f64) -> Result<Vec<f64>, Failure> {
+        Ok(self
+            .bank_split(Scalar::constant(request_w))?
+            .iter()
+            .map(|p| p.value)
+            .collect())
+    }
+    /// [`Heaters::bank_powers`] on a request with its direction
+    /// (R4-PZR-CONTINUOUS: the continuous law's request is a function of
+    /// state): each bank's power and direction on the side of the split the
+    /// request lies on.
+    pub fn bank_split(&self, request: Scalar) -> Result<Vec<Scalar>, Failure> {
         let (normal, backup) = (self.bank("normal")?, self.bank("backup")?);
         let capacity = self.banks[normal].nominal_capacity_w;
         let total = capacity + self.banks[backup].nominal_capacity_w;
-        if self.banks.len() != 2 || !(request_w.is_finite() && (0. ..=total).contains(&request_w)) {
+        let request_w = request.value;
+        if self.banks.len() != 2
+            || !(request_w.is_finite()
+                && request.direction.is_finite()
+                && (0. ..=total).contains(&request_w))
+        {
             return Err(fatal(format!(
                 "heater request {request_w} W is outside its accepted range [0, {total}] W"
             )));
         }
-        let mut powers = vec![0.; 2];
-        powers[normal] = request_w.min(capacity);
-        powers[backup] = (request_w - capacity).max(0.);
+        let mut powers = vec![s(0.); 2];
+        if request_w <= capacity {
+            powers[normal] = request;
+        } else {
+            powers[normal] = s(capacity);
+            powers[backup] = request - s(capacity);
+        }
+        Ok(powers)
+    }
+    /// R4-PZR-PI: the continuous master's split of a request with its
+    /// direction, the selected split with its corner smoothed over
+    /// `width_w` (the lead's 30 kW, the request per PT1 quantum):
+    /// `normal = Cn − Cn softplus((Cn − P)/w)/softplus(Cn/w)` and
+    /// `backup = P − normal`. Zero request gives zero to both banks; the
+    /// normal bank rises monotonically within `[0, Cn]` and below `P`, so
+    /// neither bank is negative or above its capacity; away from the corner
+    /// it is `min(P, Cn)` (at 80 kW, 6.8 kW go
+    /// to the backup bank; at 400 kW the split is the selected
+    /// one to within 3 W).
+    pub fn smooth_bank_split(&self, request: Scalar, width_w: f64) -> Result<Vec<Scalar>, Failure> {
+        let (normal, backup) = (self.bank("normal")?, self.bank("backup")?);
+        let capacity = self.banks[normal].nominal_capacity_w;
+        let total = capacity + self.banks[backup].nominal_capacity_w;
+        let request_w = request.value;
+        if self.banks.len() != 2
+            || !(width_w.is_finite() && width_w > 0.)
+            || !(request_w.is_finite()
+                && request.direction.is_finite()
+                && (0. ..=total).contains(&request_w))
+        {
+            return Err(fatal(format!(
+                "heater request {request_w} W is outside its accepted range [0, {total}] W (split width {width_w} W)"
+            )));
+        }
+        let (n, b) = smooth_split(request, capacity, total, width_w);
+        let mut powers = vec![s(0.); 2];
+        powers[backup] = b;
+        powers[normal] = n;
         Ok(powers)
     }
 
@@ -1137,5 +1188,42 @@ impl Heaters {
             contacts,
             saturation_calls,
         })
+    }
+}
+
+/// R4-PZR-PI: [`Heaters::smooth_bank_split`]'s law on a request `p` with
+/// its direction, the normal bank's capacity `cn`, the installed total `c`
+/// and the corner width `w`: `(normal, backup)`.
+pub fn smooth_split(p: Scalar, cn: f64, _c: f64, w: f64) -> (Scalar, Scalar) {
+    use crate::control::cvcs::softplus;
+    let normal = s(cn) - s(cn) * softplus((s(cn) - p) / s(w)) / softplus(s(cn / w));
+    (normal, p - normal)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_smooth_split_is_exact_at_its_ends_and_the_split_away_from_its_corner() {
+        // R4-PZR-PI: 120 kW normal of 3 MW, the 30 kW corner.
+        let split = |p: f64| smooth_split(Scalar::new(p, 1.), 120e3, 3e6, 30e3);
+        let (n, b) = split(0.);
+        assert_eq!((n.value, b.value), (0., 0.));
+        let (n, b) = split(3e6);
+        assert!((n.value - 120e3).abs() < 1e-6 && (b.value - 2.88e6).abs() < 1e-6);
+        let mut last = 0.;
+        for p in [1e3, 56e3, 80e3, 119e3, 121e3, 500e3, 2.9e6] {
+            let (n, b) = split(p);
+            assert!(n.value >= last && n.value <= p && n.value <= 120e3, "{p}");
+            assert!(b.value >= 0. && b.value <= 2.88e6, "{p}");
+            assert!(((n + b).value - p).abs() < 1e-6, "{p}");
+            assert!(((n + b).direction - 1.).abs() < 1e-12, "{p}");
+            last = n.value;
+        }
+        // At 80 kW about 7 kW go to the backup bank; far above the corner
+        // the split is min(P, 120 kW).
+        assert!((split(80e3).1.value - 6.8e3).abs() < 0.1e3);
+        assert!((split(400e3).0.value - 120e3).abs() < 5.);
     }
 }

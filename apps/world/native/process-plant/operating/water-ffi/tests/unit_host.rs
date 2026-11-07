@@ -199,7 +199,9 @@ fn a_restored_copy_continues_bitwise_and_the_protocol_refuses_explicitly() {
             "elec": env("ELEC_PACKET"),
         },
         "state": env("LD01_S3_STATE"),
-        "solver": {"weights": "stock", "first_step": "declared", "stepping": stepping, "water": water},
+        "solver": {"weights": "stock", "first_step": "declared", "stepping": stepping, "water": water,
+            // R4-NUC-SOURCE-ATOL: LD01_S3_SOURCE_ATOL (unset: derived), a required LOAD key.
+            "source_atol": std::env::var("LD01_S3_SOURCE_ATOL").unwrap_or_else(|_| "derived".into())},
     });
     let started = Instant::now();
     let mut refusals = serde_json::Map::new();
@@ -239,18 +241,100 @@ fn a_restored_copy_continues_bitwise_and_the_protocol_refuses_explicitly() {
         "PZR control mode".into(),
         json!(a.refused(COMMAND, &serde_json::to_vec(&mode).unwrap())),
     );
+    // PROC T4, T5, T11: a name the unit does not hold, a wrong key and a time
+    // that is not the unit's are refused, change nothing and stop nothing.
+    for (name, command, expected) in [
+        (
+            "no such bus",
+            json!({"kind": "IncomingDevice", "t_apply": t0, "bus": "AC.X", "source": "unit", "target": "Open"}),
+            "no bus AC.X",
+        ),
+        (
+            "no such consumer",
+            json!({"kind": "StartConsumer", "t_apply": t0, "consumer": "LD01.P.X"}),
+            "no consumer LD01.P.X",
+        ),
+        (
+            "no such DC group",
+            json!({"kind": "DcDistribution", "t_apply": t0, "group": "LD01.DC.X", "action": "Open"}),
+            "no DC group",
+        ),
+        (
+            "an unknown action",
+            json!({"kind": "DcDistribution", "t_apply": t0, "group": "LD01.DC.I1", "action": "Trip"}),
+            "Open, Reset or Close",
+        ),
+        (
+            "an extra key",
+            json!({"kind": "StartConsumer", "t_apply": t0, "consumer": "LD01.P.A1", "rotor": 0}),
+            "has keys",
+        ),
+        (
+            "not the unit's time",
+            json!({"kind": "StartConsumer", "t_apply": t0 + 1., "consumer": "LD01.P.A1"}),
+            "decided at the unit's time",
+        ),
+    ] {
+        let cause = a.refused(COMMAND, &serde_json::to_vec(&command).unwrap());
+        assert!(cause.contains(expected), "{name}: {cause}");
+        refusals.insert(format!("operator command: {name}"), json!(cause));
+    }
     refusals.insert(
         "ADVANCE behind the unit".into(),
         json!(a.refused(ADVANCE, &t0.to_le_bytes())),
     );
-    let trip = json!({"kind": "TurbineTripAcquired", "t_apply": instant(10)});
+    // R4-DUMP (WORLD4's review 2): LD01_UNIT_HOST_COMMAND=<kind>@<exchange>
+    // names the trip before the copy point, TurbineTripAcquired or
+    // ManualReactorTrip; unset, the acquired turbine trip at exchange 10.
+    // Any other form refuses.
+    let (trip_kind, trip_at) = match std::env::var("LD01_UNIT_HOST_COMMAND") {
+        Err(_) => ("TurbineTripAcquired".to_string(), 10_u64),
+        Ok(v) => {
+            let (kind, at) = v
+                .split_once('@')
+                .unwrap_or_else(|| panic!("LD01_UNIT_HOST_COMMAND={v}: <kind>@<exchange>"));
+            assert!(
+                ["TurbineTripAcquired", "ManualReactorTrip"].contains(&kind),
+                "LD01_UNIT_HOST_COMMAND={v}: TurbineTripAcquired or ManualReactorTrip"
+            );
+            let at: u64 = at
+                .parse()
+                .unwrap_or_else(|_| panic!("LD01_UNIT_HOST_COMMAND={v}: a whole exchange"));
+            assert!(
+                at >= 1 && at < copy_at,
+                "LD01_UNIT_HOST_COMMAND={v}: the trip lies before the copy point"
+            );
+            (kind.to_string(), at)
+        }
+    };
+    let trip = json!({"kind": trip_kind, "t_apply": instant(trip_at)});
     let applied = a.json(COMMAND, &serde_json::to_vec(&trip).unwrap());
+    // ECA0: LD01_UNIT_HOST_OPERATOR, a JSON array of [exchange, command,
+    // accepted]: operator commands applied at the unit's time after that
+    // exchange, before the copy point, so the copy carries what they left.
+    let operator: Vec<(u64, Value, bool)> =
+        std::env::var("LD01_UNIT_HOST_OPERATOR").map_or(Vec::new(), |v| {
+            serde_json::from_str(&v)
+                .expect("LD01_UNIT_HOST_OPERATOR: [[exchange, command, accepted], ...]")
+        });
+    assert!(
+        operator.iter().all(|(at, ..)| *at >= 1 && *at < copy_at),
+        "LD01_UNIT_HOST_OPERATOR: every command lies before the copy point"
+    );
+    let mut operated = Vec::new();
     let mut trace = Vec::new();
     let mut a_cpu = 0.;
     for k in 1..=copy_at {
         let (p, cpu) = advance(&mut a, instant(k));
         a_cpu += cpu;
         let f = frame(&p);
+        for (_, command, accepted) in operator.iter().filter(|(at, ..)| *at == k) {
+            let mut command = command.clone();
+            command["t_apply"] = json!(f.t);
+            let reply = a.json(COMMAND, &serde_json::to_vec(&command).unwrap());
+            assert_eq!(reply["accepted"], json!(accepted), "{command}: {reply}");
+            operated.push(json!({"exchange": k, "command": command, "reply": reply}));
+        }
         if k % 10 == 0 || !f.events.is_null() {
             trace.push(json!({"t": f.t, "values": ids.iter().zip(&f.values)
                 .filter(|(id, _)| ["LD01.CORE.RELEASED_POWER", "LD01.PZR.PRESSURE", "LD01.SG.A.PRESSURE", "LD01.TRIP.HOLD.AVAILABLE", "LD01.TG.GEN.WT"].contains(&id.as_str()))
@@ -358,7 +442,7 @@ fn a_restored_copy_continues_bitwise_and_the_protocol_refuses_explicitly() {
     let sha = |b: &[u8]| leitbild_operating_plant::digest::sha256(b);
     let receipt = json!({
         "gate": "ld01-unit bitwise copy and protocol conformance (NOT-EVIDENCE)",
-        "t0": t0, "copy_exchange": copy_at, "copy_point": instant(copy_at), "end": instant(end), "trip": applied,
+        "t0": t0, "copy_exchange": copy_at, "copy_point": instant(copy_at), "end": instant(end), "trip": applied, "trip_command": {"kind": trip_kind, "exchange": trip_at},
         "a_failed": a_failed.as_ref().map(|(k, c)| json!({"exchange": k, "t1": instant(*k), "cause": c})),
         "b_failed": b_failed.as_ref().map(|(k, c)| json!({"exchange": k, "t1": instant(*k), "cause": c})),
         "failures_identical": a_failed == b_failed,
@@ -373,7 +457,7 @@ fn a_restored_copy_continues_bitwise_and_the_protocol_refuses_explicitly() {
         "channels": ids.len(),
         "cpu_s": {"a_advance": a_cpu, "a_copy_point": copy_cpu, "b_restore": restore_cpu, "b_advance": b_cpu},
         "wall_s": started.elapsed().as_secs_f64(),
-        "a_status": a_status, "refusals": refusals, "trace_to_copy_point": trace,
+        "a_status": a_status, "refusals": refusals, "operated": operated, "trace_to_copy_point": trace,
         "load": load,
     });
     std::fs::write(

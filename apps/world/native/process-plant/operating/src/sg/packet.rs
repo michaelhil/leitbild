@@ -313,11 +313,38 @@ pub struct Bypass {
     pub band_width_pa: f64,
     #[serde(rename = "fractionOfNominalSteam")]
     pub fraction_of_nominal_steam: f64,
+    /// R4-DUMP: the Tavg mode's input, the CVCS's loop-average lag.
+    #[serde(rename = "tavgInput")]
+    pub tavg_input: TavgInput,
+    /// R4-DUMP: the Tavg demand's dead band and band width (judgement).
+    #[serde(rename = "tavgDeadBand_K")]
+    pub tavg_dead_band_k: f64,
+    #[serde(rename = "tavgBandWidth_K")]
+    pub tavg_band_width_k: f64,
+    /// R4-DUMP: the mode with no RCP supplied.
+    #[serde(rename = "withoutForcedCirculation")]
+    pub without_forced_circulation: PressureMode,
 }
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
 pub enum BypassMode {
-    /// The no-load pressure mode from the turbine trip on; closed before it
+    /// R4-DUMP (owner 1 Nov; arming, lead's judgement 7 Nov): with forced
+    /// circulation, the Tavg mode from the later of the reactor trip and the
+    /// turbine trip on, on the no-load average temperature; closed before it
     /// (the at-power band does not open at the full-power header).
+    #[serde(rename = "noLoadTavgAfterReactorAndTurbineTrip")]
+    NoLoadTavgAfterReactorAndTurbineTrip,
+}
+/// R4-DUMP: the Tavg mode's input channel.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+pub enum TavgInput {
+    /// The CVCS's loop-average lag (`ld01-cvcs` loopAverageInput, 1 s).
+    #[serde(rename = "cvcsLoopAverageLag")]
+    CvcsLoopAverageLag,
+}
+/// R12-B1: the no-load pressure mode, without forced circulation.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+pub enum PressureMode {
+    /// The no-load pressure mode from the turbine trip on; closed before it.
     #[serde(rename = "noLoadPressureAfterTurbineTrip")]
     NoLoadPressureAfterTurbineTrip,
 }

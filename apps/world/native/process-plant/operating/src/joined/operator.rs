@@ -311,6 +311,25 @@ fn view<'a>(
     )
 }
 
+/// R4-DUMP: the CVCS's loop-average lag (`CVCS.TAVG.lag`, physical K) and
+/// its seed direction as the secondary owner's trial input, set before every
+/// evaluation of its rows or roots; nothing without both owners.
+fn set_loop_average<P>(
+    secondary: &mut SecondaryPort<P>,
+    cvcs: &Option<Cvcs>,
+    o: Offsets,
+    scales: &[Scales; 6],
+    y: &[f64],
+    seed: Option<&[f64]>,
+) -> Result<(), Failure> {
+    if let (SecondaryPort::Owner(b), Some(_)) = (secondary, cvcs) {
+        let j = o.cvcs + cvcs::TAVG;
+        let scale = scales[5].coordinates[cvcs::TAVG];
+        b.set_loop_average(y[j] * scale, seed.map_or(0., |d| d[j]) * scale)?;
+    }
+    Ok(())
+}
+
 /// Coordinate and row scales of one block, copied once at composition so a
 /// coordinate view never borrows the block it is handed to.
 #[derive(Clone, Debug, Default)]
@@ -335,7 +354,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
         network_packet: &NetworkPacket,
         packet: &Packet,
         properties: P,
-        secondary: SecondaryPort<P>,
+        mut secondary: SecondaryPort<P>,
         rods: RodPort<P>,
     ) -> Result<Self, Failure> {
         let cells = network.cell_layout.len();
@@ -392,6 +411,13 @@ impl<P: Properties + WaterProperties> Joined<P> {
                 fatal("the PZR owner's pzrMetal section needs its steady steel (pzrSteel, S3-D36)")
             })?),
             network.pzr_saturation_temperature_k(),
+            network_packet
+                .preparation
+                .operating_point
+                .pzr_roof_pressure_pa,
+            // R4-PZR-PI (S-b): with the spray path the continuous master
+            // owns the stem, at the valve's stroke rate.
+            network.spray().map(|s| s.stem.strokes_per_second()),
         )?;
         let pzr_len = pzr.layout().len();
         // Plan r4 X4.2: the CVCS owner, when the packet composes it.
@@ -410,6 +436,13 @@ impl<P: Properties + WaterProperties> Joined<P> {
             })
             .transpose()?;
         let cvcs_len = cvcs.as_ref().map_or(0, |b| b.layout().len());
+        // R4-DUMP: the CVCS's loop-average lag is the post-trip Tavg mode's
+        // channel; without it the secondary refuses at the reactor trip.
+        if let (SecondaryPort::Owner(b), Some(_)) = (&mut secondary, &cvcs)
+            && !b.loop_average_rows().is_empty()
+        {
+            b.declare_loop_average()?;
+        }
         let mut cvcs_reads = vec![false; cells];
         for c in cvcs.iter().flat_map(|b| b.read_cells()) {
             cvcs_reads[c] = true;
@@ -729,11 +762,13 @@ impl<P: Properties + WaterProperties> Joined<P> {
         let Blocks {
             properties,
             secondary,
+            cvcs,
             heats,
             scales,
             secondary_rows,
             ..
         } = &mut self.blocks;
+        set_loop_average(secondary, cvcs, o, scales, y, None)?;
         let SecondaryPort::Owner(b) = secondary else {
             return Err(fatal("an admission column without a secondary owner"));
         };
@@ -762,6 +797,26 @@ impl<P: Properties + WaterProperties> Joined<P> {
             RodPort::Owner(b) => Some(b.as_mut()),
             RodPort::Prepared(_) => None,
         }
+    }
+    /// R4-RESTART-EQUATION-CHANGE (lead 1 Nov 2026, on S3-D41's principle):
+    /// the owners that report which equation an algebraic row carries, each
+    /// with its mode key, in a fixed composition order. A restart at which a
+    /// key changes (a mode transition that changes a row's equation) takes
+    /// the transaction class's passes. Only owners that declare it report:
+    /// today the spray path, whose valve restriction row is the lock row
+    /// while the valve or its inlet check is closed (`closed`,
+    /// `check_closed`; the stem and the port's L1 locks are not keys here).
+    pub fn equation_modes(&self) -> Vec<(&'static str, serde_json::Value)> {
+        self.network
+            .spray_discrete_state()
+            .map(|s| {
+                (
+                    "network/spray path",
+                    serde_json::json!({"closed": s.closed, "check_closed": s.check_closed}),
+                )
+            })
+            .into_iter()
+            .collect()
     }
     /// The PZR metal and relief owner (G6).
     pub fn pzr(&self) -> &Pzr {
@@ -1071,6 +1126,16 @@ impl<P: Properties + WaterProperties> Joined<P> {
             return Err(fatal("stage length"));
         }
         self.blocks.pre_network(y, yp, seed, cj)?;
+        // R4-PZR-PI (S-b): the continuous spray stem's opening, with this
+        // evaluation's direction, for the valve's restriction row.
+        if self.network.spray_continuous()
+            && let Some(k) = self.blocks.pzr.stem_coordinate()
+        {
+            let i = o.pzr + k;
+            let scale = self.blocks.pzr.layout().scales[k];
+            self.network
+                .set_spray_opening(Scalar::new(y[i] * scale, seed.map_or(0., |d| d[i] * scale)));
+        }
         // The rod owner's moving volumes; a prepared pose lists none, so every
         // cell keeps its compiled volume. Taken out for the call, so the
         // coupling may borrow the blocks while the network reads them.
@@ -1390,6 +1455,14 @@ impl<P: Properties + WaterProperties> Joined<P> {
         if let Some(b) = self.cvcs() {
             b.roots(&self.cvcs_state(y), &mut out[ns + nr + npzr..ns + nr + np])?;
         }
+        set_loop_average(
+            &mut self.blocks.secondary,
+            &self.blocks.cvcs,
+            o,
+            &self.blocks.scales,
+            y,
+            None,
+        )?;
         if let SecondaryPort::Owner(b) = &mut self.blocks.secondary {
             let x = view(
                 y,
@@ -1490,6 +1563,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
         }
         let (mut pzr_x, roof) = self.pzr_state(y);
         let mut done = Vec::new();
+        let mut spray_lock = None;
         let b = &mut self.blocks;
         if let SecondaryPort::Owner(owner) = &mut b.secondary
             && directions[..ns].iter().any(|d| *d != 0)
@@ -1537,6 +1611,11 @@ impl<P: Properties + WaterProperties> Joined<P> {
             for ((i, v), s) in (o.pzr..o.cvcs).zip(&pzr_x).zip(&b.scales[4].coordinates) {
                 y[i] = v / s;
             }
+            // R4-PZR-PI (S-b): the located spray lock change, put in the
+            // network's valve path after the inlet check's transaction
+            // below (the stem's arrival at 0 ends the valve's flow, so the
+            // check's contact root can be located at the same instant).
+            spray_lock = b.pzr.take_spray_lock_change();
         }
         // Plan r4 X4.2: the CVCS stops and AUTO withdrawals (no coordinate
         // moves).
@@ -1617,6 +1696,13 @@ impl<P: Properties + WaterProperties> Joined<P> {
                     receipt,
                 });
             }
+            if let Some(closed) = spray_lock.take() {
+                let receipt = self.network.set_spray_lock(t, closed)?;
+                done.push(super::block::Transaction {
+                    deposits: Vec::new(),
+                    receipt,
+                });
+            }
             // Every root transaction decides the port's paths, as L1 decides
             // all of its own (found at the transaction or at a located root).
             let tip = [directions[check + 1], directions[check + 2]];
@@ -1631,6 +1717,11 @@ impl<P: Properties + WaterProperties> Joined<P> {
                     });
                 }
             }
+        }
+        if spray_lock.is_some() {
+            return Err(fatal(
+                "a located spray lock change without the spray path's root slots",
+            ));
         }
         Ok(done)
     }
@@ -1897,6 +1988,15 @@ impl<P: Properties + WaterProperties> Joined<P> {
                 shaft: Shaft::Free,
             },
         );
+        // R4-DUMP: the post-trip bypass follows whether any RCP is supplied.
+        let forced = (0..self.network.rotor_count()).any(|r| {
+            self.network
+                .rotor_state(r)
+                .is_some_and(|s| matches!(s.support, Support::Supported(_)))
+        });
+        if let Some(b) = self.secondary_mut() {
+            b.set_forced_circulation(forced)?;
+        }
         Ok(super::block::Transaction {
             deposits: Vec::new(),
             receipt: serde_json::json!({"owner":"network","command":"SupplyLoss","rotor":rotor,"t_s":t,
@@ -1950,7 +2050,47 @@ impl<P: Properties + WaterProperties> Joined<P> {
                 receipt,
             });
         }
+        self.report_holding_opening(t, &mut done)?;
         Ok(done)
+    }
+    /// R4-DUMP (lead's ruling 4): every owner sees the reactor trip as one
+    /// event, the holding circuit's opening. When the rods open it by
+    /// another cause (a manual reactor trip's command, the S2 turbine trip's
+    /// declared delay), the secondary and the PZR block receive it as the
+    /// holding loss at that instant, once: the secondary's received reactor
+    /// trip records it. The acquired protection's holding loss already
+    /// reaches every owner as a command.
+    fn report_holding_opening(
+        &mut self,
+        t: f64,
+        done: &mut Vec<super::block::Transaction>,
+    ) -> Result<(), Failure> {
+        let Some(open) = self.rods().and_then(|b| b.holding_opens_at()) else {
+            return Ok(());
+        };
+        if open > t {
+            return Ok(());
+        }
+        let Some(b) = self.secondary_mut() else {
+            return Ok(());
+        };
+        if b.reactor_trip_time().is_some() {
+            return Ok(());
+        }
+        if open < t {
+            return Err(fatal(format!(
+                "R4-DUMP: the holding circuit opened at {open} s and is first reported at {t} s"
+            )));
+        }
+        let command = super::block::Command::HoldingLoss;
+        let mut reported = vec![b.command(t, command)?];
+        reported.push(self.pzr_mut().command(t, command)?);
+        for r in &mut reported {
+            r.receipt["reportedBy"] =
+                serde_json::json!("joined: the holding circuit's opening (R4-DUMP)");
+        }
+        done.extend(reported);
+        Ok(())
     }
     /// IC-CTRL (S3 spray path, for KERN): put a normal PZR pressure control
     /// frame's demands in force: the heater request into the PZR block, the
@@ -2479,6 +2619,16 @@ impl<P: Properties + WaterProperties> Joined<P> {
                 add(&mut columns, &rows, &cols);
             }
         }
+        // R4-DUMP: the secondary rows reading the CVCS's loop-average lag.
+        if let (SecondaryPort::Owner(b), Some(_)) = (&self.blocks.secondary, &self.blocks.cvcs) {
+            let tavg = BTreeSet::from([o.cvcs + cvcs::TAVG]);
+            let rows: BTreeSet<usize> = b
+                .loop_average_rows()
+                .iter()
+                .map(|r| o.secondary + r)
+                .collect();
+            add(&mut columns, &rows, &tavg);
+        }
         if let SecondaryPort::Owner(b) = &self.blocks.secondary {
             let st = b.structure();
             for (r, own) in st.own.iter().enumerate() {
@@ -2521,6 +2671,15 @@ impl<P: Properties + WaterProperties> Joined<P> {
             add(&mut columns, &metal, &cols);
             let own: BTreeSet<usize> = (o.pzr..o.cvcs).collect();
             add(&mut columns, &cell, &own);
+            // R4-PZR-PI (S-b): the valve's restriction row reads the stem.
+            if let (Some(s), Some(k)) = (self.network.spray(), b.stem_coordinate()) {
+                let row = self.network.face_layout[2 * s.valve_face].index;
+                add(
+                    &mut columns,
+                    &BTreeSet::from([row]),
+                    &BTreeSet::from([o.pzr + k]),
+                );
+            }
         }
         // 6. The CVCS (plan r4 X4.2): every row reads its own coordinates and
         // the cells it reads (COLD.A, the legs), the level row the PZR cell;
@@ -2686,6 +2845,7 @@ impl<P: Properties + WaterProperties> Blocks<P> {
             let x = view(y, yp, seed, cj, o.rods..o.pzr, &scales[3].coordinates)?;
             b.rows(properties, t, x, fluid, receipts, rod_rows)?;
         }
+        set_loop_average(secondary, cvcs, o, scales, y, seed)?;
         if let SecondaryPort::Owner(b) = secondary {
             let _cost = crate::cost::scope("secondary");
             let x = view(y, yp, seed, cj, o.secondary..o.rods, &scales[2].coordinates)?;
@@ -3254,9 +3414,13 @@ impl<P: Properties + WaterProperties> LocalCoupler<'_, P> {
         out: &mut OwnerRows,
     ) -> Result<(), Failure> {
         let o = self.blocks.offsets;
+        let t = self.t;
         let Blocks {
+            properties,
+            secondary,
             cvcs,
             cvcs_rows,
+            heats,
             scales,
             ..
         } = &mut *self.blocks;
@@ -3280,6 +3444,40 @@ impl<P: Properties + WaterProperties> LocalCoupler<'_, P> {
                 .enumerate()
                 .map(|(k, (r, rs))| (o.cvcs + k, *r / s(*rs))),
         );
+        // R4-DUMP: the loop-average lag is the post-trip Tavg mode's input,
+        // so its column also reaches the secondary rows that read it, with
+        // the own coordinates and the metal heat unseeded.
+        if self.scratch.seed[o.cvcs + cvcs::TAVG] != 0.
+            && let SecondaryPort::Owner(sb) = secondary
+        {
+            let reads = sb.loop_average_rows();
+            if !reads.is_empty() {
+                set_loop_average(secondary, cvcs, o, scales, self.y, Some(&self.scratch.seed))?;
+                let SecondaryPort::Owner(sb) = secondary else {
+                    return Err(fatal("the secondary owner"));
+                };
+                let xs = view(
+                    self.y,
+                    self.yp,
+                    None,
+                    self.cj,
+                    o.secondary..o.rods,
+                    &scales[2].coordinates,
+                )?;
+                let heat_w = &mut self.scratch.heat_w;
+                heat_w.clear();
+                heat_w.extend(heats.solids.secondary_w.iter().map(|h| s(h.value)));
+                let rows = &mut self.scratch.secondary_rows;
+                let result = sb.rows(properties, t, xs, heat_w, rows);
+                set_loop_average(secondary, cvcs, o, scales, self.y, None)?;
+                result?;
+                out.rows.extend(
+                    reads
+                        .iter()
+                        .map(|r| (o.secondary + r, rows[*r] / s(scales[2].rows[*r]))),
+                );
+            }
+        }
         Ok(())
     }
     /// The CVCS level row's direction (solver scaling) for a unit seed on
@@ -3405,6 +3603,7 @@ impl<P: Properties + WaterProperties> LocalCoupler<'_, P> {
             properties,
             solids,
             secondary,
+            cvcs,
             temperatures,
             views,
             heats,
@@ -3412,6 +3611,7 @@ impl<P: Properties + WaterProperties> LocalCoupler<'_, P> {
             secondary_outputs,
             ..
         } = &mut *self.blocks;
+        set_loop_average(secondary, cvcs, o, scales, self.y, Some(&self.scratch.seed))?;
         let SecondaryPort::Owner(b) = secondary else {
             return Err(fatal("a secondary column without a secondary owner"));
         };
@@ -3631,10 +3831,12 @@ impl<P: Properties + WaterProperties> LocalCoupler<'_, P> {
         let Blocks {
             properties,
             secondary,
+            cvcs,
             heats,
             scales,
             ..
         } = &mut *self.blocks;
+        set_loop_average(secondary, cvcs, o, scales, self.y, None)?;
         let SecondaryPort::Owner(b) = secondary else {
             return Err(fatal("a secondary heat column without a secondary owner"));
         };

@@ -1069,6 +1069,7 @@ pub fn jacobian_blocks<P: Properties + WaterProperties>(
         values,
         classes,
         None,
+        None,
         Clock(None),
     )
 }
@@ -1100,7 +1101,45 @@ pub fn jacobian_blocks_on_base<P: Properties + WaterProperties>(
         values,
         classes,
         Some(reuse),
+        None,
         Clock(profile),
+    )
+}
+
+/// R4-START-ASSEMBLY (lane RESTART): the exact consistent start's assembly.
+/// With `reuse`, on the start's own evaluation of this very state
+/// ([`jacobian_blocks_on_base`]); without, as [`jacobian_blocks`]. With
+/// `columns` (one flag per coordinate), only the marked columns are filled,
+/// each exactly as the full assembly fills it, and every other column stays
+/// zero: a column's entries depend on no other column, and a projection reads
+/// only its algebraic columns.
+#[allow(clippy::too_many_arguments)] // The stage inputs, the structure, the base and the columns.
+pub fn jacobian_blocks_start<P: Properties + WaterProperties>(
+    joined: &mut Joined<P>,
+    structure: &JoinedJacobian,
+    t: f64,
+    cj: f64,
+    y: &[f64],
+    yp: &[f64],
+    values: &mut [f64],
+    reuse: Option<Reuse<P::Caloric>>,
+    columns: Option<&[bool]>,
+) -> Result<(), Failure> {
+    if columns.is_some_and(|c| c.len() != y.len()) {
+        return Err(fatal("joined block Jacobian column flags layout"));
+    }
+    assemble(
+        joined,
+        structure,
+        t,
+        cj,
+        y,
+        yp,
+        values,
+        Classes::ALL,
+        reuse,
+        columns,
+        Clock(None),
     )
 }
 
@@ -1127,6 +1166,7 @@ pub fn jacobian_blocks_profiled<P: Properties + WaterProperties>(
         values,
         classes,
         None,
+        None,
         Clock(Some(profile)),
     )
 }
@@ -1142,9 +1182,13 @@ fn assemble<P: Properties + WaterProperties>(
     values: &mut [f64],
     classes: Classes,
     base: Option<Reuse<P::Caloric>>,
+    columns: Option<&[bool]>,
     mut clock: Clock<'_>,
 ) -> Result<(), Failure> {
     let o = joined.offsets();
+    // R4-START-ASSEMBLY: which columns this assembly fills.
+    let wanted = |j: usize| columns.is_none_or(|c| c[j]);
+    let any_wanted = |r: std::ops::Range<usize>| columns.is_none_or(|c| c[r].contains(&true));
     if y.len() != o.end || yp.len() != o.end || values.len() != structure.pattern.nonzeros() {
         return Err(fatal("joined block Jacobian layout"));
     }
@@ -1208,6 +1252,8 @@ fn assemble<P: Properties + WaterProperties>(
             .map(|a| [0, 1].map(|k| o.solids + solids.energy(a, k)))
             .collect()
     };
+    // R4-PZR-PI (S-b): the PZR owner's spray stem column, if composed.
+    let stem = joined.pzr().stem_coordinate().map(|k| o.pzr + k);
     let (network, mut coupler) = joined.local_parts(t, y, yp, cj);
     let regular = network.pzr.cell;
     let pzr_coordinates = network.pzr.coordinates();
@@ -1240,7 +1286,7 @@ fn assemble<P: Properties + WaterProperties>(
     let mut response = Vec::new();
     if classes.network {
         let (mut local, mut locals) = (0., 0);
-        for j in 0..o.nuclear {
+        for j in (0..o.nuclear).filter(|j| wanted(*j)) {
             let started = clock.now();
             response.clear();
             let sign = replay.sign(j);
@@ -1273,7 +1319,8 @@ fn assemble<P: Properties + WaterProperties>(
         clock.book_spent("network columns: local coupling", locals, local);
     }
     let mut seed = NetworkSeed::default();
-    if classes.nuclear {
+    // Every entry of this section lies in a nuclear column.
+    if classes.nuclear && any_wanted(o.nuclear..o.solids) {
         let started = clock.now();
         let template = &structure.template;
         // Every nuclear row is differential: its own coordinate's cj.
@@ -1371,7 +1418,7 @@ fn assemble<P: Properties + WaterProperties>(
         }
         let (mut own, mut replays, mut local) = ((0, 0.), (0, 0.), (0, 0.));
         let started_class = clock.now();
-        for j in range {
+        for j in range.filter(|j| wanted(*j)) {
             let started = clock.now();
             buffer.fill(zero);
             passes.fill(None);
@@ -1475,7 +1522,7 @@ fn assemble<P: Properties + WaterProperties>(
     }
     // The PZR block's columns (G6): its own rows at the base column, and the
     // stratified rows through the boundary's directions.
-    if classes.pzr && o.cvcs > o.pzr {
+    if classes.pzr && o.cvcs > o.pzr && any_wanted(o.pzr..o.cvcs) {
         let started = clock.now();
         let cell = network.stratified();
         let column = *network
@@ -1484,10 +1531,21 @@ fn assemble<P: Properties + WaterProperties>(
         seed.receipts.clear();
         seed.volumes.clear();
         seed.passes.clear();
-        for j in o.pzr..o.cvcs {
+        // R4-PZR-PI (S-b): the valve's restriction row in the PZR owner's
+        // stem, at the base evaluation's drive (zero while locked).
+        let opening = network
+            .spray_row_opening_partial()
+            .zip(stem)
+            .map(|((row, d), j)| (row, j, d * scales[j]));
+        for j in (o.pzr..o.cvcs).filter(|j| wanted(*j)) {
             let boundary = coupler.pzr_column(j, cell, &column)?;
             for (row, v) in coupler.last_pzr() {
                 sink.add(*row, j, v.direction)?;
+            }
+            if let Some((row, k, v)) = opening
+                && k == j
+            {
+                sink.add(row, j, v)?;
             }
             seed.pzr_boundary = Some(boundary);
             response.clear();

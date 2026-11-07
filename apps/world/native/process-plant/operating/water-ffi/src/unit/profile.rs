@@ -51,6 +51,14 @@ pub const SURFACES: SurfacePolicy = SurfacePolicy {
 /// place of the accuracy contract's 50 Pa: no LD-01 instrument reads core
 /// DP; at 5,000 Pa every instrumented output's E0 is unchanged.
 pub const GUIDE_CURRENT_BASIS_PA: f64 = 5000.;
+/// The PZR owner's PT1 channel lag (R4-PZR-CONTINUOUS, PERF3; lead ruling:
+/// a system class like FeedControl/InventoryControl with an operator-grade
+/// absolute tolerance): the lag is the PT1 channel's own reading, so its
+/// absolute tolerance is that channel's budget under `ld01-operator-budgets`
+/// r2 (RP-pin-ogb-r2, 9def9c2b…): `numerical.pzrPressure_Pa.budget_Pa`, a
+/// quarter of the channel rule's 161,245 Pa uncertainty, as FEED's lags
+/// take their channels' budgets (`ld01-feed-compact`).
+pub const PZR_LAG_TOLERANCE_PA: f64 = 40_311.;
 /// The S3 restarts: stock settings, the start's bound and its passes
 /// (ordinary restarts 3, lead decision R4-START-PASSES).
 pub const RESTART: Restart = Restart {
@@ -122,6 +130,34 @@ pub struct Solver {
     pub first_step: FirstStep,
     pub stepping: Stepping,
     pub water: crate::WaterMethod,
+    /// R4-NUC-SOURCE-ATOL (lead 1 Nov): the populations' and precursors'
+    /// absolute tolerances derived at the hot-standby basis
+    /// ([`super::source_atol`]), or the stock scaled floor.
+    pub source_atol: SourceAtol,
+}
+/// R4-NUC-SOURCE-ATOL: `derived` (the composition of record) or `stock`
+/// (the stock scaled floor, the record before it).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SourceAtol {
+    Derived,
+    Stock,
+}
+impl SourceAtol {
+    /// `derived` or `stock`; anything else refuses.
+    pub fn parse(name: &str) -> Result<Self, String> {
+        match name {
+            "derived" => Ok(Self::Derived),
+            "stock" => Ok(Self::Stock),
+            other => Err(format!("source_atol {other}: derived or stock")),
+        }
+    }
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Derived => "derived",
+            Self::Stock => "stock",
+        }
+    }
 }
 impl Solver {
     /// Stock weights, the declared G13 first step, free stepping
@@ -133,6 +169,7 @@ impl Solver {
         first_step: FirstStep::Declared,
         stepping: Stepping::Free,
         water: crate::WaterMethod::Sbtl,
+        source_atol: SourceAtol::Derived,
     };
 }
 

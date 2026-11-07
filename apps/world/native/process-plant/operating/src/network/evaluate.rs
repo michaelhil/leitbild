@@ -211,16 +211,17 @@ impl<P: Properties> Network<P> {
             // The physical TOTAL-force limit is checked after source assembly;
             // a nonzero-I path always uses its retained impulse, not this value.
             // L1 (decision 0014): a locked path transports nothing.
+            let beyond = self.mouth_inertance(li, &self.cells);
             let path = if self.path_locked(li) {
                 super::unilateral::held_path(inertance)
-            } else if inertance.value == 0. && pi.value == 0. {
+            } else if inertance.value == 0. && pi.value == 0. && beyond.is_none() {
                 flow::PathKinematics {
                     inertance_kg_m4: inertance,
                     inertance_rate_kg_m4_s: s(0.),
                     volume_flow_m3_s: s(0.),
                 }
             } else {
-                flow::phase_path_kinematics(
+                flow::phase_path_kinematics_beyond(
                     f,
                     &phase_mass[l.phase],
                     &pre_source_mass_rate,
@@ -228,6 +229,7 @@ impl<P: Properties> Network<P> {
                     pi,
                     s(0.),
                     flow::ColdOnset::Unavailable,
+                    beyond,
                 )
                 .map_err(|e| Failure::Recoverable(e.into()))?
             };
@@ -263,6 +265,12 @@ impl<P: Properties> Network<P> {
         }
         // IC-CTRL (S3 spray path, S3-D25): the valve opening of this time.
         self.spray_opening_at(t)?;
+        // R4-PZR-SPRAY-LAMINAR: the line liquid's viscosity with its
+        // direction, for the valve's low-Reynolds branch.
+        self.spray_mu = self
+            .spray
+            .and_then(|sp| points[sp.region][0])
+            .map(|(q, dq)| thermal::Scalar::new(q.viscosity_pa_s, dq.viscosity_pa_s));
         self.compose_sections(y, yp, seed, cj, &points)?;
         self.compose_momentum(t, y, yp, seed, cj, &phase_mass)?;
         self.compose_stocks(y, yp, seed, cj, &points, reuse)?;
@@ -664,7 +672,7 @@ impl<P: Properties> Network<P> {
             let path = if locked {
                 super::unilateral::held_path(current.inertance_kg_m4)
             } else {
-                flow::phase_path_kinematics(
+                flow::phase_path_kinematics_beyond(
                     &self.faces[l.face],
                     &phase_mass[l.phase],
                     &phase_mass_rate[l.phase],
@@ -672,6 +680,7 @@ impl<P: Properties> Network<P> {
                     pi,
                     force + current.pressure_gravity_pa,
                     flow::ColdOnset::ProvenRest,
+                    self.mouth_inertance(li, &self.cells),
                 )
                 .map_err(|e| {
                     self.first_mechanical_birth.get_or_insert(json!({"time_s":t,"face":l.face,"phase":l.phase,"inertance_kg_m4":current.inertance_kg_m4.value,"total_force_pa":(force+current.pressure_gravity_pa).value,"scope":"unsupported exact-zero physical onset; no guessed Q, phase seed or momentum reset"}));
@@ -689,12 +698,21 @@ impl<P: Properties> Network<P> {
                     let rho = self.cells[sp.region].phase[0]
                         .map(|p| p.density)
                         .ok_or_else(|| Failure::Recoverable("spray line without liquid".into()))?;
-                    self.spray_restriction_row(
+                    let mu = self.spray_mu.ok_or_else(|| {
+                        Failure::Recoverable("spray line without its liquid viscosity".into())
+                    })?;
+                    let row = self.spray_restriction_row(
                         li,
                         chart.volume_flow_m3_s,
                         force + chart.pressure_gravity_pa,
                         rho,
-                    )?
+                        mu,
+                        true,
+                    )?;
+                    if let Some((_, per_x)) = row {
+                        self.spray_row_x = Some((l.index, per_x));
+                    }
+                    row.map(|(r, _)| r)
                 }
                 _ => None,
             };
