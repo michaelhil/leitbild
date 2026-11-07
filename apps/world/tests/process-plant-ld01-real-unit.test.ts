@@ -51,7 +51,9 @@ describe.skipIf(!enabled)('NOT-EVIDENCE: the LD-01 engine on the real ld01-unit'
     const snapshot = engine.runtime.snapshot()
     expect(snapshot.variables.length).toBe(plant().graph.variables.length)
     const frames = await run(engine, 5)
-    for (const frame of frames) expect([...frame.frame!.values].every(Number.isFinite)).toBe(true)
+    // Only a depletion estimate may be no number, and then only while its DC group is not discharging: none is here.
+    const estimates = Object.values(artifact!.tagMap.channels).filter(entry => typeof entry === 'string' && entry.endsWith('.DEPLETION')).length
+    for (const frame of frames) expect([...frame.frame!.values].filter(value => !Number.isFinite(value)).length).toBe(estimates)
     expect(engine.runtime.elapsedMs()).toBeCloseTo(5_100, 6)
     recorded.load = { connectWallS: wallS, connectCost: engine.connectCost, variables: snapshot.variables.length, channels: frames[0]!.frame!.values.length, advance: costOf(frames) }
     recorded.readings = Object.fromEntries(['PZR.pressure', 'PZR.collapsedLevel', 'CORE.releasedPower', 'TG.terminalPower', 'PUMP.A1.speed', 'SG.A.PRIMARY.pressure']
@@ -77,6 +79,40 @@ describe.skipIf(!enabled)('NOT-EVIDENCE: the LD-01 engine on the real ld01-unit'
     const after = { terminalPowerMw: engine.runtime.readVariable('TG.terminalPower' as VariablePath), releasedPowerMw: engine.runtime.readVariable('CORE.releasedPower' as VariablePath) }
     expect(after.releasedPowerMw as number).toBeLessThan((before.releasedPowerMw as number) / 2)
     recorded.turbineTrip = { writtenAtMs, appliedAtUnitS: applied?.[0], before, after, events, advance: costOf(frames) }
+  }, 300_000)
+
+  // A section declaring the governor and the DC groups (the ECA0 binding): their readings, and an operator's commands end to end.
+  const declared = artifact?.tagMap.channels['TG.ADM_POS' as VariablePath] !== undefined
+  test.skipIf(!declared)('reads ADM.POS and the DC groups; a DC command reaches its group; a refused request is logged and stops nothing', async () => {
+    const { engine } = await connect()
+    await run(engine, 1)
+    const read = (path: string) => engine.runtime.readVariable(path as VariablePath)
+    const position = read('TG.ADM_POS') as number
+    expect(position).toBeGreaterThan(0)
+    expect(position).toBeLessThanOrEqual(100)
+    expect(read('TG.DC-I2-OUTPUT')).toBe(true)
+    expect(read('TG.DC-I2-CHARGER')).toBe(true)
+    expect(read('TG.DC-I2-LOAD-REQUESTED')).toBeGreaterThan(0)
+    expect(read('TG.DC-I2-ENERGY')).toBeGreaterThan(0)
+    expect(read('TG.DC-I2-DEPLETION')).toBeNaN()
+    const electrical = (frames: ReadonlyArray<NativeAdvanceReceipt>): ReadonlyArray<string> =>
+      frames.flatMap(frame => ((frame.frame!.events as { readonly electrical?: ReadonlyArray<readonly [number, string]> } | null)?.electrical ?? []).map(entry => entry[1]))
+    const write = (path: string) => { engine.runtime.writeCommand({ type: 'setVariable', path: path as VariablePath, value: true }) }
+    write('TG.dc.LD01.DC.I2.open')
+    const opened = await run(engine, 2)
+    expect(electrical(opened)).toContain('operator LD01.DC.I2 Open: accepted')
+    expect(read('TG.DC-I2-OUTPUT')).toBe(false)
+    expect(read('TG.DC-I2-LOAD-DELIVERED')).toBe(0)
+    write('TG.dc.LD01.DC.I2.close')
+    const closed = await run(engine, 2)
+    expect(electrical(closed)).toContain('operator LD01.DC.I2 Close: accepted')
+    expect(read('TG.DC-I2-OUTPUT')).toBe(true)
+    // The AC.A unit incoming is closed, so the reserve's may not close: refused by its guard, logged, and the unit goes on.
+    write('TG.incoming.AC.A.reserve.close')
+    const refused = await run(engine, 1)
+    expect(electrical(refused)).toContain('operator AC.A Reserve incoming Closed: rejected')
+    expect(engine.failure()).toBeNull()
+    recorded.operator = { position, opened: electrical(opened), closed: electrical(closed), refused: electrical(refused) }
   }, 300_000)
 
   test('snapshot, restore in a fresh child, then 30 s more in both: every frame bitwise equal', async () => {

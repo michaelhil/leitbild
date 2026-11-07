@@ -52,7 +52,11 @@ export const elec = {
 
 /** A channel's unit as ld01-unit.rs `channels()` gives it, by its id's form. */
 export const unitOf = (channel: string): string => {
-  if (channel.endsWith('RELEASED_POWER') || channel.endsWith('.WT') || channel.endsWith('HEATER.REQUEST')) return 'W'
+  if (channel.endsWith('RELEASED_POWER') || channel.endsWith('.WT') || channel.endsWith('HEATER.REQUEST') || /\.LOAD\.(REQUESTED|DELIVERED)$/u.test(channel)) return 'W'
+  if (channel.endsWith('.DEPLETION')) return 's'
+  if (channel.endsWith('.ENERGY')) return 'J'
+  if (channel.endsWith('.POS')) return '%'
+  if (/\.(OUTPUT|CHARGER|BATTERY)$/u.test(channel) || channel.includes('.CAUSE.')) return '1'
   if (channel.endsWith('.QUALITY') || channel.endsWith('.LATCHED') || channel.endsWith('.REQUEST') || channel.includes('.FT') || channel.includes('.SPEED') || channel.includes('POWER.P')) return '1'
   if (/\.(TRIP|POWERED|CLOSED|AVAILABLE|INITIATED|OFFSITE_LOST)$/u.test(channel)) return '1'
   if (channel.endsWith('.REPORT') || channel.endsWith('.INSERTED')) return '1'
