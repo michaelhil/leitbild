@@ -157,7 +157,7 @@ impl Law {
                 )));
             }
         }
-        if !(s.dead_band_k < s.maximum_speed_error_k) {
+        if s.dead_band_k.partial_cmp(&s.maximum_speed_error_k) != Some(std::cmp::Ordering::Less) {
             return Err(fatal("dead band < maximum-speed error is required"));
         }
         if !(s.mismatch_gain_k.is_finite() && s.mismatch_gain_k >= 0.) {

@@ -1022,6 +1022,9 @@ fn saturation_values<N: Number>(s: &SaturationOf<N>) -> SaturationOf<f64> {
         surface_tension: s.surface_tension.value(),
     }
 }
+// The key names the same explicit physical inputs as the wall law; grouping
+// them solely for a lint would obscure which values and directions it owns.
+#[allow(clippy::too_many_arguments)]
 fn turnover_key<N: Number>(
     quantity: u64,
     pressure: N,

@@ -1473,7 +1473,7 @@ impl<P: Properties> Secondary<P> for Secondaries {
             rows[fb + HEADER] = header - f.header_pa(total);
             for (k, m) in flows.iter().enumerate() {
                 let dp = header - x.value(self.sgs[k].base + PRESSURE);
-                if !(dp.value > 0.) {
+                if dp.value.partial_cmp(&0.) != Some(std::cmp::Ordering::Greater) {
                     return Err(recoverable(format!(
                         "FW.{} branch trial: header {} Pa at or below the SG (the check would close)",
                         self.sgs[k].id, header.value
@@ -2160,7 +2160,7 @@ fn feed_owner(
     ]
     .into_iter()
     .all(positive)
-        || !(t.shutoff_head_ratio > 1.)
+        || t.shutoff_head_ratio.partial_cmp(&1.) != Some(std::cmp::Ordering::Greater)
         || !(t.suction_pressure_pa < t.discharge_pressure_pa
             && t.header_pressure_pa < t.discharge_pressure_pa
             && t.iso_outlet_pressure_pa < t.header_pressure_pa
