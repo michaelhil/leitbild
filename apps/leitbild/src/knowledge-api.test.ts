@@ -14,7 +14,9 @@ test('wiki source endpoint shares bounded product source access without requirin
 test('human discovery and read share the same revision and content with agent library', async () => {
   const load = async () => knowledge
   const index = await knowledgeResponse(new Request('http://local/api/knowledge/index'), load)
-  expect((await index.json()).documents[0].title).toBe('Test')
+  expect(await index.json()).toEqual({ revision: knowledge.revision, documents: [
+    { path: 'index.md', title: 'Test', parent: null, hub: true },
+  ] })
   const search = await knowledgeResponse(new Request('http://local/api/knowledge/search?query=reactor'), load)
   expect(await search.json()).toEqual(knowledge.search('reactor'))
   const read = await knowledgeResponse(new Request('http://local/api/knowledge/read?path=index.md'), load)
@@ -26,4 +28,41 @@ test('obsolete feedback redirect is not exposed', async () => {
   const response = await knowledgeResponse(new Request('http://local/api/knowledge/feedback'), async () => knowledge)
   expect(response.status).toBe(404)
   expect(response.headers.has('location')).toBe(false)
+})
+
+test('article reads reject a publication change after navigation, while scoped search remains discoverable', async () => {
+  const updated = createKnowledge({ revision: 'b'.repeat(40), documents: [
+    { path: 'world/read.md', content: '# Reading\n\nActual coolant observation.' },
+    { path: 'archive/read.md', content: '# Archived reading\n\nOld coolant observation.' },
+  ] })
+  const read = await knowledgeResponse(new Request(`http://local/api/knowledge/read?path=world/read.md&revision=${knowledge.revision}`), async () => updated)
+  expect(read.status).toBe(404)
+  expect((await read.json()).error).toContain('Knowledge revision is not available')
+  const scoped = await knowledgeResponse(new Request('http://local/api/knowledge/search?query=coolant&prefix=archive/'), async () => updated)
+  expect(await scoped.json()).toMatchObject({ revision: updated.revision, total: 1, matches: [{ path: 'archive/read.md' }] })
+})
+
+test('procedure article supplies only its discovered target metadata for exact cross-step rendering', async () => {
+  const procedure = (id: string, destination: string) => `---
+type: procedure
+procedure-md: 0.7
+procedure-id: ${id}
+title: ${id}
+---
+# ${id}
+
+## Step 1 [id: check] Verify
+Action: Check.
+- Continue → ${destination}
+`
+  const library = createKnowledge({ revision: knowledge.revision, documents: [
+    { path: 'procedures/one.md', content: procedure('ONE', '[[TWO#check]]') },
+    { path: 'procedures/two.md', content: procedure('TWO', 'END') },
+    { path: 'procedures/unrelated.md', content: procedure('OTHER', 'END') },
+  ] })
+  const response = await knowledgeResponse(new Request(`http://local/api/knowledge/read?path=procedures/one.md&revision=${library.revision}`), async () => library)
+  expect(await response.json()).toEqual({
+    ...library.read('procedures/one.md'),
+    procedures: [{ path: 'procedures/two.md', procedureId: 'TWO', steps: [{ id: 'check', anchor: 'step-1-id-check-verify' }] }],
+  })
 })

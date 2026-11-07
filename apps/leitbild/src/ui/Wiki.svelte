@@ -1,35 +1,14 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte'
+  import type { Knowledge, KnowledgeNavigationEntry, KnowledgeProcedureReference } from '@leitbild/knowledge'
   import { parseProductSourceReference } from '@leitbild/knowledge/source-reference'
   import { renderWiki, wikiPageUrl } from './wiki-render.ts'
   import WikiFeedback from './WikiFeedback.svelte'
   import WikiAssistant from './WikiAssistant.svelte'
   import Wordmark from './Wordmark.svelte'
   import { defaultNavigationWidth, minimumNavigationWidth, maximumNavigationWidth, navigationWidth } from './wiki-layout.ts'
-  interface Heading {
-    title: string
-    level: number
-    line: number
-    anchor: string
-  }
-  interface Entry {
-    path: string
-    title: string
-    summary: string
-    parent: string | null
-    hub: boolean
-    procedureId?: string
-    headings?: Heading[]
-  }
-  interface Document {
-    path: string
-    title: string
-    revision: string
-    content: string
-    headings: Heading[]
-    children: Entry[]
-    parent: string | null
-  }
+  type Entry = KnowledgeNavigationEntry
+  type Document = ReturnType<Knowledge['read']> & { procedures?: KnowledgeProcedureReference[] }
   interface Source {
     path: string
     content: string
@@ -148,7 +127,7 @@
       )
       if (id !== requestId) return
       document = value
-      html = renderWiki(value, params.get('revision') ?? undefined, entries)
+      html = renderWiki(value, params.get('revision') ?? undefined, value.procedures)
       await tick()
       if (article?.querySelector('.mermaid')) {
         try {

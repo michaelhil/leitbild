@@ -5,9 +5,37 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
 const revision = 'a'.repeat(40)
-test('procedure identities are discovered from authored metadata, not filename conventions', () => {
-  const knowledge = createKnowledge({ revision, documents: [{ path: 'world/arbitrary-name.md', content: '---\ntype: procedure\nprocedure-md: 0.7\nprocedure-id: E-0\ntitle: Entry\n---\n# Entry\n\n## Step 1 [id: trip]\nAction: Request the identified trip.\n- Continue → END' }] })
-  expect(knowledge.index()[0]?.procedureId).toBe('E-0')
+test('navigation omits article metadata and procedure references preserve exact authored identities and steps', () => {
+  const procedure = (id: string, branches: string) => `---
+type: procedure
+procedure-md: 0.7
+procedure-id: ${id}
+title: Entry
+---
+# Entry
+
+## Step 1 [id: check] Verify
+Action: Check.
+${branches}
+
+## Step 2 [id: stop] Stop
+Action: Stop.
+- Continue → END
+`
+  const knowledge = createKnowledge({ revision, documents: [
+    { path: 'index.md', content: '# Home\n\nSummary retained on the article.' },
+    { path: 'world/entry.md', content: procedure('ENTRY', '- Continue → [[E-0#stop]]') },
+    { path: 'world/arbitrary-name.md', content: procedure('E-0', '- Continue → END').replaceAll('\n', '\r\n') },
+    { path: 'archive/other.md', content: procedure('E-0', '- Continue → END') },
+    { path: 'world/unrelated.md', content: procedure('OTHER', '- Continue → END') },
+  ] })
+  expect(knowledge.navigation()[0]).toEqual({ path: 'index.md', title: 'Home', parent: null, hub: true })
+  expect(knowledge.procedureReferences('world/entry.md')).toEqual([
+    { path: 'world/arbitrary-name.md', procedureId: 'E-0', steps: [{ id: 'stop', anchor: 'step-2-id-stop-stop' }] },
+    { path: 'archive/other.md', procedureId: 'E-0', steps: [{ id: 'stop', anchor: 'step-2-id-stop-stop' }] },
+  ])
+  expect(knowledge.procedureReferences('world/arbitrary-name.md')).toEqual([])
+  expect(knowledge.procedureReferences('index.md')).toEqual([])
 })
 test('publication is loaded from the application release, not the shared package installation', async () => {
   const release = await mkdtemp(join(tmpdir(), 'knowledge-release-'))
@@ -15,7 +43,7 @@ test('publication is loaded from the application release, not the shared package
     await mkdir(join(release, 'knowledge'))
     await writeFile(join(release, 'knowledge/snapshot.json'), JSON.stringify({ revision, documents: [{ path: 'index.md', content: '# Release-owned' }] }))
     const knowledge = await loadKnowledge(knowledgeSnapshotPath(release))
-    expect(knowledge.index()[0]!.title).toBe('Release-owned')
+    expect(knowledge.navigation()[0]!.title).toBe('Release-owned')
     expect(knowledge.revision).toBe(revision)
   } finally { await rm(release, { recursive: true, force: true }) }
 })
@@ -36,7 +64,7 @@ describe('published knowledge', () => {
     ] })
     expect(knowledge.read('index.md').children.map(child => child.path)).toEqual(['world/index.md'])
     expect(knowledge.read('world/index.md').children.map(child => child.title)).toEqual(['Runs', 'Packs'])
-    expect(knowledge.index().find(entry => entry.path === 'world/index.md')?.summary).toBe('Explore runs and assets.')
+    expect(knowledge.read('index.md').children.find(entry => entry.path === 'world/index.md')?.summary).toBe('Explore runs and assets.')
     expect(knowledge.read('world/packs/plant/index.md').parent).toBe('world/packs/index.md')
     expect(knowledge.read('world/index.md').content).toContain('**assets**')
   })

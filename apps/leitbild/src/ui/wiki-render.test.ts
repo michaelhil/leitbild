@@ -126,13 +126,13 @@ test('procedure source anchors survive CRLF-authored documents', () => {
 test('procedure routes resolve from discovered identities and keep sibling scope and revision', () => {
   const document = { path: 'world/ld/procedure.md', content: procedureSource, headings: headingsFor(procedureSource) }
   const html = renderWiki(document, 'revision-123', [
-    { path: 'archive/other.md', procedureId: 'OTHER' },
-    { path: 'world/ld/response.md', procedureId: 'OTHER' },
+    { path: 'archive/other.md', procedureId: 'OTHER', steps: [] },
+    { path: 'world/ld/response.md', procedureId: 'OTHER', steps: [] },
   ])
   expect(html).toContain('Continue in parallel with <a href="/wiki?path=world%2Fld%2Fresponse.md&amp;revision=revision-123">OTHER</a>')
   const ambiguous = renderWiki(document, undefined, [
-    { path: 'archive/one.md', procedureId: 'OTHER' },
-    { path: 'archive/two.md', procedureId: 'OTHER' },
+    { path: 'archive/one.md', procedureId: 'OTHER', steps: [] },
+    { path: 'archive/two.md', procedureId: 'OTHER', steps: [] },
   ])
   expect(ambiguous).toContain('Continue in parallel with OTHER')
   expect(ambiguous).not.toContain('path=archive')
@@ -158,12 +158,12 @@ test('tag linking respects Markdown code spans, existing links and case-sensitiv
 
 test('procedure cross-step links open the authored abnormal step, not normal startup', () => {
   const content = procedureSource.replace('[[OTHER]]', '[[OTHER#coast]]')
-  const target = { path: 'world/ld/turbine.md', procedureId: 'OTHER', headings: headingsFor('# Turbine\n\n## Step 1 [id: start] Start\n\n## Step 2 [id: coast] Coast') }
+  const target = { path: 'world/ld/turbine.md', procedureId: 'OTHER', steps: [{ id: 'start', anchor: 'step-1-id-start-start' }, { id: 'coast', anchor: 'step-2-id-coast-coast' }] }
   const document = { path: 'world/ld/entry.md', content, headings: headingsFor(content) }
   const html = renderWiki(document, 'revision-123', [target])
   expect(html).toContain('path=world%2Fld%2Fturbine.md&amp;revision=revision-123#step-2-id-coast-coast')
   expect(html).toContain('OTHER — coast</a>')
-  const missing = renderWiki(document, undefined, [{ ...target, headings: [] }])
+  const missing = renderWiki(document, undefined, [{ ...target, steps: [] }])
   expect(missing).not.toContain('path=world%2Fld%2Fturbine.md')
 })
 

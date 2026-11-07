@@ -83,7 +83,7 @@ const retain = async (directory: string, path: string, contents: string): Promis
 
 const bundleFor = (source: ProcedureSourceConfig, knowledge: Knowledge, retained = false) => {
   const prefix = `${source.procedurePath.replace(/\/$/, '')}/`
-  const entries = knowledge.index()
+  const entries = knowledge.navigation()
   const membership = source.documentPaths === undefined ? undefined : new Set(source.documentPaths)
   if (!retained && membership !== undefined) {
     if (membership.size === 0 || membership.size !== source.documentPaths!.length) throw new Error('Procedure source documentPaths must be nonempty and unique')
