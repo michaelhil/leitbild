@@ -645,9 +645,17 @@ const C1C3_R3_8: &str = include_str!("s3_harness/fixtures/ld01-s3-cases-c1c3-r3.
 const C1C3_R3_8_SHA256: &str = "7291821074f5f28193491ecef597deb6ff42cdb2118db4a74649ea584951f3e7";
 const C4_R3: &str = include_str!("s3_harness/fixtures/ld01-s3-cases-c4-r3.json");
 const C4_R3_SHA256: &str = "6b4958c8aff62554f88ee90e4143df86336a36df049d873335673e5874bdc261";
-/// Revision 4 (R4-C4-REV4, owner-approved after result): C4 runs on it.
+/// Revision 4 (R4-C4-REV4, owner-approved after result): its verdicts stay on
+/// record.
 const C4_R4: &str = include_str!("s3_harness/fixtures/ld01-s3-cases-c4-r4.json");
+const C4_R4_FENCE: &str = "ld01-s3-cases-c4-r4";
 const C4_R4_SHA256: &str = "44eab84f6ead4ed811d1ff9302e749ef416e38bc50ef92ec0c562e9a1ebfdb1c";
+/// Revision 5 (R4-C4-REV5, owner-approved after result): C4 runs on it.
+const C4_R5: &str = include_str!("s3_harness/fixtures/ld01-s3-cases-c4-r5.json");
+const C4_R5_SHA256: &str = "9863cfb39cb3405c75e659411013ba530266ae32c91ff7b21e16a6c0d6497526";
+/// C4-I (owner-approved 7 November): its own block on C4's drive.
+const C4I_R1: &str = include_str!("s3_harness/fixtures/ld01-s3-cases-c4i.json");
+const C4I_R1_SHA256: &str = "d5354e11ec7fa1267d102cfcf140a881d3e3a555df562ca4a5db31bbf049d1a7";
 /// The revisions the r8 wiki supersedes, refused by name.
 const SUPERSEDED: [(&str, &str, &str); 2] = [
     (
@@ -662,14 +670,16 @@ const SUPERSEDED: [(&str, &str, &str); 2] = [
     ),
 ];
 /// The pin a block must carry for a gate run on the r8 wiki, by fence.
-const REQUIRED: [(&str, &str, &str); 3] = [
+const REQUIRED: [(&str, &str, &str); 5] = [
     (
         "ld01-s3-cases-c1c3",
         C1C3_R3_8_SHA256,
         "RP1-pin-s3-c1c3-r3.8",
     ),
     ("ld01-s3-cases-c4", C4_R3_SHA256, "RP1-pin-s3-c4-r3"),
-    (s3_harness::c4::FENCE, C4_R4_SHA256, "RP1-pin-s3-c4-r4"),
+    (C4_R4_FENCE, C4_R4_SHA256, "RP1-pin-s3-c4-r4"),
+    (s3_harness::c4::FENCE, C4_R5_SHA256, "RP1-pin-s3-c4-r5"),
+    (s3_harness::c4i::FENCE, C4I_R1_SHA256, "RP1-pin-s3-c4i"),
 ];
 
 /// Refuses a superseded block revision by name, and any C1–C3 or C4 block
@@ -1060,10 +1070,28 @@ fn exchange_quiet_s() -> f64 {
         .number("/quietInterval_s")
 }
 
+/// Block r5's refinement budgets, from the operator-grade page of the wiki
+/// the run reads (`ld01-operator-budgets` and `ld01-r4-x1-cases`), and the
+/// accuracy contract's threshold timing.
+fn c4_refinement_budgets(crossing_s: f64) -> s3_harness::c4::Budgets {
+    let page = format!("{}/operator-grade-budgets.md", gates::wiki_model());
+    let operator = Block::from_page(&page, "ld01-operator-budgets")
+        .unwrap_or_else(|e| panic!("the operator budgets: {e}"));
+    let cases =
+        Block::from_page(&page, "ld01-r4-x1-cases").unwrap_or_else(|e| panic!("the X1 cases: {e}"));
+    s3_harness::c4::Budgets {
+        pressure_pa: operator.number("/numerical/pzrPressure_Pa/budget_Pa"),
+        level_m: operator.number("/numerical/pzrLevel_m/budget_m"),
+        sg_pressure_pa: operator.number("/numerical/sgPressure_Pa/budget_Pa"),
+        crossing_s,
+        convergence_fraction: cases.number("/references/convergenceFraction"),
+    }
+}
+
 /// Block r4 (R4-C4-REV4): its declared hash, and what it changed against r3.
 #[test]
 fn c4_revision_4_pins_and_names_the_owner_approved_changes() {
-    let b = Block::from_json(s3_harness::c4::FENCE, C4_R4).unwrap();
+    let b = Block::from_json(C4_R4_FENCE, C4_R4).unwrap();
     assert_eq!(guards::declared_sha256(&b).unwrap(), C4_R4_SHA256);
     let lines = b.whole("/cases/C4/lines");
     assert!(
@@ -1076,6 +1104,29 @@ fn c4_revision_4_pins_and_names_the_owner_approved_changes() {
     assert_eq!(b.whole("/cases/C4/stepping/record"), "free");
     let r3 = Block::from_json("ld01-s3-cases-c4", C4_R3).unwrap();
     assert_eq!(guards::declared_sha256(&r3).unwrap(), C4_R3_SHA256);
+}
+
+/// Block r5 (R4-C4-REV5): the owner's three rulings on E, and the stepping.
+#[test]
+fn c4_revision_5_pins_the_rulings_and_the_c4i_block_is_its_own() {
+    let b = Block::from_json(s3_harness::c4::FENCE, C4_R5).unwrap();
+    assert_eq!(guards::declared_sha256(&b).unwrap(), C4_R5_SHA256);
+    assert_eq!(b.whole("/cases/C4/stepping/record"), "free");
+    assert!(b.whole("/cases/C4/windows").get("maxStep_s").is_none());
+    let rule = b.whole("/cases/C4/gates/refinement");
+    let rule = rule.as_str().unwrap();
+    assert!(rule.contains("operator grade") && rule.contains("Recorded, not judged"));
+    let i = Block::from_json(s3_harness::c4i::FENCE, C4I_R1).unwrap();
+    assert_eq!(guards::declared_sha256(&i).unwrap(), C4I_R1_SHA256);
+    assert_eq!(i.whole("/cases/C4I/closeAt_s"), json!([30, 47]));
+    assert!(
+        i.whole("/disclosure")
+            .as_str()
+            .unwrap()
+            .contains("no CMT or PRHR flow")
+    );
+    let lines = i.whole("/cases/C4I/lines");
+    assert_eq!(lines.as_object().unwrap().len(), 12);
 }
 
 #[test]
@@ -1245,6 +1296,9 @@ struct CaseConfig {
     /// PROC T5 (lane ELEC): the five DC supply groups, report-only
     /// (`LD01_DC` on | off, unset off; the blocks from `LD01_DC_WIKI`).
     dc: bool,
+    /// C4-I (`LD01_S3_C4I_CLOSE_S`, one of its block's `closeAt_s`): C4's
+    /// drive with the relief isolation valve closed that long after zero.
+    c4i_close_s: Option<f64>,
     /// Stuck-cluster C2 (lead ruling (a)): a rod cluster composed singly
     /// (`LD01_S3_SINGLE=<cluster id>`, unset none: the bank composition), its
     /// own motion class and bore water; the start state must be of that
@@ -1322,6 +1376,13 @@ impl CaseConfig {
             "off" => false,
             v => return Err(format!("LD01_DC={v}: on or off")),
         };
+        let c4i_close_s = match std::env::var("LD01_S3_C4I_CLOSE_S") {
+            Ok(v) => Some(
+                v.parse::<f64>()
+                    .map_err(|e| format!("LD01_S3_C4I_CLOSE_S={v}: {e}"))?,
+            ),
+            Err(_) => None,
+        };
         let single: Option<&'static str> = std::env::var("LD01_S3_SINGLE")
             .ok()
             .map(|id| &*Box::leak(id.into_boxed_str()));
@@ -1346,6 +1407,7 @@ impl CaseConfig {
             rod_auto,
             turbine_governor,
             dc,
+            c4i_close_s,
             single,
             stuck,
             rod_trip,
@@ -1432,7 +1494,10 @@ fn drive(
     ask: &Ask<'_>,
 ) -> Driven {
     use leitbild_operating_water::{
-        frame::{COUNTER_NAMES, Class, Client, Diagnostic, Observer, Setup, Side, same_instant},
+        frame::{
+            Action, COUNTER_NAMES, Change, Class, Client, Diagnostic, Observer, Setup, Side,
+            same_instant,
+        },
         ida::System,
         joined::JoinedSystem,
         unit::plant::{self, Boundary, Plant},
@@ -1813,7 +1878,9 @@ fn drive(
     // C4 (C4 lane, r1): its own observation on the run (relief, PZR column,
     // the cells' departures, the acquired PT for rule A′), its ends, and
     // rule K's states 1 s after each phase change and at the declared end.
-    let c4_observe = case == Case::C4 && ask.label == "run";
+    // Block r5: the series' levels hold the frames too: relief flow and the
+    // PZR's levels are compared at frames.
+    let c4_observe = case == Case::C4 && (ask.label == "run" || ask.label.starts_with("rtol/"));
     let c4_classes = (case == Case::C4).then(|| {
         s3_harness::c4::Classes::from_block(&spec["volumeClasses"], &packet_json)
             .unwrap_or_else(|e| panic!("C4's volume classes: {e}"))
@@ -1845,6 +1912,20 @@ fn drive(
     if let Some(c) = command {
         driver.command(zero, c).unwrap();
     }
+    // C4-I: the operator's close, a class-R change on the unit's own path.
+    if let Some(close) = ask.config.c4i_close_s {
+        let due = zero + close;
+        driver
+            .decide(vec![Change {
+                due_s: due,
+                class: Class::R,
+                kind: "operator relief isolation close".into(),
+                action: Action::Held(Box::new(move |unit: &mut CaseUnit| {
+                    unit.operator_relief_isolation(due, true).map(|_| ())
+                })),
+            }])
+            .unwrap();
+    }
     let setup = Setup {
         network_ids: network_ids.as_slice(),
         absolute: atol.as_slice(),
@@ -1871,6 +1952,9 @@ fn drive(
     // CPU is marked at every chunk for the cost spans.
     let window_s = case_window(case, spec).filter(|_| command.is_some() || c5);
     let mut bounds: Vec<f64> = vec![zero, until];
+    if let Some(close) = ask.config.c4i_close_s {
+        bounds.push(zero + close);
+    }
     // C1, C5: the stand-in's exchange intervals (D1, S3-D42) are chunk
     // bounds, as the C5 host stops at each exchange's t1. C5's block copies
     // the quiet interval; C1 reads it from the D1 block itself.
@@ -2590,7 +2674,79 @@ fn drive(
             o4: Some(&o4),
             n4: n4.as_ref(),
         };
-        let judged = if c4_observe {
+        let birth = s3_harness::c4::saturation(Some(&o4));
+        let judged = if let (Some(close), "run") = (ask.config.c4i_close_s, ask.label) {
+            let joined = &ida.system().integrated().joined;
+            let valve = joined
+                .pzr()
+                .isolation_block()
+                .expect("C4-I needs a packet composing the relief isolation valve");
+            let (stroke_s, valve_id) = (valve.stroke_s, valve.id.clone());
+            let operator: Vec<(f64, String)> = ida
+                .system()
+                .log
+                .iter()
+                .filter(|(_, what)| what.contains(&valve_id))
+                .map(|(t, what)| (*t - zero, what.clone()))
+                .collect();
+            let births: Vec<(f64, String)> = events
+                .births
+                .iter()
+                .map(|(t, c, _, _)| (*t, classes.name(*c)))
+                .collect();
+            let receipts = driver.log.iter().flat_map(|e| {
+                let t = e["t_s"].as_f64().unwrap_or(f64::NAN) - zero;
+                e["restart"]["transactions"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .map(move |x| (t, x))
+            });
+            let mut lift_offs = Vec::new();
+            let mut root_vapor_kg = Vec::new();
+            for (t, x) in receipts {
+                for r in x["rods"].as_array().into_iter().flatten() {
+                    if r["event"] == "lift-off" {
+                        lift_offs.push((t, r["cluster"].as_str().unwrap_or("?").to_string()));
+                    }
+                }
+                for v in x["events"].as_array().into_iter().flatten() {
+                    if let Some(m) = v["vapor_kg_j_at_root"][0].as_f64() {
+                        root_vapor_kg.push(m);
+                    }
+                }
+            }
+            let relief_events: Vec<(f64, Value)> = events
+                .relief
+                .iter()
+                .filter(|(_, x)| {
+                    x.get("stuck_open").is_none() && x["stop"]["motion_after"] != "Open"
+                })
+                .cloned()
+                .collect();
+            s3_harness::c4i::judge(
+                &spec["lines"],
+                &s3_harness::c4i::Run {
+                    close_s: close,
+                    stroke_s,
+                    hold_end_s: span,
+                    end_s: end - zero,
+                    end_label: c4
+                        .end
+                        .as_ref()
+                        .and_then(|e| e["end"].as_str())
+                        .unwrap_or("?"),
+                    failed: failure.is_some(),
+                    operator: &operator,
+                    frames: &c4.rows,
+                    births: &births,
+                    lift_offs: &lift_offs,
+                    relief_events: &relief_events,
+                    root_vapor_kg: &root_vapor_kg,
+                    divisions: &divisions,
+                },
+            )
+        } else if ask.label == "run" {
             s3_harness::c4::judge(&spec["lines"], &run_c4, zero)
         } else {
             vec![
@@ -2620,6 +2776,7 @@ fn drive(
                 "per_cell": per_cell, "l1_changes": events.l1.len(), "chattering": events.chattering(),
                 "sg_relief": events.sg_relief.iter().map(|(t, v, th, d)| json!([t, v, th, d])).collect::<Vec<_>>(),
                 "relief": events.relief.iter().map(|(t, x)| json!([t, x])).collect::<Vec<_>>()},
+            "first_classified_birth": birth.map(|(t, cell)| json!({"t_s": t, "cell": cell})),
             "rule_k_states": c4.states, "observation_cpu_s": c4.obs_s,
             "pt_setup": {"channels": setup.ids, "max_age_frames": setup.max_age_frames, "low_frames": setup.low_frames, "high_frames": setup.high_frames},
             "frames": c4.rows});
@@ -3074,11 +3231,14 @@ fn c4_frame(
         core_vapor_kg: phase.iter().map(|r| r.vapor_kg).collect(),
     };
     let col = &ev.column;
-    let row = json!({"t_s": f.t, "pzr_roof_pa": f.roof_pa, "sg_pressure_pa": f.sg_pa, "relief_lift": f.lift,
+    let mut row = json!({"t_s": f.t, "pzr_roof_pa": f.roof_pa, "sg_pressure_pa": f.sg_pa, "relief_lift": f.lift,
         "relief_kg_s": relief, "pzr_collapsed_m": col.collapsed_elevation.value, "pzr_mixture_m": col.mixture_elevation.value,
         "pzr_vapor_zone_kg": col.vapor.mass.value,
         "core_departure_k_max": f.core_departure_k.iter().copied().fold(f64::NEG_INFINITY, f64::max),
         "core_vapor_kg": f.core_vapor_kg.iter().sum::<f64>(), "cells": cells});
+    if joined.pzr().isolation_block().is_some() {
+        row["relief_isolation_position"] = json!(100. * joined.pzr().isolation_position(t));
+    }
     Ok((f, row))
 }
 
@@ -3343,16 +3503,42 @@ fn s3_case_run() {
         |e| json!({"pinned": false, "error": e, "declared_sha256": guards::declared_sha256(&d.block).ok()}),
     );
     let tbd = d.tbd().unwrap();
-    // C4 runs on its pinned block r4 only (RP1-pin-s3-c4-r4).
+    // C4 runs on its pinned block r5 only (RP1-pin-s3-c4-r5).
     if case == Case::C4 {
         assert_eq!(
             guards::declared_sha256(&d.block).ok().as_deref(),
-            Some(C4_R4_SHA256),
-            "the C4 block is not RP1-pin-s3-c4-r4"
+            Some(C4_R5_SHA256),
+            "the C4 block is not RP1-pin-s3-c4-r5"
         );
     }
     let mut refusals = declaration::case_refusals(case, &pin, &tbd);
-    let spec = d.case(case);
+    let mut spec = d.case(case);
+    // C4-I: its block's lines on C4's drive; the run ends at the hold's end,
+    // so C4's `ends` do not apply, and a named end fails C4I.N2.
+    let c4i = config.c4i_close_s.map(|close| {
+        assert_eq!(case, Case::C4, "C4-I is C4's drive");
+        assert!(config.dc, "C4-I needs the declared DC section: LD01_DC=on");
+        let page = std::env::var("LD01_S3_DECLARATION")
+            .unwrap_or_else(|_| format!("{}/build-readiness.md", gates::wiki_model()));
+        let block = Block::from_page(&page, s3_harness::c4i::FENCE)
+            .unwrap_or_else(|e| panic!("C4-I's block: {e}"));
+        refuse_superseded(&block).unwrap_or_else(|e| panic!("{e}"));
+        let pin = guards::pin_of(&block, d.log.as_deref(), &d.log_page)
+            .unwrap_or_else(|e| panic!("C4-I's pin: {e}"));
+        let i = block.whole("/cases/C4I");
+        assert!(
+            i["closeAt_s"]
+                .as_array()
+                .is_some_and(|a| a.iter().any(|t| t.as_f64() == Some(close))),
+            "LD01_S3_C4I_CLOSE_S={close}: not one of the block's closeAt_s"
+        );
+        let hold = i["hold_s"].as_f64().expect("hold_s");
+        spec["lines"] = i["lines"].clone();
+        spec["ends"] =
+            json!({"rule": "the hold's end; any other stop fails C4I.N2", "cap_s": close + hold});
+        json!({"block": block.receipt(), "pin": pin, "close_s": close, "hold_s": hold,
+            "disclosure": block.whole("/disclosure"), "gates": i["gates"]})
+    });
     // C4 (r1) declares no duration: its last end is `ends.cap_s`.
     let declared_s = spec["duration_s"]
         .as_f64()
@@ -3967,17 +4153,46 @@ fn s3_case_run() {
                 checks.insert("h1a_convergence".into(), h1a);
             }
         }
-        let verdict = s3_harness::families::overall_of(
-            comparisons
+        // Block r5 (owner, 7 November): E judges the named outputs at operator
+        // grade; the S1 contract's rows below stay in the receipt, unjudged.
+        let c4_refinement = (case == Case::C4).then(|| {
+            let levels: Vec<s3_harness::c4::Level<'_>> = references
                 .iter()
-                .map(|c| c["verdict"].as_str().unwrap_or("?"))
-                .chain(
-                    checks
-                        .values()
-                        .map(|c| c["verdict"].as_str().unwrap_or("?")),
-                ),
+                .filter_map(|(name, r)| {
+                    let comparison = comparisons
+                        .iter()
+                        .find(|c| c["reference"] == name.as_str())?;
+                    Some(s3_harness::c4::Level {
+                        name,
+                        comparison,
+                        c4: &r.record["c4"],
+                    })
+                })
+                .collect();
+            let budgets = c4_refinement_budgets(g.budgets.timing_s);
+            s3_harness::c4::refinement(
+                &run.record["c4"],
+                &levels,
+                series.as_deref().unwrap_or_default(),
+                &budgets,
+            )
+        });
+        let verdict = c4_refinement.as_ref().map_or_else(
+            || {
+                s3_harness::families::overall_of(
+                    comparisons
+                        .iter()
+                        .map(|c| c["verdict"].as_str().unwrap_or("?"))
+                        .chain(
+                            checks
+                                .values()
+                                .map(|c| c["verdict"].as_str().unwrap_or("?")),
+                        ),
+                )
+            },
+            |r| r["verdict"].as_str().unwrap_or("fail"),
         );
-        families.insert("E_refinement".into(), json!({"family": "E refinement", "verdict": verdict, "checks": checks,
+        families.insert("E_refinement".into(), json!({"family": "E refinement", "verdict": verdict, "operator_grade": c4_refinement, "checks": checks,
             "electrical_band": "S3-D47 (interim, disclosed): E′ reports raw and 2 Hz-filtered differences; the verdict reads decision 0015 E1's 2 Hz band until the owner decides S4-6",
             "threshold_source": "ld01-accuracy-contract + ld01-s2-accuracy (E0), ld01-s2-gates referenceToleranceFactor, ld01-s1-gates eventReference",
             "electrical_extension": "E′ (S3-D23) per comparison (electrical_e0): Ieq = |i_dq|/sqrt(3) against 10 A and terminal power against 1 MW, for the cases accuracyExtension.appliesTo names",
@@ -4198,7 +4413,15 @@ fn s3_case_run() {
         } else {
             s3_harness::families::directions(case, &spec, &direction_inputs)
         };
-        families.insert("B_directions".into(), b_family);
+        families.insert(
+            "B_directions".into(),
+            if c4i.is_some() {
+                json!({"family": "B directions", "verdict": "not applicable",
+                    "reason": "C4-I's block declares no directions: its lines are the record"})
+            } else {
+                b_family
+            },
+        );
         // C1's drift, SS-1 and SS-2.
         if case == Case::C1 {
             let gg = &g.s2.gates;
@@ -4366,14 +4589,20 @@ fn s3_case_run() {
     };
     let (verdict, not_judged) = s3_harness::families::overall(
         failure.is_some(),
-        lines::all_pass(run.record["lines"].as_array().unwrap()),
+        if case == Case::C4 {
+            // C4 and C4-I: their diagnostics and recorded lines never decide.
+            s3_harness::c4::all_pass(run.record["lines"].as_array().unwrap())
+        } else {
+            lines::all_pass(run.record["lines"].as_array().unwrap())
+        },
         &families,
     );
     let mut gates_not_yet: Vec<Value> = not_implemented.iter().map(|s| json!(s)).collect();
     gates_not_yet.extend(not_judged);
     let mut receipt = json!({
         "kind": if evidence { "s3-case-run" } else { "s3-case-preview" },
-        "case": case.key(), "status": status, "verdict": verdict, "failure": failure,
+        "case": if c4i.is_some() { "C4-I" } else { case.key() }, "c4i": c4i,
+        "status": status, "verdict": verdict, "failure": failure,
         "refusals_or_deviations": refusals,
         "declaration": {"block": d.block.receipt(), "pin": pin, "tbd": tbd, "kinetics": kinetics,
             "s2_blocks": gate.as_ref().map(|g| g.s2.receipt())},
