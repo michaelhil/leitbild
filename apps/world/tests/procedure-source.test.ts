@@ -42,6 +42,29 @@ const publication = (revision: string, title = 'Reactor Trip') => createKnowledg
 ] })
 
 describe('native local procedure publication', () => {
+  test('validates distinct evidence sections even after repeated references retained their path, and retries a corrected publication', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'leitbild-procedure-section-validation-'))
+    try {
+      const ownerPath = 'packs/process-plant/engineering/criteria.md'
+      const basis = 'Basis: [First](../engineering/criteria.md#level), [Repeated](../engineering/criteria.md#level), [Second](../engineering/criteria.md#missing)'
+      const documents = [
+        { path: localPath('E-0'), content: markdownFor('E-0', 'Evidence').replace('Check:', `${basis}\nCheck:`) },
+        { path: ownerPath, content: '# Criteria\n\n## Level\nFirst criterion.\n\n## Scope\nSecond criterion.' },
+      ]
+      let current = createKnowledge({ revision: revisionA, documents })
+      const service = createProcedureSourceService({ sources: [localSource], retentionDirectory: directory, loadKnowledge: async () => current })
+      await expect(service.readCatalog()).rejects.toThrow('Unknown section: missing')
+      expect(await readdir(directory)).toEqual([])
+      current = createKnowledge({ revision: revisionA, documents: documents.map(document => ({
+        ...document, content: document.content.replace('#missing', '#scope'),
+      })) })
+      const document = await service.readDocument({ procedureId: 'E-0' })
+      expect(document.procedureId).toBe('E-0')
+      const retained = JSON.parse(await readFile(join(directory, `leitbild-${revisionA}.json`), 'utf8'))
+      expect(retained.documents.find((entry: { path: string }) => entry.path === ownerPath)).toEqual(documents[1])
+      expect((await service.readEvidence({ sourceRevision: revisionA, sourcePath: ownerPath, section: 'scope' })).content).toContain('Second criterion')
+    } finally { await rm(directory, { recursive: true, force: true }) }
+  })
   test('exact membership joins authored owners without copying or overriding procedure identities', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'leitbild-exact-procedures-'))
     try {
