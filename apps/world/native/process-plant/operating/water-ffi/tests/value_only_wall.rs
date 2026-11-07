@@ -76,7 +76,9 @@ fn laws(wall_t: f64) -> Vec<(&'static str, WallLaw)> {
 #[test]
 fn value_only_wet_contact_is_the_zero_direction_law_bit_for_bit() {
     let props = If97;
-    let pressures = [1e5, 1e6, 5e6, 7e6, 1e7, 12e6, 15.5e6, 16e6];
+    let pressures = [
+        1e5, 1e6, 5e6, 7e6, 1e7, 12e6, 15.5e6, 16e6, 16.6e6, 18e6, 19.85e6,
+    ];
     let subcooling = [60., 20., 5., 0.5, 0., -0.5];
     let superheat = [
         -10., 0.5, 2., 5., 10., 20., 30., 50., 80., 120., 200., 300., 450., 600.,
@@ -209,7 +211,7 @@ impl WaterProperties for Counted {
 #[test]
 fn shared_turnovers_answer_every_wall_law_bit_for_bit() {
     let direct = Counted::default();
-    let pressures = [1e5, 1e6, 7e6, 12e6, 15.5e6, 16e6];
+    let pressures = [1e5, 1e6, 7e6, 12e6, 15.5e6, 16e6, 16.6e6, 19.85e6];
     let subcooling = [40., 5., 0., -0.5];
     let superheat = [
         -10., 0.5, 2., 5., 10., 20., 30., 50., 80., 120., 200., 300., 450., 600.,

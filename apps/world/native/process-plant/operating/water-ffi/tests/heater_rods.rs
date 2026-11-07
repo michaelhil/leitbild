@@ -11,7 +11,7 @@ use leitbild_operating_plant::{
         },
         stratified::{self as st, Boundary, Case, Cell, Column, Coordinates, Receipt},
     },
-    thermal::{Scalar, WaterProperties},
+    thermal::{Scalar, WET_CONTACT_PRESSURE_MAX_PA, WaterProperties},
 };
 use leitbild_operating_water::If97;
 
@@ -862,7 +862,16 @@ fn heater_wet_law_refuses_outside_its_operating_pressure_domain() {
         .liquid_contact_at(s(p), s(t), If97.liquid(s(p), s(t)).unwrap(), &If97)
         .unwrap();
     assert!(h.wet_flux(1, &inside, s(t + 10.), &If97).is_ok());
-    for outside in [16.1e6, 0.09e6] {
+    // R4-WALL-CEILING: the law answers past the old 16 MPa guard, up to the
+    // Gorenflo term's stated end, on stable liquid at each pressure.
+    for p in [16.1e6, 19.85e6] {
+        let t = tsat(p) - 5.;
+        let contact = h
+            .liquid_contact_at(s(p), s(t), If97.liquid(s(p), s(t)).unwrap(), &If97)
+            .unwrap();
+        assert!(h.wet_flux(1, &contact, s(t + 10.), &If97).is_ok(), "{p} Pa");
+    }
+    for outside in [WET_CONTACT_PRESSURE_MAX_PA.next_up(), 0.09e6] {
         let mut ct = inside;
         ct.pressure = s(outside);
         match h.wet_flux(1, &ct, s(t + 10.), &If97) {
