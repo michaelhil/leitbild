@@ -689,11 +689,30 @@ impl<P: Properties> Blocks<'_, P> {
             }
         };
         let rate = self.rate(seed, l.index);
+        // R4-VAPOR-IMPULSE, as the residual's.
+        let leaving = |chart: flow::Chart| -> Scalar {
+            if l.phase != 1 || chart.inertance_kg_m4.value == 0. {
+                return s(0.);
+            }
+            let inertia_rate = net.support_inertia_rate(
+                l.face,
+                |r| {
+                    let m = self.rate(seed, net.stock_indices(r, 1).0);
+                    match pass.volume_rate[r] {
+                        None => m,
+                        Some(v) => m - pass.phase_mass[1][r] * v / pass.volume[r],
+                    }
+                },
+                |r| pass.volume[r],
+            );
+            flow::leaving_impulse_rate(inertia_rate, chart.volume_flow_m3_s)
+        };
         if reuse_chart {
             if let Some(row) = restriction(current)? {
                 return Ok((row, false));
             }
-            let row = flow::momentum_residual(rate, current, force).map_err(recoverable)?
+            let row = flow::momentum_residual(rate, current, force + leaving(current))
+                .map_err(recoverable)?
                 / s(net.scales[l.index]);
             return Ok((row, false));
         }
@@ -720,7 +739,8 @@ impl<P: Properties> Blocks<'_, P> {
         if let Some(row) = restriction(chart)? {
             return Ok((row, cold));
         }
-        let row = flow::momentum_residual(rate, chart, force).map_err(recoverable)?
+        let row = flow::momentum_residual(rate, chart, force + leaving(chart))
+            .map_err(recoverable)?
             / s(net.scales[l.index]);
         Ok((row, cold))
     }

@@ -499,6 +499,59 @@ fn mouth_path_block_replay_matches_the_colored_assembly() {
         assert!(worst < 1e-10, "{name}: block against colored {worst:e}");
     }
     println!("{}", json!({"mouth_path_block_vs_colored": report}));
+    // R4-VAPOR-IMPULSE: the same comparison with SURGE's vapor mass leaving,
+    // where the row reads its `y'` and the Jacobian carries `cj`, and the term
+    // on the moving state's row against the hand value.
+    let mut leaving = yp.clone();
+    leaving[m1] = -0.2 / sc[m1];
+    let mut cv = vec![0.; pattern.nonzeros()];
+    let mut bv = vec![0.; pattern.nonzeros()];
+    let cj = 350.;
+    net.jacobian_colored(0., cj, &moving, &leaving, &colored, &mut cv)
+        .expect("colored assembly, mass leaving");
+    net.jacobian_blocks(0., cj, &moving, &leaving, &blocks, &mut bv)
+        .expect("block assembly, mass leaving");
+    let mut worst = 0_f64;
+    for j in 0..pattern.columns() {
+        let range = pattern.pointers()[j]..pattern.pointers()[j + 1];
+        let scale = range
+            .clone()
+            .map(|q| cv[q].abs().max(bv[q].abs()))
+            .fold(0., f64::max);
+        for q in range.filter(|q| cv[*q] != bv[*q]) {
+            worst = worst.max((cv[q] - bv[q]).abs() / scale);
+        }
+    }
+    assert!(
+        worst < 1e-10,
+        "mass leaving: block against colored {worst:e}"
+    );
+    let row = net.face_layout[mouth].index;
+    let column = pattern.pointers()[m1]..pattern.pointers()[m1 + 1];
+    let entry = |v: &[f64]| {
+        column
+            .clone()
+            .find(|q| pattern.indices()[*q] == row)
+            .map(|q| v[q])
+            .expect("the mouth row reads SURGE's vapor mass")
+    };
+    let mut twice = vec![0.; pattern.nonzeros()];
+    net.jacobian_colored(0., 2. * cj, &moving, &leaving, &colored, &mut twice)
+        .expect("colored assembly at twice cj");
+    let measured = (entry(&twice) - entry(&cv)) / cj;
+    let chart = net.chart(face, 1).expect("the mouth's vapor chart");
+    let weight: f64 = i.raw["mechanics"]["faces"][face]["supports"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p["inverse_area_length_per_m"].as_f64().unwrap())
+        .sum::<f64>()
+        / v;
+    let expected = -weight * chart.volume_flow_m3_s.value * sc[m1] / sc[row];
+    assert!(
+        (measured - expected).abs() <= 1e-9 * expected.abs(),
+        "the row's d/dy' {measured:e} against {expected:e}"
+    );
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
