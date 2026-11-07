@@ -329,6 +329,38 @@ impl<S: JoinedSystem> Electrified<S> {
         ));
         Ok(done)
     }
+    /// R4-RELIEF-ISO: the operator's close or open of the relief isolation
+    /// valve at `t` (`false`: refused by its guards, recorded): no supply,
+    /// or already there. A stroke changes the relief's area, so the host
+    /// applies this as a class-R change.
+    pub fn operator_relief_isolation(&mut self, t: f64, close: bool) -> Result<bool, String> {
+        let dc = self.dc.as_ref().ok_or("no DC groups composed")?;
+        let joined = &mut self.inner.integrated_mut().joined;
+        let valve = joined
+            .pzr()
+            .isolation_block()
+            .ok_or("the packet composes no relief isolation")?;
+        let (id, supply) = (valve.id.clone(), valve.supply_group.clone());
+        let supplied = dc
+            .reports(t)?
+            .iter()
+            .find(|r| r.group == supply)
+            .ok_or_else(|| format!("{id}: no DC group {supply}"))?
+            .output_available;
+        let target = if close { "close" } else { "open" };
+        let done = supplied
+            && joined
+                .pzr_mut()
+                .drive_isolation(t, close)
+                .map_err(|e| format!("{e:?}"))?;
+        let why = match (done, supplied) {
+            (true, _) => "accepted".to_string(),
+            (false, false) => format!("refused: no {supply} supply"),
+            (false, true) => format!("refused: already {target}"),
+        };
+        self.log.push((t, format!("operator {id} {target}: {why}")));
+        Ok(done)
+    }
     /// PROC T5: the local manual charger input selection of `group` (I3)
     /// onto `bus` at `t` (`false`: already selected).
     pub fn operator_dc_charger_input(

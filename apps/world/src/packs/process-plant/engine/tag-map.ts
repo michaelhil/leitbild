@@ -6,11 +6,11 @@ import { variablePathSchema, type CompiledPlantGraph, type CompiledVariable, typ
 // engine binds it against the child's CHANNELS at LOAD and refuses any missing channel, any graph variable
 // the map does not cover, and any unit pair the closed conversion table below does not hold.
 
-export const ld01CommandKinds = ['TurbineTrip', 'TurbineTripAcquired', 'ManualReactorTrip', 'HoldingLoss', 'ReliefStuckOpen', 'SupplyLoss', 'IncomingDevice', 'StartConsumer', 'DcDistribution', 'DcChargerInput'] as const
+export const ld01CommandKinds = ['TurbineTrip', 'TurbineTripAcquired', 'ManualReactorTrip', 'HoldingLoss', 'ReliefStuckOpen', 'ReliefIsolationClose', 'ReliefIsolationOpen', 'SupplyLoss', 'IncomingDevice', 'StartConsumer', 'DcDistribution', 'DcChargerInput'] as const
 export type Ld01CommandKind = typeof ld01CommandKinds[number]
 
 export const ld01CommandSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.enum(['TurbineTrip', 'TurbineTripAcquired', 'ManualReactorTrip', 'HoldingLoss', 'ReliefStuckOpen']) }).strict(),
+  z.object({ kind: z.enum(['TurbineTrip', 'TurbineTripAcquired', 'ManualReactorTrip', 'HoldingLoss', 'ReliefStuckOpen', 'ReliefIsolationClose', 'ReliefIsolationOpen']) }).strict(),
   z.object({ kind: z.literal('SupplyLoss'), rotor: z.number().int().nonnegative() }).strict(),
   // The operator's local electrical commands (PROC T4, T5, T11): the unit applies each at its time, class R.
   z.object({ kind: z.literal('IncomingDevice'), bus: z.string().min(1), source: z.enum(['unit', 'reserve']), target: z.enum(['Open', 'Closed']) }).strict(),

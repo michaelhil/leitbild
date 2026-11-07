@@ -21,7 +21,7 @@
 //! not composed in the operating unit.
 use crate::{
     If97,
-    frame::{Change, Client, Dense},
+    frame::{Action, Change, Class, Client, Dense},
     joined::JoinedSystem,
 };
 use leitbild_operating_plant::{
@@ -64,6 +64,8 @@ pub struct PzrClient {
     pub in_force_w: f64,
     pub spray_demand: f64,
     pub scratch: Vec<f64>,
+    /// R4-RELIEF-ISO: this frame sampled a stroke with its supply gone.
+    pub valve_unsupplied: bool,
 }
 impl PzrClient {
     /// The master's demand (Pa), heater request (W) and spray demand at
@@ -131,11 +133,39 @@ impl<S: JoinedSystem> Client<S> for PzrClient {
     fn advance(&mut self, _dense: &dyn Dense, _from: f64, _to: f64) -> Result<(), String> {
         Ok(())
     }
+    /// R4-RELIEF-ISO: a stroke in progress whose supply is gone.
+    fn sample(&mut self, _k: u64, t: f64, system: &S) -> Result<(), String> {
+        let pzr = system.integrated().joined.pzr();
+        self.valve_unsupplied = match (pzr.isolation_block(), system.dc_groups()) {
+            (Some(valve), Some(groups)) if pzr.isolation_moving() => groups
+                .reports(t)?
+                .iter()
+                .any(|r| r.group == valve.supply_group && !r.output_available),
+            _ => false,
+        };
+        Ok(())
+    }
     fn frame(&mut self, _k: u64, t: f64, dense: &dyn Dense) -> Result<Vec<Change<S>>, String> {
         dense.derivative(t, 0, &mut self.scratch)?;
         self.within_span(Some(t), &self.scratch)?;
         [self.demand_pa, self.in_force_w, self.spray_demand] = self.outputs(&self.scratch);
-        Ok(Vec::new())
+        if !std::mem::take(&mut self.valve_unsupplied) {
+            return Ok(Vec::new());
+        }
+        // The position arrests where it is; intent does not replay.
+        Ok(vec![Change {
+            due_s: t,
+            class: Class::R,
+            kind: "relief isolation: supply lost in travel".into(),
+            action: Action::Held(Box::new(move |system: &mut S| {
+                system
+                    .integrated_mut()
+                    .joined
+                    .pzr_mut()
+                    .arrest_isolation(t)
+                    .map_err(|e| format!("{e:?}"))
+            })),
+        }])
     }
 }
 
@@ -262,6 +292,7 @@ pub fn commission(
         in_force_w: 0.,
         spray_demand: 0.,
         scratch: vec![0.; y.len()],
+        valve_unsupplied: false,
     };
     client.within_span(None, y)?;
     [client.demand_pa, client.in_force_w, client.spray_demand] = client.outputs(y);

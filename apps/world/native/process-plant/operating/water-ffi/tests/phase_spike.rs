@@ -125,6 +125,7 @@ impl Coupling for Relief {
         Ok(stratified::Boundary {
             relief: Some(stratified::ReliefState {
                 lift: s(self.lift),
+                isolation: Scalar::constant(1.),
                 back_pressure_pa: Some(s(self.back_pressure_pa)),
             }),
             ..stratified::Boundary::closed()

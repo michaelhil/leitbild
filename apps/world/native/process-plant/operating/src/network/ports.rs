@@ -252,6 +252,7 @@ impl<P: Properties> Network<P> {
             .any(|p| p.kind == stratified::PortKind::Relief)
             .then_some(stratified::ReliefState {
                 lift: s(0.),
+                isolation: s(1.),
                 back_pressure_pa: None,
             });
         stratified::Boundary {

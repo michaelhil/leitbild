@@ -99,6 +99,63 @@ fn fatal(reason: impl Into<String>) -> Failure {
 /// never crosses zero.
 pub const DISARMED: f64 = 1.;
 
+/// `ld01-pzr-relief-isolation` (R4-RELIEF-ISO).
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct IsolationBlock {
+    pub id: String,
+    #[serde(rename = "strokeTime_s")]
+    pub stroke_s: f64,
+    #[serde(rename = "supplyGroup")]
+    pub supply_group: String,
+    #[serde(rename = "supplyPower_W")]
+    pub supply_power_w: f64,
+}
+
+/// R4-RELIEF-ISO: the series isolation valve's achieved position, a known
+/// function of time between commands. Not a coordinate and no root: the
+/// stroke's start is a restart and its end an owner time event, so a run
+/// that never moves it keeps its bits.
+#[derive(Clone, Copy, Debug)]
+pub struct Isolation {
+    stroke_s: f64,
+    /// The open fraction while still; where the stroke started while moving.
+    position: f64,
+    /// While moving: the stroke's start and its signed fraction per second.
+    motion: Option<(f64, f64)>,
+}
+
+impl Isolation {
+    fn open_fraction(&self, t: f64) -> f64 {
+        match self.motion {
+            None => self.position,
+            Some((from, rate)) => self.position + rate * (t - from),
+        }
+    }
+    fn target(&self) -> Option<f64> {
+        self.motion.map(|(_, rate)| if rate < 0. { 0. } else { 1. })
+    }
+    fn arrival(&self) -> Option<f64> {
+        let (from, rate) = self.motion?;
+        Some(from + (self.target()? - self.position) / rate)
+    }
+    /// Start toward `target`; `false` when it stands there or moves there.
+    fn drive(&mut self, t: f64, target: f64) -> bool {
+        if self.target() == Some(target) || (self.motion.is_none() && self.position == target) {
+            return false;
+        }
+        self.position = self.open_fraction(t);
+        let rate = if target < self.position { -1. } else { 1. } / self.stroke_s;
+        self.motion = Some((t, rate));
+        true
+    }
+    /// Stop where it is (the supply lost in travel).
+    fn arrest(&mut self, t: f64) {
+        self.position = self.open_fraction(t);
+        self.motion = None;
+    }
+}
+
 /// The joined packet's `pzrMetal` section: the owners' strict blocks,
 /// unchanged, and the relief receiver's backpressure.
 #[derive(Clone, Debug, Deserialize)]
@@ -123,6 +180,11 @@ pub struct Section {
     /// law and the PT1 channel's lag, when the packet composes them.
     #[serde(rename = "continuousControl")]
     pub continuous_control: Option<ContinuousControl>,
+    /// R4-RELIEF-ISO: `ld01-pzr-relief-isolation`, when the packet composes
+    /// the valve. Without it the relief has no isolation and the valve's
+    /// commands refuse by name.
+    #[serde(rename = "reliefIsolation")]
+    pub relief_isolation: Option<IsolationBlock>,
     /// The compiler's consumed pages, for receipts only.
     pub provenance: serde_json::Value,
 }
@@ -356,6 +418,11 @@ pub struct Pzr {
     heaters: Heaters,
     walls: Walls,
     relief: Option<Relief>,
+    /// R4-RELIEF-ISO: the valve when composed, and the open fraction at the
+    /// evaluation's time.
+    isolation: Option<Isolation>,
+    isolation_block: Option<IsolationBlock>,
+    open_fraction: f64,
     /// The held heater demand (W; P4's until a control frame) and each
     /// bank's delivered power, in force under [`Control::Held`].
     request_w: f64,
@@ -606,6 +673,13 @@ impl Pzr {
             heaters,
             walls,
             relief,
+            isolation: section.relief_isolation.as_ref().map(|b| Isolation {
+                stroke_s: b.stroke_s,
+                position: 1.,
+                motion: None,
+            }),
+            isolation_block: section.relief_isolation.clone(),
+            open_fraction: 1.,
             request_w,
             bank_power_w,
             continuous,
@@ -641,6 +715,59 @@ impl Pzr {
     }
     pub fn relief(&self) -> Option<Relief> {
         self.relief
+    }
+    /// R4-RELIEF-ISO: the valve's block, when composed.
+    pub fn isolation_block(&self) -> Option<&IsolationBlock> {
+        self.isolation_block.as_ref()
+    }
+    /// R4-RELIEF-ISO: the evaluation's time, for the valve's open fraction.
+    pub fn at_time(&mut self, t: f64) {
+        if let Some(valve) = &self.isolation {
+            self.open_fraction = valve.open_fraction(t);
+        }
+    }
+    /// R4-RELIEF-ISO: the achieved open fraction at `t`, 1 with no valve.
+    pub fn isolation_position(&self, t: f64) -> f64 {
+        self.isolation.map_or(1., |v| v.open_fraction(t))
+    }
+    /// R4-RELIEF-ISO: whether the valve is travelling.
+    pub fn isolation_moving(&self) -> bool {
+        self.isolation.is_some_and(|v| v.motion.is_some())
+    }
+    /// R4-RELIEF-ISO: start the valve toward shut or open at `t`; `false`
+    /// when it stands at that target or already moves there.
+    pub fn drive_isolation(&mut self, t: f64, close: bool) -> Result<bool, Failure> {
+        let valve = self
+            .isolation
+            .as_mut()
+            .ok_or_else(|| fatal("the block composes no relief isolation"))?;
+        Ok(valve.drive(t, if close { 0. } else { 1. }))
+    }
+    /// R4-RELIEF-ISO: the supply lost in travel arrests the valve where it
+    /// is; intent does not replay when the supply returns.
+    pub fn arrest_isolation(&mut self, t: f64) -> Result<(), Failure> {
+        self.isolation
+            .as_mut()
+            .ok_or_else(|| fatal("the block composes no relief isolation"))?
+            .arrest(t);
+        Ok(())
+    }
+    /// R4-RELIEF-ISO: the stroke's end strictly after `t`.
+    pub fn next_isolation_event(&self, t: f64) -> Option<f64> {
+        self.isolation?.arrival().filter(|a| *a > t)
+    }
+    /// R4-RELIEF-ISO: the stroke ending exactly at `t`, its receipt.
+    pub fn isolation_event(&mut self, t: f64) -> Option<serde_json::Value> {
+        let valve = self.isolation.as_mut()?;
+        if valve.arrival() != Some(t) {
+            return None;
+        }
+        let target = valve.target()?;
+        valve.position = target;
+        valve.motion = None;
+        Some(
+            json!({"owner":"pzr","t_s":t,"relief_isolation":{"position":target,"stateChanged":true}}),
+        )
     }
     /// The held heater demand, W: P4's prepared demand until a controller
     /// frame replaces it. Under [`Control::Continuous`] it is not in force:
@@ -879,6 +1006,7 @@ impl Pzr {
             rows[0] = x.rate(0) - s(r.device.lift_rate(r.motion));
             ReliefState {
                 lift: x.value(0),
+                isolation: s(self.open_fraction),
                 back_pressure_pa: Some(s(r.back_pressure_pa)),
             }
         });
@@ -1057,6 +1185,14 @@ impl Pzr {
             if r.stuck_open {
                 v["stuck_open"] = json!(true);
             }
+            // R4-RELIEF-ISO: the valve, only once it has left full open.
+            if let Some(valve) = self
+                .isolation
+                .filter(|v| v.motion.is_some() || v.position != 1.)
+            {
+                v["isolation"] = json!({"position": bits(valve.position),
+                    "motion": valve.motion.map(|(from, rate)| [bits(from), bits(rate)])});
+            }
             v
         });
         if self.control == Control::Continuous {
@@ -1132,12 +1268,42 @@ impl Pzr {
                 // HOOK (C4 lane): a declared fails-open malfunction is the
                 // third key, present only once declared and only as true.
                 let stuck_open = v.get("stuck_open").is_some();
-                let keys: &[&str] = if stuck_open {
-                    &["demand_open", "motion", "stuck_open"]
-                } else {
-                    &["demand_open", "motion"]
-                };
-                let r = snapshot_object(v, "pzr relief", keys)?;
+                // R4-RELIEF-ISO: the valve, present only once it has left
+                // full open.
+                let moved = v.get("isolation");
+                let mut keys = vec!["demand_open", "motion"];
+                if stuck_open {
+                    keys.push("stuck_open");
+                }
+                if moved.is_some() {
+                    keys.push("isolation");
+                }
+                let r = snapshot_object(v, "pzr relief", &keys)?;
+                match (self.isolation.as_mut(), moved) {
+                    (Some(valve), Some(m)) => {
+                        let m =
+                            snapshot_object(m, "pzr relief isolation", &["position", "motion"])?;
+                        valve.position = bits(&m["position"])?;
+                        valve.motion = match &m["motion"] {
+                            serde_json::Value::Null => None,
+                            pair => {
+                                let pair = pair
+                                    .as_array()
+                                    .filter(|a| a.len() == 2)
+                                    .ok_or_else(|| fatal("snapshot: relief isolation motion"))?;
+                                Some((bits(&pair[0])?, bits(&pair[1])?))
+                            }
+                        };
+                    }
+                    (Some(valve), None) => {
+                        valve.position = 1.;
+                        valve.motion = None;
+                    }
+                    (None, None) => {}
+                    (None, Some(_)) => {
+                        return Err(fatal("snapshot: a relief isolation state with no valve"));
+                    }
+                }
                 if stuck_open && r["stuck_open"] != json!(true) {
                     return Err(fatal(
                         "snapshot: relief stuck_open must be true when present",
@@ -1225,6 +1391,27 @@ impl Pzr {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_isolation_valve_moves_at_one_stroke_and_arrests_where_it_is() {
+        let mut v = Isolation {
+            stroke_s: 2.,
+            position: 1.,
+            motion: None,
+        };
+        assert_eq!(v.open_fraction(5.), 1.);
+        assert!(!v.drive(5., 1.), "already open");
+        assert!(v.drive(10., 0.));
+        assert!(!v.drive(10.5, 0.), "already closing");
+        assert_eq!(v.open_fraction(11.), 0.5);
+        assert_eq!(v.arrival(), Some(12.));
+        // Reversal starts from the achieved position.
+        assert!(v.drive(11., 1.));
+        assert_eq!(v.arrival(), Some(12.));
+        v.arrest(11.5);
+        assert_eq!((v.position, v.motion), (0.75, None));
+        assert_eq!(v.arrival(), None);
+    }
 
     fn relief() -> Relief {
         Relief {

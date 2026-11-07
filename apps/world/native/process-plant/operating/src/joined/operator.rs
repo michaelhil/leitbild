@@ -1132,6 +1132,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
         if y.len() != o.end || yp.len() != o.end || seed.is_some_and(|d| d.len() != o.end) {
             return Err(fatal("stage length"));
         }
+        self.blocks.pzr.at_time(t);
         self.blocks.pre_network(y, yp, seed, cj)?;
         // R4-PZR-PI (S-b): the continuous spray stem's opening, with this
         // evaluation's direction, for the valve's restriction row.
@@ -2127,6 +2128,13 @@ impl<P: Properties + WaterProperties> Joined<P> {
             });
         }
         self.report_holding_opening(t, &mut done)?;
+        // R4-RELIEF-ISO: the valve's stroke ends here (class R).
+        if let Some(receipt) = self.blocks.pzr.isolation_event(t) {
+            done.push(super::block::Transaction {
+                deposits: Vec::new(),
+                receipt,
+            });
+        }
         Ok(done)
     }
     /// R4-DUMP (lead's ruling 4): every owner sees the reactor trip as one
@@ -2212,6 +2220,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
             self.network.spray_next_instant(t).and_then(|(a, c)| {
                 (c == crate::control::spray_valve::StemChange::Lock).then_some(a)
             }),
+            self.blocks.pzr.next_isolation_event(t),
         ]
         .into_iter()
         .flatten()

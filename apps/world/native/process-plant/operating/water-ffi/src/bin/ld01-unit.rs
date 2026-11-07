@@ -252,6 +252,10 @@ enum Operator {
         group: String,
         bus: String,
     },
+    /// R4-RELIEF-ISO: close or open the relief isolation valve.
+    ReliefIsolation {
+        close: bool,
+    },
 }
 
 /// An operator command by name, its keys exactly its own; `None` for a kind
@@ -277,6 +281,8 @@ fn operator_of(v: &Value, kind: &str) -> Option<Result<Operator, String>> {
                 },
             })
         }),
+        "ReliefIsolationClose" => parsed(&[]).map(|()| Operator::ReliefIsolation { close: true }),
+        "ReliefIsolationOpen" => parsed(&[]).map(|()| Operator::ReliefIsolation { close: false }),
         "StartConsumer" => parsed(&["consumer"]).and_then(|()| {
             Ok(Operator::Start {
                 consumer: owned("consumer")?,
@@ -330,6 +336,9 @@ enum Reading {
     /// Divisions that recorded the request.
     Request(&'static str),
     FieldInitiated,
+    /// R4-RELIEF-ISO.
+    ReliefIsolationPosition,
+    ReliefLiftOpen,
     ReleasedPower,
     PzrPressure,
     PzrCollapsedLevel,
@@ -625,6 +634,25 @@ fn channels(plant: &Plant, inputs: &Inputs) -> Result<Vec<Channel>, String> {
         Reading::HeaterRequest,
     ));
     let joined = &plant.ida.system().integrated().joined;
+    // R4-RELIEF-ISO: the valve's position and the relief's direct lift
+    // indication, where the packet composes the valve. True flow stays in
+    // the receipts.
+    if let Some(valve) = joined.pzr().isolation_block() {
+        out.push(channel(
+            format!("{}.POSITION", valve.id),
+            "%",
+            "PZR relief isolation valve position (100 open)",
+            "R4-RELIEF-ISO position indication",
+            Reading::ReliefIsolationPosition,
+        ));
+        out.push(channel(
+            "LD01.PZR.RELIEF.LIFT.OPEN",
+            "1",
+            "PZR relief lift indication (1 off its seat, 0 seated)",
+            "R4-RELIEF-ISO direct lift indication",
+            Reading::ReliefLiftOpen,
+        ));
+    }
     let scales = joined.scales();
     let labels: Vec<String> = joined
         .layouts()
@@ -1281,6 +1309,12 @@ impl Unit {
                         None => return Err(format!("no engineering value {id}")),
                     },
                     Reading::IcReportQuality(i) => flag(reports[*i].1.is_some()),
+                    Reading::ReliefIsolationPosition => {
+                        100. * unit.integrated().joined.pzr().isolation_position(t)
+                    }
+                    Reading::ReliefLiftOpen => {
+                        flag(y[unit.integrated().joined.offsets().pzr] != 0.)
+                    }
                     Reading::Latched(f) => divisions.iter().filter(|d| d.latched(f)).count() as f64,
                     Reading::DivisionTrip(d) => flag(divisions[*d].trip.is_some()),
                     Reading::DivisionPowered(d) => flag(divisions[*d].powered),
@@ -1531,6 +1565,15 @@ impl Unit {
                     .support(consumer)
                     .ok_or_else(|| format!("{kind}: no consumer {consumer}"))?;
             }
+            Operator::ReliefIsolation { .. } => {
+                let joined = &self.plant.ida.system().integrated().joined;
+                if joined.pzr().isolation_block().is_none() {
+                    return Err(format!("{kind}: the packet composes no relief isolation"));
+                }
+                if self.dc.is_none() {
+                    return Err(format!("{kind}: no DC groups composed"));
+                }
+            }
             Operator::Dc { group, .. } => {
                 group_of(group)?;
             }
@@ -1563,6 +1606,9 @@ impl Unit {
                     Operator::Dc { group, command } => u.operator_dc(due_s, group, *command),
                     Operator::Charger { group, bus } => {
                         u.operator_dc_charger_input(due_s, group, bus)
+                    }
+                    Operator::ReliefIsolation { close } => {
+                        u.operator_relief_isolation(due_s, *close)
                     }
                 }?;
                 result.set(Some(done));

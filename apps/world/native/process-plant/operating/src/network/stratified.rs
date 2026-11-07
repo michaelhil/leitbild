@@ -932,6 +932,10 @@ pub struct HeaterReceipt {
 #[derive(Clone, Copy, Debug)]
 pub struct ReliefState {
     pub lift: Scalar,
+    /// R4-RELIEF-ISO: the series isolation valve's open fraction, 1 where
+    /// none is composed; the relief's area is `x s A` (one multiplier, the
+    /// owner's labelled judgement, and no open-position loss).
+    pub isolation: Scalar,
     /// `None` only for a relief held on its seat with no receiver composed
     /// (the network alone, S1): a lift, or a lift direction, refuses then.
     pub back_pressure_pa: Option<Scalar>,
@@ -2433,7 +2437,7 @@ impl Cell {
                 let device = port
                     .relief
                     .ok_or_else(|| fatal("relief port without its device"))?;
-                let area = state.lift * s(device.effective_area_per_lift_m2);
+                let area = state.lift * s(device.effective_area_per_lift_m2) * state.isolation;
                 let mut flow = ReliefFlow {
                     effective_area_m2: area,
                     vapor_kg_s: s(0.),

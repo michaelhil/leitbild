@@ -563,8 +563,9 @@ fn default_load() -> Value {
 
 /// Advance from exchange `from` until an exchange names an end: its frame.
 fn to_the_end(host: &mut Host, instant: impl Fn(u64) -> f64, from: u64, last: u64) -> Frame {
+    let mut walls = AdvanceWalls::default();
     for k in from..=last {
-        let (payload, _) = advance(host, instant(k));
+        let (payload, _) = advance(host, &mut walls, instant(k));
         let f = frame(&payload);
         if !f.events["ended"].is_null() {
             return f;
@@ -688,4 +689,135 @@ fn a_refused_state_stops_the_unit_by_name() {
     assert!(again.contains("solver time stopped"), "{again}");
     host.ok(STATUS, &[]);
     host.close();
+}
+
+#[test]
+#[ignore = "NOT-EVIDENCE gate: ld01-unit, the stuck-open relief isolated and held (minutes); a packet composing the valve"]
+fn the_relief_isolation_valve_stops_a_stuck_open_relief_on_the_real_unit() {
+    let receipts = std::path::PathBuf::from(env("LD01_UNIT_HOST_RECEIPTS"));
+    std::fs::create_dir_all(&receipts).expect("receipt directory");
+    // LD01_UNIT_HOST_ISOLATE: the close's exchange (0.1 s each after t0);
+    // LD01_UNIT_HOST_SPAN: exchanges after it.
+    let close_at: u64 = env("LD01_UNIT_HOST_ISOLATE").parse().expect("an exchange");
+    let span: u64 = env("LD01_UNIT_HOST_SPAN").parse().expect("exchanges");
+    let load = serde_json::to_vec(&default_load()).unwrap();
+    let mut a = Host::spawn(&receipts.join("iso.stderr.log"));
+    let mut walls = AdvanceWalls::default();
+    let loaded = a.json(LOAD, &load);
+    let t0 = bits_of(&loaded["t_bits"]);
+    let period = loaded["frame_s"].as_f64().expect("frame_s");
+    let k0 = (t0 / period).round() as u64;
+    let instant = |k: u64| (k0 + k) as f64 * period;
+    let channels = a.json(CHANNELS, &[]);
+    let slot = |id: &str| {
+        channels
+            .as_array()
+            .unwrap()
+            .iter()
+            .position(|c| c["id"] == id)
+            .unwrap_or_else(|| panic!("no channel {id}"))
+    };
+    let position = slot("LD01.PZR.RELIEF.ISO.POSITION");
+    let lift = slot("LD01.PZR.RELIEF.LIFT.OPEN");
+    let pressure = slot("LD01.PZR.PRESSURE");
+    let relief = json!({"kind": "ReliefStuckOpen", "t_apply": instant(1)});
+    a.json(COMMAND, &serde_json::to_vec(&relief).unwrap());
+    let mut trace = Vec::new();
+    let mut at_close = None;
+    let mut shut_at = None;
+    for k in 1..=close_at + span {
+        let (payload, _) = advance(&mut a, &mut walls, instant(k));
+        let f = frame(&payload);
+        assert!(f.events["ended"].is_null(), "{}", f.events["ended"]);
+        if k == close_at {
+            assert_eq!(f.values[position], 100.);
+            assert_eq!(f.values[lift], 1.);
+            let close = json!({"kind": "ReliefIsolationClose", "t_apply": f.t});
+            let reply = a.json(COMMAND, &serde_json::to_vec(&close).unwrap());
+            assert_eq!(reply["accepted"], json!(true), "{reply}");
+            at_close = Some(f.values[pressure]);
+        }
+        if shut_at.is_none() && f.values[position] == 0. {
+            shut_at = Some(f.t);
+            // Already shut is a result, not a refusal.
+            let again = json!({"kind": "ReliefIsolationClose", "t_apply": f.t});
+            let reply = a.json(COMMAND, &serde_json::to_vec(&again).unwrap());
+            assert_eq!(reply["accepted"], json!(false), "{reply}");
+        }
+        if k % 50 == 0 {
+            trace.push(json!({"t": f.t, "pressure_pa": f.values[pressure],
+                "position": f.values[position], "lift_open": f.values[lift]}));
+        }
+    }
+    let shut_at = shut_at.expect("the valve shuts");
+    let (payload, _) = advance(&mut a, &mut walls, instant(close_at + span + 1));
+    let last = frame(&payload);
+    assert_eq!(last.values[lift], 1., "a stuck relief stays off its seat");
+    assert!(last.values[pressure] > at_close.expect("the close"));
+    std::fs::write(
+        receipts.join("isolation.json"),
+        serde_json::to_vec_pretty(&json!({"close_exchange": close_at, "shut_at_s": shut_at,
+            "last_t_s": last.t, "last_pressure_pa": last.values[pressure], "trace": trace}))
+        .unwrap(),
+    )
+    .unwrap();
+    a.close();
+}
+
+#[test]
+#[ignore = "NOT-EVIDENCE gate: ld01-unit, the isolation valve's supply guard and arrest (seconds); a packet composing the valve and the declared DC section"]
+fn the_relief_isolation_valve_answers_to_its_supply_on_the_real_unit() {
+    let receipts = std::path::PathBuf::from(env("LD01_UNIT_HOST_RECEIPTS"));
+    std::fs::create_dir_all(&receipts).expect("receipt directory");
+    let load = serde_json::to_vec(&default_load()).unwrap();
+    let mut a = Host::spawn(&receipts.join("iso-supply.stderr.log"));
+    let mut walls = AdvanceWalls::default();
+    let loaded = a.json(LOAD, &load);
+    let t0 = bits_of(&loaded["t_bits"]);
+    let period = loaded["frame_s"].as_f64().expect("frame_s");
+    let k0 = (t0 / period).round() as u64;
+    let instant = |k: u64| (k0 + k) as f64 * period;
+    let channels = a.json(CHANNELS, &[]);
+    let position = channels
+        .as_array()
+        .unwrap()
+        .iter()
+        .position(|c| c["id"] == "LD01.PZR.RELIEF.ISO.POSITION")
+        .expect("the position channel");
+    let relief = json!({"kind": "ReliefStuckOpen", "t_apply": instant(1)});
+    a.json(COMMAND, &serde_json::to_vec(&relief).unwrap());
+    // The supply's guard is a result, not a refusal: with ACT.A's distribution
+    // open the close is refused, and nothing moves.
+    let dc = |action: &str, t: f64| json!({"kind": "DcDistribution", "t_apply": t, "group": "LD01.DC.ACT.A", "action": action});
+    let (first, _) = advance(&mut a, &mut walls, instant(1));
+    let t1 = frame(&first).t;
+    a.json(COMMAND, &serde_json::to_vec(&dc("Open", t1)).unwrap());
+    let close = json!({"kind": "ReliefIsolationClose", "t_apply": t1});
+    let reply = a.json(COMMAND, &serde_json::to_vec(&close).unwrap());
+    assert_eq!(reply["accepted"], json!(false), "{reply}");
+    a.json(COMMAND, &serde_json::to_vec(&dc("Reset", t1)).unwrap());
+    a.json(COMMAND, &serde_json::to_vec(&dc("Close", t1)).unwrap());
+    // Closing in travel, then the supply lost: the valve arrests where it
+    // is and the intent does not replay when the supply returns.
+    let reply = a.json(COMMAND, &serde_json::to_vec(&close).unwrap());
+    assert_eq!(reply["accepted"], json!(true), "{reply}");
+    let (held, _) = advance(&mut a, &mut walls, instant(6));
+    let t6 = frame(&held).t;
+    a.json(COMMAND, &serde_json::to_vec(&dc("Open", t6)).unwrap());
+    let (arrested, _) = advance(&mut a, &mut walls, instant(7));
+    let arrested = frame(&arrested).values[position];
+    assert!(arrested > 0. && arrested < 100., "arrested at {arrested} %");
+    let (later, _) = advance(&mut a, &mut walls, instant(30));
+    let later = frame(&later);
+    assert_eq!(later.values[position], arrested, "the valve stands");
+    a.json(COMMAND, &serde_json::to_vec(&dc("Reset", later.t)).unwrap());
+    a.json(COMMAND, &serde_json::to_vec(&dc("Close", later.t)).unwrap());
+    let open = json!({"kind": "ReliefIsolationOpen", "t_apply": later.t});
+    assert_eq!(
+        a.json(COMMAND, &serde_json::to_vec(&open).unwrap())["accepted"],
+        json!(true)
+    );
+    let (back, _) = advance(&mut a, &mut walls, instant(60));
+    assert_eq!(frame(&back).values[position], 100., "open again");
+    a.close();
 }

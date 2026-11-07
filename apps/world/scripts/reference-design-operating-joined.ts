@@ -63,7 +63,9 @@ export function joinedPzrSections<Cell extends Parameters<typeof caseSetSections
     heaterContact: ownedBlock(pages.equipment, 'Abnormal wall contact and finite heat receivers', 'ld01-pzr-heater-contact'),
     caloric304: ownedBlock(pages.equipment, 'Fixed metal and complementary contact', 'reference-304-caloric'),
     shell: ownedBlock(pages.thermal, 'Shell and head metal', 'ld01-pzr-shell'),
-    reliefBackPressure_Pa: relief.calibration.backPressure_Pa } }
+    reliefBackPressure_Pa: relief.calibration.backPressure_Pa,
+    // R4-RELIEF-ISO: the relief's series isolation valve (labelled judgement on its page).
+    reliefIsolation: ownedBlock(pages.inventory, 'Relief isolation valve', 'ld01-pzr-relief-isolation') } }
 }
 
 /** MR-1's owner page and block (owner request 7 R7-P, 17 Oct). */
