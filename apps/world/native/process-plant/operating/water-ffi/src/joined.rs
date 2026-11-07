@@ -900,6 +900,58 @@ pub fn consistent_start_exempting<P: Properties + WaterProperties>(
     Ok((yp, report))
 }
 
+/// The cells a declared L1 payment entered, as the transactions' receipts
+/// state them: every `payment` of a lock change, `[cell, coordinate, J]`,
+/// in a network L1 receipt or a phase-mode receipt's vapor path contacts.
+fn paid_cells(done: &[leitbild_operating_plant::joined::block::Transaction]) -> Vec<usize> {
+    fn walk(v: &serde_json::Value, out: &mut Vec<usize>) {
+        match v {
+            serde_json::Value::Object(map) => {
+                for (k, x) in map {
+                    if k == "payment"
+                        && let Some(cell) = x.get(0).and_then(serde_json::Value::as_u64)
+                    {
+                        out.push(cell as usize);
+                    } else {
+                        walk(x, out);
+                    }
+                }
+            }
+            serde_json::Value::Array(items) => items.iter().for_each(|x| walk(x, out)),
+            _ => {}
+        }
+    }
+    let mut out = Vec::new();
+    for t in done {
+        walk(&t.receipt, &mut out);
+    }
+    out.sort_unstable();
+    out.dedup();
+    out
+}
+
+#[test]
+fn every_declared_payment_names_its_cell() {
+    use leitbild_operating_plant::joined::block::Transaction;
+    let tx = |receipt: serde_json::Value| Transaction {
+        deposits: Vec::new(),
+        receipt,
+    };
+    let done = [
+        tx(serde_json::json!({"owner": "network L1", "changes": [
+            {"path": 65, "payment": [26, 158, 1109.7]},
+            {"path": 63, "payment": null}]})),
+        tx(
+            serde_json::json!({"owner": "phase modes", "events": [{"exhaustion": 25}],
+            "vaporPathContacts": {"changes": [{"path": 67, "payment": [27, 166, 3.2]},
+                {"path": 65, "payment": [26, 158, 1.]}]}}),
+        ),
+        tx(serde_json::json!({"owner": "rods", "events": [{"cluster": "LD01.CR.001"}]})),
+    ];
+    assert_eq!(paid_cells(&done), [26, 27]);
+    assert!(paid_cells(&done[2..]).is_empty());
+}
+
 /// Each transacting owner's own coordinate range: the SG secondary, the rods,
 /// the PZR block (G6), which follows the rods and is empty while its owner is
 /// not composed, and the CVCS (plan r4 X4.2), empty unless composed.
@@ -1277,6 +1329,12 @@ mod integrated {
         /// the WRMS guard reads them; those coordinates are exempt from it,
         /// lead decision S3-D64).
         pub births: Vec<serde_json::Value>,
+        /// Every equilibrium cell a declared L1 payment entered at this
+        /// restart, with the correction of its `p, M_g, U_g` in the
+        /// integrator's tolerance units; those coordinates are exempt from
+        /// the WRMS guard at this instant as a born cell's are (owner, 7
+        /// November 2026, after result: S3-D64 extended, R4-L1-PAYMENT-FLASH).
+        pub payments: Vec<serde_json::Value>,
         pub yp: Vec<f64>,
         pub report: Report,
         /// E-EVT (plan r4): nothing the integrator reads changed (the state,
@@ -1567,6 +1625,7 @@ mod integrated {
                     first_step_s: 0.,
                     last_step_s: last_step,
                     births: Vec::new(),
+                    payments: Vec::new(),
                     yp: Vec::new(),
                     report: Report::default(),
                     noop: true,
@@ -1622,8 +1681,22 @@ mod integrated {
         // reference (rtol x 0.01, atol x 0.1) otherwise refuses the honest
         // +104 kPa flash at +18.93 s (WRMS 13.9). The bound is unchanged.
         let born = joined.network.born_cells(&modes_before).map_err(message)?;
+        // R4-L1-PAYMENT-FLASH (owner, 7 November 2026, after result; S3-D64
+        // extended): an L1 payment of a path's kinetic energy enters a cell's
+        // total energy, and an equilibrium cell's algebraic rows become the
+        // flash at its new totals. Those cells' p, M_g, U_g, and only theirs,
+        // leave the WRMS guard at this instant, reported as a birth's are;
+        // the bound is unchanged. C4-I's rtol/100 reference refused the
+        // honest flash of 1.1 kJ into HOUSING.NECK at +50.113 s (WRMS 1.063).
+        let paid: Vec<usize> = super::paid_cells(&done)
+            .into_iter()
+            .filter(|c| {
+                joined.network.cell_modes().get(*c) == Some(&network::CellMode::Equilibrium)
+            })
+            .collect();
         let flash: Vec<usize> = born
             .iter()
+            .chain(&paid)
             .flat_map(|c| {
                 let l = joined.network.cell_layout[*c];
                 [l.base, l.mass[1], l.energy[1]]
@@ -1672,6 +1745,15 @@ mod integrated {
             passes_allowed,
         )
         .map_err(message)?;
+        let units = |i: usize| (y[i] - before[i]) * weights[i];
+        let payments: Vec<serde_json::Value> = paid
+            .iter()
+            .map(|c| {
+                let l = joined.network.cell_layout[*c];
+                serde_json::json!({"cell": c, "correction_tolerance_units": {"p": units(l.base),
+                    "vapor_mass": units(l.mass[1]), "vapor_energy": units(l.energy[1])}})
+            })
+            .collect();
         let births = born
             .iter()
             .map(|c| {
@@ -1705,6 +1787,9 @@ mod integrated {
             let mut all_births = births;
             all_births.append(&mut after.births);
             after.births = all_births;
+            let mut all_payments = payments;
+            all_payments.append(&mut after.payments);
+            after.payments = all_payments;
             let mut all_appended = appended_done;
             all_appended.append(&mut after.appended);
             after.appended = all_appended;
@@ -1776,6 +1861,7 @@ mod integrated {
             first_step_s,
             last_step_s: last_step,
             births,
+            payments,
             yp,
             report,
             noop: false,

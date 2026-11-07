@@ -1849,7 +1849,7 @@ fn summary((r, before): &(Restarted, Vec<Transaction>)) -> Value {
         "transacted": r.transacted, "passes_allowed": r.passes_allowed, "placements": r.placements.len(),
         "constraint_at_entry": [r.constraint_at_entry.value, r.constraint_at_entry.row],
         "constraint_before": [rep.constraint_before.value, rep.constraint_before.row],
-        "births": r.births,
+        "births": r.births, "payments": r.payments,
         "projection_passes": rep.projection_passes, "rate_passes": rep.rate_passes,
         "correction_wrms": rep.correction_wrms, "exempt": exempt, "residual": rep.residual.value,
         "analyses_made": rep.analyses, "assemblies": rep.jacobian_s.len(),
