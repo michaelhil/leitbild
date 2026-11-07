@@ -1,6 +1,6 @@
 import {describe,expect,test} from 'bun:test'
 import {canonical,digest,parseTimeL,quietCpuS,relativeDifference} from './ld01-receipts'
-import {TRAJECTORY_SECTIONS,builtS3Cases,environmentMismatch,judgePairs,judgeSpan,median} from './ld01-tier'
+import {TRAJECTORY_SECTIONS,builtS3Cases,environmentMismatch,judgePairs,judgeSpan,median,pinnedPath,resolvePinned} from './ld01-tier'
 
 const TIME_L=`       17.52 real        16.70 user         0.48 sys
            396132352  maximum resident set size
@@ -29,6 +29,13 @@ describe('LD-01 receipt tooling',()=>{
   expect(judgePairs(pin,[pair(4.95e9,4.95e9),pair(4.95e9,4.95e9,'x'),pair(4.95e9,4.95e9)]).verdict).toBe('fail')
   expect(judgePairs(pin,[pair(4.95e9,4.95e9),pair(4.95e9,4.95e9,'d','x'),pair(4.95e9,4.95e9)]).verdict).toBe('fail')
   expect(judgePairs(undefined,[pair(1,1)]).verdict).toBe('no pin')
+ })
+ test('a pin file names no machine: its paths are relative to the receipts, and an absolute one is refused',()=>{
+  const receipts='/r/candidates/spine/resume'
+  expect(pinnedPath(`${receipts}/lane/t1/control-s3_cases`,receipts)).toBe('lane/t1/control-s3_cases')
+  expect(pinnedPath('/r/candidates/water-1',receipts)).toBe('../../water-1')
+  for(const path of [`${receipts}/lane/t1/control-s3_cases`,'/r/candidates/water-1'])expect(resolvePinned(pinnedPath(path,receipts),receipts)).toBe(path)
+  expect(()=>resolvePinned('/somewhere/control-s3_cases',receipts)).toThrow('relative to $LD01_RECEIPTS')
  })
  test('T1 takes the test binary from cargo\'s --no-run report and refuses without one',()=>{
   expect(builtS3Cases('  Executable tests/matrix_rebuild.rs (/t/deps/matrix_rebuild-1)\n  Executable tests/s3_cases.rs (/t/deps/s3_cases-2)\n')).toBe('/t/deps/s3_cases-2')

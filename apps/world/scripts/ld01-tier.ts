@@ -44,7 +44,8 @@
  * from a clean tree, carrying the reason; a changed pin is committed with
  * the lead's reason (golden baselines: re-recorded once per gate). A T1
  * record freezes the run's test binary in its receipt directory as the
- * control, by path and sha256; a pin without one is not judged. A T2
+ * control, by path and sha256; a pin without one is not judged. A pin file
+ * is public, so every path in it is relative to $LD01_RECEIPTS. A T2
  * baseline recorded with --closed-step names the receipt of record and
  * refuses unless the span's digest equals that receipt's `run` digest; a
  * later T2 re-checks the receipt's sha256 (the record unchanged). --pins
@@ -52,7 +53,7 @@
  * tier must FAIL on it and exit 1). */
 import {spawnSync} from 'node:child_process'
 import {constants,copyFileSync,existsSync,readFileSync,statSync,writeFileSync} from 'node:fs'
-import {dirname,join,resolve} from 'node:path'
+import {dirname,isAbsolute,join,relative,resolve} from 'node:path'
 import {fileURLToPath} from 'node:url'
 import {QUIET_RATIO,digest,newReceiptDir,parseTimeL,quietCpuS,relativeDifference,sha256File,stamp,writeJsonOnce,type TimeReport} from './ld01-receipts'
 
@@ -87,6 +88,13 @@ export type SpanPin={instructions:number,digest:string}
 /** A golden baseline's closed step: the receipt of record whose `run`
  * section the span reproduces (V3: closed-step receipts become baselines). */
 export type ClosedStep={receipt:string,receipt_sha256:string,digest:string}
+/** A path as a pin file holds it, relative to $LD01_RECEIPTS: a pin file is public and names no machine. */
+export const pinnedPath=(path:string,receipts:string)=>relative(receipts,path)
+/** A pinned path on this machine. An absolute one is refused: a pin file holds none. */
+export function resolvePinned(path:string,receipts:string){
+ if(isAbsolute(path))throw new Error(`a pin file holds paths relative to $LD01_RECEIPTS, not ${path}`)
+ return resolve(receipts,path)
+}
 /** T1's frozen control: the test binary of the run that recorded the pins. */
 export type Control={binary:string,sha256:string}
 /** One test run and the control run beside it. */
@@ -124,9 +132,10 @@ function environment(){
  * and a changed block value changes the digest. */
 function pinEnvironment(env:ReturnType<typeof environment>){
  const file=(k:string)=>env[k]?.sha256??null
+ const path=(k:string)=>{const v=env[k]?.value;return v===undefined?null:pinnedPath(v,process.env.LD01_RECEIPTS??'')}
  return {packet_sha256:file('LD01_OPERATING_HOT_SPINE_PACKET'),state_sha256:file('LD01_S3_STATE'),elec_packet_sha256:file('ELEC_PACKET'),
   wiki_commit:env.LD01_WIKI_COMMIT?.value??null,
-  water_lib_dir:env.LD01_OPERATING_WATER_LIB_DIR?.value??null,sundials_prefix:env.LD01_OPERATING_SUNDIALS_PREFIX?.value??null}
+  water_lib_dir:path('LD01_OPERATING_WATER_LIB_DIR'),sundials_prefix:path('LD01_OPERATING_SUNDIALS_PREFIX')}
 }
 
 function run(out:string,step:Step):StepResult{
@@ -269,8 +278,10 @@ function main(argv:string[]){
  const closedStepCheck=closedStep?{receipt:closedStep.receipt,unchanged:existsSync(closedStep.receipt)&&sha256File(closedStep.receipt)===closedStep.receipt_sha256}:null
  if(closedStepCheck&&!closedStepCheck.unchanged)mismatch.push({key:'closed_step.receipt_sha256',pinned:closedStep?.receipt_sha256??null,current:existsSync(closedStep?.receipt??'')?sha256File(closedStep?.receipt??''):null})
  const control=tier==='t1'?expectation?.control:undefined
+ const receipts=process.env.LD01_RECEIPTS??''
+ const controlBinary=control===undefined?'':resolvePinned(control.binary,receipts)
  if(control){
-  const current=existsSync(control.binary)?sha256File(control.binary):null
+  const current=existsSync(controlBinary)?sha256File(controlBinary):null
   if(current!==control.sha256)mismatch.push({key:'control.sha256',pinned:control.sha256,current})
  }
  const spans:Record<string,unknown>={},measuredPins:Record<string,SpanPin>={}
@@ -294,7 +305,7 @@ function main(argv:string[]){
    let failed:string|null=null
    for(let i=1;i<=T1_REPEATS;i++){
     const test=i===1?measured:once(testBinary,'test',i)
-    const paired=test===null?null:once(control.binary,'control',i)
+    const paired=test===null?null:once(controlBinary,'control',i)
     if(test===null||paired===null){failed=`pair ${i} did not complete`;break}
     pairs.push({test,control:paired})
     const decided=test.digest!==pin.digest||paired.digest!==pin.digest||Math.abs(relativeDifference(test.instructions,paired.instructions))>RESOLUTION_BAND
@@ -330,12 +341,12 @@ function main(argv:string[]){
  console.log(`ld01-tier ${tier}: ${verdict}; runs ${budgetedQuiet.toFixed(1)} quiet CPU-s of ${budget}${budgetedQuiet>budget?' (OVER BUDGET)':''}; spans ${JSON.stringify(Object.fromEntries(Object.entries(spans).map(([k,v])=>[k,(v as {verdict:string}).verdict])))}`)
  if(record){
   if(failedSteps.length){console.error('ld01-tier: --record refuses a run with a failed step');process.exit(1)}
-  const pins:Expectation={kind:tier==='t1'?'ld01-tier1-expectation':'ld01-golden-baseline',platform,reason:reason??'',recorded_from:out,app,
+  const pins:Expectation={kind:tier==='t1'?'ld01-tier1-expectation':'ld01-golden-baseline',platform,reason:reason??'',recorded_from:pinnedPath(out,receipts),app,
    environment:pinEnv,instruction_tolerance:INSTRUCTION_TOLERANCE,spans:measuredPins}
   if(tier==='t1'&&testBinary!==null){
    const binary=join(out,'control-s3_cases')
    copyFileSync(testBinary,binary,constants.COPYFILE_EXCL)
-   pins.control={binary,sha256:sha256File(binary)}
+   pins.control={binary:pinnedPath(binary,receipts),sha256:sha256File(binary)}
   }
   if(closedStepArg){
    const of=JSON.parse(readFileSync(closedStepArg,'utf8')) as {run:Record<string,unknown>}
