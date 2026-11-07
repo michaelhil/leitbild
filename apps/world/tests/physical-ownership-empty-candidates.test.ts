@@ -1,15 +1,8 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import type { PackPhysicalScene } from '../src/core/packs/scene.ts'
+import { describe, expect, test } from 'bun:test'
 import { createHash } from 'node:crypto'
-import { compileScenarioDefinition } from '../src/core/scenarios/compiler.ts'
-import { scenarioDefinitionSchema } from '../src/core/scenarios/definition.ts'
 import definitionSource from '../src/scenarios/halden-normal-operation.scenario.json'
-import { processPlantPack } from '../src/packs/process-plant/pack.ts'
-import { electricGridPack } from '../src/packs/electric-grid/pack.ts'
-import { weatherPack } from '../src/packs/weather/pack.ts'
-import { physicalLayoutPack } from '../src/packs/physical-layout/pack.ts'
-import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
-import { describePhysicalLayoutScene, loadPhysicalLayoutScene } from '../src/packs/physical-layout/scene.ts'
+import { physicalDesignChoices, resolvePhysicalDesign } from '../src/packs/physical-layout/design.ts'
+import { compilePhysicalScene } from '../src/packs/physical-layout/native/drafting/compile-scene.ts'
 import { buildVisibleMeshes, meshBounds, type PhysicalMesh } from '../src/ui/map/physical-scene/geometry.ts'
 import { physicalMeshDemandScene } from '../src/ui/map/physical-scene/layer-demand.ts'
 import { clipPhysicalMeshesToScope } from '../src/ui/map/physical-scene/scope-clipping.ts'
@@ -60,29 +53,18 @@ const admittedDesigns = [...new Map(definitionSource.packs
     ? [[item.design.digest, item.design] as const] : []))).values()]
 
 describe('actual admitted all-layer geometry retains the frozen ownership, rendering and picking result', () => {
-  const scenes = new Map<string, PackPhysicalScene>(), seen = new Set<string>()
-  beforeAll(async () => {
-    const scenario = await compileScenarioDefinition(scenarioDefinitionSchema.parse(definitionSource), [processPlantPack, electricGridPack, weatherPack, physicalLayoutPack], { routing: createDirectRoutingAdapter() })
-    for (const object of scenario.initialObjects) {
-      const descriptor = describePhysicalLayoutScene(object, scenario.initialObjects)
-      if (!descriptor?.geometryKey || seen.has(descriptor.geometryKey)) continue
-      seen.add(descriptor.geometryKey)
-      scenes.set(descriptor.revision, await loadPhysicalLayoutScene(object))
-    }
-  }, 30_000)
-  afterAll(() => { scenes.clear(); seen.clear() })
-
-  test('the actual scenario admits exactly its two declared distinct physical sources', () => {
-    expect(seen.size).toBe(2)
-    expect(scenes.size).toBe(seen.size)
-    expect([...scenes.keys()].sort()).toEqual(admittedDesigns.map(design => design.digest).sort())
+  test('the bundled scenario selects both exact current Design pins', () => {
+    const byId = (a: { id: string }, b: { id: string }) => a.id.localeCompare(b.id)
+    expect(admittedDesigns).toHaveLength(2)
+    expect([...admittedDesigns].sort(byId)).toEqual(physicalDesignChoices().map(choice => choice.design).sort(byId))
   })
 
-  // Every source still gets a complete fresh comparison against the retained
-  // oracle. The timeout belongs to one correctness case, not their sum.
-  for (const design of admittedDesigns) test(`${design.id} @ ${design.revision}`, () => {
-    const scene = scenes.get(design.digest)
-    if (!scene) throw Error(`Expected admitted physical source ${design.id} @ ${design.revision}`)
+  // Scenario admission and placement are checked separately. This oracle uses
+  // each exact admitted local source once, including all of its layers.
+  for (const design of admittedDesigns) test(`${design.id} @ ${design.revision}`, async () => {
+    const admitted = await resolvePhysicalDesign(design)
+    const scene = compilePhysicalScene(design.id, { ...admitted, owner: { objectId: 'ownership-oracle' }, placement: { anchor: [0, 0], bearing: 0 } })
+    expect(scene.revision).toBe(design.digest)
     const view = { ...defaultPhysicalSceneView(scene.levels), mode: '3d' as const, levelId: 'all', hiddenLayerIds: [] }, demand = physicalMeshDemandScene(scene, view)
     compare(physicalSurfaceAnnotations(demand, view, clipPhysicalMeshesToScope(demand, view, buildVisibleMeshes(demand, view))), beforeTwoLevel)
   }, 30_000)
