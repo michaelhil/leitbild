@@ -882,6 +882,44 @@ impl<P: Properties> Network<P> {
         }
         columns
     }
+    /// R4-CLIMB-START: widen `columns` by what a changed differential identity
+    /// touches: a path whose lock flipped takes its impulse and the stocks of
+    /// both ends; a cell whose mode flipped takes its stocks and the impulses
+    /// of the faces touching it.
+    pub fn identity_columns(&self, changed: &[bool], columns: &mut [bool]) {
+        let stocks = |c: usize, columns: &mut [bool]| {
+            if c < self.pzr.cell {
+                let l = self.cell_layout[c];
+                columns[l.base] = true;
+                for k in 0..2 {
+                    columns[l.mass[k]] = true;
+                    columns[l.energy[k]] = true;
+                }
+            }
+        };
+        for c in 0..self.pzr.cell {
+            let l = self.cell_layout[c];
+            let moved =
+                changed[l.base] || (0..2).any(|k| changed[l.mass[k]] || changed[l.energy[k]]);
+            if moved {
+                stocks(c, columns);
+                for path in &self.face_layout {
+                    let f = &self.faces[path.face];
+                    if f.from == c || f.to == c {
+                        columns[path.index] = true;
+                    }
+                }
+            }
+        }
+        for path in &self.face_layout {
+            if changed[path.index] {
+                let f = &self.faces[path.face];
+                columns[path.index] = true;
+                stocks(f.from, columns);
+                stocks(f.to, columns);
+            }
+        }
+    }
     /// Every retained mass and tracer coordinate, regular cells and the PZR:
     /// the stocks an integrator constrains to be nonnegative. An equilibrium
     /// cell's vapor mass is algebraic (the flash): its sign is the

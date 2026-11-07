@@ -102,6 +102,8 @@ pub struct Report {
     pub solve_s: Vec<f64>,
     /// R4-CLIMB: the matrices this start leaves for the climb after it.
     pub climb: Option<ClimbMatrices>,
+    /// R4-CLIMB-START: starts on kept matrices, and those that fell back.
+    pub start_reuse: [usize; 2],
 }
 
 /// R4-CLIMB: a start's `dF/dy` and `dF/dy'`, kept for the climb after a restart
@@ -195,6 +197,17 @@ pub struct Analyses {
     projection: Option<Projection>,
     /// Symbolic analyses made so far: rate system, projection.
     made: [usize; 2],
+    /// R4-CLIMB-START: the last start's matrices while vapor is out of the
+    /// PZR, and the passes a start on them may take.
+    retained: Option<Retained>,
+    kept_passes: usize,
+}
+/// R4-CLIMB-START: dF/dy and dF/dy' of the last start, and the differential
+/// identity they were read under.
+struct Retained {
+    a: Vec<f64>,
+    b: Vec<f64>,
+    differential: Vec<f64>,
 }
 struct Rates {
     pointers: Vec<i64>,
@@ -210,6 +223,11 @@ impl Analyses {
     /// Symbolic analyses made so far: rate system, projection.
     pub fn made(&self) -> [usize; 2] {
         self.made
+    }
+    /// R4-CLIMB-START: the passes a start on kept matrices may take. They
+    /// close by a factor at each pass, not quadratically.
+    pub fn keep_passes(&mut self, passes: usize) {
+        self.kept_passes = passes;
     }
 }
 
@@ -406,12 +424,33 @@ pub fn consistent_start_exempting<P: Properties + WaterProperties>(
     report.constraint_before = constraint(&rows);
     report.constraint_after = report.constraint_before;
     let mut values = vec![0.; nnz];
-    // 1. Projection of the algebraic coordinates, differential ones held,
-    // on the algebraic submatrix of this pattern.
-    while (report.constraint_after.value.is_nan() || report.constraint_after.value > bound)
-        && report.projection_passes < passes
-    {
-        report.projection_passes += 1;
+    // R4-CLIMB-START: while a regular cell is in equilibrium mode a start
+    // keeps the last start's matrices and reads fresh only the columns the
+    // vapor moves and the columns a changed identity touches. The matrices
+    // only steer the solves: the constraint and rate checks below stay
+    // exact, and a start they fail falls back to full assemblies.
+    let equilibrium = joined
+        .network
+        .cell_modes()
+        .contains(&leitbild_operating_plant::network::CellMode::Equilibrium);
+    let mut retained = match &mut matrices {
+        Matrices::Blocks { analyses, .. } => analyses.retained.take().filter(|_| equilibrium),
+        Matrices::Colored => None,
+    };
+    let stale = retained.is_some();
+    let limit = match &matrices {
+        Matrices::Blocks { analyses, .. } if stale => passes.max(analyses.kept_passes),
+        _ => passes,
+    };
+    if let Some(r) = retained.as_mut() {
+        let _cost = leitbild_operating_plant::cost::scope("refresh");
+        let changed: Vec<bool> = differential
+            .iter()
+            .zip(&r.differential)
+            .map(|(a, b)| a != b)
+            .collect();
+        let mut columns = joined.network.equilibrium_columns(n);
+        joined.network.identity_columns(&changed, &mut columns);
         assemble(
             joined,
             &matrices,
@@ -421,8 +460,55 @@ pub fn consistent_start_exempting<P: Properties + WaterProperties>(
             &mut values,
             &mut report,
             true,
-            Some(&algebraic),
+            Some(&columns),
         )?;
+        for j in (0..n).filter(|j| columns[*j]) {
+            r.a[pointers[j]..pointers[j + 1]]
+                .copy_from_slice(&values[pointers[j]..pointers[j + 1]]);
+        }
+        if changed.contains(&true) {
+            assemble(
+                joined,
+                &matrices,
+                t,
+                1.,
+                y,
+                &mut values,
+                &mut report,
+                false,
+                Some(&columns),
+            )?;
+            for j in (0..n).filter(|j| columns[*j]) {
+                let q = pointers[j]..pointers[j + 1];
+                for (b, (v, a)) in r.b[q.clone()]
+                    .iter_mut()
+                    .zip(values[q.clone()].iter().zip(&r.a[q]))
+                {
+                    *b = v - a;
+                }
+            }
+        }
+    }
+    // 1. Projection of the algebraic coordinates, differential ones held,
+    // on the algebraic submatrix of this pattern.
+    while (report.constraint_after.value.is_nan() || report.constraint_after.value > bound)
+        && report.projection_passes < limit
+    {
+        report.projection_passes += 1;
+        match &retained {
+            Some(r) => values.copy_from_slice(&r.a),
+            None => assemble(
+                joined,
+                &matrices,
+                t,
+                0.,
+                y,
+                &mut values,
+                &mut report,
+                true,
+                Some(&algebraic),
+            )?,
+        }
         let analyses = match &mut matrices {
             Matrices::Blocks { analyses, .. } => &mut **analyses,
             Matrices::Colored => &mut fresh,
@@ -481,6 +567,23 @@ pub fn consistent_start_exempting<P: Properties + WaterProperties>(
         rows = rows_at(joined, y, &zero)?;
         report.constraint_after = constraint(&rows);
     }
+    // R4-CLIMB-START: kept matrices that do not reach the bound: full ones.
+    if stale && (report.constraint_after.value.is_nan() || report.constraint_after.value > bound) {
+        y.copy_from_slice(&start);
+        let (yp, mut full) = consistent_start_exempting(
+            joined,
+            matrices,
+            t,
+            y,
+            differential,
+            weights,
+            exempt,
+            bound,
+            passes,
+        )?;
+        full.start_reuse[1] += 1;
+        return Ok((yp, full));
+    }
     if report.constraint_after.value.is_nan() {
         return Err(fatal(format!(
             "constraints miss their bound after projection: {:?}",
@@ -496,23 +599,37 @@ pub fn consistent_start_exempting<P: Properties + WaterProperties>(
     }
     // 2. The consistent rates: differential rows dF/dy', algebraic rows dg/dy.
     let mut a = vec![0.; nnz];
-    assemble(joined, &matrices, t, 0., y, &mut a, &mut report, true, None)?;
     let mut ab = vec![0.; nnz];
-    assemble(
-        joined,
-        &matrices,
-        t,
-        1.,
-        y,
-        &mut ab,
-        &mut report,
-        false,
-        None,
-    )?;
-    let equilibrium = joined
-        .network
-        .cell_modes()
-        .contains(&leitbild_operating_plant::network::CellMode::Equilibrium);
+    match retained.take() {
+        Some(r) => {
+            a.copy_from_slice(&r.a);
+            for (sum, (x, b)) in ab.iter_mut().zip(r.a.iter().zip(&r.b)) {
+                *sum = x + b;
+            }
+            report.start_reuse[0] += 1;
+        }
+        None => {
+            assemble(joined, &matrices, t, 0., y, &mut a, &mut report, true, None)?;
+            assemble(
+                joined,
+                &matrices,
+                t,
+                1.,
+                y,
+                &mut ab,
+                &mut report,
+                false,
+                None,
+            )?;
+        }
+    }
+    if equilibrium && let Matrices::Blocks { analyses, .. } = &mut matrices {
+        analyses.retained = Some(Retained {
+            a: a.clone(),
+            b: ab.iter().zip(&a).map(|(x, y)| x - y).collect(),
+            differential: differential.to_vec(),
+        });
+    }
     if equilibrium && matches!(matrices, Matrices::Blocks { .. }) {
         report.climb = Some(ClimbMatrices {
             a: a.clone(),
@@ -621,17 +738,24 @@ pub fn consistent_start_exempting<P: Properties + WaterProperties>(
     // round-off.
     let mut yp = vec![0.; n];
     let mut residual = rows.clone();
-    let constraint_rate = |yp: &[f64]| {
+    // R4-CLIMB-START: kept matrices steer the solve; dg/dy y' stays exact,
+    // one directional evaluation at (t, y, 0) along y'.
+    let constraint_rate = |joined: &mut Joined<P>, yp: &[f64]| -> Result<Vec<f64>, Failure> {
+        if stale {
+            let _cost = leitbild_operating_plant::cost::scope("start-rate");
+            joined.evaluate(t, y, &zero, Some(yp), 0., None)?;
+            return Ok(joined.rows().iter().map(|r| r.direction).collect());
+        }
         let mut rate = vec![0.; n];
         for j in 0..n {
             for position in pointers[j]..pointers[j + 1] {
                 rate[indices[position]] += a[position] * yp[j];
             }
         }
-        rate
+        Ok(rate)
     };
-    for pass in 1..=passes {
-        let rate = constraint_rate(&yp);
+    for pass in 1..=limit {
+        let rate = constraint_rate(joined, &yp)?;
         let mut step: Vec<f64> = (0..n)
             .map(|i| if algebraic[i] { -rate[i] } else { -residual[i] })
             .collect();
@@ -644,7 +768,7 @@ pub fn consistent_start_exempting<P: Properties + WaterProperties>(
         }
         residual = rows_at(joined, y, &yp)?;
         report.residual = largest(residual.iter().copied().enumerate());
-        let rate = constraint_rate(&yp);
+        let rate = constraint_rate(joined, &yp)?;
         report.constraint_rate = largest(
             rate.iter()
                 .enumerate()
@@ -656,12 +780,37 @@ pub fn consistent_start_exempting<P: Properties + WaterProperties>(
             break;
         }
     }
+    // R4-CLIMB-START: kept matrices that do not reach the bound: full ones.
+    let missed = |v: f64| v.is_nan() || v > bound;
+    if stale && (missed(report.residual.value) || missed(report.constraint_rate.value)) {
+        y.copy_from_slice(&start);
+        if let Matrices::Blocks { analyses, .. } = &mut matrices {
+            analyses.retained = None;
+        }
+        let (yp, mut full) = consistent_start_exempting(
+            joined,
+            matrices,
+            t,
+            y,
+            differential,
+            weights,
+            exempt,
+            bound,
+            passes,
+        )?;
+        full.start_reuse[1] += 1;
+        return Ok((yp, full));
+    }
     // Each row under its own roundoff bound: the residual's terms at
     // (y, y'), the constraint rate's at y'.
     let of_rates = magnitude(&|p| ab[p] - a[p], &yp);
     let of_residual: Vec<f64> = of_y.iter().zip(&of_rates).map(|(a, b)| a + b).collect();
     let of_constraint_rate = magnitude(&|p| a[p], &yp);
-    let rate = constraint_rate(&yp);
+    let rate = constraint_rate(joined, &yp)?;
+    if stale {
+        // The operator stands at the start's state, as after an exact start.
+        rows_at(joined, y, &yp)?;
+    }
     let (missed_residual, missed_rate) = (
         over(&residual, &of_residual, false),
         over(&rate, &of_constraint_rate, true),
@@ -1436,6 +1585,7 @@ mod integrated {
             } else {
                 restart.transaction_passes
             };
+        analyses.keep_passes(restart.transaction_passes);
         let matrices = match assembly {
             Assembly::Blocks(structure) => Matrices::Blocks {
                 structure,
@@ -2153,11 +2303,15 @@ mod integrated {
                 leitbild_operating_plant::network::heaters::hold_endpoints(false);
                 result.map_err(failure)?;
                 for (j, refreshed) in columns.iter().enumerate() {
-                    for q in self.pointers[j] as usize..self.pointers[j + 1] as usize {
+                    let q = self.pointers[j] as usize..self.pointers[j + 1] as usize;
+                    for (d, (a, b)) in data[q.clone()]
+                        .iter_mut()
+                        .zip(climb.a[q.clone()].iter_mut().zip(&climb.b[q]))
+                    {
                         if *refreshed {
-                            climb.a[q] = data[q] - cj * climb.b[q];
+                            *a = *d - cj * b;
                         } else {
-                            data[q] = climb.a[q] + cj * climb.b[q];
+                            *d = *a + cj * b;
                         }
                     }
                 }

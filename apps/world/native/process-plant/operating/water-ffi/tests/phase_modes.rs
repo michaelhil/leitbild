@@ -461,6 +461,16 @@ fn mouth_path_block_replay_matches_the_colored_assembly() {
     assert!(climbing[b] && climbing[m1] && climbing[e1]);
     assert!(climbing[net.face_layout[mouth].index]);
     assert_eq!(climbing.iter().filter(|c| **c).count(), 9);
+    // R4-CLIMB-START: the mouth path's lock flips: its impulse and the stocks
+    // of its ends, the PZR having none here; nothing moves with no change.
+    let mut changed = vec![false; y.len()];
+    let mut widened = vec![false; y.len()];
+    net.identity_columns(&changed, &mut widened);
+    assert!(!widened.contains(&true));
+    changed[net.face_layout[mouth].index] = true;
+    net.identity_columns(&changed, &mut widened);
+    assert!(widened[net.face_layout[mouth].index] && widened[b] && widened[m1] && widened[e1]);
+    assert_eq!(widened.iter().filter(|c| **c).count(), 6);
     let colored = net.sparse_jacobian().expect("colored structure");
     let blocks = net.block_jacobian().expect("block structure");
     assert_eq!(blocks.pattern, colored.pattern, "one pattern for both");
