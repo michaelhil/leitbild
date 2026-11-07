@@ -75,12 +75,29 @@ describe('discovery memo wiring', () => {
       expect(requests).toHaveLength(3)
       expect(systemText(requests[0]!)).not.toContain('Workspace operations you used earlier')
 
-      system.routeMessage({ rooms: [room.profile.id] }, { senderId: human.id, senderName: 'Alice', content: 'And now?', type: 'chat' })
-      await assistant.whenIdle()
+      const previousTurns = system.executionStore.listTurns(room.profile.id)
+      const previousTurnIds = new Set(previousTurns.map(turn => turn.id))
+      const retained = previousTurns.flatMap(turn => system.executionStore.listCalls(room.profile.id, turn.id)
+        .map(call => system.executionStore.getCall(room.profile.id, turn.id, call.id)))
+      const getCall = system.executionStore.getCall
+      let previousFullReads = 0
+      system.executionStore.getCall = (roomId, turnId, callId) => {
+        if (previousTurnIds.has(turnId)) previousFullReads++
+        return getCall(roomId, turnId, callId)
+      }
+      try {
+        system.routeMessage({ rooms: [room.profile.id] }, { senderId: human.id, senderName: 'Alice', content: 'And now?', type: 'chat' })
+        await assistant.whenIdle()
+      } finally {
+        system.executionStore.getCall = getCall
+      }
       expect(requests).toHaveLength(4)
+      expect(previousFullReads).toBe(0)
       const memo = systemText(requests[3]!)
       expect(memo).toContain('Workspace operations you used earlier in this conversation')
       expect(memo).toContain(`- ${read} · target ${JSON.stringify({ kind: 'resource', ref: run })} · input schema ${JSON.stringify(inputSchema)}`)
+      expect(previousTurns.flatMap(turn => system.executionStore.listCalls(room.profile.id, turn.id)
+        .map(call => system.executionStore.getCall(room.profile.id, turn.id, call.id)))).toEqual(retained)
     } finally {
       host.stop(true)
     }
