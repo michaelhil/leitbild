@@ -16,6 +16,9 @@ pub enum Failure {
     Fatal(String),
 }
 pub type Result<T> = std::result::Result<T, String>;
+/// R4-TIME-STOPPED: the name of an integration that can no longer move time.
+/// A host reports the failure under this name.
+pub const TIME_STOPPED: &str = "solver time stopped";
 pub trait System {
     fn dimension(&self) -> usize;
     fn nonzeros(&self) -> usize;
@@ -1215,6 +1218,7 @@ impl<S: System> Ida<S> {
         self.started = true;
         let _cost = cost::scope(step_scope(self.segment_steps));
         self.segment_steps += 1;
+        let before = self.time;
         let status = unsafe {
             operating_ida_step(
                 self.handle.as_ptr(),
@@ -1224,9 +1228,29 @@ impl<S: System> Ida<S> {
                 yp.as_mut_ptr(),
             )
         };
-        let result = self.check(status).and_then(|()| self.outcome(status));
+        let result = self
+            .check(status)
+            .and_then(|()| self.time_moved(before, status))
+            .and_then(|()| self.outcome(status));
         self.failed = result.is_err();
         result
+    }
+    /// R4-TIME-STOPPED: a state the model refuses is a wall no step can
+    /// cross, so stock IDA's step collapses onto it. Below the resolution of
+    /// `t` stock still accepts (`t + h == t`): its failure count is per step,
+    /// `hmin` is 0 and `mxstep` does not reach one-step mode, so success
+    /// would return forever with time unmoved. That is the failure, by name,
+    /// with the refusal that caused it. An exact comparison: no constant.
+    fn time_moved(&self, before: f64, status: c_int) -> Result<()> {
+        if status != IDA_SUCCESS || self.time > before {
+            return Ok(());
+        }
+        Err(format!(
+            "{TIME_STOPPED} at {} s: stock IDA accepted a step of {:e} s that does not advance time; last unavailable trial: {:?}",
+            self.time,
+            self.stats()?.last_step,
+            self.context.last_trial
+        ))
     }
     /// Dense output (S3-D1 #7): stock IDAGetDky, the `k`-th derivative at
     /// `t` of the last accepted step's interpolating polynomial, for `t`

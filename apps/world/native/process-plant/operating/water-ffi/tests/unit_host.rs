@@ -494,3 +494,51 @@ fn a_restored_copy_continues_bitwise_and_the_protocol_refuses_explicitly() {
         a_failed
     );
 }
+
+/// R4-TIME-STOPPED on the real unit: the relief fails open from the saved
+/// state, the level reaches the spray port and the model refuses that state.
+/// The unit stops by name, at once, and a host gets the refusal with it.
+/// Run with `LD01_UNIT_HOST_RECEIPTS` and the tuple's environment.
+#[test]
+#[ignore = "NOT-EVIDENCE gate: one ld01-unit process, the relief's 50 s (minutes)"]
+fn a_refused_state_stops_the_unit_by_name() {
+    let receipts = std::path::PathBuf::from(env("LD01_UNIT_HOST_RECEIPTS"));
+    let load = json!({
+        "inputs": {
+            "packet": env("LD01_OPERATING_HOT_SPINE_PACKET"),
+            "wiki_root": env("LD01_WIKI_ROOT"),
+            "wiki_commit": env("LD01_WIKI_COMMIT"),
+            "wiki_repository": env("LD01_WIKI_REPOSITORY"),
+            "ic": env("LD01_IC_SECTION"),
+            "pzr_control": env("LD01_PZR_CONTROL_SECTION"),
+            "pzr_control_wiki": env("LD01_PZR_CONTROL_WIKI"),
+            "elec": env("ELEC_PACKET"),
+        },
+        "state": env("LD01_S3_STATE"),
+        "solver": {"weights": "stock", "first_step": "declared", "stepping": "free",
+            "water": std::env::var("LD01_UNIT_HOST_WATER").unwrap_or_else(|_| "sbtl".into()),
+            "source_atol": std::env::var("LD01_S3_SOURCE_ATOL").unwrap_or_else(|_| "derived".into())},
+    });
+    std::fs::create_dir_all(&receipts).expect("receipt directory");
+    let mut host = Host::spawn(&receipts.join("time-stopped.stderr.log"));
+    let loaded = host.json(LOAD, &serde_json::to_vec(&load).unwrap());
+    let t0 = bits_of(&loaded["t_bits"]);
+    let period = loaded["frame_s"].as_f64().expect("frame_s");
+    let k0 = (t0 / period).round() as u64;
+    let open = json!({"kind": "ReliefStuckOpen", "t_apply": (k0 + 1) as f64 * period});
+    host.ok(COMMAND, &serde_json::to_vec(&open).unwrap());
+    let cause = (2..800)
+        .find_map(|k| {
+            let r = host.request(ADVANCE, &((k0 + k) as f64 * period).to_le_bytes());
+            (r.status != 0).then(|| String::from_utf8(r.payload).expect("UTF-8 cause"))
+        })
+        .expect("the relief's run ends in a refused state");
+    std::fs::write(receipts.join("time-stopped.cause.txt"), &cause).expect("receipt");
+    assert!(cause.contains("solver time stopped"), "{cause}");
+    assert!(cause.contains("the solid-PZR structural limit"), "{cause}");
+    // Fail-stop: the next ADVANCE carries the same cause; STATUS and CLOSE work.
+    let again = host.refused(ADVANCE, &((k0 + 900) as f64 * period).to_le_bytes());
+    assert!(again.contains("solver time stopped"), "{again}");
+    host.ok(STATUS, &[]);
+    host.close();
+}

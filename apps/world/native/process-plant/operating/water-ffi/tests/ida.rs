@@ -1,5 +1,11 @@
 #![cfg(feature = "ida")]
-use leitbild_operating_water::ida::{Advance, Failure, Ida, Initial, System, WeightGroups};
+use leitbild_operating_plant::thermal::{
+    Film, Scalar, WET_CONTACT_PRESSURE_MAX_PA, WallLaw, WallMaterial, liquid_wall,
+};
+use leitbild_operating_water::If97;
+use leitbild_operating_water::ida::{
+    Advance, Failure, Ida, Initial, System, TIME_STOPPED, WeightGroups,
+};
 use std::f64::consts::LN_2;
 struct Decay {
     panic: bool,
@@ -1151,4 +1157,98 @@ fn stock_ida_refuses_a_ledger_rather_than_emulating_one() {
     let error = ida.initialize_quadratures(&[0.]).unwrap_err();
     assert!(error.contains("stock IDA has no quadratures"), "{error}");
     assert!(ida.quadratures(&mut [0.]).is_err());
+}
+
+/// A cell whose pressure rises into the wet-contact law's own refusal: each
+/// residual evaluates the maintained law at the state, so the wall is the
+/// model's, on real water, at the unit's clock and approach rate.
+struct RefusedWall {
+    rate_pa_s: f64,
+}
+impl System for RefusedWall {
+    fn multiplicities(&self) -> Option<Vec<f64>> {
+        None
+    }
+    fn dimension(&self) -> usize {
+        1
+    }
+    fn nonzeros(&self) -> usize {
+        1
+    }
+    fn root_count(&self) -> usize {
+        0
+    }
+    fn roots(&mut self, _: f64, _: &[f64], _: &[f64], _: &mut [f64]) -> Result<(), Failure> {
+        Ok(())
+    }
+    fn residual(&mut self, _: f64, y: &[f64], yp: &[f64], out: &mut [f64]) -> Result<(), Failure> {
+        let c = Scalar::constant;
+        let law = WallLaw {
+            diameter_m: 0.011,
+            film: Film::Tube,
+            emissivity: 0.3,
+            material: WallMaterial {
+                conductivity: c(16.2),
+                density: 7900.,
+                cp: c(500.),
+            },
+        };
+        liquid_wall(&If97, c(y[0]), c(600.), c(610.), c(3600.), law)
+            .map_err(|e| Failure::Recoverable(e.into()))?;
+        out[0] = yp[0] - self.rate_pa_s;
+        Ok(())
+    }
+    fn jacobian(
+        &mut self,
+        _: f64,
+        cj: f64,
+        _: &[f64],
+        _: &[f64],
+        data: &mut [f64],
+        rows: &mut [i64],
+        pointers: &mut [i64],
+    ) -> Result<(), Failure> {
+        data[0] = cj;
+        rows[0] = 0;
+        pointers.copy_from_slice(&[0, 1]);
+        Ok(())
+    }
+}
+
+#[test]
+fn a_refused_wall_stops_time_by_name_within_a_few_steps() {
+    // R4-TIME-STOPPED: the -25 % step's clock and approach rate, on the wall
+    // the law states. Without the name this loop never ends.
+    let rate_pa_s = 4e4;
+    let (mut y, mut yp) = ([WET_CONTACT_PRESSURE_MAX_PA - 2e3], [rate_pa_s]);
+    let mut ida = Ida::new(
+        RefusedWall { rate_pa_s },
+        Initial {
+            time: 5272.,
+            y: &y,
+            yp: &yp,
+            differential: &[1.],
+            absolute_tolerance: &[1.],
+            relative_tolerance: 1e-5,
+        },
+    )
+    .unwrap();
+    let mut stopped = None;
+    let mut accepted = 0;
+    while accepted < 1000 && stopped.is_none() {
+        match ida.step(6000., &mut y, &mut yp) {
+            Ok(_) => accepted += 1,
+            Err(e) => stopped = Some(e),
+        }
+    }
+    let cause = stopped.expect("the wall stops the integration");
+    assert!(cause.starts_with(TIME_STOPPED), "{cause}");
+    assert!(cause.contains("hot thermal wet-contact domain"), "{cause}");
+    assert!(accepted < 200, "{accepted} accepted steps before the stop");
+    assert!(y[0] <= WET_CONTACT_PRESSURE_MAX_PA);
+    // The handle is fail-stopped: the failure cannot be stepped past.
+    assert_eq!(
+        ida.step(6000., &mut y, &mut yp).unwrap_err(),
+        "IDA handle is fail-stopped"
+    );
 }
