@@ -478,13 +478,15 @@ pub struct Secondaries {
 /// turbine-and-regeneration-dynamics.md X4.3): the turbine admission valve's
 /// choked law and the at-power bypass band, declared by the composition with
 /// the electrical slice's governor.
-/// - Admission per SG: `m_k = a * c_k(t) * p_k`, `c_k = D_k * f_STOP(t) /
+/// - Admission per SG: `m_k = a * c_k(t) * p_k`, `c_k = M * D_k * f_STOP(t) /
 ///   p_ref,k`: proportional to the valve opening `a` (the slice's coordinate,
-///   1 = full open, the prepared MANUAL position) and to the inlet pressure.
+///   1 = full open) and to the inlet pressure.
 ///   **Judgement (lead, 1 Nov):** the SG dome pressure stands in for the
-///   header/HP inlet until C10's header store joins; the law is sized at the
-///   prepared SG pressure `p_ref,k`, so the prepared opening passes the
-///   prepared demand there.
+///   header/HP inlet until C10's header store joins; the law is anchored at
+///   the prepared SG pressure `p_ref,k`.
+///   **Judgement (owner-approved, 7 Nov, R4-TURB-VALVE-MARGIN):** `M` is the
+///   ratio of two cited outputs, the generator's rating over the turbine's
+///   nominal output, because the DCD gives no valves-wide-open flow.
 /// - The opening is a trial input: the slice sets it from its coordinate
 ///   before every evaluation (`direction` 1 only for the admission column).
 /// - At power the bypass stays closed (lead ruling, x43-5: a PWR's at-power
@@ -494,6 +496,7 @@ pub struct Secondaries {
 #[derive(Clone, Debug)]
 pub struct ValveAdmission {
     reference_pa: Vec<f64>,
+    full_open_margin: f64,
     opening: f64,
     direction: f64,
 }
@@ -872,11 +875,13 @@ impl Secondaries {
         Ok(Scalar::new(v, d))
     }
 
-    /// X4.3: SG `k`'s admission coefficient `c_k(t) = D_k f_STOP(t) / p_ref,k`
-    /// (kg/s per Pa at full opening); zero without the valve law.
+    /// X4.3: SG `k`'s admission coefficient `c_k(t) = M D_k f_STOP(t) /
+    /// p_ref,k` (kg/s per Pa at full opening); zero without the valve law.
     fn admission_coefficient(&self, k: usize, t: f64) -> f64 {
         self.valve.as_ref().map_or(0., |v| {
-            self.sgs[k].steam_demand_kg_s * steam_fraction(self.trip_s, self.stop_travel_s, t)
+            v.full_open_margin
+                * self.sgs[k].steam_demand_kg_s
+                * steam_fraction(self.trip_s, self.stop_travel_s, t)
                 / v.reference_pa[k]
         })
     }
@@ -1136,7 +1141,7 @@ impl<P: Properties> Secondary<P> for Secondaries {
     fn turbine_trip_time(&self) -> Option<f64> {
         self.trip_s
     }
-    fn declare_valve_admission(&mut self) -> Result<(), Failure> {
+    fn declare_valve_admission(&mut self, full_open_margin: f64) -> Result<(), Failure> {
         if self.trip_s.is_some() || self.turbine_load != 1. || self.valve.is_some() {
             return Err(fatal(
                 "X4.3: the valve law is declared once, at power, without the X4.4 load stand-in",
@@ -1152,6 +1157,7 @@ impl<P: Properties> Secondary<P> for Secondaries {
         }
         self.valve = Some(ValveAdmission {
             reference_pa,
+            full_open_margin,
             opening: 1.,
             direction: 0.,
         });

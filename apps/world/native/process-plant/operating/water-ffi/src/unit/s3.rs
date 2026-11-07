@@ -233,8 +233,8 @@ pub fn compose_governed(
 
 /// [`compose_with`] with the X4.3 governor when `turbine` is given: in LOAD
 /// from the start with the request at the start's terminal export (the
-/// settled GEN.WT, wiki), ADM at its prepared full opening and the owner's
-/// tracking transfer `I = ADM - Kp e`.
+/// settled GEN.WT, wiki), ADM at the opening that passes the start's steam
+/// (R4-TURB-VALVE-MARGIN) and the owner's tracking transfer `I = ADM - Kp e`.
 #[allow(clippy::too_many_lines)] // One composition, step by step as KERN's settle.
 pub fn compose_governed_with<J: JoinedSystem>(
     inputs: &Inputs,
@@ -549,9 +549,11 @@ pub fn compose_dc_with<J: JoinedSystem>(
                 export,
                 export,
             )?;
-            let opening = 1.;
-            let integral = g.tracking_integral(t0, export, tail[slice::OMEGA], opening);
             unit.declare_governor(g)?;
+            let opening = unit.start_governor(t0, &y, export)?;
+            let integral = unit.governor.as_ref().map_or(0., |g| {
+                g.tracking_integral(t0, export, tail[slice::OMEGA], opening)
+            });
             slice_atol.extend([1e-8 * tb.governor.base_w, 1e-8, 1e-8]);
             let mut tail = tail;
             tail.extend([export, integral, opening]);
