@@ -2258,6 +2258,17 @@ mod integrated {
         }
     }
     impl<P: Properties + WaterProperties> Integrated<P> {
+        /// R4-CLIMB-START: forget every kept matrix, each presence key's too.
+        /// A copy point starts in full on both sides: a restored copy holds
+        /// none of the source's, and kept matrices steer the solves, so the
+        /// two would part in their last bits.
+        pub fn forget_kept_matrices(&mut self) {
+            self.climb = None;
+            self.analyses.retained = None;
+            if let Some(f) = &mut self.presence {
+                f.cache.for_each_held(|(_, analyses)| analyses.retained = None);
+            }
+        }
         /// R4-CLIMB: while `cj` falls after a restart, the iteration matrix is
         /// the start's `A + cj B`, with the equilibrium columns refreshed at
         /// the climb's first state. A request that does not lower `cj`, Newton's

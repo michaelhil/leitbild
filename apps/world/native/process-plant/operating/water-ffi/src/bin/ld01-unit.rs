@@ -1630,7 +1630,13 @@ impl Unit {
             "driver": driver_json(&driver),
         });
         // Design §6.1: the copy point is a restart boundary for the source
-        // too (the same exact consistent restart a restore makes).
+        // too (the same exact consistent restart a restore makes), so it
+        // starts on no kept matrix, as a restore does not.
+        self.plant
+            .ida
+            .system_mut()
+            .integrated_mut()
+            .forget_kept_matrices();
         let restart = Change {
             due_s: t,
             class: Class::R,
@@ -1734,6 +1740,7 @@ impl Unit {
         p.ida.constrain_nonnegative(&nonnegative)?;
         p.y = y;
         p.yp = yp;
+        p.ida.system_mut().integrated_mut().forget_kept_matrices();
         let restarted = discrete_restart(
             &mut p.ida,
             t,
