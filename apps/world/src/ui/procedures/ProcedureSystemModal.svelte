@@ -5,9 +5,9 @@
   import { currentProcedureInput, procedureInputDocumentMatches, procedureInputFocusFor, resolveProcedureInputFocus, type ProcedureInputFocus } from './procedure-input.ts'
   import { procedureBindingStatusWord, procedureComparisonText, procedureCsfChip, procedureDescriptionText, procedureDisplayReading, procedureElapsedText, procedureStepBindingSummary } from './procedure-view.ts'
   import { readProcedureTagValue } from './procedure-client.ts'
-  import type { ProcedureChecksView } from '../../features/procedures/checks-view.ts'
+  import { canInspectProcedureBranchCheck, type ProcedureChecksView } from '../../features/procedures/checks-view.ts'
   import { simulationTimeAt } from '../simulation-clock.ts'
-  import { procedureViewKey, procedureCategories, procedureOperatorRows, procedureLineChecks, procedureLineCheckEvidence, type ProcedureLineCheck, type StepItem, procedureStepTagBindings, procedureTextSegments, procedureBlockLabel, procedureObservationEvidence, procedureObservationBasis, procedureObservationLabel, procedureSourceEvidenceRequest, procedureUnitJump } from './procedure-view.ts'
+  import { procedureViewKey, procedureCategories, procedureOperatorRows, procedureLineChecks, procedureLineCheckEvidence, type ProcedureLineCheck, type StepItem, procedureStepTagBindings, procedureTextSegments, procedureBlockLabel, procedureObservationEvidence, procedureSampledEvidence, procedureObservationBasis, procedureObservationLabel, procedureSourceEvidenceRequest, procedureUnitJump } from './procedure-view.ts'
   import type {
     SimulationRunId,
     SimulationClockState,
@@ -275,6 +275,9 @@
     ? procedureCurrentStep(selectedProcedureRun, document)
     : null)
   let visibleCheckStep = $state<ProcedureStepId | undefined>()
+  let inspectedBranch = $state<{ runId: string; stepId: ProcedureStepId; branchIndex: number }>()
+  const inspectedBranchIndex = $derived(inspectedBranch && inspectedBranch.runId === activeRun?.runId
+    && inspectedBranch.stepId === currentProcedureStep?.step.id ? inspectedBranch.branchIndex : undefined)
   let checkClockTick = $state(0)
   let checkSample = $state.raw<{
     readonly view: ProcedureChecksView
@@ -288,12 +291,14 @@
     const step = currentProcedureStep?.step
     if (!activeRun || !document || step === undefined || step.id !== visibleCheckStep
       || activeRun.currentStepId !== step.id || activeRun.sourceRevision !== document.source.revision || activeRun.sourcePath !== document.sourcePath
-      || !step.pairs?.some(pair => pair.advisoryBranchIndex !== undefined) || !realtimeAttached || clock === undefined) return null
+      || (inspectedBranchIndex === undefined && !step.pairs?.some(pair => pair.advisoryBranchIndex !== undefined))
+      || !realtimeAttached || clock === undefined) return null
     return step.id
   })
   const checkRunId = $derived(activeRun?.runId)
   const checkRequest = $derived(checkRunId && checkStepId && document
-    ? { runId: checkRunId, stepId: checkStepId, sourceId: document.source.sourceId, sourceRevision: document.source.revision, sourcePath: document.sourcePath }
+    ? { runId: checkRunId, stepId: checkStepId, sourceId: document.source.sourceId, sourceRevision: document.source.revision, sourcePath: document.sourcePath,
+        ...(inspectedBranchIndex === undefined ? {} : { branchIndex: inspectedBranchIndex }) }
     : null)
 
   const observeCheckStep = (element: HTMLElement, initial: ProcedureStepId | undefined) => {
@@ -1678,7 +1683,12 @@
       {#if first.paths?.length}<ol>{#each first.paths as path}<li>{@render procedureText(path, first.tagIds)}</li>{/each}</ol>{/if}
     {/if}
   {:else}
-    {@const taken = state?.decision !== undefined && state.decision.branchIndex === step.branches.indexOf(item.branch) ? state.decision : undefined}
+    {@const branchIndex = step.branches.indexOf(item.branch)}
+    {@const taken = state?.decision !== undefined && state.decision.branchIndex === branchIndex ? state.decision : undefined}
+    {#if currentProcedureStep?.step.id === step.id && activeRun?.currentStepId === step.id
+        && !step.pairs?.some(pair => pair.advisoryBranchIndex === branchIndex) && canInspectProcedureBranchCheck(step, branchIndex)}
+      {@render currentCheck(branchIndex, step)}
+    {/if}
     <button
       type="button"
       class="procedure-branch {taken ? `taken tone-${procedureDecisionTone(taken)}` : ''}"
@@ -1724,25 +1734,44 @@
   {/if}
 {/snippet}
 
-{#snippet currentCheck(branchIndex: number)}
+{#snippet sampledChecks(result: Record<string, unknown>)}
+  {@const sampled = procedureSampledEvidence(result)}
+  {#if sampled.length}
+    <h5>Recorded sample checks</h5>
+    {#each sampled as evidence}
+      <p><strong>{evidence.label}:</strong> {evidence.value} · required {evidence.criterion} · {evidence.status}{evidence.span ? ` · ${evidence.span}` : ''}{evidence.reason ? ` · ${evidence.reason}` : ''}</p>
+    {/each}
+  {/if}
+{/snippet}
+
+{#snippet currentCheck(branchIndex: number, inspectStep?: ProcedureStep)}
   {@const check = activeCheck(branchIndex)}
   {@const tone = check?.value.status ?? 'unknown'}
-  <details class="procedure-current-check">
-    <summary class={tone}>
+  <details class="procedure-current-check" name={inspectStep ? `branch-indications-${activeRun?.runId}` : undefined} ontoggle={(event) => {
+    if (!inspectStep || !activeRun || activeRun.currentStepId !== inspectStep.id) return
+    if (event.currentTarget.open) inspectedBranch = { runId: activeRun.runId, stepId: inspectStep.id, branchIndex }
+    else if (inspectedBranchIndex === branchIndex) inspectedBranch = undefined
+  }}>
+    <summary class={tone} aria-label={inspectStep ? `Inspect indications: ${inspectStep.branches[branchIndex]?.label}` : undefined}>
       <span class="procedure-check-glyph" aria-hidden="true">{tone === 'supported' ? '✓' : tone === 'contradicted' ? '×' : '—'}</span>
-      <span>{tone === 'supported' ? 'Criteria met' : tone === 'contradicted' ? 'Criteria unmet' : 'Criteria not established'}</span>
+      <span>{inspectStep ? 'Inspect indications' : 'Check indications'}{check ? tone === 'supported' ? ' · Met' : tone === 'contradicted' ? ' · Unmet' : ' · Not established' : ''}</span>
     </summary>
-    <p>Current indications only. Confirm the response before continuing.</p>
     {#if check}
-      <p>Read at {procedurePlantTime(check.time)} simulation time.</p>
+      <p>Checked at {procedurePlantTime(check.time)} simulation time.</p>
       {#each check.value.readings as reading}
         {@const label = document?.tags.find(tag => tag.id === reading.tagId)?.description ?? reading.description ?? reading.tagId ?? 'Indication'}
-        <p><strong>{label}:</strong> {reading.value ?? 'unavailable'} {reading.unit ?? ''}{#if reading.operator && reading.expected !== undefined} · test {reading.operator} {reading.expected}{/if}{#if reading.quality && reading.quality !== 'good'} · {reading.quality}{/if}</p>
+        <p><strong>{label}:</strong> {reading.status === 'unknown' ? 'unavailable' : reading.value ?? 'unavailable'} {reading.unit ?? ''}{#if reading.operator && reading.expected !== undefined} · required {reading.operator} {reading.expected}{/if}{#if reading.quality && reading.quality !== 'good'} · {reading.quality}{/if}</p>
       {/each}
       {#if check.value.observation}
-        {#each procedureObservationEvidence(check.value.observation.result) as evidence}
-          <p><strong>{evidence.label}:</strong> {evidence.value} · test {evidence.criterion}{evidence.reason ? ` · ${evidence.reason}` : ''}</p>
-        {/each}
+        {@const result = check.value.observation.result}
+        {@const current = procedureObservationEvidence(result)}
+        {#if current.length}
+          <h5>Current indications</h5>
+          {#each current as evidence}
+            <p><strong>{evidence.label}:</strong> {evidence.value} · comparison {evidence.criterion}{evidence.reason ? ` · ${evidence.reason}` : ''}</p>
+          {/each}
+        {/if}
+        {@render sampledChecks(result)}
       {/if}
       {#each check.value.reasons as reason}<p>{reason}</p>{/each}
     {:else}
@@ -1755,7 +1784,8 @@
   {@const operator = procedureOperatorRows(step)}
   {@const state = stepStates.get(step.id)}
   {@const observation = selectedProcedureRun?.observations?.find(item => item.stepId === step.id)}
-  <article use:observeCheckStep={role === 'current' && step.pairs?.some(pair => pair.advisoryBranchIndex !== undefined) ? step.id : undefined} data-procedure-step-id={step.id} class="procedure-step {role}" class:complete={state?.assessment === 'complete'} class:failed={state?.assessment === 'failed'} class:unknown={state?.assessment === 'unknown'}>
+  <article use:observeCheckStep={role === 'current' && (step.pairs?.some(pair => pair.advisoryBranchIndex !== undefined)
+    || step.branches.some((_branch, index) => canInspectProcedureBranchCheck(step, index))) ? step.id : undefined} data-procedure-step-id={step.id} class="procedure-step {role}" class:complete={state?.assessment === 'complete'} class:failed={state?.assessment === 'failed'} class:unknown={state?.assessment === 'unknown'}>
     <div class="procedure-step-main">
       <button
         type="button"
@@ -1797,12 +1827,12 @@
                 {#if row.expected.length > 0}
                   <section class="procedure-column">
                     <h4>{#if (step.pairs?.length ?? 0) > 1}<span>{step.label}{String.fromCharCode(97 + rowIndex - (operator.rows[0]?.kind === 'sequence' ? 1 : 0))}</span>{/if}Action / Expected Response</h4>
-                    {#if lines.size === 0 && role === 'current' && row.advisoryBranchIndex !== undefined}
-                      {@render currentCheck(row.advisoryBranchIndex)}
-                    {/if}
                     {#each row.expected.filter(item => item.kind === 'block') as item}
                       {@render operatorItem(step, state, item, true, lines, role === 'current' ? row.advisoryBranchIndex : undefined)}
                     {/each}
+                    {#if lines.size === 0 && role === 'current' && row.advisoryBranchIndex !== undefined}
+                      {@render currentCheck(row.advisoryBranchIndex)}
+                    {/if}
                     {#each row.expected.filter(item => item.kind === 'branch') as item}{@render operatorItem(step, state, item, true)}{/each}
                   </section>
                 {/if}
@@ -1855,6 +1885,7 @@
             {#each procedureObservationEvidence(observation.result) as evidence}
               <p><b>{evidence.label}</b>: {evidence.value} · criterion {evidence.criterion} · {evidence.status}{evidence.reason ? ` · ${evidence.reason}` : ''}</p>
             {/each}
+            {@render sampledChecks(observation.result)}
             <small>{procedureObservationLabel(observation.result) === 'Model comparison' ? 'Comparison of runtime model values; instrumentation validity is not established. ' : ''}Last acquisition shown in simulation time, not proof that evidence remains current. Human placekeeping remains separately recorded.</small>
           </details>
         {/if}

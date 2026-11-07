@@ -208,7 +208,7 @@ export const procedureBlockLabel = (kind: ProcedureTextBlock['kind']): string =>
 export const procedureObservationEvidence = (result: Record<string, unknown>): ReadonlyArray<{
   readonly label: string; readonly value: string; readonly criterion: string; readonly status: string; readonly reason?: string
 }> => {
-  const frame = Array.isArray(result.evidence) ? result : evidenceRecord(result.current)
+  const frame = Array.isArray(result.recordings) ? evidenceRecord(result.current) : result
   if (!Array.isArray(frame.evidence)) return []
   return frame.evidence.map(value => {
     const item = evidenceRecord(value)
@@ -231,7 +231,7 @@ export const procedureObservationEvidence = (result: Record<string, unknown>): R
     const variable = evidenceRecord(facts.variable)
     const comparison = evidenceRecord(item.comparison)
     return {
-      label: [signal.label, signal.path, reference.tagId, reference.path].find((label): label is string => typeof label === 'string') ?? 'Unavailable indication',
+      label: observationSignalLabel(signal, reference),
       value: variable.value === undefined ? 'unavailable' : `${String(variable.value)}${typeof variable.unit === 'string' ? ` ${variable.unit}` : ''}`,
       criterion: `${String(comparison.operator ?? '?')} ${String(comparison.value ?? '?')}${typeof comparison.unit === 'string' ? ` ${comparison.unit}` : ''}`,
       status, ...reason,
@@ -239,8 +239,40 @@ export const procedureObservationEvidence = (result: Record<string, unknown>): R
   })
 }
 
+export const procedureSampledEvidence = (result: Record<string, unknown>): ReadonlyArray<{
+  readonly label: string; readonly value: string; readonly criterion: string; readonly status: string
+  readonly span?: string; readonly reason?: string
+}> => {
+  const recordings = result.recordings
+  if (!Array.isArray(recordings) || !Array.isArray(result.evidence)) return []
+  return result.evidence.map(value => {
+    const item = evidenceRecord(value)
+    const comparison = evidenceRecord(item.comparison)
+    const recording = evidenceRecord(Number.isSafeInteger(item.recordingIndex) ? recordings[item.recordingIndex as number] : undefined)
+    const signal = evidenceRecord(recording.signal)
+    const reference = evidenceRecord(comparison.signal)
+    const label = observationSignalLabel(signal, reference)
+    const statistic = comparison.statistic === 'change' ? 'change' : comparison.statistic === 'minimum' ? 'minimum' : 'maximum'
+    const unit = typeof comparison.unit === 'string' ? ` ${comparison.unit}` : ''
+    return {
+      label: `${label} · ${statistic}`,
+      value: typeof item.actual === 'number' ? `${item.actual}${unit}` : 'unavailable',
+      criterion: `${String(comparison.operator ?? '?')} ${String(comparison.value ?? '?')}${unit}`,
+      status: typeof item.status === 'string' ? item.status : 'unknown',
+      ...(typeof recording.integratedSpanSeconds === 'number' ? { span: `${recording.integratedSpanSeconds} s recorded` } : {}),
+      ...(typeof item.reason === 'string' ? { reason: item.reason } : {}),
+    }
+  })
+}
+
 const evidenceRecord = (value: unknown): Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {}
+
+const observationSignalLabel = (signal: Record<string, unknown>, reference: Record<string, unknown>): string => {
+  const identity = [signal.tagId, reference.tagId, signal.path, reference.path].find((text): text is string => typeof text === 'string')
+  const label = typeof signal.label === 'string' ? signal.label : undefined
+  return label && identity && label !== identity ? `${label} (${identity})` : label ?? identity ?? 'Unavailable indication'
+}
 
 const indicationState = (value: unknown) => value === true ? 'On' : value === false ? 'Off' : 'unavailable'
 

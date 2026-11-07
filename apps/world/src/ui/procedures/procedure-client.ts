@@ -106,7 +106,7 @@ const readJson = async <T>(response: Response, message: string): Promise<T> => {
 
 export const readProcedureChecks = async (
   simulationRunId: SimulationRunId,
-  request: Pick<ProcedureChecksView, 'runId' | 'stepId' | 'sourceId' | 'sourceRevision' | 'sourcePath'>,
+  request: Pick<ProcedureChecksView, 'runId' | 'stepId' | 'sourceId' | 'sourceRevision' | 'sourcePath' | 'branchIndex'>,
   signal: AbortSignal,
 ): Promise<ProcedureChecksView | undefined> => {
   const workspaceId = activeWorkspaceId()

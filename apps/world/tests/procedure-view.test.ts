@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { parseProcedureMarkdown } from '../src/features/procedures/procmd.ts'
-import { procedureBlockLabel, procedureLineCheckEvidence, procedureLineChecks, procedureObservationBasis, procedureObservationEvidence, procedureObservationLabel, procedureOperatorRows, procedureSourceEvidenceRequest, procedureStepItems, procedureStepTagBindings, procedureTextSegments, procedureUnitJump } from '../src/ui/procedures/procedure-view.ts'
+import { procedureBlockLabel, procedureLineCheckEvidence, procedureLineChecks, procedureObservationBasis, procedureObservationEvidence, procedureObservationLabel, procedureOperatorRows, procedureSampledEvidence, procedureSourceEvidenceRequest, procedureStepItems, procedureStepTagBindings, procedureTextSegments, procedureUnitJump } from '../src/ui/procedures/procedure-view.ts'
 import { procedureCriterionReadingSchema } from '../src/core/model/procedure-criteria.ts'
 import { procedureTestSource } from './procedure-fixtures.ts'
 import { procedureBindingStatusWord, procedureComparisonText, procedureCsfChip, procedureDescriptionText, procedureDisplayReading, procedureElapsedText, procedureStepBindingSummary } from '../src/ui/procedures/procedure-view.ts'
@@ -60,6 +60,20 @@ test('observation labels use declared evidence qualification, not Pack names or 
   expect(procedureObservationLabel({ basis: { qualification: 'authored-comparison' }, status: 'satisfied' })).toBe('Model comparison')
   expect(procedureObservationLabel({ status: 'satisfied' })).toBe('Read-only observation')
   expect(procedureObservationLabel({ basis: null, status: 'unknown' })).toBe('Read-only observation')
+})
+
+test('sampled response shows both current readings and a separately failed historical comparison', () => {
+  const result = {
+    current: {
+      readings: [{ signal: { label: 'Steam generator A level' }, variable: { value: 30, unit: '%' } }],
+      evidence: [{ readingIndex: 0, comparison: { operator: '>', value: 20, unit: '%' }, status: 'satisfied' }],
+    },
+    recordings: [{ signal: { label: 'Steam generator A level' }, integratedSpanSeconds: 120 }],
+    evidence: [{ recordingIndex: 0, comparison: { signal: { tagId: 'SG-A-LVL-NR' }, statistic: 'minimum', operator: '>', value: 20, unit: '%' }, actual: 18, status: 'challenged' }],
+  }
+  expect(procedureObservationEvidence(result)).toEqual([{ label: 'Steam generator A level', value: '30 %', criterion: '> 20 %', status: 'satisfied' }])
+  expect(procedureSampledEvidence(result)).toEqual([{ label: 'Steam generator A level (SG-A-LVL-NR) · minimum', value: '18 %', criterion: '> 20 %', status: 'challenged', span: '120 s recorded' }])
+  expect(procedureObservationEvidence({ ...result, recordings: [], evidence: [] })).toHaveLength(1)
 })
 
 test('World procedure presentation preserves source reading order, decisions and original branch identity', () => {
