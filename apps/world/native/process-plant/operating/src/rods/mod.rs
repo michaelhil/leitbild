@@ -2280,8 +2280,9 @@ impl<P: Properties> Rods<P> for RodBlock {
         self.unit_rows(properties, &x, fluid, clusters, receipts, out)
     }
     /// The local units (cluster `u < n`, bore group `u - n`) whose rows or
-    /// receipts read a listed moved cell: every unit reads LOWER, UPPER or
-    /// HOUSING.MAIN, and no unit reads another cell.
+    /// receipts read a listed moved cell: every unit reads LOWER, UPPER,
+    /// HOUSING.MAIN and HOUSING.NECK, where the stem's top stands
+    /// (R4-ROD2-STEM), and no unit reads another cell.
     fn readers(
         &self,
         x: Coordinates<'_>,
