@@ -276,3 +276,17 @@ test('late actual outcomes remain discoverable after every terminal status and c
     expect(() => store.recordOutcome(turn, `${turn}-call-0`, { success: false, error: 'replacement' })).toThrow('already recorded')
   }
 })
+
+test('operation identifiers and nested JSON strings preserve lone surrogates and NUL characters exactly', () => {
+  const store = openStore()
+  const operationId = 'world.x\ud800y\0z'
+  const exactTarget = { name: 'target\udfff\0value' }
+  const inputSchema = { description: 'schema\ud800\0text', properties: { 'key\udfff': { const: 'value\ud800' } } }
+  recordTurn(store, 'exact-strings', 'assistant', 1, [
+    explored([{ operationId, inputSchema }]),
+    called([{ operationId, success: true, target: exactTarget }]),
+  ])
+  expect(discoveryMemo(store, ROOM, 'assistant')).toBe(expectedMemo(
+    '- ' + operationId + ' · target ' + JSON.stringify(exactTarget) + ' · input schema ' + JSON.stringify(inputSchema),
+  ))
+})
