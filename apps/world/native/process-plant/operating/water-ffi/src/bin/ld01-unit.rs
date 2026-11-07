@@ -872,7 +872,7 @@ fn parse_load(load: &Value) -> Result<(Inputs, String, Solver), String> {
         text(i, "pzr_control_wiki", "LOAD inputs")?,
         text(i, "elec", "LOAD inputs")?,
     )?;
-    exactly(&o["solver"], "LOAD solver", &["weights", "first_step", "stepping", "water"])?;
+    exactly(&o["solver"], "LOAD solver", &["weights", "first_step", "stepping", "water", "source_atol"])?;
     let solver = Solver {
         weights: Weights::parse(text(&o["solver"], "weights", "LOAD solver")?)?,
         first_step: parse_first_step(text(&o["solver"], "first_step", "LOAD solver")?)?,
@@ -880,6 +880,8 @@ fn parse_load(load: &Value) -> Result<(Inputs, String, Solver), String> {
         // The water method (owner decision 1 Nov): a required LOAD key, in
         // the identity a restore checks.
         water: leitbild_operating_water::WaterMethod::parse(text(&o["solver"], "water", "LOAD solver")?)?,
+        // R4-NUC-SOURCE-ATOL: a required LOAD key, in the identity.
+        source_atol: leitbild_operating_water::unit::profile::SourceAtol::parse(text(&o["solver"], "source_atol", "LOAD solver")?)?,
     };
     Ok((inputs, text(load, "state", "LOAD")?.to_string(), solver))
 }
@@ -938,6 +940,7 @@ impl Unit {
             "matrix_rebuild": "stock (r4 baseline: MR-1 off)",
             "stepping": format!("{stepping:?}"),
             "water": solver.water.as_str(),
+            "source_atol": solver.source_atol.as_str(),
         });
         let mut identity = files;
         identity["composition"] = composition;

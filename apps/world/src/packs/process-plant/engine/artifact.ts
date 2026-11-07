@@ -36,7 +36,7 @@ const descriptorSchema = z.object({
       elec: relativePathSchema,
     }).strict(),
     state: relativePathSchema,
-    solver: z.object({ weights: z.string().min(1), first_step: z.string().min(1), stepping: z.string().min(1), water: z.enum(['if97', 'sbtl']) }).strict(),
+    solver: z.object({ weights: z.string().min(1), first_step: z.string().min(1), stepping: z.string().min(1), water: z.enum(['if97', 'sbtl']), source_atol: z.enum(['derived', 'stock']) }).strict(),
   }).strict(),
   graph: relativePathSchema,
 }).strict()
@@ -66,7 +66,7 @@ export interface Ld01UnitLoadRequest {
     readonly elec: string
   }
   readonly state: string
-  readonly solver: { readonly weights: string; readonly first_step: string; readonly stepping: string; readonly water: 'if97' | 'sbtl' }
+  readonly solver: { readonly weights: string; readonly first_step: string; readonly stepping: string; readonly water: 'if97' | 'sbtl'; readonly source_atol: 'derived' | 'stock' }
 }
 
 export interface Ld01UnitArtifact {

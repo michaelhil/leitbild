@@ -130,6 +130,34 @@ pub struct Solver {
     pub first_step: FirstStep,
     pub stepping: Stepping,
     pub water: crate::WaterMethod,
+    /// R4-NUC-SOURCE-ATOL (lead 1 Nov): the populations' and precursors'
+    /// absolute tolerances derived at the hot-standby basis
+    /// ([`super::source_atol`]), or the stock scaled floor.
+    pub source_atol: SourceAtol,
+}
+/// R4-NUC-SOURCE-ATOL: `derived` (the composition of record) or `stock`
+/// (the stock scaled floor, the record before it).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SourceAtol {
+    Derived,
+    Stock,
+}
+impl SourceAtol {
+    /// `derived` or `stock`; anything else refuses.
+    pub fn parse(name: &str) -> Result<Self, String> {
+        match name {
+            "derived" => Ok(Self::Derived),
+            "stock" => Ok(Self::Stock),
+            other => Err(format!("source_atol {other}: derived or stock")),
+        }
+    }
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Derived => "derived",
+            Self::Stock => "stock",
+        }
+    }
 }
 impl Solver {
     /// Stock weights, the declared G13 first step, free stepping
@@ -141,6 +169,7 @@ impl Solver {
         first_step: FirstStep::Declared,
         stepping: Stepping::Free,
         water: crate::WaterMethod::Sbtl,
+        source_atol: SourceAtol::Derived,
     };
 }
 

@@ -419,6 +419,16 @@ pub fn compose_dc_with<J: JoinedSystem>(
         atol[joined.offsets().pzr + k] = scaled;
         scaled
     };
+    // R4-NUC-SOURCE-ATOL: the populations' and precursors' derived absolute
+    // tolerances at the hot-standby basis, the tightest with the floor.
+    let source_atol = match solver.source_atol {
+        super::profile::SourceAtol::Derived => Some(super::source_atol::apply(
+            &joined,
+            &inputs.spine.wiki_root,
+            &mut atol,
+        )?),
+        super::profile::SourceAtol::Stock => None,
+    };
     let ids = joined.differential(&network_ids);
     let n = joined.dimension();
     let nonnegative = joined.network.nonnegative_stocks();
@@ -608,7 +618,7 @@ pub fn compose_dc_with<J: JoinedSystem>(
     let mut receipt = json!({
         "composition": "S3-D28 (3): joined + spray path (continuous stem, R4-PZR-PI S-b) + SG two-zone + feed gate declared + S2-D24r/S3-D16 + PZR pressure master AUTO (C, R4-PZR-PI) + L1 + phase modes + ELEC slice connected",
         "tolerance_scaling": {"relative": scaling.relative, "absolute": scaling.absolute},
-        "weights": solver.weights, "first_step": solver.first_step, "stepping": solver.stepping, "water": solver.water, "weight_groups": ida.weight_groups().map(|g| g.sizes().len()),
+        "weights": solver.weights, "first_step": solver.first_step, "stepping": solver.stepping, "water": solver.water, "source_atol": {"setting": solver.source_atol, "derived": source_atol}, "weight_groups": ida.weight_groups().map(|g| g.sizes().len()),
         "from_saved_s3_state": saved, "t0_s": t0, "spray_path": spray_path,
         "sections": {"ic": inputs.ic_path, "pzr_control": inputs.control_path, "control_wiki": inputs.control_wiki, "electrical": inputs.elec_path},
         "l1_activation_changes": l1_changes,
