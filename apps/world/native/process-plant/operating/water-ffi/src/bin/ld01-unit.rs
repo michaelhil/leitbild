@@ -1451,11 +1451,12 @@ impl Unit {
     fn named_end(&self, cause: &str) -> Option<DomainEnd> {
         let p = &self.plant;
         let yp = p.driver.accepted_rates().unwrap_or(&p.yp);
-        p.ida
-            .system()
-            .integrated()
-            .joined
-            .named_end(cause, p.driver.integrator_s(), p.driver.frame_period_s(), yp)
+        p.ida.system().integrated().joined.named_end(
+            cause,
+            p.driver.integrator_s(),
+            p.driver.frame_period_s(),
+            yp,
+        )
     }
 
     fn command(&mut self, v: &Value) -> Result<Value, String> {

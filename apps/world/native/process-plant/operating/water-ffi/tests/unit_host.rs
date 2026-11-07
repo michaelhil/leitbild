@@ -339,7 +339,12 @@ fn a_restored_copy_continues_bitwise_and_the_protocol_refuses_explicitly() {
                 .split_once('@')
                 .unwrap_or_else(|| panic!("LD01_UNIT_HOST_COMMAND={v}: <kind>@<exchange>"));
             assert!(
-                ["TurbineTripAcquired", "ManualReactorTrip", "ReliefStuckOpen"].contains(&kind),
+                [
+                    "TurbineTripAcquired",
+                    "ManualReactorTrip",
+                    "ReliefStuckOpen"
+                ]
+                .contains(&kind),
                 "LD01_UNIT_HOST_COMMAND={v}: TurbineTripAcquired, ManualReactorTrip or ReliefStuckOpen"
             );
             let at: u64 = at
@@ -598,7 +603,10 @@ fn a_named_end_holds_its_state_and_refuses_by_name() {
     assert!(refused.contains("the unit ended at"), "{refused}");
     let command = json!({"kind": "ReliefStuckOpen", "t_apply": end.t});
     let refused_command = a.refused(COMMAND, &serde_json::to_vec(&command).unwrap());
-    assert!(refused_command.contains("the unit ended at"), "{refused_command}");
+    assert!(
+        refused_command.contains("the unit ended at"),
+        "{refused_command}"
+    );
 
     // The end holds a state: a snapshot, and a unit restored from it.
     let snapshot = a.ok(SNAPSHOT, &[]).payload;

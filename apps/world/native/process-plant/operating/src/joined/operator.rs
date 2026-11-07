@@ -24,6 +24,7 @@
 //! receipts only, its Jacobian included (a consistent start of the composed
 //! coordinates at t = 0); [`Joined::integrable`] is false, and the stock-IDA
 //! adapter refuses it, so no integrator can advance it.
+use super::domain_end::{self, DomainEnd, Refused};
 use super::{
     block::{CellVolume, Coordinates, Layout, Rods, Secondary, SecondaryView},
     cvcs::{self, Cvcs},
@@ -44,7 +45,6 @@ use crate::{
     sparse::{self, Coloring, Pattern},
     thermal::{self, Scalar, WaterProperties},
 };
-use super::domain_end::{self, DomainEnd, Refused};
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 
