@@ -42,7 +42,7 @@ const compare = (meshes: ReadonlyArray<PhysicalMesh>, reference = priorOwnership
   // exact candidates, ownership and all output/picking bytes must stay equal.
   const { broadPhaseCandidates: _work, ...after } = current.diagnostics
   expect(after).toEqual(expected.diagnostics); expect(current.meshes.length).toBe(expected.objects.length)
-  for (let index = 0; index < current.meshes.length; index++) expect(current.meshes[index]!.object).toBe(expected.objects[index])
+  for (let index = 0; index < current.meshes.length; index++) expect(current.meshes[index]!.object).toBe(expected.objects[index]!)
   expect(fingerprint(current)).toBe(expected.digest)
 }
 const mesh = (id: string, faces: ReadonlyArray<readonly [number, number, number]>, material = 0): PhysicalMesh => {
