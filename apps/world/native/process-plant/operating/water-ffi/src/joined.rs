@@ -277,6 +277,22 @@ pub enum Matrices<'a> {
     Colored,
 }
 
+impl Matrices<'_> {
+    /// The same matrices for one attempt, kept for the next.
+    fn reborrow(&mut self) -> Matrices<'_> {
+        match self {
+            Matrices::Blocks {
+                structure,
+                analyses,
+            } => Matrices::Blocks {
+                structure,
+                analyses,
+            },
+            Matrices::Colored => Matrices::Colored,
+        }
+    }
+}
+
 /// One assembly of `dF/dy + cj dF/dy'` at `(t, y, 0)` into `values`, in the
 /// stored order of the matrices' pattern. R4-START-ASSEMBLY (lane RESTART):
 /// `base_stands` says the start's own evaluation of this very `(t, y, 0)` is
@@ -334,7 +350,7 @@ pub fn consistent_start<P: Properties + WaterProperties>(
     bound: f64,
     passes: usize,
 ) -> Result<(Vec<f64>, Report), Failure> {
-    consistent_start_exempting(
+    start_on_kept_or_full(
         joined,
         matrices,
         t,
@@ -345,6 +361,57 @@ pub fn consistent_start<P: Properties + WaterProperties>(
         bound,
         passes,
     )
+}
+
+/// [`consistent_start_exempting`] on the kept matrices if any, then in full:
+/// R4-CLIMB-START's matrices only steer the solves, so a step of theirs that
+/// the model refuses, or a factorization they fail, is a miss too.
+#[allow(clippy::too_many_arguments)] // As consistent_start_exempting.
+fn start_on_kept_or_full<P: Properties + WaterProperties>(
+    joined: &mut Joined<P>,
+    mut matrices: Matrices<'_>,
+    t: f64,
+    y: &mut [f64],
+    differential: &[f64],
+    weights: &[f64],
+    exempt: &[bool],
+    bound: f64,
+    passes: usize,
+) -> Result<(Vec<f64>, Report), Failure> {
+    let kept =
+        matches!(&matrices, Matrices::Blocks { analyses, .. } if analyses.retained.is_some());
+    let entry = y.to_vec();
+    let on_kept = consistent_start_exempting(
+        joined,
+        matrices.reborrow(),
+        t,
+        y,
+        differential,
+        weights,
+        exempt,
+        bound,
+        passes,
+    );
+    if on_kept.is_ok() || !kept {
+        return on_kept;
+    }
+    y.copy_from_slice(&entry);
+    if let Matrices::Blocks { analyses, .. } = &mut matrices {
+        analyses.retained = None;
+    }
+    let (yp, mut full) = consistent_start_exempting(
+        joined,
+        matrices,
+        t,
+        y,
+        differential,
+        weights,
+        exempt,
+        bound,
+        passes,
+    )?;
+    full.start_reuse[1] += 1;
+    Ok((yp, full))
 }
 
 /// [`consistent_start`] with the coordinates marked `exempt` left out of
@@ -1593,7 +1660,7 @@ mod integrated {
             },
             Assembly::Colored => Matrices::Colored,
         };
-        let (yp, mut report) = super::consistent_start_exempting(
+        let (yp, mut report) = super::start_on_kept_or_full(
             joined,
             matrices,
             t,
@@ -2266,7 +2333,8 @@ mod integrated {
             self.climb = None;
             self.analyses.retained = None;
             if let Some(f) = &mut self.presence {
-                f.cache.for_each_held(|(_, analyses)| analyses.retained = None);
+                f.cache
+                    .for_each_held(|(_, analyses)| analyses.retained = None);
             }
         }
         /// R4-CLIMB: while `cj` falls after a restart, the iteration matrix is
