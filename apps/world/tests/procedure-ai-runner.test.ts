@@ -133,6 +133,12 @@ describe('the AI procedure runner through the World Module API', () => {
       expect(response.body.result).toEqual({ ...input, plantId, sequence: before.seq, simulationTime: before.clock!.currentTime, checks: [] })
       expect(loadSource).not.toHaveBeenCalled()
     } finally { loadSource.mockRestore() }
+    const requested = await invoke('world.procedure.run.checks.read', { ...input, branchIndex: 0 }, operator)
+    expect(requested.status).toBe(200)
+    expect(requested.body.result).toMatchObject({ ...input, branchIndex: 0, checks: [{ branchIndex: 0, status: 'supported', readings: [{ tagId: 'PT-455' }] }] })
+    const invalid = await invoke('world.procedure.run.checks.read', { ...input, branchIndex: 1 }, operator)
+    expect(invalid.status).toBe(400)
+    expect(invalid.body.error.code).toBe('procedure_check_not_available')
     const superseded = await invoke('world.procedure.run.checks.read', { ...input, stepId: 'verify-turbine-trip' }, operator)
     expect(superseded.status).toBe(409)
     expect(superseded.body.error.code).toBe('procedure_checks_superseded')

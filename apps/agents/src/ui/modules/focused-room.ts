@@ -1,7 +1,7 @@
-// The Host embeds a Room in focused mode. This is a presentation boundary:
-// the Agents runtime remains Workspace-scoped, while this browser view shows
-// only the selected Room and its members.
-const params = typeof location === 'undefined' ? null : new URL(location.href).searchParams
+// A missing Room in an explicit focused URL must never subscribe to the Workspace.
+export const focusedRoomFor = (params: URLSearchParams): string | null | undefined =>
+  params.get('view') === 'focused' ? params.get('room')?.trim() || null : undefined
 
-export const focusedRoomId = params?.get('view') === 'focused' ? params.get('room') : null
-export const isFocusedRoomView = focusedRoomId !== null
+const pageRoom = globalThis.location?.href ? focusedRoomFor(new URL(location.href).searchParams) : undefined
+export const isFocusedRoomView = pageRoom !== undefined
+export const focusedRoomId = pageRoom ?? null

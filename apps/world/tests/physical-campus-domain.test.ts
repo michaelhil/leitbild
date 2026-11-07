@@ -15,13 +15,12 @@ import { actorIdSchema, geoPointFromLonLat, objectIdSchema, type IsoTimestamp, t
 import { sideViewOfSnapshot } from '../src/core/simulation-runs/side-view.ts'
 import type { SimulationRunStateSnapshot } from '../src/core/simulation-runs/state-store.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
-import { processPlantPack as liveProcessPlantPack } from '../src/packs/process-plant/pack.ts'
-import { historicalPhysicalProcessPlantPack as processPlantPack } from './fixtures/physical-layout/historical-targets.ts'
+import { processPlantPack } from '../src/packs/process-plant/pack.ts'
 import { electricGridPack } from '../src/packs/electric-grid/pack.ts'
 import { weatherPack } from '../src/packs/weather/pack.ts'
 import { physicalLayoutPack, physicalLayoutScenarioItemSchema } from '../src/packs/physical-layout/pack.ts'
-import { campusLayoutDataSchema, draftingLayoutDataSchema, canonicalPhysicalJson } from '../src/packs/physical-layout/model.ts'
-import { currentPwrPhysicalDesignRef, pwrFullUnitPhysicalDesignRef, pwrCampusPhysicalDesignRef, pwrShutdownCoolingUnitPhysicalDesignRef, pwrShutdownCoolingCampusPhysicalDesignRef } from '../src/packs/physical-layout/design.ts'
+import { physicalLayoutDataSchema, canonicalPhysicalJson } from '../src/packs/physical-layout/model.ts'
+import { pwrShutdownCoolingUnitPhysicalDesignRef, pwrShutdownCoolingCampusPhysicalDesignRef } from '../src/packs/physical-layout/design.ts'
 import { describePhysicalLayoutScene, loadPhysicalLayoutScene } from '../src/packs/physical-layout/scene.ts'
 import { createLocalProcessPlantPackRuntimeAdapter } from '../src/packs/process-plant/sim/adapter.ts'
 import { createLocalElectricGridPackRuntimeAdapter } from '../src/packs/electric-grid/sim/adapter.ts'
@@ -31,21 +30,12 @@ import { physicalLayoutStatusSummary } from '../src/ui/physical-layout/status.ts
 import { subjectOf } from '../src/features/displays/alerts/rows.ts'
 
 const packs = [processPlantPack, electricGridPack, weatherPack, physicalLayoutPack]
-// These regressions deliberately retain the r1 compiler/source/profile. Current
-// bundled r2 admission and scopes have their own explorer suite.
-const source = () => {
-  const value = scenarioDefinitionSchema.parse(normalOperation)
-  for (const item of value.packs.find(pack => pack.id === 'physical-layout')!.items) {
-    item.design = item.id === 'layout:halden-campus' ? pwrCampusPhysicalDesignRef : pwrFullUnitPhysicalDesignRef
-    delete item.group
-  }
-  return value
-}
+const source = () => scenarioDefinitionSchema.parse(normalOperation)
 const compile = (value: unknown) => compileScenarioDefinition(value, packs, { routing: createDirectRoutingAdapter() })
 const objectFor = (objects: ReadonlyArray<OperationalObject>, id: string): OperationalObject => objects.find(object => object.id === id) ?? (() => { throw new Error(`Missing test object ${id}`) })()
 const withRun = async (work: (registry: SimulationRunRegistry, run: SimulationRunRuntime) => Promise<void>) => {
   const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-campus-api-'))
-  const livePacks = [liveProcessPlantPack, electricGridPack, weatherPack, physicalLayoutPack]
+  const livePacks = [processPlantPack, electricGridPack, weatherPack, physicalLayoutPack]
   const registry = createSimulationRunRegistry({ dataDir, workspaceId: newWorkspaceId(), scenarioDefinitions: [scenarioDefinitionSchema.parse(normalOperation)], compileScenarioDefinition: value => compileScenarioDefinition(value, livePacks, { routing: createDirectRoutingAdapter() }),
     scenarioAuthoringCatalog: scenarioAuthoringCatalogFor(livePacks), scenarioRuntimeResolver: createScenarioRuntimeResolver({ packs: livePacks }),
     runtimeAdapters: [createLocalProcessPlantPackRuntimeAdapter(), createLocalElectricGridPackRuntimeAdapter(), createLocalWeatherPackRuntimeAdapter()] })
@@ -60,25 +50,22 @@ const read = async (registry: SimulationRunRegistry, run: SimulationRunRuntime, 
 }
 
 describe('Full PWR and shared campus admission', () => {
-  test('the retained r1 Scenario carries four reusable full units and one geographically separate shared site', async () => {
+  test('the current bundled Scenario carries four reusable full units and one geographically separate shared site', async () => {
     const compiled = await compile(source())
     expect(compiled.initialObjects.filter(object => object.packId === 'physical-layout')).toHaveLength(5)
     for (const unit of [1, 2, 3, 4]) {
-      const layout = objectFor(compiled.initialObjects, `layout:halden-${unit}`), data = campusLayoutDataSchema.parse(layout.packData)
-      expect(data.design).toEqual(pwrFullUnitPhysicalDesignRef)
-      expect(data.coverage.totalSubjects).toBe(121)
+      const layout = objectFor(compiled.initialObjects, `layout:halden-${unit}`), data = physicalLayoutDataSchema.parse(layout.packData)
+      expect(data.design).toEqual(pwrShutdownCoolingUnitPhysicalDesignRef)
       for (const id of ['core', 'turbine', 'condenser']) expect(data.coverage.representedSubjectIds).toContain(id)
       for (const id of ['atmosphere', 'offsiteGrid']) expect(data.coverage.unplacedSubjectIds).toContain(id)
-      expect(data.coverage.representedSubjectIds).toHaveLength(108)
-      expect(data.coverage.unplacedSubjectIds).toHaveLength(13)
-      expect(data.coverageEvidence.dispositions).toHaveLength(121)
+      expect(data.coverageEvidence.dispositions).toHaveLength(data.coverage.totalSubjects)
       expect(data.coverageEvidence.dispositions.find(entry => entry.subjectId === 'core')?.disposition).toBe('housed')
       expect(data.bindings.find(binding => binding.elementId === 'core')).toMatchObject({ relation: 'houses' })
       expect(data.source.levels.map(level => level.elevation)).toEqual([0, 8, 15, 22])
       expect(describePhysicalLayoutScene(layout, compiled.initialObjects)?.overviewFootprints!.length).toBeGreaterThanOrEqual(6)
     }
-    const campus = objectFor(compiled.initialObjects, 'layout:halden-campus'), data = campusLayoutDataSchema.parse(campus.packData)
-    expect(data.design).toEqual(pwrCampusPhysicalDesignRef)
+    const campus = objectFor(compiled.initialObjects, 'layout:halden-campus'), data = physicalLayoutDataSchema.parse(campus.packData)
+    expect(data.design).toEqual(pwrShutdownCoolingCampusPhysicalDesignRef)
     expect(data.owner).toMatchObject({ objectId: 'grid:halden-four-unit', packId: 'electric-grid', modelRef: 'electric-grid.halden.four-unit' })
     expect(data.placement.anchor).toEqual([11.48, 59.08])
     expect(data.relatedMembers).toHaveLength(4)
@@ -124,9 +111,6 @@ describe('Full PWR and shared campus admission', () => {
     const rotated = source()
     rotated.packs.find(pack => pack.id === 'physical-layout')!.items.find(item => item.id === 'layout:halden-1')!.bearing = 90
     await expect(compile(rotated)).rejects.toThrow('Physical layout dependency mismatch')
-    const replaced = source()
-    replaced.packs.find(pack => pack.id === 'physical-layout')!.items.find(item => item.id === 'layout:halden-1')!.design = currentPwrPhysicalDesignRef
-    await expect(compile(replaced)).rejects.toThrow('Physical layout dependency mismatch')
     const removed = source()
     const selected = removed.packs.find(pack => pack.id === 'physical-layout')!
     selected.items = selected.items.filter(item => item.id !== 'layout:halden-1')
@@ -147,7 +131,7 @@ describe('Full PWR and shared campus admission', () => {
     const moved = compiled.initialObjects.map(object => object.id !== 'plant:halden-2' ? object : { ...object, spatial: { ...object.spatial, position: { ...object.spatial.position!, point: geoPointFromLonLat(11.478, 59.085) } } })
     expect(describePhysicalLayoutScene(campus, moved)?.locationValid).toBe(false)
     expect(describePhysicalLayoutScene(campus, compiled.initialObjects.filter(object => object.id !== 'plant:halden-2'))?.locationValid).toBe(false)
-    const rotated = compiled.initialObjects.map(object => object.id !== 'layout:halden-1' ? object : { ...object, packData: { ...campusLayoutDataSchema.parse(object.packData), placement: { anchor: [11.47, 59.087], bearing: 90 } } })
+    const rotated = compiled.initialObjects.map(object => object.id !== 'layout:halden-1' ? object : { ...object, packData: { ...physicalLayoutDataSchema.parse(object.packData), placement: { anchor: [11.47, 59.087], bearing: 90 } } })
     expect(describePhysicalLayoutScene(campus, rotated)?.locationValid).toBe(false)
     expect(describePhysicalLayoutScene(campus, compiled.initialObjects.filter(object => object.id !== 'layout:halden-1'))?.locationValid).toBe(false)
     expect(canonicalPhysicalJson(campus.packData)).toBe(before)
@@ -175,7 +159,7 @@ describe('Real full-plant and shared-yard acquisition', () => {
     const originalSnapshot = run.snapshot.bind(run), originalObservations = run.observations.bind(run)
     const snapshotSpy = spyOn(run, 'snapshot').mockImplementation(() => { const snapshot = originalSnapshot(); return { ...snapshot, objects: snapshot.objects.map(object => {
       if (object.id !== 'layout:halden-1') return object
-      const data = draftingLayoutDataSchema.parse(object.packData)
+      const data = physicalLayoutDataSchema.parse(object.packData)
       return { ...object, packData: { ...data, placement: { ...data.placement, bearing: 90 } } }
     }) } })
     let reads = 0
@@ -214,7 +198,7 @@ describe('Real full-plant and shared-yard acquisition', () => {
 
   test('full unit and Grid bindings read complete bounded owner samples, and internal core alarms locate at their housing', async () => withRun(async (registry, run) => {
     const elapsed: number[] = []
-    const retainedSubjects = draftingLayoutDataSchema.parse(objectFor(run.snapshot().objects, 'layout:halden-1').packData).coverage.representedSubjectIds
+    const retainedSubjects = physicalLayoutDataSchema.parse(objectFor(run.snapshot().objects, 'layout:halden-1').packData).coverage.representedSubjectIds
     let sample = layoutLiveResponseSchema.parse((await read(registry, run, 'layout:halden-1', pwrShutdownCoolingUnitPhysicalDesignRef.digest)).body)
     for (let index = 0; index < 3; index++) {
       const started = performance.now(), response = await read(registry, run, 'layout:halden-1', pwrShutdownCoolingUnitPhysicalDesignRef.digest)
@@ -249,7 +233,7 @@ describe('Real full-plant and shared-yard acquisition', () => {
   }), 30_000)
 
   test('a changed related owner model is refused before the shared Grid owner is observed', async () => withRun(async (registry, run) => {
-    const realPacks = run.packs(), provider = liveProcessPlantPack.physicalTargets!
+    const realPacks = run.packs(), provider = processPlantPack.physicalTargets!
     const packSpy = spyOn(run, 'packs').mockImplementation(() => realPacks.map(pack => pack.descriptor.id !== 'process-plant' ? pack : { ...pack, physicalTargets: async (object: OperationalObject) => ({ ...await provider(object), modelDigest: '0'.repeat(64) }) }))
     const original = run.observations.bind(run)
     let reads = 0

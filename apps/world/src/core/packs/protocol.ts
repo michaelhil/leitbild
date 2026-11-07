@@ -902,6 +902,8 @@ export interface PackPhysicalTargetDescription {
 export interface WorldPack extends WorldPackView {
   /** Owner-declared object references in a complete canonical object (not arbitrary text). */
   readonly inspectionReferences: (object: OperationalObject) => ReadonlyArray<string>
+  /** Refuses unsupported Pack data before a retained Run can connect or publish a snapshot. */
+  readonly validateRetainedObjects?: (objects: ReadonlyArray<OperationalObject>) => void
   readonly scenarioConfigSchema: z.ZodType
   /** Exact owner operations available before a Run, including Packs with no runtime. */
   readonly workspaceCapabilities?: ReadonlyArray<PackWorkspaceCapability>

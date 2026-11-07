@@ -3,6 +3,7 @@ import { workspaceResourceReferenceSchema, type WorkspaceId } from '@leitbild/co
 import type { ExecutionCall } from '../core/executions/store.ts'
 import { PROPOSE_OPERATION_ID } from './operation-claims.ts'
 import { createProposalCardReader, PROPOSALS_OPERATION_ID, proposedOperationsOf } from './proposal-cards.ts'
+import { retainedWorkspaceResults } from './retained-workspace-call.ts'
 
 // Demo beat 4: the agent proposes shutting MOV-8000A; a person approves it
 // in the display window. The answer's card reads World's status.
@@ -15,6 +16,7 @@ const call = (id: string, calls: ReadonlyArray<unknown>, results: ReadonlyArray<
   id, tool: 'workspace_call', startedAt: 1, completedAt: 2, argumentBytes: 1, resultBytes: 1,
   arguments: { calls }, result: { success: true, data: { results } },
 })
+const proposalsOf = (calls: ReadonlyArray<ExecutionCall>) => proposedOperationsOf(retainedWorkspaceResults(calls))
 const proposed = call('call_1_0', [{ key: 'propose', operationId: PROPOSE_OPERATION_ID, input: proposeInput }], [
   { key: 'propose', operationId: PROPOSE_OPERATION_ID, target: { kind: 'resource', ref: run }, success: true, data: { ok: true, commandId: 'command:p1', acceptedAt: '2026-10-12T10:02:40.000Z' } },
 ])
@@ -33,7 +35,7 @@ const worldProposal = (status: string, closed?: Record<string, unknown>) => ({
 
 describe('what a turn proposed', () => {
   test('reads each propose call\'s input, its proposal id and the Resource it went to, or World\'s refusal', () => {
-    expect(proposedOperationsOf([read, proposed, refused])).toEqual([
+    expect(proposalsOf([read, proposed, refused])).toEqual([
       { callId: 'call_1_0', key: 'propose', plantId: 'plant:halden-1', target: 'MOV-8000A', value: 0, reason: proposeInput.reason, procedureStep: proposeInput.procedureStep, evidence: ['PT-455'],
         outcome: { kind: 'recorded', proposalId: 'command:p1', resource: run } },
       { callId: 'call_2_0', key: 'start', plantId: 'plant:halden-1', target: 'RCP-A-RUN', value: true, reason: proposeInput.reason, procedureStep: proposeInput.procedureStep, evidence: ['PT-455'],
@@ -46,7 +48,7 @@ describe('what a turn proposed', () => {
     const reset = call('call_4_0', [{ key: 'reset', operationId: PROPOSE_OPERATION_ID, input: resetInput }], [
       { key: 'reset', operationId: PROPOSE_OPERATION_ID, target: { kind: 'resource', ref: run }, success: true, data: { ok: true, commandId: 'command:r1', acceptedAt: 'x', word: 'RESET Manual safety injection' } },
     ])
-    expect(proposedOperationsOf([reset])).toEqual([
+    expect(proposalsOf([reset])).toEqual([
       { callId: 'call_4_0', key: 'reset', plantId: 'plant:halden-1', target: 'safety-injection-manual', reset: true, value: undefined, reason: resetInput.reason, procedureStep: resetInput.procedureStep, evidence: ['PT-455'],
         outcome: { kind: 'recorded', proposalId: 'command:r1', resource: run } },
     ])
@@ -56,7 +58,7 @@ describe('what a turn proposed', () => {
     const untargeted = call('call_3_0', [{ key: 'propose', operationId: PROPOSE_OPERATION_ID, input: proposeInput }], [
       { key: 'propose', operationId: PROPOSE_OPERATION_ID, success: true, data: { ok: true, commandId: 'command:p1', acceptedAt: 'x' } },
     ])
-    expect(() => proposedOperationsOf([untargeted])).toThrow('lacks its command id or the Resource it went to')
+    expect(() => proposalsOf([untargeted])).toThrow('lacks its command id or the Resource it went to')
   })
 })
 
@@ -77,7 +79,7 @@ describe('where World says a proposal stands', () => {
     const requests: Array<{ url: string; body: Record<string, unknown> }> = []
     const cards = await reader(() => Response.json({ result: { plantId: 'plant:halden-1', plantElapsedMs: 70_000, proposals: [
       { proposal: worldProposal('approved', { atElapsedMs: 65_000, actorId: 'actor:human:hilde', commandId: 'command:d1' }), label: 'PZR block valve' },
-    ] } }), requests).read(proposedOperationsOf([proposed, refused]), agent)
+    ] } }), requests).read(proposalsOf([proposed, refused]), agent)
     expect(requests).toEqual([{
       url: `http://127.0.0.1:4000/api/workspaces/${workspaceId}/capabilities/${PROPOSALS_OPERATION_ID}/invoke`,
       body: { resource: run, input: { plantId: 'plant:halden-1' }, actor: { kind: 'ai', id: 'agent-7', displayName: 'Shift advisor' } },
@@ -91,12 +93,12 @@ describe('where World says a proposal stands', () => {
   test('a pending proposal carries World\'s review; one the Plant no longer keeps, or a refused read, is unreadable with why', async () => {
     const review = { permitted: true, evidence: [{ tagId: 'PT-455', then: 15.26, now: 15.17 }], changed: true }
     const pending = await reader(() => Response.json({ result: { plantId: 'plant:halden-1', plantElapsedMs: 50_000, proposals: [{ proposal: worldProposal('pending'), label: 'PZR block valve', review }] } }))
-      .read(proposedOperationsOf([proposed]), agent)
+      .read(proposalsOf([proposed]), agent)
     expect(pending[0]!.outcome).toMatchObject({ kind: 'recorded', proposal: { status: 'pending' }, review })
-    const gone = await reader(() => Response.json({ result: { plantId: 'plant:halden-1', plantElapsedMs: 50_000, proposals: [] } })).read(proposedOperationsOf([proposed]), agent)
+    const gone = await reader(() => Response.json({ result: { plantId: 'plant:halden-1', plantElapsedMs: 50_000, proposals: [] } })).read(proposalsOf([proposed]), agent)
     expect(gone[0]!.outcome).toEqual({ kind: 'unreadable', proposalId: 'command:p1', reason: 'the Plant no longer keeps this proposal' })
     const restricted = await reader(() => Response.json({ error: { code: 'agent_access_restricted', message: 'AI inspect access is restricted for: plant:halden-1' } }, { status: 403 }))
-      .read(proposedOperationsOf([proposed]), agent)
+      .read(proposalsOf([proposed]), agent)
     expect(restricted[0]!.outcome).toEqual({ kind: 'unreadable', proposalId: 'command:p1', reason: 'AI inspect access is restricted for: plant:halden-1' })
   })
 })

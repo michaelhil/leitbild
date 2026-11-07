@@ -7,9 +7,7 @@
   "packageManager": "bun@1.4.0",
   "scripts": {
     "start": "bun run build:ui && bun run src/main.ts",
-    "start:remote": "OLLAMA_URL=http://192.168.0.222:11434 bun run start",
     "dev": "bun run build:ui && bun run scripts/dev.ts",
-    "dev:remote": "OLLAMA_URL=http://192.168.0.222:11434 bun run build:ui && bun run scripts/dev.ts",
     "build:css": "bun run tailwindcss -i src/ui/input.css -o src/ui/dist.css --minify",
     "build:ui": "bun run build:css && bun run scripts/build-ui.ts",
     "dev:server": "bun --watch src/main.ts",
@@ -18,7 +16,6 @@
     "check:server": "tsc --noEmit",
     "check:ui": "tsc --noEmit -p tsconfig.ui.json",
     "test": "bun test --timeout 120000",
-    "test:unit": "bun test --timeout 120000",
     "test:ollama": "OLLAMA_INTEGRATION=1 bun test src/llm/ollama.test.ts src/agents/integration.test.ts",
     "headless": "bun run src/main.ts --headless",
     "health": "bash scripts/health.sh"

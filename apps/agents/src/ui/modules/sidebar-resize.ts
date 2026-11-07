@@ -4,19 +4,22 @@
 //
 // Width is persisted to localStorage. Collapsed state is simply "width === 0".
 
-import { $sidebarWidth } from './stores.ts'
-import { isFocusedRoomView } from './focused-room.ts'
-
 const MIN_WIDTH = 120     // anything smaller than this snaps to 0 on release
 const DEFAULT_WIDTH = 160
 const MAX_WIDTH = 400
+const STORAGE_KEY = 'leitbild-sidebar-width'
 
 export const initSidebarResize = (): void => {
   const sidebar = document.getElementById('sidebar') as HTMLElement | null
   const handle = document.getElementById('sidebar-resize') as HTMLElement | null
   if (!sidebar || !handle) return
 
+  const savedWidth = localStorage.getItem(STORAGE_KEY)
+  const storedWidth = savedWidth === null ? DEFAULT_WIDTH : Number(savedWidth)
+  let width = Number.isFinite(storedWidth) && storedWidth >= 0 ? storedWidth : DEFAULT_WIDTH
+
   const applyWidth = (w: number): void => {
+    width = w
     sidebar.style.width = `${w}px`
     // Keep a 1px sliver of sidebar even when collapsed so the border-right
     // remains visible as a "there's something hidden here" hint. The handle
@@ -24,16 +27,10 @@ export const initSidebarResize = (): void => {
     handle.style.left = `${w}px`
   }
 
-  // Hydrate from atom (which read localStorage on boot).
-  if (isFocusedRoomView) {
-    document.body.classList.add('focused-room-view')
-    $sidebarWidth.set(0)
-  }
-  applyWidth($sidebarWidth.get())
-  $sidebarWidth.subscribe(applyWidth)
+  applyWidth(width)
 
   let dragging = false
-  let lastWidth = $sidebarWidth.get() || DEFAULT_WIDTH
+  let lastWidth = width || DEFAULT_WIDTH
 
   const onMouseMove = (e: MouseEvent): void => {
     if (!dragging) return
@@ -42,7 +39,7 @@ export const initSidebarResize = (): void => {
     // cramped 40px sidebar.
     const w = raw < MIN_WIDTH ? 0 : raw
     if (w > 0) lastWidth = w
-    $sidebarWidth.set(w)
+    applyWidth(w)
   }
 
   const onMouseUp = (): void => {
@@ -52,15 +49,15 @@ export const initSidebarResize = (): void => {
     document.body.classList.remove('sidebar-dragging')
     document.removeEventListener('mousemove', onMouseMove)
     document.removeEventListener('mouseup', onMouseUp)
-    localStorage.setItem('leitbild-sidebar-width', String($sidebarWidth.get()))
+    localStorage.setItem(STORAGE_KEY, String(width))
   }
 
   handle.addEventListener('mousedown', (e) => {
     e.preventDefault()
     // Click (no drag) when the sidebar is collapsed: expand to lastWidth.
-    if ($sidebarWidth.get() === 0) {
-      $sidebarWidth.set(lastWidth || DEFAULT_WIDTH)
-      localStorage.setItem('leitbild-sidebar-width', String($sidebarWidth.get()))
+    if (width === 0) {
+      applyWidth(lastWidth || DEFAULT_WIDTH)
+      localStorage.setItem(STORAGE_KEY, String(width))
       return
     }
     dragging = true

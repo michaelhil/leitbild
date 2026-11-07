@@ -1,153 +1,77 @@
 import { createHash } from 'node:crypto'
 import { rejectCapabilityInput } from '../../simulation/capability-rejection.ts'
-import turbineManifestData from './pwr-turbine-island.design.json'
-import fullUnitManifestData from './pwr-full-unit.design.json'
-import campusManifestData from './pwr-campus.design.json'
-import explorerUnitManifestData from './pwr-full-unit-explorer.design.json'
-import explorerCampusManifestData from './pwr-campus-explorer.design.json'
-import architectureUnitManifestData from './pwr-full-unit-architecture.design.json'
-import architectureCampusManifestData from './pwr-campus-architecture.design.json'
-import draftingUnitManifestData from './pwr-full-unit-drafting.design.json'
-import draftingCampusManifestData from './pwr-campus-drafting.design.json'
-import connectedUnitManifestData from './pwr-full-unit-connected.design.json'
-import connectedCampusManifestData from './pwr-campus-connected.design.json'
-import manifoldUnitManifestData from './pwr-full-unit-manifold.design.json'
-import manifoldCampusManifestData from './pwr-campus-manifold.design.json'
-import operatorUnitManifestData from './pwr-full-unit-operator.design.json'
-import operatorCampusManifestData from './pwr-campus-operator.design.json'
-import rhrUnitManifestData from './pwr-full-unit-rhr.design.json'
-import rhrCampusManifestData from './pwr-campus-rhr.design.json'
-import recirculationUnitManifestData from './pwr-full-unit-recirculation.design.json'
-import recirculationCampusManifestData from './pwr-campus-recirculation.design.json'
-import shutdownCoolingUnitManifestData from './pwr-full-unit-shutdown-cooling.design.json'
-import shutdownCoolingCampusManifestData from './pwr-campus-shutdown-cooling.design.json'
+import unitManifestData from './pwr-full-unit-shutdown-cooling.design.json'
+import campusManifestData from './pwr-campus-shutdown-cooling.design.json'
 import { physicalCatalogContent, physicalCatalogManifestSchema, type PhysicalCatalogManifest } from './catalog-manifest.ts'
-import { canonicalPhysicalJson, physicalCorrespondenceSchema, physicalDesignRefSchema, turbineIslandCorrespondenceSchema } from './model.ts'
-import { physicalSourceSchema as originalSourceSchema, type Source as OriginalSource } from './native/source.ts'
-import { physicalSourceSchema as campusSourceSchema, type Source as CampusSource } from './native/campus/source.ts'
-import { physicalSourceSchema as explorerSourceSchema, type Source as ExplorerSource } from './native/explorer/source.ts'
-import { physicalSourceSchema as architectureSourceSchema, physicalSourceFacts as architectureSourceFacts, type Source as ArchitectureSource } from './native/architecture/source.ts'
-import { physicalSourceSchema as draftingSourceSchema, physicalSourceFacts as draftingSourceFacts, type Source as DraftingSource } from './native/drafting/source.ts'
-import { physicalApplicabilityContent, physicalSourceFacts } from './applicability.ts'
+import { canonicalPhysicalJson, physicalCorrespondenceSchema, physicalDesignRefSchema } from './model.ts'
+import { physicalSourceSchema, physicalSourceFacts, type Source } from './native/drafting/source.ts'
+import { physicalApplicabilityContent } from './applicability.ts'
 import { physicalCoverageEvidenceSchema, type PhysicalCoverageEvidence } from './coverage.ts'
 import type { z } from 'zod'
 
 const hash = (value: unknown): string => createHash('sha256').update(canonicalPhysicalJson(value)).digest('hex')
-const turbineManifest = physicalCatalogManifestSchema.parse(turbineManifestData)
-const fullUnitManifest = physicalCatalogManifestSchema.parse(fullUnitManifestData)
+const unitManifest = physicalCatalogManifestSchema.parse(unitManifestData)
 const campusManifest = physicalCatalogManifestSchema.parse(campusManifestData)
-const explorerUnitManifest = physicalCatalogManifestSchema.parse(explorerUnitManifestData)
-const explorerCampusManifest = physicalCatalogManifestSchema.parse(explorerCampusManifestData)
-const architectureUnitManifest = physicalCatalogManifestSchema.parse(architectureUnitManifestData)
-const architectureCampusManifest = physicalCatalogManifestSchema.parse(architectureCampusManifestData)
-const draftingUnitManifest = physicalCatalogManifestSchema.parse(draftingUnitManifestData)
-const draftingCampusManifest = physicalCatalogManifestSchema.parse(draftingCampusManifestData)
-const connectedUnitManifest = physicalCatalogManifestSchema.parse(connectedUnitManifestData)
-const connectedCampusManifest = physicalCatalogManifestSchema.parse(connectedCampusManifestData)
-const manifoldUnitManifest = physicalCatalogManifestSchema.parse(manifoldUnitManifestData)
-const manifoldCampusManifest = physicalCatalogManifestSchema.parse(manifoldCampusManifestData)
-const operatorUnitManifest = physicalCatalogManifestSchema.parse(operatorUnitManifestData)
-const operatorCampusManifest = physicalCatalogManifestSchema.parse(operatorCampusManifestData)
-const rhrUnitManifest = physicalCatalogManifestSchema.parse(rhrUnitManifestData)
-const rhrCampusManifest = physicalCatalogManifestSchema.parse(rhrCampusManifestData)
-const recirculationUnitManifest = physicalCatalogManifestSchema.parse(recirculationUnitManifestData)
-const recirculationCampusManifest = physicalCatalogManifestSchema.parse(recirculationCampusManifestData)
-const shutdownCoolingUnitManifest = physicalCatalogManifestSchema.parse(shutdownCoolingUnitManifestData)
-const shutdownCoolingCampusManifest = physicalCatalogManifestSchema.parse(shutdownCoolingCampusManifestData)
+export const pwrShutdownCoolingUnitPhysicalDesignRef = Object.freeze({ ...unitManifest.design })
+export const pwrShutdownCoolingCampusPhysicalDesignRef = Object.freeze({ ...campusManifest.design })
 
-/** The original reference remains exact; it is not a mutable current/latest pointer. */
-export const currentPwrPhysicalDesignRef = Object.freeze({ ...turbineManifest.design, id: 'pwr-turbine-island' as const })
-export const pwrFullUnitPhysicalDesignRef = Object.freeze({ ...fullUnitManifest.design, id: 'pwr-full-unit' as const })
-export const pwrCampusPhysicalDesignRef = Object.freeze({ ...campusManifest.design, id: 'pwr-campus' as const })
-export const pwrExplorerUnitPhysicalDesignRef = Object.freeze({ ...explorerUnitManifest.design, id: 'pwr-full-unit' as const })
-export const pwrExplorerCampusPhysicalDesignRef = Object.freeze({ ...explorerCampusManifest.design, id: 'pwr-campus' as const })
-export const pwrArchitectureUnitPhysicalDesignRef = Object.freeze({ ...architectureUnitManifest.design, id: 'pwr-full-unit' as const })
-export const pwrArchitectureCampusPhysicalDesignRef = Object.freeze({ ...architectureCampusManifest.design, id: 'pwr-campus' as const })
-
-export const pwrDraftingUnitPhysicalDesignRef = Object.freeze({ ...draftingUnitManifest.design, id: 'pwr-full-unit' as const })
-export const pwrDraftingCampusPhysicalDesignRef = Object.freeze({ ...draftingCampusManifest.design, id: 'pwr-campus' as const })
-export const pwrConnectedUnitPhysicalDesignRef = Object.freeze({ ...connectedUnitManifest.design, id: 'pwr-full-unit' as const })
-export const pwrConnectedCampusPhysicalDesignRef = Object.freeze({ ...connectedCampusManifest.design, id: 'pwr-campus' as const })
-export const pwrManifoldUnitPhysicalDesignRef = Object.freeze({ ...manifoldUnitManifest.design, id: 'pwr-full-unit' as const })
-export const pwrManifoldCampusPhysicalDesignRef = Object.freeze({ ...manifoldCampusManifest.design, id: 'pwr-campus' as const })
-export const pwrOperatorUnitPhysicalDesignRef = Object.freeze({ ...operatorUnitManifest.design, id: 'pwr-full-unit' as const })
-export const pwrOperatorCampusPhysicalDesignRef = Object.freeze({ ...operatorCampusManifest.design, id: 'pwr-campus' as const })
-export const pwrRhrUnitPhysicalDesignRef = Object.freeze({ ...rhrUnitManifest.design, id: 'pwr-full-unit' as const })
-export const pwrRhrCampusPhysicalDesignRef = Object.freeze({ ...rhrCampusManifest.design, id: 'pwr-campus' as const })
-export const pwrRecirculationUnitPhysicalDesignRef = Object.freeze({ ...recirculationUnitManifest.design, id: 'pwr-full-unit' as const })
-export const pwrRecirculationCampusPhysicalDesignRef = Object.freeze({ ...recirculationCampusManifest.design, id: 'pwr-campus' as const })
-export const pwrShutdownCoolingUnitPhysicalDesignRef = Object.freeze({ ...shutdownCoolingUnitManifest.design, id: 'pwr-full-unit' as const })
-export const pwrShutdownCoolingCampusPhysicalDesignRef = Object.freeze({ ...shutdownCoolingCampusManifest.design, id: 'pwr-campus' as const })
-
-type OriginalDesign = Extract<PhysicalCatalogManifest, { profile: 'turbine-island' }> & { readonly source: OriginalSource; readonly bindings: Array<z.infer<typeof turbineIslandCorrespondenceSchema>> }
-type CampusDesign = Extract<PhysicalCatalogManifest, { profile: 'campus' }> & { readonly source: CampusSource; readonly bindings: Array<z.infer<typeof physicalCorrespondenceSchema>>; readonly coverageEvidence: PhysicalCoverageEvidence }
-type ExplorerDesign = Extract<PhysicalCatalogManifest, { profile: 'explorer' }> & { readonly source: ExplorerSource; readonly bindings: Array<z.infer<typeof physicalCorrespondenceSchema>>; readonly coverageEvidence: PhysicalCoverageEvidence }
-type ArchitectureDesign = Extract<PhysicalCatalogManifest, { profile: 'architecture' }> & { readonly source: ArchitectureSource; readonly bindings: Array<z.infer<typeof physicalCorrespondenceSchema>>; readonly coverageEvidence: PhysicalCoverageEvidence }
-type DraftingDesign = Extract<PhysicalCatalogManifest, { profile: 'drafting' }> & { readonly source: DraftingSource; readonly bindings: Array<z.infer<typeof physicalCorrespondenceSchema>>; readonly coverageEvidence: PhysicalCoverageEvidence }
-export type ResolvedPhysicalDesign = OriginalDesign | CampusDesign | ExplorerDesign | ArchitectureDesign | DraftingDesign
-interface CatalogEntry { readonly manifest: PhysicalCatalogManifest; readonly load: () => Promise<{ readonly source: unknown; readonly bindings: unknown; readonly coverage?: unknown }> }
+export type ResolvedPhysicalDesign = PhysicalCatalogManifest & {
+  readonly source: Source
+  readonly bindings: Array<z.infer<typeof physicalCorrespondenceSchema>>
+  readonly coverageEvidence: PhysicalCoverageEvidence
+}
+interface CatalogEntry {
+  readonly manifest: PhysicalCatalogManifest
+  readonly load: () => Promise<{ readonly source: unknown; readonly bindings: unknown; readonly coverage: unknown }>
+}
 const entries: ReadonlyArray<CatalogEntry> = [
-  { manifest: turbineManifest, load: async () => ({ source: (await import('./pwr-turbine-island.source.json')).default, bindings: (await import('./pwr-turbine-island.bindings.json')).default }) },
-  { manifest: fullUnitManifest, load: async () => ({ source: (await import('./pwr-full-unit.source.json')).default, bindings: (await import('./pwr-full-unit.bindings.json')).default, coverage: (await import('./pwr-full-unit.coverage.json')).default }) },
-  { manifest: campusManifest, load: async () => ({ source: (await import('./pwr-campus.source.json')).default, bindings: (await import('./pwr-campus.bindings.json')).default, coverage: (await import('./pwr-campus.coverage.json')).default }) },
-  { manifest: explorerUnitManifest, load: async () => ({ source: (await import('./pwr-full-unit-explorer.source.json')).default, bindings: (await import('./pwr-full-unit-explorer.bindings.json')).default, coverage: (await import('./pwr-full-unit-explorer.coverage.json')).default }) },
-  { manifest: explorerCampusManifest, load: async () => ({ source: (await import('./pwr-campus-explorer.source.json')).default, bindings: (await import('./pwr-campus-explorer.bindings.json')).default, coverage: (await import('./pwr-campus-explorer.coverage.json')).default }) },
-  { manifest: architectureUnitManifest, load: async () => ({ source: (await import('./pwr-full-unit-architecture.source.json')).default, bindings: (await import('./pwr-full-unit-architecture.bindings.json')).default, coverage: (await import('./pwr-full-unit-architecture.coverage.json')).default }) },
-  { manifest: architectureCampusManifest, load: async () => ({ source: (await import('./pwr-campus-architecture.source.json')).default, bindings: (await import('./pwr-campus-architecture.bindings.json')).default, coverage: (await import('./pwr-campus-architecture.coverage.json')).default }) },
-  { manifest: draftingUnitManifest, load: async () => ({ source: (await import('./pwr-full-unit-drafting.source.json')).default, bindings: (await import('./pwr-full-unit-drafting.bindings.json')).default, coverage: (await import('./pwr-full-unit-drafting.coverage.json')).default }) },
-  { manifest: draftingCampusManifest, load: async () => ({ source: (await import('./pwr-campus-drafting.source.json')).default, bindings: (await import('./pwr-campus-drafting.bindings.json')).default, coverage: (await import('./pwr-campus-drafting.coverage.json')).default }) },
-  { manifest: connectedUnitManifest, load: async () => ({ source: (await import('./pwr-full-unit-connected.source.json')).default, bindings: (await import('./pwr-full-unit-connected.bindings.json')).default, coverage: (await import('./pwr-full-unit-connected.coverage.json')).default }) },
-  { manifest: connectedCampusManifest, load: async () => ({ source: (await import('./pwr-campus-connected.source.json')).default, bindings: (await import('./pwr-campus-connected.bindings.json')).default, coverage: (await import('./pwr-campus-connected.coverage.json')).default }) },
-  { manifest: manifoldUnitManifest, load: async () => ({ source: (await import('./pwr-full-unit-manifold.source.json')).default, bindings: (await import('./pwr-full-unit-manifold.bindings.json')).default, coverage: (await import('./pwr-full-unit-manifold.coverage.json')).default }) },
-  { manifest: manifoldCampusManifest, load: async () => ({ source: (await import('./pwr-campus-manifold.source.json')).default, bindings: (await import('./pwr-campus-manifold.bindings.json')).default, coverage: (await import('./pwr-campus-manifold.coverage.json')).default }) },
-  { manifest: operatorUnitManifest, load: async () => ({ source: (await import('./pwr-full-unit-manifold.source.json')).default, bindings: (await import('./pwr-full-unit-manifold.bindings.json')).default, coverage: (await import('./pwr-full-unit-operator.coverage.json')).default }) },
-  { manifest: operatorCampusManifest, load: async () => ({ source: (await import('./pwr-campus-manifold.source.json')).default, bindings: (await import('./pwr-campus-manifold.bindings.json')).default, coverage: (await import('./pwr-campus-manifold.coverage.json')).default }) },
-  { manifest: rhrUnitManifest, load: async () => ({ source: (await import('./pwr-full-unit-rhr.source.json')).default, bindings: (await import('./pwr-full-unit-rhr.bindings.json')).default, coverage: (await import('./pwr-full-unit-rhr.coverage.json')).default }) },
-  { manifest: rhrCampusManifest, load: async () => ({ source: (await import('./pwr-campus-rhr.source.json')).default, bindings: (await import('./pwr-campus-rhr.bindings.json')).default, coverage: (await import('./pwr-campus-rhr.coverage.json')).default }) },
-  { manifest: recirculationUnitManifest, load: async () => ({ source: (await import('./pwr-full-unit-recirculation.source.json')).default, bindings: (await import('./pwr-full-unit-recirculation.bindings.json')).default, coverage: (await import('./pwr-full-unit-recirculation.coverage.json')).default }) },
-  { manifest: recirculationCampusManifest, load: async () => ({ source: (await import('./pwr-campus-recirculation.source.json')).default, bindings: (await import('./pwr-campus-recirculation.bindings.json')).default, coverage: (await import('./pwr-campus-recirculation.coverage.json')).default }) },
-  { manifest: shutdownCoolingUnitManifest, load: async () => ({ source: (await import('./pwr-full-unit-shutdown-cooling.source.json')).default, bindings: (await import('./pwr-full-unit-shutdown-cooling.bindings.json')).default, coverage: (await import('./pwr-full-unit-shutdown-cooling.coverage.json')).default }) },
-  { manifest: shutdownCoolingCampusManifest, load: async () => ({ source: (await import('./pwr-campus-shutdown-cooling.source.json')).default, bindings: (await import('./pwr-campus-shutdown-cooling.bindings.json')).default, coverage: (await import('./pwr-campus-shutdown-cooling.coverage.json')).default }) },
+  { manifest: unitManifest, load: async () => ({
+    source: (await import('./pwr-full-unit-shutdown-cooling.source.json')).default,
+    bindings: (await import('./pwr-full-unit-shutdown-cooling.bindings.json')).default,
+    coverage: (await import('./pwr-full-unit-shutdown-cooling.coverage.json')).default,
+  }) },
+  { manifest: campusManifest, load: async () => ({
+    source: (await import('./pwr-campus-shutdown-cooling.source.json')).default,
+    bindings: (await import('./pwr-campus-shutdown-cooling.bindings.json')).default,
+    coverage: (await import('./pwr-campus-shutdown-cooling.coverage.json')).default,
+  }) },
 ]
 const catalog = new Map(entries.map(entry => [canonicalPhysicalJson(entry.manifest.design), entry]))
-/** Compact immutable choices; do not clone large applicability records for a list. */
-export const physicalDesignChoices = () => entries.map(({ manifest }) => ({
-  design: { ...manifest.design }, profile: manifest.profile, modelRequirement: { ...manifest.modelRequirement },
-  ownerRole: manifest.profile === 'turbine-island' ? 'unit' : manifest.requirements.ownerRole,
-  relatedRoles: manifest.profile === 'turbine-island' ? [] : manifest.requirements.relatedMembers.map(member => member.role),
-}))
-/** Exact retained metadata only; no source loading, geometry or runtime startup. */
-export const physicalDesignManifest = (reference: unknown): PhysicalCatalogManifest => {
-  const parsed = physicalDesignRefSchema.parse(reference), entry = catalog.get(canonicalPhysicalJson(parsed))
-  if (!entry) return rejectCapabilityInput(`Unsupported or mismatched physical Design Revision: ${parsed.id}/${parsed.revision}`)
-  return structuredClone(entry.manifest)
-}
 if (catalog.size !== entries.length) throw new Error('Duplicate exact physical Design Revision')
-const loaded = new Map<CatalogEntry, Promise<ResolvedPhysicalDesign>>()
-const load = async (entry: CatalogEntry): Promise<ResolvedPhysicalDesign> => {
-  const { manifest } = entry
-  const raw = await entry.load()
-  const source = manifest.profile === 'turbine-island' ? originalSourceSchema.parse(raw.source) : manifest.profile === 'campus' ? campusSourceSchema.parse(raw.source) : manifest.profile === 'drafting' ? draftingSourceSchema.parse(raw.source) : manifest.profile === 'architecture' ? architectureSourceSchema.parse(raw.source) : explorerSourceSchema.parse(raw.source)
-  const bindings = manifest.profile === 'turbine-island' ? turbineIslandCorrespondenceSchema.array().parse(raw.bindings) : physicalCorrespondenceSchema.array().parse(raw.bindings)
-  if (source.id !== manifest.design.id || hash(source) !== manifest.sourceDigest || hash(bindings) !== manifest.bindingDigest || hash(physicalCatalogContent(manifest)) !== manifest.design.digest) throw new Error(`Physical catalog source or admission mismatch: ${manifest.design.id}`)
-  if (manifest.profile === 'turbine-island') return { ...manifest, source: originalSourceSchema.parse(source), bindings: turbineIslandCorrespondenceSchema.array().parse(bindings) }
-  const coverageEvidence = physicalCoverageEvidenceSchema.parse(raw.coverage)
-  if (hash(coverageEvidence) !== manifest.coverageDigest || canonicalPhysicalJson(coverageEvidence.modelRequirement) !== canonicalPhysicalJson(manifest.modelRequirement)) throw new Error(`Physical catalog coverage mismatch: ${manifest.design.id}`)
-  if (manifest.profile === 'campus') return { ...manifest, source: campusSourceSchema.parse(source), bindings: physicalCorrespondenceSchema.array().parse(bindings), coverageEvidence }
-  if (hash(manifest.profile === 'drafting' ? draftingSourceFacts(draftingSourceSchema.parse(source)) : manifest.profile === 'architecture' ? architectureSourceFacts(architectureSourceSchema.parse(source)) : physicalSourceFacts(source)) !== manifest.physicalApplicability.sourceDigest || hash(physicalApplicabilityContent(manifest)) !== manifest.physicalApplicability.digest || hash(manifest.presentation) !== manifest.presentationDigest) throw new Error(`Physical applicability or presentation mismatch: ${manifest.design.id}`)
-  if (manifest.profile === 'drafting') return { ...manifest, source: draftingSourceSchema.parse(source), bindings: physicalCorrespondenceSchema.array().parse(bindings), coverageEvidence }
-  if (manifest.profile === 'architecture') return { ...manifest, source: architectureSourceSchema.parse(source), bindings: physicalCorrespondenceSchema.array().parse(bindings), coverageEvidence }
-  return { ...manifest, source: explorerSourceSchema.parse(source), bindings: physicalCorrespondenceSchema.array().parse(bindings), coverageEvidence }
+
+const entryFor = (reference: unknown): CatalogEntry => {
+  const parsed = physicalDesignRefSchema.parse(reference)
+  return catalog.get(canonicalPhysicalJson(parsed))
+    ?? rejectCapabilityInput(`Unsupported or mismatched physical Design Revision: ${parsed.id}/${parsed.revision}`)
 }
 
-export function resolvePhysicalDesign(reference: typeof currentPwrPhysicalDesignRef): Promise<OriginalDesign>
-export function resolvePhysicalDesign(reference: unknown): Promise<ResolvedPhysicalDesign>
-/** Exact source loading is lazy and read-only; unsupported pins never resolve to a newer entry. */
-export async function resolvePhysicalDesign(reference: unknown): Promise<ResolvedPhysicalDesign> {
-  const parsed = physicalDesignRefSchema.parse(reference)
-  const entry = catalog.get(canonicalPhysicalJson(parsed))
-  if (entry === undefined) return rejectCapabilityInput(`Unsupported or mismatched physical Design Revision: ${parsed.id}/${parsed.revision}`)
+/** Compact immutable choices without reading source, bindings or geometry. */
+export const physicalDesignChoices = () => entries.map(({ manifest }) => ({
+  design: { ...manifest.design }, modelRequirement: { ...manifest.modelRequirement },
+  ownerRole: manifest.requirements.ownerRole,
+  relatedRoles: manifest.requirements.relatedMembers.map(member => member.role),
+}))
+
+export const physicalDesignManifest = (reference: unknown): PhysicalCatalogManifest => structuredClone(entryFor(reference).manifest)
+
+const loaded = new Map<CatalogEntry, Promise<ResolvedPhysicalDesign>>()
+const load = async ({ manifest, load }: CatalogEntry): Promise<ResolvedPhysicalDesign> => {
+  const raw = await load()
+  const source = physicalSourceSchema.parse(raw.source)
+  const bindings = physicalCorrespondenceSchema.array().parse(raw.bindings)
+  const coverageEvidence = physicalCoverageEvidenceSchema.parse(raw.coverage)
+  if (source.id !== manifest.design.id || hash(source) !== manifest.sourceDigest || hash(bindings) !== manifest.bindingDigest || hash(physicalCatalogContent(manifest)) !== manifest.design.digest) throw new Error(`Physical catalog source or admission mismatch: ${manifest.design.id}`)
+  if (hash(coverageEvidence) !== manifest.coverageDigest || canonicalPhysicalJson(coverageEvidence.modelRequirement) !== canonicalPhysicalJson(manifest.modelRequirement)) throw new Error(`Physical catalog coverage mismatch: ${manifest.design.id}`)
+  if (hash(physicalSourceFacts(source)) !== manifest.physicalApplicability.sourceDigest || hash(physicalApplicabilityContent(manifest)) !== manifest.physicalApplicability.digest || hash(manifest.presentation) !== manifest.presentationDigest) throw new Error(`Physical applicability or presentation mismatch: ${manifest.design.id}`)
+  return { ...manifest, source, bindings, coverageEvidence }
+}
+
+export const resolvePhysicalDesign = async (reference: unknown): Promise<ResolvedPhysicalDesign> => {
+  const entry = entryFor(reference)
   let pending = loaded.get(entry)
-  if (pending === undefined) { pending = load(entry); loaded.set(entry, pending) }
+  if (pending === undefined) {
+    pending = load(entry)
+    loaded.set(entry, pending)
+  }
   return structuredClone(await pending)
 }

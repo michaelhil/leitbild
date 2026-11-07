@@ -62,12 +62,11 @@ export const applyPrefs = (prefs: MessageHeaderPrefs): void => {
   }
 }
 
-export const togglePiece = (piece: MessageHeaderPiece): MessageHeaderPrefs => {
+export const setPieceVisibility = (piece: MessageHeaderPiece, visible: boolean): void => {
   const prefs = readPrefs()
-  prefs[piece] = !prefs[piece]
+  prefs[piece] = visible
   writePrefs(prefs)
   applyPrefs(prefs)
-  return prefs
 }
 
 // Boot helper — read + apply once at app start so the body classes are
@@ -76,7 +75,7 @@ export const initMessageHeaderPrefs = (): void => {
   applyPrefs(readPrefs())
 }
 
-// Pretty label per piece — used by the visibility popover.
+// Pretty label per piece — used by Room actions.
 export const pieceLabels: Record<MessageHeaderPiece, string> = {
   time:     'Time',
   duration: 'Duration',

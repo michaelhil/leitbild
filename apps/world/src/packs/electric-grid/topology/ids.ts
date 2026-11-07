@@ -1,5 +1,4 @@
 import { createHash } from 'node:crypto'
-import type { TopologyKeyMode } from './input.ts'
 
 // Id grammar of Grid Model v2 (plan, "Target architecture"): ids derive from source identity only.
 
@@ -21,21 +20,12 @@ export const stationToken = (featureId: string): string => {
 
 export const stationBusId = (stationId: string, kv: number): string => `bus:${stationId}@${formatKv(kv)}`
 
-const coordinateKeyPattern = /^(-?\d+\.\d+),(-?\d+\.\d+)$/
 const nodeKeyPattern = /^\d+$/
 
-export const junctionToken = (keyMode: TopologyKeyMode, vertexKey: string): string => {
-  if (keyMode === 'osm-node') {
-    if (!nodeKeyPattern.test(vertexKey)) throw new Error(`topology ids: OSM node key is not numeric: ${vertexKey}`)
-    return `osm-node-${vertexKey}`
-  }
-  const match = coordinateKeyPattern.exec(vertexKey)
-  if (!match) throw new Error(`topology ids: coordinate key is malformed: ${vertexKey}`)
-  return `coordinate-${match[1]}_${match[2]}`
+export const junctionBusId = (vertexKey: string, kv: number): string => {
+  if (!nodeKeyPattern.test(vertexKey)) throw new Error(`topology ids: OSM node key is not numeric: ${vertexKey}`)
+  return `bus:junction-osm-node-${vertexKey}@${formatKv(kv)}`
 }
-
-export const junctionBusId = (keyMode: TopologyKeyMode, vertexKey: string, kv: number): string =>
-  `bus:junction-${junctionToken(keyMode, vertexKey)}@${formatKv(kv)}`
 
 export const acBoundaryBusId = (area: string, kv: number): string => `bus:boundary-${area}@${formatKv(kv)}`
 export const hvdcBoundaryBusId = (area: string): string => `bus:boundary-${area}`

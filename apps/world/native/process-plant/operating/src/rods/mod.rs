@@ -798,7 +798,8 @@ impl RodBlock {
         let free = bore_volume - body_area * inserted;
         positive("prepared free bore volume", free)?;
         let mut layout = Layout::default();
-        let mut prepared = Vec::with_capacity((CLUSTER_COORDINATES + GROUP_COORDINATES) * groups.len());
+        let mut prepared =
+            Vec::with_capacity((CLUSTER_COORDINATES + GROUP_COORDINATES) * groups.len());
         // E-NUC (plan r4): one motion class per bore group. Its members have
         // one law, one datum and one bore water, so their bodies move as one:
         // the class's coordinates are its first member's, standing for the
@@ -937,11 +938,7 @@ impl RodBlock {
         }
         block.reference_displacement = [0, 1, 2].map(|k| {
             (0..block.groups.len())
-                .map(|_| {
-                    block
-                        .displacement(k, section.reference_travel_m)
-                        .0
-                })
+                .map(|_| block.displacement(k, section.reference_travel_m).0)
                 .collect()
         });
         Ok(block)

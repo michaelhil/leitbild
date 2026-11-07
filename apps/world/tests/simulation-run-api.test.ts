@@ -25,7 +25,7 @@ import { fixturePackId, fixtureRuntimeId } from './fixtures/fixture-pack.ts'
 import { fixtureCommandIds, fixtureQueryIds } from './fixtures/fixture-runtime.ts'
 import { createTestPackRuntimeAdapters, createTestScenarioRuntimeResolver, testPacks, testScenarioAuthoring, waitForCondition } from './helpers.ts'
 import { responseScenario } from './fixtures/scenarios.ts'
-import { draftingLayoutDataSchema } from '../src/packs/physical-layout/model.ts'
+import { physicalLayoutDataSchema } from '../src/packs/physical-layout/model.ts'
 import { physicalLayoutScenarioItemSchema } from '../src/packs/physical-layout/pack.ts'
 import { pwrShutdownCoolingCampusPhysicalDesignRef, pwrShutdownCoolingUnitPhysicalDesignRef } from '../src/packs/physical-layout/design.ts'
 
@@ -284,7 +284,7 @@ describe('Simulation Run API', () => {
       expect(fetched.body.scenario.initialObjects.filter(object => object.packId === 'process-plant')).toHaveLength(4)
       const layouts = fetched.body.scenario.initialObjects.filter(object => object.packId === 'physical-layout')
       expect(layouts.map(object => String(object.id)).sort()).toEqual(['layout:halden-1', 'layout:halden-2', 'layout:halden-3', 'layout:halden-4', 'layout:halden-campus'])
-      const campus = draftingLayoutDataSchema.parse(layouts.find(object => object.id === 'layout:halden-campus')!.packData)
+      const campus = physicalLayoutDataSchema.parse(layouts.find(object => object.id === 'layout:halden-campus')!.packData)
       expect(campus.design).toEqual(pwrShutdownCoolingCampusPhysicalDesignRef)
       expect(campus.source.planAnnotations!.length).toBeGreaterThan(0)
       expect(campus.owner).toMatchObject({ objectId: 'grid:halden-four-unit', packId: 'electric-grid' })

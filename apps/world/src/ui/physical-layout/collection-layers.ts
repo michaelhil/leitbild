@@ -1,5 +1,4 @@
 import type { PhysicalScenePresentation, PhysicalSceneView } from '../map/physical-scene/types.ts'
-import { requestedPhysicalLayoutView } from './view-intent.ts'
 
 export interface PhysicalCollectionLayerChoice {
   readonly key: string
@@ -35,5 +34,5 @@ export const physicalCollectionLayerChanges = (choice: PhysicalCollectionLayerCh
     if (!scene.descriptor.layers?.some(layer => layer.id === choice.id && layer.label === choice.label)) throw new Error(`Collection layer is no longer declared: ${choice.id}`)
     const hidden = hiddenLayers(scene)
     const hiddenLayerIds = visible ? hidden.filter(id => id !== choice.id) : hidden.includes(choice.id) ? [...hidden] : [...hidden, choice.id]
-    return { sceneId: scene.descriptor.id, view: { ...requestedPhysicalLayoutView(scene), hiddenLayerIds } }
+    return { sceneId: scene.descriptor.id, view: { ...scene.view, hiddenLayerIds } }
   })

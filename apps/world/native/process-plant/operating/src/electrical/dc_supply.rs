@@ -424,8 +424,8 @@ mod tests {
             assert_eq!(s.snapshot().state.cause, None);
         }
         let mut s = Supply::new(config(), 90000., paths(), true, 2000.).unwrap();
-        assert!(s
-            .transition(
+        assert!(
+            s.transition(
                 42.75 + 1e-6,
                 Paths {
                     charger_available: true,
@@ -434,7 +434,8 @@ mod tests {
                 2000.,
                 &[]
             )
-            .is_err());
+            .is_err()
+        );
         s.transition(42.75, paths(), 2000., &[]).unwrap();
         s.transition(
             42.75 + 1e-6,

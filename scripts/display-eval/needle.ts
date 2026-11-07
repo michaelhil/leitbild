@@ -3,7 +3,7 @@
  *
  *   bun scripts/display-eval/needle.ts --origin=http://127.0.0.1:<port> --workspace=<id> --from=<paused Run at power>
  *       --out=<dir> [--label=<stack>] [--inject=action:<instructor action id> | --inject=write:<path>=<value>]
- *       [--size=1920] [--port=<CDP port>] [--unit="Halden Unit 1"] [--plant=plant:halden-1] [--element=auxFeedwaterPumpMotor]
+ *       [--size=1920x1080] [--port=<CDP port>] [--unit="Halden Unit 1"] [--plant=plant:halden-1] [--element=auxFeedwaterPumpMotor]
  *       [--name="MD AFW A"] [--window=300] [--after=330]
  *
  * It copies the at-power Run (the copy keeps the Scenario's LOOP ahead of it), sets the needle on the copy before
@@ -60,7 +60,7 @@ if (import.meta.main) {
   const element = argv.get('element') ?? 'auxFeedwaterPumpMotor', name = argv.get('name') ?? 'MD AFW A'
   const windowS = Number(argv.get('window') ?? 300), afterS = Number(argv.get('after') ?? windowS + 30)
   const inject = argv.get('inject')
-  const size = sizeSpec(argv.get('size') ?? '1920')
+  const size = sizeSpec(argv.get('size') ?? '1920x1080')
   const api = createStackApi(origin, workspaceId)
   const chrome = await ensureChrome({ port, profile: join(out, `chrome-${port}`) })
   const page = await openPage(port, size.width, size.height)

@@ -28,10 +28,25 @@ jobs:
         with:
           bun-version-file: .bun-version
       - run: cargo test --locked
+      - run: cargo test --locked --release --test heater_shared_thermal_digest
       - run: cargo clippy --locked --all-targets -- -D warnings
       - run: cargo fmt --all -- --check
       - run: bun run tests/build-boundary.ts
-  validate:
+  world:
+    runs-on: ubuntu-latest
+    # The complete World suite exceeded the former 20-minute application
+    # budget. Keep its 120-second per-test limit and give the full suite room.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - run: bun install --frozen-lockfile
+      - run: bun run check:world
+      - run: bun run test:world
+      - run: bun run build:world
+  platform:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -40,4 +55,37 @@ jobs:
         with:
           bun-version-file: .bun-version
       - run: bun install --frozen-lockfile
-      - run: bun run validate
+      - run: |
+          bun run check:boundaries
+          bun run check:contracts
+          bun run check:module-runtime
+          bun run check:procmd
+          bun run check:knowledge
+          bun run check:agents
+          bun run check:host
+          bun run check:integration
+      - run: |
+          bun run test:scripts
+          bun run test:contracts
+          bun run test:module-runtime
+          bun run test:procmd
+          bun run test:knowledge
+          bun run test:agents
+          bun run test:host
+          bun run test:integration
+      - run: bun run build:agents
+  validate:
+    needs: [operating-equations, world, platform]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - name: Require every validation job
+        env:
+          OPERATING_RESULT: ${{ needs.operating-equations.result }}
+          WORLD_RESULT: ${{ needs.world.result }}
+          PLATFORM_RESULT: ${{ needs.platform.result }}
+        run: |
+          test "$OPERATING_RESULT" = success
+          test "$WORLD_RESULT" = success
+          test "$PLATFORM_RESULT" = success

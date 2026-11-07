@@ -1,27 +1,21 @@
-//! Guard for the shared thermal laws that the heater edit touches.
+//! Regression of the shared thermal laws against the admitted fixed-power edit.
 //!
-//! The cases cover every existing `liquid_wall` branch (Core, Tube, External;
-//! sensible, nucleate, transition and film, and their refusals), the exposed
-//! SG gas law and the SG secondary wall, with directions on every input. The
-//! baseline is the unmodified thermal.rs at ed9fa309; later edits must
-//! reproduce it.
+//! All 802 original heater-guard cases remain: every Core, Tube and External
+//! liquid-wall branch and refusal, SG gas and secondary wall, with directions
+//! on every input. The baseline is 7f945ac64119f12ac9340f74d0d784bed7ba69c6
+//! (R4-WALL-POWERS), recorded independently on each qualified target with rustc
+//! 1.97.1. That admitted edit replaced fixed `powf` calls with cube/root
+//! operations; the previous ed9fa309 table remains in Git at 2f6158afb.
 //!
-//! The gate is portable: every case matches the committed baseline table with
-//! identical outcome, mode and refusal text, and values and directions within
-//! `PORTABLE_RELATIVE`. The laws call the platform's `exp`, `ln` and `powf`,
-//! whose last bits differ between libms, so an exact aggregate hash cannot be
-//! a portable gate. At ed9fa309, Apple's libm and glibc differ in 8 of the 802
-//! cases, by at most 1 ULP in values and 1.35e-14 relative in directions, with
-//! identical outcomes, modes and refusals.
+//! The laws use the target libm. Subtracting the sensible heat to recover a
+//! small boiling residual magnifies last-bit root differences beyond the
+//! original portable bound. Each target therefore has its own recorded oracle,
+//! with identical outcomes, modes and refusals and the unchanged 1e-12 relative
+//! bound on every value and direction. There is no unqualified target fallback.
 //!
-//! The FNV digest of every result's exact bits is printed as a diagnostic. To
-//! show a refactor is bitwise, compare the digest at the baseline commit and
-//! at the candidate in one pinned environment. For reference, ed9fa309 gives
-//! debug `0xf7967ba897abad31` and release `0x68ed99d2b37b6651` on macOS
-//! aarch64 (Darwin 25), and debug `0x97f8597f7e113de0` and release
-//! `0x763a76b4a8238084` on GitHub ubuntu-latest (glibc 2.39), with rustc
-//! 1.97.1. Debug and release differ in the last bits of the Tube transition
-//! directions.
+//! The exact-bit FNV digest remains diagnostic. Compare baseline and candidate
+//! digests in the same target/profile to establish a bitwise refactor; these
+//! synthetic property cases do not qualify a connected plant trajectory.
 use leitbild_operating_plant::thermal::*;
 
 fn c(x: f64) -> Scalar {
@@ -248,7 +242,7 @@ fn shared_digest() -> (u64, [usize; 6], Vec<Case>) {
 }
 
 #[test]
-fn heater_edit_keeps_core_tube_external_and_sg_branches_on_the_baseline() {
+fn shared_thermal_laws_match_admitted_wall_powers_baseline() {
     let (digest, modes, cases) = shared_digest();
     let profile = if cfg!(debug_assertions) {
         "debug"
@@ -261,8 +255,23 @@ fn heater_edit_keeps_core_tube_external_and_sg_branches_on_the_baseline() {
         std::env::consts::ARCH
     );
     // Every branch is exercised, so the comparison guards each of them.
-    assert!(modes.iter().all(|&n| n > 0), "modes {modes:?}");
-    let baseline = baseline_cases(include_str!("heater_shared_thermal_baseline.txt"));
+    assert_eq!(modes, [99, 198, 270, 162, 9, 16]);
+    assert_eq!(cases.len(), 802);
+    let baseline = baseline_cases(if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+        include_str!("heater_shared_thermal_baseline-macos-aarch64.txt")
+    } else if cfg!(all(
+        target_os = "linux",
+        target_arch = "x86_64",
+        target_env = "gnu"
+    )) {
+        include_str!("heater_shared_thermal_baseline-linux-x86_64-gnu.txt")
+    } else {
+        panic!(
+            "No qualified shared-thermal baseline for {}-{}; record the admitted 7f945ac64 cases on this target first",
+            std::env::consts::OS,
+            std::env::consts::ARCH
+        );
+    });
     assert_eq!(cases.len(), baseline.len(), "case count");
     let mut inexact = 0;
     let mut worst = 0_f64;
@@ -284,7 +293,7 @@ fn heater_edit_keeps_core_tube_external_and_sg_branches_on_the_baseline() {
                 let relative = (x - y).abs() / x.abs().max(y.abs());
                 worst = worst.max(relative);
                 assert!(
-                    relative <= PORTABLE_RELATIVE,
+                    relative <= BASELINE_RELATIVE,
                     "case {i}: {x:e} against the baseline's {y:e} (relative {relative:e})"
                 );
             }
@@ -294,10 +303,9 @@ fn heater_edit_keeps_core_tube_external_and_sg_branches_on_the_baseline() {
 }
 
 /// Relative agreement required of every value and direction against the
-/// baseline table. The largest platform or profile difference measured at
-/// ed9fa309 is 1.35e-14 (a Tube transition direction); a law change moves
-/// results by many orders more.
-const PORTABLE_RELATIVE: f64 = 1e-12;
+/// admitted baseline table for this target. This is the original heater
+/// regression limit, unchanged by the target-specific provenance repair.
+const BASELINE_RELATIVE: f64 = 1e-12;
 
 /// The committed baseline: one line per case, `ok <mode or -> v:d ...` with
 /// the exact bits in hex, or `err <refusal>`; `#` lines are comments.

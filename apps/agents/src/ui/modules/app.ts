@@ -14,7 +14,7 @@ import { renderRooms } from './render/render-rooms.ts'
 import { renderAgents } from './render/render-agents.ts'
 import { mountRoomMembers, consumeAutoAddRoom, registerPendingCreateAdd, clearAutoAddRoom } from './render/render-room-members.ts'
 import { mountRoomSwitcher } from './render/render-room-switcher.ts'
-import { mountVisibilityPopover } from './visibility-popover.ts'
+import { mountRoomActions } from './room-actions.ts'
 import { initMessageHeaderPrefs } from './message-header-prefs.ts'
 import { renderMessage } from './render/render-message.ts'
 import { initPresentationComposer } from './presentation-composer.ts'
@@ -35,17 +35,9 @@ import { showToast } from './toast.ts'
 import { roomNameToId, roomIdToName, agentIdToName } from './identity-lookups.ts'
 import { populateModelSelect, getShowAllModels, setShowAllModels } from './model-select.ts'
 import { safeFetchJson } from './fetch-helpers.ts'
-import {
-  updateOllamaHealthUI,
-  wireOllamaDashboard,
-  type OllamaDashboardElements,
-} from './ollama-dashboard.ts'
-import { stopProvidersPanel } from './panels/providers/index.ts'
-import { startLoggingStateDot } from './panels/logging-panel.ts'
 import { getFocusedSubjects, startWorkspaceFocusListener } from './workspace-focus.ts'
-import { initSettingsNav } from './settings-nav.ts'
 import { hydrateIconPlaceholders, icon } from './icon.ts'
-import { isFocusedRoomView } from './focused-room.ts'
+import { focusedRoomId, isFocusedRoomView } from './focused-room.ts'
 import {
   isSummaryGroupExpanded,
   initSummaryPanel,
@@ -75,7 +67,6 @@ import {
   $currentDeliveryMode,
   $roomPaused,
   $turnInfo,
-  $ollamaHealth,
   $agentContexts,
   $agentWarnings,
   $roomListView,
@@ -89,16 +80,14 @@ import { domRefs } from './app-dom.ts'
 import { createThinkingController } from './app-thinking.ts'
 
 const {
-  roomList, roomHeader, roomNameEl, roomInfoBar, roomsToggle, roomsHeader,
+  roomList, roomHeader, roomNameEl, roomInfoBar, roomsToggle,
   agentList, roomMembers, noRoomState, chatArea,
   messagesDiv, chatForm, chatInput,
   roomStatusDot, btnModeToggle,
   btnSummaryToggle, btnSummarySettings, btnSummaryInspect, btnSummaryRegenerate,
   roomModeInfo,
-  nameModal, nameForm, roomModal, roomForm, agentModal, agentForm,
-  agentsHeader, agentsToggle,
-  ollamaStatusDot, ollamaDashboard,
-  ollamaUrlSelect, ollamaUrlInput, btnOllamaUrlAdd, btnOllamaUrlDelete,
+  roomModal, roomForm, agentModal, agentForm,
+  agentsToggle,
 } = domRefs
 
 // Shorthand for getting an element by selector. Used at several points below.
@@ -183,19 +172,6 @@ const refreshRoomControls = (): void => {
   btnSummaryRegenerate.classList.toggle('hidden', !summaryExpanded)
 }
 
-// === Ollama dashboard (extracted to ollama-dashboard.ts) ===
-
-const ollamaEls: OllamaDashboardElements = {
-  statusDot: ollamaStatusDot,
-  dashboard: ollamaDashboard,
-  urlSelect: ollamaUrlSelect,
-  urlInput: ollamaUrlInput,
-  btnUrlAdd: btnOllamaUrlAdd,
-  btnUrlDelete: btnOllamaUrlDelete,
-}
-
-// === Skills/Tools list ===
-
 let roomsSectionExpanded = true
 let agentsSectionExpanded = true
 
@@ -217,53 +193,6 @@ const updateAgentsLabel = () => {
 // reduce coupling are motion-without-progress. Revisit only when handlers
 // + DOM bindings can also move out together.
 // ============================================================================
-
-// --- Room list (batched: rooms + selection + pause + unread + generating) ---
-$roomListView.subscribe(({ rooms, selectedRoomId, pausedRooms, unreadCounts, generatingRoomIds }) => {
-  renderRooms(roomList, {
-    rooms,
-    selectedRoomId,
-    pausedRooms,
-    unreadCounts,
-    generatingRoomIds,
-    onSelect: (id) => {
-      // Selecting a room dismisses any open agent modal (and clears the
-      // sidebar agent-selection highlight).
-      $selectedAgentId.set(null)
-      $selectedRoomId.set(id)
-    },
-    onDelete: handleDeleteRoom,
-    onTogglePaused: (_id, roomName, nowPaused) => {
-      send({ type: 'set_paused', roomName, paused: nowPaused })
-    },
-  })
-  roomsToggle.textContent = `▾ Rooms (${Object.keys(rooms).length})`
-})
-
-// --- Agent list (batched: agents + identity + selection + members) ---
-// Per-room actions (add/remove/mute) live in the room-members chip row;
-// this sidebar list is now a read-only global registry with in-room tint.
-// Sidebar agent list: display-only — selection happens in the room chip
-// row, not here. Re-renders on agent list / membership / mute / inspect
-// changes; does NOT depend on $selectedHumanByRoom.
-$agentListView.subscribe(({ agents, selectedAgentId, selectedRoomId, roomMemberIds }) => {
-  const visibleAgents = isFocusedRoomView
-    ? Object.fromEntries(Object.entries(agents).filter(([id]) => roomMemberIds.includes(id)))
-    : agents
-  renderAgents(agentList, {
-    agents: visibleAgents as unknown as Record<string, AgentInfo>,
-    selectedAgentId,
-    roomMemberIds,
-    hasSelectedRoom: selectedRoomId !== null,
-    onInspect: (agentId) => {
-      $selectedAgentId.set(agentId)
-    },
-    onDelete: async (agentName) => {
-      void safeFetchJson(`/agents/${encodeURIComponent(agentName)}`, { method: 'DELETE' })
-    },
-  })
-  updateAgentsLabel()
-})
 
 $selectedRoomId.subscribe((roomId) => {
   if (!roomId) return
@@ -299,27 +228,12 @@ mountRoomMembers({
   },
 })
 
-mountRoomSwitcher({
-  button: document.getElementById('room-switcher') as HTMLButtonElement,
-  popover: document.getElementById('room-switcher-popover') as HTMLElement,
-  openCreateRoomModal: () => roomModal.showModal(),
-})
-
 // Apply persisted message-header field-visibility prefs as body classes
 // BEFORE the first message renders. CSS rules in index.html hide
 // `[data-mh-piece="<name>"]` when `body.mh-hide-<name>` is set.
 initMessageHeaderPrefs()
 
-mountVisibilityPopover({
-  button: document.getElementById('btn-icon-visibility') as HTMLButtonElement,
-  popover: document.getElementById('icon-visibility-popover') as HTMLElement,
-  roomHeader: roomHeader,
-})
-
-// Bug-report icon in the room header — same modal as Settings → Report bug.
-document.getElementById('btn-report-bug')!.onclick = () => {
-  void import('./modals/bug-modal.ts').then(m => m.openBugModal())
-}
+mountRoomActions()
 
 // --- Room selection: visibility, fetch data, render messages ---
 // Composer attachments chip strip: mount once into the host element below
@@ -507,14 +421,6 @@ $connected.listen((connected) => {
   if (connected) chatForm.querySelector('button')!.removeAttribute('disabled')
 })
 
-// --- Sidebar resize (drag handle on right edge; drag-to-left collapses) ---
-void import('./sidebar-resize.ts').then(m => m.initSidebarResize())
-
-// --- Ollama health (metrics now polled by ollama-dashboard.ts directly via REST) ---
-$ollamaHealth.listen((health) => {
-  if (health) updateOllamaHealthUI(health as unknown as Record<string, unknown>, ollamaStatusDot)
-})
-
 // ============================================================================
 // DOM EVENT HANDLERS
 // ============================================================================
@@ -580,16 +486,6 @@ chatForm.onsubmit = (e) => {
   submitComposer(roomId, content, senderId)
 }
 
-document.getElementById('btn-create-room')!.onclick = (e) => {
-  e.stopPropagation()
-  roomModal.showModal()
-}
-
-document.getElementById('btn-create-agent')!.onclick = (e) => {
-  e.stopPropagation()
-  void openCreateAgentModalShared()
-}
-
 // "Show all models" toggle in agent-modal: persist preference + re-populate
 // the visible model select without reopening the modal.
 const showAllBox = document.getElementById('model-show-all') as HTMLInputElement | null
@@ -612,6 +508,96 @@ window.addEventListener('providers-changed', () => {
     }
   })()
 })
+
+if (isFocusedRoomView) {
+  $('#sidebar').remove()
+  $('#sidebar-resize').remove()
+  roomNameEl.className = 'truncate text-base font-semibold text-text-strong'
+  $('#room-switcher').replaceWith(roomNameEl)
+  $('#room-switcher-popover').remove()
+  noRoomState.textContent = 'This conversation is unavailable.'
+} else {
+  // --- Room list (batched: rooms + selection + pause + unread + generating) ---
+  $roomListView.subscribe(({ rooms, selectedRoomId, pausedRooms, unreadCounts, generatingRoomIds }) => {
+    renderRooms(roomList, {
+      rooms,
+      selectedRoomId,
+      pausedRooms,
+      unreadCounts,
+      generatingRoomIds,
+      onSelect: (id) => {
+        // Selecting a room dismisses any open agent modal (and clears the
+        // sidebar agent-selection highlight).
+        $selectedAgentId.set(null)
+        $selectedRoomId.set(id)
+      },
+      onDelete: handleDeleteRoom,
+      onTogglePaused: (_id, roomName, nowPaused) => {
+        send({ type: 'set_paused', roomName, paused: nowPaused })
+      },
+    })
+    roomsToggle.textContent = `▾ Rooms (${Object.keys(rooms).length})`
+  })
+
+  // --- Agent list (batched: agents + identity + selection + members) ---
+  // Per-room actions (add/remove/mute) live in the room-members chip row;
+  // this sidebar list is now a read-only global registry with in-room tint.
+  // Sidebar agent list: display-only — selection happens in the room chip
+  // row, not here. Re-renders on agent list / membership / mute / inspect
+  // changes; does NOT depend on $selectedHumanByRoom.
+  $agentListView.subscribe(({ agents, selectedAgentId, selectedRoomId, roomMemberIds }) => {
+    renderAgents(agentList, {
+      agents: agents as unknown as Record<string, AgentInfo>,
+      selectedAgentId,
+      roomMemberIds,
+      hasSelectedRoom: selectedRoomId !== null,
+      onInspect: (agentId) => {
+        $selectedAgentId.set(agentId)
+      },
+      onDelete: async (agentName) => {
+        void safeFetchJson(`/agents/${encodeURIComponent(agentName)}`, { method: 'DELETE' })
+      },
+    })
+    updateAgentsLabel()
+  })
+
+  mountRoomSwitcher({
+    button: document.getElementById('room-switcher') as HTMLButtonElement,
+    popover: document.getElementById('room-switcher-popover') as HTMLElement,
+    openCreateRoomModal: () => roomModal.showModal(),
+  })
+
+  document.getElementById('btn-create-room')!.onclick = (e) => {
+    e.stopPropagation()
+    roomModal.showModal()
+  }
+
+  document.getElementById('btn-create-agent')!.onclick = (e) => {
+    e.stopPropagation()
+    void openCreateAgentModalShared()
+  }
+
+  // Sidebar section toggles
+  // Section toggles: click the dedicated toggle button (with aria-expanded)
+  // rather than the whole header — keeps the +create button and toggle as
+  // distinct keyboard targets.
+  const roomsToggleBtn = $('#rooms-toggle-btn') as HTMLButtonElement
+  roomsToggleBtn.onclick = () => {
+    roomsSectionExpanded = !roomsSectionExpanded
+    roomList.classList.toggle('hidden', !roomsSectionExpanded)
+    roomsToggle.textContent = `${roomsSectionExpanded ? '▾' : '▸'} Rooms (${Object.keys($rooms.get()).length})`
+    roomsToggleBtn.setAttribute('aria-expanded', String(roomsSectionExpanded))
+  }
+
+  const agentsToggleBtn = $('#agents-toggle-btn') as HTMLButtonElement
+  agentsToggleBtn.onclick = () => {
+    agentsSectionExpanded = !agentsSectionExpanded
+    agentList.classList.toggle('hidden', !agentsSectionExpanded)
+    updateAgentsLabel()
+    agentsToggleBtn.setAttribute('aria-expanded', String(agentsSectionExpanded))
+  }
+  void import('./sidebar-resize.ts').then(m => m.initSidebarResize())
+}
 
 // --- Pause status dot (header) ---
 roomStatusDot.onclick = () => {
@@ -743,29 +729,20 @@ agentModal.addEventListener('close', () => {
   setAgentModalKind('ai')
 })
 
-// Sidebar section toggles
-// Section toggles: click the dedicated toggle button (with aria-expanded)
-// rather than the whole header — keeps the +create button and toggle as
-// distinct keyboard targets.
-const roomsToggleBtn = $('#rooms-toggle-btn') as HTMLButtonElement
-roomsToggleBtn.onclick = () => {
-  roomsSectionExpanded = !roomsSectionExpanded
-  roomList.classList.toggle('hidden', !roomsSectionExpanded)
-  roomsToggle.textContent = `${roomsSectionExpanded ? '▾' : '▸'} Rooms (${Object.keys($rooms.get()).length})`
-  roomsToggleBtn.setAttribute('aria-expanded', String(roomsSectionExpanded))
-}
-
-const agentsToggleBtn = $('#agents-toggle-btn') as HTMLButtonElement
-agentsToggleBtn.onclick = () => {
-  agentsSectionExpanded = !agentsSectionExpanded
-  agentList.classList.toggle('hidden', !agentsSectionExpanded)
-  updateAgentsLabel()
-  agentsToggleBtn.setAttribute('aria-expanded', String(agentsSectionExpanded))
-}
-
-// Settings sidebar section — single nav entry to six modal rows.
 hydrateIconPlaceholders()
-initSettingsNav()
+
+const settingsButton = $('#btn-settings') as HTMLButtonElement
+settingsButton.onclick = async () => {
+  settingsButton.disabled = true
+  try {
+    const { openWorkspaceSettings } = await import('./settings-nav.ts')
+    settingsButton.disabled = false
+    openWorkspaceSettings()
+  } catch {
+    settingsButton.disabled = false
+    showToast(document.body, 'Workspace Settings could not be opened.', { type: 'error', position: 'fixed' })
+  }
+}
 
 // === Global modal UX: click outside to close ===
 //
@@ -775,15 +752,11 @@ initSettingsNav()
 // createModal() already have their own overlay-click handler; that path is
 // untouched. Visible × close buttons are de-emphasized (CSS) so click-
 // outside is the canonical close affordance.
-for (const dlg of Array.from(document.querySelectorAll<HTMLDialogElement>('dialog'))) {
+for (const dlg of Array.from(document.querySelectorAll<HTMLDialogElement>('dialog:not(#sandbox-access)'))) {
   dlg.addEventListener('click', (e) => {
     if (e.target === dlg && dlg.open) dlg.close()
   })
 }
-// Keep the logging recording dot fresh in the sidebar even when the
-// Logging modal isn't open.
-startLoggingStateDot()
-
 const btnClearMessages = $('#btn-clear-messages') as HTMLButtonElement
 const btnExecutions = $('#btn-executions') as HTMLButtonElement
 btnExecutions.onclick = () => {
@@ -842,19 +815,6 @@ btnRoomPrompt.onclick = () => {
   )
 }
 
-// Theme toggle + app info (version + repo link in sidebar footer)
-void (async () => {
-  const { wireBootstrapFooter } = await import('./ui-bootstrap-footer.ts')
-  wireBootstrapFooter()
-})()
-
-// Providers dashboard — one-time wiring. Opener lives in providers-modal.ts,
-// routed from the Settings > Providers sidebar row.
-wireOllamaDashboard(ollamaEls, send)
-
-// Stop polling when dashboard closes (reuses existing close event on the dialog).
-ollamaEls.dashboard.addEventListener('close', () => stopProvidersPanel())
-
 // ============================================================================
 // CONNECT + STARTUP
 // ============================================================================
@@ -883,13 +843,13 @@ const connect = () => {
 void (async () => {
   const { ensureAuthenticated } = await import('./auth.ts')
   await ensureAuthenticated()
+  settingsButton.disabled = false
+  if (isFocusedRoomView && focusedRoomId === null) return
   // UI extension reconciliation runs BEFORE connect() so any post-render
   // processors a pack-declared extension registers (e.g. biometrics) are in
   // place when the WS snapshot arrives and historical messages render.
   // Re-runs on every packs-changed event (install/uninstall/update) so the
-  // extension surface tracks pack lifecycle. Pack-declared but unknown
-  // names are silently ignored (forward-compat — see
-  // src/ui/modules/extensions/registry.ts).
+  // extension surface tracks pack lifecycle.
   const { refreshExtensions } = await import('./extensions/registry.ts')
   await refreshExtensions()
   window.addEventListener('packs-changed', () => { void refreshExtensions() })

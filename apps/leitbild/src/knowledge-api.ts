@@ -1,5 +1,6 @@
 import { loadKnowledge, knowledgeSnapshotPath, type Knowledge } from '@leitbild/knowledge'
 import { z } from 'zod'
+import { isProcedureMarkdown } from '@leitbild/procmd'
 import { resolve } from 'node:path'
 import { readProductSource } from '@leitbild/knowledge/source'
 
@@ -24,7 +25,7 @@ export const knowledgeResponse = async (request: Request, load: () => Promise<Kn
       return Response.json(await readProductSource(path, resolve(import.meta.dir, '../../..')))
     }
     const knowledge = await load()
-    if (url.pathname === '/api/knowledge/index') return Response.json({ revision: knowledge.revision, documents: knowledge.index(), sourceBaseUrl: await codeSource() })
+    if (url.pathname === '/api/knowledge/index') return Response.json({ revision: knowledge.revision, documents: knowledge.navigation(), sourceBaseUrl: await codeSource() })
     if (url.pathname === '/api/knowledge/search') {
       const input = searchSchema.parse(Object.fromEntries(url.searchParams))
       return Response.json(knowledge.search(input.query, { offset: input.offset, limit: input.limit,
@@ -35,7 +36,11 @@ export const knowledgeResponse = async (request: Request, load: () => Promise<Kn
       if (!path) return Response.json({ error: 'path is required' }, { status: 400 })
       const revision = url.searchParams.get('revision')
       const section = url.searchParams.get('section')
-      return Response.json(knowledge.read(path, { ...(revision ? { revision } : {}), ...(section ? { section } : {}) }))
+      const document = knowledge.read(path, { ...(revision ? { revision } : {}), ...(section ? { section } : {}) })
+      return Response.json({
+        ...document,
+        ...(isProcedureMarkdown(document.content) ? { procedures: knowledge.procedureReferences(path) } : {}),
+      })
     }
     return Response.json({ error: 'Unknown knowledge route' }, { status: 404 })
   } catch (error) {

@@ -1,17 +1,4 @@
 import { apiFetch } from "../api-client.ts"
-// ============================================================================
-// Logging panel — renderers used by the Settings > Logging modal and the
-// always-live state dot next to the Logging row in the sidebar.
-//
-// `renderLoggingInto(panel)` populates the given container with the full
-// control surface (toggle, session, directory, kinds, stats). It polls every
-// 5 s while its container is in the DOM.
-//
-// `startLoggingStateDot()` keeps the sidebar dot fresh (every 10 s) whether
-// or not the modal is open.
-// ============================================================================
-
-import { domRefs } from '../app-dom.ts'
 import { showToast } from '../toast.ts'
 
 interface LoggingState {
@@ -61,22 +48,7 @@ const escapeHtml = (s: string): string =>
 const escapeAttr = (s: string): string =>
   escapeHtml(s).replace(/"/g, '&quot;')
 
-const renderStateDot = (state: LoggingState | null): void => {
-  const dot = domRefs.loggingStateDot
-  if (!dot) return
-  if (!state) { dot.textContent = '◌'; dot.title = 'Logging state unavailable'; return }
-  if (!state.enabled) { dot.textContent = '◌'; dot.title = 'Logging off'; return }
-  if (state.stats.droppedCount > 0) {
-    dot.textContent = '⚠'
-    dot.title = `Logging on; ${state.stats.droppedCount} events dropped`
-    return
-  }
-  dot.textContent = '●'
-  dot.title = `Logging on · ${state.stats.eventCount} events`
-}
-
 const renderPanel = (panel: HTMLElement, refresh: () => Promise<void>, state: LoggingState | null): void => {
-  renderStateDot(state)
   if (!state) {
     panel.innerHTML = '<div class="text-text-muted">Logging state unavailable.</div>'
     return
@@ -185,15 +157,4 @@ export const renderLoggingInto = (panel: HTMLElement): { stop: () => void } => {
   const stop = (): void => { disposed = true; clearInterval(timer) }
   void refresh()
   return { stop }
-}
-
-// Lightweight dot-only refresh — runs for the life of the app so the sidebar
-// shows recording state whether or not the Logging modal is open.
-let dotTimer: ReturnType<typeof setInterval> | null = null
-export const startLoggingStateDot = (): void => {
-  if (dotTimer) return
-  void fetchState().then(renderStateDot)
-  dotTimer = setInterval(() => {
-    if (!document.hidden) void fetchState().then(renderStateDot)
-  }, 10_000)
 }

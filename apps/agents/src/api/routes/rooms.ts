@@ -1,5 +1,4 @@
 import { json, errorResponse, parseBody } from './helpers.ts'
-import { SYSTEM_SENDER_ID } from '../../core/types/constants.ts'
 import { SETTABLE_DELIVERY_MODES } from '../../core/types/messaging.ts'
 import type { SettableDeliveryMode } from '../../core/types/messaging.ts'
 import { validateSummaryConfig } from '../../core/types/summary.ts'
@@ -92,29 +91,6 @@ export const roomRoutes: RouteEntry[] = [
     method: 'GET',
     pattern: /^\/rooms$/,
     handler: (_req, _match, { system }) => json(system.rooms.listAllRooms()),
-  },
-  {
-    method: 'POST',
-    pattern: /^\/rooms$/,
-    handler: async (req, _match, { system }) => {
-      const body = await parseBody(req)
-      if (Object.hasOwn(body, 'scope')) return json({
-        error: 'This creation route does not accept scope. Use published Room creation operations for supported scopes.',
-        code: 'room_scope_unsupported',
-      }, 400)
-      if (!body.name || typeof body.name !== 'string') return errorResponse('name is required')
-      try {
-        const result = await system.createRoom({
-          name: body.name,
-          roomPrompt: body.roomPrompt as string | undefined,
-          createdBy: (body.createdBy as string) ?? SYSTEM_SENDER_ID,
-        })
-        return json(result, 201)
-      } catch (err) {
-        if (err instanceof Error && 'code' in err && err.code === 'storage_budget_exceeded') return errorResponse(err.message, 507)
-        return errorResponse(err instanceof Error ? err.message : 'Failed to create room')
-      }
-    },
   },
   {
     method: 'GET',

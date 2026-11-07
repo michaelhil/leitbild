@@ -5,9 +5,6 @@ import { workspaceIdSchema } from '@leitbild/contracts'
 import { objectIdSchema, runRolesOf, type CompiledScenario, type OperationalObject, type RunRoles, type SimulationRunId } from '../src/core/model/index.ts'
 import {
   createRealtimeConnectionController,
-  staleRefusalMessage,
-  staleResultMessage,
-  switchUnderWayMessage,
   type RealtimeConnectionCallbacks,
 } from '../src/ui/app/realtime-connection.ts'
 import { beginAction, commandFeedbackText, emptyCommandFeedback } from '../src/ui/command-feedback.ts'
@@ -309,8 +306,6 @@ describe('realtime connection in a role Run', () => {
   const readyMessage = (compiledScenario: CompiledScenario, epoch: number, roleIds: ReadonlyArray<string>, objectIds: ReadonlyArray<string>) =>
     ({ type: 'realtime.ready', snapshotSeq: epoch, epoch, roleIds, snapshot: { objects: objectIds.map(id => object(id)), seq: epoch }, compiledScenario })
 
-  const outcome = { kind: 'query', result: { units: 2 } }
-  const sentInvocations = (socket: FakeSocket) => socket.sent.filter(message => (message as { type: string }).type === 'capability.invoke') as Array<{ readonly requestId: string }>
 
   test('switches in place: the new epoch replaces the stores and late messages of the old one are ignored', async () => {
     const compiled = await roleRunScenario()
@@ -338,38 +333,20 @@ describe('realtime connection in a role Run', () => {
     })
   })
 
-  test('settles each invocation by the epoch of its own answer', async () => {
+  test('refuses live steering before readiness and throughout a role switch', async () => {
     const compiled = await roleRunScenario()
-    await withFakeSocket(async (connection, seen) => {
+    await withFakeSocket(async connection => {
       const socket = FakeSocket.last!
       socket.open()
-      // Asked before the first ready: the Run answers it in epoch 1, which the screen has adopted by then.
-      const beforeReady = connection.invokeCapability(runId, { capabilityId: 'world.fixture.assign', input: {} })
+      const steer = () => connection.sendRuntimeInput(runId, { type: 'drone.manual.intent', payload: {} })
+      expect(steer).toThrow('connected open Run')
       socket.receive(readyMessage(compiled, 1, ['dispatch'], ['a']))
-      socket.receive({ type: 'capability.result', requestId: sentInvocations(socket)[0]!.requestId, outcome, epoch: 1 })
-      expect(await beforeReady).toEqual(outcome as never)
-
-      // Asked before a switch and answered after it: settled without its result, saying it may have applied.
-      const beforeSwitch = Promise.allSettled([
-        connection.invokeCapability(runId, { capabilityId: 'world.fixture.assign', input: {} }),
-        connection.invokeCapability(runId, { capabilityId: 'world.fixture.assign', input: {} }),
-      ])
+      expect(steer).toThrow('connected open Run')
       connection.setRoles(runId, ['control'])
-      // While the switch is outstanding the Run would act under the new set, so nothing is sent.
-      const sentBefore = sentInvocations(socket).length
-      await expect(connection.invokeCapability(runId, { capabilityId: 'world.fixture.assign', input: {} })).rejects.toThrow(switchUnderWayMessage)
-      expect(sentInvocations(socket)).toHaveLength(sentBefore)
+      expect(steer).toThrow('connected open Run')
       socket.receive(readyMessage(compiled, 2, ['control'], ['c']))
-      const [, oldResult, oldError] = sentInvocations(socket)
-      socket.receive({ type: 'capability.result', requestId: oldResult!.requestId, outcome, epoch: 1 })
-      socket.receive({ type: 'capability.error', requestId: oldError!.requestId, code: 'unit_not_authorized', message: 'Red Tank 2 is not yours', epoch: 1 })
-      expect((await beforeSwitch).map(settled => settled.status === 'rejected' ? (settled.reason as Error).message : settled.status)).toEqual([staleResultMessage, staleRefusalMessage])
-
-      // Asked after the switch is answered: the Run answers it in the new epoch and it resolves.
-      const afterSwitch = connection.invokeCapability(runId, { capabilityId: 'world.fixture.assign', input: {} })
-      socket.receive({ type: 'capability.result', requestId: sentInvocations(socket).at(-1)!.requestId, outcome, epoch: 2 })
-      expect(await afterSwitch).toEqual(outcome as never)
-      expect(seen).toEqual(['ready 1 dispatch 1', 'ready 2 control 1'])
+      expect(steer).toThrow('connected open Run')
+      expect(socket.sent).toEqual([{ type: 'role.set', roles: ['control'] }])
     })
   })
 

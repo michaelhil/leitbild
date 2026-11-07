@@ -3,7 +3,6 @@ import type { PhysicalRenderPassMetrics } from './render-pass.ts'
 import type { PhysicalMesh } from './geometry.ts'
 import type { PhysicalPreparedGeometry } from './preparation.ts'
 import type { Color, PhysicalSceneHighlight, PhysicalScenePalette, PhysicalSubjectStyle } from './types.ts'
-import type { PhysicalSceneView } from './types.ts'
 import { physicalRenderMeshRanges } from './render-buffers.ts'
 import { updatePhysicalOpaqueRunMask, physicalVisibleElements } from './visible-elements.ts'
 import { createPhysicalObjectTableRows } from './object-table.ts'
@@ -26,7 +25,7 @@ export const physicalMaterialColor = (palette: PhysicalScenePalette, role: strin
   return palette.materials[role] ?? palette.defaultMaterial
 }
 
-export const physicalVertexSource = `#version 300 es
+const physicalVertexSource = `#version 300 es
 precision highp float;
 precision highp int;
 layout(location=0) in vec3 position;
@@ -36,28 +35,25 @@ layout(location=3) in float objectIndex;
 layout(location=4) in float strokeStyle;
 layout(location=5) in mat4 instanceMatrix;
 layout(location=9) in uint instanceData;
-layout(location=10) in vec3 sourcePosition;
 uniform sampler2D uObjects;
 uniform int uObjectWidth;
-uniform bool uOrdered;
 out vec3 vNormal;
 out vec3 vLocalPosition;
 out float vCameraDepth;
 flat out int vMaterial;
 flat out int vObject;
 flat out float vStroke;
-flat out float vOpacity;
 vec4 objectData(int i){return texelFetch(uObjects,ivec2(i%uObjectWidth,i/uObjectWidth),0);}
 void main(){
   int i=int(instanceData)+int(objectIndex)*3;
   vec4 placement=objectData(i+1);
   gl_Position=placement.w<=0.?vec4(2.,2.,2.,1.):instanceMatrix*vec4(position+placement.xyz,1.);
   vCameraDepth=gl_Position.w;
-  vLocalPosition=uOrdered?sourcePosition:position;
-  vNormal=normal;vMaterial=int(materialIndex);vObject=i;vStroke=strokeStyle;vOpacity=placement.w;
+  vLocalPosition=position;
+  vNormal=normal;vMaterial=int(materialIndex);vObject=i;vStroke=strokeStyle;
 }
 `
-export const physicalFragmentSource = `#version 300 es
+const physicalFragmentSource = `#version 300 es
 precision highp float;
 precision highp int;
 in vec3 vNormal;
@@ -66,7 +62,6 @@ in float vCameraDepth;
 flat in int vMaterial;
 flat in int vObject;
 flat in float vStroke;
-flat in float vOpacity;
 uniform sampler2D uMaterials;
 uniform sampler2D uObjects;
 uniform int uMaterialWidth;
@@ -74,12 +69,10 @@ uniform int uObjectWidth;
 uniform float uDepthNear;
 uniform bool uFlat;
 uniform bool uLines;
-uniform bool uArchitecturePass;
 uniform vec2 uLineOpacity;
 uniform vec3 uIllustrationLine;
 out vec4 outColor;
 void main(){
-  if(vOpacity<=0.||(!uArchitecturePass&&vOpacity<1.))discard;
   // Original clip coordinates still own clipping and screen coverage. A
   // reversed floating camera depth avoids subtracting two almost equal clip
   // coordinates for widely viewed, genuinely thin physical objects.
@@ -122,13 +115,12 @@ void main(){
     float ink=1.-smoothstep(.5*width,1.5*width,abs(fract(phase+.5)-.5));
     solid=mix(solid,uIllustrationLine,ink*.65);
   }
-  float alpha=(uLines?max(max(edgeAlpha,state.a),selection.a>0.?1.:0.):1.)*vOpacity;
+  float alpha=uLines?max(max(edgeAlpha,state.a),selection.a>0.?1.:0.):1.;
   vec3 color=uLines?edge:solid;
   outColor=vec4(color,alpha);
 }
 `
 export interface PhysicalBackendMetrics {
-  readonly architecture?: import('./architecture-backend.ts').PhysicalArchitectureBackendMetrics
   visibilityUploads?: number
   indexBytes?: number
   readonly cpuResidency?: import('./prepared-residency.ts').PhysicalPreparedResidencyMetrics
@@ -138,15 +130,12 @@ export interface PhysicalBackendMetrics {
   liveBuffersAfterDisposal: number | null; liveProgramsAfterDisposal: number | null; liveTexturesAfterDisposal: number | null
 }
 export interface PhysicalDraw {
-  /** Required when a placed global architecture cohort is presented. */
-  readonly sceneId?: string
   readonly asset: PhysicalPreparedGeometry
   readonly matrix: Float32Array
   readonly flat: boolean
   readonly meshes: ReadonlyArray<PhysicalMesh>
   readonly styles: ReadonlyArray<PhysicalSubjectStyle | null>
   readonly highlight?: PhysicalSceneHighlight
-  readonly architecture?: Pick<PhysicalSceneView, 'wallOpacity' | 'floorOpacity'>
 }
 interface Texture { readonly texture: WebGLTexture; width: number; height: number; data: Float32Array }
 interface VisiblePacket { readonly solid: WebGLBuffer; readonly lines: WebGLBuffer; readonly mask: Uint8Array; solidCount: number; lineCount: number; revision: number; lastUsed: number }
@@ -173,7 +162,7 @@ export const createPhysicalBackend = (gl: WebGL2RenderingContext, initialPalette
     gl.linkProgram(program); if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program) ?? 'Physical scene program linking failed')
   } catch (error) { if (program) gl.deleteProgram(program); throw error }
   finally { for (const shader of shaders) gl.deleteShader(shader) }
-  const ownedProgram = program, uniforms = Object.fromEntries(['uDepthNear', 'uObjects', 'uMaterials', 'uObjectWidth', 'uMaterialWidth', 'uFlat', 'uLines', 'uArchitecturePass', 'uOrdered', 'uLineOpacity', 'uIllustrationLine'].map(name => [name, gl.getUniformLocation(ownedProgram, name)]))
+  const ownedProgram = program, uniforms = Object.fromEntries(['uDepthNear', 'uObjects', 'uMaterials', 'uObjectWidth', 'uMaterialWidth', 'uFlat', 'uLines', 'uLineOpacity', 'uIllustrationLine'].map(name => [name, gl.getUniformLocation(ownedProgram, name)]))
   const metrics: PhysicalBackendMetrics = { visibilityUploads: 0, indexBytes: 0, geometryUploads: 0, geometryBytes: 0, residentCpuBytes: 0, draws: 0, buffers: 0, programs: 1, textures: 0, textureBytes: 0, instanceBytes: 0, instanceUploads: 0, statusUploads: 0, paletteUploads: 0, evictions: 0, peakRequiredBytes: 0, liveBuffersAfterDisposal: null, liveProgramsAfterDisposal: null, liveTexturesAfterDisposal: null }
   const texture = (): Texture => { const value = gl.createTexture(); if (!value) throw new Error('Unable to allocate physical material/status table'); metrics.textures++; return { texture: value, width: 0, height: 0, data: new Float32Array() } }
   const dimensions = (pixels: number) => { const width = Math.min(maxTextureSize, Math.max(1, pixels)), height = Math.max(1, Math.ceil(pixels / width)); if (height > maxTextureSize) throw new Error('Physical instance table exceeds this GPU texture allocation') ; return { width, height } }
@@ -267,7 +256,7 @@ export const createPhysicalBackend = (gl: WebGL2RenderingContext, initialPalette
       for (const list of groups.values()) { const first = list[0]!; requiredBytes += first.asset.buffers.vertices.byteLength + first.asset.buffers.lines.byteLength + list.length * (17 + first.asset.meshes.length * 12) * 4 + first.asset.buffers.roles.length * 16 }
       metrics.peakRequiredBytes = Math.max(metrics.peakRequiredBytes, requiredBytes); const required = new Set(groups.keys()); evictUnused(required)
       gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.GEQUAL); gl.depthMask(true); gl.disable(gl.CULL_FACE); gl.disable(gl.STENCIL_TEST); gl.colorMask(true, true, true, true); gl.useProgram(ownedProgram); gl.uniform1f(uniforms.uDepthNear!, depthNear)
-      gl.bindSampler(0, null); gl.bindSampler(1, null); gl.uniform1i(uniforms.uMaterials!, 0); gl.uniform1i(uniforms.uObjects!, 1); gl.uniform1i(uniforms.uOrdered!, 0); gl.uniform2f(uniforms.uLineOpacity!, palette.lineOpacity ?? 1, palette.contextLineOpacity ?? palette.lineOpacity ?? 1)
+      gl.bindSampler(0, null); gl.bindSampler(1, null); gl.uniform1i(uniforms.uMaterials!, 0); gl.uniform1i(uniforms.uObjects!, 1); gl.uniform2f(uniforms.uLineOpacity!, palette.lineOpacity ?? 1, palette.contextLineOpacity ?? palette.lineOpacity ?? 1)
       gl.uniform3f(uniforms.uIllustrationLine!, ...palette.line)
       gl.lineWidth(palette.lineWidth ?? 1)
       // Populate each retained asset's complete instance/status table once.
@@ -292,10 +281,6 @@ export const createPhysicalBackend = (gl: WebGL2RenderingContext, initialPalette
         if (previous?.key === key && previous.flat === draw.flat) previous.count++
         else runs.push({ key, start, count: 1, flat: draw.flat })
       }
-      // Opaque surfaces retain the original shared depth/antialiasing pass.
-      // Fractional architecture is blended in spatial order into this same
-      // target by the derived architecture backend, before its single resolve.
-      gl.uniform1i(uniforms.uArchitecturePass!, 0); gl.depthMask(true)
       for (const run of runs) {
         const asset = cache.get(run.key)!, selection = visiblePacket(asset, run.start, run.count)
         gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, asset.objects.texture)

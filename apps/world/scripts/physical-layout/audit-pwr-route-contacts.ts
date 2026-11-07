@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { physicalSourceSchema, elementWorld, type V3 } from '../../src/packs/physical-layout/native/drafting/source.ts'
 import { compilePhysicalObjects } from '../../src/packs/physical-layout/native/drafting/compile-scene.ts'
 const args=new Map(Bun.argv.slice(2).map(arg=>{const at=arg.indexOf('=');if(at<1)throw Error(`Expected --source=path or --output=path: ${arg}`);return [arg.slice(0,at),arg.slice(at+1)]}))
-const file=args.get('--source')??new URL('../../src/packs/physical-layout/pwr-full-unit-connected.source.json',import.meta.url)
+const file=args.get('--source')??new URL('../../src/packs/physical-layout/pwr-full-unit-shutdown-cooling.source.json',import.meta.url)
 const bytes=await Bun.file(file).text(),source=physicalSourceSchema.parse(JSON.parse(bytes)),objects=compilePhysicalObjects({source,bindings:[]}),byId=new Map(objects.map(o=>[o.id,o])),elements=new Map(source.elements.map(e=>[e.id,e]))
 const sub=(a:readonly number[],b:readonly number[]):V3=>a.map((v,i)=>v-b[i]!)as V3,dot=(a:V3,b:V3)=>a.reduce((s,v,i)=>s+v*b[i]!,0),cross=(a:V3,b:V3):V3=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]],point=(a:V3,d:V3,t:number):V3=>a.map((v,i)=>v+d[i]!*t)as V3
 const closest=(p:V3,a:V3,b:V3,c:V3):V3=>{

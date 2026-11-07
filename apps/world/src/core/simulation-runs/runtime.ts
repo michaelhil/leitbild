@@ -1385,10 +1385,15 @@ export const createSimulationRunRuntime = async (config: {
     return current
   }
 
-  const receiveRealtimeInput = async (input: PackRuntimeRealtimeInput): Promise<void> => await enqueueOperation(async () => {
+  const receiveRealtimeInput = async (input: PackRuntimeRealtimeInput): Promise<void> => {
+    // No role-aware Pack accepts live inputs. Refuse before enqueuing or inspecting targets.
+    if (runRoles !== null) throw new Error('Live steering is only available in open Runs')
+    await enqueueOperation(async () => {
+      if (!input.isCurrent()) return
       if (!config.runtimeConnection.receiveRealtimeInput) throw new Error(`runtime cannot receive realtime input type: ${input.type}`)
       await config.runtimeConnection.receiveRealtimeInput(input)
-  })
+    })
+  }
 
   let clockQueue: Promise<unknown> = Promise.resolve()
   const applyClockUpdate = async (update: SimulationClockUpdate): Promise<SimulationClockState> => {

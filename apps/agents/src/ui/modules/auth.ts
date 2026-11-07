@@ -1,112 +1,90 @@
-import { apiFetch } from "./api-client.ts"
-// ============================================================================
-// Auth gate — runs before the rest of the UI boots.
-//
-// Server tells us whether auth is required (via GET /auth) and whether
-// our cookie is currently valid. If auth is on and we're not authed, we
-// show a token prompt; on submit we POST /auth which sets the
-// HttpOnly cookie. After that, the page is reloaded and the regular boot
-// flow runs.
-//
-// Returns a Promise that resolves only when the page is authed (or auth
-// is disabled). Callers `await ensureAuthenticated()` before connecting WS.
-// ============================================================================
+import { apiFetch } from './api-client.ts'
 
-interface AuthStatus {
-  authEnabled: boolean
-  authenticated: boolean
-}
+type AuthState = 'ready' | 'token-required' | 'unavailable'
+type TokenResult = 'ready' | 'rejected' | 'rate-limited' | 'unavailable'
 
-const fetchStatus = async (): Promise<AuthStatus> => {
+export const readAuthState = async (): Promise<AuthState> => {
   try {
-    const res = await apiFetch('/auth', { method: 'GET' })
-    if (!res.ok) return { authEnabled: true, authenticated: false }
-    return await res.json() as AuthStatus
+    const response = await apiFetch('/auth', { cache: 'no-store' })
+    if (!response.ok) return 'unavailable'
+    const status = await response.json() as { authEnabled?: unknown; authenticated?: unknown } | null
+    if (typeof status?.authEnabled !== 'boolean' || typeof status.authenticated !== 'boolean') return 'unavailable'
+    if (status.authenticated) return 'ready'
+    return status.authEnabled ? 'token-required' : 'unavailable'
   } catch {
-    return { authEnabled: true, authenticated: false }
+    return 'unavailable'
   }
 }
 
-const submitToken = async (token: string): Promise<boolean> => {
+export const submitAccessToken = async (token: string): Promise<TokenResult> => {
   try {
-    const res = await apiFetch('/auth', {
+    const response = await apiFetch('/auth', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token }),
     })
-    return res.ok
+    if (response.status === 401) return 'rejected'
+    if (response.status === 429) return 'rate-limited'
+    return response.ok && (await response.json())?.ok === true ? 'ready' : 'unavailable'
   } catch {
-    return false
+    return 'unavailable'
   }
 }
 
-const showTokenPrompt = (errorMsg?: string): Promise<string> =>
-  new Promise(resolve => {
-    const overlay = document.createElement('div')
-    overlay.style.cssText = 'position:fixed;inset:0;background:var(--surface-muted);display:flex;align-items:center;justify-content:center;z-index:9999;font-family:system-ui,sans-serif'
-
-    const card = document.createElement('div')
-    card.style.cssText = 'background:var(--surface);padding:24px;border-radius:8px;box-shadow:0 4px 24px var(--shadow-overlay);max-width:380px;width:90%'
-
-    const title = document.createElement('h2')
-    title.textContent = 'Sandbox access'
-    title.style.cssText = 'margin:0 0 8px;font-size:16px;font-weight:600;color:var(--text-strong)'
-
-    const desc = document.createElement('p')
-    desc.textContent = 'Enter the access token to use this Leitbild sandbox.'
-    desc.style.cssText = 'margin:0 0 16px;font-size:13px;color:var(--text-subtle)'
-
-    const form = document.createElement('form')
-    form.style.cssText = 'display:flex;flex-direction:column;gap:8px'
-
-    const input = document.createElement('input')
-    input.type = 'password'
-    input.autocomplete = 'off'
-    input.placeholder = 'Token'
-    input.required = true
-    input.style.cssText = 'padding:8px 10px;border:1px solid var(--border-strong);border-radius:4px;font-size:13px;background:var(--surface);color:var(--text)'
-
-    const submit = document.createElement('button')
-    submit.type = 'submit'
-    submit.textContent = 'Continue'
-    submit.style.cssText = 'padding:8px 12px;border:none;border-radius:4px;background:var(--accent);color:#fff;font-size:13px;cursor:pointer'
-
-    const err = document.createElement('div')
-    err.style.cssText = 'font-size:12px;color:var(--danger);min-height:1em'
-    if (errorMsg) err.textContent = errorMsg
-
-    form.appendChild(input)
-    form.appendChild(submit)
-    form.appendChild(err)
-    card.appendChild(title)
-    card.appendChild(desc)
-    card.appendChild(form)
-    overlay.appendChild(card)
-    document.body.appendChild(overlay)
-    input.focus()
-
-    form.onsubmit = (e) => {
-      e.preventDefault()
-      const value = input.value.trim()
-      if (!value) return
-      overlay.remove()
-      resolve(value)
-    }
-  })
-
-// Resolves only when the page is authenticated. If auth is enabled and we
-// don't have a valid session, keep prompting until the user enters a
-// correct token.
 export const ensureAuthenticated = async (): Promise<void> => {
-  const status = await fetchStatus()
-  if (!status.authEnabled) return
-  if (status.authenticated) return
+  let state = await readAuthState()
+  if (state === 'ready') return
 
-  let lastErr: string | undefined
-  while (true) {
-    const token = await showTokenPrompt(lastErr)
-    const ok = await submitToken(token)
-    if (ok) return
-    lastErr = 'Token rejected — try again.'
+  const dialog = document.querySelector<HTMLDialogElement>('#sandbox-access')!
+  const title = document.getElementById('sandbox-access-title')!
+  const status = document.getElementById('sandbox-access-status')!
+  const form = dialog.querySelector('form')!
+  const token = form.querySelector('input')!
+  const submit = form.querySelector('button')!
+  const retry = dialog.querySelector<HTMLButtonElement>('#sandbox-access-retry')!
+  dialog.oncancel = event => event.preventDefault()
+  let tokenError = ''
+
+  while (state !== 'ready') {
+    const requiresToken = state === 'token-required'
+    title.textContent = requiresToken ? 'Sandbox access' : 'Could not reach Agents'
+    status.textContent = requiresToken
+      ? tokenError || 'Enter the access token to use this Leitbild sandbox.'
+      : 'Check your connection and try again.'
+    form.hidden = !requiresToken
+    retry.hidden = requiresToken
+    if (!dialog.open) dialog.showModal()
+
+    if (requiresToken) {
+      submit.disabled = false
+      token.focus()
+      const value = await new Promise<string>(resolve => {
+        form.onsubmit = event => {
+          event.preventDefault()
+          const value = token.value.trim()
+          if (!value) return
+          submit.disabled = true
+          token.value = ''
+          resolve(value)
+        }
+      })
+      const result = await submitAccessToken(value)
+      if (result === 'ready' || result === 'unavailable') state = result
+      tokenError = result === 'rejected' ? 'Token rejected. Try again.'
+        : result === 'rate-limited' ? 'Too many attempts. Wait a moment and try again.' : ''
+    } else {
+      retry.disabled = false
+      retry.focus()
+      await new Promise<void>(resolve => {
+        retry.onclick = () => {
+          retry.disabled = true
+          resolve()
+        }
+      })
+      state = await readAuthState()
+      tokenError = ''
+    }
   }
+
+  dialog.close()
 }

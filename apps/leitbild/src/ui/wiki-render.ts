@@ -1,4 +1,5 @@
 import { marked, Renderer } from 'marked'
+import type { KnowledgeProcedureReference } from '@leitbild/knowledge'
 import { isProcedureMarkdown, parseProcedure } from '@leitbild/procmd'
 import { renderProcedurePage } from './wiki-procedure.ts'
 import {
@@ -21,7 +22,7 @@ export const renderWiki = (
     headings: ReadonlyArray<KnowledgeHeading>
   },
   revision?: string,
-  procedures: ReadonlyArray<{ readonly path: string; readonly procedureId?: string; readonly headings?: ReadonlyArray<KnowledgeHeading> }> = [],
+  procedures: ReadonlyArray<KnowledgeProcedureReference> = [],
 ): string => {
   const renderer = new Renderer(),
     blocks = marked.lexer(markdownBody(document.content)),
@@ -93,10 +94,10 @@ export const renderWiki = (
       const siblings = matches.filter(candidate => candidate.path.slice(0, candidate.path.lastIndexOf('/') + 1) === directory)
       const target = siblings.length === 1 ? siblings[0] : matches.length === 1 ? matches[0] : undefined
       if (!target) return undefined
-      const heading = stepId ? target.headings?.find(heading => heading.title.match(/\[id:\s*([^\],\s]+)\s*(?:,|\])/)?.[1] === stepId) : undefined
+      const step = stepId ? target.steps.find(step => step.id === stepId) : undefined
       // An unresolved step is not silently linked to the normal entry instead.
-      if (stepId && !heading) return undefined
-      return wikiPageUrl(target.path, revision) + (heading ? `#${heading.anchor}` : '')
+      if (stepId && !step) return undefined
+      return wikiPageUrl(target.path, revision) + (step ? `#${step.anchor}` : '')
     },
   )
   return marked.parser(blocks, { renderer })

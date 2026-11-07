@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, setSystemTime, test } from 'bun:test'
 import { rm } from 'node:fs/promises'
 import {
   accessContextSchema,
@@ -10,10 +10,16 @@ import {
 } from '@leitbild/contracts'
 import { createServer } from '../src/core/api/server.ts'
 import { handleWorldModuleApi } from '../src/core/api/workspace-module-api.ts'
-import type { SimulationRunId } from '../src/core/model/index.ts'
+import { actorIdSchema, type SimulationRunId } from '../src/core/model/index.ts'
 import type { WorldWorkspaceRuntimeRegistry } from '../src/core/workspaces/runtime-registry.ts'
 import type { WorldPack } from '../src/core/packs/protocol.ts'
 import { weatherPack } from '../src/packs/weather/pack.ts'
+import { dronePack } from '../src/packs/drone/pack.ts'
+import { createDroneNativePackRuntimeAdapter } from '../src/packs/drone/native/adapter.ts'
+import { dronePackDataSchema } from '../src/packs/drone/model.ts'
+import { droneManualIntentRealtimeInputType, droneManualIntentTtlMs } from '../src/packs/drone/realtime.ts'
+import { manualControlCommandKind } from '../src/packs/drone/commands.ts'
+import type { PackRuntimeSnapshot } from '../src/simulation/protocol.ts'
 import { createRoleRunWorkspaces, declaredRoles, openRunDefinition, roleAwareFixturePack, roleRunDefinition } from './fixtures/role-runs.ts'
 import { waitForCondition } from './helpers.ts'
 
@@ -169,10 +175,18 @@ describe('Role sets on the WebSocket', () => {
     const presence = async () => (await (await fetch(`${http}/simulation-runs/${run}/presence`)).json() as { roles: { holders: Record<string, number> } }).roles.holders
     expect(await presence()).toEqual({ dispatch: 1 })
 
-    // A dispatcher may not delete: the refusal names its code in the epoch it was asked in.
+    const remove = (roles: string) => fetch(`${http}/simulation-runs/${run}/capabilities/world.object.delete/invoke?roles=${roles}`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ input: { objectId: 'unit:two' } }),
+    })
+    const refusedDelete = await remove('dispatch')
+    expect(refusedDelete.status).toBe(403)
+    expect(await refusedDelete.json()).toMatchObject({ error: { code: 'role_controller_only' } })
+    const steer = (sequence: number) => socket.send(JSON.stringify({ type: 'runtime.input', input: {
+      type: 'drone.manual.intent', session: 'ungranted', sequence, payload: {},
+    } }))
     let mark = messages.length
-    socket.send(JSON.stringify({ type: 'capability.invoke', requestId: 'r1', capabilityId: 'world.object.delete', invocation: { input: { objectId: 'unit:two' } } }))
-    expect(await nextOf(messages, 'capability.error', mark)).toMatchObject({ requestId: 'r1', code: 'role_controller_only', epoch: 1 })
+    steer(1)
+    expect(await nextOf(messages, 'runtime.input.error', mark)).toMatchObject({ message: 'Live steering is only available in open Runs', epoch: 1 })
 
     mark = messages.length
     socket.send(JSON.stringify({ type: 'role.set', roles: ['ghost'] }))
@@ -192,8 +206,12 @@ describe('Role sets on the WebSocket', () => {
     expect(await presence()).toEqual({ dispatch: 1, control: 1 })
 
     mark = messages.length
-    socket.send(JSON.stringify({ type: 'capability.invoke', requestId: 'r2', capabilityId: 'world.object.delete', invocation: { input: { objectId: 'unit:two' } } }))
-    expect(await nextOf(messages, 'capability.result', mark)).toMatchObject({ requestId: 'r2', epoch: 2, outcome: { kind: 'command', result: { ok: true } } })
+    steer(2)
+    expect(await nextOf(messages, 'runtime.input.error', mark)).toMatchObject({ message: 'Live steering is only available in open Runs', epoch: 2 })
+    mark = messages.length
+    const removed = await remove('dispatch,control')
+    expect(removed.status).toBe(200)
+    expect(await removed.json()).toMatchObject({ kind: 'command', result: { ok: true } })
     const events = await nextOf(messages, 'events', mark)
     expect(events.epoch).toBe(2)
     const issued = (await workspaces.withRuntime(workspaceId, async runtime => runtime.simulationRuns.get(run)))!.events()
@@ -201,17 +219,19 @@ describe('Role sets on the WebSocket', () => {
     expect(issued.map(command => command.roleIds)).toEqual([['dispatch', 'control']])
   })
 
-  test('a Run without roles keeps its WebSocket messages unchanged', async () => {
-    const { workspaces, workspaceId, ws } = await startServer()
+  test('a Run without roles grants an input session and keeps events free of role epochs', async () => {
+    const { workspaces, workspaceId, ws, http } = await startServer()
     const run = await createRun(workspaces, workspaceId, 'open-run')
     const { socket, messages } = await openSocket(`${ws}?simulationRun=${run}`)
     const ready = await nextOf(messages, 'realtime.ready', 0)
-    expect(Object.keys(ready).sort()).toEqual(['clock', 'scenarioId', 'simulationRunId', 'snapshotSeq', 'type', 'workspaceId'])
+    expect(Object.keys(ready).sort()).toEqual(['clock', 'inputSession', 'scenarioId', 'simulationRunId', 'snapshotSeq', 'type', 'workspaceId'])
+    expect(ready.inputSession).toMatch(/^realtime:/)
     let mark = messages.length
-    socket.send(JSON.stringify({ type: 'capability.invoke', requestId: 'r1', capabilityId: 'world.object.delete', invocation: { input: { objectId: 'unit:two' } } }))
-    const result = await nextOf(messages, 'capability.result', mark)
-    expect('epoch' in result).toBe(false)
-    expect(result).toMatchObject({ outcome: { result: { ok: true } } })
+    const removed = await fetch(`${http}/simulation-runs/${run}/capabilities/world.object.delete/invoke`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ input: { objectId: 'unit:two' } }),
+    })
+    expect(removed.status).toBe(200)
+    expect(await removed.json()).toMatchObject({ kind: 'command', result: { ok: true } })
     expect('epoch' in await nextOf(messages, 'events', mark)).toBe(false)
     mark = messages.length
     socket.send(JSON.stringify({ type: 'role.set', roles: ['dispatch'] }))
@@ -221,4 +241,137 @@ describe('Role sets on the WebSocket', () => {
     const roled = await fetch(`${ws.replace('ws://', 'http://')}?simulationRun=${run}&roles=dispatch`)
     expect(roled.status).toBe(400)
   })
+})
+
+test('live drone steering uses server identity, socket order and receipt lifetime across reconnect', async () => {
+  const droneId = 'drone:pilot-test'
+  const definition = { ...openRunDefinition, id: 'pilot-test', packs: [...openRunDefinition.packs, {
+    id: 'drone', config: { stepIntervalMs: 10, projectionIntervalMs: 20, motionFrameIntervalMs: 10 },
+    items: [{ type: 'drone', id: droneId, label: 'Pilot test drone', position: [10.75, 59.93], altitudeM: 40 }],
+  }] }
+  const droneAdapter = createDroneNativePackRuntimeAdapter()
+  const delayedInput = () => ({
+    entered: Promise.withResolvers<() => boolean>(),
+    release: Promise.withResolvers<void>(),
+    processed: Promise.withResolvers<PackRuntimeSnapshot>(),
+  })
+  const expired = delayedInput()
+  const disconnected = delayedInput()
+  const delays = new Map([['queued', expired], ['closed while queued', disconnected]])
+  const { workspaces, dataDir } = await createRoleRunWorkspaces([roleAwareFixturePack, dronePack], [definition], [{
+    ...droneAdapter,
+    connect: async config => {
+      const connection = await droneAdapter.connect(config)
+      return { ...connection, receiveRealtimeInput: async input => {
+        const label = (input.payload as { inputSource?: { label?: string } }).inputSource?.label
+        const delay = label === undefined ? undefined : delays.get(label)
+        if (!delay) {
+          await connection.receiveRealtimeInput!(input)
+          return
+        }
+        delay.entered.resolve(input.isCurrent)
+        await delay.release.promise
+        try { await connection.receiveRealtimeInput!(input) }
+        finally { delay.processed.resolve(await connection.getSnapshot()) }
+      } }
+    },
+  }])
+  cleanups.push(async () => { await workspaces.shutdown(); await rm(dataDir, { recursive: true, force: true }) })
+  const workspaceId = newWorkspaceId()
+  await workspaces.provision(workspaceId)
+  const server = createServer({ workspaces, featuredDefinitions: { definitions: [], listed: [] }, port: 0, bindHost: '127.0.0.1' })
+  cleanups.push(async () => { for (const delay of delays.values()) delay.release.resolve(); await server.stop() })
+  const run = await createRun(workspaces, workspaceId, definition.id)
+  const currentRun = async () => (await workspaces.withRuntime(workspaceId, async workspace => workspace.simulationRuns.get(run)))!
+  let runtime = await currentRun()
+  const base = `127.0.0.1:${server.port}/api/workspaces/${workspaceId}/world`
+  const url = `ws://${base}/ws?simulationRun=${run}`
+  const controlOf = (snapshot: Pick<PackRuntimeSnapshot, 'objects'>) =>
+    dronePackDataSchema.parse(snapshot.objects.find(object => object.id === droneId)?.packData).control
+  const control = () => controlOf(runtime.snapshot())
+  const waitForSteering = async (description: string, check: () => boolean): Promise<void> => {
+    const deadline = performance.now() + 10_000
+    while (!check()) {
+      if (performance.now() > deadline) throw new Error(`Timed out waiting for ${description}`)
+      await Bun.sleep(10)
+    }
+  }
+  const axes = (forward = 1) => ({ forward, right: 0, vertical: 0, yaw: 0 })
+  const steer = (socket: WebSocket, session: unknown, sequence: number, label: string, target = droneId, forward = 1) => socket.send(JSON.stringify({
+    type: 'runtime.input', input: { type: droneManualIntentRealtimeInputType, session, sequence, payload: {
+      droneId: target, axes: axes(forward), inputSource: { kind: 'keyboard', label },
+    } },
+  }))
+  const first = await openSocket(url)
+  const firstSession = (await nextOf(first.messages, 'realtime.ready', 0)).inputSession
+  const firstSteer = (...args: [sequence: number, label: string, target?: string]) => steer(first.socket, firstSession, ...args)
+  let wall = Date.now()
+  const advanceWall = (elapsedMs: number) => setSystemTime(new Date(wall += elapsedMs))
+  advanceWall(0)
+  cleanups.push(async () => { setSystemTime() })
+  first.socket.send(JSON.stringify({ type: 'runtime.input', input: { type: droneManualIntentRealtimeInputType,
+    session: firstSession, sequence: 0, actorId: 'actor:system', clientId: 'pretend', payload: {} } }))
+  await nextOf(first.messages, 'runtime.input.error', 0)
+  const mark = first.messages.length
+  firstSteer(10, 'accepted')
+  firstSteer(10, 'duplicate')
+  firstSteer(9, 'reordered')
+  firstSteer(11, 'other Pack', 'unit:one')
+  expect(await nextOf(first.messages, 'runtime.input.error', mark)).toMatchObject({ message: 'unknown drone object: unit:one' })
+  await waitForSteering('accepted steering projection', () => control().inputSource?.label === 'accepted')
+  const firstControl = control()
+  expect(firstControl.pilotActorId).toBe(actorIdSchema.parse('actor:operator'))
+  expect(firstControl.inputSource?.clientId).toMatch(/^realtime:/)
+  expect(firstControl.manualAxes).toBeUndefined()
+  expect(Date.parse(firstControl.inputExpiresAt!) - Date.parse(firstControl.lastCommandAt!)).toBe(droneManualIntentTtlMs)
+
+  firstSteer(12, 'queued')
+  await expired.entered.promise
+  advanceWall(droneManualIntentTtlMs + 10)
+  expired.release.resolve()
+  expect(controlOf(await expired.processed.promise).inputSource?.label).toBe('accepted')
+
+  firstSteer(13, 'before disconnect')
+  await waitForSteering('active before disconnect', () => control().inputSource?.label === 'before disconnect')
+  const expiresAt = control().inputExpiresAt!
+  firstSteer(14, 'closed while queued')
+  const isCurrent = await disconnected.entered.promise
+  advanceWall(1)
+  const closed = new Promise<void>(resolve => { first.socket.onclose = () => resolve() })
+  first.socket.close()
+  await closed
+  await waitForSteering('server observes socket closure', () => !isCurrent())
+  disconnected.release.resolve()
+  expect(controlOf(await disconnected.processed.promise).inputSource?.label).toBe('before disconnect')
+  await waitForSteering('disconnect revokes applied steering before its TTL', () => control().inputExpiresAt! < expiresAt)
+  expect(control().inputSource?.label).toBe('before disconnect')
+  const second = await openSocket(url)
+  const secondSession = (await nextOf(second.messages, 'realtime.ready', 0)).inputSession
+  steer(second.socket, secondSession, 1, 'reconnected')
+  await waitForSteering('fresh connection accepts a fresh sequence', () => control().inputSource?.label === 'reconnected')
+  expect(control().inputSource?.clientId).not.toBe(firstControl.inputSource?.clientId)
+  const reconnectedExpires = control().inputExpiresAt!
+  advanceWall(1)
+  steer(second.socket, secondSession, 2, 'neutral', droneId, 0)
+  await waitForSteering('neutral revokes steering before its TTL', () => control().inputExpiresAt! < reconnectedExpires)
+  expect(runtime.events().some(event => event.type === 'command.issued' && event.command.kind === manualControlCommandKind)).toBe(false)
+
+  const beforeReset = second.messages.length
+  expect((await fetch(`http://${base}/simulation-runs/${run}/reset`, { method: 'POST' })).status).toBe(200)
+  const resetSession = (await nextOf(second.messages, 'realtime.ready', beforeReset)).inputSession
+  expect(resetSession).not.toBe(secondSession)
+  runtime = await currentRun()
+  const afterReset = second.messages.length
+  steer(second.socket, secondSession, 3, 'before reset')
+  expect(await nextOf(second.messages, 'runtime.input.error', afterReset)).toMatchObject({ message: 'This connection no longer represents the active Run' })
+  expect(control().inputSource).toBeUndefined()
+  steer(second.socket, resetSession, 4, 'after reset')
+  await waitForSteering('fresh input on reset Run', () => control().inputSource?.label === 'after reset')
+
+  const command = await fetch(`http://${base}/simulation-runs/${run}/capabilities/${manualControlCommandKind}/invoke`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ input: { droneId, axes: axes(), inputSource: { kind: 'operator' } } }),
+  })
+  expect(command.status).toBe(200)
+  expect(await command.json()).toMatchObject({ kind: 'command', result: { ok: true } })
 })

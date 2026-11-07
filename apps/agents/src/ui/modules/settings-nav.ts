@@ -1,13 +1,5 @@
-// Settings sidebar section — expand/collapse + route each row to its modal.
-// Static entries are buttons in index.html carrying `data-settings-row` whose
-// value is the key looked up in the opener map below.
-//
-// Dynamic entries come from UI extensions (Path C). At init time we read
-// listExtensionPanels() and append a row for each; we re-render on
-// extension-panels-changed so install/uninstall pack lifecycle keeps the
-// nav in sync.
-
-import { domRefs } from './app-dom.ts'
+import { showToast } from './toast.ts'
+import { wireBootstrapFooter } from './ui-bootstrap-footer.ts'
 import { listExtensionPanels, onExtensionPanelsChanged, type PanelSpec } from './extensions/registry.ts'
 
 type SettingsRow = 'prompt' | 'providers' | 'tools' | 'skills' | 'scripts' | 'packs' | 'geodata' | 'logging' | 'bug'
@@ -94,7 +86,7 @@ const openExtensionPanelModal = (spec: PanelSpec): void => {
 
 // Sync the dynamic extension rows below the static rows. Removes existing
 // dynamic rows and re-appends one button per registered extension panel.
-const syncExtensionRows = (settingsList: HTMLElement): void => {
+const syncExtensionRows = (dialog: HTMLDialogElement, settingsList: HTMLElement): void => {
   // Remove any previously-rendered extension rows so re-sync is idempotent.
   settingsList.querySelectorAll('button[data-extension-panel]').forEach(b => b.remove())
   for (const spec of listExtensionPanels()) {
@@ -102,37 +94,35 @@ const syncExtensionRows = (settingsList: HTMLElement): void => {
     btn.dataset.extensionPanel = spec.id
     btn.className = 'w-full text-left text-xs text-text py-1.5 px-3 hover:bg-surface-muted cursor-pointer interactive'
     btn.textContent = spec.title
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation()
+    btn.onclick = () => {
+      dialog.close()
       openExtensionPanelModal(spec)
-    })
+    }
     settingsList.appendChild(btn)
   }
 }
 
-export const initSettingsNav = (): void => {
-  const { settingsHeader, settingsList, settingsToggle } = domRefs
+let initialized = false
 
-  const updateLabel = (expanded: boolean): void => {
-    settingsToggle.textContent = `${expanded ? '▾' : '▸'} Settings`
-  }
-
-  settingsHeader.onclick = (e) => {
-    if ((e.target as HTMLElement).closest('button[data-settings-row], button[data-extension-panel]')) return
-    const nowHidden = settingsList.classList.toggle('hidden')
-    updateLabel(!nowHidden)
-    settingsHeader.setAttribute('aria-expanded', String(!nowHidden))
-  }
-
-  settingsList.querySelectorAll<HTMLButtonElement>('button[data-settings-row]').forEach(btn => {
-    const key = btn.dataset.settingsRow as SettingsRow
-    btn.onclick = (e) => {
-      e.stopPropagation()
-      void openers[key]?.()
+export const openWorkspaceSettings = (): void => {
+  const dialog = document.querySelector<HTMLDialogElement>('#workspace-settings')!
+  if (!initialized) {
+    initialized = true
+    const settingsList = document.getElementById('settings-list')!
+    for (const button of settingsList.querySelectorAll<HTMLButtonElement>('button[data-settings-row]')) {
+      const key = button.dataset.settingsRow as SettingsRow
+      button.onclick = async () => {
+        dialog.close()
+        try {
+          await openers[key]()
+        } catch {
+          showToast(document.body, `${button.textContent} could not be opened.`, { type: 'error', position: 'fixed' })
+        }
+      }
     }
-  })
-
-  // Dynamic extension panel rows — synced now and on every change event.
-  syncExtensionRows(settingsList)
-  onExtensionPanelsChanged(() => syncExtensionRows(settingsList))
+    syncExtensionRows(dialog, settingsList)
+    onExtensionPanelsChanged(() => syncExtensionRows(dialog, settingsList))
+    wireBootstrapFooter()
+  }
+  if (!dialog.open) dialog.showModal()
 }

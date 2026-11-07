@@ -767,8 +767,7 @@ impl Solids {
                     key
                 })
                 .collect();
-            (band_c, helium_c, store_c) =
-                (color(&band_key), color(&helium_key), color(&store_key));
+            (band_c, helium_c, store_c) = (color(&band_key), color(&helium_key), color(&store_key));
             if (classes(&band_c), classes(&helium_c), classes(&store_c)) == before {
                 break;
             }
@@ -780,8 +779,11 @@ impl Solids {
             }
             m
         };
-        let (band_members, helium_members, store_members) =
-            (members_of(&band_c), members_of(&helium_c), members_of(&store_c));
+        let (band_members, helium_members, store_members) = (
+            members_of(&band_c),
+            members_of(&helium_c),
+            members_of(&store_c),
+        );
         let size = |m: &[Vec<usize>]| m.iter().map(|v| v.len() as f64).collect::<Vec<f64>>();
         let (band_m, helium_m, store_m) = (
             size(&band_members),
@@ -823,7 +825,9 @@ impl Solids {
         for (k, c) in plenum.iter().enumerate() {
             let (h, p) = (helium_c[c.helium], store_c[c.solid]);
             match reduced_plenum.iter().position(|r| {
-                r.helium == h && r.solid == p && bits(&[r.area, r.radius, r.factor]) == plenum_key[k]
+                r.helium == h
+                    && r.solid == p
+                    && bits(&[r.area, r.radius, r.factor]) == plenum_key[k]
             }) {
                 Some(j) => plenum_count[j] += 1.,
                 None => {
@@ -1131,10 +1135,16 @@ impl Solids {
     /// E-NUC phase B: the class of packet half `a`, helium store `h` and
     /// passive store `p`: the local element whose state is theirs.
     pub fn half_class(&self, a: usize) -> usize {
-        self.band_members.iter().position(|m| m.contains(&a)).expect("a packet half")
+        self.band_members
+            .iter()
+            .position(|m| m.contains(&a))
+            .expect("a packet half")
     }
     pub fn helium_class(&self, h: usize) -> usize {
-        self.helium_members.iter().position(|m| m.contains(&h)).expect("a packet helium store")
+        self.helium_members
+            .iter()
+            .position(|m| m.contains(&h))
+            .expect("a packet helium store")
     }
     pub fn store_class(&self, p: usize) -> usize {
         self.store_class[p]

@@ -10,6 +10,8 @@
     type ResourceSummaryItem,
     type Workspace,
     type ModuleQueryOutcome,
+    type ScenarioEditorStartIssue,
+    type WorkspaceDefinitionRevisionReference,
     type WorkspaceResourceReference,
     type WorkspaceSubjectReference,
   } from '@leitbild/contracts'
@@ -45,8 +47,10 @@
   import { createWorkspaceAdmin } from './workspace-admin.ts'
   import { errorDiagnostic, plainError, plainErrorText } from './error-text.ts'
   import { bannerAfterRetract } from './recoverable-error.ts'
-  import { createStartRunner, startAnnouncement, type StartState, type StartTarget } from './definition-start.ts'
+  import { createStartRunner, outcomeUnknownText, startAnnouncement, type StartState, type StartTarget } from './definition-start.ts'
   import { readFeaturedCatalogue } from './featured-catalogue.ts'
+  import { readScenarioEditorMessage, sameSavedScenario } from './scenario-editor-messages.ts'
+  import { invokeDefinitionStart } from './start-invocation.ts'
   import { continueItems, featuredStartRevision, openedFromGuide, workspaceDemos, type FeaturedCard } from './workspace-page.ts'
 
   type Page = { readonly kind: 'workspace'; readonly id: string }
@@ -91,8 +95,17 @@
   let summaryClock = $state(Date.now())
   let scenarioEditorPath = $state<string | null>(null)
   let scenarioEditorFrame = $state<HTMLIFrameElement | null>(null)
+  let scenarioEditorKey = $state(0)
   let scenarioEditorDirty = $state(false)
   let scenarioEditorSubject = $state<WorkspaceSubjectReference | null>(null)
+  interface EditorSession {
+    readonly document: Document
+    lastRequest: number
+    saved: { readonly subject: WorkspaceDefinitionRevisionReference; refreshed: Promise<string | null> | null } | null
+    unknown: WorkspaceDefinitionRevisionReference | null
+  }
+  let editorSession: EditorSession | null = null
+  let editorStart: { readonly controller: AbortController; dispatched: boolean } | null = null
   const workspaceTitle = $derived(workspace ? workspaceLabel(workspace, 'header') : 'Workspace')
   const showingComposer = $derived(selectedWorldRunId !== null || selectedAgentsRoomId !== null)
   const continuing = $derived(continueItems(resources))
@@ -224,16 +237,120 @@
     if (openRun !== null && selectedWorldRunId === null) error = 'The simulation you had open was deleted.'
   }
 
+  const clearEditorSession = (): void => {
+    if (editorStart?.dispatched) error = 'Stopped waiting. The simulation may have started. Check Continue before starting it again.'
+    editorStart?.controller.abort()
+    editorStart = null
+    editorSession = null
+  }
+  onDestroy(() => editorStart?.controller.abort())
+
+  const editorLoaded = (): void => {
+    if (editorSession && editorSession.document !== scenarioEditorFrame?.contentDocument) clearEditorSession()
+  }
+
   const handleWindowMessage = (event: MessageEvent): void => {
-    if (event.origin !== location.origin || !workspace) return
-    if (typeof event.data !== 'object' || event.data === null) return
-    if (event.source !== scenarioEditorFrame?.contentWindow) return
-    const data = event.data as { readonly type?: unknown; readonly dirty?: unknown; readonly subject?: unknown }
-    if (data.type === 'leitbild:scenario-dirty') scenarioEditorDirty = data.dirty === true
-    if (data.type === 'leitbild:scenario-saved') {
-      if (typeof data.subject === 'object' && data.subject !== null) scenarioEditorSubject = data.subject as WorkspaceSubjectReference
-      void run(() => loadWorkspaceCatalog(workspace!.id))
+    const frame = scenarioEditorFrame, id = workspace?.id, origin = location.origin
+    if (!frame || !id || !scenarioEditorPath || showingComposer || event.origin !== origin || event.source !== frame.contentWindow) return
+    const source = frame.contentWindow, document = frame.contentDocument
+    const documentId = document?.querySelector<HTMLElement>('[data-scenario-editor-document]')?.dataset.scenarioEditorDocument
+    if (!source || !document || !documentId) return
+    const message = readScenarioEditorMessage(event, { origin, source, documentId, workspaceId: id })
+    if (message === null) return
+    if (editorSession?.document !== document) {
+      clearEditorSession()
+      editorSession = { document, lastRequest: 0, saved: null, unknown: null }
     }
+    const session = editorSession
+    const active = (): boolean => scenarioEditorFrame === frame && frame.contentDocument === document
+      && workspace?.id === id && scenarioEditorPath !== null && !showingComposer
+    const refresh = (): Promise<string | null> => loadWorkspaceCatalog(id).then(() => null, cause => {
+      const text = plainErrorText(cause)
+      if (active()) error = text
+      return text
+    })
+    if (message.type !== 'leitbild:scenario-start') {
+      scenarioEditorDirty = message.dirty
+      if (message.type === 'leitbild:scenario-saved') {
+        scenarioEditorSubject = message.subject
+        session.saved = message.subject === null ? null : { subject: message.subject, refreshed: refresh() }
+      }
+      return
+    }
+    if (message.requestId <= session.lastRequest) return
+    session.lastRequest = message.requestId
+    const subject = message.subject
+    const issue = (action: ScenarioEditorStartIssue['action'], text: string): void => {
+      if (active()) source.postMessage({
+        type: 'leitbild:scenario-start-issue', documentId, requestId: message.requestId, action, message: text,
+      } satisfies ScenarioEditorStartIssue, origin)
+    }
+    const saved = session.saved
+    if (!saved || !sameSavedScenario(saved.subject, subject) || scenarioEditorDirty) {
+      issue('retry', 'Save the current revision before starting it.')
+      return
+    }
+    if (session.unknown && sameSavedScenario(session.unknown, subject)) {
+      issue('check', outcomeUnknownText({ definition: subject }))
+      return
+    }
+    if (editorStart || startState.phase === 'busy') {
+      issue('retry', 'Another simulation is already starting.')
+      return
+    }
+    const attempt = { controller: new AbortController(), dispatched: false }
+    editorStart = attempt
+    const unknown = (text: string): void => {
+      session.unknown = subject
+      issue('check', text)
+    }
+    void (async () => {
+      try {
+        const refreshError = await (saved.refreshed ??= refresh())
+        if (!active() || editorStart !== attempt) return
+        if (refreshError !== null) {
+          saved.refreshed = null
+          issue('retry', refreshError)
+          return
+        }
+        if (session.saved !== saved || scenarioEditorDirty) {
+          issue('retry', 'The editor changed before the simulation started.')
+          return
+        }
+        const descriptor = definitions.find(({ ref }) => ref.workspaceId === id && ref.moduleId === subject.moduleId
+          && ref.type === subject.type && ref.id === subject.id)
+        const capability = descriptor && cardCapability(descriptor, 'primary', capabilities)
+        if (!capability) {
+          saved.refreshed = null
+          issue('retry', 'The saved scenario does not currently publish a Start action.')
+          return
+        }
+        const receipt = await invokeDefinitionStart({
+          workspaceId: id, definition: subject, capabilityId: capability.id,
+          fetch: (input, init) => fetch(input, init), signal: attempt.controller.signal,
+          onDispatch: () => { attempt.dispatched = true }, requiredResource: 'world.simulation-run',
+        })
+        if (!active() || editorStart !== attempt) return
+        if (receipt.kind === 'accepted') {
+          if (session.saved !== saved || scenarioEditorDirty) {
+            unknown('The simulation started. Open it from Continue after finishing your edits.')
+            return
+          }
+          const created = receipt.created.find(resource => resource.type === 'world.simulation-run')!
+          memory.remember(id, 'launched')
+          location.assign(workspaceUrl(id, { world: created.id }))
+        } else if (receipt.kind === 'outcome-unknown' || receipt.kind === 'aborted') {
+          unknown(outcomeUnknownText({ definition: subject }))
+        } else {
+          issue('retry', plainErrorText(receipt.cause))
+        }
+      } catch (cause) {
+        if (attempt.dispatched) unknown(outcomeUnknownText({ definition: subject }))
+        else issue('retry', plainErrorText(cause))
+      } finally {
+        if (editorStart === attempt) editorStart = null
+      }
+    })()
   }
 
   const load = async (): Promise<void> => {
@@ -302,6 +419,7 @@
   // step; arriving opens what was created and makes this Workspace the default.
   const startFrom = async (target: StartTarget): Promise<void> => {
     if (!workspace) return
+    if (editorStart) { error = 'A saved scenario is already starting.'; return }
     const result = await startRunner.start(target)
     if (result === null) return
     if (result.destination !== null) {
@@ -321,6 +439,7 @@
     void startFrom({ key: definitionKey(definition), workspaceId: workspace.id, definition: definition.ref })
   }
   const retryStart = async (): Promise<void> => {
+    if (editorStart) { error = 'A saved scenario is already starting.'; return }
     const result = await startRunner.retry()
     if (result === null || !workspace) return
     if (result.destination !== null) {
@@ -336,10 +455,21 @@
     if (workspace) void run(() => loadWorkspaceCatalog(workspace!.id))
   }
   const openEditor = async (path: string, subject: WorkspaceSubjectReference | null): Promise<void> => {
+    if (scenarioEditorDirty && !confirm('Discard unsaved scenario changes?')) return
+    clearEditorSession()
+    scenarioEditorDirty = false
     scenarioEditorSubject = subject
     scenarioEditorPath = path
+    scenarioEditorKey += 1
     await tick()
     scenarioEditorFrame?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+  }
+  const closeEditor = (): void => {
+    if (scenarioEditorDirty && !confirm('Discard unsaved scenario changes?')) return
+    clearEditorSession()
+    scenarioEditorPath = null
+    scenarioEditorSubject = null
+    scenarioEditorDirty = false
   }
   const workspaceDeleted = (): void => {
     if (workspace) memory.forget(workspace.id)
@@ -722,7 +852,12 @@
           oninspect={definition => void inspect({ kind: 'definition', descriptor: definition })}
           onremoved={() => loadWorkspaceCatalog(workspace!.id).catch(cause => { error = plainErrorText(cause) })} />
         {#if scenarioEditorPath}
-          <section class="scenario-builder-frame" aria-label="Scenario editor"><button class="builder-close" type="button" onclick={() => { if (!scenarioEditorDirty || confirm('Discard unsaved scenario changes?')) { scenarioEditorPath = null; scenarioEditorSubject = null; scenarioEditorDirty = false } }}>Close editor</button><iframe bind:this={scenarioEditorFrame} title="World Scenario Editor" src={`${scenarioEditorPath}${scenarioEditorPath.includes('?') ? '&' : '?'}embed=1`}></iframe></section>
+          <section class="scenario-builder-frame" aria-label="Scenario editor">
+            <button class="builder-close" type="button" onclick={closeEditor}>Close editor</button>
+            {#key scenarioEditorKey}
+              <iframe bind:this={scenarioEditorFrame} title="World Scenario Editor" onload={editorLoaded} src={`${scenarioEditorPath}${scenarioEditorPath.includes('?') ? '&' : '?'}embed=1`}></iframe>
+            {/key}
+          </section>
         {:else}
           <section class="build" aria-labelledby="build-heading">
             <span class="build-icon" aria-hidden="true"><Icon name="edit" size={18} /></span>

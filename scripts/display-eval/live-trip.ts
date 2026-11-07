@@ -2,7 +2,7 @@
  * follow it within one sample. Reusable every release, on any loopback stack.
  *
  *   bun scripts/display-eval/live-trip.ts --origin=http://127.0.0.1:<port> --workspace=<id> --from=<paused Run at power>
- *       --out=<dir> [--label=<stack>] [--sizes=1920,1046] [--port=<CDP port>] [--unit="Halden Unit 1"] [--subject=plant:halden-1]
+ *       --out=<dir> [--label=<stack>] [--sizes=1920x1080,1920x1080+chat] [--port=<CDP port>] [--unit="Halden Unit 1"] [--subject=plant:halden-1]
  *       [--after=90]
  *
  * For each size it copies the at-power Run (the copy keeps the Scenario's fault ahead of it), opens the Workspace at
@@ -44,7 +44,7 @@
 import { join } from 'node:path'
 import { ensureChrome, loopbackOrigin, openPage, options, sleep, type Page } from './browser.ts'
 import { expectedGathering, onScreen, openUnitDisplay, readDisplay, readScreen, type DisplayState, type Screen } from './display-dom.ts'
-import { sizeSpec } from './display-press.ts'
+import { sizeSpec, type SizeSpec } from './display-press.ts'
 import { viewport } from './matrix.ts'
 import { createStackApi, type StackApi } from './stack-api.ts'
 
@@ -116,22 +116,22 @@ interface Check { readonly id: string; readonly release: 'R1' | 'R2' | 'R3'; rea
 
 const runSize = async (config: {
   readonly api: StackApi; readonly origin: string; readonly workspaceId: string; readonly from: string; readonly port: number
-  readonly size: number; readonly out: string; readonly label: string; readonly unit: string; readonly subject: string; readonly afterS: number
+  readonly size: SizeSpec; readonly out: string; readonly label: string; readonly unit: string; readonly subject: string; readonly afterS: number
 }): Promise<Record<string, unknown>> => {
   const { api, size, out, label, unit, subject } = config
-  const tag = `${label}-${size}`
+  const tag = `${label}-${size.name}`
   const shot = (name: string) => join(out, `${tag}-${name}.png`)
-  const copy = await api.copy(config.from, `live trip ${size} px · ${new Date().toISOString().slice(0, 19)}`)
+  const copy = await api.copy(config.from, `live trip ${size.name} · ${new Date().toISOString().slice(0, 19)}`)
   await api.load(copy)
   const start = await api.presence(copy)
   const day = String(start.execution.currentSimulationTime).slice(0, 10)
-  const page = await openPage(config.port, 1920, 1080)
+  const page = await openPage(config.port, size.width, size.height)
   const polls: Poll[] = []
   const shots: Record<string, string> = {}
   try {
     await page.goto(`${config.origin}/workspaces/${config.workspaceId}?world=${encodeURIComponent(copy)}`)
     await page.waitFor({ sel: 'button', text: `Open process display for ${unit}` }, 120_000)
-    if (size < 1920) {
+    if (size.chat) {
       await page.click({ sel: 'button', text: 'Open Leitbild Assistant' })
       await page.until(`lb.documents().some(d => d.frame && /\\/agents/.test(d.frame.getAttribute('src') || '') && lb.shown(d.frame))`, 60_000)
       await sleep(2_000)
@@ -141,10 +141,8 @@ const runSize = async (config: {
     await sleep(2_500)
     const atPower = await page.eval<DisplayState>(readDisplay())
     await page.shot(shots.atPower = shot('0-at-power'))
-    // World's default of the unit at power: the oracle for today's vignette, which World composes (the pre-swap
-    // display composed its own leads).
-    const vignette = atPower.generation === 'vignette'
-    const fresh = vignette ? await api.defaultView(copy, subject) : null
+    // World's default view of the unit at power is the oracle for the displayed leads.
+    const fresh = await api.defaultView(copy, subject)
     const atPowerExpected = fresh === null ? null : leadLabels(fresh.view)
     // The unit's mode as World samples it; a sample that fails is counted, and the next read tries again.
     let modeReadsFailed = 0
@@ -207,10 +205,10 @@ const runSize = async (config: {
     const rods = await coreRods(page)
     // What the display should frame at the end: drawn elements with an active alert of caution or worse.
     const viewState = await shownViewState(page)
-    const view = viewState === null || !vignette ? null : await api.view(copy, viewState)
+    const view = viewState === null ? null : await api.view(copy, viewState)
     const plantAlerts: ReadonlyArray<any> = (await api.objects(copy)).find(object => object.id === subject)?.alerts ?? []
     // World's own expected marks at the end (AlertRow.expected), for the shown display: which alerts are expected.
-    const endSample = viewState === null || !vignette ? null : await api.sample(copy, viewState).catch(() => null)
+    const endSample = viewState === null ? null : await api.sample(copy, viewState).catch(() => null)
     const expectedIds = new Set<string>((endSample?.alerts ?? []).filter((row: any) => row.expected !== undefined).map((row: any) => String(row.alert?.id)))
     // The Pack's own rods-on-bottom moment: its core's rodsOnBottom observation and since, in World's sample of the core.
     const core = await api.defaultView(copy, `${subject}#core`).catch(() => null)
@@ -263,9 +261,6 @@ const runSize = async (config: {
       return { at: new Date(change.simMs).toISOString().slice(11, 19), labels: change.labels, lagS: shown === undefined ? null : Math.max(0, (shown.simMs! - change.simMs) / 1000) }
     })
     const leadsFollow = leadChanges.length > 0 && leadChanges.every(change => change.lagS !== null && change.lagS <= ONE_SAMPLE_S)
-    // Without World's oracle (the pre-swap display): only whether, and when, the lead rows left the at-power set.
-    const atPowerLabels = shownLeads(atPower)
-    const switchLag = lagOf(state => state.leads.length > 0 && !sameList(shownLeads(state), atPowerLabels), upsetMs)
     const frozen = polls.filter(poll => poll.state.word === 'FROZEN')
     const statusPolls = (status: string) => polls.filter(poll => poll.state.values.some(value => value.status === status))
     const worstRead = (status: string) => statusPolls(status).sort((a, b) => b.state.values.filter(value => value.status === status).length - a.state.values.filter(value => value.status === status).length)[0]
@@ -299,19 +294,19 @@ const runSize = async (config: {
     const countsLag = lagScreen(poll => poll.counts.shown, upsetMs)
     const endUnack = endSample === null ? null : (endSample.alerts ?? []).filter((row: any) => row.state === 'active-unack' || row.state === 'returned-unack').length
     const lastPoll = polls.at(-1)!
-    const endViewport = viewport(last, lastPoll.screen, sizeSpec(String(size)))
+    const endViewport = viewport(last, lastPoll.screen, size)
     const checks: Check[] = [
       { id: 'alerts-rows', release: 'R1', pass: upsetMs === null ? null : held(rowsLag), detail: upsetMs === null ? 'no upset seen' : `first rows ${rowsLag.lagS === null ? 'never' : `${rowsLag.lagS} s`} after the upset, kept in ${kept(rowsLag)} of reads after; at the end ${last.alerts === null ? 'no alerts section' : `"${last.alerts.heading}", ${last.alerts.rows.length} rows${last.alerts.more ? `, ${last.alerts.more}` : ''}`}`, shot: shots['1-first-sample-after-upset'] },
       {
         id: 'frames', release: 'R1', pass: upsetMs === null ? null : held(framesLag) && unframed.length === 0,
-        detail: `first frame ${framesLag.lagS === null ? 'never' : `${framesLag.lagS} s`} after the upset, kept in ${kept(framesLag)} of reads after; at the end ${last.framed.length} drawn items framed (${last.framedSymbols} symbols), ${last.outlined.length} outlined (${last.outlined.map(item => item.kind).sort().join(', ') || 'none'}); ${alerted.size} drawn elements carry an active plant alert of caution or worse${nodes.length === 0 ? ' (no World topology to name the drawn elements: the pre-swap mimic)' : `: ${framedAlerted.length} framed, ${outlinedExpected.length} outlined as expected (all their alerts expected${outlinedExpected.length === 0 ? '' : `: ${outlinedExpected.join(', ')}`}), ${outlinedAbnormal.length} outlined as a command not followed in the expected outline's place${outlinedAbnormal.length === 0 ? '' : ` (${outlinedAbnormal.join(', ')})`}`}${outlinedNews.length === 0 ? '' : `; outlined though an alert is news: ${outlinedNews.join(', ')}`}${unframed.length === 0 ? '' : `; unmarked: ${unframed.join(', ')}`}`,
+        detail: `first frame ${framesLag.lagS === null ? 'never' : `${framesLag.lagS} s`} after the upset, kept in ${kept(framesLag)} of reads after; at the end ${last.framed.length} drawn items framed (${last.framedSymbols} symbols), ${last.outlined.length} outlined (${last.outlined.map(item => item.kind).sort().join(', ') || 'none'}); ${alerted.size} drawn elements carry an active plant alert of caution or worse${nodes.length === 0 ? ' (the World view supplied no topology)' : `: ${framedAlerted.length} framed, ${outlinedExpected.length} outlined as expected (all their alerts expected${outlinedExpected.length === 0 ? '' : `: ${outlinedExpected.join(', ')}`}), ${outlinedAbnormal.length} outlined as a command not followed in the expected outline's place${outlinedAbnormal.length === 0 ? '' : ` (${outlinedAbnormal.join(', ')})`}`}${outlinedNews.length === 0 ? '' : `; outlined though an alert is news: ${outlinedNews.join(', ')}`}${unframed.length === 0 ? '' : `; unmarked: ${unframed.join(', ')}`}`,
         shot: shots['2-upset+10s'],
       },
       { id: 'worst-chip', release: 'R1', pass: upsetMs === null ? null : held(chipLag), detail: `worst chip ${chipLag.lagS === null ? 'never' : `${chipLag.lagS} s`} after the upset, kept in ${kept(chipLag)} of reads after; at the end "${last.worst ?? '-'}"`, shot: shots['1-first-sample-after-upset'] },
       {
         id: 'leads', release: 'R1',
-        pass: leadsTarget === null ? (atPower.generation === 'old' && atPowerLabels.length > 0 ? switchLag.lagS !== null : null) : leadsFollow && sameList(shownLeads(last), leadsTarget),
-        detail: leadsTarget === null ? `${atPower.generation === 'old' ? 'the pre-swap display composes its own leads (no World oracle)' : 'World composes no default here'}; the lead rows left the at-power set ${switchLag.lagS === null ? 'never' : `${switchLag.lagS} s after the upset`}; at power: ${atPowerLabels.join(' | ') || '(none in the DOM at this size)'}; at the end: ${last.leads.map(lead => lead.label).join(' | ') || '(none in the DOM at this size)'}`
+        pass: leadsTarget === null ? null : leadsFollow && sameList(shownLeads(last), leadsTarget),
+        detail: leadsTarget === null ? 'World did not supply the expected lead rows'
           : `mode changed ${modeMs === null || upsetMs === null ? '(not seen)' : `${(modeMs - upsetMs) / 1000} s after the upset`}; World's lead set changed ${leadChanges.length} times while the Run played${leadChanges.map(change => ` (at ${change.at}, shown ${change.lagS === null ? 'never' : `${change.lagS} s after`})`).join(',')}; at power: ${atPower.leads.map(lead => lead.label).join(' | ')}; World at the end: ${leadsTarget.join(' | ')}; display at the end: ${shownLeads(last).join(' | ')}`,
         shot: shots['2-upset+10s'],
       },
@@ -336,7 +331,7 @@ const runSize = async (config: {
       },
     ]
     return {
-      size, copy, displayWidth: atPower.frame?.width ?? null, generation: atPower.generation,
+      size: size.name, copy, displayWidth: atPower.frame?.width ?? null, generation: atPower.generation,
       events: { playSim: new Date(playSim).toISOString(), upset: upsetMs === null ? null : new Date(upsetMs).toISOString(), trip: tripMs === null ? null : new Date(tripMs).toISOString(), modeChange: modeMs === null ? null : new Date(modeMs).toISOString(), modeAtPower, modeReadsFailed },
       atPower: { worst: atPower.worst, leads: atPower.leads, alerts: atPower.alerts, word: atPower.word, badValues: badValues(atPower) },
       worldLeads: worldLeads.map(entry => ({ at: new Date(entry.simMs).toISOString(), labels: entry.labels })),
@@ -367,11 +362,11 @@ if (import.meta.main) {
   const api = createStackApi(origin, workspaceId)
   const results: Array<Record<string, unknown>> = []
   try {
-    for (const size of (argv.get('sizes') ?? '1920,1046').split(',').map(Number)) {
+    for (const size of (argv.get('sizes') ?? '1920x1080,1920x1080+chat').split(',').map(sizeSpec)) {
       const result = await runSize({ api, origin, workspaceId, from, port, size, out, label, unit: argv.get('unit') ?? 'Halden Unit 1', subject: argv.get('subject') ?? 'plant:halden-1', afterS: Number(argv.get('after') ?? 90) })
       results.push(result)
       await Bun.write(join(out, `${label}-live-trip.json`), JSON.stringify({ label, origin, from, results }, null, 2))
-      for (const check of result.checks as Check[]) console.log(`${label} ${size} ${check.release} ${check.id.padEnd(15)} ${check.pass === null ? 'n/a ' : check.pass ? 'PASS' : 'FAIL'}  ${check.detail.slice(0, 220)}`)
+      for (const check of result.checks as Check[]) console.log(`${label} ${size.name} ${check.release} ${check.id.padEnd(15)} ${check.pass === null ? 'n/a ' : check.pass ? 'PASS' : 'FAIL'}  ${check.detail.slice(0, 220)}`)
     }
   } finally {
     if (chrome.started) await chrome.stop()

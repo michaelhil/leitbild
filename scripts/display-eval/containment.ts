@@ -3,7 +3,7 @@
  * rows (matrix.ts): the viewport rule, the CSF row, navigation, auto-pin and presses. Reusable every release.
  *
  *   bun scripts/display-eval/containment.ts --origin=http://127.0.0.1:<port> --workspace=<id> --run=<Run A> --out=<dir>
- *       [--steady=<Run B>] [--label=<stack>] [--sizes=1920,1046,1440,1280] [--port=<CDP port>] [--unit="Halden Unit 1"]
+ *       [--steady=<Run B>] [--label=<stack>] [--sizes=1920x1080,1920x1080+chat,1440x900,1280x800] [--port=<CDP port>] [--unit="Halden Unit 1"]
  *       [--plant=plant:halden-1] [--items=<n>] [--no-matrix] [--no-faceplates]
  *
  * A value fails when a box that hides overflow clips any of its text, when a drawn reading runs past the room its
@@ -75,7 +75,8 @@ const runSize = async (config: { origin: string; workspaceId: string; runId: str
     }
     const faceplates: Array<Record<string, unknown>> = []
     let itemCount = 0
-    if (config.faceplates && (size.name === '1920' || size.name === '1046')) {
+    const fullHd = size.width === 1920 && size.height === 1080
+    if (config.faceplates && fullHd) {
       const items = (await targetsOf(page)).filter(target => target.kind === 'item').slice(0, config.maxItems)
       itemCount = items.length
       for (const [index, item] of items.entries()) {
@@ -109,11 +110,11 @@ const runSize = async (config: { origin: string; workspaceId: string; runId: str
       matrix.push({ id: `faceplate-card-${size.name}`, release: 'R2', pass: opened.length > 0 && tall.length === 0 && outside.length === 0 && covering.length === 0 && arrows.length === 0,
         detail: `${opened.length} faceplates: ${tall.length === 0 ? 'the named five ≤ 300 px' : `taller than 300 px: ${tall.map(entry => `${entry.item.split(' · ')[0]} ${entry.geometry.h} px`).join(', ')}`}; ${outside.length} outside the viewport; ${covering.length} over their item; ${arrows.length} with an arrow at the card's edge${arrows.length === 0 ? '' : ` (${arrows.slice(0, 3).map(entry => `${entry.item.split(' · ')[0]}: ${entry.geometry.arrowParts.filter(part => part.endsWith('(at the edge)')).join(', ')}`).join('; ')})`}${(() => { const inner = [...new Set(opened.flatMap(entry => entry.geometry.arrowParts.filter(part => !part.endsWith('(at the edge)'))))]; return inner.length === 0 ? '' : ` (inside cards, not pointers: ${inner.slice(0, 4).join(', ')})` })()}; widths ${Math.min(...opened.map(entry => entry.geometry.w))}–${Math.max(...opened.map(entry => entry.geometry.w))} px` })
     }
-    if (config.matrix && (size.name === '1920' || size.name === '1046')) {
+    if (config.matrix && fullHd) {
       matrix.push(await navigation(page, home, reopen, join(out, `${tag}-navigation.png`)))
       matrix.push(...await presses(page, { api: config.api, runId: config.runId, plantId: config.plantId, home, reopen, chatOpen: size.chat, out, tag }))
     }
-    if (config.matrix && size.name === '1046') {
+    if (config.matrix && fullHd && size.chat) {
       matrix.push(await autoPin(page, { api: config.api, origin: config.origin, workspaceId: config.workspaceId, runA: config.runId, plantId: config.plantId, unit: config.unit, size, shotPath: join(out, `${tag}-auto-pin.png`) }))
     }
     if (config.matrix && config.steady !== undefined) {
@@ -154,7 +155,7 @@ if (import.meta.main) {
   const api = createStackApi(origin, workspaceId)
   const results: Array<Record<string, unknown>> = []
   try {
-    for (const name of (argv.get('sizes') ?? '1920,1046,1440,1280').split(',')) {
+    for (const name of (argv.get('sizes') ?? '1920x1080,1920x1080+chat,1440x900,1280x800').split(',')) {
       const size = sizeSpec(name)
       const result = await runSize({ origin, workspaceId, runId, steady: argv.get('steady'), port, size, out, label, unit: argv.get('unit') ?? 'Halden Unit 1', plantId: argv.get('plant') ?? 'plant:halden-1', maxItems: Number(argv.get('items') ?? 200), matrix: !argv.has('no-matrix'), faceplates: !argv.has('no-faceplates'), api })
       results.push(result)

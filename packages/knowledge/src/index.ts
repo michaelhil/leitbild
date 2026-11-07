@@ -35,8 +35,8 @@ export const createKnowledge = (input: unknown) => {
     const lines = document.content.split(/\r?\n/)
     const headings = headingsFor(document.content)
     const summary = summaryFor(document.content)
-    const procedureId = isProcedureMarkdown(document.content) ? parseProcedure(document.content).procedureId : undefined
-    return { ...document, lines, headings, title: headings[0]?.title ?? document.path, summary, procedureId }
+    const procedure = isProcedureMarkdown(document.content) ? parseProcedure(document.content) : undefined
+    return { ...document, lines, headings, title: headings[0]?.title ?? document.path, summary, procedure, procedureId: procedure?.procedureId }
   })
   const parentFor = (path: string): string | null => {
     const parts = path.split('/'); parts.pop()
@@ -49,7 +49,23 @@ export const createKnowledge = (input: unknown) => {
     return path !== 'index.md' && paths.has('index.md') ? 'index.md' : null
   }
   const navigation = documents.map(({ path, title, summary }) => ({ path, title, summary, parent: parentFor(path), hub: path === 'index.md' || path.endsWith('/index.md') }))
-  const index = () => documents.map(({ path, title, summary, headings, lines, procedureId }) => ({ path, title, summary, headings, totalLines: lines.length, parent: parentFor(path), hub: path === 'index.md' || path.endsWith('/index.md'), ...(procedureId ? { procedureId } : {}) }))
+  const procedureReferences = (path: string) => {
+    const procedure = documents.find(document => document.path === path)?.procedure
+    const branches = procedure?.steps.flatMap(step => step.branches).filter(branch => branch.targetKind === 'procedure') ?? []
+    // Include every candidate for an authored identity. The reader can resolve
+    // a unique sibling, but duplicated identities must never become a guess.
+    return documents.filter(document => document.procedure && branches.some(branch => branch.target === document.procedureId))
+      .map(document => ({
+        path: document.path,
+        procedureId: document.procedure!.procedureId,
+        steps: document.procedure!.steps.filter(step => branches.some(branch => branch.target === document.procedureId && branch.targetStepId === step.id))
+          .map(step => {
+            const heading = document.headings.find(heading => heading.line === step.sourceLine)
+            if (!heading) throw new Error(`Procedure step has no source heading: ${document.path}#${step.id}`)
+            return { id: step.id, anchor: heading.anchor }
+          }),
+      }))
+  }
   const read = (path: string, options: { readonly revision?: string; readonly startLine?: number; readonly lineCount?: number; readonly section?: string } = {}) => {
     if (options.revision !== undefined && options.revision !== snapshot.revision) throw new Error('Knowledge revision is not available in this publication; rediscover the current revision')
     const document = documents.find(candidate => candidate.path === path)
@@ -133,9 +149,17 @@ export const createKnowledge = (input: unknown) => {
     return { revision: snapshot.revision, total: matches.length, matches: selected,
       ...(offset + selected.length < matches.length ? { nextOffset: offset + selected.length } : {}) }
   }
-  return { revision: snapshot.revision, index, read, search }
+  return {
+    revision: snapshot.revision,
+    navigation: () => navigation.map(({ path, title, parent, hub }) => ({ path, title, parent, hub })),
+    procedureReferences,
+    read,
+    search,
+  }
 }
 export type Knowledge = ReturnType<typeof createKnowledge>
+export type KnowledgeNavigationEntry = ReturnType<Knowledge['navigation']>[number]
+export type KnowledgeProcedureReference = ReturnType<Knowledge['procedureReferences']>[number]
 
 export const knowledgeSnapshotPath = (applicationRoot: string): string => process.env.LEITBILD_KNOWLEDGE_SNAPSHOT
   ?? resolve(applicationRoot, 'knowledge/snapshot.json')

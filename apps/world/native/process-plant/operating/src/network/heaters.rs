@@ -506,7 +506,10 @@ fn endpoint_key(
         sat.surface_tension.value,
     ];
     k[0] = selector;
-    for (slot, v) in k[1..].iter_mut().zip(values.iter().chain(&w(&sat.liquid)).chain(&w(&sat.vapor))) {
+    for (slot, v) in k[1..]
+        .iter_mut()
+        .zip(values.iter().chain(&w(&sat.liquid)).chain(&w(&sat.vapor)))
+    {
         *slot = v.to_bits();
     }
     k
@@ -531,7 +534,11 @@ fn minimum_film_endpoint(
     };
     let (pv, tv, sv) = (s(pressure.value), s(bulk_t.value), saturation_values(sat));
     let key = ENDPOINTS.with(|e| e.borrow().is_some()).then(|| {
-        let probe = law(material_304(caloric, contact, s(contact.wet.minimum_film_bounds_k[0])));
+        let probe = law(material_304(
+            caloric,
+            contact,
+            s(contact.wet.minimum_film_bounds_k[0]),
+        ));
         endpoint_key(caloric, contact, &probe, pressure.value, bulk_t.value, &sv)
     });
     let held = key.and_then(|k| {

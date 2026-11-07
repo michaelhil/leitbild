@@ -136,18 +136,14 @@ describe('grid-norway reference style: zoom classes through filters', () => {
     expect(draws(spec, 12, 'LineString', { category: 'cable', maxVoltageKv: 420 })).toBe(false)
   })
 
-  test('polygon sites draw as outline dots by voltage class, footprints fill from z12', () => {
+  test('polygon sites draw outlines and fills from the footprint zoom', () => {
     const outline = layer('substations:outline')
-    expect(draws(outline, 5, 'Polygon', { category: 'substation', maxVoltageKv: 420 })).toBe(true)
-    expect(draws(outline, 6, 'Polygon', { category: 'substation', maxVoltageKv: 132 })).toBe(false)
-    expect(draws(outline, 7, 'Polygon', { category: 'substation', maxVoltageKv: 132 })).toBe(true)
-    expect(draws(outline, 8, 'Polygon', { category: 'substation', maxVoltageKv: 22 })).toBe(false)
-    expect(draws(outline, 9, 'Polygon', { category: 'substation', maxVoltageKv: 22 })).toBe(true)
-    expect(draws(layer('substations:fill'), 11, 'Polygon', { category: 'substation', maxVoltageKv: 420 })).toBe(false)
-    expect(draws(layer('substations:fill'), 12, 'Polygon', { category: 'substation', maxVoltageKv: 420 })).toBe(true)
-    const dot = evaluate(outline, 'line-width', 7, 'Polygon', { category: 'substation', maxVoltageKv: 420 }) as number
-    const footprint = evaluate(outline, 'line-width', 13, 'Polygon', { category: 'substation', maxVoltageKv: 420 }) as number
-    expect(dot).toBeGreaterThan(footprint * 3)
+    const site = { category: 'substation', maxVoltageKv: 420 }
+    expect(draws(outline, 11, 'Polygon', site)).toBe(false)
+    expect(draws(outline, 12, 'Polygon', site)).toBe(true)
+    expect(draws(layer('substations:fill'), 11, 'Polygon', site)).toBe(false)
+    expect(draws(layer('substations:fill'), 12, 'Polygon', site)).toBe(true)
+    expect(evaluate(outline, 'line-width', 12, 'Polygon', site)).toBeCloseTo(1.4, 6)
   })
 
   test('site points, transformers and generation follow their own zoom classes', () => {
@@ -161,8 +157,8 @@ describe('grid-norway reference style: zoom classes through filters', () => {
     expect(draws(generation, 7, 'Point', { category: 'plant', outputMw: 140 })).toBe(true)
     expect(draws(generation, 8, 'Point', { category: 'generator', outputMw: 900 })).toBe(false)
     expect(draws(generation, 9, 'Point', { category: 'generator', outputMw: 3 })).toBe(true)
-    expect(draws(layer('generation:outline'), 5, 'Polygon', { category: 'plant', outputMw: 600 })).toBe(true)
-    expect(draws(layer('generation:outline'), 8, 'Polygon', { category: 'plant', outputMw: 30 })).toBe(false)
+    expect(draws(layer('generation:outline'), 11, 'Polygon', { category: 'plant', outputMw: 600 })).toBe(false)
+    expect(draws(layer('generation:outline'), 12, 'Polygon', { category: 'plant', outputMw: 600 })).toBe(true)
   })
 
   test('generation circle area is proportional to nameplate output', () => {
@@ -180,9 +176,11 @@ describe('grid-norway reference style: zoom classes through filters', () => {
     expect(String(evaluate(labels, 'text-field', 9, 'LineString', { category: 'line', maxVoltageKv: 420, name: 'Holen - Rød' }))).toBe('Holen - Rød (420 kV)')
     expect(String(evaluate(labels, 'text-field', 9, 'LineString', { category: 'line', maxVoltageKv: 300 }))).toBe('300 kV')
     const sites = layer('substations:label')
-    expect(draws(sites, 7, 'Polygon', { category: 'substation', maxVoltageKv: 420, name: 'Sylling' })).toBe(true)
-    expect(draws(sites, 8, 'Polygon', { category: 'substation', maxVoltageKv: 132, name: 'Lokal' })).toBe(false)
-    expect(draws(sites, 9, 'Polygon', { category: 'substation', maxVoltageKv: 132, name: 'Lokal' })).toBe(true)
+    expect(draws(sites, 7, 'Point', { category: 'substation', maxVoltageKv: 420, name: 'Sylling' })).toBe(true)
+    expect(draws(sites, 8, 'Point', { category: 'substation', maxVoltageKv: 132, name: 'Lokal' })).toBe(false)
+    expect(draws(sites, 9, 'Point', { category: 'substation', maxVoltageKv: 132, name: 'Lokal' })).toBe(true)
+    expect(draws(sites, 11, 'Polygon', { category: 'substation', maxVoltageKv: 132, name: 'Lokal' })).toBe(false)
+    expect(draws(sites, 12, 'Polygon', { category: 'substation', maxVoltageKv: 132, name: 'Lokal' })).toBe(true)
     expect(draws(sites, 13, 'Polygon', { category: 'substation', maxVoltageKv: 420 })).toBe(false)
   })
 })

@@ -2,7 +2,6 @@ import type { PackPhysicalScene, PhysicalPlanPrimitive, PhysicalSceneBounds, Phy
 import { physicalPlanPaintCommands, physicalPlanContinuationPaths, physicalPlanTextFrame } from '../../physical-layout/plan-drawing.ts'
 import type { PhysicalPlanPaint } from '../../physical-layout/plan-paint-stream.ts'
 import { physicalScopeRegions } from './scope-regions.ts'
-import { physicalArchitectureOpacity } from './architecture-opacity.ts'
 import { createPhysicalSpatialIndex, visitPhysicalSpatialBounds, physicalSpatialBoundsOverlap, type PhysicalSpatialIndex } from './spatial-index.ts'
 import type { PhysicalSceneView } from './types.ts'
 
@@ -146,8 +145,6 @@ export const pickPhysicalPlan = (input: PhysicalPlanPickInput, point: Point): Ph
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.lineJoin = 'round'; ctx.lineCap = 'round'
     for (const { entry, text } of candidates) {
       if (entry.owner) {
-        const opacity = physicalArchitectureOpacity(entry.owner, input.view)
-        if (opacity === 0 || !entry.owner.subjectIds.length && opacity < 1) continue
       }
       if (entry.marker) {
         if (!visible(input, entry.marker.bounds) || !inRegions(index.regions, local)) continue

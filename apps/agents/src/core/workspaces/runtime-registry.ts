@@ -396,15 +396,23 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
 
       return { system, autoSaver }
     } catch (error) {
-      await disposeUninstalled(system, id, autoSaver)
+      await disposeRuntime(system, id, { kind: 'discard', autoSaver })
       throw error
     }
   }
 
-  // Construction and capacity admission share the same resource ownership rule.
-  // An uninstalled runtime must not retain producers, callback wiring or log timers.
-  const disposeUninstalled = async (system: AgentsWorkspaceRuntime, id: WorkspaceId, autoSaver?: ModuleAutoSaver): Promise<void> => {
+  const disposeRuntime = async (
+    system: AgentsWorkspaceRuntime,
+    id: WorkspaceId,
+    persistence: { readonly kind: 'discard'; readonly autoSaver: ModuleAutoSaver | undefined }
+      | { readonly kind: 'flush'; readonly autoSaver: ModuleAutoSaver },
+  ): Promise<void> => {
+    const closeStores = async (): Promise<void> => {
+      await system.comparisons.close()
+      system.executionStore.close()
+    }
     try {
+      // Quiesce producers before draining consumers or touching persistence.
       system.triggerScheduler.stop()
       system.summaryScheduler.dispose()
       // Absent in a runtime without a Workspace Host.
@@ -413,15 +421,25 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
       closeAgents(system)
       await Promise.all(system.scriptRunner.listRuns().map(run => system.scriptRunner.stop(run.roomId)))
       await drainAgents(system)
-      await autoSaver?.dispose()
+      // A rejected load discards deferred saves. A failed final flush must
+      // leave the installed runtime and its saver intact for another attempt.
+      if (persistence.kind === 'discard') await persistence.autoSaver?.dispose()
+      else await persistence.autoSaver.flush()
       await system.logging.configure({ enabled: false })
-      system.captureRegistry.clearAll()
       opts.onWorkspaceRuntimeEvicted?.(system, id)
-      for (const [agentId, workspaceId] of agentWorkspaceMap) if (workspaceId === id) agentWorkspaceMap.delete(agentId)
+      if (persistence.kind === 'flush') {
+        system.captureRegistry.clearAll()
+        await persistence.autoSaver.dispose()
+      }
     } finally {
-      await system.comparisons.close()
-      system.executionStore.close()
+      // A rejected runtime has no registry entry to retry from.
+      if (persistence.kind === 'discard') {
+        system.captureRegistry.clearAll()
+        for (const [agentId, workspaceId] of agentWorkspaceMap) if (workspaceId === id) agentWorkspaceMap.delete(agentId)
+        await closeStores()
+      }
     }
+    if (persistence.kind === 'flush') await closeStores()
   }
 
   const ownsAutonomousWork = (system: AgentsWorkspaceRuntime): boolean =>
@@ -522,7 +540,7 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
           fireFirstLoadOnce(system, id)
         } catch (error) {
           map.delete(id)
-          await disposeUninstalled(system, id, autoSaver)
+          await disposeRuntime(system, id, { kind: 'discard', autoSaver })
           throw error
         }
         if (evicted > 0) {
@@ -551,22 +569,7 @@ export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOpt
 
     const evictionPromise = (async (): Promise<void> => {
       try {
-        // Quiesce producers before draining consumers and publishing the final generation.
-        entry.system.triggerScheduler.stop()
-        entry.system.summaryScheduler.dispose()
-        // Absent in a runtime without a Workspace Host.
-        entry.system.proposalResumes?.dispose()
-        entry.system.procedureResumes?.dispose()
-        closeAgents(entry.system)
-        await Promise.all(entry.system.scriptRunner.listRuns().map(run => entry.system.scriptRunner.stop(run.roomId)))
-        await drainAgents(entry.system)
-        await entry.autoSaver.flush()
-        await entry.system.logging.configure({ enabled: false })
-        opts.onWorkspaceRuntimeEvicted?.(entry.system, id)
-        entry.system.captureRegistry.clearAll()
-        await entry.autoSaver.dispose()
-        await entry.system.comparisons.close()
-        entry.system.executionStore.close()
+        await disposeRuntime(entry.system, id, { kind: 'flush', autoSaver: entry.autoSaver })
         map.delete(id)
         for (const [agentId, workspaceId] of agentWorkspaceMap) if (workspaceId === id) agentWorkspaceMap.delete(agentId)
       } catch (error) {

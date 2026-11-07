@@ -21,7 +21,7 @@ import { scenarioPreviewFor,type ScenarioPreview } from '../scenarios/authoring-
 import type { ScenarioAuthoringCatalog } from '../scenarios/authoring.ts'
 import type { ScenarioDefinition } from '../scenarios/definition.ts'
 import { createLocalScenarioLibrary,type ScenarioLibrary,type ScenarioRecord,type ScenarioRevision,type ScenarioRevisionId } from '../scenarios/library.ts'
-import type { ScenarioRuntimeResolver } from '../scenarios/runtime-resolver.ts'
+import type { ResolvedScenarioRuntime, ScenarioRuntimeResolver } from '../scenarios/runtime-resolver.ts'
 import { worldWorkspacePaths } from '../workspaces/paths.ts'
 import { compiledScenarioDigest,createCompiledScenarioStore } from './compiled-scenario-store.ts'
 import { readRunDisplayName,runDisplayNameSchema,writeRunDisplayName } from './display-name.ts'
@@ -458,6 +458,12 @@ export const createSimulationRunRegistry = (config: {
   const executionStoreFor = (id: SimulationRunId) =>
     createExecutionStore(join(simulationRunRoot, id, 'execution.json'))
 
+  const validateRetainedObjects = (runtime: ResolvedScenarioRuntime, objects: ResolvedScenarioRuntime['initialObjects']): void => {
+    for (const pack of runtime.packs) {
+      if (pack.validateRetainedObjects) pack.validateRetainedObjects(objects.filter(object => object.packId === pack.descriptor.id))
+    }
+  }
+
   const resolveManifest = async (manifest: SimulationRunManifest): Promise<{
     readonly revision: ScenarioRevision
     readonly scenarioRuntime: NonNullable<ReturnType<ScenarioRuntimeResolver['resolve']>>
@@ -504,6 +510,7 @@ export const createSimulationRunRegistry = (config: {
         throw new Error(`Simulation Run Pack Runtime contract mismatch for ${runtime.id}`)
       }
     }
+    validateRetainedObjects(scenarioRuntime, scenarioRuntime.initialObjects)
     return { revision, scenarioRuntime }
   }
 
@@ -552,10 +559,11 @@ export const createSimulationRunRegistry = (config: {
   const createRuntime = async (createConfig: {
     readonly manifest: SimulationRunManifest
     readonly initialSeq?: number
+    readonly scenarioRuntime?: ResolvedScenarioRuntime
   }): Promise<SimulationRunRuntime> => {
     if (shuttingDown) throw new Error('Workspace runtime is closing')
     await ensureScenarioLibrary()
-    const { scenarioRuntime } = await resolveManifest(createConfig.manifest)
+    const scenarioRuntime = createConfig.scenarioRuntime ?? (await resolveManifest(createConfig.manifest)).scenarioRuntime
     const interactionHandlers = scenarioRuntime.packs.flatMap(pack => pack.interactions?.handlers ?? [])
     const interactionHandlerIds = new Set<string>()
     for (const handler of interactionHandlers) {
@@ -588,6 +596,7 @@ export const createSimulationRunRegistry = (config: {
     if (restoredSnapshot?.scenario?.scenarioId !== undefined && restoredSnapshot.scenario.scenarioId !== createConfig.manifest.scenario.id) {
       throw new Error(`Simulation Run snapshot Scenario mismatch for ${id}: expected ${createConfig.manifest.scenario.id}, got ${restoredSnapshot.scenario.scenarioId}`)
     }
+    if (restoredSnapshot) validateRetainedObjects(scenarioRuntime, restoredSnapshot.objects)
     const eventLogBytes = await eventLog.sizeBytes()
     if (eventLogBytes <= maxRestoredEventHistoryBytes) {
       restoredEvents = await eventLog.readAll()
@@ -1081,6 +1090,8 @@ export const createSimulationRunRegistry = (config: {
     if (leases['maximum-pace'] > 0) throw Object.assign(new Error('Simulation Run is playing at maximum pace; pause it before resetting'), { code: 'simulation_run_busy' })
     const manifest = await manifestStoreFor(id).load()
     if (!manifest) throw new Error(`Simulation Run not found: ${id}`)
+    await ensureScenarioLibrary()
+    const { scenarioRuntime } = await resolveManifest(manifest)
     const existing = simulationRuns.get(id)
     const resetEvent = existing
       ? await existing.publishResetBoundary({ scenarioId: manifest.scenario.id })
@@ -1098,7 +1109,7 @@ export const createSimulationRunRegistry = (config: {
       rm(join(runDir, 'guides'), { recursive: true, force: true }),
     ])
     return createRuntime({
-      manifest,
+      manifest, scenarioRuntime,
       ...(resetEvent === undefined ? {} : { initialSeq: resetEvent.seq + 1 }),
     })
   })

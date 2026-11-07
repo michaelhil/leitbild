@@ -68,9 +68,9 @@ test('owned pre-run model and exact Design capabilities work through the publish
       expect(plant.body.result.liveModelReplacement).toBe(false)
       expect(plant.body.result.models[0].parameters.properties.loopCount).toMatchObject({ minimum: 2, maximum: 6, description: expect.stringContaining('new Scenario Revision') })
       expect(plant.body.result.models[0].description).not.toContain('Validated')
-      const designs = await invoke('world.physical-layout.designs.list', { profile: 'explorer' }, actor)
+      const designs = await invoke('world.physical-layout.designs.list', {}, actor)
       expect(designs.status).toBe(200)
-      expect(designs.body.result.designs.length).toBeGreaterThan(0)
+      expect(designs.body.result.designs.map((row: { design: { revision: string } }) => row.design.revision)).toEqual(['pwr-full-unit-20261030-r10', 'pwr-campus-20261030-r12'])
       const exact = designs.body.result.designs[0].design
       const described = await invoke('world.physical-layout.design.describe', { design: exact }, actor)
       expect(described.status).toBe(200)

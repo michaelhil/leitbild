@@ -322,7 +322,7 @@ const refresh = async (): Promise<void> => {
     const res = await apiFetch('/providers')
     if (!res.ok) return
     const data = await res.json() as ProvidersResponse
-    renderProvidersPanel(data)
+    if (pollTimer !== undefined) renderProvidersPanel(data)
   } catch { /* ignore transient fetch errors */ }
 }
 
@@ -382,8 +382,7 @@ const testAll = async (): Promise<void> => {
   }
 }
 
-export const startProvidersPanel = async (): Promise<void> => {
-  await refresh()
+export const startProvidersPanel = (): void => {
   if (pollTimer !== undefined) window.clearInterval(pollTimer)
   pollTimer = window.setInterval(() => { void refresh() }, 10_000)
 
@@ -403,6 +402,7 @@ export const startProvidersPanel = async (): Promise<void> => {
     oldBtn.parentNode?.replaceChild(fresh, oldBtn)
     fresh.addEventListener('click', () => { void testAll() })
   }
+  void refresh()
 }
 
 export const stopProvidersPanel = (): void => {

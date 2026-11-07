@@ -57,13 +57,19 @@ describe('WorkspaceRuntimeRegistry', () => {
     await provision(loaded)
     await provision(people)
     await registry.peopleFor(people)
-    await registry.getOrLoad(loaded)
+    const runtime = await registry.getOrLoad(loaded)
+    runtime.rooms.createRoomSafe({ name: 'Save after retry', createdBy: 'test' })
     const flush = spyOn(registry.autoSaverFor(loaded)!, 'flush').mockImplementation(async () => { throw new Error('snapshot flush failed') })
     try {
       await expect(registry.evictIdle(Date.now() + 2_000_000)).rejects.toThrow('snapshot flush failed')
     } finally { flush.mockRestore() }
     expect(registry.peopleStatus()).toMatchObject({ openDirectories: 0, directoriesEvicted: 1 })
     expect(registry.tryGetLive(people)).toBeUndefined()
+    expect(registry.list()).toMatchObject([{ id: loaded, state: 'save-failed' }])
+    expect(runtime.executionStore.listTurns('room')).toEqual([])
+    const reloaded = await registry.getOrLoad(loaded)
+    expect(reloaded.rooms.listAllRooms().map(room => room.name)).toContain('Save after retry')
+    expect(() => runtime.executionStore.listTurns('room')).toThrow()
   })
 
   // --- Validity ---
@@ -170,13 +176,19 @@ describe('WorkspaceRuntimeRegistry', () => {
     const disposed: WorkspaceId[] = []
     let opened: Awaited<ReturnType<typeof registry.getOrLoad>> | undefined
     const failed = createWorkspaceRuntimeRegistry({ deployment: createDeploymentRuntime(), moduleState,
-      onWorkspaceRuntimeCreated: system => { opened = system; throw new Error('startup hook failed') },
+      onWorkspaceRuntimeCreated: (system, _id, saver) => {
+        opened = system
+        system.rooms.createRoomSafe({ name: 'Rejected room', createdBy: 'test' })
+        saver.scheduleSave()
+        throw new Error('startup hook failed')
+      },
       onWorkspaceRuntimeEvicted: (_system, workspaceId) => { disposed.push(workspaceId) },
     })
     await expect(failed.getOrLoad(id)).rejects.toThrow('startup hook failed')
     expect(disposed).toEqual([id])
     expect(failed.list()).toEqual([])
     expect(() => opened!.executionStore.listTurns('room')).toThrow()
+    await expect(stat(workspaceModulePaths(id).rooms.snapshot)).rejects.toMatchObject({ code: 'ENOENT' })
     await failed.shutdown()
   })
 

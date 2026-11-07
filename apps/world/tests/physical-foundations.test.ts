@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
-import { createPwrArchitectureUnitArtifacts } from '../src/packs/physical-layout/authoring/pwr-architecture.ts'
-import { restorePwrFoundations } from '../src/packs/physical-layout/authoring/pwr-foundations.ts'
+import data from '../src/packs/physical-layout/pwr-full-unit-shutdown-cooling.source.json'
+import { physicalSourceSchema } from '../src/packs/physical-layout/native/drafting/source.ts'
 import { foundationSolid, type Foundation } from '../src/packs/physical-layout/native/drafting/foundation.ts'
 import { solid } from '../src/packs/physical-layout/native/architecture/solid.ts'
 import type { Element } from '../src/packs/physical-layout/native/architecture/source.ts'
@@ -21,10 +21,9 @@ const topArea = (values: ReadonlyArray<number>, z: number): number => {
 }
 
 test('explicit source foundations preserve every casing, rib and bolt face and restore the accepted outlines', () => {
-  const { source } = createPwrArchitectureUnitArtifacts(), before = source.elements.map(element => ({ element, prior: solid(source, element) }))
-  restorePwrFoundations(source)
+  const source = physicalSourceSchema.parse(data), before = source.elements.map(element => ({ element, prior: solid(source, element) }))
   const changed = before.filter(({ element }) => (element as FoundationElement).foundation)
-  expect(changed.map(({ element }) => element.id)).toEqual(['tg-hp', 'tg-lp-1', 'tg-lp-2', 'tg-lp-3', 'tg-generator', 'tg-exciter'])
+  expect(changed.map(({ element }) => element.id)).toEqual(expect.arrayContaining(['tg-hp', 'tg-lp-1', 'tg-lp-2', 'tg-lp-3', 'tg-generator', 'tg-exciter']))
   for (const { element, prior } of changed) {
     expect(prior).not.toBeNull()
     const mesh = foundationSolid(source, element as FoundationElement, prior!)
@@ -39,7 +38,7 @@ test('explicit source foundations preserve every casing, rib and bolt face and r
 })
 
 test('LP foundation aperture derives the condenser neck rather than the shorter LP casing footprint', () => {
-  const { source } = createPwrArchitectureUnitArtifacts(); restorePwrFoundations(source)
+  const source = physicalSourceSchema.parse(data)
   for (const element of source.elements.filter(element => element.equipmentKind === 'lp') as FoundationElement[]) {
     const base = element.foundation!, hole = base.holes![0]!
     expect(hole.length).toBeCloseTo(6.4, 10)

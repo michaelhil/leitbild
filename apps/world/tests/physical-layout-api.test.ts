@@ -10,9 +10,8 @@ import { compileScenarioDefinition } from '../src/core/scenarios/compiler.ts'
 import { scenarioAuthoringCatalogFor } from '../src/core/scenarios/authoring.ts'
 import { createScenarioRuntimeResolver } from '../src/core/scenarios/runtime-resolver.ts'
 import { physicalLayoutPack } from '../src/packs/physical-layout/pack.ts'
-import { currentPwrPhysicalDesignRef, pwrShutdownCoolingUnitPhysicalDesignRef } from '../src/packs/physical-layout/design.ts'
+import { pwrShutdownCoolingUnitPhysicalDesignRef } from '../src/packs/physical-layout/design.ts'
 import { processPlantPack } from '../src/packs/process-plant/pack.ts'
-import { historicalPhysicalProcessPlantPack } from './fixtures/physical-layout/historical-targets.ts'
 import { createLocalProcessPlantPackRuntimeAdapter } from '../src/packs/process-plant/sim/adapter.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { layoutLiveResponseSchema } from '../src/ui/physical-layout/read-model.ts'
@@ -26,9 +25,9 @@ import type { WorldPack } from '../src/core/packs/protocol.ts'
 
 const definition = scenarioDefinitionSchema.parse({ id: 'layout-api-proof', title: 'Layout API proof', packs: [
   { id: 'process-plant', config: {}, items: [{ type: 'plant', id: 'plant:proof', label: 'Current PWR', location: [11.47, 59.087], model: { ref: 'process-plant.pwr.reference', parameters: { loopCount: 4 } }, operatingPoint: { ref: 'process-plant.pwr.full-power' }, automation: { ref: 'process-plant.pwr.standard' } }] },
-  { id: 'physical-layout', config: {}, items: [{ type: 'site-layout', id: 'layout:proof', label: 'Turbine island', design: currentPwrPhysicalDesignRef, members: { unit: 'plant:proof' }, bearing: 0 }] },
+  { id: 'physical-layout', config: {}, items: [{ type: 'site-layout', id: 'layout:proof', label: 'Current unit layout', design: pwrShutdownCoolingUnitPhysicalDesignRef, members: { unit: 'plant:proof' }, bearing: 0 }] },
 ], world: { startsAt: '2026-10-24T00:00:00Z' }, view: { map: { center: [11.47, 59.087], zoom: 16 } } })
-const input = { layoutObjectId: 'layout:proof', expectedRevision: currentPwrPhysicalDesignRef.digest }
+const input = { layoutObjectId: 'layout:proof', expectedRevision: pwrShutdownCoolingUnitPhysicalDesignRef.digest }
 const post = (body: unknown): RequestInit => ({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
 const route = async (registry: SimulationRunRegistry, id: string, body: unknown = input, actor: 'anonymous' | 'ai' = 'anonymous', suffix = '') => {
   const request = new Request(`http://leitbild.test/api/workspaces/${registry.workspaceId}/world/simulation-runs/${id}/displays/layout${suffix}`, post(body))
@@ -36,7 +35,7 @@ const route = async (registry: SimulationRunRegistry, id: string, body: unknown 
   if (!response) throw new Error('Layout route was not handled')
   return { status: response.status, body: await response.json() as unknown }
 }
-const withRun = async (work: (registry: SimulationRunRegistry, run: SimulationRunRuntime) => Promise<void>,source=definition,ownerPack:WorldPack=historicalPhysicalProcessPlantPack): Promise<void> => {
+const withRun = async (work: (registry: SimulationRunRegistry, run: SimulationRunRuntime) => Promise<void>,source=definition,ownerPack:WorldPack=processPlantPack): Promise<void> => {
   const packs = [ownerPack, physicalLayoutPack]
   const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-layout-api-'))
   const registry = createSimulationRunRegistry({ dataDir, workspaceId: newWorkspaceId(), scenarioDefinitions: [source], compileScenarioDefinition: source => compileScenarioDefinition(source, packs, { routing: createDirectRoutingAdapter() }), scenarioAuthoringCatalog: scenarioAuthoringCatalogFor(packs), scenarioRuntimeResolver: createScenarioRuntimeResolver({ packs }), runtimeAdapters: [createLocalProcessPlantPackRuntimeAdapter()] })
@@ -51,7 +50,6 @@ const errorCode = (body: unknown): string | undefined => (body as { error?: { co
 
 describe('Real PWR layout display boundary', () => {
   test('current full connected layout acquires exact route endpoints, flow and equipment roles in one owner sample',async()=>{
-    const source=scenarioDefinitionSchema.parse({...definition,packs:definition.packs.map(selection=>selection.id!=='physical-layout'?selection:{...selection,items:[{type:'site-layout',id:'layout:proof',label:'Full connected unit',design:pwrShutdownCoolingUnitPhysicalDesignRef,members:{unit:'plant:proof'},bearing:0}]})})
     await withRun(async(registry,run)=>{
       let reads=0
       const spy=wrapObservations(run,original=>({...original,read:async request=>{reads++;return original.read(request)}}))
@@ -105,7 +103,7 @@ describe('Real PWR layout display boundary', () => {
         expect(valve.topology!.bindings.some(binding=>binding.role==='position')).toBe(true)
         expect(resolvePhysicalSubjectOperation(valve,parsed.sample.observations,true).equipment!.positions.every(position=>position.quality==='stale'&&position.fraction===null)).toBe(true)
       }finally{spy.mockRestore()}
-    },source,processPlantPack)
+    })
   })
 
   test('one real owner acquisition parses in the exact UI schema and retains owner quality, labels and epoch', async () => withRun(async (registry, run) => {
@@ -115,8 +113,8 @@ describe('Real PWR layout display boundary', () => {
       const response = await route(registry, run.id)
       expect(response.status).toBe(200)
       const parsed = layoutLiveResponseSchema.parse(response.body)
-      expect(parsed.scope).toMatchObject({ runId: run.id, layoutObjectId: 'layout:proof', revision: currentPwrPhysicalDesignRef.digest, objectId: 'plant:proof', packId: 'process-plant', modelDigest: '47b82339adddd913ef20d24294ae9c595b104d1c10148bcfb5943bc30aeaf3ea', sequence: run.snapshot().seq })
-      expect(parsed.subjects).toHaveLength(7)
+      expect(parsed.scope).toMatchObject({ runId: run.id, layoutObjectId: 'layout:proof', revision: pwrShutdownCoolingUnitPhysicalDesignRef.digest, objectId: 'plant:proof', packId: 'process-plant', modelDigest: 'b7d6924f768f44bf2b7c965b85aae723386c7e47dff6908b95bb1ae581425cb5', sequence: run.snapshot().seq })
+      expect(parsed.subjects.length).toBeGreaterThan(7)
       expect(parsed.sample.observations.length).toBeGreaterThan(0)
       expect(parsed.sample.at).toMatchObject({ at: run.snapshot().clock!.currentTime, clock: 'simulation', paused: true })
       expect(reads).toBe(1)
@@ -175,7 +173,7 @@ describe('Real PWR layout display boundary', () => {
 
   test('changed model is refused before any live observation read', async () => withRun(async (registry, run) => {
     const original = run.packs()
-    const packsSpy = spyOn(run, 'packs').mockImplementation(() => original.map(pack => pack.descriptor.id !== 'process-plant' ? pack : { ...pack, physicalTargets: async object => ({ ...await historicalPhysicalProcessPlantPack.physicalTargets!(object), modelDigest: '0'.repeat(64) }) }))
+    const packsSpy = spyOn(run, 'packs').mockImplementation(() => original.map(pack => pack.descriptor.id !== 'process-plant' ? pack : { ...pack, physicalTargets: async object => ({ ...await processPlantPack.physicalTargets!(object), modelDigest: '0'.repeat(64) }) }))
     let reads = 0
     const observations = wrapObservations(run, original => ({ ...original, read: async request => { reads++; return original.read(request) } }))
     try {

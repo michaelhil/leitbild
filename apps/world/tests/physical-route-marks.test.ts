@@ -1,8 +1,6 @@
 import type { PhysicalProjectedPoint } from '../src/ui/map/physical-scene/types.ts'
 import { expect, test } from 'bun:test'
 import { physicalRouteDisplayPaths, physicalRouteInspectionPaths, physicalRouteScreenMarks, createPhysicalRouteScreenMarks } from '../src/ui/physical-layout/route-marks.ts'
-import { physicalArchitectureOpacity } from '../src/ui/map/physical-scene/architecture-opacity.ts'
-import { changePhysicalLayoutView, initialPhysicalLayoutView } from '../src/ui/physical-layout/view.ts'
 
 test('route annotations preserve disjoint scope gaps, merge overlapping members and retain exact floor crossings', () => {
   const a = { min: [0, 0, 0] as const, max: [4, 4, 4] as const }, b = { min: [6, 0, 0] as const, max: [10, 4, 4] as const }
@@ -20,21 +18,6 @@ test('route marks clip off-screen travel and retain ordered direction around ben
   expect(physicalRouteScreenMarks([point(0, 10), point(20_000, 10)], { width: 20_000, height: 100 }, 10)).toHaveLength(250)
   expect(() => physicalRouteScreenMarks([], { width: 300, height: 300 }, 0)).toThrow('font size')
 })
-
-test('architecture opacity follows source kind and never an equipment name or material', () => {
-  const view = { wallOpacity: .3, floorOpacity: .6 }
-  expect(physicalArchitectureOpacity({ kind: 'wall' }, view)).toBe(.3)
-  expect(physicalArchitectureOpacity({ kind: 'slab' }, view)).toBe(.6)
-  for (const kind of ['equipment', 'pipe', 'pavement', 'support']) expect(physicalArchitectureOpacity({ kind }, view)).toBe(1)
-  expect(physicalArchitectureOpacity({ kind: 'wall' }, {})).toBe(1)
-})
-
-test('opacity changes retain floor, mode and layers; malformed opacity is rejected', () => {
-  const levels = [{ id: 'ground', label: 'Ground', elevation: 0 }], current = { ...initialPhysicalLayoutView(levels), mode: '3d' as const, hiddenLayerIds: ['roof'] }
-  expect(changePhysicalLayoutView(current, { wallOpacity: 0, floorOpacity: .5 }, levels)).toEqual({ ...current, wallOpacity: 0, floorOpacity: .5 })
-  for (const opacity of [-1, 2, NaN, Infinity]) expect(() => changePhysicalLayoutView(current, { wallOpacity: opacity }, levels)).toThrow('opacity')
-})
-
 
 test('unscoped all-floor paths borrow exact immutable source vertices without changing mark positions', () => {
   const points = [[0, 0, 0], [0, 0, 0], [100, 0, 0], [100, 100, 0]] as const
@@ -54,7 +37,7 @@ test('one current path selection changes exactly with geometric scope/floor and 
   const replacement = points.map(point => [...point] as [number, number, number]); expect(physicalRouteDisplayPaths(replacement, a, { low: 0, high: 4 })).not.toBe(returned)
 })
 
-test('one concurrently displayed multi-floor selection survives camera/opacity/separation magnitude and changes with actual source or scope', () => {
+test('one concurrently displayed multi-floor selection survives camera/separation magnitude and changes with actual source or scope', () => {
   const occurrence = { levelId: 'lower', clipToScope: true as const, spatialPath: { points: [[2, 2, -1], [2, 2, 9]] as const, radius: .1 }, inspectionLevels: [{ levelId: 'lower', low: 0, high: 4 }, { levelId: 'upper', low: 4, high: 8 }] }, regions = [{ min: [0, 0, -2] as const, max: [4, 4, 10] as const }]
   const first = physicalRouteInspectionPaths(occurrence, regions, { levelId: 'all', separation: 4 })
   expect(first).toEqual([{ levelId: 'lower', points: [[2, 2, 0], [2, 2, 4]] }, { levelId: 'upper', points: [[2, 2, 4], [2, 2, 8]] }])

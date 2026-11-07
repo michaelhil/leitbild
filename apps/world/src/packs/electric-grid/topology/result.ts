@@ -1,5 +1,5 @@
 import type { LonLat } from './geometry.ts'
-import type { ExternalArea, TopologyKeyMode } from './input.ts'
+import type { ExternalArea } from './input.ts'
 import type { TopologyLedgerEntry } from './ledger.ts'
 import type { TopologyOptions } from './options.ts'
 
@@ -93,7 +93,6 @@ export type TopologyResult = {
   readonly sourceId: string
   readonly interconnectorSourceId: string
   readonly curationSourceId: string
-  readonly keyMode: TopologyKeyMode
   readonly options: TopologyOptions
   readonly buses: ReadonlyArray<TopologyBus>
   readonly branches: ReadonlyArray<TopologyBranch>

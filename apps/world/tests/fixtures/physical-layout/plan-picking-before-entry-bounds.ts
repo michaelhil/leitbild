@@ -3,7 +3,6 @@ import type { PackPhysicalScene, PhysicalPlanPrimitive, PhysicalSceneBounds, Phy
 import { physicalPlanPaintCommands, physicalPlanContinuationPaths, physicalPlanTextFrame } from '../../../src/ui/physical-layout/plan-drawing.ts'
 import type { PhysicalPlanPaint } from '../../../src/ui/physical-layout/plan-paint-stream.ts'
 import { physicalScopeRegions } from '../../../src/ui/map/physical-scene/scope-regions.ts'
-import { physicalArchitectureOpacity } from '../../../src/ui/map/physical-scene/architecture-opacity.ts'
 import { createPhysicalSpatialIndex, visitPhysicalSpatialBounds, type PhysicalSpatialIndex } from '../../../src/ui/map/physical-scene/spatial-index.ts'
 import type { PhysicalSceneView } from '../../../src/ui/map/physical-scene/types.ts'
 
@@ -148,8 +147,6 @@ export const pickPhysicalPlan = (input: PhysicalPlanPickInput, point: Point, bru
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.lineJoin = 'round'; ctx.lineCap = 'round'
     for (const { entry, text } of candidates) {
       if (entry.owner) {
-        const opacity = physicalArchitectureOpacity(entry.owner, input.view)
-        if (opacity === 0 || !entry.owner.subjectIds.length && opacity < 1) continue
       }
       if (entry.marker) {
         if (!visible(input, entry.marker.bounds) || !inRegions(index.regions, local)) continue

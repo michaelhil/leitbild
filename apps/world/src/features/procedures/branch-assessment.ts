@@ -27,11 +27,12 @@ export const assessProcedureBranch = (config: CriterionAcquisition & {
   readonly decision?: ProcedureDecision | undefined
   readonly branchIndex: number
   readonly observation?: AcquiredObservation | undefined
-}): { readonly assessment: ProcedureBranchAssessment; readonly validThrough?: IsoTimestamp } => {
+}): { readonly assessment: ProcedureBranchAssessment; readonly validThrough?: IsoTimestamp; readonly observationApplies: boolean } => {
   const { branchIndex, decision, observation: observed } = config
   const readings: CriterionReading[] = []
   const reasons = new Set<string>()
   let validThroughMs = Infinity
+  let observationApplies = false
   const unknown = (reason: string): 'unknown' => { reasons.add(reason); return 'unknown' }
   const evaluate = (condition: ProcedureAssessmentCondition): ProcedureCriterionStatus => {
     if (condition.type === 'manual') {
@@ -117,7 +118,8 @@ export const assessProcedureBranch = (config: CriterionAcquisition & {
               : scope?.automation !== undefined && (result.automationRef !== scope.automation.ref || result.automationDigest !== scope.automation.digest) ? 'Branch observation I&C configuration does not match the pinned criterion applicability.'
                 : result.status !== 'satisfied' && result.status !== 'challenged' && result.status !== 'unknown' ? 'Branch observation returned an unrecognized status.' : undefined)
     status = reason !== undefined ? unknown(reason) : result!.status === 'satisfied' ? 'supported' : result!.status === 'challenged' ? 'contradicted' : unknown(typeof result!.reason === 'string' ? result!.reason : 'Declared branch observation is unestablished.')
-    if (status !== 'unknown') validThroughMs = Date.parse(result!.simulationTime as string) + decision.observation.maxAgeSeconds * 1000
+    observationApplies = reason === undefined
+    if (observationApplies) validThroughMs = Date.parse(result!.simulationTime as string) + decision.observation.maxAgeSeconds * 1000
   } else status = decision?.condition === undefined ? unknown('No authored eligibility criterion for this branch; a person may placekeep, but automatic qualification is unestablished.') : evaluate(decision.condition)
   const assessment: ProcedureBranchAssessment = { branchIndex, status, simulationTime: config.simulationTime,
     ...(decision === undefined ? {} : { ...(decision.condition === undefined ? {} : { condition: decision.condition }),
@@ -125,9 +127,9 @@ export const assessProcedureBranch = (config: CriterionAcquisition & {
       ...(decision.applicability === undefined ? {} : { applicability: decision.applicability }) }),
     readings, reasons: [...reasons] }
   // Expire conservatively if any acquired deciding input may age out.
-  if (status === 'unknown' || !Number.isFinite(validThroughMs)) return { assessment }
+  if ((!observationApplies && status === 'unknown') || !Number.isFinite(validThroughMs)) return { assessment, observationApplies }
   const lastIsoTimestampMs = Date.UTC(9999, 11, 31, 23, 59, 59, 999)
-  return { assessment, validThrough: new Date(Math.min(validThroughMs, lastIsoTimestampMs)).toISOString() as IsoTimestamp }
+  return { assessment, observationApplies, validThrough: new Date(Math.min(validThroughMs, lastIsoTimestampMs)).toISOString() as IsoTimestamp }
 }
 
 export const assessProcedureBranches = (config: CriterionAcquisition & {

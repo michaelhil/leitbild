@@ -308,9 +308,12 @@ impl Plan {
             }
             plan.scales.extend(&layout.scales);
             plan.row_scales.extend(&layout.row_scales);
-            plan.weight.extend(layout.multiplicity.iter().map(|m| {
-                if owner == "solids" { *m as f64 } else { 1. }
-            }));
+            plan.weight.extend(
+                layout
+                    .multiplicity
+                    .iter()
+                    .map(|m| if owner == "solids" { *m as f64 } else { 1. }),
+            );
             k += layout.len();
         }
         let generators = joined

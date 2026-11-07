@@ -17,21 +17,21 @@ export const nativeMapStartup = async (openControls = true) => {
   const view = await wait(() => doc.querySelector<HTMLButtonElement>('button[aria-label="View"]'), 'the World View control')
   view.click()
   const menu = await wait(() => doc.querySelector<HTMLElement>('[aria-label="Run view"]'), 'the Run view disclosure')
-  const panels = [...menu.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent?.trim() === 'Panels')
-  if (!panels) throw new Error('World View did not expose Panels')
-  panels.click()
-  await wait(() => menu.querySelector('input[type="checkbox"]'), 'declared panel choices')
-  const initial = [...menu.querySelectorAll('label')].map(label => ({ label: label.textContent?.trim() ?? '', checked: label.querySelector<HTMLInputElement>('input[type=checkbox]')?.checked ?? null }))
-  const toggle = [...menu.querySelectorAll('label')].find(label => label.textContent?.trim().startsWith('Physical layout controls'))?.querySelector<HTMLInputElement>('input[type=checkbox]')
+  const panels = await wait(() => [...menu.querySelectorAll<HTMLHeadingElement>('h3')].find(heading => heading.textContent?.trim() === 'Panels')?.parentElement, 'declared panel choices')
+  const initial = [...panels.querySelectorAll('label')].map(label => ({ label: label.textContent?.trim() ?? '', checked: label.querySelector<HTMLInputElement>('input[type=checkbox]')?.checked ?? null }))
+  const toggle = [...panels.querySelectorAll('label')].find(label => label.textContent?.trim().startsWith('Physical layout controls'))?.querySelector<HTMLInputElement>('input[type=checkbox]')
   if (!toggle) throw new Error('World View did not list Physical layout controls')
   if (openControls && !toggle.checked) toggle.click()
   if (view.getAttribute('aria-expanded') === 'true') view.click()
   const briefingInitiallyVisible = Boolean(doc.querySelector('.scenario-guidance'))
-  if (openControls) {
+  if (openControls && briefingInitiallyVisible) {
     const guide = await wait(() => doc.querySelector<HTMLButtonElement>('button[aria-label^="Guide"]'), 'the separate Guide control')
     guide.click()
-    const pause = await wait(() => [...doc.querySelectorAll<HTMLButtonElement>('[aria-label="Guidance options"] button')].find(button => button.textContent?.trim() === 'Pause guidance'), 'global Pause guidance')
+    const updates = await wait(() => doc.querySelector<HTMLDetailsElement>('[aria-label="Guide"] details.timed-cards'), 'Scenario update controls')
+    updates.open = true
+    const pause = await wait(() => [...updates.querySelectorAll('button')].find(button => button.textContent?.trim() === 'Pause map updates'), 'Pause map updates')
     pause.click()
+    if (guide.getAttribute('aria-expanded') === 'true') guide.click()
   }
   if (openControls) await wait(() => doc.querySelector('.explorer-controls'), 'the requested Layout controls')
   return { owner: 'world', initial, briefingInitiallyVisible, openedControls: openControls }

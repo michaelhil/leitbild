@@ -7,14 +7,14 @@ import{electricGridPack}from'../src/packs/electric-grid/pack.ts'
 import{weatherPack}from'../src/packs/weather/pack.ts'
 import{physicalLayoutPack}from'../src/packs/physical-layout/pack.ts'
 import{createDirectRoutingAdapter}from'../src/routing/direct-adapter.ts'
-import{draftingLayoutDataSchema,physicalDesignManifest}from'../src/packs/physical-layout/model.ts'
-import{physicalContentHash,physicalSceneShapeHash}from'../src/packs/physical-layout/source-validation.ts'
-import{physicalApplicabilityContent}from'../src/packs/physical-layout/applicability.ts'
+import{physicalLayoutDataSchema}from'../src/packs/physical-layout/model.ts'
+import{physicalSceneShapeHash}from'../src/packs/physical-layout/source-validation.ts'
 import{compileRetainedPhysicalSource}from'../src/packs/physical-layout/source-compile.ts'
 const run=await compileScenarioDefinition(scenarioDefinitionSchema.parse(scenario),[processPlantPack,electricGridPack,weatherPack,physicalLayoutPack],{routing:createDirectRoutingAdapter()})
-const data=()=>draftingLayoutDataSchema.parse(structuredClone(run.initialObjects.find(object=>object.id==='layout:halden-1')!.packData))
-test('the once-validated source path preserves actual R4 geometry identity and refuses a wrong admitted shape',async()=>{
+const data=()=>physicalLayoutDataSchema.parse(structuredClone(run.initialObjects.find(object=>object.id==='layout:halden-1')!.packData))
+test('the once-validated source path preserves current geometry identity and refuses wrong shape or revision',async()=>{
  const value=data(),scene=await compileRetainedPhysicalSource(value);expect(await physicalSceneShapeHash(scene.objects)).toBe(value.physicalApplicability.geometryDigest)
- const wrong=data();wrong.physicalApplicability.geometryDigest='f'.repeat(64);wrong.physicalApplicability.digest=await physicalContentHash(physicalApplicabilityContent({...wrong,modelRequirement:{modelRef:wrong.owner.modelRef,modelDigest:wrong.owner.modelDigest}}));wrong.design.digest=await physicalContentHash(physicalDesignManifest(wrong));await expect(compileRetainedPhysicalSource(wrong)).rejects.toThrow('shape recipe differs')
+ const wrong=data();wrong.physicalApplicability.geometryDigest='f'.repeat(64);await expect(compileRetainedPhysicalSource(wrong)).rejects.toThrow('retained Design digest mismatch')
+ const retired=data();retired.design.revision='pwr-full-unit-20261030-r9';await expect(compileRetainedPhysicalSource(retired)).rejects.toThrow('Unsupported physical Design Revision')
  const malformed=data();malformed.source.elements[0]!.pose.position[0]=NaN;await expect(compileRetainedPhysicalSource(malformed)).rejects.toThrow()
 })

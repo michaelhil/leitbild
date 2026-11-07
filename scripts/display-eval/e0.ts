@@ -2,7 +2,7 @@
  * overview of Run A (LOOP +3 min, paused), at 1920 px and at 1046 px with the chat open. Reusable every release.
  *
  *   bun scripts/display-eval/e0.ts --origin=http://127.0.0.1:<port> --workspace=<id> --run=<Run A> --out=<dir>
- *       [--label=<stack>] [--sizes=1920,1046] [--port=<CDP port>] [--unit="Halden Unit 1"]
+ *       [--label=<stack>] [--sizes=1920x1080,1920x1080+chat] [--port=<CDP port>] [--unit="Halden Unit 1"]
  *
  * At a glance (checks 1, 2, 4, 5 total, 7, 8, 9, 11): read from the overview as it opens, with no press; a check
  * passes only on text whose value shows whole on screen (not scrolled out of a narrow window, not clipped).
@@ -234,7 +234,7 @@ if (import.meta.main) {
   const chrome = await ensureChrome({ port, profile: join(out, `chrome-${port}`) })
   const results: Array<Record<string, unknown>> = []
   try {
-    for (const name of (argv.get('sizes') ?? '1920,1046').split(',')) {
+    for (const name of (argv.get('sizes') ?? '1920x1080,1920x1080+chat').split(',')) {
       const result = await runSize({ origin, workspaceId, runId, port, size: sizeSpec(name), out, label, unit: argv.get('unit') ?? 'Halden Unit 1' })
       results.push(result)
       await Bun.write(join(out, `${label}-e0.json`), JSON.stringify({ label, origin, runId, results }, null, 2))

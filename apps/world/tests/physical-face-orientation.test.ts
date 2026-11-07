@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
-import { createPwrArchitectureUnitArtifacts } from '../src/packs/physical-layout/authoring/pwr-architecture.ts'
-import { restorePwrFoundations } from '../src/packs/physical-layout/authoring/pwr-foundations.ts'
+import data from '../src/packs/physical-layout/pwr-full-unit-shutdown-cooling.source.json'
+import { physicalSourceSchema } from '../src/packs/physical-layout/native/drafting/source.ts'
 import { solid } from '../src/packs/physical-layout/native/architecture/solid.ts'
 import { foundationSolid, type Foundation } from '../src/packs/physical-layout/native/drafting/foundation.ts'
 import { orientPhysicalFaces } from '../src/packs/physical-layout/native/drafting/orientation.ts'
@@ -22,7 +22,7 @@ const associations = (mesh: RenderObject) => {
   return vertices.sort()
 }
 test('all inherited faces and explicit foundations retain the same vertex/normal/material associations with canonical outward winding', () => {
-  const { source } = createPwrArchitectureUnitArtifacts(); restorePwrFoundations(source)
+  const source = physicalSourceSchema.parse(data)
   let negativeBefore = 0, positiveAfter = 0
   for (const element of source.elements) {
     const prior = solid(source, element)

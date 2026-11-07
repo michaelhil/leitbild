@@ -13,9 +13,9 @@
 // ============================================================================
 
 import { z } from 'zod'
-import { workspaceResourceReferenceSchema, type WorkspaceId, type WorkspaceResourceReference } from '@leitbild/contracts'
-import type { ExecutionCall } from '../core/executions/store.ts'
+import type { WorkspaceId, WorkspaceResourceReference } from '@leitbild/contracts'
 import { PROPOSE_OPERATION_ID } from './operation-claims.ts'
+import type { RetainedWorkspaceResult } from './retained-workspace-call.ts'
 
 /** The operation that reads a Plant's proposals with World's review of the pending ones. */
 // Dated exception (P0, 2026-10-20): names a World operation id, against the platform rule that Agents discover Capabilities at runtime, until the swap (plan v3.1 §7), when the proposal card becomes a World proposal vignette.
@@ -51,37 +51,22 @@ const proposeInputSchema = z.object({
   evidence: z.array(z.string()).default([]),
 })
 
-const callsSchema = z.object({ calls: z.array(z.object({ key: z.string(), operationId: z.string(), input: z.unknown() })) })
-const resultsSchema = z.object({
-  results: z.array(z.object({
-    key: z.string(),
-    operationId: z.string(),
-    success: z.boolean(),
-    data: z.unknown().optional(),
-    error: z.string().optional(),
-    target: z.object({ kind: z.string(), ref: z.unknown() }).optional(),
-  })),
-})
 const commandResultSchema = z.object({ ok: z.literal(true), commandId: z.string().min(1) })
 
 /**
  * The operations a turn proposed, in call order: from each workspace_call's
- * arguments and results, matched by batch key. A propose call whose input
+ * arguments and results, matched to the actual request. A propose call whose input
  * World could not have taken (no plant, no command named) is not a proposal.
  */
-export const proposedOperationsOf = (calls: ReadonlyArray<ExecutionCall>): ReadonlyArray<ProposedOperation> => calls.flatMap(call => {
-  if (call.tool !== 'workspace_call' || call.result?.success !== true) return []
-  const args = callsSchema.safeParse(call.arguments)
-  const results = resultsSchema.safeParse(call.result.data)
-  if (!args.success || !results.success) return []
-  return results.data.results.flatMap((entry): ReadonlyArray<ProposedOperation> => {
+export const proposedOperationsOf = (results: ReadonlyArray<RetainedWorkspaceResult>): ReadonlyArray<ProposedOperation> =>
+  results.flatMap((entry): ReadonlyArray<ProposedOperation> => {
     if (entry.operationId !== PROPOSE_OPERATION_ID) return []
-    const input = proposeInputSchema.safeParse(args.data.calls.find(candidate => candidate.key === entry.key)?.input)
+    const input = proposeInputSchema.safeParse(entry.input)
     // A write names its command by tag or path and a value; a reset names the actuation alone.
     const target = !input.success ? undefined : input.data.reset ?? (input.data.value === undefined ? undefined : input.data.tagId ?? input.data.path)
     if (!input.success || target === undefined) return []
     const base = {
-      callId: call.id,
+      callId: entry.callId,
       key: entry.key,
       plantId: input.data.plantId,
       target,
@@ -93,13 +78,11 @@ export const proposedOperationsOf = (calls: ReadonlyArray<ExecutionCall>): Reado
     }
     if (!entry.success) return [{ ...base, outcome: { kind: 'refused', reason: (entry.error ?? 'refused without a reason').replace(/^simulation_command_rejected:\s*/, '') } }]
     const command = commandResultSchema.safeParse(entry.data)
-    const resource = entry.target?.kind === 'resource' ? workspaceResourceReferenceSchema.safeParse(entry.target.ref) : undefined
-    if (!command.success || resource === undefined || !resource.success) {
-      throw new Error(`Proposal evidence of call ${call.id}/${entry.key} lacks its command id or the Resource it went to`)
+    if (!command.success || entry.resource === undefined) {
+      throw new Error(`Proposal evidence of call ${entry.callId}/${entry.key} lacks its command id or the Resource it went to`)
     }
-    return [{ ...base, outcome: { kind: 'recorded', proposalId: command.data.commandId, resource: resource.data } }]
+    return [{ ...base, outcome: { kind: 'recorded', proposalId: command.data.commandId, resource: entry.resource } }]
   })
-})
 
 // What a card shows of World's proposal record and review; World's own words.
 const worldProposalSchema = z.object({

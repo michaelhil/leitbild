@@ -5,15 +5,13 @@
     attackCommandKind,
     holdDroneCommandKind,
     landDroneCommandKind,
-    manualControlCommandKind,
     returnToLaunchDroneCommandKind,
   } from '../../packs/drone/commands.ts'
   import { dronePackDataSchema, type DroneManualAxes } from '../../packs/drone/model.ts'
   import { droneManualIntentRealtimeInputType, type DroneMotionFrame } from '../../packs/drone/realtime.ts'
   import { droneSensorContacts } from '../../packs/drone/query.ts'
-  import { invokeSimulationRunCapability, type SimulationRunCapabilityRequest } from '../simulation-run-client.ts'
+  import { invokeSimulationRunCapability } from '../simulation-run-client.ts'
   import type { RuntimeInputRequest } from '../app/realtime-connection.ts'
-  import type { CapabilityInvocationResponse } from '../types.ts'
   import IconButton from '../components/IconButton.svelte'
   import { runOnMount } from '../svelte-lifecycle.svelte.ts'
   import {
@@ -30,7 +28,7 @@
   } from './drone-key-bindings.ts'
   import { advanceDroneCameraOrbit } from './drone-camera-controls.ts'
   import {
-    createDroneManualCommandStream,
+    createDroneManualInputStream,
     droneManualAxesSignature,
     type DroneManualInputSourceKind,
   } from './drone-manual-command-stream.ts'
@@ -39,12 +37,14 @@
   import DroneFlightHud from './DroneFlightHud.svelte'
   import DroneSettingsRail from './DroneSettingsRail.svelte'
 
+  type DroneMotionFrameConsumer = (frames: ReadonlyArray<DroneMotionFrame>) => void
+
   interface Props {
     readonly simulationRunId: SimulationRunId
     readonly object: OperationalObject
     readonly objects: ReadonlyArray<OperationalObject>
-    readonly invokeRealtimeCapability?: (invocation: SimulationRunCapabilityRequest) => Promise<CapabilityInvocationResponse>
-    readonly sendRealtimeInput?: (input: RuntimeInputRequest) => void
+    readonly steeringConnected: boolean
+    readonly sendRealtimeInput: (input: RuntimeInputRequest) => void
     readonly subscribeMotionFrames?: (consumer: DroneMotionFrameConsumer) => () => void
     readonly windowOffsetIndex?: number
     readonly close: () => void
@@ -70,21 +70,12 @@
     readonly startWidth: number
   }
 
-  interface ManualControlDeliveryResult {
-    readonly transport: 'runtime-input' | 'command'
-    readonly result: {
-      readonly ok: boolean
-      readonly reason?: string
-    }
-  }
-
-  type DroneMotionFrameConsumer = (frames: ReadonlyArray<DroneMotionFrame>) => void
 
   let {
     simulationRunId,
     object,
     objects,
-    invokeRealtimeCapability,
+    steeringConnected,
     sendRealtimeInput,
     subscribeMotionFrames,
     windowOffsetIndex = 0,
@@ -102,9 +93,7 @@
   const collapsedControlPanelWidth = 42
   const sendIntervalMs = 50
   const activeKeepaliveMs = 100
-  const maxManualCommandInFlight = 3
   const commandRateUpdateIntervalMs = 250
-  const realtimeStatusUpdateIntervalMs = 600
   const deadband = 0.08
   const zeroAxes: DroneManualAxes = { forward: 0, right: 0, vertical: 0, yaw: 0 }
   const defaultCameraOrbit: DroneSceneCameraOrbit = { yawOffsetRad: 0, pitchOffsetRad: 0.4, distanceM: 82 }
@@ -138,7 +127,6 @@
   let scenePerformance = $state<DroneScenePerformanceSnapshot | null>(null)
   let keyBindings = $state<DroneKeyBindingMap>(defaultDroneKeyBindings())
   let bindingCaptureAction = $state<DroneKeyBindingAction | null>(null)
-  let lastCommandRoundTripMs = $state<number | null>(null)
   let commandRateHz = $state(0)
   let keys = new Set<string>()
   let cameraKeys = new Set<string>()
@@ -149,7 +137,6 @@
   let lastGamepadRefreshMs = 0
   let gamepadSignature = ''
   let lastCommandRateUpdateMs = 0
-  let lastRealtimeStatusUpdateMs = 0
   let pendingMotionFrames: ReadonlyArray<DroneMotionFrame> = []
 
   const droneObjects = $derived(objects.filter(candidate => dronePackDataSchema.safeParse(candidate.packData).success))
@@ -167,7 +154,7 @@
   const sensorContactPage = $derived(droneSensorContacts(objects, selectedObject.id, { limit: 4 }))
   const sensorContacts = $derived(sensorContactPage.contacts)
   const footerStatus = $derived.by(() =>
-    [commandStatus, sceneryStatus, sceneStatus]
+    [steeringConnected ? commandStatus : 'Steering disconnected', sceneryStatus, sceneStatus]
       .filter(part => part.trim().length > 0)
       .join(' · '))
 
@@ -234,12 +221,12 @@
     const value = event.currentTarget instanceof HTMLSelectElement ? event.currentTarget.value : ''
     const next = droneObjects.find(candidate => candidate.id === value)
     if (!next) return
+    manualInputStream.release(performance.now())
     selectedDroneId = next.id
     selectedTargetId = selectedTargetId === next.id ? '' : selectedTargetId
     keys = new Set()
     mouseAxes = zeroAxes
     liveAxes = zeroAxes
-    manualCommandStream.reset()
     commandStatus = `Controlling ${next.label}`
   }
 
@@ -435,91 +422,29 @@
     updateCommandRate(startedAtMs)
   }
 
-  const sendManualControl = async (
-    axes: DroneManualAxes,
-    sourceKind: DroneManualInputSourceKind,
-    sequence: number,
-    startedAtMs: number,
-  ): Promise<ManualControlDeliveryResult> => {
+  const sendManualInput = (axes: DroneManualAxes, sourceKind: DroneManualInputSourceKind): void => {
     const activeGamepad = selectedGamepadIndex === null ? null : gamepads.find(pad => pad.index === selectedGamepadIndex)
-    const source = sourceKind === 'gamepad' && activeGamepad
+    const inputSource = sourceKind === 'gamepad' && activeGamepad
       ? { kind: 'gamepad' as const, gamepadIndex: activeGamepad.index, label: activeGamepad.id }
       : sourceKind === 'mouse'
         ? { kind: 'mouse' as const, label: mouseCaptured ? 'Mouse pointer lock' : 'Mouse' }
         : { kind: 'keyboard' as const, label: 'Keyboard' }
-    const commandPayload = {
+    sendRealtimeInput({ type: droneManualIntentRealtimeInputType, payload: {
       droneId: selectedObject.id,
       axes: droneRuntimeAxesForPilotIntent(axes),
-      inputSource: source,
-      commandTtlMs: 450,
-    }
-    if (sendRealtimeInput) {
-      try {
-        sendRealtimeInput({
-          type: droneManualIntentRealtimeInputType,
-          payload: {
-            ...commandPayload,
-            sampledAtMs: startedAtMs,
-            sequence,
-          },
-        })
-        return { transport: 'runtime-input', result: { ok: true } }
-      } catch (err) {
-        commandStatus = err instanceof Error ? `${err.message}; falling back to command path` : 'Realtime input failed; falling back to command path'
-      }
-    }
-    const invocation: SimulationRunCapabilityRequest = {
-      capabilityId: manualControlCommandKind,
-      input: commandPayload,
-    }
-    try {
-      const response = invokeRealtimeCapability
-        ? await invokeRealtimeCapability(invocation)
-        : await invokeSimulationRunCapability(simulationRunId, invocation)
-      if (response.kind !== 'command') throw new Error(`${manualControlCommandKind} is not a command`)
-      return { transport: 'command', result: response.result }
-    } catch (err) {
-      if (!invokeRealtimeCapability) throw err
-      const response = await invokeSimulationRunCapability(simulationRunId, invocation)
-      if (response.kind !== 'command') throw new Error(`${manualControlCommandKind} is not a command`)
-      return { transport: 'command', result: response.result }
-    }
+      inputSource,
+    } })
   }
 
-  const manualCommandStream = createDroneManualCommandStream<ManualControlDeliveryResult>({
+  const manualInputStream = createDroneManualInputStream({
     sendIntervalMs,
     activeKeepaliveMs,
-    maxInFlight: maxManualCommandInFlight,
-    send: async input => await sendManualControl(input.axes, input.sourceKind, input.sequence, input.startedAtMs),
-    onSend: event => {
-      recordCommandSent(event.startedAtMs)
+    send: ({ axes, sourceKind, nowMs }) => {
+      sendManualInput(axes, sourceKind)
+      recordCommandSent(nowMs)
+      setCommandStatus('Manual input sent')
     },
-    onResult: event => {
-      if (event.stale) return
-      const settledAtMs = event.startedAtMs + event.roundTripMs
-      if (!event.value.result.ok) {
-        lastCommandRoundTripMs = event.roundTripMs
-        setCommandStatus(`Rejected: ${event.value.result.reason ?? 'unknown'}`)
-        return
-      }
-      if (event.value.transport === 'runtime-input') {
-        if (settledAtMs - lastRealtimeStatusUpdateMs >= realtimeStatusUpdateIntervalMs) {
-          lastRealtimeStatusUpdateMs = settledAtMs
-          setCommandStatus('Manual intent streamed')
-        }
-        return
-      }
-      lastCommandRoundTripMs = event.roundTripMs
-      setCommandStatus('Manual velocity sent')
-    },
-    onError: event => {
-      if (event.stale) return
-      lastCommandRoundTripMs = event.roundTripMs
-      setCommandStatus(event.error instanceof Error ? event.error.message : String(event.error))
-    },
-    onBlocked: event => {
-      setCommandStatus(`Rejected: ${event.reason}`)
-    },
+    onError: error => setCommandStatus(`Steering unavailable: ${error instanceof Error ? error.message : String(error)}`),
   })
 
   const setMode = async (mode: 'hold' | 'land' | 'return_to_launch'): Promise<void> => {
@@ -557,19 +482,16 @@
     advanceCameraOrbit(nowMs)
     updateCommandRate(nowMs)
     const sample = combinedAxes()
-    const axes = sample.axes
+    const axes = document.visibilityState === 'visible' && document.hasFocus() ? sample.axes : zeroAxes
     const signature = droneManualAxesSignature(axes)
     if (signature !== droneManualAxesSignature(liveAxes)) liveAxes = axes
-    manualCommandStream.update({
-      axes,
-      sourceKind: sample.sourceKind,
-      nowMs,
-      blockReason: axesAreActive(axes) && data === null ? 'selected object is not a drone' : undefined,
-    })
+    if (data !== null) manualInputStream.update({ axes, sourceKind: sample.sourceKind, nowMs })
+    else if (axesAreActive(axes)) setCommandStatus('Steering unavailable: selected object is not a drone')
     animationId = requestAnimationFrame(pollInput)
   }
 
   const resetManualInputs = (): void => {
+    manualInputStream.release(performance.now())
     keys = new Set()
     mouseAxes = zeroAxes
   }
@@ -833,7 +755,7 @@
     return () => {
       disposed = true
       cancelAnimationFrame(animationId)
-      manualCommandStream.reset()
+      manualInputStream.release(performance.now())
       window.removeEventListener('keydown', onKeydown)
       window.removeEventListener('keyup', onKeyup)
       window.removeEventListener('blur', onWindowBlur)
@@ -901,7 +823,6 @@
       {keyBindings}
       {bindingCaptureAction}
       {scenePerformance}
-      {lastCommandRoundTripMs}
       {commandRateHz}
       {mouseControlEnabled}
       {mouseCaptured}

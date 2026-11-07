@@ -1,6 +1,8 @@
 # LD-01 native plant: pause record and resume brief
 
-The owner paused LD-01 development on **11 October 2026**, to prioritise other work. This file is the starting point for whoever resumes it. The engineering record stays in the wiki: `ld-01/model/build-readiness.md`, under "Planning status", "Completion plan" and the 11 October decision records. This file holds the operational state: commits, branches, worktrees, environment, the resume order and the pitfalls.
+Start with the wiki's [current qualification and release status](https://github.com/michaelhil/leitbild-wiki/blob/main/quality/facilities/ld-01/release.md) for the accepted tuple, preflight and next gate.
+
+The brief below records the **11 October 2026** pause. Its branches, environment and resume order describe that handoff. The wiki's dated build-readiness ledger and decision log retain the engineering record.
 
 ## Starting prompt for the resuming agent
 

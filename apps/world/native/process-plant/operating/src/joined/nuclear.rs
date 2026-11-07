@@ -566,8 +566,8 @@ impl Nuclear {
                     reference_fuel_temperature_k: x.reference_fuel_temperature_k,
                     reference_xenon_atoms: m * x.reference_xenon_atoms,
                     reference_samarium_atoms: m * x.reference_samarium_atoms,
-                    reference_nonpoison_capture_opacity_m2: m
-                        * x.reference_nonpoison_capture_opacity_m2,
+                    reference_nonpoison_capture_opacity_m2: m * x
+                        .reference_nonpoison_capture_opacity_m2,
                 }
             })
             .collect();

@@ -10,7 +10,7 @@ test('semantic Plan and spatial working sets share placement assets and count ow
   for (const id of ['placement-a', 'placement-b']) { retained.remember(id, lower, undefined, ['routes'], spatial); retained.remember(id, plan, undefined, ['routes'], drawing) }
   expect(retained.select('placement-a', lower)?.asset).toBe(spatial); expect(retained.select('placement-b', plan)?.coverage).toEqual(['routes'])
   expect(retained.metrics()).toEqual({ scenes: 2, representations: 4, uniqueViews: 2, bytes: physicalPreparedGeometryBytes(spatial) + physicalPreparedGeometryBytes(drawing) })
-  expect(retained.select('placement-a', { ...lower, wallOpacity: .2, floorOpacity: .1, live: false, hiddenLayerIds: ['routes'] })?.asset).toBe(spatial)
+  expect(retained.select('placement-a', { ...lower, live: false, hiddenLayerIds: ['routes'] })?.asset).toBe(spatial)
   retained.retainScenes(new Set(['placement-b'])); expect(retained.metrics().representations).toBe(2)
   retained.forget('placement-b'); expect(retained.metrics()).toEqual({ scenes: 0, representations: 0, uniqueViews: 0, bytes: 0 })
 })

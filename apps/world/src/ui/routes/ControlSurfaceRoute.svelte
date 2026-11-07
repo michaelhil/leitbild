@@ -214,6 +214,7 @@
   let startupDismissed = $state(false)
   let startupStatusModalOpen = $state(false)
   let settingsModalOpen = $state(false)
+  let resettingScenario = false
   let executionState = $state<RunExecutionState | null>(null)
   // The types of the components loaded on demand: a type query loads nothing.
   type OperationalMapComponent = typeof import('../OperationalMap.svelte').default
@@ -288,9 +289,7 @@
   let procedureSystemModalLoadPromise: Promise<ProcedureSystemModalComponent> | null = null
   let droneControlModalLoadPromise: Promise<DroneControlModalComponent> | null = null
   let droneProfileEditorModalLoadPromise: Promise<DroneProfileEditorModalComponent> | null = null
-  let pendingRealtimeSimulationRunId = $state<SimulationRunId | null>(null)
   let postReadyPreloadStarted = false
-  let startupAutoDismissTimer: number | null = null
   let startupDebugGeneration = 0
   let startupDebugReported = false
   let startupDebugMarks: Array<{ readonly label: string; readonly atMs: number; readonly deltaMs: number }> = []
@@ -1083,7 +1082,9 @@
   const completeReadyWhenReady = (): void => {
     if (!snapshotReady || !realtimeAttached) return
     if (mapVisible && !mapReady) return
+    if (startupSteps.find(step => step.id === 'objects')?.status !== 'done' || startupHasFailed(startupSteps)) return
     completeStep('ready')
+    startupDismissed = true
     reportStartupDebug()
     preloadOptionalUiAfterReady()
   }
@@ -1091,7 +1092,10 @@
   const completeObjectsWhenReady = async (): Promise<void> => {
     if (!snapshotReady) return
     if (mapVisible && !mapReady) return
+    const generation = surfaceLoadGeneration
+    startStep('objects')
     await tick()
+    if (generation !== surfaceLoadGeneration || !snapshotReady || (mapVisible && !mapReady)) return
     completeStep('objects')
     completeReadyWhenReady()
   }
@@ -1123,15 +1127,8 @@
   }
 
   const closeStartupModal = (): void => {
-    clearStartupAutoDismissTimer()
     startupDismissed = true
     startupStatusModalOpen = false
-  }
-
-  const clearStartupAutoDismissTimer = (): void => {
-    if (startupAutoDismissTimer === null) return
-    window.clearTimeout(startupAutoDismissTimer)
-    startupAutoDismissTimer = null
   }
 
   const openStatusModal = (): void => {
@@ -1418,15 +1415,22 @@
     settingsModalOpen = false
   }
 
-  const resetStartupForJoin = (): void => {
+  const prepareRunStartup = (nextStatus: 'Starting' | 'Resetting'): void => {
+    realtimeConnection.disconnect()
+    realtimeAttached = false
     resetStartupDebug()
     surfaceLoadGeneration += 1
     postReadyPreloadStarted = false
     startupDismissed = false
     latestMapRuntimeDiagnostics = null
-    pendingRealtimeSimulationRunId = null
     latestDroneMotionFrames = []
     startupSteps = resetStartupStepsAfter(startupSteps, 'simulation-run')
+    snapshotReady = false
+    mapReady = false
+    scenarioDefinition = null
+    activePack = null
+    status = nextStatus
+    startStep('simulation-run')
   }
 
   const activeRoute = () => parseControlSurfaceRoute(location.pathname)
@@ -1435,9 +1439,6 @@
     const route = activeRoute()
     return route.workspaceId
   }
-
-  const scenarioIdForReset = (): string | undefined =>
-    scenarioState?.scenarioId
 
   const loadScenarioDefinitionAndPack = async (scenarioId: string): Promise<CompiledScenario> => {
     markStartup('scenario-fetch:start')
@@ -1565,11 +1566,6 @@
       : [...mapAssignmentChoiceIds, id]
   }
 
-  const invokeRealtimeCapability = async (invocation: Parameters<typeof realtimeConnection.invokeCapability>[1]) => {
-    if (!simulationRunId) throw new Error('simulation run is not ready')
-    return await realtimeConnection.invokeCapability(simulationRunId, invocation)
-  }
-
   const sendRealtimeInput = (input: Parameters<typeof realtimeConnection.sendRuntimeInput>[1]): void => {
     if (!simulationRunId) throw new Error('simulation run is not ready')
     realtimeConnection.sendRuntimeInput(simulationRunId, input)
@@ -1686,20 +1682,9 @@
   }
 
   const connectWebSocket = (id: SimulationRunId): void => {
-    if (mapVisible && !mapReady) {
-      pendingRealtimeSimulationRunId = id
-      startStep('realtime')
-      status = 'Waiting for map first frame before realtime updates'
-      return
-    }
-    pendingRealtimeSimulationRunId = null
     startStep('realtime')
-    if (realtimeConnection.canCarry(id)) {
-      status = realtimeConnection.statusFor(id) === 'open' ? 'Realtime channel open' : 'Connecting'
-      completeReadyWhenReady()
-      return
-    }
     realtimeAttached = false
+    status = 'Connecting realtime updates'
     latestDroneMotionFrames = []
     realtimeConnection.connect(id, {
       onOpen: () => {
@@ -1707,7 +1692,7 @@
       },
       onClose: () => {
         realtimeAttached = false
-        status = 'Disconnected'
+        if (startupSteps.find(step => step.id === 'realtime')?.status !== 'failed') failStep('realtime', 'Realtime channel disconnected')
         if (pendingRoleIds !== null) failRoleSwitch(pendingRoleIds, 'The realtime channel closed before the Run answered; this screen keeps its roles')
       },
       onError: (message) => {
@@ -1881,6 +1866,7 @@
 
   const requestRoleChange = (change: RoleSetChange): void => {
     if (change.kind === 'unchanged') return
+    if (resettingScenario) return
     if (change.kind === 'refused') {
       commandFeedback = noteAction(commandFeedback, change.reason)
       return
@@ -1928,13 +1914,6 @@
     keepHiddenRoles(result.hidden)
     rolePicker = null
     void joinSimulationRun()
-  }
-
-  const connectPendingRealtime = (): void => {
-    const id = pendingRealtimeSimulationRunId
-    if (!id) return
-    pendingRealtimeSimulationRunId = null
-    connectWebSocket(id)
   }
 
   const simulationRunIdFromPath = (): SimulationRunId => {
@@ -1997,15 +1976,8 @@
   }
 
   const joinSimulationRun = async (): Promise<void> => {
-    realtimeConnection.disconnect()
-    realtimeAttached = false
-    resetStartupForJoin()
-    snapshotReady = false
-    mapReady = false
-    scenarioDefinition = null
-    activePack = null
-    status = 'Starting'
-    startStep('simulation-run')
+    if (resettingScenario) return
+    prepareRunStartup('Starting')
     let activeStartupStep: StartupStepId = 'simulation-run'
     try {
       const id = simulationRunIdFromPath()
@@ -2053,23 +2025,16 @@
   }
 
   const resetScenario = async (): Promise<void> => {
-    if (!simulationRunId) return
-    if (switchUnderWay()) return
-    realtimeAttached = false
-    resetStartupForJoin()
-    snapshotReady = false
-    mapReady = false
-    scenarioDefinition = null
-    activePack = null
-    status = 'Resetting'
+    if (!simulationRunId || resettingScenario || switchUnderWay()) return
+    resettingScenario = true
+    closeSettings()
     const reset = beginAction(commandFeedback, 'Resetting scenario')
     commandFeedback = reset.feedback
-    startStep('simulation-run')
-    let activeStartupStep: StartupStepId = 'simulation-run'
+    let activeStartupStep: StartupStepId | null = null
     try {
-      expectedRealtimeScenarioId = scenarioIdForReset() ?? null
-      startStep('realtime')
       const body = await resetSimulationRun(simulationRunId)
+      activeStartupStep = 'simulation-run'
+      prepareRunStartup('Resetting')
       await completeStartupFromResponse(body, {
         setActiveStartupStep: id => {
           activeStartupStep = id
@@ -2077,8 +2042,10 @@
       })
       commandFeedback = completeAction(commandFeedback, reset.actionId)
     } catch (err) {
-      failStep(activeStartupStep, err)
+      if (activeStartupStep !== null) failStep(activeStartupStep, err)
       commandFeedback = failAction(commandFeedback, reset.actionId, err instanceof Error ? err.message : String(err))
+    } finally {
+      resettingScenario = false
     }
   }
 
@@ -2086,10 +2053,7 @@
     mapReady = true
     markStartup('map:ready')
     if (startupSteps.find(step => step.id === 'map')?.status !== 'done') completeStep('map')
-    if (startupSteps.find(step => step.id === 'objects')?.status === 'pending') startStep('objects')
-    connectPendingRealtime()
     void completeObjectsWhenReady()
-    preloadOptionalUiAfterReady()
   }
 
   const handleMapError = (message: string): void => {
@@ -2127,7 +2091,6 @@
         longTaskMonitor = null
         removePlacementGlobalEvents()
         railLayout.stopResize()
-        clearStartupAutoDismissTimer()
       }
     }
     if (window.self === window.top) {
@@ -2138,7 +2101,6 @@
         longTaskMonitor = null
         removePlacementGlobalEvents()
         railLayout.stopResize()
-        clearStartupAutoDismissTimer()
       }
     }
     // Before any awaited startup: the Host may relay displays as soon as this page listens.
@@ -2202,26 +2164,8 @@
       removePlacementGlobalEvents()
       railLayout.stopResize()
       realtimeConnection.disconnect()
-      clearStartupAutoDismissTimer()
       window.clearInterval(executionPoll)
     }
-  })
-
-  $effect(() => {
-    if (
-      startupDismissed
-      || startupStatusModalOpen
-      || startupHasFailed(startupSteps)
-      || !startupIsReady(startupSteps)
-    ) {
-      clearStartupAutoDismissTimer()
-      return
-    }
-    if (startupAutoDismissTimer !== null) return
-    startupAutoDismissTimer = window.setTimeout(() => {
-      startupAutoDismissTimer = null
-      closeStartupModal()
-    }, 1_500)
   })
 
   $effect(() => {
@@ -2507,7 +2451,7 @@
       {simulationRunId}
       object={windowEntry.object}
       {objects}
-      {invokeRealtimeCapability}
+      steeringConnected={realtimeAttached}
       {sendRealtimeInput}
       subscribeMotionFrames={subscribeDroneMotionFrames}
       windowOffsetIndex={windowEntry.index}
@@ -2615,7 +2559,6 @@
     tone={systemStatusTone}
     retry={joinSimulationRun}
     close={closeStartupModal}
-    autoCloseWhenReady={!startupStatusModalOpen}
     closeWhenReadyOnly={!startupStatusModalOpen}
   />
 {/if}

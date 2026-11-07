@@ -3,7 +3,7 @@ import { assessmentLeaves } from '@leitbild/procmd'
 import { z } from 'zod'
 import {
   isoTimestampSchema, procedureRunIdSchema, procedureRunScopeSchema, procedureSourceIdSchema, procedureStepIdSchema,
-  type ProcedureDocument, type ProcedureRunState,
+  type ProcedureDocument, type ProcedureRunState, type ProcedureStep,
 } from '../../core/model/index.ts'
 import { procedureBranchAssessmentSchema } from '../../core/model/procedure-criteria.ts'
 import type { SimulationRunStateSnapshot } from '../../core/simulation-runs/state-store.ts'
@@ -16,6 +16,7 @@ export const procedureChecksReadInputSchema = z.object({
   sourceId: procedureSourceIdSchema,
   sourceRevision: sourceRevisionSchema,
   sourcePath: sourceDocumentPathSchema,
+  branchIndex: z.number().int().nonnegative().optional(),
 }).strict()
 
 export const procedureChecksViewSchema = procedureChecksReadInputSchema.extend({
@@ -29,6 +30,13 @@ export const procedureChecksViewSchema = procedureChecksReadInputSchema.extend({
   })),
 }).strict()
 export type ProcedureChecksView = z.infer<typeof procedureChecksViewSchema>
+
+export const canInspectProcedureBranchCheck = (step: ProcedureStep, branchIndex: number): boolean => {
+  if (step.branches[branchIndex]?.outcome !== 'normal') return false
+  const decision = step.decisions?.find(item => item.branchIndex === branchIndex)
+  return decision?.observation !== undefined ||
+    (decision?.condition !== undefined && assessmentLeaves(decision.condition).every(leaf => leaf.type === 'comparison'))
+}
 
 const changed = () => Object.assign(
   new Error('The current procedure step, source, or plant state changed. Read it again before showing live checks.'),
@@ -64,6 +72,12 @@ export const readProcedureChecks = async (config: {
   if (step === undefined) throw Object.assign(new Error('The pinned procedure does not contain the current step.'), { status: 404, code: 'procedure_step_not_found' })
 
   const requested = new Set(step.pairs?.flatMap(pair => pair.advisoryBranchIndex === undefined ? [] : [pair.advisoryBranchIndex]))
+  if (input.branchIndex !== undefined) {
+    if (!canInspectProcedureBranchCheck(step, input.branchIndex)) {
+      throw Object.assign(new Error('This branch has no deterministic normal check to inspect.'), { status: 400, code: 'procedure_check_not_available' })
+    }
+    requested.add(input.branchIndex)
+  }
   const decisions = step.decisions?.filter(decision => requested.has(decision.branchIndex)) ?? []
   if (decisions.length !== requested.size) throw new Error('A response pair references a missing authored criterion.')
   const tagIds = [...new Set(decisions.flatMap(decision => decision.condition === undefined ? [] : assessmentLeaves(decision.condition)
@@ -81,7 +95,7 @@ export const readProcedureChecks = async (config: {
   if (after.clock === undefined) throw new Error('Simulation Run clock is not initialized')
   const simulationTime = after.clock.currentTime
   const checks = decisions.map(decision => {
-    const { assessment, validThrough } = assessProcedureBranch({
+    const { assessment, observationApplies, validThrough } = assessProcedureBranch({
       branchIndex: decision.branchIndex, decision, observation: observations.get(decision.branchIndex), plantId, simulationTime, reads,
     })
     const result = assessment.observation?.result
@@ -89,7 +103,7 @@ export const readProcedureChecks = async (config: {
       branchIndex: decision.branchIndex, status: assessment.status, reasons: assessment.reasons,
       // Keep caveats for refused evidence without displaying another unit's values.
       readings: assessment.readings.filter(reading => reading.value === undefined || reading.scopeId === plantId),
-      ...(result?.targetObjectId === plantId ? { observation: { result } } : {}),
+      ...(observationApplies && result !== undefined ? { observation: { result } } : {}),
       ...(validThrough === undefined ? {} : { validThrough }),
     }
   })

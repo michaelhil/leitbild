@@ -155,7 +155,7 @@ describe('grid-norway tile projection agrees with the reference style', () => {
       [node, square].map(geometry => gridFeature(geometry, { category, outputMw, lifecycle, name: 'Navn' }))))),
   ]
 
-  test('every tile feature is drawn at each zoom it is in and when overzoomed, and the style wants no point or line before it', () => {
+  test('every tile feature is drawn from its first tile zoom and when overzoomed', () => {
     let checked = 0
     for (const sample of samples) {
       for (const tile of tiled(gridNorwayTileFeatures(sample))) {
@@ -163,9 +163,7 @@ describe('grid-norway tile projection agrees with the reference style', () => {
         for (let zoom = tile.minZoom; zoom <= lastZoom; zoom++) {
           if (!drawnAt(zoom, tile)) throw new Error(`${JSON.stringify(tile.properties)} ${tile.geometry.type} is in the z${zoom} tiles but not drawn`)
         }
-        // Site footprints are not checked below z12: the style still draws older builds' polygon sites as dots there.
-        const footprint = tile.geometry.type !== 'Point' && ['substation', 'transformer', 'plant', 'generator'].includes(String(tile.properties.category))
-        if (!footprint && tile.minZoom > gridNorwayTilebuild.globalMinZoom && drawnAt(tile.minZoom - 1, tile)) {
+        if (tile.minZoom > gridNorwayTilebuild.globalMinZoom && drawnAt(tile.minZoom - 1, tile)) {
           throw new Error(`${JSON.stringify(tile.properties)} ${tile.geometry.type} is drawn at z${tile.minZoom - 1} but tiled from z${tile.minZoom}`)
         }
         checked += 1

@@ -1,15 +1,8 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import type { PackPhysicalScene } from '../src/core/packs/scene.ts'
+import { describe, expect, test } from 'bun:test'
 import { createHash } from 'node:crypto'
-import { compileScenarioDefinition } from '../src/core/scenarios/compiler.ts'
-import { scenarioDefinitionSchema } from '../src/core/scenarios/definition.ts'
 import definitionSource from '../src/scenarios/halden-normal-operation.scenario.json'
-import { processPlantPack } from '../src/packs/process-plant/pack.ts'
-import { electricGridPack } from '../src/packs/electric-grid/pack.ts'
-import { weatherPack } from '../src/packs/weather/pack.ts'
-import { physicalLayoutPack } from '../src/packs/physical-layout/pack.ts'
-import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
-import { describePhysicalLayoutScene, loadPhysicalLayoutScene } from '../src/packs/physical-layout/scene.ts'
+import { physicalDesignChoices, resolvePhysicalDesign } from '../src/packs/physical-layout/design.ts'
+import { compilePhysicalScene } from '../src/packs/physical-layout/native/drafting/compile-scene.ts'
 import { buildVisibleMeshes, meshBounds, type PhysicalMesh } from '../src/ui/map/physical-scene/geometry.ts'
 import { physicalMeshDemandScene } from '../src/ui/map/physical-scene/layer-demand.ts'
 import { clipPhysicalMeshesToScope } from '../src/ui/map/physical-scene/scope-clipping.ts'
@@ -25,7 +18,11 @@ type Ownership = ReturnType<typeof preparePhysicalSurfaceOwnership>
 const fingerprint = (owned: Ownership): string => {
   const hash = createHash('sha256'), binary = (values: ArrayBufferView) => hash.update(new Uint8Array(values.buffer, values.byteOffset, values.byteLength))
   const meshes = owned.meshes.map((mesh, index) => ({ ...mesh, assetKey: 'same-exact-source', assetIndex: index }))
-  for (const { object, vertices, lines, ...metadata } of meshes) { hash.update(JSON.stringify([object.id, metadata])); binary(Float64Array.from(vertices)); binary(Float64Array.from(lines)) }
+  for (const { object, vertices, lines, ...metadata } of meshes) {
+    hash.update(JSON.stringify([object.id, metadata]))
+    binary(vertices instanceof Float64Array ? vertices : Float64Array.from(vertices))
+    binary(lines instanceof Float64Array ? lines : Float64Array.from(lines))
+  }
   const buffers = preparePhysicalRenderBuffers(meshes); binary(buffers.vertices); binary(buffers.lines); hash.update(JSON.stringify([buffers.roles, buffers.objectCount]))
   const acceleration = preparePhysicalPickAcceleration(meshes)
   for (const index of [acceleration.meshes, ...acceleration.triangles.map(item => item.triangles)]) for (const values of [index.bounds, index.children, index.ranges, index.order]) binary(values)
@@ -33,13 +30,20 @@ const fingerprint = (owned: Ownership): string => {
   hash.update(JSON.stringify(diagnostics)); return hash.digest('hex')
 }
 const compare = (meshes: ReadonlyArray<PhysicalMesh>, reference = priorOwnership): void => {
-  const prior = reference(meshes), current = preparePhysicalSurfaceOwnership(meshes)
+  // Keep the frozen result's witnesses while releasing its geometry before
+  // preparing the current result and allocating its render/pick buffers.
+  const expected = (() => {
+    const prior = reference(meshes)
+    const { broadPhaseCandidates: _work, ...diagnostics } = prior.diagnostics
+    return { diagnostics, objects: prior.meshes.map(mesh => mesh.object), digest: fingerprint(prior) }
+  })()
+  const current = preparePhysicalSurfaceOwnership(meshes)
   // A conservative hierarchy may visit different false-positive leaves; its
   // exact candidates, ownership and all output/picking bytes must stay equal.
-  const { broadPhaseCandidates: _beforeWork, ...before } = prior.diagnostics, { broadPhaseCandidates: _afterWork, ...after } = current.diagnostics
-  expect(after).toEqual(before); expect(current.meshes.length).toBe(prior.meshes.length)
-  for (let index = 0; index < current.meshes.length; index++) expect(current.meshes[index]!.object).toBe(prior.meshes[index]!.object)
-  expect(fingerprint(current)).toBe(fingerprint(prior))
+  const { broadPhaseCandidates: _work, ...after } = current.diagnostics
+  expect(after).toEqual(expected.diagnostics); expect(current.meshes.length).toBe(expected.objects.length)
+  for (let index = 0; index < current.meshes.length; index++) expect(current.meshes[index]!.object).toBe(expected.objects[index]!)
+  expect(fingerprint(current)).toBe(expected.digest)
 }
 const mesh = (id: string, faces: ReadonlyArray<readonly [number, number, number]>, material = 0): PhysicalMesh => {
   const vertices = Float64Array.from(faces.flatMap(([x, y, z]) => [x, y, z, -0, 0, 1, material]))
@@ -60,30 +64,19 @@ const admittedDesigns = [...new Map(definitionSource.packs
     ? [[item.design.digest, item.design] as const] : []))).values()]
 
 describe('actual admitted all-layer geometry retains the frozen ownership, rendering and picking result', () => {
-  const scenes = new Map<string, PackPhysicalScene>(), seen = new Set<string>()
-  beforeAll(async () => {
-    const scenario = await compileScenarioDefinition(scenarioDefinitionSchema.parse(definitionSource), [processPlantPack, electricGridPack, weatherPack, physicalLayoutPack], { routing: createDirectRoutingAdapter() })
-    for (const object of scenario.initialObjects) {
-      const descriptor = describePhysicalLayoutScene(object, scenario.initialObjects)
-      if (!descriptor?.geometryKey || seen.has(descriptor.geometryKey)) continue
-      seen.add(descriptor.geometryKey)
-      scenes.set(descriptor.revision, await loadPhysicalLayoutScene(object))
-    }
-  }, 30_000)
-  afterAll(() => { scenes.clear(); seen.clear() })
-
-  test('the actual scenario admits exactly its two declared distinct physical sources', () => {
-    expect(seen.size).toBe(2)
-    expect(scenes.size).toBe(seen.size)
-    expect([...scenes.keys()].sort()).toEqual(admittedDesigns.map(design => design.digest).sort())
+  test('the bundled scenario selects both exact current Design pins', () => {
+    const byId = (a: { id: string }, b: { id: string }) => a.id.localeCompare(b.id)
+    expect(admittedDesigns).toHaveLength(2)
+    expect([...admittedDesigns].sort(byId)).toEqual(physicalDesignChoices().map(choice => choice.design).sort(byId))
   })
 
-  // Every source still gets a complete fresh comparison against the retained
-  // oracle. The timeout belongs to one correctness case, not their sum.
-  for (const design of admittedDesigns) test(`${design.id} @ ${design.revision}`, () => {
-    const scene = scenes.get(design.digest)
-    if (!scene) throw Error(`Expected admitted physical source ${design.id} @ ${design.revision}`)
+  // Scenario admission and placement are checked separately. This oracle uses
+  // each exact admitted local source once, including all of its layers.
+  for (const design of admittedDesigns) test(`${design.id} @ ${design.revision}`, async () => {
+    const admitted = await resolvePhysicalDesign(design)
+    const scene = compilePhysicalScene(design.id, { ...admitted, owner: { objectId: 'ownership-oracle' }, placement: { anchor: [0, 0], bearing: 0 } })
+    expect(scene.revision).toBe(design.digest)
     const view = { ...defaultPhysicalSceneView(scene.levels), mode: '3d' as const, levelId: 'all', hiddenLayerIds: [] }, demand = physicalMeshDemandScene(scene, view)
     compare(physicalSurfaceAnnotations(demand, view, clipPhysicalMeshesToScope(demand, view, buildVisibleMeshes(demand, view))), beforeTwoLevel)
-  }, 30_000)
+  })
 })

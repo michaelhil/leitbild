@@ -5,8 +5,6 @@ import { createPhysicalSceneRenderer } from './renderer.ts'
 import type { PhysicalProjectedPointVisitor, PhysicalSceneHighlight, PhysicalScenePalette, PhysicalSceneView, PhysicalSubjectStyle } from './types.ts'
 import type { Vector3 } from './math.ts'
 import type { PhysicalPreparedGeometry } from './preparation.ts'
-import type {PhysicalArchitectureBsp} from './architecture-bsp-types.ts'
-import type {PhysicalArchitectureBspFrame} from './architecture-cohort.ts'
 
 export interface PhysicalLayerEntry { readonly scene: PackPhysicalScene; readonly meshes: ReadonlyArray<PhysicalMesh>; readonly asset?: PhysicalPreparedGeometry; readonly view: PhysicalSceneView; readonly status: ReadonlyMap<string, PhysicalSubjectStyle>; readonly scopeId?: string }
 export const createPhysicalSceneLayer = (id: string, entries: () => ReadonlyArray<PhysicalLayerEntry>, palette: PhysicalScenePalette, reportError: (error: Error) => void, planFontFamily?: () => string) => {
@@ -21,7 +19,7 @@ export const createPhysicalSceneLayer = (id: string, entries: () => ReadonlyArra
     prerender(_context, input) { if (mapCanvas) renderer?.prepareFrame(input.defaultProjectionData.mainMatrix, { width: mapCanvas.width, height: mapCanvas.height }) },
     render() { renderer?.compositeFrame() }, onRemove: dispose,
   }
-  return { layer, dispose, setPalette: (next: PhysicalScenePalette) => renderer?.setPalette(next), setHighlight: (target: PhysicalSceneHighlight | null) => renderer?.setHighlight(target), setArchitectureBsp:(asset:PhysicalArchitectureBsp|null,frame:PhysicalArchitectureBspFrame|null)=>renderer?.setArchitectureBsp(asset,frame), retainGeometryIdentities: (identities: ReadonlySet<string>) => renderer?.retainGeometryIdentities(identities), invalidatePicks: () => renderer?.invalidatePicks(), metrics: () => renderer?.metrics() ?? finalMetrics, pick: (point: { x: number; y: number }) => renderer?.pick(point) ?? null,
+  return { layer, dispose, setPalette: (next: PhysicalScenePalette) => renderer?.setPalette(next), setHighlight: (target: PhysicalSceneHighlight | null) => renderer?.setHighlight(target), retainGeometryIdentities: (identities: ReadonlySet<string>) => renderer?.retainGeometryIdentities(identities), invalidatePicks: () => renderer?.invalidatePicks(), metrics: () => renderer?.metrics() ?? finalMetrics, pick: (point: { x: number; y: number }) => renderer?.pick(point) ?? null,
     cheapProject: (sceneId: string, occurrenceId: string, levelId?: string) => renderer?.cheapProject(sceneId, occurrenceId, levelId) ?? null,
     visibleAt: (sceneId: string, occurrenceId: string, point: { x: number; y: number }) => renderer?.visibleAt(sceneId, occurrenceId, point) ?? false,
     project: (sceneId: string, occurrenceId: string, levelId?: string) => renderer?.project(sceneId, occurrenceId, levelId) ?? null,

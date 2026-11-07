@@ -1,26 +1,32 @@
-// Settings > Providers modal. The modal markup is the shared
-// `<dialog id="ollama-dashboard">` element — opening it means
-// showModal() + activating the cloud-providers panel subscription.
-// This wrapper exists so settings-nav.ts can route to it by name.
-//
-// wireOllamaDashboard() is called once at boot from app.ts; we only open
-// and start the providers-panel subscription here.
-
 import { domRefs } from '../app-dom.ts'
-import { openOllamaDashboard, type OllamaDashboardElements } from '../ollama-dashboard.ts'
-import { startProvidersPanel } from '../panels/providers/index.ts'
-import { send } from '../ws-send.ts'
+import { openOllamaDashboard, updateOllamaHealthUI, wireOllamaDashboard, type OllamaDashboardElements } from '../ollama-dashboard.ts'
+import { startProvidersPanel, stopProvidersPanel } from '../panels/providers/index.ts'
+import { $ollamaHealth } from '../stores.ts'
 
 const ollamaEls: OllamaDashboardElements = {
   dashboard: domRefs.ollamaDashboard,
-  statusDot: domRefs.ollamaStatusDot,
   urlSelect: domRefs.ollamaUrlSelect,
   urlInput: domRefs.ollamaUrlInput,
   btnUrlAdd: domRefs.btnOllamaUrlAdd,
   btnUrlDelete: domRefs.btnOllamaUrlDelete,
 }
 
+wireOllamaDashboard(ollamaEls)
+let stopHealth: (() => void) | undefined
+ollamaEls.dashboard.addEventListener('close', () => {
+  if (ollamaEls.dashboard.open) return
+  stopProvidersPanel()
+  stopHealth?.()
+  stopHealth = undefined
+})
+
 export const openProvidersModal = async (): Promise<void> => {
-  await openOllamaDashboard(ollamaEls, send)
-  void startProvidersPanel()
+  if (ollamaEls.dashboard.open) return
+  const opening = openOllamaDashboard(ollamaEls)
+  stopHealth?.()
+  stopHealth = $ollamaHealth.listen(health => {
+    if (health) updateOllamaHealthUI(health as unknown as Record<string, unknown>)
+  })
+  startProvidersPanel()
+  await opening
 }

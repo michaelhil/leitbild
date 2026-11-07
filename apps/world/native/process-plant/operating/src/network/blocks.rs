@@ -1485,7 +1485,13 @@ impl<'a, P: Properties> Replay<'a, P> {
                 // R4-NCHEAD: the coupled SG passes' directions of this column.
                 for (node, p) in w.passes.iter().enumerate() {
                     if let Some(p) = p {
-                        add_pass(pass, base, node, p.conductance_w_k.direction, p.capacity_w_k.direction)?;
+                        add_pass(
+                            pass,
+                            base,
+                            node,
+                            p.conductance_w_k.direction,
+                            p.capacity_w_k.direction,
+                        )?;
                     }
                 }
                 for (node, r) in w.coupled.iter().enumerate() {
@@ -1701,12 +1707,11 @@ impl<'a, P: Properties> Replay<'a, P> {
 /// R4-NCHEAD: one column's direction of an SG primary cell's pass on the
 /// base pass's value. A pass where the base evaluation reported none refuses.
 fn add_pass(pass: &mut Pass, base: &Pass, node: usize, dc: f64, dk: f64) -> Result<(), Failure> {
-    let b = base
-        .passes
-        .get(node)
-        .copied()
-        .flatten()
-        .ok_or_else(|| fatal(format!("an SG pass direction for cell {node}, whose base reported none")))?;
+    let b = base.passes.get(node).copied().flatten().ok_or_else(|| {
+        fatal(format!(
+            "an SG pass direction for cell {node}, whose base reported none"
+        ))
+    })?;
     let p = pass.passes[node].unwrap_or(b);
     pass.passes[node] = Some(SgPass {
         conductance_w_k: Scalar::new(b.conductance_w_k.value, p.conductance_w_k.direction + dc),

@@ -1,24 +1,22 @@
 import { chainCableKm, chainCircuits, chainLengthKm, chainParallelGroups, chainPieces, isWholeCircuitCount } from './corridor-chain.ts'
 import { freeNodeKey } from './corridor-graph.ts'
 import { acBoundaryBusId, compareText, corridorBranchId, junctionBusId, stationBusId } from './ids.ts'
-import type { TopologyKeyMode } from './input.ts'
 import type { PreparedInterconnectors } from './interconnectors.ts'
 import type { TopologyLedger } from './ledger.ts'
 import type { LevelLink } from './levels.ts'
 import type { TopologyBranch, TopologyForeignEnd, TopologyProvenance } from './result.ts'
 
 export type BranchContext = {
-  readonly keyMode: TopologyKeyMode
   readonly interconnectors: PreparedInterconnectors
   readonly sourceIds: ReadonlyArray<string>
   readonly curationOfFeature: ReadonlyMap<string, string>
   readonly busLabel: (busId: string) => string
 }
 
-export const busIdOfNode = (context: Pick<BranchContext, 'keyMode' | 'interconnectors'>, node: string, kv: number): string => {
+export const busIdOfNode = (context: Pick<BranchContext, 'interconnectors'>, node: string, kv: number): string => {
   if (node.startsWith('S|')) return stationBusId(node.slice(2), kv)
   if (node.startsWith('B|')) return acBoundaryBusId(context.interconnectors.byId.get(node.slice(2))!.externalArea, kv)
-  return junctionBusId(context.keyMode, freeNodeKey(node), kv)
+  return junctionBusId(freeNodeKey(node), kv)
 }
 
 // Kilometre lengths are rounded to 0.1 m so the output is byte-stable across platforms.

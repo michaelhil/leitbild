@@ -3,11 +3,12 @@
  * invocation's Room and Resource while this runtime lives; no binding or second procedure store.
  */
 import { z } from 'zod'
-import { workspaceResourceReferenceSchema, type WorkspaceId, type WorkspaceResourceReference } from '@leitbild/contracts'
-import type { ExecutionCall, ExecutionStore } from '../core/executions/store.ts'
+import type { WorkspaceId, WorkspaceResourceReference } from '@leitbild/contracts'
+import type { ExecutionStore } from '../core/executions/store.ts'
 import type { RoomDirectory } from '../core/rooms/directory.ts'
 import type { AIAgent, Team } from '../core/types/agent.ts'
 import { PROCEDURE_RUNNER_SKILL } from '../core/proposal-resume.ts'
+import { readRetainedWorkspaceResults, type RetainedWorkspaceResult } from './retained-workspace-call.ts'
 import { asAIAgent } from './shared.ts'
 
 const readOperation = 'world.procedure.run.step.read'
@@ -35,45 +36,38 @@ interface Candidate {
 const record = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
 
 /** Successful receipts, not model prose, establish what this turn delegated and where. */
-export const procedureDelegationsOf = (calls: ReadonlyArray<ExecutionCall>): ReadonlyArray<Candidate> => {
+export const procedureDelegationsOf = (entries: ReadonlyArray<RetainedWorkspaceResult>): ReadonlyArray<Candidate> => {
   const candidates = new Map<string, Candidate>()
   const readSequences = new Map<string, number>()
-  for (const call of calls) {
-    if (call.tool !== 'workspace_call' || call.result?.success !== true || !record(call.arguments) || !Array.isArray(call.arguments.calls)
-      || !record(call.result.data) || !Array.isArray(call.result.data.results)) continue
-    for (const entry of call.result.data.results) {
-      if (!record(entry) || entry.success !== true || typeof entry.operationId !== 'string' || !record(entry.data)) continue
-      const target = record(entry.target) && entry.target.kind === 'resource' ? workspaceResourceReferenceSchema.safeParse(entry.target.ref) : undefined
-      if (!target?.success) continue
-      const arg = call.arguments.calls.find(value => record(value) && value.key === entry.key)
-      const input = record(arg) && record(arg.input) ? arg.input : {}
-      const view = viewSchema.safeParse(entry.data.next ?? entry.data)
-      const runId = view.success ? view.data.run.runId : typeof input.runId === 'string' ? input.runId : undefined
-      if (!runId) continue
-      const key = JSON.stringify([target.data, runId])
-      const previous = candidates.get(key)
-      const beforeSequence = previous?.sequence ?? readSequences.get(key)
-      if (view.success) readSequences.set(key, view.data.sequence)
-      // An accepted start/transition supplies a World-owned driver proof. A
-      // successful implicit step read also proves the caller drives that Run.
-      const command = entry.data.ok === true && typeof entry.data.commandId === 'string'
-      const delegated = command && ['world.procedure.run.start', 'world.procedure.run.transition', 'world.procedure.run.drive', 'world.procedure.run.request-input'].includes(entry.operationId)
-      if (!delegated && !previous) continue
-      if (entry.operationId === 'world.procedure.run.drive' && input.action === 'release') { candidates.set(key, { resource: target.data, runId, released: true }); continue }
-      const ownerProof = view.success && view.data.run.driver?.kind === 'ai'
-        && (command || (entry.operationId === readOperation && input.runId === undefined)) ? view.data.run.driver.actorId : previous?.ownerId
-      const { released: _released, requestId: _request, stepId: _step, ...activePrevious } = previous ?? {}
-      const pending = view.success ? view.data.run.inputRequest : previous
-      candidates.set(key, { ...activePrevious, resource: target.data, runId,
-        ...(ownerProof === undefined ? {} : { ownerId: ownerProof }),
-        ...(view.success ? { sequence: entry.operationId === 'world.procedure.run.request-input'
-          && view.data.run.inputRequest?.requestId !== entry.data.commandId && beforeSequence !== undefined
-            ? beforeSequence : view.data.sequence } : {}),
-        ...(pending?.requestId === undefined ? {} : { requestId: pending.requestId, stepId: pending.stepId }),
-        ...(entry.operationId === 'world.procedure.run.request-input' && command
-          ? { requestId: entry.data.commandId as string, stepId: input.stepId as string } : {}),
-      })
-    }
+  for (const { success, resource, operationId, input: rawInput, data } of entries) {
+    if (!success || !resource || !record(data)) continue
+    const input = record(rawInput) ? rawInput : {}
+    const view = viewSchema.safeParse(data.next ?? data)
+    const runId = view.success ? view.data.run.runId : typeof input.runId === 'string' ? input.runId : undefined
+    if (!runId) continue
+    const key = JSON.stringify([resource, runId])
+    const previous = candidates.get(key)
+    const beforeSequence = previous?.sequence ?? readSequences.get(key)
+    if (view.success) readSequences.set(key, view.data.sequence)
+    // An accepted start/transition supplies a World-owned driver proof. A
+    // successful implicit step read also proves the caller drives that Run.
+    const command = data.ok === true && typeof data.commandId === 'string'
+    const delegated = command && ['world.procedure.run.start', 'world.procedure.run.transition', 'world.procedure.run.drive', 'world.procedure.run.request-input'].includes(operationId)
+    if (!delegated && !previous) continue
+    if (operationId === 'world.procedure.run.drive' && input.action === 'release') { candidates.set(key, { resource, runId, released: true }); continue }
+    const ownerProof = view.success && view.data.run.driver?.kind === 'ai'
+      && (command || (operationId === readOperation && input.runId === undefined)) ? view.data.run.driver.actorId : previous?.ownerId
+    const { released: _released, requestId: _request, stepId: _step, ...activePrevious } = previous ?? {}
+    const pending = view.success ? view.data.run.inputRequest : previous
+    candidates.set(key, { ...activePrevious, resource, runId,
+      ...(ownerProof === undefined ? {} : { ownerId: ownerProof }),
+      ...(view.success ? { sequence: operationId === 'world.procedure.run.request-input'
+        && view.data.run.inputRequest?.requestId !== data.commandId && beforeSequence !== undefined
+          ? beforeSequence : view.data.sequence } : {}),
+      ...(pending?.requestId === undefined ? {} : { requestId: pending.requestId, stepId: pending.stepId }),
+      ...(operationId === 'world.procedure.run.request-input' && command
+        ? { requestId: data.commandId as string, stepId: input.stepId as string } : {}),
+    })
   }
   return [...candidates.values()]
 }
@@ -214,7 +208,10 @@ export const createProcedureResumes = (deps: {
     } finally { end(watch) }
   }
   return {
-    answered: (input: { executionTurnId: string; roomId: string; messageId: string }): void => {
+    answered: (
+      input: { executionTurnId: string; roomId: string; messageId: string },
+      readEntries = () => readRetainedWorkspaceResults(deps.executions, input.roomId, input.executionTurnId),
+    ): void => {
       if (disposed) return
       const turn = deps.executions.getTurn(input.roomId, input.executionTurnId), room = deps.rooms.getRoom(input.roomId)
       if (!turn || !room) return
@@ -222,11 +219,7 @@ export const createProcedureResumes = (deps: {
         && message.senderId === turn.agentId && message.generationTraceId === turn.id && message.type === 'error'
         && String(message.errorCode) === 'response_validation_failed')
       if (turn.status !== 'completed' && !validatedFailure) return
-      const calls = deps.executions.listCalls(input.roomId, input.executionTurnId).flatMap(call => {
-        const full = deps.executions.getCall(input.roomId, input.executionTurnId, call.id)
-        return full === undefined ? [] : [full]
-      })
-      for (const candidate of procedureDelegationsOf(calls)) {
+      for (const candidate of procedureDelegationsOf(readEntries())) {
         const key = JSON.stringify([input.roomId, turn.agentId, candidate.resource, candidate.runId])
         const previous = watches.get(key)
         if (previous?.answerId === input.messageId) continue

@@ -27,7 +27,7 @@
  *   T9  overview → SG A → AFW header with one click per hop, then Esc = Back twice
  *   T10 the same gesture elsewhere: alert rows (T8) and drawn items on the plant; grid elements (R3, W9.1)
  *   T11 a press on the unit's map icon opens its overview display in the window, and no Plant card (R3, owner 23 Oct);
- *       T11-1046 the same with the chat open
+ *       T11-1920x1080+chat the same with the chat open
  *   T17 the dashboard's run frame takes ≤ 30 % of the screen's height at 1920, 1440 and 1280 (R4 gate)
  *
  * Writes <out>/<label>-walks.json and shots. Loopback only; no model is called. */
@@ -162,7 +162,7 @@ const titleIs = (screen: Screen, pattern: RegExp) => pattern.test((screen.window
 // ---------------- the tasks ----------------
 
 const t1 = async (ctx: Ctx, live: boolean): Promise<TaskResult> => {
-  const size = sizeSpec('1920')
+  const size = sizeSpec('1920x1080')
   const { runId, home, reopen } = await session(ctx, live ? 'T1-live' : 'T1', size, live)
   try {
     const goal = (screen: Screen) => stateOf(screen, /\bMD AFW A\b|MD AFW A\/B|motor-driven auxiliary feedwater pump( A)?\b/i)
@@ -182,7 +182,7 @@ const t1 = async (ctx: Ctx, live: boolean): Promise<TaskResult> => {
 }
 
 const t2 = async (ctx: Ctx): Promise<TaskResult> => {
-  const { runId, home, reopen } = await session(ctx, 'T2', sizeSpec('1920'), false, true)
+  const { runId, home, reopen } = await session(ctx, 'T2', sizeSpec('1920x1080'), false, true)
   // A view with the PORV's own OPEN command: a faceplate or detail of the PORV itself (PORV-456A), not its block
   // valve (the block's faceplate names PORV too, and its OPEN is disabled while the block stands open), with OPEN.
   const porvItself = (text: string) => /\bPORV\b(?!\s*block)|PORV-456A|power-operated relief valve(?!\s*block)/i.test(text) && !/\bblock\b/i.test(text)
@@ -334,7 +334,7 @@ const t3 = async (ctx: Ctx, sizeName: string): Promise<TaskResult> => {
 }
 
 const t4 = async (ctx: Ctx): Promise<TaskResult> => {
-  const { runId } = await session(ctx, 'T4', sizeSpec('1920'))
+  const { runId } = await session(ctx, 'T4', sizeSpec('1920x1080'))
   const steps: Step[] = []
   const expected = (await ctx.api.defaultView(runId, `${ctx.plantId}#dieselGeneratorA`)).view.title as string
   const procedures = await ctx.page.waitFor({ sel: 'button', text: `Computer-based procedures for ${ctx.unit}` }, 15_000).catch(() => null)
@@ -454,7 +454,7 @@ const dashboardRead = async (ctx: Ctx, timeoutMs = 20_000): Promise<DashboardRea
 /** T5 (R4): the four units' SG levels side by side on the collection dashboard ("Compare Process plants (4) ›"),
  * every one on one screen at 1920, read without memory. */
 const t5 = async (ctx: Ctx): Promise<TaskResult> => {
-  await session(ctx, 'T5', sizeSpec('1920'))
+  await session(ctx, 'T5', sizeSpec('1920x1080'))
   const steps: Step[] = []
   const title = "Compare the four units' SG levels"
   if (!await toDashboard(ctx, steps)) return { id: 'T5', title, verdict: '✖', budget: null, clicks: steps.length, path: steps, deadEnds: 0, searched: 0, detail: 'no dashboard in the deck before the unit overviews', shots: [await shotOf(ctx, 'T5')] }
@@ -484,7 +484,7 @@ const t17 = async (ctx: Ctx): Promise<TaskResult> => {
   const measured: string[] = []
   let worst = 0, read = 0
   const shots: string[] = []
-  for (const name of ['1920', '1440', '1280']) {
+  for (const name of ['1920x1080', '1440x900', '1280x800']) {
     await session(ctx, 'T17', sizeSpec(name))
     if (!await toDashboard(ctx, steps)) { measured.push(`${name}: no dashboard`); continue }
     const dashboard = await dashboardRead(ctx, 10_000)
@@ -498,7 +498,7 @@ const t17 = async (ctx: Ctx): Promise<TaskResult> => {
 }
 
 const t6 = async (ctx: Ctx): Promise<TaskResult> => {
-  const { home } = await session(ctx, 'T6', sizeSpec('1920'))
+  const { home } = await session(ctx, 'T6', sizeSpec('1920x1080'))
   const steps: Step[] = []
   // The grid overview: the deck entry after the units (Previous from the first display wraps to it, else Next ×4).
   let screen = await screenOf(ctx.page)
@@ -531,7 +531,7 @@ const t6 = async (ctx: Ctx): Promise<TaskResult> => {
 }
 
 const t8 = async (ctx: Ctx): Promise<TaskResult> => {
-  const { home, reopen } = await session(ctx, 'T8', sizeSpec('1920'))
+  const { home, reopen } = await session(ctx, 'T8', sizeSpec('1920x1080'))
   const steps: Step[] = []
   const targets = await targetsOf(ctx.page)
   const row = targets.find(target => target.kind === 'row' && /steam generator A|SG A/i.test(target.name)) ?? targets.find(target => target.kind === 'row' && !/first out|1st/i.test(target.name))
@@ -547,7 +547,7 @@ const t8 = async (ctx: Ctx): Promise<TaskResult> => {
   let list = false, moreDetail = 'no "+N more" on screen', where = '1920'
   // The window may hold every row at 1920 (no "+N more" then); look where the list is short: 1046 + chat.
   if (more === undefined) {
-    const narrow = await session(ctx, 'T8', sizeSpec('1046'))
+    const narrow = await session(ctx, 'T8', sizeSpec('1920x1080+chat'))
     more = (await targetsOf(ctx.page)).find(target => target.kind === 'more')
     where = '1046 + chat'
     if (more === undefined) { await narrow.reopen(); moreDetail = 'no "+N more" on screen at 1920 (every row fits) or at 1046 + chat' }
@@ -567,7 +567,7 @@ const t8 = async (ctx: Ctx): Promise<TaskResult> => {
 }
 
 const t9 = async (ctx: Ctx): Promise<TaskResult> => {
-  const { home } = await session(ctx, 'T9', sizeSpec('1920'))
+  const { home } = await session(ctx, 'T9', sizeSpec('1920x1080'))
   const steps: Step[] = []
   // Each hop presses the item's body where a press reaches it, else its label (the part of it a person can press);
   // a body covered by another item's box is reported, as a person pressing it there opens the other item.
@@ -610,7 +610,7 @@ const t9 = async (ctx: Ctx): Promise<TaskResult> => {
 const t10 = async (ctx: Ctx, t8Result: TaskResult | undefined, t6Result: TaskResult | undefined): Promise<TaskResult> => {
   // The plant side: every drawn item and alert row a person presses opens content (the E-0 sweep counts them all;
   // here the overview's items and rows once each), then the other Packs (grid: T6; Einsatz tables: no such Run here).
-  const { home, reopen } = await session(ctx, 'T10', sizeSpec('1920'))
+  const { home, reopen } = await session(ctx, 'T10', sizeSpec('1920x1080'))
   const targets = (await targetsOf(ctx.page)).filter(target => ['item', 'label', 'row', 'more'].includes(target.kind) && !OPERATES.test(target.name))
   let opened = 0, dead = 0
   const nothing: string[] = []
@@ -635,8 +635,8 @@ const CARD = `lb.documents().some(d => d.doc && d.doc.querySelector('.plant-card
 
 /** T11: from the map with no window open, a press on the unit's icon opens its overview display; no card opens. The
  * icon is found where a person sees it (the map's Plant disks, by their fill) and named by the map's own hover card. */
-const t11 = async (ctx: Ctx, sizeName = '1920'): Promise<TaskResult> => {
-  const id = sizeName === '1920' ? 'T11' : `T11-${sizeName}`
+const t11 = async (ctx: Ctx, sizeName = '1920x1080'): Promise<TaskResult> => {
+  const id = sizeName === '1920x1080' ? 'T11' : `T11-${sizeName}`
   const title = "A press on the unit's map icon opens its overview display; no Plant card"
   const size = sizeSpec(sizeName)
   const runId = ctx.shared ??= await ctx.api.copy(ctx.runA, `walks (look only) · ${new Date().toISOString().slice(0, 19)}`)
@@ -690,7 +690,7 @@ const t7 = (): TaskResult => ({
   shots: [],
 })
 
-export const TASKS = ['T1', 'T1-live', 'T2', 'T3-1046', 'T3-1440x900+chat', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9', 'T10', 'T11', 'T11-1046', 'T17'] as const
+export const TASKS = ['T1', 'T1-live', 'T2', 'T3-1920x1080+chat', 'T3-1440x900+chat', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9', 'T10', 'T11', 'T11-1920x1080+chat', 'T17'] as const
 
 if (import.meta.main) {
   const argv = options(Bun.argv.slice(2))

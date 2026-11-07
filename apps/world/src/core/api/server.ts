@@ -1,8 +1,9 @@
 import { resolve, normalize } from 'node:path'
 import type { ServerWebSocket } from 'bun'
 import { z } from 'zod'
-import { actorIdSchema, clientIdSchema, simulationRunIdSchema, nowIso, type SimulationRunId } from '../model/index.ts'
+import { actorIdSchema, clientIdSchema, simulationRunIdSchema, nowIso, type ClientId, type SimulationRunId } from '../model/index.ts'
 import type { SimulationRunRegistry } from '../simulation-runs/registry.ts'
+import type { SimulationRunRuntime } from '../simulation-runs/runtime.ts'
 import {
   createMapArtifactConfigFromEnv,
   createMapArtifactStatus,
@@ -21,13 +22,9 @@ import {
   referenceDatasetVectorTileResponse,
   type MapArtifactConfig,
 } from '../../map/artifacts.ts'
-import {
-  buildSimulationRunActor,
-  capabilityInvocationRequestSchema,
-  handleSimulationRunApi,
-} from './simulation-run-routes.ts'
+import { handleSimulationRunApi } from './simulation-run-routes.ts'
 import { createSimulationRunRealtimeManager, emptyRealtimeStatus, type ClientPerspective, type RealtimeStatus, type SimulationRunRealtimeManager } from './realtime.ts'
-import { actorForPerspective, assertHoldsRole, isRoleGateRefusal, parseRoleSetParameter, resolveRunPerspective, roleSetParameter } from '../simulation-runs/role-gates.ts'
+import { assertHoldsRole, isRoleGateRefusal, parseRoleSetParameter, resolveRunPerspective, roleSetParameter } from '../simulation-runs/role-gates.ts'
 import { apiError, json } from './responses.ts'
 import { workspaceIdSchema, type ModuleFeaturedDefinitionCollection, type WorkspaceId } from '@leitbild/contracts'
 import { createOpenAccessContext } from '../workspaces/request-context.ts'
@@ -56,21 +53,18 @@ interface WSData {
   readonly simulationRunId: SimulationRunId
   /** The connection's role set in a Run that declares roles; `role.set` replaces it in place. */
   perspective: ClientPerspective | null
+  clientId: ClientId
+  runtime: SimulationRunRuntime
+  lastInputSequence: number
+  closed: boolean
 }
-
-const realtimeClientCapabilityMessageSchema = z.object({
-  type: z.literal('capability.invoke'),
-  requestId: z.string().min(1).max(128),
-  capabilityId: z.string().min(1).max(256),
-  invocation: capabilityInvocationRequestSchema,
-}).strict()
 
 const realtimeClientRuntimeInputMessageSchema = z.object({
   type: z.literal('runtime.input'),
   input: z.object({
     type: z.string().min(1).max(128),
-    actorId: actorIdSchema.default(defaultRealtimeInputActorId),
-    clientId: clientIdSchema.optional(),
+    session: z.string().min(1).max(128),
+    sequence: z.number().int().nonnegative(),
     payload: z.unknown(),
   }).strict(),
 }).strict()
@@ -81,13 +75,14 @@ const realtimeClientRoleSetMessageSchema = z.object({
 }).strict()
 
 const realtimeClientMessageSchema = z.union([
-  realtimeClientCapabilityMessageSchema,
   realtimeClientRuntimeInputMessageSchema,
   realtimeClientRoleSetMessageSchema,
 ])
 
 const websocketText = (message: string | Buffer): string =>
   typeof message === 'string' ? message : message.toString('utf8')
+
+const newRealtimeInputSession = (): ClientId => clientIdSchema.parse(`realtime:${crypto.randomUUID()}`)
 
 const memoryStatus = (): {
   readonly rssBytes: number
@@ -208,7 +203,13 @@ export const createServer = (config: ServerConfig): { readonly stop: () => Promi
     const realtime = createSimulationRunRealtimeManager<ServerWebSocket<WSData>>({
       registry: workspaceRuntime.simulationRuns,
       send: (socket, message) => socket.send(JSON.stringify(message)),
-      sendReady: (socket, message) => socket.send(JSON.stringify(message)),
+      sendReady: (socket, message, runtime) => {
+        if (socket.data.runtime !== runtime) {
+          socket.data.runtime = runtime
+          socket.data.clientId = newRealtimeInputSession()
+        }
+        socket.send(JSON.stringify(message.epoch === undefined ? { ...message, inputSession: socket.data.clientId } : message))
+      },
       perspectiveOf: socket => socket.data.perspective,
     })
     realtimeByWorkspace.set(workspaceRuntime.workspaceId, { runtime: workspaceRuntime, realtime })
@@ -219,25 +220,6 @@ export const createServer = (config: ServerConfig): { readonly stop: () => Promi
   // since switched roles discards it rather than mixing perspectives.
   const epochStamp = (epoch: number | null): { readonly epoch?: number } =>
     epoch === null ? {} : { epoch }
-
-  const sendRealtimeCapabilityError = (
-    socket: ServerWebSocket<WSData>,
-    requestId: string | undefined,
-    error: unknown,
-    epoch: number | null,
-  ): void => {
-    // Role gates name their refusal, so a screen can tell them apart.
-    const code = isRoleGateRefusal(error) ? error.code : undefined
-    socket.send(JSON.stringify({
-      type: 'capability.error',
-      workspaceId: socket.data.workspaceId,
-      simulationRunId: socket.data.simulationRunId,
-      ...(requestId === undefined ? {} : { requestId }),
-      ...(code === undefined ? {} : { code }),
-      message: error instanceof Error ? error.message : String(error),
-      ...epochStamp(epoch),
-    }))
-  }
 
   const sendRealtimeInputError = (
     socket: ServerWebSocket<WSData>,
@@ -297,30 +279,6 @@ export const createServer = (config: ServerConfig): { readonly stop: () => Promi
     }
   }
 
-  const invokeRealtimeCapability = async (
-    workspaceId: WorkspaceId,
-    simulationRunId: SimulationRunId,
-    capabilityId: string,
-    rawInvocation: unknown,
-    roleIds: ReadonlyArray<string> | null,
-  ) => {
-    return await config.workspaces.withRuntime(workspaceId, async workspace => {
-    const runtime = workspace.simulationRuns.get(simulationRunId)
-    if (!runtime) throw new Error('simulation run not found')
-    const release = workspace.simulationRuns.acquireLease(simulationRunId, 'api')
-    try {
-    const invocation = capabilityInvocationRequestSchema.parse(rawInvocation)
-    const perspective = resolveRunPerspective(runtime.roles(), roleIds)
-    return await runtime.invokeCapability(actorForPerspective(buildSimulationRunActor(defaultRealtimeInputActorId), perspective), {
-      capabilityId,
-      input: invocation.input,
-      ...(invocation.expectedRevision === undefined ? {} : { expectedRevision: invocation.expectedRevision }),
-      ...(invocation.idempotencyKey === undefined ? {} : { idempotencyKey: invocation.idempotencyKey }),
-    })
-    } finally { release() }
-    })
-  }
-
   const handleRealtimeClientMessage = async (
     socket: ServerWebSocket<WSData>,
     message: string | Buffer,
@@ -328,54 +286,35 @@ export const createServer = (config: ServerConfig): { readonly stop: () => Promi
     // The perspective in force when this message arrived.
     const perspective = socket.data.perspective
     const epoch = perspective?.epoch ?? null
+    const receivedAt = nowIso()
     let parsed
     try {
       parsed = realtimeClientMessageSchema.parse(JSON.parse(websocketText(message)) as unknown)
     } catch (err) {
-      sendRealtimeCapabilityError(socket, undefined, err, epoch)
+      sendRealtimeInputError(socket, undefined, err instanceof Error ? err.message : String(err), epoch)
       return
     }
     if (parsed.type === 'role.set') {
       setConnectionRoles(socket, parsed.roles)
       return
     }
-    if (parsed.type === 'runtime.input') {
-      try {
-        const runtime = config.workspaces.getLoaded(socket.data.workspaceId)?.simulationRuns.get(socket.data.simulationRunId)
-        if (!runtime) {
-          sendRealtimeInputError(socket, parsed.input.type, 'simulation run not found', epoch)
-          return
-        }
-        await runtime.receiveRealtimeInput({
-          type: parsed.input.type,
-          at: nowIso(),
-          ...(parsed.input.actorId === undefined ? {} : { actorId: parsed.input.actorId }),
-          ...(parsed.input.clientId === undefined ? {} : { clientId: parsed.input.clientId }),
-          payload: parsed.input.payload,
-        })
-      } catch (err) {
-        sendRealtimeInputError(socket, parsed.input.type, err instanceof Error ? err.message : String(err), epoch)
-      }
+    const { workspaceId, simulationRunId, runtime, clientId } = socket.data
+    const isCurrent = () => !socket.data.closed && socket.readyState === WebSocket.OPEN
+      && socket.data.clientId === clientId && socket.data.perspective === perspective
+      && config.workspaces.getLoaded(workspaceId)?.simulationRuns.get(simulationRunId) === runtime
+    if (!isCurrent() || (perspective === null && parsed.input.session !== clientId)) {
+      sendRealtimeInputError(socket, parsed.input.type, 'This connection no longer represents the active Run', epoch)
       return
     }
+    if (parsed.input.sequence <= socket.data.lastInputSequence) return
+    socket.data.lastInputSequence = parsed.input.sequence
     try {
-      const outcome = await invokeRealtimeCapability(
-        socket.data.workspaceId,
-        socket.data.simulationRunId,
-        parsed.capabilityId,
-        parsed.invocation,
-        perspective?.roleIds ?? null,
-      )
-      socket.send(JSON.stringify({
-        type: 'capability.result',
-        workspaceId: socket.data.workspaceId,
-        simulationRunId: socket.data.simulationRunId,
-        requestId: parsed.requestId,
-        outcome,
-        ...epochStamp(epoch),
-      }))
+      await runtime.receiveRealtimeInput({
+        type: parsed.input.type, at: receivedAt, actorId: defaultRealtimeInputActorId, clientId,
+        isCurrent, payload: parsed.input.payload,
+      })
     } catch (err) {
-      sendRealtimeCapabilityError(socket, parsed.requestId, err, epoch)
+      sendRealtimeInputError(socket, parsed.input.type, err instanceof Error ? err.message : String(err), epoch)
     }
   }
 
@@ -502,7 +441,10 @@ export const createServer = (config: ServerConfig): { readonly stop: () => Promi
             if (isRoleGateRefusal(err)) return secure(apiError(err.status, err.code, err.message, err.details))
             throw err
           }
-        const upgraded = serverApi.upgrade(req, { data: { workspaceId, simulationRunId, perspective } })
+        const upgraded = serverApi.upgrade(req, { data: {
+          workspaceId, simulationRunId, perspective, runtime,
+          clientId: newRealtimeInputSession(), lastInputSequence: -1, closed: false,
+        } })
         return upgraded ? undefined : secure(new Response('WebSocket upgrade failed', { status: 400 }))
         }
         return secure(new Response('Not found', { status: 404 }))
@@ -511,6 +453,7 @@ export const createServer = (config: ServerConfig): { readonly stop: () => Promi
           if ((err as Error).message.startsWith('World Module not provisioned:')) return secure(apiError(404, 'workspace_not_found', 'World is not enabled in this Workspace'))
           if (err instanceof Error && 'code' in err && err.code === 'workspace_closing') return secure(apiError(409, 'workspace_closing', err.message))
           if (err instanceof Error && 'code' in err && err.code === 'workspace_capacity_exceeded') return secure(apiError(503, 'workspace_capacity_exceeded', err.message))
+          if (err instanceof Error && 'code' in err && err.code === 'simulation_run_failed') return secure(apiError(409, 'simulation_run_failed', err.message))
           throw err
         }
       }
@@ -522,10 +465,13 @@ export const createServer = (config: ServerConfig): { readonly stop: () => Promi
     websocket: {
       open(socket) {
         const workspaceRuntime = config.workspaces.getLoaded(socket.data.workspaceId)
-        if (!workspaceRuntime) return socket.close(1011, 'Workspace runtime unavailable')
+        if (workspaceRuntime?.simulationRuns.get(socket.data.simulationRunId) !== socket.data.runtime) {
+          return socket.close(1011, 'Simulation Run runtime unavailable')
+        }
         realtimeFor(workspaceRuntime).addClient(socket.data.simulationRunId, socket)
       },
       close(socket) {
+        socket.data.closed = true
         realtimeByWorkspace.get(socket.data.workspaceId)?.realtime.removeClient(socket.data.simulationRunId, socket)
       },
       message(socket, message) {

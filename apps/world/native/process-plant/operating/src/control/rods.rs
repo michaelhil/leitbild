@@ -157,7 +157,7 @@ impl Law {
                 )));
             }
         }
-        if !(s.dead_band_k < s.maximum_speed_error_k) {
+        if s.dead_band_k.partial_cmp(&s.maximum_speed_error_k) != Some(std::cmp::Ordering::Less) {
             return Err(fatal("dead band < maximum-speed error is required"));
         }
         if !(s.mismatch_gain_k.is_finite() && s.mismatch_gain_k >= 0.) {
@@ -329,7 +329,9 @@ mod tests {
         let mut c = Controller::new(law.clone(), &at(573., 1., 1., 3.48)).unwrap();
         // Inside the dead band: no motion; just past its edge: a small rate.
         assert_eq!(c.frame(0.1, &at(573.8, 1., 1., 3.48)).unwrap().rate_m_s, 0.);
-        let d = c.frame(0.1, &at(573. + 1.5 / 1.8 + 1e-6, 1., 1., 3.48)).unwrap();
+        let d = c
+            .frame(0.1, &at(573. + 1.5 / 1.8 + 1e-6, 1., 1., 3.48))
+            .unwrap();
         assert!(d.rate_m_s < 0. && d.rate_m_s > -1e-7, "{}", d.rate_m_s);
         // Too cold: withdraw.
         assert!(c.frame(0.1, &at(572., 1., 1., 3.48)).unwrap().rate_m_s > 0.);

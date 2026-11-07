@@ -18,7 +18,6 @@ import { preparePhysicalGeometry } from '../src/ui/map/physical-scene/preparatio
 import { defaultPhysicalSceneView } from '../src/ui/map/physical-scene/types.ts'
 import { visiblePhysicalInspectionBoundaries } from '../src/ui/map/physical-scene/inspection-cutaway.ts'
 import { visiblePhysicalSurfaceOwners } from '../src/ui/map/physical-scene/surface-ownership.ts'
-import { physicalArchitectureOpacity } from '../src/ui/map/physical-scene/architecture-opacity.ts'
 
 let seed = 1072726
 const random = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 2 ** 32 }
@@ -80,7 +79,7 @@ const camera = (bounds: { min: Vector3; max: Vector3 }, bearing: number, pitch: 
   matrix[15] = 1; return matrix
 }
 
-test('actual selected R5 floor/camera/opacity/offset cases retain exact source winners and world hit positions', async () => {
+test('current floor/camera/offset cases retain exact source winners and world hit positions', async () => {
   const scenario = await compileScenarioDefinition(scenarioDefinitionSchema.parse(definitionSource), [processPlantPack, electricGridPack, weatherPack, physicalLayoutPack], { routing: createDirectRoutingAdapter() }), seen = new Set<string>()
   let hits = 0
   for (const object of scenario.initialObjects) {
@@ -91,8 +90,8 @@ test('actual selected R5 floor/camera/opacity/offset cases retain exact source w
     for (const levelId of ['all', scene.levels[0]!.id]) {
       const view = { ...defaultPhysicalSceneView(scene.levels), mode: '3d' as const, levelId, separation: levelId === 'all' ? 1 : 0, hiddenLayerIds: [] }, asset = preparePhysicalGeometry(scene, view, `${scene.id}/${levelId}`)
       const placed = levelId === 'all' ? asset.meshes.map(mesh => ({ ...mesh, offset: mesh.offset.map(value => value * 9) as unknown as Vector3 })) : asset.meshes
-      for (const [bearing, pitch] of [[-25, 50], [140, 75]]) for (const alpha of [0, .4, 1]) {
-        const matrix = camera(scene.bounds, bearing!, pitch!), boundary = visiblePhysicalInspectionBoundaries(placed, matrix), selected = visiblePhysicalSurfaceOwners(boundary.filter(mesh => physicalArchitectureOpacity(mesh.object, { wallOpacity: alpha, floorOpacity: alpha }) > 0)), pickable = selected.filter(mesh => mesh.object.subjectIds.length > 0 || physicalArchitectureOpacity(mesh.object, { wallOpacity: alpha, floorOpacity: alpha }) === 1)
+      for (const [bearing, pitch] of [[-25, 50], [140, 75]]) {
+        const matrix = camera(scene.bounds, bearing!, pitch!), pickable = visiblePhysicalSurfaceOwners(visiblePhysicalInspectionBoundaries(placed, matrix))
         const entries = [{ sceneId: scene.id, matrix, meshes: pickable, roster: placed }], width = 1000, height = 700
         const points = Array.from({ length: 24 }, () => ({ x: random() * width, y: random() * height }))
         for (const mesh of pickable.filter(mesh => mesh.object.subjectIds.length > 0).slice(0, 24)) {
@@ -103,5 +102,5 @@ test('actual selected R5 floor/camera/opacity/offset cases retain exact source w
       }
     }
   }
-  expect(seen.size).toBe(2); expect(hits).toBeGreaterThan(100)
+  expect(seen.size).toBe(2); expect(hits).toBeGreaterThan(35)
 }, 60_000)

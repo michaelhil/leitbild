@@ -3,7 +3,6 @@ import { apiFetch } from "../api-client.ts"
 // Bug report modal — POST /bugs creates a GitHub issue server-side.
 //
 // Reachable from two surfaces (both wired in app.ts / settings-nav.ts):
-//   - Bug icon in the room header (#btn-report-bug)
 //   - "Report bug" entry in the Settings sidebar
 //
 // Auto-attached context: leitbild version (from /system/info) + browser

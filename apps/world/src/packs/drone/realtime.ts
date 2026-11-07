@@ -5,17 +5,15 @@ import { droneInputSourceSchema, droneManualAxesSchema } from './model.ts'
 
 export const droneMotionFramesRealtimeType = 'drone.motion.frames'
 export const droneManualIntentRealtimeInputType = 'drone.manual.intent'
+export const droneManualIntentTtlMs = 450
 
 export const droneManualIntentPayloadSchema = z.object({
   droneId: objectIdSchema,
   axes: droneManualAxesSchema,
-  inputSource: droneInputSourceSchema,
-  commandTtlMs: z.number().int().positive().max(5_000).default(650),
-  sampledAtMs: z.number().finite().nonnegative().optional(),
-  sequence: z.number().int().nonnegative().optional(),
+  inputSource: droneInputSourceSchema.omit({ clientId: true }).extend({
+    kind: z.enum(['keyboard', 'mouse', 'gamepad']),
+  }),
 }).strict()
-
-export type DroneManualIntentPayload = z.infer<typeof droneManualIntentPayloadSchema>
 
 export const droneMotionFrameSchema = z.object({
   objectId: objectIdSchema,

@@ -1,13 +1,10 @@
 import type { LonLat, TopologyStationGeometry } from './geometry.ts'
 import type { TopologyLedgerEntry } from './ledger.ts'
 
-// Source-neutral input of the topology compiler. Adapters turn a sidecar into these features;
-// the compiler never reads source tags. Vertex keys identify electrical nodes: two vertices with
-// the same key are the same node (OSM node id, or a rounded coordinate for sources without ids).
+// The sidecar reader translates source tags before compilation. Vertex keys are OSM node IDs.
 
 export type TopologySystem = 'ac50' | 'hvdc' | 'traction'
 export type TopologyLifecycle = 'operational' | 'construction' | 'proposed' | 'disused' | 'abandoned'
-export type TopologyKeyMode = 'osm-node' | 'coordinate'
 export type ExternalArea = 'SE1' | 'SE2' | 'SE3' | 'FI' | 'DK1' | 'NL' | 'DE' | 'GB'
 
 export type TopologyLevelInput = {
@@ -80,7 +77,6 @@ export type TopologyInputFeature =
 
 export type TopologyInput = {
   readonly sourceId: string
-  readonly keyMode: TopologyKeyMode
   readonly features: ReadonlyArray<TopologyInputFeature>
   readonly adapterLedger: ReadonlyArray<TopologyLedgerEntry>
 }

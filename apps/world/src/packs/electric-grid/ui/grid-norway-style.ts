@@ -27,10 +27,7 @@ import {
 //
 // The tile build emits each site as one point below z12 and its footprint from
 // z12, and every feature only from the zoom these filters first draw it at
-// (`grid-zoom-classes.ts`). Circle layers take Point features only. Older builds
-// carry substations and plants as (Multi)Polygons at every zoom: below z12 the
-// outline layers draw those with a thick round-joined stroke that reads as a
-// single dot; from z12 the stroke thins to a footprint outline over a fill.
+// (`grid-zoom-classes.ts`). Circle layers take Point features and outlines start at z12.
 // HVDC lines draw as a double line. Assets under construction, proposed or
 // disused (`lifecycle`) draw grey, thin and dashed, never before z8.
 
@@ -44,6 +41,7 @@ const isAnyCategory = (values: ReadonlyArray<string>): ReadonlyArray<unknown> =>
 const isPoint: ReadonlyArray<unknown> = ['==', ['geometry-type'], 'Point']
 const isPolygon: ReadonlyArray<unknown> = ['==', ['geometry-type'], 'Polygon']
 const isPolygonOrLine: ReadonlyArray<unknown> = ['in', ['geometry-type'], ['literal', ['Polygon', 'LineString']]]
+const siteLabelGeometry: ReadonlyArray<unknown> = ['any', isPoint, ['>=', ['zoom'], gridFootprintMinZoom]]
 const isNotInService: ReadonlyArray<unknown> = ['has', 'lifecycle']
 const isHvdcInService: ReadonlyArray<unknown> = ['all', ['==', ['get', 'systems'], 'hvdc'], ['!', isNotInService]]
 
@@ -93,9 +91,6 @@ const siteRadiusAt: Readonly<Record<5 | 9 | 13, VoltageValues<number>>> = {
   13: { kv420: 7.0, kv300: 6.5, kv220: 6.0, kv132: 5.5, kv110: 5.0, kv66: 4.5, unknown: 4.5 },
 }
 
-const doubled = (values: VoltageValues<number>): VoltageValues<number> =>
-  Object.fromEntries(Object.entries(values).map(([key, value]) => [key, value * 2])) as unknown as VoltageValues<number>
-
 // An HVDC link draws as two strokes of half the 420 kV width around a gap of 0.6 of it.
 const hvdcStrokeShare = 0.5
 const hvdcGapShare = 0.6
@@ -120,16 +115,10 @@ const siteRadius: ReadonlyArray<unknown> = ['interpolate', ['linear'], ['zoom'],
   13, byVoltage(siteRadiusAt[13]),
 ]
 
-// Below z12 a polygon site is a few pixels across, so a stroke as wide as the
-// matching circle's diameter draws it as one dot; at z12 it becomes an outline.
-const siteOutlineWidth: ReadonlyArray<unknown> = ['interpolate', ['linear'], ['zoom'],
-  5, byVoltage(doubled(siteRadiusAt[5])),
-  10, byVoltage(doubled(siteRadiusAt[9])),
+const footprintOutlineWidth: ReadonlyArray<unknown> = ['interpolate', ['linear'], ['zoom'],
   12, 1.4,
   16, 2.4,
 ]
-
-const plantOutlineWidth: ReadonlyArray<unknown> = ['interpolate', ['linear'], ['zoom'], 5, 5, 10, 6, 12, 1.4, 16, 2.4]
 
 /** Circle area proportional to nameplate output: radius grows with √MW. */
 const generationRadiusAt = (basePx: number, pxPerSqrtMw: number): ReadonlyArray<unknown> => [
@@ -185,10 +174,10 @@ const siteLayers = (palette: GridMapPalette): ReadonlyArray<PackReferenceLayerSp
     // Site footprints and, inside them, busbars.
     id: 'substations:outline',
     type: 'line',
-    minzoom: gridSiteMinZoom.kv420,
-    filter: ['all', isPolygonOrLine, isAnyCategory(['substation', 'transformer', 'busbar']), visibleFrom(['match', category, 'busbar', gridFootprintMinZoom, siteMinZoom])],
+    minzoom: gridFootprintMinZoom,
+    filter: ['all', isPolygonOrLine, isAnyCategory(['substation', 'transformer', 'busbar'])],
     layout: { 'line-join': 'round', 'line-cap': 'round' },
-    paint: { 'line-color': color, 'line-width': siteOutlineWidth, 'line-dasharray': ['case', isNotInService, notInServiceDash, solid] },
+    paint: { 'line-color': color, 'line-width': footprintOutlineWidth, 'line-dasharray': ['case', isNotInService, notInServiceDash, solid] },
   }, {
     id: 'substations:point',
     type: 'circle',
@@ -206,10 +195,10 @@ const siteLayers = (palette: GridMapPalette): ReadonlyArray<PackReferenceLayerSp
 const generationLayers = (palette: GridMapPalette): ReadonlyArray<PackReferenceLayerSpec> => [{
   id: 'generation:outline',
   type: 'line',
-  minzoom: gridPlantMinZoom.large,
-  filter: ['all', isPolygonOrLine, isAnyCategory(['plant', 'generator']), visibleFrom(['match', category, 'generator', gridGeneratorMinZoom, plantMinZoom])],
+  minzoom: gridFootprintMinZoom,
+  filter: ['all', isPolygonOrLine, isAnyCategory(['plant', 'generator'])],
   layout: { 'line-join': 'round', 'line-cap': 'round' },
-  paint: { 'line-color': serviceColor(palette, palette.generation), 'line-width': plantOutlineWidth, 'line-dasharray': ['case', isNotInService, notInServiceDash, solid] },
+  paint: { 'line-color': serviceColor(palette, palette.generation), 'line-width': footprintOutlineWidth, 'line-dasharray': ['case', isNotInService, notInServiceDash, solid] },
 }, {
   id: 'generation:point',
   type: 'circle',
@@ -260,7 +249,7 @@ const labelLayers = (palette: GridMapPalette): ReadonlyArray<PackReferenceLayerS
   id: 'substations:label',
   type: 'symbol',
   minzoom: siteLabelMinZoom.kv420,
-  filter: ['all', isCategory('substation'), ['has', 'name'], visibleFrom(byVoltage(siteLabelMinZoom))],
+  filter: ['all', isCategory('substation'), ['has', 'name'], siteLabelGeometry, visibleFrom(byVoltage(siteLabelMinZoom))],
   // Lower sort keys are placed first, so higher voltage wins label collisions.
   layout: siteLabelLayout(byVoltage({ kv420: 0, kv300: 1, kv220: 2, kv132: 3, kv110: 4, kv66: 5, unknown: 6 })),
   paint: labelPaint(palette),
@@ -268,7 +257,7 @@ const labelLayers = (palette: GridMapPalette): ReadonlyArray<PackReferenceLayerS
   id: 'generation:label',
   type: 'symbol',
   minzoom: 7,
-  filter: ['all', isCategory('plant'), ['has', 'name'], visibleFrom(plantLabelMinZoom)],
+  filter: ['all', isCategory('plant'), ['has', 'name'], siteLabelGeometry, visibleFrom(plantLabelMinZoom)],
   layout: siteLabelLayout(byPlantOutput({ small: 2, medium: 1, large: 0 })),
   paint: labelPaint(palette),
 }]

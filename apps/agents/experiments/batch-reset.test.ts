@@ -2,9 +2,9 @@
 // Integration tests for reset-mode batches.
 //
 // These spawn real leitbild subprocesses — slow (~8s for 4 runs, ~30s+ for
-// the 50-run soak). Gated behind SOAK=1 so `bun run test:unit` stays fast.
+// the 50-run soak). Gated behind SOAK=1 so `bun run test` stays fast.
 //
-//   bun run test:unit                             # skips these
+//   bun run test                                  # skips these
 //   SOAK=1 bun test experiments/batch-reset.test.ts  # runs them
 //
 // Covers:
