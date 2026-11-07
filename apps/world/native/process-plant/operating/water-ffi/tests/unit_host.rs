@@ -812,7 +812,14 @@ fn the_relief_isolation_valve_answers_to_its_supply_on_the_real_unit() {
     assert_eq!(later.values[position], arrested, "the valve stands");
     a.json(COMMAND, &serde_json::to_vec(&dc("Reset", later.t)).unwrap());
     a.json(COMMAND, &serde_json::to_vec(&dc("Close", later.t)).unwrap());
-    let open = json!({"kind": "ReliefIsolationOpen", "t_apply": later.t});
+    // The supply is back: the arrested close does not replay.
+    let (returned, _) = advance(&mut a, &mut walls, instant(45));
+    assert_eq!(
+        frame(&returned).values[position],
+        arrested,
+        "a returning supply replays nothing"
+    );
+    let open = json!({"kind": "ReliefIsolationOpen", "t_apply": frame(&returned).t});
     assert_eq!(
         a.json(COMMAND, &serde_json::to_vec(&open).unwrap())["accepted"],
         json!(true)

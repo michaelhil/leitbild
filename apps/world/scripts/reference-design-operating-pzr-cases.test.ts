@@ -63,7 +63,7 @@ test('heater banks and the relief device parse from their owners and agree with 
   // G6's joined sections: the spine cell keeps its index and surge face, the
   // spray and relief take none; the metal owner's blocks pass unchanged and
   // the receiver is the relief calibration's backpressure.
-  const isolation={id:'LD01.PZR.RELIEF.ISO',strokeTime_s:2,supplyGroup:'LD01.DC.ACT.A',supplyPower_W:2000}
+  const isolation={id:'LD01.PZR.RELIEF.ISO',strokeTime_s:2,supplyGroup:'LD01.DC.ACT.A'}
   const pages={equipment:equipment+'\n## Abnormal wall contact and finite heat receivers\n\n'+fence('ld01-pzr-heater-contact',{wet:1})
       +'\n\n### Fixed metal and complementary contact\n\n'+fence('reference-304-caloric',{datum_K:300})+'\n',
     inventory:inventory+'\n### Relief isolation valve\n\n'+fence('ld01-pzr-relief-isolation',isolation)+'\n',thermal:'### Shell and head metal\n\n'+fence('ld01-pzr-shell',{grossArea_m2:5})+'\n'},

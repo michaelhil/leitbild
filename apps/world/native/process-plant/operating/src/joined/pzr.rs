@@ -106,10 +106,10 @@ pub struct IsolationBlock {
     pub id: String,
     #[serde(rename = "strokeTime_s")]
     pub stroke_s: f64,
+    /// The DC group whose delivered output the valve needs to move: a guard
+    /// on the command and on travel, not a load on the group.
     #[serde(rename = "supplyGroup")]
     pub supply_group: String,
-    #[serde(rename = "supplyPower_W")]
-    pub supply_power_w: f64,
 }
 
 /// R4-RELIEF-ISO: the series isolation valve's achieved position, a known
@@ -1411,6 +1411,10 @@ mod tests {
         v.arrest(11.5);
         assert_eq!((v.position, v.motion), (0.75, None));
         assert_eq!(v.arrival(), None);
+        // An arrested valve keeps no intent: it stands, with no stroke end
+        // to reach, until the next command.
+        assert_eq!(v.open_fraction(60.), 0.75);
+        assert_eq!(v.target(), None);
     }
 
     fn relief() -> Relief {
