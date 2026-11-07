@@ -295,9 +295,6 @@ export const renderMessage = (opts: RenderMessageOptions): void => {
       header.appendChild(spacer)
       div.className += ' group'
 
-      // Copy-to-clipboard. Hover-only, available on every chat message
-      // regardless of which other actions are in scope. Uses navigator
-      // .clipboard when available; falls back silently on older contexts.
       const copyBtn = document.createElement('button')
       copyBtn.className = 'icon-btn text-text-subtle hover:text-text text-xs opacity-0 group-hover:opacity-100'
       copyBtn.title = 'Copy message to clipboard'

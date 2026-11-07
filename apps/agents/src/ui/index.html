@@ -173,25 +173,13 @@
     #sidebar-resize.dragging::before { background: var(--accent); }
     body.sidebar-dragging { cursor: col-resize; user-select: none; }
     body.sidebar-dragging * { user-select: none; }
-    body.focused-room-view #btn-create-room,
-    body.focused-room-view #btn-create-agent,
-    body.focused-room-view #room-switcher [data-icon="chevron-down"] { display: none; }
-    body.focused-room-view #room-switcher { cursor: default; pointer-events: none; }
-    /* Workspace toolbar badge: tiny numeric chip overlaid on the icon
-       button when count > 0. Position: top-right of the 24×24 hit area. */
-    .workspace-badge {
-      position: absolute;
-      top: -2px; right: -4px;
-      min-width: 14px; height: 14px;
-      padding: 0 3px;
-      border-radius: 7px;
-      background: var(--accent);
-      color: #fff;
-      font-size: 10px; font-weight: 600; line-height: 14px;
-      text-align: center;
-      pointer-events: none;
+    #room-actions > button {
+      display: block;
+      width: 100%;
+      padding: 4px 12px;
+      text-align: left;
     }
-    #btn-workspace { position: relative; }
+    #room-actions > button:hover { background: var(--surface-muted); }
 
     /* === Global polish ================================================== */
 
@@ -314,10 +302,6 @@
     .sidebar-dot { width: 8px; height: 8px; }
     /* Mode icon pair */
     .mode-switcher { display: inline-flex; align-items: center; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; background: var(--surface); }
-    /* User-hide channel for room-header icons. Independent of Tailwind's
-       .hidden so app-state toggles (e.g. summary-cluster expansion) don't
-       accidentally resurrect a user-hidden button. */
-    .user-hidden { display: none !important; }
     /* Message-header field visibility toggles. body classes set by
        message-header-prefs.ts; element selectors set by render-message.ts.
        CSS-only hide means toggling re-flows existing messages instantly. */
@@ -400,45 +384,8 @@
 </head>
 <body class="h-screen flex flex-col">
 
-  <!-- file:// self-correction.
-       Recurring source of "the UI is broken" reports: editor preview panels
-       (Claude Code's Launch preview, VS Code's HTML preview, double-click
-       in Finder) open this file via file://. With no server, UI assets and
-       /api/* 404 — the page renders unstyled
-       with no rooms / no agents.
-       Self-heal: if a dev server is reachable on port 3000, navigate there
-       automatically (the editor's preview pane lands on the real app).
-       If not, paint a loud red banner with recovery instructions.
-       No-op when served over http(s). -->
-  <script>
-    (function () {
-      if (location.protocol !== 'file:') return;
-      var DEV_URL = 'http://localhost:3000/';
-      // Banner first so SOMETHING is visible during the probe and stays up
-      // if the redirect fails (e.g., server not running).
-      var b = document.createElement('div');
-      b.style.cssText = 'position:fixed;inset:0 0 auto 0;padding:14px 20px;background:#dc2626;color:#fff;font:600 14px/1.4 system-ui,-apple-system,sans-serif;z-index:2147483647;text-align:center;';
-      b.innerHTML = '⚠ leitbild loaded via <code style="background:rgba(0,0,0,0.3);padding:1px 6px;border-radius:3px">file://</code>. Probing dev server at <code style="background:rgba(0,0,0,0.3);padding:1px 6px;border-radius:3px">' + DEV_URL + '</code>…';
-      document.documentElement.appendChild(b);
-      // Probe with a short timeout. If reachable, navigate to it — the
-      // editor preview pane then shows the real app instead of a 404'd
-      // skeleton. mode:'no-cors' so we don't need CORS headers; the goal
-      // is just "did the connection succeed."
-      var ctrl = new AbortController();
-      var timeout = setTimeout(function () { ctrl.abort(); }, 1500);
-      fetch(DEV_URL, { mode: 'no-cors', signal: ctrl.signal })
-        .then(function () { clearTimeout(timeout); location.replace(DEV_URL); })
-        .catch(function () {
-          clearTimeout(timeout);
-          b.innerHTML = '⚠ leitbild loaded via <code style="background:rgba(0,0,0,0.3);padding:1px 6px;border-radius:3px">file://</code> and the dev server isn\'t reachable. Run <code style="background:rgba(0,0,0,0.3);padding:1px 6px;border-radius:3px">bun run dev</code> then open <a href="' + DEV_URL + '" style="color:#fff;text-decoration:underline">' + DEV_URL + '</a>.';
-        });
-    })();
-  </script>
-
   <!-- Toast container (bottom-right) -->
   <div id="toast-container"></div>
-
-  <!-- No header — app name + settings in sidebar -->
 
   <main class="flex flex-1 overflow-hidden relative">
     <!-- Sidebar (left). Width is JS-controlled via the resize handle. -->
@@ -468,39 +415,6 @@
         <div id="agent-list" class="overflow-y-auto max-h-96"></div>
       </div>
 
-      <!-- Settings section (collapsed by default). Each row opens its own modal. -->
-      <div class="sidebar-content border-b">
-        <button type="button" id="settings-header" class="w-full px-3 py-1.5 flex items-center justify-between cursor-pointer hover:bg-surface-muted interactive bg-transparent border-0" aria-expanded="false">
-          <span id="settings-toggle" class="text-xs font-semibold text-text-subtle uppercase tracking-wide whitespace-nowrap">▸ Settings</span>
-        </button>
-        <div id="settings-list" class="hidden">
-          <button data-settings-row="prompt"    class="w-full text-left text-xs text-text py-1.5 px-3 hover:bg-surface-muted cursor-pointer interactive">Prompt</button>
-          <button data-settings-row="providers" class="w-full text-left text-xs text-text py-1.5 px-3 hover:bg-surface-muted cursor-pointer interactive">Providers</button>
-          <button data-settings-row="tools"     class="w-full text-left text-xs text-text py-1.5 px-3 hover:bg-surface-muted cursor-pointer interactive">Tools</button>
-          <button data-settings-row="skills"    class="w-full text-left text-xs text-text py-1.5 px-3 hover:bg-surface-muted cursor-pointer interactive">Skills</button>
-          <button data-settings-row="scripts"   class="w-full text-left text-xs text-text py-1.5 px-3 hover:bg-surface-muted cursor-pointer interactive">Scripts</button>
-          <button data-settings-row="packs"     class="w-full text-left text-xs text-text py-1.5 px-3 hover:bg-surface-muted cursor-pointer interactive">Packs</button>
-          <button data-settings-row="geodata"   class="w-full text-left text-xs text-text py-1.5 px-3 hover:bg-surface-muted cursor-pointer interactive" title="Browse + manage local geodata (places, airports, offshore platforms)">Geodata</button>
-          <button data-settings-row="logging"   class="w-full text-left text-xs text-text py-1.5 px-3 hover:bg-surface-muted cursor-pointer interactive flex items-center justify-between">
-            <span>Logging</span>
-            <span id="logging-state-dot" class="text-xs" title="Logging state">◌</span>
-          </button>
-          <button data-settings-row="bug"       class="w-full text-left text-xs text-text py-1.5 px-3 hover:bg-surface-muted cursor-pointer interactive" title="Report a bug to the GitHub repo">Report bug</button>
-        </div>
-      </div>
-
-      <!-- Sidebar footer — leitbild (clickable → repo) + version + theme toggle. -->
-      <div class="sidebar-content mt-auto p-2 flex items-center gap-1 text-xs whitespace-nowrap" style="border-top: 1px solid var(--border); color: var(--text-subtle);">
-        <button id="app-repo-link" type="button" class="font-semibold cursor-pointer bg-transparent border-0 p-0 text-left" style="color: var(--text);" title="Open repository">leitbild</button>
-        <span id="app-version" style="color: var(--text-muted);">v…</span>
-        <span id="ollama-status-dot" style="display:none"></span>
-        <button id="btn-theme-toggle" class="icon-btn ml-auto" style="color: var(--text-muted);" title="Toggle theme" aria-label="Toggle theme">
-          <!-- Sun in light mode, moon in dark mode. icons are injected by app.ts init. -->
-          <span class="theme-icon-sun" data-icon="sun"></span>
-          <span class="theme-icon-moon" data-icon="moon" style="display:none"></span>
-        </button>
-      </div>
-
     </aside>
 
     <!-- Sidebar resize handle — sits on the sidebar's right edge; hover to
@@ -512,68 +426,59 @@
 
     <!-- Center section -->
     <section class="flex-1 flex flex-col min-w-0">
-      <!-- Empty state -->
+      <header class="px-3 py-1.5 border-b bg-surface flex items-center gap-2">
+        <div id="room-header" class="flex flex-1 min-w-0 items-center justify-between gap-1 hidden">
+          <div class="flex items-center gap-2 min-w-0 relative">
+            <button id="room-status-dot" class="room-status-dot" title="Active — click to pause" aria-pressed="false" aria-label="Toggle pause"></button>
+            <!-- Room switcher: room name + chevron. Click to open the popover
+                 with the room list + "create new" entry. Always visible so it
+                 works in both full-screen and sidebar-open modes. -->
+            <button id="room-switcher" class="inline-flex items-center gap-1 text-base font-semibold text-text-strong truncate hover:text-text" aria-haspopup="true" aria-expanded="false">
+              <span id="room-name" class="truncate"></span>
+              <span data-icon="chevron-down" data-icon-size="14"></span>
+            </button>
+            <!-- Anchored to the room-switcher's bottom-left. top is set inline
+                 (rather than via Tailwind top-full) because the build doesn't
+                 always pick up that utility from inside this scope. -->
+            <div id="room-switcher-popover" class="hidden absolute z-30 bg-surface border rounded shadow-lg py-1 text-sm overflow-y-auto" style="left: 0; top: 100%; margin-top: 4px; min-width: 220px; max-height: 60vh;"></div>
+          </div>
+          <div class="flex items-center gap-1">
+            <button id="btn-executions" class="mode-btn icon-btn" title="Execution history" aria-label="Execution history"><span data-icon="search"></span></button>
+            <div class="relative">
+              <button id="btn-room-actions" class="mode-btn icon-btn px-1" type="button" aria-expanded="false" aria-controls="room-actions">Room actions</button>
+              <div id="room-actions" class="hidden absolute z-30 bg-surface border rounded shadow-lg py-1 text-sm" style="right: 0; top: 100%; margin-top: 4px; min-width: 180px; max-height: 65vh; overflow-y: auto;">
+                <button id="btn-bookmarks" type="button" data-close-room-actions>Bookmarks</button>
+                <button id="btn-triggers" type="button" data-close-room-actions>Triggers</button>
+                <button id="btn-room-prompt" type="button" data-close-room-actions>Edit room prompt</button>
+                <button id="btn-clear-messages" type="button" data-close-room-actions>Clear messages</button>
+                <fieldset id="message-display-options" class="border-t border-border mt-1 px-3 pb-1">
+                  <legend class="text-xs text-text-subtle">Message display</legend>
+                </fieldset>
+              </div>
+            </div>
+            <!-- Cluster B: scripts (start chip OR running indicator + controls) -->
+            <div id="script-group" class="toolbar-group toolbar-divider relative">
+              <button id="btn-script-start" class="mode-btn icon-btn" title="Start a script" aria-label="Start a script"><span data-icon="clapperboard"></span></button>
+              <span id="script-running-chip" class="hidden text-xs px-2 py-1 rounded bg-surface-muted text-text border border-border" style="white-space: nowrap;"></span>
+              <button id="btn-script-advance" class="mode-btn icon-btn hidden" title="Force-advance to next step" aria-label="Force-advance"><span data-icon="skip-forward"></span></button>
+              <button id="btn-script-stop" class="mode-btn icon-btn hidden" title="Stop script" aria-label="Stop script"><span data-icon="square"></span></button>
+              <div id="script-start-popover" class="hidden absolute z-30 bg-surface border rounded shadow-lg py-1 text-sm" style="right: 0; top: 100%; margin-top: 4px; min-width: 260px; max-height: 50vh; overflow-y: auto;"></div>
+            </div>
+            <!-- Cluster C: summary / compression -->
+            <div id="summary-group" class="toolbar-group toolbar-divider">
+              <button id="btn-summary-toggle" class="mode-btn icon-btn" title="Summary & compression" aria-label="Summary & compression" aria-pressed="false"><span data-icon="archive"></span></button>
+              <button id="btn-summary-settings" class="mode-btn icon-btn hidden" title="Summary settings" aria-label="Summary settings"><span data-icon="settings"></span></button>
+              <button id="btn-summary-inspect" class="mode-btn icon-btn hidden" title="Inspect summary + compression" aria-label="Inspect summary"><span data-icon="search"></span></button>
+              <button id="btn-summary-regenerate" class="mode-btn icon-btn hidden" title="Regenerate now" aria-label="Regenerate now"><span data-icon="refresh-cw"></span></button>
+            </div>
+          </div>
+        </div>
+
+        <button id="btn-settings" disabled class="mode-btn icon-btn ml-auto px-1 shrink-0" type="button" aria-haspopup="dialog" aria-controls="workspace-settings">Settings</button>
+      </header>
+
       <div id="no-room-state" class="flex-1 flex items-center justify-center text-text-muted text-sm">
         Create a room to get started
-      </div>
-
-      <!-- Room header -->
-      <div id="room-header" class="px-3 py-1.5 border-b bg-surface flex items-center justify-between hidden">
-        <div class="flex items-center gap-2 min-w-0 relative">
-          <button id="room-status-dot" class="room-status-dot" title="Active — click to pause" aria-pressed="false" aria-label="Toggle pause"></button>
-          <!-- Room switcher: room name + chevron. Click to open the popover
-               with the room list + "create new" entry. Always visible so it
-               works in both full-screen and sidebar-open modes. -->
-          <button id="room-switcher" class="inline-flex items-center gap-1 text-base font-semibold text-text-strong truncate hover:text-text" aria-haspopup="true" aria-expanded="false">
-            <span id="room-name" class="truncate"></span>
-            <span data-icon="chevron-down" data-icon-size="14"></span>
-          </button>
-          <!-- Anchored to the room-switcher's bottom-left. top is set inline
-               (rather than via Tailwind top-full) because the build doesn't
-               always pick up that utility from inside this scope. -->
-          <div id="room-switcher-popover" class="hidden absolute z-30 bg-surface border rounded shadow-lg py-1 text-sm overflow-y-auto" style="left: 0; top: 100%; margin-top: 4px; min-width: 220px; max-height: 60vh;"></div>
-        </div>
-        <div class="flex items-center gap-1">
-          <!-- Cluster A: room actions (mode toggle now lives next to the
-               composer at the bottom of the chat area).
-               Buttons that participate in the visibility popover carry
-               data-room-icon-id (stable id) + data-room-icon-label
-               (display label). The eye button itself is excluded from
-               the registry (always-visible escape hatch). -->
-          <!-- Cluster A is `relative` so the visibility popover (last child)
-               can absolute-position itself against the cluster. -->
-          <div class="toolbar-group relative">
-            <button id="btn-executions" class="mode-btn icon-btn" data-room-icon-id="executions" data-room-icon-label="Execution history" title="Execution history" aria-label="Execution history"><span data-icon="search"></span></button>
-            <button id="btn-clear-messages" class="mode-btn icon-btn" data-room-icon-id="clear-messages" data-room-icon-label="Clear messages" title="Clear messages" aria-label="Clear messages"><span data-icon="trash"></span></button>
-            <button id="btn-bookmarks" class="mode-btn icon-btn" data-room-icon-id="bookmarks" data-room-icon-label="Bookmarks" title="Bookmarks" aria-label="Bookmarks"><span data-icon="bookmark" data-icon-fill="var(--danger)" data-icon-style="transform: rotate(45deg)"></span></button>
-            <button id="btn-triggers" class="mode-btn icon-btn" data-room-icon-id="triggers" data-room-icon-label="Triggers" title="Triggers — scheduled prompts for agents in this room" aria-label="Triggers"><span data-icon="clock"></span></button>
-            <button id="btn-room-prompt" class="mode-btn icon-btn" data-room-icon-id="room-prompt" data-room-icon-label="Edit room prompt" title="Room Prompt" aria-label="Edit room prompt"><span data-icon="message-square"></span></button>
-            <button id="btn-workspace" class="mode-btn icon-btn hidden" data-room-icon-id="workspace" data-room-icon-label="Workspace" title="Workspace" aria-label="Workspace"><span data-icon="folder-open"></span></button>
-            <button id="btn-report-bug" class="mode-btn icon-btn" data-room-icon-id="report-bug" data-room-icon-label="Report bug" title="Report bug" aria-label="Report bug"><span data-icon="bug"></span></button>
-            <!-- Eye sits next to bug with no cluster divider between them
-                 (this IS the same cluster). It's intentionally NOT in the
-                 visibility registry — always-visible escape hatch. -->
-            <button id="btn-icon-visibility" class="mode-btn icon-btn" title="Show/hide room icons" aria-label="Show/hide room icons" aria-haspopup="true" aria-expanded="false"><span data-icon="eye"></span></button>
-            <!-- Popover anchors to the cluster's right edge (which == eye's
-                 right edge since eye is the last child) and grows leftward. -->
-            <div id="icon-visibility-popover" class="hidden absolute z-30 bg-surface border rounded shadow-lg py-1 text-sm" style="right: 0; top: 100%; margin-top: 4px; min-width: 260px;"></div>
-          </div>
-          <!-- Cluster B: scripts (start chip OR running indicator + controls) -->
-          <div id="script-group" class="toolbar-group toolbar-divider relative">
-            <button id="btn-script-start" class="mode-btn icon-btn" data-room-icon-id="script" data-room-icon-label="Scripts" title="Start a script" aria-label="Start a script"><span data-icon="clapperboard"></span></button>
-            <span id="script-running-chip" class="hidden text-xs px-2 py-1 rounded bg-surface-muted text-text border border-border" style="white-space: nowrap;"></span>
-            <button id="btn-script-advance" class="mode-btn icon-btn hidden" title="Force-advance to next step" aria-label="Force-advance"><span data-icon="skip-forward"></span></button>
-            <button id="btn-script-stop" class="mode-btn icon-btn hidden" title="Stop script" aria-label="Stop script"><span data-icon="square"></span></button>
-            <div id="script-start-popover" class="hidden absolute z-30 bg-surface border rounded shadow-lg py-1 text-sm" style="right: 0; top: 100%; margin-top: 4px; min-width: 260px; max-height: 50vh; overflow-y: auto;"></div>
-          </div>
-          <!-- Cluster C: summary / compression -->
-          <div id="summary-group" class="toolbar-group toolbar-divider">
-            <button id="btn-summary-toggle" class="mode-btn icon-btn" data-room-icon-id="summary" data-room-icon-label="Summary & compression" title="Summary & compression" aria-label="Summary & compression" aria-pressed="false"><span data-icon="archive"></span></button>
-            <button id="btn-summary-settings" class="mode-btn icon-btn hidden" title="Summary settings" aria-label="Summary settings"><span data-icon="settings"></span></button>
-            <button id="btn-summary-inspect" class="mode-btn icon-btn hidden" title="Inspect summary + compression" aria-label="Inspect summary"><span data-icon="search"></span></button>
-            <button id="btn-summary-regenerate" class="mode-btn icon-btn hidden" title="Regenerate now" aria-label="Regenerate now"><span data-icon="refresh-cw"></span></button>
-          </div>
-        </div>
       </div>
 
       <!-- Room info bar (mode info — collapses when empty) -->
@@ -633,10 +538,45 @@
       </aside>
       </div>
 
-      <!-- Workspace lives as a modal opened from #btn-workspace in the room toolbar. -->
-
     </section>
   </main>
+
+  <dialog id="sandbox-access" class="rounded-lg shadow-xl p-4 w-80 bg-surface text-text" aria-labelledby="sandbox-access-title" aria-describedby="sandbox-access-status">
+    <h2 id="sandbox-access-title" class="font-medium text-text-strong"></h2>
+    <p id="sandbox-access-status" class="my-2 text-sm" role="status"></p>
+    <form class="space-y-2" hidden>
+      <input type="password" placeholder="Token" aria-label="Access token" autocomplete="off" required class="w-full px-3 py-2 border rounded text-sm">
+      <button type="submit" class="btn">Continue</button>
+    </form>
+    <button id="sandbox-access-retry" type="button" class="btn" hidden>Try again</button>
+  </dialog>
+
+  <dialog id="workspace-settings" class="rounded-lg shadow-xl p-0 w-64 bg-surface text-text" aria-labelledby="workspace-settings-title">
+    <div class="px-3 py-2 border-b flex items-center justify-between gap-2">
+      <h2 id="workspace-settings-title" class="font-medium text-text-strong">Workspace Settings</h2>
+      <form method="dialog"><button type="submit" class="btn btn-ghost">Done</button></form>
+    </div>
+    <div id="settings-list" class="py-1">
+      <button data-settings-row="prompt"    class="w-full text-left text-xs text-text py-1.5 px-3 hover:bg-surface-muted cursor-pointer interactive">Prompt</button>
+      <button data-settings-row="providers" class="w-full text-left text-xs text-text py-1.5 px-3 hover:bg-surface-muted cursor-pointer interactive">Providers</button>
+      <button data-settings-row="tools"     class="w-full text-left text-xs text-text py-1.5 px-3 hover:bg-surface-muted cursor-pointer interactive">Tools</button>
+      <button data-settings-row="skills"    class="w-full text-left text-xs text-text py-1.5 px-3 hover:bg-surface-muted cursor-pointer interactive">Skills</button>
+      <button data-settings-row="scripts"   class="w-full text-left text-xs text-text py-1.5 px-3 hover:bg-surface-muted cursor-pointer interactive">Scripts</button>
+      <button data-settings-row="packs"     class="w-full text-left text-xs text-text py-1.5 px-3 hover:bg-surface-muted cursor-pointer interactive">Packs</button>
+      <button data-settings-row="geodata"   class="w-full text-left text-xs text-text py-1.5 px-3 hover:bg-surface-muted cursor-pointer interactive" title="Browse + manage local geodata (places, airports, offshore platforms)">Geodata</button>
+      <button data-settings-row="logging"  class="w-full text-left text-xs text-text py-1.5 px-3 hover:bg-surface-muted cursor-pointer interactive">Logging</button>
+      <button data-settings-row="bug"       class="w-full text-left text-xs text-text py-1.5 px-3 hover:bg-surface-muted cursor-pointer interactive" title="Report a bug to the GitHub repo">Report bug</button>
+    </div>
+    <div class="p-3 flex items-center gap-1 text-xs whitespace-nowrap" style="border-top: 1px solid var(--border); color: var(--text-subtle);">
+      <button id="app-repo-link" type="button" class="font-semibold cursor-pointer bg-transparent border-0 p-0 text-left" style="color: var(--text);" title="Open repository">leitbild</button>
+      <span id="app-version" style="color: var(--text-muted);">v…</span>
+      <button id="btn-theme-toggle" class="icon-btn ml-auto" style="color: var(--text-muted);" title="Toggle theme" aria-label="Toggle theme">
+        <!-- Sun in light mode, moon in dark mode. icons are hydrated at startup. -->
+        <span class="theme-icon-sun" data-icon="sun"></span>
+        <span class="theme-icon-moon" data-icon="moon" style="display:none"></span>
+      </button>
+    </div>
+  </dialog>
 
   <!-- Create Room Modal -->
   <dialog id="room-modal" class="rounded-lg shadow-xl p-0 w-96 bg-surface text-text">
@@ -694,15 +634,6 @@
     <div class="flex flex-col" style="max-height: 90vh;">
       <div id="agent-detail-body" class="flex-1 overflow-y-auto px-4 py-3"></div>
     </div>
-  </dialog>
-
-  <!-- Name prompt modal -->
-  <dialog id="name-modal" class="rounded-lg shadow-xl p-0 w-80 bg-surface text-text">
-    <form id="name-form" class="p-4 space-y-3">
-      <p class="text-sm text-text">Enter your name to join:</p>
-      <input name="name" placeholder="Your name" required autofocus class="w-full px-3 py-2 border rounded text-sm">
-      <button type="submit" class="w-full px-3 py-2 bg-accent text-white text-sm rounded hover:bg-accent-hover">Join</button>
-    </form>
   </dialog>
 
   <!-- Bug report modal — POSTs to /api/bugs which creates a GitHub issue. -->

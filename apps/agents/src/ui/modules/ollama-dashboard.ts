@@ -10,7 +10,6 @@ import { safeFetchJson } from './fetch-helpers.ts'
 // === Types ===
 
 export interface OllamaDashboardElements {
-  readonly statusDot: HTMLElement
   readonly dashboard: HTMLDialogElement
   // Close via Escape or click outside.
   readonly urlSelect: HTMLSelectElement
@@ -31,10 +30,8 @@ const statusColors: Record<string, string> = {
 
 export const updateOllamaHealthUI = (
   health: Record<string, unknown>,
-  statusDot: HTMLElement,
 ): void => {
   const status = health.status as string ?? 'down'
-  statusDot.className = `inline-block w-2 h-2 rounded-full ${statusColors[status] ?? 'bg-text-muted'}`
 
   // Update dashboard if open
   const dotEl = document.getElementById('od-status-dot')
@@ -150,7 +147,6 @@ export const refreshOllamaUrls = async (urlSelect: HTMLSelectElement): Promise<v
 
 export const wireOllamaDashboard = (
   els: OllamaDashboardElements,
-  send: (data: unknown) => void,
 ): void => {
   // Reset circuit breaker button
   els.dashboard.querySelector('#od-reset-circuit')?.addEventListener('click', async () => {
@@ -195,7 +191,7 @@ export const wireOllamaDashboard = (
   // backdrop click, programmatic .close()). No explicit × button.
 
   els.dashboard.addEventListener('close', () => {
-    stopMetricsPoll()
+    if (!els.dashboard.open) stopMetricsPoll()
   })
 }
 
@@ -221,11 +217,11 @@ const pollOllamaMetrics = async (): Promise<void> => {
 
 export const openOllamaDashboard = async (
   els: OllamaDashboardElements,
-  _send: (data: unknown) => void,
 ): Promise<void> => {
-  void _send  // signature preserved for callers; metrics now poll REST.
   els.dashboard.showModal()
   void refreshOllamaUrls(els.urlSelect)
+  stopMetricsPoll()
+  metricsPollTimer = setInterval(() => { void pollOllamaMetrics() }, 3_000)
 
   try {
     const [healthRes, metricsRes, configRes] = await Promise.all([
@@ -233,7 +229,7 @@ export const openOllamaDashboard = async (
       apiFetch('/ollama/metrics'),
       apiFetch('/ollama/config'),
     ])
-    if (healthRes.ok) updateOllamaHealthUI(await healthRes.json() as Record<string, unknown>, els.statusDot)
+    if (healthRes.ok) updateOllamaHealthUI(await healthRes.json() as Record<string, unknown>)
     if (metricsRes.ok) updateOllamaMetricsUI(await metricsRes.json() as Record<string, unknown>)
     if (configRes.ok) {
       const cfg = await configRes.json() as Record<string, unknown>
@@ -248,7 +244,4 @@ export const openOllamaDashboard = async (
     }
   } catch { /* ignore fetch errors on dashboard open */ }
 
-  // Start the live-metrics poll. Stopped on close (above).
-  stopMetricsPoll()  // defensive — in case dashboard reopens
-  metricsPollTimer = setInterval(() => { void pollOllamaMetrics() }, 3_000)
 }

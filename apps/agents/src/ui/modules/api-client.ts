@@ -1,3 +1,5 @@
+import { focusedRoomFor } from './focused-room.ts'
+
 const workspaceIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 export const currentWorkspaceId = (): string => {
@@ -34,11 +36,9 @@ export const workspaceRealtimeUrl = (sessionToken: string): string => {
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
   const query = new URLSearchParams()
   if (sessionToken) query.set('session', sessionToken)
-  const page = new URL(location.href)
-  if (page.searchParams.get('view') === 'focused') {
-    const roomId = page.searchParams.get('room')?.trim()
-    if (roomId) query.set('room', roomId)
-  }
+  const roomId = focusedRoomFor(new URL(location.href).searchParams)
+  if (roomId === null) throw new Error('Focused Room URL is missing its Room ID')
+  if (roomId !== undefined) query.set('room', roomId)
   const suffix = query.size > 0 ? `?${query}` : ''
   return `${protocol}//${location.host}/api/workspaces/${currentWorkspaceId()}/agents/ws${suffix}`
 }

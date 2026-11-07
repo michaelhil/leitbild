@@ -1,5 +1,5 @@
 import { apiFetch } from "./api-client.ts"
-// Boot-time UI footer wiring — theme toggle + app version + repo link.
+// Workspace Settings footer wiring — theme toggle + app version + repo link.
 // Extracted from app.ts to keep the shell focused on routing and dispatch.
 // Self-contained: imports its deps lazily, no closure dependencies on app.ts.
 
