@@ -265,6 +265,29 @@ describe('an LD-01 Plant in a Run', () => {
     }
   })
 
+  test('at a named domain end it says so once, stays with its last frame, and nothing restarts it', async () => {
+    process.env[ld01UnitArtifactEnv] = await artifactWith({ endAtS: 101.05 })
+    const object = expand()
+    const store = memoryStore()
+    const clock = pausedClock()
+    const connection = await connect(object, store, clock)
+    const events: PackRuntimeEvent[] = []
+    connection.subscribe(event => { if (event.type === 'event.emission') events.push(...event.events) })
+    try {
+      await advance(connection, clock, 2_000)
+      const held = await read(connection, 'PROTECTION.pressure')
+      await advance(connection, clock, 1_000)
+      const signals = events.flatMap(event => event.type === 'interaction.signal' ? [event.signal] : [])
+      expect(signals.filter(signal => signal.type === 'process-plant.engine.ended').map(signal => (signal.payload as { message: string }).message))
+        .toEqual(['Simulation domain end: pressurizer solid at t=1.050 s'])
+      expect(signals.some(signal => signal.type === 'process-plant.engine.failed')).toBe(false)
+      expect(await projectionOf(connection)).toMatchObject({ statusLabel: 'Simulation domain end', summary: 'Simulation domain end: pressurizer solid at t=1.050 s' })
+      expect(await read(connection, 'PROTECTION.pressure')).toEqual(held)
+    } finally {
+      await connection.close()
+    }
+  })
+
   test('whose child dies fails at its time: it shows the cause, keeps its last state, and nothing restarts it', async () => {
     process.env[ld01UnitArtifactEnv] = await artifactWith({ dieAtS: 101.5 })
     const object = expand()

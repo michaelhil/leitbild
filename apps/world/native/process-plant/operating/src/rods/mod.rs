@@ -2321,6 +2321,9 @@ impl<P: Properties> Rods<P> for RodBlock {
         }
         Ok(())
     }
+    fn neck_cell(&self) -> usize {
+        self.neck
+    }
     fn structure(&self) -> Structure {
         let n = self.groups.len();
         let plena = vec![self.lower, self.upper, self.main, self.neck];

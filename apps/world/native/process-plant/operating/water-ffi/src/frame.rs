@@ -726,6 +726,24 @@ impl<S: JoinedSystem> Driver<S> {
             quadratures,
         })
     }
+    /// R4-ENDED: the last accepted step's `y'`, when one is held.
+    pub fn accepted_rates(&self) -> Option<&[f64]> {
+        (!self.step_yp.is_empty()).then_some(&self.step_yp[..])
+    }
+    /// R4-ENDED: after a named domain end the run stands at its last
+    /// accepted step, the frame the unit holds: `y`, `y'` become that state,
+    /// observation stands there and nothing located waits to apply. Returns
+    /// that time.
+    pub fn stand_at_accepted(&mut self, y: &mut [f64], yp: &mut [f64]) -> f64 {
+        if !self.step_y.is_empty() {
+            y.copy_from_slice(&self.step_y);
+            yp.copy_from_slice(&self.step_yp);
+        }
+        self.observed_to = self.integrator_s;
+        self.held_roots = None;
+        self.accepted_pending = false;
+        self.integrator_s
+    }
     /// HOOK (WORLD `ld01-unit`): restore [`Driver::state`] into a fresh
     /// driver of the same frame whose handle `ida` stands at the state's
     /// time after its consistent restart (nothing observed, decided or

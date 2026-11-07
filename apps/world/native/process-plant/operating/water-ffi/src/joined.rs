@@ -2450,9 +2450,10 @@ mod integrated {
             out: &mut [f64],
         ) -> Result<(), Failure> {
             self.base.held = false;
-            self.joined
-                .evaluate(time, y, yp, None, 0., None)
-                .map_err(failure)?;
+            if let Err(refused) = self.joined.evaluate(time, y, yp, None, 0., None) {
+                self.joined.note_refused(time, y);
+                return Err(failure(refused));
+            }
             for (r, v) in out.iter_mut().zip(self.joined.rows()) {
                 *r = v.value;
             }

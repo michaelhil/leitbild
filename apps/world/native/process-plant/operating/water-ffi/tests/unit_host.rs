@@ -19,6 +19,10 @@
 //!   exchanges. Every exchange's reply payload (time, counts, the
 //!   observation frame and its events) and the final snapshots are
 //!   byte-equal.
+//! - **Named end (R4-ENDED).** `a_named_end_holds_its_state_and_refuses_by_name`
+//!   drives the stuck-open relief to the unit's named end: the exchange
+//!   replies with `ended`, ADVANCE and COMMAND then refuse by name, SNAPSHOT
+//!   and STATUS work, and a restored unit reaches the same end.
 //! - **Conformance.** An unknown op, a command in the past, an unknown
 //!   command kind and an ADVANCE behind the unit refuse; a restore whose
 //!   identity differs (kernel sources, the start state) refuses; CLOSE
@@ -529,6 +533,93 @@ fn a_restored_copy_continues_bitwise_and_the_protocol_refuses_explicitly() {
         "the source itself refused after the copy point (the copy refused identically): {:?}",
         a_failed
     );
+}
+
+/// The LOAD request with the unit's defaults (free stepping, SBTL unless
+/// `LD01_UNIT_HOST_WATER` names IF97).
+fn default_load() -> Value {
+    let water = std::env::var("LD01_UNIT_HOST_WATER").unwrap_or_else(|_| "sbtl".into());
+    json!({
+        "inputs": {
+            "packet": env("LD01_OPERATING_HOT_SPINE_PACKET"),
+            "wiki_root": env("LD01_WIKI_ROOT"),
+            "wiki_commit": env("LD01_WIKI_COMMIT"),
+            "wiki_repository": env("LD01_WIKI_REPOSITORY"),
+            "ic": env("LD01_IC_SECTION"),
+            "pzr_control": env("LD01_PZR_CONTROL_SECTION"),
+            "pzr_control_wiki": env("LD01_PZR_CONTROL_WIKI"),
+            "elec": env("ELEC_PACKET"),
+        },
+        "state": env("LD01_S3_STATE"),
+        "solver": {"weights": "stock", "first_step": "declared", "stepping": "free", "water": water,
+            "source_atol": std::env::var("LD01_S3_SOURCE_ATOL").unwrap_or_else(|_| "derived".into())},
+    })
+}
+
+/// Advance from exchange `from` until an exchange names an end: its frame.
+fn to_the_end(host: &mut Host, instant: impl Fn(u64) -> f64, from: u64, last: u64) -> Frame {
+    for k in from..=last {
+        let (payload, _) = advance(host, instant(k));
+        let f = frame(&payload);
+        if !f.events["ended"].is_null() {
+            return f;
+        }
+    }
+    panic!("no named end by exchange {last}");
+}
+
+#[test]
+#[ignore = "NOT-EVIDENCE gate: two ld01-unit processes to the stuck-open relief's end (minutes)"]
+fn a_named_end_holds_its_state_and_refuses_by_name() {
+    let receipts = std::path::PathBuf::from(env("LD01_UNIT_HOST_RECEIPTS"));
+    std::fs::create_dir_all(&receipts).expect("receipt directory");
+    // C4 ends at +49.8 s; the span bounds a run that does not.
+    let last = 700;
+    let load = serde_json::to_vec(&default_load()).unwrap();
+    let mut a = Host::spawn(&receipts.join("end-a.stderr.log"));
+    let loaded = a.json(LOAD, &load);
+    let t0 = bits_of(&loaded["t_bits"]);
+    let period = loaded["frame_s"].as_f64().expect("frame_s");
+    let k0 = (t0 / period).round() as u64;
+    let instant = |k: u64| (k0 + k) as f64 * period;
+    let relief = json!({"kind": "ReliefStuckOpen", "t_apply": instant(1)});
+    a.json(COMMAND, &serde_json::to_vec(&relief).unwrap());
+    let end = to_the_end(&mut a, instant, 1, last);
+    let named = &end.events["ended"];
+    assert_eq!(named["label"], "solidPzr", "{named}");
+    assert_eq!(named["t"].as_f64(), Some(end.t), "{named}");
+    let status = a.json(STATUS, &[]);
+    assert_eq!(status["failed"], Value::Null, "{status}");
+    assert_eq!(status["ended"]["label"], "solidPzr", "{status}");
+
+    // Nothing runs past it, and each refusal says why.
+    let t1 = (end.t / period).ceil() * period + period;
+    let refused = a.refused(ADVANCE, &t1.to_le_bytes());
+    assert!(refused.contains("the unit ended at"), "{refused}");
+    let command = json!({"kind": "ReliefStuckOpen", "t_apply": end.t});
+    let refused_command = a.refused(COMMAND, &serde_json::to_vec(&command).unwrap());
+    assert!(refused_command.contains("the unit ended at"), "{refused_command}");
+
+    // The end holds a state: a snapshot, and a unit restored from it.
+    let snapshot = a.ok(SNAPSHOT, &[]).payload;
+    std::fs::write(receipts.join("snapshot-end.json"), &snapshot).unwrap();
+    let mut b = Host::spawn(&receipts.join("end-b.stderr.log"));
+    let restored = b.json(RESTORE, &snapshot);
+    assert_eq!(bits_of(&restored["t_bits"]), end.t, "{restored}");
+    let k = (end.t / period).ceil() as u64 - k0;
+    let again = to_the_end(&mut b, instant, k, last);
+    assert_eq!(again.events["ended"]["label"], "solidPzr");
+    std::fs::write(
+        receipts.join("named-end.json"),
+        serde_json::to_vec_pretty(&json!({
+            "first": named, "after_restore": again.events["ended"],
+            "refusals": [refused, refused_command],
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    a.close();
+    b.close();
 }
 
 /// R4-TIME-STOPPED on the real unit: the relief fails open from the saved

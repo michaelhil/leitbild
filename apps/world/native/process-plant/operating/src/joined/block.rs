@@ -752,6 +752,8 @@ pub trait Rods<P> {
     /// The clusters whose rows, receipts, travel or volumes read own
     /// coordinate `i`.
     fn coordinate_readers(&self, i: usize, out: &mut Vec<usize>) -> Result<(), Failure>;
+    /// HOUSING.NECK's cell, the stem's top (R4-ENDED's table reads it).
+    fn neck_cell(&self) -> usize;
     fn structure(&self) -> Structure;
     /// Root functions on accepted states (seats, kinks if declared).
     fn root_count(&self) -> usize;

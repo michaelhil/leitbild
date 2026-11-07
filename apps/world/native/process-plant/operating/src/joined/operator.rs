@@ -44,6 +44,7 @@ use crate::{
     sparse::{self, Coloring, Pattern},
     thermal::{self, Scalar, WaterProperties},
 };
+use super::domain_end::{self, DomainEnd, Refused};
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 
@@ -255,6 +256,10 @@ pub struct Joined<P: Properties> {
     /// the frame driver's accepted-state observer is: no transaction runs
     /// between a step and its observer.
     value_state: ValueState,
+    /// R4-ENDED: the last refused evaluation and the cell of a refused
+    /// dryout, for the named-end table.
+    refused: Option<Refused>,
+    dryout: Option<usize>,
 }
 
 /// HOOK (COST2): the bits of one value evaluation's state.
@@ -594,6 +599,8 @@ impl<P: Properties + WaterProperties> Joined<P> {
             credited: Vec::new(),
             supply_routed: false,
             value_state: ValueState::default(),
+            refused: None,
+            dryout: None,
         };
         let columns = joined.structural_pattern()?;
         let pattern = Pattern::from_columns(offsets.end, &columns).map_err(fatal)?;
@@ -1350,10 +1357,38 @@ impl<P: Properties + WaterProperties> Joined<P> {
             y[roof] * self.network.scales()[roof],
         )
     }
+    /// R4-ENDED: keep a refused evaluation's time and PZR vapor mass; the
+    /// named-end table reads them only if the run stops there.
+    pub fn note_refused(&mut self, t: f64, y: &[f64]) {
+        let i = self.network.pzr.base + stratified::VAPOR_MASS;
+        if let (Some(v), Some(scale)) = (y.get(i), self.network.scales().get(i)) {
+            self.refused = Some(Refused {
+                t,
+                vapor_mass_kg: v * scale,
+            });
+        }
+    }
+    /// R4-ENDED: the named end of a stop with this cause after the accepted
+    /// state `(t, y')`, or `None`: a failure ([`domain_end`]'s table).
+    pub fn named_end(&self, cause: &str, accepted_s: f64, yp: &[f64]) -> Option<DomainEnd> {
+        let i = self.network.pzr.base + stratified::VAPOR_MASS;
+        let rate = yp.get(i)? * self.network.scales().get(i)?;
+        domain_end::named_end(&domain_end::Stop {
+            cause,
+            refused: self.refused,
+            dryout: self.dryout,
+            neck: self.rods().map(|r| r.neck_cell()),
+            accepted_s,
+            vapor_mass_rate_kg_s: rate,
+        })
+    }
     pub fn roots(&mut self, t: f64, y: &[f64], yp: &[f64], out: &mut [f64]) -> Result<(), Failure> {
         let started = Instant::now();
         self.value_state.held = false; // HOOK (COST2)
         let result = self.root_values(t, y, yp, out);
+        if result.is_err() {
+            self.note_refused(t, y);
+        }
         // HOOK (COST2): a root call whose value evaluation completed leaves
         // that state's evaluation in the operator; everything the call does
         // after it reads the same `(y, y')` (the rods' moving volumes and
@@ -1775,6 +1810,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
                 }
                 CellMode::Equilibrium => {
                     if b == -1 {
+                        self.dryout = Some(c);
                         return Err(fatal(format!(
                             "dryout of cell {c} at t = {t} s: mode G is S6 scope (C4's declared end)"
                         )));

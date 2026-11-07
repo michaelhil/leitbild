@@ -70,6 +70,17 @@ export interface NativeEngineFailure {
   readonly reason: string
 }
 
+/** A named domain end (R4-ENDED): the unit holds its last accepted step, alive, and refuses to run past it. */
+export interface NativeEngineEnded {
+  readonly atMs: number
+  readonly label: string
+  readonly reason: string
+}
+
+const endedEventSchema = z.object({
+  ended: z.object({ label: z.string(), plain: z.string(), t: z.number().finite(), cause: z.string() }).strict().optional(),
+}).passthrough()
+
 /** What the child reports a request cost it (its reply header): handler wall and thread CPU seconds. */
 export interface NativeUnitCost {
   readonly wallS: number
@@ -94,6 +105,8 @@ export interface NativeProcessPlantEngine {
   /** The last checkpoint taken (or the unit's start), what a periodic flush persists without disturbing the unit. */
   readonly persisted: () => NativeProcessPlantCheckpoint
   readonly failure: () => NativeEngineFailure | null
+  /** The unit's named domain end, once an exchange reported one. */
+  readonly ended: () => NativeEngineEnded | null
   /** What LOAD (or RESTORE) and the first frame cost the child. */
   readonly connectCost: NativeUnitCost
   /** Snapshots a live unit (so a later connect resumes where it stood), then sends CLOSE. */
@@ -124,6 +137,7 @@ export const connectNativeProcessPlantEngine = async (config: {
     throw new Error(`LD-01 Plant ${plant.id} was saved on artifact ${restored.artifactSha256}, not this one (${config.artifactSha256}): no migration`)
   }
   let failure: NativeEngineFailure | null = null
+  let ended: NativeEngineEnded | null = null
   let state: { t: number; values: Float64Array } = { t: Number.NaN, values: new Float64Array(0) }
   let originS = Number.NaN
   let requestedS = Number.NaN
@@ -254,6 +268,7 @@ export const connectNativeProcessPlantEngine = async (config: {
 
   const runtime: ProcessPlantRuntime = {
     tick: () => { throw new Error(`LD-01 Plant ${plant.id} advances through its native engine, not tick`) },
+    domainEnd: () => ended?.reason ?? null,
     elapsedMs,
     // Plant time asked for in all: the frames exchanged and the remainder short of the next, so Run time minus it is fixed.
     advancedMs: () => (requestedS - originS) * 1_000,
@@ -267,6 +282,7 @@ export const connectNativeProcessPlantEngine = async (config: {
       const bound = binding.byPath.get(command.path)
       if (bound?.kind !== 'command') throw new Error(`LD-01 Plant ${plant.id} takes no write to ${command.path}: only its kernel commands are writable`)
       if (command.value !== true) throw new Error(`${command.path} sends ${bound.command.kind} when written true; ${String(command.value)} sends nothing`)
+      if (ended !== null) throw new Error(`LD-01 Plant ${plant.id} takes no command: ${ended.reason}`)
       if (!queued.includes(bound.command)) queued.push(bound.command)
     },
     pwrTransientDiagnostics: () => { throw new Error(`transient diagnostics belong to the TS PWR runtime; LD-01 Plant ${plant.id} does not answer them`) },
@@ -297,6 +313,11 @@ export const connectNativeProcessPlantEngine = async (config: {
     runtime,
     advance: (advanceMs: number) => exclusive(async (): Promise<NativeAdvanceReceipt> => {
       if (!Number.isFinite(advanceMs) || advanceMs <= 0) throw new Error(`LD-01 advance must be a positive number of ms, got ${advanceMs}`)
+      // R4-ENDED: past a named end the Run's time goes on, the unit does not; reads hold at the last frame.
+      if (ended !== null) {
+        requestedS += advanceMs / 1_000
+        return { simulatedMs: 0, frame: null, cost: { wallS: 0, cpuS: 0 } }
+      }
       try {
         requestedS += advanceMs / 1_000
         const t1 = instant(lastFrameAtOrBefore(requestedS))
@@ -309,6 +330,8 @@ export const connectNativeProcessPlantEngine = async (config: {
         if (frame.values.length !== binding.channelCount) throw new Error(`a frame carries ${frame.values.length} values for ${binding.channelCount} channels`)
         const simulatedMs = (frame.t - state.t) * 1_000
         state = { t: frame.t, values: frame.values }
+        const named = frame.events === null ? undefined : endedEventSchema.parse(frame.events).ended
+        if (named !== undefined) ended = { atMs: elapsedMs(), label: named.label, reason: `Simulation domain end: ${named.plain} at t=${(elapsedMs() / 1_000).toFixed(3)} s` }
         return { simulatedMs, frame, cost: { wallS: advanced.wallS, cpuS: advanced.cpuS } }
       } catch (error) {
         throw failed(error)
@@ -317,6 +340,7 @@ export const connectNativeProcessPlantEngine = async (config: {
     checkpoint: () => exclusive(snapshot),
     persisted: () => persisted,
     failure: () => failure,
+    ended: () => ended,
     connectCost,
     close: async (): Promise<NativeProcessPlantCheckpoint> => {
       // A failed unit keeps its last checkpoint; a live one is snapshotted first, and a refusal there fails it visibly.

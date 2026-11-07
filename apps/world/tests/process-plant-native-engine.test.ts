@@ -186,6 +186,20 @@ describe('the LD-01 native engine', () => {
     expect((await restarted.advance(200)).simulatedMs).toBeCloseTo(200, 6)
     expect(restarted.failure()).toBeNull()
   }, 30_000)
+  test('a named domain end holds the last frame: nothing fails, nothing runs past it, commands refuse by name', async () => {
+    const engine = await connect({ endAtS: 101.05 })
+    const receipt = await engine.advance(2_000)
+    expect(receipt.frame!.t).toBe(101.05)
+    expect(engine.failure()).toBeNull()
+    expect(engine.ended()).toEqual({ atMs: expect.closeTo(1_050, 6), label: 'solidPzr', reason: 'Simulation domain end: pressurizer solid at t=1.050 s' })
+    expect(engine.runtime.domainEnd?.()).toBe('Simulation domain end: pressurizer solid at t=1.050 s')
+    const held = engine.runtime.readVariable('PROTECTION.pressure' as VariablePath)
+    expect(await engine.advance(1_000)).toEqual({ simulatedMs: 0, frame: null, cost: { wallS: 0, cpuS: 0 } })
+    expect(engine.runtime.readVariable('PROTECTION.pressure' as VariablePath)).toBe(held)
+    expect(() => engine.runtime.writeCommand({ type: 'setVariable', path: 'PROTECTION.manualReactorTrip' as VariablePath, value: true })).toThrow('takes no command: Simulation domain end')
+    expect((await engine.checkpoint()).snapshot).not.toBeNull()
+    expect(engine.failure()).toBeNull()
+  })
 
   test('refuses at LOAD a tag map naming a channel the unit does not deliver', async () => {
     const load = await fixtureLoad({ channels: fixtureChannels.filter(channel => channel.id !== 'LD01.PROT.I1.TRIP') })
