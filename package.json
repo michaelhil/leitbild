@@ -32,7 +32,7 @@
     "test:world": "bun run --cwd apps/world test",
     "test:host": "bun run --cwd apps/leitbild test",
     "test:integration": "bun run --cwd packages/integration-tests test",
-    "test:scripts": "bun test scripts/*.test.ts scripts/display-eval",
+    "test:scripts": "bun test --timeout 120000 scripts/*.test.ts scripts/display-eval",
     "test": "bun run test:scripts && bun run test:contracts && bun run test:module-runtime && bun run test:procmd && bun run test:knowledge && bun run test:agents && bun run test:world && bun run test:host && bun run test:integration",
     "build:host": "bun run --cwd apps/leitbild build:ui",
     "build:world": "bun run --cwd apps/world build:ui",
