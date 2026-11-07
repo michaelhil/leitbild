@@ -527,10 +527,16 @@ fn a_refused_state_stops_the_unit_by_name() {
     let k0 = (t0 / period).round() as u64;
     let open = json!({"kind": "ReliefStuckOpen", "t_apply": (k0 + 1) as f64 * period});
     host.ok(COMMAND, &serde_json::to_vec(&open).unwrap());
+    // The cause arrives as a refusal, or in the `ended` event once a named
+    // domain end holds the unit (R4-ENDED): the same text either way.
     let cause = (2..800)
         .find_map(|k| {
             let r = host.request(ADVANCE, &((k0 + k) as f64 * period).to_le_bytes());
-            (r.status != 0).then(|| String::from_utf8(r.payload).expect("UTF-8 cause"))
+            if r.status != 0 {
+                return Some(String::from_utf8(r.payload).expect("UTF-8 cause"));
+            }
+            let events = frame(&r.payload).events;
+            events["ended"]["cause"].as_str().map(str::to_string)
         })
         .expect("the relief's run ends in a refused state");
     std::fs::write(receipts.join("time-stopped.cause.txt"), &cause).expect("receipt");
