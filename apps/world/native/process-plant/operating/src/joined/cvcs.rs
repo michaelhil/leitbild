@@ -187,7 +187,9 @@ const CONC_M: usize = 3;
 const RECV_M: usize = 4;
 const RECV_B: usize = 5;
 const LEVEL: usize = 6;
-const TAVG: usize = 7;
+/// The loop-average lag (`CVCS.TAVG.lag`), also the post-trip Tavg mode's
+/// input (R4-DUMP).
+pub const TAVG: usize = 7;
 /// Per branch: flow lag, inner integral, stem and the outer level
 /// integral (R4-CVCS-PI), from the branch's base.
 const BRANCH: [usize; 2] = [8, 12];
