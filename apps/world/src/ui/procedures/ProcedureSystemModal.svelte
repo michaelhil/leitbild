@@ -7,7 +7,7 @@
   import { readProcedureTagValue } from './procedure-client.ts'
   import { canInspectProcedureBranchCheck, type ProcedureChecksView } from '../../features/procedures/checks-view.ts'
   import { simulationTimeAt } from '../simulation-clock.ts'
-  import { procedureViewKey, procedureCategories, procedureOperatorRows, procedureLineChecks, procedureLineCheckEvidence, procedureLineReadingText, procedureStepCounterText, procedureReadingName, procedureReadingText, procedureRequirementText, procedureEvidenceStatusWord, type ProcedureLineCheck, type StepItem, procedureStepTagBindings, procedureTextSegments, procedureBlockLabel, procedureObservationEvidence, procedureSampledEvidence, procedureObservationBasis, procedureObservationLabel, procedureSourceEvidenceRequest, procedureUnitJump } from './procedure-view.ts'
+  import { procedureViewKey, procedureCategories, procedureOperatorRows, procedureLineChecks, procedureLineCheckEvidence, procedureLineReadingText, procedureReferenceNotice, procedureStepCounterText, procedureReadingName, procedureReadingText, procedureRequirementText, procedureEvidenceStatusWord, type ProcedureLineCheck, type StepItem, procedureStepTagBindings, procedureTextSegments, procedureBlockLabel, procedureObservationEvidence, procedureSampledEvidence, procedureObservationBasis, procedureObservationLabel, procedureSourceEvidenceRequest, procedureUnitJump } from './procedure-view.ts'
   import type {
     SimulationRunId,
     SimulationClockState,
@@ -2238,7 +2238,7 @@
           </div>
           {@render errorStrips()}
           {#if document.sourcePath.startsWith('archive/')}
-            <p class="procedure-reference-banner"><strong>Reference procedure</strong> · Check applicability before use.</p>
+            <p class="procedure-reference-banner">{procedureReferenceNotice}</p>
           {/if}
           {#if driverView}
             <div class="procedure-driver-band {driverView.kind}" role="status">
@@ -2362,7 +2362,7 @@
               <strong>{transitionToLabel(pendingTransition)}</strong>
             </p>
             {#if pendingTransition.targetProcedure.sourcePath.startsWith('archive/')}
-              <p><strong>Reference procedure.</strong> Check applicability before transferring.</p>
+              <p><strong>{procedureReferenceNotice}</strong></p>
             {/if}
             {#if driverView?.kind === 'ai' && pendingTransition.branch.outcome === 'rno'}
               <p>The AI will remain the driver. To handle recovery yourself, cancel and select <strong>Take over</strong> first.</p>

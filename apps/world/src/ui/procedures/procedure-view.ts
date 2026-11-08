@@ -397,6 +397,9 @@ export const procedureUnitJump = <Summary extends { readonly procedureId: string
   return openProcedureId === null ? { kind: 'unit' } : { kind: 'procedure', procedureId: openProcedureId }
 }
 
+/** What a person is told at a transfer into, and on, a document from the archive. */
+export const procedureReferenceNotice = 'Reference document, not written for this plant. Limits and equipment names may differ.'
+
 export const procedureViewKey = (document: ProcedureDocument, scope: ProcedureRunScope): string =>
   JSON.stringify([scope.plantId, document.source.sourceId, document.source.revision, document.sourcePath, document.procedureId])
 
