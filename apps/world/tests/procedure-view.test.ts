@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { parseProcedureMarkdown } from '../src/features/procedures/procmd.ts'
-import { procedureCategories, procedureBlockLabel, procedureEvidenceStatusWord, procedureLineReadingText, procedureStepCounterText, procedureReadingName, procedureReadingText, procedureRequirementText, procedureLineCheckEvidence, procedureLineChecks, procedureObservationBasis, procedureObservationEvidence, procedureObservationLabel, procedureOperatorRows, procedureSampledEvidence, procedureSourceEvidenceRequest, procedureStepItems, procedureStepTagBindings, procedureTextSegments, procedureUnitJump } from '../src/ui/procedures/procedure-view.ts'
+import { procedureCheckVersion, procedureCategories, procedureBlockLabel, procedureEvidenceStatusWord, procedureLineReadingText, procedureStepCounterText, procedureReadingName, procedureReadingText, procedureRequirementText, procedureLineCheckEvidence, procedureLineChecks, procedureObservationBasis, procedureObservationEvidence, procedureObservationLabel, procedureOperatorRows, procedureSampledEvidence, procedureSourceEvidenceRequest, procedureStepItems, procedureStepTagBindings, procedureTextSegments, procedureUnitJump } from '../src/ui/procedures/procedure-view.ts'
 import { procedureCriterionReadingSchema } from '../src/core/model/procedure-criteria.ts'
 import { procedureTestSource } from './procedure-fixtures.ts'
 import { procedureBindingStatusWord, procedureComparisonText, procedureCsfChip, procedureDescriptionText, procedureDisplayReading, procedureElapsedText, procedureStepBindingSummary } from '../src/ui/procedures/procedure-view.ts'
@@ -366,4 +366,15 @@ test('a document left as it was sits under Not revised, by its category', () => 
   const item = (procedureId: string, category: string) => ({ procedureId, category }) as unknown as Parameters<typeof procedureCategories>[0][number]
   const groups = procedureCategories([item('ES-1.3', 'model-scoped simulator task'), item('E-0', 'model-entry-response'), item('RHR-1', 'model-scoped simulator task')])
   expect(groups.map(group => [group.label, group.procedures.map(procedure => procedure.procedureId)])).toEqual([['Not revised', ['ES-1.3', 'RHR-1']], ['model entry response', ['E-0']]])
+})
+
+test('an accepted command ends a light sample on a paused clock, and not on a running one', () => {
+  const running = { paused: false, currentTime: '2026-07-12T04:00:10.000Z' }
+  const paused = { paused: true, currentTime: '2026-07-12T04:00:10.000Z' }
+  expect(procedureCheckVersion(1, '1:0', running)).toBe(procedureCheckVersion(1, '2:0', running))
+  expect(procedureCheckVersion(1, '1:0', { ...running, currentTime: '2026-07-12T04:00:11.000Z' })).toBe(procedureCheckVersion(1, '1:0', running))
+  expect(procedureCheckVersion(1, '1:0', paused)).not.toBe(procedureCheckVersion(1, '2:0', paused))
+  expect(procedureCheckVersion(1, '1:0', paused)).not.toBe(procedureCheckVersion(1, '1:0', { ...paused, currentTime: '2026-07-12T04:00:11.000Z' }))
+  expect(procedureCheckVersion(1, '1:0', running)).not.toBe(procedureCheckVersion(2, '1:0', running))
+  expect(procedureCheckVersion(1, '1:0', running)).not.toBe(procedureCheckVersion(1, '1:0', paused))
 })

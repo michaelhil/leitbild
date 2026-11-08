@@ -7,7 +7,7 @@
   import { readProcedureTagValue } from './procedure-client.ts'
   import { canInspectProcedureBranchCheck, type ProcedureChecksView } from '../../features/procedures/checks-view.ts'
   import { simulationTimeAt } from '../simulation-clock.ts'
-  import { procedureViewKey, procedureCategories, procedureOperatorRows, procedureLineChecks, procedureLineCheckEvidence, procedureLineReadingText, procedureReferenceNotice, procedureStepCounterText, procedureReadingName, procedureReadingText, procedureRequirementText, procedureEvidenceStatusWord, type ProcedureLineCheck, type StepItem, procedureStepTagBindings, procedureTextSegments, procedureBlockLabel, procedureObservationEvidence, procedureSampledEvidence, procedureObservationBasis, procedureObservationLabel, procedureSourceEvidenceRequest, procedureUnitJump } from './procedure-view.ts'
+  import { procedureViewKey, procedureCategories, procedureOperatorRows, procedureLineChecks, procedureLineCheckEvidence, procedureCheckVersion, procedureLineReadingText, procedureReferenceNotice, procedureStepCounterText, procedureReadingName, procedureReadingText, procedureRequirementText, procedureEvidenceStatusWord, type ProcedureLineCheck, type StepItem, procedureStepTagBindings, procedureTextSegments, procedureBlockLabel, procedureObservationEvidence, procedureSampledEvidence, procedureObservationBasis, procedureObservationLabel, procedureSourceEvidenceRequest, procedureUnitJump } from './procedure-view.ts'
   import type {
     SimulationRunId,
     SimulationClockState,
@@ -99,6 +99,7 @@
     readonly clock?: SimulationClockState | undefined
     readonly realtimeAttached?: boolean
     readonly checkEvidenceRevision?: string
+    readonly checkPerspective?: number
     readonly checkEvidenceObject?: OperationalObject
     readonly initialProcedureId?: ProcedureId | undefined
     readonly windowOffsetIndex?: number
@@ -168,6 +169,7 @@
     clock = undefined,
     realtimeAttached = false,
     checkEvidenceRevision = '',
+    checkPerspective = 0,
     checkEvidenceObject = undefined,
     initialProcedureId = undefined,
     windowOffsetIndex = 0,
@@ -287,7 +289,7 @@
     readonly revision: string
     readonly object?: OperationalObject | undefined
   }>()
-  const checkVersion = $derived(`${checkEvidenceRevision}:${clock?.paused}:${clock?.paused ? clock.currentTime : ''}`)
+  const checkVersion = $derived(procedureCheckVersion(checkPerspective, checkEvidenceRevision, clock))
   // Running plant projections are telemetry, not a change of evidence context.
   const pausedCheckObject = $derived(clock?.paused ? checkEvidenceObject : undefined)
   const checkStepId = $derived.by(() => {

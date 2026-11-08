@@ -162,6 +162,13 @@ export const procedureLineCheckEvidence = (
   return { status, operands }
 }
 
+/**
+ * What a line-light sample depends on. A paused plant changes only by what is done to it, so any accepted command or Pack change ends the sample.
+ * On a running clock a sample ends by its own age, and the next read replaces it: dropping it on every command turned all lights grey until that read returned.
+ */
+export const procedureCheckVersion = (perspective: number, evidenceRevision: string, clock: { readonly paused: boolean; readonly currentTime: string } | undefined): string =>
+  `${perspective}:${clock?.paused ? `paused:${clock.currentTime}:${evidenceRevision}` : 'running'}`
+
 export type ProcedureTextSegment =
   | { readonly kind: 'text' | 'tag'; readonly text: string }
   | { readonly kind: 'link'; readonly text: string; readonly href: string }
