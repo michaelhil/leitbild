@@ -94,7 +94,7 @@ export const componentWorkDemoInputs = (basis: PlanningSourceBasis): DemoInputs 
     const stages = [
       { id: 'isolate', title: 'Prepare and isolate', seconds: 600, crane: false },
       { id: 'remove', title: 'Lift out', seconds: 900, crane: true },
-      { id: 'inspect', title: 'Inspect and service', seconds: index === 0 ? 1800 : 3000, crane: false },
+      { id: 'inspect', title: 'Inspect and service', seconds: index === 0 ? 1800 : 2400, crane: false },
       { id: 'install', title: 'Lift in', seconds: 900, crane: true },
       { id: 'verify', title: 'Verify and release', seconds: 600, crane: false },
     ]

@@ -52,7 +52,7 @@ describe('shared planning sources', () => {
     expect(outcome.kind === 'command' && outcome.result.ok).toBe(true)
     const changed = await run.planningSource.capture(source(run.id), 'einsatz', { subjectIds: first.qualification.subjectIds })
     expect(changed.digest).not.toBe(first.digest)
-    expect(await run.planningSource.qualify({ profile: first.profile, qualification: first.qualification })).toEqual({ allowed: true })
+    expect(await run.planningSource.qualify({ profile: first.profile, qualification: first.qualification, activation: 'loaded-only' })).toEqual({ allowed: true })
   })
 
   test('denies shared capture and retained qualification after AI restrictions; missing subjects remain unavailable', async () => {
@@ -61,8 +61,8 @@ describe('shared planning sources', () => {
     const basis = await run.planningSource.capture(source(run.id), 'einsatz', {})
     await run.setAgentRestrictions(controller, { operationIds: [], objects: [{ objectId: objectIdSchema.parse('unit:planning-a'), deny: ['inspect'] }] }, 0)
     await expect(run.planningSource.capture(source(run.id), 'einsatz', {})).rejects.toThrow('shared research audience')
-    expect((await run.planningSource.qualify({ profile: basis.profile, qualification: basis.qualification })).allowed).toBe(false)
-    expect((await run.planningSource.qualify({ profile: basis.profile, qualification: { ...basis.qualification, restrictionRevision: 1, subjectIds: ['einsatz/unit/missing'] } })).allowed).toBe(false)
+    expect((await run.planningSource.qualify({ profile: basis.profile, qualification: basis.qualification, activation: 'loaded-only' })).allowed).toBe(false)
+    expect((await run.planningSource.qualify({ profile: basis.profile, qualification: { ...basis.qualification, restrictionRevision: 1, subjectIds: ['einsatz/unit/missing'] }, activation: 'loaded-only' })).allowed).toBe(false)
   })
 
   test('role-declaring sources refuse, restore retains epoch, copy and reset invalidate it', async () => {
@@ -72,12 +72,12 @@ describe('shared planning sources', () => {
     const run = await registry.create({ scenarioId: 'planning-response' })
     const basis = await run.planningSource.capture(source(run.id), 'einsatz', {})
     const copied = await registry.copy(run.id, {})
-    expect((await copied.planningSource.qualify({ profile: basis.profile, qualification: basis.qualification })).allowed).toBe(false)
+    expect((await copied.planningSource.qualify({ profile: basis.profile, qualification: basis.qualification, activation: 'loaded-only' })).allowed).toBe(false)
     await registry.close(run.id)
     const restored = await registry.load(run.id)
-    expect(await restored.planningSource.qualify({ profile: basis.profile, qualification: basis.qualification })).toEqual({ allowed: true })
+    expect(await restored.planningSource.qualify({ profile: basis.profile, qualification: basis.qualification, activation: 'loaded-only' })).toEqual({ allowed: true })
     const reset = await registry.reset(run.id)
-    expect((await reset.planningSource.qualify({ profile: basis.profile, qualification: basis.qualification })).allowed).toBe(false)
+    expect((await reset.planningSource.qualify({ profile: basis.profile, qualification: basis.qualification, activation: 'loaded-only' })).allowed).toBe(false)
   })
 
   test('captures real public pump facts without fault controls or full graph', async () => {

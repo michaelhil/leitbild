@@ -16,10 +16,10 @@ test('source capture forwards initiating AI identity to the exact Host capabilit
   }) as typeof fetch
   const sources = createWorldPlanningSources({ hostUrl: 'http://host.internal', fetch: transport })
   expect(await sources.capture(request, access)).toEqual(basis)
-  expect(await sources.qualify(basis, access)).toEqual({ allowed: true })
+  expect(await sources.qualify(basis, access, 'load-if-needed')).toEqual({ allowed: true })
   expect(calls[0]?.url).toBe(`http://host.internal/api/workspaces/${workspaceId}/capabilities/world.einsatz.planning-basis/invoke`)
   expect(calls[0]?.body).toEqual({ resource: request.source, input: { subjectIds: request.subjectIds }, actor: access.actor })
-  expect(calls[1]?.body).toEqual({ resource: request.source, input: { profile: 'einsatz', qualification: basis.qualification }, actor: access.actor })
+  expect(calls[1]?.body).toEqual({ resource: request.source, input: { profile: 'einsatz', qualification: basis.qualification, activation: 'load-if-needed' }, actor: access.actor })
 })
 
 test('foreign Workspace selection is rejected before transport, and owner refusal remains explicit', async () => {

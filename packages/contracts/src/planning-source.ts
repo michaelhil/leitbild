@@ -60,6 +60,7 @@ export type PlanningSourceBasis = z.infer<typeof planningSourceBasisSchema>
 export const planningSourceQualifyInputSchema = z.object({
   profile: planningSourceProfileSchema,
   qualification: planningSourceQualificationSchema,
+  activation: z.enum(['loaded-only', 'load-if-needed']),
 }).strict()
 export const planningSourceQualificationResultSchema = z.object({
   allowed: z.boolean(),

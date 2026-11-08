@@ -33,12 +33,13 @@ export const planningSourceCapabilities: ReadonlyArray<CapabilityRegistration<Si
       id: 'world.planning-source.qualify', moduleId: moduleIdSchema.parse('world'),
       kind: 'query', scope: { kind: 'resource', resourceType: 'world.simulation-run' },
       title: 'Check retained planning input qualification',
-      description: 'Permission/applicability only for the server-retained captured subject set. Returns no facts or current values; changed restrictions or unavailable subjects deny retained shared-audience presentation.',
+      description: 'Permission/applicability only for the retained captured subject set; returns no facts or current values. Catalogue calls use loaded-only; an explicit Study read can use load-if-needed to restore its exact source for qualification. Changed restrictions or unavailable subjects deny presentation.',
       risk: 'read', idempotent: true,
       inputSchema: z.toJSONSchema(planningSourceQualifyInputSchema), outputSchema: z.toJSONSchema(planningSourceQualificationResultSchema),
     },
     invoke: async (registry, invocation) => {
-      const runtime = registry.get(runId(invocation))
+      const input = planningSourceQualifyInputSchema.parse(invocation.input)
+      const runtime = input.activation === 'load-if-needed' ? await registry.load(runId(invocation)) : registry.get(runId(invocation))
       if (!runtime) return json({ result: { allowed: false, code: 'source_unloaded', reason: 'Open the source Run in World before inspecting retained planning evidence' } })
       return json({ result: await runtime.planningSource.qualify(invocation.input) })
     },

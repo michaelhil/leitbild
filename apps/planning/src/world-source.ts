@@ -21,11 +21,11 @@ export const createWorldPlanningSources = (config: { readonly hostUrl: string; r
       if (basis.source.id !== request.source.id || basis.source.workspaceId !== request.source.workspaceId || basis.profile !== request.profile) throw planningError(502, 'source_response_mismatch', 'The owner returned evidence for a different source')
       return basis
     },
-    qualify: async (input, access) => {
+    qualify: async (input, access, activation) => {
       const basis = planningSourceBasisSchema.parse(input)
       checkWorkspace(basis, access)
       return planningSourceQualificationResultSchema.parse(await host.call(access, 'world.planning-source.qualify', {
-        resource: basis.source, input: { profile: basis.profile, qualification: basis.qualification },
+        resource: basis.source, input: { profile: basis.profile, qualification: basis.qualification, activation },
       }))
     },
   }
