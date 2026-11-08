@@ -61,7 +61,7 @@ export const assumptionBindings = (receipt: CalculationReceipt): ReadonlyArray<{
 export const snapshotRefreshSupported = (receipt: CalculationReceipt): boolean => {
   const frames = new Map<string, Set<string>>()
   for (const basis of receipt.sources) {
-    const key = JSON.stringify([basis.source, basis.profile, basis.subjectId])
+    const key = JSON.stringify([basis.source.workspaceId, basis.source.moduleId, basis.source.type, basis.source.id, basis.profile, basis.subjectId])
     const times = frames.get(key) ?? new Set<string>()
     times.add(JSON.stringify([basis.frame.epoch, basis.frame.sequence, basis.frame.simulationAt]))
     frames.set(key, times)
@@ -72,7 +72,7 @@ export const snapshotRefreshSupported = (receipt: CalculationReceipt): boolean =
 /** Editing changes only explicit assumption values. Observations, source
  * selectors, units, qualification and original evidence stay immutable. */
 export const calculationRequest = (receipt: CalculationReceipt, edits: ReadonlyMap<string, string>, refresh: boolean) => {
-  if (refresh && !snapshotRefreshSupported(receipt)) throw new Error('This result uses a historical window. Acquire a new dated sample window instead of snapshot refresh.')
+  if (refresh && !snapshotRefreshSupported(receipt)) throw new Error('This result uses a historical window. Refresh from current Run captures one instant; acquire a new dated sample window to replace this interval.')
   const assumptions = assumptionBindings(receipt)
   for (const name of edits.keys()) if (!assumptions.some(item => item.name === name)) throw new Error(`Cannot edit observation ${name}`)
   const bindings = (receipt.request.input.bindings as ReadonlyArray<unknown>).map(raw => {

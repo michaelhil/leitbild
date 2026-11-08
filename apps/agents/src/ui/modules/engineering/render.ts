@@ -76,13 +76,13 @@ export const renderCalculation = (host: HTMLElement, receipt: CalculationReceipt
       return [ref.name, basis?.source.id ?? 'Source unavailable', basis?.subjectId ?? 'Subject unavailable', ref.quantityId]
     })))
   }
-  const sources = element('section'); sources.append(element('h2', 'Source and current applicability'))
+  const sources = element('section'); sources.append(element('h2', 'Captured sources and reuse'))
   if (receipt.sources.length === 0) sources.append(element('p', 'This calculation uses explicit assumptions. It has no captured owner observations.'))
   receipt.sources.forEach((source, index) => {
     const status = statuses[index]
     const section = element('div'); section.className = 'source'
     section.append(element('h3', `${source.subjectId} · ${source.profile}`), element('p', `Simulation time ${source.frame.simulationAt}`), element('p', `Observed ${source.frame.observedAt}`))
-    const qualification = element('p', status?.allowed ? 'Source still qualifies for reuse. This is a retained observation, not a live reading.' : `Source cannot be reused: ${status?.code ?? 'qualification_unavailable'} — ${status?.reason ?? 'Current qualification was not returned.'}`)
+    const qualification = element('p', status?.allowed ? 'This captured source is available for reuse. Its readings remain from the displayed simulation time.' : `Source cannot be reused: ${status?.code ?? 'qualification_unavailable'} — ${status?.reason ?? 'Current permission to reuse was not returned.'}`)
     if (!status?.allowed) qualification.setAttribute('role', 'alert')
     section.append(qualification); sources.append(section)
   })
@@ -99,13 +99,13 @@ export const renderCalculation = (host: HTMLElement, receipt: CalculationReceipt
   form.append(element('p', 'Editing an assumption creates a new recorded calculation. Rerun retains the captured inputs. Refresh acquires new owner observations.'))
   const actions = element('div'); actions.className = 'actions'
   const rerun = element('button', 'Rerun these inputs'); rerun.type = 'submit'; rerun.disabled = statuses.some(status => !status.allowed)
-  if (rerun.disabled) form.append(element('p', 'Rerun is unavailable because a source no longer qualifies. The original result remains historical evidence.'))
+  if (rerun.disabled) form.append(element('p', 'Rerun is unavailable because a captured source can no longer be reused. The original result remains historical evidence.'))
   const edits = () => new Map([...fields].map(([name, input]) => [name, input.value]))
   actions.append(rerun)
   if (receipt.sources.length > 0) {
     const refresh = element('button', 'Refresh from current Run'); refresh.type = 'button'
     refresh.disabled = !snapshotRefreshSupported(receipt)
-    if (refresh.disabled) form.append(element('p', 'This result uses a historical sample window. Rerun retains that window; acquire a new dated window for a current rate or balance. Snapshot refresh cannot replace an interval.'))
+    if (refresh.disabled) form.append(element('p', 'This result uses a historical sample window. Rerun retains that window. Refresh from current Run captures one instant and cannot replace this interval; acquire a new dated sample window for a current rate or balance.'))
     refresh.addEventListener('click', () => { if (form.reportValidity()) handlers.run(edits(), true) }); actions.append(refresh)
   }
   if (handlers.original !== undefined) { const original = element('button', 'Return to original result'); original.type = 'button'; original.addEventListener('click', handlers.original); actions.append(original) }
