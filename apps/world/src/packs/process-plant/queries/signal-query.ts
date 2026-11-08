@@ -19,6 +19,7 @@ import { requestedSignalValueView, resolveRequestedSignalUnit } from './signal-u
 import { declaredObservable } from '../observation/declarations.ts'
 import { readPlant } from '../observation/read.ts'
 import { processPlantEvidenceSignal, processPlantEvidenceVariable } from '../procedure-evidence-facts.ts'
+import { processPlantStatusReading } from '../status-signals.ts'
 
 /** The commands issued on these signals and the resets of actuations that held them, at the Run and plant time read at. */
 const operationsOn = (config: { readonly simulationTime?: IsoTimestamp }, system: ProcessPlantRuntimeInstance, paths: ReadonlySet<string>) => {
@@ -111,6 +112,8 @@ const validateProcedureTags = (
   system: ProcessPlantRuntimeInstance,
   tags: ReadonlyArray<z.infer<typeof procedureTagSchema>>,
 ): ReadonlyArray<ProcessPlantProcedureTagValidation> => tags.map(tag => {
+  const status = processPlantStatusReading(system, tag.id)
+  if (status !== undefined) return { id: tag.id, status: 'resolved', signal: status.signal as ReturnType<typeof processPlantSignalView>, warnings: [] }
   const binding = findProcessPlantSignalBinding(system.plant.graph, { tagId: tag.id })
   if (binding === undefined) return { id: tag.id, status: 'missing', warnings: [] }
 
@@ -201,15 +204,23 @@ export const answerProcessPlantSignalQuery = (config: {
   if (config.request.capabilityId === 'world.process-plant.signals.read') {
     const payload = signalsReadQuerySchema.parse(config.request.input)
     const system = requirePlant(config.plants, payload.plantId)
-    const bindings = payload.signals.map(signal => readableProcessPlantSignalBinding(system.plant.graph, signal))
+    const statuses = payload.signals.map(signal => processPlantStatusReading(system, signal.tagId))
+    const bindings = payload.signals.map((signal, index) => statuses[index] === undefined ? readableProcessPlantSignalBinding(system.plant.graph, signal) : undefined)
     const evidence = payload.evidence === undefined ? undefined : signalsReadEvidenceSchema.parse(processPlantEvidenceFrame(system,
       config.simulationTime ?? rejectCapabilityTarget('signals.read with evidence needs the Run time the Plant stands at')))
     return {
       plantId: payload.plantId,
       ...(payload.detail === 'values' ? { detail: 'values' as const } : {}),
       ...(evidence === undefined ? {} : { evidence }),
-      ...(payload.operations === undefined ? {} : { operations: operationsOn(config, system, new Set(bindings.map(binding => String(binding.path)))) }),
+      ...(payload.operations === undefined ? {} : { operations: operationsOn(config, system, new Set(bindings.flatMap(binding => binding === undefined ? [] : [String(binding.path)]))) }),
       signals: payload.signals.map((signal, index) => {
+        const status = statuses[index]
+        if (status !== undefined) {
+          const { variable, quality } = status.read()
+          return { signal: status.signal, variable, quality, ...(signal.requestedUnit === undefined ? {} : {
+            valueView: requestedSignalValueView({ unit: status.signal.unit, quantity: status.signal.quantity, value: variable.value }, signal.requestedUnit),
+          }) }
+        }
         const binding = bindings[index]!
         const variable = system.runtime.readVariableSnapshot(binding.path)
         const declared = payload.observed === undefined ? undefined : declaredObservable(payload.plantId as ObjectId, system.plant, null, String(binding.path))
