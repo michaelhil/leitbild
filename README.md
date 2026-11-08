@@ -1,12 +1,12 @@
 # Leitbild
 
-A modular simulation and AI-agent sandbox. World owns simulations; Agents owns scoped conversations; the Host presents one Workspace-based product.
+A modular simulation and AI-agent sandbox. World owns simulations; Agents owns scoped conversations; the Host presents one Workspace-based product. The local research stack also provisions Planning for saved scheduling Studies and comparisons.
 
 Read the [knowledge wiki](https://leitbild.app/wiki) for concepts, architecture, guides and Pack documentation. Authored knowledge lives in the separate `Leitbild-wiki` Git repository; this checkout contains executable code, skills and tests, not a second documentation collection.
 
 ## Development
 
-Use Bun 1.4.0. From clean code and wiki checkouts, run `bun run verify /path/to/Leitbild-wiki` for a frozen install, build and three-service smoke in a temporary checkout. The command prints the exact pair and checks that the Host and World serve that publication. For working-tree development, use `bun install` and `bun run validate` for checks, tests and builds, and `bun run knowledge:publish /path/to/Leitbild-wiki` to build a local publication.
+Use Bun 1.4.0. From clean code and wiki checkouts, run `bun run verify /path/to/Leitbild-wiki` for a frozen install, build and four-service smoke in a temporary checkout. The command prints the exact pair, checks that Host and World serve that publication, and checks Planning discovery/UI. For working-tree development, use `bun install` and `bun run validate` for checks, tests and builds, and `bun run knowledge:publish /path/to/Leitbild-wiki` to build a local publication. The wiki's `planning/index.md` explains both verified use cases and the supported temporal profile.
 
 Deployment runs `bun run deploy -- --dry-run` or `bun run deploy -- --yes`. It uses the same preparation path with full validation and packages the exact checked code, UI builds and publication. Both commands default to the wiki checkout at `../Leitbild-wiki` or `LEITBILD_KNOWLEDGE_REPOSITORY`.
 
