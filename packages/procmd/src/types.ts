@@ -1,12 +1,15 @@
 /** Format data only. Reading these declarations never evaluates or executes them. */
 import type { ProcedureAssessment } from './assessment.ts'
 import type { ProcedureDecision } from './decisions.ts'
+import type { ProcedureLimits } from './limits.ts'
 export interface ProcedureTextBlock {
   readonly kind: 'check' | 'action' | 'expected' | 'rno' | 'unknown' | 'basis' | 'decision' | 'when' | 'until' | 'abort-if' | 'abort-to' | 'within' | 'concurrent' | 'caution' | 'note' | 'because' | 'against' | 'text'
   readonly text: string
   readonly paths?: ReadonlyArray<string>
   readonly tagIds: ReadonlyArray<string>
   readonly sourceLine: number
+  /** Limits authored at the end of a Check, Expected or When line; its text then names their tags once. */
+  readonly limits?: ProcedureLimits
 }
 
 export interface ProcedureBranch {
@@ -21,6 +24,8 @@ export interface ProcedureBranch {
   readonly against?: string
   readonly tagIds: ReadonlyArray<string>
   readonly sourceLine: number
+  /** A fork's test: limits on the branch line itself. They decide an AI's selection and never light for a person. */
+  readonly limits?: ProcedureLimits
 }
 
 /** A presentation boundary within a Step. It has no placekeeping or execution state. */
@@ -66,6 +71,14 @@ export interface ProcedureTag {
   readonly annotations: Readonly<Record<string, string>>
 }
 
+/** Standing duties, shown with every step. Plain text with readings: no branches, no lights. */
+export interface ProcedureFoldout {
+  readonly title: string
+  readonly text: string
+  readonly tagIds: ReadonlyArray<string>
+  readonly sourceLine: number
+}
+
 export interface ParsedProcedure {
   readonly procedureId: string
   readonly title: string
@@ -76,6 +89,7 @@ export interface ParsedProcedure {
   readonly csfsMonitored: ReadonlyArray<string>
   readonly entryTriggers: ReadonlyArray<string>
   readonly description: string
+  readonly foldout?: ProcedureFoldout
   readonly annotations: Readonly<Record<string, string>>
   readonly diagnostics: ReadonlyArray<string>
   readonly rawMarkdown: string
