@@ -7,6 +7,14 @@ import { validateProcedurePublication } from '@leitbild/procmd'
 import { marked } from 'marked'
 import { markdownBody } from './markdown.ts'
 
+const imageLinks = (content: string): string[] => {
+  const links: string[] = []
+  marked.walkTokens(marked.lexer(markdownBody(content)), token => {
+    if (token.type === 'image') links.push(token.href)
+  })
+  return links
+}
+
 const git = async (root: string, args: string[]): Promise<string> => {
   const child = Bun.spawn(['git', '-C', root, ...args], { stdout: 'pipe', stderr: 'pipe' })
   const [out, error, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited])
@@ -45,8 +53,7 @@ export const publishKnowledge = async (root: string, sourceRoot?: string): Promi
   const documents = await Promise.all(names.map(async path => ({ path, content: await git(root, ['show', `${revision}:${path}`]) })))
   if (!documents.some(document => document.path === 'index.md')) throw new Error('Knowledge repository requires index.md')
   const imagePaths = new Set<string>()
-  for (const document of documents) for (const token of marked.walkTokens(marked.lexer(markdownBody(document.content)), token => token.type === 'image' ? token.href : undefined).filter((href): href is string => typeof href === 'string')) {
-    const href = token
+  for (const document of documents) for (const href of imageLinks(document.content)) {
     if (/^https:\/\//i.test(href)) continue
     if (/^[a-z][a-z\d+.-]*:/i.test(href) || href.startsWith('/') || href.includes('?') || href.includes('#')) throw new Error(`Unsupported knowledge image in ${document.path}: ${href}`)
     const path = posix.normalize(posix.join(posix.dirname(document.path), decodeURIComponent(href)))
