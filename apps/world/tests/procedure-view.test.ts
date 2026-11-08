@@ -553,3 +553,10 @@ test('a rewritten document links its usage page at its own revision', () => {
   expect(procedureUsageHref({ sourceUrl, annotations: { 'ai-workable': 'true' } })).toBe('/wiki?path=world%2Fpacks%2Fprocess-plant%2Fprocedures%2Fusage.md&revision=abc')
   expect(procedureUsageHref({ sourceUrl })).toBeUndefined()
 })
+
+test('two tags on one piece of equipment say which is which', () => {
+  const document = { tags: [{ id: 'PORV-456A', description: 'Pressurizer PORV A demand', equipment: 'pressurizer' }, { id: 'MOV-8000A', description: 'PORV A block valve demand', equipment: 'pressurizer' }], annotations: { 'ai-workable': 'true' } } as unknown as Parameters<typeof procedureTagLabels>[1]
+  const tag = (text: string) => ({ kind: 'tag' as const, text })
+  expect(procedureTagLabels([tag('PORV-456A'), { kind: 'text', text: ' ' }, tag('MOV-8000A')], document).filter(Boolean).map(item => item!.shown)).toEqual(['Pressurizer PORV A demand', 'PORV A block valve demand'])
+  expect(procedureTagLabels([tag('PORV-456A')], document).filter(Boolean).map(item => item!.shown)).toEqual(['Pressurizer'])
+})

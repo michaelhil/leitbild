@@ -458,12 +458,15 @@ export const procedureDecisionAgainst = (decision: { readonly criterion?: { read
  */
 export const procedureTagLabels = (segments: ReadonlyArray<ProcedureTextSegment>, document: Pick<ProcedureDocument, 'tags' | 'annotations'> | null): ReadonlyArray<{ readonly full: string; readonly shown: string } | undefined> => {
   let family: string | undefined
+  const onLine = segments.flatMap(segment => segment.kind === 'tag' ? [procedureTagLabel(segment.text, document)] : [])
   return segments.map(segment => {
     if (segment.kind !== 'tag') {
       if (segment.text.trim() !== '') family = undefined
       return undefined
     }
-    const full = procedureTagLabel(segment.text, document)
+    const label = procedureTagLabel(segment.text, document)
+    // Two tags on one piece of equipment would both read "Pressurizer": each then says what it is.
+    const full = onLine.filter(item => item === label).length > 1 ? document?.tags.find(tag => tag.id === segment.text)?.description ?? label : label
     const words = full.split(' ')
     const prefix = words.length > 1 && words.at(-1)!.length === 1 ? words.slice(0, -1).join(' ') : undefined
     const shown = prefix !== undefined && prefix === family ? words.at(-1)! : full
