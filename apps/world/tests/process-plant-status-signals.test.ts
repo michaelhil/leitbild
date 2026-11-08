@@ -14,7 +14,7 @@ const instance = (id: string): ProcessPlantRuntimeInstance & { readonly step: (s
   const runtime = createProcessPlantRuntime({ system: compiled })
   const protection = createProcessPlantProtectionRunner({ system: compiled, protection: compiled.automation })
   return { plant: compiled, runtime, protection, ramps: createProcessPlantRampRunner({ runtime }), performance: createProcessPlantRuntimePerformance(),
-    step: seconds => { for (let index = 0; index < seconds; index++) { runtime.tick(1000); protection.evaluate({ runtime, elapsedMs: runtime.elapsedMs(), simulationRunId: 'run:status' as never, sourceRuntimeId: 'process-plant.local' as never }) } } } as never
+    step: (seconds: number) => { for (let index = 0; index < seconds; index++) { runtime.tick(1000); protection.evaluate({ runtime, elapsedMs: runtime.elapsedMs(), simulationRunId: 'run:status' as never, sourceRuntimeId: 'process-plant.local' as never }) } } } as never
 }
 const query = (plant: ProcessPlantRuntimeInstance, capabilityId: string, input: Record<string, unknown>) => answerProcessPlantQuery({
   request: { capabilityId, input, readPolicy: unrestrictedQueryReadPolicy }, plants: new Map([[plant.plant.id, plant]]) } as never) as Record<string, never>

@@ -19,7 +19,7 @@ import { requestedSignalValueView, resolveRequestedSignalUnit } from './signal-u
 import { declaredObservable } from '../observation/declarations.ts'
 import { readPlant } from '../observation/read.ts'
 import { processPlantEvidenceSignal, processPlantEvidenceVariable } from '../procedure-evidence-facts.ts'
-import { processPlantStatusReading } from '../status-signals.ts'
+import { processPlantStatusReading, type ProcessPlantStatusReading } from '../status-signals.ts'
 
 /** The commands issued on these signals and the resets of actuations that held them, at the Run and plant time read at. */
 const operationsOn = (config: { readonly simulationTime?: IsoTimestamp }, system: ProcessPlantRuntimeInstance, paths: ReadonlySet<string>) => {
@@ -102,7 +102,7 @@ const normalizedSourceKey = (value: string): string =>
 interface ProcessPlantProcedureTagValidation {
   readonly id: string
   readonly status: 'resolved' | 'resolved-with-warnings' | 'missing'
-  readonly signal?: ReturnType<typeof processPlantSignalView>
+  readonly signal?: ReturnType<typeof processPlantSignalView> | ProcessPlantStatusReading['signal']
   /** The declared element the signal is measured on (signalMeasuredOnElement): a bundled device, else its component; its equipmentId is metadata and may name none. */
   readonly measuredOn?: string
   readonly warnings: ReadonlyArray<string>
@@ -113,7 +113,7 @@ const validateProcedureTags = (
   tags: ReadonlyArray<z.infer<typeof procedureTagSchema>>,
 ): ReadonlyArray<ProcessPlantProcedureTagValidation> => tags.map(tag => {
   const status = processPlantStatusReading(system, tag.id)
-  if (status !== undefined) return { id: tag.id, status: 'resolved', signal: status.signal as ReturnType<typeof processPlantSignalView>, warnings: [] }
+  if (status !== undefined) return { id: tag.id, status: 'resolved', signal: status.signal, warnings: [] }
   const binding = findProcessPlantSignalBinding(system.plant.graph, { tagId: tag.id })
   if (binding === undefined) return { id: tag.id, status: 'missing', warnings: [] }
 
