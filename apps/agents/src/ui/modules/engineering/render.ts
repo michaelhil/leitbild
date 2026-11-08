@@ -1,4 +1,4 @@
-import { assumptionBindings, object, type CalculationReceipt, type SourceStatus } from './model.ts'
+import { assumptionBindings, snapshotRefreshSupported, object, type CalculationReceipt, type SourceStatus } from './model.ts'
 
 const element = <K extends keyof HTMLElementTagNameMap>(tag: K, text?: string): HTMLElementTagNameMap[K] => {
   const node = document.createElement(tag)
@@ -70,6 +70,12 @@ export const renderCalculation = (host: HTMLElement, receipt: CalculationReceipt
   const inputs = element('section'); inputs.append(element('h2', 'Inputs used'))
   inputs.append(table(['Input', 'Value', 'Unit', 'Origin', 'Quality', 'Simulation time'], receipt.inputs.map(input => [input.name, input.value, input.unit, input.origin === 'observation' ? 'Owner observation' : 'Assumption', input.quality, input.simulationAt ?? 'Not time-stamped'])))
   host.append(inputs)
+  if (receipt.observationRefs?.length) {
+    inputs.append(table(['Input', 'Run', 'Subject', 'Owner quantity'], receipt.observationRefs.map(ref => {
+      const basis = receipt.sources.find(source => source.digest === ref.basisDigest)
+      return [ref.name, basis?.source.id ?? 'Source unavailable', basis?.subjectId ?? 'Subject unavailable', ref.quantityId]
+    })))
+  }
   const sources = element('section'); sources.append(element('h2', 'Source and current applicability'))
   if (receipt.sources.length === 0) sources.append(element('p', 'This calculation uses explicit assumptions. It has no captured owner observations.'))
   receipt.sources.forEach((source, index) => {
@@ -98,6 +104,8 @@ export const renderCalculation = (host: HTMLElement, receipt: CalculationReceipt
   actions.append(rerun)
   if (receipt.sources.length > 0) {
     const refresh = element('button', 'Refresh from current Run'); refresh.type = 'button'
+    refresh.disabled = !snapshotRefreshSupported(receipt)
+    if (refresh.disabled) form.append(element('p', 'This result uses a historical sample window. Rerun retains that window; acquire a new dated window for a current rate or balance. Snapshot refresh cannot replace an interval.'))
     refresh.addEventListener('click', () => { if (form.reportValidity()) handlers.run(edits(), true) }); actions.append(refresh)
   }
   if (handlers.original !== undefined) { const original = element('button', 'Return to original result'); original.type = 'button'; original.addEventListener('click', handlers.original); actions.append(original) }

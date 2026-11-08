@@ -16,7 +16,7 @@ test('engineering routes use the existing dispatcher path and trusted actor',asy
   const get=engineeringRoutes.find(route=>route.method==='GET' && route.pattern.test(getPath))!
   const response=await get.handler(new Request(`http://local${getPath}`),getPath.match(get.pattern)!,ctx)
   expect(response.status).toBe(200)
-  expect(seen[0]).toEqual(['room one','turn','call_1_0',actor])
+  expect(seen[0]).toEqual(['room one','turn','call_1_0',actor,expect.any(AbortSignal)])
   const postPath='/rooms/room%20one/engineering'
   const post=engineeringRoutes.find(route=>route.method==='POST' && route.pattern.test(postPath))!
   const request=new Request(`http://local${postPath}`,{method:'POST',body:JSON.stringify({operation:'run',input:{}})})

@@ -8,6 +8,7 @@ export interface EngineeringDatum {
 export interface CalculationReceipt {
   readonly kind: 'engineering-calculation'; readonly title: string; readonly mode: 'reviewed-method' | 'exploratory-script'
   readonly createdAt: string; readonly inputs: ReadonlyArray<EngineeringDatum>; readonly sources: ReadonlyArray<EngineeringInputBasis>
+  readonly observationRefs?: ReadonlyArray<{readonly name:string;readonly basisDigest:string;readonly quantityId:string}>
   readonly request: { readonly operation: 'calculate' | 'run'; readonly input: Record<string, unknown> }
   readonly outcome: unknown; readonly qualification: 'research-only'; readonly inputDigest: string; readonly programSource?: string
 }
@@ -57,9 +58,21 @@ export const assumptionBindings = (receipt: CalculationReceipt): ReadonlyArray<{
   })
 }
 
+export const snapshotRefreshSupported = (receipt: CalculationReceipt): boolean => {
+  const frames = new Map<string, Set<string>>()
+  for (const basis of receipt.sources) {
+    const key = JSON.stringify([basis.source, basis.profile, basis.subjectId])
+    const times = frames.get(key) ?? new Set<string>()
+    times.add(JSON.stringify([basis.frame.epoch, basis.frame.sequence, basis.frame.simulationAt]))
+    frames.set(key, times)
+  }
+  return [...frames.values()].every(times => times.size <= 1)
+}
+
 /** Editing changes only explicit assumption values. Observations, source
  * selectors, units, qualification and original evidence stay immutable. */
 export const calculationRequest = (receipt: CalculationReceipt, edits: ReadonlyMap<string, string>, refresh: boolean) => {
+  if (refresh && !snapshotRefreshSupported(receipt)) throw new Error('This result uses a historical window. Acquire a new dated sample window instead of snapshot refresh.')
   const assumptions = assumptionBindings(receipt)
   for (const name of edits.keys()) if (!assumptions.some(item => item.name === name)) throw new Error(`Cannot edit observation ${name}`)
   const bindings = (receipt.request.input.bindings as ReadonlyArray<unknown>).map(raw => {

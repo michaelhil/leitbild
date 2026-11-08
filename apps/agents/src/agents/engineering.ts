@@ -7,7 +7,7 @@ import { engineeringMethodInputSchema, calculateEngineeringMethod, type Engineer
 import { runEngineeringScript } from '../core/calculations/script-runner.ts'
 import { createWorkspaceCapabilityTools } from '../tools/built-in/workspace-capability-tools.ts'
 import { viewRefFor } from '../core/render-validators/view-fence.ts'
-import { bindEngineeringInputs, engineeringBindingsSchema, engineeringFailure, qualifyEngineeringBasis, retainedEngineeringBasis } from './engineering-inputs.ts'
+import { assertEngineeringSeries, assertSnapshotRefresh, bindEngineeringInputs, engineeringBindingsSchema, engineeringFailure, engineeringQualificationKey, qualifyEngineeringBasis, retainedEngineeringBasis, type EngineeringObservationRef } from './engineering-inputs.ts'
 
 const common = {title:z.string().trim().min(1).max(160),bindings:engineeringBindingsSchema}
 export const engineeringCalculateSchema = z.object({...common,calculation:engineeringMethodInputSchema}).strict()
@@ -20,6 +20,9 @@ export const engineeringRequestSchema = z.discriminatedUnion('operation',[
   z.object({operation:z.literal('run'),input:engineeringRunSchema,refresh:z.boolean().default(false)}).strict(),
 ])
 type Request = z.infer<typeof engineeringRequestSchema>
+// Includes owner reads and result publication, below the ordinary 30s tool limit.
+const INVOCATION_BUDGET_MS = 20_000
+const invocationSignal = (signal?:AbortSignal):AbortSignal => AbortSignal.any([AbortSignal.timeout(INVOCATION_BUDGET_MS),...(signal?[signal]:[])])
 export interface EngineeringReceipt {
   readonly kind:'engineering-calculation'
   readonly title:string
@@ -27,6 +30,7 @@ export interface EngineeringReceipt {
   readonly createdAt:string
   readonly inputs:readonly EngineeringDatum[]
   readonly sources:readonly EngineeringInputBasis[]
+  readonly observationRefs:readonly EngineeringObservationRef[]
   readonly request:{readonly operation:Request['operation'];readonly input:Request['input']}
   readonly outcome:unknown
   readonly qualification:'research-only'
@@ -52,6 +56,7 @@ export const createEngineering = (deps:{workspaceId:WorkspaceId;hostBaseUrl:stri
     return entry.data
   }
   const execute = async (operation:Request['operation'],params:unknown,context:ToolContext,person=false,workspaceCall=deps.workspaceCall):Promise<ToolResult> => {
+    context={...context,signal:invocationSignal(context.signal)}
     try {
       const scopeRevision = roomFor(context,person).profile.scopeRevision
       if (!context.executionTurnId || !context.executionCallId) return engineeringFailure('execution_required','Engineering requires exact recorded execution identifiers')
@@ -59,7 +64,10 @@ export const createEngineering = (deps:{workspaceId:WorkspaceId;hostBaseUrl:stri
       const bound = await bindEngineeringInputs({...deps,workspaceCall},context,input.bindings)
       let programSource:string|undefined
       let outcome:unknown
-      if ('calculation' in input) outcome = calculateEngineeringMethod(input.calculation,bound.inputs)
+      if ('calculation' in input) {
+        assertEngineeringSeries(input.calculation,bound)
+        outcome = calculateEngineeringMethod(input.calculation,bound.inputs)
+      }
       else {
         programSource = 'source' in input.program ? input.program.source : receiptAt(context.roomId!,input.program.reuse.turnId,input.program.reuse.toolCallId).programSource
         if (programSource===undefined) return engineeringFailure('program_missing','The selected execution does not retain a script')
@@ -67,7 +75,7 @@ export const createEngineering = (deps:{workspaceId:WorkspaceId;hostBaseUrl:stri
       }
       // A source or Room can change while the disposable process runs. Admission
       // does not grant a lease to publish derived evidence after revocation.
-      for (const source of bound.sources) {
+      for (const source of new Map(bound.sources.map(source=>[engineeringQualificationKey(source),source])).values()) {
         const status = await qualifyEngineeringBasis(workspaceCall,context,source)
         if (!status.allowed) return engineeringFailure(status.code ?? 'source_refused',status.reason ?? 'Source changed before result publication')
       }
@@ -93,14 +101,20 @@ export const createEngineering = (deps:{workspaceId:WorkspaceId;hostBaseUrl:stri
     if (!tool) throw new Error('Workspace invocation tool was not assembled')
     return tool
   }
-  const personContext = (roomId:string,actor:ActorContext,signal?:AbortSignal):ToolContext => ({roomId,callerId:actor.id??'anonymous-operator',callerName:actor.displayName??'Operator',...(signal?{signal}:{})})
+  const personContext = (roomId:string,actor:ActorContext,signal?:AbortSignal):ToolContext => ({roomId,callerId:actor.id??'anonymous-operator',callerName:actor.displayName??'Operator',signal:invocationSignal(signal)})
   return {tools,
-    read:async(roomId:string,turnId:string,toolCallId:string,actor:ActorContext) => {
-      const context=personContext(roomId,actor)
+    read:async(roomId:string,turnId:string,toolCallId:string,actor:ActorContext,signal?:AbortSignal) => {
+      const context=personContext(roomId,actor,signal)
       const scopeRevision=roomFor(context,true).profile.scopeRevision
       const receipt=receiptAt(roomId,turnId,toolCallId)
       const broker=personCall(actor)
-      const sourceStatus=await Promise.all(receipt.sources.map(source=>qualifyEngineeringBasis(broker,context,source)))
+      const checks=new Map<string,ReturnType<typeof qualifyEngineeringBasis>>()
+      const sourceStatus=await Promise.all(receipt.sources.map(source=>{
+        const key=engineeringQualificationKey(source)
+        let check=checks.get(key)
+        if(!check){check=qualifyEngineeringBasis(broker,context,source);checks.set(key,check)}
+        return check
+      }))
       const refused = sourceStatus.find(status=>!status.allowed)
       if (refused) return engineeringFailure(refused.code ?? 'source_refused',refused.reason ?? 'The retained result source is unavailable')
       if (roomFor(context,true).profile.scopeRevision !== scopeRevision) return engineeringFailure('room_scope_changed','Room Scope changed while opening the result')
@@ -125,6 +139,7 @@ export const createEngineering = (deps:{workspaceId:WorkspaceId;hostBaseUrl:stri
       }
       try {
         if (request.refresh) {
+          assertSnapshotRefresh(request.input.bindings.flatMap(binding=>binding.kind==='retained'?[retainedEngineeringBasis(deps.store,roomId,binding,deps.workspaceId)]:[]))
           const captures=new Map<string,{turnId:string;toolCallId:string;key:string}>()
           for (let i=0;i<request.input.bindings.length;i++) {
             const binding=request.input.bindings[i]!

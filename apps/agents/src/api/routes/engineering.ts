@@ -5,9 +5,9 @@ import { json } from './helpers.ts'
 const refusal = (error:unknown) => json({error:error instanceof Error?error.message:String(error),code:typeof error==='object' && error!==null && 'code' in error ? error.code : error instanceof z.ZodError ? 'invalid_request':'engineering_failed'},400)
 export const engineeringRoutes:readonly RouteEntry[]=[{
   method:'GET',pattern:/^\/rooms\/([^/]+)\/engineering\/([^/]+)\/([^/]+)$/,
-  handler:async(_req,match,ctx)=>{
+  handler:async(req,match,ctx)=>{
     if (!ctx.system.engineering) return json({error:'Engineering requires a Host capability broker',code:'engineering_unavailable'},503)
-    try {return json(await ctx.system.engineering.read(decodeURIComponent(match[1]!),decodeURIComponent(match[2]!),decodeURIComponent(match[3]!),ctx.accessContext.actor))} catch(error){return refusal(error)}
+    try {return json(await ctx.system.engineering.read(decodeURIComponent(match[1]!),decodeURIComponent(match[2]!),decodeURIComponent(match[3]!),ctx.accessContext.actor,req.signal))} catch(error){return refusal(error)}
   },
 },{
   method:'POST',pattern:/^\/rooms\/([^/]+)\/engineering$/,

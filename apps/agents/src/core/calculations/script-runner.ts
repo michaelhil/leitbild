@@ -113,7 +113,7 @@ export const runEngineeringScript = async ({ source, input, signal }: {
   try {
     scratch = await mkdtemp(join(tmpdir(), 'leitbild-engineering-'))
     if (signal?.aborted) return finish('cancelled', { code: 'cancelled', message: 'Calculation cancelled before process start' })
-    child = Bun.spawn([process.execPath, '--no-env-file', '--no-macros', '--smol', workerPath], {
+    child = Bun.spawn([process.execPath, '--no-env-file', '--no-macros', '--no-install', '--smol', workerPath], {
       cwd: scratch,
       env: { PATH: '/usr/bin:/bin', TZ: 'UTC', LANG: 'C' },
       stdin: 'pipe', stdout: 'pipe', stderr: 'pipe',

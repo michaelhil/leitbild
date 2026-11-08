@@ -2,7 +2,7 @@ import { afterEach, expect, test } from 'bun:test'
 import { engineeringInputBasisSchema } from '@leitbild/contracts'
 import { createExecutionStore } from '../core/executions/store.ts'
 import type { Tool } from '../core/types/tool.ts'
-import { bindEngineeringInputs, engineeringBindingsSchema, retainedEngineeringBasis } from './engineering-inputs.ts'
+import { assertEngineeringSeries, assertSnapshotRefresh, bindEngineeringInputs, engineeringBindingsSchema, retainedEngineeringBasis } from './engineering-inputs.ts'
 
 const workspaceId='6f1c4b8e-3a2d-4c1b-9f0e-1a2b3c4d5e6f'
 const source={workspaceId,moduleId:'world',type:'world.simulation-run',id:'run-1'}
@@ -47,4 +47,30 @@ test('refuses unknown quality and ambiguity, and never upgrades assumptions into
   await expect(bindEngineeringInputs({...state,workspaceId},context,[state.binding])).rejects.toThrow('Unknown-quality')
   expect(engineeringBindingsSchema.safeParse([state.binding,state.binding]).success).toBe(false)
   expect(engineeringBindingsSchema.safeParse([{kind:'assumption',name:'x',value:1,quantity:'mass',unit:'kg',origin:'observation',note:'x'}]).success).toBe(false)
+})
+
+test('reviewed series preserve signal and trajectory lineage; snapshot refresh never collapses a window',async()=>{
+  const state=setup()
+  const later={...basis,digest:'c'.repeat(64),frame:{...basis.frame,sequence:20,simulationAt:'2026-11-08T10:00:07.000Z'}}
+  const record=(value:typeof basis,id:string)=>{
+    const entry={key:'basis',operationId:'world.engineering.inputs.capture',target:{kind:'resource',ref:value.source},input:{profile:value.profile,subjectId:value.subjectId}}
+    state.store.recordAttempt('old',{id,tool:'workspace_call',arguments:{calls:[entry]},startedAt:2})
+    state.store.recordOutcome('old',id,{success:true,data:{results:[{...entry,success:true,data:value}]}})
+    return {...state.binding,name:'T2',toolCallId:id,quantityId:value.quantities[0]!.id}
+  }
+  const method={method:'sample_changes' as const,samples:['T','T2']}
+  const bound=await bindEngineeringInputs({...state,workspaceId},context,[state.binding,record(later,'call_1_1')])
+  expect(()=>assertEngineeringSeries(method,bound)).not.toThrow()
+  expect(bound.observationRefs).toEqual([{name:'T',basisDigest:basis.digest,quantityId:'temperature'},{name:'T2',basisDigest:later.digest,quantityId:'temperature'}])
+  expect(()=>assertSnapshotRefresh(bound.sources)).toThrow('historical time window')
+  expect(()=>assertSnapshotRefresh([basis,basis])).not.toThrow()
+  // The permission tuple is shared even though sample frames/digests differ.
+  expect(state.invocations).toHaveLength(1)
+  const changes=[{source:{...basis.source,id:'other-run'}},{subjectId:'plant:other'},{frame:{...later.frame,epoch:crypto.randomUUID()}},{quantities:[{...basis.quantities[0]!,id:'other-temperature'}]}]
+  for(const [i,change] of changes.entries()){
+    const other=record(engineeringInputBasisSchema.parse({...later,...change,digest:String(i+1).repeat(64)}),`call_2_${i}`)
+    const mixed=await bindEngineeringInputs({...state,workspaceId},context,[state.binding,other])
+    expect(()=>assertEngineeringSeries(method,mixed)).toThrow('one observed signal')
+    expect(()=>assertEngineeringSeries({method:'reservoir_balance',initial:'T',streams:[{name:'flow',direction:'in',samples:['T','T2']}],interpolation:'linear',maxGapSeconds:20,from:basis.frame.simulationAt,to:later.frame.simulationAt,boundary:'fixture',omittedTerms:[]},mixed)).toThrow('one observed signal')
+  }
 })
