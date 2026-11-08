@@ -238,11 +238,13 @@ describe('AI rules on a marked document', () => {
     expect(selected(events)).toMatchObject({ target: 'end-of-walk', basis: 'Stated basis.', evidence: [{ tagId: 'PRESSURE' }], criterion: { status: 'unknown' } })
   })
 
-  test('it is refused when a tag on the step\'s lines is unbound, unread, bad or stale, with the reason', async () => {
-    await expect(commit('judge2', 0, port({ PRESSURE: new Error('no reading') }))).rejects.toThrow('«PRESSURE» could not be read: no reading.')
-    await expect(commit('judge2', 0, port({}, { PRESSURE: { quality: 'bad' } }))).rejects.toThrow('«PRESSURE» quality is bad.')
-    await expect(commit('judge2', 0, port({}, { PRESSURE: { evidence: { kind: 'engineering-diagnostic', sampledAt: old, provenance: 'runtime-model' } } }))).rejects.toThrow('«PRESSURE» is stale.')
-    await expect(commit('judge2', 0, unbound('PRESSURE'))).rejects.toThrow('«PRESSURE» is not bound on this Plant.')
+  test('it is refused on the same reading failures as a limit, with the reason', async () => {
+    await expect(commit('judge2', 0, port({ PRESSURE: new Error('no reading') }))).rejects.toThrow('rests on readings that are not valid: Signal PRESSURE is unavailable: no reading.')
+    await expect(commit('judge2', 0, port({}, { PRESSURE: { quality: 'bad' } }))).rejects.toThrow('Signal PRESSURE quality is bad.')
+    await expect(commit('judge2', 0, port({}, { PRESSURE: { evidence: { kind: 'engineering-diagnostic', sampledAt: old, provenance: 'runtime-model' } } }))).rejects.toThrow('Signal PRESSURE sample is stale')
+    await expect(commit('judge2', 0, unbound('PRESSURE'))).rejects.toThrow('Signal PRESSURE is not bound')
+    await expect(commit('judge2', 0, port({}, { PRESSURE: { writable: true } }))).rejects.toThrow('Signal PRESSURE is a command/demand')
+    await expect(commit('judge2', 0, port({}, { PRESSURE: { signalTagId: 'OTHER' } }))).rejects.toThrow('Signal PRESSURE identity is not established')
   })
 
   test('a transfer whose limits are met is delegated; one whose limits are not is refused', async () => {

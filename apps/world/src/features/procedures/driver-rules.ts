@@ -1,6 +1,7 @@
+import { limitMaxAgeSeconds } from '@leitbild/procmd'
 import type { ActorId, IsoTimestamp, ProcedureDocument, ProcedureRunDriver, ProcedureRunState, ProcedureStep } from '../../core/model/index.ts'
 import type { ProcedureBranchAssessment } from '../../core/model/procedure-criteria.ts'
-import { procedureCheckedTagIds, procedureReadProblem } from './branch-assessment.ts'
+import { procedureCheckedTagIds, procedureReadingProblem } from './branch-assessment.ts'
 import type { ProcedureTagRead } from './pack-observations.ts'
 
 // Who may work a procedure Run, and how an AI agent decides on it. An AI
@@ -72,7 +73,7 @@ export const aiBranchRefusal = (config: {
   }
   if (branch.targetKind === 'procedure') return `${name} transfers on judgement, with no limit stated. ${askInstead}`
   const checked = procedureCheckedTagIds(step)
-  const problems = config.reads.filter(read => checked.includes(read.tagId)).flatMap(read => procedureReadProblem(read, { simulationTime: criterion.simulationTime, plantId: config.plantId }) ?? [])
+  const problems = config.reads.filter(read => checked.includes(read.tagId)).flatMap(read => procedureReadingProblem(read, read.tagId, { simulationTime: criterion.simulationTime, plantId: config.plantId, maxAgeSeconds: limitMaxAgeSeconds }) ?? [])
   return problems.length === 0 ? undefined : `${name} rests on readings that are not valid: ${problems.join(' ')}`
 }
 
