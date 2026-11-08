@@ -204,6 +204,14 @@ test('the commit tests compiled limits with today\'s refusal, for an AI only', a
   expect(selected(await commit('trip', 0, port({ 'BKR-A': true }), person)).criterion?.status).toBe('contradicted')
 })
 
+test('a person pressing a normal branch against a contradicted criterion leaves a failed mark, not a completed one', async () => {
+  const assessed = (events: ReadonlyArray<SimulationRunEvent>) => events.flatMap(event => event.type === 'procedure.step.updated' ? [event.update.assessment] : [])
+  expect(assessed(await commit('trip', 0, port({ 'BKR-A': true }), person))).toEqual(['failed'])
+  expect(assessed(await commit('trip', 0, port(), person))).toEqual(['complete'])
+  expect(assessed(await commit('trip', 0, port({ POWER: new Error('no reading') }), person))).toEqual(['complete'])
+  expect(assessed(await commit('trip', 1, port({ 'BKR-A': true }), person))).toEqual(['failed'])
+})
+
 test('the AI step view carries the foldout as guidance', async () => {
   const run = runAt('fork')
   const view = await composeProcedureStepView({ run, document: document(), ports: { sequence: () => 1, clock: () => ({ currentTime: time, paused: true }), events: () => [], observations: () => port() } })

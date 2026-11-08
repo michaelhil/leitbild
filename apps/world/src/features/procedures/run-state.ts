@@ -297,7 +297,8 @@ export const prepareProcedureCommand = async (config: {
         ...(run.observations?.find(item => item.stepId === step.id) === undefined ? {} : {
           observation: run.observations!.find(item => item.stepId === step.id)!,
         }) })
-      const assessment = branch.outcome === 'normal' ? 'complete' as const : branch.outcome === 'rno' ? 'failed' as const : branch.outcome === 'unknown' ? 'unknown' as const : undefined
+      // A press against a contradicted criterion must not leave a completed mark.
+      const assessment = branch.outcome === 'normal' ? criterion.status === 'contradicted' ? 'failed' as const : 'complete' as const : branch.outcome === 'rno' ? 'failed' as const : branch.outcome === 'unknown' ? 'unknown' as const : undefined
       const currentStepId = branch.targetKind === 'step' ? branch.target : step.id
       result.push(
         { ...base(context), type: 'procedure.step.updated', runId: run.runId, stepId: step.id,
