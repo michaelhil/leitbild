@@ -60,6 +60,9 @@
   })
 </script>
 
+<!-- A new fragment identifies different evidence; reload through owner checks. -->
+<svelte:window onhashchange={() => location.reload()} />
+
 <main>
   <header><p class="eyebrow">Private model continuation · research only</p><h1>{envelope.title}</h1>
     <p>The cases start from one captured Run state. Their results are conditional model evidence.</p>

@@ -7,6 +7,9 @@ if (host === null || status === null) throw new Error('The calculation view has 
 const showError = (error: unknown): void => { status.textContent = error instanceof Error ? error.message : String(error); status.setAttribute('role', 'alert') }
 const theme = (): void => { const saved = localStorage.getItem('leitbild.theme'); document.documentElement.classList.toggle('dark', saved === 'dark' || (saved === null && matchMedia('(prefers-color-scheme: dark)').matches)) }
 theme(); window.addEventListener('storage', event => { if (event.key === 'leitbild.theme') theme() })
+// A different retained locator requires a fresh owner read, even when only the
+// fragment changes. Rerun's replaceState does not emit this navigation event.
+window.addEventListener('hashchange', () => location.reload())
 
 const boot = async (): Promise<void> => {
   const match = location.pathname.match(/^\/workspaces\/([^/]+)\/agents\/embed\/engineering\.result$/)
