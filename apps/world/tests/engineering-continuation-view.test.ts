@@ -1,10 +1,11 @@
 import { describe, expect, test } from 'bun:test'
-import type { EmbeddedViewEnvelope, EngineeringContinuationReceipt } from '@leitbild/contracts'
+import { workspaceResourceReferenceSchema, type EmbeddedViewEnvelope, type EngineeringContinuationReceipt } from '@leitbild/contracts'
 import { alignedContinuationSamples, continuationActive, continuationClient, continuationJobId, continuationLocation, continuationRequest } from '../src/ui/embed/engineering/continuation.ts'
 
 const workspaceId = '11111111-1111-4111-8111-111111111111'
 const jobId = '22222222-2222-4222-8222-222222222222'
-const source = { workspaceId, moduleId: 'world', type: 'world.simulation-run', id: 'run' } as const
+const source = workspaceResourceReferenceSchema.parse({ workspaceId, moduleId: 'world', type: 'world.simulation-run', id: 'run' })
+const fakeFetch = (implementation: (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => Promise<Response>): typeof fetch => implementation as unknown as typeof fetch
 const envelope = { moduleId: 'world', subject: source, viewType: 'engineering.continuation', title: 'Cases', height: 650, state: JSON.stringify({ jobId }) } as EmbeddedViewEnvelope
 const at = '2026-11-08T12:00:00.000Z'
 const quantity = { id: 'temperature', label: 'Temperature', quantity: 'temperature', unit: 'degC', value: 100, quality: 'good' } as const
@@ -47,7 +48,7 @@ describe('operator continuation evidence', () => {
   })
   test('opening inspects only; submissions are explicit and retain their supplied retry key', async () => {
     const calls: Array<{path:string;body:Record<string,unknown>}> = []
-    const client = continuationClient(envelope, (async (path, init) => { calls.push({ path: String(path), body: JSON.parse(String(init!.body)) }); return Response.json({ result: published }) }) as typeof fetch)
+    const client = continuationClient(envelope, fakeFetch(async (path, init) => { calls.push({ path: String(path), body: JSON.parse(String(init!.body)) }); return Response.json({ result: published }) }))
     await client.inspect(continuationJobId(envelope))
     expect(calls.map(call => call.path.split('/').at(-2))).toEqual(['world.engineering.continuation.inspect'])
     await client.submit(receipt, false, 'same-key')
@@ -56,22 +57,22 @@ describe('operator continuation evidence', () => {
     expect(calls[1]!.body).toMatchObject({ resource: source, idempotencyKey: 'same-key', input: { replayJobId: jobId }, actor: { kind: 'human' } })
   })
   test('owner failures and cross-Run results are refused', async () => {
-    const denied = continuationClient(envelope, (async () => Response.json({ error: { message: 'Origin expired' } }, { status: 409 })) as typeof fetch)
+    const denied = continuationClient(envelope, fakeFetch(async () => Response.json({ error: { message: 'Origin expired' } }, { status: 409 })))
     await expect(denied.inspect(jobId)).rejects.toThrow('Origin expired')
-    const forged = continuationClient(envelope, (async () => Response.json({ result: { ...published, source: { ...source, id: 'another-run' } } })) as typeof fetch)
+    const forged = continuationClient(envelope, fakeFetch(async () => Response.json({ result: { ...published, source: { ...source, id: 'another-run' } } })))
     await expect(forged.inspect(jobId)).rejects.toThrow('different Run')
     expect(() => continuationJobId({ ...envelope, state: JSON.stringify({ jobId, url: 'https://untrusted.invalid' }) })).toThrow('locator is invalid')
   })
   test('a revoked-source cancellation acknowledges termination without protected evidence', async () => {
-    const acknowledgement = { jobId, status: 'cancelled', evidenceAvailable: false }
-    const client = continuationClient(envelope, (async () => Response.json({ result: acknowledgement })) as typeof fetch)
+    const acknowledgement = { jobId, status: 'cancelled', evidenceAvailable: false } as const
+    const client = continuationClient(envelope, fakeFetch(async () => Response.json({ result: acknowledgement })))
     expect(await client.cancel(jobId)).toEqual(acknowledgement)
     await expect(client.inspect(jobId)).rejects.toThrow()
-    const mismatched = continuationClient(envelope, (async () => Response.json({ result: { ...acknowledgement, jobId: workspaceId } })) as typeof fetch)
+    const mismatched = continuationClient(envelope, fakeFetch(async () => Response.json({ result: { ...acknowledgement, jobId: workspaceId } })))
     await expect(mismatched.cancel(jobId)).rejects.toThrow('different job')
-    const unfinished = continuationClient(envelope, (async () => Response.json({ result: { ...acknowledgement, status: 'cancellation-requested' } })) as typeof fetch)
+    const unfinished = continuationClient(envelope, fakeFetch(async () => Response.json({ result: { ...acknowledgement, status: 'cancellation-requested' } })))
     await expect(unfinished.cancel(jobId)).rejects.toThrow()
-    const leaking = continuationClient(envelope, (async () => Response.json({ result: { ...acknowledgement, source } })) as typeof fetch)
+    const leaking = continuationClient(envelope, fakeFetch(async () => Response.json({ result: { ...acknowledgement, source } })))
     await expect(leaking.cancel(jobId)).rejects.toThrow()
   })
 })
