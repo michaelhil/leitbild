@@ -4,7 +4,10 @@ import { answerProcessPlantQuery, compileProcessPlant, createProcessPlantProtect
 import { processPlantAutomationDigest } from '../src/packs/process-plant/evidence-frame.ts'
 import { createProcessPlantRuntimePerformance, type ProcessPlantRuntimeInstance } from '../src/packs/process-plant/runtime-instance.ts'
 import { resolveProcessPlantSignalBinding } from '../src/packs/process-plant/signals.ts'
-import { parseProcedureTagValue, parseProcedureTagValidations } from '../src/features/procedures/pack-observations.ts'
+import { createProcedureObservationPort, parseProcedureTagValue, parseProcedureTagValidations, readProcedureTags } from '../src/features/procedures/pack-observations.ts'
+import { assessProcedureBranches } from '../src/features/procedures/branch-assessment.ts'
+import { parseProcedureMarkdown } from '../src/features/procedures/procmd.ts'
+import { procedureTestSource } from './procedure-fixtures.ts'
 import { guardPlantTests } from './plant-hang-guard.ts'
 
 guardPlantTests()
@@ -60,6 +63,47 @@ describe('read-only status signals', () => {
     const runtime = createProcessPlantRuntime({ system: two })
     const small = { plant: two, runtime, ramps: createProcessPlantRampRunner({ runtime }), performance: createProcessPlantRuntimePerformance() } as ProcessPlantRuntimeInstance
     expect(parseProcedureTagValidations(query(small, 'world.process-plant.procedure-tags.validate', { plantId: two.id, tags: [tag('SI-CL-D-FLOW', 'kg/s')] })).get('SI-CL-D-FLOW')).toMatchObject({ status: 'missing' })
+  })
+
+  test('compiled limits on these tags pass the evaluator\'s whole guard chain', async () => {
+    const plant = instance('plant:status-limits')
+    const document = parseProcedureMarkdown({ source: procedureTestSource, sourcePath: 'p/T.md', sourceUrl: '/wiki?path=p%2FT.md', rawMarkdown: `---
+type: procedure
+procedure-md: 0.7
+procedure-id: T
+title: T
+ai-workable: true
+---
+
+## Step 1 [id: s] Is SI actuated
+
+Basis: [Why](basis.md#si).
+Pair: [id: question]
+Check: Is SI actuated? «SI-ACTUATED» «SI-CL-A-FLOW»
+
+- Actuated, with flow «SI-ACTUATED == true» «SI-CL-A-FLOW > 0» [outcome: normal] → END
+- Not actuated «SI-ACTUATED == false» [outcome: normal] → END
+
+## Tags
+
+- id: SI-ACTUATED
+  units: boolean
+  states: ACTUATED/NOT ACTUATED
+- id: SI-CL-A-FLOW
+  units: kg/s
+` })
+    const step = document.steps[0]!
+    const simulationTime = '2026-11-08T08:00:00.000Z' as never
+    const port = createProcedureObservationPort({ scopeId: plant.plant.id, provider: {
+      signalReadQuery: (plantId, tags) => ({ capabilityId: 'world.process-plant.signals.read', input: { plantId, evidence: true, signals: tags.map(item => ({ tagId: item.id, requestedUnit: item.units })) } }),
+      tagValidationQuery: (plantId, tags) => ({ capabilityId: 'world.process-plant.procedure-tags.validate', input: { plantId, tags: tags.map(item => ({ id: item.id, units: item.units })) } }),
+    } as never, query: async ({ capabilityId, input }) => answerProcessPlantQuery({ request: { capabilityId, input, readPolicy: unrestrictedQueryReadPolicy }, plants: new Map([[plant.plant.id, plant]]), simulationTime } as never) })
+    const statuses = async () => assessProcedureBranches({ step, plantId: plant.plant.id, simulationTime, reads: await readProcedureTags({ observations: () => port, declared: document.tags, tagIds: step.tagIds }) }).map(item => [item.status, item.reasons.join(' ')])
+    plant.step(5)
+    expect(await statuses()).toEqual([['contradicted', ''], ['supported', '']])
+    plant.runtime.writeCommand({ type: 'setVariable', path: String(resolveProcessPlantSignalBinding(plant.plant.graph, { tagId: 'SI-MAN' as never }).path) as never, value: true })
+    plant.step(30)
+    expect((await statuses())[1]).toEqual(['contradicted', ''])
   })
 
   test('the table moves neither digest', () => {
