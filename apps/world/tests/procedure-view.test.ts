@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { parseProcedureMarkdown } from '../src/features/procedures/procmd.ts'
-import { procedureBlockLabel, procedureEvidenceStatusWord, procedureLineReadingText, procedureReadingName, procedureReadingText, procedureRequirementText, procedureLineCheckEvidence, procedureLineChecks, procedureObservationBasis, procedureObservationEvidence, procedureObservationLabel, procedureOperatorRows, procedureSampledEvidence, procedureSourceEvidenceRequest, procedureStepItems, procedureStepTagBindings, procedureTextSegments, procedureUnitJump } from '../src/ui/procedures/procedure-view.ts'
+import { procedureBlockLabel, procedureEvidenceStatusWord, procedureLineReadingText, procedureStepCounterText, procedureReadingName, procedureReadingText, procedureRequirementText, procedureLineCheckEvidence, procedureLineChecks, procedureObservationBasis, procedureObservationEvidence, procedureObservationLabel, procedureOperatorRows, procedureSampledEvidence, procedureSourceEvidenceRequest, procedureStepItems, procedureStepTagBindings, procedureTextSegments, procedureUnitJump } from '../src/ui/procedures/procedure-view.ts'
 import { procedureCriterionReadingSchema } from '../src/core/model/procedure-criteria.ts'
 import { procedureTestSource } from './procedure-fixtures.ts'
 import { procedureBindingStatusWord, procedureComparisonText, procedureCsfChip, procedureDescriptionText, procedureDisplayReading, procedureElapsedText, procedureStepBindingSummary } from '../src/ui/procedures/procedure-view.ts'
@@ -348,4 +348,10 @@ test('readings that share a description name their equipment', () => {
   expect(procedureReadingName('BARE', tags)).toBeUndefined()
   expect(procedureObservationEvidence({ evidence: [{ signal: { tagId: 'SG-B-PRESS', label: 'Steam generator pressure' }, variable: { value: 7.6, unit: 'MPa' }, comparison: { operator: '<', value: 8.1, unit: 'MPa' }, status: 'satisfied' }] }, tags))
     .toMatchObject([{ label: 'SG B: steam generator pressure' }])
+})
+
+test('the step counter is a place over the number of steps, not a label', () => {
+  const steps = [{ id: 'a' }, { id: 'b' }, { id: 'c' }]
+  expect(procedureStepCounterText(steps, 'a')).toBe('step 1/3')
+  expect(procedureStepCounterText(steps, 'c')).toBe('step 3/3')
 })

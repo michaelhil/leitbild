@@ -476,6 +476,10 @@ export const procedureElapsedText = (elapsedMs: number): string => {
   return `+${pad(Math.floor(seconds / 3600))}:${pad(Math.floor(seconds / 60) % 60)}:${pad(seconds % 60)}`
 }
 
+/** Where the Run is in its document: the step's place over the number of steps. A label can run past it (E-0 labels its last of 19 steps 18). */
+export const procedureStepCounterText = (steps: ReadonlyArray<Pick<ProcedureStep, 'id'>>, stepId: string): string =>
+  `step ${steps.findIndex(step => step.id === stepId) + 1}/${steps.length}`
+
 /** A procedure's description without its leading Markdown title line, which the window already shows. */
 export const procedureDescriptionText = (description: string): string =>
   description.replace(/^\s*#[^\n]*\n+/, '').trim()
