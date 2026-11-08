@@ -355,3 +355,9 @@ test('the step counter is a place over the number of steps, not a label', () => 
   expect(procedureStepCounterText(steps, 'a')).toBe('step 1/3')
   expect(procedureStepCounterText(steps, 'c')).toBe('step 3/3')
 })
+
+test('a chip that is not green names its procedure, and a green one names none', () => {
+  expect(procedureCsfChip('heat-sink', { label: 'Heat Sink', status: 'orange', procedure: 'FR-H.2' }, false).procedure).toBe('FR-H.2')
+  expect(procedureCsfChip('heat-sink', { label: 'Heat Sink', status: 'green', procedure: 'FR-H.2' }, false).procedure).toBeUndefined()
+  expect(procedureCsfChip('heat-sink', { label: 'Heat Sink', status: 'yellow' }, false).procedure).toBeUndefined()
+})

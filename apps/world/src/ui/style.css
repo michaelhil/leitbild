@@ -3104,13 +3104,21 @@ body.rail-resizing {
   cursor: help;
 }
 
+.procedure-csf-procedure {
+  font-weight: 800;
+}
+
 .procedure-csf-glyph {
   font-size: 10px;
   line-height: 1;
 }
 
 /* Normal is quiet; a challenged function is loud; no data is hatched, never plain white. */
-.procedure-csf.green .procedure-csf-glyph { color: #15803d; }
+.procedure-csf.green .procedure-csf-procedure {
+  font-weight: 800;
+}
+
+.procedure-csf-glyph { color: #15803d; }
 .procedure-csf.yellow { border-color: #a16207; background: #facc15; color: #1c1917; }
 .procedure-csf.orange { border-color: #c2410c; background: #c2410c; color: #ffffff; }
 .procedure-csf.red { border-color: #b91c1c; background: #b91c1c; color: #ffffff; }
@@ -3120,7 +3128,11 @@ body.rail-resizing {
   background: repeating-linear-gradient(135deg, #f1f5f9 0 4px, #e2e8f0 4px 8px);
   color: #334155;
 }
-.procedure-csf.unknown .procedure-csf-glyph { font-size: 12px; font-weight: 900; }
+.procedure-csf.unknown .procedure-csf-procedure {
+  font-weight: 800;
+}
+
+.procedure-csf-glyph { font-size: 12px; font-weight: 900; }
 .procedure-csf.not-monitored { border: 1px dashed #94a3b8; background: #ffffff; color: #475569; }
 
 .procedure-csf.stale::after {

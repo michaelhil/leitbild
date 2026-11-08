@@ -490,6 +490,8 @@ export interface ProcedureCsfChip {
   readonly glyph: string
   readonly label: string
   readonly stale: boolean
+  /** The procedure a function that is not green names. */
+  readonly procedure?: string
 }
 
 const csfGlyphs: Readonly<Record<ProcedureCsfChip['tone'], string>> = {
@@ -498,11 +500,11 @@ const csfGlyphs: Readonly<Record<ProcedureCsfChip['tone'], string>> = {
 
 export const procedureCsfChip = (
   id: string,
-  evaluation: { readonly label: string; readonly status: Exclude<ProcedureCsfChip['tone'], 'pending'> } | undefined,
+  evaluation: { readonly label: string; readonly status: Exclude<ProcedureCsfChip['tone'], 'pending'>; readonly procedure?: string | undefined } | undefined,
   stale: boolean,
 ): ProcedureCsfChip => {
   const tone = evaluation?.status ?? 'pending'
-  return { tone, glyph: csfGlyphs[tone], label: evaluation?.label ?? id, stale: evaluation !== undefined && stale }
+  return { tone, glyph: csfGlyphs[tone], label: evaluation?.label ?? id, stale: evaluation !== undefined && stale, ...(tone === 'green' || evaluation?.procedure === undefined ? {} : { procedure: evaluation.procedure }) }
 }
 
 /** What a step's ⓘ heads its tag list with, and the worst binding that colours the ⓘ. */

@@ -2049,9 +2049,10 @@
           {@const evaluation = csfEvaluations.get(csf)}
           {@const chip = procedureCsfChip(csf, evaluation, csfStale)}
           <div class="procedure-csf-shell">
-            <button type="button" class="procedure-csf {chip.tone}" class:stale={chip.stale} aria-label="{chip.label}: {evaluation ? evaluation.status.replace('-', ' ') : 'not read yet'}{chip.stale ? ', stale' : ''}">
+            <button type="button" class="procedure-csf {chip.tone}" class:stale={chip.stale} aria-label="{chip.label}: {evaluation ? evaluation.status.replace('-', ' ') : 'not read yet'}{chip.procedure ? `, go to ${chip.procedure}` : ''}{chip.stale ? ', stale' : ''}">
               <span class="procedure-csf-glyph" aria-hidden="true">{chip.glyph}</span>
               <span>{chip.label}</span>
+              {#if chip.procedure}<b class="procedure-csf-procedure">{chip.procedure}</b>{/if}
               {#if chip.stale}<span class="procedure-csf-stale">Stale</span>{/if}
             </button>
             <div class="procedure-csf-popover" role="tooltip">
@@ -2474,7 +2475,7 @@
   :global(.procedure-modal.compact-procedure .procedure-cross-unit-strip) { flex-wrap: nowrap; flex: 1; width: auto; overflow-x: auto; overscroll-behavior-inline: contain; }
   :global(.procedure-modal.compact-procedure .procedure-cross-unit) { flex: 0 0 auto; flex-wrap: nowrap; }
   :global(.procedure-modal.compact-procedure .procedure-header-actions) { flex-shrink: 0; }
-  :global(.procedure-modal.compact-procedure .procedure-csf-strip) { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 3px; overscroll-behavior-inline: contain; }
+  :global(.procedure-modal.compact-procedure .procedure-csf-strip) { padding-bottom: 3px; }
   :global(.procedure-modal.compact-procedure .procedure-csf-shell) { flex: 0 0 auto; }
   /* Preserve the existing CSF help outside its scrolling strip. */
   :global(.procedure-modal.compact-procedure .procedure-csf-popover) { position: fixed; top: auto; bottom: 12px; left: 24px; right: 24px; width: auto; max-width: none; max-height: calc(100dvh - 48px); overflow-y: auto; }
