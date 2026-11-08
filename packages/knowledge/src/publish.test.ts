@@ -32,7 +32,7 @@ const run = async (root: string, args: string[]) => {
 test('publication pins referenced local screenshots to the wiki commit and refuses missing or mislabelled images', async () => {
   const root = await mkdtemp(join(tmpdir(), 'knowledge-images-')); roots.push(root)
   await run(root, ['init']); await run(root, ['config', 'user.name', 'Knowledge test']); await run(root, ['config', 'user.email', 'test@example.invalid'])
-  await Bun.write(join(root, 'index.md'), '# Example\n\n![Actual screen](images/screen.png)\n\n`![Inline example](missing.png)`\n\n```md\n![Fenced example](missing.png)\n```')
+  await Bun.write(join(root, 'index.md'), '# Example\n\nCapacity [0,5400) then [7200,28800).\n\n![Actual screen](images/screen.png)\n\n`![Inline example](missing.png)`\n\n```md\n![Fenced example](missing.png)\n[Example](missing.md)\n```')
   const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a4E8AAAAASUVORK5CYII=', 'base64')
   await Bun.write(join(root, 'images/screen.png'), png)
   await run(root, ['add', 'index.md', 'images/screen.png']); await run(root, ['commit', '-m', 'Screen'])

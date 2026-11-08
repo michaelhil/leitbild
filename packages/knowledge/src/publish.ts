@@ -7,10 +7,10 @@ import { validateProcedurePublication } from '@leitbild/procmd'
 import { marked } from 'marked'
 import { markdownBody } from './markdown.ts'
 
-const imageLinks = (content: string): string[] => {
+const markdownLinks = (content: string, kind: 'link' | 'image'): string[] => {
   const links: string[] = []
   marked.walkTokens(marked.lexer(markdownBody(content)), token => {
-    if (token.type === 'image') links.push(token.href)
+    if ((token.type === 'image' || token.type === 'link') && token.type === kind) links.push(token.href)
   })
   return links
 }
@@ -29,8 +29,8 @@ const git = async (root: string, args: string[]): Promise<string> => {
 export const validateKnowledgeSources = async (snapshot: KnowledgeSnapshot, sourceRoot?: string): Promise<ReadonlyArray<string>> => {
   const paths = new Set<string>()
   for (const document of snapshot.documents) {
-    for (const match of document.content.matchAll(/(?<!!)\[[^\]]*\]\((source:[^\s)]+)(?:\s+"[^"]*")?\)/g)) {
-      const href = match[1]!
+    for (const href of markdownLinks(document.content, 'link')) {
+      if (!href.startsWith('source:')) continue
       if (!sourceRoot) throw new Error('A product source root is required to validate implementation links')
       const ref = parseProductSourceReference(href.slice(7).replace(/#L(\d+)(?:-L?(\d+))?$/, (_match, start, end) => `:${start}${end ? `-${end}` : ''}`))
       if (!ref) throw new Error(`Invalid source reference in ${document.path}: ${href}`)
@@ -53,7 +53,7 @@ export const publishKnowledge = async (root: string, sourceRoot?: string): Promi
   const documents = await Promise.all(names.map(async path => ({ path, content: await git(root, ['show', `${revision}:${path}`]) })))
   if (!documents.some(document => document.path === 'index.md')) throw new Error('Knowledge repository requires index.md')
   const imagePaths = new Set<string>()
-  for (const document of documents) for (const href of imageLinks(document.content)) {
+  for (const document of documents) for (const href of markdownLinks(document.content, 'image')) {
     if (/^https:\/\//i.test(href)) continue
     if (/^[a-z][a-z\d+.-]*:/i.test(href) || href.startsWith('/') || href.includes('?') || href.includes('#')) throw new Error(`Unsupported knowledge image in ${document.path}: ${href}`)
     const path = posix.normalize(posix.join(posix.dirname(document.path), decodeURIComponent(href)))
@@ -86,8 +86,7 @@ export const publishKnowledge = async (root: string, sourceRoot?: string): Promi
       throw new Error(`Stale generated schematic in ${document.path}; regenerate before publishing`)
     // Relative authored document links must resolve in this exact publication.
     // External/code references are independently checkable, not mirrored here.
-    for (const match of document.content.matchAll(/(?<!!)\[[^\]]*\]\(([^\s)]+)(?:\s+"[^"]*")?\)/g)) {
-      const href = match[1]!
+    for (const href of markdownLinks(document.content, 'link')) {
       if (/^[a-z][a-z\d+.-]*:/i.test(href) || href.startsWith('/')) continue
       const [target, section] = href.split('#')
       const path = target ? posix.normalize(posix.join(posix.dirname(document.path), decodeURIComponent(target))) : document.path
