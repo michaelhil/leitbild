@@ -31,6 +31,10 @@ describe('operator continuation evidence', () => {
   })
   test('partial cases align only common elapsed times, never compare mismatched endpoints', () => {
     expect(alignedContinuationSamples(receipt).map(item => [item.elapsedSeconds, item.difference])).toEqual([[0, 0], [5, -2]])
+    // Pagination follows the largest case; its count must not be presented as
+    // the number of aligned comparisons when another case stopped earlier.
+    expect(Math.max(...receipt.cases.map(item => item.sampleCount))).toBe(3)
+    expect(alignedContinuationSamples(receipt)).toHaveLength(2)
     expect(continuationActive(receipt)).toBe(false)
     expect(continuationActive({ ...receipt, status: 'cancellation-requested' })).toBe(true)
     const unknown = structuredClone(receipt)

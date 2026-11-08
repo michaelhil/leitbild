@@ -109,7 +109,7 @@
       <div class="actions">
         <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
         <obc-button disabled={busy || offset === 0} onclick={() => page(Math.max(0, offset - 20))}>Previous samples</obc-button>
-        <span>Samples {maxSamples === 0 ? 0 : offset + 1}–{Math.min(offset + 20, maxSamples)} of {maxSamples}</span>
+        <span>Case sample page: {maxSamples === 0 ? 0 : offset + 1}–{Math.min(offset + 20, maxSamples)} (largest case: {maxSamples} samples). {rows.length} aligned comparison rows.</span>
         <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
         <obc-button disabled={busy || offset + 20 >= maxSamples} onclick={() => page(offset + 20)}>Next samples</obc-button>
       </div>
