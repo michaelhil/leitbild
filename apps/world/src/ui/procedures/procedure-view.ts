@@ -403,6 +403,9 @@ export const procedureReferenceNotice = 'Reference document, not written for thi
 export const procedureViewKey = (document: ProcedureDocument, scope: ProcedureRunScope): string =>
   JSON.stringify([scope.plantId, document.source.sourceId, document.source.revision, document.sourcePath, document.procedureId])
 
+/** The frontmatter category of a document the first correction left as it was. */
+const categoryLabels: Readonly<Record<string, string>> = { 'model-scoped simulator task': 'Not revised' }
+
 export const procedureCategories = (procedures: ReadonlyArray<ProcedureCatalogItem>) => {
   const groups = new Map<string, ProcedureCatalogItem[]>()
   for (const procedure of procedures) {
@@ -411,7 +414,7 @@ export const procedureCategories = (procedures: ReadonlyArray<ProcedureCatalogIt
     items.push(procedure)
     groups.set(category, items)
   }
-  return [...groups].map(([id, procedures]) => ({ id, label: id.replace(/[-_]/g, ' '), procedures }))
+  return [...groups].map(([id, procedures]) => ({ id, label: categoryLabels[id] ?? id.replace(/[-_]/g, ' '), procedures }))
 }
 
 const unitText: Readonly<Record<string, string>> = { degC: '°C', degF: '°F', percent: '%', pct: '%' }

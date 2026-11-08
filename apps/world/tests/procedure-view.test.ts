@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { parseProcedureMarkdown } from '../src/features/procedures/procmd.ts'
-import { procedureBlockLabel, procedureEvidenceStatusWord, procedureLineReadingText, procedureStepCounterText, procedureReadingName, procedureReadingText, procedureRequirementText, procedureLineCheckEvidence, procedureLineChecks, procedureObservationBasis, procedureObservationEvidence, procedureObservationLabel, procedureOperatorRows, procedureSampledEvidence, procedureSourceEvidenceRequest, procedureStepItems, procedureStepTagBindings, procedureTextSegments, procedureUnitJump } from '../src/ui/procedures/procedure-view.ts'
+import { procedureCategories, procedureBlockLabel, procedureEvidenceStatusWord, procedureLineReadingText, procedureStepCounterText, procedureReadingName, procedureReadingText, procedureRequirementText, procedureLineCheckEvidence, procedureLineChecks, procedureObservationBasis, procedureObservationEvidence, procedureObservationLabel, procedureOperatorRows, procedureSampledEvidence, procedureSourceEvidenceRequest, procedureStepItems, procedureStepTagBindings, procedureTextSegments, procedureUnitJump } from '../src/ui/procedures/procedure-view.ts'
 import { procedureCriterionReadingSchema } from '../src/core/model/procedure-criteria.ts'
 import { procedureTestSource } from './procedure-fixtures.ts'
 import { procedureBindingStatusWord, procedureComparisonText, procedureCsfChip, procedureDescriptionText, procedureDisplayReading, procedureElapsedText, procedureStepBindingSummary } from '../src/ui/procedures/procedure-view.ts'
@@ -360,4 +360,10 @@ test('a chip that is not green names its procedure, and a green one names none',
   expect(procedureCsfChip('heat-sink', { label: 'Heat Sink', status: 'orange', procedure: 'FR-H.2' }, false).procedure).toBe('FR-H.2')
   expect(procedureCsfChip('heat-sink', { label: 'Heat Sink', status: 'green', procedure: 'FR-H.2' }, false).procedure).toBeUndefined()
   expect(procedureCsfChip('heat-sink', { label: 'Heat Sink', status: 'yellow' }, false).procedure).toBeUndefined()
+})
+
+test('a document left as it was sits under Not revised, by its category', () => {
+  const item = (procedureId: string, category: string) => ({ procedureId, category }) as unknown as Parameters<typeof procedureCategories>[0][number]
+  const groups = procedureCategories([item('ES-1.3', 'model-scoped simulator task'), item('E-0', 'model-entry-response'), item('RHR-1', 'model-scoped simulator task')])
+  expect(groups.map(group => [group.label, group.procedures.map(procedure => procedure.procedureId)])).toEqual([['Not revised', ['ES-1.3', 'RHR-1']], ['model entry response', ['E-0']]])
 })
