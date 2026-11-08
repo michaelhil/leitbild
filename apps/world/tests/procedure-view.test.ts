@@ -531,3 +531,16 @@ test('tag buttons of one family repeat only the letter', () => {
   expect(procedureTagLabels([tag('V-A'), { kind: 'text', text: ' then ' }, tag('V-B')], document).filter(Boolean).map(item => item!.shown)).toEqual(['Aux feedwater valve A', 'Aux feedwater valve B'])
   expect(procedureTagLabels([tag('V-A'), space, tag('V-B')], { tags: [] }).filter(Boolean).map(item => item!.shown)).toEqual(['V-A', 'V-B'])
 })
+
+test('a step with line limits ends with its boxes, whichever row its lights test', () => {
+  const document = parseProcedureMarkdown({
+    source: procedureTestSource, sourcePath: 'TEST.md', sourceUrl: '/wiki?path=TEST.md&revision=r',
+    rawMarkdown: ['---', 'type: procedure', 'procedure-md: 0.7', 'procedure-id: TEST', 'title: Rows', '---', '# Rows', '', '## Step 1 [id: one] One',
+      'Pair: [id: a, criterion: 0]', 'Check: Level — BELOW 5%. «L < 5»', 'RNO: Act.', 'Pair: [id: b]', 'Check: Is it steady? «L»', 'RNO: Act again.', 'Basis: [why](basis.md#one).',
+      '- Go on [outcome: normal] → END', '', '## Tags', '', '- id: L', '  description: Level', '  units: percent', ''].join('\n'),
+  })
+  const rows = procedureOperatorRows(document.steps[0]!).rows.filter(row => row.kind === 'pair') as Array<Extract<ReturnType<typeof procedureOperatorRows>['rows'][number], { kind: 'pair' }>>
+  expect(rows.map(row => row.expected.filter(item => item.kind === 'branch').length)).toEqual([0, 1])
+  expect(rows[0]!.advisoryBranchIndex).toBe(0)
+  expect(procedureLineChecks(document.steps[0]!, rows[0]!).size).toBe(1)
+})

@@ -60,7 +60,8 @@ export const procedureOperatorRows = (step: ProcedureStep): { readonly rows: Rea
     other: rowItems.filter(item => itemColumn(item) === 'other'),
   })
   if (step.pairs?.length) {
-    const assigned = new Map(step.pairs.flatMap(pair => pair.advisoryBranchIndex === undefined
+    // On a step with line limits a Pair names the branch its lights test, and the step ends with its boxes. Elsewhere the Pair also holds its branch.
+    const assigned = new Map(step.blocks.some(block => block.limits !== undefined) ? [] : step.pairs.flatMap(pair => pair.advisoryBranchIndex === undefined
       ? []
       : [[step.branches[pair.advisoryBranchIndex]!, pair.id] as const]))
     const groups = new Map<string, StepItem[]>(step.pairs.map(pair => [pair.id, []]))
