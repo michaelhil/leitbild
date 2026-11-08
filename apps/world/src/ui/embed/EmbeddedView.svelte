@@ -12,10 +12,17 @@
   const dashboard = $derived(envelope.viewType === DASHBOARD_VIEW_TYPE && ofRun)
   const layoutInspection = $derived(envelope.viewType === LAYOUT_INSPECTION_VIEW_TYPE && ofRun)
   const procedureDecision = $derived(envelope.viewType === PROCEDURE_DECISION_VIEW_TYPE && ofRun)
+  const engineering = $derived(envelope.viewType === 'engineering.continuation' && ofRun)
 </script>
 
 {#if vignette}
   <Vignette {envelope} />
+{:else if engineering}
+  {#await import('./engineering/Continuation.svelte') then { default: Continuation }}
+    <Continuation {envelope} />
+  {:catch error}
+    <p class="embed-failure">This continuation cannot be shown: {error instanceof Error ? error.message : String(error)}</p>
+  {/await}
 {:else if layoutInspection}
   {#await import('./physical-layout/Inspection.svelte') then { default: Inspection }}
     <Inspection {envelope} />

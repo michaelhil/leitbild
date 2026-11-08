@@ -55,6 +55,10 @@ interface ExpectedSender {
  */
 export const listingRefusal = (envelope: EmbeddedViewEnvelope): string | null => {
   switch (envelope.viewType) {
+    case 'engineering.result':
+      return envelope.moduleId === 'agents' && envelope.subject.moduleId === 'agents' && envelope.subject.type === 'agents.room'
+        ? null : 'an engineering calculation must belong to an Agents Room'
+    case 'engineering.continuation':
     case VIGNETTE_VIEW_TYPE:
     case DASHBOARD_VIEW_TYPE:
       if (envelope.moduleId !== 'world') return `it is a ${envelope.viewType} view published by ${envelope.moduleId}, not by World`

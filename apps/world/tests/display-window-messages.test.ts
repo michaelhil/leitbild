@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { embeddedViewListingSchema } from '@leitbild/contracts'
-import { answerDeckEntry } from '../src/ui/process-display/display-deck.ts'
+import { answerDeckEntry, deckEntryAsset } from '../src/ui/process-display/display-deck.ts'
 import {
   listingRefusal,
   readDisplayWindowHostMessage,
@@ -28,6 +28,17 @@ const view = (overrides: Record<string, unknown> = {}, key = 'room/turn/call/key
 const fromHost = (data: unknown) => ({ origin: expected.origin, source: parent, data })
 
 describe('display window messages from the Host', () => {
+  test('engineering results use the existing display window only under their precise owners', () => {
+    const calculation = embeddedViewListingSchema.parse(view({ moduleId: 'agents', viewType: 'engineering.result', subject: { workspaceId, moduleId: 'agents', type: 'agents.room', id: 'room' } }))
+    expect(listingRefusal(calculation.envelope)).toBeNull()
+    const entry = answerDeckEntry('run-1', calculation)
+    expect(entry.otherRun).toBe(false)
+    expect(entry.caption).not.toContain('other Run')
+    expect(deckEntryAsset(entry, [], { state: 'joined' })).toEqual({ ok: false, reason: 'Engineering evidence has no live asset controls' })
+    expect(listingRefusal(embeddedViewListingSchema.parse({ ...calculation, envelope: { ...calculation.envelope, viewType: 'engineering.other' } }).envelope)).not.toBeNull()
+    expect(listingRefusal(embeddedViewListingSchema.parse({ ...calculation, envelope: { ...calculation.envelope, subject: { ...calculation.envelope.subject, type: 'agents.agent' } } }).envelope)).not.toBeNull()
+    expect(listingRefusal(embeddedViewListingSchema.parse(view({ viewType: 'engineering.continuation' })).envelope)).toBeNull()
+  })
   test('a dashboard opened at a cited line\'s section shows and marks that section first; any other view opens as given (R4 §2.6)', () => {
     const board = { ...view({ viewType: 'display.dashboard', title: 'Whole Run · dashboard', height: 960, state: '{"scope":"run"}' }, 'room/turn/call_1_0/dashboard#Halden%20Unit%201'), focus: 'Halden Unit 1' }
     const opened = readDisplayWindowHostMessage(fromHost({ type: 'leitbild:view-open', view: board }), expected)
