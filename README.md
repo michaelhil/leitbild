@@ -1,6 +1,6 @@
 # Leitbild
 
-A modular simulation and AI-agent sandbox. World owns simulations; Agents owns scoped conversations; the Host presents one Workspace-based product. The local research stack also provisions Planning for saved scheduling Studies and comparisons.
+A modular simulation and AI-agent sandbox. World owns simulations; Agents owns scoped conversations; Planning owns saved scheduling Studies and comparisons. The Host presents one Workspace-based product.
 
 Read the [knowledge wiki](https://leitbild.app/wiki) for concepts, architecture, guides and Pack documentation. Authored knowledge lives in the separate `Leitbild-wiki` Git repository; this checkout contains executable code, skills and tests, not a second documentation collection.
 
