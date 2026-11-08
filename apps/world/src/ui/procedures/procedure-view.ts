@@ -263,6 +263,10 @@ const procedureSourceHref = (target: string, sourceUrl?: string): string | undef
   } catch { return undefined }
 }
 
+/** The usage page, beside a rewritten document at its own revision. Other documents have no link: the page was not written for them. */
+export const procedureUsageHref = (document: Pick<ProcedureDocument, 'annotations' | 'sourceUrl'>): string | undefined =>
+  document.annotations?.['ai-workable'] === 'true' ? procedureSourceHref('usage.md', document.sourceUrl) : undefined
+
 export const procedureBlockLabel = (kind: ProcedureTextBlock['kind']): string => ({
   check: 'Check', action: 'Action', expected: 'Expected response', rno: 'Response not obtained',
   unknown: 'Unknown or unreliable indication', basis: 'Technical basis', decision: 'Decision',

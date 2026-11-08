@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { parseProcedureMarkdown } from '../src/features/procedures/procmd.ts'
-import { procedureTagLabels, procedureJudgementLine, procedureInlineLayout, procedureInlineValue, procedureFoldoutItems, procedureFoldoutBeforeStart, procedurePriorFoldout, procedureDecisionAgainst, procedureTagLabel, procedureLightRows, procedureLightTone, procedureCheckVersion, procedureCategories, procedureBlockLabel, procedureEvidenceStatusWord, procedureLineReadingText, procedureStepCounterText, procedureReadingName, procedureReadingText, procedureRequirementText, procedureLineCheckEvidence, procedureLineChecks, procedureObservationBasis, procedureObservationEvidence, procedureObservationLabel, procedureOperatorRows, procedureSampledEvidence, procedureSourceEvidenceRequest, procedureStepItems, procedureStepTagBindings, procedureTextSegments, procedureUnitJump } from '../src/ui/procedures/procedure-view.ts'
+import { procedureUsageHref, procedureTagLabels, procedureJudgementLine, procedureInlineLayout, procedureInlineValue, procedureFoldoutItems, procedureFoldoutBeforeStart, procedurePriorFoldout, procedureDecisionAgainst, procedureTagLabel, procedureLightRows, procedureLightTone, procedureCheckVersion, procedureCategories, procedureBlockLabel, procedureEvidenceStatusWord, procedureLineReadingText, procedureStepCounterText, procedureReadingName, procedureReadingText, procedureRequirementText, procedureLineCheckEvidence, procedureLineChecks, procedureObservationBasis, procedureObservationEvidence, procedureObservationLabel, procedureOperatorRows, procedureSampledEvidence, procedureSourceEvidenceRequest, procedureStepItems, procedureStepTagBindings, procedureTextSegments, procedureUnitJump } from '../src/ui/procedures/procedure-view.ts'
 import { procedureCriterionReadingSchema } from '../src/core/model/procedure-criteria.ts'
 import { procedureTestSource } from './procedure-fixtures.ts'
 import { procedureBindingStatusWord, procedureComparisonText, procedureCsfChip, procedureDescriptionText, procedureDisplayReading, procedureElapsedText, procedureStepBindingSummary } from '../src/ui/procedures/procedure-view.ts'
@@ -543,4 +543,10 @@ test('a step with line limits ends with its boxes, whichever row its lights test
   expect(rows.map(row => row.expected.filter(item => item.kind === 'branch').length)).toEqual([0, 1])
   expect(rows[0]!.advisoryBranchIndex).toBe(0)
   expect(procedureLineChecks(document.steps[0]!, rows[0]!).size).toBe(1)
+})
+
+test('a rewritten document links its usage page at its own revision', () => {
+  const sourceUrl = '/wiki?path=world%2Fpacks%2Fprocess-plant%2Fprocedures%2FE-0.md&revision=abc'
+  expect(procedureUsageHref({ sourceUrl, annotations: { 'ai-workable': 'true' } })).toBe('/wiki?path=world%2Fpacks%2Fprocess-plant%2Fprocedures%2Fusage.md&revision=abc')
+  expect(procedureUsageHref({ sourceUrl })).toBeUndefined()
 })

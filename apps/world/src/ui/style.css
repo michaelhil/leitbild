@@ -4479,6 +4479,8 @@ button.procedure-light:focus-visible { outline: 3px solid var(--accent, #1d4ed8)
 .procedure-line-check dd small { display: block; color: #475569; }
 .procedure-current-check p:first-of-type,
 .procedure-technical-basis > div { margin-top: 6px; }
+.procedure-usage-link { flex: none; font-size: 13px; white-space: nowrap; }
+
 .procedure-reference-banner {
   margin: 0;
   padding: 6px 12px;
