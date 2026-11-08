@@ -1,6 +1,6 @@
 import type { ExecutionInspection, JourneyEvent } from './execution-journey.ts'
 import type { ExecutionCall } from '../../../core/executions/store.ts'
-import { checkViewEnvelope } from '../../../core/render-validators/view-fence.ts'
+import { checkViewEnvelope, trustedEngineeringViewEntry } from '../../../core/render-validators/view-fence.ts'
 
 export interface ProgressActivity {
   readonly content: string
@@ -40,6 +40,8 @@ export interface RecordedOperation {
 /** Agents owns the workspace_call envelope; the owning Module's result stays
  * opaque. An accepted command is not reclassified as physical success. */
 export const recordedOperations = (call: ExecutionCall): ReadonlyArray<RecordedOperation> => {
+  const engineering = trustedEngineeringViewEntry(call)
+  if (engineering !== null) return [{ key: engineering.key, operationId: call.tool, input: call.arguments, result: engineering }]
   if (call.tool !== 'workspace_call') return []
   const args = object(call.arguments)
   if (!Array.isArray(args?.calls)) return []

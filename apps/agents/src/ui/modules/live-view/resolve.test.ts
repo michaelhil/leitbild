@@ -16,6 +16,23 @@ const fetching = (status: number, body: unknown) => {
 }
 
 describe('resolving leitbild-view references', () => {
+  test('only exact trusted engineering built-ins can publish Room calculation views', async () => {
+    const state = { roomId: origin.roomId, turnId: origin.turnId, toolCallId: ref.callId }
+    const calculation = { ...envelope, moduleId: 'agents', viewType: 'engineering.result', subject: { workspaceId, moduleId: 'agents', type: 'agents.room', id: origin.roomId }, state: JSON.stringify(state) }
+    const entry = { key: 'calculation', success: true, embeddedView: calculation, viewRef: `${ref.callId}/calculation`, data: { kind: 'engineering-calculation', mode: 'exploratory-script', qualification: 'research-only' } }
+    const calculationRef = { ...ref, key: 'calculation' }
+    const resolve = (entry:unknown, tool = 'engineering_run') => resolveViewReference(calculationRef, origin, fetching(200, evidence([entry], tool)).fetchJson)
+    expect(await resolve(entry)).toMatchObject({ kind: 'view' })
+    for (const forged of [
+      { ...entry, viewRef: 'call_9_0/calculation' },
+      { ...entry, data: { ...entry.data, qualification: 'validated' } },
+      { ...entry, embeddedView: { ...calculation, state: JSON.stringify({ ...state, turnId: 'other-turn' }) } },
+      { ...entry, embeddedView: { ...calculation, subject: { ...calculation.subject, id: 'other-room' } } },
+    ]) expect(await resolve(forged)).toMatchObject({ code: 'view_evidence_mismatch' })
+    expect(await resolve(entry, 'workspace_call')).toMatchObject({ code: 'view_evidence_mismatch' })
+    expect(await resolve(entry, 'web_fetch')).toMatchObject({ code: 'view_evidence_mismatch' })
+    expect(await resolve(entry, 'engineering_calculate')).toMatchObject({ code: 'view_evidence_mismatch' })
+  })
   test('reads the envelope from the answer turn evidence, never from the fence', async () => {
     const { paths, fetchJson } = fetching(200, evidence([{ key: 'display', embeddedView: envelope }]))
     const result = await resolveViewReference(ref, origin, fetchJson)

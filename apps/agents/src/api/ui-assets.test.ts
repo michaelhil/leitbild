@@ -17,6 +17,8 @@ describe('Agents UI asset namespace', () => {
 
   test('does not expose arbitrary files from the UI tree', () => {
     expect(agentsUiAssetFromPath('/assets/agents/app.js')).toBe('app.js')
+    expect(agentsUiAssetFromPath('/assets/agents/engineering.js')).toBe('engineering.js')
+    expect(agentsUiAssetFromPath('/assets/agents/engineering.css')).toBe('engineering.css')
     expect(agentsUiAssetFromPath('/assets/agents/styles.css')).toBe('styles.css')
     expect(agentsUiAssetFromPath('/assets/agents/chunk-aB12_cd3.js')).toBe('chunk-aB12_cd3.js')
     expect(agentsUiAssetFromPath('/assets/agents/../modules/app.ts')).toBeNull()
