@@ -1,7 +1,7 @@
 import { limitMaxAgeSeconds } from '@leitbild/procmd'
 import type { ActorId, IsoTimestamp, ProcedureDocument, ProcedureRunDriver, ProcedureRunState, ProcedureStep } from '../../core/model/index.ts'
 import type { ProcedureBranchAssessment } from '../../core/model/procedure-criteria.ts'
-import { procedureCheckedTagIds, procedureReadingProblem } from './branch-assessment.ts'
+import { procedureCheckedTagIds, procedureReadingProblem, procedureStepAsksPerson } from './branch-assessment.ts'
 import type { ProcedureTagRead } from './pack-observations.ts'
 
 // Who may work a procedure Run, and how an AI agent decides on it. An AI
@@ -52,7 +52,8 @@ const askInstead = 'A person decides it: ask with world.procedure.run.request-in
 /**
  * Why World refuses an AI agent this branch, if it does. A document marked
  * ai-workable lets an AI go on by stated judgement where no limit decides, on
- * valid readings, and stops it to ask at a judgement transfer and at the end.
+ * valid readings. It stops the AI to ask at a judgement transfer, at the end,
+ * and on any answer to a question no limit decides when one answer transfers.
  * Any other document refuses everything its criteria do not support.
  */
 export const aiBranchRefusal = (config: {
@@ -72,6 +73,7 @@ export const aiBranchRefusal = (config: {
     return criterion.status === 'supported' ? undefined : `${name} is ${criterion.status}: ${criterion.reasons.join(' ') || 'the current evidence contradicts its declared criterion'}`
   }
   if (branch.targetKind === 'procedure') return `${name} transfers on judgement, with no limit stated. ${askInstead}`
+  if (procedureStepAsksPerson(step)) return `${name} answers a question no limit decides, and another answer leaves the procedure. ${askInstead}`
   const checked = procedureCheckedTagIds(step)
   const problems = config.reads.filter(read => checked.includes(read.tagId)).flatMap(read => procedureReadingProblem(read, read.tagId, { simulationTime: criterion.simulationTime, plantId: config.plantId, maxAgeSeconds: limitMaxAgeSeconds }) ?? [])
   return problems.length === 0 ? undefined : `${name} rests on readings that are not valid: ${problems.join(' ')}`

@@ -93,6 +93,15 @@ Action: Stop.
 
 - Done [outcome: normal] → END
 
+## Step 8 [id: faulted] Check for a faulted steam generator
+
+Pair: [id: fault]
+Check: Is any SG uncontrolled? «PRESSURE»
+RNO: IF any, THEN go to the fault procedure.
+
+- None [outcome: normal] → #end-of-walk
+- Any [outcome: rno] → [[OTHER]]
+
 ## Tags
 
 - id: BKR-A
@@ -259,7 +268,16 @@ describe('AI rules on a marked document', () => {
     await expect(commit('fork', 1, port())).rejects.toThrow('ends the procedure')
   })
 
+  test('a question no limit decides stops an AI on every answer when one answer transfers', async () => {
+    await expect(commit('faulted', 0, port())).rejects.toThrow(`answers a question no limit decides, and another answer leaves the procedure. A person decides it: ${asks}`)
+    await expect(commit('faulted', 1, port())).rejects.toThrow('transfers on judgement')
+    // The same question with no transfer among its answers stays the AI's judgement, and a step with any limit is untouched.
+    expect(selected(await commit('judge2', 0, port())).target).toBe('end-of-walk')
+    expect(selected(await commit('routes', 0, port({ SI: true }))).target).toBe('OTHER')
+  })
+
   test('a person is never refused any of them', async () => {
+    expect(selected(await commit('faulted', 0, port(), person)).target).toBe('end-of-walk')
     expect(selected(await commit('routes', 1, port(), person)).target).toBe('OTHER')
     expect(selected(await commit('judge', 0, port(), person)).target).toBe('END')
     expect(selected(await commit('judge2', 0, port({ PRESSURE: new Error('no reading') }), person)).target).toBe('end-of-walk')
@@ -276,6 +294,7 @@ test('on a marked document a no-limit branch stays unknown and its reason says w
   expect(judgement[0]).toMatchObject({ status: 'unknown', reasons: [expect.stringContaining('It is a judgement: an AI agent decides it on a stated basis')] })
   expect((await assessments('routes'))[1]).toMatchObject({ status: 'unknown', reasons: ['No limit decides this transfer. An AI agent stops and asks a person.'] })
   expect((await assessments('judge'))[0]).toMatchObject({ status: 'unknown', reasons: ['No limit decides this ending. An AI agent stops and asks a person.'] })
+  expect((await assessments('faulted'))[0]).toMatchObject({ status: 'unknown', reasons: ['No limit decides this step, and one of its answers leaves the procedure. An AI agent stops and asks a person.'] })
   expect((await assessments('judge2', 'category: x'))[0]!.reasons[0]).toStartWith('No authored eligibility criterion')
   expect(selected(await commit('judge2', 0, port())).criterion).toMatchObject({ status: 'unknown', reasons: [expect.stringContaining('It is a judgement')] })
 })
