@@ -16,7 +16,7 @@ export const createPlanningServer = (config: {
   const handle = createPlanningModuleApi(config)
   const uiRoot = resolve(config.uiDistPath ?? `${import.meta.dir}/ui/dist`)
   return Bun.serve({
-    hostname: config.host ?? '127.0.0.1', port: config.port ?? 3103,
+    hostname: config.host ?? '127.0.0.1', port: config.port ?? 3102,
     async fetch(request) {
       const url = new URL(request.url)
       try {

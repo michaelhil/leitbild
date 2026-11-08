@@ -10,7 +10,7 @@ import { PROVIDER_PROFILES } from '../apps/agents/src/llm/provider-catalog.ts'
 const repository = resolve(import.meta.dir, '..')
 const loopback = '127.0.0.1'
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
-type ModuleName = 'host' | 'world' | 'agents'
+type ModuleName = 'host' | 'world' | 'agents' | 'planning'
 // Host tests include DOM typings, which hide Bun's supported header options.
 const ClientWebSocket = WebSocket as unknown as { new(url: URL, options: Bun.WebSocketOptions): WebSocket }
 
@@ -45,10 +45,10 @@ export const preflightOsrm = async (osrm: string): Promise<void> => {
   }
 }
 
-/** Deliberately not a Caddy parser: these two named matchers own our route split.
+/** Deliberately not a Caddy parser: these named matchers own our route split.
  * Fail if their format changes rather than silently testing a different split. */
 export const localRoutes = (caddy: string): ((path: string) => ModuleName) => {
-  const patterns = (['world', 'agents'] as const).map(name => {
+  const patterns = (['world', 'agents', 'planning'] as const).map(name => {
     const matches = [...caddy.matchAll(new RegExp(`^\\s*@${name} path_regexp ${name} (.+)$`, 'gm'))]
     if (matches.length !== 1) throw new Error(`Expected one Caddy ${name} path matcher`)
     return [name, new RegExp(matches[0]![1]!)] as const
@@ -57,7 +57,7 @@ export const localRoutes = (caddy: string): ((path: string) => ModuleName) => {
 }
 
 export const preflightLocalStack = async (root: string, expectedKnowledgeRevision?: string): Promise<string> => {
-  for (const path of ['apps/leitbild/src/ui/dist/index.html', 'apps/world/src/ui/dist/index.html', 'apps/agents/src/ui/dist/index.html', 'apps/agents/src/ui/dist/app.js', 'apps/agents/src/ui/dist.css']) {
+  for (const path of ['apps/leitbild/src/ui/dist/index.html', 'apps/world/src/ui/dist/index.html', 'apps/agents/src/ui/dist/index.html', 'apps/agents/src/ui/dist/app.js', 'apps/agents/src/ui/dist.css', 'apps/planning/src/ui/dist/index.html']) {
     if (!await Bun.file(join(root, path)).exists()) throw new Error(`Missing ${path}; run bun run build before dev:stack`)
   }
   const { revision } = await loadKnowledge(join(root, 'knowledge/snapshot.json'))
@@ -144,24 +144,25 @@ export const startLocalStack = async ({ port = 43100, models = false, osrm, ld01
   const onSignal = () => { void stop().finally(() => process.exit(130)) }
   process.once('SIGINT', onSignal); process.once('SIGTERM', onSignal)
   try {
-    for (let index = 0; index < 3; index++) reservations.push(await reservePort())
-    const ports = { host: reservations[0]!.port, world: reservations[1]!.port, agents: reservations[2]!.port }
+    for (let index = 0; index < 4; index++) reservations.push(await reservePort())
+    const ports = { host: reservations[0]!.port, world: reservations[1]!.port, agents: reservations[2]!.port, planning: reservations[3]!.port }
     proxy = startLocalProxy(route, ports, port)
     const origin = `http://${loopback}:${proxy.port}`
-    for (const folder of ['host', 'world', 'agents', 'maps', 'reference']) await mkdir(join(directory, folder))
+    for (const folder of ['host', 'world', 'agents', 'planning', 'maps', 'reference']) await mkdir(join(directory, folder))
     // Allow-list environment, and disable Bun's implicit .env loading: never read
     // provider keys, user MCP configuration or a real deployment's data paths.
     const env = {
       PATH: process.env.PATH ?? '', NODE_ENV: 'production',
       WORKSPACE_HOST_URL: `http://${loopback}:${ports.host}`, LEITBILD_BIND_HOST: loopback, BIND_HOST: loopback,
       WORKSPACE_HOST_HOME: join(directory, 'host'), LEITBILD_HOME: join(directory, 'agents'),
+      LEITBILD_PLANNING_HOME: join(directory, 'planning'),
       LEITBILD_DATA_DIR: join(directory, 'world'), LEITBILD_MAP_ROOT: join(directory, 'maps'),
       LEITBILD_REFERENCE_ROOT: join(directory, 'reference'), ...localRoutingEnvironment(osrm),
       LEITBILD_KNOWLEDGE_SNAPSHOT: join(repository, 'knowledge/snapshot.json'),
       ...localModelEnvironment(models, process.env),
-      WORKSPACE_MODULES: JSON.stringify((['world', 'agents'] as const).map(moduleId => ({ moduleId, internalBaseUrl: `http://${loopback}:${ports[moduleId]}`, manifestPath: '/.well-known/workspace-module' }))),
+      WORKSPACE_MODULES: JSON.stringify((['world', 'agents', 'planning'] as const).map(moduleId => ({ moduleId, internalBaseUrl: `http://${loopback}:${ports[moduleId]}`, manifestPath: '/.well-known/workspace-module' }))),
     }
-    for (const [index, name] of (['host', 'world', 'agents'] as const).entries()) {
+    for (const [index, name] of (['host', 'world', 'agents', 'planning'] as const).entries()) {
       if (stopped) throw new Error('Local stack startup interrupted')
       const logPath = join(directory, `${name}.log`)
       const log = await open(logPath, 'w'); logs.push(log)
@@ -180,7 +181,7 @@ export const startLocalStack = async ({ port = 43100, models = false, osrm, ld01
           void stop()
         }
       })
-      const startup = ['Workspace Host listening on', 'Leitbild running at', 'Leitbild Modules listening on'][index]!
+      const startup = ['Workspace Host listening on', 'Leitbild running at', 'Leitbild Modules listening on', 'Planning Module listening on'][index]!
       const deadline = Date.now() + 60_000
       for (;;) {
         if (spawnError || child.exitCode !== null || child.signalCode !== null) throw new Error(`${name} exited during startup; see ${logPath}`, { cause: spawnError })

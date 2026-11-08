@@ -34,6 +34,11 @@ leitbild.app, leitbild.ai {
 		reverse_proxy 127.0.0.1:3000
 	}
 
+	@planning path_regexp planning ^(?:/workspaces/[^/]+/planning(?:/.*)?|/assets/planning/.*)$
+	handle @planning {
+		reverse_proxy 127.0.0.1:3102
+	}
+
 	handle {
 		reverse_proxy 127.0.0.1:3100
 	}
