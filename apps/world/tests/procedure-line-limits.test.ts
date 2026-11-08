@@ -268,6 +268,16 @@ describe('AI rules on a marked document', () => {
   })
 })
 
+test('on a marked document a no-limit branch stays unknown and its reason says what happens', async () => {
+  const assessments = async (stepId: string, front?: string) => (await composeProcedureStepView({ run: runAt(stepId), document: document(front), ports: { sequence: () => 1, clock: () => ({ currentTime: time, paused: true }), events: () => [], observations: () => port() } })).step!.branchAssessments
+  const judgement = await assessments('judge2')
+  expect(judgement[0]).toMatchObject({ status: 'unknown', reasons: [expect.stringContaining('It is a judgement: an AI agent decides it on a stated basis')] })
+  expect((await assessments('routes'))[1]).toMatchObject({ status: 'unknown', reasons: ['No limit decides this transfer. An AI agent stops and asks a person.'] })
+  expect((await assessments('judge'))[0]).toMatchObject({ status: 'unknown', reasons: ['No limit decides this ending. An AI agent stops and asks a person.'] })
+  expect((await assessments('judge2', 'category: x'))[0]!.reasons[0]).toStartWith('No authored eligibility criterion')
+  expect(selected(await commit('judge2', 0, port())).criterion).toMatchObject({ status: 'unknown', reasons: [expect.stringContaining('It is a judgement')] })
+})
+
 describe('an unmarked document behaves as today', () => {
   const unmarked = 'category: x'
   test('no limit is refused, whatever the target, and supported limits still pass, END included', async () => {

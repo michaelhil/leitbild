@@ -51,6 +51,8 @@ export const assessProcedureBranch = (config: CriterionAcquisition & {
   readonly decision?: ProcedureDecision | undefined
   readonly branchIndex: number
   readonly observation?: AcquiredObservation | undefined
+  /** Why a branch with no authored criterion is unestablished, where the document says more than the default. */
+  readonly noCriterionReason?: string | undefined
 }): { readonly assessment: ProcedureBranchAssessment; readonly validThrough?: IsoTimestamp; readonly observationApplies: boolean } => {
   const { branchIndex, decision, observation: observed } = config
   const readings: CriterionReading[] = []
@@ -142,7 +144,7 @@ export const assessProcedureBranch = (config: CriterionAcquisition & {
     status = reason !== undefined ? unknown(reason) : result!.status === 'satisfied' ? 'supported' : result!.status === 'challenged' ? 'contradicted' : unknown(typeof result!.reason === 'string' ? result!.reason : 'Declared branch observation is unestablished.')
     observationApplies = reason === undefined
     if (observationApplies) validThroughMs = Date.parse(result!.simulationTime as string) + decision.observation.maxAgeSeconds * 1000
-  } else status = decision?.condition === undefined ? unknown('No authored eligibility criterion for this branch; a person may placekeep, but automatic qualification is unestablished.') : evaluate(decision.condition)
+  } else status = decision?.condition === undefined ? unknown(config.noCriterionReason ?? 'No authored eligibility criterion for this branch; a person may placekeep, but automatic qualification is unestablished.') : evaluate(decision.condition)
   const assessment: ProcedureBranchAssessment = { branchIndex, status, simulationTime: config.simulationTime,
     ...(decision === undefined ? {} : { ...(decision.condition === undefined ? {} : { condition: decision.condition }),
       ...(decision.observation === undefined ? {} : { observation: { ...decision.observation, ...(observed?.result === undefined ? {} : { result: observed.result }) } }),
@@ -154,11 +156,18 @@ export const assessProcedureBranch = (config: CriterionAcquisition & {
   return { assessment, observationApplies, validThrough: new Date(Math.min(validThroughMs, lastIsoTimestampMs)).toISOString() as IsoTimestamp }
 }
 
+const judgementReason = (targetKind: ProcedureStep['branches'][number]['targetKind']): string =>
+  targetKind === 'procedure' ? 'No limit decides this transfer. An AI agent stops and asks a person.'
+    : targetKind === 'end' || targetKind === 'abort' ? 'No limit decides this ending. An AI agent stops and asks a person.'
+      : 'No limit decides this branch. It is a judgement: an AI agent decides it on a stated basis, if the readings on the step\'s lines are valid.'
+
 export const assessProcedureBranches = (config: CriterionAcquisition & {
   readonly step: ProcedureStep
+  readonly document?: Pick<ProcedureDocument, 'annotations'>
   readonly observations?: ReadonlyMap<number, AcquiredObservation>
-}): ReadonlyArray<ProcedureBranchAssessment> => config.step.branches.map((_branch, branchIndex) => assessProcedureBranch({
+}): ReadonlyArray<ProcedureBranchAssessment> => config.step.branches.map((branch, branchIndex) => assessProcedureBranch({
   ...config, branchIndex, decision: config.step.decisions?.find(candidate => candidate.branchIndex === branchIndex),
+  noCriterionReason: config.document?.annotations?.['ai-workable'] === 'true' ? judgementReason(branch.targetKind) : undefined,
   observation: config.observations?.get(branchIndex),
 }).assessment)
 

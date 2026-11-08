@@ -341,7 +341,7 @@ export const composeProcedureStepView = async (config: {
         ...(branch.execution === undefined ? {} : { execution: branch.execution }),
         ...(branch.because === undefined ? {} : { because: withoutLinkTargets(branch.because) }),
       })),
-      branchAssessments: assessProcedureBranches({ step, reads, observations: acquired.observations, plantId: run.scope.plantId, simulationTime: clock.currentTime }).map(projectProcedureBranchAssessment),
+      branchAssessments: assessProcedureBranches({ document, step, reads, observations: acquired.observations, plantId: run.scope.plantId, simulationTime: clock.currentTime }).map(projectProcedureBranchAssessment),
       ...(observation === undefined ? {} : { observation: {
         status: observation.result.status,
         ...(observation.result.reason === undefined ? {} : { reason: observation.result.reason }),

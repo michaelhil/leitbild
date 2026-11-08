@@ -245,7 +245,7 @@ export const prepareProcedureCommand = async (config: {
         }, document, step, branchIndex: payload.branchIndex, run, ...(context.events === undefined ? {} : { events: context.events }),
       })
       const { reads } = acquired
-      const criterion = assessProcedureBranches({ step, reads, observations: acquired.observations, plantId: run.scope.plantId, simulationTime: context.clock?.() ?? context.simulationTime ?? context.at })[payload.branchIndex]!
+      const criterion = assessProcedureBranches({ document, step, reads, observations: acquired.observations, plantId: run.scope.plantId, simulationTime: context.clock?.() ?? context.simulationTime ?? context.at })[payload.branchIndex]!
       const refusal = context.actorKind === 'ai' ? aiBranchRefusal({ document, step, branchIndex: payload.branchIndex, criterion, reads, plantId: run.scope.plantId }) : undefined
       if (refusal !== undefined) {
         throw Object.assign(new Error(refusal), {
