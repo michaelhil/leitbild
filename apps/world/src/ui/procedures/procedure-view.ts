@@ -458,6 +458,12 @@ export const procedureDecisionAgainst = (decision: { readonly criterion?: { read
  */
 export const procedureTagLabels = (segments: ReadonlyArray<ProcedureTextSegment>, document: Pick<ProcedureDocument, 'tags' | 'annotations'> | null): ReadonlyArray<{ readonly full: string; readonly shown: string } | undefined> => {
   let family: string | undefined
+  const familyLetter = (previous: string | undefined, label: string): string | undefined => {
+    const [before, words] = [previous?.split(' ') ?? [], label.split(' ')]
+    if (before.length !== words.length) return undefined
+    const differing = words.filter((word, index) => word !== before[index])
+    return differing.length > 0 && differing.every(word => word === differing[0] && word.length === 1) && words.some((word, index) => word === before[index]) ? differing[0] : undefined
+  }
   const onLine = segments.flatMap(segment => segment.kind === 'tag' ? [procedureTagLabel(segment.text, document)] : [])
   return segments.map(segment => {
     if (segment.kind !== 'tag') {
@@ -467,11 +473,9 @@ export const procedureTagLabels = (segments: ReadonlyArray<ProcedureTextSegment>
     const label = procedureTagLabel(segment.text, document)
     // Two tags on one piece of equipment would both read "Pressurizer": each then says what it is.
     const full = onLine.filter(item => item === label).length > 1 ? document?.tags.find(tag => tag.id === segment.text)?.description ?? label : label
-    const words = full.split(' ')
-    const prefix = words.length > 1 && words.at(-1)!.length === 1 ? words.slice(0, -1).join(' ') : undefined
-    const shown = prefix !== undefined && prefix === family ? words.at(-1)! : full
-    family = prefix
-    return { full, shown }
+    const letter = familyLetter(family, full)
+    family = full
+    return { full, shown: letter ?? full }
   })
 }
 
@@ -484,8 +488,9 @@ export const procedureJudgementLine = (block: Pick<ProcedureTextBlock, 'kind' | 
 
 /** What a tag button says. A rewritten document names the equipment, so the line reads as a line; a document left as it was keeps its tag ids. */
 export const procedureTagLabel = (tagId: string, document: Pick<ProcedureDocument, 'tags' | 'annotations'> | null): string => {
-  const equipment = document?.annotations?.['ai-workable'] === 'true' ? document.tags.find(tag => tag.id === tagId)?.equipment : undefined
-  return equipment === undefined ? tagId : equipmentWords(equipment)
+  if (document?.annotations?.['ai-workable'] !== 'true') return tagId
+  const tag = document.tags.find(item => item.id === tagId)
+  return tag?.equipment !== undefined ? equipmentWords(tag.equipment) : tag?.description ?? tagId
 }
 
 const observationSignalLabel = (signal: Record<string, unknown>, reference: Record<string, unknown>, tags: ReadonlyArray<ProcedureTag>): string => {

@@ -557,3 +557,10 @@ test('pressing a chip goes to the procedure it names, if that is listed and not 
   expect(procedureChipTarget({ procedure: 'FR-Z.9' }, procedures, 'E-0')).toBeUndefined()
   expect(procedureChipTarget({}, procedures, 'E-0')).toBeUndefined()
 })
+
+test('a tag family differs by its letters wherever they sit, and a tag with no equipment reads by its description', () => {
+  const document = { tags: ['A', 'B'].map(letter => ({ id: `AFW-FCV-${letter}-MOTOR-POWER`, description: `AFW valve ${letter} motor power` })).concat(['A', 'B'].map(letter => ({ id: `L-${letter}`, equipment: `auxFeedwaterValve-${letter}-to-sg-${letter}`, description: '' }))), annotations: { 'ai-workable': 'true' } } as unknown as Parameters<typeof procedureTagLabels>[1]
+  const tag = (text: string) => ({ kind: 'tag' as const, text }), space = { kind: 'text' as const, text: ' ' }
+  expect(procedureTagLabels([tag('AFW-FCV-A-MOTOR-POWER'), space, tag('AFW-FCV-B-MOTOR-POWER')], document).filter(Boolean).map(item => item!.shown)).toEqual(['AFW valve A motor power', 'B'])
+  expect(procedureTagLabels([tag('L-A'), space, tag('L-B')], document).filter(Boolean).map(item => item!.shown)).toEqual(['Aux feedwater valve A to SG A', 'B'])
+})
