@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onDestroy, untrack, tick } from 'svelte'
-  import type { WorkspaceResourceReference, WorkspaceSubjectReference } from '@leitbild/contracts'
+  import type { EmbeddedViewListing, WorkspaceResourceReference, WorkspaceSubjectReference } from '@leitbild/contracts'
+  import { embeddedViewFragment, embeddedViewPath } from '@leitbild/contracts/embedded-view-route'
+  import Modal from './Modal.svelte'
   import { createViewRelay, type WorldPane } from './view-relay.ts'
   import { createRunAssistantBridge } from './run-assistant-bridge.ts'
   import { createPresentationBridge } from './presentation-bridge.ts'
@@ -46,6 +48,8 @@
   let dragWidth = 1
   let agentsFrame = $state<HTMLIFrameElement | null>(null)
   let worldFrame = $state<HTMLIFrameElement | null>(null)
+  let ownedView = $state<EmbeddedViewListing | null>(null)
+  let ownedViewOpen = $state(false)
   const primaryOpen = $derived(planningPath !== null || worldRunId !== null)
   // The process display window asked for the whole area and the chat was collapsed for it.
   let windowMaximised = $state(false)
@@ -141,6 +145,7 @@
     showWorld: () => restoreSplit(),
     maximiseWorld,
     openRun: runId => onOpenRun(runId),
+    openOwnedView: view => { ownedView = view; ownedViewOpen = view !== null },
     reportError: message => onError(message),
     startTimer: (ms, expire) => {
       const timer = setTimeout(expire, ms)
@@ -231,8 +236,9 @@
     untrack(() => assistantBridge.availabilityChanged())
   })
 
-  // Another Room or a closed chat ends the Agents document that listed the displays.
+  // Another Workspace, Room or a closed chat ends the Agents document that listed the displays.
   $effect(() => {
+    workspaceId
     agentsRoomId
     untrack(() => { relay.agentsFrameUnloaded(); presentation.agentsUnloaded() })
   })
@@ -318,3 +324,18 @@
     <button class="reopen-handle right" type="button" aria-label="Show Agents" onclick={onShowAgents}>‹</button>
   {/if}
 </section>
+
+<Modal bind:open={ownedViewOpen} title={ownedView?.envelope.title ?? 'Display'} eyebrow={ownedView?.caption ?? ''}
+  width="1100px" height="820px" scrollBody={false} closeLabel="Close display"
+  onclose={() => { ownedView = null }}>
+  {#if ownedView}
+    <iframe class="owned-view-frame" title={ownedView.envelope.title}
+      src={embeddedViewPath(ownedView.envelope) + embeddedViewFragment(ownedView.envelope)}
+      allow="camera 'none'; microphone 'none'; geolocation 'none'; display-capture 'none'"
+      referrerpolicy="same-origin"></iframe>
+  {/if}
+</Modal>
+
+<style>
+  .owned-view-frame { display: block; width: 100%; height: 100%; border: 0; }
+</style>

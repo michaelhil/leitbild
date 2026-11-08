@@ -17,7 +17,9 @@ import type { ZodError } from 'zod'
 // The Host relays the one process display window's messages between the
 // Agents frame, which lists the displays its answers composed and asks for one
 // to be opened (or a subject's default display, as a proposal card does), and
-// the World frame, whose page shows the window. The relay is
+// the World frame, whose page shows the Run's window. Views about other
+// Resources open in a Host frame at their owning Module's embed route; they
+// do not require or select a World Run. The relay is
 // the only validator on that path: every message is parsed with its contract
 // schema and must name this page's Workspace, and every refusal is reported
 // where the operator sees it. It keeps only the latest list, whether the World
@@ -68,6 +70,8 @@ export const createViewRelay = (config: {
   readonly maximiseWorld: (maximised: boolean) => void
   /** Opens the Run in a World pane beside the chat, as switching Runs does. */
   readonly openRun: (runId: string) => void
+  /** Frames an owner-published view without selecting a Run; null closes that frame. State stays opaque. */
+  readonly openOwnedView: (view: EmbeddedViewListing | null) => void
   readonly reportError: (message: string) => void
   /** Calls `expire` after `ms` unless the returned cancel runs first. */
   readonly startTimer: (ms: number, expire: () => void) => () => void
@@ -90,6 +94,12 @@ export const createViewRelay = (config: {
   const dropPending = (): void => {
     pending?.cancel()
     pending = null
+  }
+
+  const closeOpens = (): void => {
+    openSequence += 1
+    dropPending()
+    config.openOwnedView(null)
   }
 
   const keepPending = (open: WindowOpen): void => {
@@ -123,6 +133,11 @@ export const createViewRelay = (config: {
     if (!parsed.success) return config.reportError(`Display could not be opened: ${firstIssue(parsed.error)}`)
     const view = parsed.data.view
     if (foreign(view)) return config.reportError('Display could not be opened: it belongs to another Workspace')
+    if (view.envelope.subject.moduleId !== 'world' || view.envelope.subject.type !== 'world.simulation-run') {
+      closeOpens()
+      config.openOwnedView(view)
+      return
+    }
     open(openMessage(view), view.envelope.subject)
   }
 
@@ -136,6 +151,7 @@ export const createViewRelay = (config: {
 
   const open = (message: WindowOpen, run: WorkspaceResourceReference): void => {
     const sequence = ++openSequence
+    config.openOwnedView(null)
     if (config.worldPane() === 'absent') return void openBesideChat(message, run, sequence)
     deliver(message)
   }
@@ -206,11 +222,15 @@ export const createViewRelay = (config: {
      * learns that a Host relays what it lists and opens.
      */
     agentsFrameLoaded: (): void => {
+      closeOpens()
       forgetViews()
       config.postToAgents(embeddedViewHostMessageSchema.parse({ type: 'leitbild:view-host' }))
     },
     /** The Agents frame shows another Room or closed: its displays leave the window's list. */
-    agentsFrameUnloaded: forgetViews,
+    agentsFrameUnloaded: (): void => {
+      closeOpens()
+      forgetViews()
+    },
     /**
      * The World frame shows another Run or closed. Its next document listens
      * only once it says so, and its window starts unmaximised. A pending open
@@ -220,7 +240,7 @@ export const createViewRelay = (config: {
       worldListening = false
       config.maximiseWorld(false)
     },
-    dispose: dropPending,
+    dispose: closeOpens,
   }
 }
 
