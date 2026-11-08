@@ -29,6 +29,21 @@ const run = async (root: string, args: string[]) => {
   const p = Bun.spawn(['git', '-C', root, ...args], { stdout: 'pipe', stderr: 'pipe' })
   expect(await p.exited).toBe(0)
 }
+test('publication pins referenced local screenshots to the wiki commit and refuses missing or mislabelled images', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'knowledge-images-')); roots.push(root)
+  await run(root, ['init']); await run(root, ['config', 'user.name', 'Knowledge test']); await run(root, ['config', 'user.email', 'test@example.invalid'])
+  await Bun.write(join(root, 'index.md'), '# Example\n\n![Actual screen](images/screen.png)')
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a4E8AAAAASUVORK5CYII=', 'base64')
+  await Bun.write(join(root, 'images/screen.png'), png)
+  await run(root, ['add', 'index.md', 'images/screen.png']); await run(root, ['commit', '-m', 'Screen'])
+  const snapshot = await publishKnowledge(root)
+  expect(snapshot.images).toEqual([{ path: 'images/screen.png', mediaType: 'image/png', base64: png.toString('base64') }])
+  await Bun.write(join(root, 'images/screen.png'), '<svg>not a PNG</svg>')
+  await run(root, ['add', 'images/screen.png']); await run(root, ['commit', '-m', 'Wrong media'])
+  await expect(publishKnowledge(root)).rejects.toThrow('signature')
+  await run(root, ['rm', 'images/screen.png']); await run(root, ['commit', '-m', 'Missing screen'])
+  await expect(publishKnowledge(root)).rejects.toThrow('image unavailable')
+})
 test('publishes a named clean commit with valid links, refuses dirty or broken content', async () => {
   const root = await mkdtemp(join(tmpdir(), 'leitbild-knowledge-'))
   roots.push(root)

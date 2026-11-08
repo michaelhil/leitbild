@@ -1,4 +1,4 @@
-import { createKnowledge, safeDocumentPath, type KnowledgeSnapshot } from './index.ts'
+import { createKnowledge, safeDocumentPath, safeKnowledgeImagePath, type KnowledgeSnapshot } from './index.ts'
 import { posix } from 'node:path'
 import { readProductSource } from './source.ts'
 import { parseProductSourceReference } from './source-reference.ts'
@@ -42,7 +42,26 @@ export const publishKnowledge = async (root: string, sourceRoot?: string): Promi
   ).sort()
   const documents = await Promise.all(names.map(async path => ({ path, content: await git(root, ['show', `${revision}:${path}`]) })))
   if (!documents.some(document => document.path === 'index.md')) throw new Error('Knowledge repository requires index.md')
-  const snapshot = { revision, documents }
+  const imagePaths = new Set<string>()
+  for (const document of documents) for (const match of document.content.matchAll(/!\[[^\]]*\]\(([^\s)]+)(?:\s+"[^"]*")?\)/g)) {
+    const href = match[1]!
+    if (/^https:\/\//i.test(href)) continue
+    if (/^[a-z][a-z\d+.-]*:/i.test(href) || href.startsWith('/') || href.includes('?') || href.includes('#')) throw new Error(`Unsupported knowledge image in ${document.path}: ${href}`)
+    const path = posix.normalize(posix.join(posix.dirname(document.path), decodeURIComponent(href)))
+    if (!safeKnowledgeImagePath(path)) throw new Error(`Knowledge images must name a local PNG or WebP: ${document.path}: ${href}`)
+    imagePaths.add(path)
+  }
+  const images = await Promise.all([...imagePaths].sort().map(async path => {
+    const child = Bun.spawn(['git', '-C', root, 'show', `${revision}:${path}`], { stdout: 'pipe', stderr: 'pipe' })
+    const [bytes, error, code] = await Promise.all([new Response(child.stdout).arrayBuffer(), new Response(child.stderr).text(), child.exited])
+    if (code !== 0) throw new Error(`Knowledge image unavailable: ${path}: ${error.trim()}`)
+    const buffer = Buffer.from(bytes)
+    const png = buffer.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+    const webp = buffer.subarray(0, 4).toString() === 'RIFF' && buffer.subarray(8, 12).toString() === 'WEBP'
+    if (buffer.length > 5_000_000 || (path.endsWith('.png') ? !png : !webp)) throw new Error(`Knowledge image must be a valid PNG/WebP signature and at most 5 MB: ${path}`)
+    return { path, mediaType: path.endsWith('.png') ? 'image/png' as const : 'image/webp' as const, base64: buffer.toString('base64') }
+  }))
+  const snapshot = { revision, documents, ...(images.length ? { images } : {}) }
   const knowledge = createKnowledge(snapshot)
   validateProcedurePublication(documents, (fromPath, href, requireSection) => {
     if (/^[a-z][a-z\d+.-]*:/i.test(href) || href.startsWith('/')) throw new Error(`Assessment source must name a local engineering owner in ${fromPath}: ${href}`)

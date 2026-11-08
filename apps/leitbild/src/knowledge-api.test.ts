@@ -3,6 +3,16 @@ import { createKnowledge } from '@leitbild/knowledge'
 import { knowledgeResponse } from './knowledge-api.ts'
 
 const knowledge = createKnowledge({ revision: 'a'.repeat(40), documents: [{ path: 'index.md', content: '# Test\n\nCold reactor explanation.' }] })
+test('wiki screenshots use only exact published bytes and reject a different revision or filesystem path', async () => {
+  const published = createKnowledge({ revision: knowledge.revision, documents: [{ path: 'index.md', content: '# Screen' }], images: [{ path: 'planning/images/screen.png', mediaType: 'image/png', base64: 'aGVsbG8=' }] })
+  const image = (path: string, revision: string) => knowledgeResponse(new Request(`http://local/api/knowledge/image?${new URLSearchParams({ path, revision })}`), async () => published)
+  const response = await image('planning/images/screen.png', knowledge.revision)
+  expect(response.headers.get('Content-Type')).toBe('image/png')
+  expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff')
+  expect(await response.text()).toBe('hello')
+  expect((await image('planning/images/screen.png', 'b'.repeat(40))).status).toBe(404)
+  expect((await image('../private.png', knowledge.revision)).status).toBe(404)
+})
 test('wiki source endpoint shares bounded product source access without requiring a room', async () => {
   const request=(path:string)=>new Request(`http://local/api/knowledge/source?path=${encodeURIComponent(path)}`)
   const response=await knowledgeResponse(request('packages/knowledge/src/index.ts'))
