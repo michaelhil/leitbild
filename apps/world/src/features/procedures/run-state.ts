@@ -12,7 +12,7 @@ import {
   aiBranchRefusal, assertAiDrives, assertAiMayDrive, assertAiStatesBasis, assertAiWorksCurrentStep,
   procedureDriver, sameProcedureDriver, type ProcedureActorKind,
 } from './driver-rules.ts'
-import { assessProcedureBranches, procedureCapturedTagIds, readProcedureBranchEvidence } from './branch-assessment.ts'
+import { assessProcedureBranches, readProcedureBranchEvidence } from './branch-assessment.ts'
 import { procedureEvidenceReadingText, type ProcedureObservationPort } from './pack-observations.ts'
 
 export interface ProcedureCommitContext {
@@ -252,8 +252,8 @@ export const prepareProcedureCommand = async (config: {
           code: 'procedure_branch_not_supported', details: { runId: run.runId, sourceId: run.sourceId, sourceRevision: run.sourceRevision, sourcePath: run.sourcePath, procedureId: run.procedureId, stepId: step.id, branchIndex: payload.branchIndex, assessment: criterion },
         })
       }
-      const captured = procedureCapturedTagIds(step, payload.branchIndex)
-      const evidence = reads.filter(read => evidenceTagIds.includes(read.tagId) || captured.includes(read.tagId)).map(read => ({ tagId: read.tagId, reading: procedureEvidenceReadingText(read) }))
+      // A marked document asks nobody to record anything: its decisions keep every reading of the step.
+      const evidence = reads.filter(read => document.annotations?.['ai-workable'] === 'true' || evidenceTagIds.includes(read.tagId)).map(read => ({ tagId: read.tagId, reading: procedureEvidenceReadingText(read) }))
       if (context.actorKind === 'ai') assertAiStatesBasis(payload.basis)
       // Deliberate off-path decisions remain possible, but asynchronously prepared
       // requests must not race another operator's newly accepted navigation.

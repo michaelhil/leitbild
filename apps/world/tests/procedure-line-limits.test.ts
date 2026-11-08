@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test'
 import { actorIdSchema, isoTimestampSchema, type CommandEnvelope, type EventId, type ProcedureStep, type SimulationRunEvent, type SimulationRunId } from '../src/core/model/index.ts'
-import { procedureCapturedTagIds } from '../src/features/procedures/branch-assessment.ts'
 import { canInspectProcedureBranchCheck, readProcedureChecks } from '../src/features/procedures/checks-view.ts'
 import { parseProcedureMarkdown } from '../src/features/procedures/procmd.ts'
 import { composeProcedureStepView, projectProcedureStepGuidance } from '../src/features/procedures/step-view.ts'
@@ -296,7 +295,7 @@ test('a person pressing a normal branch against a contradicted criterion leaves 
   expect(assessed(await commit('trip', 1, port({ 'BKR-A': true }), person))).toEqual(['failed'])
 })
 
-test('a decision captures every tag on the step\'s lines, by itself: a judgement keeps its readings and a limit step keeps its other lines', async () => {
+test('a decision on a marked document keeps the step\'s readings by itself', async () => {
   const kept = (events: ReadonlyArray<SimulationRunEvent>) => selected(events).evidence
   expect(kept(await commit('judge', 0, port(), person))).toEqual([{ tagId: 'PRESSURE', reading: '14' }])
   expect(kept(await commit('judge', 0, port({ PRESSURE: new Error('no reading') }), person))).toEqual([{ tagId: 'PRESSURE', reading: 'unavailable: no reading' }])
@@ -304,31 +303,8 @@ test('a decision captures every tag on the step\'s lines, by itself: a judgement
   expect(kept(await commit('trip', 0, port(), person))!.map(item => item.tagId)).toEqual(['BKR-A', 'BKR-B', 'POWER'])
 })
 
-test('a branch a decision block decides keeps today\'s record: only what was cited', () => {
-  const fenced = parseProcedureMarkdown({ source: procedureTestSource, sourcePath: 'procedures/TEST.md', sourceUrl: '/wiki?path=procedures%2FTEST.md', rawMarkdown: `---
-type: procedure
-procedure-md: 0.7
-procedure-id: TEST
-title: Fenced
----
-
-## Step 1 [id: s] S
-
-Check: Power. «POWER»
-
-\`\`\`procedure-decisions
-[{"branchIndex":0,"condition":{"type":"manual","description":"Judge it","tagIds":[],"source":"basis.md#x"}}]
-\`\`\`
-
-- Go on [outcome: normal] → END
-
-## Tags
-
-- id: POWER
-  units: percent
-` })
-  expect(procedureCapturedTagIds(fenced.steps[0]!, 0)).toEqual([])
-  expect(procedureCapturedTagIds(stepOf('judge'), 0)).toEqual(['PRESSURE'])
+test('a decision on an unmarked document keeps only what was cited', async () => {
+  expect(selected(await commit('judge', 0, port(), person, 'category: x')).evidence).toBeUndefined()
 })
 
 test('the AI step view carries the foldout as guidance', async () => {
