@@ -260,6 +260,7 @@ export const createEngineeringService = ({ registry, root, storageBudget }: { re
       const record = records.get(input.jobId)
       if (!record || String(record.receipt.source.id) !== String(id)) return unavailable('This comparison is unavailable')
       await cancelRecord(record)
+      if (Date.parse(record.receipt.expiresAt) <= Date.now()) return { jobId: record.receipt.jobId, status: record.receipt.status as 'completed' | 'partial' | 'failed' | 'cancelled' | 'interrupted', evidenceAvailable: false as const }
       try { await qualify(record); return page(record) }
       catch { return { jobId: record.receipt.jobId, status: record.receipt.status as 'completed' | 'partial' | 'failed' | 'cancelled' | 'interrupted', evidenceAvailable: false as const } }
     },
