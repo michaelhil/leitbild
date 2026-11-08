@@ -16,7 +16,8 @@ const CITATION_FORMAT_LINE = 'Put each key right after the number it supports (9
 // existing wording rather than growing every prompt.
 const LEITBILD_ASSISTANCE_BODY_MAX_CHARS = 13_208
 // The procedure runner rides along in every Assistant prompt, not only while a procedure runs.
-const PROCEDURE_RUNNER_BODY_MAX_CHARS = 4_000
+// If an honest need exceeds this, raise the cap; do not move the rule into a procedure.
+const PROCEDURE_RUNNER_BODY_MAX_CHARS = 1_000
 const DESCRIPTION_MAX_CHARS = 1_024
 
 describe('Leitbild Assistant skills', () => {
