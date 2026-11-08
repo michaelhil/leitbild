@@ -2576,7 +2576,7 @@
   :global(.procedure-modal.compact-procedure .procedure-light) { width: 44px; height: 44px; margin: -10px -6px -10px -10px; }
   :global(.procedure-modal.compact-procedure .procedure-readings) { left: 12px !important; right: 12px; top: auto !important; bottom: 12px; width: auto; }
   /* Preserve the existing CSF help outside its scrolling strip. */
-  :global(.procedure-modal.compact-procedure .procedure-csf-popover) { position: fixed; top: auto; bottom: 12px; left: 24px; right: 24px; width: auto; max-width: none; max-height: calc(100dvh - 48px); overflow-y: auto; }
+  :global(.procedure-modal.compact-procedure .procedure-csf-popover) { position: fixed; top: auto; bottom: 12px; left: 24px; right: 24px; width: auto; max-width: none; max-height: 38vh; overflow-y: auto; }
   /* On a narrow window the existing catalogue is a recoverable picker, not
      a permanent block above the procedure. No separate navigation state. */
   :global(.procedure-modal.compact-procedure .procedure-layout) { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
