@@ -465,15 +465,13 @@ test('a foldout waits for the step its heading names', () => {
 })
 
 test('a reference document inherits the foldout of the procedure that sent the Run there, along the chain', () => {
-  const run = (procedureId: string, target: string, status = 'transferred', plantId = 'plant:a', simulationTime = '2026-11-08T08:00:00.000Z', currentStepId = 'late') => ({ procedureId, status, currentStepId, scope: { plantId }, stepStates: [{ decision: { targetKind: 'procedure', target, simulationTime } }] }) as unknown as Parameters<typeof procedurePriorFoldout>[0][number]
+  const run = (procedureId: string, target: string, status = 'transferred', plantId = 'plant:a', simulationTime = '2026-11-08T08:00:00.000Z') => ({ procedureId, status, scope: { plantId }, stepStates: [{ decision: { targetKind: 'procedure', target, simulationTime } }] }) as unknown as Parameters<typeof procedurePriorFoldout>[0][number]
   const foldout = { title: 'Foldout: applies from Step 5', text: '- Keep.', tagIds: [], sourceLine: 1 }
-  const steps = [{ id: 'early', label: '1' }, { id: 'late', label: '5' }]
-  const documents = { 'E-0': { procedureId: 'E-0', foldout, steps }, 'E-2': { procedureId: 'E-2', steps } } as unknown as Record<string, ReturnType<Parameters<typeof procedurePriorFoldout>[1]>>
+  const documents = { 'E-0': { procedureId: 'E-0', foldout }, 'E-2': { procedureId: 'E-2' } } as unknown as Record<string, ReturnType<Parameters<typeof procedurePriorFoldout>[1]>>
   const documentFor = (item: { procedureId: string }) => documents[item.procedureId]
   const scope = { plantId: 'plant:a' }
-  expect(procedurePriorFoldout([run('E-0', 'E-2')], documentFor, scope, 'E-2')).toMatchObject({ procedureId: 'E-0', foldout, waiting: false })
-  expect(procedurePriorFoldout([run('E-0', 'E-2', 'transferred', 'plant:a', '2026-11-08T08:00:00.000Z', 'early')], documentFor, scope, 'E-2')?.waiting).toBe(true)
-  expect(procedurePriorFoldout([run('E-0', 'E-2'), run('E-2', 'ECA-2.1')], documentFor, scope, 'ECA-2.1')).toMatchObject({ procedureId: 'E-0', foldout, waiting: false })
+  expect(procedurePriorFoldout([run('E-0', 'E-2')], documentFor, scope, 'E-2')).toMatchObject({ procedureId: 'E-0', foldout })
+  expect(procedurePriorFoldout([run('E-0', 'E-2'), run('E-2', 'ECA-2.1')], documentFor, scope, 'ECA-2.1')).toMatchObject({ procedureId: 'E-0', foldout })
   expect(procedurePriorFoldout([run('E-0', 'E-2', 'active')], documentFor, scope, 'E-2')).toBeUndefined()
   expect(procedurePriorFoldout([run('E-0', 'E-2', 'transferred', 'plant:b')], documentFor, scope, 'E-2')).toBeUndefined()
   expect(procedurePriorFoldout([run('E-2', 'E-3'), run('E-3', 'E-2')], documentFor, scope, 'E-3')).toBeUndefined()

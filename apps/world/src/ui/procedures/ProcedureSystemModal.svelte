@@ -440,10 +440,7 @@
     }
     if (!document.sourcePath.startsWith('archive/')) return null
     const prior = procedurePriorFoldout(runs, run => runDocuments.get(procedureRunDocumentKey(run)), currentScope, document.procedureId)
-    if (!prior) return null
-    return prior.waiting
-      ? { ...prior.foldout, owner: prior as TagOwner, heading: `${prior.procedureId} ${prior.foldout.title.charAt(0).toLowerCase()}${prior.foldout.title.slice(1)}`, layout: 'strip' as const }
-      : { ...prior.foldout, owner: prior as TagOwner, heading: `${prior.procedureId} foldout: still applies`, layout: wide ? 'side' as const : 'strip' as const }
+    return prior ? { ...prior.foldout, owner: prior as TagOwner, heading: `${prior.procedureId} ${prior.foldout.title.charAt(0).toLowerCase()}${prior.foldout.title.slice(1)}`, layout: wide ? 'side' as const : 'strip' as const } : null
   })
   const sourceLabel = $derived(catalog
     ? `${catalog.source.repository}@${catalog.source.revision.slice(0, 8)}`
