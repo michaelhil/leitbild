@@ -28,9 +28,19 @@ const commandSchema = z.object({
   actuation: z.enum(['command', 'faultInjection']),
 }).strict()
 
+const setpointSchema = z.object({
+  path: localVariablePathSchema,
+  label: z.string().min(1),
+  discipline: variableDisciplineSchema,
+  quantity: processQuantitySchema,
+  unit: processUnitSchema,
+}).strict()
+
 const observedSchema = z.object({
   readings: z.array(readingSchema),
   commands: z.array(commandSchema).default([]),
+  /** Numeric setpoints the unit takes (R4-GRID), each read back on its own channel. */
+  setpoints: z.array(setpointSchema).default([]),
   /** The readings an operator reads first, most important first. */
   keyValues: z.array(localVariablePathSchema).default([]),
 }).strict()
@@ -44,6 +54,7 @@ const observedVariables = ({ parameters }: { readonly parameters: unknown }): Re
       path: command.path, label: command.label, kind: 'control', discipline: 'control', writable: true, publish: 'telemetry',
       actuation: command.actuation, quantity: 'boolean', unit: 'boolean',
     })),
+    ...observed.setpoints.map(setpoint => variable({ ...setpoint, kind: 'control', writable: true, publish: 'telemetry', actuation: 'command' })),
   ]
 }
 
@@ -134,6 +145,23 @@ export const nativeUnitComponentDefinitions: ReadonlyArray<ComponentDefinition> 
         aspects: [aspect('running', { variable: generator.speedReading, reading: 'aboveZero' })],
       })(parameters)
     },
+    variables: [],
+    resolveAdditionalVariables: observedVariables,
+  }),
+  defineComponent({
+    // The unit's port to a Grid (R4-GRID): the boundary it holds and the net power it exchanges. A Scenario
+    // connection names it by `externalPortId`; its readings are the unit's own channels.
+    kind: 'nativeGridBoundary' as ComponentKind,
+    label: 'Grid boundary',
+    ports: { outlet: { kind: 'electricalAc', direction: 'out' } },
+    parametersSchema: observedSchema.extend({
+      externalPortId: z.string().min(1),
+      nominalVoltageKv: z.number().finite().positive(),
+      maximumExportMw: z.number().finite().nonnegative(),
+      maximumImportMw: z.number().finite().nonnegative(),
+      generatorInertiaSeconds: z.number().finite().nonnegative(),
+    }).strict(),
+    semantics: parameters => fixedSemantics({ keyValues: (parameters as Observed).keyValues })(parameters),
     variables: [],
     resolveAdditionalVariables: observedVariables,
   }),

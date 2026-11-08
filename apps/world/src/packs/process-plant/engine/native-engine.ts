@@ -14,7 +14,7 @@ import {
   ld01UnitOps,
   type Ld01UnitAdvanceFrame,
 } from './protocol.ts'
-import { bindLd01TagMap, convertLd01Channel, ld01ChannelSchema, type Ld01Binding, type Ld01Command, type Ld01TagMap } from './tag-map.ts'
+import { bindLd01TagMap, convertLd01Channel, ld01ChannelSchema, ld01ChannelValueOf, type Ld01Binding, type Ld01Command, type Ld01TagMap } from './tag-map.ts'
 
 // The LD-01 Plant's engine: one `ld01-unit` child per Plant (shell design §2). It serves the Pack's
 // synchronous runtime reads from the last observation frame, sends queued commands and one ADVANCE per
@@ -24,6 +24,17 @@ import { bindLd01TagMap, convertLd01Channel, ld01ChannelSchema, type Ld01Binding
 // SNAPSHOT (platform design §6.1).
 
 export const ld01EngineCheckpointFormat = 'ld01-unit' as const
+
+/**
+ * The Grid exchange interval of a connected unit (s): the wiki's quiet interval (`ld01-electrical-exchange`, owner
+ * D1). The window interval (owner 8 Nov: one 0.1 s I&C frame) has no window law yet, so nothing shortens this.
+ */
+export const ld01GridExchangeS = 1
+
+/** The boundary a connected unit holds from its next exchange: the Grid's port, or a dead one. */
+export type NativeGridBoundary =
+  | { readonly energized: true; readonly voltagePu: number; readonly frequencyHz: number; readonly frequencyRateHzPerS: number }
+  | { readonly energized: false }
 
 /** f64 values as the child writes vectors: 16 hex digits of each value's IEEE bits, concatenated. */
 const valuesToBits = (values: Float64Array): string => {
@@ -104,6 +115,8 @@ export interface NativeProcessPlantEngine {
   readonly checkpoint: () => Promise<NativeProcessPlantCheckpoint>
   /** The last checkpoint taken (or the unit's start), what a periodic flush persists without disturbing the unit. */
   readonly persisted: () => NativeProcessPlantCheckpoint
+  /** The Grid's latest boundary for this unit, sent at its next exchange (R4-GRID). */
+  readonly setGridBoundary: (boundary: NativeGridBoundary) => void
   readonly failure: () => NativeEngineFailure | null
   /** The unit's named domain end, once an exchange reported one. */
   readonly ended: () => NativeEngineEnded | null
@@ -125,6 +138,8 @@ export const connectNativeProcessPlantEngine = async (config: {
   readonly plant: CompiledProcessPlant
   readonly tagMap: Ld01TagMap
   readonly load: Ld01UnitLoadRequest
+  /** The Grid exchange interval (s); null for a Plant no Scenario connection joins to a Grid. */
+  readonly gridExchangeS: number | null
   readonly artifactSha256: string
   /** argv of the child: the artifact's binary (tests: a protocol double). */
   readonly command: ReadonlyArray<string>
@@ -142,6 +157,11 @@ export const connectNativeProcessPlantEngine = async (config: {
   let originS = Number.NaN
   let requestedS = Number.NaN
   let frameS = Number.NaN
+  let exchangeEvery: number | null = null
+  let offsiteLostChannel = -1
+  let gridBoundary: NativeGridBoundary | null = null
+  /** The load request written since the last exchange, sent at the next one. */
+  let loadRequest: { readonly path: VariablePath; readonly value: number; readonly requestW: number } | null = null
   const elapsedMs = (): number => (state.t - originS) * 1_000
   /**
    * The I&C frame instants, k · period on the unit's axis, by the same product the driver forms
@@ -156,6 +176,8 @@ export const connectNativeProcessPlantEngine = async (config: {
     while (instant(k) > t) k -= 1
     return k
   }
+  /** The exchange grid's next instant after a frame `k` (R4-GRID): whole multiples of the interval, in the frames' own product. */
+  const nextExchangeFrame = (k: number, every: number): number => (Math.floor(k / every) + 1) * every
   const fail = (reason: string): NativeEngineFailure => {
     if (failure !== null) return failure
     const at = Number.isFinite(state.t) ? elapsedMs() : 0
@@ -173,7 +195,7 @@ export const connectNativeProcessPlantEngine = async (config: {
   try {
     const composed = restored?.snapshot
       ? await child.request(ld01UnitOps.restore, encodeLd01UnitJson(restored.snapshot))
-      : await child.request(ld01UnitOps.load, encodeLd01UnitJson(config.load))
+      : await child.request(ld01UnitOps.load, encodeLd01UnitJson({ ...config.load, solver: { ...config.load.solver, grid_exchange_s: config.gridExchangeS } }))
     connectCost = { wallS: composed.wallS, cpuS: composed.cpuS }
     const reply = loadReplySchema.parse(decodeLd01UnitJson(composed.payload, restored?.snapshot ? 'RESTORE' : 'LOAD'))
     const channels = z.array(ld01ChannelSchema).parse(decodeLd01UnitJson((await child.request(ld01UnitOps.channels, new Uint8Array(0))).payload, 'CHANNELS'))
@@ -181,6 +203,11 @@ export const connectNativeProcessPlantEngine = async (config: {
     binding = bindLd01TagMap(plant.graph, config.tagMap, channels)
     originS = restored === undefined ? reply.t : valuesFromBits(restored.originBits)[0]!
     frameS = reply.frame_s
+    if (config.gridExchangeS !== null) {
+      exchangeEvery = Math.round(config.gridExchangeS / frameS)
+      offsiteLostChannel = channels.findIndex(channel => channel.id === 'LD01.GRID.OFFSITE_LOST')
+      if (offsiteLostChannel < 0) throw new Error('a Grid-connected unit delivers no LD01.GRID.OFFSITE_LOST channel')
+    }
     if (restored === undefined || restored.snapshot === null) {
       // The unit's first observation is its first I&C frame after its start: the driver stops there anyway, so this
       // exchange adds no stop the trajectory would not make. A restored start state reproduces it bit for bit.
@@ -263,8 +290,10 @@ export const connectNativeProcessPlantEngine = async (config: {
       ...(variable.descriptor.limits === undefined ? {} : { limits: variable.descriptor.limits }),
     }
   }
-  const queuedCommands = (): ReadonlyArray<ProcessPlantCommand> =>
-    [...binding.byPath.values()].flatMap(bound => bound.kind === 'command' && queued.includes(bound.command) ? [{ type: 'setVariable' as const, path: bound.variable.path, value: true }] : [])
+  const queuedCommands = (): ReadonlyArray<ProcessPlantCommand> => [
+    ...[...binding.byPath.values()].flatMap(bound => bound.kind === 'command' && queued.includes(bound.command) ? [{ type: 'setVariable' as const, path: bound.variable.path, value: true }] : []),
+    ...(loadRequest === null ? [] : [{ type: 'setVariable' as const, path: loadRequest.path, value: loadRequest.value }]),
+  ]
 
   const runtime: ProcessPlantRuntime = {
     tick: () => { throw new Error(`LD-01 Plant ${plant.id} advances through its native engine, not tick`) },
@@ -280,7 +309,15 @@ export const connectNativeProcessPlantEngine = async (config: {
     writeCommand: (command: ProcessPlantCommand): void => {
       if (failure !== null) throw new Error(failure.reason)
       const bound = binding.byPath.get(command.path)
-      if (bound?.kind !== 'command') throw new Error(`LD-01 Plant ${plant.id} takes no write to ${command.path}: only its kernel commands are writable`)
+      if (bound?.kind === 'setpoint') {
+        if (typeof command.value !== 'number' || !Number.isFinite(command.value) || command.value < 0) throw new Error(`${command.path} takes a finite non-negative number, not ${String(command.value)}`)
+        if (ended !== null) throw new Error(`LD-01 Plant ${plant.id} takes no command: ${ended.reason}`)
+        if (exchangeEvery === null) throw new Error(`LD-01 Plant ${plant.id} is connected to no Grid: ${bound.setpoint.kind} has no exchange to take effect at`)
+        if (state.values[bound.activeChannel] !== 1) throw new Error(`LD-01 Plant ${plant.id} takes no ${bound.setpoint.kind}: its governor is not in LOAD`)
+        loadRequest = { path: command.path, value: command.value, requestW: ld01ChannelValueOf(bound.channelUnit, bound.variable.descriptor.unit, command.value) }
+        return
+      }
+      if (bound?.kind !== 'command') throw new Error(`LD-01 Plant ${plant.id} takes no write to ${command.path}: only its kernel commands and setpoints are writable`)
       if (command.value !== true) throw new Error(`${command.path} sends ${bound.command.kind} when written true; ${String(command.value)} sends nothing`)
       if (ended !== null) throw new Error(`LD-01 Plant ${plant.id} takes no command: ${ended.reason}`)
       if (!queued.includes(bound.command)) queued.push(bound.command)
@@ -295,6 +332,36 @@ export const connectNativeProcessPlantEngine = async (config: {
       variables: variables.map((_, slot) => snapshotHandle(resolve(variables[slot]!.path))),
     }),
     checkpoint: () => { throw new Error(`LD-01 Plant ${plant.id} checkpoints through SNAPSHOT (its native engine), not the TS runtime checkpoint`) },
+  }
+
+  /**
+   * R4-GRID: the unit stands at an exchange instant: the boundary for the next interval, then a pending load request.
+   * The boundary is the Grid's latest committed port (owner 8 Nov: delay up to about 3 s, disclosed); `phase_error_rad`
+   * is zero until the Grid publishes a carrier (labelled judgement, the owner's). A unit that lost its offsite connection
+   * takes none: 1.0 has no restoration, and a re-energised bay stays dead here.
+   */
+  const exchangeGrid = async (every: number): Promise<void> => {
+    const k = lastFrameAtOrBefore(state.t)
+    if (gridBoundary !== null && state.values[offsiteLostChannel] !== 1) {
+      const boundary = gridBoundary
+      await json(ld01UnitOps.command, {
+        kind: 'GridBoundary',
+        t_apply: state.t,
+        until: instant(k + every),
+        energized: boundary.energized,
+        voltage_pu: boundary.energized ? boundary.voltagePu : 0,
+        frequency_hz: boundary.energized ? boundary.frequencyHz : 0,
+        phase_error_rad: 0,
+        frequency_rate_hz_s: boundary.energized ? boundary.frequencyRateHzPerS : 0,
+      }, 'COMMAND')
+    }
+    if (loadRequest !== null) {
+      const request = loadRequest
+      loadRequest = null
+      const reply = await json(ld01UnitOps.command, { kind: 'LoadRequest', t_apply: state.t, request_w: request.requestW }, 'COMMAND') as { readonly accepted?: unknown }
+      // Written while the governor was in LOAD, refused at the exchange: a trip came between.
+      if (reply.accepted !== true) console.warn(`LD-01 Plant ${plant.id}: the load request at ${state.t} s was not taken: the governor left LOAD`)
+    }
   }
 
   const snapshot = async (): Promise<NativeProcessPlantCheckpoint> => {
@@ -325,20 +392,31 @@ export const connectNativeProcessPlantEngine = async (config: {
         if (!(t1 > state.t)) return { simulatedMs: 0, frame: null, cost: { wallS: 0, cpuS: 0 } }
         const sending = queued.splice(0)
         for (const command of sending) await json(ld01UnitOps.command, { ...command, t_apply: state.t }, 'COMMAND')
-        const advanced = await child.request(ld01UnitOps.advance, encodeLd01UnitAdvance(t1))
-        const frame = decodeLd01UnitAdvance(advanced.payload)
-        if (frame.values.length !== binding.channelCount) throw new Error(`a frame carries ${frame.values.length} values for ${binding.channelCount} channels`)
-        const simulatedMs = (frame.t - state.t) * 1_000
-        state = { t: frame.t, values: frame.values }
-        const named = frame.events === null ? undefined : endedEventSchema.parse(frame.events).ended
-        if (named !== undefined) ended = { atMs: elapsedMs(), label: named.label, reason: `Simulation domain end: ${named.plain} at t=${(elapsedMs() / 1_000).toFixed(3)} s` }
-        return { simulatedMs, frame, cost: { wallS: advanced.wallS, cpuS: advanced.cpuS } }
+        // R4-GRID: an exchange instant inside the span ends an ADVANCE; the unit stops there and takes the boundary.
+        const from = state.t
+        const cost = { wallS: 0, cpuS: 0 }
+        let frame: Ld01UnitAdvanceFrame | null = null
+        while (state.t < t1 && ended === null) {
+          const every = exchangeEvery
+          const to = every === null ? t1 : Math.min(t1, instant(nextExchangeFrame(lastFrameAtOrBefore(state.t), every)))
+          const advanced = await child.request(ld01UnitOps.advance, encodeLd01UnitAdvance(to))
+          frame = decodeLd01UnitAdvance(advanced.payload)
+          if (frame.values.length !== binding.channelCount) throw new Error(`a frame carries ${frame.values.length} values for ${binding.channelCount} channels`)
+          cost.wallS += advanced.wallS
+          cost.cpuS += advanced.cpuS
+          state = { t: frame.t, values: frame.values }
+          const named = frame.events === null ? undefined : endedEventSchema.parse(frame.events).ended
+          if (named !== undefined) ended = { atMs: elapsedMs(), label: named.label, reason: `Simulation domain end: ${named.plain} at t=${(elapsedMs() / 1_000).toFixed(3)} s` }
+          if (every !== null && ended === null && lastFrameAtOrBefore(to) % every === 0) await exchangeGrid(every)
+        }
+        return { simulatedMs: (state.t - from) * 1_000, frame, cost }
       } catch (error) {
         throw failed(error)
       }
     }),
     checkpoint: () => exclusive(snapshot),
     persisted: () => persisted,
+    setGridBoundary: (boundary: NativeGridBoundary): void => { gridBoundary = boundary },
     failure: () => failure,
     ended: () => ended,
     connectCost,

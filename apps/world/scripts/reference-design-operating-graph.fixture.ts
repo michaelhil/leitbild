@@ -53,6 +53,9 @@ export const elec = {
 
 /** A channel's unit as ld01-unit.rs `channels()` gives it, by its id's form. */
 export const unitOf = (channel: string): string => {
+  if (channel === 'LD01.GRID.NET_EXPORT' || channel === 'LD01.TG.LOAD.REQUEST') return 'W'
+  if (channel === 'LD01.GRID.FREQUENCY') return 'Hz'
+  if (channel === 'LD01.GRID.VOLTAGE') return '1'
   if (channel.endsWith('RELEASED_POWER') || channel.endsWith('.WT') || channel.endsWith('HEATER.REQUEST') || /\.LOAD\.(REQUESTED|DELIVERED)$/u.test(channel)) return 'W'
   if (channel.endsWith('.DEPLETION')) return 's'
   if (channel.endsWith('.ENERGY')) return 'J'
