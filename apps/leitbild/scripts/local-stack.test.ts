@@ -43,6 +43,8 @@ test('local route split consumes production matchers, not a second routing table
   expect(route('/api/workspaces/w/world/ws')).toBe('world')
   expect(route('/api/workspaces/w/agents/ws')).toBe('agents')
   expect(route('/assets/agents/app.js')).toBe('agents')
+  expect(route('/workspaces/w/agents/embed/engineering.result')).toBe('agents')
+  expect(route('/workspaces/w/agents/embed/arbitrary.page')).toBe('host')
   expect(route('/workspaces/w/planning')).toBe('planning')
   expect(route('/assets/planning/app.js')).toBe('planning')
   expect(route('/wiki')).toBe('host')

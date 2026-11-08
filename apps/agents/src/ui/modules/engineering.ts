@@ -19,6 +19,7 @@ const boot = async (): Promise<void> => {
   let current = original
   let busy = false
   const open = async (): Promise<void> => {
+    host.replaceChildren()
     status.setAttribute('role', 'status'); status.textContent = 'Reading the retained calculation…'
     const { receipt, sourceStatus } = await api.open(current)
     renderCalculation(host, receipt, sourceStatus, {
