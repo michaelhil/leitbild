@@ -74,7 +74,7 @@ test('human placekeeping records unknown manual qualification, while AI must hol
 })
 
 
-test('declared query proof must establish current scope, age, engineering provenance and both authored identities', () => {
+test('declared query proof must establish current scope, age, engineering provenance and the authored model identity', () => {
   const applicability = { description: 'Exact test model and I&C', source: '../basis.md#scope', model: { ref: 'model:test', digest: 'a'.repeat(64) }, automation: { ref: 'automation:test', digest: 'b'.repeat(64) } }
   const observation = { capabilityId: 'world.example.condition.read', input: {}, source: '../basis.md#query', maxAgeSeconds: 2 }
   const step = { ...document().steps[0]!, decisions: [{ branchIndex: 0, observation, applicability }] }
@@ -85,11 +85,23 @@ test('declared query proof must establish current scope, age, engineering proven
   for (const result of [
     { ...healthy, targetObjectId: 'plant:other' }, { ...healthy, simulationTime: '2026-10-29T07:59:57.000Z' },
     { ...healthy, simulationTime: '2026-10-29T08:00:01.000Z' }, { ...healthy, provenance: 'unspecified' },
-    { ...healthy, modelDigest: 'c'.repeat(64) }, { ...healthy, automationDigest: 'c'.repeat(64) },
+    { ...healthy, modelDigest: 'c'.repeat(64) },
     { ...healthy, status: 'green' },
   ]) expect(assess(result).status).toBe('unknown')
+  // A wording edit moves the I&C digest; it must not invalidate a procedure's criteria.
+  expect(assess({ ...healthy, automationDigest: 'c'.repeat(64) }).status).toBe('supported')
 })
 
+
+test('a comparison still needs the authored model, and no longer the authored I&C digest', () => {
+  const applicability = { description: 'Exact test model and I&C', source: '../basis.md#scope', model: { ref: 'model:test', digest: 'a'.repeat(64) }, automation: { ref: 'automation:test', digest: 'b'.repeat(64) } }
+  const step = { ...document().steps[0]!, decisions: [{ branchIndex: 0, condition, applicability }] }
+  const read = (evidence: Record<string, string>): ProcedureTagRead => { const base = observation(10); return { ...base, value: { ...base.value!, evidence: { ...base.value!.evidence!, modelRef: 'model:test', modelDigest: 'a'.repeat(64), automationRef: 'automation:test', automationDigest: 'b'.repeat(64), ...evidence } } } }
+  const assess = (evidence: Record<string, string>) => assessProcedureBranches({ step, reads: [read(evidence)], plantId, simulationTime: time })[0]!.status
+  expect(assess({})).toBe('supported')
+  expect(assess({ automationDigest: 'c'.repeat(64) })).toBe('supported')
+  expect(assess({ modelDigest: 'c'.repeat(64) })).toBe('unknown')
+})
 
 test('a Pack cannot relabel a mismatched variable identity, native unit or writable demand as feedback', () => {
   const tag = { id: 'PT-455' }

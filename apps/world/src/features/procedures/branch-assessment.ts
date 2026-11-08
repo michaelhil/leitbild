@@ -57,7 +57,6 @@ export const assessProcedureBranch = (config: CriterionAcquisition & {
                     : value.conversionStatus === 'unavailable' || value.unit !== condition.unit ? `Signal ${condition.tagId} does not supply criterion unit ${condition.unit}.`
                       : acquired === undefined || acquired.kind !== condition.evidence ? `Signal ${condition.tagId} does not establish ${condition.evidence} evidence.`
                         : decision?.applicability?.model !== undefined && (acquired.modelRef !== decision.applicability.model.ref || acquired.modelDigest !== decision.applicability.model.digest) ? `Signal ${condition.tagId} model identity does not match the pinned criterion applicability.`
-                          : decision?.applicability?.automation !== undefined && (acquired.automationRef !== decision.applicability.automation.ref || acquired.automationDigest !== decision.applicability.automation.digest) ? `Signal ${condition.tagId} I&C configuration does not match the pinned criterion applicability.`
                             : ageSeconds === undefined || !Number.isFinite(ageSeconds) || ageSeconds < 0 || ageSeconds > condition.maxAgeSeconds ? `Signal ${condition.tagId} sample is stale or is outside the current simulation-time frame.`
                           : typeof condition.value === 'number' && condition.bound !== 'value' ? `Signal ${condition.tagId} supplies a scalar; the requested ${condition.bound} interval bound is not established.`
                             : typeof value.value !== typeof condition.value ? `Signal ${condition.tagId} value type does not match the criterion.` : undefined
@@ -115,7 +114,6 @@ export const assessProcedureBranch = (config: CriterionAcquisition & {
         : result.evidenceKind !== 'engineering-diagnostic' || result.provenance !== 'runtime-model' ? 'Branch observation does not establish engineering diagnostic evidence provenance.'
           : !Number.isFinite(age) || age < 0 || age > decision.observation.maxAgeSeconds ? 'Branch observation is stale or outside the current simulation-time frame.'
             : scope?.model !== undefined && (result.modelRef !== scope.model.ref || result.modelDigest !== scope.model.digest) ? 'Branch observation model identity does not match the pinned criterion applicability.'
-              : scope?.automation !== undefined && (result.automationRef !== scope.automation.ref || result.automationDigest !== scope.automation.digest) ? 'Branch observation I&C configuration does not match the pinned criterion applicability.'
                 : result.status !== 'satisfied' && result.status !== 'challenged' && result.status !== 'unknown' ? 'Branch observation returned an unrecognized status.' : undefined)
     status = reason !== undefined ? unknown(reason) : result!.status === 'satisfied' ? 'supported' : result!.status === 'challenged' ? 'contradicted' : unknown(typeof result!.reason === 'string' ? result!.reason : 'Declared branch observation is unestablished.')
     observationApplies = reason === undefined
