@@ -3,6 +3,7 @@
   import type { EmbeddedViewListing, WorkspaceResourceReference, WorkspaceSubjectReference } from '@leitbild/contracts'
   import { embeddedViewFragment, embeddedViewPath } from '@leitbild/contracts/embedded-view-route'
   import Modal from './Modal.svelte'
+  import { closeEmbeddedViewOnEscape } from './embedded-view-keyboard.ts'
   import { createViewRelay, type WorldPane } from './view-relay.ts'
   import { createRunAssistantBridge } from './run-assistant-bridge.ts'
   import { createPresentationBridge } from './presentation-bridge.ts'
@@ -330,6 +331,7 @@
   onclose={() => { ownedView = null }}>
   {#if ownedView}
     <iframe class="owned-view-frame" title={ownedView.envelope.title}
+      use:closeEmbeddedViewOnEscape={() => { ownedViewOpen = false }}
       src={embeddedViewPath(ownedView.envelope) + embeddedViewFragment(ownedView.envelope)}
       allow="camera 'none'; microphone 'none'; geolocation 'none'; display-capture 'none'"
       referrerpolicy="same-origin"></iframe>
