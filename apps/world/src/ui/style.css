@@ -4408,6 +4408,28 @@ body.rail-resizing {
 .procedure-current-check summary { font-weight: 650; }
 .procedure-current-check summary.supported .procedure-check-glyph { color: var(--success); }
 .procedure-current-check summary.contradicted .procedure-check-glyph { color: var(--critical); }
+.procedure-lit-line { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0 6px; align-items: start; }
+.procedure-light { appearance: none; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 50%; background: transparent; }
+button.procedure-light { cursor: pointer; }
+button.procedure-light:focus-visible { outline: 3px solid var(--accent, #1d4ed8); outline-offset: 1px; }
+.procedure-light-dot { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%; color: #ffffff; font-size: 12px; font-weight: 800; line-height: 1; }
+.procedure-light-dot.supported { background: #15703d; }
+.procedure-light-dot.contradicted { background: #b3261e; }
+.procedure-light-dot.unknown { background: #6b7480; }
+.procedure-light-dot.waiting { background: #ffffff; border: 2px solid #6b7480; }
+.procedure-light-dot.idle { background: #ffffff; border: 2px solid #cbd5e1; }
+.procedure-readings { position: fixed; z-index: 40; width: min(440px, calc(100vw - 16px)); max-height: min(70vh, 460px); overflow: auto; padding: 8px 10px; border: 1px solid #17212b; border-radius: 8px; background: #ffffff; color: #17212b; box-shadow: 0 10px 30px rgb(10 20 30 / 28%); font-size: 13.5px; font-weight: 400; }
+.procedure-readings-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.procedure-readings-close { min-width: 30px; min-height: 30px; border: 1px solid #cbd5e1; border-radius: 6px; background: #ffffff; cursor: pointer; }
+.procedure-readings table { width: 100%; margin: 6px 0; border-collapse: collapse; }
+.procedure-readings th { padding: 2px 4px; border-bottom: 1px solid #cbd5e1; color: #566573; font-size: 12px; font-weight: 600; text-align: left; }
+.procedure-readings td { padding: 3px 4px; border-bottom: 1px solid #eef1f4; vertical-align: top; }
+.procedure-readings-value { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.procedure-readings-state { font-weight: 800; }
+.procedure-readings-state.supported { color: #15703d; }
+.procedure-readings-state.contradicted { color: #b3261e; }
+.procedure-readings-state.unknown { color: #6b7480; }
+.procedure-readings small { color: #566573; }
 .procedure-check-glyph { display: inline-block; min-width: 1em; text-align: center; font-weight: 800; }
 .procedure-check-glyph.supported { color: var(--success); }
 .procedure-check-glyph.contradicted { color: var(--critical); }

@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { parseProcedureMarkdown } from '../src/features/procedures/procmd.ts'
-import { procedureCheckVersion, procedureCategories, procedureBlockLabel, procedureEvidenceStatusWord, procedureLineReadingText, procedureStepCounterText, procedureReadingName, procedureReadingText, procedureRequirementText, procedureLineCheckEvidence, procedureLineChecks, procedureObservationBasis, procedureObservationEvidence, procedureObservationLabel, procedureOperatorRows, procedureSampledEvidence, procedureSourceEvidenceRequest, procedureStepItems, procedureStepTagBindings, procedureTextSegments, procedureUnitJump } from '../src/ui/procedures/procedure-view.ts'
+import { procedureLightRows, procedureLightTone, procedureCheckVersion, procedureCategories, procedureBlockLabel, procedureEvidenceStatusWord, procedureLineReadingText, procedureStepCounterText, procedureReadingName, procedureReadingText, procedureRequirementText, procedureLineCheckEvidence, procedureLineChecks, procedureObservationBasis, procedureObservationEvidence, procedureObservationLabel, procedureOperatorRows, procedureSampledEvidence, procedureSourceEvidenceRequest, procedureStepItems, procedureStepTagBindings, procedureTextSegments, procedureUnitJump } from '../src/ui/procedures/procedure-view.ts'
 import { procedureCriterionReadingSchema } from '../src/core/model/procedure-criteria.ts'
 import { procedureTestSource } from './procedure-fixtures.ts'
 import { procedureBindingStatusWord, procedureComparisonText, procedureCsfChip, procedureDescriptionText, procedureDisplayReading, procedureElapsedText, procedureStepBindingSummary } from '../src/ui/procedures/procedure-view.ts'
@@ -377,4 +377,66 @@ test('an accepted command ends a light sample on a paused clock, and not on a ru
   expect(procedureCheckVersion(1, '1:0', paused)).not.toBe(procedureCheckVersion(1, '1:0', { ...paused, currentTime: '2026-07-12T04:00:11.000Z' }))
   expect(procedureCheckVersion(1, '1:0', running)).not.toBe(procedureCheckVersion(2, '1:0', running))
   expect(procedureCheckVersion(1, '1:0', running)).not.toBe(procedureCheckVersion(1, '1:0', paused))
+})
+
+const limitDocument = (lines: string) => parseProcedureMarkdown({
+  source: procedureTestSource, sourcePath: 'TEST.md', sourceUrl: '/wiki?path=TEST.md&revision=r',
+  rawMarkdown: ['---', 'type: procedure', 'procedure-md: 0.7', 'procedure-id: TEST', 'title: Limits', '---', '# Limits', '', '## Step 1 [id: one] One', 'Pair: [id: row, criterion: 0]', lines, 'RNO: Act.', 'Basis: [why](basis.md#one).', '- Go on [outcome: normal] → END', '', '## Tags', '',
+    ...['A', 'B'].flatMap(id => [`- id: ${id}`, '  description: Breaker closed', '  units: boolean', `  equipment: breaker${id}`, '  states: CLOSED/OPEN']),
+    '- id: L', '  description: Level', '  units: percent', ''].join('\n'),
+})
+const at = '2026-11-08T08:00:10.000Z'
+const rowsOf = (document: ReturnType<typeof limitDocument>) => {
+  const step = document.steps[0]!
+  const row = procedureOperatorRows(step).rows.find(item => item.kind === 'pair')!
+  return [...procedureLineChecks(step, row as Extract<typeof row, { kind: 'pair' }>).values()]
+}
+const read = (tagId: string, operator: string, expected: number | boolean, value: number | boolean, status: 'supported' | 'contradicted' | 'unknown', sampledAt = at, extra = {}) =>
+  ({ source: 'basis', tagId, operator, expected, value, unit: typeof value === 'boolean' ? 'boolean' : 'percent', sampledAt, status, ...extra }) as Parameters<typeof procedureLineCheckEvidence>[1][number]
+
+test('a line with limits lights by its comparisons: any red gives red, else any grey gives grey, else green', () => {
+  const [line] = rowsOf(limitDocument('Check: Breakers A and B — OPEN. «A == false» «B == false»'))
+  expect(line!.text).toBe('Breakers A and B — OPEN.')
+  const green = [read('A', '==', false, false, 'supported'), read('B', '==', false, false, 'supported')]
+  expect(procedureLineCheckEvidence(line!, green, at).status).toBe('supported')
+  expect(procedureLineCheckEvidence(line!, [green[0]!, read('B', '==', false, true, 'contradicted')], at).status).toBe('contradicted')
+  expect(procedureLineCheckEvidence(line!, [green[0]!, read('B', '==', false, false, 'unknown')], at).status).toBe('unknown')
+  expect(procedureLineCheckEvidence(line!, [green[0]!], at).status).toBe('unknown')
+  expect(procedureLineCheckEvidence(line!, [read('A', '==', false, true, 'contradicted'), read('B', '==', false, false, 'unknown')], at).status).toBe('contradicted')
+})
+
+test('a band finds each reading by its comparison, so one side cannot read as the other', () => {
+  const [line] = rowsOf(limitDocument('Check: Level — 40% TO 70%. «L > 40» «L < 70»'))
+  const evidence = procedureLineCheckEvidence(line!, [read('L', '>', 40, 90, 'supported'), read('L', '<', 70, 90, 'contradicted')], at)
+  expect(evidence.status).toBe('contradicted')
+  expect(procedureLightRows(evidence.operands, []).map(row => [row.limit, row.state])).toEqual([['above 40 %', 'supported'], ['below 70 %', 'contradicted']])
+})
+
+test('an any line is green on one, red only when all are red, else grey', () => {
+  const [line] = rowsOf(limitDocument('Check: Breakers — AT LEAST ONE OPEN. «any» «A == false» «B == false»'))
+  const open = (id: string) => read(id, '==', false, false, 'supported'), closed = (id: string) => read(id, '==', false, true, 'contradicted')
+  expect(procedureLineCheckEvidence(line!, [closed('A'), open('B')], at).status).toBe('supported')
+  expect(procedureLineCheckEvidence(line!, [closed('A'), closed('B')], at).status).toBe('contradicted')
+  expect(procedureLineCheckEvidence(line!, [closed('A'), read('B', '==', false, false, 'unknown')], at).status).toBe('unknown')
+})
+
+test('a WHEN line has no colour until met and never shows red', () => {
+  const [line] = rowsOf(limitDocument('When: Level — BELOW 75%. «L < 75»'))
+  expect(line!.limits?.when).toBe(true)
+  expect(procedureLightTone(line!, 'supported')).toBe('supported')
+  expect(procedureLightTone(line!, 'contradicted')).toBe('waiting')
+  expect(procedureLightTone(line!, 'unknown')).toBe('waiting')
+})
+
+test('a popover row holds the reading, limit, time and quality, in the words the tag declares', () => {
+  const document = limitDocument('Check: Breakers A and B — OPEN. «A == false» «B == false»')
+  const [line] = rowsOf(document)
+  const old = '2026-11-08T08:00:01.000Z'
+  const evidence = procedureLineCheckEvidence(line!, [read('A', '==', false, true, 'contradicted'), read('B', '==', false, false, 'supported', old)], at)
+  const rows = procedureLightRows(evidence.operands, document.tags)
+  expect(rows[0]).toEqual({ tagId: 'A', name: 'Breaker A: breaker closed', value: 'CLOSED', limit: 'OPEN', state: 'contradicted', quality: 'good', sampledAt: at })
+  expect(rows[1]).toEqual({ tagId: 'B', name: 'Breaker B: breaker closed', value: 'OPEN', limit: 'OPEN', state: 'unknown', quality: 'stale', sampledAt: old })
+  const bad = procedureLightRows(procedureLineCheckEvidence(line!, [read('A', '==', false, false, 'unknown', at, { reason: 'Signal quality is bad.' })], at).operands, document.tags)
+  expect(bad[0]!.quality).toBe('Signal quality is bad.')
+  expect(bad[1]).toMatchObject({ value: 'no value', state: 'unknown', quality: 'no reading' })
 })

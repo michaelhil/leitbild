@@ -106,7 +106,9 @@ export const procedureOperatorRows = (step: ProcedureStep): { readonly rows: Rea
 type Comparison = Extract<ProcedureAssessmentCondition, { type: 'comparison' }>
 export interface ProcedureLineCheck {
   readonly text: string
-  readonly comparisons: ReadonlyArray<Comparison>
+  readonly comparisons: ReadonlyArray<Pick<Comparison, 'tagId' | 'operator' | 'value' | 'unit' | 'maxAgeSeconds'>>
+  /** Set where the document states its limits on the line: `any` for at least one, `when` for a line that waits. */
+  readonly limits?: { readonly any: boolean; readonly when: boolean }
 }
 
 const comparisonConjunction = (condition: ProcedureAssessmentCondition): ReadonlyArray<Comparison> | null => {
@@ -116,10 +118,21 @@ const comparisonConjunction = (condition: ProcedureAssessmentCondition): Readonl
   return groups.some(group => group === null) ? null : groups.flatMap(group => group ?? [])
 }
 
+const trailingTags = /(?:\s*«[^»]*»)+\s*$/
+
 /** Trailing authored tags associate each Check line with exact, unique comparisons in its paired all-of. */
 export const procedureLineChecks = (step: ProcedureStep, row: Extract<OperatorRow, { kind: 'pair' }>): ReadonlyMap<number, ProcedureLineCheck> => {
   const lines = new Map<number, ProcedureLineCheck>()
   if (row.advisoryBranchIndex === undefined) return lines
+  const limited = row.expected.flatMap(item => item.kind === 'block' ? item.blocks.filter(block => block.limits !== undefined) : [])
+  if (limited.length > 0) {
+    for (const block of limited) lines.set(block.sourceLine, {
+      text: block.text.replace(trailingTags, ''),
+      comparisons: block.limits!.comparisons,
+      limits: { any: block.limits!.any, when: block.kind === 'when' },
+    })
+    return lines
+  }
   const condition = step.decisions?.find(decision => decision.branchIndex === row.advisoryBranchIndex)?.condition
   const comparisons = condition && comparisonConjunction(condition)
   if (!comparisons?.length || new Set(comparisons.map(item => item.tagId)).size !== comparisons.length) return lines
@@ -152,15 +165,58 @@ export const procedureLineCheckEvidence = (
 ) => {
   const now = Date.parse(currentTime ?? '')
   const operands = line.comparisons.map(comparison => {
-    const reading = readings.find(item => item.tagId === comparison.tagId)
-    const acquired = Date.parse(reading?.sampledAt ?? '')
-    const current = reading !== undefined && acquired <= now && now - acquired <= comparison.maxAgeSeconds * 1000
-    return { comparison, reading: current ? reading : undefined }
+    // A band holds two comparisons on one tag, so a line with limits finds a reading by its comparison and not its tag alone.
+    const last = readings.find(item => item.tagId === comparison.tagId && (line.limits === undefined || (item.operator === comparison.operator && item.expected === comparison.value)))
+    const acquired = Date.parse(last?.sampledAt ?? '')
+    const current = last !== undefined && acquired <= now && now - acquired <= comparison.maxAgeSeconds * 1000
+    return { comparison, reading: current ? last : undefined, last }
   })
-  const status = operands.some(item => item.reading?.status === 'contradicted') ? 'contradicted'
-    : operands.every(item => item.reading?.status === 'supported') ? 'supported' : 'unknown'
+  const statuses = operands.map(item => item.reading?.status)
+  const status: ProcedureLightTone = line.limits?.any
+    ? statuses.includes('supported') ? 'supported' : statuses.every(item => item === 'contradicted') ? 'contradicted' : 'unknown'
+    : statuses.includes('contradicted') ? 'contradicted' : statuses.every(item => item === 'supported') ? 'supported' : 'unknown'
   return { status, operands }
 }
+
+export type ProcedureLightTone = 'supported' | 'contradicted' | 'unknown' | 'waiting'
+
+/** A WHEN line waits: it has no colour until met, and never shows red. */
+export const procedureLightTone = (line: ProcedureLineCheck, status: ProcedureLightTone): ProcedureLightTone =>
+  line.limits?.when && status !== 'supported' ? 'waiting' : status
+
+export interface ProcedureLightRow {
+  readonly tagId: string
+  readonly name: string
+  readonly value: string
+  readonly limit?: string
+  readonly state: ProcedureLightTone
+  readonly quality: string
+  readonly sampledAt?: string
+}
+
+/** A declared two-state word for a value: `states: OPEN/CLOSED` says OPEN for true or 1 and CLOSED for false or 0. */
+const stateWord = (value: unknown, tag: ProcedureTag | undefined): string | undefined => {
+  const words = tag?.annotations?.states?.split('/')
+  if (words?.length !== 2) return undefined
+  return value === true || value === 1 ? words[0] : value === false || value === 0 ? words[1] : undefined
+}
+
+/** A popover row for each of a lit line's comparisons: the reading, its limit, its time and its quality. A stale reading keeps its last value and says it is stale. */
+export const procedureLightRows = (operands: ReturnType<typeof procedureLineCheckEvidence>['operands'], tags: ReadonlyArray<ProcedureTag>): ReadonlyArray<ProcedureLightRow> =>
+  operands.map(({ comparison, reading, last }) => {
+    const tag = tags.find(item => item.id === comparison.tagId)
+    const word = stateWord(comparison.value, tag)
+    const stale = last !== undefined && reading === undefined
+    return {
+      tagId: comparison.tagId,
+      name: procedureReadingName(comparison.tagId, tags) ?? comparison.tagId,
+      value: last?.value === undefined ? 'no value' : stateWord(last.value, tag) ?? procedureReadingText(last.value, last.unit),
+      limit: word === undefined ? procedureRequirementText(comparison.operator, comparison.value, comparison.unit) : comparison.operator === '!=' ? `not ${word}` : word,
+      state: reading?.status ?? 'unknown',
+      quality: stale ? 'stale' : reading === undefined ? 'no reading' : reading.status === 'unknown' ? reading.reason ?? reading.quality ?? 'no valid reading' : reading.quality ?? 'good',
+      ...(last?.sampledAt === undefined ? {} : { sampledAt: last.sampledAt }),
+    }
+  })
 
 /**
  * What a line-light sample depends on. A paused plant changes only by what is done to it, so any accepted command or Pack change ends the sample.

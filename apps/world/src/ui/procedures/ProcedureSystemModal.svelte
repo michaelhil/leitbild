@@ -7,7 +7,7 @@
   import { readProcedureTagValue } from './procedure-client.ts'
   import { canInspectProcedureBranchCheck, type ProcedureChecksView } from '../../features/procedures/checks-view.ts'
   import { simulationTimeAt } from '../simulation-clock.ts'
-  import { procedureViewKey, procedureCategories, procedureOperatorRows, procedureLineChecks, procedureLineCheckEvidence, procedureCheckVersion, procedureLineReadingText, procedureReferenceNotice, procedureStepCounterText, procedureReadingName, procedureReadingText, procedureRequirementText, procedureEvidenceStatusWord, type ProcedureLineCheck, type StepItem, procedureStepTagBindings, procedureTextSegments, procedureBlockLabel, procedureObservationEvidence, procedureSampledEvidence, procedureObservationBasis, procedureObservationLabel, procedureSourceEvidenceRequest, procedureUnitJump } from './procedure-view.ts'
+  import { procedureViewKey, procedureCategories, procedureOperatorRows, procedureLineChecks, procedureLineCheckEvidence, procedureCheckVersion, procedureLightRows, procedureLightTone, procedureLineReadingText, procedureReferenceNotice, procedureStepCounterText, procedureReadingName, procedureReadingText, procedureRequirementText, procedureEvidenceStatusWord, type ProcedureLineCheck, type StepItem, procedureStepTagBindings, procedureTextSegments, procedureBlockLabel, procedureObservationEvidence, procedureSampledEvidence, procedureObservationBasis, procedureObservationLabel, procedureSourceEvidenceRequest, procedureUnitJump } from './procedure-view.ts'
   import type {
     SimulationRunId,
     SimulationClockState,
@@ -35,6 +35,7 @@
   import { procedureDialog } from './procedure-dialog.ts'
   import { procedureFollowAction, procedureFollowMark, type ProcedureFollowMark } from './procedure-follow.ts'
   import ProcedureTagDisplay from './ProcedureTagDisplay.svelte'
+  import ProcedureLineLight from './ProcedureLineLight.svelte'
   import { procedureTagDisplayPlan } from './procedure-tag-display.ts'
   import { defaultDisplayEnvelope, readDefaultDisplay } from '../process-display/default-display.ts'
   import { activeWorkspaceId } from '../workspace-context.ts'
@@ -1642,6 +1643,9 @@
 {#snippet lineCheck(line: ProcedureLineCheck, branchIndex: number | undefined)}
   {@const check = branchIndex === undefined ? undefined : activeCheck(branchIndex)}
   {@const evidence = procedureLineCheckEvidence(line, check?.value.readings ?? [], check?.currentTime)}
+  {#if line.limits}
+  <ProcedureLineLight text={line.text} live={branchIndex !== undefined} tone={procedureLightTone(line, evidence.status)} rows={procedureLightRows(evidence.operands, document?.tags ?? [])} openTag={(tagId) => void openTagDisplay(tagId as ProcedureTagId)} />
+  {:else}
   {@const status = evidence.status === 'supported' ? 'Met' : evidence.status === 'contradicted' ? 'Unmet' : 'Not established'}
   <details class="procedure-line-check" ontoggle={(event) => {
     if (event.currentTarget.open && branchIndex === undefined) void readLineIndications(line)
@@ -1677,6 +1681,7 @@
       {/each}
     </dl>
   </details>
+  {/if}
 {/snippet}
 
 {#snippet operatorItem(step: ProcedureStep, state: ProcedureStepRunState | undefined, item: StepItem, paired: boolean, lines?: ReadonlyMap<number, ProcedureLineCheck>, checkIndex?: number)}
@@ -2498,6 +2503,8 @@
   :global(.procedure-modal.compact-procedure .procedure-header-actions) { flex-shrink: 0; }
   :global(.procedure-modal.compact-procedure .procedure-csf-strip) { padding-bottom: 3px; }
   :global(.procedure-modal.compact-procedure .procedure-csf-shell) { flex: 0 0 auto; }
+  :global(.procedure-modal.compact-procedure .procedure-light) { width: 44px; height: 44px; margin: -10px -6px -10px -10px; }
+  :global(.procedure-modal.compact-procedure .procedure-readings) { left: 12px !important; right: 12px; top: auto !important; bottom: 12px; width: auto; }
   /* Preserve the existing CSF help outside its scrolling strip. */
   :global(.procedure-modal.compact-procedure .procedure-csf-popover) { position: fixed; top: auto; bottom: 12px; left: 24px; right: 24px; width: auto; max-width: none; max-height: calc(100dvh - 48px); overflow-y: auto; }
   /* On a narrow window the existing catalogue is a recoverable picker, not
