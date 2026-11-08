@@ -7,7 +7,7 @@
   import { readProcedureTagValue } from './procedure-client.ts'
   import { canInspectProcedureBranchCheck, type ProcedureChecksView } from '../../features/procedures/checks-view.ts'
   import { simulationTimeAt } from '../simulation-clock.ts'
-  import { procedureViewKey, procedureCategories, procedureOperatorRows, procedureLineChecks, procedureLineCheckEvidence, procedureCheckVersion, procedureDecisionAgainst, procedureTagLabel, procedureLightRows, procedureLightTone, procedureLineReadingText, procedureReferenceNotice, procedureStepCounterText, procedureReadingName, procedureReadingText, procedureRequirementText, procedureEvidenceStatusWord, type ProcedureLineCheck, type StepItem, procedureStepTagBindings, procedureTextSegments, procedureBlockLabel, procedureObservationEvidence, procedureSampledEvidence, procedureObservationBasis, procedureObservationLabel, procedureSourceEvidenceRequest, procedureUnitJump } from './procedure-view.ts'
+  import { procedureViewKey, procedureCategories, procedureOperatorRows, procedureLineChecks, procedureLineCheckEvidence, procedureCheckVersion, procedureTagLabel, procedureFoldoutBeforeStart, procedurePriorFoldout, procedureDecisionAgainst, procedureLightRows, procedureLightTone, procedureLineReadingText, procedureReferenceNotice, procedureStepCounterText, procedureReadingName, procedureReadingText, procedureRequirementText, procedureEvidenceStatusWord, type ProcedureLineCheck, type StepItem, procedureStepTagBindings, procedureTextSegments, procedureBlockLabel, procedureObservationEvidence, procedureSampledEvidence, procedureObservationBasis, procedureObservationLabel, procedureSourceEvidenceRequest, procedureUnitJump } from './procedure-view.ts'
   import type {
     SimulationRunId,
     SimulationClockState,
@@ -36,6 +36,7 @@
   import { procedureFollowAction, procedureFollowMark, type ProcedureFollowMark } from './procedure-follow.ts'
   import ProcedureTagDisplay from './ProcedureTagDisplay.svelte'
   import ProcedureLineLight from './ProcedureLineLight.svelte'
+  import ProcedureFoldout from './ProcedureFoldout.svelte'
   import { procedureTagDisplayPlan } from './procedure-tag-display.ts'
   import { defaultDisplayEnvelope, readDefaultDisplay } from '../process-display/default-display.ts'
   import { activeWorkspaceId } from '../workspace-context.ts'
@@ -418,6 +419,22 @@
   const busy = $derived(pendingControl !== null)
   const procedureRows = $derived(document ? procedureStepRows(document, selectedProcedureRun) : [])
   const catalogCategories = $derived(procedureCategories(catalog?.procedures ?? []))
+  const foldoutSideWidth = 1024
+  // A document's own foldout, or on a reference document the foldout of the procedure that sent the Run there.
+  const pinnedFoldout = $derived.by(() => {
+    if (!document) return null
+    const wide = windowBounds.width >= foldoutSideWidth
+    if (document.foldout) {
+      const waiting = procedureFoldoutBeforeStart(document.foldout.title, document.steps, currentProcedureStep?.step.id)
+      return { ...document.foldout, heading: document.foldout.title, layout: wide && !waiting ? 'side' as const : 'strip' as const }
+    }
+    if (!document.sourcePath.startsWith('archive/')) return null
+    const prior = procedurePriorFoldout(runs, run => runDocuments.get(procedureRunDocumentKey(run)), currentScope, document.procedureId)
+    if (!prior) return null
+    return prior.waiting
+      ? { ...prior.foldout, heading: `${prior.procedureId} ${prior.foldout.title.charAt(0).toLowerCase()}${prior.foldout.title.slice(1)}`, layout: 'strip' as const }
+      : { ...prior.foldout, heading: `${prior.procedureId} foldout: still applies`, layout: wide ? 'side' as const : 'strip' as const }
+  })
   const sourceLabel = $derived(catalog
     ? `${catalog.source.repository}@${catalog.source.revision.slice(0, 8)}`
     : 'Procedure source')
@@ -2271,6 +2288,10 @@
             </div>
           {/if}
 
+          {#if pinnedFoldout?.layout === 'strip'}
+            <ProcedureFoldout heading={pinnedFoldout.heading} text={pinnedFoldout.text} tagIds={pinnedFoldout.tagIds} layout="strip" line={procedureText} />
+          {/if}
+          <div class="procedure-document-columns" class:with-foldout={pinnedFoldout?.layout === 'side'}>
           <div
             class="procedure-document-body"
             bind:this={procedureDocumentBodyElement}
@@ -2298,6 +2319,10 @@
                 {/if}
               {/each}
             </div>
+          </div>
+          {#if pinnedFoldout?.layout === 'side'}
+            <ProcedureFoldout heading={pinnedFoldout.heading} text={pinnedFoldout.text} tagIds={pinnedFoldout.tagIds} layout="side" line={procedureText} />
+          {/if}
           </div>
           {#if loadingProcedureId !== null}
             <div class="procedure-document-loading" role="status" aria-live="polite" aria-label="Loading procedure {loadingProcedureId}">

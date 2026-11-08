@@ -3574,6 +3574,18 @@ body.rail-resizing {
   flex: none;
 }
 
+.procedure-document-columns { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); flex: 1 1 auto; min-height: 0; }
+.procedure-document-columns.with-foldout { grid-template-columns: minmax(0, 1fr) 300px; }
+.procedure-foldout-side { min-height: 0; overflow: auto; margin: 10px 10px 10px 0; padding: 8px 10px; border: 2px solid #17212b; border-radius: 6px; background: #ffffff; font-size: calc(13.5px * var(--procedure-font-scale)); }
+.procedure-foldout-side h3 { margin: 0; font-size: 12.5px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; }
+.procedure-foldout-side p { margin: 8px 0 0; }
+.procedure-foldout-strip { position: relative; border-block-end: 2px solid #17212b; background: #ffffff; }
+.procedure-foldout-items { display: flex; flex-wrap: nowrap; gap: 6px; align-items: center; overflow-x: auto; padding: 4px 12px; }
+.procedure-foldout-label { flex: none; font-size: 12px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; }
+.procedure-foldout-item { flex: none; min-height: 32px; padding: 2px 8px; border: 1px solid #17212b; border-radius: 6px; background: #ffffff; color: #17212b; font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer; }
+.procedure-foldout-item[aria-expanded="true"] { background: #17212b; color: #ffffff; }
+.procedure-foldout-open { position: absolute; z-index: 30; top: 100%; left: 8px; width: min(460px, calc(100% - 16px)); max-height: 50vh; overflow: auto; padding: 8px 12px; border: 1px solid #17212b; border-radius: 8px; background: #ffffff; box-shadow: 0 10px 30px rgb(10 20 30 / 28%); font-size: calc(13.5px * var(--procedure-font-scale)); }
+.procedure-foldout-open p { margin: 0; }
 .procedure-document > .procedure-document-body {
   flex: 1 1 auto;
 }

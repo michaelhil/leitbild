@@ -1,4 +1,4 @@
-import type { ProcedureBranch, ProcedureCatalogItem, ProcedureDocument, ProcedureRunScope, ProcedureStep, ProcedureTag, ProcedureTextBlock } from '../../core/model/index.ts'
+import type { ProcedureBranch, ProcedureCatalogItem, ProcedureDocument, ProcedureRunScope, ProcedureRunState, ProcedureStep, ProcedureTag, ProcedureTextBlock } from '../../core/model/index.ts'
 import type { ProcedureCriterionReading } from '../../core/model/procedure-criteria.ts'
 import type { ProcedureAssessmentCondition } from '@leitbild/procmd'
 import type { ProcedureSourceEvidenceRequest } from './procedure-client.ts'
@@ -359,6 +359,50 @@ export const procedureReadingName = (tagId: string, tags: ReadonlyArray<Procedur
   if (tag.equipment === undefined) return `${tag.description} (${tagId})`
   const description = /^[A-Z][a-z]/.test(tag.description) ? tag.description.charAt(0).toLowerCase() + tag.description.slice(1) : tag.description
   return `${equipmentWords(tag.equipment)}: ${description}`
+}
+
+export interface ProcedureFoldoutItem { readonly name?: string; readonly text: string }
+
+/** A foldout's items: each list line, its bold headline apart. Lines that are not list items continue the one before. */
+export const procedureFoldoutItems = (text: string): ReadonlyArray<ProcedureFoldoutItem> => {
+  const items: Array<{ name?: string; text: string }> = []
+  for (const line of text.split('\n').map(item => item.trim()).filter(Boolean)) {
+    const opens = line.startsWith('- ') || items.length === 0
+    if (!opens) { items[items.length - 1]!.text += ` ${line}`; continue }
+    const body = line.replace(/^- /, '')
+    const headline = /^\*\*(.+?)\*\*\s*/.exec(body)
+    items.push(headline === null ? { text: body } : { name: headline[1]!, text: body.slice(headline[0].length) })
+  }
+  return items
+}
+
+/** Whether a foldout has yet to apply: its heading names the step it starts from, and the Run has not reached it. */
+export const procedureFoldoutBeforeStart = (title: string, steps: ReadonlyArray<Pick<ProcedureStep, 'id' | 'label'>>, currentStepId: string | undefined): boolean => {
+  const label = /\bSteps? ([\d.]+[a-z]?)/i.exec(title)?.[1]
+  const start = steps.findIndex(step => step.label === label)
+  return start >= 0 && steps.findIndex(step => step.id === currentStepId) < start
+}
+
+/** The foldout a reference document inherits: back along the transfers that led to it, to the nearest procedure that has one. All of it from the Runs as they stand. */
+export const procedurePriorFoldout = (
+  runs: ReadonlyArray<ProcedureRunState>,
+  documentFor: (run: ProcedureRunState) => Pick<ProcedureDocument, 'procedureId' | 'foldout' | 'steps'> | undefined,
+  scope: Pick<ProcedureRunScope, 'plantId'>,
+  procedureId: string,
+): { readonly procedureId: string; readonly foldout: NonNullable<ProcedureDocument['foldout']>; readonly waiting: boolean } | undefined => {
+  const seen = new Set<string>()
+  let target = procedureId
+  while (!seen.has(target)) {
+    seen.add(target)
+    const into = (run: ProcedureRunState) => run.stepStates.flatMap(state => state.decision?.targetKind === 'procedure' && state.decision.target === target ? [Date.parse(state.decision.simulationTime)] : [])
+    const from = runs.filter(run => run.scope?.plantId === scope.plantId && run.status === 'transferred' && into(run).length > 0)
+      .sort((left, right) => Math.max(...into(right)) - Math.max(...into(left)))[0]
+    if (from === undefined) return undefined
+    const document = documentFor(from)
+    if (document?.foldout) return { procedureId: document.procedureId, foldout: document.foldout, waiting: procedureFoldoutBeforeStart(document.foldout.title, document.steps, from.currentStepId) }
+    target = from.procedureId
+  }
+  return undefined
 }
 
 /** What a branch was pressed against: the readings its criterion did not find met, by name. Undefined unless the criterion was contradicted. */

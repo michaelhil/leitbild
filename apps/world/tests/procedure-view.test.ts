@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { parseProcedureMarkdown } from '../src/features/procedures/procmd.ts'
-import { procedureDecisionAgainst, procedureTagLabel, procedureLightRows, procedureLightTone, procedureCheckVersion, procedureCategories, procedureBlockLabel, procedureEvidenceStatusWord, procedureLineReadingText, procedureStepCounterText, procedureReadingName, procedureReadingText, procedureRequirementText, procedureLineCheckEvidence, procedureLineChecks, procedureObservationBasis, procedureObservationEvidence, procedureObservationLabel, procedureOperatorRows, procedureSampledEvidence, procedureSourceEvidenceRequest, procedureStepItems, procedureStepTagBindings, procedureTextSegments, procedureUnitJump } from '../src/ui/procedures/procedure-view.ts'
+import { procedureFoldoutItems, procedureFoldoutBeforeStart, procedurePriorFoldout, procedureDecisionAgainst, procedureTagLabel, procedureLightRows, procedureLightTone, procedureCheckVersion, procedureCategories, procedureBlockLabel, procedureEvidenceStatusWord, procedureLineReadingText, procedureStepCounterText, procedureReadingName, procedureReadingText, procedureRequirementText, procedureLineCheckEvidence, procedureLineChecks, procedureObservationBasis, procedureObservationEvidence, procedureObservationLabel, procedureOperatorRows, procedureSampledEvidence, procedureSourceEvidenceRequest, procedureStepItems, procedureStepTagBindings, procedureTextSegments, procedureUnitJump } from '../src/ui/procedures/procedure-view.ts'
 import { procedureCriterionReadingSchema } from '../src/core/model/procedure-criteria.ts'
 import { procedureTestSource } from './procedure-fixtures.ts'
 import { procedureBindingStatusWord, procedureComparisonText, procedureCsfChip, procedureDescriptionText, procedureDisplayReading, procedureElapsedText, procedureStepBindingSummary } from '../src/ui/procedures/procedure-view.ts'
@@ -455,4 +455,34 @@ test('a press against red says what was not met, and any other press says nothin
   expect(procedureDecisionAgainst({ criterion: { status: 'supported', readings: [reading('A', 'supported')] } }, tags)).toBeUndefined()
   expect(procedureDecisionAgainst({}, tags)).toBeUndefined()
   expect(procedureDecisionAgainst(undefined, tags)).toBeUndefined()
+})
+
+test('a foldout reads as items with headlines', () => {
+  expect(procedureFoldoutItems('- **SI.** IF SI actuates, THEN go. «SI-ACTUATED»\n- **RCP stop.** IF low\n  THEN stop.\n- Keep level.')).toEqual([
+    { name: 'SI.', text: 'IF SI actuates, THEN go. «SI-ACTUATED»' }, { name: 'RCP stop.', text: 'IF low THEN stop.' }, { text: 'Keep level.' },
+  ])
+})
+
+test('a foldout waits for the step its heading names', () => {
+  const steps = [{ id: 'a', label: '1' }, { id: 'b', label: '5' }, { id: 'c', label: '6' }]
+  expect(procedureFoldoutBeforeStart('Foldout: applies from Step 5', steps, 'a')).toBe(true)
+  expect(procedureFoldoutBeforeStart('Foldout: applies from Step 5', steps, undefined)).toBe(true)
+  expect(procedureFoldoutBeforeStart('Foldout: applies from Step 5', steps, 'b')).toBe(false)
+  expect(procedureFoldoutBeforeStart('Foldout: applies from Step 5', steps, 'c')).toBe(false)
+  expect(procedureFoldoutBeforeStart('Foldout: applies at every step', steps, 'a')).toBe(false)
+})
+
+test('a reference document inherits the foldout of the procedure that sent the Run there, along the chain', () => {
+  const run = (procedureId: string, target: string, status = 'transferred', plantId = 'plant:a', simulationTime = '2026-11-08T08:00:00.000Z', currentStepId = 'late') => ({ procedureId, status, currentStepId, scope: { plantId }, stepStates: [{ decision: { targetKind: 'procedure', target, simulationTime } }] }) as unknown as Parameters<typeof procedurePriorFoldout>[0][number]
+  const foldout = { title: 'Foldout: applies from Step 5', text: '- Keep.', tagIds: [], sourceLine: 1 }
+  const steps = [{ id: 'early', label: '1' }, { id: 'late', label: '5' }]
+  const documents = { 'E-0': { procedureId: 'E-0', foldout, steps }, 'E-2': { procedureId: 'E-2', steps } } as unknown as Record<string, ReturnType<Parameters<typeof procedurePriorFoldout>[1]>>
+  const documentFor = (item: { procedureId: string }) => documents[item.procedureId]
+  const scope = { plantId: 'plant:a' }
+  expect(procedurePriorFoldout([run('E-0', 'E-2')], documentFor, scope, 'E-2')).toEqual({ procedureId: 'E-0', foldout, waiting: false })
+  expect(procedurePriorFoldout([run('E-0', 'E-2', 'transferred', 'plant:a', '2026-11-08T08:00:00.000Z', 'early')], documentFor, scope, 'E-2')?.waiting).toBe(true)
+  expect(procedurePriorFoldout([run('E-0', 'E-2'), run('E-2', 'ECA-2.1')], documentFor, scope, 'ECA-2.1')).toEqual({ procedureId: 'E-0', foldout, waiting: false })
+  expect(procedurePriorFoldout([run('E-0', 'E-2', 'active')], documentFor, scope, 'E-2')).toBeUndefined()
+  expect(procedurePriorFoldout([run('E-0', 'E-2', 'transferred', 'plant:b')], documentFor, scope, 'E-2')).toBeUndefined()
+  expect(procedurePriorFoldout([run('E-2', 'E-3'), run('E-3', 'E-2')], documentFor, scope, 'E-3')).toBeUndefined()
 })
