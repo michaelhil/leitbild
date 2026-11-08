@@ -1,4 +1,6 @@
-import { engineeringContinuationReceiptSchema, type EmbeddedViewEnvelope, type EngineeringContinuationReceipt } from '@leitbild/contracts'
+import { embeddedViewPublicationSchema, engineeringContinuationCancellationSchema, engineeringContinuationReceiptSchema, type EmbeddedViewEnvelope, type EngineeringContinuationReceipt } from '@leitbild/contracts'
+
+const receiptWithView = engineeringContinuationReceiptSchema.extend({ view: embeddedViewPublicationSchema }).strict()
 
 export const continuationJobId = (envelope: EmbeddedViewEnvelope): string => {
   if (envelope.moduleId !== 'world' || envelope.subject.type !== 'world.simulation-run' || envelope.viewType !== 'engineering.continuation') throw new Error('This view requires a World Run continuation')
@@ -19,22 +21,34 @@ export const continuationRequest = (receipt: EngineeringContinuationReceipt, ref
 }
 
 export const continuationClient = (envelope: EmbeddedViewEnvelope, request: typeof fetch = fetch) => {
-  const invoke = async (operation: 'inspect' | 'submit' | 'cancel', input: unknown, idempotencyKey?: string): Promise<EngineeringContinuationReceipt> => {
+  const invoke = async (operation: 'inspect' | 'submit' | 'cancel', input: unknown, idempotencyKey?: string): Promise<unknown> => {
     const response = await request(`/api/workspaces/${encodeURIComponent(envelope.subject.workspaceId)}/capabilities/world.engineering.continuation.${operation}/invoke`, {
       method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ resource: envelope.subject, input, actor: { kind: 'human' }, ...(idempotencyKey === undefined ? {} : { idempotencyKey }) }),
     })
     const body = await response.json()
     if (!response.ok) throw new Error(typeof body.error?.message === 'string' ? body.error.message : `Continuation ${operation} failed (${response.status})`)
-    const receipt = engineeringContinuationReceiptSchema.parse(body.result)
+    return body.result
+  }
+  const readReceipt = (value: unknown, jobId?: string): EngineeringContinuationReceipt => {
+    const { view, ...receipt } = receiptWithView.parse(value)
+    if (continuationJobId({ ...envelope, ...view }) !== receipt.jobId) throw new Error('The published view does not match the returned continuation')
     if (receipt.source.workspaceId !== envelope.subject.workspaceId || receipt.source.id !== envelope.subject.id || receipt.source.moduleId !== 'world') throw new Error('The returned continuation belongs to a different Run')
-    if (operation !== 'submit' && receipt.jobId !== (input as { jobId: string }).jobId) throw new Error('The returned job does not match the requested continuation')
+    if (jobId !== undefined && receipt.jobId !== jobId) throw new Error('The returned job does not match the requested continuation')
     return receipt
   }
   return {
-    inspect: (jobId: string, offset = 0) => invoke('inspect', { jobId, offset, limit: 20 }),
-    cancel: (jobId: string) => invoke('cancel', { jobId }),
-    submit: (receipt: EngineeringContinuationReceipt, refresh: boolean, key: string) => invoke('submit', continuationRequest(receipt, refresh), key),
+    inspect: async (jobId: string, offset = 0) => readReceipt(await invoke('inspect', { jobId, offset, limit: 20 }), jobId),
+    cancel: async (jobId: string) => {
+      const result = await invoke('cancel', { jobId })
+      if (typeof result === 'object' && result !== null && 'evidenceAvailable' in result && result.evidenceAvailable === false) {
+        const acknowledgement = engineeringContinuationCancellationSchema.parse(result)
+        if (acknowledgement.jobId !== jobId) throw new Error('The cancellation acknowledgement belongs to a different job')
+        return acknowledgement
+      }
+      return readReceipt(result, jobId)
+    },
+    submit: async (receipt: EngineeringContinuationReceipt, refresh: boolean, key: string) => readReceipt(await invoke('submit', continuationRequest(receipt, refresh), key)),
   }
 }
 

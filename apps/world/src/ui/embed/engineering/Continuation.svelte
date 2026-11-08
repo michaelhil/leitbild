@@ -9,6 +9,7 @@
   let { envelope }: { envelope: EmbeddedViewEnvelope } = $props()
   let receipt = $state.raw<EngineeringContinuationReceipt | null>(null)
   let failure = $state<string | null>(null)
+  let acknowledgement = $state<string | null>(null)
   let busy = $state(false)
   let offset = $state(0)
   let original = $state('')
@@ -30,18 +31,21 @@
     if (busy || closed) return
     busy = true
     try { const next = await client.inspect(current, offset); if (!closed) { receipt = next; failure = null } }
-    catch (error) { if (!closed) failure = errorText(error) }
+    catch (error) { if (!closed) { receipt = null; failure = errorText(error) } }
     finally { busy = false; schedule() }
   }
   const act = async (action: 'cancel' | 'rerun' | 'refresh'): Promise<void> => {
-    if (receipt === null || busy) return
+    if (busy || (receipt === null && action !== 'cancel')) return
     busy = true; failure = null; clearTimeout(timer)
     try {
       if (action !== 'cancel' && pendingSubmit !== null && pendingSubmit.refresh !== (action === 'refresh')) throw new Error(`A previous ${pendingSubmit.refresh ? 'refresh' : 'rerun'} has an unknown outcome. Retry that same action to resolve it before submitting another.`)
-      if (action !== 'cancel' && pendingSubmit === null) pendingSubmit = { key: crypto.randomUUID(), receipt, refresh: action === 'refresh' }
-      const next = action === 'cancel' ? await client.cancel(receipt.jobId) : await client.submit(pendingSubmit!.receipt, pendingSubmit!.refresh, pendingSubmit!.key)
+      if (action !== 'cancel' && pendingSubmit === null) pendingSubmit = { key: crypto.randomUUID(), receipt: receipt!, refresh: action === 'refresh' }
+      const next = action === 'cancel' ? await client.cancel(current) : await client.submit(pendingSubmit!.receipt, pendingSubmit!.refresh, pendingSubmit!.key)
       pendingSubmit = null
-      if (!closed) { receipt = next; current = next.jobId; offset = 0 }
+      if (!closed) {
+        if ('evidenceAvailable' in next) { receipt = null; acknowledgement = `Continuation ${next.status}. The work has stopped. Its source evidence is unavailable with current access.` }
+        else { receipt = next; current = next.jobId; offset = 0; acknowledgement = null }
+      }
     } catch (error) { if (!closed) failure = `${errorText(error)}${pendingSubmit === null ? '' : ' Retry the same action; its submission key is retained.'}` }
     finally { busy = false; schedule() }
   }
@@ -61,7 +65,10 @@
   {#if failure}<p role="alert" class="failure">{failure}</p>{#if receipt === null && current !== ''}
     <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
     <obc-button disabled={busy} onclick={() => void load()}>Retry reading</obc-button>
+    <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+    <obc-button disabled={busy} onclick={() => void act('cancel')}>Cancel continuation</obc-button>
   {/if}{/if}
+  {#if acknowledgement}<p role="status">{acknowledgement}</p>{/if}
   {#if receipt}
     <section aria-label="Coverage">
       <h2>{receipt.status.replaceAll('-', ' ')} · requested {receipt.request.horizonSeconds} s</h2>
@@ -109,7 +116,7 @@
       {/each}
     </details>
     <details><summary>Source, configuration and full receipt</summary><p>Retained until {receipt.expiresAt}</p><pre>{JSON.stringify(receipt, null, 2)}</pre></details>
-  {:else if !failure}<p role="status">Reading the retained continuation…</p>{/if}
+  {:else if !failure && !acknowledgement}<p role="status">Reading the retained continuation…</p>{/if}
   <p role="status" aria-live="polite">{busy ? 'Working…' : active ? 'Checking progress every two seconds.' : ''}</p>
 </main>
 
