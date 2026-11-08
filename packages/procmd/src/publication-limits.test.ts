@@ -56,7 +56,7 @@ test('correct lines pass', () => {
   for (const text of [
     'Power range — BELOW 5%. «POWER < 5»',
     'Power range — AT MOST 5%. «POWER <= 5»',
-    'Total flow — AT LEAST 7,000 kg/s. «FLOW >= 7000»',
+    'Total flow — AT LEAST 7000 kg/s. «FLOW >= 7000»',
     'Startup rate — ZERO OR NEGATIVE. «RATE <= 0»',
     'Breakers A and B — OPEN. «BKR-A-POS == false» «BKR-B-POS == false»',
     'Stop valve — CLOSED. «STOP-POS == 0»',
@@ -77,6 +77,7 @@ const mutants: ReadonlyArray<readonly [string, string, string]> = [
   ['words say ANY, no any', 'Breakers — AT LEAST ONE CLOSED. «BKR-A-POS == true» «BKR-B-POS == true»', 'has no «any»'],
   ['one SG given a different limit', 'SG levels — ALL BELOW 82%. «SG-A-LVL < 82» «SG-B-LVL < 82» «SG-C-LVL < 82» «SG-D-LVL < 90»', 'different limits'],
   ['wrong letter in the words', 'SG A level — BELOW 82%. «SG-B-LVL < 82»', 'SG-B-LVL is on a line naming A'],
+  ['a named letter dropped from the limits', 'Breakers A and B — OPEN. «BKR-A-POS == false»', 'the words name B'],
   ['boolean with the opposite word', 'Breakers A and B — OPEN. «BKR-A-POS == true» «BKR-B-POS == true»', 'means CLOSED'],
   ['boolean with no state words', 'Switch — ON. «NO-WORDS == true»', 'needs states:'],
   ['a limit the words never state', 'Power range is low. «POWER < 5»', 'not stated in the words'],
@@ -97,13 +98,10 @@ test('a marked document states every limit as a limit, except on an IF line', ()
   expect(checkProcedureLimits(parseProcedure(doc('Pair: [id: a]\nCheck: Is any SG uncontrolled? «SG-A-LVL»\n\n- None [outcome: normal] → END')))).toEqual([])
 })
 
-test('every leaf has a line: a decision block is refused on a marked document, and stays valid on an unmarked one', () => {
-  const fence = (condition: string) => `Pair: [id: a]\nCheck: Level. «POWER»\n\n\`\`\`procedure-decisions\n[{"branchIndex":0,${condition}}]\n\`\`\`\n\n- Met [outcome: normal] → END`
-  const comparison = '"condition":{"type":"comparison","tagId":"POWER","operator":"<","value":5,"unit":"percent","bound":"value","evidence":"engineering-diagnostic","source":"basis.md#limit","maxAgeSeconds":2}'
-  expect(checkProcedureLimits(parseProcedure(doc(fence(comparison)))).join()).toContain('has no line')
-  expect(checkProcedureLimits(parseProcedure(doc(fence('"condition":{"type":"manual","description":"d","tagIds":[],"source":"basis.md#limit"}')))).join()).toContain('manual criterion no line states')
-  expect(checkProcedureLimits(parseProcedure(doc(fence('"observation":{"capabilityId":"x.y","input":{},"source":"basis.md#limit","maxAgeSeconds":2}')))).join()).toContain('a query no line states')
-  expect(checkProcedureLimits(parseProcedure(doc(fence(comparison), 'category: x')))).toEqual([])
+test('a marked document has no decision block, and an unmarked one may', () => {
+  const fence = 'Pair: [id: a]\nCheck: Level. «POWER»\n\n```procedure-decisions\n[{"branchIndex":0,"condition":{"type":"manual","description":"d","tagIds":[],"source":"basis.md#limit"}}]\n```\n\n- Met [outcome: normal] → END'
+  expect(checkProcedureLimits(parseProcedure(doc(fence))).join()).toContain('has no decision block')
+  expect(checkProcedureLimits(parseProcedure(doc(fence, 'category: x')))).toEqual([])
 })
 
 test('a fork names its tags on a line of the step, and its numbers in the step\'s words', () => {

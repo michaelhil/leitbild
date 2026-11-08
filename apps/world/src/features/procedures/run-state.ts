@@ -9,7 +9,7 @@ import {
   procedureRunTransitionPayloadSchema, procedureRunRequestInputPayloadSchema,
 } from '../../core/model/index.ts'
 import {
-  assertAiDrives, assertAiMayDrive, assertAiStatesBasis, assertAiWorksCurrentStep,
+  aiBranchRefusal, assertAiDrives, assertAiMayDrive, assertAiStatesBasis, assertAiWorksCurrentStep,
   procedureDriver, sameProcedureDriver, type ProcedureActorKind,
 } from './driver-rules.ts'
 import { assessProcedureBranches, readProcedureBranchEvidence } from './branch-assessment.ts'
@@ -245,13 +245,15 @@ export const prepareProcedureCommand = async (config: {
         }, document, step, branchIndex: payload.branchIndex, run, ...(context.events === undefined ? {} : { events: context.events }),
       })
       const { reads } = acquired
-      const criterion = assessProcedureBranches({ step, reads, observations: acquired.observations, plantId: run.scope.plantId, simulationTime: context.clock?.() ?? context.simulationTime ?? context.at })[payload.branchIndex]!
-      if (context.actorKind === 'ai' && criterion.status !== 'supported') {
-        throw Object.assign(new Error(`Branch ${payload.branchIndex} of step ${step.label} is ${criterion.status}: ${criterion.reasons.join(' ') || 'the current evidence contradicts its declared criterion'}`), {
+      const criterion = assessProcedureBranches({ document, step, reads, observations: acquired.observations, plantId: run.scope.plantId, simulationTime: context.clock?.() ?? context.simulationTime ?? context.at })[payload.branchIndex]!
+      const refusal = context.actorKind === 'ai' ? aiBranchRefusal({ document, step, branchIndex: payload.branchIndex, criterion, reads, plantId: run.scope.plantId }) : undefined
+      if (refusal !== undefined) {
+        throw Object.assign(new Error(refusal), {
           code: 'procedure_branch_not_supported', details: { runId: run.runId, sourceId: run.sourceId, sourceRevision: run.sourceRevision, sourcePath: run.sourcePath, procedureId: run.procedureId, stepId: step.id, branchIndex: payload.branchIndex, assessment: criterion },
         })
       }
-      const evidence = reads.filter(read => evidenceTagIds.includes(read.tagId)).map(read => ({ tagId: read.tagId, reading: procedureEvidenceReadingText(read) }))
+      // A marked document asks nobody to record anything: its decisions keep every reading of the step.
+      const evidence = reads.filter(read => document.annotations?.['ai-workable'] === 'true' || evidenceTagIds.includes(read.tagId)).map(read => ({ tagId: read.tagId, reading: procedureEvidenceReadingText(read) }))
       if (context.actorKind === 'ai') assertAiStatesBasis(payload.basis)
       // Deliberate off-path decisions remain possible, but asynchronously prepared
       // requests must not race another operator's newly accepted navigation.
@@ -297,7 +299,8 @@ export const prepareProcedureCommand = async (config: {
         ...(run.observations?.find(item => item.stepId === step.id) === undefined ? {} : {
           observation: run.observations!.find(item => item.stepId === step.id)!,
         }) })
-      const assessment = branch.outcome === 'normal' ? 'complete' as const : branch.outcome === 'rno' ? 'failed' as const : branch.outcome === 'unknown' ? 'unknown' as const : undefined
+      // A press against a contradicted criterion must not leave a completed mark.
+      const assessment = branch.outcome === 'normal' ? criterion.status === 'contradicted' ? 'failed' as const : 'complete' as const : branch.outcome === 'rno' ? 'failed' as const : branch.outcome === 'unknown' ? 'unknown' as const : undefined
       const currentStepId = branch.targetKind === 'step' ? branch.target : step.id
       result.push(
         { ...base(context), type: 'procedure.step.updated', runId: run.runId, stepId: step.id,

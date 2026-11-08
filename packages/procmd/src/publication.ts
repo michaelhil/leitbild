@@ -8,19 +8,18 @@ export const isProcedureMarkdown = (content: string): boolean => {
   return frontmatter !== null && /^type:\s*(?:procedure|"procedure"|'procedure')\s*$/m.test(frontmatter[1]!)
 }
 
-const number = '-?\\d[\\d,]*(?:\\.\\d+)?'
+const number = '-?\\d+(?:\\.\\d+)?'
 const unit = '%|°C|MPa|kg/s|DPM|mSv/h'
 const unitNames: Readonly<Record<string, string>> = { '%': 'percent', '°C': 'degC', MPa: 'MPa', 'kg/s': 'kg/s', DPM: 'DPM', 'mSv/h': 'mSv/h' }
 const comparators: Readonly<Record<string, string>> = { BELOW: '<', ABOVE: '>', 'AT MOST': '<=', 'AT LEAST': '>=' }
-const numeric = (text: string): number => Number(text.replaceAll(',', ''))
 type Claim = { readonly text: string; readonly operators: ReadonlyArray<string>; readonly value: number; readonly unit?: string | undefined }
 
 /** The limits a line's capitalised state words state. */
 const claimsIn = (words: string): ReadonlyArray<Claim> => [
   ...[...words.matchAll(new RegExp(`\\b(BELOW|ABOVE|AT MOST|AT LEAST)\\s+(${number})\\s*(${unit})?`, 'g'))]
-    .map(([text, word, value, named]) => ({ text, operators: [comparators[word!]!], value: numeric(value!), unit: named })),
+    .map(([text, word, value, named]) => ({ text, operators: [comparators[word!]!], value: Number(value), unit: named })),
   ...[...words.matchAll(new RegExp(`(${number})\\s*(?:${unit})?\\s+TO\\s+(${number})\\s*(${unit})?`, 'g'))]
-    .flatMap(([text, low, high, named]) => [{ text, operators: ['>', '>='], value: numeric(low!), unit: named }, { text, operators: ['<', '<='], value: numeric(high!), unit: named }]),
+    .flatMap(([text, low, high, named]) => [{ text, operators: ['>', '>='], value: Number(low), unit: named }, { text, operators: ['<', '<='], value: Number(high), unit: named }]),
   ...(/\bZERO OR NEGATIVE\b/.test(words) ? [{ text: 'ZERO OR NEGATIVE', operators: ['<='], value: 0 }] : []),
 ]
 
@@ -58,20 +57,20 @@ const lineProblems = (parsed: ParsedProcedure, words: string, limits: ProcedureL
   if (/\b(ALL|NONE|EACH|EVERY)\b/.test(words)) for (const tag of parsed.tags) if (family(tag.id).includes('?') && tags.some(tagId => family(tagId) === family(tag.id)) && !tags.includes(tag.id)) problems.push(`the words say ALL and ${tag.id} is left out`)
   const named = lettersIn(words)
   if (named.length > 0) for (const tagId of tags) { const letter = letterOf(tagId); if (letter !== undefined && !named.includes(letter)) problems.push(`${tagId} is on a line naming ${named.join(', ')}`) }
+  for (const letter of named) if (!tags.some(tagId => letterOf(tagId) === letter)) problems.push(`the words name ${letter}, and no limit on this line reads it`)
   return problems
 }
 
-const limitKey = (branchIndex: number, item: { readonly tagId: string; readonly operator: string; readonly value: number | boolean }): string => `${branchIndex}|${item.tagId}|${item.operator}|${String(item.value)}`
 const pairOf = (step: ProcedureStep, sourceLine: number) => [...(step.pairs ?? [])].reverse().find(pair => pair.sourceLine < sourceLine)
 
-/** Words against limits, and every leaf to its line and back. Empty for a document with no limits that is not marked ai-workable. */
+/** Words against limits. A compiled leaf comes from its line, so a marked document only has to carry no decision block of its own. Empty for a document with no limits that is not marked. */
 export const checkProcedureLimits = (parsed: ParsedProcedure): ReadonlyArray<string> => {
   const marked = parsed.annotations['ai-workable'] === 'true'
   const problems: string[] = []
+  if (marked && /^\s*(`{3,}|~{3,})procedure-decisions\s*$/m.test(parsed.rawMarkdown)) problems.push(`${parsed.procedureId}: an ai-workable document has no decision block`)
   for (const step of parsed.steps) {
     const at = (line: number, problem: string) => problems.push(`${parsed.procedureId} Step ${step.label}, line ${line}: ${problem}`)
     const lines = step.blocks.filter(block => block.kind === 'check' || block.kind === 'expected' || block.kind === 'when')
-    const fromLines: string[] = []
     for (const block of lines) {
       const words = block.text.replace(/\s*«[^»]*»/g, '').trim()
       if (block.limits === undefined) {
@@ -79,25 +78,12 @@ export const checkProcedureLimits = (parsed: ParsedProcedure): ReadonlyArray<str
         continue
       }
       for (const problem of lineProblems(parsed, words, block.limits)) at(block.sourceLine, problem)
-      for (const item of block.limits.comparisons) fromLines.push(limitKey(pairOf(step, block.sourceLine)?.advisoryBranchIndex ?? -1, item))
     }
-    const stepWords = step.blocks.filter(block => block.kind !== 'basis').map(block => block.text).join(' ').replace(/(\d),(\d)/g, '$1$2')
-    for (const [index, branch] of step.branches.entries()) for (const item of branch.limits?.comparisons ?? []) {
-      fromLines.push(limitKey(index, item))
+    const stepWords = step.blocks.filter(block => block.kind !== 'basis').map(block => block.text).join(' ')
+    for (const branch of step.branches) for (const item of branch.limits?.comparisons ?? []) {
       if (!lines.some(block => block.tagIds.includes(item.tagId))) at(branch.sourceLine, `${item.tagId} tests this branch and is named on no line of the step`)
       if (typeof item.value === 'number' && !new RegExp(`(^|[^\\d.])${String(item.value).replace('.', '\\.')}($|[^\\d])`).test(stepWords)) at(branch.sourceLine, `${item.tagId} ${item.operator} ${item.value}: that number is on no line of the step`)
     }
-    if (!marked && fromLines.length === 0) continue
-    const fromDecisions = (step.decisions ?? []).flatMap(decision => {
-      if (decision.condition === undefined) { at(step.sourceLine, `branch ${decision.branchIndex} has a query no line states`); return [] }
-      return assessmentLeaves(decision.condition).flatMap(leaf => {
-        if (leaf.type === 'comparison') return [limitKey(decision.branchIndex, leaf)]
-        at(step.sourceLine, `branch ${decision.branchIndex} has a ${leaf.type} criterion no line states`)
-        return []
-      })
-    })
-    for (const key of fromDecisions) if (!fromLines.includes(key)) at(step.sourceLine, `leaf ${key} has no line`)
-    for (const key of fromLines) if (!fromDecisions.includes(key)) at(step.sourceLine, `limit ${key} has no leaf`)
   }
   return problems
 }
