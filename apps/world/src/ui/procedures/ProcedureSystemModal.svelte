@@ -428,12 +428,14 @@
   const busy = $derived(pendingControl !== null)
   const procedureRows = $derived(document ? procedureStepRows(document, selectedProcedureRun) : [])
   const catalogCategories = $derived(procedureCategories(catalog?.procedures ?? []))
-  const foldoutSideWidth = 1024
+  // A side column takes 310 px, and a step below 660 px drops its response column under its action. Short of that room the foldout is a strip.
+  const foldoutSidePaneWidth = 1080
+  let documentPaneWidth = $state(0)
   type TagOwner = Pick<ProcedureDocument, 'tags' | 'annotations'>
   // A document's own foldout, or on a reference document the foldout of the procedure that sent the Run there.
   const pinnedFoldout = $derived.by(() => {
     if (!document) return null
-    const wide = windowBounds.width >= foldoutSideWidth
+    const wide = documentPaneWidth >= foldoutSidePaneWidth
     if (document.foldout) {
       const waiting = procedureFoldoutBeforeStart(document.foldout.title, document.steps, currentProcedureStep?.step.id)
       return { ...document.foldout, owner: document as TagOwner, heading: document.foldout.title, layout: wide && !waiting ? 'side' as const : 'strip' as const }
@@ -2236,6 +2238,7 @@
         </button>
 
         <main
+          bind:clientWidth={documentPaneWidth}
           class="procedure-document"
           class:completed-run={selectedProcedureRun?.status === 'completed'}
           aria-busy={loadingProcedureId !== null}
@@ -2279,7 +2282,7 @@
               </button>
               {/if}
               {#if procedureUsageHref(document)}
-                <a class="procedure-usage-link" href={procedureUsageHref(document)} target="_blank" rel="noopener noreferrer">How to use these procedures</a>
+                <a class="procedure-usage-link" href={procedureUsageHref(document)} target="_blank" rel="noopener noreferrer" title="How to use these procedures">How to use</a>
               {/if}
             </div>
             <div class="procedure-mode-actions">
@@ -2568,6 +2571,7 @@
   :global(.procedure-modal.compact-procedure .procedure-csf-strip) { padding-bottom: 3px; }
   :global(.procedure-modal.compact-procedure .procedure-csf-shell) { flex: 0 0 auto; }
   :global(.procedure-modal.compact-procedure .procedure-tag.letter) { min-width: 44px; min-height: 44px; }
+  :global(.procedure-modal:not(.compact-procedure) .procedure-document-toolbar > .procedure-mode-actions) { flex: none; flex-wrap: nowrap; }
   :global(.procedure-modal.compact-procedure .procedure-inline-value) { font-size: 13px; white-space: nowrap; }
   :global(.procedure-modal.compact-procedure .procedure-light) { width: 44px; height: 44px; margin: -10px -6px -10px -10px; }
   :global(.procedure-modal.compact-procedure .procedure-readings) { left: 12px !important; right: 12px; top: auto !important; bottom: 12px; width: auto; }

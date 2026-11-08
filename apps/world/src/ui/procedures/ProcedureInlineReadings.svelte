@@ -74,31 +74,43 @@
   }
 </script>
 
-<div class="procedure-inline-readings" style={layout.heads.length > 0 ? `--columns: ${layout.heads.length}` : '--columns: 1'}>
+{#snippet cell(tagId: string, rowLabel: string, range: { readonly min: number; readonly max: number } | undefined, unit: string | undefined)}
+  {@const reading = procedureInlineValue(tagId, tags, indications, now)}
+  {@const points = histories.get(tagId)}
+  {@const line = points !== undefined && now !== undefined ? sparkline(points, now, WINDOW_MS, SIZE, HOLD_MS, undefined, range ? sparklineScale(range) : undefined) : null}
+  <button type="button" class="procedure-inline-value" class:stale={reading.stale} title={reading.note} onclick={() => openTag(tagId)}>{reading.value}</button>
+  {#if line}
+    {@const text = `${rowLabel}: last ${WINDOW_MS / 60_000} min, ${procedureNumberText(line.range.min, unit)} to ${procedureNumberText(line.range.max, unit)}`}
+    <svg class="procedure-inline-trend" viewBox="0 0 {SIZE.width} {SIZE.height}" width={SIZE.width} height={SIZE.height} role="img" aria-label={text}>
+      <title>{text}</title>
+      <path d={line.path} />
+      {#if line.end}<circle cx={line.end.x} cy={line.end.y} r="2" />{/if}
+    </svg>
+  {:else if layout.heads.length === 0}<span></span>{/if}
+{/snippet}
+
+<div class="procedure-inline-readings" class:named={layout.heads.length === 0} style={layout.heads.length > 0 ? `--columns: ${layout.heads.length}` : undefined}>
   {#each layout.heads as head (head)}<span class="procedure-inline-head">{head}</span>{/each}
   {#each layout.rows as row (row.label)}
     {@const range = rowRange(row.tagIds)}
     {@const unit = indications.find(item => item.tagId !== undefined && item.unit !== undefined && row.tagIds.includes(item.tagId))?.unit}
+    {@const note = layout.heads.length === 0 && row.tagIds[0] ? procedureInlineValue(row.tagIds[0], tags, indications, now).note : undefined}
     <span class="procedure-inline-label">
-      <span>{row.label}</span>
-      {#if range}<span>last {WINDOW_MS / 60_000} min: {procedureNumberText(range.min, unit)} to {procedureNumberText(range.max, unit)}</span>{/if}
+      <span>{row.label}{note ? ` (${note})` : ''}</span>
+      {#if range && layout.heads.length > 0}<span>last {WINDOW_MS / 60_000} min: {procedureNumberText(range.min, unit)} to {procedureNumberText(range.max, unit)}</span>{/if}
     </span>
     {#each row.tagIds as tagId, index (tagId ?? index)}
-      <span class="procedure-inline-cell">
-        {#if tagId !== null}
-          {@const cell = procedureInlineValue(tagId, tags, indications, now)}
-          {@const points = histories.get(tagId)}
-          {@const line = points !== undefined && now !== undefined ? sparkline(points, now, WINDOW_MS, SIZE, HOLD_MS, undefined, range ? sparklineScale(range) : undefined) : null}
-          <button type="button" class="procedure-inline-value" class:stale={cell.stale} title={cell.note} onclick={() => openTag(tagId)}>{cell.value}</button>
-          {#if line}
-            <svg class="procedure-inline-trend" viewBox="0 0 {SIZE.width} {SIZE.height}" width={SIZE.width} height={SIZE.height} role="img" aria-label="{row.label}: last {WINDOW_MS / 60_000} min, {procedureNumberText(line.range.min, unit)} to {procedureNumberText(line.range.max, unit)}">
-              <path d={line.path} />
-              {#if line.end}<circle cx={line.end.x} cy={line.end.y} r="2" />{/if}
-            </svg>
+      {#if layout.heads.length === 0}
+        {#if tagId !== null}{@render cell(tagId, row.label, range, unit)}{/if}
+      {:else}
+        <span class="procedure-inline-cell">
+          {#if tagId !== null}
+            {@render cell(tagId, row.label, range, unit)}
+            {@const note = procedureInlineValue(tagId, tags, indications, now).note}
+            {#if note}<small class="procedure-inline-note">{note}</small>{/if}
           {/if}
-          {#if cell.note}<small class="procedure-inline-note">{cell.note}</small>{/if}
-        {/if}
-      </span>
+        </span>
+      {/if}
     {/each}
   {/each}
   {#if historyError}<small class="procedure-inline-note">No trend: {historyError}</small>{/if}

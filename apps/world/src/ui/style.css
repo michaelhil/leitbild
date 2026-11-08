@@ -4365,7 +4365,7 @@ body.rail-resizing {
 
 .procedure-operator-rows {
   display: grid;
-  gap: 9px;
+  gap: 6px;
   container-type: inline-size;
 }
 
@@ -4386,7 +4386,7 @@ body.rail-resizing {
 }
 
 .procedure-response-pair > .procedure-column {
-  padding: 9px 12px;
+  padding: 6px 12px;
 }
 
 .procedure-column.response {
@@ -4435,9 +4435,11 @@ body.rail-resizing {
 .procedure-current-check summary.supported .procedure-check-glyph { color: var(--success); }
 .procedure-current-check summary.contradicted .procedure-check-glyph { color: var(--critical); }
 .procedure-instruction-list.lit { padding-inline-start: 0; list-style: none; }
+.procedure-inline-readings.named { grid-template-columns: minmax(0, 1fr) auto 64px; align-items: center; gap: 1px 10px; }
+.procedure-inline-readings.named .procedure-inline-label { grid-column: auto; margin-block-start: 0; }
 .procedure-inline-readings { display: grid; grid-template-columns: repeat(var(--columns), minmax(0, 1fr)); gap: 1px 10px; margin: 6px 0 2px; }
 .procedure-inline-head { border-block-end: 1px solid #17212b; font-size: 12.5px; font-weight: 700; }
-.procedure-inline-label { grid-column: 1 / -1; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0 8px; margin-block-start: 5px; color: #566573; font-size: 12.5px; }
+.procedure-inline-label { grid-column: 1 / -1; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0 8px; margin-block-start: 3px; color: #566573; font-size: 12.5px; }
 .procedure-inline-cell { display: block; min-width: 0; }
 .procedure-inline-value { appearance: none; display: block; padding: 0; border: 0; background: transparent; color: #17212b; font: inherit; font-weight: 700; font-variant-numeric: tabular-nums; text-align: left; cursor: pointer; }
 .procedure-inline-value:hover { text-decoration: underline; }
@@ -4534,11 +4536,13 @@ button.procedure-light:focus-visible { outline: 3px solid var(--accent, #1d4ed8)
 }
 
 .procedure-branch {
-  display: grid;
-  gap: 4px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 10px;
   width: 100%;
-  margin-bottom: 9px;
-  padding: 8px 9px;
+  margin-bottom: 4px;
+  padding: 6px 9px;
   background: #ffffff;
   border: 1px solid var(--border);
   color: inherit;
@@ -4582,6 +4586,7 @@ button.procedure-light:focus-visible { outline: 3px solid var(--accent, #1d4ed8)
 }
 
 .procedure-decision-line {
+  flex-basis: 100%;
   color: #334155;
   font-size: calc(12px * var(--procedure-font-scale));
   font-weight: 600;
