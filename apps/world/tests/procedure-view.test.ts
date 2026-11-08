@@ -423,6 +423,7 @@ test('an any line is green on one, red only when all are red, else grey', () => 
 test('a WHEN line has no colour until met and never shows red', () => {
   const [line] = rowsOf(limitDocument('When: Level — BELOW 75%. «L < 75»'))
   expect(line!.limits?.when).toBe(true)
+  expect(line!.text).toBe('WHEN Level — BELOW 75%.')
   expect(procedureLightTone(line!, 'supported')).toBe('supported')
   expect(procedureLightTone(line!, 'contradicted')).toBe('waiting')
   expect(procedureLightTone(line!, 'unknown')).toBe('waiting')

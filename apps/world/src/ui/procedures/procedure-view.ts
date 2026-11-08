@@ -130,7 +130,7 @@ export const procedureLineChecks = (step: ProcedureStep, row: Extract<OperatorRo
   const limited = row.expected.flatMap(item => item.kind === 'block' ? item.blocks.filter(block => block.limits !== undefined) : [])
   if (limited.length > 0) {
     for (const block of limited) lines.set(block.sourceLine, {
-      text: block.text.replace(trailingTags, ''),
+      text: `${block.kind === 'when' ? 'WHEN ' : ''}${block.text.replace(trailingTags, '')}`,
       comparisons: block.limits!.comparisons,
       limits: { any: block.limits!.any, when: block.kind === 'when' },
     })
