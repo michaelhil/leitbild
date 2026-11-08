@@ -53,4 +53,8 @@ test('public planning capture/qualification uses the exact Run and enforces shar
   }, 0)
   expect((await invoke('world.einsatz.planning-basis', {})).status).toBe(403)
   expect((await invoke('world.planning-source.qualify', { profile: basis.profile, qualification: basis.qualification })).body.result).toMatchObject({ allowed: false })
+  await registry.close(run.id)
+  expect(registry.get(run.id)).toBeUndefined()
+  expect((await invoke('world.planning-source.qualify', { profile: basis.profile, qualification: basis.qualification })).body.result).toMatchObject({ allowed: false, code: 'source_unloaded' })
+  expect(registry.get(run.id)).toBeUndefined()
 })

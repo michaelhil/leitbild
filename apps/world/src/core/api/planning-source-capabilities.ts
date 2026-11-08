@@ -38,7 +38,8 @@ export const planningSourceCapabilities: ReadonlyArray<CapabilityRegistration<Si
       inputSchema: z.toJSONSchema(planningSourceQualifyInputSchema), outputSchema: z.toJSONSchema(planningSourceQualificationResultSchema),
     },
     invoke: async (registry, invocation) => {
-      const runtime = await registry.load(runId(invocation))
+      const runtime = registry.get(runId(invocation))
+      if (!runtime) return json({ result: { allowed: false, code: 'source_unloaded', reason: 'Open the source Run in World before inspecting retained planning evidence' } })
       return json({ result: await runtime.planningSource.qualify(invocation.input) })
     },
   },

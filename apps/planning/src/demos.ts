@@ -73,9 +73,9 @@ export const responseDemoInputs = (basis: PlanningSourceBasis): DemoInputs => {
     profile: 'elapsed-fs', axis: { run: basis.source, unit: 'second' }, horizon: { start: 0, end }, asOf: 0,
     supplies: [supply('unit-a', 'Response A', end), supply('unit-b', 'Response B', end), supply('receiving', 'Receiving slots', end, numberFact(basis, `${site}/receiving-slots`))],
     activities: [...a.activities, ...b.activities], precedences: [...chainLinks(a.ids), ...chainLinks(b.ids)],
-    priorityOrder: [...b.ids, ...a.ids], objectives: [{ metric: 'activity-completion', activityId: 'a-handover', direction: 'minimize', tolerance: 0 }, { metric: 'weighted-tardiness', direction: 'minimize', tolerance: 0 }, { metric: 'makespan', direction: 'minimize', tolerance: 0 }],
+    priorityOrder: [...b.ids, ...a.ids], objectives: [{ metric: 'activity-completion', activityId: 'a-handover', direction: 'minimize', tolerance: 0 }, { metric: 'activity-completion', activityId: 'b-handover', direction: 'minimize', tolerance: 0 }, { metric: 'weighted-tardiness', direction: 'minimize', tolerance: 0 }, { metric: 'makespan', direction: 'minimize', tolerance: 0 }],
   })
-  assumptions.push(assumption('objective-policy', 'Objective policy', 'Job A handover, then weighted tardiness, then makespan', 'A supplied research policy for comparing these candidates. No clinical quality claim is inferred from speed or priority.'))
+  assumptions.push(assumption('objective-policy', 'Objective policy', 'Job A handover, then Job B handover, weighted tardiness and makespan', 'A supplied lexicographic research policy. Both job completion times also participate in Pareto comparison, making their tradeoff visible. No clinical quality claim is inferred from speed or priority.'))
   return { title: 'Response handover: evidence and order', problem, sourceBindings: bindings, assumptions, alternativeOrder: [...a.ids, ...b.ids] }
 }
 
