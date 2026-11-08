@@ -39,6 +39,19 @@ test('a decision query is explicit, scoped, sourced and exclusive with native co
     { branchIndex: 0, observation: { ...observation, maxAgeSeconds: -1 } },
     { branchIndex: 0, observation: { ...observation, input: { targetObjectId: 'other' } } },
     { branchIndex: 0, observation: { ...observation, input: { plantId: 'other' } } },
+    { branchIndex: 0, observation: { ...observation, input: { startingObservation: { status: 'satisfied' } } } },
+    { branchIndex: 0, observation: { ...observation, afterStep: '' } },
     { branchIndex: 0, observation: { ...observation, responsePath: '$.healthy' } },
   ]) expect(() => parseProcedureDecisions([invalid])).toThrow()
+})
+
+test('a timed branch names an observed local entry; literal starting proof and unresolved anchors are rejected', () => {
+  const observation = { capabilityId: 'world.example.condition.read', input: {}, source: '../basis.md#observe', maxAgeSeconds: 2 }
+  const entry = source([{ branchIndex: 0, observation }]).replace('- Required → END', '- Required → #observe')
+  const continuation = `\n## Step 2 [id: observe]\nCheck: Verify the observed response.\n- Response verified [outcome: normal] → END\n\`\`\`procedure-decisions\n${JSON.stringify([{ branchIndex: 0, observation: { ...observation, afterStep: 'check' } }])}\n\`\`\`\n`
+  const valid = entry.replace('## Tags', continuation + '## Tags')
+  expect(parseProcedure(valid).steps[1]!.decisions?.[0]?.observation?.afterStep).toBe('check')
+  expect(() => parseProcedure(valid.replace('"afterStep":"check"', '"afterStep":"missing"'))).toThrow('different local step')
+  expect(() => parseProcedure(valid.replace('"afterStep":"check"', '"afterStep":"observe"'))).toThrow('different local step')
+  expect(() => parseProcedure(valid.replace('- Required → #observe', '- Required → END'))).toThrow('observed branch')
 })

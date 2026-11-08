@@ -10,12 +10,11 @@
 // current one (workspace_call hands an invalid input its schema).
 // ============================================================================
 
-import type { ExecutionCall, ExecutionCallSummary, ExecutionTurn } from '../core/executions/store.ts'
+import type { ExecutionDiscoveryEvidence, ExecutionTurn } from '../core/executions/store.ts'
 
 export interface DiscoveryEvidence {
   readonly listTurns: (roomId: string, options?: { readonly limit?: number }) => ReadonlyArray<ExecutionTurn>
-  readonly listCalls: (roomId: string, turnId: string) => ReadonlyArray<ExecutionCallSummary>
-  readonly getCall: (roomId: string, turnId: string, callId: string) => ExecutionCall | undefined
+  readonly readDiscoveryEvidence: (roomId: string, turnId: string) => ReadonlyArray<ExecutionDiscoveryEvidence>
 }
 
 // The turns a conversation's operations are read from: one page of the
@@ -35,34 +34,6 @@ interface Used {
   readonly target?: unknown
 }
 
-const record = (value: unknown): Readonly<Record<string, unknown>> | undefined =>
-  typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Readonly<Record<string, unknown>> : undefined
-
-/** What one call shows: the operations a call used, and the input schemas a call returned. */
-const readCall = (call: ExecutionCall, used: Map<string, Used>, schemas: Map<string, unknown>): void => {
-  const result = call.result
-  if (result?.success !== true) return
-  const data = record(result.data)
-  if (call.tool === 'workspace_explore') {
-    for (const operation of Array.isArray(data?.operations) ? data.operations : []) {
-      const entry = record(operation)
-      if (typeof entry?.operationId === 'string' && entry.inputSchema !== undefined) schemas.set(entry.operationId, entry.inputSchema)
-    }
-    return
-  }
-  if (call.tool !== 'workspace_call') return
-  for (const value of Array.isArray(data?.results) ? data.results : []) {
-    const entry = record(value)
-    if (typeof entry?.operationId !== 'string') continue
-    // A refusal of invalid input carries the operation's schema.
-    if (entry.inputSchema !== undefined) schemas.set(entry.operationId, entry.inputSchema)
-    if (entry.success !== true) continue
-    // Most recent use last, so the newest target wins.
-    used.delete(entry.operationId)
-    used.set(entry.operationId, { operationId: entry.operationId, ...(entry.target === undefined ? {} : { target: entry.target }) })
-  }
-}
-
 /**
  * The memo for an Agent's next turn in a Room, or '' where its earlier turns
  * there used no Workspace operation.
@@ -74,10 +45,13 @@ export const discoveryMemo = (evidence: DiscoveryEvidence, roomId: string, agent
   const used = new Map<string, Used>()
   const schemas = new Map<string, unknown>()
   for (const turn of turns) {
-    for (const summary of evidence.listCalls(roomId, turn.id)) {
-      if (summary.tool !== 'workspace_call' && summary.tool !== 'workspace_explore') continue
-      const call = evidence.getCall(roomId, turn.id, summary.id)
-      if (call) readCall(call, used, schemas)
+    for (const entry of evidence.readDiscoveryEvidence(roomId, turn.id)) {
+      // Refused inner calls still teach their current input schema.
+      if (entry.inputSchema !== undefined) schemas.set(entry.operationId, entry.inputSchema)
+      if (!entry.used) continue
+      // Most recent use last, so the newest target wins.
+      used.delete(entry.operationId)
+      used.set(entry.operationId, { operationId: entry.operationId, ...(entry.target === undefined ? {} : { target: entry.target }) })
     }
   }
   if (used.size === 0) return ''

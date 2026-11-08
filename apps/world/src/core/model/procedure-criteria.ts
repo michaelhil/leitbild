@@ -43,7 +43,7 @@ export const procedureBranchAssessmentSchema = z.object({
   status: statusSchema,
   simulationTime: isoTimestampSchema,
   condition: authoredConditionSchema.optional(),
-  observation: z.object({ capabilityId: z.string().min(1), input: z.record(z.string(), z.unknown()), source: z.string().min(1), maxAgeSeconds: z.number().finite().nonnegative(), result: z.record(z.string(), z.unknown()).optional() }).strict().optional(),
+  observation: z.object({ capabilityId: z.string().min(1), input: z.record(z.string(), z.unknown()), source: z.string().min(1), maxAgeSeconds: z.number().finite().nonnegative(), afterStep: z.string().min(1).optional(), result: z.record(z.string(), z.unknown()).optional() }).strict().optional(),
   applicability: z.object({ description: z.string().min(1), source: z.string().min(1),
     model: z.object({ ref: z.string().min(1), digest: z.string().regex(/^[a-f0-9]{64}$/) }).strict().optional(),
     automation: z.object({ ref: z.string().min(1), digest: z.string().regex(/^[a-f0-9]{64}$/) }).strict().optional(),

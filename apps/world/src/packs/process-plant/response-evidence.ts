@@ -9,6 +9,7 @@ import type { ProcessPlantRuntimeInstance } from './runtime-instance.ts'
 import { processPlantSignalQuality, processPlantSignalReferenceSchema, readableProcessPlantSignalBinding, type ProcessPlantSignalQuality } from './signals.ts'
 import { processPlantSimRuntimeId } from './sim/constants.ts'
 import { processPlantEvidenceSignal, processPlantEvidenceVariable, encodeProcessPlantSampleTimeRuns, type ProcessPlantEvidenceVariable } from './procedure-evidence-facts.ts'
+import { processPlantResponseStartSchema, startingResponseCondition, startingResponseReading } from './response-start.ts'
 
 const numericOperator = z.enum(['<', '<=', '==', '!=', '>=', '>'])
 export const processPlantResponseQuerySchema = z.object({
@@ -16,6 +17,10 @@ export const processPlantResponseQuerySchema = z.object({
   basis: processPlantProcedureBasisSchema,
   condition: processPlantProcedureConditionSchema.describe('Current read-only prerequisites, reacquired with this response. A recorded response never replaces current physical feedback.'),
   windowSeconds: z.number().finite().positive().describe('Required elapsed simulation-time observation window. Its engineering source must justify the exercise window; pause does not accumulate it.'),
+  startingObservation: processPlantResponseStartSchema.optional().describe('Original native starting acquisition supplied by the pinned procedure transition. Evaluate its entire interval through now, never a replacement rolling window.'),
+  startingCondition: processPlantProcedureConditionSchema.optional().describe('Authored starting prerequisites evaluated from the retained original acquisition; independent of the required ending condition.'),
+  unchangedSettings: z.array(z.object({ signal: processPlantSignalReferenceSchema, unit: processUnitSchema }).strict()).min(1).max(128).optional()
+    .describe('Configuration must match its original acquisition, retained configuration samples and latest accepted person/AI operation identity. Configuration is not physical response.'),
   afterOperations: z.array(z.object({ signal: processPlantSignalReferenceSchema, value: z.union([z.number().finite(), z.boolean()]), unit: processUnitSchema }).strict()).min(1).optional()
     .describe('Optional command-relative response: the latest retained accepted operation on EACH exact control must match this value/unit and the current control value. Historical samples before the latest required receipt cannot qualify. Accepted commands do not prove achieved response.'),
   comparisons: z.array(z.object({
@@ -25,7 +30,9 @@ export const processPlantResponseQuerySchema = z.object({
     value: z.number().finite(),
     unit: processUnitSchema,
   }).strict()).min(1),
-}).strict()
+}).strict().superRefine((input, context) => {
+  if (input.startingObservation !== undefined && input.afterOperations !== undefined) context.addIssue({ code: 'custom', message: 'Use one response origin: an original observation or accepted control operations.' })
+})
 
 type Status = 'satisfied' | 'challenged' | 'unknown'
 const compare = (actual: number, operator: z.infer<typeof numericOperator>, expected: number): boolean =>
@@ -52,7 +59,7 @@ export const evaluateProcessPlantResponse = (config: {
     interpretation: 'Stored-sample envelope and endpoint change only; no uninterrupted hold, instrument qualification, future capacity or recovery claim.' }
   const acquired = evaluateProcessPlantProcedureCondition({ plant, condition: input.condition, basis: input.basis, ...(config.simulationTime === undefined ? {} : { simulationTime: config.simulationTime }) })
   // Point and temporal queries share the same explicit deciding-facts DTO.
-  const current = acquired
+  const current = { targetObjectId: input.targetObjectId, ...acquired }
   const evidence: Array<Record<string, unknown>> = []
   const recordings: Array<Record<string, unknown>> = []
   const anchors: Array<Record<string, unknown>> = []
@@ -69,8 +76,24 @@ export const evaluateProcessPlantResponse = (config: {
   if (!Number.isFinite(now) || interval === undefined || !Number.isSafeInteger(interval) || interval <= 0 || config.recordedHistory === undefined || config.recordedSeriesIds === undefined) {
     return failure('Run simulation time and an active Plant recording/history selection are required.')
   }
-  const durationMs = input.windowSeconds * 1000
-  const start = now - durationMs
+  const original = input.startingObservation
+  if (original !== undefined) {
+    const age = now - Date.parse(original.simulationTime), integratedAge = plant.runtime.elapsedMs() - original.simTimeMs
+    if (original.targetObjectId !== input.targetObjectId || original.status !== 'satisfied'
+      || original.modelRef !== identity.modelRef || original.modelDigest !== identity.modelDigest
+      || original.automationRef !== identity.automationRef || original.automationDigest !== identity.automationDigest
+      || !Number.isFinite(age) || age < 0 || integratedAge < 0 || Math.abs(age - integratedAge) > plant.plant.graph.timestep.fixedStepMs + 1) {
+      return failure('The original starting observation does not establish this Plant, model, I&C configuration and advancing simulation-time trajectory.')
+    }
+    if (age < input.windowSeconds * 1000 || integratedAge < input.windowSeconds * 1000) return failure('The required response duration has not elapsed since the original starting observation.')
+    if (input.startingCondition === undefined) return failure('An original starting observation requires its authored starting condition.')
+    try {
+      if (startingResponseCondition(original, input.startingCondition, plant.plant.graph) !== 'satisfied') return failure('The original acquisition does not establish every authored starting prerequisite.')
+    } catch (error) { return failure(error instanceof Error ? error.message : String(error)) }
+  }
+  if (input.unchangedSettings !== undefined && original === undefined) return failure('Unchanged configuration requires the original starting observation.')
+  const start = original === undefined ? now - input.windowSeconds * 1000 : Date.parse(original.simulationTime)
+  const durationMs = now - start
   const fromMs = start - recordedHoldMs - interval
   const limit = Math.ceil((durationMs + recordedHoldMs + interval) / interval) + 2
   if (!Number.isSafeInteger(Math.ceil(durationMs)) || !Number.isSafeInteger(limit) || !Number.isFinite(new Date(fromMs).getTime())) return failure('The requested response window cannot be represented in simulation time.')
@@ -109,6 +132,7 @@ export const evaluateProcessPlantResponse = (config: {
       let acquiredVariable: ProcessPlantEvidenceVariable | undefined
       let quality: ProcessPlantSignalQuality = { status: 'unavailable', reason: 'Signal acquisition is unavailable.' }
       let acquiredQuality = false
+      let startingValue: number | undefined
       try {
         const variable = plant.runtime.readVariableSnapshot(binding.path)
         acquiredVariable = processPlantEvidenceVariable(variable)
@@ -120,6 +144,7 @@ export const evaluateProcessPlantResponse = (config: {
               : !config.recordedSeriesIds.has(seriesId) ? 'This physical signal is not selected for recording in the Run.' : undefined
         if (reason === undefined) {
           value = variable.value as number
+          if (original !== undefined) startingValue = startingResponseReading(original, binding).variable!.value as number
           samples = [...config.recordedHistory.read({ seriesId, from, to, limit })].sort((a, b) => a.sequence - b.sequence)
           if (samples.length >= limit) reason = 'The source cadence does not establish that the entire requested sample window was returned.'
           const runtimeIds = new Set(samples.map(sample => sample.runtimeId))
@@ -148,15 +173,16 @@ export const evaluateProcessPlantResponse = (config: {
         const at = Date.parse(sample.simulationTime ?? '')
         if (at <= start && (input.afterOperations === undefined || at >= anchoredAt && sample.elapsedMs !== undefined && sample.elapsedMs > notBeforeElapsedMs)) left = index
       })
-      const selected = left < 0 ? samples : samples.slice(left)
-      const first = selected[0]
-      if (reason === undefined && (left < 0 || first === undefined)) reason = 'The retained record does not cover the left boundary of the requested response window.'
+      const selected = original === undefined ? left < 0 ? samples : samples.slice(left) : samples.filter(sample => Date.parse(sample.simulationTime ?? '') >= start)
+      const first = original === undefined ? selected[0] : { simulationTime: original.simulationTime, elapsedMs: original.simTimeMs, value: startingValue }
+      if (reason === undefined && (first === undefined || original === undefined && left < 0)) reason = 'The retained record does not cover the left boundary of the requested response window.'
+      if (reason === undefined && original !== undefined && samples.length === 0) reason = 'The retained record does not establish this signal recording across the original observation.'
       if (reason === undefined && selected.some(sample => sample.quality !== 'good' || typeof sample.value !== 'number' || !Number.isFinite(sample.value))) reason = 'A retained response sample is unavailable or not good quality.'
-      const times = selected.flatMap(sample => sample.simulationTime === undefined || !Number.isFinite(Date.parse(sample.simulationTime)) ? [] : [Date.parse(sample.simulationTime)])
+      const times = [...(original === undefined ? [] : [start]), ...selected.flatMap(sample => sample.simulationTime === undefined || !Number.isFinite(Date.parse(sample.simulationTime)) ? [] : [Date.parse(sample.simulationTime)])]
       const uniqueTimes = new Set([...times, now])
       const maximumGapMs = times.reduce((maximum, at, index) => Math.max(maximum, index === 0 ? 0 : at - times[index - 1]!), times.length === 0 ? 0 : now - times.at(-1)!)
       if (reason === undefined && (uniqueTimes.size < 2 || maximumGapMs > recordedHoldMs + interval)) reason = 'The stored record has an unresolved response gap; a fresh endpoint cannot fill it.'
-      const values = selected.flatMap(sample => typeof sample.value === 'number' ? [sample.value] : [])
+      const values = [...(startingValue === undefined ? [] : [startingValue]), ...selected.flatMap(sample => typeof sample.value === 'number' ? [sample.value] : [])]
       const minimum = value === undefined ? undefined : values.reduce((minimum, measured) => Math.min(minimum, measured), value)
       const maximum = value === undefined ? undefined : values.reduce((maximum, measured) => Math.max(maximum, measured), value)
       const change = value === undefined || typeof first?.value !== 'number' ? undefined : value - first.value
@@ -165,7 +191,7 @@ export const evaluateProcessPlantResponse = (config: {
       if (reason === undefined && (integratedSpanSeconds === undefined || integratedSpanSeconds < input.windowSeconds)) reason = 'The retained samples do not cover the required integrated physical response duration.'
       const summary = { ...base, ...(input.afterOperations === undefined ? {} : { notBeforeElapsedMs, notBeforeSimulationTime: new Date(anchoredAt).toISOString() }),
         status: reason === undefined ? 'satisfied' : 'unknown', ...(reason === undefined ? {} : { reason }),
-        storedSampleCount: selected.length, sampleTimestampOrigin: first?.simulationTime ?? to,
+        storedSampleCount: selected.length, ...(original === undefined ? {} : { originalAcquisitionIncluded: true }), sampleTimestampOrigin: first?.simulationTime ?? to,
         sampleTimeRuns: encodeProcessPlantSampleTimeRuns(times.map(at => at - (times[0] ?? now))), maximumGapMs, quality,
         retainedRuntimeIds: [...new Set(selected.map(sample => sample.runtimeId))],
         ...(selected.length === 0 ? {} : { firstSequence: selected[0]!.sequence, lastSequence: selected.at(-1)!.sequence }),
@@ -182,6 +208,56 @@ export const evaluateProcessPlantResponse = (config: {
     const reason = binding.unit !== comparison.unit ? `Response unit ${comparison.unit} does not match the native signal unit ${binding.unit}.` : cached.reason
     const status: Status = reason !== undefined || cached.status === 'unknown' || actual === undefined ? 'unknown' : compare(actual, comparison.operator, comparison.value) ? 'satisfied' : 'challenged'
     evidence.push({ recordingIndex: cached.recordingIndex, comparison, ...(actual === undefined ? {} : { actual }), status, ...(reason === undefined ? {} : { reason }) })
+  }
+  for (const setting of input.unchangedSettings ?? []) {
+    const binding = readableProcessPlantSignalBinding(plant.plant.graph, setting.signal)
+    const base = { kind: 'setting', signal: processPlantEvidenceSignal(binding), requestedFrom: new Date(start).toISOString(), requestedTo: to,
+      interpretation: 'Original and current configuration, retained sampled values and latest person/AI accepted-operation identity; not continuously observed controller authority.' }
+    let status: Status = 'unknown', reason: string | undefined
+    let detail: Record<string, unknown> = {}
+    let expectedValue: number | boolean | undefined
+    try {
+      if (original === undefined) throw new Error('Unchanged configuration requires its original acquisition.')
+      if (!binding.writable || binding.unit !== setting.unit) throw new Error('Unchanged configuration requires its canonical writable setting and native unit.')
+      const initial = startingResponseReading(original, binding, true)
+      const ending = startingResponseReading(current, binding, true)
+      const initialValue = initial.variable!.value
+      expectedValue = initialValue
+      const seriesId = recordingSeriesIdFor(plant.plant.id, binding.path)
+      const rows = [...config.recordedHistory.read({ seriesId, from, to, limit })].sort((a, b) => a.sequence - b.sequence)
+      const selected = rows.filter(row => Date.parse(row.simulationTime ?? '') >= start)
+      const initialOperation = initial.settingOperation, endingOperation = ending.settingOperation
+      const changedOperation = initialOperation?.available === true && endingOperation?.available === true
+        && JSON.stringify(initialOperation.latest) !== JSON.stringify(endingOperation.latest)
+      const validRows = rows.every((row, index) => {
+        const at = Date.parse(row.simulationTime ?? ''), previous = rows[index - 1]
+        const offset = row.elapsedMs === undefined ? Number.NaN : at - row.elapsedMs - clockOrigin
+        return row.runtimeId === processPlantSimRuntimeId && row.seriesId === seriesId && Number.isFinite(at) && at >= fromMs && at <= now
+          && row.elapsedMs !== undefined && row.elapsedMs <= plant.runtime.elapsedMs() && offset >= -1 && offset < fixedStepMs + 1
+          && (previous === undefined || at >= Date.parse(previous.simulationTime!) && row.elapsedMs >= previous.elapsedMs!)
+      })
+      const changedValue = ending.variable!.value !== initialValue || validRows
+        && selected.some(row => row.quality === 'good' && typeof row.value === typeof initialValue && row.value !== initialValue)
+      const times = [start, ...selected.map(row => Date.parse(row.simulationTime!)), now]
+      const maximumGapMs = times.reduce((maximum, at, index) => Math.max(maximum, index === 0 ? 0 : at - times[index - 1]!), 0)
+      reason = changedOperation ? 'An accepted person/AI operation changed the original configuration operation identity.'
+        : changedValue ? 'Current or retained configuration differs from its original acquisition.'
+          : !config.recordedSeriesIds.has(seriesId) || rows.length === 0 ? 'The configuration record is unavailable for the original observation.'
+            : rows.length >= limit || !validRows ? 'The retained configuration does not establish this complete simulation-time trajectory.'
+              : selected.some(row => row.quality !== 'good' || typeof row.value !== typeof initialValue) ? 'A retained configuration point is unavailable or not good quality.'
+                : maximumGapMs > recordedHoldMs + interval ? 'The retained configuration has an unresolved observation gap.'
+                  : initialOperation?.available !== true || endingOperation?.available !== true ? 'The accepted-operation identity is unavailable.' : undefined
+      status = changedOperation || changedValue ? 'challenged' : reason === undefined ? 'satisfied' : 'unknown'
+      detail = { seriesId, first: { simulationTime: original.simulationTime, elapsedMs: original.simTimeMs, value: initialValue },
+        current: { simulationTime: to, elapsedMs: plant.runtime.elapsedMs(), ...ending.variable }, quality: ending.quality,
+        storedSampleCount: selected.length, sampleTimestampOrigin: original.simulationTime,
+        sampleTimeRuns: encodeProcessPlantSampleTimeRuns(selected.map(row => Date.parse(row.simulationTime!) - start)), maximumGapMs,
+        originalOperation: initialOperation, currentOperation: endingOperation }
+    } catch (error) { reason = error instanceof Error ? error.message : String(error) }
+    const recordingIndex = recordings.length
+    recordings.push({ ...base, ...detail, status, ...(reason === undefined ? {} : { reason }) })
+    evidence.push({ recordingIndex, comparison: { signal: setting.signal, statistic: 'unchanged', operator: '==', ...(expectedValue === undefined ? {} : { value: expectedValue }), unit: setting.unit },
+      status, ...(reason === undefined ? {} : { reason }) })
   }
   const status = combine([current.status, ...evidence.map(row => row.status as Status)])
   return { ...identity, status, ...(status === 'unknown' ? { reason: 'The current prerequisites or explicitly sampled response cannot be established from the retained evidence.' } : {}), current, evidence, recordings, afterOperations: anchors }

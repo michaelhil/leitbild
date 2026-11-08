@@ -1,5 +1,5 @@
 import type { ProcedureAssessmentCondition, ProcedureDecision, ProcedureDecisionObservation } from '@leitbild/procmd'
-import type { IsoTimestamp, ProcedureStep } from '../../core/model/index.ts'
+import type { IsoTimestamp, ProcedureStep, ProcedureRunState, SimulationRunEvent } from '../../core/model/index.ts'
 import type { ProcedureBranchAssessment, ProcedureCriterionReading as CriterionReading, ProcedureCriterionStatus } from '../../core/model/procedure-criteria.ts'
 import type { ProcedureDocument } from '../../core/model/index.ts'
 import { readProcedureTags, type ProcedureObservationPort, type ProcedureTagRead } from './pack-observations.ts'
@@ -142,8 +142,47 @@ export const assessProcedureBranches = (config: CriterionAcquisition & {
 
 export const readProcedureBranchObservation = async (
   port: () => ProcedureObservationPort, binding: ProcedureDecisionObservation,
+  context?: { readonly run: ProcedureRunState; readonly step: ProcedureStep; readonly events: ReadonlyArray<SimulationRunEvent> },
 ): Promise<AcquiredObservation> => {
-  try { return { result: await port().readObservation(binding) } }
+  try {
+    if (binding.afterStep === undefined) return { result: await port().readObservation(binding) }
+    if (context === undefined || context.run.status !== 'active' || context.run.currentStepId !== context.step.id) throw new Error('The observation requires the accepted starting transition for the current step.')
+    // Use the latest navigation event for this exact visit, never a comment or
+    // an old successful step state. Manual repositioning and resumption break
+    // the anchor; changing driver alone does not erase an ongoing observation.
+    let navigationIndex = -1
+    for (let index = context.events.length - 1; index >= 0; index--) {
+      const event = context.events[index]!
+      const navigation = event.type === 'procedure.run.started' ? event.run.runId === context.run.runId
+        : 'runId' in event && event.runId === context.run.runId && (event.type === 'procedure.branch.selected'
+          || event.type === 'procedure.run.resumed' || event.type === 'procedure.run.closed'
+          || event.type === 'procedure.step.updated' && event.currentStepId !== undefined)
+      if (navigation) { navigationIndex = index; break }
+    }
+    let latest = context.events[navigationIndex]
+    // A selected branch and its placekeeping update are one accepted batch.
+    // Only that adjacent update may share the branch's anchor.
+    if (latest?.type === 'procedure.step.updated') {
+      const selected = context.events[navigationIndex - 1]
+      if (selected?.type === 'procedure.branch.selected' && selected.runId === latest.runId && selected.stepId === latest.stepId
+        && selected.targetKind === 'step' && selected.target === latest.currentStepId
+        && selected.provenance.causedByCommandId !== undefined && selected.provenance.causedByCommandId === latest.provenance.causedByCommandId) latest = selected
+    }
+    if (latest?.type !== 'procedure.branch.selected' || latest.targetKind !== 'step'
+      || latest.target !== context.step.id || latest.criterion?.status !== 'supported') throw new Error('No supported observed transition establishes this visit\'s starting frame.')
+    const repeated = latest.stepId === context.step.id && latest.outcome === 'normal' && latest.criterion.observation?.afterStep === binding.afterStep
+    if (latest.stepId !== binding.afterStep && !repeated) throw new Error('The latest navigation did not enter from the declared observation start.')
+    const retained = latest.criterion.observation?.result
+    if (retained?.status !== 'satisfied') throw new Error('The preceding interval has no supported native observation.')
+    // A supported self-loop starts at the preceding checked endpoint. Any gap
+    // before the next read remains inside the next interval, never rolled away.
+    const startingObservation = repeated ? retained.current as Readonly<Record<string, unknown>> | undefined : retained
+    if (startingObservation === undefined || startingObservation.status !== 'satisfied' || startingObservation.targetObjectId !== context.run.scope.plantId
+      || startingObservation.evidenceKind !== 'engineering-diagnostic' || startingObservation.provenance !== 'runtime-model'
+      || typeof startingObservation.simulationTime !== 'string' || !Number.isFinite(Date.parse(startingObservation.simulationTime))
+      || Date.parse(startingObservation.simulationTime) > Date.parse(latest.simulationTime)) throw new Error('The accepted starting transition has no applicable native observation.')
+    return { result: await port().readObservation({ ...binding, input: { ...binding.input, startingObservation } }) }
+  }
   catch (error) { return { error: error instanceof Error ? error.message : String(error) } }
 }
 
@@ -153,12 +192,15 @@ export const readProcedureBranchEvidence = async (config: {
   readonly document: ProcedureDocument
   readonly observations: () => ProcedureObservationPort
   readonly branchIndex?: number
+  readonly run?: ProcedureRunState
+  readonly events?: ReadonlyArray<SimulationRunEvent>
 }): Promise<{ readonly reads: ReadonlyArray<ProcedureTagRead>; readonly observations: ReadonlyMap<number, AcquiredObservation> }> => {
   const reads = await readProcedureTags({ observations: config.observations, declared: config.document.tags, tagIds: config.step.tagIds })
   const observations = new Map<number, AcquiredObservation>()
   for (const decision of config.step.decisions ?? []) {
     if (decision.observation === undefined || config.branchIndex !== undefined && config.branchIndex !== decision.branchIndex) continue
-    observations.set(decision.branchIndex, await readProcedureBranchObservation(config.observations, decision.observation))
+    observations.set(decision.branchIndex, await readProcedureBranchObservation(config.observations, decision.observation,
+      config.run === undefined ? undefined : { run: config.run, step: config.step, events: config.events ?? [] }))
   }
   return { reads, observations }
 }

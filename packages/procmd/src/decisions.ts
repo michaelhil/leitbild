@@ -5,6 +5,8 @@ export interface ProcedureDecisionObservation {
   readonly input: Readonly<Record<string, unknown>>
   readonly source: string
   readonly maxAgeSeconds: number
+  /** Native observation retained by the accepted local transition that entered this step. */
+  readonly afterStep?: string
 }
 
 /** Branch eligibility is authored separately from human placekeeping and step engineering guidance. */
@@ -31,12 +33,14 @@ export const parseProcedureDecisions = (value: unknown): ReadonlyArray<Procedure
     if (row.observation !== undefined) {
       if (row.observation === null || typeof row.observation !== 'object' || Array.isArray(row.observation)) throw new Error('decision observation requires an object')
       const spec = row.observation as Record<string, unknown>
-      if (Object.keys(spec).some(key => !['capabilityId', 'input', 'source', 'maxAgeSeconds'].includes(key))) throw new Error('unsupported decision observation field')
+      if (Object.keys(spec).some(key => !['capabilityId', 'input', 'source', 'maxAgeSeconds', 'afterStep'].includes(key))) throw new Error('unsupported decision observation field')
       if (typeof spec.capabilityId !== 'string' || !spec.capabilityId.trim() || typeof spec.source !== 'string' || !spec.source.trim()) throw new Error('decision observation requires capabilityId and source')
       if (typeof spec.input !== 'object' || spec.input === null || Array.isArray(spec.input)) throw new Error('decision observation requires object input')
-      if ('targetObjectId' in spec.input || 'plantId' in spec.input) throw new Error('decision observation scope belongs to the procedure Run')
+      if ('targetObjectId' in spec.input || 'plantId' in spec.input || 'startingObservation' in spec.input) throw new Error('decision observation scope and starting observation belong to the procedure Run')
       if (typeof spec.maxAgeSeconds !== 'number' || !Number.isFinite(spec.maxAgeSeconds) || spec.maxAgeSeconds < 0) throw new Error('decision observation requires nonnegative finite maxAgeSeconds')
-      observation = { capabilityId: spec.capabilityId, input: spec.input as Record<string, unknown>, source: spec.source, maxAgeSeconds: spec.maxAgeSeconds }
+      if (spec.afterStep !== undefined && (typeof spec.afterStep !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(spec.afterStep))) throw new Error('decision observation afterStep requires a local step id')
+      observation = { capabilityId: spec.capabilityId, input: spec.input as Record<string, unknown>, source: spec.source, maxAgeSeconds: spec.maxAgeSeconds,
+        ...(spec.afterStep === undefined ? {} : { afterStep: spec.afterStep as string }) }
     }
     let applicability: ProcedureDecision['applicability']
     if (row.applicability !== undefined) {

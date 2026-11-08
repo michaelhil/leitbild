@@ -3,7 +3,7 @@ import { assessmentLeaves } from '@leitbild/procmd'
 import { z } from 'zod'
 import {
   isoTimestampSchema, procedureRunIdSchema, procedureRunScopeSchema, procedureSourceIdSchema, procedureStepIdSchema,
-  type ProcedureDocument, type ProcedureRunState, type ProcedureStep,
+  type ProcedureDocument, type ProcedureRunState, type ProcedureStep, type SimulationRunEvent,
 } from '../../core/model/index.ts'
 import { procedureBranchAssessmentSchema } from '../../core/model/procedure-criteria.ts'
 import type { SimulationRunStateSnapshot } from '../../core/simulation-runs/state-store.ts'
@@ -50,6 +50,7 @@ export const readProcedureChecks = async (config: {
   readonly canInspect: (plantId: string) => boolean
   readonly document: (run: ProcedureRunState) => Promise<ProcedureDocument>
   readonly observations: (plantId: string) => ProcedureObservationPort
+  readonly events?: () => ReadonlyArray<SimulationRunEvent>
 }): Promise<ProcedureChecksView> => {
   const { input } = config
   const selectedRun = (snapshot: ReturnType<typeof config.snapshot>) =>
@@ -86,7 +87,8 @@ export const readProcedureChecks = async (config: {
   const reads = tagIds.length === 0 ? [] : await readProcedureTags({ observations: port, declared: document.tags, tagIds })
   const observations = new Map<number, Awaited<ReturnType<typeof readProcedureBranchObservation>>>()
   for (const decision of decisions) {
-    if (decision.observation !== undefined) observations.set(decision.branchIndex, await readProcedureBranchObservation(port, decision.observation))
+    if (decision.observation !== undefined) observations.set(decision.branchIndex, await readProcedureBranchObservation(port, decision.observation,
+      { run, step, events: config.events?.() ?? [] }))
   }
 
   const after = config.snapshot()
