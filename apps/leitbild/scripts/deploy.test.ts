@@ -55,7 +55,11 @@ test('production artifact includes every local workspace dependency', async () =
 })
 
 test('production install includes manifests for development-only lockfile workspaces', () => {
-  expect(INSTALL_MANIFEST_ONLY_WORKSPACE_PATHS).toEqual(['packages/integration-tests'])
+  expect(INSTALL_MANIFEST_ONLY_WORKSPACE_PATHS).toEqual(['packages/integration-tests', 'apps/planning'])
+  const included = new Set<string>([...productionAppPaths, ...PRODUCTION_DEPENDENCY_WORKSPACE_PATHS, ...INSTALL_MANIFEST_ONLY_WORKSPACE_PATHS])
+  for (const pattern of ['apps/*/package.json', 'packages/*/package.json']) {
+    for (const path of new Bun.Glob(pattern).scanSync({ cwd: workspaceRoot })) expect(included.has(path.slice(0, -'/package.json'.length))).toBe(true)
+  }
 })
 
 test('Module routing has one production owner and cannot be overridden by provider environment files', async () => {

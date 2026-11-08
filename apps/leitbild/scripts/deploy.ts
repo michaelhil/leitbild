@@ -18,6 +18,7 @@ export const PRODUCTION_DEPENDENCY_WORKSPACE_PATHS = [
 ] as const
 export const INSTALL_MANIFEST_ONLY_WORKSPACE_PATHS = [
   'packages/integration-tests',
+  'apps/planning',
 ] as const
 const DEPLOY_ROOT = '/opt/leitbild'
 const CURRENT_LINK = `${DEPLOY_ROOT}/current`
