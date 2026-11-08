@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { runOnMount } from '../svelte-lifecycle.svelte.ts'
   import { procedurePlantTime } from './procedure-run-selectors.ts'
   import type { ProcedureLightRow, ProcedureLightTone } from './procedure-view.ts'
 
@@ -59,28 +60,28 @@
     if (open && panel) position()
   })
 
-  $effect(() => {
-    if (!open) return
+  runOnMount(() => {
     const pressElsewhere = (event: PointerEvent): void => {
       const target = event.target as Node
-      if (!button?.contains(target) && !panel?.contains(target)) hide()
+      if (open && !button?.contains(target) && !panel?.contains(target)) hide()
     }
     const key = (event: KeyboardEvent): void => {
-      if (event.key !== 'Escape') return
+      if (!open || event.key !== 'Escape') return
       event.stopPropagation()
       event.preventDefault()
       hide(true)
     }
+    const resize = (): void => { if (open) position() }
     window.addEventListener('pointerdown', pressElsewhere, true)
     window.addEventListener('keydown', key, true)
-    window.addEventListener('resize', position)
+    window.addEventListener('resize', resize)
     return () => {
+      clearTimeout(timer)
       window.removeEventListener('pointerdown', pressElsewhere, true)
       window.removeEventListener('keydown', key, true)
-      window.removeEventListener('resize', position)
+      window.removeEventListener('resize', resize)
     }
   })
-  $effect(() => () => clearTimeout(timer))
 
   const hasLimit = $derived(rows.some(row => row.limit !== undefined))
   const readAt = $derived(rows.find(row => row.sampledAt !== undefined)?.sampledAt)

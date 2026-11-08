@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Snippet } from 'svelte'
+  import { runOnMount } from '../svelte-lifecycle.svelte.ts'
   import { procedureFoldoutItems } from './procedure-view.ts'
 
   // A procedure's standing duties, kept in view: a side column, or a strip of headlines
@@ -20,13 +21,12 @@
   let root = $state<HTMLElement | null>(null)
   const opened = $derived(openIndex === null ? undefined : items[openIndex])
 
-  $effect(() => {
-    if (openIndex === null) return
+  runOnMount(() => {
     const pressElsewhere = (event: PointerEvent): void => {
-      if (!root?.contains(event.target as Node)) openIndex = null
+      if (openIndex !== null && !root?.contains(event.target as Node)) openIndex = null
     }
     const key = (event: KeyboardEvent): void => {
-      if (event.key !== 'Escape') return
+      if (openIndex === null || event.key !== 'Escape') return
       event.stopPropagation()
       event.preventDefault()
       const index = openIndex
