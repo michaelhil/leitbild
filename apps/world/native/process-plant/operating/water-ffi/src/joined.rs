@@ -1742,12 +1742,16 @@ mod integrated {
                 restart.transaction_passes
             };
         analyses.keep_passes(restart.transaction_passes);
-        // R4-CLIMB-SEAT: a restart that seats rods with the relief shut.
+        // R4-CLIMB-SEAT: a located root that seats rods, with the relief shut.
         let relief_shut = joined
             .network
             .pzr_boundary()
             .is_none_or(|(b, _)| b.relief.as_ref().is_none_or(|r| r.lift.value == 0.));
-        analyses.keep_for_seat(transacted.contains(&"rods") && relief_shut);
+        analyses.keep_for_seat(
+            matches!(discrete, Discrete::Roots(_))
+                && transacted.contains(&"rods")
+                && relief_shut,
+        );
         let matrices = match assembly {
             Assembly::Blocks(structure) => Matrices::Blocks {
                 structure,
