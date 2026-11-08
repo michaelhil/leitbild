@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { z } from 'zod'
-import { createPlanningClient } from './api.ts'
+import { createPlanningClient, sourceUnavailable } from './api.ts'
 
 describe('Planning Host boundary', () => {
   test('Study operations carry the exact Resource while source refresh remains Workspace scoped', async () => {
@@ -20,5 +20,17 @@ describe('Planning Host boundary', () => {
     await expect(refusal.demos()).rejects.toThrow('This Run is no longer shared.')
     const malformed = createPlanningClient('workspace', (async () => Response.json({ result: { demos: [{ id: 'invented', title: 'bad', description: 'bad' }] } })))
     await expect(malformed.demos()).rejects.toThrow()
+  })
+  test('known source refusals retain their code so every action can clear cached evidence', async () => {
+    const client = createPlanningClient('workspace', async () => Response.json({ error: { code: 'planning_source_unavailable', message: 'The retained source is no longer qualified.' } }, { status: 403 }))
+    try {
+      await client.demos()
+      throw new Error('Expected source refusal')
+    } catch (error) {
+      expect(sourceUnavailable(error)).toBe(true)
+      expect(error).toMatchObject({ status: 403, code: 'planning_source_unavailable', message: 'The retained source is no longer qualified.' })
+    }
+    expect(sourceUnavailable(new Error('ordinary validation error'))).toBe(false)
+    expect(sourceUnavailable(undefined)).toBe(false)
   })
 })

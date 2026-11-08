@@ -9,6 +9,8 @@ export const comparisonSchema = z.object({
   pairs: z.array(z.object({ left: z.string(), right: z.string(), lexicographic: z.number().optional(), leftDominates: z.boolean().optional(), rightDominates: z.boolean().optional(), warning: z.string().optional() })),
 })
 export type Comparison = z.infer<typeof comparisonSchema>
+export type PlanningRequestError = Error & { readonly status: number; readonly code?: string }
+export const sourceUnavailable = (error: unknown): boolean => error instanceof Error && 'code' in error && error.code === 'planning_source_unavailable'
 
 type PlanningTransport = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
 export const createPlanningClient = (workspaceId: string, transport: PlanningTransport = fetch) => {
@@ -18,7 +20,9 @@ export const createPlanningClient = (workspaceId: string, transport: PlanningTra
     const body: unknown = await response.json()
     if (!response.ok) {
       const failure = z.object({ error: z.object({ message: z.string(), code: z.string().optional() }) }).safeParse(body)
-      throw new Error(failure.success ? failure.data.error.message : `Request failed (${response.status})`)
+      throw Object.assign(new Error(failure.success ? failure.data.error.message : `Request failed (${response.status})`), {
+        status: response.status, ...(failure.success && failure.data.error.code ? { code: failure.data.error.code } : {}),
+      }) satisfies PlanningRequestError
     }
     return body
   }

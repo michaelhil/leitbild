@@ -3,7 +3,7 @@
   import type { ModuleResourceDescriptor } from '@leitbild/contracts'
   import { currentProblemRevision, type Study, type Candidate, type SourceBinding } from '../study-model.ts'
   import { planningProblemSchema, type PlanningProblem, type PlanningActivity } from '../model.ts'
-  import { createPlanningClient, type Demo, type Comparison } from './api.ts'
+  import { createPlanningClient, sourceUnavailable, type Demo, type Comparison } from './api.ts'
   import { barPosition, elapsed, fittedHorizon, movePriority, optionalSecond } from './presentation.ts'
 
   const match = location.pathname.match(/^\/workspaces\/([^/]+)\/planning$/)
@@ -89,7 +89,10 @@
     busy = true
     error = null
     notice = ''
-    try { await work() } catch (cause) { error = cause instanceof Error ? cause.message : String(cause) }
+    try { await work() } catch (cause) {
+      if (sourceUnavailable(cause)) { study = null; comparison = null }
+      error = cause instanceof Error ? cause.message : String(cause)
+    }
     finally { busy = false }
   }
   const openStudy = (id: string): void => { window.parent.location.assign(hostHref(id)) }
