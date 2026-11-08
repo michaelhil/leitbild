@@ -2498,13 +2498,14 @@ mod integrated {
                 }
                 // R4-JAC-BASE's rule: on a seat's climb the residual's evaluation
                 // at this very state stands while the relief is shut.
-                let on_base = climb.seat
-                    && self
-                        .base
-                        .matches(time, y, yp, self.joined.counters.residuals)
-                    && self.joined.network.pzr_boundary().is_none_or(|(b, _)| {
-                        b.relief.as_ref().is_none_or(|r| r.lift.value == 0.)
-                    });
+                let on_base =
+                    climb.seat
+                        && self
+                            .base
+                            .matches(time, y, yp, self.joined.counters.residuals)
+                        && self.joined.network.pzr_boundary().is_none_or(|(b, _)| {
+                            b.relief.as_ref().is_none_or(|r| r.lift.value == 0.)
+                        });
                 let reuse = on_base.then(|| self.joined.network.reuse());
                 crate::basis_assembly(true);
                 leitbild_operating_plant::network::heaters::hold_endpoints(true);
