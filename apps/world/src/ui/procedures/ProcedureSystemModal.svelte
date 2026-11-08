@@ -35,6 +35,9 @@
   import { procedureDialog } from './procedure-dialog.ts'
   import { procedureFollowAction, procedureFollowMark, type ProcedureFollowMark } from './procedure-follow.ts'
   import ProcedureTagDisplay from './ProcedureTagDisplay.svelte'
+  import { procedureTagDisplayPlan } from './procedure-tag-display.ts'
+  import { defaultDisplayEnvelope, readDefaultDisplay } from '../process-display/default-display.ts'
+  import { activeWorkspaceId } from '../workspace-context.ts'
   import type { EmbeddedViewListing } from '@leitbild/contracts'
   import {
     closeProcedureRun,
@@ -1382,6 +1385,22 @@
     envelope,
   })
 
+  // A tag goes straight to its display window. Where the unit has no display for it or no window is offered, the dialog says why.
+  const openTagDisplay = async (tagId: ProcedureTagId): Promise<void> => {
+    const plan = procedureTagDisplayPlan(currentUnitContext.plantId, tagId, validationFor(tagId))
+    if (openDisplay === undefined || plan.kind !== 'display') {
+      openTagId = tagId
+      return
+    }
+    try {
+      const view = await readDefaultDisplay(simulationRunId, plan.subject)
+      openDisplay(tagDisplayListing(tagId, defaultDisplayEnvelope({ workspaceId: activeWorkspaceId(), simulationRunId, view })))
+    } catch {
+      // The dialog composes the same display and states the refusal.
+      openTagId = tagId
+    }
+  }
+
   const closeBasis = (): void => {
     basisReadGeneration++
     basisRequest = null
@@ -1560,7 +1579,7 @@
 {#snippet procedureText(text: string, tagIds: readonly string[])}
   {#each procedureTextSegments(text, tagIds, document?.sourceUrl) as segment}
     {#if segment.kind === 'tag'}
-      <button type="button" class="procedure-tag" title="Show {segment.text} on a process display" onclick={() => { openTagId = segment.text as ProcedureTagId }}>{segment.text}</button>
+      <button type="button" class="procedure-tag" title="Show {segment.text} on a process display" onclick={() => void openTagDisplay(segment.text as ProcedureTagId)}>{segment.text}</button>
     {:else if segment.kind === 'link'}
       {@const sourceRequest = document ? procedureSourceEvidenceRequest(segment.href, document) : undefined}
       {#if sourceRequest}
@@ -1640,7 +1659,7 @@
     </summary>
     <dl aria-label="Live indications">
       {#each evidence.operands as { comparison, reading } (comparison.tagId)}
-        <dt><button type="button" class="procedure-basis-link" onclick={() => { openTagId = comparison.tagId as ProcedureTagId }}>{procedureReadingName(comparison.tagId, document?.tags ?? []) ?? comparison.tagId}</button></dt>
+        <dt><button type="button" class="procedure-basis-link" onclick={() => void openTagDisplay(comparison.tagId as ProcedureTagId)}>{procedureReadingName(comparison.tagId, document?.tags ?? []) ?? comparison.tagId}</button></dt>
         {@const row = procedureLineReadingText(line.text, comparison, reading)}
         <dd>
           {#if reading?.value !== undefined && reading.status !== 'unknown'}
