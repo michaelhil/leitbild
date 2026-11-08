@@ -34,6 +34,7 @@ import { storedDashboards } from '../../features/displays/dashboards/dashboards.
 import { observablesSearchInputSchema, observablesSearchOutputSchema, searchObservables } from '../../features/displays/observation/search.ts'
 import { displayCapabilities } from './display-capabilities.ts'
 import { planningSourceCapabilities } from './planning-source-capabilities.ts'
+import { engineeringCapabilities } from './engineering-capabilities.ts'
 import { guidanceCapabilities } from './guidance-capabilities.ts'
 import { isGuidanceFailure } from '../guides/errors.ts'
 import { isCapabilityRejection } from '../../simulation/capability-rejection.ts'
@@ -886,6 +887,7 @@ const visibleChangeEvents = (
 
 const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, Response>(WORLD_MODULE_ID, [
   ...planningSourceCapabilities,
+  ...engineeringCapabilities,
   ...guidanceCapabilities(),
   {
     descriptor: {
@@ -1927,7 +1929,8 @@ const invokeCapability = async (
   const invocation = moduleCapabilityInvocationSchema.parse(rawInvocation)
   if (invocation.workspaceId !== registry.workspaceId) return apiError(409, 'workspace_scope_mismatch', 'Invocation belongs to another Workspace')
   if (invocation.capabilityId !== capabilityId) return apiError(409, 'capability_scope_mismatch', 'Invocation Capability does not match the route')
-  if (invocation.idempotencyKey !== undefined && worldCapabilities.descriptors.some(descriptor => descriptor.id === capabilityId)) return apiError(400, 'idempotency_not_supported', 'This Capability does not support keyed retries; inspect the Resource after an uncertain result.')
+  const builtinDescriptor = worldCapabilities.descriptors.find(descriptor => descriptor.id === capabilityId)
+  if (invocation.idempotencyKey !== undefined && builtinDescriptor && !builtinDescriptor.acceptsIdempotencyKey) return apiError(400, 'idempotency_not_supported', 'This Capability does not support keyed retries; inspect the Resource after an uncertain result.')
 
   const release = invocation.resource?.type === 'world.simulation-run' && capabilityId !== 'world.simulation-run.delete'
     ? registry.acquireLease(requireSimulationRunResource(invocation), 'api') : undefined

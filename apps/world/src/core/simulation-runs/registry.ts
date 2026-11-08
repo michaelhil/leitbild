@@ -49,6 +49,9 @@ import { guideAttemptIdSchema, guideAttemptSchema } from '../guides/attempt.ts'
 import { createPresentationDelivery, type PresentationDelivery } from '../guides/presentation.ts'
 import type { GuidePromptEvidenceReader } from '../guides/prompt-evidence.ts'
 import { writeAtomic } from '../storage/atomic-write.ts'
+import type { RunContinuationSeed } from './execution.ts'
+import type { PackRuntimeQuery } from '../../simulation/protocol.ts'
+import { createEngineeringService, type EngineeringService } from '../engineering/service.ts'
 
 const maxRestoredEventHistoryBytes = 8 * 1024 * 1024
 
@@ -116,6 +119,11 @@ interface MaximumPaceController {
 
 export interface SimulationRunRegistry {
   readonly workspaceId: WorkspaceId
+  readonly engineering: EngineeringService
+  readonly sourceEpoch: (id: SimulationRunId) => Promise<string | null>
+  readonly captureContinuation: (id: SimulationRunId, reads: ReadonlyArray<PackRuntimeQuery>) => Promise<RunContinuationSeed>
+  /** Used by the private worker registry only, rooted outside public Run storage. */
+  readonly restoreContinuation: (seed: RunContinuationSeed) => Promise<SimulationRunRuntime>
   readonly scenarioAuthoringCatalog: ScenarioAuthoringCatalog
   readonly installedCapabilities: ReadonlyArray<ActiveSimulationCapability>
   readonly workspaceCapabilities: ReadonlyArray<PackWorkspaceCapability>
@@ -223,6 +231,7 @@ export const createSimulationRunRegistry = (config: {
   const idleRuntimeCloseDelayMs = config.idleRuntimeCloseDelayMs ?? defaultSimulationRunRuntimePolicy.idleRuntimeCloseDelayMs
   const armIdleRuntimeClose = config.idleRuntimeCloseTimer ?? wallClockIdleRuntimeCloseTimer
   let nextLeaseNumber = 0
+  let engineering: EngineeringService | undefined
   const workspacePaths = worldWorkspacePaths(config.dataDir, config.workspaceId)
   const workspaceRoot = workspacePaths.root
   const storageBudget = config.storageBudget ?? createStorageBudget({ root: config.dataDir })
@@ -718,6 +727,11 @@ export const createSimulationRunRegistry = (config: {
       throw new Error('Workspace runtime is closing')
     }
     simulationRuns.set(id, runtime)
+    runtime.subscribe(notification => {
+      if (notification.events.some(event => event.type === 'scenario.agent-restrictions.set' || event.type === 'object.deleted')) {
+        void engineering?.invalidateSource(id, false).catch(error => console.error('Engineering source invalidation failed', id, error))
+      }
+    })
     loadedCompiledScenarios.set(id, scenarioRuntime.scenario)
     const priorExecution = await executionStoreFor(id).load()
     if (priorExecution) executionStates.set(id, priorExecution)
@@ -1086,7 +1100,9 @@ export const createSimulationRunRegistry = (config: {
   }
   const close = (id: SimulationRunId): Promise<boolean> => lifecycle.run(id, () => closeLoaded(id))
 
-  const reset = (id: SimulationRunId): Promise<SimulationRunRuntime> => lifecycle.run(id, async () => {
+  const reset = async (id: SimulationRunId): Promise<SimulationRunRuntime> => {
+    await registry.engineering.invalidateSource(id, false, true)
+    try { return await lifecycle.run(id, async () => {
     await assertSimulationRunRecoveryNotRequired(join(simulationRunRoot, id, 'snapshot.json'))
     await settleCompletingMaximumPace(id)
     const leases = leaseSummary(id).leasesByKind
@@ -1119,10 +1135,13 @@ export const createSimulationRunRegistry = (config: {
       manifest, scenarioRuntime,
       ...(resetEvent === undefined ? {} : { initialSeq: resetEvent.seq + 1 }),
     })
-  })
+    }) } finally { registry.engineering.releaseSource(id) }
+  }
 
   // Serialized with execution changes too, so none persists into a deleted Run's directory.
-  const deleteSimulationRun = (id: SimulationRunId): Promise<boolean> => executionOperations.run(id, () => lifecycle.run(id, async () => {
+  const deleteSimulationRun = (id: SimulationRunId): Promise<boolean> => executionOperations.run(id, async () => {
+    await registry.engineering.invalidateSource(id, true, true)
+    return await lifecycle.run(id, async () => {
     awaitingFirstScreen.delete(id)
     const maximumPaceJob = maximumPaceJobs.get(id)
     if (maximumPaceJob) {
@@ -1146,7 +1165,8 @@ export const createSimulationRunRegistry = (config: {
     }
     if (existedOnDisk) await rm(runDir, { recursive: true, force: true })
     return wasLoaded || existedOnDisk
-  }))
+    })
+  })
 
   const listPersistedIds = (): Promise<ReadonlyArray<SimulationRunId>> => listStoredSimulationRunIds(simulationRunRoot)
 
@@ -1320,8 +1340,33 @@ export const createSimulationRunRegistry = (config: {
     leases: leaseSummaries(),
   })
 
-  return {
+  const registry: SimulationRunRegistry = {
     workspaceId: config.workspaceId,
+    get engineering() { return engineering ??= createEngineeringService({ registry, root: join(workspaceRoot, 'engineering'), storageBudget }) },
+    sourceEpoch: id => readPlanningSourceEpoch(join(simulationRunRoot, id, 'planning-source-epoch.json')),
+    captureContinuation: async (id, reads) => {
+      const source = await load(id)
+      const manifest = await manifestStoreFor(id).load()
+      if (!manifest) throw new Error('Continuation source is unavailable')
+      const { revision } = await resolveManifest(manifest)
+      const compiledScenario = await createCompiledScenarioStore(join(simulationRunRoot, id, 'compiled-scenario.json')).load()
+      return { manifest, definition: revision.document, compiledScenario, checkpoint: await source.checkpointForCopy(reads) }
+    },
+    restoreContinuation: async seed => {
+      await ensureScenarioLibrary()
+      await scenarioLibrary.seed([seed.definition])
+      const id = newSimulationRunId()
+      const manifest = simulationRunManifestSchema.parse({ ...seed.manifest, id, workspaceId: config.workspaceId })
+      if (compiledScenarioDigest(seed.compiledScenario) !== manifest.scenario.compiledDigest) throw new Error('Continuation compiled Scenario digest mismatch')
+      await manifestStoreFor(id).create(manifest)
+      await createCompiledScenarioStore(join(simulationRunRoot, id, 'compiled-scenario.json')).create(seed.compiledScenario)
+      await createSimulationRunSnapshotStore({ simulationRunId: id, path: join(simulationRunRoot, id, 'snapshot.json') }).save({
+        ...seed.checkpoint.snapshot, seq: 0, ...(seed.checkpoint.snapshot.clock ? { clock: { ...seed.checkpoint.snapshot.clock, paused: true } } : {}),
+      })
+      for (const [runtimeId, state] of Object.entries(seed.checkpoint.runtimeStates)) await createJsonRuntimeStateStore({ runtimeId, path: join(simulationRunRoot, id, 'runtimes', `${runtimeId}.json`) }).save(state)
+      await createPlanningSourceEpoch(join(simulationRunRoot, id, 'planning-source-epoch.json'))
+      return await createRuntime({ manifest })
+    },
     scenarioAuthoringCatalog: {
       ...config.scenarioAuthoringCatalog,
       commands: installedCapabilities.filter(entry => entry.capability.kind === 'command' && entry.capability.schedulable).map(entry => ({
@@ -1410,6 +1455,7 @@ export const createSimulationRunRegistry = (config: {
     },
     shutdown: async () => {
       shuttingDown = true
+      await engineering?.close()
       for (const job of maximumPaceJobs.values()) job.stopRequested = true
       await Promise.allSettled([...maximumPaceJobs.values()].map(job => job.done))
       await executionOperations.drain()
@@ -1426,7 +1472,7 @@ export const createSimulationRunRegistry = (config: {
     leaseSummary,
     beginClose: () => { closeRequested = true },
     closing: () => closeRequested || shuttingDown,
-    isIdle: () => simulationRuns.size === 0 && creatingSimulationRuns.size === 0 && definitionOperations.activeCount() === 0 && leasesBySimulationRun.size === 0,
+    isIdle: () => simulationRuns.size === 0 && creatingSimulationRuns.size === 0 && definitionOperations.activeCount() === 0 && leasesBySimulationRun.size === 0 && !engineering?.busy(),
     listScenarios: () => definitionOperations.run(async () => {
       await ensureScenarioLibrary()
       return await scenarioLibrary.list()
@@ -1459,4 +1505,5 @@ export const createSimulationRunRegistry = (config: {
     compileScenarioRevision: compileRevision,
     close,
   }
+  return registry
 }

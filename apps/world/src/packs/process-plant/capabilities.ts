@@ -27,6 +27,7 @@ import { operationRecordSchema, resetRecordSchema } from './operations/plant-ope
 import { processPlantProposalSchema } from './operations/proposals.ts'
 import { operationConsequenceSchema } from './operations/consequence.ts'
 import { processPlantQueryKinds } from './query.ts'
+import { processPlantEngineeringCapability } from './engineering-inputs.ts'
 import { processPlantActions } from './actions.ts'
 import { faultActionIds, writesFault } from './operations/fault-acts.ts'
 import { processPlantActionsSearchInputSchema, processPlantCatalogInputSchema } from './queries/catalog-query.ts'
@@ -410,6 +411,7 @@ export const processPlantCapabilities = [
     withheldFromAgents: payload => faultActionIds().has(processPlantActionInvokePayloadSchema.parse(payload).actionId),
   }),
   ...processPlantQueryCapabilities,
+  processPlantEngineeringCapability,
   defineObservationCapability('declarations', {
     id: processPlantObservationCapabilityIds.declarations,
     title: 'Declare observables',

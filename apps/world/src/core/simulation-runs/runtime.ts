@@ -37,6 +37,7 @@ import { maximumPaceProgressWallIntervalMs,maximumPaceStepMs,type SimulationRunC
 import { createSimulationRunStateStore,type SimulationRunStateSnapshot,type SimulationRunStateStore } from './state-store.ts'
 import { createScenarioTimelineRunner,dueScenarioTimelineCues,type ScenarioTimelineRunner } from './timeline-runner.ts'
 import { createPlanningSourcePort, type PlanningSourcePort } from './planning-source.ts'
+import type { PackRuntimeQuery } from '../../simulation/protocol.ts'
 
 const projectedSnapshotFlushIntervalMs = defaultSimulationRunRuntimePolicy.projectedSnapshotFlushIntervalMs
 const scenarioRunnerActor: Actor = {
@@ -74,7 +75,9 @@ export interface SimulationRunRuntime {
   readonly planningSource: PlanningSourcePort
   readonly setClock: (update: SimulationClockUpdate) => Promise<SimulationClockState>
   readonly setAgentRestrictions: (actor: Actor, restrictions: AgentRestrictions, expectedRevision: number) => Promise<ScenarioExecutionState['agentRestrictions']>
-  readonly checkpointForCopy: () => Promise<SimulationRunCopyCheckpoint>
+  readonly checkpointForCopy: (reads?: ReadonlyArray<PackRuntimeQuery>) => Promise<SimulationRunCopyCheckpoint>
+  /** World-owned bounded owner projection; never exposed as arbitrary public query dispatch. */
+  readonly readAtBoundary: (query: PackRuntimeQuery) => Promise<unknown>
   readonly runMaximumPace: (targetSimulationTime: IsoTimestamp | null, control: {
     readonly shouldStop: () => boolean
     readonly onProgress?: (currentSimulationTime: IsoTimestamp) => void | Promise<void>
@@ -1607,7 +1610,7 @@ export const createSimulationRunRuntime = async (config: {
     },
   })
 
-  const checkpointForCopy = async (): Promise<SimulationRunCopyCheckpoint> => await enqueueOperation(async () => {
+  const checkpointForCopy = async (reads: ReadonlyArray<PackRuntimeQuery> = []): Promise<SimulationRunCopyCheckpoint> => await enqueueOperation(async () => {
     if (commandsInFlight.size > 0 || pendingCues > 0) throw Object.assign(
       new Error('Simulation Run has commands preparing changes; retry copy when they finish'),
       { code: 'simulation_run_busy' },
@@ -1635,6 +1638,7 @@ export const createSimulationRunRuntime = async (config: {
       return {
         snapshot: structuredClone({ ...snapshotWithCurrentClock(), clock: stopped }),
         runtimeStates,
+        ...(reads.length === 0 ? {} : { reads: await Promise.all(reads.map(query => config.runtimeConnection.invokeQuery(query))) }),
       }
     } finally {
       const resumed: SimulationClockState = {
@@ -1776,6 +1780,12 @@ export const createSimulationRunRuntime = async (config: {
     setClock,
     setAgentRestrictions,
     checkpointForCopy,
+    readAtBoundary: query => enqueueOperation(async () => {
+      assertCommitAvailable()
+      const capability = runtimeCapabilities.get(query.capabilityId)?.capability
+      if (!capability || capability.kind !== 'query' || capability.audience !== 'system') throw new Error('Boundary reads require an active World-owned projection')
+      return capability.output.parse(await config.runtimeConnection.invokeQuery({ ...query, input: capability.input.parse(query.input) }))
+    }),
     runMaximumPace,
     failStop: (reason: string): void => { terminalExecutionFailure = reason },
     events: (eventsConfig?: { readonly afterSeq?: number }): ReadonlyArray<SimulationRunEvent> => {

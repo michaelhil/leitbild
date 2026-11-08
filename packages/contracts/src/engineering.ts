@@ -83,7 +83,15 @@ export const engineeringContinuationReceiptSchema = z.object({
   sampleOffset: z.number().int().nonnegative(), sampleLimit: z.number().int().nonnegative(),
   limits: z.object({ wallSeconds: z.number().positive(), workerCount: z.number().int().positive(), outputBytes: z.number().int().positive() }).strict(),
   evidenceKind: z.literal('exact-state-conditional-continuation'),
+  executionDigest: digest,
+  observationGrid: z.literal('new-grid-at-captured-origin'),
   qualification: z.literal('research-only'),
+}).strict()
+/** Safe cancellation acknowledgement when the source no longer qualifies for
+ * returning its retained values. This contains no source facts or view. */
+export const engineeringContinuationCancellationSchema = z.object({
+  jobId: z.string().uuid(), status: z.enum(['completed', 'partial', 'failed', 'cancelled', 'interrupted']),
+  evidenceAvailable: z.literal(false),
 }).strict()
 export type EngineeringProfile = z.infer<typeof engineeringProfileSchema>
 export type EngineeringQuantity = z.infer<typeof engineeringQuantitySchema>
