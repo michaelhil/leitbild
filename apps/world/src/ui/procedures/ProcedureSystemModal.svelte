@@ -1115,6 +1115,9 @@
       else if (branch.targetKind !== 'unknown') {
         await transitionProcedureRun(simulationRunId, { runId: selectedRun.runId, stepId: fromStep.id, branchIndex: fromStep.branches.indexOf(branch) })
         await refreshRuns()
+        // A finished procedure hands the screen back to whatever is in effect, as a Return says.
+        const inEffect = branch.targetKind === 'end' ? procedureRunInEffect(runs, currentScope) : null
+        if (inEffect && !disposed) await loadProcedure(inEffect.procedureId)
       }
     } catch (err) {
       error = errorMessage(err)
