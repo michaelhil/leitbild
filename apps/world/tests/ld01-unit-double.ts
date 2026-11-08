@@ -40,7 +40,7 @@ const fromBits = (hex: string): number => {
   return view.getFloat64(0)
 }
 
-let unit: { fixture: Fixture; load: Record<string, unknown>; t: number; commands: Array<{ kind: string; t: number }>; failed: string | null } | null = null
+let unit: { fixture: Fixture; load: Record<string, unknown>; t: number; commands: Array<{ kind: string; t: number; body?: Record<string, unknown> }>; failed: string | null } | null = null
 
 // R4-ENDED: the named end this unit stands at; ADVANCE and COMMAND then refuse by name.
 let ended: number | null = null
@@ -76,6 +76,8 @@ const handle = (op: number, payload: Uint8Array): Uint8Array | 'close' => {
   if (op === 3) {
     const asked = new DataView(payload.buffer, payload.byteOffset, payload.byteLength).getFloat64(0, true)
     if (!(asked > unit.t)) throw new Error(`ADVANCE to ${asked} s is not after the unit's ${unit.t} s`)
+    const exchange = (unit.load.solver as { grid_exchange_s?: number | null }).grid_exchange_s
+    if (typeof exchange === 'number' && asked > (Math.floor(unit.t / exchange + 1e-9) + 1) * exchange + 1e-9) throw new Error(`ADVANCE to ${asked} s crosses the Grid exchange`)
     const ending = unit.fixture.endAtS !== undefined && asked >= unit.fixture.endAtS
     const t1 = ending ? unit.fixture.endAtS! : asked
     if (ending) ended = t1
@@ -108,8 +110,9 @@ const handle = (op: number, payload: Uint8Array): Uint8Array | 'close' => {
     const command = json(payload)
     if (command.kind === 'StuckCluster') throw new Error('StuckCluster: the unit composes no cluster singly')
     if (typeof command.t_apply !== 'number' || command.t_apply < unit.t) throw new Error(`${String(command.kind)} at ${String(command.t_apply)} s is not prospective`)
-    unit.commands.push({ kind: String(command.kind), t: command.t_apply })
-    return text({ kind: command.kind, t_apply: command.t_apply, t_apply_bits: bits(command.t_apply) })
+    // R4-GRID: the double's channels can follow a dead bus as a command of its own (setBy).
+    unit.commands.push({ kind: command.kind === 'GridBoundary' && command.energized === false ? 'GridBoundaryDead' : String(command.kind), t: command.t_apply, body: command })
+    return text({ kind: command.kind, t_apply: command.t_apply, t_apply_bits: bits(command.t_apply), ...(command.kind === 'LoadRequest' ? { accepted: true } : {}) })
   }
   if (op === 5) {
     if (payload.length !== 0) throw new Error('SNAPSHOT takes no payload')

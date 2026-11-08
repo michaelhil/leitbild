@@ -95,7 +95,7 @@ describe('the ECA0 binding: a section declaring the governor and the DC groups',
   const dcCharging = { 'LD01.DC.I3': { normal: 'AC.A', alternate: 'AC.B' }, 'LD01.DC.ACT.A': { normal: 'AC.A' } }
   const bound = compileOperatingGraph({ packet, ic: declared, elec, sha8: 'abcdef12', dcCharging })
   const graph = compilePlantGraph(bound.graph, processPlantComponentRegistry)
-  const channels = channelsFor(Object.values(bound.tagMap.channels).map(ld01ChannelIdOf))
+  const channels = channelsFor([...Object.values(bound.tagMap.channels).map(ld01ChannelIdOf), ...Object.values(bound.tagMap.setpoints).flatMap(setpoint => [setpoint.channel, setpoint.activeChannel])])
   const binding = bindLd01TagMap(graph, bound.tagMap, channels)
   const tagged = (tag: string) => graph.variables.find(variable => variable.descriptor.tagId === tag)
   const command = (path: string) => bound.tagMap.commands[`TG.${path}` as never]
