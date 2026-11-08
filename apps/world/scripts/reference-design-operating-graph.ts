@@ -101,6 +101,7 @@ const icSchema = z.object({
   // PROC T5's labelled engineering values: for a person's judgement, no criterion reads them.
   engineering: z.array(z.object({ id: z.string().min(1), group: z.string().min(1), field: z.enum(['requested_w', 'delivered_w', 'energy_j', 'depletion_s']), unit: z.string().min(1), label: z.string().min(1) }).strict()).default([]),
   dc: z.object({ declared: z.boolean() }).passthrough().optional(),
+  rod_control: z.object({ declared: z.boolean() }).passthrough(),
   functions: z.array(z.object({
     id: z.string().min(1),
     rule: z.record(z.string(), z.object({ family: z.string().min(1).optional(), side: side.optional() }).passthrough()),
@@ -427,6 +428,14 @@ export const compileOperatingGraph = (input: { readonly packet: unknown; readonl
     ...packet.rods.clusters.map(cluster => reading(`rod.${cluster.id}`, `Rod cluster ${cluster.id} travel`, 'state', 'nuclear', 'length', 'm', `LD01.ROD.${cluster.id}.TRAVEL`, 'm')),
     reading('rodTravelMean', 'Rod cluster mean travel', 'state', 'nuclear', 'length', 'm', 'LD01.ROD.TRAVEL.MEAN', 'm'),
   )
+  // AUTO rod control, where the section declares it: the bank HOLD and its release, and whether HOLD is in force.
+  if (ic.rod_control.declared) {
+    coreEquipment.readings.push(reading('bankHoldInForce', 'Control bank HOLD in force', 'discrete', 'control', 'boolean', 'boolean', 'LD01.CORE.BANK.HOLD', '1'))
+    coreEquipment.commands.push(
+      { path: 'bankHold', label: 'Control bank HOLD', actuation: 'command', command: { kind: 'BankHold' }, momentary: true },
+      { path: 'bankAuto', label: 'Control bank release HOLD to AUTO', actuation: 'command', command: { kind: 'BankAuto' }, momentary: true },
+    )
+  }
   // Each cluster's travel moves over the packet's maximum travel. The generated displays draw an insertion part by part,
   // at most 16 to a node; the 52 clusters move as one bank (EVT-RODS-BANK), so the core leads with their mean travel instead.
   const maximumTravel = packet.feedback_metadata.parameters.rod_maximum_travel_m

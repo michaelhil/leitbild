@@ -36,6 +36,7 @@ export const ic = {
     { id: 'LD01.RCP.A1.SPEED', quantity: { pump_speed: { rotor: 0, rotor_id: 'PUMP.A1' } }, channels: [{ id: 'LD01.RCP.A1.SPEED', supply: 'I1' }], channel: { ...channelSpec, min: 0, max: 1.5 } },
     { id: 'LD01.RCP.B1.SPEED', quantity: { pump_speed: { rotor: 1, rotor_id: 'PUMP.B1' } }, channels: [{ id: 'LD01.RCP.B1.SPEED', supply: 'I2' }], channel: { ...channelSpec, min: 0, max: 1.5 } },
   ],
+  rod_control: { declared: false, basis: 'test: no rod control' },
   reports: [{ id: 'LD01.TG.TRIP.REPORT', source: 'turbine_retained_trip', supply: 'ACT.B' }],
   functions: [
     { id: 'LD01.PROT.PZR.HIGH_PRESSURE', rule: { voted: { family: 'LD01.PZR.PT', side: { at_or_above: 15_898_400 }, qualification_s: 0.2 } }, effects: { reactor_trip: true, cmt_injection: false, heater_isolation: true, prhr: false } },

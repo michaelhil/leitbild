@@ -19,6 +19,9 @@
 //!   exchanges. Every exchange's reply payload (time, counts, the
 //!   observation frame and its events) and the final snapshots are
 //!   byte-equal.
+//! - **AUTO moving.** With `LD01_UNIT_HOST_AUTO_MOVING=1` the copy point must
+//!   stand inside a rod motion (the snapshot's in-force AUTO rate is not zero).
+//! - **Bank HOLD.** `the_bank_hold_stops_auto_and_its_release_returns_it`.
 //! - **Named end (R4-ENDED).** `a_named_end_holds_its_state_and_refuses_by_name`
 //!   drives the stuck-open relief to the unit's named end: the exchange
 //!   replies with `ended`, ADVANCE and COMMAND then refuse by name, SNAPSHOT
@@ -198,6 +201,13 @@ fn advance(host: &mut Host, walls: &mut AdvanceWalls, t1: f64) -> (Vec<u8>, f64)
         String::from_utf8_lossy(&r.payload)
     );
     (r.payload, r.cpu_s)
+}
+
+/// A snapshot real (`ic::acquisition::snapshot_real`'s 16 hex digits) or null.
+fn bits_of_real(v: &Value) -> f64 {
+    v.as_str().map_or(0., |s| {
+        f64::from_bits(u64::from_str_radix(s, 16).expect("a real's bits"))
+    })
 }
 
 fn bits_of(v: &Value) -> f64 {
@@ -402,6 +412,17 @@ fn a_restored_copy_continues_bitwise_and_the_protocol_refuses_explicitly() {
     let copy_cpu = copy.cpu_s;
     let copy = copy.payload;
     std::fs::write(receipts.join("snapshot-tc.json"), &copy).unwrap();
+    // The required restore with AUTO moving: the copy point lies inside a
+    // rod motion, so the client's rate in force is part of what is copied.
+    let auto_rate =
+        serde_json::from_slice::<Value>(&copy).unwrap()["clients"]["rod_control"]["in_force_m_s"]
+            .clone();
+    if std::env::var("LD01_UNIT_HOST_AUTO_MOVING").as_deref() == Ok("1") {
+        assert!(
+            bits_of_real(&auto_rate) != 0.,
+            "the copy point is not inside a rod motion: {auto_rate}"
+        );
+    }
     // A refusal after the copy point (the source's own failure) ends both
     // runs at that exchange: the copy must refuse there identically.
     let mut a_frames = Vec::new();
@@ -500,6 +521,7 @@ fn a_restored_copy_continues_bitwise_and_the_protocol_refuses_explicitly() {
         "stepping": if free { "free" } else { "frame-stops" },
         "water": water,
         "copy_integrator_s": copy_integrator, "copy_mid_step": copy_integrator > copy_t,
+        "auto_rate_at_copy": auto_rate,
         "exchanges_compared": a_frames.len(), "frames_equal": first_difference.is_none(),
         "first_difference": first_difference,
         "final_snapshots_equal": snapshots_equal,
@@ -629,6 +651,99 @@ fn a_named_end_holds_its_state_and_refuses_by_name() {
     .unwrap();
     a.close();
     b.close();
+}
+
+/// X4.4 on the unit: the operator's bank HOLD stops AUTO's motion at the
+/// next frame and its release returns the rods to AUTO; with the drive
+/// disengaged a HOLD is a result, not a refusal. A unit whose IC section
+/// declares no rod control refuses both by name. The drive is the stuck-open
+/// relief, whose falling pressure moves the rods before the trip.
+#[test]
+#[ignore = "NOT-EVIDENCE gate: ld01-unit, the bank HOLD on a moving AUTO (seconds)"]
+fn the_bank_hold_stops_auto_and_its_release_returns_it() {
+    let receipts = std::path::PathBuf::from(env("LD01_UNIT_HOST_RECEIPTS"));
+    std::fs::create_dir_all(&receipts).expect("receipt directory");
+    let load = serde_json::to_vec(&default_load()).unwrap();
+    let mut a = Host::spawn(&receipts.join("hold.stderr.log"));
+    let mut walls = AdvanceWalls::default();
+    let loaded = a.json(LOAD, &load);
+    let t0 = bits_of(&loaded["t_bits"]);
+    let period = loaded["frame_s"].as_f64().expect("frame_s");
+    let k0 = (t0 / period).round() as u64;
+    let instant = |k: u64| (k0 + k) as f64 * period;
+    let channels = a.json(CHANNELS, &[]);
+    let slot = |id: &str| {
+        channels
+            .as_array()
+            .unwrap()
+            .iter()
+            .position(|c| c["id"] == id)
+    };
+    let hold_kind =
+        |kind: &str, t: f64| serde_json::to_vec(&json!({"kind": kind, "t_apply": t})).unwrap();
+    let Some(held) = slot("LD01.CORE.BANK.HOLD") else {
+        let cause = a.refused(COMMAND, &hold_kind("BankHold", t0));
+        assert!(cause.contains("declares no rod control"), "{cause}");
+        a.close();
+        return;
+    };
+    let travel = slot("LD01.ROD.TRAVEL.MEAN").expect("the mean travel channel");
+    let relief = json!({"kind": "ReliefStuckOpen", "t_apply": instant(1)});
+    a.json(COMMAND, &serde_json::to_vec(&relief).unwrap());
+    let mut frames = Vec::new();
+    let mut at = |a: &mut Host, k: u64| {
+        let (p, _) = advance(a, &mut walls, instant(k));
+        let f = frame(&p);
+        frames.push((k, f.values[travel], f.values[held]));
+        f
+    };
+    for k in 1..=176 {
+        at(&mut a, k);
+    }
+    let last = at(&mut a, 177);
+    // AUTO is moving the bank, and a HOLD is accepted.
+    assert_eq!(last.values[held], 0.);
+    let reply = a.json(COMMAND, &hold_kind("BankHold", last.t));
+    assert_eq!(reply["accepted"], json!(true), "{reply}");
+    // In force again: a result, not a refusal.
+    let again = a.json(COMMAND, &hold_kind("BankHold", last.t));
+    assert_eq!(again["accepted"], json!(false), "{again}");
+    // Acting at the next frame: from there the bank stands.
+    let acting = at(&mut a, 178);
+    assert_eq!(acting.values[held], 1.);
+    let stood = at(&mut a, 179).values[travel];
+    for k in 180..=184 {
+        let f = at(&mut a, k);
+        assert!(
+            (f.values[travel] - stood).abs() < 1e-9,
+            "the bank moved under HOLD at exchange {k}: {} against {stood}",
+            f.values[travel]
+        );
+    }
+    let last = at(&mut a, 185);
+    let reply = a.json(COMMAND, &hold_kind("BankAuto", last.t));
+    assert_eq!(reply["accepted"], json!(true), "{reply}");
+    assert_eq!(at(&mut a, 186).values[held], 0.);
+    // AUTO acts one frame after it decides, then moves the bank again.
+    let moved = (187..=190).any(|k| (at(&mut a, k).values[travel] - stood).abs() >= 1e-9);
+    assert!(moved, "the bank did not move after the release to AUTO");
+    // After the trip the drive is gone: HOLD is refused as a result.
+    let tripped = (191..=300).find_map(|k| {
+        let f = at(&mut a, k);
+        (f.values[travel] < stood - 0.05).then_some(f.t)
+    });
+    let t_trip = tripped.expect("the rods fell");
+    // Stand on the next exchange so the command is at the unit's time.
+    let k = (t_trip / period).round() as u64 - k0 + 20;
+    let last = at(&mut a, k);
+    let after = a.json(COMMAND, &hold_kind("BankHold", last.t));
+    assert_eq!(after["accepted"], json!(false), "{after}");
+    std::fs::write(
+        receipts.join("bank-hold.json"),
+        serde_json::to_vec_pretty(&json!({"frames": frames})).unwrap(),
+    )
+    .unwrap();
+    a.close();
 }
 
 /// R4-TIME-STOPPED on the real unit: the relief fails open from the saved

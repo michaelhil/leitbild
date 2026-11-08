@@ -30,6 +30,7 @@ use crate::{
 };
 use leitbild_operating_plant::{
     control::rods::{Controller, Decision, Evidence, Law, Section, lag},
+    ic::acquisition as bits,
     joined::operator::Joined,
     network::Properties,
 };
@@ -190,6 +191,9 @@ pub struct RodClient {
     /// frame, which acts one frame later (sample at k, act at k + 1).
     pub decided_m_s: Option<f64>,
     pub scratch: Vec<f64>,
+    /// Whether `series` and `schedule` keep their per-frame records. A
+    /// live unit keeps none: they would grow without bound.
+    pub recording: bool,
     /// Per frame: the delivered evidence and the decision.
     pub series: Vec<Value>,
     /// The requested rate changes, `(t, m/s)`.
@@ -274,7 +278,9 @@ impl<S: JoinedSystem> Client<S> for RodClient {
                     })),
                 });
                 self.in_force_m_s = 0.;
-                self.schedule.push((t, 0.));
+                if self.recording {
+                    self.schedule.push((t, 0.));
+                }
             }
         }
         let decision: Option<Decision> = if self.engaged && !self.hold {
@@ -304,7 +310,9 @@ impl<S: JoinedSystem> Client<S> for RodClient {
                     })),
                 });
                 self.in_force_m_s = rate;
-                self.schedule.push((t, rate));
+                if self.recording {
+                    self.schedule.push((t, rate));
+                }
             }
             Some(d)
         } else {
@@ -312,10 +320,12 @@ impl<S: JoinedSystem> Client<S> for RodClient {
             self.decided_m_s = None;
             None
         };
-        self.series.push(
-            json!({"k": k, "t_s": t, "tavg_raw_k": now[0], "evidence": evidence,
-            "decision": decision, "engaged": self.engaged, "hold": self.hold, "rate_m_s": self.in_force_m_s}),
-        );
+        if self.recording {
+            self.series.push(
+                json!({"k": k, "t_s": t, "tavg_raw_k": now[0], "evidence": evidence,
+                "decision": decision, "engaged": self.engaged, "hold": self.hold, "rate_m_s": self.in_force_m_s}),
+            );
+        }
         Ok(out)
     }
     fn stop_at_frame(&self, _k: u64) -> bool {
@@ -350,6 +360,110 @@ impl RodClient {
         // TURB's fold of R4-ROD-DELAY: a stale AUTO rate never acts at release.
         self.decided_m_s = None;
     }
+}
+
+const SNAPSHOT_CLASS: &str = "AUTO rod control (X4.4)";
+
+impl RodClient {
+    /// The client's state at a snapshot: everything a later frame or stop
+    /// reads. The load and the admission probe are read again at each
+    /// frame's sample, the probe and the law are the composition's, and the
+    /// per-frame records are observation.
+    pub fn snapshot(&self) -> Value {
+        let reals = |v: &[f64]| {
+            v.iter()
+                .map(|x| bits::snapshot_real(*x))
+                .collect::<Vec<_>>()
+        };
+        json!({"class": SNAPSHOT_CLASS,
+            "at": bits::snapshot_real(self.at),
+            "inputs": reals(&self.inputs),
+            "lagged": reals(&self.lagged),
+            "controller": reals(&self.controller.state()),
+            "engaged": self.engaged,
+            "hold": self.hold,
+            "in_force_m_s": bits::snapshot_real(self.in_force_m_s),
+            "decided_m_s": self.decided_m_s.map(bits::snapshot_real)})
+    }
+    /// Restore [`RodClient::snapshot`] exactly; any other form refuses.
+    pub fn restore(&mut self, v: &Value) -> Result<(), String> {
+        let o = bits::snapshot_fields(
+            v,
+            "rod control",
+            &[
+                "class",
+                "at",
+                "inputs",
+                "lagged",
+                "controller",
+                "engaged",
+                "hold",
+                "in_force_m_s",
+                "decided_m_s",
+            ],
+        )?;
+        if o["class"] != json!(SNAPSHOT_CLASS) {
+            return Err(format!("rod control of class {} restored", o["class"]));
+        }
+        fn reals<const N: usize>(v: &Value, what: &str) -> Result<[f64; N], String> {
+            let items = v
+                .as_array()
+                .filter(|a| a.len() == N)
+                .ok_or_else(|| format!("rod control {what}: {v}"))?;
+            let mut out = [0.; N];
+            for (x, item) in out.iter_mut().zip(items) {
+                *x = bits::restored_real(item, what)?;
+            }
+            Ok(out)
+        }
+        self.at = bits::restored_real(&o["at"], "rod control at")?;
+        self.inputs = reals(&o["inputs"], "inputs")?;
+        self.lagged = reals(&o["lagged"], "lagged")?;
+        self.controller
+            .restore_state(reals(&o["controller"], "controller")?);
+        self.engaged = bits::restored_bool(&o["engaged"], "rod control engaged")?;
+        self.hold = bits::restored_bool(&o["hold"], "rod control hold")?;
+        self.in_force_m_s = bits::restored_real(&o["in_force_m_s"], "rod control rate")?;
+        self.decided_m_s =
+            bits::restored_real_option(&o["decided_m_s"], "rod control decided rate")?;
+        Ok(())
+    }
+}
+
+/// The client the IC section declares, commissioned on the composed `unit`
+/// from the wiki's `ld01-rod-control`: `None` when the section does not
+/// declare rod control.
+pub fn of_section<J: JoinedSystem<Properties = If97>>(
+    inputs: &super::inputs::Inputs,
+    unit: &mut super::s3::S3Unit<J>,
+) -> Result<Option<(RodClient, Value)>, String> {
+    if !inputs.ic.rod_control.declared {
+        return Ok(None);
+    }
+    let section = section(&inputs.spine.wiki_root)?;
+    let packet = inputs.spine.packet_json()?;
+    let ids: Vec<String> = packet["mechanics"]["regions"]
+        .as_array()
+        .ok_or("the packet's mechanics regions")?
+        .iter()
+        .map(|r| {
+            r["id"]
+                .as_str()
+                .map(str::to_string)
+                .ok_or_else(|| format!("a packet region's id: {r}"))
+        })
+        .collect::<Result<_, _>>()?;
+    let (t0, y, reference) = (unit.t0, unit.y.clone(), unit.reference.clone());
+    commission(
+        unit.ida.system_mut(),
+        &section,
+        &ids,
+        Class::S,
+        t0,
+        &y,
+        &reference,
+    )
+    .map(Some)
 }
 
 /// Commissioning at the unit's start `t0` (before the driver starts): the
@@ -404,6 +518,7 @@ pub fn commission<S: JoinedSystem<Properties = If97>>(
         in_force_m_s: 0.,
         decided_m_s: None,
         scratch: vec![0.; y.len()],
+        recording: true,
         series: Vec::new(),
         schedule: Vec::new(),
     };

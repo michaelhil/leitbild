@@ -286,14 +286,15 @@ function dcEngineering(b: ReturnType<typeof parseDcReports>) {
  * compiled only when it is declared; composition refuses a mismatch. */
 export type GovernorDeclaration = { declared: boolean, basis: string }
 /** The compile's explicit declarations of the per-run compositions: the
- * governor (ADM.POS) and the report-only DC groups (PROC T5). */
-export type Declarations = { governor: GovernorDeclaration, dc: GovernorDeclaration }
+ * governor (ADM.POS), the report-only DC groups (PROC T5) and automatic rod
+ * control (X4.4: the rod client and its HOLD command). */
+export type Declarations = { governor: GovernorDeclaration, dc: GovernorDeclaration, rodControl: GovernorDeclaration }
 export function compileOperatingIcFrom(texts: Pages, packetValue: unknown, declarations: Declarations) {
-  for (const k of ['governor', 'dc'] as const) {
+  for (const k of ['governor', 'dc', 'rodControl'] as const) {
     const d = declarations?.[k]
     if (typeof d?.declared !== 'boolean' || !d.basis) throw Error(`The IC compile needs an explicit ${k} declaration`)
   }
-  const { governor, dc } = declarations
+  const { governor, dc, rodControl } = declarations
   const packet: Packet = packetSchema.parse(packetValue)
   const channel = parsePressureChannel(texts['systems/instrumentation/operational-observations.md'])
   const protection = parsePressureProtection(texts['safety/source-and-primary-protection.md'])
@@ -627,6 +628,7 @@ export function compileOperatingIcFrom(texts: Pages, packetValue: unknown, decla
     ...(sourceRange ? { source_range: sourceRange } : {}),
     governor,
     dc,
+    rod_control: rodControl,
     engineering: dc.declared ? dcEngineering(dcBlock) : [],
     missing: sourceRange ? OPEN_ITEMS : [...OPEN_ITEMS, { item: 'LD01.CORE.NI.SHUTDOWN regional Rref',
       note: 'ld01-source-range-pulse rrefEventsPerS is open: the regional collected-event intensity at the original reference field (NUC); no SOURCE path is compiled until it is filled' }],
@@ -651,11 +653,11 @@ export async function compileOperatingIc(wikiRoot: string, packetPath: string, d
 }
 
 if (import.meta.main) {
-  const [wiki, packet, f1, v1, f2, v2, ...rest] = Bun.argv.slice(2)
+  const [wiki, packet, f1, v1, f2, v2, f3, v3, ...rest] = Bun.argv.slice(2)
   const ok = (v?: string) => v === 'declared' || v === 'undeclared'
-  if (!wiki || !packet || f1 !== '--governor' || !ok(v1) || f2 !== '--dc' || !ok(v2) || rest.length)
-    throw Error('Usage: reference-design-operating-ic <wiki root> <joined packet> --governor declared|undeclared --dc declared|undeclared')
+  if (!wiki || !packet || f1 !== '--governor' || !ok(v1) || f2 !== '--dc' || !ok(v2) || f3 !== '--rod-control' || !ok(v3) || rest.length)
+    throw Error('Usage: reference-design-operating-ic <wiki root> <joined packet> --governor declared|undeclared --dc declared|undeclared --rod-control declared|undeclared')
   const decl = (flag: string, v: string, what: string) => ({ declared: v === 'declared', basis: `${v} at compile (${flag} ${v}): ${v === 'declared' ? 'a run composing ' : 'a run without '}${what}` })
   console.log(JSON.stringify(await compileOperatingIc(wiki, packet,
-    { governor: decl('--governor', v1!, 'the governor (X4.3)'), dc: decl('--dc', v2!, 'the DC groups (PROC T5)') }), null, 1))
+    { governor: decl('--governor', v1!, 'the governor (X4.3)'), dc: decl('--dc', v2!, 'the DC groups (PROC T5)'), rodControl: decl('--rod-control', v3!, 'AUTO rod control (X4.4)') }), null, 1))
 }

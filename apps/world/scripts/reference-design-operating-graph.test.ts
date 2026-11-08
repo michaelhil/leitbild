@@ -70,6 +70,17 @@ describe('the LD-01 graph compiler', () => {
   })
 })
 
+test('composes the bank HOLD and its release only where the section declares rod control', () => {
+  expect(compiled.tagMap.commands['CORE.bankHold' as never]).toBeUndefined()
+  expect(compiled.tagMap.channels['CORE.bankHoldInForce' as never]).toBeUndefined()
+  const declared = compileOperatingGraph({ packet, ic: { ...ic, rod_control: { declared: true, basis: 'test' } }, elec, sha8: 'abcdef12' })
+  expect(declared.tagMap.commands['CORE.bankHold' as never]).toEqual({ kind: 'BankHold' })
+  expect(declared.tagMap.commands['CORE.bankAuto' as never]).toEqual({ kind: 'BankAuto' })
+  expect(declared.tagMap.channels['CORE.bankHoldInForce' as never]).toBe('LD01.CORE.BANK.HOLD')
+  expect(ld01CommandSchema.parse({ kind: 'BankHold' })).toEqual({ kind: 'BankHold' })
+  expect(ld01CommandSchema.parse({ kind: 'BankAuto' })).toEqual({ kind: 'BankAuto' })
+})
+
 describe('the ECA0 binding: a section declaring the governor and the DC groups', () => {
   const groups = ['LD01.DC.I3', 'LD01.DC.ACT.A']
   const position = (id: string, quantity: unknown) => ({ id, quantity, channels: [{ id, supply: 'ACT.B' }], channel: { min: 0, max: 100, sample_s: 0.1, transport_s: 0.1 } })

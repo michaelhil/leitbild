@@ -1,13 +1,13 @@
 //! spec: world/packs/process-plant/reference-designs/ld-01/safety/protection-and-command-precedence.md#time-copies-and-simultaneous-actions
 //! The frame-driven S3 unit: a composed [`S3Unit`] on IC-PROT's frame
 //! driver with its plant clients — the acquired protection, IC-CTRL's PZR
-//! pressure control and (optionally) the generator page's ACT.B field
-//! controller (ICFIELD) — in that order, and the test-only Grid stand-in's
+//! pressure control, (optionally) the generator page's ACT.B field
+//! controller (ICFIELD) and AUTO rod control (X4.4) — in that order, and the test-only Grid stand-in's
 //! boundary decided through the driver (owner decisions D1 + D2, S3-D10).
 //! The S3 case harness and the C5 host drive this one unit; each adds its
 //! own observation-only clients (which decide nothing) after the plant's,
 //! and its own observer, case clock and receipts.
-use super::s3::S3Unit;
+use super::{rod_control::RodClient, s3::S3Unit};
 use crate::{
     If97,
     electrical::{Electrified, FieldClient},
@@ -43,6 +43,8 @@ pub struct Plant<J: JoinedSystem = Integrated<If97>> {
     pub protection: ProtectionClient,
     pub control: super::pzr_control::PzrClient,
     pub field: Option<FieldClient>,
+    /// AUTO rod control, when the IC section declares it (X4.4).
+    pub rods: Option<RodClient>,
     /// The composition's receipt.
     pub composition: Value,
     /// The operator at the packet's prepared hot reference (the acquired
@@ -128,6 +130,7 @@ impl<J: JoinedSystem> Plant<J> {
             protection,
             control,
             field,
+            rods: None,
             composition: receipt,
             reference,
         })
@@ -143,12 +146,13 @@ impl<J: JoinedSystem> Plant<J> {
             protection,
             control,
             field,
+            rods,
             t0,
             y,
             yp,
             ..
         } = self;
-        let mut clients = clients(protection, control, field, observers);
+        let mut clients = clients(protection, control, field, rods, observers);
         driver.start(&mut clients, *t0, y, yp)
     }
 
@@ -175,6 +179,7 @@ impl<J: JoinedSystem> Plant<J> {
             protection,
             control,
             field,
+            rods,
             ..
         } = self;
         let setup = Setup {
@@ -184,7 +189,7 @@ impl<J: JoinedSystem> Plant<J> {
             restart: *restart,
             derived,
         };
-        let mut clients = clients(protection, control, field, observers);
+        let mut clients = clients(protection, control, field, rods, observers);
         driver.run_observed(ida, t, until, y, yp, &mut clients, &setup, observer)
     }
 
@@ -206,6 +211,7 @@ impl<J: JoinedSystem> Plant<J> {
             protection,
             control,
             field,
+            rods,
             ..
         } = self;
         let setup = Setup {
@@ -215,7 +221,7 @@ impl<J: JoinedSystem> Plant<J> {
             restart: *restart,
             derived,
         };
-        let mut clients = clients(protection, control, field, observers);
+        let mut clients = clients(protection, control, field, rods, observers);
         driver.apply_due(ida, y, yp, &mut clients, &setup)
     }
 
@@ -312,16 +318,21 @@ pub fn boundary<J: JoinedSystem>(
 }
 
 /// The plant's clients in the driver's order (protection, PZR control,
-/// field controller), then the caller's observation-only clients.
+/// field controller, AUTO rod control), then the caller's observation-only
+/// clients.
 pub fn clients<'a, J: JoinedSystem>(
     protection: &'a mut ProtectionClient,
     control: &'a mut super::pzr_control::PzrClient,
     field: &'a mut Option<FieldClient>,
+    rods: &'a mut Option<RodClient>,
     observers: &'a mut [&mut dyn Client<Electrified<J>>],
 ) -> Vec<&'a mut dyn Client<Electrified<J>>> {
     let mut clients: Vec<&'a mut dyn Client<Electrified<J>>> = vec![protection, control];
     if let Some(f) = field.as_mut() {
         clients.push(f);
+    }
+    if let Some(r) = rods.as_mut() {
+        clients.push(r);
     }
     for o in observers.iter_mut() {
         clients.push(&mut **o);

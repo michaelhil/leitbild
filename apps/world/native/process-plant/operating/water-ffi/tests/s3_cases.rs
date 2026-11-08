@@ -1681,6 +1681,7 @@ fn drive(
         protection,
         control,
         field,
+        rods: plant_rods,
         composition,
         ..
     } = &mut plant;
@@ -2032,7 +2033,7 @@ fn drive(
             if let Some(r) = rods.as_mut() {
                 extra.push(r);
             }
-            let mut clients = plant::clients(protection, control, field, &mut extra);
+            let mut clients = plant::clients(protection, control, field, plant_rods, &mut extra);
             driver.start(&mut clients, t0, y, yp)
         };
         let mut t = t0;
@@ -2071,7 +2072,7 @@ fn drive(
                 if let Some(r) = rods.as_mut() {
                     extra.push(r);
                 }
-                let mut clients = plant::clients(protection, control, field, &mut extra);
+                let mut clients = plant::clients(protection, control, field, plant_rods, &mut extra);
                 driver
                     .run_observed(ida, t, *b, y, yp, &mut clients, &setup, Some(&mut observer))
                     .map(|_| ())
@@ -2285,7 +2286,7 @@ fn drive(
                                 extra.push(r);
                             }
                             let mut clients =
-                                plant::clients(protection, control, field, &mut extra);
+                                plant::clients(protection, control, field, plant_rods, &mut extra);
                             step = driver.apply_due(ida, y, yp, &mut clients, &setup);
                         }
                         if step.is_ok() {

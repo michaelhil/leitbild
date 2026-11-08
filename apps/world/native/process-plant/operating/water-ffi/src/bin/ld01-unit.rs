@@ -6,7 +6,8 @@
 //! composition (`unit::s3::compose`) on IC-PROT's frame driver with its
 //! plant clients (`unit::plant::Plant`: the acquired protection, IC-CTRL's
 //! PZR pressure control in class S, the generator page's ACT.B field
-//! controller), stock IDAS in one-step mode with its quadratures carried.
+//! controller, and AUTO rod control when the section declares it), stock
+//! IDAS in one-step mode with its quadratures carried.
 //! It reads no environment: LOAD names every input path.
 //!
 //! **Frames.** Request `u32 len | u8 op | u32 seq | payload`; reply
@@ -43,8 +44,9 @@
 //! **Composition.** The IC section's own declarations choose it: a section
 //! declaring the governor composes the X4.3 governor (`LD01.TG.ADM.POS`), one
 //! declaring the DC groups composes them, report-only (their reports and the
-//! labelled engineering values); the protection client refuses a mismatch.
-//! The pages they read join the identity.
+//! labelled engineering values), and one declaring rod control composes the
+//! AUTO rod client on the wiki's `ld01-rod-control`; the protection client
+//! refuses a governor or DC mismatch. The pages they read join the identity.
 //!
 //! **Operator commands** (PROC T4, T5, T11; lane ELEC): `IncomingDevice`
 //! `{bus, source, target}`, `StartConsumer` `{consumer}`, `DcDistribution`
@@ -54,6 +56,9 @@
 //! the unit does not hold is refused and changes nothing. A request the
 //! equipment's guards refuse is a result, not a refusal: the reply says
 //! `accepted: false`, the electrical log records why, and the unit goes on.
+//! `BankHold` and `BankAuto` set and release the operator's bank HOLD on the
+//! AUTO rod client, at the unit's time and acting at the next frame; a unit
+//! whose section declares no rod control refuses them by name.
 //!
 //! **Snapshot** (design §6.1, copy = restart boundary). At the unit's time,
 //! with nothing due there and no held change pending: `t`, `y`, `y'` and
@@ -96,7 +101,7 @@ use leitbild_operating_water::{
         inputs::{Inputs, MODEL, Spine},
         plant::{self, Boundary, Plant},
         profile::{Solver, Weights, parse_first_step, parse_stepping},
-        s3, timeline,
+        rod_control, s3, timeline,
         turbine::{self, Turbine},
     },
 };
@@ -339,6 +344,8 @@ enum Reading {
     /// R4-RELIEF-ISO.
     ReliefIsolationPosition,
     ReliefLiftOpen,
+    /// The operator's bank HOLD on the AUTO rod client.
+    BankHold,
     ReleasedPower,
     PzrPressure,
     PzrCollapsedLevel,
@@ -633,6 +640,15 @@ fn channels(plant: &Plant, inputs: &Inputs) -> Result<Vec<Channel>, String> {
         "IC-CTRL PZR pressure control",
         Reading::HeaterRequest,
     ));
+    if plant.rods.is_some() {
+        out.push(channel(
+            "LD01.CORE.BANK.HOLD",
+            "1",
+            "Bank HOLD in force (1 held, 0 AUTO)",
+            "X4.4 AUTO rod control",
+            Reading::BankHold,
+        ));
+    }
     let joined = &plant.ida.system().integrated().joined;
     // R4-RELIEF-ISO: the valve's position and the relief's direct lift
     // indication, where the packet composes the valve. True flow stays in
@@ -994,6 +1010,7 @@ fn file_identity(
         (inputs.ic.governor.declared, turbine::TURBINE_PAGE),
         (inputs.ic.governor.declared, turbine::ADMISSION_PAGE),
         (inputs.ic.dc.declared, dc::DC_PAGE),
+        (inputs.ic.rod_control.declared, rod_control::PAGE),
     ];
     for (_, p) in declared.iter().filter(|(on, _)| *on) {
         let path = format!("{}/{p}", inputs.spine.wiki_root);
@@ -1120,7 +1137,7 @@ impl Unit {
             .declared
             .then(|| Dc::from_wiki(wiki))
             .transpose()?;
-        let u = s3::compose_dc_with(
+        let mut u = s3::compose_dc_with(
             &inputs,
             &state,
             s3::Scaling::NONE,
@@ -1137,7 +1154,13 @@ impl Unit {
                 u.receipt
             ));
         }
-        let plant = Plant::new(
+        // The section's declaration chooses AUTO; a host keeps no per-frame
+        // record of it.
+        let rods = rod_control::of_section(&inputs, &mut u)?.map(|(mut client, _)| {
+            client.recording = false;
+            client
+        });
+        let mut plant = Plant::new(
             u,
             &inputs.ic,
             plant::Config {
@@ -1148,6 +1171,7 @@ impl Unit {
                 clock: clock::thread_cpu_s,
             },
         )?;
+        plant.rods = rods;
         // R4-FREE-STEPS: the LOAD request's stepping (its solver, part of the
         // identity a restore checks); the plant's driver took it.
         let stepping = solver.stepping;
@@ -1257,6 +1281,7 @@ impl Unit {
             protection,
             control,
             field,
+            rods,
             ..
         } = &mut self.plant;
         let n = *n;
@@ -1315,6 +1340,7 @@ impl Unit {
                     Reading::ReliefLiftOpen => {
                         flag(y[unit.integrated().joined.offsets().pzr] != 0.)
                     }
+                    Reading::BankHold => flag(rods.as_ref().is_some_and(|r| r.hold)),
                     Reading::Latched(f) => divisions.iter().filter(|d| d.latched(f)).count() as f64,
                     Reading::DivisionTrip(d) => flag(divisions[*d].trip.is_some()),
                     Reading::DivisionPowered(d) => flag(divisions[*d].powered),
@@ -1507,6 +1533,9 @@ impl Unit {
         if kind == "GridBoundary" {
             return self.grid_boundary(v, t);
         }
+        if kind == "BankHold" || kind == "BankAuto" {
+            return self.bank(v, kind, t);
+        }
         if let Some(operator) = operator_of(v, kind) {
             return self.operator(kind, operator?, t);
         }
@@ -1633,6 +1662,43 @@ impl Unit {
         )
     }
 
+    /// The operator's bank HOLD or its release to AUTO, at the unit's time,
+    /// acting at the next frame (the client's own rule). With the drive
+    /// disengaged or the request already in force it is a result, not a
+    /// refusal; a unit composing no rod control refuses by name.
+    fn bank(&mut self, v: &Value, kind: &str, t: f64) -> Result<Value, String> {
+        exactly(v, kind, &["kind", "t_apply"])?;
+        if !same_instant(t, self.t) {
+            return Err(format!(
+                "{kind}: decided at the unit's time {} s, not {t} s",
+                self.t
+            ));
+        }
+        let hold = kind == "BankHold";
+        let rods = self
+            .plant
+            .rods
+            .as_mut()
+            .ok_or_else(|| format!("{kind}: the section declares no rod control"))?;
+        let accepted = rods.engaged && rods.hold != hold;
+        if accepted {
+            rods.set_hold(hold);
+        }
+        let why = match (accepted, rods.engaged) {
+            (true, _) => "accepted",
+            (false, false) => "refused: the drive is not engaged",
+            (false, true) => "refused: already in force",
+        };
+        self.plant
+            .ida
+            .system_mut()
+            .log
+            .push((self.t, format!("operator LD01.CORE.BANK {kind}: {why}")));
+        Ok(
+            json!({"kind": kind, "t_apply": self.t, "t_apply_bits": bits(self.t), "accepted": accepted}),
+        )
+    }
+
     /// The Grid's boundary for `[t, until)` through the unit library
     /// (`plant::boundary`), decided at the unit's time and applied now.
     fn grid_boundary(&mut self, v: &Value, t: f64) -> Result<Value, String> {
@@ -1727,6 +1793,7 @@ impl Unit {
                 "protection": p.protection.protection.snapshot()?,
                 "pzr_control": p.control.snapshot()?,
                 "field": p.field.as_ref().ok_or("no field controller")?.snapshot(),
+                "rod_control": p.rods.as_ref().map(rod_control::RodClient::snapshot),
             },
             "driver": driver_json(&driver),
         });
@@ -1810,7 +1877,7 @@ impl Unit {
         let clients = exactly(
             &o["clients"],
             "snapshot clients",
-            &["protection", "pzr_control", "field"],
+            &["protection", "pzr_control", "field", "rod_control"],
         )?;
         let driver = driver_state(&o["driver"])?;
         if driver.observed_to.to_bits() != t.to_bits() {
@@ -1832,6 +1899,16 @@ impl Unit {
             .as_mut()
             .ok_or("no field controller")?
             .restore(&clients["field"])?;
+        match (p.rods.as_mut(), &clients["rod_control"]) {
+            (Some(rods), v) if !v.is_null() => rods.restore(v)?,
+            (None, Value::Null) => {}
+            (rods, v) => {
+                return Err(format!(
+                    "the snapshot's rod control {v} against a unit composing {}",
+                    if rods.is_some() { "it" } else { "none" }
+                ));
+            }
+        }
         // The integrator's tolerances and nonnegative stocks as the source
         // holds them (a phase-mode restart retunes both), then the source's
         // exact consistent restart at t.
