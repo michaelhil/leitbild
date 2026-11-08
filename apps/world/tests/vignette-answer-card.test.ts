@@ -23,7 +23,7 @@ import { underTitle } from '../src/ui/embed/vignette/format.ts'
 import { ownLabel } from '../src/ui/embed/vignette/value-rows.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { builtinScenarioDefinitions } from '../src/scenarios/definitions.ts'
-import { guardPlantTests } from './plant-hang-guard.ts'
+import { guardPlantTests, PLANT_HANG_GUARD_MS } from './plant-hang-guard.ts'
 
 guardPlantTests()
 
@@ -56,7 +56,7 @@ beforeAll(async () => {
   await runtime.setClock({ paused: true })
   start = Date.parse(runtime.snapshot().clock!.currentTime)
   await play(300)
-}, 240_000)
+}, PLANT_HANG_GUARD_MS)
 afterAll(async () => { await registry.shutdown(); await rm(dataDir, { recursive: true, force: true }) })
 
 const compose = async (spec: unknown) => {
