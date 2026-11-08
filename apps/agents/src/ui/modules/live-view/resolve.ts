@@ -2,7 +2,7 @@
 // execution evidence of the answer's own turn. Nothing in the fence is used as
 // a URL or as the view itself; the envelope comes from the evidence alone.
 import type { EmbeddedViewEnvelope } from '@leitbild/contracts'
-import { checkViewEnvelope, type ViewReference } from '../../../core/render-validators/view-fence.ts'
+import { checkViewEnvelope, trustedEngineeringViewEntry, type ViewReference } from '../../../core/render-validators/view-fence.ts'
 
 export interface ViewFenceOrigin {
   readonly roomId: string
@@ -27,6 +27,12 @@ export const resolveViewReference = async (ref: ViewReference, origin: ViewFence
   if (response.status === 404) return { kind: 'refused', code: 'view_evidence_unavailable', message: 'the tool result behind this display is no longer retained' }
   if (response.status !== 200) return { kind: 'refused', code: 'view_evidence_unreadable', message: `reading the display evidence failed with HTTP ${response.status}` }
   const call = response.body as EvidenceCall
+  if (call?.tool === 'engineering_calculate' || call?.tool === 'engineering_run') {
+    const entry = trustedEngineeringViewEntry(call, { roomId: origin.roomId, turnId: origin.turnId, toolCallId: ref.callId })
+    if (entry === null || ref.key !== entry.key) return { kind: 'refused', code: 'view_evidence_mismatch', message: 'the calculation does not match this exact Room execution' }
+    const checked = checkViewEnvelope(entry.embeddedView, origin.workspaceId)
+    return checked.kind === 'view' ? checked : { kind: 'refused', code: checked.code, message: checked.error }
+  }
   if (call.tool !== 'workspace_call' || call.result?.success !== true || !Array.isArray(call.result.data?.results)) {
     return { kind: 'refused', code: 'view_evidence_mismatch', message: 'the referenced call did not produce a display' }
   }
@@ -34,6 +40,7 @@ export const resolveViewReference = async (ref: ViewReference, origin: ViewFence
     .find(candidate => candidate.key === ref.key)
   if (entry?.embeddedView === undefined) return { kind: 'refused', code: 'view_evidence_mismatch', message: `no display was composed under "${ref.key}"` }
   const checked = checkViewEnvelope(entry.embeddedView, origin.workspaceId)
+  if (checked.kind === 'view' && checked.envelope.moduleId !== 'world') return { kind: 'refused', code: 'view_evidence_mismatch', message: 'a workspace call cannot publish an Agents calculation' }
   return checked.kind === 'view' ? checked : { kind: 'refused', code: checked.code, message: checked.error }
 }
 

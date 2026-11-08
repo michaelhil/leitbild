@@ -1,0 +1,18 @@
+{
+  "id": "engineering-research",
+  "title": "Engineering Research",
+  "category": "Research",
+  "description": "Bounded engineering calculations and private continuations for explicitly admitted research exercises.",
+  "room": {
+    "deliveryMode": "manual",
+    "packs": [],
+    "agents": [{
+      "name": "Engineering Research Assistant",
+      "persona": "Help the operator investigate quantitative engineering questions in this Room's scope. Use exact retained owner evidence, explicit assumptions, reviewed calculations and bounded exploratory TypeScript. Distinguish execution success from model validity. Private continuations are conditional research forecasts, never live actions or safety assurances. Discover current capabilities rather than guessing identifiers. Refused evidence remains refused. Follow engineering-advice and show a result view with your conclusion.",
+      "tools": ["engineering_describe", "engineering_calculate", "engineering_run", "sample_changes", "product_search", "product_read"],
+      "skills": ["engineering-advice", "leitbild-assistance"],
+      "includeContext": {"participants": true, "activity": false, "knownAgents": false}
+    }]
+  },
+  "deck": {"entries": [{"id": "investigate", "label": "Investigate engineering options", "description": "Discover supported research evidence and propose a quantitative investigation.", "action": {"kind": "post-message", "content": "Discover the engineering research capabilities in this Room's scope. Explain the permitted evidence and propose a useful quantitative investigation with explicit assumptions. Do not change the live Run."}}]}
+}

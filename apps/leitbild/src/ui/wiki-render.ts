@@ -62,10 +62,14 @@ export const renderWiki = (
       return renderer.link({ type: 'link', raw, text: raw, href: tag.source, title: null, tokens: [{ type: 'text', raw, text: raw }] })
     })
   }
-  renderer.image = ({ href, text }) =>
-    /^https:\/\//i.test(href)
-      ? `<img src="${escapeHtml(href)}" alt="${escapeHtml(text)}" loading="lazy" referrerpolicy="no-referrer" />`
-      : escapeHtml(text)
+  renderer.image = ({ href, text }) => {
+    if (/^https:\/\//i.test(href)) return `<img src="${escapeHtml(href)}" alt="${escapeHtml(text)}" loading="lazy" referrerpolicy="no-referrer" />`
+    if (/^[a-z][a-z\d+.-]*:/i.test(href) || href.startsWith('/') || href.includes('?') || href.includes('#')) return escapeHtml(text)
+    const path = new URL(href, `https://wiki.invalid/${document.path}`).pathname.slice(1)
+    if (!/\.(png|webp)$/.test(path)) return escapeHtml(text)
+    const src = `/api/knowledge/image?${new URLSearchParams({ path, ...(revision ? { revision } : {}) })}`
+    return `<img src="${escapeHtml(src)}" alt="${escapeHtml(text)}" loading="lazy" />`
+  }
   renderer.code = ({ text, lang }) =>
     lang === 'mermaid'
       ? `<div class="wiki-diagram"><pre class="mermaid">${escapeHtml(text)}</pre></div>`

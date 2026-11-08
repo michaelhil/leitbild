@@ -16,7 +16,8 @@ describe('bundled Room Definitions', () => {
   })
 
   test('ships one Assistant definition whose Room Scope is selected at creation', () => {
-    expect(BUNDLED_ROOM_DEFINITIONS.map(definition => definition.id)).toEqual(['leitbild-assistant'])
+    expect(BUNDLED_ROOM_DEFINITIONS.map(definition => definition.id)).toEqual(['engineering-research', 'leitbild-assistant'])
+    expect(getBundledRoomDefinition('engineering-research')?.room.agents[0]?.skills).toContain('engineering-advice')
     expect(getBundledRoomDefinition('leitbild-assistant')?.assistance).toBe(true)
   })
 

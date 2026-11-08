@@ -8,13 +8,13 @@ await rm(outdir, { recursive: true, force: true })
 await mkdir(outdir, { recursive: true })
 
 const result = await Bun.build({
-  entrypoints: [join(uiRoot, 'modules', 'app.ts')],
+  entrypoints: [join(uiRoot, 'modules', 'app.ts'), join(uiRoot, 'modules', 'engineering.ts')],
   outdir,
   target: 'browser',
   format: 'esm',
   minify: true,
   splitting: true,
-  naming: { entry: 'app.js', chunk: 'chunk-[hash].js', asset: 'asset-[name]-[hash].[ext]' },
+  naming: { entry: '[name].js', chunk: 'chunk-[hash].js', asset: 'asset-[name]-[hash].[ext]' },
 })
 
 if (!result.success) {
@@ -22,9 +22,10 @@ if (!result.success) {
   process.exit(1)
 }
 
-const entry = result.outputs.find(output => output.kind === 'entry-point' && output.path.endsWith('.js'))
-if (!entry) throw new Error('Agents UI build did not produce a JavaScript entry point')
-if (entry.path !== join(outdir, 'app.js')) throw new Error(`Unexpected Agents UI entry path: ${entry.path}`)
+for (const name of ['app.js', 'engineering.js']) {
+  if (!result.outputs.some(output => output.kind === 'entry-point' && output.path === join(outdir, name))) throw new Error(`Agents UI build did not produce ${name}`)
+}
 
 const sourceHtml = await readFile(join(uiRoot, 'index.html'), 'utf8')
 await writeFile(join(outdir, 'index.html'), sourceHtml)
+for (const name of ['engineering.html', 'engineering.css']) await writeFile(join(outdir, name), await readFile(join(uiRoot, name), 'utf8'))

@@ -24,7 +24,7 @@ const CURRENT_LINK = `${DEPLOY_ROOT}/current`
 const RELEASES_DIR = `${DEPLOY_ROOT}/releases`
 const DEPS_DIR = `${DEPLOY_ROOT}/deps`
 const STATE_ROOT = '/var/lib/leitbild'
-const SERVICES = ['leitbild-world.service', 'leitbild-agents.service', 'leitbild-host.service'] as const
+const SERVICES = ['leitbild-world.service', 'leitbild-agents.service', 'leitbild-planning.service', 'leitbild-host.service'] as const
 const SERVICE_USER = 'leitbild'
 const BUN_BIN = `${DEPLOY_ROOT}/runtime/bun`
 const PUBLIC_HEALTH_URL = 'https://leitbild.app/health'
@@ -116,7 +116,7 @@ const isDevelopmentOnlyPath = (path: string): boolean =>
   /(?:^|\/)(?:tests?|fixtures|__fixtures__|__tests__|__snapshots__)(?:\/|$)/.test(path)
   || /\.(?:test|spec)(?:-d)?\.[cm]?[jt]sx?$/.test(path)
 
-export const isProductionSourcePath = (workspace: 'host' | 'world' | 'agents' | 'package', path: string): boolean => {
+export const isProductionSourcePath = (workspace: 'host' | 'world' | 'agents' | 'planning' | 'package', path: string): boolean => {
   if (isDevelopmentOnlyPath(path)) return false
   if (workspace === 'host') {
     return path === 'package.json'
@@ -124,7 +124,7 @@ export const isProductionSourcePath = (workspace: 'host' | 'world' | 'agents' | 
       || path.startsWith('scripts/')
       || path === 'deploy/Caddyfile'
       || path === 'deploy/sites/leitbild.caddy'
-      || /^deploy\/leitbild-(?:host|world|agents)\.service$/.test(path)
+      || /^deploy\/leitbild-(?:host|world|agents|planning)\.service$/.test(path)
       || path.startsWith('deploy/retired/')
   }
   if (workspace === 'world') return path === 'package.json' || path.startsWith('src/')
@@ -202,7 +202,7 @@ const directoryFiles = async (root: string, child: string): Promise<string[]> =>
 const entriesFor = async (
   root: string,
   targetRoot: string,
-  workspace: 'host' | 'world' | 'agents' | 'package',
+  workspace: 'host' | 'world' | 'agents' | 'planning' | 'package',
   extra: ReadonlyArray<string> = [],
 ): Promise<ArtifactEntry[]> => {
   const entries: ArtifactEntry[] = []
@@ -277,12 +277,14 @@ const createArtifact = async (root: string, baseCommit: string, branch: string, 
     const hostRoot = join(root, 'apps/leitbild')
     const worldRoot = join(root, 'apps/world')
     const agentsRoot = join(root, 'apps/agents')
+    const planningRoot = join(root, 'apps/planning')
     const hostEntries = await entriesFor(hostRoot, 'apps/leitbild', 'host', await directoryFiles(hostRoot, 'src/ui/dist'))
     const worldEntries = await entriesFor(worldRoot, 'apps/world', 'world', await directoryFiles(worldRoot, 'src/ui/dist'))
     const agentsEntries = await entriesFor(agentsRoot, 'apps/agents', 'agents', [
       'src/ui/dist.css',
       ...await directoryFiles(agentsRoot, 'src/ui/dist'),
     ])
+    const planningEntries = await entriesFor(planningRoot, 'apps/planning', 'planning', await directoryFiles(planningRoot, 'src/ui/dist'))
     const rootEntries: ArtifactEntry[] = ['package.json', 'bun.lock', 'LICENSE', 'NOTICE.md', 'knowledge/snapshot.json'].map(path => ({ source: join(root, path), target: path }))
     const productKnowledgeEntries: ArtifactEntry[] = (await trackedFiles(root))
       .filter(path => isProductKnowledgePath(path) && !isDevelopmentOnlyPath(path))
@@ -300,6 +302,7 @@ const createArtifact = async (root: string, baseCommit: string, branch: string, 
       ...hostEntries,
       ...worldEntries,
       ...agentsEntries,
+      ...planningEntries,
       ...dependencyPackageEntries,
       ...installManifestEntries,
     ]
@@ -490,7 +493,7 @@ if test ${install ? '1' : '0'} -eq 1; then
   install_changed=1
   cat > /etc/leitbild/platform.env <<'EOF'
 WORKSPACE_HOST_URL=https://leitbild.app
-WORKSPACE_MODULES=[{"moduleId":"world","internalBaseUrl":"http://127.0.0.1:4177","manifestPath":"/.well-known/workspace-module"},{"moduleId":"agents","internalBaseUrl":"http://127.0.0.1:3000","manifestPath":"/.well-known/workspace-module"}]
+WORKSPACE_MODULES=[{"moduleId":"world","internalBaseUrl":"http://127.0.0.1:4177","manifestPath":"/.well-known/workspace-module"},{"moduleId":"agents","internalBaseUrl":"http://127.0.0.1:3000","manifestPath":"/.well-known/workspace-module"},{"moduleId":"planning","internalBaseUrl":"http://127.0.0.1:3102","manifestPath":"/.well-known/workspace-module"}]
 EOF
   chmod 0600 /etc/leitbild/platform.env
   for service in ${SERVICES.join(' ')}; do cp "$release_dir/apps/leitbild/deploy/$service" "/etc/systemd/system/$service"; done
@@ -507,9 +510,9 @@ mv -Tf "$next_link" ${shellQuote(CURRENT_LINK)}
 systemctl reset-failed ${SERVICES.join(' ')} || true
 services_started=1
 systemctl restart ${SERVICES.join(' ')}
-for port in 3000 4177 3100; do for attempt in $(seq 1 60); do curl -fsS -o /dev/null "http://127.0.0.1:$port/health" && break; sleep 1; done; curl -fsS -o /dev/null "http://127.0.0.1:$port/health"; done
+for port in 3000 4177 3102 3100; do for attempt in $(seq 1 60); do curl -fsS -o /dev/null "http://127.0.0.1:$port/health" && break; sleep 1; done; curl -fsS -o /dev/null "http://127.0.0.1:$port/health"; done
 # Verify effective process routing, Workspace access and release-owned knowledge.
-for module in world agents; do
+for module in world agents planning; do
   module_pid="$(systemctl show "leitbild-$module" --property=MainPID --value)"
   if ! tr '\\0' '\\n' < "/proc/$module_pid/environ" | grep -Fx 'WORKSPACE_HOST_URL=http://127.0.0.1:3100' > /dev/null; then
     echo "leitbild-$module is not routed to the internal Workspace Host" >&2
@@ -570,7 +573,7 @@ fi
 if test ${install ? '1' : '0'} -eq 1; then
   # Provisioning is retained on activation failure; never remove application data.
   id -u ${SERVICE_USER} >/dev/null 2>&1 || useradd --system --home-dir /nonexistent --shell /usr/sbin/nologin ${SERVICE_USER}
-  install -d -o ${SERVICE_USER} -g ${SERVICE_USER} -m 0700 ${shellQuote(`${STATE_ROOT}/host`)} ${shellQuote(`${STATE_ROOT}/world`)} ${shellQuote(`${STATE_ROOT}/agents`)}
+  install -d -o ${SERVICE_USER} -g ${SERVICE_USER} -m 0700 ${shellQuote(`${STATE_ROOT}/host`)} ${shellQuote(`${STATE_ROOT}/world`)} ${shellQuote(`${STATE_ROOT}/agents`)} ${shellQuote(`${STATE_ROOT}/planning`)}
   install -d -o root -g root -m 0755 ${shellQuote(DEPLOY_ROOT)}
   install -d -o root -g root -m 0755 /etc/leitbild
 fi
@@ -583,11 +586,12 @@ test "$(jq -r .releaseId "$incoming/DEPLOYMENT.json")" = "$release_id"
 if test ! -d "$dep_dir/node_modules"; then
   dep_tmp="${DEPS_DIR}/.incoming-${artifact.lockChecksum}-$$"
   rm -rf -- "$dep_tmp"
-  mkdir -p "$dep_tmp/apps/leitbild" "$dep_tmp/apps/world" "$dep_tmp/apps/agents" "$dep_tmp/packages"
+  mkdir -p "$dep_tmp/apps/leitbild" "$dep_tmp/apps/world" "$dep_tmp/apps/agents" "$dep_tmp/apps/planning" "$dep_tmp/packages"
   cp "$incoming/package.json" "$incoming/bun.lock" "$dep_tmp/"
   cp "$incoming/apps/leitbild/package.json" "$dep_tmp/apps/leitbild/"
   cp "$incoming/apps/world/package.json" "$dep_tmp/apps/world/"
   cp "$incoming/apps/agents/package.json" "$dep_tmp/apps/agents/"
+  cp "$incoming/apps/planning/package.json" "$dep_tmp/apps/planning/"
   ${PRODUCTION_DEPENDENCY_WORKSPACE_PATHS.map(path => `cp -a "$incoming/${path}" "$dep_tmp/packages/"`).join('\n  ')}
   ${INSTALL_MANIFEST_ONLY_WORKSPACE_PATHS.map(path => `mkdir -p "$dep_tmp/${path}"; cp "$incoming/${path}/package.json" "$dep_tmp/${path}/"`).join('\n  ')}
   chown -R ${SERVICE_USER}:${SERVICE_USER} "$dep_tmp"
@@ -598,6 +602,7 @@ ln -s "$dep_dir/node_modules" "$incoming/node_modules"
 ln -s "$dep_dir/apps/leitbild/node_modules" "$incoming/apps/leitbild/node_modules"
 ln -s "$dep_dir/apps/world/node_modules" "$incoming/apps/world/node_modules"
 ln -s "$dep_dir/apps/agents/node_modules" "$incoming/apps/agents/node_modules"
+ln -s "$dep_dir/apps/planning/node_modules" "$incoming/apps/planning/node_modules"
 mv "$incoming" "$release_dir"
 ${releaseActivation(install, artifact.manifest.knowledgeRevision)}
 # Retention is maintenance after the activation commit, never a rollback trigger.

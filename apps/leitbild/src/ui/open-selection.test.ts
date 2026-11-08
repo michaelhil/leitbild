@@ -34,4 +34,14 @@ describe('what stays open after the Resources are read again', () => {
     const none = { world: null, agents: null, agentsVisible: false }
     expect(keptSelection(none, [], ready)).toEqual(none)
   })
+
+  test('Planning closes a deleted Study only after its Module answered; its library stays available', () => {
+    const planning = { world: null, agents: null, agentsVisible: false, planning: 'study-1' }
+    const available = outcomes(...ready, { moduleId: 'planning', status: 'ready' })
+    const failed = outcomes(...ready, { moduleId: 'planning', status: 'failed', failure: { code: 'module_unavailable', message: 'Planning did not answer', retryable: true } })
+    expect(keptSelection(planning, [], available).planning).toBeNull()
+    expect(keptSelection(planning, [], failed).planning).toBe('study-1')
+    expect(keptSelection({ ...planning, planning: 'library' }, [], available).planning).toBe('library')
+    expect(keptSelection({ ...planning, planning: 'library' }, [], ready).planning).toBeNull()
+  })
 })

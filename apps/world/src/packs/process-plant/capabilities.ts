@@ -27,6 +27,7 @@ import { operationRecordSchema, resetRecordSchema } from './operations/plant-ope
 import { processPlantProposalSchema } from './operations/proposals.ts'
 import { operationConsequenceSchema } from './operations/consequence.ts'
 import { processPlantQueryKinds } from './query.ts'
+import { processPlantEngineeringCapability } from './engineering-inputs.ts'
 import { processPlantActions } from './actions.ts'
 import { faultActionIds, writesFault } from './operations/fault-acts.ts'
 import { processPlantActionsSearchInputSchema, processPlantCatalogInputSchema } from './queries/catalog-query.ts'
@@ -53,6 +54,7 @@ import {
 } from './queries/signal-query.ts'
 import { variablesReadQuerySchema, variablesSearchQuerySchema } from './queries/variable-query.ts'
 import { processPlantResponseQuerySchema } from './response-evidence.ts'
+import { processPlantPlanningCapability } from './planning-source.ts'
 
 const recordSchema = z.record(z.string(), z.json())
 const recordArraySchema = z.array(recordSchema)
@@ -359,6 +361,7 @@ export const processPlantControlProposeResultSchema = z.discriminatedUnion('ok',
 export type ProcessPlantControlProposeResult = z.infer<typeof processPlantControlProposeResultSchema>
 
 export const processPlantCapabilities = [
+  processPlantPlanningCapability,
   commandCapability({
     id: processPlantControlWriteCommandKind,
     title: 'Write process control',
@@ -408,6 +411,7 @@ export const processPlantCapabilities = [
     withheldFromAgents: payload => faultActionIds().has(processPlantActionInvokePayloadSchema.parse(payload).actionId),
   }),
   ...processPlantQueryCapabilities,
+  processPlantEngineeringCapability,
   defineObservationCapability('declarations', {
     id: processPlantObservationCapabilityIds.declarations,
     title: 'Declare observables',

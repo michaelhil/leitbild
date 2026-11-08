@@ -13,7 +13,7 @@ export const MODULE_TITLES: Readonly<Record<RequiredModule, string>> = { world: 
 
 /** A Module's title; a Module without one is named by its id as it stands, never by a guess. */
 export const moduleTitle = (moduleId: string): string =>
-  Object.hasOwn(MODULE_TITLES, moduleId) ? MODULE_TITLES[moduleId as RequiredModule] : moduleId
+  moduleId === 'planning' ? 'Planning' : Object.hasOwn(MODULE_TITLES, moduleId) ? MODULE_TITLES[moduleId as RequiredModule] : moduleId
 export type ModuleReadiness = 'ready' | 'provisioning' | 'failed' | 'missing'
 
 export const LAST_WORKSPACE_GONE_TEXT = 'Your last Workspace no longer exists.'

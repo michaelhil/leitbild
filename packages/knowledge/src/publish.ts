@@ -1,9 +1,19 @@
-import { createKnowledge, safeDocumentPath, type KnowledgeSnapshot } from './index.ts'
+import { createKnowledge, safeDocumentPath, safeKnowledgeImagePath, type KnowledgeSnapshot } from './index.ts'
 import { posix } from 'node:path'
 import { readProductSource } from './source.ts'
 import { parseProductSourceReference } from './source-reference.ts'
 import { updateSchematicDocument } from './schematic.ts'
 import { validateProcedurePublication } from '@leitbild/procmd'
+import { marked } from 'marked'
+import { markdownBody } from './markdown.ts'
+
+const markdownLinks = (content: string, kind: 'link' | 'image'): string[] => {
+  const links: string[] = []
+  marked.walkTokens(marked.lexer(markdownBody(content)), token => {
+    if ((token.type === 'image' || token.type === 'link') && token.type === kind) links.push(token.href)
+  })
+  return links
+}
 
 const git = async (root: string, args: string[]): Promise<string> => {
   const child = Bun.spawn(['git', '-C', root, ...args], { stdout: 'pipe', stderr: 'pipe' })
@@ -19,8 +29,8 @@ const git = async (root: string, args: string[]): Promise<string> => {
 export const validateKnowledgeSources = async (snapshot: KnowledgeSnapshot, sourceRoot?: string): Promise<ReadonlyArray<string>> => {
   const paths = new Set<string>()
   for (const document of snapshot.documents) {
-    for (const match of document.content.matchAll(/(?<!!)\[[^\]]*\]\((source:[^\s)]+)(?:\s+"[^"]*")?\)/g)) {
-      const href = match[1]!
+    for (const href of markdownLinks(document.content, 'link')) {
+      if (!href.startsWith('source:')) continue
       if (!sourceRoot) throw new Error('A product source root is required to validate implementation links')
       const ref = parseProductSourceReference(href.slice(7).replace(/#L(\d+)(?:-L?(\d+))?$/, (_match, start, end) => `:${start}${end ? `-${end}` : ''}`))
       if (!ref) throw new Error(`Invalid source reference in ${document.path}: ${href}`)
@@ -42,7 +52,25 @@ export const publishKnowledge = async (root: string, sourceRoot?: string): Promi
   ).sort()
   const documents = await Promise.all(names.map(async path => ({ path, content: await git(root, ['show', `${revision}:${path}`]) })))
   if (!documents.some(document => document.path === 'index.md')) throw new Error('Knowledge repository requires index.md')
-  const snapshot = { revision, documents }
+  const imagePaths = new Set<string>()
+  for (const document of documents) for (const href of markdownLinks(document.content, 'image')) {
+    if (/^https:\/\//i.test(href)) continue
+    if (/^[a-z][a-z\d+.-]*:/i.test(href) || href.startsWith('/') || href.includes('?') || href.includes('#')) throw new Error(`Unsupported knowledge image in ${document.path}: ${href}`)
+    const path = posix.normalize(posix.join(posix.dirname(document.path), decodeURIComponent(href)))
+    if (!safeKnowledgeImagePath(path)) throw new Error(`Knowledge images must name a local PNG or WebP: ${document.path}: ${href}`)
+    imagePaths.add(path)
+  }
+  const images = await Promise.all([...imagePaths].sort().map(async path => {
+    const child = Bun.spawn(['git', '-C', root, 'show', `${revision}:${path}`], { stdout: 'pipe', stderr: 'pipe' })
+    const [bytes, error, code] = await Promise.all([new Response(child.stdout).arrayBuffer(), new Response(child.stderr).text(), child.exited])
+    if (code !== 0) throw new Error(`Knowledge image unavailable: ${path}: ${error.trim()}`)
+    const buffer = Buffer.from(bytes)
+    const png = buffer.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+    const webp = buffer.subarray(0, 4).toString() === 'RIFF' && buffer.subarray(8, 12).toString() === 'WEBP'
+    if (buffer.length > 5_000_000 || (path.endsWith('.png') ? !png : !webp)) throw new Error(`Knowledge image must be a valid PNG/WebP signature and at most 5 MB: ${path}`)
+    return { path, mediaType: path.endsWith('.png') ? 'image/png' as const : 'image/webp' as const, base64: buffer.toString('base64') }
+  }))
+  const snapshot = { revision, documents, ...(images.length ? { images } : {}) }
   const knowledge = createKnowledge(snapshot)
   validateProcedurePublication(documents, (fromPath, href, requireSection) => {
     if (/^[a-z][a-z\d+.-]*:/i.test(href) || href.startsWith('/')) throw new Error(`Assessment source must name a local engineering owner in ${fromPath}: ${href}`)
@@ -58,8 +86,7 @@ export const publishKnowledge = async (root: string, sourceRoot?: string): Promi
       throw new Error(`Stale generated schematic in ${document.path}; regenerate before publishing`)
     // Relative authored document links must resolve in this exact publication.
     // External/code references are independently checkable, not mirrored here.
-    for (const match of document.content.matchAll(/(?<!!)\[[^\]]*\]\(([^\s)]+)(?:\s+"[^"]*")?\)/g)) {
-      const href = match[1]!
+    for (const href of markdownLinks(document.content, 'link')) {
       if (/^[a-z][a-z\d+.-]*:/i.test(href) || href.startsWith('/')) continue
       const [target, section] = href.split('#')
       const path = target ? posix.normalize(posix.join(posix.dirname(document.path), decodeURIComponent(target))) : document.path

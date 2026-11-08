@@ -43,6 +43,10 @@ test('local route split consumes production matchers, not a second routing table
   expect(route('/api/workspaces/w/world/ws')).toBe('world')
   expect(route('/api/workspaces/w/agents/ws')).toBe('agents')
   expect(route('/assets/agents/app.js')).toBe('agents')
+  expect(route('/workspaces/w/agents/embed/engineering.result')).toBe('agents')
+  expect(route('/workspaces/w/agents/embed/arbitrary.page')).toBe('host')
+  expect(route('/workspaces/w/planning')).toBe('planning')
+  expect(route('/assets/planning/app.js')).toBe('planning')
   expect(route('/wiki')).toBe('host')
   expect(() => localRoutes(caddy.replace('@world path_regexp world', '@changed path_regexp changed'))).toThrow()
   expect(() => localRoutes(`${caddy}\n@world path_regexp world .*`)).toThrow()
@@ -58,7 +62,7 @@ test('preflight refuses a prepared stack with the wrong wiki revision', async ()
   const root = await mkdtemp(join(tmpdir(), 'leitbild-preflight-wiki-'))
   const revision = 'a'.repeat(40)
   try {
-    for (const path of ['apps/leitbild/src/ui/dist/index.html', 'apps/world/src/ui/dist/index.html', 'apps/agents/src/ui/dist/index.html', 'apps/agents/src/ui/dist/app.js', 'apps/agents/src/ui/dist.css']) {
+    for (const path of ['apps/leitbild/src/ui/dist/index.html', 'apps/world/src/ui/dist/index.html', 'apps/agents/src/ui/dist/index.html', 'apps/agents/src/ui/dist/app.js', 'apps/agents/src/ui/dist.css', 'apps/planning/src/ui/dist/index.html']) {
       await Bun.write(join(root, path), '')
     }
     await Bun.write(join(root, 'knowledge/snapshot.json'), JSON.stringify({ revision, documents: [] }))
@@ -80,9 +84,9 @@ test('loopback proxy retains HTTP path/query/body and forwards WebSocket frames 
     },
     websocket: { open(socket) { socket.send('ready') }, message(socket, message) { socket.send(message) } },
   })
-  const proxy = startLocalProxy(localRoutes(caddy), { host: upstream.port!, agents: upstream.port!, world: upstream.port! })
+  const proxy = startLocalProxy(localRoutes(caddy), { host: upstream.port!, agents: upstream.port!, world: upstream.port!, planning: upstream.port! })
   try {
-    expect(() => startLocalProxy(localRoutes(caddy), { host: upstream.port!, agents: upstream.port!, world: upstream.port! }, upstream.port!)).toThrow()
+    expect(() => startLocalProxy(localRoutes(caddy), { host: upstream.port!, agents: upstream.port!, world: upstream.port!, planning: upstream.port! }, upstream.port!)).toThrow()
     const response = await fetch(`http://127.0.0.1:${proxy.port}/api/workspaces/w/world/example?value=a%20b`, { method: 'POST', body: 'payload' })
     expect(await response.json()).toEqual({ path: '/api/workspaces/w/world/example', query: '?value=a%20b', body: 'payload' })
     await new Promise<void>((resolve, reject) => {
@@ -104,7 +108,7 @@ test('loopback proxy retains HTTP path/query/body and forwards WebSocket frames 
 test('the public development proxy never forwards internal Module invocation paths', async () => {
   let calls = 0
   const upstream = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch: () => { calls++; return new Response('unexpected') } })
-  const proxy = startLocalProxy(localRoutes(caddy), { host: upstream.port!, agents: upstream.port!, world: upstream.port! })
+  const proxy = startLocalProxy(localRoutes(caddy), { host: upstream.port!, agents: upstream.port!, world: upstream.port!, planning: upstream.port! })
   try {
     for (const path of ['/internal', '/internal/workspaces/w/capabilities/world.context.read/invoke']) {
       const response = await fetch(`http://127.0.0.1:${proxy.port}${path}`, { method: 'POST', body: '{}' })

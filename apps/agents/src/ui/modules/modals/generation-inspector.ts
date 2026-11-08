@@ -324,7 +324,9 @@ export const showGenerationInspector = (options: {
     if (compactActivity && record.result === undefined) note(host, 'Outcome unknown: no durable result was recorded for this attempt.')
     const operations = recordedOperations(record)
     const focusedKey = activity?.evidence.callId === call.id ? activity.evidence.operationKey : undefined
-    const focused = focusedKey === undefined ? undefined : operations.find(operation => operation.key === focusedKey)
+    const focused = focusedKey === undefined
+      ? (record.tool === 'engineering_calculate' || record.tool === 'engineering_run' ? operations[0] : undefined)
+      : operations.find(operation => operation.key === focusedKey)
     const published = focused === undefined ? undefined : recordedOperationView(focused, currentWorkspaceId())
     // The Module's detail leads when present; retain the original chat prose
     // in context rather than repeating it above the recorded decision.

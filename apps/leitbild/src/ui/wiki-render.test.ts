@@ -26,6 +26,12 @@ test('authored HTML and unsafe protocols never become executable DOM', () => {
   expect(html).not.toContain('<img')
   expect(html).toContain('class="mermaid"')
 })
+test('local screenshot URLs resolve relative to the article and pin its publication', () => {
+  const content = '# Screen\n\n![Schedule](images/screen.png) ![Blocked](//foreign.invalid/screen.png)'
+  const html = renderWiki({ path: 'planning/index.md', content, headings: headingsFor(content) }, 'a'.repeat(40))
+  expect(html).toContain('src="/api/knowledge/image?path=planning%2Fimages%2Fscreen.png&amp;revision=')
+  expect(html).not.toContain('src="//foreign')
+})
 test('authoring comments stay hidden while literal code and other HTML remain escaped', () => {
   const html = render('# Drawing\n\n<!-- generated-schematic:start -->\n\nVisible\n\n```text\n<!-- literal example -->\n```\n\n<div>Not executable</div>')
   expect(html).not.toContain('generated-schematic:start')

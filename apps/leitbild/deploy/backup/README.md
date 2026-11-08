@@ -4,9 +4,9 @@ Leitbild backups are pulled from production into the encrypted Restic
 repository on the operator Mac. The password is stored in macOS Keychain under
 `no.openai.leitbild-restic`.
 
-- `critical` runs daily at 03:15. It briefly stops World, Agents, and Host to
+- `critical` runs daily at 03:15. It briefly stops World, Agents, Planning and Host to
   capture `/var/lib/leitbild`, service definitions, environment files, Caddy,
-  and recovery metadata. All three services are restarted and health-checked
+  and recovery metadata. All four services are restarted and health-checked
   before the archive is sent to Restic.
 - `static` runs Sundays at 04:15 without stopping the platform. It captures
   map, reference, and OSRM data.

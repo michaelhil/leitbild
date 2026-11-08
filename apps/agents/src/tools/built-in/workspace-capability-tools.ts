@@ -22,6 +22,7 @@ import {
   type WorkspaceId,
   type WorkspaceResourceReference,
   type WorkspaceRoomScope,
+  type ActorContext,
 } from '@leitbild/contracts'
 import type { Tool, ToolContext, ToolResult, ToolExecutionEffect } from '../../core/types/tool.ts'
 import { isPeopleCapabilityId } from '../../core/people/people-capability-ids.ts'
@@ -32,6 +33,8 @@ export interface WorkspaceCapabilityToolsDeps {
   readonly hostBaseUrl: string
   readonly getRoomScope: (roomId: string) => WorkspaceRoomScope | undefined
   readonly fetchImpl?: typeof fetch
+  /** Trusted HTTP caller attribution for owner-mediated human research actions. Never tool input. */
+  readonly actor?: ActorContext
 }
 
 export const WORKSPACE_CAPABILITY_TOOL_NAMES = ['workspace_explore', 'workspace_call'] as const
@@ -802,7 +805,7 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
                 ...(entry.expectedRevision === undefined ? {} : { expectedRevision: entry.expectedRevision }),
                 ...(entry.idempotencyKey === undefined ? {} : { idempotencyKey: entry.idempotencyKey }),
                 input,
-                actor: { kind: 'ai', id: context.callerId, displayName: context.callerName },
+                actor: deps.actor ?? { kind: 'ai', id: context.callerId, displayName: context.callerName },
               }),
             })
             if (!response.ok) {

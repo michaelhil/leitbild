@@ -15,6 +15,7 @@ import { sightingOf, trackDeletionRefusal, trackIndexObject, trackObject, type T
 import { hasLoad } from '../engine/rules.ts'
 import { recommend } from '../recommend.ts'
 import { refusal } from '../refusal.ts'
+import { readEinsatzPlanningSource } from '../planning-source.ts'
 import { attributionOf, resolveViewer } from '../viewer.ts'
 import { removeRecords } from './removal.ts'
 import { einsatzAdapterId, einsatzPackId, einsatzRuntimeId } from '../ids.ts'
@@ -327,6 +328,9 @@ const connectEinsatz = async (config: PackRuntimeConnectionConfig, routing: Rout
     invokeQuery: async query => {
       if (unavailable()) throw new Error(unavailableReason)
       const viewer = resolveViewer(query.viewer, roles)
+      if (query.capabilityId === 'world.einsatz.planning-basis') {
+        return await readEinsatzPlanningSource({ state: withoutDeleted(current).state, input: query.input, policy: query.readPolicy, routing })
+      }
       if (query.capabilityId === einsatzQueryIds.recommend) {
         const input = recommendInputSchema.parse(query.input)
         return await recommend({ state: einsatzQueryState(withoutDeleted(current).state, query.readPolicy), viewer, taskId: input.taskId, routing })

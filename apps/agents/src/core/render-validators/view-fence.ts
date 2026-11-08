@@ -17,9 +17,27 @@ import {
 
 export const VIEW_FENCE_LANGUAGE = 'leitbild-view'
 
-// Modules whose views an answer may present. Agents never presents
-// its own pages, and a new Module must be added deliberately.
+// Module-wide publications. Agents has one narrower, Room-owned exception
+// below: engineering.result. No other Agents page is embeddable.
 export const EMBEDDABLE_VIEW_MODULES: ReadonlySet<string> = new Set(['world'])
+
+export interface EngineeringViewState {
+  readonly roomId: string
+  readonly turnId: string
+  readonly toolCallId: string
+}
+
+export const engineeringViewState = (state: string): EngineeringViewState | null => {
+  let raw: unknown
+  try { raw = JSON.parse(state) } catch (error) { if (error instanceof SyntaxError) return null; throw error }
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null
+  const value = raw as Record<string, unknown>
+  if (Object.keys(value).sort().join() !== 'roomId,toolCallId,turnId'
+    || typeof value.roomId !== 'string' || !IDENTIFIER.test(value.roomId)
+    || typeof value.turnId !== 'string' || !IDENTIFIER.test(value.turnId)
+    || typeof value.toolCallId !== 'string' || !/^call_\d+_\d+$/.test(value.toolCallId)) return null
+  return value as unknown as EngineeringViewState
+}
 
 export interface ViewReference {
   readonly callId: string
@@ -89,7 +107,41 @@ export const checkViewEnvelope = (value: unknown, workspaceId: string): ViewEnve
   const problem = structuralProblem(value)
   if (problem !== null) return { kind: 'refused', code: 'view_envelope_invalid', error: problem }
   const envelope = value as EmbeddedViewEnvelope
-  if (!EMBEDDABLE_VIEW_MODULES.has(envelope.moduleId)) return { kind: 'refused', code: 'view_module_not_embeddable', error: `views of Module ${envelope.moduleId} cannot be embedded` }
+  const engineering = envelope.moduleId === 'agents' && envelope.viewType === 'engineering.result' && envelope.subject.type === 'agents.room'
+  if (!EMBEDDABLE_VIEW_MODULES.has(envelope.moduleId) && !engineering) return { kind: 'refused', code: 'view_module_not_embeddable', error: `views of Module ${envelope.moduleId} cannot be embedded` }
+  if (engineering) {
+    const state = engineeringViewState(envelope.state)
+    if (state === null || state.roomId !== envelope.subject.id) return { kind: 'refused', code: 'view_envelope_invalid', error: 'engineering evidence locator does not match its Room' }
+  }
   if (envelope.subject.workspaceId !== workspaceId) return { kind: 'refused', code: 'view_workspace_mismatch', error: 'the view belongs to another Workspace' }
   return { kind: 'view', envelope }
+}
+
+const object = (value: unknown): Record<string, unknown> | null =>
+  typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : null
+
+/** Only these two built-ins publish an Agents calculation. The receipt and
+ * exact execution locator must agree; a workspace tool cannot forge one. */
+export const trustedEngineeringViewEntry = (value: unknown, expected?: Partial<EngineeringViewState>): {
+  readonly key: 'calculation'; readonly success: true; readonly embeddedView: EmbeddedViewEnvelope; readonly viewRef: string; readonly data: Record<string, unknown>
+} | null => {
+  const call = object(value)
+  if (call?.tool !== 'engineering_calculate' && call?.tool !== 'engineering_run') return null
+  const result = object(call.result)
+  const data = object(result?.data)
+  if (result?.success !== true || !Array.isArray(data?.results) || data.results.length !== 1) return null
+  const entry = object(data.results[0])
+  const receipt = object(entry?.data)
+  const envelope = object(entry?.embeddedView)
+  const subject = object(envelope?.subject)
+  if (entry?.key !== 'calculation' || entry.success !== true || receipt?.kind !== 'engineering-calculation'
+    || receipt.qualification !== 'research-only' || receipt.mode !== (call.tool === 'engineering_run' ? 'exploratory-script' : 'reviewed-method')
+    || envelope?.moduleId !== 'agents' || envelope.viewType !== 'engineering.result' || subject?.type !== 'agents.room'
+    || typeof subject.workspaceId !== 'string' || typeof envelope.state !== 'string') return null
+  const checked = checkViewEnvelope(envelope, subject.workspaceId)
+  const state = engineeringViewState(envelope.state)
+  if (checked.kind !== 'view' || state === null || entry.viewRef !== viewRefFor(state.toolCallId, 'calculation')
+    || (typeof call.id === 'string' && call.id !== state.toolCallId)
+    || (expected !== undefined && Object.entries(expected).some(([key, item]) => state[key as keyof EngineeringViewState] !== item))) return null
+  return entry as unknown as { key: 'calculation'; success: true; embeddedView: EmbeddedViewEnvelope; viewRef: string; data: Record<string, unknown> }
 }

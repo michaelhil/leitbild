@@ -29,9 +29,12 @@ export const smokeLocalStack = async (origin: string, knowledgeRevision: string)
   const base = `/api/workspaces/${workspace.id}`
   const invoke = (id: string, body: unknown) => request(`${base}/capabilities/${id}/invoke`, body)
   try {
-    if (workspace.modules.length !== 2 || workspace.modules.some((module: { status: string }) => module.status !== 'ready')) throw new Error('Core Modules were not provisioned')
+    if (workspace.modules.length !== 3 || ['world', 'agents', 'planning'].some(id => !workspace.modules.some((module: { moduleId: string; status: string }) => module.moduleId === id && module.status === 'ready'))) throw new Error('Research Workspace Modules were not provisioned')
     const catalog = await request(`${base}/capabilities`)
     if (!catalog.capabilities.some((capability: { id: string }) => capability.id === 'agents.assistance.open')) throw new Error('Agents discovery unavailable')
+    if (!catalog.capabilities.some((capability: { id: string }) => capability.id === 'planning.demo.start')) throw new Error('Planning discovery unavailable')
+    const planningUi = await fetch(`${origin}/workspaces/${workspace.id}/planning`)
+    if (!planningUi.ok || !(await planningUi.text()).includes('/assets/planning/')) throw new Error('Built Planning UI unavailable through the public proxy')
     const authored = await invoke('world.scenario.create', { input: { source: {
       id: 'local-stack-weather', title: 'Local stack weather',
       packs: [{ id: 'weather', items: [{ type: 'weather_probe', id: 'weather:local', label: 'Local weather', point: [10.75, 59.91] }] }],
