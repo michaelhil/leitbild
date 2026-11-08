@@ -407,7 +407,7 @@ export const connectNativeProcessPlantEngine = async (config: {
           state = { t: frame.t, values: frame.values }
           const named = frame.events === null ? undefined : endedEventSchema.parse(frame.events).ended
           if (named !== undefined) ended = { atMs: elapsedMs(), label: named.label, reason: `Simulation domain end: ${named.plain} at t=${(elapsedMs() / 1_000).toFixed(3)} s` }
-          if (every !== null && ended === null && to === instant(lastFrameAtOrBefore(to)) && lastFrameAtOrBefore(to) % every === 0) await exchangeGrid(every)
+          if (every !== null && ended === null && lastFrameAtOrBefore(to) % every === 0) await exchangeGrid(every)
         }
         return { simulatedMs: (state.t - from) * 1_000, frame, cost }
       } catch (error) {
