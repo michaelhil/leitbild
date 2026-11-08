@@ -77,6 +77,13 @@ const progressForStep = (step: ProcedureStep): ProcedureRunStepProgress => ({
   name: procedureStepDisplayName(step),
 })
 
+/** The Run a unit is working to now: its latest active Run, else the latest it is held at. */
+export const procedureRunInEffect = (runs: ReadonlyArray<ProcedureRunState>, scope: ProcedureRunScope): ProcedureRunState | null => {
+  const latest = (status: ProcedureRunState['status']) => runs.filter(run => run.status === status && sameProcedureScope(run.scope, scope))
+    .sort((left, right) => Date.parse(right.startedAt) - Date.parse(left.startedAt))[0]
+  return latest('active') ?? latest('transferred') ?? null
+}
+
 /** Where a transfer lands: the step its branch names, else where an open Run of the target stands, else the target's first step. */
 export const procedureTransferStep = (
   branch: Pick<ProcedureBranch, 'targetStepId'>,

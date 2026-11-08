@@ -75,6 +75,7 @@
     procedureStepRows,
     procedureRunFor,
     procedureRunDocumentKey,
+    procedureRunInEffect,
     procedureTransferStep,
     procedureRunSummariesForScope,
     procedureRunVisualStateFor as selectedProcedureRunVisualStateFor,
@@ -683,7 +684,7 @@
       catalog = nextCatalog
       setLoadStage('source', 'done', `${nextCatalog.procedures.length} procedures available`)
       setLoadStage('runs', 'done', `${runs.length} tracked runs`)
-      selectedProcedureId = selectedProcedureId ?? initialProcedureId ?? nextCatalog.procedures[0]?.procedureId ?? null
+      selectedProcedureId = selectedProcedureId ?? initialProcedureId ?? procedureRunInEffect(runs, currentScope)?.procedureId ?? nextCatalog.procedures[0]?.procedureId ?? null
       // Exact input activation owns its pinned load and focuses only after revalidation.
       if (selectedProcedureId && inputFocus === undefined) await loadProcedure(selectedProcedureId, !loading)
       if (disposed || request !== catalogRequest) return
