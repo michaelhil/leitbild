@@ -2,6 +2,7 @@
 :root.dark { color-scheme: dark; --surface: #111827; --surface-muted: #1f2937; --text: #e5e7eb; --text-strong: #f9fafb; --text-subtle: #d1d5db; --border: #4b5563; --focus: #93c5fd; }
 * { box-sizing: border-box; } body { margin: 0; padding: 20px; background: var(--surface); color: var(--text); font: 14px/1.5 system-ui, sans-serif; }
 main { max-width: 1200px; margin: auto; } h1 { margin: 4px 0 8px; font-size: 23px; color: var(--text-strong); } h2 { font-size: 18px; margin: 0 0 12px; } h3 { font-size: 14px; margin: 12px 0 6px; }
+a { color: var(--focus); text-underline-offset: 3px; }
 p { margin: 7px 0; } section, form, details { margin: 22px 0; } .eyebrow, small, #status { color: var(--text-subtle); font-size: 12px; } .eyebrow { letter-spacing: .03em; }
 .table-scroll { overflow-x: auto; } table { border-collapse: collapse; width: 100%; text-align: left; font-variant-numeric: tabular-nums; } th, td { padding: 9px; border-bottom: 1px solid var(--border); vertical-align: top; } th { font-weight: 600; } th:first-child, td:first-child { padding-left: 0; }
 .source { border-left: 3px solid var(--border); padding-left: 12px; margin: 14px 0; } .failure { padding: 12px; border: 1px solid var(--border); font-weight: 600; } .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }

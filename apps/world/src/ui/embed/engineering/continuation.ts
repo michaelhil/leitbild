@@ -1,4 +1,5 @@
 import { embeddedViewPublicationSchema, engineeringContinuationCancellationSchema, engineeringContinuationReceiptSchema, type EmbeddedViewEnvelope, type EngineeringContinuationReceipt } from '@leitbild/contracts'
+import { embeddedViewFragment, embeddedViewPath } from '@leitbild/contracts/embedded-view-route'
 
 const receiptWithView = engineeringContinuationReceiptSchema.extend({ view: embeddedViewPublicationSchema }).strict()
 
@@ -8,6 +9,12 @@ export const continuationJobId = (envelope: EmbeddedViewEnvelope): string => {
   if (typeof state !== 'object' || state === null || Array.isArray(state) || Object.keys(state).join() !== 'jobId'
     || !('jobId' in state) || typeof state.jobId !== 'string' || !/^[0-9a-f-]{36}$/i.test(state.jobId)) throw new Error('The continuation locator is invalid')
   return state.jobId
+}
+
+export const continuationLocation = (envelope: EmbeddedViewEnvelope, jobId: string): string => {
+  const next = { ...envelope, state: JSON.stringify({ jobId }) }
+  continuationJobId(next)
+  return `${embeddedViewPath(next)}${embeddedViewFragment(next)}`
 }
 
 export const continuationActive = (receipt: EngineeringContinuationReceipt): boolean =>

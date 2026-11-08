@@ -4,7 +4,7 @@
   import '@oicl/openbridge-webcomponents/dist/components/button/button.js'
   import { runOnMount } from '../../svelte-lifecycle.svelte.ts'
   import { embeddedDisplayFrame } from '../view-host.ts'
-  import { alignedContinuationSamples, continuationActive, continuationClient, continuationJobId } from './continuation.ts'
+  import { alignedContinuationSamples, continuationActive, continuationClient, continuationJobId, continuationLocation } from './continuation.ts'
 
   let { envelope }: { envelope: EmbeddedViewEnvelope } = $props()
   let receipt = $state.raw<EngineeringContinuationReceipt | null>(null)
@@ -21,6 +21,7 @@
   const rows = $derived(receipt === null ? [] : alignedContinuationSamples(receipt))
   const active = $derived(receipt !== null && continuationActive(receipt))
   const maxSamples = $derived(Math.max(0, ...(receipt?.cases.map(item => item.sampleCount) ?? [])))
+  const permalink = $derived(receipt === null ? null : continuationLocation(envelope, receipt.jobId))
   const number = (value: number): string => value.toLocaleString(undefined, { maximumSignificantDigits: 6 })
   const errorText = (error: unknown): string => error instanceof Error ? error.message : String(error)
   const schedule = (): void => {
@@ -30,7 +31,7 @@
   const load = async (): Promise<void> => {
     if (busy || closed) return
     busy = true
-    try { const next = await client.inspect(current, offset); if (!closed) { receipt = next; failure = null } }
+    try { const next = await client.inspect(current, offset); if (!closed) { receipt = next; failure = null; history.replaceState(null, '', continuationLocation(envelope, next.jobId)) } }
     catch (error) { if (!closed) { receipt = null; failure = errorText(error) } }
     finally { busy = false; schedule() }
   }
@@ -44,7 +45,7 @@
       pendingSubmit = null
       if (!closed) {
         if ('evidenceAvailable' in next) { receipt = null; acknowledgement = `Continuation ${next.status}. The work has stopped. Its source evidence is unavailable with current access.` }
-        else { receipt = next; current = next.jobId; offset = 0; acknowledgement = null }
+        else { receipt = next; current = next.jobId; offset = 0; acknowledgement = null; history.replaceState(null, '', continuationLocation(envelope, next.jobId)) }
       }
     } catch (error) { if (!closed) failure = `${errorText(error)}${pendingSubmit === null ? '' : ' Retry the same action; its submission key is retained.'}` }
     finally { busy = false; schedule() }
@@ -61,7 +62,8 @@
 
 <main>
   <header><p class="eyebrow">Private model continuation · research only</p><h1>{envelope.title}</h1>
-    <p>The cases start from one captured Run state. Their results are conditional model evidence.</p></header>
+    <p>The cases start from one captured Run state. Their results are conditional model evidence.</p>
+    {#if permalink !== null}<a href={permalink} target="_blank" rel="noopener">Open this result</a>{/if}</header>
   {#if failure}<p role="alert" class="failure">{failure}</p>{#if receipt === null && current !== ''}
     <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
     <obc-button disabled={busy} onclick={() => void load()}>Retry reading</obc-button>
@@ -129,5 +131,6 @@
   caption { text-align: left; margin-bottom: 8px; } th, td { padding: 8px; border-bottom: 1px solid var(--border-divider-color); vertical-align: top; }
   .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
   .failure { padding: 12px; border: 1px solid var(--border-divider-color); font-weight: 600; }
+  a { color: var(--element-active-color); text-underline-offset: 3px; }
   summary { cursor: pointer; font-weight: 600; } pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
 </style>

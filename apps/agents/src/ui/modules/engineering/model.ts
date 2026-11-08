@@ -1,4 +1,5 @@
 import type { EngineeringInputBasis } from '@leitbild/contracts'
+import { embeddedViewFragment, embeddedViewPath } from '@leitbild/contracts/embedded-view-route'
 import { checkViewEnvelope, engineeringViewState, type EngineeringViewState } from '../../../core/render-validators/view-fence.ts'
 
 export interface EngineeringDatum {
@@ -23,6 +24,16 @@ export const calculationLocator = (raw: unknown, workspaceId: string): Engineeri
   const state = engineeringViewState(checked.envelope.state)
   if (state === null) throw new Error('The engineering execution locator is invalid')
   return state
+}
+
+/** A shareable owner route names the exact successful read, including reruns.
+ * The originating message's envelope remains immutable. */
+export const calculationLocation = (raw: unknown, workspaceId: string, locator: EngineeringViewState): string => {
+  const checked = checkViewEnvelope(raw, workspaceId)
+  if (checked.kind !== 'view') throw new Error(`${checked.code}: ${checked.error}`)
+  const next = { ...checked.envelope, state: JSON.stringify(locator) }
+  calculationLocator(next, workspaceId)
+  return `${embeddedViewPath(next)}${embeddedViewFragment(next)}`
 }
 
 export const readCalculationReceipt = (value: unknown): CalculationReceipt => {

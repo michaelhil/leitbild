@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { calculationApi, calculationLocator, calculationRequest, readCalculationReceipt, type CalculationReceipt } from './model.ts'
+import { calculationApi, calculationLocation, calculationLocator, calculationRequest, readCalculationReceipt, type CalculationReceipt } from './model.ts'
 
 const workspaceId = '11111111-1111-4111-8111-111111111111'
 const locator = { roomId: 'room-1', turnId: 'turn-1', toolCallId: 'call_1_0' }
@@ -10,6 +10,16 @@ const receipt: CalculationReceipt = { kind: 'engineering-calculation', title: 'E
 ] } }, outcome: { status: 'completed', output: { value: 4 } } }
 
 describe('retained calculation interaction', () => {
+  test('new successful execution permalinks reopen exactly and preserve the original locator', () => {
+    const next = { ...locator, turnId: 'new-turn' }
+    const href = calculationLocation(envelope, workspaceId, next)
+    const reloaded = JSON.parse(decodeURIComponent(href.split('#view=')[1]!))
+    expect(calculationLocator(reloaded, workspaceId)).toEqual(next)
+    expect(calculationLocator(envelope, workspaceId)).toEqual(locator)
+    expect(calculationLocation(envelope, workspaceId, locator)).toContain(encodeURIComponent('turn-1'))
+    expect(() => calculationLocation(envelope, workspaceId, { ...next, roomId: 'other-room' })).toThrow('Room')
+    expect(() => calculationLocation(envelope, workspaceId, { ...next, turnId: '../private' })).toThrow('locator')
+  })
   test('opening only reads exact owner evidence; a new execution requires an explicit run', async () => {
     const calls: Array<{ path: string; method: string; body: unknown }> = []
     const api = calculationApi(workspaceId, (async (path, init) => {

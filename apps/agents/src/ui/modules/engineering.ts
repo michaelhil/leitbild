@@ -1,4 +1,4 @@
-import { calculationApi, calculationLocator, calculationRequest } from './engineering/model.ts'
+import { calculationApi, calculationLocation, calculationLocator, calculationRequest } from './engineering/model.ts'
 import { renderCalculation } from './engineering/render.ts'
 
 const host = document.getElementById('calculation')
@@ -22,7 +22,9 @@ const boot = async (): Promise<void> => {
     host.replaceChildren()
     status.setAttribute('role', 'status'); status.textContent = 'Reading the retained calculation…'
     const { receipt, sourceStatus } = await api.open(current)
+    const permalink = calculationLocation(raw, workspaceId, current)
     renderCalculation(host, receipt, sourceStatus, {
+      permalink,
       ...(current === original ? {} : { original: () => { current = original; void open().catch(showError) } }),
       run: (edits, refresh) => {
         if (busy) return
@@ -38,6 +40,7 @@ const boot = async (): Promise<void> => {
         void run().catch(showError)
       },
     })
+    history.replaceState(null, '', permalink)
     status.textContent = 'Retained result. Opening this page did not run a calculation.'
   }
   // The existing display window's ready handshake; no live-control message is handled.

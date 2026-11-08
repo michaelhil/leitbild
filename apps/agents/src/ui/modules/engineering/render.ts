@@ -51,11 +51,17 @@ export const renderEngineeringData = (value: unknown, depth = 0): HTMLElement =>
 export const renderCalculation = (host: HTMLElement, receipt: CalculationReceipt, statuses: ReadonlyArray<SourceStatus>, handlers: {
   readonly run: (edits: ReadonlyMap<string, string>, refresh: boolean) => void
   readonly original?: () => void
+  /** Constructed by the owner locator helper, never taken from guest output. */
+  readonly permalink?: string
 }): void => {
   host.replaceChildren()
   const header = element('header')
   const eyebrow = element('p', `${receipt.mode === 'exploratory-script' ? 'Exploratory program' : 'Reviewed arithmetic method'} · research only`); eyebrow.className = 'eyebrow'
   header.append(eyebrow, element('h1', receipt.title), element('p', `Calculated ${receipt.createdAt}`)); host.append(header)
+  if (handlers.permalink !== undefined) {
+    const link = element('a', 'Open this result'); link.href = handlers.permalink; link.target = '_blank'; link.rel = 'noopener'
+    header.append(link)
+  }
   const outcome = object(receipt.outcome)
   const failed = outcome?.status === 'failed' || outcome?.status === 'cancelled' || outcome?.success === false
   if (failed) { const failure = element('p', `This attempt ${String(outcome.status ?? 'failed')}. No completed result is established.`); failure.setAttribute('role', 'alert'); failure.className = 'failure'; host.append(failure) }

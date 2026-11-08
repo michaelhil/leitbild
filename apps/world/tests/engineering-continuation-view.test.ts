@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type { EmbeddedViewEnvelope, EngineeringContinuationReceipt } from '@leitbild/contracts'
-import { alignedContinuationSamples, continuationActive, continuationClient, continuationJobId, continuationRequest } from '../src/ui/embed/engineering/continuation.ts'
+import { alignedContinuationSamples, continuationActive, continuationClient, continuationJobId, continuationLocation, continuationRequest } from '../src/ui/embed/engineering/continuation.ts'
 
 const workspaceId = '11111111-1111-4111-8111-111111111111'
 const jobId = '22222222-2222-4222-8222-222222222222'
@@ -21,6 +21,13 @@ const receipt: EngineeringContinuationReceipt = {
 const published = { ...receipt, view: { viewType: envelope.viewType, title: envelope.title, height: envelope.height, state: envelope.state } }
 
 describe('operator continuation evidence', () => {
+  test('a new attempt can reopen by its own permalink without changing the original evidence locator', () => {
+    const nextId = '33333333-3333-4333-8333-333333333333'
+    const href = continuationLocation(envelope, nextId)
+    expect(continuationJobId(JSON.parse(decodeURIComponent(href.split('#view=')[1]!)))).toBe(nextId)
+    expect(continuationJobId(envelope)).toBe(jobId)
+    expect(() => continuationLocation(envelope, '../other')).toThrow('locator')
+  })
   test('partial cases align only common elapsed times, never compare mismatched endpoints', () => {
     expect(alignedContinuationSamples(receipt).map(item => [item.elapsedSeconds, item.difference])).toEqual([[0, 0], [5, -2]])
     expect(continuationActive(receipt)).toBe(false)
