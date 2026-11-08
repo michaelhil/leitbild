@@ -16,6 +16,14 @@ export const barPosition = (horizon: PlanningProblem['horizon'], placement: Pick
   return { left, width: right - left }
 }
 
+export const fittedHorizon = (horizon: PlanningProblem['horizon'], placements: ReadonlyArray<Pick<PlanningPlacement, 'end'>>): PlanningProblem['horizon'] => {
+  if (!placements.length) return horizon
+  const finish = Math.max(horizon.start, ...placements.map(placement => placement.end))
+  const span = Math.max(1, finish - horizon.start)
+  // Small whole-minute breathing room keeps a final milestone inside the plot.
+  return { start: horizon.start, end: Math.min(horizon.end, horizon.start + Math.max(60, Math.ceil(span * 1.08 / 60) * 60)) }
+}
+
 export const movePriority = (order: string[], id: string, direction: -1 | 1): string[] => {
   const index = order.indexOf(id)
   const destination = index + direction

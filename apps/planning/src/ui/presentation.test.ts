@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { barPosition, elapsed, movePriority, optionalSecond } from './presentation.ts'
+import { barPosition, elapsed, fittedHorizon, movePriority, optionalSecond } from './presentation.ts'
 
 describe('Planning presentation', () => {
   test('timeline uses the retained horizon and clips older baseline bars to its bounds', () => {
@@ -11,6 +11,12 @@ describe('Planning presentation', () => {
     expect(movePriority(['a', 'b', 'c'], 'b', -1)).toEqual(['b', 'a', 'c'])
     expect(movePriority(['a', 'b', 'c'], 'b', 1)).toEqual(['a', 'c', 'b'])
     expect(movePriority(['a', 'b'], 'a', -1)).toEqual(['a', 'b'])
+  })
+  test('the schedule view fits retained placements without changing the planning horizon', () => {
+    const horizon = { start: 0, end: 10800 }
+    expect(fittedHorizon(horizon, [{ end: 3000 }])).toEqual({ start: 0, end: 3240 })
+    expect(fittedHorizon(horizon, [])).toEqual(horizon)
+    expect(fittedHorizon(horizon, [{ end: 10800 }])).toEqual(horizon)
   })
   test('elapsed labels and form parsing preserve seconds and distinguish blank from zero', () => {
     expect(elapsed(3661)).toBe('1h 1m 1s')
