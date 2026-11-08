@@ -7,7 +7,7 @@
   import { readProcedureTagValue } from './procedure-client.ts'
   import { canInspectProcedureBranchCheck, type ProcedureChecksView } from '../../features/procedures/checks-view.ts'
   import { simulationTimeAt } from '../simulation-clock.ts'
-  import { procedureViewKey, procedureCategories, procedureOperatorRows, procedureLineChecks, procedureLineCheckEvidence, procedureCheckVersion, procedureLightRows, procedureLightTone, procedureLineReadingText, procedureReferenceNotice, procedureStepCounterText, procedureReadingName, procedureReadingText, procedureRequirementText, procedureEvidenceStatusWord, type ProcedureLineCheck, type StepItem, procedureStepTagBindings, procedureTextSegments, procedureBlockLabel, procedureObservationEvidence, procedureSampledEvidence, procedureObservationBasis, procedureObservationLabel, procedureSourceEvidenceRequest, procedureUnitJump } from './procedure-view.ts'
+  import { procedureViewKey, procedureCategories, procedureOperatorRows, procedureLineChecks, procedureLineCheckEvidence, procedureCheckVersion, procedureTagLabel, procedureLightRows, procedureLightTone, procedureLineReadingText, procedureReferenceNotice, procedureStepCounterText, procedureReadingName, procedureReadingText, procedureRequirementText, procedureEvidenceStatusWord, type ProcedureLineCheck, type StepItem, procedureStepTagBindings, procedureTextSegments, procedureBlockLabel, procedureObservationEvidence, procedureSampledEvidence, procedureObservationBasis, procedureObservationLabel, procedureSourceEvidenceRequest, procedureUnitJump } from './procedure-view.ts'
   import type {
     SimulationRunId,
     SimulationClockState,
@@ -1582,7 +1582,7 @@
 {#snippet procedureText(text: string, tagIds: readonly string[])}
   {#each procedureTextSegments(text, tagIds, document?.sourceUrl) as segment}
     {#if segment.kind === 'tag'}
-      <button type="button" class="procedure-tag" title="Show {segment.text} on a process display" onclick={() => void openTagDisplay(segment.text as ProcedureTagId)}>{segment.text}</button>
+      <button type="button" class="procedure-tag" title="Show {segment.text} on a process display" onclick={() => void openTagDisplay(segment.text as ProcedureTagId)}>{procedureTagLabel(segment.text, document)}</button>
     {:else if segment.kind === 'link'}
       {@const sourceRequest = document ? procedureSourceEvidenceRequest(segment.href, document) : undefined}
       {#if sourceRequest}
@@ -1696,7 +1696,7 @@
           {#each item.blocks as block}<li>{@render procedureText(block.text, block.tagIds)}</li>{/each}
         </ol>
       {:else}
-        <ul class="procedure-instruction-list" aria-label={procedureBlockLabel(first.kind)}>
+        <ul class="procedure-instruction-list" class:lit={item.blocks.some(block => lines?.get(block.sourceLine)?.limits)} aria-label={procedureBlockLabel(first.kind)}>
           {#each item.blocks as block}
             {@const line = lines?.get(block.sourceLine)}
             <li>{#if line}{@render lineCheck(line, checkIndex)}{:else}{@render procedureText(block.text, block.tagIds)}{/if}</li>

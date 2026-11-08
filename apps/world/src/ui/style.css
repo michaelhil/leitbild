@@ -4408,6 +4408,7 @@ body.rail-resizing {
 .procedure-current-check summary { font-weight: 650; }
 .procedure-current-check summary.supported .procedure-check-glyph { color: var(--success); }
 .procedure-current-check summary.contradicted .procedure-check-glyph { color: var(--critical); }
+.procedure-instruction-list.lit { padding-inline-start: 0; list-style: none; }
 .procedure-lit-line { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0 6px; align-items: start; }
 .procedure-light { appearance: none; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 50%; background: transparent; }
 button.procedure-light { cursor: pointer; }

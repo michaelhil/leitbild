@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { parseProcedureMarkdown } from '../src/features/procedures/procmd.ts'
-import { procedureLightRows, procedureLightTone, procedureCheckVersion, procedureCategories, procedureBlockLabel, procedureEvidenceStatusWord, procedureLineReadingText, procedureStepCounterText, procedureReadingName, procedureReadingText, procedureRequirementText, procedureLineCheckEvidence, procedureLineChecks, procedureObservationBasis, procedureObservationEvidence, procedureObservationLabel, procedureOperatorRows, procedureSampledEvidence, procedureSourceEvidenceRequest, procedureStepItems, procedureStepTagBindings, procedureTextSegments, procedureUnitJump } from '../src/ui/procedures/procedure-view.ts'
+import { procedureTagLabel, procedureLightRows, procedureLightTone, procedureCheckVersion, procedureCategories, procedureBlockLabel, procedureEvidenceStatusWord, procedureLineReadingText, procedureStepCounterText, procedureReadingName, procedureReadingText, procedureRequirementText, procedureLineCheckEvidence, procedureLineChecks, procedureObservationBasis, procedureObservationEvidence, procedureObservationLabel, procedureOperatorRows, procedureSampledEvidence, procedureSourceEvidenceRequest, procedureStepItems, procedureStepTagBindings, procedureTextSegments, procedureUnitJump } from '../src/ui/procedures/procedure-view.ts'
 import { procedureCriterionReadingSchema } from '../src/core/model/procedure-criteria.ts'
 import { procedureTestSource } from './procedure-fixtures.ts'
 import { procedureBindingStatusWord, procedureComparisonText, procedureCsfChip, procedureDescriptionText, procedureDisplayReading, procedureElapsedText, procedureStepBindingSummary } from '../src/ui/procedures/procedure-view.ts'
@@ -439,4 +439,11 @@ test('a popover row holds the reading, limit, time and quality, in the words the
   const bad = procedureLightRows(procedureLineCheckEvidence(line!, [read('A', '==', false, false, 'unknown', at, { reason: 'Signal quality is bad.' })], at).operands, document.tags)
   expect(bad[0]!.quality).toBe('Signal quality is bad.')
   expect(bad[1]).toMatchObject({ value: 'no value', state: 'unknown', quality: 'no reading' })
+})
+
+test('a tag button names the equipment on a rewritten document and keeps its id on any other', () => {
+  const tags = [{ id: 'RX-TRIP-MAN', equipment: 'manualReactorTrip' }, { id: 'BARE' }] as unknown as Parameters<typeof procedureTagLabel>[1] extends infer D ? D extends { tags: infer T } ? T : never : never
+  expect(procedureTagLabel('RX-TRIP-MAN', { tags, annotations: { 'ai-workable': 'true' } })).toBe('Manual reactor trip')
+  expect(procedureTagLabel('BARE', { tags, annotations: { 'ai-workable': 'true' } })).toBe('BARE')
+  expect(procedureTagLabel('RX-TRIP-MAN', { tags })).toBe('RX-TRIP-MAN')
 })

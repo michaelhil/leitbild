@@ -361,6 +361,12 @@ export const procedureReadingName = (tagId: string, tags: ReadonlyArray<Procedur
   return `${equipmentWords(tag.equipment)}: ${description}`
 }
 
+/** What a tag button says. A rewritten document names the equipment, so the line reads as a line; a document left as it was keeps its tag ids. */
+export const procedureTagLabel = (tagId: string, document: Pick<ProcedureDocument, 'tags' | 'annotations'> | null): string => {
+  const equipment = document?.annotations?.['ai-workable'] === 'true' ? document.tags.find(tag => tag.id === tagId)?.equipment : undefined
+  return equipment === undefined ? tagId : equipmentWords(equipment)
+}
+
 const observationSignalLabel = (signal: Record<string, unknown>, reference: Record<string, unknown>, tags: ReadonlyArray<ProcedureTag>): string => {
   const tagId = [signal.tagId, reference.tagId].find((text): text is string => typeof text === 'string')
   const named = tagId === undefined ? undefined : procedureReadingName(tagId, tags)
