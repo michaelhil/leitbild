@@ -1,0 +1,33 @@
+[Unit]
+Description=Leitbild Planning laboratory module
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=leitbild
+Group=leitbild
+WorkingDirectory=/opt/leitbild/current/apps/planning
+Environment=PORT=3102
+Environment=BIND_HOST=127.0.0.1
+Environment=LEITBILD_PLANNING_HOME=/var/lib/leitbild/planning
+Environment=WORKSPACE_HOST_URL=http://127.0.0.1:3100
+ExecStart=/opt/leitbild/runtime/bun run src/index.ts
+Restart=on-failure
+RestartSec=5s
+MemoryMax=256M
+CPUQuota=50%
+LimitNOFILE=4096
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/leitbild/planning
+PrivateTmp=true
+PrivateDevices=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

@@ -13,7 +13,7 @@ import {
 } from './deploy.ts'
 
 const workspaceRoot = resolve(import.meta.dir, '../../..')
-const productionAppPaths = ['apps/leitbild', 'apps/world', 'apps/agents'] as const
+const productionAppPaths = ['apps/leitbild', 'apps/world', 'apps/agents', 'apps/planning'] as const
 
 test('wiki inspection supplements only tracked referenced files and never overwrites another artifact source', async () => {
   const root = await mkdtemp(resolve(tmpdir(), 'leitbild-inspection-artifact-'))
@@ -55,7 +55,7 @@ test('production artifact includes every local workspace dependency', async () =
 })
 
 test('production install includes manifests for development-only lockfile workspaces', () => {
-  expect(INSTALL_MANIFEST_ONLY_WORKSPACE_PATHS).toEqual(['packages/integration-tests', 'apps/planning'])
+  expect(INSTALL_MANIFEST_ONLY_WORKSPACE_PATHS).toEqual(['packages/integration-tests'])
   const included = new Set<string>([...productionAppPaths, ...PRODUCTION_DEPENDENCY_WORKSPACE_PATHS, ...INSTALL_MANIFEST_ONLY_WORKSPACE_PATHS])
   for (const pattern of ['apps/*/package.json', 'packages/*/package.json']) {
     for (const path of new Bun.Glob(pattern).scanSync({ cwd: workspaceRoot })) expect(included.has(path.slice(0, -'/package.json'.length))).toBe(true)
@@ -102,12 +102,36 @@ test('production artifact excludes development-only files', () => {
   expect(isProductionSourcePath('world', 'tests/api.test.ts')).toBe(false)
   expect(isProductionSourcePath('host', 'deploy/backup/backup-production.sh')).toBe(false)
   expect(isProductionSourcePath('host', 'deploy/Caddyfile')).toBe(true)
+  expect(isProductionSourcePath('host', 'deploy/leitbild-planning.service')).toBe(true)
+  expect(isProductionSourcePath('planning', 'src/index.ts')).toBe(true)
+  expect(isProductionSourcePath('planning', 'src/ui/dist/index.html')).toBe(true)
+  expect(isProductionSourcePath('planning', 'src/ui/dist/assets/planning/index.js')).toBe(true)
+  expect(isProductionSourcePath('planning', 'src/service.test.ts')).toBe(false)
   expect(isProductionSourcePath('host', 'deploy/sites/leitbild.caddy')).toBe(true)
   expect(isProductionSourcePath('host', 'deploy/sites/optifuel.caddy')).toBe(false)
   expect(isProductKnowledgePath('docs/adr/0015-leitbild-assistant-uses-an-ordinary-room.md')).toBe(true)
   expect(isProductKnowledgePath('contexts/agents/CONTEXT.md')).toBe(true)
   expect(isProductKnowledgePath('apps/world/README.md')).toBe(true)
   expect(isProductKnowledgePath('.env')).toBe(false)
+})
+
+test('Planning service keeps its writer, internal routing and backup boundaries explicit', async () => {
+  const read = (path: string) => Bun.file(resolve(workspaceRoot, 'apps/leitbild/deploy', path)).text()
+  const unit = await read('leitbild-planning.service')
+  expect(unit).toContain('Environment=PORT=3102')
+  expect(unit).toContain('Environment=BIND_HOST=127.0.0.1')
+  expect(unit).toContain('Environment=WORKSPACE_HOST_URL=http://127.0.0.1:3100')
+  expect(unit).toContain('Environment=LEITBILD_PLANNING_HOME=/var/lib/leitbild/planning')
+  expect(unit).toContain('ReadWritePaths=/var/lib/leitbild/planning')
+  expect(unit).not.toContain('EnvironmentFile=')
+  expect(await read('leitbild-host.service')).toMatch(/^Requires=.*leitbild-planning.service/m)
+  const backup = await read('backup/stream-production.sh')
+  expect(backup).toMatch(/^backup_services=.*leitbild-planning.service/m)
+  expect(backup).toContain('4177 3000 3102 3100')
+  expect(backup).toContain('etc/systemd/system/leitbild-planning.service')
+  const restore = await read('backup/verify-restore.sh')
+  expect(restore).toContain('/var/lib/leitbild/planning')
+  expect(restore).toContain('/etc/systemd/system/leitbild-planning.service')
 })
 
 test('public routing exposes only the bundled Agents UI asset namespace', async () => {

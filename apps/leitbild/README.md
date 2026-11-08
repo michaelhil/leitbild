@@ -1,6 +1,6 @@
 # Leitbild Host
 
-Owns Workspace identity, provisioning, navigation and public routing. Domain state remains in its Modules: World and Agents, plus Planning in the local research stack.
+Owns Workspace identity, provisioning, navigation and public routing. Domain state remains in its Modules: World, Agents and Planning.
 
 The Host also presents the [knowledge wiki](https://leitbild.app/wiki) from the same immutable publication used by agent reads. It does not run a second documentation database or hosted editor.
 
