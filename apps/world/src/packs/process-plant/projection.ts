@@ -312,11 +312,13 @@ export const projectedProcessPlantUnit = (config: {
   const worst = worstSafetyFunctionOf(safetyFunctions)
   // The operating mode, as the unit's mode observable reads it (observation/derived.ts).
   const mode = processPlantOperatingMode({ system: plant.plant, runtime: plant.runtime, modes: plant.plant.automation.operatingModes })
+  // R4-ENDED: a named domain end: the Plant holds its last frame and says so.
+  const domainEnd = plant.runtime.domainEnd?.() ?? null
   const projection: ProcessPlantUnitProjection = {
     schemaVersion: 1,
-    summary: headline.length === 0 ? status.label : headline.map(field => `${field.label} ${field.value}`).join(' · '),
-    statusTone: status.tone,
-    statusLabel: status.label,
+    summary: domainEnd ?? (headline.length === 0 ? status.label : headline.map(field => `${field.label} ${field.value}`).join(' · ')),
+    statusTone: domainEnd === null ? status.tone : 'idle',
+    statusLabel: domainEnd === null ? status.label : 'Simulation domain end',
     ...(status.highestSeverity === undefined ? {} : { highestSeverity: status.highestSeverity }),
     ...(mode === null ? {} : { modeLabel: mode.label }),
     ...(reactorTripped(plant) ? { reactorTripped: true } : {}),

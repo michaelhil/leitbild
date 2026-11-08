@@ -6,7 +6,9 @@
 //! line the run cannot decide is reported as such, never passed.
 use serde_json::{Value, json};
 
-pub const FENCE: &str = "ld01-s3-cases-c4";
+/// Revision 5 (owner, 7 November, after result). Revision 3 stays pinned under
+/// its own fence for C3's chattering check.
+pub const FENCE: &str = "ld01-s3-cases-c4-r5";
 
 /// A regular cell's declared volume class.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -584,7 +586,7 @@ pub fn judge(lines: &Value, run: &Run<'_>, zero: f64) -> Vec<Value> {
             }
             "O3" => {
                 let low: Vec<(usize, f64)> =
-                    causes(run.divisions, "LD01.PROT.PZR.LOW_PRESSURE").collect();
+                    causes(run.divisions, "LD01.PROT.PZR.S_PRESSURE").collect();
                 let mut missing = Vec::new();
                 for (i, t) in &low {
                     let req = run.divisions[*i]["requests"]
@@ -594,7 +596,7 @@ pub fn judge(lines: &Value, run: &Run<'_>, zero: f64) -> Vec<Value> {
                     for want in ["CMT injection", "PRHR"] {
                         let has = req.iter().any(|r| {
                             r["request"] == want
-                                && r["by"] == "LD01.PROT.PZR.LOW_PRESSURE"
+                                && r["by"] == "LD01.PROT.PZR.S_PRESSURE"
                                 && r["t_s"].as_f64().is_some_and(|x| same(x, *t))
                         });
                         if !has {
@@ -778,12 +780,149 @@ pub fn judge(lines: &Value, run: &Run<'_>, zero: f64) -> Vec<Value> {
     out
 }
 
-/// Pass only when every judged must and must-not line passes.
+/// Pass only when every judged must and must-not line passes; a may line,
+/// a recorded line and a diagnostic (N4′, R11-3a) never decide.
 pub fn all_pass(judged: &[Value]) -> bool {
     judged
         .iter()
-        .filter(|l| l["kind"] != "may")
+        .filter(|l| !matches!(l["kind"].as_str(), Some("may" | "recorded" | "diagnostic")))
         .all(|l| l["verdict"] == "pass")
+}
+
+/// Block r5's refinement budgets: `ld01-operator-budgets`, the threshold
+/// timing, and `ld01-r4-x1-cases`' convergence fraction.
+#[derive(Clone, Copy, Debug)]
+pub struct Budgets {
+    pub pressure_pa: f64,
+    pub level_m: f64,
+    pub sg_pressure_pa: f64,
+    pub crossing_s: f64,
+    pub convergence_fraction: f64,
+}
+
+/// One level of the tolerance series: its name, its comparison against the
+/// run, and its receipt's `c4` record.
+pub struct Level<'a> {
+    pub name: &'a str,
+    pub comparison: &'a Value,
+    pub c4: &'a Value,
+}
+
+/// The largest |a - b| of a frame output over the frames both records hold:
+/// (value, frame time). Raw: a frame row is a 0.1 s sample, not the 2 Hz grid.
+fn frame_max(a: &Value, b: &Value, key: &str) -> Option<(f64, f64)> {
+    let at = |r: &Value| r["t_s"].as_f64().map(|t| (t * 1e6).round() as i64);
+    let others: std::collections::BTreeMap<i64, f64> = b["frames"]
+        .as_array()?
+        .iter()
+        .filter_map(|r| Some((at(r)?, r[key].as_f64()?)))
+        .collect();
+    a["frames"]
+        .as_array()?
+        .iter()
+        .filter_map(|r| {
+            let (k, v) = (at(r)?, r[key].as_f64()?);
+            Some(((v - others.get(&k)?).abs(), r["t_s"].as_f64()?))
+        })
+        .max_by(|x, y| x.0.total_cmp(&y.0))
+}
+
+/// One judged row: an output's value against its bound.
+fn row(metric: &str, value: Option<f64>, bound: f64) -> Value {
+    json!({"metric": metric, "value": value, "bound": bound,
+        "pass": value.is_some_and(|v| v.is_finite() && v <= bound)})
+}
+
+/// The judged outputs of one comparison, each bound `fraction` of its budget.
+/// A birth in one record only is a miss; none in either compares nothing.
+fn judged_rows(e0: &Value, a: &Value, b: &Value, budgets: &Budgets, fraction: f64) -> Vec<Value> {
+    let metric = |k: &str| e0["metrics"][k]["value"].as_f64();
+    let frames = |k: &str| frame_max(a, b, k).map(|x| x.0);
+    let birth = |c: &Value| c["first_classified_birth"]["t_s"].as_f64();
+    let births = match (birth(a), birth(b)) {
+        (Some(x), Some(y)) => Some((x - y).abs()),
+        (None, None) => Some(0.),
+        _ => None,
+    };
+    vec![
+        row(
+            "pzr_roof_max_abs_pa",
+            e0["pzr_roof_max_abs_pa"].as_f64(),
+            fraction * budgets.pressure_pa,
+        ),
+        row(
+            "pzr_level_m",
+            metric("pzr_level_m"),
+            fraction * budgets.level_m,
+        ),
+        row(
+            "pzr_collapsed_m",
+            frames("pzr_collapsed_m"),
+            fraction * budgets.level_m,
+        ),
+        row(
+            "pzr_mixture_m",
+            frames("pzr_mixture_m"),
+            fraction * budgets.level_m,
+        ),
+        row(
+            "sg_pressure_pa",
+            metric("sg_pressure_pa"),
+            fraction * budgets.sg_pressure_pa,
+        ),
+        row(
+            "first_classified_birth_s",
+            births,
+            fraction * budgets.crossing_s,
+        ),
+    ]
+}
+
+/// Block r5's refinement (owner, 7 November 2026): `ld01-r4-x1-cases`'
+/// numerical rule on the named outputs. The tightest level that completes
+/// is the converged one; it must agree with the next looser completed level
+/// within a fraction of each budget, and the run with it within each budget.
+/// Relief flow and core DP are recorded for every level and decide nothing:
+/// no instrument reads them.
+pub fn refinement(run: &Value, levels: &[Level<'_>], series: &[Value], budgets: &Budgets) -> Value {
+    let done = |l: &Level<'_>| {
+        l.comparison["reference_failure"].is_null() && l.comparison["e0"]["evaluable"] == true
+    };
+    let status: Vec<Value> = levels
+        .iter()
+        .map(|l| json!({"level": l.name, "completed": done(l), "failure": l.comparison["reference_failure"]}))
+        .collect();
+    let recorded: Vec<Value> = levels
+        .iter()
+        .map(|l| {
+            let relief = frame_max(run, l.c4, "relief_kg_s");
+            json!({"level": l.name, "core_dp_pa": l.comparison["e0"]["metrics"]["core_dp_pa"],
+                "relief_kg_s": relief.map(|(v, t)| json!({"value": v, "at_s": t}))})
+        })
+        .collect();
+    let tightest = levels.iter().rposition(done);
+    let Some((i, looser)) = tightest.and_then(|i| Some((i, levels.get(i.checked_sub(1)?)?))) else {
+        return json!({"verdict": "fail", "reason": "no two adjacent levels completed", "levels": status, "recorded": recorded});
+    };
+    let converged = &levels[i];
+    let pair = series
+        .iter()
+        .find(|x| x["looser"] == looser.name && x["tighter"] == converged.name);
+    let convergence = judged_rows(
+        pair.map_or(&Value::Null, |x| &x["e0"]),
+        looser.c4,
+        converged.c4,
+        budgets,
+        budgets.convergence_fraction,
+    );
+    let against = judged_rows(&converged.comparison["e0"], run, converged.c4, budgets, 1.);
+    let pass = done(looser)
+        && convergence
+            .iter()
+            .chain(&against)
+            .all(|r| r["pass"] == true);
+    json!({"verdict": if pass { "pass" } else { "fail" }, "levels": status, "converged": converged.name,
+        "against": looser.name, "convergence": convergence, "run_vs_converged": against, "recorded": recorded})
 }
 
 /// How a stopped run ends under the block's `ends`: a labelled end's name
@@ -1197,7 +1336,7 @@ pub fn primary_mass(d: &Value) -> Row {
         ledger["bound_local_tolerance_units"].as_f64(),
         worst["max_units"].as_f64(),
         last,
-        receipts["values"]["pzr_relief_attribution_kg"].as_f64(),
+        receipts["values"]["primary_mass_kg"].as_f64(),
         ledger["final"]["t_s"].as_f64(),
         receipts["t_s"].as_f64(),
     ) else {
@@ -1226,8 +1365,130 @@ pub fn primary_mass(d: &Value) -> Row {
         Some(worst_units <= bound && change < 0. && relief_units <= bound),
         json!({"bound_units": bound, "bound_source": "ld01-s2-gates ledger.boundLocalToleranceUnits",
             "closure_max_units": worst_units, "closure_at_t_s": worst["at_t_s"],
-            "last_closure_t_s": t, "inventory_change_kg": change, "integrated_relief_kg": attribution,
-            "against_relief_units": relief_units, "tolerance_kg": tolerance,
+            "last_closure_t_s": t, "inventory_change_kg": change,
+            "integrated_relief_less_cvcs_net_kg": attribution,
+            "integrated_relief_kg": receipts["values"]["pzr_relief_attribution_kg"],
+            "against_relief_less_cvcs_net_units": relief_units, "tolerance_kg": tolerance,
             "span": "rule D's ledgers from the run's start (q0 = 0) to its last closure"}),
     )
+}
+
+#[test]
+fn refinement_judges_the_named_outputs_and_records_the_others() {
+    let budgets = Budgets {
+        pressure_pa: 40_311.,
+        level_m: 0.02822,
+        sg_pressure_pa: 10_342.,
+        crossing_s: 0.05,
+        convergence_fraction: 0.25,
+    };
+    let c4 = |relief: f64, level: f64, birth: f64| {
+        json!({"frames": [{"t_s": 1., "relief_kg_s": relief, "pzr_collapsed_m": level, "pzr_mixture_m": level}],
+            "first_classified_birth": {"t_s": birth}})
+    };
+    let e0 = |roof: f64, core_dp: f64| {
+        json!({"evaluable": true, "pzr_roof_max_abs_pa": roof, "metrics": {
+            "pzr_level_m": {"value": 1e-3}, "sg_pressure_pa": {"value": 100.},
+            "core_dp_pa": {"value": core_dp}}})
+    };
+    let compared = |e: Value| json!({"reference_failure": null, "e0": e});
+    let (run, a, b) = (
+        c4(85., 10., 43.66),
+        c4(85.1, 10., 43.65),
+        c4(90., 10., 43.651),
+    );
+    let (ca, cb) = (compared(e0(500., 300.)), compared(e0(2_000., 300.)));
+    let levels = [
+        Level {
+            name: "rtol/30",
+            comparison: &ca,
+            c4: &a,
+        },
+        Level {
+            name: "rtol/100",
+            comparison: &cb,
+            c4: &b,
+        },
+    ];
+    let series = [json!({"looser": "rtol/30", "tighter": "rtol/100", "e0": e0(1_000., 300.)})];
+    // Core DP at 300 Pa and relief flow 5 kg/s apart decide nothing.
+    let r = refinement(&run, &levels, &series, &budgets);
+    assert_eq!(r["verdict"], "pass", "{r}");
+    assert_eq!(r["recorded"][1]["relief_kg_s"]["value"], 5.);
+    assert_eq!(r["recorded"][1]["core_dp_pa"]["value"], 300.);
+    // A named output past its budget fails; past a quarter in the pair too.
+    let cb = compared(e0(50_000., 300.));
+    let levels = [
+        Level {
+            name: "rtol/30",
+            comparison: &ca,
+            c4: &a,
+        },
+        Level {
+            name: "rtol/100",
+            comparison: &cb,
+            c4: &b,
+        },
+    ];
+    assert_eq!(
+        refinement(&run, &levels, &series, &budgets)["verdict"],
+        "fail"
+    );
+    let series = [json!({"looser": "rtol/30", "tighter": "rtol/100", "e0": e0(11_000., 0.)})];
+    let cb = compared(e0(2_000., 0.));
+    let levels = [
+        Level {
+            name: "rtol/30",
+            comparison: &ca,
+            c4: &a,
+        },
+        Level {
+            name: "rtol/100",
+            comparison: &cb,
+            c4: &b,
+        },
+    ];
+    assert_eq!(
+        refinement(&run, &levels, &series, &budgets)["verdict"],
+        "fail"
+    );
+    // A failed reference at the tightest level moves the pair down; with no
+    // pair left the family fails.
+    let failed = json!({"reference_failure": "stopped", "e0": {"evaluable": false}});
+    let levels = [
+        Level {
+            name: "rtol/30",
+            comparison: &ca,
+            c4: &a,
+        },
+        Level {
+            name: "rtol/100",
+            comparison: &failed,
+            c4: &b,
+        },
+    ];
+    assert_eq!(
+        refinement(&run, &levels, &series, &budgets)["verdict"],
+        "fail"
+    );
+    // A birth in one record only is a miss.
+    let none = json!({"frames": b["frames"]});
+    let cb = compared(e0(2_000., 0.));
+    let levels = [
+        Level {
+            name: "rtol/30",
+            comparison: &ca,
+            c4: &a,
+        },
+        Level {
+            name: "rtol/100",
+            comparison: &cb,
+            c4: &none,
+        },
+    ];
+    let series = [json!({"looser": "rtol/30", "tighter": "rtol/100", "e0": e0(1_000., 0.)})];
+    assert_eq!(
+        refinement(&run, &levels, &series, &budgets)["verdict"],
+        "fail"
+    );
 }

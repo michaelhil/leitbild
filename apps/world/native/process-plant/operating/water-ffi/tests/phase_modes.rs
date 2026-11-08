@@ -110,6 +110,7 @@ impl Coupling for Relief {
         Ok(stratified::Boundary {
             relief: Some(stratified::ReliefState {
                 lift: s(self.lift),
+                isolation: Scalar::constant(1.),
                 back_pressure_pa: Some(s(self.back_pressure_pa)),
             }),
             ..stratified::Boundary::closed()
@@ -456,6 +457,21 @@ fn mouth_path_block_replay_matches_the_colored_assembly() {
     let mouth = 2 * face + 1;
     assert_eq!(net.face_layout[mouth].phase, 1);
     assert_eq!(net.unilateral().unwrap().paths[mouth], Lock::Free);
+    // R4-CLIMB: SURGE's five stocks and the four paths of its two faces.
+    let climbing = net.equilibrium_columns(y.len());
+    assert!(climbing[b] && climbing[m1] && climbing[e1]);
+    assert!(climbing[net.face_layout[mouth].index]);
+    assert_eq!(climbing.iter().filter(|c| **c).count(), 9);
+    // R4-CLIMB-START: the mouth path's lock flips: its impulse and the stocks
+    // of its ends, the PZR having none here; nothing moves with no change.
+    let mut changed = vec![false; y.len()];
+    let mut widened = vec![false; y.len()];
+    net.identity_columns(&changed, &mut widened);
+    assert!(!widened.contains(&true));
+    changed[net.face_layout[mouth].index] = true;
+    net.identity_columns(&changed, &mut widened);
+    assert!(widened[net.face_layout[mouth].index] && widened[b] && widened[m1] && widened[e1]);
+    assert_eq!(widened.iter().filter(|c| **c).count(), 6);
     let colored = net.sparse_jacobian().expect("colored structure");
     let blocks = net.block_jacobian().expect("block structure");
     assert_eq!(blocks.pattern, colored.pattern, "one pattern for both");
@@ -499,6 +515,59 @@ fn mouth_path_block_replay_matches_the_colored_assembly() {
         assert!(worst < 1e-10, "{name}: block against colored {worst:e}");
     }
     println!("{}", json!({"mouth_path_block_vs_colored": report}));
+    // R4-VAPOR-IMPULSE: the same comparison with SURGE's vapor mass leaving,
+    // where the row reads its `y'` and the Jacobian carries `cj`, and the term
+    // on the moving state's row against the hand value.
+    let mut leaving = yp.clone();
+    leaving[m1] = -0.2 / sc[m1];
+    let mut cv = vec![0.; pattern.nonzeros()];
+    let mut bv = vec![0.; pattern.nonzeros()];
+    let cj = 350.;
+    net.jacobian_colored(0., cj, &moving, &leaving, &colored, &mut cv)
+        .expect("colored assembly, mass leaving");
+    net.jacobian_blocks(0., cj, &moving, &leaving, &blocks, &mut bv)
+        .expect("block assembly, mass leaving");
+    let mut worst = 0_f64;
+    for j in 0..pattern.columns() {
+        let range = pattern.pointers()[j]..pattern.pointers()[j + 1];
+        let scale = range
+            .clone()
+            .map(|q| cv[q].abs().max(bv[q].abs()))
+            .fold(0., f64::max);
+        for q in range.filter(|q| cv[*q] != bv[*q]) {
+            worst = worst.max((cv[q] - bv[q]).abs() / scale);
+        }
+    }
+    assert!(
+        worst < 1e-10,
+        "mass leaving: block against colored {worst:e}"
+    );
+    let row = net.face_layout[mouth].index;
+    let column = pattern.pointers()[m1]..pattern.pointers()[m1 + 1];
+    let entry = |v: &[f64]| {
+        column
+            .clone()
+            .find(|q| pattern.indices()[*q] == row)
+            .map(|q| v[q])
+            .expect("the mouth row reads SURGE's vapor mass")
+    };
+    let mut twice = vec![0.; pattern.nonzeros()];
+    net.jacobian_colored(0., 2. * cj, &moving, &leaving, &colored, &mut twice)
+        .expect("colored assembly at twice cj");
+    let measured = (entry(&twice) - entry(&cv)) / cj;
+    let chart = net.chart(face, 1).expect("the mouth's vapor chart");
+    let weight: f64 = i.raw["mechanics"]["faces"][face]["supports"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p["inverse_area_length_per_m"].as_f64().unwrap())
+        .sum::<f64>()
+        / v;
+    let expected = -weight * chart.volume_flow_m3_s.value * sc[m1] / sc[row];
+    assert!(
+        (measured - expected).abs() <= 1e-9 * expected.abs(),
+        "the row's d/dy' {measured:e} against {expected:e}"
+    );
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

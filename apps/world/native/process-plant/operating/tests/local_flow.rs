@@ -468,6 +468,23 @@ fn cancelling_signed_mass_is_not_an_empty_phase_onset() {
     }
 }
 
+#[test]
+fn leaving_mass_takes_the_path_velocity() {
+    use leitbild_operating_plant::local_flow::leaving_impulse_rate;
+    let q = Scalar::new(-3., 0.5);
+    // Leaving: `I' Q`, with both directions carried.
+    let leaving = leaving_impulse_rate(Scalar::new(-2., 7.), q);
+    assert_eq!(
+        (leaving.value, leaving.direction),
+        (6., -2. * 0.5 + 7. * -3.)
+    );
+    // Arriving is born at rest, and the term is continuous at `I' = 0`.
+    for rate in [Scalar::new(2., 7.), Scalar::new(0., 7.)] {
+        let arriving = leaving_impulse_rate(rate, q);
+        assert_eq!((arriving.value, arriving.direction), (0., 0.));
+    }
+}
+
 /// R4-MOUTH-INERTIA: inertia held outside the supports adds to `I`, so a
 /// path whose supports empty keeps a finite `Q`; with none it is the plain
 /// law bit for bit.

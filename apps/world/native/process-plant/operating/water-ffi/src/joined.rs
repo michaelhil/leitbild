@@ -100,6 +100,20 @@ pub struct Report {
     pub analyze_s: Vec<f64>,
     pub factor_s: Vec<f64>,
     pub solve_s: Vec<f64>,
+    /// R4-CLIMB: the matrices this start leaves for the climb after it.
+    pub climb: Option<ClimbMatrices>,
+    /// R4-CLIMB-START: starts on kept matrices, and those that fell back.
+    pub start_reuse: [usize; 2],
+}
+
+/// R4-CLIMB: a start's `dF/dy` and `dF/dy'`, kept for the climb after a restart
+/// while a regular cell is in equilibrium mode. No case without vapor outside
+/// the PZR reads them.
+#[derive(Clone, Debug)]
+pub struct ClimbMatrices {
+    a: Vec<f64>,
+    b: Vec<f64>,
+    last_cj: f64,
 }
 
 /// The correction of the coordinates a start exempts from its WRMS guard:
@@ -183,6 +197,17 @@ pub struct Analyses {
     projection: Option<Projection>,
     /// Symbolic analyses made so far: rate system, projection.
     made: [usize; 2],
+    /// R4-CLIMB-START: the last start's matrices while vapor is out of the
+    /// PZR, and the passes a start on them may take.
+    retained: Option<Retained>,
+    kept_passes: usize,
+}
+/// R4-CLIMB-START: dF/dy and dF/dy' of the last start, and the differential
+/// identity they were read under.
+struct Retained {
+    a: Vec<f64>,
+    b: Vec<f64>,
+    differential: Vec<f64>,
 }
 struct Rates {
     pointers: Vec<i64>,
@@ -198,6 +223,11 @@ impl Analyses {
     /// Symbolic analyses made so far: rate system, projection.
     pub fn made(&self) -> [usize; 2] {
         self.made
+    }
+    /// R4-CLIMB-START: the passes a start on kept matrices may take. They
+    /// close by a factor at each pass, not quadratically.
+    pub fn keep_passes(&mut self, passes: usize) {
+        self.kept_passes = passes;
     }
 }
 
@@ -245,6 +275,22 @@ pub enum Matrices<'a> {
     /// The colored assemblies on the operator's structural pattern,
     /// analyzed afresh: the reference the block start is checked against.
     Colored,
+}
+
+impl Matrices<'_> {
+    /// The same matrices for one attempt, kept for the next.
+    fn reborrow(&mut self) -> Matrices<'_> {
+        match self {
+            Matrices::Blocks {
+                structure,
+                analyses,
+            } => Matrices::Blocks {
+                structure,
+                analyses,
+            },
+            Matrices::Colored => Matrices::Colored,
+        }
+    }
 }
 
 /// One assembly of `dF/dy + cj dF/dy'` at `(t, y, 0)` into `values`, in the
@@ -304,7 +350,7 @@ pub fn consistent_start<P: Properties + WaterProperties>(
     bound: f64,
     passes: usize,
 ) -> Result<(Vec<f64>, Report), Failure> {
-    consistent_start_exempting(
+    start_on_kept_or_full(
         joined,
         matrices,
         t,
@@ -315,6 +361,57 @@ pub fn consistent_start<P: Properties + WaterProperties>(
         bound,
         passes,
     )
+}
+
+/// [`consistent_start_exempting`] on the kept matrices if any, then in full:
+/// R4-CLIMB-START's matrices only steer the solves, so a step of theirs that
+/// the model refuses, or a factorization they fail, is a miss too.
+#[allow(clippy::too_many_arguments)] // As consistent_start_exempting.
+fn start_on_kept_or_full<P: Properties + WaterProperties>(
+    joined: &mut Joined<P>,
+    mut matrices: Matrices<'_>,
+    t: f64,
+    y: &mut [f64],
+    differential: &[f64],
+    weights: &[f64],
+    exempt: &[bool],
+    bound: f64,
+    passes: usize,
+) -> Result<(Vec<f64>, Report), Failure> {
+    let kept =
+        matches!(&matrices, Matrices::Blocks { analyses, .. } if analyses.retained.is_some());
+    let entry = y.to_vec();
+    let on_kept = consistent_start_exempting(
+        joined,
+        matrices.reborrow(),
+        t,
+        y,
+        differential,
+        weights,
+        exempt,
+        bound,
+        passes,
+    );
+    if on_kept.is_ok() || !kept {
+        return on_kept;
+    }
+    y.copy_from_slice(&entry);
+    if let Matrices::Blocks { analyses, .. } = &mut matrices {
+        analyses.retained = None;
+    }
+    let (yp, mut full) = consistent_start_exempting(
+        joined,
+        matrices,
+        t,
+        y,
+        differential,
+        weights,
+        exempt,
+        bound,
+        passes,
+    )?;
+    full.start_reuse[1] += 1;
+    Ok((yp, full))
 }
 
 /// [`consistent_start`] with the coordinates marked `exempt` left out of
@@ -394,12 +491,33 @@ pub fn consistent_start_exempting<P: Properties + WaterProperties>(
     report.constraint_before = constraint(&rows);
     report.constraint_after = report.constraint_before;
     let mut values = vec![0.; nnz];
-    // 1. Projection of the algebraic coordinates, differential ones held,
-    // on the algebraic submatrix of this pattern.
-    while (report.constraint_after.value.is_nan() || report.constraint_after.value > bound)
-        && report.projection_passes < passes
-    {
-        report.projection_passes += 1;
+    // R4-CLIMB-START: while a regular cell is in equilibrium mode a start
+    // keeps the last start's matrices and reads fresh only the columns the
+    // vapor moves and the columns a changed identity touches. The matrices
+    // only steer the solves: the constraint and rate checks below stay
+    // exact, and a start they fail falls back to full assemblies.
+    let equilibrium = joined
+        .network
+        .cell_modes()
+        .contains(&leitbild_operating_plant::network::CellMode::Equilibrium);
+    let mut retained = match &mut matrices {
+        Matrices::Blocks { analyses, .. } => analyses.retained.take().filter(|_| equilibrium),
+        Matrices::Colored => None,
+    };
+    let stale = retained.is_some();
+    let limit = match &matrices {
+        Matrices::Blocks { analyses, .. } if stale => passes.max(analyses.kept_passes),
+        _ => passes,
+    };
+    if let Some(r) = retained.as_mut() {
+        let _cost = leitbild_operating_plant::cost::scope("refresh");
+        let changed: Vec<bool> = differential
+            .iter()
+            .zip(&r.differential)
+            .map(|(a, b)| a != b)
+            .collect();
+        let mut columns = joined.network.equilibrium_columns(n);
+        joined.network.identity_columns(&changed, &mut columns);
         assemble(
             joined,
             &matrices,
@@ -409,8 +527,55 @@ pub fn consistent_start_exempting<P: Properties + WaterProperties>(
             &mut values,
             &mut report,
             true,
-            Some(&algebraic),
+            Some(&columns),
         )?;
+        for j in (0..n).filter(|j| columns[*j]) {
+            r.a[pointers[j]..pointers[j + 1]]
+                .copy_from_slice(&values[pointers[j]..pointers[j + 1]]);
+        }
+        if changed.contains(&true) {
+            assemble(
+                joined,
+                &matrices,
+                t,
+                1.,
+                y,
+                &mut values,
+                &mut report,
+                false,
+                Some(&columns),
+            )?;
+            for j in (0..n).filter(|j| columns[*j]) {
+                let q = pointers[j]..pointers[j + 1];
+                for (b, (v, a)) in r.b[q.clone()]
+                    .iter_mut()
+                    .zip(values[q.clone()].iter().zip(&r.a[q]))
+                {
+                    *b = v - a;
+                }
+            }
+        }
+    }
+    // 1. Projection of the algebraic coordinates, differential ones held,
+    // on the algebraic submatrix of this pattern.
+    while (report.constraint_after.value.is_nan() || report.constraint_after.value > bound)
+        && report.projection_passes < limit
+    {
+        report.projection_passes += 1;
+        match &retained {
+            Some(r) => values.copy_from_slice(&r.a),
+            None => assemble(
+                joined,
+                &matrices,
+                t,
+                0.,
+                y,
+                &mut values,
+                &mut report,
+                true,
+                Some(&algebraic),
+            )?,
+        }
         let analyses = match &mut matrices {
             Matrices::Blocks { analyses, .. } => &mut **analyses,
             Matrices::Colored => &mut fresh,
@@ -469,6 +634,23 @@ pub fn consistent_start_exempting<P: Properties + WaterProperties>(
         rows = rows_at(joined, y, &zero)?;
         report.constraint_after = constraint(&rows);
     }
+    // R4-CLIMB-START: kept matrices that do not reach the bound: full ones.
+    if stale && (report.constraint_after.value.is_nan() || report.constraint_after.value > bound) {
+        y.copy_from_slice(&start);
+        let (yp, mut full) = consistent_start_exempting(
+            joined,
+            matrices,
+            t,
+            y,
+            differential,
+            weights,
+            exempt,
+            bound,
+            passes,
+        )?;
+        full.start_reuse[1] += 1;
+        return Ok((yp, full));
+    }
     if report.constraint_after.value.is_nan() {
         return Err(fatal(format!(
             "constraints miss their bound after projection: {:?}",
@@ -484,19 +666,44 @@ pub fn consistent_start_exempting<P: Properties + WaterProperties>(
     }
     // 2. The consistent rates: differential rows dF/dy', algebraic rows dg/dy.
     let mut a = vec![0.; nnz];
-    assemble(joined, &matrices, t, 0., y, &mut a, &mut report, true, None)?;
     let mut ab = vec![0.; nnz];
-    assemble(
-        joined,
-        &matrices,
-        t,
-        1.,
-        y,
-        &mut ab,
-        &mut report,
-        false,
-        None,
-    )?;
+    match retained.take() {
+        Some(r) => {
+            a.copy_from_slice(&r.a);
+            for (sum, (x, b)) in ab.iter_mut().zip(r.a.iter().zip(&r.b)) {
+                *sum = x + b;
+            }
+            report.start_reuse[0] += 1;
+        }
+        None => {
+            assemble(joined, &matrices, t, 0., y, &mut a, &mut report, true, None)?;
+            assemble(
+                joined,
+                &matrices,
+                t,
+                1.,
+                y,
+                &mut ab,
+                &mut report,
+                false,
+                None,
+            )?;
+        }
+    }
+    if equilibrium && let Matrices::Blocks { analyses, .. } = &mut matrices {
+        analyses.retained = Some(Retained {
+            a: a.clone(),
+            b: ab.iter().zip(&a).map(|(x, y)| x - y).collect(),
+            differential: differential.to_vec(),
+        });
+    }
+    if equilibrium && matches!(matrices, Matrices::Blocks { .. }) {
+        report.climb = Some(ClimbMatrices {
+            a: a.clone(),
+            b: ab.iter().zip(&a).map(|(x, y)| x - y).collect(),
+            last_cj: f64::INFINITY,
+        });
+    }
     // Each row's magnitude of terms from its linearization at the state:
     // `sum_j |dF/dy_ij y_j|`, and with rates `sum_j |dF/dy'_ij y'_j|`.
     let magnitude = |matrix: &dyn Fn(usize) -> f64, v: &[f64]| {
@@ -591,22 +798,31 @@ pub fn consistent_start_exempting<P: Properties + WaterProperties>(
     lu.factor(&matrix)
         .map_err(|e| fatal(format!("rates: {e}")))?;
     report.factor_s.push(started.elapsed().as_secs_f64());
-    // The rows are linear in y', so one pass is exact; further passes, at
-    // most `passes`, only remove the first solve's round-off, as the
-    // network's dense consistent_rates does.
+    // The rows are linear in y' but for R4-VAPOR-IMPULSE's min(I', 0) Q, which
+    // these matrices at y' = 0 do not hold. No row reads an impulse's rate, so
+    // the first pass gives every rate I' reads and the second takes the term
+    // into the impulse rows; further passes, at most `passes`, only remove
+    // round-off.
     let mut yp = vec![0.; n];
     let mut residual = rows.clone();
-    let constraint_rate = |yp: &[f64]| {
+    // R4-CLIMB-START: kept matrices steer the solve; dg/dy y' stays exact,
+    // one directional evaluation at (t, y, 0) along y'.
+    let constraint_rate = |joined: &mut Joined<P>, yp: &[f64]| -> Result<Vec<f64>, Failure> {
+        if stale {
+            let _cost = leitbild_operating_plant::cost::scope("start-rate");
+            joined.evaluate(t, y, &zero, Some(yp), 0., None)?;
+            return Ok(joined.rows().iter().map(|r| r.direction).collect());
+        }
         let mut rate = vec![0.; n];
         for j in 0..n {
             for position in pointers[j]..pointers[j + 1] {
                 rate[indices[position]] += a[position] * yp[j];
             }
         }
-        rate
+        Ok(rate)
     };
-    for pass in 1..=passes {
-        let rate = constraint_rate(&yp);
+    for pass in 1..=limit {
+        let rate = constraint_rate(joined, &yp)?;
         let mut step: Vec<f64> = (0..n)
             .map(|i| if algebraic[i] { -rate[i] } else { -residual[i] })
             .collect();
@@ -619,7 +835,7 @@ pub fn consistent_start_exempting<P: Properties + WaterProperties>(
         }
         residual = rows_at(joined, y, &yp)?;
         report.residual = largest(residual.iter().copied().enumerate());
-        let rate = constraint_rate(&yp);
+        let rate = constraint_rate(joined, &yp)?;
         report.constraint_rate = largest(
             rate.iter()
                 .enumerate()
@@ -631,12 +847,37 @@ pub fn consistent_start_exempting<P: Properties + WaterProperties>(
             break;
         }
     }
+    // R4-CLIMB-START: kept matrices that do not reach the bound: full ones.
+    let missed = |v: f64| v.is_nan() || v > bound;
+    if stale && (missed(report.residual.value) || missed(report.constraint_rate.value)) {
+        y.copy_from_slice(&start);
+        if let Matrices::Blocks { analyses, .. } = &mut matrices {
+            analyses.retained = None;
+        }
+        let (yp, mut full) = consistent_start_exempting(
+            joined,
+            matrices,
+            t,
+            y,
+            differential,
+            weights,
+            exempt,
+            bound,
+            passes,
+        )?;
+        full.start_reuse[1] += 1;
+        return Ok((yp, full));
+    }
     // Each row under its own roundoff bound: the residual's terms at
     // (y, y'), the constraint rate's at y'.
     let of_rates = magnitude(&|p| ab[p] - a[p], &yp);
     let of_residual: Vec<f64> = of_y.iter().zip(&of_rates).map(|(a, b)| a + b).collect();
     let of_constraint_rate = magnitude(&|p| a[p], &yp);
-    let rate = constraint_rate(&yp);
+    let rate = constraint_rate(joined, &yp)?;
+    if stale {
+        // The operator stands at the start's state, as after an exact start.
+        rows_at(joined, y, &yp)?;
+    }
     let (missed_residual, missed_rate) = (
         over(&residual, &of_residual, false),
         over(&rate, &of_constraint_rate, true),
@@ -657,6 +898,58 @@ pub fn consistent_start_exempting<P: Properties + WaterProperties>(
     report.roundoff_rows[1] = accepted_above(&residual, false);
     report.roundoff_rows[2] = accepted_above(&rate, true);
     Ok((yp, report))
+}
+
+/// The cells a declared L1 payment entered, as the transactions' receipts
+/// state them: every `payment` of a lock change, `[cell, coordinate, J]`,
+/// in a network L1 receipt or a phase-mode receipt's vapor path contacts.
+fn paid_cells(done: &[leitbild_operating_plant::joined::block::Transaction]) -> Vec<usize> {
+    fn walk(v: &serde_json::Value, out: &mut Vec<usize>) {
+        match v {
+            serde_json::Value::Object(map) => {
+                for (k, x) in map {
+                    if k == "payment"
+                        && let Some(cell) = x.get(0).and_then(serde_json::Value::as_u64)
+                    {
+                        out.push(cell as usize);
+                    } else {
+                        walk(x, out);
+                    }
+                }
+            }
+            serde_json::Value::Array(items) => items.iter().for_each(|x| walk(x, out)),
+            _ => {}
+        }
+    }
+    let mut out = Vec::new();
+    for t in done {
+        walk(&t.receipt, &mut out);
+    }
+    out.sort_unstable();
+    out.dedup();
+    out
+}
+
+#[test]
+fn every_declared_payment_names_its_cell() {
+    use leitbild_operating_plant::joined::block::Transaction;
+    let tx = |receipt: serde_json::Value| Transaction {
+        deposits: Vec::new(),
+        receipt,
+    };
+    let done = [
+        tx(serde_json::json!({"owner": "network L1", "changes": [
+            {"path": 65, "payment": [26, 158, 1109.7]},
+            {"path": 63, "payment": null}]})),
+        tx(
+            serde_json::json!({"owner": "phase modes", "events": [{"exhaustion": 25}],
+            "vaporPathContacts": {"changes": [{"path": 67, "payment": [27, 166, 3.2]},
+                {"path": 65, "payment": [26, 158, 1.]}]}}),
+        ),
+        tx(serde_json::json!({"owner": "rods", "events": [{"cluster": "LD01.CR.001"}]})),
+    ];
+    assert_eq!(paid_cells(&done), [26, 27]);
+    assert!(paid_cells(&done[2..]).is_empty());
 }
 
 /// Each transacting owner's own coordinate range: the SG secondary, the rods,
@@ -953,7 +1246,7 @@ mod integrated {
             block::{Command, Transaction},
             blocks::{
                 Classes, JoinedJacobian, Profile, jacobian_blocks, jacobian_blocks_on_base,
-                jacobian_blocks_profiled,
+                jacobian_blocks_profiled, jacobian_blocks_start,
             },
             operator::Joined,
             presence::{PatternCache, PresenceKey, VaporPresence, pattern_cells},
@@ -1036,6 +1329,12 @@ mod integrated {
         /// the WRMS guard reads them; those coordinates are exempt from it,
         /// lead decision S3-D64).
         pub births: Vec<serde_json::Value>,
+        /// Every equilibrium cell a declared L1 payment entered at this
+        /// restart, with the correction of its `p, M_g, U_g` in the
+        /// integrator's tolerance units; those coordinates are exempt from
+        /// the WRMS guard at this instant as a born cell's are (owner, 7
+        /// November 2026, after result: S3-D64 extended, R4-L1-PAYMENT-FLASH).
+        pub payments: Vec<serde_json::Value>,
         pub yp: Vec<f64>,
         pub report: Report,
         /// E-EVT (plan r4): nothing the integrator reads changed (the state,
@@ -1326,6 +1625,7 @@ mod integrated {
                     first_step_s: 0.,
                     last_step_s: last_step,
                     births: Vec::new(),
+                    payments: Vec::new(),
                     yp: Vec::new(),
                     report: Report::default(),
                     noop: true,
@@ -1381,8 +1681,22 @@ mod integrated {
         // reference (rtol x 0.01, atol x 0.1) otherwise refuses the honest
         // +104 kPa flash at +18.93 s (WRMS 13.9). The bound is unchanged.
         let born = joined.network.born_cells(&modes_before).map_err(message)?;
+        // R4-L1-PAYMENT-FLASH (owner, 7 November 2026, after result; S3-D64
+        // extended): an L1 payment of a path's kinetic energy enters a cell's
+        // total energy, and an equilibrium cell's algebraic rows become the
+        // flash at its new totals. Those cells' p, M_g, U_g, and only theirs,
+        // leave the WRMS guard at this instant, reported as a birth's are;
+        // the bound is unchanged. C4-I's rtol/100 reference refused the
+        // honest flash of 1.1 kJ into HOUSING.NECK at +50.113 s (WRMS 1.063).
+        let paid: Vec<usize> = super::paid_cells(&done)
+            .into_iter()
+            .filter(|c| {
+                joined.network.cell_modes().get(*c) == Some(&network::CellMode::Equilibrium)
+            })
+            .collect();
         let flash: Vec<usize> = born
             .iter()
+            .chain(&paid)
             .flat_map(|c| {
                 let l = joined.network.cell_layout[*c];
                 [l.base, l.mass[1], l.energy[1]]
@@ -1411,6 +1725,7 @@ mod integrated {
             } else {
                 restart.transaction_passes
             };
+        analyses.keep_passes(restart.transaction_passes);
         let matrices = match assembly {
             Assembly::Blocks(structure) => Matrices::Blocks {
                 structure,
@@ -1418,7 +1733,7 @@ mod integrated {
             },
             Assembly::Colored => Matrices::Colored,
         };
-        let (yp, report) = super::consistent_start_exempting(
+        let (yp, mut report) = super::start_on_kept_or_full(
             joined,
             matrices,
             t,
@@ -1430,6 +1745,15 @@ mod integrated {
             passes_allowed,
         )
         .map_err(message)?;
+        let units = |i: usize| (y[i] - before[i]) * weights[i];
+        let payments: Vec<serde_json::Value> = paid
+            .iter()
+            .map(|c| {
+                let l = joined.network.cell_layout[*c];
+                serde_json::json!({"cell": c, "correction_tolerance_units": {"p": units(l.base),
+                    "vapor_mass": units(l.mass[1]), "vapor_energy": units(l.energy[1])}})
+            })
+            .collect();
         let births = born
             .iter()
             .map(|c| {
@@ -1443,6 +1767,37 @@ mod integrated {
             })
             .collect::<Result<Vec<_>, network::Failure>>()
             .map_err(message)?;
+        // R4-EXHAUST-START: an exhaustion stock IDA can no longer report,
+        // its root already past zero at this consistent state, is located
+        // here: the same instant restarts on it.
+        if let Some(event) = joined.exhaustion_at_start(y, &yp).map_err(message)? {
+            let mut after = restart_or_continue(
+                ida,
+                t,
+                Discrete::Roots(&event),
+                y_all,
+                network_ids,
+                absolute_all,
+                relative,
+                restart,
+                false,
+            )?;
+            done.append(&mut after.transactions);
+            after.transactions = done;
+            let mut all_births = births;
+            all_births.append(&mut after.births);
+            after.births = all_births;
+            let mut all_payments = payments;
+            all_payments.append(&mut after.payments);
+            after.payments = all_payments;
+            let mut all_appended = appended_done;
+            all_appended.append(&mut after.appended);
+            after.appended = all_appended;
+            after.modes_changed = true;
+            after.presence_changed |= presence_changed;
+            after.constraint_at_entry = entry;
+            return Ok(after);
+        }
         // L1 at the segment start (DR S3-REBIRTH, decision 0014): a lock
         // whose drive draws from its holding end at t0+ (at the consistent
         // state, or from an exact zero by its rate) is released now; stock
@@ -1474,6 +1829,7 @@ mod integrated {
         ida.reinitialize(t, y_all, &yp)?;
         ida.set_differential(&ids)?;
         restart.configure(ida)?;
+        ida.system_mut().integrated_mut().climb = report.climb.take();
         let first_step_s = match first_step_policy {
             FirstStep::LastStep { divisor } if last_step > 0. => {
                 let h = last_step / divisor;
@@ -1505,6 +1861,7 @@ mod integrated {
             first_step_s,
             last_step_s: last_step,
             births,
+            payments,
             yp,
             report,
             noop: false,
@@ -1750,6 +2107,8 @@ mod integrated {
     /// Jacobian and the symbolic analyses its block restarts reuse. A
     /// partial composition (a prepared port) is refused.
     pub struct Integrated<P: Properties> {
+        /// R4-CLIMB: the last start's matrices, while its climb lasts.
+        climb: Option<super::ClimbMatrices>,
         pub joined: Joined<P>,
         rows: Vec<i64>,
         pointers: Vec<i64>,
@@ -1850,6 +2209,7 @@ mod integrated {
                 analyses: Analyses::default(),
                 presence: None,
                 first_step: FirstStep::Declared,
+                climb: None,
                 base: Base::new(),
             })
         }
@@ -1891,6 +2251,7 @@ mod integrated {
                 analyses,
                 presence: None,
                 first_step: FirstStep::Declared,
+                climb: None,
                 base: Base::new(),
             })
         }
@@ -1949,6 +2310,7 @@ mod integrated {
                 assembly: Assembly::Blocks(Box::new(structure)),
                 analyses,
                 first_step: FirstStep::Declared,
+                climb: None,
                 base: Base::new(),
                 presence: Some(Following {
                     cache,
@@ -2048,6 +2410,83 @@ mod integrated {
             &self.analyses
         }
     }
+    impl<P: Properties + WaterProperties> Integrated<P> {
+        /// R4-CLIMB-START: forget every kept matrix, each presence key's too.
+        /// A copy point starts in full on both sides: a restored copy holds
+        /// none of the source's, and kept matrices steer the solves, so the
+        /// two would part in their last bits.
+        pub fn forget_kept_matrices(&mut self) {
+            self.climb = None;
+            self.analyses.retained = None;
+            if let Some(f) = &mut self.presence {
+                f.cache
+                    .for_each_held(|(_, analyses)| analyses.retained = None);
+            }
+        }
+        /// R4-CLIMB: while `cj` falls after a restart, the iteration matrix is
+        /// the start's `A + cj B`, with the equilibrium columns refreshed at
+        /// the climb's first state. A request that does not lower `cj`, Newton's
+        /// own retry after a failed solve among them, ends the climb and
+        /// assembles in full. Returns whether `data` is filled.
+        fn climb_matrix(
+            &mut self,
+            time: f64,
+            cj: f64,
+            y: &[f64],
+            yp: &[f64],
+            data: &mut [f64],
+        ) -> Result<bool, Failure> {
+            let Some(mut climb) = self.climb.take() else {
+                return Ok(false);
+            };
+            let Assembly::Blocks(structure) = &self.assembly else {
+                return Ok(false);
+            };
+            if cj >= climb.last_cj || climb.a.len() != data.len() {
+                return Ok(false);
+            }
+            if climb.last_cj.is_finite() {
+                for (d, (a, b)) in data.iter_mut().zip(climb.a.iter().zip(&climb.b)) {
+                    *d = a + cj * b;
+                }
+            } else {
+                let columns = self.joined.network.equilibrium_columns(y.len());
+                crate::basis_assembly(true);
+                leitbild_operating_plant::network::heaters::hold_endpoints(true);
+                let result = jacobian_blocks_start(
+                    &mut self.joined,
+                    structure,
+                    time,
+                    cj,
+                    y,
+                    yp,
+                    data,
+                    None,
+                    Some(&columns),
+                );
+                crate::basis_assembly(false);
+                leitbild_operating_plant::network::heaters::hold_endpoints(false);
+                result.map_err(failure)?;
+                for (j, refreshed) in columns.iter().enumerate() {
+                    let q = self.pointers[j] as usize..self.pointers[j + 1] as usize;
+                    for (d, (a, b)) in data[q.clone()]
+                        .iter_mut()
+                        .zip(climb.a[q.clone()].iter_mut().zip(&climb.b[q]))
+                    {
+                        if *refreshed {
+                            *a = *d - cj * b;
+                        } else {
+                            *d = *a + cj * b;
+                        }
+                    }
+                }
+            }
+            climb.last_cj = cj;
+            self.climb = Some(climb);
+            self.base.held = false;
+            Ok(true)
+        }
+    }
     impl<P: Properties + WaterProperties> System for Integrated<P> {
         fn dimension(&self) -> usize {
             self.joined.dimension()
@@ -2097,9 +2536,10 @@ mod integrated {
             out: &mut [f64],
         ) -> Result<(), Failure> {
             self.base.held = false;
-            self.joined
-                .evaluate(time, y, yp, None, 0., None)
-                .map_err(failure)?;
+            if let Err(refused) = self.joined.evaluate(time, y, yp, None, 0., None) {
+                self.joined.note_refused(time, y);
+                return Err(failure(refused));
+            }
             for (r, v) in out.iter_mut().zip(self.joined.rows()) {
                 *r = v.value;
             }
@@ -2132,6 +2572,9 @@ mod integrated {
             rows[..n].copy_from_slice(&self.rows);
             pointers.copy_from_slice(&self.pointers);
             let data = &mut data[..n];
+            if self.climb_matrix(time, cj, y, yp, data)? {
+                return Ok(());
+            }
             match &self.assembly {
                 Assembly::Colored => self.joined.jacobian(time, cj, y, yp, data),
                 Assembly::Blocks(structure) => {

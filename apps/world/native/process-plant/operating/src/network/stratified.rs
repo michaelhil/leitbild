@@ -58,6 +58,11 @@ use serde::Deserialize;
 const G: f64 = 9.80665;
 
 /// Number of PZR coordinates, in the contract's order (amendment 6).
+/// The level's named structural limit (S3-D17), read by R4-ENDED's table.
+pub const SOLID_PZR_LIMIT: &str = "the solid-PZR structural limit";
+/// The vapor zone's own inverse refused, read by R4-ENDED's table.
+pub const VAPOR_ZONE_INVERSE: &str = "the PZR vapor zone's inverse";
+
 pub const COORDINATES: usize = 19;
 pub const ROOF_PRESSURE: usize = 0;
 pub const VAPOR_VOLUME: usize = 1;
@@ -927,6 +932,10 @@ pub struct HeaterReceipt {
 #[derive(Clone, Copy, Debug)]
 pub struct ReliefState {
     pub lift: Scalar,
+    /// R4-RELIEF-ISO: the series isolation valve's open fraction, 1 where
+    /// none is composed; the relief's area is `x s A` (one multiplier, the
+    /// owner's labelled judgement, and no open-position loss).
+    pub isolation: Scalar,
     /// `None` only for a relief held on its seat with no receiver composed
     /// (the network alone, S1): a lift, or a lift direction, refuses then.
     pub back_pressure_pa: Option<Scalar>,
@@ -1992,7 +2001,11 @@ impl Cell {
             reuse
                 .as_mut()
                 .map(|(r, k)| (&mut **r, k.vapor_and_resident)),
-        )?;
+        )
+        .map_err(|f| match f {
+            Failure::Recoverable(m) => recoverable(format!("{VAPOR_ZONE_INVERSE}: {m}")),
+            fatal => fatal,
+        })?;
         let admitted = zone(
             h.pressure[1],
             x.admitted_mass,
@@ -2078,7 +2091,7 @@ impl Cell {
             PortKind::Spray | PortKind::Relief => {
                 if column.mixture_elevation.value >= p.elevation_m {
                     return Err(recoverable(format!(
-                        "mixture level reaches upper port {}: the solid-PZR structural limit",
+                        "mixture level reaches upper port {}: {SOLID_PZR_LIMIT}",
                         p.id
                     )));
                 }
@@ -2222,9 +2235,9 @@ impl Cell {
             }
             WallElement::TopHead => {
                 if column.mixture_elevation.value >= self.parameters.top_m {
-                    return Err(recoverable(
-                        "mixture level reaches the top head: the solid-PZR structural limit",
-                    ));
+                    return Err(recoverable(format!(
+                        "mixture level reaches the top head: {SOLID_PZR_LIMIT}"
+                    )));
                 }
                 Ok(one(2))
             }
@@ -2424,7 +2437,7 @@ impl Cell {
                 let device = port
                     .relief
                     .ok_or_else(|| fatal("relief port without its device"))?;
-                let area = state.lift * s(device.effective_area_per_lift_m2);
+                let area = state.lift * s(device.effective_area_per_lift_m2) * state.isolation;
                 let mut flow = ReliefFlow {
                     effective_area_m2: area,
                     vapor_kg_s: s(0.),
@@ -2437,7 +2450,7 @@ impl Cell {
                 if area.value != 0. || area.direction != 0. {
                     if c.mixture_elevation.value >= port.elevation_m {
                         return Err(recoverable(format!(
-                            "mixture level reaches the relief port {}: the solid-PZR structural limit",
+                            "mixture level reaches the relief port {}: {SOLID_PZR_LIMIT}",
                             port.id
                         )));
                     }

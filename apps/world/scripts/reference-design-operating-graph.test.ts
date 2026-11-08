@@ -42,6 +42,20 @@ describe('the LD-01 graph compiler', () => {
     expect(compiled.tagMap.commands['PROTECTION.manualReactorTrip' as never]).toEqual({ kind: 'ManualReactorTrip' })
   })
 
+  test('composes the relief isolation valve only where the packet does: position, lift, commands and the at-power alarm, no flow', () => {
+    expect(compiled.tagMap.commands['PZR.reliefIsolationClose' as never]).toBeUndefined()
+    expect(compiled.tagMap.channels['PZR.reliefLiftOpen' as never]).toBeUndefined()
+    const composed = compileOperatingGraph({ packet: { ...packet, pzrMetal: { reliefIsolation: { id: 'LD01.PZR.RELIEF.ISO' } } }, ic, elec, sha8: 'abcdef12' })
+    expect(composed.tagMap.commands['PZR.reliefIsolationClose' as never]).toEqual({ kind: 'ReliefIsolationClose' })
+    expect(composed.tagMap.commands['PZR.reliefIsolationOpen' as never]).toEqual({ kind: 'ReliefIsolationOpen' })
+    expect(composed.tagMap.channels['PZR.reliefIsolationPosition' as never]).toBe('LD01.PZR.RELIEF.ISO.POSITION')
+    expect(composed.tagMap.channels['PZR.reliefLiftOpen' as never]).toBe('LD01.PZR.RELIEF.LIFT.OPEN')
+    expect(Object.values(composed.tagMap.channels).map(ld01ChannelIdOf).filter(id => id.includes('RELIEF') && id.includes('FLOW'))).toEqual([])
+    const rules = (composed.automation as { rules: Array<{ id: string; ruleClass: string }> }).rules
+    expect(rules.find(rule => rule.id === 'LD01.PZR.RELIEF.ISO.SHUT_AT_POWER')?.ruleClass).toBe('alarm')
+    expect(ld01CommandSchema.parse({ kind: 'ReliefIsolationClose' })).toEqual({ kind: 'ReliefIsolationClose' })
+  })
+
   test('maps every graph variable to a channel or a command, and binds to the channels it names', () => {
     expect(graph.variables.every(variable => compiled.tagMap.channels[variable.path] !== undefined || compiled.tagMap.commands[variable.path] !== undefined)).toBe(true)
     const binding = bindLd01TagMap(graph, compiled.tagMap, channelsFor(Object.values(compiled.tagMap.channels).map(ld01ChannelIdOf)))

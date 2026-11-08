@@ -376,6 +376,25 @@ impl<P: Properties> Network<P> {
     pub(super) fn unilateral_locked(&self, li: usize) -> bool {
         self.unilateral.as_ref().is_some_and(|u| u.is_locked(li))
     }
+    /// R4-VAPOR-IMPULSE: the rate of a path's support inertia. `rate` is each
+    /// support region's `M' - M V'/V`, the rate of the phase density's
+    /// numerator; `M'` is the row's own `y'`, also where the vapor mass is an
+    /// equilibrium cell's algebraic coordinate (owner, 7 Nov).
+    pub(super) fn support_inertia_rate(
+        &self,
+        face: usize,
+        rate: impl Fn(usize) -> Scalar,
+        volume: impl Fn(usize) -> Scalar,
+    ) -> Scalar {
+        self.faces[face]
+            .supports
+            .iter()
+            .fold(Scalar::constant(0.), |sum, support| {
+                sum + rate(support.region) * Scalar::constant(support.inverse_area_length_per_m)
+                    / volume(support.region)
+            })
+    }
+
     /// R4-MOUTH-INERTIA: the inertia of the vapor the free surge-mouth path
     /// must accelerate on the PZR side, `(αρ)_port ∫ds/A`, with the port
     /// view's own `αρ`, the factor of the path's mass flow when the PZR is

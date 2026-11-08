@@ -25,6 +25,8 @@ const index = z.number().int().nonnegative()
 
 const packetSchema = z.object({
   identity: z.string().min(1),
+  // R4-RELIEF-ISO: the relief's series isolation valve, where the packet composes it.
+  pzrMetal: z.object({ reliefIsolation: z.object({ id: z.string().min(1) }).passthrough().optional() }).passthrough().optional(),
   mechanics: z.object({
     regions: z.array(z.object({ id: z.string().min(1), volume_m3: finite.positive(), elevation_m: finite }).passthrough()),
     faces: z.array(z.object({ id: z.string().min(1), from: index, to: index }).passthrough()),
@@ -373,6 +375,19 @@ export const compileOperatingGraph = (input: { readonly packet: unknown; readonl
     pzr.keyValues.splice(1, 1, 'levelPercent')
   }
   pzr.commands.push({ path: 'reliefStuckOpen', label: 'Pressurizer relief valve fails open', actuation: 'faultInjection', command: { kind: 'ReliefStuckOpen' }, momentary: false })
+  // R4-RELIEF-ISO: the valve's position and the relief's direct lift indication as operator channels, and its two
+  // commands. True relief flow stays in the receipts; nothing interlocks a close.
+  const reliefIsolation = packet.pzrMetal?.reliefIsolation
+  if (reliefIsolation !== undefined) {
+    pzr.readings.push(
+      reading('reliefIsolationPosition', `${reliefIsolation.id} position (100 open)`, 'derived', 'control', 'ratio', 'percent', `${reliefIsolation.id}.POSITION`, '%', 'position'),
+      reading('reliefLiftOpen', 'Pressurizer relief lift indication (off its seat)', 'discrete', 'control', 'boolean', 'boolean', 'LD01.PZR.RELIEF.LIFT.OPEN', '1'),
+    )
+    pzr.commands.push(
+      { path: 'reliefIsolationClose', label: 'Close pressurizer relief isolation', actuation: 'command', command: { kind: 'ReliefIsolationClose' }, momentary: true },
+      { path: 'reliefIsolationOpen', label: 'Open pressurizer relief isolation', actuation: 'command', command: { kind: 'ReliefIsolationOpen' }, momentary: true },
+    )
+  }
   for (const family of ic.families) {
     const quantity = family.quantity
     if (typeof quantity === 'object' && 'loop_flow' in quantity) {
@@ -655,6 +670,25 @@ export const compileOperatingGraph = (input: { readonly packet: unknown; readonl
           annunciator: { system: 'LD01.PROTECTION', role: 'cause', priority: entry.effects.reactor_trip ? 'urgent' : 'high' },
         }],
       })),
+      // R4-RELIEF-ISO: shut at power: the valve off full open while the holding voltage stands. An alarm, no interlock.
+      ...(reliefIsolation === undefined ? [] : [{
+        id: `${reliefIsolation.id}.SHUT_AT_POWER`,
+        label: `${reliefIsolation.id} shut at power`,
+        ruleClass: 'alarm',
+        condition: { type: 'vote', required: 2, conditions: [
+          { type: 'comparison', signal: { path: `${pzr.id}.reliefIsolationPosition` }, operator: '<', value: 100 },
+          { type: 'comparison', signal: { path: 'PROTECTION.holdingAvailable' }, operator: '==', value: true },
+        ] },
+        latch: false,
+        effects: [{
+          type: 'alarm.enter',
+          id: `${reliefIsolation.id}.SHUT_AT_POWER.ANNUNCIATED`,
+          title: 'Relief isolated at power',
+          message: `${reliefIsolation.id} is not fully open with the rods held: the pressurizer relief is the only overpressure relief`,
+          severity: 'warning',
+          annunciator: { system: 'LD01.PROTECTION', role: 'cause', priority: 'high' },
+        }],
+      }]),
       {
         id: `${ic.holding.interface}.LOST`,
         label: `${ic.holding.interface} holding voltage lost (rods released)`,

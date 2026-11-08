@@ -180,10 +180,6 @@ type HeldState = (Vec<f64>, Vec<f64>, Vec<f64>);
 /// A held-input change applied to the system at an exact stop.
 pub type HeldChange<S> = Box<dyn FnOnce(&mut S) -> Result<(), String>>;
 
-/// A declared event window's step cap and the predicate on a restart's
-/// transaction receipts that starts it ([`Driver::restart_max_step`]).
-pub type WindowCap = (f64, fn(&Value) -> bool);
-
 /// What a decided change does at its due instant.
 pub enum Action<S> {
     /// An owner command applied through `discrete_restart` (class R).
@@ -523,12 +519,6 @@ pub struct Driver<S> {
     quadratures: Option<(f64, Vec<f64>)>,
     /// HOOK (S3GATES): the time an [`Observer`] was last sampled to.
     gate_observed_to: f64,
-    /// HOOK (C4 lane, for KERN): a declared event window's step cap (0015
-    /// E2), set at the restart whose transaction receipts start a window
-    /// (the predicate): stock keeps IDASetMaxStep across IDAReInit and takes
-    /// a new bound only after a reinitialization, before the next step. The
-    /// caller removes it at the window's end (`Ida::remove_max_step`).
-    pub restart_max_step: Option<WindowCap>,
     /// MR-1 (owner, request 7 R7-P): the joined solve's forced
     /// iteration-matrix rebuild, stock IDAS check points every
     /// `rebuildEverySteps` steps of the packet's `matrixRebuild` section
@@ -663,7 +653,6 @@ impl<S: JoinedSystem> Driver<S> {
             solver_reached_s: t0,
             quadratures: None,
             gate_observed_to: t0,
-            restart_max_step: None,
             matrix_rebuild: MatrixRebuild::Packet,
             stepping: Stepping::FrameStops,
             hard_stops: Vec::new(),
@@ -697,12 +686,8 @@ impl<S: JoinedSystem> Driver<S> {
     /// HOOK (WORLD `ld01-unit`): the driver's truth at the stop it stands at
     /// ([`DriverState`]), the carried quadratures read there. Refused while
     /// a held change is pending (its action is code, not data: the caller
-    /// takes the snapshot at a later stop) or an event window's cap is
-    /// armed.
+    /// takes the snapshot at a later stop).
     pub fn state(&self, ida: &Ida<S>) -> Result<DriverState, String> {
-        if self.restart_max_step.is_some() {
-            return Err("an event window's step cap is armed: no driver snapshot".into());
-        }
         let pending = self
             .pending
             .iter()
@@ -725,6 +710,28 @@ impl<S: JoinedSystem> Driver<S> {
             pending,
             quadratures,
         })
+    }
+    /// The I&C frame period.
+    pub fn frame_period_s(&self) -> f64 {
+        self.frame.period_s()
+    }
+    /// R4-ENDED: the last accepted step's `y'`, when one is held.
+    pub fn accepted_rates(&self) -> Option<&[f64]> {
+        (!self.step_yp.is_empty()).then_some(&self.step_yp[..])
+    }
+    /// R4-ENDED: after a named domain end the run stands at its last
+    /// accepted step, the frame the unit holds: `y`, `y'` become that state,
+    /// observation stands there and nothing located waits to apply. Returns
+    /// that time.
+    pub fn stand_at_accepted(&mut self, y: &mut [f64], yp: &mut [f64]) -> f64 {
+        if !self.step_y.is_empty() {
+            y.copy_from_slice(&self.step_y);
+            yp.copy_from_slice(&self.step_yp);
+        }
+        self.observed_to = self.integrator_s;
+        self.held_roots = None;
+        self.accepted_pending = false;
+        self.integrator_s
     }
     /// HOOK (WORLD `ld01-unit`): restore [`Driver::state`] into a fresh
     /// driver of the same frame whose handle `ida` stands at the state's
@@ -1716,23 +1723,6 @@ impl<S: JoinedSystem> Driver<S> {
             ida.reinitialize_quadratures(&q)?;
             self.quadratures = Some((t, q));
         }
-        // HOOK (C4 lane): a window starting at this restart caps its steps.
-        // HOOK (C5X RC-1, KERN to reconcile): the appended owners' records
-        // at this restart count too, each as `{"appended": record}` (the
-        // slice's "GCB Open" ends C2's fast electrical ramp).
-        if let Some((h, starts)) = self.restart_max_step
-            && (restarted
-                .transactions
-                .iter()
-                .chain(&before)
-                .any(|x| starts(&x.receipt))
-                || restarted
-                    .appended
-                    .iter()
-                    .any(|a| starts(&json!({ "appended": a }))))
-        {
-            ida.set_max_step(h)?;
-        }
         yp.copy_from_slice(&restarted.yp);
         self.cpu.restart_s += (self.clock)() - started;
         Ok((restarted, before))
@@ -1859,7 +1849,7 @@ fn summary((r, before): &(Restarted, Vec<Transaction>)) -> Value {
         "transacted": r.transacted, "passes_allowed": r.passes_allowed, "placements": r.placements.len(),
         "constraint_at_entry": [r.constraint_at_entry.value, r.constraint_at_entry.row],
         "constraint_before": [rep.constraint_before.value, rep.constraint_before.row],
-        "births": r.births,
+        "births": r.births, "payments": r.payments,
         "projection_passes": rep.projection_passes, "rate_passes": rep.rate_passes,
         "correction_wrms": rep.correction_wrms, "exempt": exempt, "residual": rep.residual.value,
         "analyses_made": rep.analyses, "assemblies": rep.jacobian_s.len(),

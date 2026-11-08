@@ -70,6 +70,7 @@
 //! A refusal after the unit's state may have changed (ADVANCE, a restart, a
 //! Grid boundary) fail-stops the unit: every later request but STATUS and
 //! CLOSE is refused with that cause.
+use leitbild_operating_plant::joined::domain_end::DomainEnd;
 use leitbild_operating_plant::{
     digest::sha256,
     electrical::{breaker::Contact, bus, dc_supply, field, slice},
@@ -251,6 +252,10 @@ enum Operator {
         group: String,
         bus: String,
     },
+    /// R4-RELIEF-ISO: close or open the relief isolation valve.
+    ReliefIsolation {
+        close: bool,
+    },
 }
 
 /// An operator command by name, its keys exactly its own; `None` for a kind
@@ -276,6 +281,8 @@ fn operator_of(v: &Value, kind: &str) -> Option<Result<Operator, String>> {
                 },
             })
         }),
+        "ReliefIsolationClose" => parsed(&[]).map(|()| Operator::ReliefIsolation { close: true }),
+        "ReliefIsolationOpen" => parsed(&[]).map(|()| Operator::ReliefIsolation { close: false }),
         "StartConsumer" => parsed(&["consumer"]).and_then(|()| {
             Ok(Operator::Start {
                 consumer: owned("consumer")?,
@@ -329,6 +336,9 @@ enum Reading {
     /// Divisions that recorded the request.
     Request(&'static str),
     FieldInitiated,
+    /// R4-RELIEF-ISO.
+    ReliefIsolationPosition,
+    ReliefLiftOpen,
     ReleasedPower,
     PzrPressure,
     PzrCollapsedLevel,
@@ -624,6 +634,25 @@ fn channels(plant: &Plant, inputs: &Inputs) -> Result<Vec<Channel>, String> {
         Reading::HeaterRequest,
     ));
     let joined = &plant.ida.system().integrated().joined;
+    // R4-RELIEF-ISO: the valve's position and the relief's direct lift
+    // indication, where the packet composes the valve. True flow stays in
+    // the receipts.
+    if let Some(valve) = joined.pzr().isolation_block() {
+        out.push(channel(
+            format!("{}.POSITION", valve.id),
+            "%",
+            "PZR relief isolation valve position (100 open)",
+            "R4-RELIEF-ISO position indication",
+            Reading::ReliefIsolationPosition,
+        ));
+        out.push(channel(
+            "LD01.PZR.RELIEF.LIFT.OPEN",
+            "1",
+            "PZR relief lift indication (1 off its seat, 0 seated)",
+            "R4-RELIEF-ISO direct lift indication",
+            Reading::ReliefLiftOpen,
+        ));
+    }
     let scales = joined.scales();
     let labels: Vec<String> = joined
         .layouts()
@@ -930,7 +959,16 @@ struct Unit {
     /// Receipt cursors: driver, protection, field controller and slice logs.
     seen: [usize; 4],
     failed: Option<String>,
+    /// R4-ENDED: the named domain end the unit stands at.
+    ended: Option<Ended>,
     exchanges: u64,
+}
+
+/// R4-ENDED: a named domain end, at the last accepted step's time.
+struct Ended {
+    end: DomainEnd,
+    t: f64,
+    cause: String,
 }
 
 /// The cheap identity of a LOAD request: every input file and wiki page it
@@ -1142,6 +1180,7 @@ impl Unit {
             dc,
             seen: [0; 4],
             failed: None,
+            ended: None,
             exchanges: 0,
         })
     }
@@ -1165,6 +1204,21 @@ impl Unit {
     fn usable(&self) -> Result<(), String> {
         match &self.failed {
             Some(cause) => Err(format!("the unit fail-stopped: {cause}")),
+            None => Ok(()),
+        }
+    }
+
+    /// R4-ENDED: ADVANCE and COMMAND past a named domain end, refused by
+    /// name; SNAPSHOT, STATUS and CHANNELS keep working.
+    fn running(&self) -> Result<(), String> {
+        self.usable()?;
+        match &self.ended {
+            Some(end) => Err(format!(
+                "the unit ended at {} s: {}, {}",
+                end.t,
+                end.end.label(),
+                end.cause
+            )),
             None => Ok(()),
         }
     }
@@ -1255,6 +1309,12 @@ impl Unit {
                         None => return Err(format!("no engineering value {id}")),
                     },
                     Reading::IcReportQuality(i) => flag(reports[*i].1.is_some()),
+                    Reading::ReliefIsolationPosition => {
+                        100. * unit.integrated().joined.pzr().isolation_position(t)
+                    }
+                    Reading::ReliefLiftOpen => {
+                        flag(y[unit.integrated().joined.offsets().pzr] != 0.)
+                    }
                     Reading::Latched(f) => divisions.iter().filter(|d| d.latched(f)).count() as f64,
                     Reading::DivisionTrip(d) => flag(divisions[*d].trip.is_some()),
                     Reading::DivisionPowered(d) => flag(divisions[*d].powered),
@@ -1366,21 +1426,37 @@ impl Unit {
         let reached = self.plant.run(self.t, t1, &mut [], None);
         let reached = match reached {
             Ok(plant_reached) => plant_reached,
-            Err(e) => {
-                let cause = format!(
-                    "ADVANCE from {} s to {t1} s (a discrete change attempted at {:?} s, the solver at {} s): {e}",
-                    self.t, self.plant.driver.attempt_s, self.plant.driver.solver_reached_s
-                );
-                self.failed = Some(cause.clone());
-                return Err(cause);
-            }
+            Err(e) => match self.named_end(&e) {
+                // R4-ENDED: the run holds its last accepted step; the
+                // exchange reports it and names the end.
+                Some(end) => {
+                    let Plant { driver, y, yp, .. } = &mut self.plant;
+                    let t = driver.stand_at_accepted(y, yp);
+                    self.ended = Some(Ended { end, t, cause: e });
+                    leitbild_operating_water::frame::Reached::Until(t)
+                }
+                None => {
+                    let cause = format!(
+                        "ADVANCE from {} s to {t1} s (a discrete change attempted at {:?} s, the solver at {} s): {e}",
+                        self.t, self.plant.driver.attempt_s, self.plant.driver.solver_reached_s
+                    );
+                    self.failed = Some(cause.clone());
+                    return Err(cause);
+                }
+            },
         };
         let leitbild_operating_water::frame::Reached::Until(t) = reached;
         self.t = t;
         self.exchanges += 1;
         let after = self.counters()?;
         let values = self.values()?;
-        let events = self.events()?;
+        let mut events = self.events()?;
+        if let Some(end) = &self.ended {
+            if events.is_null() {
+                events = json!({});
+            }
+            events["ended"] = json!({"label": end.end.label(), "plain": end.end.plain(), "t": end.t, "cause": end.cause});
+        }
         out.extend_from_slice(&t.to_le_bytes());
         out.extend_from_slice(&self.plant.driver.solver_reached_s.to_le_bytes());
         out.extend_from_slice(&(COUNTS.len() as u32).to_le_bytes());
@@ -1402,6 +1478,19 @@ impl Unit {
         out.extend_from_slice(&(events.len() as u32).to_le_bytes());
         out.extend_from_slice(&events);
         Ok(())
+    }
+
+    /// R4-ENDED: the named end of a stop with this cause, from the last
+    /// accepted state, or `None`: a failure.
+    fn named_end(&self, cause: &str) -> Option<DomainEnd> {
+        let p = &self.plant;
+        let yp = p.driver.accepted_rates().unwrap_or(&p.yp);
+        p.ida.system().integrated().joined.named_end(
+            cause,
+            p.driver.integrator_s(),
+            p.driver.frame_period_s(),
+            yp,
+        )
     }
 
     fn command(&mut self, v: &Value) -> Result<Value, String> {
@@ -1476,6 +1565,15 @@ impl Unit {
                     .support(consumer)
                     .ok_or_else(|| format!("{kind}: no consumer {consumer}"))?;
             }
+            Operator::ReliefIsolation { .. } => {
+                let joined = &self.plant.ida.system().integrated().joined;
+                if joined.pzr().isolation_block().is_none() {
+                    return Err(format!("{kind}: the packet composes no relief isolation"));
+                }
+                if self.dc.is_none() {
+                    return Err(format!("{kind}: no DC groups composed"));
+                }
+            }
             Operator::Dc { group, .. } => {
                 group_of(group)?;
             }
@@ -1508,6 +1606,9 @@ impl Unit {
                     Operator::Dc { group, command } => u.operator_dc(due_s, group, *command),
                     Operator::Charger { group, bus } => {
                         u.operator_dc_charger_input(due_s, group, bus)
+                    }
+                    Operator::ReliefIsolation { close } => {
+                        u.operator_relief_isolation(due_s, *close)
                     }
                 }?;
                 result.set(Some(done));
@@ -1629,8 +1730,19 @@ impl Unit {
             },
             "driver": driver_json(&driver),
         });
+        // R4-ENDED: an ended unit runs no further, so no restart in place.
+        if self.ended.is_some() {
+            self.mark_seen()?;
+            return Ok(snapshot);
+        }
         // Design §6.1: the copy point is a restart boundary for the source
-        // too (the same exact consistent restart a restore makes).
+        // too (the same exact consistent restart a restore makes), so it
+        // starts on no kept matrix, as a restore does not.
+        self.plant
+            .ida
+            .system_mut()
+            .integrated_mut()
+            .forget_kept_matrices();
         let restart = Change {
             due_s: t,
             class: Class::R,
@@ -1734,6 +1846,7 @@ impl Unit {
         p.ida.constrain_nonnegative(&nonnegative)?;
         p.y = y;
         p.yp = yp;
+        p.ida.system_mut().integrated_mut().forget_kept_matrices();
         let restarted = discrete_restart(
             &mut p.ida,
             t,
@@ -1755,7 +1868,7 @@ impl Unit {
         let counters = self.counters()?;
         let cpu = &self.plant.driver.cpu;
         Ok(
-            json!({"t": self.t, "t_bits": bits(self.t), "integrator_t_bits": bits(self.plant.driver.integrator_s()), "failed": self.failed, "exchanges": self.exchanges,
+            json!({"t": self.t, "t_bits": bits(self.t), "integrator_t_bits": bits(self.plant.driver.integrator_s()), "failed": self.failed, "ended": self.ended.as_ref().map(|e| json!({"label": e.end.label(), "t": e.t, "cause": e.cause})), "exchanges": self.exchanges,
             "counts": COUNTS.iter().zip(counters).map(|(k, v)| (k.to_string(), json!(v))).collect::<Map<_, _>>(),
             "stock_counter_names": COUNTER_NAMES,
             "counts_by_class": self.plant.driver.counts.json(),
@@ -1882,7 +1995,7 @@ fn handle(
         }
         ADVANCE => {
             let u = unit.as_mut().ok_or("no unit is loaded")?;
-            u.usable()?;
+            u.running()?;
             let t1 = match payload {
                 [a, b, c, d, e, f, g, h] => f64::from_le_bytes([*a, *b, *c, *d, *e, *f, *g, *h]),
                 _ => {
@@ -1896,7 +2009,7 @@ fn handle(
         }
         COMMAND => {
             let u = unit.as_mut().ok_or("no unit is loaded")?;
-            u.usable()?;
+            u.running()?;
             let reply = u.command(&parsed("COMMAND")?)?;
             json_reply(&reply, out)?;
         }

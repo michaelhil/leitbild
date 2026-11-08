@@ -1,30 +1,30 @@
 {
  "kind": "ld01-tier1-expectation",
  "platform": "macos-aarch64",
- "reason": "The one combined re-settle (lane REPIN, lead 7 Nov), wiki d714de9, new packets and states, six items. (1) R4-PZR-PI: the PZR PI master with live spray. (2) R4-DUMP, R4-DUMP-ARM, R4-DUMP-TRANSFER: the post-trip bypass's Tavg mode. (3) R4-NUC-POISON-EQ with the critical boron: joint root 1,537.199 ppm-eq at -0.016 K, poisons within 7.4e-5 of equilibrium at the settled state. (4) R4-REPIN-GOV-SETTLE: a governed twin of the feed-train settle; the load reference re-based 1,010.28 -> 1,003.412 MW through the Grid request path (lead's ruling B), recorded in the settle receipt; the valve is in effect fully open with no upward margin, so H1 and S2's return to the request start saturated, and in a 60 s hold GEN.WT leaves the 68.2 kW bound at +22 s; no headroom added. (5) R4-NUC-SOURCE-ATOL (lead 1 Nov): derived absolute tolerances on the nuclear populations and precursors (Solver.source_atol = derived, ld01-source-atol); error weights at power move by about 1e-3 relative, so trajectories and digests move at step level; no packet change; correctness fix, C2 worst 0.5 s +3.1 % accepted (lead), steady -18 %. On this tuple it also raises C5's worst 0.5 s 0.2075 (stock atol) -> 0.2198 (+5.9 %) and its worst frame 0.569 -> 0.697 at +135.7 s, accepted by the lead on the same reasoning. (6) R4-START-ASSEMBLY: digest-equal (C2 9d2fbc86, T2 655aa23b, C3 and C5 equal with and without it); WORLD5's shadow check 1,637 assemblies, 21,039,896 entries, 0 different. Instructions against the previous pin (b2b0d528f, r4q, 5.195 and 11.548 G): C2@0 5.195 -> 5.169 G (-0.5 %), C2@2.5 11.548 -> 11.279 G (-2.3 %). Why, one-run-set attribution, medians of 3 at load 5: C2@0 does not move with the code, the tuple, source atol or start assembly (5.163 to 5.174 G across the settings); the -0.5 % against the pin is within its run-to-run spread. C2@2.5: new code on the old tuple +0.1 %, the new tuple -2.6 % (11.243 G; the prepared state's share, not separated further), source atol +2.1 % (11.476 G), start assembly -1.7 %. RESTART's measure of the rises the previous pin already held: C2@0 +0.228 G entirely the wiki provenance hash (wiki 336 -> 462 files, tree_hash twice per process); C2@2.5 +1.049 G 22 % that hash, 77 % DUMP's trajectory inside the span. Cost against b2b0d528f, 3 a side, worst 0.5 s: C2 0.300 -> 0.232, C3 0.261 -> 0.235 (B-prod met), C5 0.207 -> 0.205; worst frames 0.643, 0.533, 0.524; steady (600 s) keeps 0.0038, 0.0039, 0.0026. Control recorded under T1LOCK.",
- "recorded_from": "r4-repin/t1-record-r4r",
- "app": "ed2aef23c",
+ "reason": "The r4t re-pin (lane REPIN, lead 8 Nov) on rt-integ 3468cc9c5, wiki 79964f57: RESTART's final head (the climb, the exhaustion fix, ended, R4-RELIEF-ISO with the valve block now in the packet, R4-ROD-READER, the records stepping as the unit does with no window cap, C4 on block r5, C4-I pinned, R4-L1-PAYMENT-FLASH, R4-PZR-RESIDUE). Packets compiled twice from 79964f57 at the head (solids built there): against r4s they differ only in /pzrMetal/reliefIsolation and provenance; r4s's ungoverned and governed states carried bitwise and proven (C1 and C2 60 s digests, governed 60 s series equal). Instructions against the previous pin (620d6ab28, r4s, 5.374 and 11.477 G): C2@0 5.374 -> 5.306 G (-1.3 %), digest c6957835 unchanged; C2@2.5 11.477 -> 11.176 G (-2.6 %), digest 1ff8c15f -> 5bc91ebd: the trajectory moves through R4-ROD-READER and the cap removal (digest.py f5fd58d1 -> fd22c8f7 on r4s; the packet does not move it). Why the counts moved, one run set, medians of 3 interleaved at load 3-5: C2@0 does not move (the previous pin's binary on r4s 5.273 G, the head on r4s 5.269, on r4t 5.272); C2@2.5 the head's changes -2.0 % (11.410 -> 11.187 G on r4s), the packet -0.1 % (11.170 on r4t). The previous pin's own values were recorded at load 8-45, about 2 % above these quiet readings. Cost against the same binary on r4s, 3 a side, every line keeps: worst 0.5 s C2 0.243, C3 0.196, C5 0.239; worst frames 0.737, 0.489, 0.516; steady (600 s) 0.0040, 0.0039, 0.0026. Control recorded under T1LOCK.",
+ "recorded_from": "r4-repin/t1-record-r4t",
+ "app": "6a31cf0e3",
  "environment": {
-  "packet_sha256": "ad64a0bf641f1dd1fe1421531eafa875de0848034b6d850fb7dd482b9655f5cf",
-  "state_sha256": "a05ec2a2eadce30f502d222897135ca7c8daa4f00f3c92ae06334217be519558",
+  "packet_sha256": "5fc0b695b10b44aea6f30113155ad64ed82849da3885dfaac8f745ea0576fc47",
+  "state_sha256": "ed186e0e87f455c479723a94cb4136aa8b6da387d597524a2ac1e49ccfc10ba2",
   "elec_packet_sha256": "1e4f579e39d4a3e83f423d2a02229b5eccd7fdb1a2d977fb82c425b3d58b7f84",
-  "wiki_commit": "d714de9",
+  "wiki_commit": "79964f5",
   "water_lib_dir": "../../operating-water-sbtl-repin-dd021f1",
   "sundials_prefix": "../../idas-klu-7.5.0/prefix"
  },
  "instruction_tolerance": 0.01,
  "spans": {
   "C2@0": {
-   "instructions": 5169475832,
+   "instructions": 5306265489,
    "digest": "c6957835d3e00894429c6d4f890a39a888b1b9470a9d41e2401d4926363ab819"
   },
   "C2@2.5": {
-   "instructions": 11278870739,
-   "digest": "1ff8c15f51867d460ab34eb24fcd84aaf9d6c4dc11f6d9d8cd3e2a8d4e5bca99"
+   "instructions": 11175601731,
+   "digest": "5bc91ebd71d949d60df2eb7aac5bf37490f93eb32163fbaa9ac0196a75a9a536"
   }
  },
  "control": {
-  "binary": "r4-repin/t1-record-r4r/control-s3_cases",
-  "sha256": "bdf881cee61b1c0d9a208953bc64aeeddc22c287bbe723398feae4c5c8de5392"
+  "binary": "r4-repin/t1-record-r4t/control-s3_cases",
+  "sha256": "0b4da1376ac82d9b5cb11672af2126f9dc815f133a132e9794cbb44f67300465"
  }
 }

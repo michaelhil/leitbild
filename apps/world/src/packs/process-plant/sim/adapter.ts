@@ -417,8 +417,27 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
       recordedSeriesIds = recordedSeriesFor(recordingPlan)
     }
 
+    const engineSignal = (kind: 'failed' | 'ended', severity: 'critical' | 'warning', plantId: string, left: NativeEngineFailure, at: IsoTimestamp): PackRuntimeEvent => ({
+      type: 'interaction.signal',
+      at,
+      provenance: { source: 'simulator', adapterId: processPlantSimAdapterId },
+      signal: {
+        id: `process-plant-engine-${kind}:${randomUUID()}` as SignalId,
+        simulationRunId: config.simulationRunId,
+        at,
+        source: { kind: 'simulation', id: processPlantSimRuntimeId },
+        targets: [{ kind: 'broadcast' }],
+        type: `process-plant.engine.${kind}`,
+        severity,
+        payload: { plantId, atMs: left.atMs, message: left.reason },
+      },
+    })
+
+    /** R4-ENDED: the Plants whose named domain end has been signalled; each stays, its reads holding at the last frame. */
+    const endedPlants = new Set<string>()
+
     /**
-     * An LD-01 engine failed at its time (its child died, or its unit refused an exchange): the Plant leaves the
+     * An LD-01 engine failed at its time (its child died, its unit refused an exchange, or an ADVANCE passed the limit): the Plant leaves the
      * running Plants with the state it last saved, shows "engine unavailable" with the cause, and nothing
      * restarts it. A person or an agent may restore the Run's last checkpoint.
      */
@@ -432,21 +451,7 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
       networkAvailableByPlant.delete(plantId)
       rebuildRecordingPlan()
       const at = nowIso()
-      emitPackRuntimeEvents(handlers, [{
-        type: 'interaction.signal',
-        at,
-        provenance: { source: 'simulator', adapterId: processPlantSimAdapterId },
-        signal: {
-          id: `process-plant-engine-failed:${randomUUID()}` as SignalId,
-          simulationRunId: config.simulationRunId,
-          at,
-          source: { kind: 'simulation', id: processPlantSimRuntimeId },
-          targets: [{ kind: 'broadcast' }],
-          type: 'process-plant.engine.failed',
-          severity: 'critical',
-          payload: { plantId, atMs: failure.atMs, message: failure.reason },
-        },
-      }, ...processPlantProjectionEvents({
+      emitPackRuntimeEvents(handlers, [engineSignal('failed', 'critical', plantId, failure, at), ...processPlantProjectionEvents({
         objectsById, plants, at, simulationTime: new Date(lastSimulationMs).toISOString() as IsoTimestamp, connectedPlantIds, unavailable,
         provenance: { source: 'simulator', adapterId: processPlantSimAdapterId },
       })])
@@ -481,6 +486,14 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
         instance.ramps.apply(instance.runtime.elapsedMs() + elapsedMs)
         const receipt = await engine.advance(elapsedMs)
         exchanged.set(plantId, { simulatedMs: receipt.simulatedMs, wallMs: performance.now() - startedAt })
+        // R4-ENDED: a named domain end saves its held state and is signalled once; nothing restarts the unit.
+        const ended = engine.ended()
+        if (ended !== null && !endedPlants.has(plantId)) {
+          endedPlants.add(plantId)
+          await engine.checkpoint()
+          emitPackRuntimeEvents(handlers, [engineSignal('ended', 'warning', plantId, ended, nowIso())])
+          persistence.scheduleSave()
+        }
       }))
       // An engine's own failure has moved its Plant out (failNativePlant); anything else fails the runtime, visibly.
       for (const [index, outcome] of settled.entries()) {

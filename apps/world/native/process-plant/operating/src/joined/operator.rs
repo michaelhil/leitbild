@@ -24,6 +24,7 @@
 //! receipts only, its Jacobian included (a consistent start of the composed
 //! coordinates at t = 0); [`Joined::integrable`] is false, and the stock-IDA
 //! adapter refuses it, so no integrator can advance it.
+use super::domain_end::{self, DomainEnd, Refused};
 use super::{
     block::{CellVolume, Coordinates, Layout, Rods, Secondary, SecondaryView},
     cvcs::{self, Cvcs},
@@ -255,6 +256,10 @@ pub struct Joined<P: Properties> {
     /// the frame driver's accepted-state observer is: no transaction runs
     /// between a step and its observer.
     value_state: ValueState,
+    /// R4-ENDED: the last refused evaluation and the cell of a refused
+    /// dryout, for the named-end table.
+    refused: Option<Refused>,
+    dryout: Option<usize>,
 }
 
 /// HOOK (COST2): the bits of one value evaluation's state.
@@ -594,6 +599,8 @@ impl<P: Properties + WaterProperties> Joined<P> {
             credited: Vec::new(),
             supply_routed: false,
             value_state: ValueState::default(),
+            refused: None,
+            dryout: None,
         };
         let columns = joined.structural_pattern()?;
         let pattern = Pattern::from_columns(offsets.end, &columns).map_err(fatal)?;
@@ -1125,6 +1132,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
         if y.len() != o.end || yp.len() != o.end || seed.is_some_and(|d| d.len() != o.end) {
             return Err(fatal("stage length"));
         }
+        self.blocks.pzr.at_time(t);
         self.blocks.pre_network(y, yp, seed, cj)?;
         // R4-PZR-PI (S-b): the continuous spray stem's opening, with this
         // evaluation's direction, for the valve's restriction row.
@@ -1350,10 +1358,45 @@ impl<P: Properties + WaterProperties> Joined<P> {
             y[roof] * self.network.scales()[roof],
         )
     }
+    /// R4-ENDED: keep a refused evaluation's time and PZR vapor mass; the
+    /// named-end table reads them only if the run stops there.
+    pub fn note_refused(&mut self, t: f64, y: &[f64]) {
+        let i = self.network.pzr.base + stratified::VAPOR_MASS;
+        if let (Some(v), Some(scale)) = (y.get(i), self.network.scales().get(i)) {
+            self.refused = Some(Refused {
+                t,
+                vapor_mass_kg: v * scale,
+            });
+        }
+    }
+    /// R4-ENDED: the named end of a stop with this cause after the accepted
+    /// state `(t, y')`, or `None`: a failure ([`domain_end`]'s table).
+    pub fn named_end(
+        &self,
+        cause: &str,
+        accepted_s: f64,
+        frame_s: f64,
+        yp: &[f64],
+    ) -> Option<DomainEnd> {
+        let i = self.network.pzr.base + stratified::VAPOR_MASS;
+        let rate = yp.get(i)? * self.network.scales().get(i)?;
+        domain_end::named_end(&domain_end::Stop {
+            cause,
+            refused: self.refused,
+            dryout: self.dryout,
+            neck: self.rods().map(|r| r.neck_cell()),
+            accepted_s,
+            vapor_mass_rate_kg_s: rate,
+            frame_s,
+        })
+    }
     pub fn roots(&mut self, t: f64, y: &[f64], yp: &[f64], out: &mut [f64]) -> Result<(), Failure> {
         let started = Instant::now();
         self.value_state.held = false; // HOOK (COST2)
         let result = self.root_values(t, y, yp, out);
+        if result.is_err() {
+            self.note_refused(t, y);
+        }
         // HOOK (COST2): a root call whose value evaluation completed leaves
         // that state's evaluation in the operator; everything the call does
         // after it reads the same `(y, y')` (the rods' moving volumes and
@@ -1657,20 +1700,29 @@ impl<P: Properties + WaterProperties> Joined<P> {
                     continue;
                 }
                 let l = self.network.face_layout[li];
+                if l.phase != 1 {
+                    continue;
+                }
                 let (from, to) = self.network.face_ends(l.face);
                 let flow = self.network.path_flow_sign(y, li);
                 let donor = if flow > 0. {
-                    from
+                    Some(from)
                 } else if flow < 0. {
-                    to
+                    Some(to)
                 } else {
-                    continue;
+                    None
                 };
-                if donor < self.network.pzr.cell
-                    && self.network.cell_modes()[donor] == CellMode::Equilibrium
-                    && l.phase == 1
-                {
-                    modes[2 * donor] = -1;
+                // R4-EXHAUST-START: a root-size vapor mass past zero makes the
+                // path's inertia negative and turns `Q`, so the flow can name
+                // the liquid end while the located root is the vapor cell's
+                // own. An end at or past zero exhausts whichever way it reads.
+                for end in [from, to] {
+                    if end < self.network.pzr.cell
+                        && self.network.cell_modes()[end] == CellMode::Equilibrium
+                        && (donor == Some(end) || self.network.equilibrium_masses(end, y)?.0 <= 0.)
+                    {
+                        modes[2 * end] = -1;
+                    }
                 }
             }
             if let Some(m) = self.mode_transact(t, &modes, y)? {
@@ -1766,6 +1818,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
                 }
                 CellMode::Equilibrium => {
                     if b == -1 {
+                        self.dryout = Some(c);
                         return Err(fatal(format!(
                             "dryout of cell {c} at t = {t} s: mode G is S6 scope (C4's declared end)"
                         )));
@@ -1888,6 +1941,30 @@ impl<P: Properties + WaterProperties> Joined<P> {
                 "oneSided":one_sided.iter().map(|(p, f, r)| serde_json::json!({"path":p,"orientedDrive_Pa":f,"orientedRate_Pa_s":r})).collect::<Vec<_>>(),
                 "changes":tx.changes,"stateChanged":!tx.changes.is_empty()}),
         }))
+    }
+    /// R4-EXHAUST-START: the root directions of the exhaustions stock IDA
+    /// cannot report at a segment start `(y, y')`: an equilibrium cell whose
+    /// vapor mass stands below zero, or at an exact zero and falling. Its
+    /// exhaustion root starts on the far side and never crosses. `None` when
+    /// no cell stands there. The root's own sign and rate, the rule of
+    /// [`Joined::unilateral_release_at_start`]: no threshold.
+    pub fn exhaustion_at_start(&self, y: &[f64], yp: &[f64]) -> Result<Option<Vec<i32>>, Failure> {
+        if !self.phase_modes {
+            return Ok(None);
+        }
+        let first = self.root_count() - self.spray_slots() - self.phase_mode_slots();
+        let mut located = None;
+        for c in 0..self.network.pzr.cell {
+            if self.network.cell_modes()[c] != CellMode::Equilibrium {
+                continue;
+            }
+            let (vapor, _) = self.network.equilibrium_masses(c, y)?;
+            let rate = yp[self.network.cell_layout[c].mass[1]];
+            if crate::network::past_zero(vapor, rate) {
+                located.get_or_insert_with(|| vec![0; self.root_count()])[first + 2 * c] = -1;
+            }
+        }
+        Ok(located)
     }
     /// A declared command to every composed owner, in order, followed by
     /// any time event the command makes due at once ([`Joined::time_events`]).
@@ -2051,6 +2128,13 @@ impl<P: Properties + WaterProperties> Joined<P> {
             });
         }
         self.report_holding_opening(t, &mut done)?;
+        // R4-RELIEF-ISO: the valve's stroke ends here (class R).
+        if let Some(receipt) = self.blocks.pzr.isolation_event(t) {
+            done.push(super::block::Transaction {
+                deposits: Vec::new(),
+                receipt,
+            });
+        }
         Ok(done)
     }
     /// R4-DUMP (lead's ruling 4): every owner sees the reactor trip as one
@@ -2136,6 +2220,7 @@ impl<P: Properties + WaterProperties> Joined<P> {
             self.network.spray_next_instant(t).and_then(|(a, c)| {
                 (c == crate::control::spray_valve::StemChange::Lock).then_some(a)
             }),
+            self.blocks.pzr.next_isolation_event(t),
         ]
         .into_iter()
         .flatten()

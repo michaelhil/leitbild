@@ -24,7 +24,7 @@ use serde_json::{Value, json};
 const C4_R2: &str = include_str!("s3_harness/fixtures/ld01-s3-cases-c4-r2.json");
 
 fn block() -> Block {
-    Block::from_json(c4::FENCE, C4_R2).unwrap()
+    Block::from_json("ld01-s3-cases-c4", C4_R2).unwrap()
 }
 
 #[test]
@@ -151,10 +151,10 @@ fn c4_logs() -> (Vec<Value>, Vec<Value>) {
                 "before": "Free", "after": {"Locked": "From"}, "cause": "ContactRoot"}]}]}}),
     ];
     let division = json!({"powered": true,
-        "causes": [{"function": "LD01.PROT.PZR.LOW_PRESSURE", "t_s": t0 + 12.3}, {"function": "LD01.PROT.TG.TRIP", "t_s": t0 + 22.5}],
+        "causes": [{"function": "LD01.PROT.PZR.LOW_PRESSURE", "t_s": t0 + 12.3}, {"function": "LD01.PROT.PZR.S_PRESSURE", "t_s": t0 + 12.3}, {"function": "LD01.PROT.TG.TRIP", "t_s": t0 + 22.5}],
         "trip": {"function": "LD01.PROT.PZR.LOW_PRESSURE", "t_s": t0 + 12.3},
-        "requests": [{"request": "PRHR", "by": "LD01.PROT.PZR.LOW_PRESSURE", "t_s": t0 + 12.3},
-            {"request": "CMT injection", "by": "LD01.PROT.PZR.LOW_PRESSURE", "t_s": t0 + 12.3}]});
+        "requests": [{"request": "PRHR", "by": "LD01.PROT.PZR.S_PRESSURE", "t_s": t0 + 12.3},
+            {"request": "CMT injection", "by": "LD01.PROT.PZR.S_PRESSURE", "t_s": t0 + 12.3}]});
     (log, vec![division.clone(), division.clone(), division])
 }
 

@@ -238,7 +238,7 @@ impl<S: JoinedSystem> Electrified<S> {
             .secondary_mut()
             .ok_or("the governor needs the SG owner")?;
         secondary
-            .declare_valve_admission()
+            .declare_valve_admission(governor.parameters.full_open_margin)
             .map_err(|f| format!("{f:?}"))?;
         let terms = secondary
             .admission_terms(0.)
@@ -247,6 +247,42 @@ impl<S: JoinedSystem> Electrified<S> {
         self.admission_rows = secondary.admission_rows().iter().map(|r| o + r).collect();
         self.governor = Some(governor);
         Ok(())
+    }
+    /// R4-TURB-VALVE-MARGIN: the tracking start of a governor composed on an
+    /// ungoverned state. ADM's opening is the one that passes the start's
+    /// steam at the SG pressures of the operator's `y`, and the load
+    /// reference's scale is the start's export over it, the export at full
+    /// open. A start beyond the full-open valve is refused.
+    pub fn start_governor(&mut self, t: f64, y: &[f64], export_w: f64) -> Result<f64, String> {
+        self.read_pressures(y);
+        let secondary = self
+            .inner
+            .integrated()
+            .joined
+            .secondary()
+            .ok_or("the governor needs the SG owner")?;
+        let steam = secondary
+            .admitted_steam_kg_s(t)
+            .ok_or("the SG owner admits no steam")?;
+        let full_open: f64 = secondary
+            .admission_terms(t)
+            .ok_or("the SG owner declared no valve law")?
+            .iter()
+            .zip(&self.pressures_pa)
+            .map(|((_, c), p)| c * p)
+            .sum();
+        let opening = steam / full_open;
+        if !(opening.is_finite() && opening > 0. && opening <= 1.) {
+            return Err(format!(
+                "the start's {steam} kg/s is beyond the full-open valve's {full_open} kg/s"
+            ));
+        }
+        self.governor
+            .as_mut()
+            .ok_or("no governor composed")?
+            .held
+            .scale_w = export_w / opening;
+        Ok(opening)
     }
     /// PROC T5 (lane ELEC, lead 1 Nov): compose the five DC supply groups
     /// at `t` in the normal alignment, each charger on its normal bus as
@@ -291,6 +327,38 @@ impl<S: JoinedSystem> Electrified<S> {
                 if done { "accepted" } else { "refused" }
             ),
         ));
+        Ok(done)
+    }
+    /// R4-RELIEF-ISO: the operator's close or open of the relief isolation
+    /// valve at `t` (`false`: refused by its guards, recorded): no supply,
+    /// or already there. A stroke changes the relief's area, so the host
+    /// applies this as a class-R change.
+    pub fn operator_relief_isolation(&mut self, t: f64, close: bool) -> Result<bool, String> {
+        let dc = self.dc.as_ref().ok_or("no DC groups composed")?;
+        let joined = &mut self.inner.integrated_mut().joined;
+        let valve = joined
+            .pzr()
+            .isolation_block()
+            .ok_or("the packet composes no relief isolation")?;
+        let (id, supply) = (valve.id.clone(), valve.supply_group.clone());
+        let supplied = dc
+            .reports(t)?
+            .iter()
+            .find(|r| r.group == supply)
+            .ok_or_else(|| format!("{id}: no DC group {supply}"))?
+            .output_available;
+        let target = if close { "close" } else { "open" };
+        let done = supplied
+            && joined
+                .pzr_mut()
+                .drive_isolation(t, close)
+                .map_err(|e| format!("{e:?}"))?;
+        let why = match (done, supplied) {
+            (true, _) => "accepted".to_string(),
+            (false, false) => format!("refused: no {supply} supply"),
+            (false, true) => format!("refused: already {target}"),
+        };
+        self.log.push((t, format!("operator {id} {target}: {why}")));
         Ok(done)
     }
     /// PROC T5: the local manual charger input selection of `group` (I3)

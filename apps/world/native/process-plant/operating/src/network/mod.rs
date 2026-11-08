@@ -41,7 +41,7 @@ pub use jacobian::{
     ConsistentPair, ConsistentSystem, CscOut, DensePattern, Largest, Placement, Projection,
     SparseJacobian, consistent_rates, consistent_start, place_on_bounds, project_constraints,
 };
-pub use phase_modes::CellMode;
+pub use phase_modes::{CellMode, past_zero};
 pub use ports::{CellVolume, Coupling, Fluid, Receipts};
 pub use properties::{Band, BandReport, MetastableBand, Properties, Reuse, Water};
 pub use tolerance::{CreditedOutput, ToleranceClasses};
@@ -856,6 +856,69 @@ impl<P: Properties> Network<P> {
     pub fn stock_indices(&self, node: usize, k: usize) -> (usize, usize) {
         let l = self.cell_layout[node];
         (l.mass[k], l.energy[k])
+    }
+    /// R4-CLIMB: the columns a climb refreshes: every stock of a regular cell
+    /// in equilibrium mode, and the impulses of the faces touching one, whose
+    /// entries move fastest while a vapor stock is small.
+    pub fn equilibrium_columns(&self, n: usize) -> Vec<bool> {
+        let mut columns = vec![false; n];
+        let equilibrium: Vec<bool> = (0..self.pzr.cell)
+            .map(|c| self.modes[c] == CellMode::Equilibrium)
+            .collect();
+        for c in (0..self.pzr.cell).filter(|c| equilibrium[*c]) {
+            let l = self.cell_layout[c];
+            columns[l.base] = true;
+            for k in 0..2 {
+                columns[l.mass[k]] = true;
+                columns[l.energy[k]] = true;
+            }
+        }
+        for l in &self.face_layout {
+            let f = &self.faces[l.face];
+            let touches = |c: usize| equilibrium.get(c).copied().unwrap_or(false);
+            if touches(f.from) || touches(f.to) {
+                columns[l.index] = true;
+            }
+        }
+        columns
+    }
+    /// R4-CLIMB-START: widen `columns` by what a changed differential identity
+    /// touches: a path whose lock flipped takes its impulse and the stocks of
+    /// both ends; a cell whose mode flipped takes its stocks and the impulses
+    /// of the faces touching it.
+    pub fn identity_columns(&self, changed: &[bool], columns: &mut [bool]) {
+        let stocks = |c: usize, columns: &mut [bool]| {
+            if c < self.pzr.cell {
+                let l = self.cell_layout[c];
+                columns[l.base] = true;
+                for k in 0..2 {
+                    columns[l.mass[k]] = true;
+                    columns[l.energy[k]] = true;
+                }
+            }
+        };
+        for c in 0..self.pzr.cell {
+            let l = self.cell_layout[c];
+            let moved =
+                changed[l.base] || (0..2).any(|k| changed[l.mass[k]] || changed[l.energy[k]]);
+            if moved {
+                stocks(c, columns);
+                for path in &self.face_layout {
+                    let f = &self.faces[path.face];
+                    if f.from == c || f.to == c {
+                        columns[path.index] = true;
+                    }
+                }
+            }
+        }
+        for path in &self.face_layout {
+            if changed[path.index] {
+                let f = &self.faces[path.face];
+                columns[path.index] = true;
+                stocks(f.from, columns);
+                stocks(f.to, columns);
+            }
+        }
     }
     /// Every retained mass and tracer coordinate, regular cells and the PZR:
     /// the stocks an integrator constrains to be nonnegative. An equilibrium

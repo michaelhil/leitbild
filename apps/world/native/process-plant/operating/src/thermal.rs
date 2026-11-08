@@ -10,6 +10,15 @@ const PI: f64 = std::f64::consts::PI;
 pub(crate) const SB: f64 = 5.670374419e-8;
 const G: f64 = 9.80665;
 const BTU: f64 = 1055.05585262 / 3600. / 0.3048 * 1.8;
+/// Water's critical pressure, Pa: the Gorenflo law's reduced-pressure scale.
+const CRITICAL_PRESSURE_PA: f64 = 22.064e6;
+/// The highest reduced pressure Gorenflo's pressure relationship states.
+const GORENFLO_REDUCED_PRESSURE_MAX: f64 = 0.9;
+/// The wet-contact law's upper pressure, Pa, 19.8576 MPa: the Gorenflo
+/// term's stated end, `pr <= 0.9`. The citation is that term's alone. The
+/// composite law above 16 MPa is judgement: the other terms state no pressure
+/// range on disk (R4-WALL-CEILING).
+pub const WET_CONTACT_PRESSURE_MAX_PA: f64 = GORENFLO_REDUCED_PRESSURE_MAX * CRITICAL_PRESSURE_PA;
 pub type Result<T> = std::result::Result<T, &'static str>;
 
 /// One current value and ONE directional derivative, not a state/history or
@@ -1226,7 +1235,7 @@ struct PoolFactors<N> {
 }
 impl<N: Number> PoolFactors<N> {
     fn new(pressure: N, core: bool) -> Self {
-        let r = pressure / N::from(22.064e6);
+        let r = pressure / N::from(CRITICAL_PRESSURE_PA);
         let n = N::from(0.9) - N::from(0.3) * r.pow(0.15);
         let denom = if core {
             N::from(1.) - r * r
@@ -1460,7 +1469,9 @@ fn liquid_wall_inputs<N: Number>(
     positive(bulk_t)?;
     positive(wall_t)?;
     mass_flux.finite()?;
-    if !(1e5..=16e6).contains(&pressure.value()) || !(0. ..=1.).contains(&law.emissivity) {
+    if !(1e5..=WET_CONTACT_PRESSURE_MAX_PA).contains(&pressure.value())
+        || !(0. ..=1.).contains(&law.emissivity)
+    {
         return Err("hot thermal wet-contact domain");
     }
     Ok(())
@@ -2751,9 +2762,11 @@ mod current_port_regression {
 
     #[test]
     fn wet_contact_input_refusal_precedes_property_queries() {
+        assert!((WET_CONTACT_PRESSURE_MAX_PA - 19.8576e6).abs() < 1e-6);
         for (p, bulk, wall, flux, emissivity) in [
             (-1., 590., 580., 500., 0.3),
             (2e4, 590., 580., 500., 0.3),
+            (WET_CONTACT_PRESSURE_MAX_PA.next_up(), 590., 580., 500., 0.3),
             (1e7, 0., 580., 500., 0.3),
             (1e7, 590., 0., 500., 0.3),
             (1e7, 590., 580., f64::NAN, 0.3),

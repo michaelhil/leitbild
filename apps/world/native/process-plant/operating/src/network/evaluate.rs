@@ -691,6 +691,23 @@ impl<P: Properties> Network<P> {
                 .map_err(|e| Failure::Recoverable(e.into()))?;
             self.charts[l.face][l.phase] = Some(chart);
             self.face_drive[l.face][l.phase] = force + chart.pressure_gravity_pa;
+            // R4-VAPOR-IMPULSE: mass leaving a free vapor path's inertia takes
+            // its velocity. Roots read the drive above, without this term.
+            let mut leaving = s(0.);
+            if l.phase == 1 && !locked && chart.inertance_kg_m4.value != 0. {
+                let inertia_rate = self.support_inertia_rate(
+                    l.face,
+                    |r| {
+                        let m = self.rate(yp, seed, cj, self.stock_indices(r, 1).0);
+                        match self.cell_volume_rate[r] {
+                            None => m,
+                            Some(v) => m - phase_mass[1][r] * v / self.cell_volume[r],
+                        }
+                    },
+                    |r| self.cell_volume[r],
+                );
+                leaving = flow::leaving_impulse_rate(inertia_rate, chart.volume_flow_m3_s);
+            }
             // IC-CTRL (S3 spray path, S3-D25 (1)): the open valve's liquid
             // path is the restriction relation, algebraic.
             let restriction = match self.spray {
@@ -721,7 +738,7 @@ impl<P: Properties> Network<P> {
             } else if let Some(row) = restriction {
                 row
             } else {
-                flow::momentum_residual(self.rate(yp, seed, cj, l.index), chart, force)
+                flow::momentum_residual(self.rate(yp, seed, cj, l.index), chart, force + leaving)
                     .map_err(|e| Failure::Recoverable(e.into()))?
                     / s(self.scales[l.index])
             };

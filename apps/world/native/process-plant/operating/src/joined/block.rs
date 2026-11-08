@@ -586,8 +586,9 @@ pub trait Secondary<P> {
     /// X4.3 hook (lane TURB): declare the turbine admission valve's choked
     /// law (admission proportional to the slice's valve opening and the SG
     /// pressure; the rows already read the pressure, so the structure is
-    /// unchanged). An owner without the law refuses.
-    fn declare_valve_admission(&mut self) -> Result<(), Failure> {
+    /// unchanged), its full opening `full_open_margin` x the prepared demand
+    /// at the prepared pressure. An owner without the law refuses.
+    fn declare_valve_admission(&mut self, _full_open_margin: f64) -> Result<(), Failure> {
         Err(Failure::Fatal(
             "this secondary owner has no turbine valve law".into(),
         ))
@@ -751,6 +752,8 @@ pub trait Rods<P> {
     /// The clusters whose rows, receipts, travel or volumes read own
     /// coordinate `i`.
     fn coordinate_readers(&self, i: usize, out: &mut Vec<usize>) -> Result<(), Failure>;
+    /// HOUSING.NECK's cell, the stem's top (R4-ENDED's table reads it).
+    fn neck_cell(&self) -> usize;
     fn structure(&self) -> Structure;
     /// Root functions on accepted states (seats, kinks if declared).
     fn root_count(&self) -> usize;

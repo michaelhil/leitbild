@@ -66,6 +66,8 @@ export interface ProcessPlantRuntimeCheckpoint {
 
 export interface ProcessPlantRuntime {
   readonly tick: (elapsedMs: number) => ProcessPlantTickResult
+  /** R4-ENDED: why a native unit stands at a named domain end, reads holding at its last frame; absent elsewhere. */
+  readonly domainEnd?: () => string | null
   readonly elapsedMs: () => number
   /** Plant time ticked in all: the stepped elapsedMs and the remainder short of a step, so Run time minus it is fixed. */
   readonly advancedMs: () => number

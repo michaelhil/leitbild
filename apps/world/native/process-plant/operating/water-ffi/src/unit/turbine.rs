@@ -9,7 +9,9 @@ use crate::{
     frame::{Action, Change, Class, Driver},
     joined::JoinedSystem,
 };
-use leitbild_operating_plant::turbine::governor::{ContinuousBlock, GovernorBlock, Parameters};
+use leitbild_operating_plant::turbine::governor::{
+    ContinuousBlock, GovernorBlock, Parameters, ValveMarginBlock,
+};
 use serde_json::{Value, json};
 
 pub const TURBINE_PAGE: &str = "world/packs/process-plant/reference-designs/ld-01/systems/steam-power/turbine-and-regeneration-dynamics.md";
@@ -21,6 +23,7 @@ pub struct Turbine {
     pub governor: GovernorBlock,
     pub continuous: ContinuousBlock,
     pub admission_travel_s: f64,
+    pub valve_margin: ValveMarginBlock,
 }
 
 fn block(wiki: &str, page: &str, fence: &str) -> Result<Value, String> {
@@ -42,10 +45,15 @@ impl Turbine {
         let continuous = serde_json::from_value(block(wiki, TURBINE_PAGE, "ld01-governor-x43")?)
             .map_err(|e| format!("ld01-governor-x43: {e}"))?;
         let travel = block(wiki, ADMISSION_PAGE, "ld01-steam-valve-travel")?;
+        let valve_margin: ValveMarginBlock =
+            serde_json::from_value(block(wiki, TURBINE_PAGE, "ld01-turbine-valve-margin")?)
+                .map_err(|e| format!("ld01-turbine-valve-margin: {e}"))?;
+        valve_margin.margin()?;
         Ok(Self {
             governor,
             continuous,
             admission_travel_s: number(&travel, "admission_s", "ld01-steam-valve-travel")?,
+            valve_margin,
         })
     }
     /// The governor's parameters at the rated mechanical speed `omega0`.
@@ -55,10 +63,12 @@ impl Turbine {
             continuous: self.continuous,
             admission_travel_s: self.admission_travel_s,
             omega0_rad_s,
+            full_open_margin: self.valve_margin.generator_rated_output_kw
+                / self.valve_margin.turbine_nominal_output_kw,
         }
     }
     pub fn receipt(&self) -> Value {
-        json!({"governor": self.governor, "continuous": self.continuous, "admission_travel_s": self.admission_travel_s,
+        json!({"governor": self.governor, "continuous": self.continuous, "admission_travel_s": self.admission_travel_s, "valve_margin": self.valve_margin,
             "judgements": ["admission proportional to opening x SG dome pressure (the header/HP inlet stand-in until C10's header store joins; lead 1 Nov)",
                 "no at-power dump: the Tavg-mode load-rejection dump is not in 1.0 (CRED I14; lead ruling x43-5)",
                 "governor: 5 % speed droop about the load reference (request over the start's full-open export); GEN.WT only as the slow Ki trim (x43-5, the fast power loop destabilised the swing mode in x43-4)",

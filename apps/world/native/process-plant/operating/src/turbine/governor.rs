@@ -61,6 +61,32 @@ pub struct ContinuousBlock {
     pub position_lag_s: f64,
 }
 
+/// The wiki's `ld01-turbine-valve-margin` block (R4-TURB-VALVE-MARGIN, owner
+/// 7 Nov 2026): the two cited outputs whose ratio is the full-open
+/// admission over the D2 anchor. Applying a generator rating to steam flow is
+/// a labelled judgement, carried in `status`.
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ValveMarginBlock {
+    #[serde(rename = "turbineNominalOutput_kW")]
+    pub turbine_nominal_output_kw: f64,
+    #[serde(rename = "generatorRatedOutput_kW")]
+    pub generator_rated_output_kw: f64,
+    pub status: String,
+}
+
+impl ValveMarginBlock {
+    /// The full-open admission over the anchor: the ratio of the two cited
+    /// outputs, refused unless the valve gains a margin.
+    pub fn margin(&self) -> Result<f64, String> {
+        let m = self.generator_rated_output_kw / self.turbine_nominal_output_kw;
+        if !(self.turbine_nominal_output_kw > 0. && m.is_finite() && m >= 1.) {
+            return Err(format!("the turbine valve margin: {self:?}"));
+        }
+        Ok(m)
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, serde::Serialize)]
 pub struct Parameters {
     pub governor: GovernorBlock,
@@ -69,6 +95,8 @@ pub struct Parameters {
     pub admission_travel_s: f64,
     /// Rated mechanical speed (rad/s): the carrier over the pole pairs.
     pub omega0_rad_s: f64,
+    /// The full-open admission over the D2 anchor (R4-TURB-VALVE-MARGIN).
+    pub full_open_margin: f64,
 }
 
 impl Parameters {
@@ -88,6 +116,9 @@ impl Parameters {
         ];
         if positive.iter().any(|v| !(v.is_finite() && *v > 0.)) {
             return Err(format!("governor parameters must be positive: {self:?}"));
+        }
+        if !(self.full_open_margin.is_finite() && self.full_open_margin >= 1.) {
+            return Err(format!("the valve margin must be >= 1: {self:?}"));
         }
         Ok(())
     }
@@ -320,6 +351,23 @@ impl Governor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn the_valve_margin_is_the_ratio_of_the_two_cited_outputs() {
+        let cited = ValveMarginBlock {
+            turbine_nominal_output_kw: 1_199_500.,
+            generator_rated_output_kw: 1_237_500.,
+            status: "judgement".into(),
+        };
+        assert_eq!(
+            cited.margin().unwrap().to_bits(),
+            (1_237_500_f64 / 1_199_500.).to_bits()
+        );
+        let below = ValveMarginBlock {
+            generator_rated_output_kw: 1_199_499.,
+            ..cited
+        };
+        assert!(below.margin().is_err());
+    }
     fn governor() -> Governor {
         let p = Parameters {
             governor: GovernorBlock {
@@ -337,6 +385,7 @@ mod tests {
             },
             admission_travel_s: 1.,
             omega0_rad_s: 50. * std::f64::consts::PI,
+            full_open_margin: 1.03,
         };
         Governor::new(p, 0., 1.0e9, 1.02e9).unwrap()
     }

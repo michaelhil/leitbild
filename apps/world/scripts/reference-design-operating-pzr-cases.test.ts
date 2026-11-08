@@ -63,14 +63,15 @@ test('heater banks and the relief device parse from their owners and agree with 
   // G6's joined sections: the spine cell keeps its index and surge face, the
   // spray and relief take none; the metal owner's blocks pass unchanged and
   // the receiver is the relief calibration's backpressure.
+  const isolation={id:'LD01.PZR.RELIEF.ISO',strokeTime_s:2,supplyGroup:'LD01.DC.ACT.A'}
   const pages={equipment:equipment+'\n## Abnormal wall contact and finite heat receivers\n\n'+fence('ld01-pzr-heater-contact',{wet:1})
       +'\n\n### Fixed metal and complementary contact\n\n'+fence('reference-304-caloric',{datum_K:300})+'\n',
-    inventory,thermal:'### Shell and head metal\n\n'+fence('ld01-pzr-shell',{grossArea_m2:5})+'\n'},
+    inventory:inventory+'\n### Relief isolation valve\n\n'+fence('ld01-pzr-relief-isolation',isolation)+'\n',thermal:'### Shell and head metal\n\n'+fence('ld01-pzr-shell',{grossArea_m2:5})+'\n'},
     g6=joinedPzrSections({...cell,index:28,ports:cell.ports.map(p=>({...p,face:34}))},pages)
   expect(g6.cell.index).toBe(28)
   expect((g6.cell.ports as {kind:string,face:number|null}[]).map(p=>[p.kind,p.face])).toEqual([['surge',34],['spray',null],['relief',null]])
   expect(g6.pzrMetal).toEqual({heaterBanks:{banks:parsePzrHeaterBanks(equipment)},heaterContact:{wet:1},caloric304:{datum_K:300},
-    shell:{grossArea_m2:5},reliefBackPressure_Pa:101325})
+    shell:{grossArea_m2:5},reliefBackPressure_Pa:101325,reliefIsolation:isolation})
   expect(()=>joinedPzrSections(cell,{...pages,thermal:'### Elsewhere\n'})).toThrow('Shell and head metal')
 })
 

@@ -130,7 +130,6 @@ fn the_c5_block_pins_before_any_run_and_reads_its_common_rules_under_common_rule
     .unwrap();
     assert_eq!((at, command.is_none()), (10.37, true));
     assert_eq!(case_window(Case::C5, &spec), Some(30.));
-    assert!(window_cap(Case::C5, &spec, None).is_none());
     assert_eq!(spec["lines"]["O3"]["window_s"], json!([0, 0.3]));
 }
 
@@ -646,6 +645,17 @@ const C1C3_R3_8: &str = include_str!("s3_harness/fixtures/ld01-s3-cases-c1c3-r3.
 const C1C3_R3_8_SHA256: &str = "7291821074f5f28193491ecef597deb6ff42cdb2118db4a74649ea584951f3e7";
 const C4_R3: &str = include_str!("s3_harness/fixtures/ld01-s3-cases-c4-r3.json");
 const C4_R3_SHA256: &str = "6b4958c8aff62554f88ee90e4143df86336a36df049d873335673e5874bdc261";
+/// Revision 4 (R4-C4-REV4, owner-approved after result): its verdicts stay on
+/// record.
+const C4_R4: &str = include_str!("s3_harness/fixtures/ld01-s3-cases-c4-r4.json");
+const C4_R4_FENCE: &str = "ld01-s3-cases-c4-r4";
+const C4_R4_SHA256: &str = "44eab84f6ead4ed811d1ff9302e749ef416e38bc50ef92ec0c562e9a1ebfdb1c";
+/// Revision 5 (R4-C4-REV5, owner-approved after result): C4 runs on it.
+const C4_R5: &str = include_str!("s3_harness/fixtures/ld01-s3-cases-c4-r5.json");
+const C4_R5_SHA256: &str = "9863cfb39cb3405c75e659411013ba530266ae32c91ff7b21e16a6c0d6497526";
+/// C4-I (owner-approved 7 November): its own block on C4's drive.
+const C4I_R1: &str = include_str!("s3_harness/fixtures/ld01-s3-cases-c4i.json");
+const C4I_R1_SHA256: &str = "d5354e11ec7fa1267d102cfcf140a881d3e3a555df562ca4a5db31bbf049d1a7";
 /// The revisions the r8 wiki supersedes, refused by name.
 const SUPERSEDED: [(&str, &str, &str); 2] = [
     (
@@ -660,13 +670,16 @@ const SUPERSEDED: [(&str, &str, &str); 2] = [
     ),
 ];
 /// The pin a block must carry for a gate run on the r8 wiki, by fence.
-const REQUIRED: [(&str, &str, &str); 2] = [
+const REQUIRED: [(&str, &str, &str); 5] = [
     (
         "ld01-s3-cases-c1c3",
         C1C3_R3_8_SHA256,
         "RP1-pin-s3-c1c3-r3.8",
     ),
     ("ld01-s3-cases-c4", C4_R3_SHA256, "RP1-pin-s3-c4-r3"),
+    (C4_R4_FENCE, C4_R4_SHA256, "RP1-pin-s3-c4-r4"),
+    (s3_harness::c4::FENCE, C4_R5_SHA256, "RP1-pin-s3-c4-r5"),
+    (s3_harness::c4i::FENCE, C4I_R1_SHA256, "RP1-pin-s3-c4i"),
 ];
 
 /// Refuses a superseded block revision by name, and any C1–C3 or C4 block
@@ -926,7 +939,8 @@ fn operator_trip_delay(case: Case, spec: &Value) -> Result<Option<f64>, String> 
 }
 
 /// S3-D39's labelled end: zone R's mass `m` (kg), draining at `rate`
-/// (kg/s), reaches exhaustion within the `step` (s) the solver attempts next.
+/// (kg/s), reaches exhaustion within `step` (s): the I&C frame, since the step
+/// the solver attempts next collapses to zero at a wall.
 fn zone_r_exhausts_within(m: f64, rate: f64, step: f64) -> bool {
     rate < 0. && step > 0. && m + rate * step <= 0.
 }
@@ -1030,157 +1044,6 @@ fn case_window(case: Case, spec: &Value) -> Option<f64> {
     }
 }
 
-/// A case's declared event window (r3 §1.1, decision 0015 E2): its cap,
-/// its length and the restart receipt that starts it (the case's own
-/// command: C2's turbine trip, C3's RCP supply loss; C3's later operator
-/// trip does not start one). C1 has none: it runs uncapped.
-struct WindowCap {
-    max_step_s: f64,
-    window_s: f64,
-    starts: fn(&Value) -> bool,
-    /// RC-1: a declared fast electrical ramp at the window's start, capped
-    /// tighter until the record that ends it.
-    ramp: Option<Ramp>,
-}
-
-/// A declared fast electrical ramp (owner R7-S, RC-1; decision 0015 E2
-/// amended): from the window's start (the case's command) to the record
-/// that ends it, the steps are capped at `max_step_s`; the window's own
-/// cap holds after it.
-struct Ramp {
-    max_step_s: f64,
-    /// The restart record that ends the ramp (a transaction receipt, or an
-    /// appended owner's record as `{"appended": record}`).
-    ends: fn(&Value) -> bool,
-    declared: &'static str,
-}
-
-impl WindowCap {
-    /// The cap the window's starting restart sets.
-    fn start_cap(&self) -> f64 {
-        self.ramp.as_ref().map_or(self.max_step_s, |r| r.max_step_s)
-    }
-}
-
-/// The cap in force `after_zero` s after the window's start, with the ramp
-/// ending at `ramp_end` (s after the start) once its record exists: the
-/// ramp's cap inside the ramp, the window's after it, none outside.
-fn cap_in_force(w: &WindowCap, after_zero: f64, ramp_end: Option<f64>) -> Option<f64> {
-    if !(0. ..w.window_s).contains(&after_zero) {
-        return None;
-    }
-    match (&w.ramp, ramp_end) {
-        (Some(r), None) => Some(r.max_step_s),
-        (Some(r), Some(end)) if after_zero < end => Some(r.max_step_s),
-        _ => Some(w.max_step_s),
-    }
-}
-
-/// S1's `eventWindow.maxStep_s` (the gate run checks it against the block).
-const WINDOW_MAX_STEP_S: f64 = 0.02;
-
-/// RC-1's strict block (owner R7-S, 17 Oct; decision 0015 E2 amended):
-/// `ld01-event-window-ramp-cap` on decision 0015's page, its own block
-/// because S1's harness reads `ld01-s1-gates` strictly.
-const RAMP_CAP_FENCE: &str = "ld01-event-window-ramp-cap";
-const DECISION_0015: &str = "world/packs/process-plant/reference-designs/engineering/development/decisions/0015-credited-band-and-event-windows.md";
-
-/// The ramp-cap block of the wiki named by `LD01_WIKI_ROOT`: exactly one,
-/// strict JSON; absent refuses (RC-1 applies from S3, no default).
-fn ramp_cap_block() -> Result<Value, String> {
-    let wiki = std::env::var("LD01_WIKI_ROOT").map_err(|_| "LD01_WIKI_ROOT".to_string())?;
-    let page = format!("{wiki}/{DECISION_0015}");
-    let text = std::fs::read_to_string(&page).map_err(|e| format!("{page}: {e}"))?;
-    ramp_cap_from(&text)
-}
-fn ramp_cap_from(text: &str) -> Result<Value, String> {
-    let open = format!("```{RAMP_CAP_FENCE}\n");
-    let mut found = text.match_indices(&open).map(|(i, _)| i);
-    let start = found.next().ok_or(format!("no {RAMP_CAP_FENCE} block"))? + open.len();
-    if found.next().is_some() {
-        return Err(format!("more than one {RAMP_CAP_FENCE} block"));
-    }
-    let end = start
-        + text[start..]
-            .find("\n```")
-            .ok_or("unterminated ramp-cap block")?;
-    let block: Value = serde_json::from_str(&text[start..end]).map_err(|e| e.to_string())?;
-    let keys = [
-        "amends",
-        "appliesFrom",
-        "rampMaxStep_s",
-        "elsewhereInWindow",
-        "ramps",
-        "rule",
-    ];
-    match block.as_object() {
-        Some(o) if o.len() == keys.len() && keys.iter().all(|k| o.contains_key(*k)) => Ok(block),
-        _ => Err(format!("{RAMP_CAP_FENCE}: exactly the keys {keys:?}")),
-    }
-}
-
-/// The block's ramp for `case`, bound to the harness's records: C2's ramp
-/// starts at the case command LD01.TG TRIP (the window's start) and ends at
-/// the generator breaker's opening, the slice's "GCB Open" record. A listed
-/// ramp the harness cannot bind refuses.
-fn declared_ramp(case: Case, block: &Value) -> Result<Option<Ramp>, String> {
-    let h = block["rampMaxStep_s"]
-        .as_f64()
-        .filter(|h| h.is_finite() && *h > 0.)
-        .ok_or(format!("{RAMP_CAP_FENCE}.rampMaxStep_s"))?;
-    let listed: Vec<&Value> = block["ramps"]
-        .as_array()
-        .ok_or(format!("{RAMP_CAP_FENCE}.ramps"))?
-        .iter()
-        .filter(|r| r["case"] == case.key())
-        .collect();
-    match (case, listed.as_slice()) {
-        (_, []) => Ok(None),
-        (Case::C2, [r])
-            if r["from"]
-                .as_str()
-                .is_some_and(|f| f.contains("LD01.TG TRIP"))
-                && r["to"]
-                    .as_str()
-                    .is_some_and(|t| t.contains("generator breaker opening")) =>
-        {
-            Ok(Some(Ramp {
-                max_step_s: h,
-                ends: |r| r["appended"] == "GCB Open",
-                declared: "ld01-event-window-ramp-cap (RC-1, owner R7-S): C2's turbine stop-valve ramp, from the trip command to the generator breaker's opening record",
-            }))
-        }
-        _ => Err(format!(
-            "{RAMP_CAP_FENCE}: {} lists a ramp the harness cannot bind",
-            case.key()
-        )),
-    }
-}
-
-fn window_cap(case: Case, spec: &Value, ramp: Option<Ramp>) -> Option<WindowCap> {
-    let (window_s, starts): (Option<f64>, fn(&Value) -> bool) = match case {
-        // C5's cap is set by the case after the offsite loss's restart.
-        Case::C1 | Case::C5 => return None,
-        // X4 T2: the rod trip's command starts the same window.
-        Case::C2 => (spec["window_s"].as_f64(), |r| {
-            r["command"] == "TurbineTripAcquired" || r["command"] == "ManualReactorTrip"
-        }),
-        Case::C3 => (spec["window_s"].as_f64(), |r| r["command"] == "SupplyLoss"),
-        // C4 (r1 `windows`): one window from each of the relief malfunction,
-        // the reactor trip and every birth, each started by its restart.
-        Case::C4 => (
-            spec["windows"]["window_s"].as_f64(),
-            s3_harness::c4::starts_window,
-        ),
-    };
-    Some(WindowCap {
-        max_step_s: WINDOW_MAX_STEP_S,
-        window_s: window_s?,
-        starts,
-        ramp,
-    })
-}
-
 /// S3-D39's operator turbine trip: once any division's acquired reactor
 /// trip exists, its earliest time and the declared delay to the operator's
 /// turbine trip (None before that, or for a case without one).
@@ -1207,123 +1070,63 @@ fn exchange_quiet_s() -> f64 {
         .number("/quietInterval_s")
 }
 
-/// Whether the cap comes off at the chunk bound `b`: the first bound at
-/// or after the window's end.
-fn cap_removed_at(b: f64, zero: f64, window_s: f64) -> bool {
-    b >= zero + window_s - 1e-9
+/// Block r5's refinement budgets, from the operator-grade page of the wiki
+/// the run reads (`ld01-operator-budgets` and `ld01-r4-x1-cases`), and the
+/// accuracy contract's threshold timing.
+fn c4_refinement_budgets(crossing_s: f64) -> s3_harness::c4::Budgets {
+    let page = format!("{}/operator-grade-budgets.md", gates::wiki_model());
+    let operator = Block::from_page(&page, "ld01-operator-budgets")
+        .unwrap_or_else(|e| panic!("the operator budgets: {e}"));
+    let cases =
+        Block::from_page(&page, "ld01-r4-x1-cases").unwrap_or_else(|e| panic!("the X1 cases: {e}"));
+    s3_harness::c4::Budgets {
+        pressure_pa: operator.number("/numerical/pzrPressure_Pa/budget_Pa"),
+        level_m: operator.number("/numerical/pzrLevel_m/budget_m"),
+        sg_pressure_pa: operator.number("/numerical/sgPressure_Pa/budget_Pa"),
+        crossing_s,
+        convergence_fraction: cases.number("/references/convergenceFraction"),
+    }
 }
 
-/// The published block (wiki claude/ld01-r7-wiki e2e26fd, decision 0015's page).
-const RAMP_CAP_E2E26FD: &str = "```ld01-event-window-ramp-cap\n{\"amends\":\"decision 0015 E2 (owner request 7 S, RC-1, 17 October 2026)\",\"appliesFrom\":\"S3\",\"rampMaxStep_s\":0.005,\"elsewhereInWindow\":\"ld01-s1-gates eventWindow.maxStep_s\",\"ramps\":[{\"case\":\"C2\",\"ramp\":\"the turbine stop-valve (STOP) ramp with the generator connected\",\"from\":\"the case command LD01.TG TRIP, which starts C2's event window\",\"to\":\"the generator breaker opening at the STOP ramp's end (C2.O2, 0.30 s after the trip)\"}],\"rule\":\"the 5 ms cap holds only over a ramp listed here; a ramp is listed before the first gated run of its case (RP1)\"}\n```\n";
-fn ramp_fixture() -> Value {
-    ramp_cap_from(RAMP_CAP_E2E26FD).unwrap()
-}
-
+/// Block r4 (R4-C4-REV4): its declared hash, and what it changed against r3.
 #[test]
-fn the_ramp_cap_block_is_read_strictly_and_binds_only_c2s_ramp() {
-    let b = ramp_fixture();
-    assert_eq!(
-        b["rampMaxStep_s"].as_f64().unwrap().to_bits(),
-        0.005f64.to_bits()
+fn c4_revision_4_pins_and_names_the_owner_approved_changes() {
+    let b = Block::from_json(C4_R4_FENCE, C4_R4).unwrap();
+    assert_eq!(guards::declared_sha256(&b).unwrap(), C4_R4_SHA256);
+    let lines = b.whole("/cases/C4/lines");
+    assert!(
+        lines["O3"]["action"]
+            .as_str()
+            .unwrap()
+            .contains("S_PRESSURE")
     );
-    assert!(declared_ramp(Case::C2, &b).unwrap().is_some());
-    assert!(declared_ramp(Case::C3, &b).unwrap().is_none());
-    assert!(declared_ramp(Case::C1, &b).unwrap().is_none());
-    // Two blocks, an extra key, or a ramp the harness cannot bind refuse.
-    assert!(ramp_cap_from(&format!("{RAMP_CAP_E2E26FD}{RAMP_CAP_E2E26FD}")).is_err());
-    assert!(ramp_cap_from(&RAMP_CAP_E2E26FD.replace("\"rule\"", "\"extra\":1,\"rule\"")).is_err());
-    assert!(ramp_cap_from("no block").is_err());
-    let mut unbound = b.clone();
-    unbound["ramps"][0]["to"] = "the reactor trip".into();
-    assert!(declared_ramp(Case::C2, &unbound).is_err());
-    let mut c3 = b.clone();
-    c3["ramps"][0]["case"] = "C3".into();
-    assert!(declared_ramp(Case::C3, &c3).is_err());
+    assert_eq!(lines["N4"]["kind"], "diagnostic");
+    assert_eq!(b.whole("/cases/C4/stepping/record"), "free");
+    let r3 = Block::from_json("ld01-s3-cases-c4", C4_R3).unwrap();
+    assert_eq!(guards::declared_sha256(&r3).unwrap(), C4_R3_SHA256);
 }
 
+/// Block r5 (R4-C4-REV5): the owner's three rulings on E, and the stepping.
 #[test]
-fn the_ramp_cap_holds_only_inside_the_ramp() {
-    let b = block();
-    let c2 = window_cap(
-        Case::C2,
-        &b.whole("/cases/C2"),
-        declared_ramp(Case::C2, &ramp_fixture()).unwrap(),
-    )
-    .unwrap();
-    // Before the trip, at and after the window's end: no cap.
-    assert_eq!(cap_in_force(&c2, -0.01, None), None);
-    assert_eq!(cap_in_force(&c2, 20., Some(0.3)), None);
-    // Inside the ramp (the GCB-open record not yet, or later than t): 5 ms.
-    assert_eq!(cap_in_force(&c2, 0., None), Some(0.005));
-    assert_eq!(cap_in_force(&c2, 0.15, None), Some(0.005));
-    assert_eq!(cap_in_force(&c2, 0.299, Some(0.3)), Some(0.005));
-    // From the record to the window's end: the window's 20 ms.
-    assert_eq!(cap_in_force(&c2, 0.3, Some(0.3)), Some(0.02));
-    assert_eq!(cap_in_force(&c2, 19.99, Some(0.3)), Some(0.02));
-    // C3 declares no ramp: 20 ms over its whole window.
-    let c3 = window_cap(
-        Case::C3,
-        &b.whole("/cases/C3"),
-        declared_ramp(Case::C3, &ramp_fixture()).unwrap(),
-    )
-    .unwrap();
-    assert_eq!(cap_in_force(&c3, 0., None), Some(0.02));
-    assert_eq!(cap_in_force(&c3, 29.99, None), Some(0.02));
-}
-
-#[test]
-fn the_window_cap_holds_only_inside_the_declared_window() {
-    let b = block();
-    // C1 declares no window: never capped.
-    assert!(window_cap(Case::C1, &b.whole("/cases/C1"), None).is_none());
-    // C2: 20 s from the trip, started by the trip's receipt only.
-    let c2 = window_cap(
-        Case::C2,
-        &b.whole("/cases/C2"),
-        declared_ramp(Case::C2, &ramp_fixture()).unwrap(),
-    )
-    .unwrap();
-    assert_eq!((c2.max_step_s, c2.window_s), (0.02, 20.));
-    assert!((c2.starts)(
-        &json!({"command": "TurbineTripAcquired", "owner": "secondary"})
-    ));
-    assert!(!(c2.starts)(
-        &json!({"command": "HoldingLoss", "owner": "secondary"})
-    ));
-    assert!(!(c2.starts)(
-        &json!({"event": "STOP ramp end", "owner": "secondary"})
-    ));
-    // C3: 30 s from the supply loss; the operator's later trip starts none.
-    let c3 = window_cap(
-        Case::C3,
-        &b.whole("/cases/C3"),
-        declared_ramp(Case::C3, &ramp_fixture()).unwrap(),
-    )
-    .unwrap();
-    assert_eq!(c3.window_s, 30.);
-    assert!((c3.starts)(
-        &json!({"command": "SupplyLoss", "owner": "network", "rotor": 0})
-    ));
-    assert!(!(c3.starts)(
-        &json!({"command": "TurbineTripAcquired", "owner": "secondary"})
-    ));
-    // RC-1: C2's ramp, 5 ms from the trip to the GCB-open record; C3 none.
-    let ramp = c2.ramp.as_ref().unwrap();
-    assert_eq!((c2.start_cap(), ramp.max_step_s), (0.005, 0.005));
-    assert!((ramp.ends)(&json!({"appended": "GCB Open"})));
-    assert!(!(ramp.ends)(&json!({"appended": "GCB Closed"})));
-    assert!(!(ramp.ends)(
-        &json!({"event": "STOP ramp end", "owner": "secondary"})
-    ));
-    assert!(!(ramp.ends)(
-        &json!({"command": "TurbineTripAcquired", "owner": "secondary"})
-    ));
-    assert!(c3.ramp.is_none() && c3.start_cap() == 0.02);
-    // Off at the first bound at or after the window's end, not before.
-    let zero = 548.05;
-    assert!(!cap_removed_at(zero + 19.95, zero, 20.));
-    assert!(cap_removed_at(zero + 20., zero, 20.));
-    assert!(cap_removed_at(548.1 + 20., zero, 20.));
+fn c4_revision_5_pins_the_rulings_and_the_c4i_block_is_its_own() {
+    let b = Block::from_json(s3_harness::c4::FENCE, C4_R5).unwrap();
+    assert_eq!(guards::declared_sha256(&b).unwrap(), C4_R5_SHA256);
+    assert_eq!(b.whole("/cases/C4/stepping/record"), "free");
+    assert!(b.whole("/cases/C4/windows").get("maxStep_s").is_none());
+    let rule = b.whole("/cases/C4/gates/refinement");
+    let rule = rule.as_str().unwrap();
+    assert!(rule.contains("operator grade") && rule.contains("Recorded, not judged"));
+    let i = Block::from_json(s3_harness::c4i::FENCE, C4I_R1).unwrap();
+    assert_eq!(guards::declared_sha256(&i).unwrap(), C4I_R1_SHA256);
+    assert_eq!(i.whole("/cases/C4I/closeAt_s"), json!([30, 47]));
+    assert!(
+        i.whole("/disclosure")
+            .as_str()
+            .unwrap()
+            .contains("no CMT or PRHR flow")
+    );
+    let lines = i.whole("/cases/C4I/lines");
+    assert_eq!(lines.as_object().unwrap().len(), 12);
 }
 
 #[test]
@@ -1331,7 +1134,7 @@ fn c4s_clock_windows_and_operator_trip_are_read_from_its_block() {
     // C4's revision 2 (superseded by r3 for a run, refused there by name):
     // its clock, windows and register mechanics, which r3 keeps.
     let b = Block::from_json(
-        s3_harness::c4::FENCE,
+        "ld01-s3-cases-c4",
         include_str!("s3_harness/fixtures/ld01-s3-cases-c4-r2.json"),
     )
     .unwrap();
@@ -1340,21 +1143,21 @@ fn c4s_clock_windows_and_operator_trip_are_read_from_its_block() {
     let (zero, command) = case_clock(Case::C4, &spec, 0.1).unwrap();
     assert_eq!((zero, command), (0., Some(Command::ReliefStuckOpen)));
     // 20 s windows from the malfunction, the reactor trip and each birth.
-    let w = window_cap(Case::C4, &spec, None).unwrap();
-    assert_eq!((w.max_step_s, w.window_s), (0.02, 20.));
-    assert!((w.starts)(
+    let starts = s3_harness::c4::starts_window;
+    assert_eq!(case_window(Case::C4, &spec), Some(20.));
+    assert!(starts(
         &json!({"owner": "pzr", "command": "ReliefStuckOpen", "stuck_open": true})
     ));
-    assert!((w.starts)(
+    assert!(starts(
         &json!({"owner": "secondary", "command": "HoldingLoss"})
     ));
-    assert!((w.starts)(
+    assert!(starts(
         &json!({"owner": "phase modes", "events": [{"birth": 26}]})
     ));
-    assert!(!(w.starts)(
+    assert!(!starts(
         &json!({"owner": "phase modes", "events": [{"exhaustion": 26}]})
     ));
-    assert!(!(w.starts)(
+    assert!(!starts(
         &json!({"owner": "secondary", "command": "TurbineTripAcquired"})
     ));
     // The operator trips the turbine 10 s after the reactor trip.
@@ -1446,9 +1249,8 @@ struct Driven {
     gcb_open_after_zero: Option<f64>,
     sg_relief: Vec<(String, String, i64, f64)>,
     repeat_record: Value,
-    /// Rule K's post-event state (S3-D52): the declared part's end, the
-    /// window's end or rule I's end, whichever first: `(path, sha256,
-    /// which)`.
+    /// Rule K's post-event state (S3-D52): rule I's end when it falls
+    /// inside the declared span: `(path, sha256, which)`.
     declared_end_state: Option<(String, String, &'static str)>,
     /// R4-NUC-SOURCE-ATOL's basis (record only): the state at the first
     /// frame stop at or after `LD01_S3_STATE_AT_AFTER_ZERO_S`, written to
@@ -1478,13 +1280,11 @@ fn sg_relief_valve(packet: &Value) -> &Value {
 /// The case run's explicit configuration, read once by `s3_case_run` and
 /// recorded in every drive's receipt: the error-weight rule (N1; stock until
 /// G1-INTEG sets grouped), the first step of every discrete restart (N3),
-/// the driver's matrix management (MR-1's packet interval or stock's own)
-/// and whether RC-1's declared ramp cap applies.
+/// and the driver's matrix management (MR-1's packet interval or stock's own).
 #[derive(Clone, Copy, Debug)]
 struct CaseConfig {
     solver: leitbild_operating_water::unit::profile::Solver,
     matrix_rebuild: leitbild_operating_water::frame::MatrixRebuild,
-    ramp_cap: bool,
     /// X4.4 (lane ROD): automatic rod control composed in AUTO
     /// (`LD01_ROD_AUTO` on | off, unset off; the block from
     /// `LD01_ROD_CONTROL_WIKI`).
@@ -1496,6 +1296,9 @@ struct CaseConfig {
     /// PROC T5 (lane ELEC): the five DC supply groups, report-only
     /// (`LD01_DC` on | off, unset off; the blocks from `LD01_DC_WIKI`).
     dc: bool,
+    /// C4-I (`LD01_S3_C4I_CLOSE_S`, one of its block's `closeAt_s`): C4's
+    /// drive with the relief isolation valve closed that long after zero.
+    c4i_close_s: Option<f64>,
     /// Stuck-cluster C2 (lead ruling (a)): a rod cluster composed singly
     /// (`LD01_S3_SINGLE=<cluster id>`, unset none: the bank composition), its
     /// own motion class and bore water; the start state must be of that
@@ -1553,11 +1356,6 @@ impl CaseConfig {
             "stock" => MatrixRebuild::Stock,
             v => return Err(format!("LD01_S3_MATRIX_REBUILD={v}: stock or packet")),
         };
-        let ramp_cap = match var("LD01_S3_RC1", "on").as_str() {
-            "on" => true,
-            "off" => false,
-            v => return Err(format!("LD01_S3_RC1={v}: on or off")),
-        };
         let jump_diagnostic = match var("LD01_S3_JUMP_DIAGNOSTIC", "off").as_str() {
             "on" => true,
             "off" => false,
@@ -1577,6 +1375,13 @@ impl CaseConfig {
             "on" => true,
             "off" => false,
             v => return Err(format!("LD01_DC={v}: on or off")),
+        };
+        let c4i_close_s = match std::env::var("LD01_S3_C4I_CLOSE_S") {
+            Ok(v) => Some(
+                v.parse::<f64>()
+                    .map_err(|e| format!("LD01_S3_C4I_CLOSE_S={v}: {e}"))?,
+            ),
+            Err(_) => None,
         };
         let single: Option<&'static str> = std::env::var("LD01_S3_SINGLE")
             .ok()
@@ -1599,10 +1404,10 @@ impl CaseConfig {
         Ok(Self {
             solver,
             matrix_rebuild,
-            ramp_cap,
             rod_auto,
             turbine_governor,
             dc,
+            c4i_close_s,
             single,
             stuck,
             rod_trip,
@@ -1610,7 +1415,7 @@ impl CaseConfig {
         })
     }
     fn json(&self) -> Value {
-        json!({"weights": self.solver.weights, "first_step": self.solver.first_step, "matrix_rebuild": format!("{:?}", self.matrix_rebuild), "ramp_cap": self.ramp_cap, "rod_auto": self.rod_auto, "turbine_governor": self.turbine_governor, "dc": self.dc, "single": self.single, "stuck": self.stuck, "trip": if self.rod_trip { "rod" } else { "turbine" }, "stepping": self.solver.stepping, "water": self.solver.water, "jump_diagnostic": self.jump_diagnostic,
+        json!({"weights": self.solver.weights, "first_step": self.solver.first_step, "matrix_rebuild": format!("{:?}", self.matrix_rebuild), "rod_auto": self.rod_auto, "turbine_governor": self.turbine_governor, "dc": self.dc, "single": self.single, "stuck": self.stuck, "trip": if self.rod_trip { "rod" } else { "turbine" }, "stepping": self.solver.stepping, "water": self.solver.water, "jump_diagnostic": self.jump_diagnostic,
             "cost_excludes_case_observer": true})
     }
 }
@@ -1626,10 +1431,6 @@ struct Ask<'a> {
     /// The path prefix of rule K's post-event state (C2/C3), if written:
     /// `<prefix>-window-end-state.json` or `<prefix>-rule-i-end-state.json`.
     window_state: Option<String>,
-    /// Whether the case's declared event window applies (decision 0015
-    /// E2's cap and E4/H1's window-end restart): the run, its repeat and
-    /// the cost drive; never a reference (R1 has its own cap, R2 none).
-    event_window: bool,
     /// The gate observation grid when not S1's comparison grid (SS-1: the
     /// 0.1 s output grid, S3-D51).
     observation_s: Option<f64>,
@@ -2073,38 +1874,13 @@ fn drive(
     if let Some(h) = ask.max_step {
         ida.set_max_step(h).unwrap();
     }
-    // Decision 0015 E2: the 20 ms cap only inside the case's declared event
-    // window, set by the driver at the restart that starts it (C4's hook)
-    // and removed at the first chunk bound at or after its end.
-    // RC-1: the case's declared fast electrical ramp, from the wiki's block.
-    let ramp_block = ramp_cap_block().unwrap_or_else(|e| panic!("RC-1: {e}"));
-    let ramp = declared_ramp(case, &ramp_block)
-        .unwrap_or_else(|e| panic!("RC-1: {e}"))
-        .filter(|_| ask.config.ramp_cap);
-    let window_cap = window_cap(case, spec, ramp).filter(|_| ask.event_window);
-    if let Some(w) = &window_cap {
-        driver.restart_max_step = Some((w.start_cap(), w.starts));
-    }
-    let mut cap_intervals: Vec<Value> = Vec::new();
-    // RC-1: the ramp's end hook is armed after the window's start, and its
-    // end (the record's time, s after zero) once the hook has fired.
-    let mut ramp_armed = false;
-    let mut ramp_end: Option<f64> = None;
-    // The cap observed: each chunk's last step against the cap in force at
-    // its middle (RC-1's check that the cap holds only where declared).
-    let mut cap_checks = (0u64, 0f64, 0f64);
     let max_step = ask.max_step;
     // C4 (C4 lane, r1): its own observation on the run (relief, PZR column,
     // the cells' departures, the acquired PT for rule A′), its ends, and
     // rule K's states 1 s after each phase change and at the declared end.
-    if case == Case::C4 {
-        assert_eq!(
-            spec["windows"]["maxStep_s"].as_f64(),
-            Some(WINDOW_MAX_STEP_S),
-            "C4's window cap is S1's eventWindow.maxStep_s"
-        );
-    }
-    let c4_observe = case == Case::C4 && ask.label == "run";
+    // Block r5: the series' levels hold the frames too: relief flow and the
+    // PZR's levels are compared at frames.
+    let c4_observe = case == Case::C4 && (ask.label == "run" || ask.label.starts_with("rtol/"));
     let c4_classes = (case == Case::C4).then(|| {
         s3_harness::c4::Classes::from_block(&spec["volumeClasses"], &packet_json)
             .unwrap_or_else(|e| panic!("C4's volume classes: {e}"))
@@ -2136,30 +1912,17 @@ fn drive(
     if let Some(c) = command {
         driver.command(zero, c).unwrap();
     }
-    // E4/H1: the window ends with a restart from the accepted state (the
-    // exact consistent start), then the cap is lifted (M1).
-    if let Some(w) = &window_cap {
+    // C4-I: the operator's close, a class-R change on the unit's own path.
+    if let Some(close) = ask.config.c4i_close_s {
+        let due = zero + close;
         driver
             .decide(vec![Change {
-                due_s: zero + w.window_s,
+                due_s: due,
                 class: Class::R,
-                kind: "H1 window-end restart (E4)".into(),
-                action: Action::Held(Box::new(|_| Ok(()))),
-            }])
-            .unwrap();
-    }
-    // C5 (C5L): the same E4/H1 window-end restart at zero + window, its cap
-    // set by the case at the offsite loss's restart (below).
-    if c5
-        && ask.event_window
-        && let Some(w) = case_window(case, spec)
-    {
-        driver
-            .decide(vec![Change {
-                due_s: zero + w,
-                class: Class::R,
-                kind: "H1 window-end restart (E4)".into(),
-                action: Action::Held(Box::new(|_| Ok(()))),
+                kind: "operator relief isolation close".into(),
+                action: Action::Held(Box::new(move |unit: &mut CaseUnit| {
+                    unit.operator_relief_isolation(due, true).map(|_| ())
+                })),
             }])
             .unwrap();
     }
@@ -2189,8 +1952,8 @@ fn drive(
     // CPU is marked at every chunk for the cost spans.
     let window_s = case_window(case, spec).filter(|_| command.is_some() || c5);
     let mut bounds: Vec<f64> = vec![zero, until];
-    if let Some(w) = window_s {
-        bounds.push(zero + w);
+    if let Some(close) = ask.config.c4i_close_s {
+        bounds.push(zero + close);
     }
     // C1, C5: the stand-in's exchange intervals (D1, S3-D42) are chunk
     // bounds, as the C5 host stops at each exchange's t1. C5's block copies
@@ -2212,14 +1975,8 @@ fn drive(
     };
     bounds.extend(exchanges.iter().map(|(b, _)| *b));
     // R4-FREE-STEPS: under free stepping only these bounds (the event, the
-    // window's end, the exchanges' interval ends and the run's end) are
-    // exact stops; the frame chunks below are observation marks.
+    // exchanges' interval ends and the run's end) are exact stops; the frame chunks below are observation marks.
     if ask.config.solver.stepping == leitbild_operating_water::frame::Stepping::Free {
-        // C4 serves no 1.0 case and reads its frames at exact chunk stops.
-        assert!(
-            case != Case::C4,
-            "C4 refuses free stepping: compose it with LD01_S3_STEPPING=frame-stops"
-        );
         assert_eq!(
             driver.stepping,
             leitbild_operating_water::frame::Stepping::Free
@@ -2252,8 +2009,8 @@ fn drive(
             )
         });
     let mut state_at: Option<(String, String, f64)> = None;
-    // S3-D52: the last frame stop that rule I admits, kept while the window
-    // runs, for a rule-I end before the window's end (A4 admits no state
+    // S3-D52: the last frame stop that rule I admits, kept through the
+    // declared span, for a rule-I end inside it (A4 admits no state
     // after rule I's exit).
     let mut last_admitted: Option<FrameState> = None;
     // C5's exchange record: the decisions, the interval receipts, the feed
@@ -2325,100 +2082,6 @@ fn drive(
             } else {
                 *b
             };
-            // C4: every declared window (relief, reactor trip, each birth)
-            // caps from its restart; each later window also ends with E4's
-            // restart; the cap comes off at the first bound at or after the
-            // last open window's end, and the hook stays armed.
-            if case == Case::C4
-                && let Some(w) = &window_cap
-                && r.is_ok()
-            {
-                for start in s3_harness::c4::window_starts(&driver.log[c4.seen_windows..], zero) {
-                    let until_w = start + w.window_s;
-                    if c4.cap_until.is_none() {
-                        cap_intervals.push(json!({"from_after_zero_s": start, "set_by": "the driver at the restart that starts the window (restart_max_step)"}));
-                    }
-                    if start > 1e-9 {
-                        let decided = driver.decide(vec![Change {
-                            due_s: zero + until_w,
-                            class: Class::R,
-                            kind: "H1 window-end restart (E4)".into(),
-                            action: Action::Held(Box::new(|_| Ok(()))),
-                        }]);
-                        if let Err(e) = decided {
-                            r = Err(e);
-                        }
-                    }
-                    c4.cap_until = Some(c4.cap_until.map_or(until_w, |u| u.max(until_w)));
-                }
-                c4.seen_windows = driver.log.len();
-                if let Some(u) = c4.cap_until
-                    && *b - zero >= u - 1e-9
-                {
-                    if let Err(e) = ida.remove_max_step() {
-                        r = Err(format!("removing the window's cap at {b} s: {e}"));
-                    }
-                    if let Some(last) = cap_intervals.last_mut() {
-                        last["window_end_after_zero_s"] = json!(u);
-                        last["removed_after_zero_s"] = json!(*b - zero);
-                    }
-                    c4.cap_until = None;
-                }
-            } else if let Some(w) = &window_cap
-                && r.is_ok()
-            {
-                // The window's start disarms the hook (nothing later re-caps);
-                // its end removes the cap.
-                if driver.restart_max_step.is_some() && *b >= zero - 1e-9 && !ramp_armed {
-                    driver.restart_max_step = None;
-                    cap_intervals.push(json!({"from_s": zero, "from_after_zero_s": 0., "max_step_s": w.start_cap(),
-                        "set_by": "the driver at the restart that starts the window (C4 hook 75dd4632c)"}));
-                    if let Some(ramp) = &w.ramp {
-                        // The ramp's end record sets the window's cap at its
-                        // restart (the hook sees appended records, C5X RC-1).
-                        driver.restart_max_step = Some((w.max_step_s, ramp.ends));
-                        ramp_armed = true;
-                    }
-                }
-                if ramp_armed && ramp_end.is_none() {
-                    let opened = ida
-                        .system()
-                        .log
-                        .iter()
-                        .find(|(at, what)| *at >= zero - 1e-9 && what == "GCB Open")
-                        .map(|(at, _)| *at);
-                    if let Some(at) = opened {
-                        driver.restart_max_step = None;
-                        ramp_end = Some(at - zero);
-                        if let Some(last) = cap_intervals.last_mut() {
-                            last["ramp_end_s"] = json!(at);
-                            last["ramp_end_after_zero_s"] = json!(at - zero);
-                        }
-                        cap_intervals.push(json!({"from_s": at, "from_after_zero_s": at - zero, "max_step_s": w.max_step_s,
-                            "set_by": "the driver at the ramp's end record's restart (GCB Open; C5X RC-1 hook)"}));
-                    }
-                }
-                if let Ok(st) = ida.stats()
-                    && st.last_step > 0.
-                    && let Some(cap) = cap_in_force(w, *b - zero - st.last_step / 2., ramp_end)
-                {
-                    cap_checks.0 += 1;
-                    cap_checks.1 = cap_checks.1.max(st.last_step / cap);
-                    if ramp_end.is_none_or(|e| *b - zero <= e + 1e-9) && w.ramp.is_some() {
-                        cap_checks.2 = cap_checks.2.max(st.last_step);
-                    }
-                }
-                if let Some(last) = cap_intervals.last_mut()
-                    && last.get("removed_at_s").is_none()
-                    && cap_removed_at(*b, zero, w.window_s)
-                {
-                    if let Err(e) = ida.remove_max_step() {
-                        r = Err(format!("removing the window's cap at {b} s: {e}"));
-                    }
-                    last["removed_at_s"] = json!(*b);
-                    last["removed_after_zero_s"] = json!(*b - zero);
-                }
-            }
             // Rule G: CPU and instructions with rule I counted (S3-D46;
             // in an ungated drive the observer is rule I alone) and without.
             let cpu_with = process_cpu_s() - run_started - ledger_quadrature_cpu_s(ida.system());
@@ -2444,6 +2107,14 @@ fn drive(
                 let s0 = process_cpu_s();
                 let classes = c4_classes.as_ref().unwrap();
                 if c4_observe {
+                    // Block r4: under free stepping the integrator may stand
+                    // past the mark; the frame is stock's dense output there.
+                    let free = driver.stepping == leitbild_operating_water::frame::Stepping::Free;
+                    let (mut at, mut rate) = (y.to_vec(), yp.to_vec());
+                    if free && ida.dense_output(*b, &mut at, &mut rate).is_err() {
+                        at.copy_from_slice(y);
+                        rate.copy_from_slice(yp);
+                    }
                     match c4_frame(
                         ida,
                         n,
@@ -2454,8 +2125,8 @@ fn drive(
                         &recorder.sg,
                         c4_lift,
                         *b,
-                        y,
-                        yp,
+                        &at,
+                        &rate,
                     ) {
                         Ok((f, row)) => {
                             c4.frames.push(f);
@@ -2628,11 +2299,6 @@ fn drive(
                                 observer.sample(ida.system_mut(), b, y, yp, &q, Side::AfterRestart);
                             driver.cpu.gate_s += process_cpu_s() - gate1;
                         }
-                        if step.is_ok() && ask.event_window {
-                            step = ida.set_max_step(WINDOW_MAX_STEP_S);
-                            cap_intervals.push(json!({"from_s": b, "from_after_zero_s": 0., "max_step_s": WINDOW_MAX_STEP_S,
-                                "set_by": "the case after the offsite loss's restart (Driver::apply_due, C5X hook 77d63b010), as the C5 host"}));
-                        }
                         let net = &ida.system().integrated().joined.network;
                         rcp_after = Some(
                             (0..net.rotor_count())
@@ -2665,18 +2331,6 @@ fn drive(
                         }
                     }
                 }
-                // The plant window's end lifts the cap on the same history.
-                if let Some(w) = window_s
-                    && let Some(last) = cap_intervals.last_mut()
-                    && last.get("removed_at_s").is_none()
-                    && cap_removed_at(b, zero, w)
-                {
-                    if let Err(e) = ida.remove_max_step() {
-                        r = Err(format!("removing the window's cap at {b} s: {e}"));
-                    }
-                    last["removed_at_s"] = json!(b);
-                    last["removed_after_zero_s"] = json!(b - zero);
-                }
             }
             // R4-NUC-SOURCE-ATOL's basis state (record only): the solver's
             // own state at the first frame stop at or after the request, in
@@ -2707,12 +2361,12 @@ fn drive(
                     *b,
                 ));
             }
-            // Rule K's post-event state (S3-D52): the declared part's end,
-            // the window's end or rule I's end, whichever first, the
-            // solver's own state at a frame stop, for SPECTRUM. A rule-I
-            // exit inside the window takes the last frame stop rule I
-            // admitted (A4 admits no state after its exit). C4's states are
-            // its own: 1 s after each phase change and its declared end.
+            // Rule K's post-event state (S3-D52), for SPECTRUM: a rule-I exit
+            // inside the declared span takes the last frame stop rule I
+            // admitted (A4 admits no state after its exit). There is no
+            // state at the span's end: no stop falls there on the unit's
+            // stepping. C4's states are its own: 1 s after each phase change
+            // and its declared end.
             if r.is_ok()
                 && case != Case::C4
                 && declared_end_state.is_none()
@@ -2762,20 +2416,6 @@ fn drive(
                         );
                         declared_end_state = Some((path, sha, "rule I end"));
                     }
-                } else if (*b - (zero + w)).abs() < 1e-9 {
-                    let snapshot = ida.system().system_discrete_state();
-                    let (path, sha) = write(
-                        format!("{prefix}-window-end-state.json"),
-                        (
-                            *b,
-                            y.as_slice(),
-                            yp.as_slice(),
-                            &snapshot,
-                            control.in_force_w,
-                        ),
-                        format!("{} window end ({} s after zero)", case.key(), w),
-                    );
-                    declared_end_state = Some((path, sha, "window end"));
                 } else if *b < zero + w {
                     last_admitted = Some((
                         *b,
@@ -2796,8 +2436,7 @@ fn drive(
     driver.close_segment(ida, until).unwrap();
     let mut failure = outcome.as_ref().err().cloned();
     // S3-D39's labelled end (C3): a run that stops while the PZR's resident
-    // zone R drains to exhaustion within the step the solver attempts next
-    // ends there, labelled, at its last accepted step (as S3-D17 for C4);
+    // zone R drains to exhaustion within the I&C frame ends there, labelled, at its last accepted step (as S3-D17 for C4);
     // any other stop stays a failure.
     let mut labelled_end = Value::Null;
     if failure.is_some() && spec.get("labelledEnd").is_some() {
@@ -2811,7 +2450,7 @@ fn drive(
                 + leitbild_operating_plant::network::stratified::RESIDENT_MASS;
             let scale = joined.scales()[i];
             let (m, rate) = (ys[i] * scale, yps[i] * scale);
-            let exhausting = zone_r_exhausts_within(m, rate, s.current_step);
+            let exhausting = zone_r_exhausts_within(m, rate, driver.frame_period_s());
             labelled_end = json!({"declared": spec["labelledEnd"], "zone_r_mass_kg": m, "zone_r_rate_kg_s": rate,
                 "next_step_s": s.current_step, "last_accepted_s": t_last, "last_accepted_after_zero_s": t_last - zero,
                 "applies": exhausting, "refusal": failure});
@@ -3035,7 +2674,79 @@ fn drive(
             o4: Some(&o4),
             n4: n4.as_ref(),
         };
-        let judged = if c4_observe {
+        let birth = s3_harness::c4::saturation(Some(&o4));
+        let judged = if let (Some(close), "run") = (ask.config.c4i_close_s, ask.label) {
+            let joined = &ida.system().integrated().joined;
+            let valve = joined
+                .pzr()
+                .isolation_block()
+                .expect("C4-I needs a packet composing the relief isolation valve");
+            let (stroke_s, valve_id) = (valve.stroke_s, valve.id.clone());
+            let operator: Vec<(f64, String)> = ida
+                .system()
+                .log
+                .iter()
+                .filter(|(_, what)| what.contains(&valve_id))
+                .map(|(t, what)| (*t - zero, what.clone()))
+                .collect();
+            let births: Vec<(f64, String)> = events
+                .births
+                .iter()
+                .map(|(t, c, _, _)| (*t, classes.name(*c)))
+                .collect();
+            let receipts = driver.log.iter().flat_map(|e| {
+                let t = e["t_s"].as_f64().unwrap_or(f64::NAN) - zero;
+                e["restart"]["transactions"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .map(move |x| (t, x))
+            });
+            let mut lift_offs = Vec::new();
+            let mut root_vapor_kg = Vec::new();
+            for (t, x) in receipts {
+                for r in x["rods"].as_array().into_iter().flatten() {
+                    if r["event"] == "lift-off" {
+                        lift_offs.push((t, r["cluster"].as_str().unwrap_or("?").to_string()));
+                    }
+                }
+                for v in x["events"].as_array().into_iter().flatten() {
+                    if let Some(m) = v["vapor_kg_j_at_root"][0].as_f64() {
+                        root_vapor_kg.push(m);
+                    }
+                }
+            }
+            let relief_events: Vec<(f64, Value)> = events
+                .relief
+                .iter()
+                .filter(|(_, x)| {
+                    x.get("stuck_open").is_none() && x["stop"]["motion_after"] != "Open"
+                })
+                .cloned()
+                .collect();
+            s3_harness::c4i::judge(
+                &spec["lines"],
+                &s3_harness::c4i::Run {
+                    close_s: close,
+                    stroke_s,
+                    hold_end_s: span,
+                    end_s: end - zero,
+                    end_label: c4
+                        .end
+                        .as_ref()
+                        .and_then(|e| e["end"].as_str())
+                        .unwrap_or("?"),
+                    failed: failure.is_some(),
+                    operator: &operator,
+                    frames: &c4.rows,
+                    births: &births,
+                    lift_offs: &lift_offs,
+                    relief_events: &relief_events,
+                    root_vapor_kg: &root_vapor_kg,
+                    divisions: &divisions,
+                },
+            )
+        } else if ask.label == "run" {
             s3_harness::c4::judge(&spec["lines"], &run_c4, zero)
         } else {
             vec![
@@ -3065,6 +2776,7 @@ fn drive(
                 "per_cell": per_cell, "l1_changes": events.l1.len(), "chattering": events.chattering(),
                 "sg_relief": events.sg_relief.iter().map(|(t, v, th, d)| json!([t, v, th, d])).collect::<Vec<_>>(),
                 "relief": events.relief.iter().map(|(t, x)| json!([t, x])).collect::<Vec<_>>()},
+            "first_classified_birth": birth.map(|(t, cell)| json!({"t_s": t, "cell": cell})),
             "rule_k_states": c4.states, "observation_cpu_s": c4.obs_s,
             "pt_setup": {"channels": setup.ids, "max_age_frames": setup.max_age_frames, "low_frames": setup.low_frames, "high_frames": setup.high_frames},
             "frames": c4.rows});
@@ -3153,16 +2865,6 @@ fn drive(
                 "packet_section": rebuild_section,
                 "held_max": leitbild_operating_water::frame::MATRIX_REBUILD_HELD,
                 "counts": {"steps": rebuild_counts.steps, "held": rebuild_counts.held, "most_held": rebuild_counts.most_held, "drops": rebuild_counts.drops}},
-            "window_cap": window_cap.as_ref().map(|w| json!({"max_step_s": w.max_step_s, "window_s": w.window_s,
-                "ramp": w.ramp.as_ref().map(|r| json!({"max_step_s": r.max_step_s, "declared": r.declared,
-                    "value": format!("{RAMP_CAP_FENCE}.rampMaxStep_s ({DECISION_0015})"),
-                    "block_sha256": leitbild_operating_plant::digest::sha256(ramp_block.to_string().as_bytes()), "end_after_zero_s": ramp_end})),
-                "observed": {"chunk_steps_checked": cap_checks.0, "max_last_step_over_cap": cap_checks.1, "max_last_step_in_ramp_s": cap_checks.2},
-                "rule": "0015 E2: the cap only inside the declared window, set at the restart that starts it, removed at the first chunk bound at or after its end",
-                "intervals": cap_intervals})),
-            "c5_window_cap": if c5 { json!({"max_step_s": WINDOW_MAX_STEP_S, "window_s": window_s,
-                "rule": "0015 E2 (EW-1): the cap from the offsite loss's restart, removed at the first chunk bound at or after its window's end",
-                "intervals": cap_intervals}) } else { Value::Null },
             "tolerance_scaling": {"relative": ask.scaling.relative, "absolute": ask.scaling.absolute},
             "derived_tolerances": derived, "relative_tolerance": rtol,
             "integration": if cfg!(feature = "quadratures") { "frame driver: stock IDAS IDA_ONE_STEP (ledgers as quadratures, IDASetQuadErrCon false), observation from IDAGetDky, restarts by discrete_restart" } else { "frame driver: stock IDA_ONE_STEP, observation from IDAGetDky, restarts by discrete_restart" }},
@@ -3261,10 +2963,7 @@ fn drive(
         .map(|(_, l)| {
             l.labels
                 .iter()
-                .filter_map(|x| {
-                    x.strip_prefix("y[")
-                        .map(|v| v.trim_end_matches(']').to_string())
-                })
+                .filter_map(|x| x.strip_prefix("y[").map(group_leader))
                 .enumerate()
                 .map(|(i, id)| (id, i))
                 .collect()
@@ -3316,6 +3015,16 @@ fn drive(
     }
 }
 
+/// The cluster a rod position label names: the layout labels a coordinate
+/// `y[<first member>x<members>]`, one per group of identical rods, and the
+/// timeline's seat records name each member.
+fn group_leader(label: &str) -> String {
+    let label = label.trim_end_matches(']');
+    let (id, members) = label.rsplit_once('x').expect("y[<id>x<members>]");
+    assert!(members.parse::<usize>().is_ok(), "rod label {label}");
+    id.to_string()
+}
+
 /// Each cluster's first seat by cluster index, absolute (S2's G9 and rule
 /// E's rod timing): a body that lifts off and seats again (C4, after the
 /// hot births) keeps its first seat time. `seats` is the timeline's, in log
@@ -3332,6 +3041,12 @@ fn first_seats(
         }
     }
     out
+}
+
+#[test]
+fn a_rod_label_names_its_group_by_the_first_member() {
+    assert_eq!(group_leader("LD01.CR.001x52]"), "LD01.CR.001");
+    assert_eq!(group_leader("LD01.CR.004x1]"), "LD01.CR.004");
 }
 
 #[test]
@@ -3369,9 +3084,7 @@ struct C4Run {
     first_birth: Option<f64>,
     end: Option<Value>,
     stopped_at: Option<f64>,
-    seen_windows: usize,
     seen_changes: usize,
-    cap_until: Option<f64>,
     changes: Vec<(f64, String)>,
     written: usize,
     states: Vec<Value>,
@@ -3518,11 +3231,14 @@ fn c4_frame(
         core_vapor_kg: phase.iter().map(|r| r.vapor_kg).collect(),
     };
     let col = &ev.column;
-    let row = json!({"t_s": f.t, "pzr_roof_pa": f.roof_pa, "sg_pressure_pa": f.sg_pa, "relief_lift": f.lift,
+    let mut row = json!({"t_s": f.t, "pzr_roof_pa": f.roof_pa, "sg_pressure_pa": f.sg_pa, "relief_lift": f.lift,
         "relief_kg_s": relief, "pzr_collapsed_m": col.collapsed_elevation.value, "pzr_mixture_m": col.mixture_elevation.value,
         "pzr_vapor_zone_kg": col.vapor.mass.value,
         "core_departure_k_max": f.core_departure_k.iter().copied().fold(f64::NEG_INFINITY, f64::max),
         "core_vapor_kg": f.core_vapor_kg.iter().sum::<f64>(), "cells": cells});
+    if joined.pzr().isolation_block().is_some() {
+        row["relief_isolation_position"] = json!(100. * joined.pzr().isolation_position(t));
+    }
     Ok((f, row))
 }
 
@@ -3744,7 +3460,6 @@ fn rule_i_is_judged_at_every_accepted_step() {
             max_step: None,
             credited_from: 0.,
             window_state: None,
-            event_window: true,
             observation_s: None,
             f_tolerances: false,
             config,
@@ -3788,16 +3503,42 @@ fn s3_case_run() {
         |e| json!({"pinned": false, "error": e, "declared_sha256": guards::declared_sha256(&d.block).ok()}),
     );
     let tbd = d.tbd().unwrap();
-    // C4 runs on its pinned block r3 only (RP1-pin-s3-c4-r3, the r8 wiki).
+    // C4 runs on its pinned block r5 only (RP1-pin-s3-c4-r5).
     if case == Case::C4 {
         assert_eq!(
             guards::declared_sha256(&d.block).ok().as_deref(),
-            Some(C4_R3_SHA256),
-            "the C4 block is not RP1-pin-s3-c4-r3"
+            Some(C4_R5_SHA256),
+            "the C4 block is not RP1-pin-s3-c4-r5"
         );
     }
     let mut refusals = declaration::case_refusals(case, &pin, &tbd);
-    let spec = d.case(case);
+    let mut spec = d.case(case);
+    // C4-I: its block's lines on C4's drive; the run ends at the hold's end,
+    // so C4's `ends` do not apply, and a named end fails C4I.N2.
+    let c4i = config.c4i_close_s.map(|close| {
+        assert_eq!(case, Case::C4, "C4-I is C4's drive");
+        assert!(config.dc, "C4-I needs the declared DC section: LD01_DC=on");
+        let page = std::env::var("LD01_S3_DECLARATION")
+            .unwrap_or_else(|_| format!("{}/build-readiness.md", gates::wiki_model()));
+        let block = Block::from_page(&page, s3_harness::c4i::FENCE)
+            .unwrap_or_else(|e| panic!("C4-I's block: {e}"));
+        refuse_superseded(&block).unwrap_or_else(|e| panic!("{e}"));
+        let pin = guards::pin_of(&block, d.log.as_deref(), &d.log_page)
+            .unwrap_or_else(|e| panic!("C4-I's pin: {e}"));
+        let i = block.whole("/cases/C4I");
+        assert!(
+            i["closeAt_s"]
+                .as_array()
+                .is_some_and(|a| a.iter().any(|t| t.as_f64() == Some(close))),
+            "LD01_S3_C4I_CLOSE_S={close}: not one of the block's closeAt_s"
+        );
+        let hold = i["hold_s"].as_f64().expect("hold_s");
+        spec["lines"] = i["lines"].clone();
+        spec["ends"] =
+            json!({"rule": "the hold's end; any other stop fails C4I.N2", "cap_s": close + hold});
+        json!({"block": block.receipt(), "pin": pin, "close_s": close, "hold_s": hold,
+            "disclosure": block.whole("/disclosure"), "gates": i["gates"]})
+    });
     // C4 (r1) declares no duration: its last end is `ends.cap_s`.
     let declared_s = spec["duration_s"]
         .as_f64()
@@ -3876,7 +3617,6 @@ fn s3_case_run() {
             // take their own spans from it.
             credited_from: 0.,
             window_state: window_state("run"),
-            event_window: true,
             observation_s: None,
             f_tolerances: gates_on,
             config,
@@ -3932,7 +3672,6 @@ fn s3_case_run() {
                 max_step: None,
                 credited_from: judged_from,
                 window_state: None,
-                event_window: true,
                 observation_s: None,
                 f_tolerances: false,
                 config,
@@ -4030,7 +3769,10 @@ fn s3_case_run() {
                 .chain(verdicts.iter().map(String::as_str)),
         );
         g_cost["c4_later_windows"] = json!(later);
-        g_cost["verdict"] = json!(overall);
+        // Block r4: the owner's 31 October rule decides, read by ld01-cost.ts
+        // from the frame record; these budgets are reported.
+        g_cost["reported_budgets_verdict"] = json!(overall);
+        g_cost["verdict"] = json!("judged by ld01-cost.ts on the 31 October rule");
     }
     g_cost["measured_on"] = json!(if cost_drive.is_some() {
         "the ungated cost drive (same trajectory; frames compared, in the verdict)"
@@ -4053,11 +3795,6 @@ fn s3_case_run() {
     if let Some(g) = gate.as_ref() {
         let og = run.observer.gates.as_ref().unwrap();
         let units_bound = g.s2.gates.number("/ledger/boundLocalToleranceUnits");
-        assert_eq!(
-            g.s2.shared.number("/eventWindow/maxStep_s"),
-            WINDOW_MAX_STEP_S,
-            "the window cap is S1's eventWindow.maxStep_s"
-        );
         families.insert(
             "D_conservation".into(),
             conservation_family(og, units_bound),
@@ -4079,7 +3816,6 @@ fn s3_case_run() {
                     max_step: None,
                     credited_from: judged_from,
                     window_state: window_state("repeat"),
-                    event_window: true,
                     observation_s: None,
                     f_tolerances: false,
                     config,
@@ -4173,8 +3909,9 @@ fn s3_case_run() {
         // references are the tolerance-proportionality series rtol/10, /30
         // and /100 (every atol scaled with it), each over the whole span;
         // consecutive levels are compared below (`series`).
-        let series_on = std::env::var("LD01_PHYS_SERIES").as_deref() == Ok("1")
-            && matches!(case, Case::C2 | Case::C3 | Case::C5);
+        let series_on = case == Case::C4
+            || (std::env::var("LD01_PHYS_SERIES").as_deref() == Ok("1")
+                && matches!(case, Case::C2 | Case::C3 | Case::C5));
         let asks = if series_on {
             [10., 30., 100.]
                 .into_iter()
@@ -4217,7 +3954,6 @@ fn s3_case_run() {
                     // (rule E's rod timing) is in its record as in C2/C3.
                     credited_from: if case == Case::C4 { 0. } else { from },
                     window_state: None,
-                    event_window: false,
                     observation_s: None,
                     f_tolerances: false,
                     config,
@@ -4412,19 +4148,51 @@ fn s3_case_run() {
             if end < w + post {
                 h1a["truncated_by_rule_i"] = json!(true);
             }
-            checks.insert("h1a_convergence".into(), h1a);
+            // Block r4 moved C4's refinement to the tolerance series.
+            if case != Case::C4 {
+                checks.insert("h1a_convergence".into(), h1a);
+            }
         }
-        let verdict = s3_harness::families::overall_of(
-            comparisons
+        // Block r5 (owner, 7 November): E judges the named outputs at operator
+        // grade; the S1 contract's rows below stay in the receipt, unjudged.
+        let c4_refinement = (case == Case::C4).then(|| {
+            let levels: Vec<s3_harness::c4::Level<'_>> = references
                 .iter()
-                .map(|c| c["verdict"].as_str().unwrap_or("?"))
-                .chain(
-                    checks
-                        .values()
-                        .map(|c| c["verdict"].as_str().unwrap_or("?")),
-                ),
+                .filter_map(|(name, r)| {
+                    let comparison = comparisons
+                        .iter()
+                        .find(|c| c["reference"] == name.as_str())?;
+                    Some(s3_harness::c4::Level {
+                        name,
+                        comparison,
+                        c4: &r.record["c4"],
+                    })
+                })
+                .collect();
+            let budgets = c4_refinement_budgets(g.budgets.timing_s);
+            s3_harness::c4::refinement(
+                &run.record["c4"],
+                &levels,
+                series.as_deref().unwrap_or_default(),
+                &budgets,
+            )
+        });
+        let verdict = c4_refinement.as_ref().map_or_else(
+            || {
+                s3_harness::families::overall_of(
+                    comparisons
+                        .iter()
+                        .map(|c| c["verdict"].as_str().unwrap_or("?"))
+                        .chain(
+                            checks
+                                .values()
+                                .map(|c| c["verdict"].as_str().unwrap_or("?")),
+                        ),
+                )
+            },
+            |r| r["verdict"].as_str().unwrap_or("fail"),
         );
-        families.insert("E_refinement".into(), json!({"family": "E refinement", "verdict": verdict, "checks": checks,
+        families.insert("E_refinement".into(), json!({"family": "E refinement", "verdict": verdict, "operator_grade": c4_refinement, "checks": checks,
             "electrical_band": "S3-D47 (interim, disclosed): E′ reports raw and 2 Hz-filtered differences; the verdict reads decision 0015 E1's 2 Hz band until the owner decides S4-6",
             "threshold_source": "ld01-accuracy-contract + ld01-s2-accuracy (E0), ld01-s2-gates referenceToleranceFactor, ld01-s1-gates eventReference",
             "electrical_extension": "E′ (S3-D23) per comparison (electrical_e0): Ieq = |i_dq|/sqrt(3) against 10 A and terminal power against 1 MW, for the cases accuracyExtension.appliesTo names",
@@ -4566,11 +4334,13 @@ fn s3_case_run() {
         k["post_event"] = json!(match case {
             Case::C1 => "not applicable: C1 has no event",
             Case::C2 | Case::C3 | Case::C5 =>
-                "S3-D52: the declared part's end state, the window's end or rule I's end, whichever first (C2, C3, C5); A4 admits no state after rule I's exit",
+                "S3-D52: the declared part's end state, rule I's end when it falls inside the declared span (C2, C3, C5); A4 admits no state after rule I's exit",
             Case::C4 => "1 s after each phase change and at the declared part's end (C4, S3-D52)",
         });
         if case == Case::C4 {
-            k["c4_states"] = json!(run.c4_states);
+            k = json!({"family": "K spectra", "verdict": "dropped",
+                "reason": "block r4: R11-3a keeps rule K at equilibria only, and C4 has none",
+                "c4_states": run.c4_states});
         }
         families.insert("K_spectra".into(), k);
         // Rule B (S3-D50), with the chattering criterion as data.
@@ -4643,7 +4413,15 @@ fn s3_case_run() {
         } else {
             s3_harness::families::directions(case, &spec, &direction_inputs)
         };
-        families.insert("B_directions".into(), b_family);
+        families.insert(
+            "B_directions".into(),
+            if c4i.is_some() {
+                json!({"family": "B directions", "verdict": "not applicable",
+                    "reason": "C4-I's block declares no directions: its lines are the record"})
+            } else {
+                b_family
+            },
+        );
         // C1's drift, SS-1 and SS-2.
         if case == Case::C1 {
             let gg = &g.s2.gates;
@@ -4737,7 +4515,6 @@ fn s3_case_run() {
                         max_step: None,
                         credited_from: 0.,
                         window_state: None,
-                        event_window: true,
                         observation_s: Some(g.budgets.output_s),
                         f_tolerances: false,
                         config,
@@ -4812,14 +4589,20 @@ fn s3_case_run() {
     };
     let (verdict, not_judged) = s3_harness::families::overall(
         failure.is_some(),
-        lines::all_pass(run.record["lines"].as_array().unwrap()),
+        if case == Case::C4 {
+            // C4 and C4-I: their diagnostics and recorded lines never decide.
+            s3_harness::c4::all_pass(run.record["lines"].as_array().unwrap())
+        } else {
+            lines::all_pass(run.record["lines"].as_array().unwrap())
+        },
         &families,
     );
     let mut gates_not_yet: Vec<Value> = not_implemented.iter().map(|s| json!(s)).collect();
     gates_not_yet.extend(not_judged);
     let mut receipt = json!({
         "kind": if evidence { "s3-case-run" } else { "s3-case-preview" },
-        "case": case.key(), "status": status, "verdict": verdict, "failure": failure,
+        "case": if c4i.is_some() { "C4-I" } else { case.key() }, "c4i": c4i,
+        "status": status, "verdict": verdict, "failure": failure,
         "refusals_or_deviations": refusals,
         "declaration": {"block": d.block.receipt(), "pin": pin, "tbd": tbd, "kinetics": kinetics,
             "s2_blocks": gate.as_ref().map(|g| g.s2.receipt())},

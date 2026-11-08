@@ -12,12 +12,17 @@
 //!   turbine trip at `t0 + 1 s`, advances in 0.1 s exchanges, snapshots at
 //!   `t_c` (`LD01_UNIT_HOST_COPY_EXCHANGE` exchanges after t0; the plan's
 //!   gate: 30, `t0 + 3 s`; the copy point is a restart in place) and
-//!   continues to `t_c + 30 s`. A refusal of the source after the copy point
+//!   continues to `t_c + 30 s`, or `LD01_UNIT_HOST_SPAN` exchanges past it.
+//!   A refusal of the source after the copy point
 //!   ends both runs there; the copy must refuse identically, and the gate
 //!   still fails. Process B restores the snapshot and makes the same
 //!   exchanges. Every exchange's reply payload (time, counts, the
 //!   observation frame and its events) and the final snapshots are
 //!   byte-equal.
+//! - **Named end (R4-ENDED).** `a_named_end_holds_its_state_and_refuses_by_name`
+//!   drives the stuck-open relief to the unit's named end: the exchange
+//!   replies with `ended`, ADVANCE and COMMAND then refuse by name, SNAPSHOT
+//!   and STATUS work, and a restored unit reaches the same end.
 //! - **Conformance.** An unknown op, a command in the past, an unknown
 //!   command kind and an ADVANCE behind the unit refuse; a restore whose
 //!   identity differs (kernel sources, the start state) refuses; CLOSE
@@ -157,8 +162,41 @@ fn frame(payload: &[u8]) -> Frame {
     }
 }
 
-fn advance(host: &mut Host, t1: f64) -> (Vec<u8>, f64) {
-    let r = host.ok(ADVANCE, &t1.to_le_bytes());
+/// Wall time of each ADVANCE as a host sees it: request to reply, `(t1, s)`.
+#[derive(Default)]
+struct AdvanceWalls(Vec<(f64, f64)>);
+
+impl AdvanceWalls {
+    /// One ADVANCE, timed.
+    fn timed(&mut self, host: &mut Host, t1: f64) -> Reply {
+        let started = Instant::now();
+        let reply = host.request(ADVANCE, &t1.to_le_bytes());
+        self.0.push((t1, started.elapsed().as_secs_f64()));
+        reply
+    }
+    /// The worst ADVANCE and the worst run of `per_second` consecutive ones,
+    /// the wall of one 1 s exchange, with the series.
+    fn receipt(&self, per_second: usize) -> Value {
+        let longer = |w: (f64, f64), a: (f64, f64)| if a.1 > w.1 { a } else { w };
+        let worst = self.0.iter().copied().fold((0., 0.), longer);
+        let window = self
+            .0
+            .windows(per_second.max(1))
+            .map(|w| (w[w.len() - 1].0, w.iter().map(|a| a.1).sum::<f64>()))
+            .fold((0., 0.), longer);
+        json!({"count": self.0.len(), "worst_s": worst.1, "worst_t1": worst.0,
+            "worst_1s_exchange_s": window.1, "worst_1s_exchange_ending_t1": window.0, "series": self.0})
+    }
+}
+
+fn advance(host: &mut Host, walls: &mut AdvanceWalls, t1: f64) -> (Vec<u8>, f64) {
+    let r = walls.timed(host, t1);
+    assert_eq!(
+        r.status,
+        0,
+        "ADVANCE to {t1} s refused: {}",
+        String::from_utf8_lossy(&r.payload)
+    );
     (r.payload, r.cpu_s)
 }
 
@@ -175,7 +213,13 @@ fn a_restored_copy_continues_bitwise_and_the_protocol_refuses_explicitly() {
     let copy_at: u64 = env("LD01_UNIT_HOST_COPY_EXCHANGE")
         .parse()
         .expect("LD01_UNIT_HOST_COPY_EXCHANGE: a whole number of exchanges after t0");
-    let end = copy_at + 300;
+    // LD01_UNIT_HOST_SPAN: exchanges past the copy point, for a case the unit
+    // ends sooner.
+    let end = copy_at
+        + std::env::var("LD01_UNIT_HOST_SPAN").map_or(300, |v| {
+            v.parse()
+                .expect("LD01_UNIT_HOST_SPAN: a whole number of exchanges")
+        });
     std::fs::create_dir_all(&receipts).expect("receipt directory");
     // R4-FREE-STEPS: the LOAD request's stepping (free, the unit's default,
     // unless LD01_UNIT_HOST_STEPPING names frame-stops for the control run).
@@ -216,6 +260,7 @@ fn a_restored_copy_continues_bitwise_and_the_protocol_refuses_explicitly() {
     let loaded = a.json(LOAD, &serde_json::to_vec(&load).unwrap());
     let t0 = bits_of(&loaded["t_bits"]);
     let period = loaded["frame_s"].as_f64().expect("frame_s");
+    let exchanges_per_second = (1. / period).round() as usize;
     let k0 = (t0 / period).round() as u64;
     let instant = |k: u64| (k0 + k) as f64 * period;
     let channels = a.json(CHANNELS, &[]);
@@ -285,8 +330,8 @@ fn a_restored_copy_continues_bitwise_and_the_protocol_refuses_explicitly() {
     );
     // R4-DUMP (WORLD4's review 2): LD01_UNIT_HOST_COMMAND=<kind>@<exchange>
     // names the trip before the copy point, TurbineTripAcquired or
-    // ManualReactorTrip; unset, the acquired turbine trip at exchange 10.
-    // Any other form refuses.
+    // ManualReactorTrip, or the relief malfunction ReliefStuckOpen; unset,
+    // the acquired turbine trip at exchange 10. Any other form refuses.
     let (trip_kind, trip_at) = match std::env::var("LD01_UNIT_HOST_COMMAND") {
         Err(_) => ("TurbineTripAcquired".to_string(), 10_u64),
         Ok(v) => {
@@ -294,8 +339,13 @@ fn a_restored_copy_continues_bitwise_and_the_protocol_refuses_explicitly() {
                 .split_once('@')
                 .unwrap_or_else(|| panic!("LD01_UNIT_HOST_COMMAND={v}: <kind>@<exchange>"));
             assert!(
-                ["TurbineTripAcquired", "ManualReactorTrip"].contains(&kind),
-                "LD01_UNIT_HOST_COMMAND={v}: TurbineTripAcquired or ManualReactorTrip"
+                [
+                    "TurbineTripAcquired",
+                    "ManualReactorTrip",
+                    "ReliefStuckOpen"
+                ]
+                .contains(&kind),
+                "LD01_UNIT_HOST_COMMAND={v}: TurbineTripAcquired, ManualReactorTrip or ReliefStuckOpen"
             );
             let at: u64 = at
                 .parse()
@@ -324,8 +374,9 @@ fn a_restored_copy_continues_bitwise_and_the_protocol_refuses_explicitly() {
     let mut operated = Vec::new();
     let mut trace = Vec::new();
     let mut a_cpu = 0.;
+    let (mut a_walls, mut b_walls) = (AdvanceWalls::default(), AdvanceWalls::default());
     for k in 1..=copy_at {
-        let (p, cpu) = advance(&mut a, instant(k));
+        let (p, cpu) = advance(&mut a, &mut a_walls, instant(k));
         a_cpu += cpu;
         let f = frame(&p);
         for (_, command, accepted) in operator.iter().filter(|(at, ..)| *at == k) {
@@ -356,7 +407,7 @@ fn a_restored_copy_continues_bitwise_and_the_protocol_refuses_explicitly() {
     let mut a_frames = Vec::new();
     let mut a_failed: Option<(u64, String)> = None;
     for k in copy_at + 1..=end {
-        let r = a.request(ADVANCE, &instant(k).to_le_bytes());
+        let r = a_walls.timed(&mut a, instant(k));
         a_cpu += r.cpu_s;
         if r.status != 0 {
             a_failed = Some((k, String::from_utf8_lossy(&r.payload).into_owned()));
@@ -387,7 +438,7 @@ fn a_restored_copy_continues_bitwise_and_the_protocol_refuses_explicitly() {
     let mut b_failed: Option<(u64, String)> = None;
     let last = a_failed.as_ref().map_or(end, |f| f.0);
     for k in copy_at + 1..=last {
-        let r = b.request(ADVANCE, &instant(k).to_le_bytes());
+        let r = b_walls.timed(&mut b, instant(k));
         b_cpu += r.cpu_s;
         if r.status != 0 {
             b_failed = Some((k, String::from_utf8_lossy(&r.payload).into_owned()));
@@ -457,6 +508,7 @@ fn a_restored_copy_continues_bitwise_and_the_protocol_refuses_explicitly() {
         "channels": ids.len(),
         "cpu_s": {"a_advance": a_cpu, "a_copy_point": copy_cpu, "b_restore": restore_cpu, "b_advance": b_cpu},
         "wall_s": started.elapsed().as_secs_f64(),
+        "advance_wall_s": {"a": a_walls.receipt(exchanges_per_second), "b": b_walls.receipt(exchanges_per_second)},
         "a_status": a_status, "refusals": refusals, "operated": operated, "trace_to_copy_point": trace,
         "load": load,
     });
@@ -486,4 +538,293 @@ fn a_restored_copy_continues_bitwise_and_the_protocol_refuses_explicitly() {
         "the source itself refused after the copy point (the copy refused identically): {:?}",
         a_failed
     );
+}
+
+/// The LOAD request with the unit's defaults (free stepping, SBTL unless
+/// `LD01_UNIT_HOST_WATER` names IF97).
+fn default_load() -> Value {
+    let water = std::env::var("LD01_UNIT_HOST_WATER").unwrap_or_else(|_| "sbtl".into());
+    json!({
+        "inputs": {
+            "packet": env("LD01_OPERATING_HOT_SPINE_PACKET"),
+            "wiki_root": env("LD01_WIKI_ROOT"),
+            "wiki_commit": env("LD01_WIKI_COMMIT"),
+            "wiki_repository": env("LD01_WIKI_REPOSITORY"),
+            "ic": env("LD01_IC_SECTION"),
+            "pzr_control": env("LD01_PZR_CONTROL_SECTION"),
+            "pzr_control_wiki": env("LD01_PZR_CONTROL_WIKI"),
+            "elec": env("ELEC_PACKET"),
+        },
+        "state": env("LD01_S3_STATE"),
+        "solver": {"weights": "stock", "first_step": "declared", "stepping": "free", "water": water,
+            "source_atol": std::env::var("LD01_S3_SOURCE_ATOL").unwrap_or_else(|_| "derived".into())},
+    })
+}
+
+/// Advance from exchange `from` until an exchange names an end: its frame.
+fn to_the_end(host: &mut Host, instant: impl Fn(u64) -> f64, from: u64, last: u64) -> Frame {
+    let mut walls = AdvanceWalls::default();
+    for k in from..=last {
+        let (payload, _) = advance(host, &mut walls, instant(k));
+        let f = frame(&payload);
+        if !f.events["ended"].is_null() {
+            return f;
+        }
+    }
+    panic!("no named end by exchange {last}");
+}
+
+#[test]
+#[ignore = "NOT-EVIDENCE gate: two ld01-unit processes to the stuck-open relief's end (minutes)"]
+fn a_named_end_holds_its_state_and_refuses_by_name() {
+    let receipts = std::path::PathBuf::from(env("LD01_UNIT_HOST_RECEIPTS"));
+    std::fs::create_dir_all(&receipts).expect("receipt directory");
+    // C4 ends at +49.8 s; the span bounds a run that does not.
+    let last = 700;
+    let load = serde_json::to_vec(&default_load()).unwrap();
+    let mut a = Host::spawn(&receipts.join("end-a.stderr.log"));
+    let loaded = a.json(LOAD, &load);
+    let t0 = bits_of(&loaded["t_bits"]);
+    let period = loaded["frame_s"].as_f64().expect("frame_s");
+    let k0 = (t0 / period).round() as u64;
+    let instant = |k: u64| (k0 + k) as f64 * period;
+    let relief = json!({"kind": "ReliefStuckOpen", "t_apply": instant(1)});
+    a.json(COMMAND, &serde_json::to_vec(&relief).unwrap());
+    let end = to_the_end(&mut a, instant, 1, last);
+    let named = &end.events["ended"];
+    assert_eq!(named["label"], "solidPzr", "{named}");
+    assert_eq!(named["t"].as_f64(), Some(end.t), "{named}");
+    let status = a.json(STATUS, &[]);
+    assert_eq!(status["failed"], Value::Null, "{status}");
+    assert_eq!(status["ended"]["label"], "solidPzr", "{status}");
+
+    // Nothing runs past it, and each refusal says why.
+    let t1 = (end.t / period).ceil() * period + period;
+    let refused = a.refused(ADVANCE, &t1.to_le_bytes());
+    assert!(refused.contains("the unit ended at"), "{refused}");
+    let command = json!({"kind": "ReliefStuckOpen", "t_apply": end.t});
+    let refused_command = a.refused(COMMAND, &serde_json::to_vec(&command).unwrap());
+    assert!(
+        refused_command.contains("the unit ended at"),
+        "{refused_command}"
+    );
+
+    // The end holds a state: a snapshot, and a unit restored from it.
+    let snapshot = a.ok(SNAPSHOT, &[]).payload;
+    std::fs::write(receipts.join("snapshot-end.json"), &snapshot).unwrap();
+    let mut b = Host::spawn(&receipts.join("end-b.stderr.log"));
+    let restored = b.json(RESTORE, &snapshot);
+    assert_eq!(bits_of(&restored["t_bits"]), end.t, "{restored}");
+    let k = (end.t / period).ceil() as u64 - k0;
+    let again = to_the_end(&mut b, instant, k, last);
+    assert_eq!(again.events["ended"]["label"], "solidPzr");
+    std::fs::write(
+        receipts.join("named-end.json"),
+        serde_json::to_vec_pretty(&json!({
+            "first": named, "after_restore": again.events["ended"],
+            "refusals": [refused, refused_command],
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    a.close();
+    b.close();
+}
+
+/// R4-TIME-STOPPED on the real unit: the relief fails open from the saved
+/// state, the level reaches the spray port and the model refuses that state.
+/// The unit stops by name, at once, and a host gets the refusal with it.
+/// Run with `LD01_UNIT_HOST_RECEIPTS` and the tuple's environment.
+#[test]
+#[ignore = "NOT-EVIDENCE gate: one ld01-unit process, the relief's 50 s (minutes)"]
+fn a_refused_state_stops_the_unit_by_name() {
+    let receipts = std::path::PathBuf::from(env("LD01_UNIT_HOST_RECEIPTS"));
+    let load = json!({
+        "inputs": {
+            "packet": env("LD01_OPERATING_HOT_SPINE_PACKET"),
+            "wiki_root": env("LD01_WIKI_ROOT"),
+            "wiki_commit": env("LD01_WIKI_COMMIT"),
+            "wiki_repository": env("LD01_WIKI_REPOSITORY"),
+            "ic": env("LD01_IC_SECTION"),
+            "pzr_control": env("LD01_PZR_CONTROL_SECTION"),
+            "pzr_control_wiki": env("LD01_PZR_CONTROL_WIKI"),
+            "elec": env("ELEC_PACKET"),
+        },
+        "state": env("LD01_S3_STATE"),
+        "solver": {"weights": "stock", "first_step": "declared", "stepping": "free",
+            "water": std::env::var("LD01_UNIT_HOST_WATER").unwrap_or_else(|_| "sbtl".into()),
+            "source_atol": std::env::var("LD01_S3_SOURCE_ATOL").unwrap_or_else(|_| "derived".into())},
+    });
+    std::fs::create_dir_all(&receipts).expect("receipt directory");
+    let mut host = Host::spawn(&receipts.join("time-stopped.stderr.log"));
+    let loaded = host.json(LOAD, &serde_json::to_vec(&load).unwrap());
+    let t0 = bits_of(&loaded["t_bits"]);
+    let period = loaded["frame_s"].as_f64().expect("frame_s");
+    let k0 = (t0 / period).round() as u64;
+    let open = json!({"kind": "ReliefStuckOpen", "t_apply": (k0 + 1) as f64 * period});
+    host.ok(COMMAND, &serde_json::to_vec(&open).unwrap());
+    // The cause arrives as a refusal, or in the `ended` event once a named
+    // domain end holds the unit (R4-ENDED): the same text either way.
+    let mut walls = AdvanceWalls::default();
+    let cause = (2..800)
+        .find_map(|k| {
+            let r = walls.timed(&mut host, (k0 + k) as f64 * period);
+            if r.status != 0 {
+                return Some(String::from_utf8(r.payload).expect("UTF-8 cause"));
+            }
+            let events = frame(&r.payload).events;
+            events["ended"]["cause"].as_str().map(str::to_string)
+        })
+        .expect("the relief's run ends in a refused state");
+    std::fs::write(receipts.join("time-stopped.cause.txt"), &cause).expect("receipt");
+    std::fs::write(
+        receipts.join("advance-wall.json"),
+        serde_json::to_vec_pretty(&walls.receipt((1. / period).round() as usize)).unwrap(),
+    )
+    .expect("receipt");
+    assert!(cause.contains("solver time stopped"), "{cause}");
+    assert!(cause.contains("the solid-PZR structural limit"), "{cause}");
+    // Fail-stop: the next ADVANCE carries the same cause; STATUS and CLOSE work.
+    let again = host.refused(ADVANCE, &((k0 + 900) as f64 * period).to_le_bytes());
+    assert!(again.contains("solver time stopped"), "{again}");
+    host.ok(STATUS, &[]);
+    host.close();
+}
+
+#[test]
+#[ignore = "NOT-EVIDENCE gate: ld01-unit, the stuck-open relief isolated and held (minutes); a packet composing the valve"]
+fn the_relief_isolation_valve_stops_a_stuck_open_relief_on_the_real_unit() {
+    let receipts = std::path::PathBuf::from(env("LD01_UNIT_HOST_RECEIPTS"));
+    std::fs::create_dir_all(&receipts).expect("receipt directory");
+    // LD01_UNIT_HOST_ISOLATE: the close's exchange (0.1 s each after t0);
+    // LD01_UNIT_HOST_SPAN: exchanges after it.
+    let close_at: u64 = env("LD01_UNIT_HOST_ISOLATE").parse().expect("an exchange");
+    let span: u64 = env("LD01_UNIT_HOST_SPAN").parse().expect("exchanges");
+    let load = serde_json::to_vec(&default_load()).unwrap();
+    let mut a = Host::spawn(&receipts.join("iso.stderr.log"));
+    let mut walls = AdvanceWalls::default();
+    let loaded = a.json(LOAD, &load);
+    let t0 = bits_of(&loaded["t_bits"]);
+    let period = loaded["frame_s"].as_f64().expect("frame_s");
+    let k0 = (t0 / period).round() as u64;
+    let instant = |k: u64| (k0 + k) as f64 * period;
+    let channels = a.json(CHANNELS, &[]);
+    let slot = |id: &str| {
+        channels
+            .as_array()
+            .unwrap()
+            .iter()
+            .position(|c| c["id"] == id)
+            .unwrap_or_else(|| panic!("no channel {id}"))
+    };
+    let position = slot("LD01.PZR.RELIEF.ISO.POSITION");
+    let lift = slot("LD01.PZR.RELIEF.LIFT.OPEN");
+    let pressure = slot("LD01.PZR.PRESSURE");
+    let relief = json!({"kind": "ReliefStuckOpen", "t_apply": instant(1)});
+    a.json(COMMAND, &serde_json::to_vec(&relief).unwrap());
+    let mut trace = Vec::new();
+    let mut at_close = None;
+    let mut shut_at = None;
+    for k in 1..=close_at + span {
+        let (payload, _) = advance(&mut a, &mut walls, instant(k));
+        let f = frame(&payload);
+        assert!(f.events["ended"].is_null(), "{}", f.events["ended"]);
+        if k == close_at {
+            assert_eq!(f.values[position], 100.);
+            assert_eq!(f.values[lift], 1.);
+            let close = json!({"kind": "ReliefIsolationClose", "t_apply": f.t});
+            let reply = a.json(COMMAND, &serde_json::to_vec(&close).unwrap());
+            assert_eq!(reply["accepted"], json!(true), "{reply}");
+            at_close = Some(f.values[pressure]);
+        }
+        if shut_at.is_none() && f.values[position] == 0. {
+            shut_at = Some(f.t);
+            // Already shut is a result, not a refusal.
+            let again = json!({"kind": "ReliefIsolationClose", "t_apply": f.t});
+            let reply = a.json(COMMAND, &serde_json::to_vec(&again).unwrap());
+            assert_eq!(reply["accepted"], json!(false), "{reply}");
+        }
+        if k % 50 == 0 {
+            trace.push(json!({"t": f.t, "pressure_pa": f.values[pressure],
+                "position": f.values[position], "lift_open": f.values[lift]}));
+        }
+    }
+    let shut_at = shut_at.expect("the valve shuts");
+    let (payload, _) = advance(&mut a, &mut walls, instant(close_at + span + 1));
+    let last = frame(&payload);
+    assert_eq!(last.values[lift], 1., "a stuck relief stays off its seat");
+    assert!(last.values[pressure] > at_close.expect("the close"));
+    std::fs::write(
+        receipts.join("isolation.json"),
+        serde_json::to_vec_pretty(&json!({"close_exchange": close_at, "shut_at_s": shut_at,
+            "last_t_s": last.t, "last_pressure_pa": last.values[pressure], "trace": trace}))
+        .unwrap(),
+    )
+    .unwrap();
+    a.close();
+}
+
+#[test]
+#[ignore = "NOT-EVIDENCE gate: ld01-unit, the isolation valve's supply guard and arrest (seconds); a packet composing the valve and the declared DC section"]
+fn the_relief_isolation_valve_answers_to_its_supply_on_the_real_unit() {
+    let receipts = std::path::PathBuf::from(env("LD01_UNIT_HOST_RECEIPTS"));
+    std::fs::create_dir_all(&receipts).expect("receipt directory");
+    let load = serde_json::to_vec(&default_load()).unwrap();
+    let mut a = Host::spawn(&receipts.join("iso-supply.stderr.log"));
+    let mut walls = AdvanceWalls::default();
+    let loaded = a.json(LOAD, &load);
+    let t0 = bits_of(&loaded["t_bits"]);
+    let period = loaded["frame_s"].as_f64().expect("frame_s");
+    let k0 = (t0 / period).round() as u64;
+    let instant = |k: u64| (k0 + k) as f64 * period;
+    let channels = a.json(CHANNELS, &[]);
+    let position = channels
+        .as_array()
+        .unwrap()
+        .iter()
+        .position(|c| c["id"] == "LD01.PZR.RELIEF.ISO.POSITION")
+        .expect("the position channel");
+    let relief = json!({"kind": "ReliefStuckOpen", "t_apply": instant(1)});
+    a.json(COMMAND, &serde_json::to_vec(&relief).unwrap());
+    // The supply's guard is a result, not a refusal: with ACT.A's distribution
+    // open the close is refused, and nothing moves.
+    let dc = |action: &str, t: f64| json!({"kind": "DcDistribution", "t_apply": t, "group": "LD01.DC.ACT.A", "action": action});
+    let (first, _) = advance(&mut a, &mut walls, instant(1));
+    let t1 = frame(&first).t;
+    a.json(COMMAND, &serde_json::to_vec(&dc("Open", t1)).unwrap());
+    let close = json!({"kind": "ReliefIsolationClose", "t_apply": t1});
+    let reply = a.json(COMMAND, &serde_json::to_vec(&close).unwrap());
+    assert_eq!(reply["accepted"], json!(false), "{reply}");
+    a.json(COMMAND, &serde_json::to_vec(&dc("Reset", t1)).unwrap());
+    a.json(COMMAND, &serde_json::to_vec(&dc("Close", t1)).unwrap());
+    // Closing in travel, then the supply lost: the valve arrests where it
+    // is and the intent does not replay when the supply returns.
+    let reply = a.json(COMMAND, &serde_json::to_vec(&close).unwrap());
+    assert_eq!(reply["accepted"], json!(true), "{reply}");
+    let (held, _) = advance(&mut a, &mut walls, instant(6));
+    let t6 = frame(&held).t;
+    a.json(COMMAND, &serde_json::to_vec(&dc("Open", t6)).unwrap());
+    let (arrested, _) = advance(&mut a, &mut walls, instant(7));
+    let arrested = frame(&arrested).values[position];
+    assert!(arrested > 0. && arrested < 100., "arrested at {arrested} %");
+    let (later, _) = advance(&mut a, &mut walls, instant(30));
+    let later = frame(&later);
+    assert_eq!(later.values[position], arrested, "the valve stands");
+    a.json(COMMAND, &serde_json::to_vec(&dc("Reset", later.t)).unwrap());
+    a.json(COMMAND, &serde_json::to_vec(&dc("Close", later.t)).unwrap());
+    // The supply is back: the arrested close does not replay.
+    let (returned, _) = advance(&mut a, &mut walls, instant(45));
+    assert_eq!(
+        frame(&returned).values[position],
+        arrested,
+        "a returning supply replays nothing"
+    );
+    let open = json!({"kind": "ReliefIsolationOpen", "t_apply": frame(&returned).t});
+    assert_eq!(
+        a.json(COMMAND, &serde_json::to_vec(&open).unwrap())["accepted"],
+        json!(true)
+    );
+    let (back, _) = advance(&mut a, &mut walls, instant(60));
+    assert_eq!(frame(&back).values[position], 100., "open again");
+    a.close();
 }

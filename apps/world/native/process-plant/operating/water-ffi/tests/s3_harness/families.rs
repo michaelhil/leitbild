@@ -2585,7 +2585,7 @@ mod tests {
             "ledger": {"bound_local_tolerance_units": 1.0,
                 "closures": {"primary_mass_kg": {"max_units": 0.2, "at_t_s": 505.}},
                 "final": {"t_s": 510., "closures": [{"name": "primary_mass_kg", "inventory_change": -19.9, "tolerance": 1.0}]}},
-            "receipts_at_last_closure": {"t_s": 510., "values": {"pzr_relief_attribution_kg": -20.}}});
+            "receipts_at_last_closure": {"t_s": 510., "values": {"primary_mass_kg": -20., "pzr_relief_attribution_kg": -20.}}});
         let c4 = crate::s3_harness::c4::DirectionRecord {
             frames: &frames,
             log: &log,

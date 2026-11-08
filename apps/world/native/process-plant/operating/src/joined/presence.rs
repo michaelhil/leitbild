@@ -161,6 +161,10 @@ impl<T> PatternCache<T> {
         }
     }
     /// Take back the structure of `key`, which must be checked out.
+    /// Each structure held in the cache, the checked-out one excepted.
+    pub fn for_each_held(&mut self, mut f: impl FnMut(&mut T)) {
+        self.entries.values_mut().flatten().for_each(&mut f);
+    }
     pub fn check_in(&mut self, key: &PresenceKey, structure: T) -> Result<(), Failure> {
         match self.entries.get_mut(key) {
             Some(slot @ None) => {

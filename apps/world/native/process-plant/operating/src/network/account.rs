@@ -124,7 +124,7 @@ impl<P: Properties> Network<P> {
         if orphan_abs > orphan_allowance {
             return Err(Failure::Fatal("aggregate absolute empty-phase energy exceeds associated unchanged state-error budgets".into()));
         }
-        let pzr = self.stratified_inventory(y)?;
+        let pzr = self.stratified_inventory(y, tolerance)?;
         for (sum, v) in total.iter_mut().zip(pzr.totals) {
             *sum += v;
         }
@@ -394,15 +394,27 @@ impl<P: Properties> Network<P> {
     /// The PZR cell's admitted inventory (`stratified::inventory`): totals
     /// [mass, tracer, fluid internal energy, 0] with its transit stocks'
     /// saturated energy, and its receipt. Every stock must be finite and
-    /// every mass and tracer nonnegative.
-    fn stratified_inventory(&self, y: &[f64]) -> Result<StratifiedInventory, Failure> {
+    /// every mass and tracer nonnegative; a stock that has decayed to nothing
+    /// may carry a negative residue inside its own error allowance, as an
+    /// equilibrium cell's vapor mass may.
+    fn stratified_inventory(
+        &self,
+        y: &[f64],
+        tolerance: Tolerances<'_>,
+    ) -> Result<StratifiedInventory, Failure> {
         let mut values = [0.; PZR_COORDINATES];
+        let base = self.pzr.base;
         for (v, i) in values.iter_mut().zip(self.pzr.coordinates()) {
             *v = y[i] * self.scales[i];
         }
+        let refused = |o: &usize| {
+            let i = base + *o;
+            values[*o] < 0.
+                && -values[*o]
+                    > self.scales[i] * (tolerance.absolute[i] + tolerance.relative * y[i].abs())
+        };
         let nonnegative = PZR_MASS.iter().chain(&PZR_TRACER);
-        if values.iter().any(|v| !v.is_finite()) || nonnegative.into_iter().any(|o| values[*o] < 0.)
-        {
+        if values.iter().any(|v| !v.is_finite()) || nonnegative.into_iter().any(refused) {
             return Err(Failure::Fatal(format!(
                 "physical PZR stock admission failed: {values:?}"
             )));
