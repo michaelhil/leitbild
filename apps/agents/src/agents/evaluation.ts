@@ -17,7 +17,7 @@ import type { ContextResult, FlushInfo } from './context-builder.ts'
 import { classifyLLMError } from './error-classify.ts'
 import { extractFences } from './fence-extract.ts'
 import { parseMapBody, formatMapErrors } from '../core/render-validators/map-schema.ts'
-import { parseViewFenceBody, viewRefFor, VIEW_FENCE_LANGUAGE } from '../core/render-validators/view-fence.ts'
+import { parseViewFenceBody, viewRefFor, VIEW_FENCE_LANGUAGE, trustedEngineeringViewEntry } from '../core/render-validators/view-fence.ts'
 import { createTurnCards, type TurnCards } from './answer-cards.ts'
 import { citationIssues } from './citations.ts'
 import { collectTurnOperations, operationClaimIssues, type TurnOperation } from './operation-claims.ts'
@@ -369,6 +369,8 @@ const correctionEvent = (entries: ReadonlyArray<{ readonly cause: CorrectionCaus
 
 /** viewRefs that successful workspace_call results in this turn made presentable. */
 export const collectViewRefs = (into: Set<string>, tool: string, result: ToolResult): void => {
+  const engineering = trustedEngineeringViewEntry({tool,result})
+  if (engineering) { into.add(engineering.viewRef); return }
   if (tool !== 'workspace_call' || !result.success) return
   const entries = (result.data as { results?: unknown } | undefined)?.results
   if (!Array.isArray(entries)) return

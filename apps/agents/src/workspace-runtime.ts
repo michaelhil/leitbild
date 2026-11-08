@@ -94,6 +94,7 @@ import type { WorkspaceId } from '@leitbild/contracts'
 import type { AgentPackCatalog } from './packs/agent-pack-catalog.ts'
 
 import { createOllamaUrlRegistry, type OllamaUrlRegistry } from './core/ollama-urls.ts'
+import { createEngineering, type EngineeringService } from './agents/engineering.ts'
 export type { OllamaUrlRegistry }
 
 import type { LogConfig, LogConfigState, LogEvent, LogSink } from './logging/types.ts'
@@ -109,6 +110,8 @@ import {
 } from './logging/event-mapping.ts'
 
 export interface AgentsWorkspaceRuntime {
+  /** Absent only in standalone runtimes without a Host capability broker. */
+  readonly engineering?: EngineeringService
   readonly readPromptEvidence: (roomId: string, input: unknown) => Promise<import('@leitbild/contracts').PresentationPromptEvidence>
   readonly comparisons: import('./agents/comparisons.ts').Comparisons
   readonly executionStore: ExecutionStore
@@ -699,12 +702,18 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
 
     // Cross-Module interaction is Host-routed. Room Scope is the durable access
     // boundary; target Modules enforce their own current run restrictions.
+    let engineering: EngineeringService | undefined
     if (options.workspaceId !== undefined && options.workspaceHostUrl !== undefined) {
-      toolRegistry.registerAll(createWorkspaceCapabilityTools({
+      const workspaceTools = createWorkspaceCapabilityTools({
         workspaceId: options.workspaceId,
         hostBaseUrl: options.workspaceHostUrl,
         getRoomScope: roomId => rooms.getRoom(roomId)?.profile.scope,
-      }))
+      })
+      toolRegistry.registerAll(workspaceTools)
+      const workspaceCall = workspaceTools.find(tool => tool.name === 'workspace_call')
+      if (!workspaceCall) throw new Error('Workspace invocation tool was not assembled')
+      engineering = createEngineering({workspaceId:options.workspaceId,hostBaseUrl:options.workspaceHostUrl,rooms,store:executionStore,workspaceCall,growth:executionGrowth})
+      toolRegistry.registerAll(engineering.tools)
     }
 
     // Biometrics tools — implementation lives in core (needs RoomDirectory + capture
@@ -1058,6 +1067,7 @@ export const createAgentsWorkspaceRuntime = (options: CreateAgentsWorkspaceRunti
 
     const system: AgentsWorkspaceRuntime = {
       rooms, createRoom, settings, bookmarks, team, routeMessage, executionStore, comparisons,
+      ...(engineering === undefined ? {} : {engineering}),
       readPromptEvidence: (roomId, input) => {
         if (options.workspaceId === undefined) throw Object.assign(new Error('Prompt evidence requires a Workspace identity'), { code: 'workspace_required' })
         return readPromptEvidence({ workspaceId: options.workspaceId, rooms, executionStore, ...(options.workspaceHostUrl === undefined ? {} : { hostBaseUrl: options.workspaceHostUrl }) }, roomId, input)
