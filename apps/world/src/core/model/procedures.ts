@@ -64,12 +64,29 @@ export const procedureTagSchema = z.object({
 })
 export type ProcedureTag = z.infer<typeof procedureTagSchema>
 
+/** A line's or a fork branch's limits, each a comparison leaf the branch criterion also holds. */
+export const procedureLimitsSchema = z.object({
+  any: z.boolean(),
+  comparisons: z.array(z.object({
+    type: z.literal('comparison'),
+    tagId: procedureTagIdSchema,
+    operator: z.enum(['<', '<=', '>', '>=', '==', '!=']),
+    value: z.union([z.number().finite(), z.boolean()]),
+    unit: z.string().min(1),
+    bound: z.literal('value').optional(),
+    evidence: z.enum(['instrument', 'engineering-diagnostic']),
+    source: z.string().min(1),
+    maxAgeSeconds: z.number().finite().nonnegative(),
+  }).strict()).min(1),
+}).strict()
+
 export const procedureTextBlockSchema = z.object({
   kind: z.enum(['check', 'action', 'expected', 'rno', 'unknown', 'basis', 'decision', 'when', 'until', 'abort-if', 'abort-to', 'within', 'concurrent', 'caution', 'note', 'because', 'against', 'text']),
   text: z.string().min(1),
   paths: z.array(z.string()).optional(),
   sourceLine: z.number().int().positive(),
   tagIds: z.array(procedureTagIdSchema).default([]),
+  limits: procedureLimitsSchema.optional(),
 })
 export type ProcedureTextBlock = z.infer<typeof procedureTextBlockSchema>
 
@@ -84,6 +101,7 @@ export const procedureBranchSchema = z.object({
   against: z.string().min(1).optional(),
   sourceLine: z.number().int().positive(),
   tagIds: z.array(procedureTagIdSchema).default([]),
+  limits: procedureLimitsSchema.optional(),
 })
 export type ProcedureBranch = z.infer<typeof procedureBranchSchema>
 
@@ -131,6 +149,12 @@ export const procedureDocumentSchema = z.object({
   csfsMonitored: z.array(idSchema).default([]),
   entryTriggers: z.array(idSchema).default([]),
   description: z.string().default(''),
+  foldout: z.object({
+    title: z.string().min(1),
+    text: z.string(),
+    tagIds: z.array(procedureTagIdSchema),
+    sourceLine: z.number().int().positive(),
+  }).strict().optional(),
   sourcePath: sourceDocumentPathSchema,
   sourceUrl: procedureSourceUrlSchema,
   rawMarkdown: z.string(),
