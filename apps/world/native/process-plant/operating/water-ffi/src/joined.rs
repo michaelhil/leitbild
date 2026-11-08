@@ -1748,9 +1748,7 @@ mod integrated {
             .pzr_boundary()
             .is_none_or(|(b, _)| b.relief.as_ref().is_none_or(|r| r.lift.value == 0.));
         analyses.keep_for_seat(
-            matches!(discrete, Discrete::Roots(_))
-                && transacted.contains(&"rods")
-                && relief_shut,
+            matches!(discrete, Discrete::Roots(_)) && transacted.contains(&"rods") && relief_shut,
         );
         let matrices = match assembly {
             Assembly::Blocks(structure) => Matrices::Blocks {
