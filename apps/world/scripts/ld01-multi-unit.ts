@@ -355,6 +355,7 @@ const runEngines = async (config: Config, artifact: Ld01UnitArtifact, records: R
   const count = Math.round(config.spanS * 1_000 / stepMs)
   const t0 = performance.now() + config.leadS * 1_000
   let commanded = false
+  const refusals: string[] = []
   try {
     for (let k = 0; k < count; k += 1) {
       const scheduled = t0 + k * stepMs
@@ -365,7 +366,7 @@ const runEngines = async (config: Config, artifact: Ld01UnitArtifact, records: R
       // The commands due at this exchange: queued on every unit before any sends, so they go out on the same exchange.
       for (const [index, record] of records.entries()) {
         const { spec } = record
-        if (spec.caseName !== null && spec.atS !== null && !record.spec.text.startsWith('H') && record.commandT === null && k === Math.round(spec.atS * 1_000 / stepMs)) {
+        if (spec.caseName !== null && spec.atS !== null && record.commandT === null && k === Math.round(spec.atS * 1_000 / stepMs)) {
           record.commandT = Number.NaN // set from the frame below
           engines[index]!.runtime.writeCommand({ type: 'setVariable', path: casePaths[spec.caseName]!, value: true })
           commanded = true
@@ -378,7 +379,8 @@ const runEngines = async (config: Config, artifact: Ld01UnitArtifact, records: R
         // The engine forms `requested + advanceMs` and goes to the last frame at or before it; adding exactly stepMs can
         // fall short of the next frame by rounding (no exchange this tick, two frames the next). Keep the request on the
         // next frame instant so every tick is one exchange of `exchangeMs`; the unit makes the same steps either way.
-        const onGrid = stepMs + (engine.runtime.elapsedMs() - engine.runtime.advancedMs()) + 1e-4
+        // Past a named end the Run's time goes on and the unit's does not, so the correction no longer applies.
+        const onGrid = engine.ended() === null ? stepMs + (engine.runtime.elapsedMs() - engine.runtime.advancedMs()) + 1e-4 : stepMs
         const sentAt = performance.now()
         const receipt = await engine.advance(onGrid)
         const doneAt = performance.now()
@@ -392,6 +394,7 @@ const runEngines = async (config: Config, artifact: Ld01UnitArtifact, records: R
       const refused = settled.flatMap((outcome, index) => outcome.status === 'rejected' ? [`unit ${index}: ${stringifyError(outcome.reason)}`] : [])
       if (refused.length > 0) {
         for (const line of refused) console.error(line)
+        refusals.push(...refused)
         break
       }
     }
@@ -400,7 +403,7 @@ const runEngines = async (config: Config, artifact: Ld01UnitArtifact, records: R
     for (const engine of engines) await engine.close().catch(() => undefined)
   }
   const hostAtEnd = counters(process.pid)
-  return { exchanges_columns: ['k', 'scheduled_s', 'started_s', 'ended_s', 'overrun_s'], exchanges, commanded, load: load.samples, host_cpu_s: hostAtStart === null || hostAtEnd === null ? null : (hostAtEnd.userS + hostAtEnd.systemS) - (hostAtStart.userS + hostAtStart.systemS), host_instructions_g: hostAtStart === null || hostAtEnd === null ? null : (hostAtEnd.instructions - hostAtStart.instructions) / 1e9 }
+  return { exchanges_columns: ['k', 'scheduled_s', 'started_s', 'ended_s', 'overrun_s'], exchanges, commanded, refusals, load: load.samples, host_cpu_s: hostAtStart === null || hostAtEnd === null ? null : (hostAtEnd.userS + hostAtEnd.systemS) - (hostAtStart.userS + hostAtStart.systemS), host_instructions_g: hostAtStart === null || hostAtEnd === null ? null : (hostAtEnd.instructions - hostAtStart.instructions) / 1e9 }
 }
 
 // The real Pack adapter path: per-unit rusage and the exchange wall, no reply header.
@@ -511,7 +514,7 @@ const main = async (): Promise<void> => {
   const printable = { out: config.out, via: config.via, units: config.units.map(unit => unit.text), exchange_ms: config.exchangeMs, pace: config.pace, load_start: loadAtStart[0], load_end: loadavg()[0], core_busy_mean: coreBusyMean.map(value => Number(value.toFixed(3))), host_cpu_s: run.host_cpu_s, host_instructions_g: run.host_instructions_g, exchanges: (run.exchanges as ReadonlyArray<unknown>).length, summaries }
   console.log(JSON.stringify(printable, null, 1))
   // A run that ended on a failure has its receipt written first; the exit code still says it failed.
-  if (records.some(record => record.failure !== null) || (run as { failed?: string | null }).failed) process.exit(1)
+  if (records.some(record => record.failure !== null) || (run as { failed?: string | null }).failed || ((run as { refusals?: ReadonlyArray<string> }).refusals ?? []).length > 0) process.exit(1)
   process.exit(0)
 }
 
