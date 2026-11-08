@@ -77,6 +77,7 @@ const mutants: ReadonlyArray<readonly [string, string, string]> = [
   ['words say ANY, no any', 'Breakers — AT LEAST ONE CLOSED. «BKR-A-POS == true» «BKR-B-POS == true»', 'has no «any»'],
   ['one SG given a different limit', 'SG levels — ALL BELOW 82%. «SG-A-LVL < 82» «SG-B-LVL < 82» «SG-C-LVL < 82» «SG-D-LVL < 90»', 'different limits'],
   ['wrong letter in the words', 'SG A level — BELOW 82%. «SG-B-LVL < 82»', 'SG-B-LVL is on a line naming A'],
+  ['a named letter dropped from the limits', 'Breakers A and B — OPEN. «BKR-A-POS == false»', 'the words name B'],
   ['boolean with the opposite word', 'Breakers A and B — OPEN. «BKR-A-POS == true» «BKR-B-POS == true»', 'means CLOSED'],
   ['boolean with no state words', 'Switch — ON. «NO-WORDS == true»', 'needs states:'],
   ['a limit the words never state', 'Power range is low. «POWER < 5»', 'not stated in the words'],

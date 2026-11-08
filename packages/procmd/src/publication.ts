@@ -57,6 +57,7 @@ const lineProblems = (parsed: ParsedProcedure, words: string, limits: ProcedureL
   if (/\b(ALL|NONE|EACH|EVERY)\b/.test(words)) for (const tag of parsed.tags) if (family(tag.id).includes('?') && tags.some(tagId => family(tagId) === family(tag.id)) && !tags.includes(tag.id)) problems.push(`the words say ALL and ${tag.id} is left out`)
   const named = lettersIn(words)
   if (named.length > 0) for (const tagId of tags) { const letter = letterOf(tagId); if (letter !== undefined && !named.includes(letter)) problems.push(`${tagId} is on a line naming ${named.join(', ')}`) }
+  for (const letter of named) if (!tags.some(tagId => letterOf(tagId) === letter)) problems.push(`the words name ${letter}, and no limit on this line reads it`)
   return problems
 }
 
