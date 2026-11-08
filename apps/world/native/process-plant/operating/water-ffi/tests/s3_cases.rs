@@ -1106,6 +1106,7 @@ impl GridTrace {
             .unwrap_or(&self.points[0]);
         leitbild_operating_water::unit::plant::Boundary::Energized {
             voltage_v: v_nominal * p.3,
+            voltage_pu: p.3,
             frequency_hz: p.1,
             phase_error_rad: 0.,
             frequency_rate_hz_s: p.2,
@@ -1549,6 +1550,10 @@ fn drive(
         v.parse::<f64>().expect("LD01_S3_GRID_HOLD_S")
     });
     let exchanging = c5 || case == Case::C1 || grid_trace.is_some();
+    // The delay from the case's event to the Grid's first answer (test-only,
+    // with a trace; a chosen input, recorded by the caller's rule).
+    let grid_delay_s = std::env::var("LD01_S3_GRID_DELAY_S")
+        .map_or(0., |v| v.parse::<f64>().expect("LD01_S3_GRID_DELAY_S"));
     let started = process_cpu_s();
     let section = inputs.ic.clone();
     // Stuck-cluster C2: the declared single's packet index.
@@ -1695,6 +1700,7 @@ fn drive(
     // frequency, no phase error and no frequency rate (D2, SW-1).
     let steady_bus = Boundary::Energized {
         voltage_v: v_nominal,
+        voltage_pu: 1.,
         frequency_hz: f_nominal,
         phase_error_rad: 0.,
         frequency_rate_hz_s: 0.,
@@ -2036,6 +2042,10 @@ fn drive(
     let mut feed_record: Vec<(f64, bool)> = Vec::new();
     let mut rcp_after: Option<usize> = None;
     let mut feed_after: Option<bool> = None;
+    // R4-GRID (test-only): the auxiliary supply each whole second of a
+    // connected case: time after zero, RCPs supported, feed supplied, the
+    // reserve and unit sources in band.
+    let mut grid_aux: Vec<Value> = Vec::new();
     let outcome = {
         let mut r = {
             let mut extra: Vec<&mut dyn Client<CaseUnit>> = vec![&mut recorder];
@@ -2329,17 +2339,57 @@ fn drive(
                         }
                     } else if (!c5 || b < zero)
                         && let Some(t1) = next
-                        && (grid_trace.is_none()
-                            || ida.system().breaker.contact
-                                == leitbild_operating_plant::electrical::breaker::Contact::Closed)
                     {
                         let bus = grid_trace
                             .as_ref()
-                            .map_or(steady_bus, |g| g.at(b - zero, v_nominal));
+                            .map_or(steady_bus, |g| g.at(b - zero - grid_delay_s, v_nominal));
                         match plant::boundary(driver, ida.system(), b, t1, bus) {
                             Ok(k) => exchange_log.push(json!({"t_s": b, "decided": k})),
                             Err(e) => r = Err(e),
                         }
+                    }
+                }
+            }
+            if let Some(g) = grid_trace.as_ref()
+                && r.is_ok()
+            {
+                let b = *b;
+                let every = (quiet_s / period).round() as u64;
+                let m = (b / (every as f64 * period)).round() as u64;
+                if same_instant(frame.instant(m * every), b) {
+                    // Past the last armed exchange the boundary still reaches
+                    // the auxiliary sources, each whole second, with no stop.
+                    if b > exchanges.last().map_or(f64::INFINITY, |e| e.0) {
+                        let bus = g.at(b - zero - grid_delay_s, v_nominal);
+                        match plant::boundary(driver, ida.system(), b, b + quiet_s, bus) {
+                            Ok(k) => exchange_log.push(json!({"t_s": b, "decided": k})),
+                            Err(e) => r = Err(e),
+                        }
+                    }
+                    if b >= zero {
+                        use leitbild_operating_plant::electrical::bus::Source;
+                        let u = ida.system();
+                        let net = &u.integrated().joined.network;
+                        let rcps = (0..net.rotor_count())
+                            .filter(|i| {
+                                matches!(
+                                    net.rotor_state(*i).map(|s| s.support),
+                                    Some(leitbild_operating_plant::rotor::Support::Supported(_))
+                                )
+                            })
+                            .count();
+                        let feed = u
+                            .routing
+                            .support("LD01.FW.P1")
+                            .zip(u.routing.support("LD01.FW.P2"))
+                            .map(|s| s.0.energized || s.1.energized);
+                        grid_aux.push(json!([
+                            b - zero,
+                            rcps,
+                            feed,
+                            u.routing.source_in_band(Source::Reserve),
+                            u.routing.source_in_band(Source::Unit)
+                        ]));
                     }
                 }
             }
@@ -2900,6 +2950,7 @@ fn drive(
             "receipts_sum_export_J": receipts.iter().map(|q| q.export_j).sum::<f64>(),
             "cumulative_export_J": q_prev.as_ref().map(|q| q[q.len() - leitbild_operating_plant::electrical::slice::QUADRATURES.len()]),
             "rcp_supported_after_loss": rcp_after, "feed_supplied_after_loss": feed_after,
+            "grid_aux": {"columns": ["after_zero_s", "rcps_supported", "feed_supplied", "reserve_in_band", "unit_in_band"], "seconds": grid_aux, "electrical_log": ida.system().log.iter().map(|(t, what)| json!([t - zero, what])).collect::<Vec<_>>()},
             "feed_supplied": feed_record.iter().map(|(t, f)| json!([t, f])).collect::<Vec<_>>(),
             "routing_records": routing.iter().map(|(t, w)| json!([t, w])).collect::<Vec<_>>(),
             "field_controller": field.as_ref().map(|f| json!({"initiated": f.protection.initiated.as_ref().map(|i| json!({"cause": i.cause, "frame": i.frame, "t_s": i.at_s, "t_after_zero_s": i.at_s - zero})), "log": f.protection.log}))}) } else { Value::Null },

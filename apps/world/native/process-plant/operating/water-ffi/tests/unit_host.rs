@@ -1130,15 +1130,24 @@ fn a_connected_unit_exchanges_at_exact_stops_and_its_copy_continues_bitwise() {
                     let reply: Value = serde_json::from_slice(&r.payload).unwrap();
                     log.push(r.payload);
                     let (r1, s1) = counts_of(host);
-                    if e == 9 {
-                        // The trip came before: the breaker is open.
+                    if e == 6 || e == 8 {
+                        // The Grid's frequency leaves and re-enters the
+                        // qualification band: class R at the driver's instant.
+                        assert_eq!(
+                            reply["decided"],
+                            json!("R: the auxiliary sources' band"),
+                            "{reply}"
+                        );
+                        assert_eq!(r1, r0 + 1, "exchange {e}: one restart");
+                    } else if e == 7 || e == 9 {
+                        // The breaker is open and the band's verdict stands.
                         assert_eq!(
                             reply["decided"],
                             json!("none (the breaker is open)"),
                             "{reply}"
                         );
                         assert_eq!((r1, s1), (r0, s0), "no event with the breaker open");
-                    } else if e < 9 {
+                    } else if e < 6 {
                         // Exact stop, class S, no restart.
                         assert_eq!(r1, r0, "exchange {e}: no restart: {reply}");
                         if reply["decided"] == json!("S: held boundary") {
@@ -1168,8 +1177,8 @@ fn a_connected_unit_exchanges_at_exact_stops_and_its_copy_continues_bitwise() {
                     assert_eq!(reply["accepted"], json!(false), "{reply}");
                 }
             }
-            // The turbine trip half a second after exchange 8.
-            if e == 8 {
+            // The turbine trip half a second after exchange 5.
+            if e == 5 {
                 while f < at + 5 {
                     f += 1;
                     let (p, _) = advance(host, walls, instant(f));

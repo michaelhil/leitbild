@@ -20,7 +20,11 @@ use crate::{
     joined::{DerivedTolerances, Integrated, JoinedSystem, Restart},
 };
 use leitbild_operating_plant::{
-    electrical::{field, slice},
+    electrical::{
+        breaker::Contact,
+        bus::{Source, SourceState},
+        field, slice,
+    },
     ic::packet::Section as IcSection,
 };
 use serde_json::Value;
@@ -72,6 +76,9 @@ pub enum Boundary {
     /// over the interval.
     Energized {
         voltage_v: f64,
+        /// The same voltage per unit of the line voltage (the auxiliary
+        /// sources' qualification reads it).
+        voltage_pu: f64,
         frequency_hz: f64,
         phase_error_rad: f64,
         frequency_rate_hz_s: f64,
@@ -273,6 +280,7 @@ pub fn boundary<J: JoinedSystem>(
         (
             Boundary::Energized {
                 voltage_v,
+                voltage_pu,
                 frequency_hz,
                 phase_error_rad,
                 frequency_rate_hz_s,
@@ -290,29 +298,56 @@ pub fn boundary<J: JoinedSystem>(
                 ));
             }
             let accel = 2. * std::f64::consts::PI * frequency_rate_hz_s;
+            // R4-GRID (owner 8 Nov): the Grid at the auxiliary sources. A
+            // change of the qualification band's verdict is class R, the
+            // source's state applied at that restart's own instant; inside
+            // the band no event, the routing reading no other number.
+            let closed = unit.breaker.contact == Contact::Closed;
+            let supply = SourceState {
+                energized: true,
+                voltage_pu,
+                frequency_hz,
+            };
+            let in_band = unit.routing.in_band(&supply);
+            let band_changed = in_band != unit.routing.source_in_band(Source::Reserve)
+                || (closed && in_band != unit.routing.source_in_band(Source::Unit));
             let i = unit.slice.inputs;
-            if i.v_line.to_bits() == voltage_v.to_bits()
-                && i.f_grid_hz.to_bits() == frequency_hz.to_bits()
-                && i.carrier_rad_s.to_bits() == carrier.to_bits()
-                && accel == 0.
-                && i.carrier_accel_rad_s2 == 0.
-            {
-                return Ok("none (agrees with the held prediction)");
+            let agrees = !closed
+                || (i.v_line.to_bits() == voltage_v.to_bits()
+                    && i.f_grid_hz.to_bits() == frequency_hz.to_bits()
+                    && i.carrier_rad_s.to_bits() == carrier.to_bits()
+                    && accel == 0.
+                    && i.carrier_accel_rad_s2 == 0.);
+            if agrees && !band_changed {
+                return Ok(if closed {
+                    "none (agrees with the held prediction)"
+                } else {
+                    "none (the breaker is open)"
+                });
             }
             driver.decide(vec![Change {
                 due_s: t0,
-                class: Class::S,
+                class: if band_changed { Class::R } else { Class::S },
                 kind: "Grid boundary (held voltage/carrier and slope, D2 + SW-1)".into(),
                 action: Action::Held(Box::new(move |u: &mut Electrified<J>| {
-                    u.slice.inputs.v_line = voltage_v;
-                    u.slice.inputs.f_grid_hz = frequency_hz;
-                    u.slice.inputs.carrier_rad_s = carrier;
-                    u.slice.inputs.carrier_accel_rad_s2 = accel;
-                    u.slice.inputs.carrier_from_s = t0;
+                    if closed {
+                        u.slice.inputs.v_line = voltage_v;
+                        u.slice.inputs.f_grid_hz = frequency_hz;
+                        u.slice.inputs.carrier_rad_s = carrier;
+                        u.slice.inputs.carrier_accel_rad_s2 = accel;
+                        u.slice.inputs.carrier_from_s = t0;
+                    }
+                    if band_changed {
+                        u.grid_supply = Some(supply);
+                    }
                     Ok(())
                 })),
             }])?;
-            Ok("S: held boundary")
+            Ok(if band_changed {
+                "R: the auxiliary sources' band"
+            } else {
+                "S: held boundary"
+            })
         }
     }
 }

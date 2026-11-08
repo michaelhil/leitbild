@@ -82,7 +82,10 @@
 //! exchange instant: the boundary's frequency, its rate and the voltage, and
 //! the governor's load request, are held inputs entering storage rates only,
 //! class S at the stop, no restart. With the breaker open a changed boundary
-//! is no event; a dead bus is class R there too, once. Energized after dead
+//! is no event; the boundary's voltage and frequency also reach the auxiliary
+//! sources, class R at the exchange only when the qualification band's
+//! verdict changes (no stop armed with the breaker open: a restart from the
+//! last step's dense output). A dead bus is class R there too, once. Energized after dead
 //! is refused: 1.0 has no offsite restoration (S3-D10). A load request with
 //! the governor out of LOAD is a result (`accepted: false`), not a refusal.
 //!
@@ -1932,6 +1935,7 @@ impl Unit {
         let boundary = match v["energized"].as_bool() {
             Some(true) => Boundary::Energized {
                 voltage_v: self.v_nominal * number("voltage_pu")?,
+                voltage_pu: number("voltage_pu")?,
                 frequency_hz: number("frequency_hz")?,
                 phase_error_rad: number("phase_error_rad")?,
                 frequency_rate_hz_s: number("frequency_rate_hz_s")?,
@@ -1939,15 +1943,6 @@ impl Unit {
             Some(false) => Boundary::Dead,
             None => return Err("GridBoundary needs the boolean energized".into()),
         };
-        let unit = self.plant.ida.system();
-        if matches!(boundary, Boundary::Energized { .. })
-            && unit.offsite_loss_s.is_none()
-            && unit.breaker.contact != Contact::Closed
-        {
-            return Ok(
-                json!({"kind": "GridBoundary", "t_apply": self.t, "t_apply_bits": bits(self.t), "decided": "none (the breaker is open)"}),
-            );
-        }
         let decided = self.plant.boundary(self.t, until, boundary)?;
         if let Err(e) = self.plant.apply_due(&mut []) {
             let cause = format!("GridBoundary at {} s: {e}", self.t);
