@@ -1285,16 +1285,10 @@ fn sg_relief_valve(packet: &Value) -> &Value {
 struct CaseConfig {
     solver: leitbild_operating_water::unit::profile::Solver,
     matrix_rebuild: leitbild_operating_water::frame::MatrixRebuild,
-    /// X4.4 (lane ROD): automatic rod control composed in AUTO
-    /// (`LD01_ROD_AUTO` on | off, unset off; the block from
-    /// `LD01_ROD_CONTROL_WIKI`).
+    /// The section's declarations, recorded: AUTO rod control (X4.4), the
+    /// LOAD governor (X4.3) and the DC groups (PROC T5).
     rod_auto: bool,
-    /// X4.3 (lane TURB): the LOAD governor, ADM and GEN.WT composed with
-    /// the SG owner's valve law (`LD01_TURB_GOV` on | off, unset off; the
-    /// blocks from `LD01_TURB_WIKI`).
     turbine_governor: bool,
-    /// PROC T5 (lane ELEC): the five DC supply groups, report-only
-    /// (`LD01_DC` on | off, unset off; the blocks from `LD01_DC_WIKI`).
     dc: bool,
     /// C4-I (`LD01_S3_C4I_CLOSE_S`, one of its block's `closeAt_s`): C4's
     /// drive with the relief isolation valve closed that long after zero.
@@ -1326,7 +1320,7 @@ impl CaseConfig {
     /// | last/<d> | last-unless-roots/<d>), `LD01_S3_MATRIX_REBUILD` (stock |
     /// packet) and `LD01_S3_RC1` (on | off); unset: stock, declared, stock,
     /// on (the r4 baseline). Any other value refuses.
-    fn from_env() -> Result<Self, String> {
+    fn from_env(ic: &leitbild_operating_plant::ic::packet::Section) -> Result<Self, String> {
         use leitbild_operating_water::{
             frame::MatrixRebuild,
             unit::profile::{Solver, Weights, parse_first_step, parse_stepping},
@@ -1361,21 +1355,9 @@ impl CaseConfig {
             "off" => false,
             v => return Err(format!("LD01_S3_JUMP_DIAGNOSTIC={v}: on or off")),
         };
-        let rod_auto = match var("LD01_ROD_AUTO", "off").as_str() {
-            "on" => true,
-            "off" => false,
-            v => return Err(format!("LD01_ROD_AUTO={v}: on or off")),
-        };
-        let turbine_governor = match var("LD01_TURB_GOV", "off").as_str() {
-            "on" => true,
-            "off" => false,
-            v => return Err(format!("LD01_TURB_GOV={v}: on or off")),
-        };
-        let dc = match var("LD01_DC", "off").as_str() {
-            "on" => true,
-            "off" => false,
-            v => return Err(format!("LD01_DC={v}: on or off")),
-        };
+        let rod_auto = ic.rod_control.declared;
+        let turbine_governor = ic.governor.declared;
+        let dc = ic.dc.declared;
         let c4i_close_s = match std::env::var("LD01_S3_C4I_CLOSE_S") {
             Ok(v) => Some(
                 v.parse::<f64>()
@@ -1500,6 +1482,7 @@ fn drive(
         },
         ida::System,
         joined::JoinedSystem,
+        unit::live,
         unit::plant::{self, Boundary, Plant},
     };
     let c5 = case == Case::C5;
@@ -1509,11 +1492,6 @@ fn drive(
     let exchanging = c5 || case == Case::C1;
     let started = process_cpu_s();
     let section = inputs.ic.clone();
-    let turbine = ask.config.turbine_governor.then(|| {
-        let wiki = std::env::var("LD01_TURB_WIKI").expect("LD01_TURB_GOV=on needs LD01_TURB_WIKI");
-        leitbild_operating_water::unit::turbine::Turbine::from_wiki(&wiki)
-            .unwrap_or_else(|e| panic!("{e}"))
-    });
     // Stuck-cluster C2: the declared single's packet index.
     let single = ask.config.single.map(|id| {
         let packet = inputs.spine.packet_json().expect("packet json");
@@ -1525,21 +1503,16 @@ fn drive(
             .unwrap_or_else(|| panic!("LD01_S3_SINGLE={id}: no such rod cluster"));
         (id, index)
     });
-    let dc = ask.config.dc.then(|| {
-        let wiki = std::env::var("LD01_DC_WIKI").expect("LD01_DC=on needs LD01_DC_WIKI");
-        leitbild_operating_water::unit::dc::Dc::from_wiki(&wiki).unwrap_or_else(|e| panic!("{e}"))
-    });
-    let mut unit = s3::compose_dc_with(
+    let mut unit = live::compose(
         inputs,
         state,
         ask.scaling,
         ask.config.solver,
-        turbine.as_ref(),
         &single.iter().map(|(_, i)| *i).collect::<Vec<_>>(),
-        dc.as_ref(),
         wrap,
     )
-    .unwrap_or_else(|e| panic!("{e}"));
+    .unwrap_or_else(|e| panic!("{e}"))
+    .unit;
     // B1 (owner request 14): the declared stuck-cluster term, before any
     // transaction, from the wiki's ld01-stuck-worth.
     let stuck_worth = ask.config.stuck.then(|| {
@@ -1565,33 +1538,6 @@ fn drive(
         json!({"page": page_path, "block": block, "block_sha256": leitbild_operating_plant::digest::sha256(text.as_bytes()), "term_dk": dk})
     });
     let (t0, n, rtol, frame) = (unit.t0, unit.n, unit.rtol, unit.frame);
-    // X4.4 (lane ROD): automatic rod control in AUTO when asked.
-    let (mut rods, rod_receipt) = if ask.config.rod_auto {
-        use leitbild_operating_water::unit::rod_control;
-        let wiki = std::env::var("LD01_ROD_CONTROL_WIKI")
-            .expect("LD01_ROD_AUTO=on needs LD01_ROD_CONTROL_WIKI");
-        let section = rod_control::section(&wiki).unwrap_or_else(|e| panic!("{e}"));
-        let ids: Vec<String> = inputs.spine.packet_json().unwrap()["mechanics"]["regions"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|r| r["id"].as_str().unwrap().to_string())
-            .collect();
-        let (y0, reference) = (unit.y.clone(), unit.reference.clone());
-        let (c, r) = rod_control::commission(
-            unit.ida.system_mut(),
-            &section,
-            &ids,
-            leitbild_operating_water::frame::Class::S,
-            t0,
-            &y0,
-            &reference,
-        )
-        .unwrap_or_else(|e| panic!("rod control: {e}"));
-        (Some(c), json!({"wiki": wiki, "commissioning": r}))
-    } else {
-        (None, Value::Null)
-    };
     let declared_frame_s = d.block.number(&d.common("/frameAlignment/frame_s"));
     d.block.text(&d.common("/frameAlignment/rule"));
     assert_eq!(
@@ -1645,20 +1591,13 @@ fn drive(
     let elec_packet: Value =
         serde_json::from_slice(&std::fs::read(&inputs.elec_path).expect("the electrical packet"))
             .expect("the electrical packet json");
-    let field_parameters: Option<leitbild_operating_plant::electrical::field::Parameters> =
-        c5.then(|| {
-            serde_json::from_value(elec_packet["fieldProtection"].clone()).expect(
-                "C5: the electrical packet carries no field controller timing (ld01-generator-field-protection)",
-            )
-        });
     // The frame-driven unit (IC-PROT's driver, residual-jump diagnostic at
     // class-S stops): the acquired protection, the PZR control and C5's
     // field controller, in the unit library's order.
-    let mut plant = Plant::new(
+    let (mut plant, rod_receipt) = live::plant(
         unit,
-        &section,
-        plant::Config {
-            field: field_parameters.as_ref(),
+        inputs,
+        live::Options {
             diagnostic: if ask.config.jump_diagnostic {
                 Diagnostic::Jump
             } else {
@@ -1666,6 +1605,7 @@ fn drive(
             },
             matrix_rebuild: ask.config.matrix_rebuild,
             clock: process_cpu_s,
+            rod_records: true,
         },
     )
     .unwrap_or_else(|e| panic!("the frame-driven unit: {e}"));
@@ -2030,9 +1970,6 @@ fn drive(
             if let Some(f) = feed.as_mut() {
                 extra.push(f);
             }
-            if let Some(r) = rods.as_mut() {
-                extra.push(r);
-            }
             let mut clients = plant::clients(protection, control, field, plant_rods, &mut extra);
             driver.start(&mut clients, t0, y, yp)
         };
@@ -2069,10 +2006,8 @@ fn drive(
                 if let Some(f) = feed.as_mut() {
                     extra.push(f);
                 }
-                if let Some(r) = rods.as_mut() {
-                    extra.push(r);
-                }
-                let mut clients = plant::clients(protection, control, field, plant_rods, &mut extra);
+                let mut clients =
+                    plant::clients(protection, control, field, plant_rods, &mut extra);
                 driver
                     .run_observed(ida, t, *b, y, yp, &mut clients, &setup, Some(&mut observer))
                     .map(|_| ())
@@ -2281,9 +2216,6 @@ fn drive(
                             let mut extra: Vec<&mut dyn Client<CaseUnit>> = vec![&mut recorder];
                             if let Some(f) = feed.as_mut() {
                                 extra.push(f);
-                            }
-                            if let Some(r) = rods.as_mut() {
-                                extra.push(r);
                             }
                             let mut clients =
                                 plant::clients(protection, control, field, plant_rods, &mut extra);
@@ -2857,7 +2789,7 @@ fn drive(
         "configuration": {"span_after_zero_s": span, "zero_after_start_s": zero_after,
             "case_configuration": ask.config.json(),
             "rod_control": rod_receipt.clone(),
-            "rod_schedule": rods.as_ref().map(|r| r.schedule.clone()),
+            "rod_schedule": plant_rods.as_ref().map(|r| r.schedule.clone()),
             "weights": ida.weight_rule_kind(),
             "command": command.map(|c| format!("{c:?}")), "frame_s": frame.period_s(),
             "max_order": profile::MAX_ORDER, "max_step_s": max_step,
@@ -3445,7 +3377,7 @@ fn rule_i_is_judged_at_every_accepted_step() {
     let state: Value =
         serde_json::from_slice(&std::fs::read(&state_path).expect("state")).expect("state json");
     let inputs = common::inputs();
-    let config = CaseConfig::from_env().unwrap_or_else(|e| panic!("{e}"));
+    let config = CaseConfig::from_env(&inputs.ic).unwrap_or_else(|e| panic!("{e}"));
     let run = drive(
         Case::C1,
         &d,
@@ -3481,7 +3413,8 @@ fn rule_i_is_judged_at_every_accepted_step() {
 #[allow(clippy::too_many_lines)] // One case: refusals, runs, families, receipt.
 fn s3_case_run() {
     let case = Case::parse(&std::env::var("LD01_S3_CASE").expect("LD01_S3_CASE")).unwrap();
-    let config = CaseConfig::from_env().unwrap_or_else(|e| panic!("{e}"));
+    let inputs = common::inputs();
+    let config = CaseConfig::from_env(&inputs.ic).unwrap_or_else(|e| panic!("{e}"));
     let preview = std::env::var("LD01_S3_PREVIEW").as_deref() == Ok("1");
     let gates_on = std::env::var("LD01_S3_GATES").as_deref() == Ok("1");
     // N4′: C3's chattering rule is the pinned C4 block's; a rule in
@@ -3518,7 +3451,7 @@ fn s3_case_run() {
     // so C4's `ends` do not apply, and a named end fails C4I.N2.
     let c4i = config.c4i_close_s.map(|close| {
         assert_eq!(case, Case::C4, "C4-I is C4's drive");
-        assert!(config.dc, "C4-I needs the declared DC section: LD01_DC=on");
+        assert!(config.dc, "C4-I needs an IC section declaring the DC groups");
         let page = std::env::var("LD01_S3_DECLARATION")
             .unwrap_or_else(|_| format!("{}/build-readiness.md", gates::wiki_model()));
         let block = Block::from_page(&page, s3_harness::c4i::FENCE)
@@ -3558,7 +3491,6 @@ fn s3_case_run() {
     let state_path = std::env::var("LD01_S3_STATE").expect("LD01_S3_STATE");
     let state: Value =
         serde_json::from_slice(&std::fs::read(&state_path).expect("state")).expect("state json");
-    let inputs = common::inputs();
     // The gate observation's declared settings: S2's blocks on the same page
     // (identity and ledger bounds, the observation and output grids, the
     // accuracy contract), read only for a gate run.

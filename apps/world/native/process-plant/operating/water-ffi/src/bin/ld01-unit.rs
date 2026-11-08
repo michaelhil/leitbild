@@ -78,7 +78,7 @@
 use leitbild_operating_plant::joined::domain_end::DomainEnd;
 use leitbild_operating_plant::{
     digest::sha256,
-    electrical::{breaker::Contact, bus, dc_supply, field, slice},
+    electrical::{breaker::Contact, bus, dc_supply, slice},
     ic::{
         acquisition::Quality,
         packet::{Quantity, SgFlow},
@@ -99,10 +99,10 @@ use leitbild_operating_water::{
         clock,
         dc::{self, Dc},
         inputs::{Inputs, MODEL, Spine},
-        plant::{self, Boundary, Plant},
+        live,
+        plant::{Boundary, Plant},
         profile::{Solver, Weights, parse_first_step, parse_stepping},
-        rod_control, s3, timeline,
-        turbine::{self, Turbine},
+        rod_control, s3, timeline, turbine,
     },
 };
 use serde_json::{Map, Value, json};
@@ -1113,40 +1113,13 @@ impl Unit {
         let files = file_identity(load, &inputs, &state_path, solver)?;
         let state = read_json(&state_path)?;
         let elec = read_json(&inputs.elec_path)?;
-        let field_parameters: field::Parameters =
-            serde_json::from_value(elec["fieldProtection"].clone()).map_err(|e| {
-                format!(
-                    "the electrical packet's fieldProtection (ld01-generator-field-protection): {e}"
-                )
-            })?;
         let v_nominal = elec["boundary"]["lineVoltage_V"]
             .as_f64()
             .ok_or("the electrical packet's boundary.lineVoltage_V")?;
         // The section's declarations choose the composition; the protection
-        // client refuses a mismatch either way.
-        let wiki = &inputs.spine.wiki_root;
-        let governor = inputs
-            .ic
-            .governor
-            .declared
-            .then(|| Turbine::from_wiki(wiki))
-            .transpose()?;
-        let dc = inputs
-            .ic
-            .dc
-            .declared
-            .then(|| Dc::from_wiki(wiki))
-            .transpose()?;
-        let mut u = s3::compose_dc_with(
-            &inputs,
-            &state,
-            s3::Scaling::NONE,
-            solver,
-            governor.as_ref(),
-            &[],
-            dc.as_ref(),
-            Ok,
-        )?;
+        // client refuses a governor or DC mismatch either way.
+        let live::Composed { unit: u, dc } =
+            live::compose(&inputs, &state, s3::Scaling::NONE, solver, &[], Ok)?;
         if u.receipt["from_saved_s3_state"] != json!(true) || u.receipt["spray_path"] != json!(true)
         {
             return Err(format!(
@@ -1154,24 +1127,18 @@ impl Unit {
                 u.receipt
             ));
         }
-        // The section's declaration chooses AUTO; a host keeps no per-frame
-        // record of it.
-        let rods = rod_control::of_section(&inputs, &mut u)?.map(|(mut client, _)| {
-            client.recording = false;
-            client
-        });
-        let mut plant = Plant::new(
+        // The r4 baseline: stock matrix management (MR-1 off). A host keeps
+        // no per-frame record of the rods.
+        let (plant, _) = live::plant(
             u,
-            &inputs.ic,
-            plant::Config {
-                field: Some(&field_parameters),
+            &inputs,
+            live::Options {
                 diagnostic: Diagnostic::None,
-                // The r4 baseline: stock matrix management (MR-1 off).
                 matrix_rebuild: MatrixRebuild::Stock,
                 clock: clock::thread_cpu_s,
+                rod_records: false,
             },
         )?;
-        plant.rods = rods;
         // R4-FREE-STEPS: the LOAD request's stepping (its solver, part of the
         // identity a restore checks); the plant's driver took it.
         let stepping = solver.stepping;
