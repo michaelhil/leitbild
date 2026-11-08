@@ -51,8 +51,12 @@ for (const caseId of ['baseline', 'variant'] as const) {
     scenarioAuthoringCatalog: scenarioAuthoringCatalogFor(packs), compileScenarioDefinition: source => compileScenarioDefinition(source, packs, { routing: createDirectRoutingAdapter() }),
     runtimeAdapters: [createLocalProcessPlantPackRuntimeAdapter(), createLocalElectricGridPackRuntimeAdapter(), createLocalWeatherPackRuntimeAdapter()],
   })
+  let releaseCase: (() => void) | undefined
   try {
     const runtime = await registry.restoreContinuation(structuredClone(input.seed))
+    // A case has no browser/API lease. Its supervising job owns this runtime
+    // until teardown, including long advances between observed boundaries.
+    releaseCase = registry.acquireLease(runtime.id, 'background')
     const model = async () => engineeringOwnerBasisSchema.parse(await runtime.readAtBoundary({ capabilityId: 'world.process-plant.engineering-basis', input: { subjectId: request.subjectId, purpose: 'capture' }, readPolicy: unrestrictedQueryReadPolicy }))
     const initial = await model()
     const sample = async (seconds: number) => {
@@ -104,7 +108,7 @@ for (const caseId of ['baseline', 'variant'] as const) {
     result.status = result.samples.length ? 'partial' : 'failed'
     result.reason = (error instanceof Error ? error.message : String(error)).slice(0, 2000)
   } finally {
-    await registry.shutdown()
+    try { await registry.shutdown() } finally { releaseCase?.() }
     await save()
   }
 }
