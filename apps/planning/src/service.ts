@@ -7,9 +7,9 @@ import { checkPlanningProblem, planningProblemSchema, type PlanningProblem } fro
 import { scheduleProblem } from './scheduler.ts'
 import { checkCandidate } from './checker.ts'
 import { compareMetrics, dominatesMetrics } from './metrics.ts'
-import { planningError } from './errors.ts'
+import { isPlanningError, planningError } from './errors.ts'
 import { currentProblemRevision, planningAssumptionSchema, sourceBindingSchema, studySchema, type Candidate, type PlanningAssumption, type ProblemRevision, type SourceBinding, type Study } from './study-model.ts'
-import type { PlanningSourcePort } from './source-port.ts'
+import type { PlanningSourceActivation, PlanningSourcePort } from './source-port.ts'
 import type { StudyStore } from './study-store.ts'
 
 export type { PlanningSourcePort, PlanningSources } from './source-port.ts'
@@ -43,8 +43,33 @@ const assertSource = (workspaceId: WorkspaceId, problem: PlanningProblem, reques
   if (request.source.workspaceId !== workspaceId || !sameSource(request.source, basis.source) || !sameSource(problem.axis.run, basis.source) || request.profile !== basis.profile) throw planningError(400, 'source_scope_mismatch', 'Problem, capture request and retained evidence must identify the same Run and profile')
 }
 
-const assertBindings = (problem: PlanningProblem, bindings: ReadonlyArray<SourceBinding>): void => {
+const sourceFacts = (basis: PlanningSourceBasis) => {
+  const facts = new Map<string, PlanningSourceBasis['subjects'][number]['facts'][number]>()
+  for (const subject of basis.subjects) for (const fact of subject.facts) {
+    if (facts.has(fact.id)) throw planningError(400, 'ambiguous_source_fact', `Owner returned duplicate fact identity: ${fact.id}`)
+    facts.set(fact.id, fact)
+  }
+  return facts
+}
+
+const boundValue = (problem: PlanningProblem, binding: SourceBinding, facts: ReturnType<typeof sourceFacts>): number => {
+  const fact = facts.get(binding.factId), target = binding.target
+  if (!fact || typeof fact.value !== 'number' || !Number.isSafeInteger(fact.value) || fact.value < 0) throw planningError(400, 'source_binding_unavailable', `Bound source fact must be a nonnegative integer: ${binding.factId}`)
+  if (target.kind === 'remaining') throw planningError(400, 'remaining_binding_unsupported', 'The current owner projections do not declare remaining-duration scope; author a remaining estimate explicitly instead')
+  if (target.kind === 'duration') {
+    if (!['duration', 'quantity'].includes(fact.semantic) || fact.unit !== 's') throw planningError(400, 'source_binding_unit_mismatch', `Duration binding requires an explicitly selected owner numeric quantity in seconds: ${binding.factId}`)
+  } else {
+    if (fact.semantic !== 'capacity') throw planningError(400, 'source_binding_semantic_mismatch', `Capacity binding requires an owner capacity: ${binding.factId}`)
+    const supply = problem.supplies.find(supply => supply.id === target.supplyId)
+    if (!supply) throw planningError(400, 'source_binding_target_missing', `Bound supply is absent: ${target.supplyId}`)
+    if (!fact.unit || !supply.unit || fact.unit !== supply.unit) throw planningError(400, 'source_binding_unit_mismatch', `Capacity binding requires identical explicit owner and supply units (use '1' for counts): ${binding.factId}`)
+  }
+  return fact.value
+}
+
+const assertBindings = (problem: PlanningProblem, bindings: ReadonlyArray<SourceBinding>, basis?: PlanningSourceBasis): void => {
   const targets = new Set<string>()
+  const facts = basis === undefined ? undefined : sourceFacts(basis)
   for (const binding of bindings) {
     const target = binding.target
     if (target.kind === 'remaining') throw planningError(400, 'remaining_binding_unsupported', 'The current owner projections do not declare remaining-duration scope; author a remaining estimate explicitly instead')
@@ -53,23 +78,30 @@ const assertBindings = (problem: PlanningProblem, bindings: ReadonlyArray<Source
     targets.add(key)
     if (target.kind === 'duration' && !problem.activities.some(activity => activity.id === target.activityId)) throw planningError(400, 'source_binding_target_missing', 'A duration binding must name an activity in the problem')
     if (target.kind === 'capacity' && !problem.supplies.some(supply => supply.id === target.supplyId)) throw planningError(400, 'source_binding_target_missing', 'A capacity binding must name a supply in the problem')
+    if (facts === undefined) continue
+    const value = boundValue(problem, binding, facts)
+    if (target.kind === 'duration') {
+      const activity = problem.activities.find(activity => activity.id === target.activityId)!
+      // Duration bindings govern planned work, never recorded total/remaining work.
+      if (activity.progress.kind === 'planned' && activity.durationSeconds !== value) throw planningError(400, 'source_binding_value_mismatch', 'A planned duration must equal its retained bound fact; remove the binding to author an override')
+    } else if (problem.supplies.find(supply => supply.id === target.supplyId)!.segments.some(segment => segment.capacity !== value)) {
+      throw planningError(400, 'source_binding_value_mismatch', 'Every bound capacity window must equal its retained scalar fact; represent unavailable windows as gaps or remove the binding to author capacities')
+    }
   }
 }
 
 const applySource = (revision: ProblemRevision, request: PlanningSourceRequest, basis: PlanningSourceBasis): PlanningProblem => {
   assertSource(basis.source.workspaceId, revision.problem, request, basis)
   if (revision.basis !== undefined && !sameSource(revision.basis.source, basis.source)) throw planningError(409, 'source_rebind_unsupported', 'Create a new Study to bind a different Simulation Run')
+  if (revision.basis !== undefined && revision.basis.qualification.epoch !== basis.qualification.epoch) throw planningError(409, 'source_epoch_changed', 'The source Run was reset or replaced during capture; create a new Study for the new epoch')
   const epoch = revision.sourceEpochAt ?? basis.simulationAt
   const elapsedMs = Date.parse(basis.simulationAt) - Date.parse(epoch)
   if (elapsedMs < 0) throw planningError(409, 'source_time_reversed', 'Source time precedes the retained Study epoch; copy or reset requires a new Study')
   // The first model uses whole elapsed seconds. Preserve the original ISO stamp as evidence.
   const asOf = Math.floor(elapsedMs / 1000)
+  if (asOf < revision.problem.asOf) throw planningError(409, 'source_frame_behind_progress', 'The source frame precedes retained Study progress; advance the source before refreshing')
   if (asOf > revision.problem.horizon.end) throw planningError(409, 'planning_horizon_elapsed', 'The source advanced beyond this Study horizon; extend the authored horizon before refreshing')
-  const facts = new Map<string, PlanningSourceBasis['subjects'][number]['facts'][number]>()
-  for (const subject of basis.subjects) for (const fact of subject.facts) {
-    if (facts.has(fact.id)) throw planningError(400, 'ambiguous_source_fact', `Owner returned duplicate fact identity: ${fact.id}`)
-    facts.set(fact.id, fact)
-  }
+  const facts = sourceFacts(basis)
   const problem = structuredClone(revision.problem)
   problem.asOf = asOf
   for (const activity of problem.activities) if (activity.progress.kind === 'started') activity.progress = {
@@ -77,21 +109,18 @@ const applySource = (revision: ProblemRevision, request: PlanningSourceRequest, 
   }
   for (const binding of revision.sourceBindings) {
     const target = binding.target
-    const fact = facts.get(binding.factId)
-    if (!fact || typeof fact.value !== 'number' || !Number.isSafeInteger(fact.value) || fact.value < 0) throw planningError(400, 'source_binding_unavailable', `Bound source fact must be a nonnegative integer: ${binding.factId}`)
+    const value = boundValue(problem, binding, facts)
     if (target.kind === 'duration' || target.kind === 'remaining') {
-      if (!['duration', 'quantity'].includes(fact.semantic) || fact.unit !== 's') throw planningError(400, 'source_binding_unit_mismatch', `Duration binding requires an explicitly selected owner numeric quantity in seconds: ${binding.factId}`)
       const activity = problem.activities.find(activity => activity.id === target.activityId)
       if (!activity) throw planningError(400, 'source_binding_target_missing', `Bound activity is absent: ${target.activityId}`)
       if (activity.progress.kind === 'completed') continue
       if (target.kind === 'remaining') {
         throw planningError(400, 'remaining_binding_unsupported', 'Owner projections do not yet declare remaining-duration scope')
-      } else if (activity.progress.kind === 'planned') activity.durationSeconds = fact.value
+      } else if (activity.progress.kind === 'planned') activity.durationSeconds = value
     } else {
-      if (fact.semantic !== 'capacity') throw planningError(400, 'source_binding_semantic_mismatch', `Capacity binding requires an owner capacity: ${binding.factId}`)
       const supply = problem.supplies.find(supply => supply.id === target.supplyId)
       if (!supply) throw planningError(400, 'source_binding_target_missing', `Bound supply is absent: ${target.supplyId}`)
-      supply.segments = supply.segments.map(segment => ({ ...segment, capacity: fact.value as number }))
+      supply.segments = supply.segments.map(segment => ({ ...segment, capacity: value }))
     }
   }
   return assertProblem(problem, basis.source.workspaceId)
@@ -102,14 +131,27 @@ const assertCommittedHistory = (previous: PlanningProblem, next: PlanningProblem
   for (const activity of previous.activities) {
     if (activity.progress.kind === 'planned') continue
     const after = next.activities.find(item => item.id === activity.id)
-    if (!after || after.progress.kind === 'planned' || after.progress.actualStart !== activity.progress.actualStart || after.modeId !== activity.modeId || !same(after.demands, activity.demands)) throw planningError(409, 'committed_history_changed', 'Actual starts and committed assignments cannot be rewritten by revision')
+    if (!after || after.progress.kind === 'planned' || after.progress.actualStart !== activity.progress.actualStart || after.modeId !== activity.modeId || !same(after.demands, activity.demands) || !same(after.subject, activity.subject)) throw planningError(409, 'committed_history_changed', 'Actual starts, subjects and committed assignments cannot be rewritten by revision')
     if (activity.progress.kind === 'completed' && !same(after.progress, activity.progress)) throw planningError(409, 'completed_history_changed', 'Completed actual history cannot be rewritten by revision')
   }
 }
 
 export const createPlanningService = (config: { readonly store: StudyStore; readonly sources: PlanningSourcePort; readonly now?: () => Date }) => {
   const now = () => (config.now?.() ?? new Date()).toISOString()
-  const qualify = async (study: Study, access: AccessContext): Promise<void> => {
+  const qualifyBasis = async (basis: PlanningSourceBasis, access: AccessContext, activation: PlanningSourceActivation): Promise<void> => {
+    let answer: unknown
+    try { answer = await config.sources.qualify(basis, access, activation) }
+    catch (error) {
+      // Expected owner/Host availability failures hide retained evidence. Contract
+      // parsing and unexpected programming defects remain observable to operators.
+      const unavailableCodes = ['source_transport_unavailable', 'module_unavailable', 'module_not_ready', 'workspace_closing', 'workspace_not_found', 'simulation_run_not_found', 'simulation_run_not_loaded', 'query_read_scope_unavailable', 'query_policy_superseded']
+      if (!isPlanningError(error) || !unavailableCodes.includes(error.code)) throw error
+      throw planningError(403, 'planning_source_unavailable', 'The retained Study source is unavailable or no longer qualified for this shared audience', { sourceCode: error.code })
+    }
+    const result = planningSourceQualificationResultSchema.parse(answer)
+    if (!result.allowed) throw planningError(403, 'planning_source_unavailable', 'The retained Study source is unavailable or no longer qualified for this shared audience', { sourceCode: result.code ?? 'source_not_qualified' })
+  }
+  const qualify = async (study: Study, access: AccessContext, activation: PlanningSourceActivation = 'load-if-needed'): Promise<void> => {
     if (access.workspaceId !== study.workspaceId) throw planningError(403, 'workspace_scope_mismatch', 'Access context belongs to another Workspace')
     const checked = new Set<string>()
     for (const revision of study.revisions) {
@@ -117,8 +159,7 @@ export const createPlanningService = (config: { readonly store: StudyStore; read
       const key = JSON.stringify({ source: revision.basis.source, profile: revision.basis.profile, qualification: revision.basis.qualification })
       if (checked.has(key)) continue
       checked.add(key)
-      const result = planningSourceQualificationResultSchema.parse(await config.sources.qualify(revision.basis, access))
-      if (!result.allowed) throw planningError(403, 'planning_source_unavailable', 'The retained Study source is unavailable or no longer qualified for this shared audience', { sourceCode: result.code ?? 'source_not_qualified' })
+      await qualifyBasis(revision.basis, access, activation)
     }
   }
   const read = async (workspaceId: WorkspaceId, studyId: string, access: AccessContext): Promise<Study> => {
@@ -132,7 +173,7 @@ export const createPlanningService = (config: { readonly store: StudyStore; read
     const assumptions = z.array(planningAssumptionSchema).parse(input.assumptions ?? [])
     if (sourced !== undefined) assertSource(workspaceId, problem, sourced.request, sourced.basis)
     else if (sourceBindings.length > 0) throw planningError(400, 'source_binding_without_basis', 'Capture an owner basis before declaring source bindings')
-    assertBindings(problem, sourceBindings)
+    assertBindings(problem, sourceBindings, sourced?.basis)
     const stamp = now()
     const revision = { id: 1, createdAt: stamp, problem, sourceBindings, assumptions, ...(sourced === undefined ? {} : { basis: sourced.basis, sourceRequest: { ...sourced.request, subjectIds: [...sourced.basis.qualification.subjectIds] }, sourceEpochAt: sourced.basis.simulationAt }) }
     return await config.store.create(workspaceId, studySchema.parse({ id: crypto.randomUUID(), workspaceId, title: input.title, revision: 1, currentProblemRevisionId: 1, revisions: [revision], candidates: [], createdAt: stamp, updatedAt: stamp }))
@@ -164,15 +205,14 @@ export const createPlanningService = (config: { readonly store: StudyStore; read
     createFromBasis: async (workspaceId: WorkspaceId, input: CreateSourcedStudyInput, access: AccessContext): Promise<Study> => {
       const basis = planningSourceBasisSchema.parse(input.basis)
       const request = planningSourceRequestSchema.parse(input.request)
-      const qualification = planningSourceQualificationResultSchema.parse(await config.sources.qualify(basis, access))
-      if (!qualification.allowed) throw planningError(403, 'planning_source_unavailable', 'Source is not qualified for a shared research Study')
+      await qualifyBasis(basis, access, 'load-if-needed')
       return await create(workspaceId, input, { basis, request })
     },
     list: async (workspaceId: WorkspaceId, access: AccessContext) => {
       const studies = await config.store.list(workspaceId)
       const results: Array<{ study: Study; available: boolean }> = []
       for (const study of studies) {
-        try { await qualify(study, access); results.push({ study, available: true }) }
+        try { await qualify(study, access, 'loaded-only'); results.push({ study, available: true }) }
         catch (error) {
           if (!(error instanceof Error && 'code' in error && error.code === 'planning_source_unavailable')) throw error
           results.push({ study, available: false })
@@ -189,7 +229,7 @@ export const createPlanningService = (config: { readonly store: StudyStore; read
       const sourceBindings = z.array(sourceBindingSchema).parse(input.sourceBindings ?? previous.sourceBindings)
       const assumptions = z.array(planningAssumptionSchema).parse(input.assumptions ?? previous.assumptions)
       if (!previous.basis && sourceBindings.length > 0) throw planningError(400, 'source_binding_without_basis', 'Capture an owner basis before declaring source bindings')
-      assertBindings(problem, sourceBindings)
+      assertBindings(problem, sourceBindings, previous.basis)
       const stamp = now()
       return await config.store.update(workspaceId, studyId, input.expectedRevision, current => {
         const id = current.currentProblemRevisionId + 1

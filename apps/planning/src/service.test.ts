@@ -2,12 +2,14 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { accessContextSchema, planningSourceBasisSchema, planningSourceRequestSchema, workspaceIdSchema, type PlanningSourceBasis } from '@leitbild/contracts'
+import { accessContextSchema, planningSourceBasisSchema, planningSourceRequestSchema, workspaceIdSchema, type AccessContext, type PlanningSourceBasis } from '@leitbild/contracts'
 import { planningProblemSchema, type PlanningProblem } from './model.ts'
 import { createStudyStore } from './study-store.ts'
 import { createPlanningService } from './service.ts'
 import { createPlanningModuleApi } from './module-api.ts'
 import { currentProblemRevision } from './study-model.ts'
+import { planningError } from './errors.ts'
+import type { PlanningSourceActivation } from './source-port.ts'
 
 const workspaceId = workspaceIdSchema.parse('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee')
 const source = { workspaceId, moduleId: 'world', type: 'world.simulation-run', id: 'research-run' }
@@ -36,7 +38,7 @@ const setup = async () => {
   let currentBasis = basis(), allowed = true
   const sources = {
     capture: async () => currentBasis,
-    qualify: async () => ({ allowed, ...(allowed ? {} : { code: 'source_deleted', reason: 'Owner unavailable' }) }),
+    qualify: async (_basis: PlanningSourceBasis, _access: AccessContext, _activation: PlanningSourceActivation) => ({ allowed, ...(allowed ? {} : { code: 'source_deleted', reason: 'Owner unavailable' }) }),
   }
   const service = createPlanningService({ store, sources })
   return { folder, store, service, sources, setBasis: (value: PlanningSourceBasis) => { currentBasis = value }, deny: () => { allowed = false } }
@@ -102,6 +104,97 @@ describe('Study persistence and revision semantics', () => {
     expect(result.candidate.result.status).toBe('unknown')
   })
 
+  test('declared duration bindings reject contradictory creation and revision; an explicit unbind permits an override', async () => {
+    const { service, store } = await setup()
+    const sourceBindings = [{ factId: 'unit:a/preparation', target: { kind: 'duration' as const, activityId: 'a' } }]
+    await expect(service.createFromBasis(workspaceId, { title: 'Contradiction', problem: problem(), basis: basis(30), request: sourceRequest, sourceBindings }, access)).rejects.toMatchObject({ code: 'source_binding_value_mismatch' })
+    expect(await store.list(workspaceId)).toEqual([])
+    const study = await service.createFromBasis(workspaceId, { title: 'Bound estimate', problem: problem(), basis: basis(), request: sourceRequest, sourceBindings }, access)
+    const revised = problem(); revised.activities[0]!.durationSeconds = 19
+    await expect(service.revise(workspaceId, study.id, { expectedRevision: 1, problem: revised }, access)).rejects.toMatchObject({ code: 'source_binding_value_mismatch' })
+    expect((await store.read(workspaceId, study.id)).revision).toBe(1)
+    const override = await service.revise(workspaceId, study.id, { expectedRevision: 1, problem: revised, sourceBindings: [], assumptions: [{ id: 'override', label: 'Authored preparation estimate', value: 19, unit: 's' }] }, access)
+    expect(currentProblemRevision(override).sourceBindings).toEqual([])
+    expect(currentProblemRevision(override).problem.activities[0]?.durationSeconds).toBe(19)
+  })
+
+  test('capacity binding requires identical explicit units at creation, revision and refresh', async () => {
+    const fixture = await setup()
+    const makeBasis = (value: number, unit?: string) => {
+      const valueBasis = basis(value)
+      valueBasis.subjects[0]!.facts = [{ id: 'unit:a/capacity', label: 'Capacity', semantic: 'capacity', value, basis: 'observation', ...(unit === undefined ? {} : { unit }) }]
+      return valueBasis
+    }
+    const capacityProblem = problem(); capacityProblem.supplies[0]!.unit = '1'; capacityProblem.supplies[0]!.segments[0]!.capacity = 2
+    const sourceBindings = [{ factId: 'unit:a/capacity', target: { kind: 'capacity' as const, supplyId: 'slot' } }]
+    for (const ownerBasis of [makeBasis(2, 'kg/s'), makeBasis(2)]) {
+      await expect(fixture.service.createFromBasis(workspaceId, { title: 'Invalid units', problem: capacityProblem, basis: ownerBasis, request: sourceRequest, sourceBindings }, access)).rejects.toMatchObject({ code: 'source_binding_unit_mismatch' })
+    }
+    const noSupplyUnit = structuredClone(capacityProblem); delete noSupplyUnit.supplies[0]!.unit
+    await expect(fixture.service.createFromBasis(workspaceId, { title: 'Missing supply unit', problem: noSupplyUnit, basis: makeBasis(2, '1'), request: sourceRequest, sourceBindings }, access)).rejects.toMatchObject({ code: 'source_binding_unit_mismatch' })
+    const study = await fixture.service.createFromBasis(workspaceId, { title: 'Crew count', problem: capacityProblem, basis: makeBasis(2, '1'), request: sourceRequest, sourceBindings }, access)
+    const incompatible = structuredClone(capacityProblem); incompatible.supplies[0]!.unit = 'kg/s'
+    await expect(fixture.service.revise(workspaceId, study.id, { expectedRevision: 1, problem: incompatible }, access)).rejects.toMatchObject({ code: 'source_binding_unit_mismatch' })
+    fixture.setBasis(makeBasis(3, 'kg/s'))
+    await expect(fixture.service.refresh(workspaceId, { studyId: study.id, expectedRevision: 1 }, access)).rejects.toMatchObject({ code: 'source_binding_unit_mismatch' })
+    expect((await fixture.store.read(workspaceId, study.id)).revision).toBe(1)
+  })
+
+  test('a scalar capacity binding cannot erase authored unavailable windows; gaps survive refresh', async () => {
+    const fixture = await setup()
+    const makeBasis = (value: number) => {
+      const valueBasis = basis(value)
+      valueBasis.subjects[0]!.facts = [{ id: 'unit:a/capacity', label: 'Capacity', semantic: 'capacity', value, unit: '1', basis: 'observation' }]
+      return valueBasis
+    }
+    const capacityProblem = problem(); capacityProblem.supplies[0]!.unit = '1'
+    capacityProblem.supplies[0]!.segments = [{ start: 0, end: 100, capacity: 2 }, { start: 100, end: 200, capacity: 0 }, { start: 200, end: 7200, capacity: 2 }]
+    const sourceBindings = [{ factId: 'unit:a/capacity', target: { kind: 'capacity' as const, supplyId: 'slot' } }]
+    await expect(fixture.service.createFromBasis(workspaceId, { title: 'Ambiguous blackout', problem: capacityProblem, basis: makeBasis(2), request: sourceRequest, sourceBindings }, access)).rejects.toMatchObject({ code: 'source_binding_value_mismatch' })
+    capacityProblem.supplies[0]!.segments.splice(1, 1)
+    const study = await fixture.service.createFromBasis(workspaceId, { title: 'Explicit windows', problem: capacityProblem, basis: makeBasis(2), request: sourceRequest, sourceBindings }, access)
+    const changedCapacity = structuredClone(capacityProblem); changedCapacity.supplies[0]!.segments[0]!.capacity = 5
+    await expect(fixture.service.revise(workspaceId, study.id, { expectedRevision: 1, problem: changedCapacity }, access)).rejects.toMatchObject({ code: 'source_binding_value_mismatch' })
+    fixture.setBasis(makeBasis(3))
+    const refreshed = await fixture.service.refresh(workspaceId, { studyId: study.id, expectedRevision: 1 }, access)
+    expect(currentProblemRevision(refreshed.study).problem.supplies[0]?.segments).toEqual([{ start: 0, end: 100, capacity: 3 }, { start: 200, end: 7200, capacity: 3 }])
+  })
+
+  test.each(['started', 'completed'] as const)('a revision preserves the exact subject of %s work', async kind => {
+    const { service, store } = await setup()
+    const committed = problem(); committed.asOf = 10
+    const activity = committed.activities[0]!
+    activity.release = 0; activity.subject = { resource: committed.axis.run, locator: 'unit:a' }
+    activity.progress = kind === 'started' ? { kind, actualStart: 0, asOf: 10, remainingSeconds: 20 } : { kind, actualStart: 0, actualFinish: 10 }
+    const study = await service.create(workspaceId, { title: 'Committed identity', problem: committed })
+    for (const locator of ['unit:b', undefined]) {
+      const changed = structuredClone(committed)
+      if (locator === undefined) delete changed.activities[0]!.subject
+      else changed.activities[0]!.subject = { resource: changed.axis.run, locator }
+      await expect(service.revise(workspaceId, study.id, { expectedRevision: 1, problem: changed }, access)).rejects.toMatchObject({ code: 'committed_history_changed' })
+    }
+    expect((await store.read(workspaceId, study.id)).revision).toBe(1)
+    const correction = structuredClone(committed); correction.activities[0]!.title = 'Corrected description'
+    expect((await service.revise(workspaceId, study.id, { expectedRevision: 1, problem: correction }, access)).revision).toBe(2)
+    const absentSubject = structuredClone(committed); delete absentSubject.activities[0]!.subject
+    const anonymous = await service.create(workspaceId, { title: 'No committed subject', problem: absentSubject })
+    await expect(service.revise(workspaceId, anonymous.id, { expectedRevision: 1, problem: committed }, access)).rejects.toMatchObject({ code: 'committed_history_changed' })
+  })
+
+  test('a source refresh cannot rewind manually authored progress or accept a new Run epoch', async () => {
+    const fixture = await setup()
+    let study = await fixture.service.createFromBasis(workspaceId, { title: 'Clock conflict', problem: problem(), basis: basis(), request: sourceRequest }, access)
+    const started = problem(); started.asOf = 10; started.activities[0]!.release = 0
+    started.activities[0]!.progress = { kind: 'started', actualStart: 0, asOf: 10, remainingSeconds: 20 }
+    study = await fixture.service.revise(workspaceId, study.id, { expectedRevision: 1, problem: started }, access)
+    await expect(fixture.service.refresh(workspaceId, { studyId: study.id, expectedRevision: study.revision }, access)).rejects.toMatchObject({ code: 'source_frame_behind_progress' })
+    expect(currentProblemRevision(await fixture.store.read(workspaceId, study.id)).problem).toEqual(started)
+    const replaced = basis(30, '2026-11-08T08:00:20.000Z'); replaced.qualification.epoch = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+    fixture.setBasis(replaced)
+    await expect(fixture.service.refresh(workspaceId, { studyId: study.id, expectedRevision: study.revision }, access)).rejects.toMatchObject({ code: 'source_epoch_changed' })
+    expect((await fixture.store.read(workspaceId, study.id)).revision).toBe(study.revision)
+  })
+
   test('source denial hides derived content and metadata but retains archive bytes', async () => {
     const fixture = await setup()
     const study = await fixture.service.createFromBasis(workspaceId, { title: 'Source sensitive label', problem: problem(), basis: basis(), request: sourceRequest }, access)
@@ -114,6 +207,49 @@ describe('Study persistence and revision semantics', () => {
     expect(text).not.toContain('Source sensitive label'); expect(text).not.toContain('research-run')
     expect(text).toContain('Unavailable planning Study')
     expect((await fixture.store.read(workspaceId, study.id)).title).toBe('Source sensitive label')
+  })
+
+  test.each([
+    { status: 404, code: 'simulation_run_not_found' },
+    { status: 409, code: 'simulation_run_not_loaded' },
+    { status: 503, code: 'source_transport_unavailable' },
+  ])('a thrown $code qualification leaves a healthy catalogue and no retained evidence disclosure', async ({ status, code }) => {
+    const fixture = await setup()
+    const unavailable = await fixture.service.createFromBasis(workspaceId, { title: 'Sensitive source title', problem: problem(), basis: basis(), request: sourceRequest }, access)
+    const healthy = await fixture.service.create(workspaceId, { title: 'Healthy standalone Study', problem: problem() })
+    fixture.sources.qualify = async () => { throw planningError(status, code, 'Private owner diagnostics and research-run') }
+    await expect(fixture.service.read(workspaceId, unavailable.id, access)).rejects.toMatchObject({ code: 'planning_source_unavailable', message: 'The retained Study source is unavailable or no longer qualified for this shared audience' })
+    expect((await fixture.service.list(workspaceId, access)).map(item => ({ id: item.study.id, available: item.available }))).toContainEqual({ id: healthy.id, available: true })
+    const api = createPlanningModuleApi({ service: fixture.service })
+    const url = new URL(`http://planning/internal/workspaces/${workspaceId}/resources`)
+    const response = await api(new Request(url), url)
+    expect(response?.status).toBe(200)
+    const body = await response?.text()
+    expect(body).toContain('Healthy standalone Study'); expect(body).toContain('Unavailable planning Study')
+    expect(body).not.toContain('Sensitive source title'); expect(body).not.toContain('research-run'); expect(body).not.toContain('Private owner diagnostics')
+  })
+
+  test('malformed qualification contracts and unexpected defects remain visible', async () => {
+    const fixture = await setup()
+    await fixture.service.createFromBasis(workspaceId, { title: 'Contract check', problem: problem(), basis: basis(), request: sourceRequest }, access)
+    fixture.sources.qualify = async () => ({ allowed: 'yes' } as never)
+    await expect(fixture.service.list(workspaceId, access)).rejects.toMatchObject({ name: 'ZodError' })
+    fixture.sources.qualify = async () => { throw planningError(502, 'invalid_host_response', 'Malformed Host JSON') }
+    await expect(fixture.service.list(workspaceId, access)).rejects.toMatchObject({ code: 'invalid_host_response' })
+    fixture.sources.qualify = async () => { throw new Error('Unexpected internal defect') }
+    await expect(fixture.service.list(workspaceId, access)).rejects.toThrow('Unexpected internal defect')
+  })
+
+  test('catalogue qualification stays loaded-only while an explicit Study open may load its retained source', async () => {
+    const fixture = await setup()
+    const activations: PlanningSourceActivation[] = []
+    fixture.sources.qualify = async (_basis, _access, activation) => { activations.push(activation); return { allowed: true } }
+    const study = await fixture.service.createFromBasis(workspaceId, { title: 'Open archived evidence', problem: problem(), basis: basis(), request: sourceRequest }, access)
+    expect(activations.splice(0)).toEqual(['load-if-needed'])
+    await fixture.service.list(workspaceId, access)
+    expect(activations.splice(0)).toEqual(['loaded-only'])
+    await fixture.service.read(workspaceId, study.id, access)
+    expect(activations).toEqual(['load-if-needed'])
   })
 
   test('a capture completing after deletion cannot resurrect its Study or Workspace', async () => {
