@@ -205,6 +205,7 @@ test('a band, an any line and two pairs test one branch; each row keeps its oper
 test('a fork carries no check and no inspection; its readings come back with no verdict', async () => {
   const view = await checks('fork', port({ SI: true }))
   expect(view.checks).toEqual([])
+  expect(view.indications!.some(row => 'status' in row)).toBe(false)
   expect(view.indications).toEqual([
     { tagId: 'SI', binding: 'resolved', label: 'SI', formatted: 'true', value: true, unit: 'boolean', quality: 'good', sampledAt: time },
     { tagId: 'PRESSURE', binding: 'resolved', label: 'PRESSURE', formatted: '14', value: 14, unit: 'MPa', quality: 'good', sampledAt: time },
@@ -212,7 +213,7 @@ test('a fork carries no check and no inspection; its readings come back with no 
   const step = stepOf('fork')
   expect(step.branches.map((_branch, index) => canInspectProcedureBranchCheck(step, index))).toEqual([false, false])
   const missing = await checks('fork', port({ SI: new Error('no reading') }))
-  expect(missing.indications![0]).toEqual({ tagId: 'SI', binding: 'resolved', unavailable: 'no reading' })
+  expect(missing.indications![0]).toEqual({ tagId: 'SI', binding: 'resolved', reason: 'no reading' })
   expect((await checks('judge', port())).indications!.map(row => row.tagId)).toEqual(['PRESSURE'])
 })
 

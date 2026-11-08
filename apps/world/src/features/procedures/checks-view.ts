@@ -5,7 +5,7 @@ import {
   isoTimestampSchema, procedureRunIdSchema, procedureRunScopeSchema, procedureSourceIdSchema, procedureStepIdSchema,
   type ProcedureDocument, type ProcedureRunState, type ProcedureStep, type SimulationRunEvent,
 } from '../../core/model/index.ts'
-import { procedureBranchAssessmentSchema } from '../../core/model/procedure-criteria.ts'
+import { procedureBranchAssessmentSchema, procedureCriterionReadingSchema } from '../../core/model/procedure-criteria.ts'
 import type { SimulationRunStateSnapshot } from '../../core/simulation-runs/state-store.ts'
 import { assessProcedureBranch, procedureCheckedTagIds, readProcedureBranchObservation } from './branch-assessment.ts'
 import { readProcedureTags, type ProcedureObservationPort, type ProcedureTagRead } from './pack-observations.ts'
@@ -29,17 +29,7 @@ export const procedureChecksViewSchema = procedureChecksReadInputSchema.extend({
     observation: z.object({ result: z.record(z.string(), z.unknown()) }).strict().optional(),
   })),
   /** On an ai-workable document, the readings of the step's left column as read now. They carry no verdict: forks and judgement lines show them with no colour. */
-  indications: z.array(z.object({
-    tagId: z.string(),
-    binding: z.enum(['resolved', 'resolved-with-warnings', 'missing', 'unchecked']),
-    label: z.string().optional(),
-    formatted: z.string().optional(),
-    value: z.union([z.number().finite(), z.boolean()]).optional(),
-    unit: z.string().optional(),
-    quality: z.string().optional(),
-    sampledAt: isoTimestampSchema.optional(),
-    unavailable: z.string().optional(),
-  }).strict()).optional(),
+  indications: z.array(procedureCriterionReadingSchema.omit({ status: true, source: true }).extend({ label: z.string().optional(), formatted: z.string().optional() })).optional(),
 }).strict()
 export type ProcedureChecksView = z.infer<typeof procedureChecksViewSchema>
 
@@ -48,7 +38,7 @@ const indication = ({ tagId, binding, value, unavailable }: ProcedureTagRead) =>
     ...(typeof value.value === 'boolean' || (typeof value.value === 'number' && Number.isFinite(value.value)) ? { value: value.value } : {}),
     ...(value.unit === undefined ? {} : { unit: value.unit }), ...(value.quality === undefined ? {} : { quality: value.quality }),
     ...(value.evidence === undefined ? {} : { sampledAt: value.evidence.sampledAt }) }),
-  ...(unavailable === undefined ? {} : { unavailable }),
+  ...(unavailable === undefined ? {} : { reason: unavailable }),
 })
 
 export const canInspectProcedureBranchCheck = (step: ProcedureStep, branchIndex: number): boolean => {
