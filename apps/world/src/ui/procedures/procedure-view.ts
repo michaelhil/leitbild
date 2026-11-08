@@ -205,7 +205,7 @@ export const procedureBlockLabel = (kind: ProcedureTextBlock['kind']): string =>
   because: 'Because', against: 'Against', text: '',
 })[kind]
 
-export const procedureObservationEvidence = (result: Record<string, unknown>): ReadonlyArray<{
+export const procedureObservationEvidence = (result: Record<string, unknown>, tags: ReadonlyArray<ProcedureTag> = []): ReadonlyArray<{
   readonly label: string; readonly value: string; readonly criterion: string; readonly status: string; readonly reason?: string
 }> => {
   const frame = Array.isArray(result.recordings) ? evidenceRecord(result.current) : result
@@ -231,7 +231,7 @@ export const procedureObservationEvidence = (result: Record<string, unknown>): R
     const variable = evidenceRecord(facts.variable)
     const comparison = evidenceRecord(item.comparison)
     return {
-      label: observationSignalLabel(signal, reference),
+      label: observationSignalLabel(signal, reference, tags),
       value: procedureReadingText(variable.value, typeof variable.unit === 'string' ? variable.unit : undefined),
       criterion: procedureRequirementText(comparison.operator, comparison.value, typeof comparison.unit === 'string' ? comparison.unit : undefined),
       status, ...reason,
@@ -239,7 +239,7 @@ export const procedureObservationEvidence = (result: Record<string, unknown>): R
   })
 }
 
-export const procedureSampledEvidence = (result: Record<string, unknown>): ReadonlyArray<{
+export const procedureSampledEvidence = (result: Record<string, unknown>, tags: ReadonlyArray<ProcedureTag> = []): ReadonlyArray<{
   readonly label: string; readonly value: string; readonly criterion: string; readonly status: string
   readonly span?: string; readonly window?: string; readonly reason?: string
 }> => {
@@ -251,7 +251,7 @@ export const procedureSampledEvidence = (result: Record<string, unknown>): Reado
     const recording = evidenceRecord(Number.isSafeInteger(item.recordingIndex) ? recordings[item.recordingIndex as number] : undefined)
     const signal = evidenceRecord(recording.signal)
     const reference = evidenceRecord(comparison.signal)
-    const label = observationSignalLabel(signal, reference)
+    const label = observationSignalLabel(signal, reference, tags)
     const statistic = comparison.statistic === 'change' ? 'change' : comparison.statistic === 'minimum' ? 'minimum' : 'maximum'
     const unit = typeof comparison.unit === 'string' ? comparison.unit : undefined
     const from = observationClock(evidenceRecord(recording.first).simulationTime)
@@ -276,7 +276,32 @@ const observationClock = (value: unknown): string | undefined =>
 const evidenceRecord = (value: unknown): Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {}
 
-const observationSignalLabel = (signal: Record<string, unknown>, reference: Record<string, unknown>): string => {
+const equipmentAcronyms = new Set(['ac', 'afw', 'ccw', 'dc', 'mfw', 'msiv', 'porv', 'pzr', 'rcp', 'rhr', 'rwst', 'sg', 'si', 'ups'])
+
+const equipmentWords = (id: string): string => {
+  const words = id.replace(/([a-z0-9])([A-Z])/g, '$1 $2').split(/[\s_-]+/).filter(Boolean)
+    .map(word => word.length === 1 || equipmentAcronyms.has(word.toLowerCase()) ? word.toUpperCase() : word.toLowerCase())
+  const text = words.join(' ')
+  return text.charAt(0).toUpperCase() + text.slice(1)
+}
+
+/**
+ * What a reading is called. A description one tag holds is its name. A description several tags share
+ * ("Running", "Steam generator pressure") names their equipment too, so no two readings look alike.
+ */
+export const procedureReadingName = (tagId: string, tags: ReadonlyArray<ProcedureTag>): string | undefined => {
+  const tag = tags.find(item => item.id === tagId)
+  if (tag?.description === undefined) return undefined
+  if (tags.filter(item => item.description === tag.description).length < 2) return tag.description
+  if (tag.equipment === undefined) return `${tag.description} (${tagId})`
+  const description = /^[A-Z][a-z]/.test(tag.description) ? tag.description.charAt(0).toLowerCase() + tag.description.slice(1) : tag.description
+  return `${equipmentWords(tag.equipment)}: ${description}`
+}
+
+const observationSignalLabel = (signal: Record<string, unknown>, reference: Record<string, unknown>, tags: ReadonlyArray<ProcedureTag>): string => {
+  const tagId = [signal.tagId, reference.tagId].find((text): text is string => typeof text === 'string')
+  const named = tagId === undefined ? undefined : procedureReadingName(tagId, tags)
+  if (named !== undefined) return named
   const identity = [signal.tagId, reference.tagId, signal.path, reference.path].find((text): text is string => typeof text === 'string')
   const label = typeof signal.label === 'string' ? signal.label : undefined
   return label && identity && label !== identity ? `${label} (${identity})` : label ?? identity ?? 'Unavailable indication'

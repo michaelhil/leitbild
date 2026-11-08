@@ -7,7 +7,7 @@
   import { readProcedureTagValue } from './procedure-client.ts'
   import { canInspectProcedureBranchCheck, type ProcedureChecksView } from '../../features/procedures/checks-view.ts'
   import { simulationTimeAt } from '../simulation-clock.ts'
-  import { procedureViewKey, procedureCategories, procedureOperatorRows, procedureLineChecks, procedureLineCheckEvidence, procedureLineReadingText, procedureReadingText, procedureRequirementText, procedureEvidenceStatusWord, type ProcedureLineCheck, type StepItem, procedureStepTagBindings, procedureTextSegments, procedureBlockLabel, procedureObservationEvidence, procedureSampledEvidence, procedureObservationBasis, procedureObservationLabel, procedureSourceEvidenceRequest, procedureUnitJump } from './procedure-view.ts'
+  import { procedureViewKey, procedureCategories, procedureOperatorRows, procedureLineChecks, procedureLineCheckEvidence, procedureLineReadingText, procedureReadingName, procedureReadingText, procedureRequirementText, procedureEvidenceStatusWord, type ProcedureLineCheck, type StepItem, procedureStepTagBindings, procedureTextSegments, procedureBlockLabel, procedureObservationEvidence, procedureSampledEvidence, procedureObservationBasis, procedureObservationLabel, procedureSourceEvidenceRequest, procedureUnitJump } from './procedure-view.ts'
   import type {
     SimulationRunId,
     SimulationClockState,
@@ -1640,8 +1640,7 @@
     </summary>
     <dl aria-label="Live indications">
       {#each evidence.operands as { comparison, reading } (comparison.tagId)}
-        {@const tag = document?.tags.find(item => item.id === comparison.tagId)}
-        <dt><button type="button" class="procedure-basis-link" onclick={() => { openTagId = comparison.tagId as ProcedureTagId }}>{tag?.description ?? comparison.tagId}</button></dt>
+        <dt><button type="button" class="procedure-basis-link" onclick={() => { openTagId = comparison.tagId as ProcedureTagId }}>{procedureReadingName(comparison.tagId, document?.tags ?? []) ?? comparison.tagId}</button></dt>
         {@const row = procedureLineReadingText(line.text, comparison, reading)}
         <dd>
           {#if reading?.value !== undefined && reading.status !== 'unknown'}
@@ -1720,7 +1719,7 @@
           <details>
             <summary>Recorded readings ({taken.evidence.length})</summary>
             {#each taken.evidence as evidence (evidence.tagId)}
-              <div class="procedure-evidence-row"><b>{evidence.tagId}</b><span>{procedureDisplayReading(evidence.reading)}</span></div>
+              <div class="procedure-evidence-row"><b>{procedureReadingName(evidence.tagId, document?.tags ?? []) ?? evidence.tagId}</b><span>{procedureDisplayReading(evidence.reading)}</span></div>
             {/each}
           </details>
         {/if}
@@ -1737,7 +1736,7 @@
 {/snippet}
 
 {#snippet sampledChecks(result: Record<string, unknown>)}
-  {@const sampled = procedureSampledEvidence(result)}
+  {@const sampled = procedureSampledEvidence(result, document?.tags ?? [])}
   {#if sampled.length}
     <h5>Recorded sample checks</h5>
     {#each new Set(sampled.flatMap(evidence => evidence.window ? [evidence.window] : [])) as window}
@@ -1764,12 +1763,12 @@
     {#if check}
       <p>Checked at {procedurePlantTime(check.time)} simulation time.</p>
       {#each check.value.readings as reading}
-        {@const label = document?.tags.find(tag => tag.id === reading.tagId)?.description ?? reading.description ?? reading.tagId ?? 'Indication'}
+        {@const label = (reading.tagId === undefined ? undefined : procedureReadingName(reading.tagId, document?.tags ?? [])) ?? reading.description ?? reading.tagId ?? 'Indication'}
         <p><strong>{label}:</strong> {reading.status === 'unknown' ? 'unavailable' : procedureReadingText(reading.value, reading.unit)}{#if reading.operator && reading.expected !== undefined} · required {procedureRequirementText(reading.operator, reading.expected, reading.unit)}{/if} · {procedureEvidenceStatusWord(reading.status)}{#if reading.quality && reading.quality !== 'good'} · {reading.quality}{/if}</p>
       {/each}
       {#if check.value.observation}
         {@const result = check.value.observation.result}
-        {@const current = procedureObservationEvidence(result)}
+        {@const current = procedureObservationEvidence(result, document?.tags ?? [])}
         {#if current.length}
           <h5>Current indications</h5>
           {#each current as evidence}
@@ -1887,7 +1886,7 @@
             <summary>{procedureObservationLabel(observation.result)}: {observation.result.status} · acquired at simulation time {observation.simulationTime}</summary>
             {#if observation.result.reason}<p>{observation.result.reason}</p>{/if}
             <p>{@render procedureText(procedureObservationBasis(observation.result), [])}</p>
-            {#each procedureObservationEvidence(observation.result) as evidence}
+            {#each procedureObservationEvidence(observation.result, document?.tags ?? []) as evidence}
               <p><b>{evidence.label}</b>: {evidence.value} · required {evidence.criterion} · {procedureEvidenceStatusWord(evidence.status)}{evidence.reason ? ` · ${evidence.reason}` : ''}</p>
             {/each}
             {@render sampledChecks(observation.result)}

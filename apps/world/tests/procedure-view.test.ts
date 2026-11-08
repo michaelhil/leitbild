@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { parseProcedureMarkdown } from '../src/features/procedures/procmd.ts'
-import { procedureBlockLabel, procedureEvidenceStatusWord, procedureLineReadingText, procedureReadingText, procedureRequirementText, procedureLineCheckEvidence, procedureLineChecks, procedureObservationBasis, procedureObservationEvidence, procedureObservationLabel, procedureOperatorRows, procedureSampledEvidence, procedureSourceEvidenceRequest, procedureStepItems, procedureStepTagBindings, procedureTextSegments, procedureUnitJump } from '../src/ui/procedures/procedure-view.ts'
+import { procedureBlockLabel, procedureEvidenceStatusWord, procedureLineReadingText, procedureReadingName, procedureReadingText, procedureRequirementText, procedureLineCheckEvidence, procedureLineChecks, procedureObservationBasis, procedureObservationEvidence, procedureObservationLabel, procedureOperatorRows, procedureSampledEvidence, procedureSourceEvidenceRequest, procedureStepItems, procedureStepTagBindings, procedureTextSegments, procedureUnitJump } from '../src/ui/procedures/procedure-view.ts'
 import { procedureCriterionReadingSchema } from '../src/core/model/procedure-criteria.ts'
 import { procedureTestSource } from './procedure-fixtures.ts'
 import { procedureBindingStatusWord, procedureComparisonText, procedureCsfChip, procedureDescriptionText, procedureDisplayReading, procedureElapsedText, procedureStepBindingSummary } from '../src/ui/procedures/procedure-view.ts'
@@ -327,4 +327,25 @@ test('a Check line states its requirement and its two-state readings in its own 
   expect(procedureLineReadingText(line, closed, { value: true, unit: 'boolean', status: 'contradicted' })).toEqual({ value: 'not OPEN', required: 'OPEN' })
   expect(procedureLineReadingText('Power range — below 5%.', { operator: '<', value: 5, unit: 'percent' }, { value: 1.04321, unit: 'percent', status: 'supported' })).toEqual({ value: '1.0 %', required: 'below 5%' })
   expect(procedureLineReadingText('Check the level', { operator: '>', value: 10, unit: 'percent' }, undefined)).toEqual({ value: 'unavailable', required: 'above 10 %' })
+})
+
+test('readings that share a description name their equipment', () => {
+  const tags = [
+    { id: 'SG-A-PRESS', description: 'Steam generator pressure', equipment: 'sgA' },
+    { id: 'SG-B-PRESS', description: 'Steam generator pressure', equipment: 'sgB' },
+    { id: 'MFW-PUMP-A-RUNNING', description: 'Running', equipment: 'mainFeedwaterPumpA' },
+    { id: 'CSPRAY-B-RUNNING', description: 'Running', equipment: 'containmentSprayPumpB' },
+    { id: 'CTMT-PR', description: 'Containment pressure', equipment: 'containment' },
+    { id: 'X-1', description: 'Flow' },
+    { id: 'X-2', description: 'Flow' },
+    { id: 'BARE' },
+  ] as unknown as Parameters<typeof procedureReadingName>[1]
+  expect(procedureReadingName('SG-A-PRESS', tags)).toBe('SG A: steam generator pressure')
+  expect(procedureReadingName('MFW-PUMP-A-RUNNING', tags)).toBe('Main feedwater pump A: running')
+  expect(procedureReadingName('CSPRAY-B-RUNNING', tags)).toBe('Containment spray pump B: running')
+  expect(procedureReadingName('CTMT-PR', tags)).toBe('Containment pressure')
+  expect(procedureReadingName('X-2', tags)).toBe('Flow (X-2)')
+  expect(procedureReadingName('BARE', tags)).toBeUndefined()
+  expect(procedureObservationEvidence({ evidence: [{ signal: { tagId: 'SG-B-PRESS', label: 'Steam generator pressure' }, variable: { value: 7.6, unit: 'MPa' }, comparison: { operator: '<', value: 8.1, unit: 'MPa' }, status: 'satisfied' }] }, tags))
+    .toMatchObject([{ label: 'SG B: steam generator pressure' }])
 })
