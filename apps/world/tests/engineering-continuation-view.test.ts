@@ -11,6 +11,7 @@ const quantity = { id: 'temperature', label: 'Temperature', quantity: 'temperatu
 const sample = (elapsedSeconds: number, value: number) => ({ elapsedSeconds, simulationAt: at, modelElapsedMs: elapsedSeconds * 1000, quantities: [{ ...quantity, value }] })
 const receipt: EngineeringContinuationReceipt = {
   jobId, source, status: 'partial', createdAt: at, updatedAt: at, expiresAt: at,
+  timings: {captureMs:1,restoreMs:2,advanceMs:3,observationMs:4,publicationMs:5,teardownMs:6},
   request: { profile: 'plant-thermal', subjectId: 'plant', horizonSeconds: 60, sampleEverySeconds: 5, variant: { label: 'Variant', actions: [{ atSeconds: 0, path: 'cooler', value: 1 }] } },
   origin: { source, subjectId: 'plant', profile: 'plant-thermal', profileRevision: 'engineering-research-1', frame: { epoch: jobId, scenarioDigest: 'a'.repeat(64), restrictionRevision: 0, sequence: 0, simulationAt: at, observedAt: at }, quantities: [quantity], digest: 'b'.repeat(64) },
   cases: [
