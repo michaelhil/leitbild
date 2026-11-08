@@ -8,19 +8,18 @@ export const isProcedureMarkdown = (content: string): boolean => {
   return frontmatter !== null && /^type:\s*(?:procedure|"procedure"|'procedure')\s*$/m.test(frontmatter[1]!)
 }
 
-const number = '-?\\d[\\d,]*(?:\\.\\d+)?'
+const number = '-?\\d+(?:\\.\\d+)?'
 const unit = '%|°C|MPa|kg/s|DPM|mSv/h'
 const unitNames: Readonly<Record<string, string>> = { '%': 'percent', '°C': 'degC', MPa: 'MPa', 'kg/s': 'kg/s', DPM: 'DPM', 'mSv/h': 'mSv/h' }
 const comparators: Readonly<Record<string, string>> = { BELOW: '<', ABOVE: '>', 'AT MOST': '<=', 'AT LEAST': '>=' }
-const numeric = (text: string): number => Number(text.replaceAll(',', ''))
 type Claim = { readonly text: string; readonly operators: ReadonlyArray<string>; readonly value: number; readonly unit?: string | undefined }
 
 /** The limits a line's capitalised state words state. */
 const claimsIn = (words: string): ReadonlyArray<Claim> => [
   ...[...words.matchAll(new RegExp(`\\b(BELOW|ABOVE|AT MOST|AT LEAST)\\s+(${number})\\s*(${unit})?`, 'g'))]
-    .map(([text, word, value, named]) => ({ text, operators: [comparators[word!]!], value: numeric(value!), unit: named })),
+    .map(([text, word, value, named]) => ({ text, operators: [comparators[word!]!], value: Number(value), unit: named })),
   ...[...words.matchAll(new RegExp(`(${number})\\s*(?:${unit})?\\s+TO\\s+(${number})\\s*(${unit})?`, 'g'))]
-    .flatMap(([text, low, high, named]) => [{ text, operators: ['>', '>='], value: numeric(low!), unit: named }, { text, operators: ['<', '<='], value: numeric(high!), unit: named }]),
+    .flatMap(([text, low, high, named]) => [{ text, operators: ['>', '>='], value: Number(low), unit: named }, { text, operators: ['<', '<='], value: Number(high), unit: named }]),
   ...(/\bZERO OR NEGATIVE\b/.test(words) ? [{ text: 'ZERO OR NEGATIVE', operators: ['<='], value: 0 }] : []),
 ]
 
@@ -79,7 +78,7 @@ export const checkProcedureLimits = (parsed: ParsedProcedure): ReadonlyArray<str
       }
       for (const problem of lineProblems(parsed, words, block.limits)) at(block.sourceLine, problem)
     }
-    const stepWords = step.blocks.filter(block => block.kind !== 'basis').map(block => block.text).join(' ').replace(/(\d),(\d)/g, '$1$2')
+    const stepWords = step.blocks.filter(block => block.kind !== 'basis').map(block => block.text).join(' ')
     for (const branch of step.branches) for (const item of branch.limits?.comparisons ?? []) {
       if (!lines.some(block => block.tagIds.includes(item.tagId))) at(branch.sourceLine, `${item.tagId} tests this branch and is named on no line of the step`)
       if (typeof item.value === 'number' && !new RegExp(`(^|[^\\d.])${String(item.value).replace('.', '\\.')}($|[^\\d])`).test(stepWords)) at(branch.sourceLine, `${item.tagId} ${item.operator} ${item.value}: that number is on no line of the step`)

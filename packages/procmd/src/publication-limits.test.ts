@@ -56,7 +56,7 @@ test('correct lines pass', () => {
   for (const text of [
     'Power range — BELOW 5%. «POWER < 5»',
     'Power range — AT MOST 5%. «POWER <= 5»',
-    'Total flow — AT LEAST 7,000 kg/s. «FLOW >= 7000»',
+    'Total flow — AT LEAST 7000 kg/s. «FLOW >= 7000»',
     'Startup rate — ZERO OR NEGATIVE. «RATE <= 0»',
     'Breakers A and B — OPEN. «BKR-A-POS == false» «BKR-B-POS == false»',
     'Stop valve — CLOSED. «STOP-POS == 0»',
