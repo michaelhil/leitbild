@@ -346,7 +346,7 @@ const observationClock = (value: unknown): string | undefined =>
 const evidenceRecord = (value: unknown): Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {}
 
-const equipmentAcronyms = new Set(['ac', 'afw', 'ccw', 'dc', 'mfw', 'msiv', 'porv', 'pzr', 'rcp', 'rhr', 'rwst', 'sg', 'si', 'ups'])
+const equipmentAcronyms = new Set(['ac', 'afw', 'ccw', 'dc', 'mfw', 'msiv', 'porv', 'pzr', 'rcp', 'rcs', 'rhr', 'rwst', 'sg', 'si', 'ups'])
 
 const equipmentWords = (id: string): string => {
   const words = id.replace(/([a-z0-9])([A-Z])/g, '$1 $2').split(/[\s_-]+/).filter(Boolean)
@@ -417,9 +417,17 @@ export type ProcedureIndication = NonNullable<ProcedureChecksView['indications']
 /** A judgement line's tags as a grid: one column per piece of equipment and one row per thing read, where every cell is filled. Otherwise one named row each. */
 export const procedureInlineLayout = (tagIds: ReadonlyArray<string>, tags: ReadonlyArray<ProcedureTag>): { readonly heads: ReadonlyArray<string>; readonly rows: ReadonlyArray<{ readonly label: string; readonly tagIds: ReadonlyArray<string | null> }> } => {
   const declared = tagIds.map(id => ({ id, tag: tags.find(item => item.id === id) }))
+  // "SG A pressure" on SG A reads "Pressure" in a row beneath a column headed SG A.
+  const rowOf = (item: (typeof declared)[number]): string => {
+    const description = item.tag?.description ?? item.id
+    const equipment = item.tag?.equipment === undefined ? undefined : equipmentWords(item.tag.equipment)
+    if (equipment === undefined || !description.toLowerCase().startsWith(`${equipment.toLowerCase()} `)) return description
+    const rest = description.slice(equipment.length + 1)
+    return rest.charAt(0).toUpperCase() + rest.slice(1)
+  }
   const columns = [...new Set(declared.map(item => item.tag?.equipment ?? item.id))]
-  const rows = [...new Set(declared.map(item => item.tag?.description ?? item.id))]
-  const cell = (row: string, column: string) => declared.find(item => (item.tag?.description ?? item.id) === row && (item.tag?.equipment ?? item.id) === column)?.id ?? null
+  const rows = [...new Set(declared.map(rowOf))]
+  const cell = (row: string, column: string) => declared.find(item => rowOf(item) === row && (item.tag?.equipment ?? item.id) === column)?.id ?? null
   if (columns.length > 1 && rows.length * columns.length === declared.length && rows.every(row => columns.every(column => cell(row, column) !== null)))
     return { heads: columns.map(equipmentWords), rows: rows.map(row => ({ label: row, tagIds: columns.map(column => cell(row, column)) })) }
   return { heads: [], rows: declared.map(({ id }) => ({ label: procedureReadingName(id, tags) ?? id, tagIds: [id] })) }

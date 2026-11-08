@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte'
   import type { ProcedureTag, SimulationRunId } from '../../core/model/index.ts'
   import { sparkline, sparklineScale } from '../sparkline.ts'
   import { runOnMount } from '../svelte-lifecycle.svelte.ts'
@@ -33,10 +34,12 @@
   let historyError = $state<string | null>(null)
   let disposed = false
 
+  // The tags with a number to trend. They are known once the first indications arrive, and that read starts the trend.
+  const numeric = $derived(tagIds.filter(tagId => typeof indications.find(item => item.tagId === tagId)?.value === 'number'))
+  const numericKey = $derived(numeric.join(' '))
   const refresh = async (): Promise<void> => {
     if (now === undefined) return
     const to = now
-    const numeric = tagIds.filter(tagId => typeof indications.find(item => item.tagId === tagId)?.value === 'number')
     try {
       const reads = await Promise.all(numeric.flatMap(tagId => {
         const path = pathFor(tagId)
@@ -51,8 +54,11 @@
     }
   }
 
+  $effect(() => {
+    if (numericKey !== '') untrack(() => void refresh())
+  })
+
   runOnMount(() => {
-    void refresh()
     const timer = setInterval(() => { void refresh() }, READ_EVERY_MS)
     return () => {
       disposed = true

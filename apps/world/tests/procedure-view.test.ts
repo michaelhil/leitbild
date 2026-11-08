@@ -498,6 +498,8 @@ test('a judgement line lays its readings out by equipment where they form a grid
     heads: ['SG A', 'SG B'],
     rows: [{ label: 'Steam generator pressure', tagIds: ['SG-A-PRESS', 'SG-B-PRESS'] }, { label: 'Steam generator level', tagIds: ['SG-A-LVL', 'SG-B-LVL'] }],
   })
+  const named = [{ id: 'PA', description: 'SG A pressure', equipment: 'sgA' }, { id: 'PB', description: 'SG B pressure', equipment: 'sgB' }] as unknown as Parameters<typeof procedureInlineLayout>[1]
+  expect(procedureInlineLayout(['PA', 'PB'], named)).toEqual({ heads: ['SG A', 'SG B'], rows: [{ label: 'Pressure', tagIds: ['PA', 'PB'] }] })
   expect(procedureInlineLayout(['SI', 'PZR'], inlineTags)).toEqual({ heads: [], rows: [{ label: 'SI actuated', tagIds: ['SI'] }, { label: 'Pressurizer pressure', tagIds: ['PZR'] }] })
   expect(procedureInlineLayout(['SG-A-PRESS', 'SG-B-PRESS', 'SG-A-LVL'], inlineTags).heads).toEqual([])
 })

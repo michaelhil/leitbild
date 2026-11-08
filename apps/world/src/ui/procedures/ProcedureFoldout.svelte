@@ -59,7 +59,7 @@
           class="procedure-foldout-item"
           aria-expanded={openIndex === index}
           onclick={() => { openIndex = openIndex === index ? null : index }}
-        >{item.name ?? `Item ${index + 1}`}</button>
+        >{item.name?.replace(/\.$/, '') ?? `Item ${index + 1}`}</button>
       {/each}
     </div>
     {#if opened}
