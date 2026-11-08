@@ -10,6 +10,12 @@ const receipt: CalculationReceipt = { kind: 'engineering-calculation', title: 'E
 ] } }, outcome: { status: 'completed', output: { value: 4 } } }
 
 describe('retained calculation interaction', () => {
+  test('rerunning reused code depends on this receipt, not an earlier deleted selector', () => {
+    const reused: CalculationReceipt = { ...receipt, programSource: '({ value: input.heat.value * 2 })', request: { operation: 'run', input: { ...receipt.request.input, program: { reuse: { turnId: 'removed', toolCallId: 'call_1_0' } } } } }
+    const request = calculationRequest(reused, new Map(), false)
+    expect(request.input.program).toEqual({source: reused.programSource})
+    expect(reused.request.input.program).toEqual({reuse: {turnId:'removed',toolCallId:'call_1_0'}})
+  })
   test('new successful execution permalinks reopen exactly and preserve the original locator', () => {
     const next = { ...locator, turnId: 'new-turn' }
     const href = calculationLocation(envelope, workspaceId, next)

@@ -94,7 +94,11 @@ export const calculationRequest = (receipt: CalculationReceipt, edits: ReadonlyM
     if (text === '' || !Number.isFinite(value)) throw new Error(`${binding.name} requires a finite number`)
     return { ...binding, value }
   })
-  return { operation: receipt.request.operation, input: { ...receipt.request.input, bindings }, ...(refresh ? { refresh: true } : {}) }
+  // A reused program is retained in this receipt. Rerunning it must not depend
+  // on an older source-selection turn surviving conversation retention.
+  const program = receipt.mode === 'exploratory-script' && receipt.programSource !== undefined
+    ? { program: { source: receipt.programSource } } : {}
+  return { operation: receipt.request.operation, input: { ...receipt.request.input, ...program, bindings }, ...(refresh ? { refresh: true } : {}) }
 }
 
 export const calculationApi = (workspaceId: string, request: typeof fetch = fetch) => {
