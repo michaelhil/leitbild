@@ -1610,7 +1610,7 @@
   {@const labels = procedureTagLabels(segments, owner)}
   {#each segments as segment, index}
     {#if segment.kind === 'tag'}
-      <button type="button" class="procedure-tag" aria-label={labels[index]?.full} title="Show {labels[index]?.full} on a process display" onclick={() => void openTagDisplay(segment.text as ProcedureTagId)}>{labels[index]?.shown}</button>
+      <button type="button" class="procedure-tag" class:letter={labels[index]?.shown.length === 1} aria-label={labels[index]?.full} title="Show {labels[index]?.full} on a process display" onclick={() => void openTagDisplay(segment.text as ProcedureTagId)}>{labels[index]?.shown}</button>
     {:else if segment.kind === 'link'}
       {@const sourceRequest = document ? procedureSourceEvidenceRequest(segment.href, document) : undefined}
       {#if sourceRequest}
@@ -2567,6 +2567,7 @@
   :global(.procedure-modal.compact-procedure .procedure-header-actions) { flex-shrink: 0; }
   :global(.procedure-modal.compact-procedure .procedure-csf-strip) { padding-bottom: 3px; }
   :global(.procedure-modal.compact-procedure .procedure-csf-shell) { flex: 0 0 auto; }
+  :global(.procedure-modal.compact-procedure .procedure-tag.letter) { min-width: 44px; min-height: 44px; }
   :global(.procedure-modal.compact-procedure .procedure-inline-value) { font-size: 13px; white-space: nowrap; }
   :global(.procedure-modal.compact-procedure .procedure-light) { width: 44px; height: 44px; margin: -10px -6px -10px -10px; }
   :global(.procedure-modal.compact-procedure .procedure-readings) { left: 12px !important; right: 12px; top: auto !important; bottom: 12px; width: auto; }

@@ -4461,7 +4461,7 @@ button.procedure-light:focus-visible { outline: 3px solid var(--accent, #1d4ed8)
 .procedure-readings-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .procedure-readings-close { min-width: 30px; min-height: 30px; border: 1px solid #cbd5e1; border-radius: 6px; background: #ffffff; cursor: pointer; }
 .procedure-readings table { width: 100%; margin: 6px 0; border-collapse: collapse; }
-.procedure-readings th { padding: 2px 4px; border-bottom: 1px solid #cbd5e1; color: #566573; font-size: 12px; font-weight: 600; text-align: left; }
+.procedure-readings th { white-space: nowrap; padding: 2px 4px; border-bottom: 1px solid #cbd5e1; color: #566573; font-size: 12px; font-weight: 600; text-align: left; }
 .procedure-readings td { padding: 3px 4px; border-bottom: 1px solid #eef1f4; vertical-align: top; }
 .procedure-readings-value { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .procedure-readings-state { font-weight: 800; }
@@ -4684,6 +4684,15 @@ button.procedure-light:focus-visible { outline: 3px solid var(--accent, #1d4ed8)
   font-weight: 800;
   font-variant-numeric: tabular-nums;
   cursor: pointer;
+}
+
+.procedure-tag.letter {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  min-height: 28px;
+  vertical-align: middle;
 }
 
 .procedure-tag:hover {
