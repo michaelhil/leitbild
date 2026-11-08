@@ -12,6 +12,7 @@ import { scenarioAuthoringCatalogFor } from '../src/core/scenarios/authoring.ts'
 import { createSimulationRunRegistry } from '../src/core/simulation-runs/registry.ts'
 import { actorIdSchema, objectIdSchema } from '../src/core/model/ids.ts'
 import { worldWorkspacePaths } from '../src/core/workspaces/paths.ts'
+import { scenarioDefinitionSchema } from '../src/core/scenarios/definition.ts'
 import { guardPlantTests } from './plant-hang-guard.ts'
 
 guardPlantTests()
@@ -19,12 +20,17 @@ const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => { for (const close of cleanups.splice(0).reverse()) await close() })
 const controller = { id: actorIdSchema.parse('actor:engineering-test'), label: 'Researcher', role: 'controller' as const }
 const thermal = { profile: 'plant-thermal' as const, subjectId: 'plant:engineering-thermal' }
+const coupled = scenarioDefinitionSchema.parse({
+  ...builtinScenarioDefinitions.find(source => source.id === 'engineering-thermal')!, id: 'engineering-coupled-refusal',
+  packs: [...builtinScenarioDefinitions.find(source => source.id === 'engineering-thermal')!.packs, { id: 'electric-grid', items: [{ type: 'grid', id: 'grid:engineering-coupled', label: 'Coupled Grid qualification fixture', location: [11.47, 59.086], model: { ref: 'electric-grid.halden.four-unit' }, operatingPoint: { ref: 'electric-grid.norway.summer-night-low' }, automation: { ref: 'electric-grid.frequency.nordic-2025' } }] }],
+  connections: [{ id: 'engineering-coupling', type: 'electrical', system: { objectId: thermal.subjectId, portId: 'grid-420kv' }, network: { objectId: 'grid:engineering-coupled', portId: 'unit-1-420kv' } }],
+})
 const qualify = (basis: EngineeringInputBasis) => ({ profile: basis.profile, profileRevision: basis.profileRevision, subjectId: basis.subjectId,
   frame: { epoch: basis.frame.epoch, scenarioDigest: basis.frame.scenarioDigest, restrictionRevision: basis.frame.restrictionRevision } })
 const setup = async () => {
   const dataDir = await mkdtemp(join(tmpdir(), 'engineering-'))
   const routing = createDirectRoutingAdapter(), assembly = createWorldApplicationAssembly({ routing }), workspaceId = newWorkspaceId()
-  const config = { dataDir, workspaceId, scenarioDefinitions: builtinScenarioDefinitions,
+  const config = { dataDir, workspaceId, scenarioDefinitions: [...builtinScenarioDefinitions, coupled],
     compileScenarioDefinition: (source: unknown) => compileScenarioDefinition(source, assembly.packs, { routing }),
     scenarioAuthoringCatalog: scenarioAuthoringCatalogFor(assembly.packs), scenarioRuntimeResolver: createScenarioRuntimeResolver({ packs: assembly.packs }),
     runtimeAdapters: assembly.runtimeAdapters, idleRuntimeCloseTimer: () => () => {} }
@@ -51,6 +57,18 @@ test('named research fixtures capture finite owner quantities with original qual
   expect(gridBasis.quantities.every(row => row.quantity === 'power' && row.unit === 'MW' && Number.isFinite(row.value))).toBe(true)
   const other = await registry.create({ scenarioId: 'planning-component-work' })
   await expect(registry.engineering.capture(other.id, { ...thermal, subjectId: 'plant:planning-work' })).rejects.toThrow('shared engineering')
+}, 60_000)
+
+test('a real coupled Plant/Grid clone is refused rather than silently dropping the Grid dependency', async () => {
+  const { registry } = await setup(), run = await registry.create({ scenarioId: coupled.id })
+  expect(registry.loadedCompiledScenario(run.id).connections).toHaveLength(1)
+  expect(run.snapshot().objects.some(object => object.id === 'grid:engineering-coupled')).toBe(true)
+  const full = await registry.captureContinuation(run.id, [])
+  expect(full.manifest.runtimes).toHaveLength(2)
+  expect(Object.keys(full.checkpoint.runtimeStates)).toHaveLength(2)
+  await expect(registry.engineering.capture(run.id, thermal)).rejects.toThrow('shared engineering')
+  await expect(registry.engineering.submit(run.id, 'test', 'coupled', { ...thermal, horizonSeconds: 1, variant: { label: 'Trip', actions: [{ atSeconds: 0, path: 'manualReactorTrip.pushbutton', value: true }] } })).rejects.toThrow('shared engineering')
+  expect(registry.engineering.busy()).toBe(false)
 }, 60_000)
 
 test('active cancellation removes private runtimes; restart returns interrupted receipt for the original key and never resumes', async () => {
