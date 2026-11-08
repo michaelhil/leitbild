@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, readdir, rm } from 'node:fs/promises'
+import { mkdir, open, readdir, rm } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import type { StorageBudget } from '@leitbild/module-runtime'
 import { z } from 'zod'
@@ -49,16 +49,19 @@ export const createEngineeringService = ({ registry, root, storageBudget }: { re
   }
   const output = async (record: Record) => {
     const path = join(folder(record.receipt.jobId), 'output.json')
-    const file = Bun.file(path)
-    if (!await file.exists()) return
-    if (file.size > OUTPUT_BYTES) throw new Error('Continuation result exceeded its output bound')
-    let contents: unknown
-    try { contents = await file.json() } catch (error) {
-      // A supervisor may finish and remove the scratch output while a read is
-      // acquiring it. The durable in-memory receipt already owns that result.
-      if (terminal(record.receipt.status)) return
+    // Open once: size and bytes must come from the same inode while the worker
+    // atomically replaces this file. A cached Bun.file size can belong to the
+    // prior receipt and truncate a later read after rename.
+    let file
+    try { file = await open(path, 'r') } catch (error) {
+      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return
       throw error
     }
+    let contents: unknown
+    try {
+      if ((await file.stat()).size > OUTPUT_BYTES) throw new Error('Continuation result exceeded its output bound')
+      contents = JSON.parse(await file.readFile('utf8'))
+    } finally { await file.close() }
     const result = continuationWorkerOutputSchema.parse(contents)
     if (result.token !== record.token || result.receipt.jobId !== record.receipt.jobId || result.receipt.origin.digest !== record.receipt.origin.digest || engineeringDigest(result.receipt.request) !== record.requestDigest) throw new Error('Continuation result identity mismatch')
     if (terminal(record.receipt.status)) return
