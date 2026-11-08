@@ -175,8 +175,10 @@ describe('Workspace Host with real Modules', () => {
     const capabilityIds = new Set((await capabilityCatalogResponse.json() as {
       capabilities: Array<{ id: string }>
     }).capabilities.map(capability => capability.id))
-    expect(BUNDLED_ROOM_DEFINITIONS.map(definition => definition.id)).toEqual(['leitbild-assistant'])
-    expect(BUNDLED_ROOM_DEFINITIONS[0]?.room.agents[0]).not.toHaveProperty('toolGrants')
+    expect(BUNDLED_ROOM_DEFINITIONS.map(definition => definition.id)).toEqual(['engineering-research', 'leitbild-assistant'])
+    for (const definition of BUNDLED_ROOM_DEFINITIONS) {
+      for (const agent of definition.room.agents) expect(agent).not.toHaveProperty('toolGrants')
+    }
     expect(capabilityIds).toContain('agents.assistance.open')
     expect([...capabilityIds].filter(id => id.startsWith('world.perspective.') || id.startsWith('agents.perspective-room.'))).toEqual([])
 
