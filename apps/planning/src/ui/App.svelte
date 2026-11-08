@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte'
-  import type { ModuleResourceDescriptor } from '@leitbild/contracts'
+  import { resourceCatalogChangedMessageSchema, type ModuleResourceDescriptor } from '@leitbild/contracts'
   import { currentProblemRevision, type Study, type Candidate, type SourceBinding } from '../study-model.ts'
   import { planningProblemSchema, type PlanningProblem, type PlanningActivity } from '../model.ts'
   import { createPlanningClient, sourceUnavailable, type Demo, type Comparison } from './api.ts'
@@ -49,6 +49,13 @@
   const activityObjectives = $derived(problem?.objectives.filter(objective => 'activityId' in objective) ?? [])
   const timelineHorizon = $derived(displayedProblem ? fullHorizon ? displayedProblem.horizon : fittedHorizon(displayedProblem.horizon, [...candidate?.result.placements ?? [], ...baseline?.result.placements ?? []]) : null)
   const hostHref = (id?: string) => `/workspaces/${encodeURIComponent(workspaceId)}?planning=${encodeURIComponent(id ?? 'library')}`
+  const notifyCatalog = (): void => {
+    if (!studyId || window.parent === window) return
+    window.parent.postMessage(resourceCatalogChangedMessageSchema.parse({
+      type: 'leitbild:resource-catalog-changed',
+      resource: { workspaceId, moduleId: 'planning', type: 'planning.study', id: studyId },
+    }), location.origin)
+  }
   const candidateLabel = (item: Candidate) => `Candidate ${(study?.candidates.findIndex(value => value.id === item.id) ?? 0) + 1}`
   const bindingTargetLabel = (binding: SourceBinding): string => {
     const target = binding.target
@@ -83,6 +90,7 @@
     hydrateActivity(current.problem.activities.find(item => item.id === id))
     hydrateSupply(current.problem.supplies.some(item => item.id === selectedSupplyId) ? selectedSupplyId : current.problem.supplies[0]?.id ?? '')
     objectiveText = JSON.stringify(current.problem.objectives, null, 2)
+    notifyCatalog()
   }
   const action = async (work: () => Promise<void>): Promise<void> => {
     if (busy) return
@@ -90,7 +98,7 @@
     error = null
     notice = ''
     try { await work() } catch (cause) {
-      if (sourceUnavailable(cause)) { study = null; comparison = null }
+      if (sourceUnavailable(cause)) { study = null; comparison = null; notifyCatalog() }
       error = cause instanceof Error ? cause.message : String(cause)
     }
     finally { busy = false }
@@ -123,7 +131,7 @@
     } catch (cause) {
       // Re-read through the same qualification gate before retaining source-backed UI.
       // A source refusal must not leave newly disallowed retained evidence on screen.
-      try { acceptStudy(await client.study(id)) } catch { study = null }
+      try { acceptStudy(await client.study(id)) } catch { study = null; notifyCatalog() }
       throw cause
     }
   })
@@ -205,7 +213,10 @@
           demos = catalogue.demos
           saved = resources.filter(resource => resource.ref.moduleId === 'planning' && resource.ref.type === 'planning.study')
         }
-      } catch (cause) { error = cause instanceof Error ? cause.message : String(cause) }
+      } catch (cause) {
+        error = cause instanceof Error ? cause.message : String(cause)
+        if (sourceUnavailable(cause)) notifyCatalog()
+      }
       finally { loading = false }
     })()
   })

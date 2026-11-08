@@ -9,11 +9,14 @@
   import { createPresentationBridge } from './presentation-bridge.ts'
   import type { RunAssistantResolution } from './run-assistant-opening.ts'
   import { workspaceSubjectFocusMessage } from './workspace-focus.ts'
+  import { isCurrentResourceCatalogChange } from './resource-catalog-message.ts'
 
   interface Props {
     readonly workspaceId: string
     readonly worldRunId: string | null
     readonly planningPath?: string | null
+    readonly planningResource?: WorkspaceResourceReference | null
+    readonly onResourceCatalogChange: () => void
     readonly focusedSubjects: ReadonlyArray<WorkspaceSubjectReference>
     readonly agentsRoomId: string | null
     readonly agentsVisible: boolean
@@ -38,7 +41,7 @@
   const minimumOpenShare = 20
 
   let {
-    workspaceId, worldRunId, planningPath = null, focusedSubjects, agentsRoomId, agentsVisible, onShowAgents, runRefusal, onOpenRun,
+    workspaceId, worldRunId, planningPath = null, planningResource = null, onResourceCatalogChange, focusedSubjects, agentsRoomId, agentsVisible, onShowAgents, runRefusal, onOpenRun,
     runAssistantAvailable, onOpenRunAssistant, onError, worldPane = $bindable(null),
   }: Props = $props()
   let splitPercent = $state(initialSplit)
@@ -49,6 +52,7 @@
   let dragWidth = 1
   let agentsFrame = $state<HTMLIFrameElement | null>(null)
   let worldFrame = $state<HTMLIFrameElement | null>(null)
+  let planningFrame = $state<HTMLIFrameElement | null>(null)
   let ownedView = $state<EmbeddedViewListing | null>(null)
   let ownedViewOpen = $state(false)
   const primaryOpen = $derived(planningPath !== null || worldRunId !== null)
@@ -197,9 +201,12 @@
   // document (a reload, or the World start page) no longer listens.
   let listeningWorldDocument: Document | null = null
 
-  // Only the two frames' own documents take part in the window's protocol.
+  // Only the active Module frames take part in the window's protocol.
   const receiveViewMessage = (event: MessageEvent): void => {
     if (event.origin !== location.origin || event.source === null) return
+    if (planningPath !== null && isCurrentResourceCatalogChange(event, {
+      origin: location.origin, source: planningFrame?.contentWindow ?? null, resource: planningResource,
+    })) onResourceCatalogChange()
     if (event.source === agentsFrame?.contentWindow) { relay.fromAgents(event.data); presentation.fromAgents(event.data) }
     else if (event.source === worldFrame?.contentWindow) {
       if ((event.data as { readonly type?: unknown } | null)?.type === 'leitbild:view-window-ready') listeningWorldDocument = worldFrame?.contentDocument ?? null
@@ -282,7 +289,7 @@
 >
   {#if primaryOpen}<section bind:this={worldPane} class="module-pane world-pane" class:collapsed={collapsedPane === 'world'} aria-label={planningPath !== null ? 'Planning Study' : 'World simulations'}>
     {#if planningPath !== null}
-    <iframe class="module-frame active" src={planningPath} title="Planning laboratory"></iframe>
+    <iframe bind:this={planningFrame} class="module-frame active" src={planningPath} title="Planning laboratory"></iframe>
     {:else if worldRunId !== null}
     <iframe
       bind:this={worldFrame}
