@@ -175,6 +175,10 @@ export const prepareProcedureCommand = async (config: {
           ? [driverChanged(context, existing.runId, actorDriver(context, 'ai'), 'started')] : []
         return [...takeover, resumed, ...aiDrives]
       }
+      // A person returns to a finished marked procedure, such as a second FR-H.3 entry. The journal keeps the first pass.
+      if (existing?.status === 'completed' && context.actorKind === 'person' && document.annotations?.['ai-workable'] === 'true') {
+        return [{ ...base(context), type: 'procedure.run.reset', sourceId: document.source.sourceId, procedureId: payload.procedureId, scope: payload.scope, resetAt: context.at, resetBy: command.actorId }, started(context, document, payload.scope)]
+      }
       if (existing) {
         throw new Error(`procedure ${payload.procedureId} already has current run state for ${payload.scope.plantId}; reset it before starting another run`)
       }

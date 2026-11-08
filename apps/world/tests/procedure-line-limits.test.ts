@@ -280,6 +280,25 @@ test('on a marked document a no-limit branch stays unknown and its reason says w
   expect(selected(await commit('judge2', 0, port())).criterion).toMatchObject({ status: 'unknown', reasons: [expect.stringContaining('It is a judgement')] })
 })
 
+test('a person restarts a finished marked procedure with one start; an AI, and any other document, still need a reset', async () => {
+  const start = async (by: typeof ai, front?: string) => {
+    const finished = { ...runAt('trip', by), status: 'completed' as const, driver: undefined }
+    const procedures = { runs: [finished] }
+    const command: CommandEnvelope = { id: 'command:restart' as CommandEnvelope['id'], simulationRunId: 'run:limits' as SimulationRunId, actorId: by, issuedAt: time, kind: 'world.procedure.run.start', targetObjectIds: [],
+      payload: { sourceId: finished.sourceId, procedureId: 'TEST', scope: finished.scope } }
+    const actorKind = by === ai ? 'ai' as const : 'person' as const
+    const prepared = await prepareProcedureCommand({ command, procedures, readDocument: async () => document(front), observations: () => port(), actorKind })
+    let seq = 1
+    return await prepared!({ simulationRunId: 'run:limits' as SimulationRunId, at: time, simulationTime: time, actorKind, procedures, objectIds: new Set([plantId]), factory: { eventId: () => `event:${seq}` as EventId, nextSeq: () => seq++ } })
+  }
+  const events = await start(person)
+  expect(events.map(event => event.type)).toEqual(['procedure.run.reset', 'procedure.run.started'])
+  expect(events[0]).toMatchObject({ procedureId: 'TEST', scope: { plantId }, resetBy: person })
+  expect(events[1]).toMatchObject({ run: { currentStepId: 'trip', status: 'active' } })
+  await expect(start(ai)).rejects.toThrow('reset it before starting another run')
+  await expect(start(person, 'category: x')).rejects.toThrow('reset it before starting another run')
+})
+
 describe('an unmarked document behaves as today', () => {
   const unmarked = 'category: x'
   test('no limit is refused, whatever the target, and supported limits still pass, END included', async () => {
