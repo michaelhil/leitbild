@@ -6,6 +6,12 @@ import { readProcedureTags, type ProcedureObservationPort, type ProcedureTagRead
 
 type AcquiredObservation = { readonly result?: Readonly<Record<string, unknown>>; readonly error?: string }
 
+/** The tags whose readings a step's left column rests on: its Check, Expected and When lines, and what its forks test. */
+export const procedureCheckedTagIds = (step: ProcedureStep): ReadonlyArray<string> => [...new Set([
+  ...step.blocks.filter(block => block.kind === 'check' || block.kind === 'expected' || block.kind === 'when').flatMap(block => block.tagIds),
+  ...step.branches.flatMap(branch => branch.limits?.comparisons.map(item => item.tagId) ?? []),
+])]
+
 const compare = (a: number | boolean, operator: string, b: number | boolean): boolean => {
   if (operator === '==') return a === b
   if (operator === '!=') return a !== b

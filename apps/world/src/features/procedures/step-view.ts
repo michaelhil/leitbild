@@ -82,6 +82,8 @@ const stepSchema = z.object({
   label: z.string(),
   /** Where it says more than "Step <label>". */
   title: z.string().optional(),
+  /** Standing duties of the document, in force on every step. */
+  foldout: z.object({ title: z.string(), text: z.string() }).strict().optional(),
   blocks: z.array(z.object({ kind: procedureTextBlockSchema.shape.kind, text: z.string() }).strict()),
   branches: z.array(stepBranchSchema),
   branchAssessments: z.array(procedureStepBranchAssessmentViewSchema),
@@ -118,7 +120,7 @@ export type ProcedureStepView = z.infer<typeof procedureStepViewSchema>
 /** Explicit current-only projection for a caller that already has this exact pinned step's guidance. */
 const procedureStepCurrentViewSchema = procedureStepViewSchema.omit({ step: true, tags: true }).extend({
   guidanceIncluded: z.literal(false),
-  step: stepSchema.omit({ blocks: true, branches: true, branchAssessments: true }).extend({
+  step: stepSchema.omit({ foldout: true, blocks: true, branches: true, branchAssessments: true }).extend({
     branchAssessments: z.array(procedureStepBranchAssessmentViewSchema.omit({ condition: true, applicability: true })),
   }).strict().optional(),
   tags: z.array(stepTagSchema.omit({ description: true, notes: true })).optional(),
@@ -145,7 +147,7 @@ export const projectProcedureStepGuidance = (view: ProcedureStepView, includeGui
   if (includeGuidance) return view
   const { step, tags, ...current } = view
   const withoutGuidance = step === undefined ? undefined : (() => {
-    const { blocks: _blocks, branches: _branches, branchAssessments, ...facts } = step
+    const { foldout: _foldout, blocks: _blocks, branches: _branches, branchAssessments, ...facts } = step
     return { ...facts, branchAssessments: branchAssessments.map(({ condition: _condition, applicability: _applicability, ...currentFacts }) => currentFacts) }
   })()
   return procedureStepCurrentViewSchema.parse({
@@ -326,6 +328,7 @@ export const composeProcedureStepView = async (config: {
       label: step.label,
       ...(step.title === `Step ${step.label}` ? {} : { title: step.title }),
       definition: stepDefinition(run, step),
+      ...(document.foldout === undefined ? {} : { foldout: { title: document.foldout.title, text: withoutLinkTargets(document.foldout.text) } }),
       blocks: step.blocks.filter(block => !omittedBlockKinds.has(block.kind)).map(block => ({ kind: block.kind, text: withoutLinkTargets(block.text) })),
       branches: step.branches.map((branch, index) => ({
         index,

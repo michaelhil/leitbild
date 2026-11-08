@@ -7,8 +7,8 @@ import {
 } from '../../core/model/index.ts'
 import { procedureBranchAssessmentSchema } from '../../core/model/procedure-criteria.ts'
 import type { SimulationRunStateSnapshot } from '../../core/simulation-runs/state-store.ts'
-import { assessProcedureBranch, readProcedureBranchObservation } from './branch-assessment.ts'
-import { readProcedureTags, type ProcedureObservationPort } from './pack-observations.ts'
+import { assessProcedureBranch, procedureCheckedTagIds, readProcedureBranchObservation } from './branch-assessment.ts'
+import { readProcedureTags, type ProcedureObservationPort, type ProcedureTagRead } from './pack-observations.ts'
 
 export const procedureChecksReadInputSchema = z.object({
   runId: procedureRunIdSchema,
@@ -28,11 +28,32 @@ export const procedureChecksViewSchema = procedureChecksReadInputSchema.extend({
     validThrough: isoTimestampSchema.optional(),
     observation: z.object({ result: z.record(z.string(), z.unknown()) }).strict().optional(),
   })),
+  /** On an ai-workable document, the readings of the step's left column as read now. They carry no verdict: forks and judgement lines show them with no colour. */
+  indications: z.array(z.object({
+    tagId: z.string(),
+    binding: z.enum(['resolved', 'resolved-with-warnings', 'missing', 'unchecked']),
+    label: z.string().optional(),
+    formatted: z.string().optional(),
+    value: z.union([z.number().finite(), z.boolean()]).optional(),
+    unit: z.string().optional(),
+    quality: z.string().optional(),
+    sampledAt: isoTimestampSchema.optional(),
+    unavailable: z.string().optional(),
+  }).strict()).optional(),
 }).strict()
 export type ProcedureChecksView = z.infer<typeof procedureChecksViewSchema>
 
+const indication = ({ tagId, binding, value, unavailable }: ProcedureTagRead) => ({ tagId, binding,
+  ...(value === undefined ? {} : { label: value.label, formatted: value.formatted,
+    ...(typeof value.value === 'boolean' || (typeof value.value === 'number' && Number.isFinite(value.value)) ? { value: value.value } : {}),
+    ...(value.unit === undefined ? {} : { unit: value.unit }), ...(value.quality === undefined ? {} : { quality: value.quality }),
+    ...(value.evidence === undefined ? {} : { sampledAt: value.evidence.sampledAt }) }),
+  ...(unavailable === undefined ? {} : { unavailable }),
+})
+
 export const canInspectProcedureBranchCheck = (step: ProcedureStep, branchIndex: number): boolean => {
-  if (step.branches[branchIndex]?.outcome !== 'normal') return false
+  // A fork's limits test an AI. A person sees their readings with no colour, never a verdict on the route.
+  if (step.branches[branchIndex]?.outcome !== 'normal' || step.branches[branchIndex]?.limits !== undefined) return false
   const decision = step.decisions?.find(item => item.branchIndex === branchIndex)
   return decision?.observation !== undefined ||
     (decision?.condition !== undefined && assessmentLeaves(decision.condition).every(leaf => leaf.type === 'comparison'))
@@ -81,8 +102,9 @@ export const readProcedureChecks = async (config: {
   }
   const decisions = step.decisions?.filter(decision => requested.has(decision.branchIndex)) ?? []
   if (decisions.length !== requested.size) throw new Error('A response pair references a missing authored criterion.')
-  const tagIds = [...new Set(decisions.flatMap(decision => decision.condition === undefined ? [] : assessmentLeaves(decision.condition)
-    .flatMap(leaf => leaf.type === 'comparison' ? [leaf.tagId] : leaf.tagIds)))]
+  const lineTagIds = document.annotations?.['ai-workable'] === 'true' ? procedureCheckedTagIds(step) : undefined
+  const tagIds = [...new Set([...decisions.flatMap(decision => decision.condition === undefined ? [] : assessmentLeaves(decision.condition)
+    .flatMap(leaf => leaf.type === 'comparison' ? [leaf.tagId] : leaf.tagIds)), ...(lineTagIds ?? [])])]
   const port = () => config.observations(plantId)
   const reads = tagIds.length === 0 ? [] : await readProcedureTags({ observations: port, declared: document.tags, tagIds })
   const observations = new Map<number, Awaited<ReturnType<typeof readProcedureBranchObservation>>>()
@@ -109,5 +131,6 @@ export const readProcedureChecks = async (config: {
       ...(validThrough === undefined ? {} : { validThrough }),
     }
   })
-  return procedureChecksViewSchema.parse({ ...input, plantId, sequence: after.seq, simulationTime, checks })
+  const indications = lineTagIds === undefined ? {} : { indications: reads.filter(read => lineTagIds.includes(read.tagId) && (read.value === undefined || read.value.scopeId === plantId)).map(indication) }
+  return procedureChecksViewSchema.parse({ ...input, plantId, sequence: after.seq, simulationTime, checks, ...indications })
 }
