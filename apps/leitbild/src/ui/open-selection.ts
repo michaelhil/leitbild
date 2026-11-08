@@ -11,6 +11,7 @@ export interface OpenSelection {
   readonly world: string | null
   readonly agents: string | null
   readonly agentsVisible: boolean
+  readonly planning?: string | null
 }
 
 export const keptSelection = (
@@ -24,7 +25,13 @@ export const keptSelection = (
   const world = selection.world !== null && run === undefined && answered('world') ? null : selection.world
   const roomGone = selection.agents !== null && room === undefined && answered('agents')
   const roomOutsideRun = run !== undefined && room !== undefined && !roomServesRun(room, run)
+  const planning = selection.planning === 'library'
+    ? modules.some(module => module.moduleId === 'planning') ? 'library' : null
+    : selection.planning !== undefined && selection.planning !== null
+      && !resources.some(resource => resource.ref.type === 'planning.study' && resource.ref.id === selection.planning)
+      && answered('planning') ? null : selection.planning
+  const planningSelection = 'planning' in selection ? { planning: planning ?? null } : {}
   return roomGone || roomOutsideRun
-    ? { world, agents: null, agentsVisible: false }
-    : { world, agents: selection.agents, agentsVisible: selection.agentsVisible }
+    ? { world, agents: null, agentsVisible: false, ...planningSelection }
+    : { world, agents: selection.agents, agentsVisible: selection.agentsVisible, ...planningSelection }
 }

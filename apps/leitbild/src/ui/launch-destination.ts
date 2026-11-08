@@ -10,6 +10,7 @@ export interface CreatedResourceRef {
 export interface WorkspaceSelection {
   readonly world?: string | null
   readonly agents?: string | null
+  readonly planning?: string | null
 }
 
 export const workspacePath = (workspaceId: string): string => `/workspaces/${encodeURIComponent(workspaceId)}`
@@ -18,6 +19,7 @@ export const workspaceUrl = (workspaceId: string, selection: WorkspaceSelection 
   const params = new URLSearchParams()
   if (selection.world) params.set('world', selection.world)
   if (selection.agents) params.set('agents', selection.agents)
+  if (selection.planning) params.set('planning', selection.planning)
   return `${workspacePath(workspaceId)}${params.size > 0 ? `?${params}` : ''}`
 }
 
@@ -34,8 +36,10 @@ export const launchDestination = (
 ): string => {
   const world = created.find(resource => resource.moduleId === 'world' && resource.type === 'world.simulation-run')
   const agents = created.find(resource => resource.moduleId === 'agents' && resource.type === 'agents.room')
+  const study = created.find(resource => resource.moduleId === 'planning' && resource.type === 'planning.study')
   return workspaceUrl(workspaceId, {
-    world: world?.id ?? current.world ?? null,
-    agents: agents?.id ?? (world ? null : current.agents ?? null),
+    world: study ? null : world?.id ?? current.world ?? null,
+    agents: agents?.id ?? (world || study ? null : current.agents ?? null),
+    planning: study?.id ?? (world ? null : current.planning ?? null),
   })
 }
