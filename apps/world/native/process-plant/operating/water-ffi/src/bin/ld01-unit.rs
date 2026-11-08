@@ -67,6 +67,20 @@
 //! water library, solver configuration, the composed tolerances), restores
 //! every state and makes the same exact consistent restart.
 //!
+//! **Grid exchange** (R4-GRID, owner 8 Nov). LOAD's `solver.grid_exchange_s`
+//! (seconds, or null for a unit no Grid connects) sets an absolute exchange
+//! grid in unit time, whole multiples of that many I&C frames. While the
+//! generator breaker is closed the next exchange is an exact stop, re-armed
+//! at every request boundary from `t`, the LOAD and the breaker's state, so
+//! a restored copy holds the stop its source holds. An ADVANCE may not cross
+//! an armed exchange. `GridBoundary` and `LoadRequest` apply only at an
+//! exchange instant: the boundary's frequency, its rate and the voltage, and
+//! the governor's load request, are held inputs entering storage rates only,
+//! class S at the stop, no restart. With the breaker open a changed boundary
+//! is no event; a dead bus is class R there too, once. Energized after dead
+//! is refused: 1.0 has no offsite restoration (S3-D10). A load request with
+//! the governor out of LOAD is a result (`accepted: false`), not a refusal.
+//!
 //! A refusal after the unit's state may have changed (ADVANCE, a restart, a
 //! Grid boundary) fail-stops the unit: every later request but STATUS and
 //! CLOSE is refused with that cause.
@@ -81,13 +95,14 @@ use leitbild_operating_plant::{
     joined::block::Command,
     network::{CellMode, Network, Properties},
     thermal::Scalar,
+    turbine::governor::Mode,
 };
 use leitbild_operating_water::{
     If97,
     electrical::Electrified,
     frame::{
-        Action, COUNTER_NAMES, Change, Class, Client, Diagnostic, DriverState, MatrixRebuild,
-        Stepping, same_instant,
+        Action, COUNTER_NAMES, Change, Class, Client, Diagnostic, DriverState, Frame,
+        MatrixRebuild, Stepping, same_instant,
     },
     joined::{Discrete, Integrated, JoinedSystem, discrete_restart},
     unit::{
@@ -360,6 +375,31 @@ enum Reading {
     BreakerClosed,
     OffsiteLost,
     ExportEnergy,
+    /// R4-GRID: the held boundary and the port's net power.
+    GridFrequency,
+    GridVoltage,
+    NetExport,
+    /// R4-GRID: the governor's load request in force and whether it takes one.
+    LoadRequest,
+    LoadActive,
+}
+
+/// R4-GRID: the exchange grid's first instant strictly after `t`.
+fn exchange_after(frame: &Frame, every: u64, t: f64) -> f64 {
+    let mut m = (t / (every as f64 * frame.period_s())).floor() as u64;
+    loop {
+        let instant = frame.instant(m * every);
+        if instant > t && !same_instant(instant, t) {
+            return instant;
+        }
+        m += 1;
+    }
+}
+
+/// R4-GRID: whether `t` is an instant of the exchange grid.
+fn on_exchange(frame: &Frame, every: u64, t: f64) -> bool {
+    let m = (t / (every as f64 * frame.period_s())).round() as u64;
+    same_instant(frame.instant(m * every), t)
 }
 
 struct Channel {
@@ -921,8 +961,43 @@ fn channels(plant: &Plant, inputs: &Inputs) -> Result<Vec<Channel>, String> {
             "generator export energy since LOAD (IDAS quadrature)",
             Reading::ExportEnergy,
         ),
+        (
+            "LD01.GRID.FREQUENCY",
+            "Hz",
+            "the Grid's frequency held at the boundary",
+            Reading::GridFrequency,
+        ),
+        (
+            "LD01.GRID.VOLTAGE",
+            "1",
+            "the Grid's voltage held at the boundary, per unit of the line voltage",
+            Reading::GridVoltage,
+        ),
+        (
+            "LD01.GRID.NET_EXPORT",
+            "W",
+            "net power to the Grid: terminal export less both auxiliary draws",
+            Reading::NetExport,
+        ),
     ] {
         out.push(channel(id, unit, quantity, "ELEC slice", read));
+    }
+    // R4-GRID: the load path, with a governor composed.
+    if inputs.ic.governor.declared {
+        out.push(channel(
+            "LD01.TG.LOAD.REQUEST",
+            "W",
+            "the governor's load request in force",
+            "X4.3 governor",
+            Reading::LoadRequest,
+        ));
+        out.push(channel(
+            "LD01.TG.LOAD.ACTIVE",
+            "1",
+            "the governor is in LOAD and takes a load request",
+            "X4.3 governor",
+            Reading::LoadActive,
+        ));
     }
     let mut seen = std::collections::BTreeSet::new();
     if let Some(c) = out.iter().find(|c| !seen.insert(c.id.clone())) {
@@ -962,6 +1037,8 @@ struct Unit {
     /// R4-ENDED: the named domain end the unit stands at.
     ended: Option<Ended>,
     exchanges: u64,
+    /// R4-GRID: the exchange grid in I&C frames (LOAD's `grid_exchange_s`).
+    grid_exchange_frames: Option<u64>,
 }
 
 /// R4-ENDED: a named domain end, at the last accepted step's time.
@@ -1013,8 +1090,24 @@ fn file_identity(
     }))
 }
 
-/// A LOAD request's parts: the inputs, the state's path, the solver.
-fn parse_load(load: &Value) -> Result<(Inputs, String, Solver), String> {
+/// R4-GRID: LOAD's exchange interval in I&C frames: a whole number of them,
+/// the grid's instants the frames' own product.
+fn exchange_frames(seconds: f64, frame: &Frame) -> Result<u64, String> {
+    let frames = (seconds / frame.period_s()).round();
+    if !(seconds.is_finite() && seconds > 0. && frames >= 1.)
+        || !same_instant(frames * frame.period_s(), seconds)
+    {
+        return Err(format!(
+            "LOAD solver.grid_exchange_s {seconds} is not a whole number of {} s frames",
+            frame.period_s()
+        ));
+    }
+    Ok(frames as u64)
+}
+
+/// A LOAD request's parts: the inputs, the state's path, the solver, the
+/// Grid exchange interval (s; null for a unit no Grid connects).
+fn parse_load(load: &Value) -> Result<(Inputs, String, Solver, Option<f64>), String> {
     let o = exactly(load, "LOAD", &["inputs", "state", "solver"])?;
     let i = &o["inputs"];
     exactly(
@@ -1057,8 +1150,23 @@ fn parse_load(load: &Value) -> Result<(Inputs, String, Solver), String> {
     exactly(
         &o["solver"],
         "LOAD solver",
-        &["weights", "first_step", "stepping", "water", "source_atol"],
+        &[
+            "weights",
+            "first_step",
+            "stepping",
+            "water",
+            "source_atol",
+            "grid_exchange_s",
+        ],
     )?;
+    // R4-GRID: a required LOAD key, null with no Grid connected.
+    let grid_exchange_s =
+        match &o["solver"]["grid_exchange_s"] {
+            Value::Null => None,
+            v => Some(v.as_f64().ok_or_else(|| {
+                format!("LOAD solver.grid_exchange_s is a number or null, not {v}")
+            })?),
+        };
     let solver = Solver {
         weights: Weights::parse(text(&o["solver"], "weights", "LOAD solver")?)?,
         first_step: parse_first_step(text(&o["solver"], "first_step", "LOAD solver")?)?,
@@ -1077,14 +1185,19 @@ fn parse_load(load: &Value) -> Result<(Inputs, String, Solver), String> {
             "LOAD solver",
         )?)?,
     };
-    Ok((inputs, text(load, "state", "LOAD")?.to_string(), solver))
+    Ok((
+        inputs,
+        text(load, "state", "LOAD")?.to_string(),
+        solver,
+        grid_exchange_s,
+    ))
 }
 
 impl Unit {
     /// The composed unit of a LOAD request, before its start frame (LOAD)
     /// or its restore (RESTORE).
     fn compose(load: &Value) -> Result<Self, String> {
-        let (inputs, state_path, solver) = parse_load(load)?;
+        let (inputs, state_path, solver, grid_exchange_s) = parse_load(load)?;
         if !matches!(
             solver.first_step,
             leitbild_operating_water::joined::FirstStep::Declared
@@ -1169,6 +1282,9 @@ impl Unit {
                 .as_bytes()
         ));
         let t = plant.t0;
+        let grid_exchange_frames = grid_exchange_s
+            .map(|seconds| exchange_frames(seconds, &plant.frame))
+            .transpose()?;
         Ok(Self {
             plant,
             inputs,
@@ -1182,6 +1298,7 @@ impl Unit {
             failed: None,
             ended: None,
             exchanges: 0,
+            grid_exchange_frames,
         })
     }
 
@@ -1191,7 +1308,45 @@ impl Unit {
         let q0 = vec![0.; slice::QUADRATURES.len()];
         p.driver.start_quadratures(&mut p.ida, q0)?;
         p.start(&mut [])?;
+        unit.arm_exchange()?;
         Ok(unit)
+    }
+
+    /// R4-GRID: the armed stop is the next exchange while the breaker is
+    /// closed and none otherwise, from `t`, the LOAD and the breaker alone.
+    /// Any request boundary may call it: a source and its restored copy hold
+    /// the same stop, and how a Run slices its time changes nothing.
+    fn arm_exchange(&mut self) -> Result<(), String> {
+        let Some(every) = self.grid_exchange_frames else {
+            return Ok(());
+        };
+        let p = &mut self.plant;
+        p.driver.clear_declared_stops();
+        if p.ida.system().breaker.contact == Contact::Closed {
+            p.driver
+                .declare_stop(exchange_after(&p.frame, every, self.t))?;
+        }
+        Ok(())
+    }
+
+    /// R4-GRID: the unit stands at an exchange instant, or a refusal by name.
+    fn at_exchange(&self, kind: &str, t: f64) -> Result<(), String> {
+        let every = self
+            .grid_exchange_frames
+            .ok_or_else(|| format!("{kind}: this unit was loaded with no Grid exchange"))?;
+        if !same_instant(t, self.t) {
+            return Err(format!(
+                "{kind}: decided at the unit's time {} s, not {t} s",
+                self.t
+            ));
+        }
+        if !on_exchange(&self.plant.frame, every, self.t) {
+            return Err(format!(
+                "{kind}: {} s is not an instant of the exchange grid",
+                self.t
+            ));
+        }
+        Ok(())
     }
 
     fn reply(&self) -> Value {
@@ -1357,6 +1512,17 @@ impl Unit {
                     Reading::BreakerClosed => flag(unit.breaker.contact == Contact::Closed),
                     Reading::OffsiteLost => flag(unit.offsite_loss_s.is_some_and(|l| l <= t)),
                     Reading::ExportEnergy => q[EXPORT],
+                    Reading::GridFrequency => unit.slice.inputs.f_grid_hz,
+                    Reading::GridVoltage => unit.slice.inputs.v_line / self.v_nominal,
+                    Reading::NetExport => {
+                        let i = unit.slice.inputs;
+                        unit.slice.export_w(&y[n..]) - i.unit_draw_w - i.reserve_draw_w
+                    }
+                    Reading::LoadRequest => unit.governor.as_ref().ok_or("no governor")?.held.to_w,
+                    Reading::LoadActive => {
+                        let g = unit.governor.as_ref().ok_or("no governor")?;
+                        flag(g.held.mode == Mode::Load)
+                    }
                 })
             })
             .collect()
@@ -1422,6 +1588,17 @@ impl Unit {
                 self.t
             ));
         }
+        // R4-GRID: an armed exchange is the end of an ADVANCE, never inside one.
+        if let Some(every) = self.grid_exchange_frames
+            && self.plant.ida.system().breaker.contact == Contact::Closed
+        {
+            let exchange = exchange_after(&self.plant.frame, every, self.t);
+            if t1 > exchange && !same_instant(t1, exchange) {
+                return Err(format!(
+                    "ADVANCE to {t1} s crosses the Grid exchange at {exchange} s"
+                ));
+            }
+        }
         let before = self.counters()?;
         let reached = self.plant.run(self.t, t1, &mut [], None);
         let reached = match reached {
@@ -1448,6 +1625,9 @@ impl Unit {
         let leitbild_operating_water::frame::Reached::Until(t) = reached;
         self.t = t;
         self.exchanges += 1;
+        if self.ended.is_none() {
+            self.arm_exchange()?;
+        }
         let after = self.counters()?;
         let values = self.values()?;
         let mut events = self.events()?;
@@ -1506,6 +1686,9 @@ impl Unit {
         }
         if kind == "GridBoundary" {
             return self.grid_boundary(v, t);
+        }
+        if kind == "LoadRequest" {
+            return self.load_request(v, t);
         }
         if let Some(operator) = operator_of(v, kind) {
             return self.operator(kind, operator?, t);
@@ -1633,8 +1816,56 @@ impl Unit {
         )
     }
 
+    /// R4-GRID: the plant-side load request, at an exchange instant, through
+    /// the unit library (`turbine::grid_request`), class S. With the governor
+    /// out of LOAD (after a turbine trip) it is a result, not a refusal: the
+    /// reply says `accepted: false`, the electrical log records why, and the
+    /// unit goes on, like an operator command its equipment's guards refuse.
+    fn load_request(&mut self, v: &Value, t: f64) -> Result<Value, String> {
+        exactly(v, "LoadRequest", &["kind", "t_apply", "request_w"])?;
+        self.at_exchange("LoadRequest", t)?;
+        let request_w = v["request_w"]
+            .as_f64()
+            .filter(|w| w.is_finite() && *w >= 0.)
+            .ok_or_else(|| {
+                format!(
+                    "LoadRequest needs a finite request_w >= 0, not {}",
+                    v["request_w"]
+                )
+            })?;
+        let at = self.t;
+        let p = &mut self.plant;
+        let governor = p
+            .ida
+            .system()
+            .governor
+            .as_ref()
+            .ok_or("LoadRequest: no governor composed")?;
+        if governor.held.mode != Mode::Load {
+            p.ida.system_mut().log.push((
+                at,
+                format!("load request {request_w} W refused: the governor is not in LOAD"),
+            ));
+            return Ok(
+                json!({"kind": "LoadRequest", "t_apply": at, "t_apply_bits": bits(at), "accepted": false}),
+            );
+        }
+        let decided = turbine::grid_request(&mut p.driver, p.ida.system(), at, request_w)?;
+        if let Err(e) = self.plant.apply_due(&mut []) {
+            let cause = format!("LoadRequest at {at} s: {e}");
+            self.failed = Some(cause.clone());
+            return Err(cause);
+        }
+        Ok(
+            json!({"kind": "LoadRequest", "t_apply": at, "t_apply_bits": bits(at), "accepted": true, "decided": decided}),
+        )
+    }
+
     /// The Grid's boundary for `[t, until)` through the unit library
-    /// (`plant::boundary`), decided at the unit's time and applied now.
+    /// (`plant::boundary`), decided at an exchange instant and applied now,
+    /// `until` the next one. With the breaker open a changed boundary is no
+    /// event: the relative angle alone still reads it, and an angle to a bus
+    /// the machine has left means nothing. A dead bus goes through, once.
     fn grid_boundary(&mut self, v: &Value, t: f64) -> Result<Value, String> {
         exactly(
             v,
@@ -1650,21 +1881,19 @@ impl Unit {
                 "frequency_rate_hz_s",
             ],
         )?;
-        if !same_instant(t, self.t) {
-            return Err(format!(
-                "GridBoundary: decided at the unit's time {} s, not {t} s",
-                self.t
-            ));
-        }
+        self.at_exchange("GridBoundary", t)?;
         let number = |k: &str| {
             v[k].as_f64()
                 .ok_or_else(|| format!("GridBoundary needs the number {k}"))
         };
         let until = number("until")?;
-        if !(until.is_finite() && until > self.t) {
+        let every = self
+            .grid_exchange_frames
+            .ok_or("GridBoundary: no exchange")?;
+        let next = exchange_after(&self.plant.frame, every, self.t);
+        if !same_instant(until, next) {
             return Err(format!(
-                "GridBoundary: until {until} s is not after {} s",
-                self.t
+                "GridBoundary: until {until} s is not the next exchange, {next} s"
             ));
         }
         let boundary = match v["energized"].as_bool() {
@@ -1677,6 +1906,15 @@ impl Unit {
             Some(false) => Boundary::Dead,
             None => return Err("GridBoundary needs the boolean energized".into()),
         };
+        let unit = self.plant.ida.system();
+        if matches!(boundary, Boundary::Energized { .. })
+            && unit.offsite_loss_s.is_none()
+            && unit.breaker.contact != Contact::Closed
+        {
+            return Ok(
+                json!({"kind": "GridBoundary", "t_apply": self.t, "t_apply_bits": bits(self.t), "decided": "none (the breaker is open)"}),
+            );
+        }
         let decided = self.plant.boundary(self.t, until, boundary)?;
         if let Err(e) = self.plant.apply_due(&mut []) {
             let cause = format!("GridBoundary at {} s: {e}", self.t);
@@ -1759,6 +1997,7 @@ impl Unit {
             self.failed = Some(cause.clone());
             return Err(cause);
         }
+        self.arm_exchange()?;
         self.mark_seen()?;
         Ok(snapshot)
     }
@@ -1784,7 +2023,7 @@ impl Unit {
             return Err(format!("not an {FORMAT}: {}", o["format"]));
         }
         // The input files first (cheap), then the composition's identity.
-        let (inputs, state, solver) = parse_load(&o["load"])?;
+        let (inputs, state, solver, _) = parse_load(&o["load"])?;
         let mut files = file_identity(&o["load"], &inputs, &state, solver)?;
         for (k, v) in o["identity"].as_object().ok_or("snapshot identity")? {
             if k != "composition" && k != "channels_sha256" && files.get(k) != Some(v) {
@@ -1860,6 +2099,7 @@ impl Unit {
         p.yp.clone_from(&restarted.yp);
         p.driver.restore_state(&mut p.ida, driver)?;
         unit.t = t;
+        unit.arm_exchange()?;
         unit.mark_seen()?;
         Ok(unit)
     }

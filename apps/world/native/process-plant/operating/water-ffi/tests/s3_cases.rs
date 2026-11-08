@@ -1063,6 +1063,56 @@ fn operator_trip_at(
 
 /// D1's quiet exchange interval, from the `ld01-electrical-exchange` block
 /// on the handoff page (`LD01_WIKI_ROOT`).
+/// R4-GRID (test-only, unset: nothing changes): the boundary a connected
+/// case exchanges on the absolute 1 s grid, `LD01_S3_GRID_TRACE`: the Grid
+/// Pack's own port values per second, `{points: [{after_zero_s, frequency_hz,
+/// frequency_rate_hz_s, voltage_pu}, ...]}` ascending; held from each point.
+/// `LD01_S3_GRID_HOLD_S` is the connected hold before the case's event.
+struct GridTrace {
+    points: Vec<(f64, f64, f64, f64)>,
+}
+impl GridTrace {
+    fn read() -> Option<Self> {
+        let path = std::env::var("LD01_S3_GRID_TRACE").ok()?;
+        let v: Value = serde_json::from_slice(&std::fs::read(&path).expect("LD01_S3_GRID_TRACE"))
+            .expect("LD01_S3_GRID_TRACE: JSON");
+        let number = |p: &Value, k: &str| p[k].as_f64().unwrap_or_else(|| panic!("trace {k}"));
+        let points: Vec<_> = v["points"]
+            .as_array()
+            .expect("trace points")
+            .iter()
+            .map(|p| {
+                (
+                    number(p, "after_zero_s"),
+                    number(p, "frequency_hz"),
+                    number(p, "frequency_rate_hz_s"),
+                    number(p, "voltage_pu"),
+                )
+            })
+            .collect();
+        assert!(!points.is_empty(), "LD01_S3_GRID_TRACE: no points");
+        Some(Self { points })
+    }
+    fn at(
+        &self,
+        after_zero_s: f64,
+        v_nominal: f64,
+    ) -> leitbild_operating_water::unit::plant::Boundary {
+        let p = self
+            .points
+            .iter()
+            .rev()
+            .find(|p| p.0 <= after_zero_s)
+            .unwrap_or(&self.points[0]);
+        leitbild_operating_water::unit::plant::Boundary::Energized {
+            voltage_v: v_nominal * p.3,
+            frequency_hz: p.1,
+            phase_error_rad: 0.,
+            frequency_rate_hz_s: p.2,
+        }
+    }
+}
+
 fn exchange_quiet_s() -> f64 {
     let page = format!("{}/operating-scale-realization.md", gates::wiki_model());
     Block::from_page(&page, "ld01-electrical-exchange")
@@ -1506,7 +1556,16 @@ fn drive(
     // C1 and C5 exchange with the test-only Grid stand-in (owner D1 + D2,
     // R5-F4): C1 as a connected unit on a steady bus, every interval quiet
     // (S3-D42: no grid event, no grid window).
-    let exchanging = c5 || case == Case::C1;
+    // R4-GRID: a connected case on a scripted boundary (test-only).
+    let grid_trace = GridTrace::read();
+    let grid_hold_s = std::env::var("LD01_S3_GRID_HOLD_S").map_or(0., |v| {
+        assert!(
+            grid_trace.is_some(),
+            "LD01_S3_GRID_HOLD_S needs LD01_S3_GRID_TRACE"
+        );
+        v.parse::<f64>().expect("LD01_S3_GRID_HOLD_S")
+    });
+    let exchanging = c5 || case == Case::C1 || grid_trace.is_some();
     let started = process_cpu_s();
     let section = inputs.ic.clone();
     let turbine = ask.config.turbine_governor.then(|| {
@@ -1636,7 +1695,7 @@ fn drive(
         ),
         other => panic!("kinetics rule {other:?}: A4 or P1"),
     };
-    let zero = t0 + zero_after;
+    let zero = t0 + zero_after + grid_hold_s;
     let implemented: Vec<String> = section.functions.iter().map(|f| f.id.clone()).collect();
     // C5 (ICFIELD): the generator page's ACT.B field controller, a client,
     // with its timing from the ELEC packet's `fieldProtection`
@@ -1967,6 +2026,19 @@ fn drive(
     };
     let exchanges: Vec<(f64, bool)> = if c5 {
         s3_harness::c5::exchange_bounds(t0, zero, window_s.unwrap_or(f64::NAN), until, quiet_s)
+    } else if grid_trace.is_some() {
+        // R4-GRID: the unit's absolute exchange grid, whole multiples of the
+        // quiet interval in frames, from after t0 through the first exchange
+        // at or after the event (the armed stop the event finds; with the
+        // breaker open after it the live unit arms no more).
+        let every = (quiet_s / frame.period_s()).round() as u64;
+        let mut m = (t0 / (every as f64 * frame.period_s())).floor() as u64 + 1;
+        let mut grid = Vec::new();
+        while frame.instant(m * every) <= (zero + quiet_s).min(until) {
+            grid.push((frame.instant(m * every), false));
+            m += 1;
+        }
+        grid
     } else if exchanging {
         // A connected unit, no grid event: quiet intervals to the end.
         s3_harness::c5::exchange_bounds(t0, until, 0., until, quiet_s)
@@ -2039,7 +2111,7 @@ fn drive(
         // C5: the stand-in's boundary for the first interval, decided at
         // the unit's start (an energized bus agreeing with the held
         // prediction is no event).
-        if exchanging && r.is_ok() {
+        if exchanging && grid_trace.is_none() && r.is_ok() {
             let t1 = exchanges.first().map_or(until, |e| e.0);
             r = plant::boundary(driver, ida.system(), t0, t1, steady_bus)
                 .map(|k| exchange_log.push(json!({"t_s": t0, "decided": k})));
@@ -2324,8 +2396,14 @@ fn drive(
                         }
                     } else if (!c5 || b < zero)
                         && let Some(t1) = next
+                        && (grid_trace.is_none()
+                            || ida.system().breaker.contact
+                                == leitbild_operating_plant::electrical::breaker::Contact::Closed)
                     {
-                        match plant::boundary(driver, ida.system(), b, t1, steady_bus) {
+                        let bus = grid_trace
+                            .as_ref()
+                            .map_or(steady_bus, |g| g.at(b - zero, v_nominal));
+                        match plant::boundary(driver, ida.system(), b, t1, bus) {
                             Ok(k) => exchange_log.push(json!({"t_s": b, "decided": k})),
                             Err(e) => r = Err(e),
                         }
