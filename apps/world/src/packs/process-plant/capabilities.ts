@@ -297,8 +297,8 @@ const queryDescriptionById: Readonly<Record<string, string>> = {
   'world.process-plant.transient.diagnostics': 'Read detailed transient, performance, and instrumentation diagnostics for one Plant.',
   'world.process-plant.ic.status': 'Read the complete current I&C snapshot for one Plant, including inactive alarm and trip lifecycle state.',
   'world.process-plant.ic.catalog': 'Discover one Plant\'s configured I&C rules (alarms, trips, protection and control): each rule\'s class, the modes it acts in, its effects and command gates, and the signals it watches by tagId, label and unit; signals.read gives their readings. Filter by text (words in the rule, its effects or its signals, e.g. "safety injection"), ruleClass or ruleIds. Returns a page of 25 rules by default (limit up to 100; continue from offset + returned while hasMore), with ruleCount, the Plant\'s total.',
-  'world.process-plant.alarms.status': 'Read active alarms and trips plus a compact current lifecycle summary for one Plant. Use ic.status only when inactive lifecycle records are needed.',
-  'world.process-plant.alarms.summary': 'Read a compact current alarm and trip summary for one Plant.',
+  'world.process-plant.alarms.status': 'Read active alarms and trips plus a compact current lifecycle summary for one Plant. Use ic.status only when inactive lifecycle records are needed. Say why a trip happened from its first-out; if none is shown, say so.',
+  'world.process-plant.alarms.summary': 'Read a compact current alarm and trip summary for one Plant. Say why a trip happened from its first-out; if none is shown, say so.',
   'world.process-plant.alarms.history': 'Read alarm and trip lifecycle transitions recorded for one Plant.',
 }
 
