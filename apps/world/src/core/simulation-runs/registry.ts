@@ -17,6 +17,7 @@ import {
   runRolesOf,
 } from '../model/index.ts'
 import { createSimulationClock,nowIso } from '../model/time.ts'
+import { createPlanningSourceEpoch, readPlanningSourceEpoch } from './planning-source-epoch.ts'
 import { scenarioPreviewFor,type ScenarioPreview } from '../scenarios/authoring-preview.ts'
 import type { ScenarioAuthoringCatalog } from '../scenarios/authoring.ts'
 import type { ScenarioDefinition } from '../scenarios/definition.ts'
@@ -701,6 +702,7 @@ export const createSimulationRunRegistry = (config: {
         procedureSourceService,
         procedureProvider: object => scenarioRuntime.packs.find(pack => pack.descriptor.id === object.packId)?.procedures,
         packs: scenarioRuntime.packs,
+        planningSourceEpoch: () => readPlanningSourceEpoch(join(simulationRunRoot, id, 'planning-source-epoch.json')),
         runtimeStateLoaders: Object.fromEntries(Object.entries(runtimeStateStores).map(([runtimeId, store]) => [runtimeId, store.load])),
         ...(historian === undefined ? {} : { historian }),
       })
@@ -734,6 +736,7 @@ export const createSimulationRunRegistry = (config: {
     const creating = storageBudget.withGrowth(workspaceRoot, 16 * 1024 * 1024, async () => {
       const { manifest, compiledScenario } = await createManifest(id, requestedScenarioId, createConfig?.scenarioRevisionId)
       await manifestStoreFor(id).create(manifest)
+      await createPlanningSourceEpoch(join(simulationRunRoot, id, 'planning-source-epoch.json'))
       await createCompiledScenarioStore(join(simulationRunRoot, id, 'compiled-scenario.json')).create(compiledScenario)
       return await createRuntime({ manifest })
     }).finally(() => {
@@ -1020,6 +1023,7 @@ export const createSimulationRunRegistry = (config: {
       const compiledScenario = await createCompiledScenarioStore(join(simulationRunRoot, sourceId, 'compiled-scenario.json')).load()
       await storageBudget.withGrowth(workspaceRoot, 32 * 1024 * 1024, async () => {
         await manifestStoreFor(id).create(manifest)
+        await createPlanningSourceEpoch(join(simulationRunRoot, id, 'planning-source-epoch.json'))
         await createCompiledScenarioStore(join(simulationRunRoot, id, 'compiled-scenario.json')).create(compiledScenario)
         await createSimulationRunSnapshotStore({ simulationRunId: id, path: join(simulationRunRoot, id, 'snapshot.json') }).save({
           ...checkpoint.snapshot,
@@ -1098,6 +1102,9 @@ export const createSimulationRunRegistry = (config: {
       : undefined
     await closeLoaded(id)
     const runDir = join(simulationRunRoot, id)
+    // Revoke retained planning qualification before destructive reset writes,
+    // including a crash between removing the old snapshot and starting anew.
+    await createPlanningSourceEpoch(join(runDir, 'planning-source-epoch.json'))
     await Promise.all([
       rm(join(runDir, 'snapshot.json'), { force: true }),
       rm(join(runDir, 'events.jsonl'), { force: true }),

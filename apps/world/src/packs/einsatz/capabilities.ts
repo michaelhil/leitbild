@@ -6,6 +6,7 @@ import type { SimulationCapability } from '../../simulation/protocol.ts'
 import { configurationOutputSchema } from './config-schema.ts'
 import { divertsNameSendUnits, divertsNameSendUnitsIssue, intentFields } from './engine/intents.ts'
 import { recommendationSchema } from './recommendation-schema.ts'
+import { einsatzPlanningCapability } from './planning-source.ts'
 
 /**
  * The Einsatz Capabilities. Commands are validated against the current state
@@ -96,6 +97,7 @@ const command = <K extends EinsatzCommandId>(config: {
 })
 
 export const einsatzCapabilities: ReadonlyArray<SimulationCapability> = [
+  einsatzPlanningCapability,
   command({
     id: einsatzCommandIds.send,
     title: 'Send units',

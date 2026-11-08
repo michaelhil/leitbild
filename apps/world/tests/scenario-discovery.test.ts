@@ -21,6 +21,8 @@ describe('bundled scenario discovery', () => {
       'nordic-frequency-event',
       'nordland-corridor-security',
       'norway-situation-monitor',
+      'planning-component-work',
+      'planning-response',
       'rogaland-black-start',
       'supply-run',
     ])

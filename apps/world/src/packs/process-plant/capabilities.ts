@@ -53,6 +53,7 @@ import {
 } from './queries/signal-query.ts'
 import { variablesReadQuerySchema, variablesSearchQuerySchema } from './queries/variable-query.ts'
 import { processPlantResponseQuerySchema } from './response-evidence.ts'
+import { processPlantPlanningCapability } from './planning-source.ts'
 
 const recordSchema = z.record(z.string(), z.json())
 const recordArraySchema = z.array(recordSchema)
@@ -359,6 +360,7 @@ export const processPlantControlProposeResultSchema = z.discriminatedUnion('ok',
 export type ProcessPlantControlProposeResult = z.infer<typeof processPlantControlProposeResultSchema>
 
 export const processPlantCapabilities = [
+  processPlantPlanningCapability,
   commandCapability({
     id: processPlantControlWriteCommandKind,
     title: 'Write process control',

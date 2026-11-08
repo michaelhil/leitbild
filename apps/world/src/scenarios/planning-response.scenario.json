@@ -1,0 +1,27 @@
+{
+  "id": "planning-response",
+  "title": "Planning lab: shared response capacity",
+  "description": "Two fictional response units, two jobs and one receiving slot. Capture the current owner estimates in Planning, compare supplied assignments, then observe real accepted dispatch. Direct movement is an explicit exercise assumption; no clinical quality model is supplied.",
+  "objectives": ["Compare two supplied job orders without exceeding one receiving slot.", "Keep predicted dates separate from accepted dispatch and observed completion."],
+  "world": { "startsAt": "2026-11-08T09:00:00.000Z", "environment": { "purpose": "planning research demonstration" } },
+  "view": { "map": { "center": [11.39, 59.13], "zoom": 12 } },
+  "packs": [{
+    "id": "einsatz",
+    "config": {
+      "loadClasses": [{ "id": "routine", "label": "Routine", "code": "R", "noun": { "one": "load", "other": "loads" } }],
+      "unitTypes": [
+        { "id": "response", "label": "Response unit", "icon": "ambulance", "components": { "mobility": { "mode": "direct", "speedMps": 12, "mobilizeS": 60 }, "service": { "provides": ["assessment"], "onSceneS": 600 }, "carry": { "capacity": 1, "classes": ["routine"] } }, "properties": [{ "id": "preparationSeconds", "label": "Authored preparation estimate", "kind": "number", "unit": "s", "min": 0, "default": 180 }], "standingOrders": { "deliver": "nearest-accepting" } },
+        { "id": "receiving", "label": "Receiving site", "icon": "hospital", "public": true, "components": { "receiving": { "accepts": ["routine"], "slots": 1, "handoverS": 900, "accepting": true } } }
+      ],
+      "taskTemplates": [{ "id": "response-job", "label": "Response job", "icon": "heart-pulse", "requires": [{ "provides": "assessment", "count": 1, "label": { "one": "response unit", "other": "response units" } }] }]
+    },
+    "items": [
+      { "type": "unit", "id": "unit:planning-a", "label": "Response A", "unitType": "response", "position": [11.38, 59.12] },
+      { "type": "unit", "id": "unit:planning-b", "label": "Response B", "unitType": "response", "position": [11.42, 59.14], "properties": { "preparationSeconds": 300 } },
+      { "type": "unit", "id": "site:planning-receiving", "label": "One-slot receiving site", "unitType": "receiving", "position": [11.39, 59.125] },
+      { "type": "task", "id": "task:planning-a", "label": "Job A", "template": "response-job", "position": [11.40, 59.135], "loads": { "routine": 1 } },
+      { "type": "task", "id": "task:planning-b", "label": "Job B", "template": "response-job", "position": [11.37, 59.14], "loads": { "routine": 1 } }
+    ]
+  }],
+  "guide": { "id": "planning-response-guide", "title": "Compare response plans", "startPaused": true, "steps": [{ "id": "capture", "title": "Capture a planning basis", "instruction": "This Run starts paused. Open Planning and capture the response source. Compare supplied orders for the two units and one receiving slot. A schedule is a forecast; use ordinary dispatch to observe an actual outcome.", "completion": { "kind": "acknowledge" } }, { "id": "explore", "title": "Observe an actual response", "instruction": "Select a response unit and job in World, dispatch it, and play the Run to observe the accepted response. Keep the measured outcome distinct from the saved planning candidate. Copy the Run before trying another intervention.", "completion": { "kind": "acknowledge" } }] }
+}

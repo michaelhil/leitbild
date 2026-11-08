@@ -36,6 +36,7 @@ import type { SimulationRunSnapshotStore } from './snapshot-store.ts'
 import { maximumPaceProgressWallIntervalMs,maximumPaceStepMs,type SimulationRunCopyCheckpoint } from './execution.ts'
 import { createSimulationRunStateStore,type SimulationRunStateSnapshot,type SimulationRunStateStore } from './state-store.ts'
 import { createScenarioTimelineRunner,dueScenarioTimelineCues,type ScenarioTimelineRunner } from './timeline-runner.ts'
+import { createPlanningSourcePort, type PlanningSourcePort } from './planning-source.ts'
 
 const projectedSnapshotFlushIntervalMs = defaultSimulationRunRuntimePolicy.projectedSnapshotFlushIntervalMs
 const scenarioRunnerActor: Actor = {
@@ -69,6 +70,8 @@ export interface SimulationRunRuntime {
   readonly inspectionPolicy: (actor: Actor) => QueryReadPolicy
   /** The roles this Run declares, fixed for its lifetime; null in open mode. */
   readonly roles: () => RunRoles | null
+  /** Shared-audience planning reads; Packs own the projected facts. */
+  readonly planningSource: PlanningSourcePort
   readonly setClock: (update: SimulationClockUpdate) => Promise<SimulationClockState>
   readonly setAgentRestrictions: (actor: Actor, restrictions: AgentRestrictions, expectedRevision: number) => Promise<ScenarioExecutionState['agentRestrictions']>
   readonly checkpointForCopy: () => Promise<SimulationRunCopyCheckpoint>
@@ -177,6 +180,7 @@ export const createSimulationRunRuntime = async (config: {
   /** A new Run starts paused rather than playing; a restored one keeps the clock it was saved with. */
   readonly startPaused?: boolean
   readonly restoredEvents?: ReadonlyArray<SimulationRunEvent>
+  readonly planningSourceEpoch?: () => Promise<string | null>
   readonly initialSeq?: number
   readonly scenario: {
     readonly id: string
@@ -1761,6 +1765,14 @@ export const createSimulationRunRuntime = async (config: {
     snapshot: () => snapshotWithCurrentClock(),
     inspectionPolicy,
     roles: () => runRoles,
+    planningSource: createPlanningSourcePort({
+      snapshot: () => snapshotWithCurrentClock(),
+      roles: () => runRoles,
+      packs: () => config.packs ?? [],
+      active: id => runtimeCapabilities.get(id)?.capability.audience === 'system',
+      epoch: config.planningSourceEpoch ?? (async () => null),
+      invoke: query => { assertCommitAvailable(); return config.runtimeConnection.invokeQuery(query) },
+    }),
     setClock,
     setAgentRestrictions,
     checkpointForCopy,

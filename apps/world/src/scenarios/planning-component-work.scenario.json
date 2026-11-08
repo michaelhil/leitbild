@@ -1,0 +1,10 @@
+{
+  "id": "planning-component-work",
+  "title": "Planning lab: pump work methods",
+  "description": "A fictional supported PWR model supplies public pump state and physical response parameters. Planning attaches explicit method durations, crew demands and a proposed work window. The demonstration does not model maintenance methods, isolation permits or lifting feasibility.",
+  "objectives": ["Reference exact live pump components while keeping work-duration assumptions in Planning.", "Compare work sequences under shared crew capacity."],
+  "world": { "startsAt": "2026-11-08T09:00:00.000Z", "environment": { "purpose": "component planning research demonstration" } },
+  "view": { "map": { "center": [11.47, 59.086], "zoom": 14 } },
+  "packs": [{ "id": "process-plant", "items": [{ "type": "plant", "id": "plant:planning-work", "label": "Planning research plant", "location": [11.47, 59.086], "model": { "ref": "process-plant.pwr.reference", "parameters": { "loopCount": 4 } }, "operatingPoint": { "ref": "process-plant.pwr.full-power" }, "automation": { "ref": "process-plant.pwr.standard" } }] }],
+  "guide": { "id": "planning-component-guide", "title": "Compare component work", "startPaused": true, "steps": [{ "id": "capture", "title": "Read the pump subjects", "instruction": "This Run starts paused. Capture the public pump planning basis. Add explicit preparation, work and verification durations in Planning. Nominal pump flow and run-up time describe physical behavior, not a qualified maintenance method.", "completion": { "kind": "acknowledge" } }, { "id": "explore", "title": "Inspect the live plant", "instruction": "Inspect the referenced pump and its public readings in World. A proposed work window does not change the plant. Use offered controls only for an explicitly chosen experiment, and retain actual command outcomes separately from method assumptions.", "completion": { "kind": "acknowledge" } }] }
+}

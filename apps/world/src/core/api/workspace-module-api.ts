@@ -33,6 +33,7 @@ import { assembleRunContext } from '../../features/displays/context/run-context.
 import { storedDashboards } from '../../features/displays/dashboards/dashboards.ts'
 import { observablesSearchInputSchema, observablesSearchOutputSchema, searchObservables } from '../../features/displays/observation/search.ts'
 import { displayCapabilities } from './display-capabilities.ts'
+import { planningSourceCapabilities } from './planning-source-capabilities.ts'
 import { guidanceCapabilities } from './guidance-capabilities.ts'
 import { isGuidanceFailure } from '../guides/errors.ts'
 import { isCapabilityRejection } from '../../simulation/capability-rejection.ts'
@@ -884,6 +885,7 @@ const visibleChangeEvents = (
 }
 
 const worldCapabilities = createModuleCapabilityRegistry<SimulationRunRegistry, Response>(WORLD_MODULE_ID, [
+  ...planningSourceCapabilities,
   ...guidanceCapabilities(),
   {
     descriptor: {

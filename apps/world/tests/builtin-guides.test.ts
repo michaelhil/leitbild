@@ -16,8 +16,8 @@ import { scenarioAuthoringCatalogFor } from '../src/core/scenarios/authoring.ts'
 import { createScenarioRuntimeResolver } from '../src/core/scenarios/runtime-resolver.ts'
 import { evaluateGuideCondition } from '../src/core/guides/conditions.ts'
 
-test('all sixteen pinned guides compile with exact owner targets and perspective-compatible human paths', async () => {
-  expect(builtinScenarioDefinitions).toHaveLength(16)
+test('all bundled guides compile with exact owner targets and perspective-compatible human paths', async () => {
+  expect(builtinScenarioDefinitions).toHaveLength(18)
   const panelIds = new Set(worldPacks.flatMap(pack => pack.ui?.surfacePanels.map(panel => panel.id) ?? []))
   let stateTasks = 0, promptTasks = 0
   for (const source of builtinScenarioDefinitions) {
