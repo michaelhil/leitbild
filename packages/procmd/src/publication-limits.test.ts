@@ -69,6 +69,7 @@ test('correct lines pass', () => {
 
 const mutants: ReadonlyArray<readonly [string, string, string]> = [
   ['reversed comparator', 'Power range — BELOW 5%. «POWER > 5»', 'the words state BELOW 5%'],
+  ['reversed comparator, lower-case words', 'Power range — below 5%. «POWER > 5»', 'the words state below 5%'],
   ['wrong tag, different unit', 'Power range — BELOW 5%. «RATE < 5»', 'RATE is in DPM'],
   ['SG D left out of ALL', 'SG levels — ALL BELOW 82%. «SG-A-LVL < 82» «SG-B-LVL < 82» «SG-C-LVL < 82»', 'SG-D-LVL is left out'],
   ['band reversed on one SG', `SG levels — ALL 40% TO 70%. «SG-A-LVL > 40» «SG-A-LVL < 70» «SG-B-LVL > 70» «SG-B-LVL < 40» «SG-C-LVL > 40» «SG-C-LVL < 70» «SG-D-LVL > 40» «SG-D-LVL < 70»`, 'not stated in the words'],
@@ -94,6 +95,12 @@ test('a marked document states every limit as a limit, except on an IF line', ()
   const stated = 'Pair: [id: a]\nCheck: Level — BELOW 5%. «POWER»\n\n- Met [outcome: normal] → END'
   expect(checkProcedureLimits(parseProcedure(doc(stated))).join()).toContain('states a limit and carries none')
   expect(checkProcedureLimits(parseProcedure(doc(stated, 'category: x')))).toEqual([])
+  for (const lowered of ['Level — below 5%. «POWER»', 'Leakage at most 0.063 kg/s. «FLOW»', 'Level 40% to 70%. «POWER»', 'b. Level below 5%. «POWER»']) {
+    expect(checkProcedureLimits(parseProcedure(doc(`Pair: [id: a]\nCheck: ${lowered}\n\n- Met [outcome: normal] → END`))).join()).toContain('states a limit and carries none')
+  }
+  for (const exempt of ['Is power below 5%? «POWER»', 'b. IF power is above 5%: breakers OPEN. «POWER»', 'For each affected steam generator: flow below 1 kg/s. «FLOW»', 'Keep Steps 1 to 3 met.']) {
+    expect(checkProcedureLimits(parseProcedure(doc(`Pair: [id: a]\nCheck: ${exempt}\n\n- Met [outcome: normal] → END`)))).toEqual([])
+  }
   expect(checkProcedureLimits(parseProcedure(doc('Pair: [id: a]\nCheck: IF power is ABOVE 5%: breakers OPEN. «POWER»\n\n- Met [outcome: normal] → END')))).toEqual([])
   expect(checkProcedureLimits(parseProcedure(doc('Pair: [id: a]\nCheck: Is any SG uncontrolled? «SG-A-LVL»\n\n- None [outcome: normal] → END')))).toEqual([])
 })

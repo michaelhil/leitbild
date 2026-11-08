@@ -16,11 +16,11 @@ type Claim = { readonly text: string; readonly operators: ReadonlyArray<string>;
 
 /** The limits a line's capitalised state words state. */
 const claimsIn = (words: string): ReadonlyArray<Claim> => [
-  ...[...words.matchAll(new RegExp(`\\b(BELOW|ABOVE|AT MOST|AT LEAST)\\s+(${number})\\s*(${unit})?`, 'g'))]
-    .map(([text, word, value, named]) => ({ text, operators: [comparators[word!]!], value: Number(value), unit: named })),
-  ...[...words.matchAll(new RegExp(`(${number})\\s*(?:${unit})?\\s+TO\\s+(${number})\\s*(${unit})?`, 'g'))]
+  ...[...words.matchAll(new RegExp(`\\b(BELOW|ABOVE|AT MOST|AT LEAST)\\s+(${number})\\s*(${unit})?`, 'gi'))]
+    .map(([text, word, value, named]) => ({ text, operators: [comparators[word!.toUpperCase()]!], value: Number(value), unit: named })),
+  ...[...words.matchAll(new RegExp(`(?<!steps?\\s)(${number})\\s*(?:${unit})?\\s+TO\\s+(${number})\\s*(${unit})?`, 'gi'))]
     .flatMap(([text, low, high, named]) => [{ text, operators: ['>', '>='], value: Number(low), unit: named }, { text, operators: ['<', '<='], value: Number(high), unit: named }]),
-  ...(/\bZERO OR NEGATIVE\b/.test(words) ? [{ text: 'ZERO OR NEGATIVE', operators: ['<='], value: 0 }] : []),
+  ...(/\bZERO OR NEGATIVE\b/i.test(words) ? [{ text: 'ZERO OR NEGATIVE', operators: ['<='], value: 0 }] : []),
 ]
 
 const family = (tagId: string): string => tagId.replace(/(^|-)[A-D](-|$)/, '$1?$2')
@@ -74,7 +74,8 @@ export const checkProcedureLimits = (parsed: ParsedProcedure): ReadonlyArray<str
     for (const block of lines) {
       const words = block.text.replace(/\s*«[^»]*»/g, '').trim()
       if (block.limits === undefined) {
-        if (marked && !/^IF\b/.test(words) && claimsIn(words).length > 0) at(block.sourceLine, 'the line states a limit and carries none')
+        // A question, an IF line and a line about whichever SG is affected state a limit no fixed tag can carry.
+        if (marked && !/^(?:[a-z]\.\s+)?IF\b|\?|\baffected\b/i.test(words) && claimsIn(words).length > 0) at(block.sourceLine, 'the line states a limit and carries none')
         continue
       }
       for (const problem of lineProblems(parsed, words, block.limits)) at(block.sourceLine, problem)
