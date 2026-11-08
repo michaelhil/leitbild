@@ -964,6 +964,7 @@
     .workspace-bar { height: auto; min-height: 44px; flex-wrap: wrap; gap: 2px; padding: 2px 8px; }
     .workspace-identity { flex: 1 0 100%; min-width: 0; }
     .workspace-actions { width: 100%; flex-wrap: wrap; gap: 4px; }
+    .planning-title { display: none; }
     .workspace-actions > :global(.run-controls) { flex: 1 1 auto; }
     .workspace-bar :global(button), .workspace-bar :global(.workspace-actions > a) { min-height: 44px; }
     .workspace-name { max-width: 42vw; }
