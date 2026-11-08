@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { parseProcedureMarkdown } from '../src/features/procedures/procmd.ts'
-import { procedureBlockLabel, procedureLineCheckEvidence, procedureLineChecks, procedureObservationBasis, procedureObservationEvidence, procedureObservationLabel, procedureOperatorRows, procedureSampledEvidence, procedureSourceEvidenceRequest, procedureStepItems, procedureStepTagBindings, procedureTextSegments, procedureUnitJump } from '../src/ui/procedures/procedure-view.ts'
+import { procedureBlockLabel, procedureEvidenceStatusWord, procedureLineReadingText, procedureReadingText, procedureRequirementText, procedureLineCheckEvidence, procedureLineChecks, procedureObservationBasis, procedureObservationEvidence, procedureObservationLabel, procedureOperatorRows, procedureSampledEvidence, procedureSourceEvidenceRequest, procedureStepItems, procedureStepTagBindings, procedureTextSegments, procedureUnitJump } from '../src/ui/procedures/procedure-view.ts'
 import { procedureCriterionReadingSchema } from '../src/core/model/procedure-criteria.ts'
 import { procedureTestSource } from './procedure-fixtures.ts'
 import { procedureBindingStatusWord, procedureComparisonText, procedureCsfChip, procedureDescriptionText, procedureDisplayReading, procedureElapsedText, procedureStepBindingSummary } from '../src/ui/procedures/procedure-view.ts'
@@ -35,8 +35,8 @@ test('authored observation presentation retains measured value, criterion and un
   ] }
   expect(procedureObservationBasis(result)).toContain('[Source](../basis.md)')
   expect(procedureObservationEvidence(result)).toEqual([
-    { label: 'SG level', value: '42 %', criterion: '>= 35 %', status: 'satisfied' },
-    { label: 'Unavailable indication', value: 'unavailable', criterion: '== true bool', status: 'unknown', reason: 'Signal absent' },
+    { label: 'SG level', value: '42 %', criterion: 'at least 35 %', status: 'satisfied' },
+    { label: 'Unavailable indication', value: 'unavailable', criterion: 'On', status: 'unknown', reason: 'Signal absent' },
   ])
 })
 
@@ -50,7 +50,7 @@ test('advisory details show the actual receiving flow and protection indications
     ],
   }
   expect(procedureObservationEvidence(result)).toMatchObject([
-    { label: 'Safety injection to cold leg A', value: '2.4 kg/s', criterion: '> 0 kg/s' },
+    { label: 'Safety injection to cold leg A', value: '2.40 kg/s', criterion: 'above 0 kg/s' },
     { label: 'Manual safety injection · latched', value: 'Off', criterion: 'Off' },
     { label: 'FLOW-B', value: 'unavailable', status: 'unknown' },
   ])
@@ -75,9 +75,9 @@ test('sampled response shows both current readings and a separately failed histo
     }],
     evidence: [{ recordingIndex: 0, comparison: { signal: { tagId: 'SG-A-LVL-NR' }, statistic: 'minimum', operator: '>', value: 20, unit: '%' }, actual: 18, status: 'challenged' }],
   }
-  expect(procedureObservationEvidence(result)).toEqual([{ label: 'Steam generator A level', value: '30 %', criterion: '> 20 %', status: 'satisfied' }])
+  expect(procedureObservationEvidence(result)).toEqual([{ label: 'Steam generator A level', value: '30 %', criterion: 'above 20 %', status: 'satisfied' }])
   expect(procedureSampledEvidence(result)).toEqual([{
-    label: 'Steam generator A level (SG-A-LVL-NR) · minimum', value: '18 %', criterion: '> 20 %', status: 'challenged',
+    label: 'Steam generator A level (SG-A-LVL-NR) · minimum', value: '18 %', criterion: 'above 20 %', status: 'challenged',
     span: '120 s recorded', window: 'Samples 04:00:00.000 to 04:02:00.000 · largest gap 1 s · after accepted operation at 03:59:59.000',
   }])
   expect(procedureObservationEvidence({ ...result, recordings: [], evidence: [] })).toHaveLength(1)
@@ -306,4 +306,25 @@ test("a step's ⓘ heads its tags with counts and takes the colour of its worst 
   expect(procedureStepBindingSummary([binding('resolved')])).toEqual({ text: '1 tag · 0 with warnings · 0 missing', worst: 'resolved' })
   expect(procedureStepBindingSummary([]).worst).toBe('none')
   expect(procedureBindingStatusWord('resolved-with-warnings')).toBe('Warnings')
+})
+
+test('a long float reads rounded, with the requirement in the words lines use', () => {
+  expect(procedureReadingText(55.858770158142825, 'percent')).toBe('55.9 %')
+  expect(procedureReadingText(7.671234, 'MPa')).toBe('7.67 MPa')
+  expect(procedureReadingText(false, 'boolean')).toBe('Off')
+  expect(procedureReadingText(undefined, 'MPa')).toBe('unavailable')
+  expect(procedureRequirementText('>', 10, 'percent')).toBe('above 10 %')
+  expect(procedureRequirementText('<=', 0.063, 'kg/s')).toBe('at most 0.063 kg/s')
+  expect(procedureRequirementText('==', false, 'boolean')).toBe('Off')
+  expect(procedureEvidenceStatusWord('challenged')).toBe('not met')
+  expect(procedureEvidenceStatusWord('supported')).toBe('met')
+})
+
+test('a Check line states its requirement and its two-state readings in its own words', () => {
+  const closed = { operator: '==', value: false, unit: 'boolean' } as const
+  const line = 'Reactor trip breakers A and B — OPEN.'
+  expect(procedureLineReadingText(line, closed, { value: false, unit: 'boolean', status: 'supported' })).toEqual({ value: 'OPEN', required: 'OPEN' })
+  expect(procedureLineReadingText(line, closed, { value: true, unit: 'boolean', status: 'contradicted' })).toEqual({ value: 'not OPEN', required: 'OPEN' })
+  expect(procedureLineReadingText('Power range — below 5%.', { operator: '<', value: 5, unit: 'percent' }, { value: 1.04321, unit: 'percent', status: 'supported' })).toEqual({ value: '1.0 %', required: 'below 5%' })
+  expect(procedureLineReadingText('Check the level', { operator: '>', value: 10, unit: 'percent' }, undefined)).toEqual({ value: 'unavailable', required: 'above 10 %' })
 })

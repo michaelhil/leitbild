@@ -232,8 +232,8 @@ export const procedureObservationEvidence = (result: Record<string, unknown>): R
     const comparison = evidenceRecord(item.comparison)
     return {
       label: observationSignalLabel(signal, reference),
-      value: variable.value === undefined ? 'unavailable' : `${String(variable.value)}${typeof variable.unit === 'string' ? ` ${variable.unit}` : ''}`,
-      criterion: `${String(comparison.operator ?? '?')} ${String(comparison.value ?? '?')}${typeof comparison.unit === 'string' ? ` ${comparison.unit}` : ''}`,
+      value: procedureReadingText(variable.value, typeof variable.unit === 'string' ? variable.unit : undefined),
+      criterion: procedureRequirementText(comparison.operator, comparison.value, typeof comparison.unit === 'string' ? comparison.unit : undefined),
       status, ...reason,
     }
   })
@@ -253,15 +253,15 @@ export const procedureSampledEvidence = (result: Record<string, unknown>): Reado
     const reference = evidenceRecord(comparison.signal)
     const label = observationSignalLabel(signal, reference)
     const statistic = comparison.statistic === 'change' ? 'change' : comparison.statistic === 'minimum' ? 'minimum' : 'maximum'
-    const unit = typeof comparison.unit === 'string' ? ` ${comparison.unit}` : ''
+    const unit = typeof comparison.unit === 'string' ? comparison.unit : undefined
     const from = observationClock(evidenceRecord(recording.first).simulationTime)
     const to = observationClock(evidenceRecord(recording.current).simulationTime)
     const anchor = observationClock(recording.notBeforeSimulationTime)
     const gap = typeof recording.maximumGapMs === 'number' ? ` · largest gap ${recording.maximumGapMs / 1000} s` : ''
     return {
       label: `${label} · ${statistic}`,
-      value: typeof item.actual === 'number' ? `${item.actual}${unit}` : 'unavailable',
-      criterion: `${String(comparison.operator ?? '?')} ${String(comparison.value ?? '?')}${unit}`,
+      value: procedureReadingText(typeof item.actual === 'number' ? item.actual : undefined, unit),
+      criterion: procedureRequirementText(comparison.operator, comparison.value, unit),
       status: typeof item.status === 'string' ? item.status : 'unknown',
       ...(typeof recording.integratedSpanSeconds === 'number' ? { span: `${recording.integratedSpanSeconds} s recorded` } : {}),
       ...(from && to ? { window: `Samples ${from} to ${to}${gap}${anchor ? ` · after accepted operation at ${anchor}` : ''}` } : {}),
@@ -395,6 +395,42 @@ export const procedureNumberText = (value: number, unit?: string): string => {
   const fixed = Number.isInteger(value) ? String(value)
     : Math.abs(value) < 0.001 ? value.toExponential(2) : value.toFixed(digits)
   return unit === undefined ? fixed : `${fixed} ${unitText[unit] ?? unit}`
+}
+
+/** A value as an operator reads it: a two-state signal as On or Off, a number rounded with its unit, a word as written. */
+export const procedureReadingText = (value: unknown, unit?: string): string => {
+  if (value === undefined || value === null) return 'unavailable'
+  if (typeof value === 'boolean') return value ? 'On' : 'Off'
+  if (typeof value === 'number') return procedureNumberText(value, unit)
+  return unit === undefined ? String(value) : `${String(value)} ${unitText[unit] ?? unit}`
+}
+
+const requirementWords: Readonly<Record<string, string>> = { '<': 'below', '<=': 'at most', '>': 'above', '>=': 'at least', '!=': 'not' }
+
+/** A comparison in the words procedure lines use: "above 10 %", "at most 1 %", "Off". */
+export const procedureRequirementText = (operator: unknown, expected: unknown, unit?: string): string => {
+  const word = typeof operator === 'string' ? requirementWords[operator] : undefined
+  const value = procedureReadingText(expected, unit)
+  return word === undefined ? value : `${word} ${value}`
+}
+
+/** Whether one row of evidence met its comparison, in words. */
+export const procedureEvidenceStatusWord = (status: unknown): string =>
+  status === 'supported' || status === 'satisfied' ? 'met' : status === 'contradicted' || status === 'challenged' ? 'not met' : 'not established'
+
+/**
+ * One reading of a Check line, in the line's words. What follows the line's dash is its requirement ("OPEN", "below 5%");
+ * a two-state signal then reads as that word or its negation, never as an indication the line does not name.
+ */
+export const procedureLineReadingText = (
+  lineText: string,
+  comparison: Pick<Comparison, 'operator' | 'value' | 'unit'>,
+  reading: Pick<ProcedureCriterionReading, 'value' | 'unit' | 'status'> | undefined,
+): { readonly value: string; readonly required: string } => {
+  const words = /\s—\s+(.+?)\.?\s*$/.exec(lineText)?.[1]
+  const required = words ?? procedureRequirementText(comparison.operator, comparison.value, comparison.unit)
+  if (words !== undefined && typeof reading?.value === 'boolean') return { value: reading.status === 'supported' ? words : `not ${words}`, required }
+  return { value: procedureReadingText(reading?.value, reading?.unit), required }
 }
 
 /**

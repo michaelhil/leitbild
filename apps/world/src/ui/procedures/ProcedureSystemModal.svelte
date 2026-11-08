@@ -7,7 +7,7 @@
   import { readProcedureTagValue } from './procedure-client.ts'
   import { canInspectProcedureBranchCheck, type ProcedureChecksView } from '../../features/procedures/checks-view.ts'
   import { simulationTimeAt } from '../simulation-clock.ts'
-  import { procedureViewKey, procedureCategories, procedureOperatorRows, procedureLineChecks, procedureLineCheckEvidence, type ProcedureLineCheck, type StepItem, procedureStepTagBindings, procedureTextSegments, procedureBlockLabel, procedureObservationEvidence, procedureSampledEvidence, procedureObservationBasis, procedureObservationLabel, procedureSourceEvidenceRequest, procedureUnitJump } from './procedure-view.ts'
+  import { procedureViewKey, procedureCategories, procedureOperatorRows, procedureLineChecks, procedureLineCheckEvidence, procedureLineReadingText, procedureReadingText, procedureRequirementText, procedureEvidenceStatusWord, type ProcedureLineCheck, type StepItem, procedureStepTagBindings, procedureTextSegments, procedureBlockLabel, procedureObservationEvidence, procedureSampledEvidence, procedureObservationBasis, procedureObservationLabel, procedureSourceEvidenceRequest, procedureUnitJump } from './procedure-view.ts'
   import type {
     SimulationRunId,
     SimulationClockState,
@@ -1642,15 +1642,17 @@
       {#each evidence.operands as { comparison, reading } (comparison.tagId)}
         {@const tag = document?.tags.find(item => item.id === comparison.tagId)}
         <dt><button type="button" class="procedure-basis-link" onclick={() => { openTagId = comparison.tagId as ProcedureTagId }}>{tag?.description ?? comparison.tagId}</button></dt>
+        {@const row = procedureLineReadingText(line.text, comparison, reading)}
         <dd>
           {#if reading?.value !== undefined && reading.status !== 'unknown'}
-            {typeof reading.value === 'boolean' ? (reading.value ? 'On' : 'Off') : `${reading.value} ${reading.unit === 'percent' ? '%' : reading.unit ?? ''}`}
+            {row.value}
             {#if reading.sampledAt}<small>{procedurePlantTime(reading.sampledAt)}</small>{/if}
           {:else if branchIndex === undefined}
             {lineReadings[lineReadKey(comparison.tagId)] ?? 'Reading…'}
           {:else}
             {reading?.reason ?? 'No current reading'}
           {/if}
+          <small>required {row.required}</small>
         </dd>
       {/each}
     </dl>
@@ -1718,7 +1720,7 @@
           <details>
             <summary>Recorded readings ({taken.evidence.length})</summary>
             {#each taken.evidence as evidence (evidence.tagId)}
-              <div class="procedure-evidence-row"><b>{evidence.tagId}</b><span>{evidence.reading}</span></div>
+              <div class="procedure-evidence-row"><b>{evidence.tagId}</b><span>{procedureDisplayReading(evidence.reading)}</span></div>
             {/each}
           </details>
         {/if}
@@ -1742,7 +1744,7 @@
       <p>{window}</p>
     {/each}
     {#each sampled as evidence}
-      <p><strong>{evidence.label}:</strong> {evidence.value} · required {evidence.criterion} · {evidence.status}{evidence.span ? ` · ${evidence.span}` : ''}{evidence.reason ? ` · ${evidence.reason}` : ''}</p>
+      <p><strong>{evidence.label}:</strong> {evidence.value} · required {evidence.criterion} · {procedureEvidenceStatusWord(evidence.status)}{evidence.span ? ` · ${evidence.span}` : ''}{evidence.reason ? ` · ${evidence.reason}` : ''}</p>
     {/each}
   {/if}
 {/snippet}
@@ -1763,7 +1765,7 @@
       <p>Checked at {procedurePlantTime(check.time)} simulation time.</p>
       {#each check.value.readings as reading}
         {@const label = document?.tags.find(tag => tag.id === reading.tagId)?.description ?? reading.description ?? reading.tagId ?? 'Indication'}
-        <p><strong>{label}:</strong> {reading.status === 'unknown' ? 'unavailable' : reading.value ?? 'unavailable'} {reading.unit ?? ''}{#if reading.operator && reading.expected !== undefined} · required {reading.operator} {reading.expected}{/if}{#if reading.quality && reading.quality !== 'good'} · {reading.quality}{/if}</p>
+        <p><strong>{label}:</strong> {reading.status === 'unknown' ? 'unavailable' : procedureReadingText(reading.value, reading.unit)}{#if reading.operator && reading.expected !== undefined} · required {procedureRequirementText(reading.operator, reading.expected, reading.unit)}{/if} · {procedureEvidenceStatusWord(reading.status)}{#if reading.quality && reading.quality !== 'good'} · {reading.quality}{/if}</p>
       {/each}
       {#if check.value.observation}
         {@const result = check.value.observation.result}
@@ -1771,7 +1773,7 @@
         {#if current.length}
           <h5>Current indications</h5>
           {#each current as evidence}
-            <p><strong>{evidence.label}:</strong> {evidence.value} · comparison {evidence.criterion}{evidence.reason ? ` · ${evidence.reason}` : ''}</p>
+            <p><strong>{evidence.label}:</strong> {evidence.value} · required {evidence.criterion} · {procedureEvidenceStatusWord(evidence.status)}{evidence.reason ? ` · ${evidence.reason}` : ''}</p>
           {/each}
         {/if}
         {@render sampledChecks(result)}
@@ -1886,7 +1888,7 @@
             {#if observation.result.reason}<p>{observation.result.reason}</p>{/if}
             <p>{@render procedureText(procedureObservationBasis(observation.result), [])}</p>
             {#each procedureObservationEvidence(observation.result) as evidence}
-              <p><b>{evidence.label}</b>: {evidence.value} · criterion {evidence.criterion} · {evidence.status}{evidence.reason ? ` · ${evidence.reason}` : ''}</p>
+              <p><b>{evidence.label}</b>: {evidence.value} · required {evidence.criterion} · {procedureEvidenceStatusWord(evidence.status)}{evidence.reason ? ` · ${evidence.reason}` : ''}</p>
             {/each}
             {@render sampledChecks(observation.result)}
             <small>{procedureObservationLabel(observation.result) === 'Model comparison' ? 'Comparison of runtime model values; instrumentation validity is not established. ' : ''}Last acquisition shown in simulation time, not proof that evidence remains current. Human placekeeping remains separately recorded.</small>
