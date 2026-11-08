@@ -427,20 +427,21 @@
   const procedureRows = $derived(document ? procedureStepRows(document, selectedProcedureRun) : [])
   const catalogCategories = $derived(procedureCategories(catalog?.procedures ?? []))
   const foldoutSideWidth = 1024
+  type TagOwner = Pick<ProcedureDocument, 'tags' | 'annotations'>
   // A document's own foldout, or on a reference document the foldout of the procedure that sent the Run there.
   const pinnedFoldout = $derived.by(() => {
     if (!document) return null
     const wide = windowBounds.width >= foldoutSideWidth
     if (document.foldout) {
       const waiting = procedureFoldoutBeforeStart(document.foldout.title, document.steps, currentProcedureStep?.step.id)
-      return { ...document.foldout, heading: document.foldout.title, layout: wide && !waiting ? 'side' as const : 'strip' as const }
+      return { ...document.foldout, owner: document as TagOwner, heading: document.foldout.title, layout: wide && !waiting ? 'side' as const : 'strip' as const }
     }
     if (!document.sourcePath.startsWith('archive/')) return null
     const prior = procedurePriorFoldout(runs, run => runDocuments.get(procedureRunDocumentKey(run)), currentScope, document.procedureId)
     if (!prior) return null
     return prior.waiting
-      ? { ...prior.foldout, heading: `${prior.procedureId} ${prior.foldout.title.charAt(0).toLowerCase()}${prior.foldout.title.slice(1)}`, layout: 'strip' as const }
-      : { ...prior.foldout, heading: `${prior.procedureId} foldout: still applies`, layout: wide ? 'side' as const : 'strip' as const }
+      ? { ...prior.foldout, owner: prior as TagOwner, heading: `${prior.procedureId} ${prior.foldout.title.charAt(0).toLowerCase()}${prior.foldout.title.slice(1)}`, layout: 'strip' as const }
+      : { ...prior.foldout, owner: prior as TagOwner, heading: `${prior.procedureId} foldout: still applies`, layout: wide ? 'side' as const : 'strip' as const }
   })
   const sourceLabel = $derived(catalog
     ? `${catalog.source.repository}@${catalog.source.revision.slice(0, 8)}`
@@ -1415,16 +1416,19 @@
   // A tag goes straight to its display window. Where the unit has no display for it or no window is offered, the dialog says why.
   const openTagDisplay = async (tagId: ProcedureTagId): Promise<void> => {
     const plan = procedureTagDisplayPlan(currentUnitContext.plantId, tagId, validationFor(tagId))
-    if (openDisplay === undefined || plan.kind !== 'display') {
+    // A tag of a pinned foldout belongs to the procedure that sent the Run here, so this document cannot state why it has no display.
+    const foreign = tagFor(tagId) === undefined
+    if (openDisplay === undefined || (plan.kind !== 'display' && !foreign)) {
       openTagId = tagId
       return
     }
     try {
-      const view = await readDefaultDisplay(simulationRunId, plan.subject)
+      const view = await readDefaultDisplay(simulationRunId, plan.kind === 'display' ? plan.subject : `${currentUnitContext.plantId}#${tagId}`)
       openDisplay(tagDisplayListing(tagId, defaultDisplayEnvelope({ workspaceId: activeWorkspaceId(), simulationRunId, view })))
-    } catch {
+    } catch (err) {
       // The dialog composes the same display and states the refusal.
-      openTagId = tagId
+      if (foreign) error = errorMessage(err)
+      else openTagId = tagId
     }
   }
 
@@ -1603,9 +1607,9 @@
 
 </script>
 
-{#snippet procedureText(text: string, tagIds: readonly string[])}
+{#snippet procedureText(text: string, tagIds: readonly string[], owner: TagOwner | null = document)}
   {@const segments = procedureTextSegments(text, tagIds, document?.sourceUrl)}
-  {@const labels = procedureTagLabels(segments, document)}
+  {@const labels = procedureTagLabels(segments, owner)}
   {#each segments as segment, index}
     {#if segment.kind === 'tag'}
       <button type="button" class="procedure-tag" aria-label={labels[index]?.full} title="Show {labels[index]?.full} on a process display" onclick={() => void openTagDisplay(segment.text as ProcedureTagId)}>{labels[index]?.shown}</button>
@@ -1618,6 +1622,10 @@
       {/if}
     {:else}{segment.text}{/if}
   {/each}
+{/snippet}
+
+{#snippet foldoutLine(text: string, tagIds: readonly string[])}
+  {@render procedureText(text, tagIds, pinnedFoldout?.owner ?? document)}
 {/snippet}
 
 {#snippet stepInfoButton(step: ProcedureStep)}
@@ -2320,7 +2328,7 @@
           {/if}
 
           {#if pinnedFoldout?.layout === 'strip'}
-            <ProcedureFoldout heading={pinnedFoldout.heading} text={pinnedFoldout.text} tagIds={pinnedFoldout.tagIds} layout="strip" line={procedureText} />
+            <ProcedureFoldout heading={pinnedFoldout.heading} text={pinnedFoldout.text} tagIds={pinnedFoldout.tagIds} layout="strip" line={foldoutLine} />
           {/if}
           <div class="procedure-document-columns" class:with-foldout={pinnedFoldout?.layout === 'side'}>
           <div
@@ -2352,7 +2360,7 @@
             </div>
           </div>
           {#if pinnedFoldout?.layout === 'side'}
-            <ProcedureFoldout heading={pinnedFoldout.heading} text={pinnedFoldout.text} tagIds={pinnedFoldout.tagIds} layout="side" line={procedureText} />
+            <ProcedureFoldout heading={pinnedFoldout.heading} text={pinnedFoldout.text} tagIds={pinnedFoldout.tagIds} layout="side" line={foldoutLine} />
           {/if}
           </div>
           {#if loadingProcedureId !== null}

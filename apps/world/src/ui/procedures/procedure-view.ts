@@ -393,10 +393,10 @@ export const procedureFoldoutBeforeStart = (title: string, steps: ReadonlyArray<
 /** The foldout a reference document inherits: back along the transfers that led to it, to the nearest procedure that has one. All of it from the Runs as they stand. */
 export const procedurePriorFoldout = (
   runs: ReadonlyArray<ProcedureRunState>,
-  documentFor: (run: ProcedureRunState) => Pick<ProcedureDocument, 'procedureId' | 'foldout' | 'steps'> | undefined,
+  documentFor: (run: ProcedureRunState) => Pick<ProcedureDocument, 'procedureId' | 'foldout' | 'steps' | 'tags' | 'annotations'> | undefined,
   scope: Pick<ProcedureRunScope, 'plantId'>,
   procedureId: string,
-): { readonly procedureId: string; readonly foldout: NonNullable<ProcedureDocument['foldout']>; readonly waiting: boolean } | undefined => {
+): { readonly procedureId: string; readonly foldout: NonNullable<ProcedureDocument['foldout']>; readonly tags: ProcedureDocument['tags']; readonly annotations: ProcedureDocument['annotations']; readonly waiting: boolean } | undefined => {
   const seen = new Set<string>()
   let target = procedureId
   while (!seen.has(target)) {
@@ -406,7 +406,7 @@ export const procedurePriorFoldout = (
       .sort((left, right) => Math.max(...into(right)) - Math.max(...into(left)))[0]
     if (from === undefined) return undefined
     const document = documentFor(from)
-    if (document?.foldout) return { procedureId: document.procedureId, foldout: document.foldout, waiting: procedureFoldoutBeforeStart(document.foldout.title, document.steps, from.currentStepId) }
+    if (document?.foldout) return { procedureId: document.procedureId, foldout: document.foldout, tags: document.tags, annotations: document.annotations, waiting: procedureFoldoutBeforeStart(document.foldout.title, document.steps, from.currentStepId) }
     target = from.procedureId
   }
   return undefined
