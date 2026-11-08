@@ -640,21 +640,6 @@ export const procedureEvidenceStatusWord = (status: unknown): string =>
   status === 'supported' || status === 'satisfied' ? 'met' : status === 'contradicted' || status === 'challenged' ? 'not met' : 'not established'
 
 /**
- * One reading of a Check line, in the line's words. What follows the line's dash is its requirement ("OPEN", "below 5%");
- * a two-state signal then reads as that word or its negation, never as an indication the line does not name.
- */
-export const procedureLineReadingText = (
-  lineText: string,
-  comparison: Pick<Comparison, 'operator' | 'value' | 'unit'>,
-  reading: Pick<ProcedureCriterionReading, 'value' | 'unit' | 'status'> | undefined,
-): { readonly value: string; readonly required: string } => {
-  const words = /\s—\s+(.+?)\.?\s*$/.exec(lineText)?.[1]
-  const required = words ?? procedureRequirementText(comparison.operator, comparison.value, comparison.unit)
-  if (words !== undefined && typeof reading?.value === 'boolean') return { value: reading.status === 'supported' ? words : `not ${words}`, required }
-  return { value: procedureReadingText(reading?.value, reading?.unit), required }
-}
-
-/**
  * A reading as the window shows it. Readings arrive formatted ("287.871 degC"); a number with
  * its unit is rewritten to sensible precision ("287.9 °C"), any other reading (a state, a word) stays as written.
  */

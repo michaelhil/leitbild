@@ -7,7 +7,7 @@
   import { readProcedureTagValue } from './procedure-client.ts'
   import { canInspectProcedureBranchCheck, type ProcedureChecksView } from '../../features/procedures/checks-view.ts'
   import { simulationTimeAt } from '../simulation-clock.ts'
-  import { procedureViewKey, procedureCategories, procedureOperatorRows, procedureLineChecks, procedureLineCheckEvidence, procedureCheckVersion, procedureChipTarget, procedureUsageHref, procedureTagLabels, procedureJudgementLine, procedureFoldoutBeforeStart, procedurePriorFoldout, procedureDecisionAgainst, procedureLightRows, procedureLightTone, procedureLineReadingText, procedureReferenceNotice, procedureStepCounterText, procedureReadingName, procedureReadingText, procedureRequirementText, procedureEvidenceStatusWord, type ProcedureLineCheck, type StepItem, procedureStepTagBindings, procedureTextSegments, procedureBlockLabel, procedureObservationEvidence, procedureSampledEvidence, procedureObservationBasis, procedureObservationLabel, procedureSourceEvidenceRequest, procedureUnitJump } from './procedure-view.ts'
+  import { procedureViewKey, procedureCategories, procedureOperatorRows, procedureLineChecks, procedureLineCheckEvidence, procedureCheckVersion, procedureChipTarget, procedureUsageHref, procedureTagLabels, procedureJudgementLine, procedureFoldoutBeforeStart, procedurePriorFoldout, procedureDecisionAgainst, procedureLightRows, procedureLightTone, procedureReferenceNotice, procedureStepCounterText, procedureReadingName, procedureReadingText, procedureRequirementText, procedureEvidenceStatusWord, type ProcedureLineCheck, type StepItem, procedureStepTagBindings, procedureTextSegments, procedureBlockLabel, procedureObservationEvidence, procedureSampledEvidence, procedureObservationBasis, procedureObservationLabel, procedureSourceEvidenceRequest, procedureUnitJump } from './procedure-view.ts'
   import type {
     SimulationRunId,
     SimulationClockState,
@@ -1701,17 +1701,15 @@
     <dl aria-label="Live indications">
       {#each evidence.operands as { comparison, reading } (comparison.tagId)}
         <dt><button type="button" class="procedure-basis-link" onclick={() => void openTagDisplay(comparison.tagId as ProcedureTagId)}>{procedureReadingName(comparison.tagId, document?.tags ?? []) ?? comparison.tagId}</button></dt>
-        {@const row = procedureLineReadingText(line.text, comparison, reading)}
         <dd>
           {#if reading?.value !== undefined && reading.status !== 'unknown'}
-            {row.value}
+            {procedureReadingText(reading.value, reading.unit)}
             {#if reading.sampledAt}<small>{procedurePlantTime(reading.sampledAt)}</small>{/if}
           {:else if branchIndex === undefined}
             {lineReadings[lineReadKey(comparison.tagId)] ?? 'Reading…'}
           {:else}
             {reading?.reason ?? 'No current reading'}
           {/if}
-          <small>required {row.required}</small>
         </dd>
       {/each}
     </dl>
