@@ -77,6 +77,19 @@ const progressForStep = (step: ProcedureStep): ProcedureRunStepProgress => ({
   name: procedureStepDisplayName(step),
 })
 
+/** Where a transfer lands: the step its branch names, else where an open Run of the target stands, else the target's first step. */
+export const procedureTransferStep = (
+  branch: Pick<ProcedureBranch, 'targetStepId'>,
+  target: ProcedureDocument,
+  targetRun: ProcedureRunState | null,
+) => {
+  if (branch.targetStepId !== undefined) return procedureStepById(target, branch.targetStepId)
+  return targetRun && (targetRun.status === 'active' || targetRun.status === 'transferred')
+    && targetRun.sourceRevision === target.source.revision && targetRun.sourcePath === target.sourcePath
+    ? procedureCurrentStep(targetRun, target)?.step
+    : procedureFirstStep(target)
+}
+
 export const procedureBranchActionText = (config: {
   readonly currentDocument: ProcedureDocument
   readonly branch: ProcedureBranch

@@ -20,6 +20,7 @@ import {
   procedureRunSummariesForScope,
   procedureRunSummaryText,
   procedureStepDisplayName,
+  procedureTransferStep,
 } from '../src/ui/procedures/procedure-run-selectors.ts'
 
 const at = '2026-01-01T00:00:00.000Z' as IsoTimestamp
@@ -278,5 +279,20 @@ describe('procedure run selectors', () => {
     expect(procedureCompletionWarning(document, run)).toBe('E-0 is at step 2, not at an END step. Steps 2–4, 6 are still open.')
     expect(procedureCompletionWarning(document, { ...run, currentStepId: 's4' })).toBeNull()
     expect(procedureCompletionWarning(document, { ...run, currentStepId: 's6' })).toBeNull()
+  })
+})
+
+describe('where a transfer lands', () => {
+  const steps = (procedure as unknown as ProcedureDocument).steps
+  const open = (status: ProcedureRunState['status'], currentStepId: string) => ({ status, currentStepId, sourceRevision: source.revision, sourcePath: procedure.sourcePath, stepStates: [] }) as unknown as ProcedureRunState
+  const [first, last] = [steps[0]!, steps.at(-1)!]
+
+  test('a branch that names a step goes there, even past where a held Run stands', () => {
+    expect(procedureTransferStep({ targetStepId: first.id }, procedure as unknown as ProcedureDocument, open('transferred', last.id))?.id).toBe(first.id)
+  })
+  test('a branch that names none resumes an open Run where it stands, else starts at the first step', () => {
+    expect(procedureTransferStep({}, procedure as unknown as ProcedureDocument, open('transferred', last.id))?.id).toBe(last.id)
+    expect(procedureTransferStep({}, procedure as unknown as ProcedureDocument, null)?.id).toBe(first.id)
+    expect(procedureTransferStep({}, procedure as unknown as ProcedureDocument, open('completed', last.id))?.id).toBe(first.id)
   })
 })

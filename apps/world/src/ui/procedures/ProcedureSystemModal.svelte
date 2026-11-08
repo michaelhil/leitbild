@@ -75,6 +75,7 @@
     procedureStepRows,
     procedureRunFor,
     procedureRunDocumentKey,
+    procedureTransferStep,
     procedureRunSummariesForScope,
     procedureRunVisualStateFor as selectedProcedureRunVisualStateFor,
     procedureStepById,
@@ -980,7 +981,7 @@
       const targetRun = procedureRunFor(runs, { sourceId: targetDocument.source.sourceId, procedureId: targetDocument.procedureId, scope: currentScope })
       if (targetRun && (targetRun.status === 'active' || targetRun.status === 'transferred')
         && targetRun.sourceRevision === targetDocument.source.revision && targetRun.sourcePath === targetDocument.sourcePath) {
-        const destination = procedureCurrentStep(targetRun, targetDocument)?.step
+        const destination = procedureTransferStep(branch, targetDocument, targetRun)
         if (destination) return `${targetRun.status === 'transferred' ? 'Resume' : 'Go to'} ${targetDocument.procedureId}, step ${destination.label}: ${procedureStepDisplayName(destination)}`
       }
     }
@@ -1070,11 +1071,7 @@
       })
       if (disposed || request !== latestProcedureLoadRequest) return
       const targetRun = procedureRunFor(runs, { sourceId: targetProcedure.source.sourceId, procedureId: targetProcedure.procedureId, scope: currentScope })
-      const targetStep = branch.targetStepId !== undefined ? procedureStepById(targetProcedure, branch.targetStepId)
-        : targetRun && (targetRun.status === 'active' || targetRun.status === 'transferred')
-        && targetRun.sourceRevision === targetProcedure.source.revision && targetRun.sourcePath === targetProcedure.sourcePath
-        ? procedureCurrentStep(targetRun, targetProcedure)?.step
-        : procedureFirstStep(targetProcedure)
+      const targetStep = procedureTransferStep(branch, targetProcedure, targetRun)
       if (!targetStep) {
         error = `Procedure ${targetProcedure.procedureId} has no steps to enter.`
         return
