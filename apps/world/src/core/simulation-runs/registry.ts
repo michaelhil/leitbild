@@ -1101,7 +1101,7 @@ export const createSimulationRunRegistry = (config: {
   const close = (id: SimulationRunId): Promise<boolean> => lifecycle.run(id, () => closeLoaded(id))
 
   const reset = async (id: SimulationRunId): Promise<SimulationRunRuntime> => {
-    await registry.engineering.invalidateSource(id, false, true)
+    await registry.engineering.invalidateSource(id, true, true)
     try { return await lifecycle.run(id, async () => {
     await assertSimulationRunRecoveryNotRequired(join(simulationRunRoot, id, 'snapshot.json'))
     await settleCompletingMaximumPace(id)

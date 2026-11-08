@@ -15,9 +15,11 @@ const WALL_SECONDS = 60
 const OUTPUT_BYTES = 2 * 1024 * 1024
 const SEED_BYTES = 16 * 1024 * 1024
 const RETAINED_JOBS = 32
+const RETAINED_KEYS = 1024
 const RETENTION_MS = 24 * 3600 * 1000
 const terminal = (status: EngineeringContinuationReceipt['status']) => !['queued', 'running', 'cancellation-requested'].includes(status)
 const recordSchema = z.object({ token: z.string().uuid(), keyDigest: z.string(), requestDigest: z.string(), codeDigest: z.string(), receipt: engineeringContinuationReceiptSchema }).strict()
+const expiredKeySchema = z.object({ jobId: z.string().uuid(), keyDigest: z.string(), requestDigest: z.string(), sourceId: z.string(), epoch: z.string().uuid(), expiredAt: z.string().datetime(), status: z.enum(['completed', 'partial', 'failed', 'cancelled', 'interrupted']) }).strict()
 type Record = z.infer<typeof recordSchema>
 type Supervisor = { child?: Bun.Subprocess; started: boolean; cancelled: boolean; done: Promise<void>; release: () => void }
 // All Workspaces in this World process share this deliberately small admission
@@ -28,6 +30,7 @@ const unavailable = (message: string): never => engineeringRefusal('engineering_
 
 export const createEngineeringService = ({ registry, root, storageBudget }: { registry: SimulationRunRegistry; root: string; storageBudget: StorageBudget }) => {
   const records = new Map<string, Record>()
+  const expiredKeys = new Map<string, z.infer<typeof expiredKeySchema>>()
   const sourceGenerations = new Map<string, number>()
   const blockedSources = new Set<string>()
   const writes = new Map<string, Promise<void>>()
@@ -66,6 +69,7 @@ export const createEngineeringService = ({ registry, root, storageBudget }: { re
     if (result.token !== record.token || result.receipt.jobId !== record.receipt.jobId || result.receipt.origin.digest !== record.receipt.origin.digest || engineeringDigest(result.receipt.request) !== record.requestDigest) throw new Error('Continuation result identity mismatch')
     if (terminal(record.receipt.status)) return
     record.receipt.cases = result.receipt.cases
+    record.receipt.timings = result.receipt.timings
     return result.receipt.status
   }
   const finishCases = (record: Record) => {
@@ -81,6 +85,14 @@ export const createEngineeringService = ({ registry, root, storageBudget }: { re
     await mkdir(root, { recursive: true, mode: 0o700 })
     for (const id of await readdir(root)) {
       if (!z.string().uuid().safeParse(id).success) continue
+      const expiredFile = Bun.file(join(folder(id), 'expired.json'))
+      if (await expiredFile.exists()) {
+        const expired = expiredKeySchema.parse(await expiredFile.json())
+        if (expired.jobId !== id) throw new Error('Engineering key storage scope mismatch')
+        expiredKeys.set(expired.keyDigest, expired)
+        for (const name of await readdir(folder(id))) if (name !== 'expired.json') await rm(join(folder(id), name), { recursive: true, force: true })
+        continue
+      }
       const file = Bun.file(join(folder(id), 'record.json'))
       if (!await file.exists()) {
         // Admission did not publish a receipt before the prior process stopped.
@@ -102,7 +114,13 @@ export const createEngineeringService = ({ registry, root, storageBudget }: { re
   })()
   const reap = async () => {
     for (const [id, record] of records) if (terminal(record.receipt.status) && Date.parse(record.receipt.expiresAt) <= Date.now()) {
-      await rm(folder(id), { recursive: true, force: true }); records.delete(id)
+      const expired = expiredKeySchema.parse({ jobId: id, keyDigest: record.keyDigest, requestDigest: record.requestDigest,
+        sourceId: record.receipt.source.id, epoch: record.receipt.origin.frame.epoch, expiredAt: record.receipt.expiresAt, status: record.receipt.status })
+      // Write the no-physics tombstone first: a crash may retain excess files,
+      // but must never turn an acknowledged old key into a new submission.
+      await writeAtomic(join(folder(id), 'expired.json'), JSON.stringify(expired))
+      for (const name of await readdir(folder(id))) if (name !== 'expired.json') await rm(join(folder(id), name), { recursive: true, force: true })
+      expiredKeys.set(expired.keyDigest, expired); records.delete(id); writes.delete(id)
     }
   }
   const qualify = async (record: Record) => {
@@ -177,7 +195,9 @@ export const createEngineeringService = ({ registry, root, storageBudget }: { re
       control.child?.kill('SIGKILL')
       if (!terminal(record.receipt.status)) { record.receipt.status = 'cancelled'; record.receipt.reason = 'Cancelled before worker start' }
       finishCases(record)
+      const cleanupStarted = performance.now()
       await cleanup(id)
+      record.receipt.timings.teardownMs += performance.now() - cleanupStarted
       if (records.get(id) === record) await persist(record)
     }
   }
@@ -194,13 +214,14 @@ export const createEngineeringService = ({ registry, root, storageBudget }: { re
       const context = await engineeringSourceContext(registry, id, request.profile, request.subjectId)
       const keyDigest = engineeringDigest({ id, actor, epoch: context.epoch, key })
       const requestDigest = engineeringDigest(request)
+      if (expiredKeys.has(keyDigest)) return engineeringRefusal('engineering_key_expired', 'This submission key expired; use a new key to request a new comparison')
       const previous = [...records.values()].find(record => record.keyDigest === keyDigest)
       if (previous) {
         if (previous.requestDigest !== requestDigest) return engineeringRefusal('engineering_key_conflict', 'This submission key already identifies a different comparison')
         await qualify(previous)
         return page(previous)
       }
-      if (queued >= 4 || records.size >= RETAINED_JOBS) return engineeringRefusal('engineering_capacity', 'Engineering comparison capacity is full; wait for completion or evidence expiry')
+      if (queued >= 4 || records.size >= RETAINED_JOBS || records.size + expiredKeys.size >= RETAINED_KEYS) return engineeringRefusal('engineering_capacity', 'Engineering comparison or retained-key capacity is full; wait for completion/expiry, or explicitly reset/delete the source to end its key scope')
       // Reserve synchronously before capture/hash awaits, including submissions
       // from other Workspace service instances in this process.
       queued++
@@ -208,13 +229,16 @@ export const createEngineeringService = ({ registry, root, storageBudget }: { re
       try {
       const codeDigest = await engineeringCodeDigest()
       let seed, origin
+      let captureMs = 0
       if (request.replayJobId) {
         const original = await get(id, request.replayJobId)
         if (original.codeDigest !== codeDigest) return engineeringRefusal('engineering_code_changed', 'Execution code changed; refresh from the current source instead')
         seed = continuationSeedSchema.parse(await Bun.file(join(folder(original.receipt.jobId), 'origin.json')).json())
         origin = original.receipt.origin
       } else {
+        const captureStarted = performance.now()
         seed = continuationSeedSchema.parse(await registry.captureContinuation(id, [context.query('capture')]))
+        captureMs = performance.now() - captureStarted
         const after = await engineeringSourceContext(registry, id, request.profile, request.subjectId)
         if (after.epoch !== context.epoch || after.revision !== context.revision) return engineeringRefusal('engineering_source_changed', 'Source qualification changed during capture')
         origin = engineeringBasis(registry, id, request, context, seed.checkpoint.snapshot, seed.checkpoint.reads?.[0])
@@ -224,7 +248,8 @@ export const createEngineeringService = ({ registry, root, storageBudget }: { re
       const now = new Date().toISOString(), jobId = randomUUID()
       const receipt = engineeringContinuationReceiptSchema.parse({ jobId, source: origin.source, status: 'queued', createdAt: now, updatedAt: now,
         expiresAt: new Date(Date.now() + RETENTION_MS).toISOString(), request, origin, cases: [], sampleOffset: 0, sampleLimit: 20,
-        limits: { wallSeconds: WALL_SECONDS, workerCount: 1, outputBytes: OUTPUT_BYTES }, evidenceKind: 'exact-state-conditional-continuation', executionDigest: codeDigest, observationGrid: 'new-grid-at-captured-origin', qualification: 'research-only' })
+        limits: { wallSeconds: WALL_SECONDS, workerCount: 1, outputBytes: OUTPUT_BYTES }, evidenceKind: 'exact-state-conditional-continuation', executionDigest: codeDigest, observationGrid: 'new-grid-at-captured-origin',
+        timings: { captureMs, restoreMs: 0, advanceMs: 0, observationMs: 0, publicationMs: 0, teardownMs: 0 }, qualification: 'research-only' })
       const record = recordSchema.parse({ token: randomUUID(), keyDigest, requestDigest, codeDigest, receipt })
       await storageBudget.withGrowth(dirname(root), Buffer.byteLength(encoded) + OUTPUT_BYTES, async () => {
         await mkdir(folder(jobId), { recursive: true, mode: 0o700 })
@@ -258,6 +283,8 @@ export const createEngineeringService = ({ registry, root, storageBudget }: { re
       const input = engineeringContinuationCancelSchema.parse(raw)
       await ready
       const record = records.get(input.jobId)
+      const expired = [...expiredKeys.values()].find(value => value.jobId === input.jobId && value.sourceId === String(id))
+      if (expired) return { jobId: expired.jobId, status: expired.status, evidenceAvailable: false as const }
       if (!record || String(record.receipt.source.id) !== String(id)) return unavailable('This comparison is unavailable')
       await cancelRecord(record)
       if (Date.parse(record.receipt.expiresAt) <= Date.now()) return { jobId: record.receipt.jobId, status: record.receipt.status as 'completed' | 'partial' | 'failed' | 'cancelled' | 'interrupted', evidenceAvailable: false as const }
@@ -273,6 +300,7 @@ export const createEngineeringService = ({ registry, root, storageBudget }: { re
       const matching = [...records].filter(([, record]) => String(record.receipt.source.id) === String(id))
       await Promise.all(matching.map(([, record]) => cancelRecord(record)))
       if (remove) for (const [jobId] of matching) { await rm(folder(jobId), { recursive: true, force: true }); records.delete(jobId); writes.delete(jobId) }
+      if (hold) for (const [key, expired] of expiredKeys) if (expired.sourceId === String(id)) { await rm(folder(expired.jobId), { recursive: true, force: true }); expiredKeys.delete(key) }
     },
     releaseSource: (id: SimulationRunId) => { blockedSources.delete(id) },
     busy: () => running.size > 0,

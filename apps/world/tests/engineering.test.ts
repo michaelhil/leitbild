@@ -121,6 +121,30 @@ test('refused future owner action is recorded and cannot claim the requested hor
   expect(result.cases[1]!.interventions[0]!.acceptedAt).toBeNull()
 }, 60_000)
 
+test('expired keys retain no physics and cannot reexecute until the source epoch is deliberately reset', async () => {
+  const { registry, config, dataDir } = await setup(), run = await registry.create({ scenarioId: 'engineering-thermal' })
+  const request = { ...thermal, horizonSeconds: 1, variant: { label: 'Trip', actions: [{ atSeconds: 0, path: 'manualReactorTrip.pushbutton', value: true }] } }
+  const first = await registry.engineering.submit(run.id, 'test', 'expired', request)
+  await registry.engineering.cancel(run.id, { jobId: first.jobId })
+  await registry.shutdown()
+  const directory = join(worldWorkspacePaths(dataDir, registry.workspaceId).root, 'engineering', first.jobId)
+  const record = await Bun.file(join(directory, 'record.json')).json()
+  record.receipt.expiresAt = '2026-01-01T00:00:00.000Z'
+  await writeFile(join(directory, 'record.json'), JSON.stringify(record))
+  const restored = createSimulationRunRegistry(config)
+  cleanups.push(() => restored.shutdown())
+  await expect(restored.engineering.submit(run.id, 'test', 'expired', request)).rejects.toThrow('submission key expired')
+  expect(restored.engineering.busy()).toBe(false)
+  expect(await readdir(directory)).toEqual(['expired.json'])
+  const tombstone = await Bun.file(join(directory, 'expired.json')).json()
+  expect(Object.keys(tombstone).sort()).toEqual(['epoch', 'expiredAt', 'jobId', 'keyDigest', 'requestDigest', 'sourceId', 'status'])
+  expect(await restored.engineering.cancel(run.id, { jobId: first.jobId })).toEqual({ jobId: first.jobId, status: 'cancelled', evidenceAvailable: false })
+  await restored.reset(run.id)
+  const fresh = await restored.engineering.submit(run.id, 'test', 'expired', request)
+  expect(fresh.jobId).not.toBe(first.jobId)
+  await restored.engineering.cancel(run.id, { jobId: fresh.jobId })
+}, 60_000)
+
 test('revocation still permits safe cancellation; source reset/delete stop active and queued workers and remove deleted-source evidence', async () => {
   const { registry, dataDir } = await setup(), run = await registry.create({ scenarioId: 'engineering-thermal' })
   const request = { ...thermal, horizonSeconds: 600, sampleEverySeconds: 1,
@@ -167,6 +191,7 @@ test('real private worker reaches both cases, keeps source immutable, supports k
   expect(result.status).toBe('completed')
   expect(result.cases.map(row => [row.status, row.reachedSeconds, row.sampleCount])).toEqual([['completed', 4, 4], ['completed', 4, 4]])
   expect(result.cases.map(row => row.samples.map(sample => sample.elapsedSeconds))).toEqual([[0, 1, 3, 4], [0, 1, 3, 4]])
+  expect(Object.values(result.timings).every(value => Number.isFinite(value) && value > 0)).toBe(true)
   expect(result.cases[1]!.samples.at(-1)!.quantities.find(row => row.id === 'core.totalThermalPowerMw')!.value).toBeLessThan(result.cases[0]!.samples.at(-1)!.quantities.find(row => row.id === 'core.totalThermalPowerMw')!.value)
   expect(result.cases[1]!.interventions[0]!.status).toBe('accepted')
   expect((await registry.engineering.inspect(run.id, { jobId: first.jobId, offset: 1, limit: 1 })).cases[0]!.samples).toHaveLength(1)

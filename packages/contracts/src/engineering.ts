@@ -72,6 +72,11 @@ export const engineeringContinuationCaseSchema = z.object({
   interventions: z.array(engineeringInterventionReceiptSchema).max(16),
   sampleCount: z.number().int().nonnegative(), samples: z.array(engineeringContinuationSampleSchema).max(601),
 }).strict()
+export const engineeringContinuationTimingsSchema = z.object({
+  captureMs: z.number().finite().nonnegative(), restoreMs: z.number().finite().nonnegative(),
+  advanceMs: z.number().finite().nonnegative(), observationMs: z.number().finite().nonnegative(),
+  publicationMs: z.number().finite().nonnegative(), teardownMs: z.number().finite().nonnegative(),
+}).strict()
 export const engineeringContinuationReceiptSchema = z.object({
   jobId: z.string().uuid(), source: workspaceResourceReferenceSchema,
   status: z.enum(['queued', 'running', 'cancellation-requested', 'completed', 'partial', 'failed', 'cancelled', 'interrupted']),
@@ -85,6 +90,7 @@ export const engineeringContinuationReceiptSchema = z.object({
   evidenceKind: z.literal('exact-state-conditional-continuation'),
   executionDigest: digest,
   observationGrid: z.literal('new-grid-at-captured-origin'),
+  timings: engineeringContinuationTimingsSchema,
   qualification: z.literal('research-only'),
 }).strict()
 /** Safe cancellation acknowledgement when the source no longer qualifies for

@@ -35,9 +35,11 @@ const memoryGuard = setInterval(() => { if (process.memoryUsage.rss() > 512 * 10
 memoryGuard.unref()
 const packs = [processPlantPack, electricGridPack, weatherPack]
 const save = async () => {
+  const started = performance.now()
   receipt.updatedAt = new Date().toISOString()
   const validated = engineeringContinuationReceiptSchema.parse(receipt)
   await writeAtomic(outputPath, JSON.stringify({ token: input.token, receipt: validated }))
+  receipt.timings.publicationMs += performance.now() - started
 }
 const originMs = Date.parse(input.seed.checkpoint.snapshot.clock!.currentTime)
 const request = receipt.request
@@ -53,11 +55,17 @@ for (const caseId of ['baseline', 'variant'] as const) {
   })
   let releaseCase: (() => void) | undefined
   try {
+    const restoreStarted = performance.now()
     const runtime = await registry.restoreContinuation(structuredClone(input.seed))
+    receipt.timings.restoreMs += performance.now() - restoreStarted
     // A case has no browser/API lease. Its supervising job owns this runtime
     // until teardown, including long advances between observed boundaries.
     releaseCase = registry.acquireLease(runtime.id, 'background')
-    const model = async () => engineeringOwnerBasisSchema.parse(await runtime.readAtBoundary({ capabilityId: 'world.process-plant.engineering-basis', input: { subjectId: request.subjectId, purpose: 'capture' }, readPolicy: unrestrictedQueryReadPolicy }))
+    const model = async () => {
+      const started = performance.now()
+      try { return engineeringOwnerBasisSchema.parse(await runtime.readAtBoundary({ capabilityId: 'world.process-plant.engineering-basis', input: { subjectId: request.subjectId, purpose: 'capture' }, readPolicy: unrestrictedQueryReadPolicy })) }
+      finally { receipt.timings.observationMs += performance.now() - started }
+    }
     const initial = await model()
     const sample = async (seconds: number) => {
       const basis = await model()
@@ -98,7 +106,9 @@ for (const caseId of ['baseline', 'variant'] as const) {
       const nextAction = boundaryActions.find(action => action.atSeconds > reached)?.atSeconds ?? request.horizonSeconds
       const nextSample = (Math.floor(reached / request.sampleEverySeconds) + 1) * request.sampleEverySeconds
       const target = Math.min(nextAction, nextSample, request.horizonSeconds)
-      await runtime.runMaximumPace(new Date(originMs + target * 1000).toISOString() as never, { shouldStop: () => false })
+      const advanceStarted = performance.now()
+      try { await runtime.runMaximumPace(new Date(originMs + target * 1000).toISOString() as never, { shouldStop: () => false }) }
+      finally { receipt.timings.advanceMs += performance.now() - advanceStarted }
       reached = target
       await apply(reached)
       await sample(reached)
@@ -108,7 +118,8 @@ for (const caseId of ['baseline', 'variant'] as const) {
     result.status = result.samples.length ? 'partial' : 'failed'
     result.reason = (error instanceof Error ? error.message : String(error)).slice(0, 2000)
   } finally {
-    try { await registry.shutdown() } finally { releaseCase?.() }
+    const teardownStarted = performance.now()
+    try { await registry.shutdown() } finally { releaseCase?.(); receipt.timings.teardownMs += performance.now() - teardownStarted }
     await save()
   }
 }
