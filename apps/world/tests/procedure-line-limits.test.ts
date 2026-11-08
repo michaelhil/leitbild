@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { describe, expect, test } from 'bun:test'
 import { actorIdSchema, isoTimestampSchema, type CommandEnvelope, type EventId, type ProcedureStep, type SimulationRunEvent, type SimulationRunId } from '../src/core/model/index.ts'
 import { procedureCapturedTagIds } from '../src/features/procedures/branch-assessment.ts'
 import { canInspectProcedureBranchCheck, readProcedureChecks } from '../src/features/procedures/checks-view.ts'
@@ -71,6 +71,29 @@ Check: Is any SG uncontrolled? «PRESSURE»
 
 - None [outcome: normal] → END
 
+## Step 5 [id: judge2] Judge
+
+Pair: [id: fault]
+Check: Is any SG uncontrolled? «PRESSURE»
+RNO: Go to the fault procedure.
+
+- None [outcome: normal] → #end-of-walk
+
+## Step 6 [id: routes] Choose the next procedure
+
+Basis: [Why](basis.md#routes).
+Pair: [id: question]
+Check: Is SI running? «SI»
+
+- SI running «SI == true» [outcome: normal] → [[OTHER]]
+- Not running [outcome: normal] → [[OTHER]]
+
+## Step 7 [id: end-of-walk] End
+
+Action: Stop.
+
+- Done [outcome: normal] → END
+
 ## Tags
 
 - id: BKR-A
@@ -122,13 +145,17 @@ const checks = async (stepId: string, observations: ProcedureObservationPort, fr
     canInspect: () => true, document: async () => document(front), observations: () => observations,
   })
 }
-const commit = async (stepId: string, branchIndex: number, observations: ProcedureObservationPort, by = ai, front?: string): Promise<ReadonlyArray<SimulationRunEvent>> => {
+const unbound = (tagId: string): ProcedureObservationPort => {
+  const base = port()
+  return { ...base, validateTags: async tags => new Map(tags.map(tag => [tag.id, { id: tag.id, status: tag.id === tagId ? 'missing' as const : 'resolved' as const, warnings: [] }])) }
+}
+const commit = async (stepId: string, branchIndex: number, observations: ProcedureObservationPort, by = ai, front?: string, basis: string | null = 'Stated basis.'): Promise<ReadonlyArray<SimulationRunEvent>> => {
   const run = runAt(stepId, by)
   const procedures = { runs: [run] }
   const command: CommandEnvelope = { id: 'command:limits' as CommandEnvelope['id'], simulationRunId: 'run:limits' as SimulationRunId, actorId: by, issuedAt: time,
-    kind: 'world.procedure.run.transition', targetObjectIds: [], payload: { runId: run.runId, stepId, branchIndex, basis: 'Stated basis.' } }
+    kind: 'world.procedure.run.transition', targetObjectIds: [], payload: { runId: run.runId, stepId, branchIndex, ...(basis === null ? {} : { basis }) } }
   const actorKind = by === ai ? 'ai' as const : 'person' as const
-  const prepared = await prepareProcedureCommand({ command, procedures, readDocument: async () => document(front), observations: () => observations, actorKind })
+  const prepared = await prepareProcedureCommand({ command, procedures, readDocument: async config => config.procedureId === 'OTHER' ? { ...document(front), procedureId: 'OTHER' } : document(front), observations: () => observations, actorKind })
   let seq = 1
   const context: ProcedureCommitContext = { simulationRunId: 'run:limits' as SimulationRunId, at: time, simulationTime: time, actorKind, procedures, objectIds: new Set([plantId]),
     factory: { eventId: () => `event:${seq}` as EventId, nextSeq: () => seq++ }, observations: () => observations }
@@ -201,8 +228,54 @@ test('the commit tests compiled limits with today\'s refusal, for an AI only', a
   await expect(commit('feed', 0, port({ POWER: 5 }))).rejects.toThrow('is contradicted')
   expect(selected(await commit('fork', 0, port({ SI: true }))).criterion?.status).toBe('supported')
   await expect(commit('fork', 0, port())).rejects.toThrow('is contradicted')
-  expect(selected(await commit('fork', 1, port())).target).toBe('END')
   expect(selected(await commit('trip', 0, port({ 'BKR-A': true }), person)).criterion?.status).toBe('contradicted')
+})
+
+describe('AI rules on a marked document', () => {
+  const asks = 'ask with world.procedure.run.request-input'
+
+  test('a normal branch with no limit goes on a stated basis, with readings captured', async () => {
+    const events = await commit('judge2', 0, port())
+    expect(selected(events)).toMatchObject({ target: 'end-of-walk', basis: 'Stated basis.', evidence: [{ tagId: 'PRESSURE' }], criterion: { status: 'unknown' } })
+  })
+
+  test('it is refused when a tag on the step\'s lines is unbound, unread, bad or stale, with the reason', async () => {
+    await expect(commit('judge2', 0, port({ PRESSURE: new Error('no reading') }))).rejects.toThrow('«PRESSURE» could not be read: no reading.')
+    await expect(commit('judge2', 0, port({}, { PRESSURE: { quality: 'bad' } }))).rejects.toThrow('«PRESSURE» quality is bad.')
+    await expect(commit('judge2', 0, port({}, { PRESSURE: { evidence: { kind: 'engineering-diagnostic', sampledAt: old, provenance: 'runtime-model' } } }))).rejects.toThrow('«PRESSURE» is stale.')
+    await expect(commit('judge2', 0, unbound('PRESSURE'))).rejects.toThrow('«PRESSURE» is not bound on this Plant.')
+  })
+
+  test('a transfer whose limits are met is delegated; one whose limits are not is refused', async () => {
+    expect(selected(await commit('routes', 0, port({ SI: true }))).target).toBe('OTHER')
+    await expect(commit('routes', 0, port())).rejects.toThrow('is contradicted')
+  })
+
+  test('a judgement transfer and an END stop and ask, even with an END\'s limits met', async () => {
+    await expect(commit('routes', 1, port())).rejects.toThrow(`transfers on judgement, with no limit stated. A person decides it: ${asks}`)
+    await expect(commit('judge', 0, port())).rejects.toThrow(`ends the procedure. A person decides it: ${asks}`)
+    await expect(commit('fork', 1, port())).rejects.toThrow('ends the procedure')
+  })
+
+  test('a person is never refused any of them', async () => {
+    expect(selected(await commit('routes', 1, port(), person)).target).toBe('OTHER')
+    expect(selected(await commit('judge', 0, port(), person)).target).toBe('END')
+    expect(selected(await commit('judge2', 0, port({ PRESSURE: new Error('no reading') }), person)).target).toBe('end-of-walk')
+  })
+
+  test('an AI still needs a basis', async () => {
+    await expect(commit('judge2', 0, port(), ai, undefined, null)).rejects.toThrow('only with a basis')
+  })
+})
+
+describe('an unmarked document behaves as today', () => {
+  const unmarked = 'category: x'
+  test('no limit is refused, whatever the target, and supported limits still pass, END included', async () => {
+    await expect(commit('judge2', 0, port(), ai, unmarked)).rejects.toThrow('is unknown: No authored eligibility criterion')
+    await expect(commit('routes', 1, port(), ai, unmarked)).rejects.toThrow('is unknown: No authored eligibility criterion')
+    await expect(commit('judge', 0, port(), ai, unmarked)).rejects.toThrow('is unknown: No authored eligibility criterion')
+    expect(selected(await commit('fork', 1, port(), ai, unmarked)).target).toBe('END')
+  })
 })
 
 test('a person pressing a normal branch against a contradicted criterion leaves a failed mark, not a completed one', async () => {

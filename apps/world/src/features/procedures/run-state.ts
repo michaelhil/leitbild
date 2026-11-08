@@ -9,7 +9,7 @@ import {
   procedureRunTransitionPayloadSchema, procedureRunRequestInputPayloadSchema,
 } from '../../core/model/index.ts'
 import {
-  assertAiDrives, assertAiMayDrive, assertAiStatesBasis, assertAiWorksCurrentStep,
+  aiBranchRefusal, assertAiDrives, assertAiMayDrive, assertAiStatesBasis, assertAiWorksCurrentStep,
   procedureDriver, sameProcedureDriver, type ProcedureActorKind,
 } from './driver-rules.ts'
 import { assessProcedureBranches, procedureCapturedTagIds, readProcedureBranchEvidence } from './branch-assessment.ts'
@@ -246,8 +246,9 @@ export const prepareProcedureCommand = async (config: {
       })
       const { reads } = acquired
       const criterion = assessProcedureBranches({ step, reads, observations: acquired.observations, plantId: run.scope.plantId, simulationTime: context.clock?.() ?? context.simulationTime ?? context.at })[payload.branchIndex]!
-      if (context.actorKind === 'ai' && criterion.status !== 'supported') {
-        throw Object.assign(new Error(`Branch ${payload.branchIndex} of step ${step.label} is ${criterion.status}: ${criterion.reasons.join(' ') || 'the current evidence contradicts its declared criterion'}`), {
+      const refusal = context.actorKind === 'ai' ? aiBranchRefusal({ document, step, branchIndex: payload.branchIndex, criterion, reads, plantId: run.scope.plantId }) : undefined
+      if (refusal !== undefined) {
+        throw Object.assign(new Error(refusal), {
           code: 'procedure_branch_not_supported', details: { runId: run.runId, sourceId: run.sourceId, sourceRevision: run.sourceRevision, sourcePath: run.sourcePath, procedureId: run.procedureId, stepId: step.id, branchIndex: payload.branchIndex, assessment: criterion },
         })
       }

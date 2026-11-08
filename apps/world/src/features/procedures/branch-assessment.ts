@@ -1,4 +1,4 @@
-import type { ProcedureAssessmentCondition, ProcedureDecision, ProcedureDecisionObservation } from '@leitbild/procmd'
+import { limitMaxAgeSeconds, type ProcedureAssessmentCondition, type ProcedureDecision, type ProcedureDecisionObservation } from '@leitbild/procmd'
 import type { IsoTimestamp, ProcedureStep, ProcedureRunState, SimulationRunEvent } from '../../core/model/index.ts'
 import type { ProcedureBranchAssessment, ProcedureCriterionReading as CriterionReading, ProcedureCriterionStatus } from '../../core/model/procedure-criteria.ts'
 import type { ProcedureDocument } from '../../core/model/index.ts'
@@ -17,6 +17,17 @@ export const procedureCapturedTagIds = (step: ProcedureStep, branchIndex: number
   const hasLimits = step.blocks.some(block => block.limits !== undefined) || step.branches.some(branch => branch.limits !== undefined)
   if (!hasLimits && step.decisions?.some(decision => decision.branchIndex === branchIndex)) return []
   return [...new Set([...step.blocks.filter(block => block.kind !== 'basis').flatMap(block => block.tagIds), ...step.branches.flatMap(branch => branch.tagIds)])]
+}
+
+/** Why a reading cannot stand beside a judgement: unbound, unread, another unit's, bad or stale. */
+export const procedureReadProblem = (read: ProcedureTagRead, config: { readonly simulationTime: IsoTimestamp; readonly plantId: string }): string | undefined => {
+  if (read.binding === 'missing' || read.binding === 'unchecked') return `«${read.tagId}» is not bound on this Plant.`
+  const { value } = read
+  if (value === undefined) return `«${read.tagId}» could not be read: ${read.unavailable ?? 'no reading'}.`
+  if (value.scopeId !== config.plantId) return `«${read.tagId}» does not read this Plant.`
+  if (value.quality !== 'good') return `«${read.tagId}» quality is ${value.quality ?? 'unestablished'}.`
+  const ageSeconds = value.evidence === undefined ? Number.NaN : (Date.parse(config.simulationTime) - Date.parse(value.evidence.sampledAt)) / 1000
+  return !(ageSeconds >= 0 && ageSeconds <= limitMaxAgeSeconds) ? `«${read.tagId}» is stale.` : undefined
 }
 
 const compare = (a: number | boolean, operator: string, b: number | boolean): boolean => {
