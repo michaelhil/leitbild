@@ -16,6 +16,7 @@ export const ENGINEERING_SCRIPT_LIMITS = Object.freeze({
   jsonNodes: 20_000,
   processRssBytes: 512 * 1024 * 1024,
   processRssSampleMs: 100,
+  processRssProbeTimeoutMs: 500,
   concurrency: 2,
 })
 

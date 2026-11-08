@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { readdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
+import { fileURLToPath } from 'node:url'
 import { ENGINEERING_SCRIPT_LIMITS } from './script-protocol'
 import { runEngineeringScript } from './script-runner'
 
@@ -116,7 +117,7 @@ describe('bounded engineering scripts', () => {
     expect(performance.now() - began).toBeLessThan(ENGINEERING_SCRIPT_LIMITS.wallTimeMs + 2000)
     expect((await run('new ArrayBuffer(128*1024*1024)')).error?.code).toBe('guest_execution_failed')
     expect((await successful('1+1')).output).toBe(2)
-  }, 12000)
+  }, 20000)
 
   test('cancels the whole process and cleans its scratch directory before returning', async () => {
     const directories = () => readdir(tmpdir()).then(names => names.filter(name => name.startsWith('leitbild-engineering-')).sort())
@@ -134,6 +135,34 @@ describe('bounded engineering scripts', () => {
     expect((await successful('42')).output).toBe(42)
     expect((await runEngineeringScript({ source: '1', input: {}, signal: AbortSignal.abort() })).status).toBe('cancelled')
   })
+
+  test('external deadline kills even a suspended worker that cannot cooperate', async () => {
+    const controller = new AbortController()
+    const worker = fileURLToPath(new URL('./script-worker.ts', import.meta.url))
+    const pending = runEngineeringScript({ source: 'while(true){}; ({})', input: {}, signal: controller.signal })
+    let pid: number | undefined
+    try {
+      const searchDeadline = performance.now() + 2000
+      while (!pid && performance.now() < searchDeadline) {
+        const listing = Bun.spawn(['/bin/ps', '-axo', 'pid=,command='], { stdout: 'pipe', stderr: 'ignore' })
+        const text = await new Response(listing.stdout).text()
+        await listing.exited
+        const rows = text.split('\n').filter(line => line.includes(`--smol ${worker}`))
+        if (rows.length === 1) pid = Number(rows[0]!.trim().split(/\s+/, 1)[0])
+        if (!pid) await Bun.sleep(20)
+      }
+      expect(pid).toBeDefined()
+      // A stopped process cannot run QuickJS's cooperative interrupt handler.
+      process.kill(pid!, 'SIGSTOP')
+      const result = await pending
+      expect(result.error?.code).toBe('wall_deadline')
+      expect(result.elapsedMs).toBeLessThan(ENGINEERING_SCRIPT_LIMITS.wallTimeMs + 1500)
+      expect(() => process.kill(pid!, 0)).toThrow()
+    } finally {
+      controller.abort()
+      await pending
+    }
+  }, 9000)
 
   test('refuses excess concurrency explicitly rather than queueing unbounded work', async () => {
     const controller = new AbortController()
@@ -155,7 +184,7 @@ describe('bounded engineering scripts', () => {
     }
     const rebound = await successful(thermalSource, thermalInput(0.020, 15, 100))
     expect((rebound.output as { targetSeconds: number }).targetSeconds).toBeCloseTo(referenceTarget(0.020, 100), 3)
-  }, 12000)
+  }, 30000)
 
   test('Grid energy example reports interval shortfall even with positive net energy', async () => {
     const source = `

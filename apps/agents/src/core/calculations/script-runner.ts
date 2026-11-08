@@ -113,7 +113,7 @@ export const runEngineeringScript = async ({ source, input, signal }: {
   try {
     scratch = await mkdtemp(join(tmpdir(), 'leitbild-engineering-'))
     if (signal?.aborted) return finish('cancelled', { code: 'cancelled', message: 'Calculation cancelled before process start' })
-    child = Bun.spawn([process.execPath, '--no-env-file', '--smol', workerPath], {
+    child = Bun.spawn([process.execPath, '--no-env-file', '--no-macros', '--smol', workerPath], {
       cwd: scratch,
       env: { PATH: '/usr/bin:/bin', TZ: 'UTC', LANG: 'C' },
       stdin: 'pipe', stdout: 'pipe', stderr: 'pipe',
@@ -123,7 +123,7 @@ export const runEngineeringScript = async ({ source, input, signal }: {
     const sampleRss = async () => {
       if (running.exitCode !== null) return
       const probe = Bun.spawn(['/bin/ps', '-o', 'rss=', '-p', String(running.pid)], { env: { PATH: '/usr/bin:/bin', LANG: 'C' }, stdin: 'ignore', stdout: 'pipe', stderr: 'ignore' })
-      const probeTimeout = setTimeout(() => probe.kill('SIGKILL'), limits.processRssSampleMs)
+      const probeTimeout = setTimeout(() => probe.kill('SIGKILL'), limits.processRssProbeTimeoutMs)
       try {
         const value = (await new Response(probe.stdout).text()).trim()
         const code = await probe.exited

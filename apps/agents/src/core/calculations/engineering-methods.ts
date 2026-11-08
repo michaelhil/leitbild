@@ -4,7 +4,7 @@ import { calculateSampleChanges } from './sample-changes'
 const nameSchema = z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,63}$/)
   .refine(name => !['constructor', 'prototype', '__proto__'].includes(name), 'Reserved name')
 const timestampSchema = z.iso.datetime({ offset: true, precision: 3 })
-const labelSchema = z.string().trim().min(1).max(160)
+const labelSchema = z.string().min(1).max(160).refine(value => value.trim() === value, 'Use exact labels without surrounding whitespace')
 
 /** A scalar with a semantic quantity, not merely a dimensional unit label. */
 export const engineeringDatumSchema = z.object({
@@ -58,6 +58,18 @@ const rateUnits: Record<string, Record<string, number>> = {
   'mass-flow': { 'kg/s': 1, 'g/s': 0.001, 'kg/h': 1 / 3600 },
   power: { W: 1, kW: 1000, MW: 1e6 },
 }
+const sampleUnits: Record<string, readonly string[]> = {
+  temperature: ['°C', 'degC', 'K'],
+  'temperature-difference': ['K'],
+  mass: Object.keys(storageUnits.mass!),
+  energy: Object.keys(storageUnits.energy!),
+  'mass-flow': Object.keys(rateUnits['mass-flow']!),
+  power: Object.keys(rateUnits.power!),
+  time: ['s'],
+  frequency: ['Hz'],
+  fraction: ['1'],
+  percentage: ['%'],
+}
 const own = (object: Record<string, number> | undefined, key: string): number | undefined =>
   object && Object.hasOwn(object, key) ? object[key] : undefined
 
@@ -91,6 +103,7 @@ export const calculateEngineeringMethod = (raw: unknown, rawDatums: unknown) => 
   if (request.method === 'sample_changes') {
     const selected = samples(request.samples)
     const first = selected[0]!
+    if (!Object.hasOwn(sampleUnits, first.quantity) || !sampleUnits[first.quantity]!.includes(first.unit)) return refuse('unsupported_quantity_unit', 'The reviewed sample method does not support this exact quantity/unit pair; no unit meaning is inferred')
     let arithmetic: ReturnType<typeof calculateSampleChanges>
     try {
       arithmetic = calculateSampleChanges({ timestamps: selected.map(datum => datum.simulationAt), series: [{ key: first.quantity, unit: first.unit, values: selected.map(datum => datum.value) }] })
@@ -104,7 +117,7 @@ export const calculateEngineeringMethod = (raw: unknown, rawDatums: unknown) => 
       quantity: first.quantity,
       // Differences of absolute Celsius temperatures are kelvin intervals.
       changeQuantity: first.quantity === 'temperature' ? 'temperature-difference' : first.quantity,
-      changeUnit: first.quantity === 'temperature' && ['°C', 'degC', 'C'].includes(first.unit) ? 'K' : first.unit,
+      changeUnit: first.quantity === 'temperature' && ['°C', 'degC'].includes(first.unit) ? 'K' : first.unit,
       arithmetic,
     }
   }
@@ -133,6 +146,7 @@ export const calculateEngineeringMethod = (raw: unknown, rawDatums: unknown) => 
   }
   let storage = initial.value
   const intervals = grid.slice(1).map((at, index) => {
+    const startingStorage = storage
     const elapsedSeconds = (at - grid[index]!) / 1000
     if (elapsedSeconds > request.maxGapSeconds) return refuse('sample_gap', 'A sample interval exceeds maxGapSeconds; no gap repair')
     const transfers = streams.map(stream => {
@@ -145,7 +159,17 @@ export const calculateEngineeringMethod = (raw: unknown, rawDatums: unknown) => 
     })
     const netAmount = transfers.reduce((total, transfer) => finite(total + transfer.signedAmount), 0)
     storage = finite(storage + netAmount)
-    return { from: streams[0]!.selected[index]!.simulationAt!, to: streams[0]!.selected[index + 1]!.simulationAt!, elapsedSeconds, transfers, netAmount, accountedStorage: storage }
+    const rateAt = (sampleIndex: number) => streams.reduce((total, stream) => finite(total + finite(stream.selected[sampleIndex]!.value * stream.scale / storageScale * (stream.direction === 'in' ? 1 : -1))), 0)
+    const leftRate = rateAt(index)
+    const rightRate = request.interpolation === 'hold-left' ? leftRate : rateAt(index + 1)
+    // A signed linear flow reversal can put the inventory minimum inside an
+    // interval even when both endpoints are positive. This is interpolation,
+    // not a claim of event coverage or proof about an unmeasured physical flow.
+    const reversal = (leftRate < 0 && rightRate > 0) || (leftRate > 0 && rightRate < 0)
+    const extremumSeconds = reversal ? finite(-leftRate / finite(rightRate - leftRate) * elapsedSeconds) : null
+    const interiorStorage = extremumSeconds === null ? null : finite(startingStorage + finite(leftRate * extremumSeconds / 2))
+    const minimumAccountedStorage = Math.min(startingStorage, storage, interiorStorage ?? Infinity)
+    return { from: streams[0]!.selected[index]!.simulationAt!, to: streams[0]!.selected[index + 1]!.simulationAt!, elapsedSeconds, transfers, netAmount, accountedStorage: storage, minimumAccountedStorage, interiorExtremum: interiorStorage === null ? null : { secondsAfterFrom: extremumSeconds!, accountedStorage: interiorStorage } }
   })
   return {
     method: request.method,
@@ -156,14 +180,14 @@ export const calculateEngineeringMethod = (raw: unknown, rawDatums: unknown) => 
     initialStorage: initial.value,
     finalAccountedStorage: storage,
     minimumSampledAccountedStorage: Math.min(initial.value, ...intervals.map(interval => interval.accountedStorage)),
-    negativeAccountedStorage: initial.value < 0 || intervals.some(interval => interval.accountedStorage < 0),
+    minimumAccountedStorage: Math.min(initial.value, ...intervals.map(interval => interval.minimumAccountedStorage)),
+    negativeAccountedStorage: initial.value < 0 || intervals.some(interval => interval.minimumAccountedStorage < 0),
     interpolation: request.interpolation,
     maxGapSeconds: request.maxGapSeconds,
     boundary: request.boundary,
     omittedTerms: request.omittedTerms,
     coverage: 'supplied-streams-only' as const,
-    // This checks sample boundaries only; signed linear rates can have interior extrema.
-    extremaCoverage: 'sample-boundaries-only' as const,
+    extremaCoverage: 'declared-interpolation-only' as const,
     intervals,
   }
 }
