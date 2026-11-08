@@ -154,10 +154,15 @@ export const assessProcedureBranch = (config: CriterionAcquisition & {
   return { assessment, observationApplies, validThrough: new Date(Math.min(validThroughMs, lastIsoTimestampMs)).toISOString() as IsoTimestamp }
 }
 
-const judgementReason = (targetKind: ProcedureStep['branches'][number]['targetKind']): string =>
+/** A question no limit decides, with an answer that leaves the document. On a marked document a person answers it. */
+export const procedureStepAsksPerson = (step: ProcedureStep): boolean =>
+  (step.decisions?.length ?? 0) === 0 && step.branches.some(branch => branch.targetKind === 'procedure')
+
+const judgementReason = (step: ProcedureStep, targetKind: ProcedureStep['branches'][number]['targetKind']): string =>
   targetKind === 'procedure' ? 'No limit decides this transfer. An AI agent stops and asks a person.'
     : targetKind === 'end' || targetKind === 'abort' ? 'No limit decides this ending. An AI agent stops and asks a person.'
-      : 'No limit decides this branch. It is a judgement: an AI agent decides it on a stated basis, if the readings on the step\'s lines are valid.'
+      : procedureStepAsksPerson(step) ? 'No limit decides this step, and one of its answers leaves the procedure. An AI agent stops and asks a person.'
+        : 'No limit decides this branch. It is a judgement: an AI agent decides it on a stated basis, if the readings on the step\'s lines are valid.'
 
 export const assessProcedureBranches = (config: CriterionAcquisition & {
   readonly step: ProcedureStep
@@ -165,7 +170,7 @@ export const assessProcedureBranches = (config: CriterionAcquisition & {
   readonly observations?: ReadonlyMap<number, AcquiredObservation>
 }): ReadonlyArray<ProcedureBranchAssessment> => config.step.branches.map((branch, branchIndex) => assessProcedureBranch({
   ...config, branchIndex, decision: config.step.decisions?.find(candidate => candidate.branchIndex === branchIndex),
-  noCriterionReason: config.document?.annotations?.['ai-workable'] === 'true' ? judgementReason(branch.targetKind) : undefined,
+  noCriterionReason: config.document?.annotations?.['ai-workable'] === 'true' ? judgementReason(config.step, branch.targetKind) : undefined,
   observation: config.observations?.get(branchIndex),
 }).assessment)
 
