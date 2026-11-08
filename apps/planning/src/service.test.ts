@@ -252,6 +252,29 @@ describe('Study persistence and revision semantics', () => {
     expect(activations).toEqual(['load-if-needed'])
   })
 
+  test('a cold Study read restores its catalogue title without changing saved data or revealing a revoked source', async () => {
+    const fixture = await setup()
+    const study = await fixture.service.createFromBasis(workspaceId, { title: 'Restored Study', problem: problem(), basis: basis(), request: sourceRequest }, access)
+    let loaded = false, revoked = false
+    fixture.sources.qualify = async (_basis, _access, activation) => {
+      if (revoked) return { allowed: false, code: 'source_not_qualified' }
+      if (activation === 'load-if-needed') loaded = true
+      return loaded ? { allowed: true } : { allowed: false, code: 'simulation_run_not_loaded' }
+    }
+    const api = createPlanningModuleApi({ service: fixture.service })
+    const url = new URL(`http://planning/internal/workspaces/${workspaceId}/resources`)
+    const catalogue = async () => (await api(new Request(url), url))!.text()
+    expect(await catalogue()).not.toContain('Restored Study')
+    expect(loaded).toBe(false)
+    expect(await fixture.service.read(workspaceId, study.id, access)).toEqual(study)
+    expect(await catalogue()).toContain('Restored Study')
+    revoked = true
+    await expect(fixture.service.read(workspaceId, study.id, access)).rejects.toMatchObject({ code: 'planning_source_unavailable' })
+    expect(await catalogue()).not.toContain('Restored Study')
+    expect(await catalogue()).toContain('Unavailable planning Study')
+    expect(await fixture.store.read(workspaceId, study.id)).toEqual(study)
+  })
+
   test('a capture completing after deletion cannot resurrect its Study or Workspace', async () => {
     const fixture = await setup()
     const study = await fixture.service.createFromBasis(workspaceId, { title: 'Deletion race', problem: problem(), basis: basis(), request: sourceRequest }, access)
