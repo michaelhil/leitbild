@@ -53,6 +53,22 @@
         "vite": "^8.0.14",
       },
     },
+    "apps/planning": {
+      "name": "@leitbild/planning",
+      "version": "0.1.0",
+      "dependencies": {
+        "@leitbild/contracts": "workspace:*",
+        "@leitbild/module-runtime": "workspace:*",
+        "svelte": "^5.57.2",
+        "zod": "^4.4.3",
+      },
+      "devDependencies": {
+        "@sveltejs/vite-plugin-svelte": "^7.1.2",
+        "svelte-check": "^4.7.7",
+        "typescript": "^6.0.3",
+        "vite": "^8.0.14",
+      },
+    },
     "apps/world": {
       "name": "@leitbild/world",
       "version": "0.6.0",
@@ -201,6 +217,8 @@
     "@leitbild/knowledge": ["@leitbild/knowledge@workspace:packages/knowledge"],
 
     "@leitbild/module-runtime": ["@leitbild/module-runtime@workspace:packages/module-runtime"],
+
+    "@leitbild/planning": ["@leitbild/planning@workspace:apps/planning"],
 
     "@leitbild/procmd": ["@leitbild/procmd@workspace:packages/procmd"],
 
