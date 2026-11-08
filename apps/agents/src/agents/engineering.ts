@@ -53,7 +53,7 @@ export const createEngineering = (deps:{workspaceId:WorkspaceId;hostBaseUrl:stri
   }
   const execute = async (operation:Request['operation'],params:unknown,context:ToolContext,person=false,workspaceCall=deps.workspaceCall):Promise<ToolResult> => {
     try {
-      roomFor(context,person)
+      const scopeRevision = roomFor(context,person).profile.scopeRevision
       if (!context.executionTurnId || !context.executionCallId) return engineeringFailure('execution_required','Engineering requires exact recorded execution identifiers')
       const input = operation==='calculate' ? engineeringCalculateSchema.parse(params) : engineeringRunSchema.parse(params)
       const bound = await bindEngineeringInputs({...deps,workspaceCall},context,input.bindings)
@@ -65,6 +65,14 @@ export const createEngineering = (deps:{workspaceId:WorkspaceId;hostBaseUrl:stri
         if (programSource===undefined) return engineeringFailure('program_missing','The selected execution does not retain a script')
         outcome = await runEngineeringScript({source:programSource,input:Object.fromEntries(bound.inputs.map(datum=>[datum.name,datum])),...(context.signal ? {signal:context.signal}:{})})
       }
+      // A source or Room can change while the disposable process runs. Admission
+      // does not grant a lease to publish derived evidence after revocation.
+      for (const source of bound.sources) {
+        const status = await qualifyEngineeringBasis(workspaceCall,context,source)
+        if (!status.allowed) return engineeringFailure(status.code ?? 'source_refused',status.reason ?? 'Source changed before result publication')
+      }
+      if (roomFor(context,person).profile.scopeRevision !== scopeRevision) return engineeringFailure('room_scope_changed','Room Scope changed during calculation; reacquire permitted evidence')
+      context.signal?.throwIfAborted()
       const receipt:EngineeringReceipt = {kind:'engineering-calculation',title:input.title,mode:operation==='calculate'?'reviewed-method':'exploratory-script',createdAt:new Date().toISOString(),...bound,request:{operation,input},outcome,qualification:'research-only',...(programSource===undefined?{}:{programSource})}
       const embeddedView = embeddedViewEnvelopeSchema.parse({moduleId:'agents',viewType:'engineering.result',title:input.title,height:650,
         subject:{workspaceId:deps.workspaceId,moduleId:'agents',type:'agents.room',id:context.roomId},
@@ -89,10 +97,13 @@ export const createEngineering = (deps:{workspaceId:WorkspaceId;hostBaseUrl:stri
   return {tools,
     read:async(roomId:string,turnId:string,toolCallId:string,actor:ActorContext) => {
       const context=personContext(roomId,actor)
-      roomFor(context,true)
+      const scopeRevision=roomFor(context,true).profile.scopeRevision
       const receipt=receiptAt(roomId,turnId,toolCallId)
       const broker=personCall(actor)
       const sourceStatus=await Promise.all(receipt.sources.map(source=>qualifyEngineeringBasis(broker,context,source)))
+      const refused = sourceStatus.find(status=>!status.allowed)
+      if (refused) return engineeringFailure(refused.code ?? 'source_refused',refused.reason ?? 'The retained result source is unavailable')
+      if (roomFor(context,true).profile.scopeRevision !== scopeRevision) return engineeringFailure('room_scope_changed','Room Scope changed while opening the result')
       return {receipt,sourceStatus}
     },
     // Reserve the bounded request, output and up to 32 retained capture bundles
