@@ -756,6 +756,99 @@ fn the_bank_hold_stops_auto_and_its_release_returns_it() {
     a.close();
 }
 
+/// Step 4 of the live composition (lead, 8 November): the unit's half of the
+/// unit-against-harness gate. `LD01_UNIT_HOST_SCRIPT` names a JSON script,
+/// `{"span_s", "grid_exchange_s", "channels": [ids], "commands":
+/// [{"after_s", "apply": "prospective"|"at_frame", "command": {..}}]}`; the
+/// unit runs it in 0.1 s exchanges and writes `unit-series.json`: per frame
+/// the time and each named channel, the named end if one comes.
+#[test]
+#[ignore = "NOT-EVIDENCE gate: ld01-unit, one scripted case for the harness comparison (minutes)"]
+fn the_unit_records_a_command_script() {
+    let receipts = std::path::PathBuf::from(env("LD01_UNIT_HOST_RECEIPTS"));
+    std::fs::create_dir_all(&receipts).expect("receipt directory");
+    let script: Value =
+        serde_json::from_slice(&std::fs::read(env("LD01_UNIT_HOST_SCRIPT")).expect("the script"))
+            .expect("script json");
+    let mut load = default_load();
+    load["solver"]["grid_exchange_s"] = script["grid_exchange_s"].clone();
+    let mut a = Host::spawn(&receipts.join("script.stderr.log"));
+    let loaded = a.json(LOAD, &serde_json::to_vec(&load).unwrap());
+    let t0 = bits_of(&loaded["t_bits"]);
+    let period = loaded["frame_s"].as_f64().expect("frame_s");
+    let k0 = (t0 / period).round() as u64;
+    let instant = |k: u64| (k0 + k) as f64 * period;
+    let channels = a.json(CHANNELS, &[]);
+    let names: Vec<String> = script["channels"]
+        .as_array()
+        .expect("channels")
+        .iter()
+        .map(|c| c.as_str().expect("a channel id").to_string())
+        .collect();
+    let slots: Vec<usize> = names
+        .iter()
+        .map(|id| {
+            channels
+                .as_array()
+                .unwrap()
+                .iter()
+                .position(|c| c["id"] == *id)
+                .unwrap_or_else(|| panic!("no channel {id}"))
+        })
+        .collect();
+    let commands = script["commands"].as_array().expect("commands").clone();
+    let on = |c: &Value| c["after_s"].as_f64().expect("after_s");
+    // Prospective commands go in now, at their own instants.
+    for c in commands.iter().filter(|c| c["apply"] == "prospective") {
+        let mut cmd = c["command"].clone();
+        cmd["t_apply"] = json!(t0 + on(c));
+        a.json(COMMAND, &serde_json::to_vec(&cmd).unwrap());
+    }
+    let at_frame: Vec<(u64, Value)> = commands
+        .iter()
+        .filter(|c| c["apply"] == "at_frame")
+        .map(|c| ((on(c) / period).round() as u64, c["command"].clone()))
+        .collect();
+    let span = script["span_s"].as_f64().expect("span_s");
+    let last = (span / period).round() as u64;
+    let mut walls = AdvanceWalls::default();
+    let mut frames = Vec::new();
+    let mut ended = Value::Null;
+    let mut replies = Vec::new();
+    for (_, command) in at_frame.iter().filter(|(k, _)| *k == 0) {
+        let mut cmd = command.clone();
+        cmd["t_apply"] = json!(t0);
+        replies.push(a.json(COMMAND, &serde_json::to_vec(&cmd).unwrap()));
+    }
+    for k in 1..=last {
+        let (p, _) = advance(&mut a, &mut walls, instant(k));
+        let f = frame(&p);
+        let mut row = vec![f.t];
+        row.extend(slots.iter().map(|s| f.values[*s]));
+        frames.push(row);
+        if !f.events["ended"].is_null() {
+            ended = f.events["ended"].clone();
+            break;
+        }
+        for (_, command) in at_frame.iter().filter(|(at, _)| *at == k) {
+            let mut cmd = command.clone();
+            cmd["t_apply"] = json!(f.t);
+            replies.push(a.json(COMMAND, &serde_json::to_vec(&cmd).unwrap()));
+        }
+    }
+    let status = a.json(STATUS, &[]);
+    std::fs::write(
+        receipts.join("unit-series.json"),
+        serde_json::to_vec(&json!({"t0": t0, "frame_s": period, "channels": names,
+            "frames": frames, "ended": ended, "replies": replies, "failed": status["failed"],
+            "advance_wall_s": walls.receipt((1. / period).round() as usize)}))
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(status["failed"], Value::Null, "{status}");
+    a.close();
+}
+
 /// R4-TIME-STOPPED on the real unit: the relief fails open from the saved
 /// state, the level reaches the spray port and the model refuses that state.
 /// The unit stops by name, at once, and a host gets the refusal with it.
