@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import type { ActorId, CommandEnvelope, EventId, IsoTimestamp, ProcedureDocument, SimulationRunEvent, SimulationRunId } from '../src/core/model/index.ts'
 import { nowIso, simulationRunEventSchema, procedureRunStateSchema } from '../src/core/model/index.ts'
 import { createSimulationRunStateStore } from '../src/core/simulation-runs/state-store.ts'
-import { assertAiDecisionEvidence, assertAiWorksCurrentStep, type ProcedureActorKind } from '../src/features/procedures/driver-rules.ts'
+import { assertAiStatesBasis, assertAiWorksCurrentStep, type ProcedureActorKind } from '../src/features/procedures/driver-rules.ts'
 import type { ProcedureObservationPort, ProcedureTagValue } from '../src/features/procedures/pack-observations.ts'
 import { parseProcedureMarkdown } from '../src/features/procedures/procmd.ts'
 import { prepareProcedureCommand } from '../src/features/procedures/run-state.ts'
@@ -265,7 +265,7 @@ describe('procedure run driver and AI decision rules', () => {
     expect(rno.run('FR-S.1').status).toBe('completed')
   })
 
-  test('an AI transition off the current step, without a basis, or on a tag it cannot read is refused', async () => {
+  test('an AI transition off the current step, without a basis, or whose criterion cannot read a tag is refused', async () => {
     const h = harness()
     await h.start()
     await expect(h.execute(assistant, 'world.procedure.run.transition', { runId: h.run().runId, stepId: 'check-power', branchIndex: 1, basis: 'Flux low.', evidenceTagIds: ['NIS-PR-AVG'] }))
@@ -277,7 +277,6 @@ describe('procedure run driver and AI decision rules', () => {
     const fresh = harness()
     await fresh.start()
     await expect(fresh.transition(assistant, { branchIndex: 0, evidenceTagIds: ['TRIP-BKR-A'] })).rejects.toThrow('only with a basis')
-    await expect(fresh.transition(assistant, { branchIndex: 0, basis: 'Breakers open.', evidenceTagIds: ['PT-455'] })).rejects.toThrow('«PT-455» are not cited in step 1')
     fresh.setValues({ ...tripped, 'TRIP-BKR-B': 'missing' })
     await expect(fresh.transition(assistant, { branchIndex: 0, ...fresh.evidence })).rejects.toThrow('Signal TRIP-BKR-B is not bound')
     fresh.setValues({ ...tripped, 'NIS-PR-AVG': new Error('runtime unavailable') })
@@ -296,6 +295,14 @@ describe('procedure run driver and AI decision rules', () => {
     blind.setValues({ 'TRIP-BKR-A': 'missing', 'TRIP-BKR-B': new Error('runtime unavailable'), 'NIS-PR-AVG': 'missing' })
     await expect(blind.transition(assistant, { branchIndex: 0, basis: 'Not observable in the model: trip breakers, flux. Nothing contradicts the trip.' })).rejects.toThrow('is unknown')
     expect(blind.run().currentStepId).toBe('verify-reactor-trip')
+  })
+
+  test('a citation is a receipt, never a reason to refuse: naming a tag beyond the step or twice leaves the decision to its criterion', async () => {
+    const h = harness()
+    await h.start()
+    await h.transition(assistant, { branchIndex: 0, basis: 'Breakers open.', evidenceTagIds: ['PT-455', 'NIS-PR-AVG', 'NIS-PR-AVG'] })
+    expect(h.run().currentStepId).toBe('verify-turbine-trip')
+    expect(h.run().stepStates[0]?.decision?.evidence?.map(item => item.tagId)).toEqual(['NIS-PR-AVG'])
   })
 
   test('complete server criterion proof permits omitted optional citations', async () => {
@@ -434,12 +441,11 @@ describe('procedure run driver and AI decision rules', () => {
     expect(h.run().stepStates.find(step => step.stepId === 'verify-reactor-trip')?.decision).toBeUndefined()
   })
 
-  test('the AI decision rules the commit applies: the current step, a basis, and the step\'s tags that read', () => {
+  test('the AI decision rules the commit applies: the current step and a basis', () => {
     const [first, second] = documents['E-0']!.steps
     expect(() => assertAiWorksCurrentStep({ currentStepId: first!.id }, first!)).not.toThrow()
     expect(() => assertAiWorksCurrentStep({ currentStepId: second!.id }, first!)).toThrow("Step 1 is not the run's current step (verify-turbine-trip)")
-    expect(() => assertAiDecisionEvidence({ step: second!, basis: 'Stop valves closed.', reads: [] })).not.toThrow()
-    expect(() => assertAiDecisionEvidence({ step: first!, basis: 'Breakers open.', reads: [] })).not.toThrow()
-
+    expect(() => assertAiStatesBasis('Breakers open.')).not.toThrow()
+    expect(() => assertAiStatesBasis(undefined)).toThrow('only with a basis')
   })
 })

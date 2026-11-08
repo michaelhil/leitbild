@@ -1,12 +1,10 @@
 import type { ActorId, IsoTimestamp, ProcedureRunDriver, ProcedureRunState, ProcedureStep } from '../../core/model/index.ts'
-import type { ProcedureTagRead } from './pack-observations.ts'
 
 // Who may work a procedure Run, and how an AI agent decides on it. An AI
 // agent that drives a Run works its current step as the procedure says: it
 // selects any declared branch there (a normal, response-not-obtained or
-// unknown outcome; to a step, another procedure or END) on a stated basis,
-// citing the step's tags World reads now wherever any of them reads. A person
-// takes over by acting. Explicit placekeeping is distinct from an evidence-backed
+// unknown outcome; to a step, another procedure or END) on a stated basis.
+// A person takes over by acting. Explicit placekeeping is distinct from an evidence-backed
 // branch decision; World enforces ownership and document validity at commit.
 
 /** Who issues a procedure command: an AI agent, a person, or the Run itself (its Scenario timeline). */
@@ -39,17 +37,9 @@ export const assertAiDrives = (run: ProcedureRunState, actorId: ActorId): void =
 }
 
 /** A person-readable basis accompanies authoritative World criteria; optional citations are receipts, not proof. */
-export const assertAiDecisionEvidence = (config: {
-  readonly step: ProcedureStep
-  readonly basis?: string
-  readonly reads: ReadonlyArray<ProcedureTagRead>
-}): void => {
-  if (config.basis === undefined) {
+export const assertAiStatesBasis = (basis: string | undefined): void => {
+  if (basis === undefined) {
     throw new Error('An AI agent selects a branch only with a basis: what the step asks, the values read with units and plant time, and what could not be observed (at most 300 characters).')
-  }
-  for (const read of config.reads) {
-    if (read.binding === 'missing') throw new Error(`«${read.tagId}» has no binding on this Plant: cite only tags World reads now, and say in the basis what is not observable.`)
-    if (read.value === undefined) throw new Error(`«${read.tagId}» could not be read (${read.unavailable ?? 'no value'}): cite only tags World reads now, and say in the basis what is not observable.`)
   }
 }
 

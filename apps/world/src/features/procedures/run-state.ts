@@ -9,7 +9,7 @@ import {
   procedureRunTransitionPayloadSchema, procedureRunRequestInputPayloadSchema,
 } from '../../core/model/index.ts'
 import {
-  assertAiDecisionEvidence, assertAiDrives, assertAiMayDrive, assertAiWorksCurrentStep,
+  assertAiDrives, assertAiMayDrive, assertAiStatesBasis, assertAiWorksCurrentStep,
   procedureDriver, sameProcedureDriver, type ProcedureActorKind,
 } from './driver-rules.ts'
 import { assessProcedureBranches, readProcedureBranchEvidence } from './branch-assessment.ts'
@@ -229,11 +229,7 @@ export const prepareProcedureCommand = async (config: {
       throw new Error(`procedure ${targetDocument.procedureId} does not contain destination step ${branch.targetStepId}`)
     }
     const preparedTarget = targetDocument ? currentRunFor(config.procedures, preparedRun.sourceId, targetDocument.procedureId, preparedRun.scope) : undefined
-    // Citations are bounded by this pinned step's declared tag identities, not an arbitrary count.
     const evidenceTagIds = payload.evidenceTagIds ?? []
-    if (new Set(evidenceTagIds).size !== evidenceTagIds.length) throw new Error('evidenceTagIds name a tag more than once')
-    const uncited = evidenceTagIds.filter(tagId => !step.tagIds.includes(tagId))
-    const uncitedEvidence = uncited.length === 0 ? undefined : new Error(`${uncited.map(tagId => `«${tagId}»`).join(', ')} are not cited in step ${step.label}; evidence must name its declared tags.`)
     return async context => {
       const run = activeRunFor(context.procedures, payload.runId)
       assertDocumentScope(context, document, run.scope)
@@ -242,7 +238,6 @@ export const prepareProcedureCommand = async (config: {
         assertAiDrives(run, command.actorId)
         assertAiWorksCurrentStep(run, step)
       }
-      if (uncitedEvidence !== undefined) throw uncitedEvidence
       const acquired = await readProcedureBranchEvidence({
         observations: () => {
           if (context.observations === undefined) throw new Error('Commit-local procedure observations are unavailable')
@@ -256,11 +251,8 @@ export const prepareProcedureCommand = async (config: {
           code: 'procedure_branch_not_supported', details: { runId: run.runId, sourceId: run.sourceId, sourceRevision: run.sourceRevision, sourcePath: run.sourcePath, procedureId: run.procedureId, stepId: step.id, branchIndex: payload.branchIndex, assessment: criterion },
         })
       }
-      const evidenceReads = reads.filter(read => evidenceTagIds.includes(read.tagId))
-      const evidence = evidenceReads.map(read => ({ tagId: read.tagId, reading: procedureEvidenceReadingText(read) }))
-      if (context.actorKind === 'ai') {
-        assertAiDecisionEvidence({ step, ...(payload.basis === undefined ? {} : { basis: payload.basis }), reads: evidenceReads })
-      }
+      const evidence = reads.filter(read => evidenceTagIds.includes(read.tagId)).map(read => ({ tagId: read.tagId, reading: procedureEvidenceReadingText(read) }))
+      if (context.actorKind === 'ai') assertAiStatesBasis(payload.basis)
       // Deliberate off-path decisions remain possible, but asynchronously prepared
       // requests must not race another operator's newly accepted navigation.
       if (run.currentStepId !== preparedRun.currentStepId) throw new Error('procedure current step changed; refresh before selecting this branch')
