@@ -17,7 +17,7 @@ import { createScenarioRuntimeResolver } from '../src/core/scenarios/runtime-res
 import { evaluateGuideCondition } from '../src/core/guides/conditions.ts'
 
 test('all bundled guides compile with exact owner targets and perspective-compatible human paths', async () => {
-  expect(builtinScenarioDefinitions).toHaveLength(18)
+  expect(builtinScenarioDefinitions).toHaveLength(20)
   const panelIds = new Set(worldPacks.flatMap(pack => pack.ui?.surfacePanels.map(panel => panel.id) ?? []))
   let stateTasks = 0, promptTasks = 0
   for (const source of builtinScenarioDefinitions) {
