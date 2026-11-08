@@ -12,6 +12,13 @@ export const procedureCheckedTagIds = (step: ProcedureStep): ReadonlyArray<strin
   ...step.branches.flatMap(branch => branch.limits?.comparisons.map(item => item.tagId) ?? []),
 ])]
 
+/** The readings a decision keeps of its own accord: every tag named on the step's lines, where no decision block already keeps its proof. */
+export const procedureCapturedTagIds = (step: ProcedureStep, branchIndex: number): ReadonlyArray<string> => {
+  const hasLimits = step.blocks.some(block => block.limits !== undefined) || step.branches.some(branch => branch.limits !== undefined)
+  if (!hasLimits && step.decisions?.some(decision => decision.branchIndex === branchIndex)) return []
+  return [...new Set([...step.blocks.filter(block => block.kind !== 'basis').flatMap(block => block.tagIds), ...step.branches.flatMap(branch => branch.tagIds)])]
+}
+
 const compare = (a: number | boolean, operator: string, b: number | boolean): boolean => {
   if (operator === '==') return a === b
   if (operator === '!=') return a !== b
