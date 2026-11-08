@@ -14,18 +14,17 @@ describe('product procedure content ownership', () => {
     try {
       const source = procedureSources[0]!
       const selected = source.documentPaths!
-      expect(selected).toHaveLength(41)
+      expect(selected).toHaveLength(39)
       expect(selected.filter(path => path.startsWith('world/'))).toEqual([
         'world/packs/process-plant/procedures/E-0.md',
         'world/packs/process-plant/procedures/ES-0.1.md',
         'world/packs/process-plant/procedures/ES-1.3.md',
         'world/packs/process-plant/procedures/RHR-1.md',
-        'world/packs/process-plant/procedures/RHR-2.md',
         'world/packs/process-plant/procedures/ECA-0.0.md',
         'world/packs/process-plant/procedures/FR-H.3.md',
-        'world/packs/process-plant/procedures/FR-H.4.md',
-        'world/packs/process-plant/procedures/FR-H.5.md',
       ])
+      expect(selected).toContain('archive/pwr-reference-model/procedures/FR-H.5.md')
+      expect(selected.some(path => path.endsWith('/FR-H.4.md') || path.endsWith('/RHR-2.md'))).toBe(false)
       expect(selected.some(path => path.includes('/ld-01/'))).toBe(false)
       const archivedPath = 'archive/pwr-reference-model/procedures/ES-0.1.md'
       const archivedTransferPath = 'archive/pwr-reference-model/procedures/ES-1.3.md'
