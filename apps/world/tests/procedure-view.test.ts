@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { parseProcedureMarkdown } from '../src/features/procedures/procmd.ts'
-import { procedureUsageHref, procedureTagLabels, procedureJudgementLine, procedureInlineLayout, procedureInlineValue, procedureFoldoutItems, procedureFoldoutBeforeStart, procedurePriorFoldout, procedureDecisionAgainst, procedureTagLabel, procedureLightRows, procedureLightTone, procedureCheckVersion, procedureCategories, procedureBlockLabel, procedureEvidenceStatusWord, procedureLineReadingText, procedureStepCounterText, procedureReadingName, procedureReadingText, procedureRequirementText, procedureLineCheckEvidence, procedureLineChecks, procedureObservationBasis, procedureObservationEvidence, procedureObservationLabel, procedureOperatorRows, procedureSampledEvidence, procedureSourceEvidenceRequest, procedureStepItems, procedureStepTagBindings, procedureTextSegments, procedureUnitJump } from '../src/ui/procedures/procedure-view.ts'
+import { procedureChipTarget, procedureUsageHref, procedureTagLabels, procedureJudgementLine, procedureInlineLayout, procedureInlineValue, procedureFoldoutItems, procedureFoldoutBeforeStart, procedurePriorFoldout, procedureDecisionAgainst, procedureTagLabel, procedureLightRows, procedureLightTone, procedureCheckVersion, procedureCategories, procedureBlockLabel, procedureEvidenceStatusWord, procedureLineReadingText, procedureStepCounterText, procedureReadingName, procedureReadingText, procedureRequirementText, procedureLineCheckEvidence, procedureLineChecks, procedureObservationBasis, procedureObservationEvidence, procedureObservationLabel, procedureOperatorRows, procedureSampledEvidence, procedureSourceEvidenceRequest, procedureStepItems, procedureStepTagBindings, procedureTextSegments, procedureUnitJump } from '../src/ui/procedures/procedure-view.ts'
 import { procedureCriterionReadingSchema } from '../src/core/model/procedure-criteria.ts'
 import { procedureTestSource } from './procedure-fixtures.ts'
 import { procedureBindingStatusWord, procedureComparisonText, procedureCsfChip, procedureDescriptionText, procedureDisplayReading, procedureElapsedText, procedureStepBindingSummary } from '../src/ui/procedures/procedure-view.ts'
@@ -559,4 +559,12 @@ test('two tags on one piece of equipment say which is which', () => {
   const tag = (text: string) => ({ kind: 'tag' as const, text })
   expect(procedureTagLabels([tag('PORV-456A'), { kind: 'text', text: ' ' }, tag('MOV-8000A')], document).filter(Boolean).map(item => item!.shown)).toEqual(['Pressurizer PORV A demand', 'PORV A block valve demand'])
   expect(procedureTagLabels([tag('PORV-456A')], document).filter(Boolean).map(item => item!.shown)).toEqual(['Pressurizer'])
+})
+
+test('pressing a chip goes to the procedure it names, if that is listed and not already shown', () => {
+  const procedures = [{ procedureId: 'FR-H.3' }, { procedureId: 'E-0' }]
+  expect(procedureChipTarget({ procedure: 'FR-H.3' }, procedures, 'E-0')).toBe('FR-H.3')
+  expect(procedureChipTarget({ procedure: 'FR-H.3' }, procedures, 'FR-H.3')).toBeUndefined()
+  expect(procedureChipTarget({ procedure: 'FR-Z.9' }, procedures, 'E-0')).toBeUndefined()
+  expect(procedureChipTarget({}, procedures, 'E-0')).toBeUndefined()
 })

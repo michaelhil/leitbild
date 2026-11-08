@@ -3104,6 +3104,10 @@ body.rail-resizing {
   cursor: help;
 }
 
+.procedure-csf.names-procedure {
+  cursor: pointer;
+}
+
 .procedure-csf-procedure {
   font-weight: 800;
 }
@@ -3114,7 +3118,11 @@ body.rail-resizing {
 }
 
 /* Normal is quiet; a challenged function is loud; no data is hatched, never plain white. */
-.procedure-csf.green .procedure-csf-procedure {
+.procedure-csf.green .procedure-csf.names-procedure {
+  cursor: pointer;
+}
+
+.procedure-csf-procedure {
   font-weight: 800;
 }
 
@@ -3128,7 +3136,11 @@ body.rail-resizing {
   background: repeating-linear-gradient(135deg, #f1f5f9 0 4px, #e2e8f0 4px 8px);
   color: #334155;
 }
-.procedure-csf.unknown .procedure-csf-procedure {
+.procedure-csf.unknown .procedure-csf.names-procedure {
+  cursor: pointer;
+}
+
+.procedure-csf-procedure {
   font-weight: 800;
 }
 

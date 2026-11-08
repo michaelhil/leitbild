@@ -690,6 +690,10 @@ export interface ProcedureCsfChip {
   readonly procedure?: string
 }
 
+/** Where pressing a chip goes: the procedure it names, if it is in the list and not already on screen. */
+export const procedureChipTarget = (chip: Pick<ProcedureCsfChip, 'procedure'>, procedures: ReadonlyArray<{ readonly procedureId: string }>, shownProcedureId: string | undefined): string | undefined =>
+  chip.procedure !== undefined && chip.procedure !== shownProcedureId && procedures.some(item => item.procedureId === chip.procedure) ? chip.procedure : undefined
+
 const csfGlyphs: Readonly<Record<ProcedureCsfChip['tone'], string>> = {
   green: '●', yellow: '▲', orange: '◆', red: '■', unknown: '?', 'not-monitored': '—', pending: '…',
 }

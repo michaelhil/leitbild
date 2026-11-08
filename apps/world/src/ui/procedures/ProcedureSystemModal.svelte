@@ -7,7 +7,7 @@
   import { readProcedureTagValue } from './procedure-client.ts'
   import { canInspectProcedureBranchCheck, type ProcedureChecksView } from '../../features/procedures/checks-view.ts'
   import { simulationTimeAt } from '../simulation-clock.ts'
-  import { procedureViewKey, procedureCategories, procedureOperatorRows, procedureLineChecks, procedureLineCheckEvidence, procedureCheckVersion, procedureUsageHref, procedureTagLabels, procedureJudgementLine, procedureFoldoutBeforeStart, procedurePriorFoldout, procedureDecisionAgainst, procedureLightRows, procedureLightTone, procedureLineReadingText, procedureReferenceNotice, procedureStepCounterText, procedureReadingName, procedureReadingText, procedureRequirementText, procedureEvidenceStatusWord, type ProcedureLineCheck, type StepItem, procedureStepTagBindings, procedureTextSegments, procedureBlockLabel, procedureObservationEvidence, procedureSampledEvidence, procedureObservationBasis, procedureObservationLabel, procedureSourceEvidenceRequest, procedureUnitJump } from './procedure-view.ts'
+  import { procedureViewKey, procedureCategories, procedureOperatorRows, procedureLineChecks, procedureLineCheckEvidence, procedureCheckVersion, procedureChipTarget, procedureUsageHref, procedureTagLabels, procedureJudgementLine, procedureFoldoutBeforeStart, procedurePriorFoldout, procedureDecisionAgainst, procedureLightRows, procedureLightTone, procedureLineReadingText, procedureReferenceNotice, procedureStepCounterText, procedureReadingName, procedureReadingText, procedureRequirementText, procedureEvidenceStatusWord, type ProcedureLineCheck, type StepItem, procedureStepTagBindings, procedureTextSegments, procedureBlockLabel, procedureObservationEvidence, procedureSampledEvidence, procedureObservationBasis, procedureObservationLabel, procedureSourceEvidenceRequest, procedureUnitJump } from './procedure-view.ts'
   import type {
     SimulationRunId,
     SimulationClockState,
@@ -2015,7 +2015,7 @@
 {/snippet}
 
 {#snippet procedureRunActions()}
-  {#if completedRun}
+  {#if completedRun && !aiWorkable}
     <button type="button" class="reset" class:busy={busy} disabled={busy} onclick={() => { summaryOpen = false; confirmation = 'reset' }}>{#if pendingControl === 'reset'}{@render recordingNote()}{:else}Reset…{/if}</button>
   {:else if activeRun}
     <button type="button" class="complete" class:busy={busy} disabled={busy} onclick={() => { summaryOpen = false; confirmation = 'completed' }}>
@@ -2133,7 +2133,7 @@
           {@const evaluation = csfEvaluations.get(csf)}
           {@const chip = procedureCsfChip(csf, evaluation, csfStale)}
           <div class="procedure-csf-shell">
-            <button type="button" class="procedure-csf {chip.tone}" class:stale={chip.stale} aria-label="{chip.label}: {evaluation ? evaluation.status.replace('-', ' ') : 'not read yet'}{chip.procedure ? `, go to ${chip.procedure}` : ''}{chip.stale ? ', stale' : ''}">
+            <button type="button" class="procedure-csf {chip.tone}" class:stale={chip.stale} class:names-procedure={chip.procedure !== undefined} onclick={() => { const target = procedureChipTarget(chip, catalog?.procedures ?? [], document?.procedureId); if (target) void chooseProcedure(target as ProcedureId) }} aria-label="{chip.label}: {evaluation ? evaluation.status.replace('-', ' ') : 'not read yet'}{chip.procedure ? `, go to ${chip.procedure}` : ''}{chip.stale ? ', stale' : ''}">
               <span class="procedure-csf-glyph" aria-hidden="true">{chip.glyph}</span>
               <span>{chip.label}</span>
               {#if chip.procedure}<b class="procedure-csf-procedure">{chip.procedure}</b>{/if}
