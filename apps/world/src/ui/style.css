@@ -4423,6 +4423,18 @@ body.rail-resizing {
 .procedure-current-check summary.supported .procedure-check-glyph { color: var(--success); }
 .procedure-current-check summary.contradicted .procedure-check-glyph { color: var(--critical); }
 .procedure-instruction-list.lit { padding-inline-start: 0; list-style: none; }
+.procedure-inline-readings { display: grid; grid-template-columns: repeat(var(--columns), minmax(0, 1fr)); gap: 1px 10px; margin: 6px 0 2px; }
+.procedure-inline-head { border-block-end: 1px solid #17212b; font-size: 12.5px; font-weight: 700; }
+.procedure-inline-label { grid-column: 1 / -1; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0 8px; margin-block-start: 5px; color: #566573; font-size: 12.5px; }
+.procedure-inline-cell { display: block; min-width: 0; }
+.procedure-inline-value { appearance: none; display: block; padding: 0; border: 0; background: transparent; color: #17212b; font: inherit; font-weight: 700; font-variant-numeric: tabular-nums; text-align: left; cursor: pointer; }
+.procedure-inline-value:hover { text-decoration: underline; }
+.procedure-inline-value:focus-visible { outline: 3px solid var(--accent, #1d4ed8); outline-offset: 1px; }
+.procedure-inline-value.stale { color: #566573; font-style: italic; font-weight: 500; }
+.procedure-inline-trend { display: block; max-width: 100%; }
+.procedure-inline-trend path { fill: none; stroke: #17212b; stroke-width: 1.5; stroke-linejoin: round; }
+.procedure-inline-trend circle { fill: #17212b; }
+.procedure-inline-note { display: block; color: #566573; font-size: 12px; }
 .procedure-lit-line { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0 6px; align-items: start; }
 .procedure-light { appearance: none; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 50%; background: transparent; }
 button.procedure-light { cursor: pointer; }

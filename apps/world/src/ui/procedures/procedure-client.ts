@@ -19,6 +19,7 @@ import type {
   ProcedureStepId,
   ProcedureTag,
 } from '../../core/model/index.ts'
+import { recordingSeriesIdFor } from '../../core/model/index.ts'
 import { invokeSimulationRunCapability, querySimulationRunCapability } from '../simulation-run-client.ts'
 import { activeWorkspaceId, workspaceApiPath } from '../workspace-context.ts'
 import type { PackProcedureContribution } from '../../core/packs/protocol.ts'
@@ -102,6 +103,17 @@ export const readProcedureSourceEvidence = async (
 const readJson = async <T>(response: Response, message: string): Promise<T> => {
   if (!response.ok) throw new Error(`${message}: ${response.status}`)
   return await response.json() as T
+}
+
+export interface ProcedureTrendPoint { readonly t: number; readonly v: number }
+
+/** What the Run's historian recorded of a signal in a window of Run time: its numeric samples, oldest first. */
+export const readProcedureTagHistory = async (simulationRunId: SimulationRunId, plantId: string, path: string, window: { readonly from: number; readonly to: number }): Promise<ReadonlyArray<ProcedureTrendPoint>> => {
+  const query = new URLSearchParams({ mode: 'raw', seriesId: recordingSeriesIdFor(plantId, path), timeAxis: 'simulation', from: new Date(window.from).toISOString(), to: new Date(window.to).toISOString(), limit: '4000' })
+  const response = await fetch(`${workspaceApiPath(`/simulation-runs/${encodeURIComponent(simulationRunId)}/history/samples`)}?${query}`, { cache: 'no-store' })
+  const page = await readJson<{ readonly samples?: ReadonlyArray<{ readonly simulationTime?: string; readonly value: unknown }> }>(response, `reading the history of ${path} failed`)
+  return (page.samples ?? []).flatMap(sample => typeof sample.value === 'number' && sample.simulationTime !== undefined ? [{ t: Date.parse(sample.simulationTime), v: sample.value }] : [])
+    .sort((left, right) => left.t - right.t)
 }
 
 export const readProcedureChecks = async (

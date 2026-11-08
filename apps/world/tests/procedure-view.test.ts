@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { parseProcedureMarkdown } from '../src/features/procedures/procmd.ts'
-import { procedureFoldoutItems, procedureFoldoutBeforeStart, procedurePriorFoldout, procedureDecisionAgainst, procedureTagLabel, procedureLightRows, procedureLightTone, procedureCheckVersion, procedureCategories, procedureBlockLabel, procedureEvidenceStatusWord, procedureLineReadingText, procedureStepCounterText, procedureReadingName, procedureReadingText, procedureRequirementText, procedureLineCheckEvidence, procedureLineChecks, procedureObservationBasis, procedureObservationEvidence, procedureObservationLabel, procedureOperatorRows, procedureSampledEvidence, procedureSourceEvidenceRequest, procedureStepItems, procedureStepTagBindings, procedureTextSegments, procedureUnitJump } from '../src/ui/procedures/procedure-view.ts'
+import { procedureTagLabels, procedureJudgementLine, procedureInlineLayout, procedureInlineValue, procedureFoldoutItems, procedureFoldoutBeforeStart, procedurePriorFoldout, procedureDecisionAgainst, procedureTagLabel, procedureLightRows, procedureLightTone, procedureCheckVersion, procedureCategories, procedureBlockLabel, procedureEvidenceStatusWord, procedureLineReadingText, procedureStepCounterText, procedureReadingName, procedureReadingText, procedureRequirementText, procedureLineCheckEvidence, procedureLineChecks, procedureObservationBasis, procedureObservationEvidence, procedureObservationLabel, procedureOperatorRows, procedureSampledEvidence, procedureSourceEvidenceRequest, procedureStepItems, procedureStepTagBindings, procedureTextSegments, procedureUnitJump } from '../src/ui/procedures/procedure-view.ts'
 import { procedureCriterionReadingSchema } from '../src/core/model/procedure-criteria.ts'
 import { procedureTestSource } from './procedure-fixtures.ts'
 import { procedureBindingStatusWord, procedureComparisonText, procedureCsfChip, procedureDescriptionText, procedureDisplayReading, procedureElapsedText, procedureStepBindingSummary } from '../src/ui/procedures/procedure-view.ts'
@@ -485,4 +485,49 @@ test('a reference document inherits the foldout of the procedure that sent the R
   expect(procedurePriorFoldout([run('E-0', 'E-2', 'active')], documentFor, scope, 'E-2')).toBeUndefined()
   expect(procedurePriorFoldout([run('E-0', 'E-2', 'transferred', 'plant:b')], documentFor, scope, 'E-2')).toBeUndefined()
   expect(procedurePriorFoldout([run('E-2', 'E-3'), run('E-3', 'E-2')], documentFor, scope, 'E-3')).toBeUndefined()
+})
+
+const inlineTags = [
+  ...['A', 'B'].flatMap(letter => [{ id: `SG-${letter}-PRESS`, description: 'Steam generator pressure', equipment: `sg${letter}`, units: 'MPa' }, { id: `SG-${letter}-LVL`, description: 'Steam generator level', equipment: `sg${letter}`, units: 'percent' }]),
+  { id: 'SI', description: 'SI actuated', units: 'boolean', annotations: { states: 'ACTUATED/NOT ACTUATED' } },
+  { id: 'PZR', description: 'Pressurizer pressure', equipment: 'pressurizer', units: 'MPa' },
+] as unknown as Parameters<typeof procedureInlineLayout>[1]
+
+test('a judgement line lays its readings out by equipment where they form a grid, and as named rows where not', () => {
+  expect(procedureInlineLayout(['SG-A-PRESS', 'SG-B-PRESS', 'SG-A-LVL', 'SG-B-LVL'], inlineTags)).toEqual({
+    heads: ['SG A', 'SG B'],
+    rows: [{ label: 'Steam generator pressure', tagIds: ['SG-A-PRESS', 'SG-B-PRESS'] }, { label: 'Steam generator level', tagIds: ['SG-A-LVL', 'SG-B-LVL'] }],
+  })
+  expect(procedureInlineLayout(['SI', 'PZR'], inlineTags)).toEqual({ heads: [], rows: [{ label: 'SI actuated', tagIds: ['SI'] }, { label: 'Pressurizer pressure', tagIds: ['PZR'] }] })
+  expect(procedureInlineLayout(['SG-A-PRESS', 'SG-B-PRESS', 'SG-A-LVL'], inlineTags).heads).toEqual([])
+})
+
+test('a judgement reading has no verdict, and says when it cannot be trusted', () => {
+  const now = Date.parse('2026-11-08T08:00:10.000Z')
+  const read = (tagId: string, extra: object) => ({ tagId, binding: 'resolved', sampledAt: '2026-11-08T08:00:10.000Z', ...extra }) as Parameters<typeof procedureInlineValue>[2][number]
+  expect(procedureInlineValue('SG-A-PRESS', inlineTags, [read('SG-A-PRESS', { value: 7.67123, unit: 'MPa' })], now)).toEqual({ value: '7.67 MPa', stale: false })
+  expect(procedureInlineValue('SI', inlineTags, [read('SI', { value: false, unit: 'boolean' })], now)).toEqual({ value: 'NOT ACTUATED', stale: false })
+  expect(procedureInlineValue('SG-A-PRESS', inlineTags, [read('SG-A-PRESS', { value: 7.67, unit: 'MPa', sampledAt: '2026-11-08T08:00:01.000Z' })], now)).toEqual({ value: '7.67 MPa', stale: true, note: 'stale' })
+  expect(procedureInlineValue('SG-A-PRESS', inlineTags, [read('SG-A-PRESS', { value: 7.67, unit: 'MPa', quality: 'bad' })], now)).toEqual({ value: '7.67 MPa', stale: true, note: 'bad' })
+  expect(procedureInlineValue('SG-A-PRESS', inlineTags, [read('SG-A-PRESS', { reason: 'unbound' })], now)).toEqual({ value: '–', stale: true, note: 'unbound' })
+  expect(procedureInlineValue('PZR', inlineTags, [], now)).toEqual({ value: '–', stale: true })
+})
+
+test('only a limit-free line ending in tags reads as a judgement', () => {
+  const block = (kind: string, text: string, tagIds: string[], limits?: object) => ({ kind, text, tagIds, ...(limits ? { limits } : {}) }) as Parameters<typeof procedureJudgementLine>[0]
+  expect(procedureJudgementLine(block('check', 'Is any SG uncontrolled? «A» «B»', ['A', 'B']))).toEqual({ text: 'Is any SG uncontrolled?', tagIds: ['A', 'B'] })
+  expect(procedureJudgementLine(block('check', 'Level — BELOW 5%. «A»', ['A'], { any: false, comparisons: [] }))).toBeUndefined()
+  expect(procedureJudgementLine(block('rno', 'Press it. «A»', ['A']))).toBeUndefined()
+  expect(procedureJudgementLine(block('check', 'Read «A» then act.', ['A']))).toBeUndefined()
+  expect(procedureJudgementLine(block('check', 'No tags here.', []))).toBeUndefined()
+})
+
+test('tag buttons of one family repeat only the letter', () => {
+  const document = { tags: ['A', 'B', 'C'].map(letter => ({ id: `V-${letter}`, equipment: `auxFeedwaterValve${letter}` })).concat({ id: 'P', equipment: 'pump' }), annotations: { 'ai-workable': 'true' } } as unknown as Parameters<typeof procedureTagLabels>[1]
+  const tag = (text: string) => ({ kind: 'tag' as const, text }), space = { kind: 'text' as const, text: ' ' }
+  const labels = procedureTagLabels([{ kind: 'text', text: 'Open. ' }, tag('V-A'), space, tag('V-B'), space, tag('V-C'), space, tag('P')], document)
+  expect(labels.filter(Boolean).map(item => item!.shown)).toEqual(['Aux feedwater valve A', 'B', 'C', 'Pump'])
+  expect(labels.filter(Boolean).map(item => item!.full)).toEqual(['Aux feedwater valve A', 'Aux feedwater valve B', 'Aux feedwater valve C', 'Pump'])
+  expect(procedureTagLabels([tag('V-A'), { kind: 'text', text: ' then ' }, tag('V-B')], document).filter(Boolean).map(item => item!.shown)).toEqual(['Aux feedwater valve A', 'Aux feedwater valve B'])
+  expect(procedureTagLabels([tag('V-A'), space, tag('V-B')], { tags: [] }).filter(Boolean).map(item => item!.shown)).toEqual(['V-A', 'V-B'])
 })

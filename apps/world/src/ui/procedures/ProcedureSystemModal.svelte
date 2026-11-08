@@ -7,7 +7,7 @@
   import { readProcedureTagValue } from './procedure-client.ts'
   import { canInspectProcedureBranchCheck, type ProcedureChecksView } from '../../features/procedures/checks-view.ts'
   import { simulationTimeAt } from '../simulation-clock.ts'
-  import { procedureViewKey, procedureCategories, procedureOperatorRows, procedureLineChecks, procedureLineCheckEvidence, procedureCheckVersion, procedureTagLabel, procedureFoldoutBeforeStart, procedurePriorFoldout, procedureDecisionAgainst, procedureLightRows, procedureLightTone, procedureLineReadingText, procedureReferenceNotice, procedureStepCounterText, procedureReadingName, procedureReadingText, procedureRequirementText, procedureEvidenceStatusWord, type ProcedureLineCheck, type StepItem, procedureStepTagBindings, procedureTextSegments, procedureBlockLabel, procedureObservationEvidence, procedureSampledEvidence, procedureObservationBasis, procedureObservationLabel, procedureSourceEvidenceRequest, procedureUnitJump } from './procedure-view.ts'
+  import { procedureViewKey, procedureCategories, procedureOperatorRows, procedureLineChecks, procedureLineCheckEvidence, procedureCheckVersion, procedureTagLabels, procedureJudgementLine, procedureFoldoutBeforeStart, procedurePriorFoldout, procedureDecisionAgainst, procedureLightRows, procedureLightTone, procedureLineReadingText, procedureReferenceNotice, procedureStepCounterText, procedureReadingName, procedureReadingText, procedureRequirementText, procedureEvidenceStatusWord, type ProcedureLineCheck, type StepItem, procedureStepTagBindings, procedureTextSegments, procedureBlockLabel, procedureObservationEvidence, procedureSampledEvidence, procedureObservationBasis, procedureObservationLabel, procedureSourceEvidenceRequest, procedureUnitJump } from './procedure-view.ts'
   import type {
     SimulationRunId,
     SimulationClockState,
@@ -24,7 +24,7 @@
     ProcedureStep,
     ProcedureStepId,
     ProcedureStepRunState,
-    ProcedureTag,
+    ProcedureTag, ProcedureTextBlock,
     ProcedureTagId,
   } from '../../core/model/index.ts'
   import { sameProcedureScope } from '../../core/model/index.ts'
@@ -37,6 +37,7 @@
   import ProcedureTagDisplay from './ProcedureTagDisplay.svelte'
   import ProcedureLineLight from './ProcedureLineLight.svelte'
   import ProcedureFoldout from './ProcedureFoldout.svelte'
+  import ProcedureInlineReadings from './ProcedureInlineReadings.svelte'
   import { procedureTagDisplayPlan } from './procedure-tag-display.ts'
   import { defaultDisplayEnvelope, readDefaultDisplay } from '../process-display/default-display.ts'
   import { activeWorkspaceId } from '../workspace-context.ts'
@@ -294,11 +295,12 @@
   const checkVersion = $derived(procedureCheckVersion(checkPerspective, checkEvidenceRevision, clock))
   // Running plant projections are telemetry, not a change of evidence context.
   const pausedCheckObject = $derived(clock?.paused ? checkEvidenceObject : undefined)
+  const aiWorkable = $derived(document?.annotations?.['ai-workable'] === 'true')
   const checkStepId = $derived.by(() => {
     const step = currentProcedureStep?.step
     if (!activeRun || !document || step === undefined || step.id !== visibleCheckStep
       || activeRun.currentStepId !== step.id || activeRun.sourceRevision !== document.source.revision || activeRun.sourcePath !== document.sourcePath
-      || (inspectedBranchIndex === undefined && !step.pairs?.some(pair => pair.advisoryBranchIndex !== undefined))
+      || (inspectedBranchIndex === undefined && !aiWorkable && !step.pairs?.some(pair => pair.advisoryBranchIndex !== undefined))
       || !realtimeAttached || clock === undefined) return null
     return step.id
   })
@@ -391,6 +393,11 @@
     if (!value || !currentTime || Date.parse(currentTime) < Date.parse(sample.view.simulationTime)) return undefined
     if (value.validThrough ? Date.parse(currentTime) > Date.parse(value.validThrough) : value.status !== 'unknown') return undefined
     return { value, time: sample.view.simulationTime, currentTime }
+  }
+  // The current step's readings with no verdict, on a rewritten document: judgement lines and forks show these.
+  const activeIndications = () => {
+    const sample = checkSample
+    return sample && checkRequest && sample.view.runId === checkRequest.runId && sample.view.stepId === checkRequest.stepId && sample.revision === checkVersion ? sample.view.indications ?? [] : []
   }
   const lineReadKey = (tagId: string) => JSON.stringify([simulationRunId, plantId, document?.source.revision, document?.sourcePath, tagId])
   let lineReadings = $state<Record<string, string>>({})
@@ -1597,9 +1604,11 @@
 </script>
 
 {#snippet procedureText(text: string, tagIds: readonly string[])}
-  {#each procedureTextSegments(text, tagIds, document?.sourceUrl) as segment}
+  {@const segments = procedureTextSegments(text, tagIds, document?.sourceUrl)}
+  {@const labels = procedureTagLabels(segments, document)}
+  {#each segments as segment, index}
     {#if segment.kind === 'tag'}
-      <button type="button" class="procedure-tag" title="Show {segment.text} on a process display" onclick={() => void openTagDisplay(segment.text as ProcedureTagId)}>{procedureTagLabel(segment.text, document)}</button>
+      <button type="button" class="procedure-tag" aria-label={labels[index]?.full} title="Show {labels[index]?.full} on a process display" onclick={() => void openTagDisplay(segment.text as ProcedureTagId)}>{labels[index]?.shown}</button>
     {:else if segment.kind === 'link'}
       {@const sourceRequest = document ? procedureSourceEvidenceRequest(segment.href, document) : undefined}
       {#if sourceRequest}
@@ -1701,6 +1710,25 @@
   {/if}
 {/snippet}
 
+{#snippet plainLine(step: ProcedureStep, block: ProcedureTextBlock)}
+  {@const judgement = aiWorkable && activeRun?.currentStepId === step.id && currentProcedureStep?.step.id === step.id ? procedureJudgementLine(block) : undefined}
+  {#if judgement}
+    {judgement.text}
+    <ProcedureInlineReadings
+      {simulationRunId}
+      plantId={currentUnitContext.plantId}
+      tagIds={judgement.tagIds}
+      tags={document?.tags ?? []}
+      indications={activeIndications()}
+      now={Date.parse(simulationTimeAt(clock, checkClockTick) ?? '') || undefined}
+      pathFor={(tagId) => { const path = validationFor(tagId as ProcedureTagId)?.signal?.path; return typeof path === 'string' ? path : undefined }}
+      openTag={(tagId) => void openTagDisplay(tagId as ProcedureTagId)}
+    />
+  {:else}
+    {@render procedureText(block.text, block.tagIds)}
+  {/if}
+{/snippet}
+
 {#snippet operatorItem(step: ProcedureStep, state: ProcedureStepRunState | undefined, item: StepItem, paired: boolean, lines?: ReadonlyMap<number, ProcedureLineCheck>, checkIndex?: number)}
   {#if item.kind === 'block'}
     {@const first = item.blocks[0]}
@@ -1716,14 +1744,14 @@
         <ul class="procedure-instruction-list" class:lit={item.blocks.some(block => lines?.get(block.sourceLine)?.limits)} aria-label={procedureBlockLabel(first.kind)}>
           {#each item.blocks as block}
             {@const line = lines?.get(block.sourceLine)}
-            <li>{#if line}{@render lineCheck(line, checkIndex)}{:else}{@render procedureText(block.text, block.tagIds)}{/if}</li>
+            <li>{#if line}{@render lineCheck(line, checkIndex)}{:else}{@render plainLine(step, block)}{/if}</li>
           {/each}
         </ul>
       {/if}
     {:else}
       {@const line = lines?.get(first.sourceLine)}
       {#if line}{@render lineCheck(line, checkIndex)}
-      {:else}<p class="block-{first.kind}">{#if !paired || !['check', 'action', 'expected', 'rno', 'text'].includes(first.kind)}{#if first.kind !== 'text'}<b>{procedureBlockLabel(first.kind)}</b>{/if}{/if} {@render procedureText(first.text, first.tagIds)}</p>{/if}
+      {:else}<p class="block-{first.kind}">{#if !paired || !['check', 'action', 'expected', 'rno', 'text'].includes(first.kind)}{#if first.kind !== 'text'}<b>{procedureBlockLabel(first.kind)}</b>{/if}{/if} {@render plainLine(step, first)}</p>{/if}
       {#if first.paths?.length}<ol>{#each first.paths as path}<li>{@render procedureText(path, first.tagIds)}</li>{/each}</ol>{/if}
     {/if}
   {:else}
@@ -1833,7 +1861,7 @@
   {@const operator = procedureOperatorRows(step)}
   {@const state = stepStates.get(step.id)}
   {@const observation = selectedProcedureRun?.observations?.find(item => item.stepId === step.id)}
-  <article use:observeCheckStep={role === 'current' && (step.pairs?.some(pair => pair.advisoryBranchIndex !== undefined)
+  <article use:observeCheckStep={role === 'current' && (aiWorkable || step.pairs?.some(pair => pair.advisoryBranchIndex !== undefined)
     || step.branches.some((_branch, index) => canInspectProcedureBranchCheck(step, index))) ? step.id : undefined} data-procedure-step-id={step.id} class="procedure-step {role}" class:complete={state?.assessment === 'complete'} class:failed={state?.assessment === 'failed'} class:unknown={state?.assessment === 'unknown'}>
     <div class="procedure-step-main">
       <button

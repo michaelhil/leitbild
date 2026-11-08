@@ -2,6 +2,8 @@ import type { ProcedureBranch, ProcedureCatalogItem, ProcedureDocument, Procedur
 import type { ProcedureCriterionReading } from '../../core/model/procedure-criteria.ts'
 import type { ProcedureAssessmentCondition } from '@leitbild/procmd'
 import type { ProcedureSourceEvidenceRequest } from './procedure-client.ts'
+import type { ProcedureChecksView } from '../../features/procedures/checks-view.ts'
+import { limitMaxAgeSeconds } from '@leitbild/procmd'
 
 const primaryKinds = new Set(['check', 'action', 'expected', 'decision', 'when', 'until', 'within', 'concurrent', 'caution', 'note', 'text'])
 const listKinds = new Set(['check', 'action', 'expected', 'rno'])
@@ -405,11 +407,63 @@ export const procedurePriorFoldout = (
   return undefined
 }
 
+export type ProcedureIndication = NonNullable<ProcedureChecksView['indications']>[number]
+
+/** A judgement line's tags as a grid: one column per piece of equipment and one row per thing read, where every cell is filled. Otherwise one named row each. */
+export const procedureInlineLayout = (tagIds: ReadonlyArray<string>, tags: ReadonlyArray<ProcedureTag>): { readonly heads: ReadonlyArray<string>; readonly rows: ReadonlyArray<{ readonly label: string; readonly tagIds: ReadonlyArray<string | null> }> } => {
+  const declared = tagIds.map(id => ({ id, tag: tags.find(item => item.id === id) }))
+  const columns = [...new Set(declared.map(item => item.tag?.equipment ?? item.id))]
+  const rows = [...new Set(declared.map(item => item.tag?.description ?? item.id))]
+  const cell = (row: string, column: string) => declared.find(item => (item.tag?.description ?? item.id) === row && (item.tag?.equipment ?? item.id) === column)?.id ?? null
+  if (columns.length > 1 && rows.length * columns.length === declared.length && rows.every(row => columns.every(column => cell(row, column) !== null)))
+    return { heads: columns.map(equipmentWords), rows: rows.map(row => ({ label: row, tagIds: columns.map(column => cell(row, column)) })) }
+  return { heads: [], rows: declared.map(({ id }) => ({ label: procedureReadingName(id, tags) ?? id, tagIds: [id] })) }
+}
+
+/** A reading on a judgement line: in the words its tag declares, else rounded. It says so where it is unavailable, bad or old. */
+export const procedureInlineValue = (tagId: string, tags: ReadonlyArray<ProcedureTag>, indications: ReadonlyArray<ProcedureIndication>, now: number | undefined): { readonly value: string; readonly stale: boolean; readonly note?: string } => {
+  const read = indications.find(item => item.tagId === tagId)
+  if (read === undefined) return { value: '–', stale: true }
+  if (read.value === undefined) return { value: '–', stale: true, note: read.reason ?? (read.binding === 'missing' ? 'not in this model' : 'no reading') }
+  const value = stateWord(read.value, tags.find(item => item.id === tagId)) ?? procedureReadingText(read.value, read.unit)
+  const acquired = Date.parse(read.sampledAt ?? '')
+  if (read.quality !== undefined && read.quality !== 'good') return { value, stale: true, note: read.quality }
+  if (now !== undefined && Number.isFinite(acquired) && now - acquired > limitMaxAgeSeconds * 1000) return { value, stale: true, note: 'stale' }
+  return { value, stale: false }
+}
+
 /** What a branch was pressed against: the readings its criterion did not find met, by name. Undefined unless the criterion was contradicted. */
 export const procedureDecisionAgainst = (decision: { readonly criterion?: { readonly status: string; readonly readings: ReadonlyArray<ProcedureCriterionReading> } | undefined } | undefined, tags: ReadonlyArray<ProcedureTag>): ReadonlyArray<string> | undefined => {
   if (decision?.criterion?.status !== 'contradicted') return undefined
   return [...new Set(decision.criterion.readings.filter(reading => reading.status !== 'supported')
     .map(reading => (reading.tagId === undefined ? undefined : procedureReadingName(reading.tagId, tags)) ?? reading.description ?? reading.tagId ?? 'Indication'))]
+}
+
+/**
+ * What a line's tag buttons say. Beside a tag of the same equipment family only its letter is repeated,
+ * so a line naming four valves reads "AFW valve A", "B", "C", "D" and takes one row, not four.
+ */
+export const procedureTagLabels = (segments: ReadonlyArray<ProcedureTextSegment>, document: Pick<ProcedureDocument, 'tags' | 'annotations'> | null): ReadonlyArray<{ readonly full: string; readonly shown: string } | undefined> => {
+  let family: string | undefined
+  return segments.map(segment => {
+    if (segment.kind !== 'tag') {
+      if (segment.text.trim() !== '') family = undefined
+      return undefined
+    }
+    const full = procedureTagLabel(segment.text, document)
+    const words = full.split(' ')
+    const prefix = words.length > 1 && words.at(-1)!.length === 1 ? words.slice(0, -1).join(' ') : undefined
+    const shown = prefix !== undefined && prefix === family ? words.at(-1)! : full
+    family = prefix
+    return { full, shown }
+  })
+}
+
+/** The tags ending a line that carries no limit, and its words without them: a judgement or a fork, whose readings show with no colour. */
+export const procedureJudgementLine = (block: Pick<ProcedureTextBlock, 'kind' | 'text' | 'tagIds' | 'limits'>): { readonly text: string; readonly tagIds: ReadonlyArray<string> } | undefined => {
+  if (block.limits !== undefined || !['check', 'expected', 'when'].includes(block.kind) || block.tagIds.length === 0) return undefined
+  const text = block.text.replace(trailingTags, '')
+  return text === block.text || text.includes('«') ? undefined : { text, tagIds: block.tagIds }
 }
 
 /** What a tag button says. A rewritten document names the equipment, so the line reads as a line; a document left as it was keeps its tag ids. */
