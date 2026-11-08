@@ -7,7 +7,7 @@
   import { readProcedureTagValue } from './procedure-client.ts'
   import { canInspectProcedureBranchCheck, type ProcedureChecksView } from '../../features/procedures/checks-view.ts'
   import { simulationTimeAt } from '../simulation-clock.ts'
-  import { procedureViewKey, procedureCategories, procedureOperatorRows, procedureLineChecks, procedureLineCheckEvidence, procedureCheckVersion, procedureTagLabel, procedureLightRows, procedureLightTone, procedureLineReadingText, procedureReferenceNotice, procedureStepCounterText, procedureReadingName, procedureReadingText, procedureRequirementText, procedureEvidenceStatusWord, type ProcedureLineCheck, type StepItem, procedureStepTagBindings, procedureTextSegments, procedureBlockLabel, procedureObservationEvidence, procedureSampledEvidence, procedureObservationBasis, procedureObservationLabel, procedureSourceEvidenceRequest, procedureUnitJump } from './procedure-view.ts'
+  import { procedureViewKey, procedureCategories, procedureOperatorRows, procedureLineChecks, procedureLineCheckEvidence, procedureCheckVersion, procedureDecisionAgainst, procedureTagLabel, procedureLightRows, procedureLightTone, procedureLineReadingText, procedureReferenceNotice, procedureStepCounterText, procedureReadingName, procedureReadingText, procedureRequirementText, procedureEvidenceStatusWord, type ProcedureLineCheck, type StepItem, procedureStepTagBindings, procedureTextSegments, procedureBlockLabel, procedureObservationEvidence, procedureSampledEvidence, procedureObservationBasis, procedureObservationLabel, procedureSourceEvidenceRequest, procedureUnitJump } from './procedure-view.ts'
   import type {
     SimulationRunId,
     SimulationClockState,
@@ -1712,6 +1712,7 @@
   {:else}
     {@const branchIndex = step.branches.indexOf(item.branch)}
     {@const taken = state?.decision !== undefined && state.decision.branchIndex === branchIndex ? state.decision : undefined}
+    {@const against = procedureDecisionAgainst(taken, document?.tags ?? [])}
     {#if currentProcedureStep?.step.id === step.id && activeRun?.currentStepId === step.id
         && !step.pairs?.some(pair => pair.advisoryBranchIndex === branchIndex) && canInspectProcedureBranchCheck(step, branchIndex)}
       {@render currentCheck(branchIndex, step)}
@@ -1726,9 +1727,10 @@
       title={!selectedRun ? 'Start the procedure to use branch actions' : branchIsOffPath(step) ? `Step ${step.label} is not the current step: asks before moving ${document?.procedureId ?? 'the Run'}` : branchActionTextFor(item.branch)}
       onclick={() => void requestBranch(step, item.branch)}
     >
-      <strong>{#if taken}<span class="procedure-taken-mark" aria-hidden="true">✓</span>{/if}{item.branch.label}</strong>
+      <strong>{#if taken}<span class="procedure-taken-mark" aria-hidden="true">{against ? '✗' : '✓'}</span>{/if}{item.branch.label}</strong>
       <span>{operatorDestination(item.branch)}</span>
       {#if pendingControl === branchControlKey(step, item.branch)}{@render recordingNote()}{/if}
+      {#if against}<small class="procedure-decision-line against">Not met: {against.join(', ')}</small>{/if}
       {#if taken}
         {@const who = procedureActorLabel(taken.selectedBy, taken.selectedByLabel)}
         {#if procedureActorIsAi(taken.selectedBy)}
@@ -1989,6 +1991,7 @@
 {#snippet stepSummary(step: ProcedureStep)}
   {@const state = stepStates.get(step.id)}
   {@const decision = state?.decision}
+  {@const against = procedureDecisionAgainst(decision, document?.tags ?? [])}
   <button
     type="button"
     class="procedure-step-summary {decision ? `tone-${procedureDecisionTone(decision)}` : ''}"
@@ -1997,11 +2000,12 @@
     title="Show step {step.label}"
     onclick={() => setStepExpanded(step.id, true)}
   >
-    <span class="procedure-summary-box {assessmentClass(state)}" aria-hidden="true">{state?.assessment === 'complete' ? '✓' : state?.assessment === 'failed' ? '✗' : state?.assessment === 'unknown' ? '?' : ''}</span>
+    <span class="procedure-summary-box {against ? 'failed' : assessmentClass(state)}" aria-hidden="true">{against || state?.assessment === 'failed' ? '✗' : state?.assessment === 'complete' ? '✓' : state?.assessment === 'unknown' ? '?' : ''}</span>
     <strong>Step {step.label}</strong>
     <span class="procedure-summary-name">{procedureStepDisplayName(step)}</span>
     {#if decision && document}
       <span class="procedure-summary-decision">— {decision.label ?? step.branches[decision.branchIndex]?.label ?? `branch ${decision.branchIndex + 1}`} → {procedureDecisionTargetText(document, decision)}</span>
+      {#if against}<span class="procedure-summary-unmet">Not met: {against.join(', ')}</span>{/if}
       <small>{#if procedureActorIsAi(decision.selectedBy)}<span class="procedure-ai-tag" title="Selected by {procedureActorLabel(decision.selectedBy, decision.selectedByLabel)}">AI</span> {/if}{procedurePlantTime(decision.simulationTime, 'minutes')}</small>
     {/if}
   </button>

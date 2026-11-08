@@ -361,6 +361,13 @@ export const procedureReadingName = (tagId: string, tags: ReadonlyArray<Procedur
   return `${equipmentWords(tag.equipment)}: ${description}`
 }
 
+/** What a branch was pressed against: the readings its criterion did not find met, by name. Undefined unless the criterion was contradicted. */
+export const procedureDecisionAgainst = (decision: { readonly criterion?: { readonly status: string; readonly readings: ReadonlyArray<ProcedureCriterionReading> } | undefined } | undefined, tags: ReadonlyArray<ProcedureTag>): ReadonlyArray<string> | undefined => {
+  if (decision?.criterion?.status !== 'contradicted') return undefined
+  return [...new Set(decision.criterion.readings.filter(reading => reading.status !== 'supported')
+    .map(reading => (reading.tagId === undefined ? undefined : procedureReadingName(reading.tagId, tags)) ?? reading.description ?? reading.tagId ?? 'Indication'))]
+}
+
 /** What a tag button says. A rewritten document names the equipment, so the line reads as a line; a document left as it was keeps its tag ids. */
 export const procedureTagLabel = (tagId: string, document: Pick<ProcedureDocument, 'tags' | 'annotations'> | null): string => {
   const equipment = document?.annotations?.['ai-workable'] === 'true' ? document.tags.find(tag => tag.id === tagId)?.equipment : undefined

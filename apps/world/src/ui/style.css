@@ -4214,6 +4214,8 @@ body.rail-resizing {
 
 .procedure-summary-name { color: #334155; font-weight: 600; }
 .procedure-summary-decision { color: #1e293b; }
+.procedure-summary-unmet { color: #b3261e; font-weight: 600; }
+.procedure-decision-line.against { color: #b3261e; font-weight: 600; }
 .procedure-step-summary small { color: #475569; font-variant-numeric: tabular-nums; }
 
 .procedure-summary-box {

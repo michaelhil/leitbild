@@ -300,9 +300,9 @@ export const procedureDriverView = (run: ProcedureRunState | null): ProcedureDri
 export const procedureDecisionTargetText = (document: ProcedureDocument, decision: ProcedureStepDecision): string =>
   decision.targetKind === 'step' ? procedureStepById(document, decision.target)?.label ?? decision.target : decision.target
 
-/** How a taken branch is coloured: by its declared outcome, or plainly taken where it declares none. */
+/** How a taken branch is coloured: by its declared outcome, or plainly taken where it declares none. A press against a red light is never coloured as normal. */
 export const procedureDecisionTone = (decision: ProcedureStepDecision): 'normal' | 'rno' | 'unknown' | 'taken' =>
-  decision.outcome ?? 'taken'
+  decision.criterion?.status === 'contradicted' ? 'rno' : decision.outcome ?? 'taken'
 
 /**
  * One row of the procedure document. The current step and open steps show in full;

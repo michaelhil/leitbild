@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { parseProcedureMarkdown } from '../src/features/procedures/procmd.ts'
-import { procedureTagLabel, procedureLightRows, procedureLightTone, procedureCheckVersion, procedureCategories, procedureBlockLabel, procedureEvidenceStatusWord, procedureLineReadingText, procedureStepCounterText, procedureReadingName, procedureReadingText, procedureRequirementText, procedureLineCheckEvidence, procedureLineChecks, procedureObservationBasis, procedureObservationEvidence, procedureObservationLabel, procedureOperatorRows, procedureSampledEvidence, procedureSourceEvidenceRequest, procedureStepItems, procedureStepTagBindings, procedureTextSegments, procedureUnitJump } from '../src/ui/procedures/procedure-view.ts'
+import { procedureDecisionAgainst, procedureTagLabel, procedureLightRows, procedureLightTone, procedureCheckVersion, procedureCategories, procedureBlockLabel, procedureEvidenceStatusWord, procedureLineReadingText, procedureStepCounterText, procedureReadingName, procedureReadingText, procedureRequirementText, procedureLineCheckEvidence, procedureLineChecks, procedureObservationBasis, procedureObservationEvidence, procedureObservationLabel, procedureOperatorRows, procedureSampledEvidence, procedureSourceEvidenceRequest, procedureStepItems, procedureStepTagBindings, procedureTextSegments, procedureUnitJump } from '../src/ui/procedures/procedure-view.ts'
 import { procedureCriterionReadingSchema } from '../src/core/model/procedure-criteria.ts'
 import { procedureTestSource } from './procedure-fixtures.ts'
 import { procedureBindingStatusWord, procedureComparisonText, procedureCsfChip, procedureDescriptionText, procedureDisplayReading, procedureElapsedText, procedureStepBindingSummary } from '../src/ui/procedures/procedure-view.ts'
@@ -446,4 +446,13 @@ test('a tag button names the equipment on a rewritten document and keeps its id 
   expect(procedureTagLabel('RX-TRIP-MAN', { tags, annotations: { 'ai-workable': 'true' } })).toBe('Manual reactor trip')
   expect(procedureTagLabel('BARE', { tags, annotations: { 'ai-workable': 'true' } })).toBe('BARE')
   expect(procedureTagLabel('RX-TRIP-MAN', { tags })).toBe('RX-TRIP-MAN')
+})
+
+test('a press against red says what was not met, and any other press says nothing', () => {
+  const tags = [{ id: 'A', description: 'Breaker closed', equipment: 'breakerA' }, { id: 'B', description: 'Breaker closed', equipment: 'breakerB' }, { id: 'P', description: 'Power range' }] as unknown as Parameters<typeof procedureDecisionAgainst>[1]
+  const reading = (tagId: string, status: string) => ({ source: 'basis', tagId, status }) as Parameters<typeof procedureLineCheckEvidence>[1][number]
+  expect(procedureDecisionAgainst({ criterion: { status: 'contradicted', readings: [reading('A', 'supported'), reading('B', 'contradicted'), reading('P', 'unknown')] } }, tags)).toEqual(['Breaker B: breaker closed', 'Power range'])
+  expect(procedureDecisionAgainst({ criterion: { status: 'supported', readings: [reading('A', 'supported')] } }, tags)).toBeUndefined()
+  expect(procedureDecisionAgainst({}, tags)).toBeUndefined()
+  expect(procedureDecisionAgainst(undefined, tags)).toBeUndefined()
 })
