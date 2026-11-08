@@ -42,6 +42,7 @@ export const planningOwnerBasisInputSchema = z.object({
 }).strict()
 export const planningSourceQualificationSchema = z.object({
   audience: z.literal('shared-research'),
+  epoch: z.string().uuid(),
   restrictionRevision: z.number().int().nonnegative(),
   subjectIds: z.array(z.string().min(1).max(512)).min(1).max(32),
 }).strict()
