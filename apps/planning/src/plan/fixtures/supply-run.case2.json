@@ -457,7 +457,7 @@
       "words": "Keep at least one truck of 1,000 kg or more free at all times.",
       "source": {
         "by": "planner",
-        "note": "Dispatcher's coverage rule for the next urgent bulk request (case2.md)."
+        "note": "Dispatcher's coverage rule: keep one heavy truck ready for the next urgent bulk request."
       }
     }
   ],

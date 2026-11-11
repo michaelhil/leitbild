@@ -30,7 +30,7 @@
         "function": "service-water",
         "source": {
           "by": "planner",
-          "note": "train membership: planner knowledge (case v0.2)"
+          "note": "Backup pair: the planner's knowledge of the plant's trains."
         }
       },
       {
@@ -44,7 +44,7 @@
         "function": "component-cooling",
         "source": {
           "by": "planner",
-          "note": "train membership: planner knowledge (case v0.2)"
+          "note": "Backup pair: the planner's knowledge of the plant's trains."
         }
       },
       {
@@ -56,7 +56,7 @@
         ],
         "source": {
           "by": "planner",
-          "note": "Exists in the plant graph but is not in the planning basis (pumps only). Linking it needs an extended read: owner-decision."
+          "note": "In the plant, but the World planning read covers pumps only, so the planner declares it here."
         }
       },
       {
@@ -70,7 +70,7 @@
         "function": "residual-heat-removal",
         "source": {
           "by": "planner",
-          "note": "train membership: planner knowledge (case v0.2)"
+          "note": "Backup pair: the planner's knowledge of the plant's trains."
         }
       },
       {
@@ -84,7 +84,7 @@
         "function": "high-head-injection",
         "source": {
           "by": "planner",
-          "note": "train membership: planner knowledge (case v0.2)"
+          "note": "Backup pair: the planner's knowledge of the plant's trains."
         }
       },
       {
@@ -96,7 +96,7 @@
         "function": "containment-spray",
         "source": {
           "by": "planner",
-          "note": "train membership: planner knowledge (case v0.2)"
+          "note": "Backup pair: the planner's knowledge of the plant's trains."
         }
       },
       {
@@ -108,7 +108,7 @@
         "function": "motor-driven-aux-feedwater",
         "source": {
           "by": "planner",
-          "note": "train membership: planner knowledge (case v0.2)"
+          "note": "Backup pair: the planner's knowledge of the plant's trains."
         }
       },
       {
@@ -119,7 +119,7 @@
         "function": "service-water",
         "source": {
           "by": "planner",
-          "note": "train membership: planner knowledge (case v0.2)"
+          "note": "Backup pair: the planner's knowledge of the plant's trains."
         }
       },
       {
@@ -130,7 +130,7 @@
         "function": "component-cooling",
         "source": {
           "by": "planner",
-          "note": "train membership: planner knowledge (case v0.2)"
+          "note": "Backup pair: the planner's knowledge of the plant's trains."
         }
       },
       {
@@ -141,7 +141,7 @@
         "function": "residual-heat-removal",
         "source": {
           "by": "planner",
-          "note": "train membership: planner knowledge (case v0.2)"
+          "note": "Backup pair: the planner's knowledge of the plant's trains."
         }
       },
       {
@@ -152,7 +152,7 @@
         "function": "high-head-injection",
         "source": {
           "by": "planner",
-          "note": "train membership: planner knowledge (case v0.2)"
+          "note": "Backup pair: the planner's knowledge of the plant's trains."
         }
       },
       {
@@ -163,7 +163,7 @@
         "function": "containment-spray",
         "source": {
           "by": "planner",
-          "note": "train membership: planner knowledge (case v0.2)"
+          "note": "Backup pair: the planner's knowledge of the plant's trains."
         }
       },
       {
@@ -174,7 +174,7 @@
         "function": "motor-driven-aux-feedwater",
         "source": {
           "by": "planner",
-          "note": "train membership: planner knowledge (case v0.2)"
+          "note": "Backup pair: the planner's knowledge of the plant's trains."
         }
       },
       {
@@ -185,7 +185,7 @@
         "function": "turbine-driven-aux-feedwater",
         "source": {
           "by": "planner",
-          "note": "train membership: planner knowledge (case v0.2)"
+          "note": "Backup pair: the planner's knowledge of the plant's trains."
         }
       },
       {
@@ -194,7 +194,7 @@
         "supportedBy": [],
         "source": {
           "by": "reference",
-          "note": "Protected all week; not in the pump-only planning read (case v0.2). Protected-train practice in on-line maintenance risk management (NUMARC 93-01 section 11 as endorsed by NRC RG 1.160; examples in NRC IMC 0308 Att 3 App K). Declared as this fictional plant's rule."
+          "note": "Protected all week. In the plant, but the World planning read covers pumps only, so the planner declares it here. Protected-train practice for work at power (NUMARC 93-01 section 11, endorsed by NRC RG 1.160; examples in NRC IMC 0308 Att 3 App K), declared as this plant's rule."
         }
       },
       {
@@ -203,7 +203,7 @@
         "supportedBy": [],
         "source": {
           "by": "reference",
-          "note": "Protected all week; not in the pump-only planning read (case v0.2). Protected-train practice in on-line maintenance risk management (NUMARC 93-01 section 11 as endorsed by NRC RG 1.160; examples in NRC IMC 0308 Att 3 App K). Declared as this fictional plant's rule."
+          "note": "Protected all week. In the plant, but the World planning read covers pumps only, so the planner declares it here. Protected-train practice for work at power (NUMARC 93-01 section 11, endorsed by NRC RG 1.160; examples in NRC IMC 0308 Att 3 App K), declared as this plant's rule."
         }
       },
       {
@@ -212,7 +212,7 @@
         "supportedBy": [],
         "source": {
           "by": "reference",
-          "note": "maint case change C10: EDG B, the safety bus B and the switchyard/offsite supply are protected for the whole week. Declared: no job may touch the switchyard (NUMARC-style risk-management action, NRC IMC 0308 Att 3 App K examples)."
+          "note": "Declared for this week: the switchyard and offsite supply are protected, and no job may touch the switchyard (risk-management practice for work at power; examples in NRC IMC 0308 Att 3 App K)."
         }
       }
     ],
@@ -2174,7 +2174,7 @@
         "words": "Every Train B item (SW B, CCW B, RHR B, HHSI B, CS B, MD AFW B, EDG B, safety bus B), the turbine-driven AFW pump and the switchyard/offsite supply are never tagged, worked or tested.",
         "source": {
           "by": "reference",
-          "note": "Protected-train practice in on-line maintenance risk management (NUMARC 93-01 section 11 as endorsed by NRC RG 1.160; examples in NRC IMC 0308 Att 3 App K). Declared as this fictional plant's rule. Switchyard and offsite supply: maint case change C10."
+          "note": "Protected-train practice for work at power (NUMARC 93-01 section 11, endorsed by NRC RG 1.160; examples in NRC IMC 0308 Att 3 App K), declared as this plant's rule. Declared for this week: the switchyard and offsite supply are protected too."
         }
       },
       {
@@ -2189,7 +2189,7 @@
         "words": "Once the first Train A cooling item is tagged out, every item in the chain must be back and tested within 72 h, in one continuous span. Station policy allows one entry per window.",
         "source": {
           "by": "reference",
-          "note": "Modelled on NUREG-1431 Standard Technical Specifications: one ECCS train inoperable for 72 h (LCO 3.5.2, recollection), and similar 72 h Completion Times for CCW (3.7.7) and service water (3.7.8), also recollection. The Completion Time runs from entry into the Condition and applies to deliberate removal from service (LCO 3.0.2, STS Bases Rev 3.1). Declared fictional plant rule, not a licence."
+          "note": "Modelled on the US Standard Technical Specifications (NUREG-1431): one emergency core cooling train out for 72 h (LCO 3.5.2), with the same 72 h for component cooling (3.7.7) and service water (3.7.8). The clock runs from the first removal from service. Declared as this plant's rule, not a licence."
         }
       },
       {
@@ -2204,7 +2204,7 @@
         "words": "Containment spray train A: back and tested within 72 h of the first tag-out, in one continuous span.",
         "source": {
           "by": "reference",
-          "note": "Modelled on NUREG-1431 LCO 3.6.6 (recollection; 72 h at many plants)."
+          "note": "Modelled on the US Standard Technical Specifications (NUREG-1431 LCO 3.6.6): 72 h for one containment spray train. Declared as this plant's rule."
         }
       },
       {
@@ -2219,7 +2219,7 @@
         "words": "Auxiliary feedwater train A (motor-driven): back and tested within 72 h of the first tag-out, in one continuous span.",
         "source": {
           "by": "reference",
-          "note": "NUREG-1431 LCO 3.7.5 Condition B: one AFW train inoperable, 72 h (STS Bases Rev 3.1, fetched)."
+          "note": "Modelled on the US Standard Technical Specifications (NUREG-1431 LCO 3.7.5 Condition B): 72 h for one auxiliary feedwater train. Declared as this plant's rule."
         }
       }
     ],

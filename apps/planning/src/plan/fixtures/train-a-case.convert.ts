@@ -2,6 +2,8 @@
 // deterministically to the plan inputs in train-a.case.json, with every coordinator decision since the
 // freeze applied. Values come from the case; the only values written here are the decisions the case does
 // not hold (test minimums, the cost step, function keys, the switchyard of case change C10), each named.
+// Every note is shown to planners, so notes are planner words: review traces (case versions, change ids,
+// reviewer names) stay in comments, the .sha256 sibling and commit messages, never in a note.
 // usage: bun apps/planning/src/plan/fixtures/train-a-case.convert.ts   (rewrites train-a.case.json)
 import caseJson from '../../solve/fixtures/train-a-case-v0.2.json'
 import { planInputsSchema, type PlanInputs } from '../schema.ts'
@@ -68,7 +70,20 @@ const protectedItem: Readonly<Record<string, { readonly key: string; readonly la
 /** maint/case-changes.md C10: the switchyard/offsite supply is protected all week (wording only, no JSON change). */
 const switchyard = {
   key: 'SWYD', label: 'Switchyard and offsite supply',
-  note: 'maint case change C10: EDG B, the safety bus B and the switchyard/offsite supply are protected for the whole week. Declared: no job may touch the switchyard (NUMARC-style risk-management action, NRC IMC 0308 Att 3 App K examples).',
+  note: 'Declared for this week: the switchyard and offsite supply are protected, and no job may touch the switchyard (risk-management practice for work at power; examples in NRC IMC 0308 Att 3 App K).',
+}
+/** Planner words for the provenance the case states in reviewer terms (equipment notes, protected-train and group bases). */
+export const plannerNote = {
+  /** case v0.2 protectedEquipment.basis */
+  protectedTrain: 'Protected-train practice for work at power (NUMARC 93-01 section 11, endorsed by NRC RG 1.160; examples in NRC IMC 0308 Att 3 App K), declared as this plant\'s rule.',
+  /** case v0.2 equipment notes for items outside the pump-only planning read */
+  notRead: 'In the plant, but the World planning read covers pumps only, so the planner declares it here.',
+  /** case v0.2 functionGroups[].basis, by group */
+  groups: {
+    'COOL-A': 'Modelled on the US Standard Technical Specifications (NUREG-1431): one emergency core cooling train out for 72 h (LCO 3.5.2), with the same 72 h for component cooling (3.7.7) and service water (3.7.8). The clock runs from the first removal from service. Declared as this plant\'s rule, not a licence.',
+    'CS-A': 'Modelled on the US Standard Technical Specifications (NUREG-1431 LCO 3.6.6): 72 h for one containment spray train. Declared as this plant\'s rule.',
+    'AFW-A': 'Modelled on the US Standard Technical Specifications (NUREG-1431 LCO 3.7.5 Condition B): 72 h for one auxiliary feedwater train. Declared as this plant\'s rule.',
+  } as Readonly<Record<string, string>>,
 }
 /** Coordinator (lane S): items that back each other up share a key; case v0.2 pairs trains A and B and keeps the turbine-driven AFW pump apart. */
 const functionOf: Readonly<Record<string, string>> = {
@@ -77,7 +92,14 @@ const functionOf: Readonly<Record<string, string>> = {
   CSA: 'containment-spray', CSB: 'containment-spray', AFWA: 'motor-driven-aux-feedwater', AFWB: 'motor-driven-aux-feedwater',
   AFWTD: 'turbine-driven-aux-feedwater',
 }
-const membership = { by: 'planner' as const, note: 'train membership: planner knowledge (case v0.2)' }
+const membership = { by: 'planner' as const, note: 'Backup pair: the planner\'s knowledge of the plant\'s trains.' }
+/** The notes as shown, for the other Train A fixture (train-a.fragment.json) to use the same words. */
+export const shownNotes = {
+  membership: membership.note,
+  unread: `Protected all week. ${plannerNote.notRead} ${plannerNote.protectedTrain}`,
+  switchyard: switchyard.note,
+  protectedRule: `${plannerNote.protectedTrain} Declared for this week: the switchyard and offsite supply are protected too.`,
+} as const
 /** maint/lane-a-fixture-check.md section 3: test minimums, planner judgement. */
 const minimumHours: Readonly<Record<string, number>> = { 'SWA-RTS': 2.5, 'CCWA-RTS': 1.5, 'RHRA-RTS': 1.5, 'HHSIA-RTS': 1, 'CSA-RTS': 1.5, 'AFWA-RTS': 1.5 }
 const minimumWords = "planner judgement, no procedure source; below it needs the test engineer's agreement and a reason"
@@ -97,11 +119,11 @@ export const convertTrainACase = (frozen: CaseCase): PlanInputs => {
   const withFunction = <T extends { readonly key: string }>(item: T) =>
     functionOf[item.key] === undefined ? item : { ...item, function: functionOf[item.key]!, source: membership }
   const keyOf = (componentId: string): string => once(protectedItem[componentId], `plan key for ${componentId}`).key
-  const unreadNote = `Protected all week; not in the pump-only planning read (case v0.2). ${frozen.protectedEquipment.basis}`
+  const unreadNote = shownNotes.unread
   const equipment = [
     ...frozen.equipment.map(item => withFunction({
       key: item.id, label: item.label, group: item.group, supportedBy: supportedBy.get(item.id) ?? [],
-      ...(item.source === 'world' ? { locator: plantLocator(item.worldComponentId) } : { source: { by: 'planner' as const, ...(item.note === undefined ? {} : { note: item.note }) } }),
+      ...(item.source === 'world' ? { locator: plantLocator(item.worldComponentId) } : { source: { by: 'planner' as const, note: plannerNote.notRead } }),
     })),
     ...frozen.protectedEquipment.items.map(id => withFunction({ key: keyOf(id), label: protectedItem[id]!.label, supportedBy: [], locator: plantLocator(id) })),
     ...frozen.protectedEquipment.alsoProtectedNotInPlanningBasis.map(id => ({ key: keyOf(id), label: protectedItem[id]!.label, supportedBy: [], source: { by: 'reference' as const, note: unreadNote } })),
@@ -191,11 +213,11 @@ export const convertTrainACase = (frozen: CaseCase): PlanInputs => {
     rules: [
       { kind: 'protected', key: 'R1', equipment: r1Keys,
         words: 'Every Train B item (SW B, CCW B, RHR B, HHSI B, CS B, MD AFW B, EDG B, safety bus B), the turbine-driven AFW pump and the switchyard/offsite supply are never tagged, worked or tested.',
-        source: { by: 'reference', note: `${frozen.protectedEquipment.basis} Switchyard and offsite supply: maint case change C10.` } },
+        source: { by: 'reference', note: shownNotes.protectedRule } },
       ...frozen.functionGroups.map(group => ({
         kind: 'span-limit', key: group.id === cool.id ? 'R2' : `R2-${group.id}`, group: group.id, limit: { value: group.allowedOutageHours, unit: 'h' }, singleEntry: group.singleEntry,
         words: group.words ?? `${group.label}: back and tested within ${group.allowedOutageHours} h of the first tag-out, in one continuous span.`,
-        source: { by: 'reference', note: group.basis },
+        source: { by: 'reference', note: once(plannerNote.groups[group.id], `planner words for ${group.id}`) },
       })),
     ],
     goals: [

@@ -6,6 +6,7 @@ import {
 import { editSchema } from './edit-schema.ts'
 import { editInputSchema, generateResultSchema } from '../api/contract.ts'
 import { checkPlan, inputCodes } from '../check/check.ts'
+import { shownNotes } from './fixtures/train-a-case.convert.ts'
 
 const fixture = async (name: string): Promise<any> => Bun.file(new URL(`./fixtures/${name}`, import.meta.url)).json()
 const trainA = await fixture('train-a.fragment.json')
@@ -404,7 +405,7 @@ describe('function keys name items that back each other up', () => {
     }
     expect(fn('AFWTD')).not.toBe(fn('AFWA'))
     expect(fn('CCWHXA')).toBeUndefined()
-    for (const item of trainA.equipment.filter((entry: any) => entry.function !== undefined)) expect(item.source).toEqual({ by: 'planner', note: 'train membership: planner knowledge (case v0.2)' })
+    for (const item of trainA.equipment.filter((entry: any) => entry.function !== undefined)) expect(item.source).toEqual({ by: 'planner', note: shownNotes.membership })
   })
 
   test('it parses as a key on stored equipment and in the equipment edit; null clears it', () => {
@@ -415,5 +416,44 @@ describe('function keys name items that back each other up', () => {
     expect(editSchema.safeParse({ edit: 'equipment', key: 'MFWA', function: 'main-feedwater' }).success).toBe(true)
     expect(editSchema.safeParse({ edit: 'equipment', key: 'MFWA', function: null }).success).toBe(true)
     expect(editSchema.safeParse({ edit: 'equipment', key: 'MFWA', function: '' }).success).toBe(false)
+  })
+})
+
+describe('shown text in the fixtures is in planner words (walk item 16)', () => {
+  const fixtures = ['train-a.case.json', 'train-a.fragment.json', 'supply-run.case2.json']
+  const texts = async (name: string, fields: ReadonlySet<string>) => {
+    const found: Array<[string, string]> = []
+    const walk = (node: unknown, path: string): void => {
+      if (Array.isArray(node)) return node.forEach((child, index) => walk(child, `${path}/${index}`))
+      if (node === null || typeof node !== 'object') return
+      for (const [key, value] of Object.entries(node)) {
+        if (typeof value === 'string' && fields.has(key)) found.push([`${name}${path}/${key}`, value])
+        else walk(value, `${path}/${key}`)
+      }
+    }
+    walk(await fixture(name), '')
+    return found
+  }
+  // Review traces: the reviewer names maint and or, case change ids C1-C12, case versions and the twin.
+  const reviewTrace = /maint|\bor\b|case change|\bC(1[0-2]|[1-9])\b|v0\.2|v1\.1|twin/i
+  // In every shown text, ids and versions of review artefacts (design ids such as S10, review files).
+  const reviewId = /case change|\b[ACDGS](1[0-2]|[1-9])\b|v0\.2|v1\.1|twin|\.md\b/i
+
+  test('no note names a reviewer, a case change, a case version or the twin', async () => {
+    for (const name of fixtures) {
+      const notes = await texts(name, new Set(['note']))
+      expect(notes.length).toBeGreaterThan(0)
+      expect(notes.filter(([, text]) => reviewTrace.test(text))).toEqual([])
+    }
+  })
+
+  test('no label, title or words carry a review id', async () => {
+    for (const name of fixtures) expect((await texts(name, new Set(['label', 'title', 'words', 'purpose', 'note']))).filter(([, text]) => reviewId.test(text))).toEqual([])
+  })
+
+  test('the checks catch the old notes', () => {
+    for (const old of ['train membership: planner knowledge (case v0.2)', 'maint case change C10: EDG B ...', "or's runs", 'Dispatcher\'s coverage rule (case2.md).']) expect(reviewTrace.test(old) || reviewId.test(old)).toBe(true)
+    expect(reviewId.test('Vendor promises the spare for Monday 12:00 (scheduled at it and flagged; S10)')).toBe(true)
+    for (const fine of ['Backup pair: the planner\'s knowledge of the plant\'s trains.', 'Protected-train practice for work at power (NUMARC 93-01 section 11)', 'NUREG-1431 LCO 3.7.5 Condition B']) expect(reviewTrace.test(fine)).toBe(false)
   })
 })
