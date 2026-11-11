@@ -158,7 +158,7 @@ export const layoutTimeline = (inputs: PlanInputs, rows: readonly DatedRow[], fo
     const start = Math.min(...all.map(interval => interval.start))
     const end = Math.max(...all.map(interval => interval.end))
     const out = end - start
-    const parts = [`Out ${hoursText(out / hourMs)}${limitMs === null ? '' : ` of ${hoursText(limitMs / hourMs)} allowed`}`]
+    const parts = [`Out ${hoursText(out / hourMs)}${limitMs === null ? '' : ` of ${hoursText(limitMs / hourMs)} allowed`}, back ${format.clock(end)}`]
     if (limitMs !== null) parts.push(out <= limitMs ? `${hoursText((limitMs - out) / hourMs)} margin` : `${hoursText((out - limitMs) / hourMs)} over the limit`)
     if (guidelineMs !== null) parts.push(out <= guidelineMs ? `within the ${hoursText(guidelineMs / hourMs)} guideline` : `${hoursText((out - guidelineMs) / hourMs)} over the ${hoursText(guidelineMs / hourMs)} guideline`)
     return {

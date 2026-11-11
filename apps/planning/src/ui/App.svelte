@@ -97,7 +97,7 @@
     .plan-header .generate { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px; max-width: 520px; }
     .screen-grid { display: grid; grid-template-columns: 320px minmax(0, 1fr) 340px; gap: 16px; align-items: start; }
     .col-attention, .col-main, .col-panel { min-width: 0; display: grid; gap: 16px; }
-    .attention, .work-list, .options, .rules, .crews, .picker, .authoring, .job-panel, .preview, .shift-list, .shown-option, .timeline {
+    .attention, .glance, .work-list, .options, .rules, .crews, .picker, .authoring, .job-panel, .preview, .shift-list, .shown-option, .timeline {
       background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 14px;
     }
     .cards { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
@@ -168,6 +168,8 @@
     .shift-list li { padding: 6px 0; border-top: 1px solid var(--line-2); display: grid; font-size: 13px; }
     .shift-list .when { font-weight: 600; }
     .shift-list .who { color: var(--ink-2); font-size: 12px; }
+    .glance ul { list-style: none; padding: 0; margin: 0 0 6px; font-size: 12px; }
+    .glance li { padding: 3px 0; }
     .phone-only { display: none; }
 
     @media (max-width: 1280px) {

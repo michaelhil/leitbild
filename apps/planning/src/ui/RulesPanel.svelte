@@ -24,6 +24,7 @@
         <p><MarkTag mark={rule.mark} tone="rule" /> <strong>{rule.kind}.</strong> {rule.words}</p>
         <p class="hint">{rule.covers}</p>
         <p class="hint"><MarkTag mark={rule.source.mark} tone={sourceTone(rule.source.mark.shape)} />{rule.source.note ? ` ${rule.source.note}` : ''}</p>
+        <button type="button" class="quiet" disabled={busy} onclick={() => onPreview([{ edit: 'remove', what: 'rule', key: rule.key }], `Remove the rule “${rule.words}”`)}>Remove…</button>
       </li>
     {/each}
   </ul>

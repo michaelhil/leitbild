@@ -70,6 +70,27 @@ describe('Train A on the plan screen', () => {
     expect(work).toContain('≈ Estimate')
   })
 
+  test('at a glance: protected items and preconditions with their World state at read time, orders, crews and promises', () => {
+    const inputs = trainAInputs()
+    const swb = inputs.equipment.find(item => item.key === 'SWB')!
+    const check = inputs.jobs.flatMap(job => job.checks)[0]!
+    // Test input standing in for a refresh: World shows SW B running, read Thu 10:02.
+    const fact = { locator: swb.locator!, id: check.fact, label: 'Running', quantity: 'state', value: check.expect, basis: 'observed' as const, at: '2026-11-12T09:02:00Z' }
+    const read = modelOf({ ...inputs, settings: { ...inputs.settings, run: { id: 'run-1', linkedAt: '2026-11-12T09:00:00Z' } }, world: { refreshedAt: '2026-11-12T09:02:00Z', facts: [fact] } })
+    const text = screen(read)
+    expect(text).toContain('This plan at a glance')
+    expect(text).toContain('Service Water Pump B is never touched.')
+    expect(text).toContain('Running: yes · observed · read Thu 10:02')
+    expect(text).toContain('Met at read time: Running: yes · observed · read Thu 10:02')
+    expect(text).toContain('Order “Contractor night crew (nights Mon to Thu)” by Fri 12:00.')
+    expect(text).toContain('“Rebook the eddy-current team to Friday” moves it.')
+    expect(text).toContain('Lit crane-crew hours, Tue to Thu')
+    expect(text).toContain('depends on a promise, Mon 12:00.')
+    const unread = screen(modelOf(inputs))
+    expect(unread).toContain('Not read from World yet')
+    expect(unread).not.toContain('Met at read time')
+  })
+
   test('a planned option: each group against its limit and guideline, load per crew, float, and the honest status', () => {
     const model = trainAPlanned()
     const text = screen(model)
@@ -79,7 +100,8 @@ describe('Train A on the plan screen', () => {
     expect(out).toBe(24 + 5 + 3.5)
     const { limit, guideline } = limitsOf(model)
     expect(out).toBeLessThan(guideline)
-    expect(text).toContain(`Out ${out} h of ${limit} h allowed; ${limit - out} h margin; within the ${guideline} h guideline.`)
+    // Back when the last passed test finishes: Tue 15:30.
+    expect(text).toContain(`Out ${out} h of ${limit} h allowed, back Tue 15:30; ${limit - out} h margin; within the ${guideline} h guideline.`)
     expect(text).toContain('validated feasible')
     expect(text).toContain('proven optimal')
     expect(text).toContain('no plan can do better')

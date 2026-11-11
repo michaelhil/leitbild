@@ -107,5 +107,6 @@
       <button type="submit" disabled={busy}>Preview</button>
     </form>
     {#if problems.length > 0}<ul class="problems">{#each problems as problem (problem)}<li>{problem}</li>{/each}</ul>{/if}
+    <p><button type="button" class="quiet" disabled={busy} onclick={() => onPreview([{ edit: 'remove', what: 'job', key: job.key }], `Remove the job “${job.title}”`)}>Remove this job…</button></p>
   </section>
 {/if}

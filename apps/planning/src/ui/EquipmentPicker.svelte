@@ -123,7 +123,7 @@
         {#each results as subject (subject.locator)}
           <li>
             <strong>{subject.label}</strong> <small>{subject.kind}</small>
-            {#each subject.facts as fact (fact.id)}<small><MarkTag mark={{ shape: '◉', word: 'World' }} tone="world" /> {factText(fact, context.format)}</small>{/each}
+            {#each subject.facts.slice(0, 4) as fact (fact.id)}<small><MarkTag mark={{ shape: '◉', word: 'World' }} tone="world" /> {factText(fact, context.format)}</small>{/each}
             <span class="actions">
               <button type="button" disabled={busy} onclick={() => add(subject, 'equipment')}>Add as equipment</button>
               <button type="button" disabled={busy} onclick={() => add(subject, 'resource')}>Add as crew or tool</button>

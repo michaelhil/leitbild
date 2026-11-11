@@ -2,13 +2,15 @@
   import { onMount } from 'svelte'
   import type { PlanningSubject } from '@leitbild/contracts'
   import type { Edit } from '../plan/edit-schema.ts'
-  import { isRequestError, refusalText, RUN, type GenerateInput, type PlanningClient } from './api.ts'
+  import { isRequestError, refusalText, type GenerateInput, type PlanningClient } from './api.ts'
   import { attentionCards, type CardAction } from './attention.ts'
   import AttentionColumn from './AttentionColumn.svelte'
   import CrewForm from './CrewForm.svelte'
   import EditPreview from './EditPreview.svelte'
   import EquipmentPicker from './EquipmentPicker.svelte'
-  import { finishChain, whyStart, type FinishStep, type WhyStart } from './explain-text.ts'
+  import Glance from './Glance.svelte'
+  import { glance } from './orientation.ts'
+  import type { FinishStep, WhyStart } from './explain-text.ts'
   import { createTimeFormat } from './format.ts'
   import JobForm from './JobForm.svelte'
   import JobPanel from './JobPanel.svelte'
@@ -17,7 +19,7 @@
   import PlanHeader from './PlanHeader.svelte'
   import type { Preview } from './preview.ts'
   import RulesPanel from './RulesPanel.svelte'
-  import { loadPlan, loadRows } from './sections.ts'
+  import { createPlanActions, type Shown } from './plan-actions.ts'
   import { shiftList } from './shift-list.ts'
   import ShiftList from './ShiftList.svelte'
   import StatusBlock from './StatusBlock.svelte'
@@ -70,20 +72,11 @@
     { key: 'crews', word: 'Crews and shifts' }, { key: 'rules', word: 'Rules and goals' }, { key: 'options', word: 'Options' },
   ]
 
-  const readRuns = async (): Promise<readonly RunChoice[]> => {
-    const catalog = await client.catalog()
-    const scenario = model?.inputs.settings.scenario?.id
-    return catalog.resources.filter(resource => resource.ref.type === RUN).map(resource => ({
-      id: resource.ref.id, title: resource.title,
-      status: String(resource.summary.find(item => item.key === 'status')?.value ?? ''),
-      matches: scenario !== undefined && resource.sourceDefinition?.id === scenario,
-    }))
-  }
-  const reload = async (): Promise<void> => {
-    const next = await loadPlan(client, planId)
-    const keep = selectedOption !== null && next.options?.items.some(option => option.key === selectedOption) ? selectedOption : next.options?.recommended ?? null
-    model = keep !== null && next.rows[keep] === undefined ? { ...next, rows: { ...next.rows, [keep]: await loadRows(client, planId, keep) } } : next
-    selectedOption = keep
+  const actions = $derived(createPlanActions(client, planId))
+  const show = (shown: Shown): void => {
+    model = shown.model
+    selectedOption = shown.option
+    if (shown.notice !== null) notice = shown.notice
     finish = null
     why = null
   }
@@ -92,151 +85,85 @@
     error = null
     try { await work() } catch (cause) {
       error = refusalText(cause)
-      if (isRequestError(cause) && cause.code === 'plan_revision_conflict') await reload().catch(() => undefined)
+      if (isRequestError(cause) && cause.code === 'plan_revision_conflict') await actions.load(selectedOption).then(show, () => undefined)
     } finally { busy = false }
+  }
+  /** Runs an action on the plan as shown now; nothing runs before the plan is read. */
+  const withModel = (work: (current: PlanModel) => Promise<void>): void => {
+    const current = model
+    if (current !== null) void attempt(() => work(current))
   }
 
   onMount(() => {
     void attempt(async () => {
-      if (model === null) await reload()
-      runs = await readRuns()
+      if (model === null) show(await actions.load(null))
+      runs = await actions.runs(model?.inputs.settings.scenario?.id)
     })
   })
 
-  const previewEdits = (edits: readonly Edit[], label: string): void => {
-    if (model === null) return
-    const revision = model.revision
-    void attempt(async () => {
-      pending = edits
-      try {
-        preview = { label, result: await client.edit(planId, revision, { edits: [...edits], preview: true }), refusal: null }
-      } catch (cause) {
-        if (!isRequestError(cause) || cause.status >= 500) throw cause
-        preview = { label, result: null, refusal: { text: refusalText(cause), needsAuthority: cause.code === 'needs_authority' } }
-      }
-    })
-  }
-  const readsWorld = (edits: readonly Edit[]): boolean => edits.some(edit => ('locator' in edit && typeof edit.locator === 'string') || (edit.edit === 'plan' && typeof edit.run === 'string'))
-  const afterWrite = async (edits: readonly Edit[]): Promise<void> => {
-    await reload()
-    if (model !== null && model.inputs.settings.run !== null && readsWorld(edits)) {
-      await client.refresh(planId, model.revision)
-      await reload()
-    }
+  const previewEdits = (edits: readonly Edit[], label: string): void => withModel(async current => {
+    pending = edits
+    preview = await actions.preview(current, edits, label)
+  })
+  const apply = (authority: { name: string; reason: string } | null): void => withModel(async current => {
+    const shown = await actions.apply(current, pending, authority, selectedOption)
+    preview = null
+    show(shown)
     onChanged()
-  }
-  const apply = (authority: { name: string; reason: string } | null): void => {
-    if (model === null) return
-    const revision = model.revision
-    const edits = pending
-    void attempt(async () => {
-      const result = await client.edit(planId, revision, { edits: [...edits], ...(authority === null ? {} : { authority }) })
-      preview = null
-      notice = result.changed.length > 0 ? result.changed.join(' ') : 'Saved.'
-      await afterWrite(edits)
-    })
-  }
+  })
   const useTime = (instant: string): void => {
     const lock = pending.find(edit => edit.edit === 'job' && 'lock' in edit)
     if (lock !== undefined && lock.edit === 'job') previewEdits([{ edit: 'job', key: lock.key, lock: instant }], preview?.label ?? 'Fix the start')
   }
-  const link = (run: string): void => {
-    if (model === null) return
-    const revision = model.revision
-    void attempt(async () => {
-      await client.edit(planId, revision, { edits: [{ edit: 'plan', run }] })
-      notice = 'Linked. Reading its values…'
-      await afterWrite([{ edit: 'plan', run }])
-      notice = 'Linked, and the World values are read.'
-    })
-  }
-  const refresh = (): void => {
-    if (model === null) return
-    const revision = model.revision
-    void attempt(async () => {
-      const result = await client.refresh(planId, revision)
-      notice = result.changed.length > 0 ? result.changed.join(' ') : 'World values read; nothing changed.'
-      await reload()
-      onChanged()
-    })
-  }
+  const link = (run: string): void => withModel(async current => { show(await actions.link(current, run, selectedOption)); onChanged() })
+  const refresh = (): void => withModel(async current => { show(await actions.refresh(current, selectedOption)); onChanged() })
   const generate = (input: GenerateInput): void => {
-    if (model === null) return
-    const revision = model.revision
+    const current = model
+    if (current === null || generating !== null) return
     const controller = new AbortController()
     generating = controller
     error = null
     void (async () => {
       try {
-        const result = await client.generate(planId, revision, input, controller.signal)
-        notice = result.text
-        selectedOption = result.recommended ?? selectedOption
-      } catch (cause) {
-        if (controller.signal.aborted) notice = 'Cancelled. The best plan found before the stop is kept if it is better than the one you had.'
-        else error = refusalText(cause)
-      } finally {
-        generating = null
-      }
-      await attempt(async () => { await reload(); onChanged() })
+        const shown = await actions.generate(current, input, controller.signal, selectedOption)
+        show(shown)
+        error = shown.error
+        onChanged()
+      } catch (cause) { error = refusalText(cause) } finally { generating = null }
     })()
   }
-  const showOption = (option: string): void => {
-    if (model === null) return
-    const current = model
-    void attempt(async () => {
-      model = current.rows[option] === undefined ? { ...current, rows: { ...current.rows, [option]: await loadRows(client, planId, option) } } : current
-      selectedOption = option
-      finish = null
-      why = null
-      view = 'schedule'
-    })
-  }
+  const showOption = (option: string): void => withModel(async current => {
+    model = await actions.rows(current, option)
+    selectedOption = option
+    finish = null
+    why = null
+    view = 'schedule'
+  })
   const explainFinish = (): void => {
-    if (context === null) return
     const shownContext = context
-    void attempt(async () => {
-      finish = finishChain(await client.explain(planId, { ask: 'finish', ...(selectedOption === null ? {} : { option: selectedOption }) }), shownContext)
-    })
+    if (shownContext !== null) void attempt(async () => { finish = await actions.finish(shownContext, selectedOption) })
   }
   const explainStart = (job: string): void => {
-    if (context === null) return
     const shownContext = context
+    if (shownContext === null) return
     void attempt(async () => {
-      const result = await client.explain(planId, { ask: 'why-start', job, ...(selectedOption === null ? {} : { option: selectedOption }) })
-      const item = result.items.find(entry => entry.job === job)
-      why = item === undefined ? null : whyStart(item, shownContext, rows.find(row => row.job === job))
-      if (item === undefined) notice = result.lines.join(' ')
+      const answer = await actions.whyStart(shownContext, selectedOption, job, rows)
+      why = answer.why
+      if (answer.notice !== null) notice = answer.notice
     })
   }
-  const baseline = (option: string, name: string, note: string): void => {
-    if (model === null) return
-    const revision = model.revision
-    void attempt(async () => {
-      await client.baseline(planId, revision, { option, name, ...(note === '' ? {} : { note }) })
-      notice = `Baseline “${name}” saved.`
-      await reload()
-      onChanged()
-    })
-  }
+  const baseline = (option: string, name: string, note: string): void => withModel(async current => { show(await actions.baseline(current, option, name, note)); onChanged() })
   const onAction = (action: CardAction): void => {
     if (action === 'open-workspace') onOpenWorkspace()
-    else if (action === 'link-run') view = 'equipment'
+    else if (action === 'link-run' || action === 'add-work') view = 'equipment'
     else if (action === 'refresh') refresh()
-    else if (action === 'add-work') view = 'equipment'
     else if (action === 'generate') generate({})
     else explainFinish()
   }
-  const search = async (text: string): Promise<readonly PlanningSubject[]> => {
-    const run = model?.inputs.settings.run?.id
-    if (run === undefined) return []
-    return (await client.facts(run, { text, limit: 10 })).items
-  }
+  const search = async (text: string): Promise<readonly PlanningSubject[]> => model === null ? [] : actions.search(model, text)
   const detail = async (locator: string): Promise<PlanningSubject> => {
-    const run = model?.inputs.settings.run?.id
-    if (run === undefined) throw new Error('Link a simulation first.')
-    const found = (await client.facts(run, { subjects: [locator] })).items.find(item => item.locator === locator)
-    if (found === undefined) throw new Error('World no longer has this item.')
-    return found
+    if (model === null) throw new Error('The plan is not read yet.')
+    return actions.detail(model, locator)
   }
 </script>
 
@@ -249,6 +176,7 @@
     <div class="screen-grid">
       <div class="col-attention">
         <AttentionColumn {cards} {finish} busy={busy || generating !== null} {onAction} />
+        <Glance sections={glance(context)} />
         <div class="phone-only"><ShiftList {shifts} /></div>
       </div>
       <div class="col-main">
