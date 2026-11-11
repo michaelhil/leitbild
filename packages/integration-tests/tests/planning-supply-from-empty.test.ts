@@ -33,7 +33,8 @@ test('the Supply run from empty: World trucks and requests are usable as soon as
   const window = { start: '2026-09-03T08:00:00Z', end: '2026-09-03T08:30:00Z' }
 
   const scope = await assistant.explore({ view: 'scope', moduleId: 'planning' }) as { data: { definitions: any[] } }
-  const created = await one({ operationId: 'planning.plan.create', target: scope.data.definitions.find(definition => definition.target.ref.id === 'blank').target, input: { edits: [
+  // Jobs of a few minutes: the plan's time step is 30 s, chosen at create.
+  const created = await one({ operationId: 'planning.plan.create', target: scope.data.definitions.find(definition => definition.target.ref.id === 'blank').target, input: { grid: '30s', edits: [
     { edit: 'plan', title: 'Supply run from empty', timeZone: 'Europe/Oslo', window, dataDate: window.start, run: runId },
     { edit: 'calendar', key: 'exercise', label: 'On duty for the exercise', periods: [window] },
   ] } })
@@ -72,4 +73,17 @@ test('the Supply run from empty: World trucks and requests are usable as soon as
   const generated = await one({ operationId: 'planning.plan.generate', target: plan, input: {}, expectedRevision: revision })
   console.log('from empty:', JSON.stringify(generated.options.map((option: any) => ({ word: option.status.word, goals: option.status.goals }))), generated.text)
   expect(generated.options[0].status.word).toBe('validated feasible')
+  // On the 30 s grid each request keeps its World time (arrival plus service), never rounded up to a half hour.
+  const stored = await stack.store.read(stack.workspaceId, created.plan.id)
+  expect(stored.inputs.settings.grid).toBe('30s')
+  const rows = stored.options!.options[0]!.rows
+  for (const row of rows) {
+    const job = stored.inputs.jobs.find(entry => entry.key === row.job)!
+    const used = row.uses[0]!.resource
+    const refs = job.durationWith.find(entry => entry.resource === used)
+    const seconds = refs !== undefined && 'refs' in refs ? refs.refs.reduce((sum, ref) => sum + (stored.inputs.world.facts.find(fact => fact.locator === ref.locator && fact.id === ref.fact)!.value as number), 0) : 0
+    const worked = (Date.parse(row.finish) - Date.parse(row.start)) / 1_000
+    expect([row.job, worked]).toEqual([row.job, Math.ceil(seconds / 30) * 30])
+    expect(worked).toBeLessThan(30 * 60)
+  }
 })

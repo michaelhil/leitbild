@@ -25,9 +25,11 @@ export const startPlan = (start: {
   readonly at: string
   readonly by: StoredActor
   readonly edits: readonly Edit[]
+  /** The plan's time step, chosen at create; without one the Definition's own (New plan: 30min). */
+  readonly grid?: Plan['inputs']['settings']['grid']
 }): { readonly plan: Plan; readonly changes: readonly ChangeRecord[] } => {
   const { definition, at, by } = start
-  const inputs = planInputsSchema.parse({ ...structuredClone(definition.inputs), settings: { ...definition.inputs.settings, run: null } })
+  const inputs = planInputsSchema.parse({ ...structuredClone(definition.inputs), settings: { ...definition.inputs.settings, run: null, grid: start.grid ?? definition.inputs.settings.grid } })
   const outcome = start.edits.length === 0 ? { inputs, changes: [], weakens: [] } : applyEdits(inputs, start.edits, { now: at, by })
   requireAuthority(outcome.weakens, undefined, inputs)
   const summary = `Created from '${definition.title}'${outcome.changes.length === 0 ? '' : `; ${changeSummary(outcome.changes, outcome.inputs)}`}`

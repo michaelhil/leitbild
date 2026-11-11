@@ -249,3 +249,14 @@ describe('ops fixes: option identity, one Generate at a time, baseline bound, re
     } finally { await slow.close() }
   })
 })
+
+describe('the time step chosen at create (walk fix 18)', () => {
+  test('create stores the requested grid; without one a Definition keeps its own', async () => {
+    const chosen = await harness.create('blank', { grid: '30s' })
+    expect((await harness.store.read(harness.workspaceId, chosen.id)).inputs.settings.grid).toBe('30s')
+    const blank = await harness.create('blank')
+    expect((await harness.store.read(harness.workspaceId, blank.id)).inputs.settings.grid).toBe('30min')
+    const supply = await harness.create('supply-run')
+    expect((await harness.store.read(harness.workspaceId, supply.id)).inputs.settings.grid).toBe(supplyRun.settings.grid)
+  })
+})

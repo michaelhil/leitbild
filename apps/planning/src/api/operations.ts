@@ -394,7 +394,7 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
 
     create: async (workspaceId: WorkspaceId, definition: { readonly id: string; readonly revisionId: string }, input: z.infer<typeof createInputSchema>, access: AccessContext): Promise<{ readonly result: WriteResult; readonly created: WorkspaceResourceReference }> => {
       const found = definitionRevision(ports.definitions, definition)
-      const { plan, changes } = startPlan({ definition: found, workspaceId, id: crypto.randomUUID(), at: now(), by: storedActor(access), edits: input.edits ?? [] })
+      const { plan, changes } = startPlan({ definition: found, workspaceId, id: crypto.randomUUID(), at: now(), by: storedActor(access), edits: input.edits ?? [], ...(input.grid === undefined ? {} : { grid: input.grid }) })
       const stored = await store.create(workspaceId, plan)
       return { result: writeResult(stored, [`Created '${stored.inputs.settings.title}' from '${found.title}'`, ...changeLines(changes, stored.inputs, 11)]), created: planReference(workspaceId, stored.id) }
     },
