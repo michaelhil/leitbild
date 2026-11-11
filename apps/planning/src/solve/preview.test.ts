@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, test } from 'bun:test'
 import { createHarness } from '../api/fixtures/harness.ts'
-import { createRealSolver, realChecker } from '../api/wiring.ts'
+import { createRealSolver } from '../api/wiring.ts'
 import { checkPlan } from '../check/check.ts'
 import { planInputsSchema, planSchema, type PlanInputs } from '../plan/schema.ts'
 import { twinPlan, twinV3Options } from '../../tests/harness/twin-plan.ts'
@@ -132,7 +132,7 @@ describe('preview re-timing repairs the option, never re-solves it', () => {
     const placed = ({ float: _float, ...row }: (typeof option.rows)[number]) => row
     for (const row of option.rows) if (row.finish <= before.get('CCWA-SEAL')!.start) expect(placed(preview.rows.find(entry => entry.job === row.job)!)).toEqual(placed(row))
     // Through the operations (planning.plan.edit with preview): what moved, each with the edit as its cause.
-    const harness = await createHarness({ solver, checker: realChecker })
+    const harness = await createHarness({ solver })
     try {
       const at = new Date().toISOString()
       const plan = planSchema.parse({

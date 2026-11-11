@@ -6,8 +6,8 @@ import { newRequestId, workspaceIdSchema, type PlanningSubject, type WorkspaceId
 import { bundledPlanDefinitions, createPlanDefinitions } from '../../definitions/index.ts'
 import { createPlanStore } from '../../plan/store.ts'
 import { createPlanningModuleApi } from '../module-api.ts'
-import { createPlanningOperations, type CheckerPort, type SolverPort } from '../operations.ts'
-import { createCheckerDouble, createSolverDouble, createWorldDouble } from './doubles.ts'
+import { createPlanningOperations, type SolverPort } from '../operations.ts'
+import { createSolverDouble, createWorldDouble } from './doubles.ts'
 
 export interface Call {
   readonly resource?: string
@@ -21,7 +21,6 @@ export interface Answer { readonly status: number; readonly body: any; readonly 
 
 export const createHarness = async (options: {
   readonly solver?: SolverPort
-  readonly checker?: CheckerPort
   readonly subjects?: () => readonly PlanningSubject[]
   readonly worldAnswerAfterMs?: number
   readonly refreshDeadlineMs?: number
@@ -36,7 +35,6 @@ export const createHarness = async (options: {
     world: createWorldDouble(options.subjects ?? (() => []), journal, options.worldAnswerAfterMs === undefined ? {} : { answerAfterMs: options.worldAnswerAfterMs }),
     ...(options.refreshDeadlineMs === undefined ? {} : { refreshDeadlineMs: options.refreshDeadlineMs }),
     solver: options.solver ?? createSolverDouble(),
-    checker: options.checker ?? createCheckerDouble(),
   })
   const handle = createPlanningModuleApi({ operations, definitions, store })
   const request = async (path: string, init?: RequestInit): Promise<Answer> => {

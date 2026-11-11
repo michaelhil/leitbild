@@ -1,7 +1,8 @@
 // The nine operations' behaviour (eight here; the World facts query is World's). The UI and the Assistant
 // reach these only through Host and module-api.ts, so both take one path. Planning writes nothing in World:
 // its only World call is the facts read in refresh. Generate, explain and preview run on the solver port
-// (lane S); every status shown is re-checked on the checker port (lane K).
+// (lane S). Lane K's checker and its re-verifications run inside Generate's solver child, once; the service
+// stores their result, validated against the plan schema, and never runs the checker on a read.
 import { z } from 'zod'
 import {
   inspectionViewSchema, planningFactsOutputSchema, workspaceResourceReferenceSchema,
@@ -12,7 +13,7 @@ import { applyEdits, requireAuthority, type ChangeRecord, type EditOutcome, type
 import { definitionRevision, startPlan } from '../definitions/start.ts'
 import type { PlanDefinitionsPort } from '../definitions/index.ts'
 import { outTogether, readiness, worldSubjects, type ReadinessItem } from '../plan/readiness.ts'
-import { refusedStatus, unresolvedStatus, withoutProof } from '../solve/status.ts'
+import { withoutProof } from '../solve/status.ts'
 import {
   certificateSchema, certifiedSizeSchema, optionSetSchema, planInputsSchema,
   type CertifiedSize, type Plan, type PlanInputs, type Status, type WorldFactCopy,
@@ -41,28 +42,6 @@ export type GenerateVariant = NonNullable<z.infer<typeof generateInputSchema>['v
 
 /** One finding of the independent checker, as keys and a code; summary.ts words it. */
 export interface CheckViolation { readonly code: string; readonly about: readonly string[]; readonly words?: string }
-
-/** What lane K's re-check (check/recheck.ts) answers for a stored option against the current plan. */
-export interface RecheckView {
-  /** The stored status may be shown with its proof words. */
-  readonly usable: boolean
-  readonly baselineAllowed: boolean
-  readonly reasons: readonly string[]
-  /** What to show instead when the stored status cannot be shown. */
-  readonly shownAs?: 'unresolved' | 'invalid input'
-  /**
-   * Goals stored as "proven optimal" whose bound lane K's own verifyBound does not reach, and every later
-   * one: they are shown and stored as "best found under budget", never "proven optimal".
-   */
-  readonly bestFoundGoals: readonly number[]
-  readonly violations: ReadonlyArray<CheckViolation & { readonly input?: boolean }>
-  readonly certificate?: { readonly proves: boolean; readonly ok: boolean; readonly unverified: readonly string[] }
-}
-
-/** Lane K: the plan-level checker. It re-derives every rule from the inputs and trusts nothing in the rows. */
-export interface CheckerPort {
-  readonly recheck: (plan: Plan, option: Option, formulation: string) => RecheckView
-}
 
 /** Lane S: compile, bounds, the Engine in its Worker pool, decode, date, float, status and rank. */
 export interface SolverPort {
@@ -113,7 +92,6 @@ export interface PlanningOperationsPorts {
   readonly store: PlanStore
   readonly world: WorldFactsPort
   readonly solver: SolverPort
-  readonly checker: CheckerPort
   readonly definitions: PlanDefinitionsPort
   readonly now?: () => Date
   /** One deadline for a whole refresh, every page included (default 20 s, inside Host's 30 s). */
@@ -177,16 +155,6 @@ const appendChange = (plan: Plan, change: Omit<Plan['changes'][number], 'seq'>):
 
 const editKinds = (edits: readonly Edit[]): Plan['changes'][number]['kinds'] => [...new Set(edits.map(edit => edit.edit))].slice(0, 16)
 
-/**
- * Lane K's bound check: from the first goal it does not confirm on, no goal reads "proven optimal". The
- * solver's bound is dropped with the word, as in lane S's withoutProof: it is not trusted on its own.
- */
-export const unconfirmedAsBestFound = (status: Status, goals: readonly number[]): Status => {
-  if (status.word !== 'validated feasible' || goals.length === 0) return status
-  const from = Math.min(...goals)
-  return { ...status, goals: status.goals.map(goal => goal.goal >= from && goal.word === 'proven optimal' ? { word: 'best found under budget' as const, goal: goal.goal, value: goal.value, unit: goal.unit } : goal) }
-}
-
 /** Preview findings given whole (at most 600 characters each, 1,600 in all, 6 findings); later ones are left out first. */
 const wholeFindings = (texts: readonly string[]): string[] => {
   const kept: string[] = []
@@ -239,7 +207,7 @@ const sliceCursor = (cursor: string | undefined): number => {
 // ───────────── the operations ─────────────
 
 export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
-  const { store, solver, checker } = ports
+  const { store, solver } = ports
   const now = (): string => (ports.now?.() ?? new Date()).toISOString()
   const certifiedSize = certifiedSizeSchema.parse(solver.certifiedSize)
   const refreshDeadlineMs = ports.refreshDeadlineMs ?? 20_000
@@ -248,29 +216,20 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
   const stopping = new AbortController()
 
   /**
-   * Every shown status is lane K's re-check of the stored one: proof words only on the current revision
-   * and formulation, a feasible plan the checker accepts today, and a certificate that `proves`. Otherwise
-   * the shown status loses its proof (lane S's withoutProof), or becomes what the checker found.
+   * A stored status stands only on the plan revision and the solver formulation it was generated on: lane
+   * K checked it then, inside Generate's solver child, and nothing it rests on has changed. Otherwise the
+   * option is out of date: shown without proof (lane S's withoutProof), never baselined. No checker runs
+   * on a read (coordinator's memory decision, 11 Nov).
    */
-  const inputProblems = (recheck: RecheckView) => {
-    const problems = recheck.violations.filter(violation => violation.input !== false).slice(0, 16).map(violation => ({ about: [...violation.about.slice(0, 4)], code: violation.code }))
-    return problems.length > 0 ? problems : [{ about: [], code: 'invalid_input' }]
-  }
   const optionState = (plan: Plan, option: Option): OptionState => {
-    const formulation = solver.formulation(plan.inputs.settings.grid)
-    const recheck = checker.recheck(plan, option, formulation)
     const stored = option.status
-    const shown: Status = recheck.usable ? unconfirmedAsBestFound(stored, recheck.bestFoundGoals)
-      : recheck.shownAs === 'invalid input' ? refusedStatus('invalid input', inputProblems(recheck))
-        : recheck.shownAs === 'unresolved' && 'run' in stored ? unresolvedStatus(stored.run)
-          : stored.word === 'validated feasible' && recheck.reasons.includes('violations') ? unresolvedStatus(stored.run)
-            : withoutProof(stored)
+    const reason = option.inputsRevision !== plan.revision ? 'revision' as const
+      : 'run' in stored && stored.run.formulation !== solver.formulation(plan.inputs.settings.grid) ? 'formulation' as const : undefined
+    const shown: Status = reason === undefined ? stored : withoutProof(stored)
     // The function-key rule; lane S's redundancyWarning fires on one train's series chain until it adopts it.
     const warning = shown.word === 'validated feasible' ? outTogether(plan.inputs, option.rows) : undefined
     const warnings = warning === undefined ? [] : [optionWarning(warning, plan.inputs)]
-    const reason = recheck.usable ? undefined
-      : recheck.reasons.includes('inputs-changed') ? 'revision' as const : recheck.reasons.includes('formulation-changed') ? 'formulation' as const : 'recheck' as const
-    return { stale: !recheck.usable, ...(reason === undefined ? {} : { reason }), warnings, shown, baselineAllowed: recheck.baselineAllowed }
+    return { stale: reason !== undefined, ...(reason === undefined ? {} : { reason }), warnings, shown, baselineAllowed: reason === undefined && stored.word === 'validated feasible' }
   }
   const optionStates = (plan: Plan): ReadonlyMap<string, OptionState> =>
     new Map((plan.options?.options ?? []).map(option => [option.key, optionState(plan, option)]))
@@ -307,7 +266,7 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
 
   const requireFresh = (plan: Plan, option: Option): OptionState => {
     const state = optionState(plan, option)
-    if (state.stale) throw planningError(409, 'option_stale', `Option ${option.label} no longer matches the plan (${state.reason === 'formulation' ? 'the solver changed' : state.reason === 'recheck' ? 'it fails the re-check' : 'the plan changed'}); generate again`, { about: [option.key], currentRevision: plan.revision })
+    if (state.stale) throw planningError(409, 'option_stale', `Option ${option.label} no longer matches the plan (${state.reason === 'formulation' ? 'the solver changed' : 'the plan changed'}); generate again`, { about: [option.key], currentRevision: plan.revision })
     return state
   }
 
@@ -439,16 +398,9 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
       stoppedByWho: () => stopping.signal.aborted ? 'host' : signal.aborted ? 'person' : undefined,
     }))
     if (!answer.success) throw planningError(500, 'invalid_planning_result', 'Generate returned options that do not match the plan schema')
-    // Lane K re-checks every feasible option before it is stored: one it refuses is a defect, and a goal
-    // whose bound it does not confirm is stored as best found, so no later read can show it proven.
-    const formulation = solver.formulation(plan.inputs.settings.grid)
-    const keyedSet = keyed(answer.data, plan.options)
-    const generated = { ...keyedSet, options: keyedSet.options.map(option => {
-      if (option.status.word !== 'validated feasible' || option.inputsRevision !== plan.revision) return option
-      const recheck = checker.recheck(plan, option, formulation)
-      if (!recheck.usable) throw planningError(500, 'invalid_planning_result', `Generate called option ${option.label} feasible but the checker refuses it`)
-      return { ...option, status: unconfirmedAsBestFound(option.status, recheck.bestFoundGoals) }
-    }) }
+    // Lane K's check, its certificate and bound re-verifications ran on these options inside the solver
+    // child; the set is validated against the plan schema above and stored as it came.
+    const generated = keyed(answer.data, plan.options)
     const saved = await store.update(workspaceId, planId, guard, current => ({
       ...current, updatedAt: at, options: generated,
       ...appendChange(current, { at, by, revision: current.revision, summary: `Generated ${generated.options.length} option${generated.options.length === 1 ? '' : 's'}`, kinds: [] }),

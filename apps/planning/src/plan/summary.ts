@@ -311,9 +311,9 @@ export const sizeRefusalWords = (size: CertifiedSize, inputs: Pick<PlanInputs, '
 
 export interface OptionState {
   readonly stale: boolean
-  readonly reason?: 'revision' | 'formulation' | 'recheck'
+  readonly reason?: 'revision' | 'formulation'
   readonly warnings: readonly OptionWarning[]
-  /** The status to show: the stored one only when lane K's re-check lets it stand. */
+  /** The status to show: the stored one, checked by lane K inside Generate, only on its revision and formulation. */
   readonly shown: Status
   readonly baselineAllowed: boolean
 }

@@ -1,7 +1,6 @@
 // The real solver (lane S, solve/) and checker (lane K, check/) behind the operations' ports. index.ts
 // wires these; tests use the doubles in api/fixtures. Nothing here touches World.
-import { checkPlan, inputCodes, type CheckRow } from '../check/check.ts'
-import { recheckOption } from '../check/recheck.ts'
+import { checkPlan, type CheckRow } from '../check/check.ts'
 import { verifyCertificate } from '../check/certificate.ts'
 import { verifyBound } from '../check/optimal.ts'
 import { checkForSolver } from '../solve/lane-k-ports.ts'
@@ -20,26 +19,10 @@ import { clip, nameOf, timeWords } from '../plan/summary.ts'
 import { planningError } from '../errors.ts'
 import { byteLength } from '../plan/summary.ts'
 import { resultLimitBytes } from './contract.ts'
-import type { CheckerPort, ExplainResult, SolverPort } from './operations.ts'
+import type { ExplainResult, SolverPort } from './operations.ts'
 
 type Option = NonNullable<Plan['options']>['options'][number]
 
-
-/**
- * Every shown or stored status is re-checked by lane K; proof is decided on the certificate's `proves`, and
- * a "proven optimal" goal on lane K's own bound (check/optimal.ts verifyBound), passed on as bestFoundGoals.
- */
-export const realChecker: CheckerPort = {
-  recheck: (plan, option, formulation) => {
-    const result = recheckOption(plan, option, formulation)
-    return {
-      usable: result.usable, baselineAllowed: result.baselineAllowed, reasons: result.reasons, bestFoundGoals: result.bestFoundGoals,
-      ...(result.shownAs === undefined ? {} : { shownAs: result.shownAs }),
-      violations: result.check.violations.map(violation => ({ code: violation.code, about: violation.about, input: inputCodes.has(violation.code) })),
-      ...(result.certificate === undefined ? {} : { certificate: { proves: result.certificate.proves, ok: result.certificate.ok, unverified: result.certificate.unverified } }),
-    }
-  },
-}
 
 /** The option's schedule back on the compiled grid (date.ts `undate`); `edited` for a preview. */
 const scheduleOf = (prep: Prepared, index: CompileIndex, option: Option, edited = false): Schedule => {

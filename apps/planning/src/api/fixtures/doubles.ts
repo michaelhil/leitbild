@@ -1,5 +1,5 @@
 // Test doubles for the parallel lanes, used only by tests (fixtures/ never ships). The real solver (lane S),
-// checker (lane K) and World facts query (lane W) replace them at integration.
+// and World facts query (lane W) replace them at integration; lane K's checker runs inside the real solver.
 import { createHash } from 'node:crypto'
 import {
   planningFactsInputSchema, planningFactsOutputSchema,
@@ -8,7 +8,7 @@ import {
 import { planningError } from '../../errors.ts'
 import { combineWorldFacts, type Plan, type PlanInputs } from '../../plan/schema.ts'
 import { durationMs } from '../../time/units.ts'
-import type { CheckerPort, CheckViolation, SolverPort, WorldFactsPort } from '../operations.ts'
+import type { CheckViolation, SolverPort, WorldFactsPort } from '../operations.ts'
 
 type Option = NonNullable<Plan['options']>['options'][number]
 
@@ -86,19 +86,6 @@ export const createSolverDouble = (options: { readonly calls?: Array<{ readonly 
       return { ...row, start: new Date(Date.parse(row.start) + shift).toISOString(), finish: new Date(Date.parse(row.finish) + shift).toISOString() }
     })
     return { rows, violations, ...(violations.length === 0 || window === null ? {} : { nearestAllowed: { job: violations[0]!.about[0]!, at: window.start } }) }
-  },
-})
-
-/** Lane K stand-in: like recheck.ts on revision and formulation; refuses the option keys it is told to. */
-export const createCheckerDouble = (refuse: Set<string> = new Set()): CheckerPort => ({
-  recheck: (plan, option, formulation) => {
-    const reasons = [
-      ...(option.inputsRevision !== plan.revision ? ['inputs-changed'] : []),
-      ...('run' in option.status && option.status.run.formulation !== formulation ? ['formulation-changed'] : []),
-      ...(refuse.has(option.key) && option.status.word === 'validated feasible' ? ['violations'] : []),
-    ]
-    const violations: CheckViolation[] = reasons.includes('violations') ? [{ code: 'capacity', about: [option.rows[0]?.job ?? option.key] }] : []
-    return { usable: reasons.length === 0, baselineAllowed: reasons.length === 0 && option.status.word === 'validated feasible', reasons, bestFoundGoals: [], violations }
   },
 })
 

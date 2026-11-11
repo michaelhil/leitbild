@@ -1,4 +1,5 @@
-// The operations on the REAL solver (lane S's Worker pool and Generate) and checker (lane K's re-check):
+// The operations on the REAL solver (lane S's pool and Generate, lane K's checker inside each sub-solve's
+// child; the tests below run lane K's code on what was stored, as an independent witness):
 // the Train A Definition's inputs (the frozen flagship case, V1 and V2) and result sizes on twin v3. The demo
 // as a planner starts it, with World, is packages/integration-tests/tests/planning-train-a.test.ts.
 import { afterAll, describe, expect, test } from 'bun:test'
@@ -7,10 +8,13 @@ import { createSolverPool } from '../solve/pool.ts'
 import { bundledPlanDefinitions } from '../definitions/index.ts'
 import { twinPlan, twinV3Options } from '../../tests/harness/twin-plan.ts'
 import { createHarness, type Answer } from './fixtures/harness.ts'
-import { createRealSolver, realChecker } from './wiring.ts'
+import { createRealSolver } from './wiring.ts'
+import { checkPlan } from '../check/check.ts'
+import { verifyCertificate } from '../check/certificate.ts'
+import { verifyOptimality } from '../check/optimal.ts'
 
 const pool = createSolverPool()
-const harness = await createHarness({ solver: createRealSolver(pool), checker: realChecker })
+const harness = await createHarness({ solver: createRealSolver(pool) })
 afterAll(async () => { await pool.shutdown(); await harness.close() })
 const small = (answer: Answer) => expect(answer.bytes).toBeLessThanOrEqual(4_096)
 
@@ -49,9 +53,11 @@ describe('the operations on the real solver and checker', () => {
     // Train A's cooling chain is one train in series: no redundancy warning.
     expect(options.map(option => option.warnings)).toEqual(options.map(() => []))
     const stored = await harness.store.read(harness.workspaceId, id)
+    // What the child stored is what lane K's own code finds on the stored rows: feasible, each proof confirmed.
     for (const option of stored.options!.options) {
-      const recheck = realChecker.recheck(stored, option, createRealSolver(pool).formulation(stored.inputs.settings.grid))
-      expect([option.key, recheck.usable]).toEqual([option.key, true])
+      if (option.status.word !== 'validated feasible') continue
+      expect([option.key, checkPlan(stored.inputs, option.variant, option.rows).feasible]).toEqual([option.key, true])
+      expect(verifyOptimality(stored.inputs, option.variant, option.status).every(entry => entry.proves)).toBe(true)
     }
     for (const ask of ['finish', 'why-start'] as const) {
       const explained = await harness.call('planning.plan.explain', { resource: id, input: { ask } })
@@ -74,14 +80,13 @@ describe('the operations on the real solver and checker', () => {
     const options: GeneratedOption[] = generated.body.result.options
     console.log('V1/V2:', JSON.stringify(options.map(option => ({ label: option.label, word: option.status.word, cause: option.status.cause }))))
     const stored = await harness.store.read(harness.workspaceId, id)
-    const formulation = createRealSolver(pool).formulation(stored.inputs.settings.grid)
     for (const option of stored.options!.options) {
       const shown = options.find(entry => entry.key === option.key)!
-      const recheck = realChecker.recheck(stored, option, formulation)
-      console.log(`${option.label}: solver ${option.status.word}; lane K proves ${recheck.certificate?.proves}; unverified ${JSON.stringify(recheck.certificate?.unverified ?? [])}`)
-      // The stored refusal is a certificate (lane S); it is shown as proven only when lane K's re-verification proves it.
+      const certificate = option.status.word === 'proven infeasible' ? verifyCertificate(stored.inputs, option.variant, option.status.cause) : undefined
+      console.log(`${option.label}: stored ${option.status.word}; lane K proves ${certificate?.proves}; unverified ${JSON.stringify(certificate?.unverified ?? [])}`)
+      // The child keeps "proven infeasible" only when lane K's re-verification proves it; the service shows it as stored.
       expect(option.status.word).toBe('proven infeasible')
-      expect(shown.status.word).toBe(recheck.certificate?.proves === true && recheck.usable ? 'proven infeasible' : 'unresolved')
+      expect(shown.status.word).toBe(option.status.word)
       const refusal = await harness.call('planning.plan.explain', { resource: id, input: { ask: 'refusal', option: option.key } })
       small(refusal)
       if (shown.status.word === 'proven infeasible') {
@@ -95,7 +100,7 @@ describe('the operations on the real solver and checker', () => {
     }
     // V1 and V2 are proven and verified with nothing unverified, each with its cause in hours.
     expect(options.map(option => option.status.word)).toEqual(['proven infeasible', 'proven infeasible'])
-    for (const option of stored.options!.options) expect(realChecker.recheck(stored, option, formulation).certificate).toMatchObject({ proves: true, unverified: [] })
+    for (const option of stored.options!.options) expect(option.status.word === 'proven infeasible' ? verifyCertificate(stored.inputs, option.variant, option.status.cause) : undefined).toMatchObject({ proves: true, unverified: [] })
     expect(options.find(option => option.label.startsWith('V1'))!.status.cause).toMatchObject({ kind: 'chain', requiredHours: 37, availableHours: 32 })
   }, 120_000)
 
@@ -156,32 +161,3 @@ describe('a lock judged on every violation it brings (adversary recheck 3)', () 
   }, 120_000)
 })
 
-describe("lane K's bound check through the real checker port", () => {
-  // A then B on one operator, 1 h each, window from 06:00Z: nothing finishes before 2 h in. A stored claim of
-  // "proven optimal" at 3 h is one lane K's own bound (2 h) cannot confirm.
-  const job = (key: string): PlanInputs['jobs'][number] => ({
-    key, title: key, kind: 'work', equipment: [], isolation: 'none', duration: { value: 1, unit: 'h', calendar: 'working', origin: { by: 'planner' } },
-    durationWith: [], needs: [{ anyOf: ['ops'], amount: 1, handover: false }], continuous: true, checks: [], tags: [],
-  })
-  const row = (key: string, from: string, to: string) => ({ job: key, start: from, finish: to, uses: [{ resource: 'ops', from, to }], float: { workingHours: 0, limitedBy: { kind: 'window-end' as const } } })
-  const run = { grid: '30min' as const, engine: 'double', formulation: 'f', seed: 1, budget: { evals: 1, cpuMs: 1, wallMs: 1 }, stoppedBy: 'done' as const, evals: 1, cpuMs: 1 }
-  const claimed = (value: number) => ({ word: 'validated feasible' as const, run, goals: [{ word: 'proven optimal' as const, goal: 0, value, unit: 'h', bound: { value, source: 'logic+calendars' as const, certificate: { kind: 'earliest-finish' as const, jobs: [{ job: 'A', finish: '2026-11-16T09:00:00Z' }] } } }] })
-  const stored = (status: ReturnType<typeof claimed>, rows: ReturnType<typeof row>[]): Plan => planSchema.parse({
-    id: '00000000-0000-4000-8000-000000000004', workspaceId: '00000000-0000-4000-8000-0000000000aa', revision: 1, createdAt: '2026-11-11T00:00:00Z', updatedAt: '2026-11-11T00:00:00Z',
-    inputs: {
-      settings: { title: 'Bound check', timeZone: 'Europe/Oslo', window: { start: '2026-11-16T06:00:00Z', end: '2026-11-16T12:00:00Z' }, dataDate: null, grid: '30min', currency: 'NOK', run: null },
-      equipment: [], groups: [], purchases: [], methods: [], rules: [], world: { refreshedAt: null, facts: [] },
-      calendars: [{ key: 'always', label: 'Always', weekly: [], periods: [{ start: '2026-11-16T06:00:00Z', end: '2026-11-16T12:00:00Z' }], except: [], source: { by: 'planner' } }],
-      resources: [{ key: 'ops', label: 'Operator', kind: 'crew', count: 1, calendar: 'always', attributes: [], source: { by: 'planner' } }],
-      jobs: [job('A'), job('B')], links: [{ from: 'A', to: 'B', type: 'FS', lag: { value: 0, unit: 'h' } }], goals: [{ metric: 'finish', tolerance: { value: 0, unit: 'h' } }],
-    },
-    options: { at: '2026-11-11T00:00:00Z', by: { kind: 'agent' }, options: [{ key: 'o', label: 'Option', variant: { methods: [], purchases: [] }, status, rows, metrics: [], inputsRevision: 1 }] },
-    baselines: [], changes: [], droppedChanges: 0,
-  })
-  test('an unconfirmable "proven optimal" reaches the operations as bestFoundGoals; a confirmed one does not', () => {
-    const late = stored(claimed(3), [row('A', '2026-11-16T06:00:00Z', '2026-11-16T07:00:00Z'), row('B', '2026-11-16T08:00:00Z', '2026-11-16T09:00:00Z')])
-    expect(realChecker.recheck(late, late.options!.options[0]!, 'f')).toMatchObject({ usable: true, bestFoundGoals: [0] })
-    const tight = stored(claimed(2), [row('A', '2026-11-16T06:00:00Z', '2026-11-16T07:00:00Z'), row('B', '2026-11-16T07:00:00Z', '2026-11-16T08:00:00Z')])
-    expect(realChecker.recheck(tight, tight.options!.options[0]!, 'f')).toMatchObject({ usable: true, bestFoundGoals: [] })
-  })
-})

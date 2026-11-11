@@ -34,7 +34,7 @@ import { createPlanningOperations } from '../../../apps/planning/src/api/operati
 import { createPlanDefinitions } from '../../../apps/planning/src/definitions/index.ts'
 import { createPlanStore } from '../../../apps/planning/src/plan/store.ts'
 import { createPlanningHostClient } from '../../../apps/planning/src/host-client.ts'
-import { createRealSolver, realChecker } from '../../../apps/planning/src/api/wiring.ts'
+import { createRealSolver } from '../../../apps/planning/src/api/wiring.ts'
 import { createSolverPool } from '../../../apps/planning/src/solve/pool.ts'
 
 const temporary = async (cleanup: Array<() => Promise<void> | void>, name: string) => {
@@ -120,7 +120,7 @@ export const createPlanningStack = async (options: { readonly realAgents?: boole
   const pool = createSolverPool({ rssLimitMb: 4_000 })
   cleanup.push(() => pool.shutdown())
   const operations = createPlanningOperations({
-    store, definitions, solver: createRealSolver(pool), checker: realChecker,
+    store, definitions, solver: createRealSolver(pool),
     world: { read: async (access, run, input, signal) => planningFactsOutputSchema.parse(await createPlanningHostClient({ hostUrl }).call(access, 'world.simulation-run.planning-facts', { resource: run, input }, signal)) },
   })
   const planning = createPlanningServer({ operations, definitions, store, port: 0, uiDistPath: planningHome })
