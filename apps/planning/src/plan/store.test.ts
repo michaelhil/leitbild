@@ -48,8 +48,29 @@ describe('one JSON file per plan', () => {
     const stale = await caught(store.update(workspaceId, plan.id, { expectedRevision: 1, required: true }, retitle('B')))
     expect([stale.status, stale.code, stale.details?.currentRevision, stale.details?.since]).toEqual([409, 'plan_revision_conflict', 2, [{ revision: 2, summary: 'Renamed A' }]])
     // A change may keep the revision (generate, baseline) or raise it by one, nothing else.
-    expect((await store.update(workspaceId, plan.id, { expectedRevision: 2, required: true }, retitle('C', false))).revision).toBe(2)
+    expect((await store.update(workspaceId, plan.id, { expectedRevision: 2, required: true }, plan => ({ ...plan, updatedAt: '2026-11-11T09:00:00Z' }))).revision).toBe(2)
     expect((await caught(store.update(workspaceId, plan.id, { expectedRevision: 2, required: true }, plan => ({ ...plan, revision: plan.revision + 2 })))).code).toBe('invalid_plan_mutation')
+  })
+
+  test('a write that changes what the solver and checker read without raising the revision is refused (child-boundary risk)', async () => {
+    const store = createPlanStore(await tempRoot())
+    await store.provision(workspaceId)
+    const plan = await store.create(workspaceId, planFor())
+    // Forged: one more truck, revision kept. Lane K's verdict on stored options would silently outlive it.
+    const resource = plan.inputs.resources[0]!
+    const forged = await caught(store.update(workspaceId, plan.id, { expectedRevision: 1, required: true }, current => ({
+      ...current, inputs: { ...current.inputs, resources: current.inputs.resources.map(entry => entry.key !== resource.key ? entry : { ...entry, count: entry.count + 1 }) },
+    })))
+    expect([forged.status, forged.code]).toEqual([500, 'invalid_plan_mutation'])
+    expect(await caught(store.update(workspaceId, plan.id, { expectedRevision: 1, required: true }, retitle('Renamed', false))).then(error => error.code)).toBe('invalid_plan_mutation')
+    expect((await store.read(workspaceId, plan.id)).inputs).toEqual(plan.inputs)
+    // A World read that only renews read times and labels is no input change (a refresh with no new value).
+    const facts = [{ id: 'f', label: 'Arrival', quantity: 'time', unit: 's', value: 60, basis: 'observed' as const, at: '2026-09-03T08:00:00Z', locator: 'einsatz/unit/unit%3Atruck-1' }]
+    const read = await store.update(workspaceId, plan.id, { expectedRevision: 1, required: true }, current => ({ ...current, revision: 2, inputs: { ...current.inputs, world: { refreshedAt: '2026-09-03T08:00:00Z', facts } } }))
+    const renewed = await store.update(workspaceId, plan.id, { expectedRevision: 2, required: true }, current => ({ ...current, inputs: { ...current.inputs, world: { refreshedAt: '2026-09-03T09:00:00Z', facts: facts.map(fact => ({ ...fact, label: 'Arrival time', at: '2026-09-03T09:00:00Z' })) } } }))
+    expect([read.revision, renewed.revision]).toEqual([2, 2])
+    // A changed value with the revision kept is refused.
+    expect((await caught(store.update(workspaceId, plan.id, { expectedRevision: 2, required: true }, current => ({ ...current, inputs: { ...current.inputs, world: { ...current.inputs.world, facts: facts.map(fact => ({ ...fact, value: 90 })) } } })))).code).toBe('invalid_plan_mutation')
   })
 
   test('one writer per Workspace: concurrent changes apply one after the other', async () => {

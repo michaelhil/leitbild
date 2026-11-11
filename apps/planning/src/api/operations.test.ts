@@ -27,6 +27,32 @@ const harness = await createHarness({ subjects: () => world })
 afterAll(() => harness.close())
 const expectSmall = (answer: { bytes: number }) => expect(answer.bytes).toBeLessThanOrEqual(4_096)
 
+describe('every write path keeps the store\'s rule: inputs change only with the revision (child-boundary risk)', () => {
+  test('create, edit, preview, refresh (new values, then only a newer read time), generate, baseline and delete all pass', async () => {
+    const { inputsDigest } = await import('../plan/store.ts')
+    const local = await createHarness({ subjects: () => world })
+    try {
+      const ok = (answer: { status: number; body: any }) => { expect([answer.status < 300, answer.body?.error?.code]).toEqual([true, undefined]); return answer }
+      const stored = () => local.store.read(local.workspaceId, created.id)
+      world = subjectsFor(supplyRun, valuesFor(1), '2026-09-03T08:00:00Z')
+      const created = await local.create('supply-run')
+      ok(await local.call('planning.plan.edit', { resource: created.id, input: { edits: [{ edit: 'plan', run: 'run-supply' }] }, expectedRevision: 1 }))
+      ok(await local.call('planning.plan.edit', { resource: created.id, input: { edits: [{ edit: 'plan', title: 'Preview only' }], preview: true } }))
+      ok(await local.call('planning.sources.refresh', { input: { plan: created.id }, expectedRevision: 2 }))
+      // The same values read again later: the revision and what the solver reads both stay.
+      const before = await stored()
+      world = subjectsFor(supplyRun, valuesFor(1), '2026-09-03T08:05:00Z')
+      ok(await local.call('planning.sources.refresh', { input: { plan: created.id }, expectedRevision: 3 }))
+      const after = await stored()
+      expect([after.revision, inputsDigest(after.inputs)]).toEqual([before.revision, inputsDigest(before.inputs)])
+      const generated = ok(await local.call('planning.plan.generate', { resource: created.id, input: {}, expectedRevision: 3 }))
+      ok(await local.call('planning.plan.baseline', { resource: created.id, input: { option: generated.body.result.recommended, name: 'B' }, expectedRevision: 3 }))
+      expect(inputsDigest((await stored()).inputs)).toBe(inputsDigest(after.inputs))
+      ok(await local.call('planning.plan.delete', { resource: created.id, expectedRevision: 3 }))
+    } finally { await local.close() }
+  })
+})
+
 describe('the Supply run cycle through the operations', () => {
   test('create, link, refresh, generate, explain, baseline and read: results within 4 KB, World only read by refresh', async () => {
     world = padded(subjectsFor(supplyRun, valuesFor(1), '2026-09-03T08:00:00Z'))

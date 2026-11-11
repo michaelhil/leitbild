@@ -34,6 +34,17 @@ const planFileSchema = planSchema.omit({ baselines: true }).extend({
 
 const contentKey = (inputs: PlanInputs): string => createHash('sha256').update(JSON.stringify(inputs)).digest('hex').slice(0, 16)
 
+/**
+ * What the solver and lane K's checker read of a plan: its inputs, with each World fact by value, unit and
+ * basis only. A newer read time or label is no input change, as a refresh judges it (it raises the
+ * revision exactly when this digest changes).
+ */
+export const inputsDigest = (inputs: PlanInputs): string => {
+  const facts = inputs.world.facts.map(fact => [fact.locator, fact.id, fact.value, fact.unit ?? null, fact.basis] as const)
+    .sort((left, right) => `${left[0]}\u0000${left[1]}`.localeCompare(`${right[0]}\u0000${right[1]}`))
+  return createHash('sha256').update(JSON.stringify({ ...inputs, world: { facts } })).digest('hex')
+}
+
 /** The file form: every distinct baseline inputs copy stored once, the plan's current inputs never twice. */
 export const encodePlan = (plan: Plan): z.infer<typeof planFileSchema> => {
   const current = JSON.stringify(plan.inputs)
@@ -299,6 +310,12 @@ export const createPlanStore = (rootDirectory: string, options: PlanStoreOptions
       const next = planSchema.parse(await change(previous))
       if (next.id !== previous.id || next.workspaceId !== previous.workspaceId || (next.revision !== previous.revision && next.revision !== previous.revision + 1)) {
         throw planningError(500, 'invalid_plan_mutation', 'A plan change keeps its identity and raises its revision by at most one')
+      }
+      // A stored status stands on its revision and formulation alone (lane K's check ran in the solver child),
+      // so a write that changes what the solver and checker read must raise the revision; one that does not is
+      // a programming error, refused, never saved (adversary, child-boundary residual risk).
+      if (next.revision === previous.revision && inputsDigest(next.inputs) !== inputsDigest(previous.inputs)) {
+        throw planningError(500, 'invalid_plan_mutation', 'A plan change that alters its inputs raises its revision')
       }
       await writePlan(planPath(workspaceId, planId), next)
       return next
