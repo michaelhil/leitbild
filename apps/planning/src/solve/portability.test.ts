@@ -95,13 +95,13 @@ describe('the Supply run solves on the same core', () => {
   })
 
   test('the solver has no domain branch', async () => {
-    const words = /\b(truck|payload|pump|reactor|nuclear|einsatz|process-plant|crane|eddy|tag-?out|PWR|SWA|COOL-A)\b/i
+    // Job kinds ('tag-out', 'work', 'test') are the plan schema's own vocabulary, not a domain.
+    const words = /\b(truck|payload|pump|reactor|nuclear|einsatz|process-plant|crane|eddy|PWR|SWA|COOL-A|cooling)\b/i
     const offenders: string[] = []
     for await (const file of new Glob('*.ts').scan({ cwd: new URL('.', import.meta.url).pathname })) {
       if (file.endsWith('.test.ts')) continue
       const text = await Bun.file(new URL(file, import.meta.url)).text()
-      // Job kinds are the plan schema's own words ('tag-out', 'test'); everything else must be generic.
-      const code = text.replace(/'tag-out'/g, '').replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '')
+      const code = text.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '')
       if (words.test(code)) offenders.push(file)
     }
     expect(offenders).toEqual([])
