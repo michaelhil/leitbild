@@ -294,7 +294,7 @@ export const createPlanningService = (config: { readonly store: StudyStore; read
       if (!study.candidates.some(candidate => candidate.id === candidateId && candidate.result.status === 'feasible')) throw planningError(400, 'baseline_candidate_invalid', 'A baseline must identify a retained feasible candidate')
       return await config.store.update(workspaceId, studyId, expectedRevision, current => ({ ...current, revision: current.revision + 1, baselineCandidateId: candidateId, updatedAt: now() }))
     },
-    delete: (workspaceId: WorkspaceId, studyId: string, expectedRevision: number) => config.store.delete(workspaceId, studyId, expectedRevision),
+    delete: (workspaceId: WorkspaceId, studyId: string, expectedRevision: number | undefined) => config.store.delete(workspaceId, studyId, expectedRevision),
   }
 }
 export type PlanningService = ReturnType<typeof createPlanningService>

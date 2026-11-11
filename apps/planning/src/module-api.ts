@@ -43,7 +43,9 @@ const readSchema = z.object({ section: z.enum(['overview', 'problem', 'candidate
 const solveSchema = z.object({ expectedRevision: revisionSchema, maxPlacementChecks: z.number().int().positive().max(10_000_000).optional() }).strict()
 const compareSchema = z.object({ candidateIds: z.array(z.uuid()).min(2).max(32) }).strict()
 const baselineSchema = z.object({ candidateId: z.uuid(), expectedRevision: revisionSchema }).strict()
-const deleteSchema = z.object({ expectedRevision: revisionSchema }).strict()
+// Delete takes no input, so Host's delete card can offer it. Its optional
+// precondition is the envelope revision, as for every other Module.
+const deleteSchema = z.object({}).strict()
 const demoSchema = z.object({ case: z.enum(['response', 'component-work']) }).strict()
 const summarySchema = z.object({ id: z.uuid(), title: z.string(), revision: revisionSchema, currentProblemRevisionId: revisionSchema, baselineCandidateId: z.uuid().optional(), createdAt: isoTimestampSchema, updatedAt: isoTimestampSchema }).strict()
 const candidateSummarySchema = z.object({ id: z.uuid(), problemRevisionId: revisionSchema, createdAt: isoTimestampSchema, stale: z.boolean(), status: candidateSchema.shape.result.shape.status, metrics: planningMetricsSchema.nullable(), issueCount: z.number().int().nonnegative() }).strict()
@@ -152,8 +154,8 @@ export const createPlanningModuleApi = (config: { readonly service: PlanningServ
     invoke: (service, invocation, input) => service.compare(invocation.workspaceId, studyIdFor(invocation), input.candidateIds, invocation.access) })
   add({ id: 'planning.study.baseline.set', output: studySchema, kind: 'command', scope: 'study', title: 'Retain Planning Baseline', description: 'Name a saved feasible candidate as baseline. Does not overwrite the candidate or update World.', schema: baselineSchema,
     invoke: (service, invocation, input) => service.baseline(invocation.workspaceId, studyIdFor(invocation), input.candidateId, input.expectedRevision, invocation.access) })
-  add({ id: 'planning.study.delete', output: z.object({ deleted: z.literal(true) }).strict(), kind: 'command', scope: 'study', title: 'Delete Planning Study', description: 'Delete this Study, its retained evidence, revisions and candidates. Source World Runs are retained. Requires the current Study revision.', schema: deleteSchema, destructive: true,
-    invoke: async (service, invocation, input) => { await service.delete(invocation.workspaceId, studyIdFor(invocation), input.expectedRevision); return { deleted: true } } })
+  add({ id: 'planning.study.delete', output: z.object({ deleted: z.literal(true) }).strict(), kind: 'command', scope: 'study', title: 'Delete Planning Study', description: 'Delete this Study, its retained evidence, revisions and candidates. Source World Runs are retained. Pass the envelope expectedRevision to refuse the delete if the Study changed since you read it.', schema: deleteSchema, destructive: true,
+    invoke: async (service, invocation) => { await service.delete(invocation.workspaceId, studyIdFor(invocation), invocation.expectedRevision); return { deleted: true } } })
   if (config.demos) {
     const demos = config.demos
     add({ id: 'planning.demos.read', output: z.object({ demos: z.array(z.object({ id: z.enum(['response', 'component-work']), title: z.string(), description: z.string() }).strict()) }).strict(), kind: 'query', scope: 'workspace', title: 'List Planning Demonstrations', description: 'Describe the two implemented planning research use cases and their real owner source models.', schema: emptySchema, invoke: async () => ({ demos: demos.list() }) })

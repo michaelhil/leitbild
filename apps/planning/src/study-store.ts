@@ -16,7 +16,8 @@ export interface StudyStore {
   readonly read: (workspaceId: WorkspaceId, studyId: string) => Promise<Study>
   readonly create: (workspaceId: WorkspaceId, study: Study) => Promise<Study>
   readonly update: (workspaceId: WorkspaceId, studyId: string, expectedRevision: number, change: (study: Study) => Study) => Promise<Study>
-  readonly delete: (workspaceId: WorkspaceId, studyId: string, expectedRevision: number) => Promise<void>
+  /** Without an expected revision the delete is unconditional, as a person confirmed it. */
+  readonly delete: (workspaceId: WorkspaceId, studyId: string, expectedRevision: number | undefined) => Promise<void>
 }
 
 /** One writer per Workspace. Slow owner reads happen outside this queue and commit with a revision check. */
@@ -106,7 +107,8 @@ export const createStudyStore = (rootDirectory: string): StudyStore => {
       return next
     }),
     delete: (workspaceId, studyId, expectedRevision) => serialize(workspaceId, async () => {
-      assertRevision(await read(workspaceId, studyId), expectedRevision)
+      const study = await read(workspaceId, studyId)
+      if (expectedRevision !== undefined) assertRevision(study, expectedRevision)
       await rm(studyPath(workspaceId, studyId))
     }),
   }
