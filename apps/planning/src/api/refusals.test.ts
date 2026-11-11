@@ -87,7 +87,8 @@ describe('refusals name their cause and stay within 4 KB', () => {
       const big = await small.create('train-a-work-week')
       const refused = await small.call('planning.plan.generate', { resource: big.id, input: {}, expectedRevision: 1 })
       expect(error(refused)).toEqual([413, 'above_certified_size'])
-      expect(refused.body.error.message).toBe(`Too large for the certified size: certified for ${testCertifiedSize.family} up to 1 jobs; this plan has ${trainA.jobs.length}`)
+      expect(refused.body.error.message).toBe(`This plan has ${trainA.jobs.length} jobs, more than Generate takes; certified size: pending the owner's decision; measured family ${testCertifiedSize.family}`)
+      expect(refused.body.error.message).not.toMatch(/up to \d+ jobs/)
     } finally { await small.close() }
   })
 

@@ -169,8 +169,12 @@ export const statusSentence = (status: Status, inputs: Inputs): string => {
   }
 }
 
-/** "certified for single-train work weeks up to 100 jobs; measured 11 Nov". */
-export const certifiedSizeWords = (size: CertifiedSize): string => `certified for ${size.family} up to ${size.maxJobs} jobs; ${size.evidence}`
+/**
+ * The certified size in words. No size is certified until the owner decides the scale gate, so it never
+ * names a job count: "certified size: pending the owner's decision; measured family …". Lane S will export
+ * this wording from solve/generate.ts; this text follows it until then.
+ */
+export const certifiedSizeWords = (size: CertifiedSize): string => `certified size: pending the owner's decision; measured family ${size.family}`
 
 // ───────────── read sections ─────────────
 // The `data` of each planning.plan.read section, in the shapes of api/contract.ts sectionDataSchemas, which

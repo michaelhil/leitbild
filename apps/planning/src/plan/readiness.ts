@@ -78,12 +78,58 @@ export const takenOut = (inputs: Inputs): readonly string[] =>
 const ruleNamed = (inputs: Inputs): ReadonlySet<string> => new Set(inputs.rules.flatMap(rule =>
   rule.kind === 'protected' ? rule.equipment : rule.kind === 'keep-in-service' ? rule.members.flatMap(member => 'equipment' in member ? [member.equipment] : []) : []))
 
-/** Two or more items taken out and no keep-in-service or protected rule names any of them (A3). */
-const redundancy = (inputs: Inputs): ReadinessItem | undefined => {
-  const out = takenOut(inputs)
+/**
+ * Items that back each other up share an equipment `function` key (lane A's optional field; until it lands
+ * no item has one, and no redundancy warning fires). One train's series chain shares no function.
+ */
+export const functionOf = (item: Inputs['equipment'][number]): string | undefined => (item as Inputs['equipment'][number] & { readonly function?: string }).function
+
+/**
+ * The redundancy rule (adversary item 7, after the attack on lane S): two or more items `out` together that
+ * share a function key, none named by a keep-in-service or protected rule. Returns the first such set.
+ */
+const sharedFunction = (inputs: Inputs, out: readonly string[]): readonly string[] | undefined => {
   const named = ruleNamed(inputs)
-  if (out.length < 2 || out.some(key => named.has(key))) return undefined
-  return { kind: 'warning', code: 'redundancy', about: out.slice(0, 4), blocks: false, count: out.length }
+  const byFunction = new Map<string, string[]>()
+  for (const key of out) {
+    const item = inputs.equipment.find(entry => entry.key === key)
+    const shared = item === undefined ? undefined : functionOf(item)
+    if (shared !== undefined) byFunction.set(shared, [...(byFunction.get(shared) ?? []), key])
+  }
+  return [...byFunction.values()].find(items => items.length >= 2 && !items.some(key => named.has(key)))
+}
+
+/** On the plan: redundant items it takes out with no rule keeping one in service. */
+const redundancy = (inputs: Inputs): ReadinessItem | undefined => {
+  const items = sharedFunction(inputs, takenOut(inputs))
+  return items === undefined ? undefined : { kind: 'warning', code: 'redundancy', about: items.slice(0, 4), blocks: false, count: items.length }
+}
+
+/**
+ * On an option: redundant items its schedule has out at the same time (own outage from the first tag-out
+ * start to the last test finish, or while a supporter is out), with no rule keeping one in service.
+ */
+export const outTogether = (inputs: Inputs, rows: ReadonlyArray<{ readonly job: string; readonly start: string; readonly finish: string }>): OutTogether | undefined => {
+  const windowEnd = inputs.settings.window === null ? Math.max(...rows.map(row => Date.parse(row.finish))) : Date.parse(inputs.settings.window.end)
+  const jobs = new Map(inputs.jobs.map(job => [job.key, job]))
+  const own = (key: string): Array<[number, number]> => {
+    const tags = rows.filter(row => jobs.get(row.job)?.kind === 'tag-out' && jobs.get(row.job)!.equipment.includes(key)).map(row => Date.parse(row.start))
+    if (tags.length === 0) return []
+    const tests = rows.filter(row => jobs.get(row.job)?.kind === 'test' && jobs.get(row.job)!.equipment.includes(key)).map(row => Date.parse(row.finish))
+    return [[Math.min(...tags), tests.length === 0 ? windowEnd : Math.max(...tests)]]
+  }
+  const supporters = new Map(inputs.equipment.map(item => [item.key, item.supportedBy]))
+  const intervals = (key: string, seen: ReadonlySet<string> = new Set()): Array<[number, number]> => seen.has(key) ? []
+    : [...own(key), ...(supporters.get(key) ?? []).flatMap(supporter => intervals(supporter, new Set([...seen, key])))]
+  const spans = new Map(inputs.equipment.map(item => [item.key, intervals(item.key)]))
+  for (const at of [...new Set([...spans.values()].flat().map(([from]) => from))].sort((a, b) => a - b)) {
+    const out = [...spans].filter(([, list]) => list.some(([from, to]) => from <= at && at < to)).map(([key]) => key)
+    const items = sharedFunction(inputs, out)
+    if (items === undefined) continue
+    const to = Math.min(...items.flatMap(key => spans.get(key)!.filter(([from, end]) => from <= at && at < end).map(([, end]) => end)))
+    return { kind: 'redundancy', about: items, from: new Date(at).toISOString(), to: new Date(to).toISOString() }
+  }
+  return undefined
 }
 
 const sourced = (inputs: Inputs): ReadinessItem[] => {

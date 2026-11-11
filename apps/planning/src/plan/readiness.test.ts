@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { workspaceIdSchema } from '@leitbild/contracts'
-import { preconditions, readiness, takenOut, worldSubjects } from './readiness.ts'
+import { outTogether, preconditions, readiness, takenOut, worldSubjects } from './readiness.ts'
 import { planInputsSchema, type Plan, type PlanInputs } from './schema.ts'
 import { buildSection, byteLength, readinessText, statusSentence, timeWords } from './summary.ts'
 import { sectionDataSchemas } from '../api/contract.ts'
@@ -77,15 +77,25 @@ describe('readiness: warnings only, never a score (T2)', () => {
     expect(readiness(planOf(late), { staleOptions: [], now: late.settings.dataDate }).find(item => item.about[0] === purchase.key)?.code).toBe('order-passed')
   })
 
-  test('two items taken out with no rule keeping any of them in service warn on the plan', () => {
-    const two = trainA.equipment.filter(item => item.key !== (trainA.rules[0]!.kind === 'protected' ? trainA.rules[0]!.equipment[0] : '')).slice(0, 2).map(item => item.key)
-    const tagOuts = two.map((key, index) => ({ ...trainA.jobs.find(job => job.kind === 'tag-out')!, key: `TAG-${index}`, equipment: [key], checks: [] }))
-    const tests = two.map((key, index) => ({ ...trainA.jobs.find(job => job.kind === 'test')!, key: `TEST-${index}`, equipment: [key] }))
-    const inputs: PlanInputs = { ...trainA, jobs: [...tagOuts, ...tests], links: [] }
-    expect(takenOut(inputs)).toEqual(two)
-    expect(codes(inputs)).toContain('redundancy')
-    const keepOne: PlanInputs = { ...inputs, rules: [...inputs.rules, { kind: 'keep-in-service', key: 'K', members: two.map(equipment => ({ equipment })), atLeast: 1, words: 'Keep one in service', source: { by: 'planner' } }] }
-    expect(codes(keepOne)).not.toContain('redundancy')
+  test('redundancy warns only for items that back each other up (one function), out together, with no rule', () => {
+    // Train A's own chain shares no function: no warning on the plan.
+    expect(codes(trainA)).not.toContain('redundancy')
+    // A pair of feedwater pumps that back each other up, both taken out, with no rule keeping one in service.
+    const pump = (key: string) => ({ key, label: `Main feedwater pump ${key.slice(-1)}`, supportedBy: [], function: 'MFW' }) as unknown as PlanInputs['equipment'][number]
+    const tagOut = trainA.jobs.find(job => job.kind === 'tag-out')!
+    const test = trainA.jobs.find(job => job.kind === 'test')!
+    const jobs = ['MFWA', 'MFWB'].flatMap(key => [{ ...tagOut, key: `${key}-TAG`, equipment: [key], checks: [] }, { ...test, key: `${key}-RTS`, equipment: [key] }])
+    const pair: PlanInputs = { ...trainA, equipment: [...trainA.equipment, pump('MFWA'), pump('MFWB')], jobs, links: [] }
+    expect(readiness(planOf(pair), { staleOptions: [], now: '2026-11-12T09:00:00Z' }).find(item => item.code === 'redundancy')?.about).toEqual(['MFWA', 'MFWB'])
+    const row = (job: string, start: string, finish: string) => ({ job, start, finish })
+    const together = [row('MFWA-TAG', '2026-11-16T06:00:00Z', '2026-11-16T07:00:00Z'), row('MFWB-TAG', '2026-11-16T07:00:00Z', '2026-11-16T08:00:00Z'), row('MFWA-RTS', '2026-11-16T10:00:00Z', '2026-11-16T11:00:00Z'), row('MFWB-RTS', '2026-11-16T11:00:00Z', '2026-11-16T12:00:00Z')]
+    expect(outTogether(pair, together)).toEqual({ kind: 'redundancy', about: ['MFWA', 'MFWB'], from: '2026-11-16T07:00:00.000Z', to: '2026-11-16T11:00:00.000Z' })
+    const apart = [row('MFWA-TAG', '2026-11-16T06:00:00Z', '2026-11-16T07:00:00Z'), row('MFWA-RTS', '2026-11-16T08:00:00Z', '2026-11-16T09:00:00Z'), row('MFWB-TAG', '2026-11-16T09:00:00Z', '2026-11-16T10:00:00Z'), row('MFWB-RTS', '2026-11-16T11:00:00Z', '2026-11-16T12:00:00Z')]
+    expect(outTogether(pair, apart)).toBeUndefined()
+    // A rule keeping one in service answers it.
+    const ruled: PlanInputs = { ...pair, rules: [...pair.rules, { kind: 'keep-in-service', key: 'K', members: [{ equipment: 'MFWA' }, { equipment: 'MFWB' }], atLeast: 1, words: 'Keep one feedwater pump in service', source: { by: 'planner' } }] }
+    expect(codes(ruled)).not.toContain('redundancy')
+    expect(outTogether(ruled, together)).toBeUndefined()
   })
 })
 

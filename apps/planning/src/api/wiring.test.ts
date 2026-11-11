@@ -55,6 +55,8 @@ describe('the operations on the real solver and checker', () => {
     console.log('Flagship:', JSON.stringify(summary(options)), generated.body.result.text)
     const recommended = options.find(option => option.key === generated.body.result.recommended)
     expect(recommended?.status.word).toBe('validated feasible')
+    // Train A's cooling chain is one train in series: no redundancy warning.
+    expect(options.map(option => option.warnings)).toEqual(options.map(() => []))
     const stored = await harness.store.read(harness.workspaceId, id)
     for (const option of stored.options!.options) {
       const recheck = realChecker.recheck(stored, option, createRealSolver(pool).formulation(stored.inputs.settings.grid))
@@ -100,9 +102,10 @@ describe('the operations on the real solver and checker', () => {
         expect([refusal.status, refusal.body.error.code]).toEqual([409, 'option_stale'])
       }
     }
-    // V2 is proven and verified with nothing unverified.
-    const v2 = stored.options!.options.find(option => option.label.startsWith('V2'))!
-    expect(realChecker.recheck(stored, v2, formulation).certificate).toMatchObject({ proves: true, unverified: [] })
+    // V1 and V2 are proven and verified with nothing unverified, each with its cause in hours.
+    expect(options.map(option => option.status.word)).toEqual(['proven infeasible', 'proven infeasible'])
+    for (const option of stored.options!.options) expect(realChecker.recheck(stored, option, formulation).certificate).toMatchObject({ proves: true, unverified: [] })
+    expect(options.find(option => option.label.startsWith('V1'))!.status.cause).toMatchObject({ kind: 'chain', requiredHours: 37, availableHours: 32 })
   }, 120_000)
 
   test('twin v3: every result stays within 4 KB', async () => {

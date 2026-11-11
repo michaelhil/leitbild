@@ -11,8 +11,8 @@ import { isPlanningError, planningError } from '../errors.ts'
 import { applyEdits, requireAuthority, type ChangeRecord, type EditOutcome, type StoredActor } from '../plan/edits.ts'
 import { definitionRevision, startPlan } from '../definitions/start.ts'
 import type { PlanDefinitionsPort } from '../definitions/index.ts'
-import { readiness, worldSubjects, type ReadinessItem } from '../plan/readiness.ts'
-import { redundancyWarning, refusedStatus, unresolvedStatus, withoutProof } from '../solve/status.ts'
+import { outTogether, readiness, worldSubjects, type ReadinessItem } from '../plan/readiness.ts'
+import { refusedStatus, unresolvedStatus, withoutProof } from '../solve/status.ts'
 import {
   certificateSchema, certifiedSizeSchema, optionSetSchema, planInputsSchema,
   type CertifiedSize, type Plan, type PlanInputs, type Status, type WorldFactCopy,
@@ -20,7 +20,7 @@ import {
 import type { Edit } from '../plan/edit-schema.ts'
 import { assertRevision, type PlanStore, type RevisionGuard } from '../plan/store.ts'
 import {
-  attentionKind, basisWords, buildSection, byteLength, changeLines, changeSummary, nameOf, optionWarning, readinessText,
+  attentionKind, basisWords, buildSection, certifiedSizeWords, byteLength, changeLines, changeSummary, nameOf, optionWarning, readinessText,
   statusSentence, timeWords, valueWords, type OptionState, type Section, type SectionContext,
 } from '../plan/summary.ts'
 import type { Grid } from '../time/units.ts'
@@ -220,8 +220,9 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
         : recheck.shownAs === 'unresolved' && 'run' in stored ? unresolvedStatus(stored.run)
           : stored.word === 'validated feasible' && recheck.reasons.includes('violations') ? unresolvedStatus(stored.run)
             : withoutProof(stored)
-    const warning = shown.word === 'validated feasible' ? redundancyWarning(plan.inputs, option.rows) : undefined
-    const warnings = warning === undefined ? [] : [optionWarning({ kind: 'redundancy', about: warning.items, from: warning.from, to: warning.to }, plan.inputs)]
+    // The function-key rule; lane S's redundancyWarning fires on one train's series chain until it adopts it.
+    const warning = shown.word === 'validated feasible' ? outTogether(plan.inputs, option.rows) : undefined
+    const warnings = warning === undefined ? [] : [optionWarning(warning, plan.inputs)]
     const reason = recheck.usable ? undefined
       : recheck.reasons.includes('inputs-changed') ? 'revision' as const : recheck.reasons.includes('formulation-changed') ? 'formulation' as const : 'recheck' as const
     return { stale: !recheck.usable, ...(reason === undefined ? {} : { reason }), warnings, shown, baselineAllowed: recheck.baselineAllowed }
@@ -304,7 +305,7 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
     const guard = { expectedRevision, required: true }
     const plan = await readGuarded(workspaceId, planId, guard)
     if (plan.inputs.jobs.length > certifiedSize.maxJobs) {
-      throw planningError(413, 'above_certified_size', `Too large for the certified size: certified for ${certifiedSize.family} up to ${certifiedSize.maxJobs} jobs; this plan has ${plan.inputs.jobs.length}`, { maxJobs: certifiedSize.maxJobs, jobs: plan.inputs.jobs.length })
+      throw planningError(413, 'above_certified_size', `This plan has ${plan.inputs.jobs.length} jobs, more than Generate takes; ${certifiedSizeWords(certifiedSize)}`, { maxJobs: certifiedSize.maxJobs, jobs: plan.inputs.jobs.length })
     }
     const at = now()
     const by = storedActor(access)
