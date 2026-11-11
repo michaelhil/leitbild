@@ -32,7 +32,7 @@ export const recheckOption = (plan: Plan, option: Option, formulation: string): 
   if (status.word === 'proven infeasible') {
     certificate = verifyCertificate(plan.inputs, option.variant, status.cause)
     if (!certificate.ok) reasons.push('certificate')
-    else if (certificate.unverified.length > 0) reasons.push('certificate-unverified')   // not a proof; its bound is an explanation
+    else if (!certificate.proves) reasons.push('certificate-unverified')   // not a proof; its bound is an explanation
   }
   const usable = reasons.length === 0
   const shownAs = check.invalidInput && (status.word === 'validated feasible' || status.word === 'proven infeasible') ? 'invalid input' as const

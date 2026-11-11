@@ -11,14 +11,18 @@ import { prepare, type CheckVariant, type Context } from './check.ts'
 import { jobSlots, leastWork, propagate, resourceSlots, worldsOf, type JobWindow, type World } from './propagate.ts'
 
 export interface CertificateCheck {
+  /** The certificate proves infeasibility: no problem found and nothing left unverified. Decide proof on this. */
+  readonly proves: boolean
+  /** No problem found in its figures; parts may still be unverified, so this alone is never a proof. */
   readonly ok: boolean
   readonly problems: readonly string[]
   /** Premises the checker could not re-derive; any entry means the certificate is not a proof. */
   readonly unverified: readonly string[]
   /**
    * Cases of the variant's optional rebookings that the checker's own time logic already rules out, so the
-   * certificate's argument was not needed there. When every case is listed, the refusal is better worded
-   * from the time logic than from the certificate's figures.
+   * certificate's argument was not needed there. Each entry gives the case's cause in planner words: the
+   * jobs, hours, calendars, links and limits that rule it out. When every case is listed, the refusal is
+   * better worded from these than from the certificate's figures.
    */
   readonly refutedByTime: readonly string[]
   /** The checker's own figures (from the case with the least margin). */
@@ -74,7 +78,7 @@ const forcedInto = (window: JobWindow, from: number, to: number, latestFinish: n
 
 export const verifyCertificate = (inputs: PlanInputs, variant: CheckVariant, certificate: Certificate): CertificateCheck => {
   const prepared = prepare(inputs, variant)
-  if (!prepared.ok) return { ok: false, problems: prepared.problems.map(problem => problem.words), unverified: [], refutedByTime: [], figures: {} }
+  if (!prepared.ok) return { proves: false, ok: false, problems: prepared.problems.map(problem => problem.words), unverified: [], refutedByTime: [], figures: {} }
   const context = prepared.context
   const { grid } = context
   const problems: string[] = []
@@ -95,7 +99,7 @@ export const verifyCertificate = (inputs: PlanInputs, variant: CheckVariant, cer
     for (const world of worlds) {
       const name = [...world].map(([key, taken]) => `${key} ${taken ? 'taken' : 'not taken'}`).join(', ') || 'the variant as given'
       const timed = propagate(context, world)
-      if (!timed.ok) { refutedByTime.push(`${name}: '${context.jobs.get(timed.job)?.title ?? timed.job}' ${timed.reason}`); continue }
+      if (!timed.ok) { refutedByTime.push(`With ${name}: ${timed.words}`); continue }
       const gap = refute(world, timed.windows)
       if (gap !== undefined) unverified.push(`${what} with ${name}: ${gap}`)
     }
@@ -240,5 +244,5 @@ export const verifyCertificate = (inputs: PlanInputs, variant: CheckVariant, cer
       break
     }
   }
-  return { ok: problems.length === 0, problems, unverified, refutedByTime, figures }
+  return { proves: problems.length === 0 && unverified.length === 0, ok: problems.length === 0, problems, unverified, refutedByTime, figures }
 }

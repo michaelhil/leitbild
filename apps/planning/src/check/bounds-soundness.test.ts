@@ -40,6 +40,17 @@ describe('bounds soundness re-verification', () => {
     // on the truly infeasible ones the made-up figures do not re-verify either
     expect(failures.some(failure => failure.problem.startsWith('the certificate does not re-verify'))).toBe(true)
   }, 60_000)
+  test('a certificate with figures that hold but premises left unverified does not count as re-verified', async () => {
+    // on the infeasible instances: an energy claim over the first hour that nothing forces work into
+    const loose: BoundsPort = {
+      bounds: async inputs => ({
+        certificate: { kind: 'energy', resources: ['crew', 'ops'], jobs: ['P-WORK', 'Q-WORK'], requiredHours: 0, availableHours: 0, from: inputs.settings.window!.start, to: new Date(Date.parse(inputs.settings.window!.start) + 1_800_000).toISOString() },
+        goals: [],
+      }),
+    }
+    const { failures, infeasible } = await boundsSoundness(loose, seeds)
+    expect(failures.filter(failure => failure.problem.startsWith('the certificate does not re-verify'))).toHaveLength(infeasible)
+  }, 60_000)
   test('the instances are reproducible from their seed', () => {
     expect(smallInstance(3)).toEqual(smallInstance(3))
   })

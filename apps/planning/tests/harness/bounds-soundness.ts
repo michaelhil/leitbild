@@ -134,7 +134,7 @@ export const boundsSoundness = async (port: BoundsPort, seeds: readonly number[]
       if (optimum !== undefined) failures.push({ seed, problem: `a ${answer.certificate.kind} certificate is issued, but ${schedules.length} checker-validated schedules exist` })
       else {
         const verified = verifyCertificate(inputs, variant, answer.certificate)
-        if (!verified.ok) failures.push({ seed, problem: `the certificate does not re-verify: ${verified.problems.join(' ')}` })
+        if (!verified.proves) failures.push({ seed, problem: `the certificate does not re-verify: ${[...verified.problems, ...verified.unverified].join(' ')}` })
       }
     }
     if (optimum === undefined) continue

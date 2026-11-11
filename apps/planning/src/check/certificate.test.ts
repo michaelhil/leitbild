@@ -16,19 +16,34 @@ describe('V1 and V2 on the flagship', () => {
   test('V1: a lift needs a crew and the crane at once, so the chain is proven, 37 h against 32 h', () => {
     const { inputs, variant } = daysOnly('M1-rebuild')
     const result = verifyCertificate(inputs, variant, v1('2026-11-17T06:00:00Z'))
-    expect(result).toMatchObject({ ok: true, problems: [], unverified: [], figures: { workHours: 37, availableHours: 32 } })
+    expect(result).toMatchObject({ proves: true, ok: true, problems: [], unverified: [], figures: { workHours: 37, availableHours: 32 } })
   })
   test('V1 counted from Monday is refused: the chain\'s jobs can work 40 h from Mon 07:00', () => {
     const { inputs, variant } = daysOnly('M1-rebuild')
     const result = verifyCertificate(inputs, variant, v1('2026-11-16T06:00:00Z'))
     expect(result.ok).toBe(false)
+    expect(result.proves).toBe(false)
     expect(result.figures.availableHours).toBe(40)
   })
   test('V2: the checker\'s own time logic rules out both ECT bookings, so a refusal re-verifies', () => {
     const { inputs, variant } = daysOnly('M2-swap')
     const temporal = verifyCertificate(inputs, variant, { kind: 'temporal', steps: [{ job: 'SWA-TAG', via: 'window' }, { job: 'SWA-MOTOR-DISC', via: 'link' }] })
-    expect(temporal).toMatchObject({ ok: true, unverified: [] })
+    expect(temporal).toMatchObject({ proves: true, unverified: [] })
     expect(temporal.refutedByTime).toHaveLength(2)
+  })
+  test('V2\'s time refusal is worded for a planner: the span, its limit, and the jobs and shifts that set it', () => {
+    const { inputs, variant } = daysOnly('M2-swap')
+    const [wednesday, friday] = verifyCertificate(inputs, variant, { kind: 'temporal', steps: [] }).refutedByTime
+    // ECT on its Wednesday booking: the cooling-chain span must open by Tue 07:00 local (06:00Z) for the
+    // heat-exchanger chain to reach the Wednesday test, and from its shortest opening, Mon 11:00, the tests
+    // end Thu 19:30: 80.5 h, over the 72 h limit
+    expect(wednesday).toContain('Train A cooling chain (SW A, CCW A and HX A, RHR A, HHSI A) would be out at least 80.5 h, against its 72 h limit')
+    expect(wednesday).toContain('The span must open by Tue 17 Nov 06:00')
+    expect(wednesday).toContain("'Eddy-current test of CCW HX A tubes' 8 h unbroken in Eddy-current team booked, Wed 18 Nov 07:00 to Wed 18 Nov 15:00")
+    expect(wednesday).toContain("'Restore RHR A, pump test on recirculation' 2.5 h unbroken in 24/7 shift operation, Thu 19 Nov 17:00 to Thu 19 Nov 19:30")
+    // ECT rebooked to Friday: closing the heat exchanger after it no longer fits in Friday's day shift
+    expect(friday).toContain("'Close CCW HX A channel heads with new gaskets' 4 h in Day shift, which no longer fits before the window closes Sat 21 Nov 07:00")
+    expect(`${wednesday} ${friday}`).not.toMatch(/earliest start is after its latest start/)
   })
   test('swap with overtime and nights, where or found plans: no refusal re-verifies, and recheck shows "unresolved"', () => {
     const { inputs, variant } = trainAInputs(caseJson, { method: 'M2-swap', overtime: true, nights: ['2026-11-16', '2026-11-17', '2026-11-18', '2026-11-19'], craneFriday: true, ectFriday: true })
@@ -37,6 +52,7 @@ describe('V1 and V2 on the flagship', () => {
     const verified = verifyCertificate(inputs, variant, energy)
     expect(verified.ok).toBe(true)                     // the figures are not wrong as such ...
     expect(verified.unverified.length).toBeGreaterThan(0)   // ... but nothing forces that work into Monday
+    expect(verified.proves).toBe(false)
     expect(verifyCertificate(inputs, variant, { kind: 'temporal', steps: [] }).unverified.length).toBeGreaterThan(0)
     const run = { grid: '30min' as const, engine: 'double', formulation: 'f-1', seed: 1, budget: { evals: 1, cpuMs: 1, wallMs: 1 }, stoppedBy: 'done' as const, evals: 1, cpuMs: 1 }
     const plan = planSchema.parse({
@@ -77,11 +93,12 @@ describe('energy and availability are re-derived, not taken on trust', () => {
   })
   const energy = (available: number) => ({ kind: 'energy' as const, resources: ['mech'], jobs: ['P-W', 'Q-W'], requiredHours: 6, availableHours: available, from: '2026-11-16T06:00:00Z', to: '2026-11-16T11:00:00Z', span: 'G' })
   test('in every 5 h window the span could open, 6 h of work against 5 h: proven', () => {
-    expect(verifyCertificate(group(5), none, energy(5))).toMatchObject({ ok: true, unverified: [], refutedByTime: [], figures: { requiredHours: 6, availableHours: 5 } })
+    expect(verifyCertificate(group(5), none, energy(5))).toMatchObject({ proves: true, unverified: [], refutedByTime: [], figures: { requiredHours: 6, availableHours: 5 } })
   })
   test('with a 7 h limit the same count proves nothing and stays unverified', () => {
     const result = verifyCertificate(group(7), none, energy(5))
     expect(result.unverified.length).toBeGreaterThan(0)
+    expect(result.proves).toBe(false)
   })
   test('an availability certificate holds only where every schedule has the items out together', () => {
     const forced = (locked: boolean) => small({
@@ -96,7 +113,7 @@ describe('energy and availability are re-derived, not taken on trust', () => {
     })
     // locked tags at 06:00Z and 07:00Z, tests no earlier than 09:00Z-10:00Z: both out 07:00Z-10:00Z in every schedule
     const certificate = { kind: 'availability' as const, rule: 'K', items: ['A', 'B'], from: '2026-11-16T07:00:00Z', to: '2026-11-16T10:00:00Z' }
-    expect(verifyCertificate(forced(true), none, certificate)).toMatchObject({ ok: true, unverified: [] })
-    expect(verifyCertificate(forced(false), none, certificate).unverified.length).toBeGreaterThan(0)
+    expect(verifyCertificate(forced(true), none, certificate)).toMatchObject({ proves: true, unverified: [] })
+    expect(verifyCertificate(forced(false), none, certificate).proves).toBe(false)
   })
 })

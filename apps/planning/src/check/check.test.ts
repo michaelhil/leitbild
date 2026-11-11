@@ -358,13 +358,13 @@ describe('certificates are re-verified from the inputs', () => {
   const certificate = (workHours: number, availableHours: number, jobs = ['C1', 'C2', 'C3']) => ({ kind: 'chain' as const, jobs, workHours, calendars: ['day'], availableHours, from: '2026-11-16T06:00:00Z', by: '2026-11-18T06:00:00Z' })
   test('a true chain proof is confirmed with the checker\'s own figures', () => {
     const result = verifyCertificate(chain, noVariant, certificate(18, 16))
-    expect(result).toMatchObject({ ok: true, figures: { workHours: 18, availableHours: 16 } })
+    expect(result).toMatchObject({ proves: true, figures: { workHours: 18, availableHours: 16 } })
   })
   test('a chain that undercounts the available hours is refused', () => {
-    expect(verifyCertificate(chain, noVariant, certificate(18, 12)).ok).toBe(false)
+    expect(verifyCertificate(chain, noVariant, certificate(18, 12)).proves).toBe(false)
   })
   test('jobs that are not bound one after the other are not a chain', () => {
-    expect(verifyCertificate(chain, noVariant, certificate(18, 16, ['C1', 'C3', 'C2'])).ok).toBe(false)
+    expect(verifyCertificate(chain, noVariant, certificate(18, 16, ['C1', 'C3', 'C2'])).proves).toBe(false)
   })
 })
 
