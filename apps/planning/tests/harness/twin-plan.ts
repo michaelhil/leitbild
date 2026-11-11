@@ -119,9 +119,12 @@ export const twinPlan = (bench: Bench, options: TwinOptions): TwinPlan => {
     for (const member of members) boughtFor.set(member.id, { resource, purchase: key })
   }
   if ((bench.fixedCost ?? 0) > 0) {
-    // a committed fixed cost (the method's parts): an ordered purchase is charged whether used or not
-    purchases.push({ key: 'committed', label: 'Committed parts', resource: resources[0]!.key, adds: { periods: [{ start: at(0), end: at(1) }] }, replaces: [], price: { once: bench.fixedCost }, ordered: { at: at(0), by: { kind: 'service', name: 'twin generator' } }, allowed: false })
-    notes.push(`the fixed cost ${bench.fixedCost} is an ordered purchase, charged whether used or not`)
+    // a committed fixed cost (the swap method's parts): an ordered purchase is charged whether used or not.
+    // It sits on a resource of its own with no booked time, so it never adds working time to a crew.
+    calendars.push({ key: 'committed-none', label: 'No working time', weekly: [], periods: [], except: [], source: planner })
+    resources.push({ key: 'committed', label: 'Committed parts (swap method)', kind: 'tool', count: 1, calendar: 'committed-none', attributes: [], source: planner })
+    purchases.push({ key: 'committed', label: 'Committed parts', resource: 'committed', adds: { periods: [{ start: at(0), end: at(1) }] }, replaces: [], price: { once: bench.fixedCost }, ordered: { at: at(0), by: { kind: 'service', name: 'twin generator' } }, allowed: false })
+    notes.push(`the fixed cost ${bench.fixedCost} is an ordered purchase on a resource of its own, charged whether used or not`)
   }
 
   // ── spans: items with openers and closers, groups with limits ──

@@ -43,6 +43,11 @@ describe('gate twin v3 as a plan', () => {
     expect(found.map(violation => violation.about)).toEqual([[rule.key, job]])
     expect(found[0]?.words).toContain('Thu 19 Nov 15:30')
   })
+  test("lane S's compile accepts the twin plan: no bought time overlaps booked time", async () => {
+    const { compile } = await import('../solve/compile.ts')
+    const compiled = compile(plan.inputs, { methods: [], buy: 'allowed' })
+    expect(compiled.ok ? [] : compiled.problems).toEqual([])
+  })
   test('supports are read from the spans: CCW A from SW A, RHR A from CCW A', () => {
     const supported = (key: string) => plan.inputs.equipment.find(item => item.key === key)?.supportedBy
     expect(supported('CCWA')).toEqual(['SWA'])
