@@ -10,7 +10,11 @@ import { trainAInputs } from '../../tests/harness/train-a-case.ts'
 const fragment = planInputsSchema.parse(fragmentJson)
 const mine = trainAInputs(caseJson, { method: 'M2-swap', overtime: true, nights: ['2026-11-16', '2026-11-17', '2026-11-18', '2026-11-19'], craneFriday: true, ectFriday: true }).inputs
 const optionName: Readonly<Record<string, string>> = { rebuild: 'M1-rebuild', swap: 'M2-swap' }
-const itemName: Readonly<Record<string, string>> = { SWB: 'serviceWaterPumpB' }
+// lane A names the protected items short; lane K keeps the case's own ids (the switchyard is case change C10)
+const itemName: Readonly<Record<string, string>> = {
+  SWB: 'serviceWaterPumpB', CCWB: 'componentCoolingWaterPumpB', RHRB: 'rhrPumpB', HHSIB: 'safetyInjectionPumpB', CSB: 'containmentSprayPumpB',
+  AFWB: 'auxFeedwaterPumpMotorB', AFWTD: 'auxFeedwaterPumpTurbine', EDGB: 'dieselGeneratorB', BUSB: 'safetyBusB', SWYD: 'switchyard',
+}
 const byKey = <T extends { key: string }>(list: readonly T[], key: string): T => {
   const found = list.find(entry => entry.key === key)
   if (found === undefined) throw new Error(`lane K's conversion has no ${key}`)
@@ -43,7 +47,7 @@ describe("lane K's Train A conversion agrees with lane A's fixture", () => {
   test('equipment, supports and groups', () => {
     for (const item of fragment.equipment) {
       const other = byKey(mine.equipment, itemName[item.key] ?? item.key)
-      expect([other.group, other.supportedBy]).toEqual([item.group, item.supportedBy])
+      expect([other.group, other.supportedBy, other.locator, other.source?.by]).toEqual([item.group, item.supportedBy, item.locator, item.source?.by])
     }
   })
   test('calendars, resources, purchases and method costs', () => {
@@ -70,6 +74,7 @@ describe("lane K's Train A conversion agrees with lane A's fixture", () => {
       expect(other?.kind === 'span-limit' ? [other.limit, other.singleEntry] : undefined).toEqual([limit.limit, limit.singleEntry])
     }
     const mineShielded = mine.rules.flatMap(rule => rule.kind === 'protected' ? rule.equipment : [])
-    for (const rule of fragment.rules) if (rule.kind === 'protected') for (const item of rule.equipment) expect(mineShielded).toContain(itemName[item] ?? item)
+    const theirs = fragment.rules.flatMap(rule => rule.kind === 'protected' ? rule.equipment.map(item => itemName[item] ?? item) : [])
+    expect([...mineShielded].sort()).toEqual([...theirs].sort())
   })
 })

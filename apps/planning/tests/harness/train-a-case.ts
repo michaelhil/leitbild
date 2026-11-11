@@ -55,13 +55,20 @@ export const trainAInputs = (cj: CaseJson, choices: CaseChoices, progress?: Case
     if (dependency.supporter === undefined) continue
     for (const supported of dependency.supported) supportedBy.set(supported, [...(supportedBy.get(supported) ?? []), dependency.supporter])
   }
-  const protectedItems: string[] = cj.protectedEquipment.items
+  // R1 protects what the case names: the pumps World reads (with locators), the items it does not read
+  // (alsoProtectedNotInPlanningBasis, no locator), and the switchyard/offsite supply of case change C10
+  // (maint/case-changes.md; the JSON is unchanged), declared from the reference practice
+  const readable: string[] = cj.protectedEquipment.items
+  const unread: string[] = [...cj.protectedEquipment.alsoProtectedNotInPlanningBasis, 'switchyard']
+  const protectedItems = [...readable, ...unread]
+  const declared = { by: 'reference' as const, note: `Protected all week, not in the pump-only planning read. ${cj.protectedEquipment.basis}` }
   const equipment: PlanInputs['equipment'] = [
     ...(cj.equipment as any[]).map(item => ({
       key: item.id, label: item.label, group: groupOf.get(item.id), supportedBy: supportedBy.get(item.id) ?? [],
       ...(item.source === 'world' ? { locator: plantLocator(item.worldComponentId) } : {}),
     })),
-    ...protectedItems.map(id => ({ key: id, label: `Protected ${id}`, supportedBy: [], locator: plantLocator(id) })),
+    ...readable.map(id => ({ key: id, label: `Protected ${id}`, supportedBy: [], locator: plantLocator(id) })),
+    ...unread.map(id => ({ key: id, label: `Protected ${id}`, supportedBy: [], source: declared })),
   ]
 
   // which items a tag-out isolates and a test restores: the CCW A tag-out covers its heat exchanger too
