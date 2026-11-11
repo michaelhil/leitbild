@@ -29,7 +29,21 @@ const kindMarks: Readonly<Record<AttentionKind, Mark>> = {
 }
 const kindOrder: readonly AttentionKind[] = ['refusal', 'not-ready', 'decision', 'stale', 'world', 'rule', 'limit', 'warning']
 
-export const attentionCards = (model: PlanModel, context: Context): readonly Card[] => {
+/**
+ * Whether the linked simulation's time is outside the plan window, by the Module's own rule: at or after
+ * the window's end, or before its start and more than a day before the plan's "now" (or the wall clock
+ * when the plan has no "now"). A simulation at "now", days before the window, is planning ahead.
+ */
+export const simulationOutsideWindow = (inputs: PlanModel['inputs'], wallNowMs: number): string | null => {
+  const sim = inputs.settings.run === null ? null : simulationNow(inputs)
+  const window = inputs.settings.window
+  if (sim === null || window === null) return null
+  const at = Date.parse(sim)
+  const now = inputs.settings.dataDate === null ? wallNowMs : Date.parse(inputs.settings.dataDate)
+  return at >= Date.parse(window.end) || (at < Date.parse(window.start) && at < now - 86_400_000) ? sim : null
+}
+
+export const attentionCards = (model: PlanModel, context: Context, wallNowMs: number = Date.now()): readonly Card[] => {
   const { inputs } = model
   const cards: Card[] = []
   const scenario = inputs.settings.scenario
@@ -56,9 +70,9 @@ export const attentionCards = (model: PlanModel, context: Context): readonly Car
     })
   }
   // The linked simulation's time against the plan window: times on the plan and in World must match.
-  const now = inputs.settings.run === null ? null : simulationNow(inputs)
+  const now = simulationOutsideWindow(inputs, wallNowMs)
   const window = inputs.settings.window
-  if (now !== null && window !== null && (Date.parse(now) < Date.parse(window.start) || Date.parse(now) > Date.parse(window.end))) {
+  if (now !== null && window !== null) {
     cards.push({
       mark: { shape: '◉', word: 'World' },
       title: `The linked simulation is at ${context.format.when(now)} (simulation time), outside this plan's window, ${context.format.when(window.start)} to ${context.format.when(window.end)}.`,

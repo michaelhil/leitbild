@@ -95,6 +95,13 @@ describe("maint's second walk, screen defects", () => {
     const length = Date.parse(inputs.settings.window!.end) - Date.parse(inputs.settings.window!.start)
     expect(alignWindowEdit(model.inputs, simulationNow(model.inputs)!)).toEqual({ ok: true, edits: [{ edit: 'plan', window: { start: '2026-09-03T08:00:00.000Z', end: new Date(Date.parse('2026-09-03T08:00:00Z') + length).toISOString() }, dataDate: '2026-09-03T08:00:00.000Z' }] })
     expect(attentionCards(modelOf(inputs), contextOf(modelOf(inputs))).some(item => item.actions.includes('align-window'))).toBe(false)
+    // Lane P's rule: a simulation at the plan's "now", days before the window, is planning ahead (the
+    // Train A flagship: now Thu 12 Nov, window from Mon 16 Nov). No card then.
+    const ahead = modelOf({ ...model.inputs, world: { refreshedAt: inputs.settings.dataDate, facts: model.inputs.world.facts.map(fact => ({ ...fact, at: inputs.settings.dataDate! })) } })
+    expect(attentionCards(ahead, contextOf(ahead)).some(item => item.actions.includes('align-window'))).toBe(false)
+    // Without a "now", the wall clock stands in: the Supply walk's 3 Sep simulation against a November window.
+    const noNow = modelOf({ ...model.inputs, settings: { ...model.inputs.settings, dataDate: null } })
+    expect(attentionCards(noNow, contextOf(noNow), Date.parse('2026-11-11T08:00:00Z')).some(item => item.actions.includes('align-window'))).toBe(true)
   })
 
   test('D5-02, N-05, T20-04 (R2-7): no raw kinds, no plain World counts, and cut text is caught', () => {
