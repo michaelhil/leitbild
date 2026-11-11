@@ -17,6 +17,7 @@ export type PlanningFactBasis = z.infer<typeof planningFactBasisSchema>
 export const planningFactSchema = z.object({
   id: z.string().min(1).max(512),
   label: z.string().min(1).max(160),
+  // An open label, except that 'state' is reserved for a discrete current state: a search shows only observed 'state' facts.
   quantity: z.string().min(1).max(64),
   unit: z.string().min(1).max(32).optional(),
   value: z.union([z.number().finite(), z.string().max(512), z.boolean()]),
@@ -70,6 +71,7 @@ export const planningFactsRunSchema = workspaceResourceReferenceSchema.refine(
   'Planning facts are read from a World Simulation Run',
 )
 
+/** One page of planning facts. An item may continue on the next page under the same locator; join facts by locator. */
 export const planningFactsOutputSchema = z.object({
   run: planningFactsRunSchema,
   // Wall time of the read; each fact keeps its own simulation `at`.

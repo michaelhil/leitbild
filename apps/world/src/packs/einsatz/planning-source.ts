@@ -82,7 +82,7 @@ export const readEinsatzPlanningSource = async (config: {
     for (const property of type.properties) {
       const value = unit.properties[property.id]
       if (value === undefined) throw new Error('Declared Einsatz property has no current value')
-      // A number property declared without a unit is a plain count.
+      // A number property declared without a unit is reported in the SI dimensionless unit 1.
       facts.push(fact(`${unit.id}/property/${property.id}`, property.label, property.id, value, 'configured', property.kind === 'number' ? property.unit ?? '1' : undefined))
     }
     if (mobility !== undefined && estimates) for (const task of tasks) {

@@ -14,13 +14,14 @@ import type { SimulationRunStateSnapshot } from './state-store.ts'
 export const planningFactsPageBytes = 4_096
 const defaultSearchLimit = 10
 const searchFactsPerItem = 2
-const cursorPattern = /^(\d{1,3})\.([0-9a-f]{16})\.([0-9a-f]{16})$/
+// <next fact>.<next item's locator>.<fact ids served from that item, with the next one>.<question>, the last three as digests.
+const cursorPattern = /^(\d{1,3})\.([0-9a-f]{16})\.([0-9a-f]{16})\.([0-9a-f]{16})$/
 // The longest cursor this port writes; every page is measured as if it carried one.
-const longestCursor = `999.${'f'.repeat(16)}.${'f'.repeat(16)}`
+const longestCursor = `999.${'f'.repeat(16)}.${'f'.repeat(16)}.${'f'.repeat(16)}`
 
 export type PlanningFactsRefusal = Error & {
   readonly name: 'PlanningFactsRefusal'
-  readonly status: 400 | 404 | 500
+  readonly status: 400 | 404 | 409 | 500
   readonly code: string
   readonly details?: Readonly<Record<string, unknown>>
 }
@@ -32,6 +33,8 @@ const projectionId = (packId: string) => `world.${packId}.planning-basis`
 const packOf = (locator: string) => locator.slice(0, locator.indexOf('/'))
 const digest = (value: string) => createHash('sha256').update(value).digest('hex').slice(0, 16)
 const bytes = (value: unknown) => Buffer.byteLength(JSON.stringify(value), 'utf8')
+/** The ids of an item's facts already served, and of the next one; nothing is served from an item started afresh. */
+const servedDigest = (subject: PlanningSubject, next: number) => digest(JSON.stringify(next === 0 ? [] : subject.facts.slice(0, next + 1).map(fact => fact.id)))
 const unknownSubjects = (locators: ReadonlyArray<string>) =>
   refusal(404, 'unknown_subject', `No item in this Run has the locator ${locators.join(', ')}`, { subjects: locators })
 const invalidAnswer = (packId: string, reason: string) =>
@@ -62,10 +65,13 @@ const page = (frame: Pick<PlanningFactsOutput, 'run' | 'observedAt'>, items: Rea
   let start = { item: 0, fact: 0 }
   if (cursor !== undefined) {
     const parsed = cursorPattern.exec(cursor)
-    if (parsed === null || parsed[3] !== query) throw refusal(400, 'invalid_cursor', 'This cursor belongs to another question; ask again without it')
+    if (parsed === null || parsed[4] !== query) throw refusal(400, 'invalid_cursor', 'This cursor belongs to another question; ask again without it')
     const item = items.findIndex(subject => digest(subject.locator) === parsed[2])
     const fact = Number(parsed[1])
-    if (item < 0 || fact > items[item]!.facts.length) throw refusal(400, 'invalid_cursor', 'The items this cursor continues have changed; ask again without it')
+    // A fact added or removed in the served part of a continued item would leave a gap or a repeat: refuse it.
+    if (item < 0 || fact >= Math.max(1, items[item]!.facts.length) || servedDigest(items[item]!, fact) !== parsed[3]) {
+      throw refusal(400, 'invalid_cursor', 'The items this cursor continues have changed; ask again without it')
+    }
     start = { item, fact }
   }
   const fits = (candidate: ReadonlyArray<PlanningSubject>) => bytes({ ...frame, items: candidate, more: longestCursor }) <= planningFactsPageBytes
@@ -89,7 +95,7 @@ const page = (frame: Pick<PlanningFactsOutput, 'run' | 'observedAt'>, items: Rea
     break
   }
   const following = items[next.item]
-  return { items: out, ...(following === undefined ? {} : { more: `${next.fact}.${digest(following.locator)}.${query}` }) }
+  return { items: out, ...(following === undefined ? {} : { more: `${next.fact}.${digest(following.locator)}.${servedDigest(following, next.fact)}.${query}` }) }
 }
 
 /**
@@ -111,7 +117,8 @@ export const createPlanningFactsPort = (ports: {
     const restricted = requests.map(([packId]) => packId).filter(packId => restrictions?.operationIds.some(id => id.startsWith(`world.${packId}.`)))
     if (restricted.length > 0) unavailableQueryReadScope(`Planning facts are unavailable while ${restricted.join(', ')} operations are restricted in this Run`)
     const denied = restrictions?.objects.filter(entry => entry.deny.includes('inspect')).map(entry => String(entry.objectId)) ?? []
-    const readPolicy = rawObjectReadPolicy(createQueryReadPolicy(`planning:${restrictions?.revision ?? 0}`, denied), snapshot.objects, ports.packs())
+    const revision = restrictions?.revision ?? 0
+    const readPolicy = rawObjectReadPolicy(createQueryReadPolicy(`planning:${revision}`, denied), snapshot.objects, ports.packs())
     const subjects: PlanningSubject[] = []
     for (const [packId, input] of requests) {
       const answer = planningProjectionOutputSchema.safeParse(await ports.invoke({ capabilityId: projectionId(packId), input, readPolicy }))
@@ -124,6 +131,10 @@ export const createPlanningFactsPort = (ports: {
         seen.add(subject.locator)
       }
       subjects.push(...answer.data.subjects)
+    }
+    // Run motion is read as it comes; a permission change during the read is not.
+    if ((ports.snapshot().scenario?.agentRestrictions.revision ?? 0) !== revision) {
+      throw refusal(409, 'query_policy_superseded', 'Restrictions on this Run changed while its planning facts were read; ask again')
     }
     return subjects
   }

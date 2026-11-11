@@ -68,7 +68,7 @@ const merged = (pages: ReadonlyArray<PlanningFactsOutput>) => {
   return items
 }
 /** The port over a real Run, with a spy (or a substitute answer) between it and the Pack projections. */
-const spiedPort = (run: SimulationRunRuntime, answer?: (query: PackRuntimeQuery, real: unknown) => unknown) => {
+const spiedPort = (run: SimulationRunRuntime, answer?: (query: PackRuntimeQuery, real: unknown) => unknown | Promise<unknown>) => {
   const calls: Array<{ readonly query: PackRuntimeQuery; readonly answer: unknown }> = []
   const projections = new Set(run.packs().map(pack => `world.${pack.descriptor.id}.planning-basis`))
   const port = createPlanningFactsPort({
@@ -76,7 +76,7 @@ const spiedPort = (run: SimulationRunRuntime, answer?: (query: PackRuntimeQuery,
     active: id => projections.has(id) && ['world.einsatz.planning-basis', 'world.process-plant.planning-basis'].includes(id),
     invoke: async query => {
       const real = await run.readAtBoundary(query)
-      const given = answer === undefined ? real : answer(query, real)
+      const given = answer === undefined ? real : await answer(query, real)
       calls.push({ query, answer: given })
       return given
     },
@@ -195,6 +195,41 @@ describe('World planning facts', () => {
     expect(pages.flatMap(page => page.items.map(item => item.locator)).filter((locator, index, all) => all[index - 1] !== locator)).toEqual(subjects)
     expect(merged(pages).get(caseSubjects[1]!)!.map(fact => fact.id)).toEqual(Array.from({ length: 60 }, (_, index) => `unit:truck-3/test-fact/${index}`))
     expect(large.calls.every(call => (call.query.input as { subjects: string[] }).subjects.length === 3)).toBe(true)
+  })
+
+  test('a fact added or removed between pages of a continued item refuses the cursor; changed values do not', async () => {
+    const registry = await setup()
+    const run = await registry.create({ scenarioId: 'supply-run' })
+    // Each projection request may answer a different fact list for Truck 3, as a moving Run can.
+    const drifting = (facts: (call: number) => ReadonlyArray<number>) => {
+      let call = 0
+      return spiedPort(run, (_query, real) => {
+        const answer = real as PlanningProjectionOutput, ids = facts(call++)
+        return { ...answer, subjects: answer.subjects.map(subject => ({ ...subject, facts: ids.map(index => ({ ...subject.facts[0]!, id: `unit:truck-3/test-fact/${index}`, label: `Test fact ${index}`, value: `call ${call}` })) })) }
+      })
+    }
+    const all = Array.from({ length: 60 }, (_, index) => index)
+    const ask = (port: ReturnType<typeof drifting>) => allPages(cursor => port.read({ subjects: [caseSubjects[1]!], ...(cursor === undefined ? {} : { cursor }) }))
+    const steady = await ask(drifting(() => all))
+    expect(steady.length).toBeGreaterThan(2)
+    expect(merged(steady).get(caseSubjects[1]!)!.map(fact => fact.value)).toContain('call 2')
+    expect(merged(steady).get(caseSubjects[1]!)!.map(fact => fact.id)).toEqual(all.map(index => `unit:truck-3/test-fact/${index}`))
+    // Removed or added before the cursor, removed from a served page (fact 3), or cut short before the next fact.
+    for (const drift of [all.slice(1), [-1, ...all], all.filter(index => index !== 3), all.slice(0, 5)]) {
+      await expect(ask(drifting(call => call === 0 ? all : drift))).rejects.toMatchObject({ status: 400, code: 'invalid_cursor' })
+    }
+  })
+
+  test('a restriction change during the read refuses it with 409', async () => {
+    const registry = await setup()
+    const run = await registry.create({ scenarioId: 'supply-run' })
+    const changing = spiedPort(run, async (_query, real) => {
+      await run.setAgentRestrictions(controller, { operationIds: [], objects: [] }, run.snapshot().scenario!.agentRestrictions.revision)
+      return real
+    })
+    await expect(changing.read({ subjects: caseSubjects })).rejects.toMatchObject({ status: 409, code: 'query_policy_superseded' })
+    await expect(changing.read({ text: 'truck' })).rejects.toMatchObject({ status: 409, code: 'query_policy_superseded' })
+    expect((await read(run, { text: 'truck' })).items).toHaveLength(3)
   })
 
   test('an answer outside the contract is refused with 500 naming the Pack', async () => {
