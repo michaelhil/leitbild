@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Choice from './Choice.svelte'
   import type { GenerateInput } from './api.ts'
   import type { Context } from './status-text.ts'
 
@@ -7,7 +8,7 @@
   let { context, title, certified, generating = false, busy = false, onGenerate, onCancel }: {
     context: Context
     title: string
-    certified: string | null
+    certified: { text: string; evidence: string } | null
     generating?: boolean
     busy?: boolean
     onGenerate: (input: GenerateInput) => void
@@ -16,7 +17,9 @@
 
   const settings = $derived(context.inputs.settings)
   let daysOnly = $state(false)
-  let fixed = $state<Record<string, string>>({})
+  // Every method starts at "Let Generate choose", so the choice always shows a selected answer.
+  // svelte-ignore state_referenced_locally
+  let fixed = $state<Record<string, string>>(Object.fromEntries(context.inputs.methods.map(method => [method.key, ''])))
 
   const generate = () => {
     const methods = context.inputs.methods
@@ -48,12 +51,7 @@
   <div class="generate">
     <label class="inline"><input type="checkbox" bind:checked={daysOnly} disabled={generating} /> Days only: no overtime or night crews (rebookings and tool days stay allowed)</label>
     {#each context.inputs.methods as method (method.key)}
-      <label>{method.label}
-        <select bind:value={fixed[method.key]} disabled={generating}>
-          <option value="">Let Generate choose</option>
-          {#each method.options as option (option.key)}<option value={option.key}>{option.label}</option>{/each}
-        </select>
-      </label>
+      <Choice label={method.label} bind:value={() => fixed[method.key] ?? '', next => { fixed[method.key] = next }} disabled={generating} options={[{ value: '', label: 'Let Generate choose' }, ...method.options.map(option => ({ value: option.key, label: option.label }))]} />
     {/each}
     <div class="actions">
       {#if generating}
@@ -62,6 +60,9 @@
         <button type="button" class="primary" disabled={busy} onclick={generate}>Generate</button>
       {/if}
     </div>
-    {#if certified}<p class="hint">{certified}</p>{/if}
+    {#if certified}
+      <p class="hint">{certified.text}</p>
+      <details class="hint"><summary>How the size was measured</summary><p>{certified.evidence}</p></details>
+    {/if}
   </div>
 </header>

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Choice from './Choice.svelte'
   import type { Edit } from '../plan/edit-schema.ts'
   import type { Weekday } from '../time/zone.ts'
   import { crewEdits, purchaseAllowedEdit, type CrewForm } from './edit-forms.ts'
@@ -94,13 +95,11 @@
     <h3>Add a crew or tool</h3>
     <label>Name<input bind:value={label} placeholder="e.g. Day crew" /></label>
     <div class="field-pair">
-      <label>It is a<select bind:value={kind}><option value="crew">crew</option><option value="tool">tool or vehicle</option></select></label>
+      <Choice label="It is a" bind:value={kind} options={[{ value: 'crew', label: 'crew' }, { value: 'tool', label: 'tool or vehicle' }]} />
       <label>How many<input inputmode="numeric" bind:value={count} /></label>
     </div>
     {#if kind === 'crew'}<label>People per crew (for prices per person-hour)<input inputmode="numeric" bind:value={crewSize} /></label>{/if}
-    <label>Works on
-      <select bind:value={calendar}><option value="">a new weekly shift</option>{#each context.inputs.calendars as item (item.key)}<option value={item.key}>{item.label}</option>{/each}</select>
-    </label>
+    <Choice label="Works on" bind:value={calendar} options={[{ value: '', label: 'a new weekly shift' }, ...context.inputs.calendars.map(item => ({ value: item.key, label: item.label }))]} />
     {#if calendar === ''}
       <fieldset><legend>Working days</legend>
         {#each days as day (day.key)}<label class="inline"><input type="checkbox" checked={chosen.includes(day.key)} onchange={() => { chosen = chosen.includes(day.key) ? chosen.filter(item => item !== day.key) : [...chosen, day.key] }} /> {day.word}</label>{/each}
@@ -111,9 +110,7 @@
       </div>
       <p class="hint">A shift that ends at or before it starts ends the next day.</p>
     {/if}
-    <label>Who says so
-      <select bind:value={sourceBy}><option value="planner">My own</option><option value="assumption">Assumption, not yet confirmed</option><option value="reference">From a reference</option></select>
-    </label>
+    <Choice label="Who says so" bind:value={sourceBy} options={[{ value: 'planner', label: 'My own' }, { value: 'assumption', label: 'Assumption, not yet confirmed' }, { value: 'reference', label: 'From a reference' }]} />
     <label>Where it comes from<input bind:value={sourceNote} /></label>
     <button type="submit" disabled={busy}>Preview</button>
     {#if problems.length > 0}<ul class="problems">{#each problems as problem (problem)}<li>{problem}</li>{/each}</ul>{/if}

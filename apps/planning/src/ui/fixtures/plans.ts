@@ -17,7 +17,7 @@ export const supplyRunInputs = (): PlanInputs => planInputsSchema.parse(supplyRu
 
 export const modelOf = (inputs: PlanInputs, extra: Partial<PlanModel> = {}): PlanModel => ({
   id: '0b4b9a52-2f7e-4c1a-9d3e-0000000000aa', title: inputs.settings.title, revision: 3, updatedAt: '2026-11-12T09:00:00.000Z',
-  inputs, attention: [], certifiedSize: null, options: null, rows: {}, history: [], ...extra,
+  inputs, attention: [], certifiedSize: null, options: null, rows: {}, history: [], refusals: {}, ...extra,
 })
 
 export const runBasis = (grid: PlanInputs['settings']['grid']) => ({

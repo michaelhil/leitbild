@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Choice from './Choice.svelte'
   import type { Edit } from '../plan/edit-schema.ts'
   import type { TimeUnit } from '../time/units.ts'
   import { jobEdits, linkEdit, type JobForm, type LinkForm } from './edit-forms.ts'
@@ -66,16 +67,14 @@
     {#if kind === 'work' && equipment.length > 0}<label class="inline"><input type="checkbox" bind:checked={inside} /> Needs the item tagged out (tag-out before, test after)</label>{/if}
     <div class="field-pair">
       <label>Most likely<input inputmode="decimal" bind:value={value} /></label>
-      <label>Unit<select bind:value={unit}><option value="h">hours</option><option value="min">minutes</option></select></label>
+      <Choice label="Unit" bind:value={unit} options={[{ value: 'h', label: 'hours' }, { value: 'min', label: 'minutes' }]} />
     </div>
     <div class="field-pair">
       <label>Optimistic<input inputmode="decimal" bind:value={low} /></label>
       <label>Pessimistic<input inputmode="decimal" bind:value={high} /></label>
     </div>
     <label class="inline"><input type="checkbox" bind:checked={elapsed} /> Clock time (it runs on by itself, e.g. curing), not crew working time</label>
-    <label>Who says so
-      <select bind:value={sourceBy}><option value="assumption">My assumption, not yet confirmed</option><option value="planner">My own figure</option><option value="reference">From a reference</option></select>
-    </label>
+    <Choice label="Who says so" bind:value={sourceBy} options={[{ value: 'assumption', label: 'My assumption, not yet confirmed' }, { value: 'planner', label: 'My own figure' }, { value: 'reference', label: 'From a reference' }]} />
     <label>Where it comes from<input bind:value={sourceNote} /></label>
     <fieldset><legend>Done by (any one of)</legend>
       {#each context.inputs.resources as item (item.key)}<label class="inline"><input type="checkbox" checked={crews.includes(item.key)} onchange={() => { crews = toggle(crews, item.key) }} /> {item.label}</label>{/each}
@@ -89,12 +88,12 @@
 
   <form class="mini-form" onsubmit={submitLink}>
     <h2>Link two jobs</h2>
-    <label>First job<select bind:value={from}><option value="">Choose…</option>{#each context.inputs.jobs as job (job.key)}<option value={job.key}>{job.title}</option>{/each}</select></label>
-    <label>It<select bind:value={type}>{#each (['FS', 'SS', 'FF'] as const) as option (option)}<option value={option}>{linkWords[option]}</option>{/each}</select></label>
-    <label>Second job<select bind:value={to}><option value="">Choose…</option>{#each context.inputs.jobs as job (job.key)}<option value={job.key}>{job.title}</option>{/each}</select></label>
+    <Choice label="First job" bind:value={from} options={[{ value: '', label: 'Choose…' }, ...context.inputs.jobs.map(job => ({ value: job.key, label: job.title }))]} />
+    <Choice label="The first job" bind:value={type} options={(['FS', 'SS', 'FF'] as const).map(option => ({ value: option, label: linkWords[option] }))} />
+    <Choice label="Second job" bind:value={to} options={[{ value: '', label: 'Choose…' }, ...context.inputs.jobs.map(job => ({ value: job.key, label: job.title }))]} />
     <div class="field-pair">
       <label>Wait between them<input inputmode="decimal" bind:value={lag} placeholder="0" /></label>
-      <label>Unit<select bind:value={lagUnit}><option value="h">hours</option><option value="min">minutes</option></select></label>
+      <Choice label="Unit of the wait" bind:value={lagUnit} options={[{ value: 'h', label: 'hours' }, { value: 'min', label: 'minutes' }]} />
     </div>
     <button type="submit" disabled={busy}>Preview</button>
     {#if linkProblems.length > 0}<ul class="problems">{#each linkProblems as problem (problem)}<li>{problem}</li>{/each}</ul>{/if}

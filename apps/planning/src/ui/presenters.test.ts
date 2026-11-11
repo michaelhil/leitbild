@@ -56,7 +56,8 @@ describe('Needs your attention', () => {
     const size = { family: 'single-train work weeks', maxJobs: planned.inputs.jobs.length - 1, evidence: 'measured 11 Nov' }
     const large: PlanModel = { ...planned, certifiedSize: size }
     const refusal = attentionCards(large, contextOf(large)).find(card => card.title === 'Too large for the certified size.')!
-    expect(refusal.text).toBe(`Generate is certified for single-train work weeks up to ${size.maxJobs} jobs (measured 11 Nov); this plan has ${planned.inputs.jobs.length}.`)
+    // The evidence is for reviewers; the card says the size in words only (maint's walk G2).
+    expect(refusal.text).toBe(`Certified plan size: single-train work weeks, up to ${size.maxJobs} jobs; this plan has ${planned.inputs.jobs.length}.`)
   })
 })
 

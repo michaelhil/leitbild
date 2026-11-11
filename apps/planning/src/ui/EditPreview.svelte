@@ -1,7 +1,9 @@
 <script lang="ts">
+  import { authorityWords } from './api.ts'
+  import { sentence } from './format.ts'
   import MarkTag from './MarkTag.svelte'
   import type { Preview } from './preview.ts'
-  import type { Context } from './status-text.ts'
+  import { problemText, type Context } from './status-text.ts'
 
   // Every edit is shown here before it is saved: its consequence, the rules it would break (then it is
   // refused, with the nearest allowed time), and what it weakens (then someone must agree, by name).
@@ -17,6 +19,7 @@
   let name = $state('')
   let reason = $state('')
   const shown = $derived(preview.result?.preview ?? null)
+  const nearest = $derived(shown?.nearestAllowed ?? preview.refusal?.nearestAllowed ?? null)
   const refused = $derived(preview.refusal !== null && !preview.refusal.needsAuthority || (shown?.violations.length ?? 0) > 0 || (preview.result?.problems.length ?? 0) > 0)
   const needsAuthority = $derived((shown?.weakens.length ?? 0) > 0 || preview.refusal?.needsAuthority === true || preview.asks !== null)
   const ready = $derived(!refused && (!needsAuthority || (name.trim() !== '' && reason.trim() !== '')))
@@ -25,24 +28,27 @@
 <section class="preview" aria-labelledby="preview-title" aria-live="polite">
   <h2 id="preview-title" tabindex="-1">Preview: {preview.label}</h2>
   <p class="hint">Not saved yet.</p>
-  {#if shown}<p>{shown.consequence}</p>{/if}
   {#if refused}
-    <p><MarkTag mark={{ shape: '✕', word: 'Refused' }} tone="refusal" /> This change cannot be saved.</p>
+    <!-- A refused change moves nothing, so no consequence is shown for it. -->
+    <p><MarkTag mark={{ shape: '✕', word: 'Refused' }} tone="refusal" /> This change breaks a rule and cannot be saved.</p>
     <ul class="problems">
       {#each shown?.violations ?? [] as violation (violation)}<li>{violation}</li>{/each}
-      {#each preview.result?.problems ?? [] as problem, index (index)}<li>{problem.text}</li>{/each}
+      {#each preview.result?.problems ?? [] as problem, index (index)}<li>{problemText(problem, context.names)}</li>{/each}
       {#if preview.refusal && !preview.refusal.needsAuthority}<li>{preview.refusal.text}</li>{/if}
     </ul>
+  {:else if shown}
+    <p>{shown.consequence}</p>
   {/if}
-  {#if shown?.nearestAllowed}
-    <p>Nearest allowed start: <strong>{context.format.clock(shown.nearestAllowed)}</strong>.
-      <button type="button" disabled={busy} onclick={() => onUseTime(shown.nearestAllowed!)}>Use this time</button></p>
+  {#if nearest}
+    <p>Nearest allowed start: <strong>{context.format.clock(nearest)}</strong>
+      <button type="button" disabled={busy} onclick={() => onUseTime(nearest)}>Use this time</button></p>
   {/if}
   {#if needsAuthority && !refused}
     <div class="authority">
-      <p><MarkTag mark={{ shape: '■', word: 'Rule' }} tone="rule" /> {preview.asks ?? 'This weakens'} {shown && shown.weakens.length > 0 ? context.names.list(shown.weakens) : preview.asks === null ? 'a hard rule' : ''}{preview.refusal ? `: ${preview.refusal.text}` : ''}. It is saved only with the name of who agreed and their reason, and the change log keeps both. Ask them; never fill this in yourself.</p>
-      <label>Who agreed<input bind:value={name} autocomplete="name" /></label>
-      <label>Why<input bind:value={reason} /></label>
+      <p><MarkTag mark={{ shape: '■', word: 'Rule' }} tone="rule" /> {sentence(`${preview.asks ?? 'This change weakens a hard rule'}${shown && shown.weakens.length > 0 ? `: ${context.names.list(shown.weakens)}` : ''}`)}</p>
+      <p>{preview.refusal?.text ?? authorityWords} The change log keeps the name and the reason.</p>
+      <label>Who agreed<input bind:value={name} autocomplete="off" /></label>
+      <label>Their reason<input bind:value={reason} /></label>
     </div>
   {/if}
   <div class="actions">

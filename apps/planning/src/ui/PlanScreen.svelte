@@ -10,6 +10,7 @@
   import EquipmentPicker from './EquipmentPicker.svelte'
   import Glance from './Glance.svelte'
   import { glance } from './orientation.ts'
+  import { outcomeBanner } from './outcome.ts'
   import type { FinishStep, WhyStart } from './explain-text.ts'
   import { createTimeFormat } from './format.ts'
   import JobForm from './JobForm.svelte'
@@ -76,10 +77,11 @@
   const rows = $derived(model !== null && selectedOption !== null ? model.rows[selectedOption] ?? [] : [])
   const layout = $derived(model !== null && context !== null ? layoutTimeline(model.inputs, rows, context.format) : null)
   const cards = $derived(model !== null && context !== null ? attentionCards(model, context) : [])
+  const banner = $derived(model !== null && context !== null ? outcomeBanner(model, context) : null)
   const shifts = $derived(model !== null && context !== null ? shiftList(model.inputs, rows, context.format) : [])
   const shown = $derived(model?.options?.items.find(option => option.key === selectedOption) ?? null)
   const linkedRun = $derived(model?.inputs.settings.run ? runs.find(run => run.id === model?.inputs.settings.run?.id)?.title ?? null : null)
-  const certified = $derived(model?.certifiedSize ? `Generate is certified for ${model.certifiedSize.family} up to ${model.certifiedSize.maxJobs} jobs (${model.certifiedSize.evidence}). This plan has ${model.inputs.jobs.length}.` : null)
+  const certified = $derived(model?.certifiedSize ? { text: `Certified plan size: ${model.certifiedSize.family}, up to ${model.certifiedSize.maxJobs} jobs. This plan has ${model.inputs.jobs.length}.`, evidence: model.certifiedSize.evidence } : null)
 
   const views: ReadonlyArray<{ key: PlanView; word: string }> = [
     { key: 'schedule', word: 'Schedule' }, { key: 'add', word: 'Add jobs and links' }, { key: 'equipment', word: 'Equipment and World' },
@@ -121,7 +123,7 @@
     reveal()
   })
   const apply = (authority: { name: string; reason: string } | null): void => withModel(async current => {
-    const shown = await actions.apply(current, pending, authority, selectedOption)
+    const shown = await actions.apply(current, pending, authority, selectedOption, preview?.label ?? 'the change')
     preview = null
     show(shown)
     onChanged()
@@ -189,6 +191,12 @@
     <PlanHeader {context} title={model.title} {certified} generating={generating !== null} {busy} onGenerate={generate} onCancel={() => generating?.abort()} />
     {#if error}<p class="error" role="alert">{error}</p>{/if}
     {#if notice}<p class="notice" aria-live="polite">{notice}</p>{/if}
+    {#if banner}
+      <section class="outcome" aria-labelledby="outcome-title">
+        <p id="outcome-title" class="outcome-title">{banner.title}</p>
+        {#if banner.lines.length > 0}<ul>{#each banner.lines as line, index (index)}<li>{line}</li>{/each}</ul>{/if}
+      </section>
+    {/if}
     <div class="screen-grid">
       <div class="col-attention">
         <p class="phone-only jump"><a href="#plan-views">Jump to the plan views and forms</a></p>

@@ -1,7 +1,7 @@
 // "This plan at a glance" for the first screen: the window, each group's outage limit and guideline,
 // what is protected and its World state at read time, the preconditions, order deadlines, crews and
 // their hours, and the promises the plan depends on. Generated from the plan; nothing is stored.
-import { durationText, factText, sourceMark, type Mark } from './format.ts'
+import { durationText, factText, routineFact, sourceMark, type Mark } from './format.ts'
 import { orderView, resourceHoursText } from './rules-text.ts'
 import type { Context } from './status-text.ts'
 
@@ -14,7 +14,7 @@ export const glance = (context: Context): readonly Glance[] => {
   const { inputs, names, format } = context
   const factsOf = (locator: string | undefined, limit: number): readonly string[] => locator === undefined
     ? []
-    : inputs.world.facts.filter(fact => fact.locator === locator).slice(0, limit).map(fact => factText(fact, format))
+    : inputs.world.facts.filter(fact => fact.locator === locator && routineFact(fact)).slice(0, limit).map(fact => factText(fact, format))
   const sections: Glance[] = []
 
   const window = inputs.settings.window

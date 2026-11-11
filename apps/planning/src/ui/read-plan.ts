@@ -59,7 +59,7 @@ export const assemblePlan = (
     id: summary.plan.id, title: summary.plan.title, revision: summary.plan.revision, updatedAt: summary.plan.updatedAt,
     inputs, attention: summary.attention, certifiedSize: summary.certifiedSize,
     options: firstOptions === undefined || firstOptions.at === null ? null : { at: firstOptions.at, recommended: firstOptions.recommended, items: options },
-    rows: {}, history: parts.history === undefined ? [] : items(parts.history),
+    rows: {}, history: parts.history === undefined ? [] : items(parts.history), refusals: {},
   }
 }
 

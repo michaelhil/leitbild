@@ -3,6 +3,7 @@
 // one-sentence answer about the recommended option.
 import { sourceMark, type Mark } from './format.ts'
 import type { AttentionKind, PlanModel } from './model.ts'
+import { outcomes } from './outcome.ts'
 import { statusView, type Context } from './status-text.ts'
 
 export type CardAction = 'open-workspace' | 'link-run' | 'refresh' | 'add-work' | 'generate' | 'why-finish'
@@ -66,13 +67,17 @@ export const attentionCards = (model: PlanModel, context: Context): readonly Car
     cards.push({
       mark: kindMarks.refusal,
       title: 'Too large for the certified size.',
-      text: `Generate is certified for ${size.family} up to ${size.maxJobs} jobs (${size.evidence}); this plan has ${inputs.jobs.length}.`,
+      text: `Certified plan size: ${size.family}, up to ${size.maxJobs} jobs; this plan has ${inputs.jobs.length}.`,
       steps: [], actions: [],
     })
   }
   const items = [...model.attention].sort((left, right) => kindOrder.indexOf(left.kind) - kindOrder.indexOf(right.kind))
   for (const item of items) cards.push({ mark: kindMarks[item.kind], title: item.text, text: '', steps: [], actions: [] })
 
+  // Every current option that is not validated feasible says why, here, not only in the Options view.
+  for (const outcome of outcomes(model, context).filter(item => item.word !== 'validated feasible')) {
+    cards.push({ mark: outcome.mark, title: `${outcome.label}: ${outcome.word}.`, text: outcome.cause, steps: [], actions: [] })
+  }
   const recommended = model.options?.items.find(option => option.key === model.options?.recommended)
   if (recommended !== undefined) {
     const view = statusView(recommended.status, context)

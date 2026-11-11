@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Choice from './Choice.svelte'
   import type { Edit } from '../plan/edit-schema.ts'
   import type { TimeUnit } from '../time/units.ts'
   import { ruleEdit, type RuleForm } from './edit-forms.ts'
@@ -54,28 +55,17 @@
     </fieldset>
     <label>At least this many in service at all times<input inputmode="numeric" bind:value={atLeast} /></label>
   {:else if kind === 'due'}
-    <label>Job<select bind:value={job}><option value="">Choose…</option>{#each context.inputs.jobs as item (item.key)}<option value={item.key}>{item.title}</option>{/each}</select></label>
+    <Choice label="Job" bind:value={job} options={[{ value: '', label: 'Choose…' }, ...context.inputs.jobs.map(item => ({ value: item.key, label: item.title }))]} />
     <label>Finished by ({context.format.zone})<input type="datetime-local" bind:value={finishBy} /></label>
     <p class="hint">A due time is a rule: no plan may finish the job later. A wanted finish that may slip is a target on the job instead.</p>
   {:else}
-    <label>Function group
-      <select bind:value={group}>
-        <option value="">Choose…</option>
-        {#each context.inputs.groups as item (item.key)}<option value={item.key}>{item.label}</option>{/each}
-      </select>
-    </label>
+    <Choice label="Function group" bind:value={group} options={[{ value: '', label: 'Choose…' }, ...context.inputs.groups.map(item => ({ value: item.key, label: item.label }))]} />
     <div class="field-pair">
       <label>Out at most<input inputmode="decimal" bind:value={limit} /></label>
-      <label>Unit<select bind:value={limitUnit}><option value="h">hours</option><option value="d">days</option><option value="min">minutes</option></select></label>
+      <Choice label="Unit" bind:value={limitUnit} options={[{ value: 'h', label: 'hours' }, { value: 'd', label: 'days' }, { value: 'min', label: 'minutes' }]} />
     </div>
   {/if}
-  <label>Who says so
-    <select bind:value={sourceBy}>
-      <option value="planner">My own rule</option>
-      <option value="reference">From a reference (name it below)</option>
-      <option value="assumption">Assumption, not yet confirmed</option>
-    </select>
-  </label>
+  <Choice label="Who says so" bind:value={sourceBy} options={[{ value: 'planner', label: 'My own rule' }, { value: 'reference', label: 'From a reference (name it below)' }, { value: 'assumption', label: 'Assumption, not yet confirmed' }]} />
   <label>Where it comes from<input bind:value={sourceNote} /></label>
   <button type="submit" disabled={busy}>Preview</button>
   {#if problems.length > 0}<ul class="problems">{#each problems as problem (problem)}<li>{problem}</li>{/each}</ul>{/if}

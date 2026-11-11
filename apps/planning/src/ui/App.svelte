@@ -65,6 +65,9 @@
     .error { padding: 10px 12px; border-radius: 6px; border: 1px solid #e5c3b9; background: var(--refusal-bg); color: var(--refusal); }
     .notice { padding: 8px 12px; border-left: 3px solid var(--accent); background: var(--accent-2); font-size: 13px; }
     .loading { margin: 24px; color: var(--ink-3); }
+    .outcome { padding: 8px 12px; border-left: 3px solid var(--refusal); background: var(--card); margin: 8px 0; font-size: 13px; overflow-wrap: anywhere; }
+    .outcome-title { font-weight: 600; margin: 0 0 4px; }
+    .outcome ul { margin: 0; padding-left: 18px; }
     .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
     .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
     .field-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
@@ -97,9 +100,10 @@
     .plan-header .purpose { color: var(--ink-2); }
     .plan-header .generate { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px; max-width: 520px; }
     .screen-grid { display: grid; grid-template-columns: 320px minmax(0, 1fr) 340px; gap: 16px; align-items: start; }
-    .col-attention, .col-main, .col-panel { min-width: 0; display: grid; gap: 16px; }
+    /* Each column is one track that may shrink to its box; long text wraps instead of widening it. */
+    .col-attention, .col-main, .col-panel, .desktop-only { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-content: start; }
     .attention, .glance, .work-list, .options, .rules, .crews, .picker, .authoring, .job-panel, .preview, .shift-list, .shown-option, .timeline {
-      background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 14px;
+      background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 14px; min-width: 0; overflow-wrap: anywhere;
     }
     .cards { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
     .card { border: 1px solid var(--line); border-radius: 6px; padding: 10px; }
@@ -172,6 +176,13 @@
     .glance ul { list-style: none; padding: 0; margin: 0 0 6px; font-size: 12px; }
     .glance li { padding: 3px 0; }
     .jump { margin: 0; font-size: 13px; }
+    .choice.list { display: grid; gap: 4px; margin-bottom: 8px; min-width: 0; }
+    .choice-label { font-size: 12px; font-weight: 500; }
+    .choice-current { display: flex; justify-content: space-between; gap: 8px; text-align: left; }
+    .choice-options ul { list-style: none; padding: 0; margin: 4px 0; max-height: 260px; overflow-y: auto; border: 1px solid var(--line); border-radius: 6px; }
+    .choice-options li button { width: 100%; text-align: left; border: 0; border-radius: 0; min-height: 32px; }
+    .choice-options li button[aria-pressed='true'] { background: var(--accent-2); font-weight: 600; }
+    .choice.radios label.inline { margin-bottom: 4px; }
     .phone-only { display: none; }
 
     @media (max-width: 1280px) {

@@ -1,8 +1,9 @@
 <script lang="ts">
+  import Choice from './Choice.svelte'
   import type { PlanningSubject } from '@leitbild/contracts'
   import type { Edit } from '../plan/edit-schema.ts'
   import { equipmentFromWorld, resourceFromWorld } from './edit-forms.ts'
-  import { factText } from './format.ts'
+  import { factText, routineFact } from './format.ts'
   import MarkTag from './MarkTag.svelte'
   import type { RunChoice } from './model.ts'
   import type { Context } from './status-text.ts'
@@ -35,7 +36,9 @@
   let kind = $state<'crew' | 'tool'>('tool')
   let problems = $state<readonly string[]>([])
 
-  const factsOf = (locator: string | undefined) => locator === undefined ? [] : context.inputs.world.facts.filter(fact => fact.locator === locator)
+  /** The newest simulation time the read values describe; the wall-clock time of the read is not shown. */
+  const latestRead = $derived(context.inputs.world.facts.reduce<string | null>((last, fact) => last === null || Date.parse(fact.at) > Date.parse(last) ? fact.at : last, null))
+  const factsOf = (locator: string | undefined) => locator === undefined ? [] : context.inputs.world.facts.filter(fact => fact.locator === locator && routineFact(fact))
   const search = async (event: SubmitEvent) => {
     event.preventDefault()
     if (text.trim() === '') return
@@ -81,7 +84,7 @@
     {/if}
   {:else}
     <p><MarkTag mark={{ shape: '◉', word: 'Linked' }} tone="world" /> {linkedRun ?? 'A simulation in this Workspace'}.
-      {context.inputs.world.refreshedAt === null ? 'Its values are not read yet.' : `Values read ${context.format.clock(context.inputs.world.refreshedAt)}.`}</p>
+      {latestRead === null ? 'Its values are not read yet.' : `Values describe simulation time ${context.format.clock(latestRead)}.`}</p>
     <button type="button" disabled={busy} onclick={onRefresh}>Read the World values again</button>
   {/if}
 
@@ -111,24 +114,18 @@
     {#if results !== null}
       {#if results.length === 0}<p class="hint">Nothing in World matches “{text}”.</p>{/if}
       <div class="field-pair">
-        <label>Function group for new equipment
-          <select bind:value={group}><option value="">None</option>{#each context.inputs.groups as item (item.key)}<option value={item.key}>{item.label}</option>{/each}</select>
-        </label>
+        <Choice label="Function group for new equipment" bind:value={group} options={[{ value: '', label: 'None' }, ...context.inputs.groups.map(item => ({ value: item.key, label: item.label }))]} />
         <label>Or a new group<input bind:value={newGroup} /></label>
       </div>
       <div class="field-pair">
-        <label>New crew or tool is a
-          <select bind:value={kind}><option value="tool">tool or vehicle</option><option value="crew">crew</option></select>
-        </label>
-        <label>Available on
-          <select bind:value={calendar}><option value="">the whole window</option>{#each context.inputs.calendars as item (item.key)}<option value={item.key}>{item.label}</option>{/each}</select>
-        </label>
+        <Choice label="New crew or tool is a" bind:value={kind} options={[{ value: 'tool', label: 'tool or vehicle' }, { value: 'crew', label: 'crew' }]} />
+        <Choice label="Available on" bind:value={calendar} options={[{ value: '', label: 'the whole window' }, ...context.inputs.calendars.map(item => ({ value: item.key, label: item.label }))]} />
       </div>
       <ul class="item-list">
         {#each results as subject (subject.locator)}
           <li>
             <strong>{subject.label}</strong> <small>{subject.kind}</small>
-            {#each subject.facts.slice(0, 4) as fact (fact.id)}<small><MarkTag mark={{ shape: '◉', word: 'World' }} tone="world" /> {factText(fact, context.format)}</small>{/each}
+            {#each subject.facts.filter(routineFact).slice(0, 4) as fact (fact.id)}<small><MarkTag mark={{ shape: '◉', word: 'World' }} tone="world" /> {factText(fact, context.format)}</small>{/each}
             <span class="actions">
               <button type="button" disabled={busy} onclick={() => add(subject, 'equipment')}>Add as equipment</button>
               <button type="button" disabled={busy} onclick={() => add(subject, 'resource')}>Add as crew or tool</button>

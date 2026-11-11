@@ -124,6 +124,22 @@ export const factValueText = (fact: Pick<PlanningFact, 'label' | 'value' | 'unit
   return `${fact.label}: ${fact.unit === undefined ? grouped(fact.value) : quantityText(fact.value, fact.unit)}`
 }
 
-/** "Running: yes · observed · read Thu 10:02" */
+/** Ends a sentence with one full stop, whatever the words it was built from end with. */
+export const sentence = (text: string): string => /[.!?]$/.test(text.trim()) ? text.trim() : `${text.trim()}.`
+
+/** "read Thu 10:02 (simulation time)": a World value's time is the simulation's, in the plan zone. */
+export const readAt = (at: string, format: TimeFormat): string => `read ${format.clock(at)} (simulation time)`
+
+/** "Running: yes · observed · read Thu 10:02 (simulation time)" */
 export const factText = (fact: Pick<PlanningFact, 'label' | 'value' | 'unit' | 'basis' | 'at'>, format: TimeFormat): string =>
-  `${factValueText(fact)} · ${basisWord(fact.basis)} · read ${format.clock(fact.at)}`
+  `${factValueText(fact)} · ${basisWord(fact.basis)} · ${readAt(fact.at, format)}`
+
+/**
+ * Whether a World value belongs on a routine screen. Model digests, World locators and bare lists of
+ * step numbers are provenance for reviewers, not planner information, and are not shown.
+ */
+export const routineFact = (fact: Pick<PlanningFact, 'value'>): boolean => {
+  if (typeof fact.value !== 'string') return true
+  const text = fact.value.trim()
+  return !(/^[0-9a-f]{16,}$/i.test(text) || /%[0-9A-F]{2}/.test(text) || /^[a-z][a-z0-9-]*\/\S+$/.test(text) || /^\d+(\s+\d+)+$/.test(text) || text.length > 80)
+}

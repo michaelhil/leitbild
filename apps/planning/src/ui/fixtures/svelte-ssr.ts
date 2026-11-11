@@ -50,6 +50,12 @@ export const routineBreaches = (text: string, identifiers: readonly string[], la
   if (/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(text)) breaches.push('ISO timestamp')
   if (/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(text)) breaches.push('UUID')
   if (/\bseconds\b|\b1 second\b|\bsecs?\b/i.test(text)) breaches.push('the word seconds')
+  // Provenance that is not planner information (maint's walk J-05, T1-04, S-03): model digests, World
+  // locators, bare step numbers, and any unbreakable run of text that would push a column wide.
+  if (/\b[0-9a-f]{16,}\b/i.test(text)) breaches.push('hex digest')
+  if (/%[0-9A-F]{2}/.test(text) || /\b[a-z][a-z0-9-]*\/[a-z][a-z0-9-]*\/\S+/.test(text)) breaches.push('World locator')
+  if (/(^|[^\d.,:–\-])\d \d(\s\d)*($|[^\d])/.test(text)) breaches.push('bare step numbers')
+  if (/\S{48,}/.test(text)) breaches.push('unbreakable text')
   // A count of seconds of a minute or more, unless it is the planner's own words quoted from the plan.
   for (const match of text.matchAll(/(\d[\d,]*)\s?s\b/g)) {
     if (Number(match[1]!.replaceAll(',', '')) >= 60 && !words.includes(match[0])) breaches.push(`seconds count ${match[0]}`)

@@ -47,6 +47,8 @@ export interface PlanModel {
   /** Dated rows per option key, read on demand with section `schedule`. */
   readonly rows: Readonly<Record<string, readonly DatedRow[]>>
   readonly history: readonly Change[]
+  /** For each proven-infeasible option: the Module's refusal in planner words and hours (explain, ask refusal). */
+  readonly refusals: Readonly<Record<string, readonly string[]>>
 }
 
 /**

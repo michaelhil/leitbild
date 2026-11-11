@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Choice from './Choice.svelte'
   import { goalChoiceWords, planEdits, type GoalChoice, type PlanForm } from './edit-forms.ts'
 
   // A new plan from empty: name, window, site time zone and goal order. The plan's own currency comes
@@ -45,9 +46,7 @@
 <form class="mini-form new-plan" onsubmit={submit}>
   <h2>New plan</h2>
   <label>Name<input bind:value={title} placeholder="e.g. Week 47 maintenance" /></label>
-  <label>Site time zone
-    <select bind:value={timeZone}>{#each zones as zone (zone)}<option value={zone}>{zone.replaceAll('_', ' ')}</option>{/each}</select>
-  </label>
+  <Choice label="Site time zone" bind:value={timeZone} options={zones.map(zone => ({ value: zone, label: zone.replaceAll('_', ' ') }))} />
   <div class="field-pair">
     <label>Window starts<input type="datetime-local" bind:value={windowStart} /></label>
     <label>Window ends<input type="datetime-local" bind:value={windowEnd} /></label>

@@ -90,18 +90,21 @@ describe('panels', () => {
 
   test('the site time zone is chosen from a list of zones, the default selected', () => {
     const html = renderHtml(NewPlanForm, { defaultZone: 'Europe/Oslo', defaultStart: '2026-11-16T07:00', defaultEnd: '2026-11-21T07:00', onCreate: none, onCancel: none })
-    expect(html).toMatch(/<select[^>]*>[\s\S]*<option value="Europe\/Oslo" selected/)
-    expect(html).toContain('<option value="Asia/Tokyo"')
+    // Chosen from the list, never typed; the default is shown as the current choice.
+    expect(readableText(html)).toContain('Site time zone Europe/Oslo')
+    expect(html).not.toContain('<select')
     expect(html).not.toContain('placeholder="Europe/Oslo"')
   })
 
   test('a weakening edit asks who agreed and why before it can be applied', () => {
     const preview: Preview = { label: 'Remove SW B from the protected rule', result: { ...write, preview: { saved: false, consequence: 'SW B could be tagged out.', violations: [], weakens: ['R1'] } }, refusal: null, asks: null }
     const text = readableText(renderHtml(EditPreview, { preview, context, onApply: none, onDiscard: none, onUseTime: none }))
-    expect(text).toContain(`This weakens ${model.inputs.rules.find(rule => rule.key === 'R1')!.words}`)
+    expect(text).toContain(`This change weakens a hard rule: ${model.inputs.rules.find(rule => rule.key === 'R1')!.words}`)
+    expect(text).toContain('Ask them; never fill this in yourself.')
+    expect(text).not.toContain('..')
     expect(text).toContain('Who agreed')
     expect(text).toContain('Apply')
-    const refused: Preview = { label: 'Tag out SW B', result: null, refusal: { text: 'Service Water Pump B is protected: it is never tagged, worked or tested.', needsAuthority: false }, asks: null }
+    const refused: Preview = { label: 'Tag out SW B', result: null, refusal: { text: 'Service Water Pump B is protected: it is never tagged, worked or tested.', needsAuthority: false, nearestAllowed: null }, asks: null }
     expect(readableText(renderHtml(EditPreview, { preview: refused, context, onApply: none, onDiscard: none, onUseTime: none }))).toContain('Service Water Pump B is protected')
   })
 

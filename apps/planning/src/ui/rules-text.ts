@@ -2,7 +2,7 @@
 // differ by colour alone: ■ Rule, ≈ Estimate, ? Unknown, △ Assumption, § Reference, ◉ From World.
 import type { WorldFactCopy } from '../plan/schema.ts'
 import { combineWorldFacts } from '../plan/schema.ts'
-import { basisWord, durationText, quantityText, sourceMark, type Mark, type TimeFormat } from './format.ts'
+import { basisWord, durationText, quantityText, readAt, sourceMark, type Mark, type TimeFormat } from './format.ts'
 import type { Job, Names, Resource, Rule } from './model.ts'
 import type { Context } from './status-text.ts'
 
@@ -84,7 +84,7 @@ export const durationView = (job: Job, facts: readonly WorldFactCopy[], format: 
     if (!combined.ok) return { mark: unknownMark, text: 'Not read from World yet', source: 'Link the simulation and read the World values.' }
     return {
       mark: sourceMark({ by: 'world' }),
-      text: `${durationText(combined.value, duration.unit)} · ${basisWord(combined.basis)} · read ${format.clock(combined.at)}`,
+      text: `${durationText(combined.value, duration.unit)} · ${basisWord(combined.basis)} · ${readAt(combined.at, format)}`,
       source: 'Taken from World; check it describes the work.',
     }
   }
@@ -107,7 +107,7 @@ export const attributeViews = (resource: Resource, facts: readonly WorldFactCopy
     if (attribute.origin.by === 'world') {
       const combined = combineWorldFacts(attribute.origin.refs, facts, attribute.unit)
       return combined.ok
-        ? { mark: sourceMark({ by: 'world' }), text: `${attribute.label} ${quantityText(combined.value, attribute.unit)} · ${basisWord(combined.basis)} · read ${format.clock(combined.at)}${later}`, source: null }
+        ? { mark: sourceMark({ by: 'world' }), text: `${attribute.label} ${quantityText(combined.value, attribute.unit)} · ${basisWord(combined.basis)} · ${readAt(combined.at, format)}${later}`, source: null }
         : { mark: unknownMark, text: `${attribute.label}: not read from World yet${later}`, source: null }
     }
     if (attribute.value === null) return { mark: unknownMark, text: `${attribute.label}: no value yet${later}`, source: null }

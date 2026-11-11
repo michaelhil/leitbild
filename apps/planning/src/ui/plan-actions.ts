@@ -3,8 +3,9 @@
 // World is only read, through its planning-facts query.
 import type { PlanningSubject } from '@leitbild/contracts'
 import type { Edit } from '../plan/edit-schema.ts'
-import { isRequestError, refusalText, RUN, type GenerateInput, type PlanningClient } from './api.ts'
+import { isRequestError, refusalAuthority, refusalNearest, refusalText, RUN, type GenerateInput, type PlanningClient } from './api.ts'
 import { finishChain, whyStart, type FinishStep, type WhyStart } from './explain-text.ts'
+import { createTimeFormat } from './format.ts'
 import { createNames, type DatedRow, type PlanModel, type RunChoice } from './model.ts'
 import type { Preview } from './preview.ts'
 import { loadPlan, loadRows } from './read-plan.ts'
@@ -15,6 +16,17 @@ export interface Shown {
   /** The option drawn on the timeline: the one shown before if it still exists, else the recommended one. */
   readonly option: string | null
   readonly notice: string | null
+}
+
+/**
+ * After a read of World: when the values describe, in simulation time. The Module's own lines name
+ * locators and raw values, so the screen writes its own; wall-clock time is not shown.
+ */
+export const worldReadNotice = (model: PlanModel): string => {
+  const facts = model.inputs.world.facts
+  if (facts.length === 0) return 'World values read; World returned none for this plan.'
+  const latest = facts.reduce((last, fact) => Date.parse(fact.at) > Date.parse(last) ? fact.at : last, facts[0]!.at)
+  return `World values read: ${facts.length} values, describing simulation time ${createTimeFormat(model.inputs.settings.timeZone).clock(latest)}.`
 }
 
 /** An edit that names a World item or links a Run: World values are read again after it is saved. */
@@ -37,8 +49,15 @@ export const weakensRule = (model: PlanModel, edits: readonly Edit[]): string | 
 }
 
 export const createPlanActions = (client: PlanningClient, planId: string) => {
+  /** Every current option the Module proved impossible, with its refusal in words and hours. */
+  const refusalsOf = async (model: PlanModel): Promise<PlanModel['refusals']> => {
+    const refused = model.options?.items.filter(item => item.fresh && item.status.word === 'proven infeasible') ?? []
+    const answers = await Promise.all(refused.map(async item => [item.key, (await client.explain(planId, { ask: 'refusal', option: item.key })).lines] as const))
+    return Object.fromEntries(answers)
+  }
   const load = async (keep: string | null, notice: string | null = null): Promise<Shown> => {
-    const model = await loadPlan(client, planId)
+    const read = await loadPlan(client, planId)
+    const model = { ...read, refusals: await refusalsOf(read) }
     const option = keep !== null && model.options?.items.some(item => item.key === keep) ? keep : model.options?.recommended ?? null
     if (option === null || model.rows[option] !== undefined) return { model, option, notice }
     return { model: { ...model, rows: { ...model.rows, [option]: await loadRows(client, planId, option) } }, option, notice }
@@ -47,8 +66,9 @@ export const createPlanActions = (client: PlanningClient, planId: string) => {
   const afterWrite = async (edits: readonly Edit[], keep: string | null, notice: string): Promise<Shown> => {
     const shown = await load(keep, notice)
     if (shown.model.inputs.settings.run === null || !readsWorld(edits)) return shown
-    const read = await client.refresh(planId, shown.model.revision)
-    return load(keep, `${notice} ${read.changed.length > 0 ? read.changed.join(' ') : 'World values read.'}`)
+    await client.refresh(planId, shown.model.revision)
+    const read = await load(keep)
+    return { ...read, notice: `${notice} ${worldReadNotice(read.model)}` }
   }
 
   return {
@@ -67,12 +87,12 @@ export const createPlanActions = (client: PlanningClient, planId: string) => {
       } catch (cause) {
         if (!isRequestError(cause) || cause.status >= 500) throw cause
         const names = createNames(model.inputs)
-        return { label, result: null, refusal: { text: refusalText(cause, names.any), needsAuthority: cause.code === 'needs_authority' || cause.code === 'below_minimum' }, asks }
+        return { label, result: null, refusal: { text: refusalText(cause, names.any), needsAuthority: refusalAuthority(cause) !== null, nearestAllowed: refusalNearest(cause) }, asks }
       }
     },
-    apply: async (model: PlanModel, edits: readonly Edit[], authority: { name: string; reason: string } | null, keep: string | null): Promise<Shown> => {
-      const result = await client.edit(planId, model.revision, { edits: [...edits], ...(authority === null ? {} : { authority }) })
-      return afterWrite(edits, keep, result.changed.length > 0 ? result.changed.join(' ') : 'Saved.')
+    apply: async (model: PlanModel, edits: readonly Edit[], authority: { name: string; reason: string } | null, keep: string | null, label: string): Promise<Shown> => {
+      await client.edit(planId, model.revision, { edits: [...edits], ...(authority === null ? {} : { authority }) })
+      return afterWrite(edits, keep, `Saved: ${label}.`)
     },
     /** Links a Run the person started in World, then reads its values. */
     link: async (model: PlanModel, run: string, keep: string | null): Promise<Shown> => {
@@ -81,8 +101,9 @@ export const createPlanActions = (client: PlanningClient, planId: string) => {
       return afterWrite(edits, keep, 'Linked.')
     },
     refresh: async (model: PlanModel, keep: string | null): Promise<Shown> => {
-      const result = await client.refresh(planId, model.revision)
-      return load(keep, result.changed.length > 0 ? result.changed.join(' ') : 'World values read; nothing changed.')
+      await client.refresh(planId, model.revision)
+      const read = await load(keep)
+      return { ...read, notice: worldReadNotice(read.model) }
     },
     /** Generate, or Cancel through `signal`: either way the plan is read again, so what is kept shows. */
     generate: async (model: PlanModel, input: GenerateInput, signal: AbortSignal, keep: string | null): Promise<Shown & { readonly error: string | null }> => {
@@ -90,8 +111,8 @@ export const createPlanActions = (client: PlanningClient, planId: string) => {
       let error: string | null = null
       let option = keep
       try {
+        // The outcome banner says what Generate found, from the options read back; no prose is copied.
         const result = await client.generate(planId, model.revision, input, signal)
-        notice = result.text
         option = result.recommended ?? keep
       } catch (cause) {
         if (signal.aborted) notice = 'Cancelled. The best plan found before the stop is kept only if it is better than the one you had.'

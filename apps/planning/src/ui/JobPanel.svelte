@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Choice from './Choice.svelte'
   import type { Edit } from '../plan/edit-schema.ts'
   import type { TimeUnit } from '../time/units.ts'
   import { estimateEdit, localInputValue, lockEdit, unlockEdit, type Built } from './edit-forms.ts'
@@ -77,6 +78,7 @@
 
     {#if row}
       <h3>Planned {context.format.range(row.start, row.finish)}</h3>
+      {#if row.uses.length > 0}<p class="planned-with">With {names.list([...new Set(row.uses.map(use => use.resource))], names.resource)}{row.uses.some(use => use.purchase !== undefined) ? ', partly on bought time' : ''}.</p>{/if}
       <p class="hint">{floatText(row.float, context)}</p>
       <button type="button" disabled={busy} onclick={() => onWhy(job.key)}>Why does it start then?</button>
       {#if why}
@@ -100,13 +102,7 @@
     <form class="mini-form" onsubmit={(event) => { event.preventDefault(); send(estimateEdit(job.key, estimate, entryUnit(job.duration.unit), estimateBy, estimateNote), `New estimate for ${job.title}`) }}>
       <h3>Change the estimate</h3>
       <label>New most likely value ({entryUnit(job.duration.unit) === 'h' ? 'hours' : entryUnit(job.duration.unit) === 'd' ? 'days' : 'minutes'})<input inputmode="decimal" bind:value={estimate} /></label>
-      <label>Who says so
-        <select bind:value={estimateBy}>
-          <option value="planner">{estimateMark.word}: my own</option>
-          <option value="assumption">Assumption, not yet confirmed</option>
-          <option value="reference">From a reference</option>
-        </select>
-      </label>
+      <Choice label="Who says so" bind:value={estimateBy} options={[{ value: 'planner', label: `${estimateMark.word}: my own` }, { value: 'assumption', label: 'Assumption, not yet confirmed' }, { value: 'reference', label: 'From a reference' }]} />
       <label>Where it comes from<input bind:value={estimateNote} placeholder={job.duration.origin.by === 'world' ? '' : sourceText(job.duration.origin)} /></label>
       <button type="submit" disabled={busy}>Preview</button>
     </form>

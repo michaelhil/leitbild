@@ -97,6 +97,20 @@ export type PlanningClient = ReturnType<typeof createPlanningClient>
 /** The words that ask for a named person's agreement, as the Module asks them. */
 export const authorityWords = 'Name the person who agreed and their reason. Ask them; never fill this in yourself.'
 
+/** What lifts a refusal: the Module's request for a named person's agreement, or null when nothing can. */
+export const refusalAuthority = (error: PlanningRequestError): string | null => {
+  const authority = error.details?.authority
+  if (authority !== null && typeof authority === 'object' && (authority as { needed?: unknown }).needed === true) {
+    const ask = (authority as { ask?: unknown }).ask
+    return typeof ask === 'string' ? ask : authorityWords
+  }
+  return error.code === 'needs_authority' || error.code === 'below_minimum' ? authorityWords : null
+}
+
+/** The nearest allowed time a refusal names, if any. */
+export const refusalNearest = (error: PlanningRequestError): string | null =>
+  typeof error.details?.nearestAllowed === 'string' ? error.details.nearestAllowed : null
+
 /** Where a refusal's details name plan keys, the screen says their names. */
 export type KeyNames = (key: string) => string
 
@@ -115,6 +129,9 @@ const listOf = (keys: readonly string[], name: KeyNames): string =>
 export const refusalText = (error: unknown, name: KeyNames = () => 'an item in this plan'): string => {
   if (isRequestError(error)) {
     const about = keysIn(error.details, 'about')
+    // The Module states the broken rule in planner words, and what lifts it, as structured fields.
+    const rule = typeof error.details?.rule === 'string' ? error.details.rule.replace(/\.?\s*$/, '.') : null
+    if (rule !== null) return refusalAuthority(error) === null ? rule : `${rule} ${refusalAuthority(error)}`
     switch (error.code) {
       case 'plan_revision_conflict': return 'Someone else changed this plan a moment ago. It has been read again; check it and try once more.'
       case 'planning_busy': return 'Planning is busy with other plans. Try again in a moment.'
