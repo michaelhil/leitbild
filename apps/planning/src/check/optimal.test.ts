@@ -20,7 +20,7 @@ const plan = (fields: Partial<PlanInputs>) => planInputsSchema.parse({
 })
 const run = { grid: '30min' as const, engine: 'double', formulation: 'f', seed: 1, budget: { evals: 1, cpuMs: 1, wallMs: 1 }, stoppedBy: 'done' as const, evals: 1, cpuMs: 1 }
 const optimal = (metric: 'finish' | 'extra-cost' | 'span-over' | 'unavailable-hours' | 'lateness', value: number, unit = 'h') =>
-  ({ word: 'validated feasible' as const, goals: [{ word: 'proven optimal' as const, goal: 0, value, unit, bound: { value, source: 'logic+calendars' as const } }], run })
+  ({ word: 'validated feasible' as const, goals: [{ word: 'proven optimal' as const, goal: 0, value, unit, bound: { value, source: 'logic+calendars' as const, certificate: { kind: 'zero' as const } } }], run })
 const none = { methods: [], purchases: [] }
 
 describe('"proven optimal" is re-derived by the checker', () => {
@@ -77,8 +77,8 @@ describe("lane S's port and goal order", () => {
   })
   test('once a goal is not confirmed, no later "proven optimal" goal is', () => {
     const status = { word: 'validated feasible' as const, run, goals: [
-      { word: 'proven optimal' as const, goal: 0, value: 3, unit: 'h', bound: { value: 3, source: 'logic+calendars' as const } },
-      { word: 'proven optimal' as const, goal: 1, value: 0, unit: 'NOK', bound: { value: 0, source: 'fixed-costs' as const } },
+      { word: 'proven optimal' as const, goal: 0, value: 3, unit: 'h', bound: { value: 3, source: 'logic+calendars' as const, certificate: { kind: 'zero' as const } } },
+      { word: 'proven optimal' as const, goal: 1, value: 0, unit: 'NOK', bound: { value: 0, source: 'fixed-costs' as const, certificate: { kind: 'zero' as const } } },
     ] }
     expect(verifyOptimality(two, none, status).map(entry => entry.proves)).toEqual([false, false])
   })

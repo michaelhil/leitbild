@@ -3,7 +3,7 @@ import { createRealSolver } from '../api/wiring.ts'
 import { twinPlan, twinV3Options } from '../../tests/harness/twin-plan.ts'
 import { generate } from './generate.ts'
 import { createSolverPool, SOLVER_CPU_CAP_CORES } from './pool.ts'
-import { laneKCheck, laneKVerify } from './fixtures/lane-k.ts'
+import { laneKCheck, laneKVerify, laneKVerifyBound } from './fixtures/lane-k.ts'
 import { SIZE_CURVE_SHA256, sizeCurveSubset } from './fixtures/size-curve.ts'
 import { trainAInputs } from './fixtures/train-a-case.ts'
 
@@ -36,7 +36,7 @@ describe.skipIf(!enabled)('solver floors at the certified size (opt-in)', () => 
   const solver = createRealSolver(pool)
   afterAll(() => pool.shutdown())
   const flagship = trainAInputs({ read: true })
-  const run = (inputs = flagship, input = {}) => generate({ engine: pool, check: laneKCheck, verify: laneKVerify }, { inputs, revision: 1, previous: null, input, by, signal: new AbortController().signal })
+  const run = (inputs = flagship, input = {}) => generate({ engine: pool, check: laneKCheck, verify: laneKVerify, verifyBound: laneKVerifyBound }, { inputs, revision: 1, previous: null, input, by, signal: new AbortController().signal })
 
   test('flagship: Generate within 20 s and 200 MB, solver CPU within the cap; preview p95 within 300 ms', async () => {
     const stop = sampleRss()

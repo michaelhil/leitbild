@@ -2,7 +2,7 @@
 // the goal's resolution and only when every earlier goal is proven; the gap is in the goal's unit. Every
 // status shown is re-checked against the current inputs, and a stored proof is reused only when the
 // option's inputs revision and formulation both equal the current ones. Prose is never built here.
-import { goalResolution, statusSchema, type Certificate, type GoalWord, type PlanInputs, type Status } from '../plan/schema.ts'
+import { goalResolution, statusSchema, type BoundCertificate, type Certificate, type GoalWord, type PlanInputs, type Status } from '../plan/schema.ts'
 import type { BoundSource } from './problem.ts'
 import { goalExcess, type RawMetric } from './rank.ts'
 import type { DatedRow } from './date.ts'
@@ -11,7 +11,8 @@ type RunBasis = Extract<Status, { word: 'validated feasible' }>['run']
 type GoalStatus = Extract<Status, { word: 'validated feasible' }>['goals'][number]
 type Option = { readonly key: string; readonly status: Status; readonly rows: readonly DatedRow[]; readonly inputsRevision: number; readonly variant: { readonly methods: ReadonlyArray<{ choice: string; option: string }>; readonly purchases: readonly string[] } }
 
-export interface GoalBound { readonly value: RawMetric; readonly source: BoundSource }
+/** A goal's lower bound from bounds.ts: raw value, source, and its derivation in plan terms. */
+export interface GoalBound { readonly value: RawMetric; readonly source: BoundSource; readonly certificate?: BoundCertificate }
 
 /** What the independent checker answers for a plan (lane K's check port). Raw metrics, no threshold. */
 export interface CheckReport {
@@ -26,6 +27,12 @@ export type CheckPlan = (plan: { readonly inputs: PlanInputs; readonly variant: 
  * found and nothing left unverified. Required wherever a proof is stored or shown (adversary fix 6).
  */
 export type VerifyCertificate = (inputs: PlanInputs, variant: Option['variant'], cause: Certificate) => { readonly proves: boolean }
+/**
+ * Lane K's re-derivation of a "proven optimal" goal's bound (check/optimal.ts verifyBound): it `proves` when
+ * lane K's own lower bound, from the inputs, reaches `bound.value` (net of the threshold, in the goal's
+ * unit) at the goal's resolution. It does not read the certificate. Required wherever such a claim is stored.
+ */
+export type VerifyBound = (inputs: PlanInputs, variant: Option['variant'], goal: number, bound: { readonly value: number }) => { readonly proves: boolean }
 
 /**
  * Checker findings that come from the inputs, not from a schedule: lane K's input codes and the readiness
@@ -59,11 +66,31 @@ export const goalStatuses = (goals: PlanInputs['goals'], grid: PlanInputs['setti
     const boundValue = bound === undefined ? undefined : goalExcess(bound.value, threshold)
     if (bound === undefined || boundValue === undefined) { provenSoFar = false; return { word: 'best found under budget', goal: k, value, unit } }
     if (boundValue - value >= resolution / 2) { conflicts.push(k); provenSoFar = false; return { word: 'best found under budget', goal: k, value, unit } }
-    const word: GoalWord = provenSoFar && Math.abs(value - boundValue) < resolution / 2 ? 'proven optimal' : 'best found under budget'
-    if (word !== 'proven optimal') provenSoFar = false
-    return { word, goal: k, value, unit, bound: { value: boundValue, source: bound.source } }
+    // The bound's derivation: at 0 no goal can be lower; else bounds.ts's record. None, no proof.
+    const certificate: BoundCertificate | undefined = Math.abs(boundValue) < resolution / 2 ? { kind: 'zero' } : bound.certificate
+    if (provenSoFar && certificate !== undefined && Math.abs(value - boundValue) < resolution / 2) return { word: 'proven optimal', goal: k, value, unit, bound: { value: boundValue, source: bound.source, certificate } }
+    provenSoFar = false
+    return { word: 'best found under budget', goal: k, value, unit, bound: { value: boundValue, source: bound.source, ...(certificate === undefined ? {} : { certificate }) } }
   })
   return { goals: statuses, conflicts }
+}
+
+/**
+ * Every "proven optimal" goal re-derived by lane K: the first one it does not prove, and every later goal
+ * (goal order), becomes "best found under budget". A bound lane K does not prove is dropped: not a fact.
+ */
+export const verifiedGoals = (status: Status, verify: (goal: number, bound: { readonly value: number }) => { readonly proves: boolean }): Status => {
+  if (status.word !== 'validated feasible') return status
+  let broken = false
+  const goals = status.goals.map((goal): GoalStatus => {
+    if (goal.word !== 'proven optimal') { broken = true; return goal }
+    const proves = verify(goal.goal, goal.bound).proves
+    if (proves && !broken) return goal
+    broken = true
+    // Best found: a bound lane K re-derived stays (a fact); one it did not is dropped.
+    return { word: 'best found under budget', goal: goal.goal, value: goal.value, unit: goal.unit, ...(proves ? { bound: goal.bound } : {}) }
+  })
+  return parse({ ...status, goals })
 }
 
 /** The gap of a goal in its unit (value minus bound), when a bound is known. */

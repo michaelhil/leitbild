@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { planInputsSchema, planSchema, type PlanInputs } from '../plan/schema.ts'
+import { verifyBound } from './optimal.ts'
 import { verifyCertificate } from './certificate.ts'
 import type { CheckVariant } from './check.ts'
 import { recheckOption } from './recheck.ts'
@@ -131,7 +132,7 @@ describe("lane S's real generate", () => {
       const result = checkPlan(planned, variant, rows)
       return { violations: result.violations, goals: result.goals.map(goal => 'value' in goal ? goal.value : goal.spans.map(span => span.value)) }
     }
-    const result = await generate({ engine: searchEngine(), check, verify: verifyCertificate }, {
+    const result = await generate({ engine: searchEngine(), check, verify: verifyCertificate, verifyBound }, {
       inputs, revision: 1, previous: null, by: { kind: 'agent' }, signal: new AbortController().signal,
       input: { variants: [{ label: 'V1', methods: [{ choice: 'SWA-method', option: 'rebuild' }], buy: 'no-extra-crew-hours' }], seconds: 2 },
     })

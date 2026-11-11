@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { planInputsSchema, statusSchema, type PlanInputs } from '../plan/schema.ts'
 import fragmentJson from '../plan/fixtures/train-a.fragment.json'
-import { feasibleStatus, goalGap, goalStatuses, redundancyWarning, showStatus, withoutProof, type CheckPlan } from './status.ts'
+import { feasibleStatus, goalGap, goalStatuses, redundancyWarning, showStatus, withoutProof, type CheckPlan, verifiedGoals } from './status.ts'
 
 const inputs: PlanInputs = planInputsSchema.parse(fragmentJson)
 const run = { grid: '30min' as const, engine: 'lahc-1', formulation: 'F1', seed: 1, budget: { evals: 1, cpuMs: 1, wallMs: 1 }, stoppedBy: 'cpu' as const, evals: 1, cpuMs: 1 }
@@ -34,8 +34,14 @@ describe('status words', () => {
   })
 
   test('removing proof words leaves a status the schema accepts', () => {
-    const { status } = feasibleStatus(goals, run, [[50], 425_050, 100], [{ value: [40], source: 'logic+calendars' }, { value: 425_050, source: 'fixed-costs' }, { value: 100, source: 'logic+calendars' }])
+    const { status } = feasibleStatus(goals, run, [[50], 425_050, 100], [{ value: [40], source: 'logic+calendars' }, { value: 425_050, source: 'fixed-costs', certificate: { kind: 'fixed-costs', items: [{ key: 'swap', amount: 425_050 }] } }, { value: 100, source: 'logic+calendars', certificate: { kind: 'least-outage', items: [{ item: 'SWA', from: '2026-11-16T06:00:00Z', to: '2026-11-20T10:00:00Z' }] } }])
     expect(status.word === 'validated feasible' && status.goals.map(goal => goal.word)).toEqual(['proven optimal', 'proven optimal', 'proven optimal'])
+    // A proven goal without its bound's certificate is not proven: from it on, best found.
+    const uncertified = feasibleStatus(goals, run, [[50], 425_050, 100], [{ value: [40], source: 'logic+calendars' }, { value: 425_050, source: 'fixed-costs' }, { value: 100, source: 'logic+calendars' }]).status
+    expect(uncertified.word === 'validated feasible' && uncertified.goals.map(goal => goal.word)).toEqual(['proven optimal', 'best found under budget', 'best found under budget'])
+    // Lane K re-derives each claim: the first it does not prove, and every later goal, read best found.
+    const second = verifiedGoals(status, goal => ({ proves: goal !== 1 }))
+    expect(second.word === 'validated feasible' && second.goals.map(goal => [goal.word, goal.bound !== undefined])).toEqual([['proven optimal', true], ['best found under budget', false], ['best found under budget', true]])
     const plain = withoutProof(status)
     expect(plain.word === 'validated feasible' && plain.goals.every(goal => goal.word === 'best found under budget' && goal.bound === undefined)).toBe(true)
     expect(withoutProof({ word: 'proven infeasible', cause: { kind: 'temporal', steps: [] }, run }).word).toBe('unresolved')
@@ -43,7 +49,7 @@ describe('status words', () => {
 })
 
 describe('every shown status is re-checked against the current inputs', () => {
-  const { status } = feasibleStatus(goals, run, [[50], 425_050, 100], [{ value: [40], source: 'logic+calendars' }, { value: 425_050, source: 'fixed-costs' }, { value: 100, source: 'logic+calendars' }])
+  const { status } = feasibleStatus(goals, run, [[50], 425_050, 100], [{ value: [40], source: 'logic+calendars' }, { value: 425_050, source: 'fixed-costs', certificate: { kind: 'fixed-costs', items: [{ key: 'swap', amount: 425_050 }] } }, { value: 100, source: 'logic+calendars', certificate: { kind: 'least-outage', items: [{ item: 'SWA', from: '2026-11-16T06:00:00Z', to: '2026-11-20T10:00:00Z' }] } }])
   const option = { key: 'swap', status, rows: [], inputsRevision: 3, variant: { methods: [], purchases: [] } }
 
   test('proof is reused only on the exact inputs revision and formulation', () => {

@@ -3,6 +3,7 @@
 import { checkPlan, inputCodes } from '../check/check.ts'
 import { recheckOption } from '../check/recheck.ts'
 import { verifyCertificate } from '../check/certificate.ts'
+import { verifyBound } from '../check/optimal.ts'
 import { bounds } from '../solve/bounds.ts'
 import { compile, formulationOf, type CompileIndex } from '../solve/compile.ts'
 import { dateSchedule, undate } from '../solve/date.ts'
@@ -86,7 +87,7 @@ const bounded = (result: ExplainResult): ExplainResult => {
 export const createRealSolver = (pool: SolverPool): SolverPort => ({
   certifiedSize: CERTIFIED_SIZE,
   formulation: grid => formulationOf(grid),
-  generate: async request => (await generate({ engine: pool, check: checkForSolver, verify: verifyCertificate, certifiedSize: CERTIFIED_SIZE }, {
+  generate: async request => (await generate({ engine: pool, check: checkForSolver, verify: verifyCertificate, verifyBound, certifiedSize: CERTIFIED_SIZE }, {
     inputs: request.inputs, revision: request.inputsRevision, previous: request.stored,
     input: { ...(request.variants === undefined ? {} : { variants: [...request.variants] }), seconds: request.seconds },
     by: request.by, signal: request.signal, ...(request.stoppedByWho === undefined ? {} : { stoppedByWho: request.stoppedByWho }),

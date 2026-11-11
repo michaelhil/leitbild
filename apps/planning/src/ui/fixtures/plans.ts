@@ -67,7 +67,7 @@ export const trainAPlanned = (): PlanModel => {
   const optionStatus = status({
     word: 'validated feasible', run: runBasis(inputs.settings.grid),
     goals: [
-      { word: 'proven optimal', goal: 0, value: 0, unit: 'h', bound: { value: 0, source: 'logic+calendars' } },
+      { word: 'proven optimal', goal: 0, value: 0, unit: 'h', bound: { value: 0, source: 'logic+calendars', certificate: { kind: 'zero' } } },
       { word: 'best found under budget', goal: 1, value: 0, unit: 'NOK' },
     ],
   })

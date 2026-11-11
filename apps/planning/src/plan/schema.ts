@@ -260,6 +260,23 @@ export const certificateSchema = z.discriminatedUnion('kind', [
 export type Certificate = z.infer<typeof certificateSchema>
 
 const boundSourceSchema = z.enum(['logic+calendars', 'crew-energy', 'availability-rule', 'fixed-costs'])
+/**
+ * How a goal's lower bound was derived, in plan terms, for the record and the planner's words. Lane K does
+ * not trust it: a "proven optimal" stands only when lane K re-derives a bound at least as high (check/optimal.ts).
+ * zero: the goal is at 0, below which no goal goes. earliest-finish: these jobs cannot finish earlier (links,
+ * releases, the window, calendars). crew-energy: the jobs need the resource in every choice, and its hours from
+ * the window start reach the work only at `finish`. fixed-costs: costs every plan pays. least-outage: each item is
+ * out at least from its latest first tag-out to its earliest last test. least-span: each group's least span.
+ */
+export const boundCertificateSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('zero') }).strict(),
+  z.object({ kind: z.literal('earliest-finish'), jobs: z.array(z.object({ job: keySchema, finish: instantSchema }).strict()).min(1).max(32) }).strict(),
+  z.object({ kind: z.literal('crew-energy'), resource: keySchema, jobs: z.array(keySchema).max(128), requiredHours: z.number().finite().nonnegative(), finish: instantSchema }).strict(),
+  z.object({ kind: z.literal('fixed-costs'), items: z.array(z.object({ key: keySchema, amount: z.number().finite().nonnegative() }).strict()).max(64) }).strict(),
+  z.object({ kind: z.literal('least-outage'), items: z.array(z.object({ item: keySchema, from: instantSchema, to: instantSchema }).strict()).max(64) }).strict(),
+  z.object({ kind: z.literal('least-span'), spans: z.array(z.object({ group: keySchema, hours: z.number().finite().nonnegative() }).strict()).max(16) }).strict(),
+])
+export type BoundCertificate = z.infer<typeof boundCertificateSchema>
 const runBasisSchema = z.object({
   grid: gridSchema, engine: z.string(), formulation: z.string(),   // proofs are reused only on an equal inputs revision and formulation
   seed: z.number().int(), budget: z.object({ evals: z.number().int(), cpuMs: z.number().int(), wallMs: z.number().int() }).strict(),
@@ -289,9 +306,9 @@ export const goalResolution = (unit: string, grid: z.infer<typeof gridSchema>): 
 
 const goalStatusSchema = z.discriminatedUnion('word', [
   z.object({ word: z.literal(goalWordSchema.enum['proven optimal']), goal: z.number().int().nonnegative(), value: z.number().finite(), unit: z.string(),
-    bound: z.object({ value: z.number().finite(), source: boundSourceSchema }).strict() }).strict(),
+    bound: z.object({ value: z.number().finite(), source: boundSourceSchema, certificate: boundCertificateSchema }).strict() }).strict(),
   z.object({ word: z.literal(goalWordSchema.enum['best found under budget']), goal: z.number().int().nonnegative(), value: z.number().finite(), unit: z.string(),
-    bound: z.object({ value: z.number().finite(), source: boundSourceSchema }).strict().optional() }).strict(),
+    bound: z.object({ value: z.number().finite(), source: boundSourceSchema, certificate: boundCertificateSchema.optional() }).strict().optional() }).strict(),
 ])
 const problemSchema = z.object({ about: z.array(keySchema).max(4), code: z.string().max(64) }).strict()   // prose is generated from code + keys
 

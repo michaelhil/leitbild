@@ -52,16 +52,18 @@ describe('the two cases', () => {
 
 describe('status cannot hold a contradiction (A4)', () => {
   test('the five r1 contradictions are refused and a consistent status is accepted', () => {
-    expect(accepted({ word: 'unresolved', run, goals: [{ word: 'proven optimal', goal: 0, value: 0, unit: 'h', bound: { value: 0, source: 'logic+calendars' } }] })).toBe(false)
+    expect(accepted({ word: 'unresolved', run, goals: [{ word: 'proven optimal', goal: 0, value: 0, unit: 'h', bound: { value: 0, source: 'logic+calendars', certificate: { kind: 'zero' } } }] })).toBe(false)
     expect(accepted({ word: 'proven infeasible', run })).toBe(false)
     expect(accepted({ word: 'validated feasible', run, goals: [
       { word: 'best found under budget', goal: 0, value: 2.5, unit: 'h' },
-      { word: 'proven optimal', goal: 1, value: 398800, unit: 'NOK', bound: { value: 398800, source: 'fixed-costs' } }] })).toBe(false)
-    expect(accepted({ word: 'validated feasible', run, goals: [{ word: 'proven optimal', goal: 0, value: 3, unit: 'h', bound: { value: 0, source: 'logic+calendars' } }] })).toBe(false)
+      { word: 'proven optimal', goal: 1, value: 398800, unit: 'NOK', bound: { value: 398800, source: 'fixed-costs', certificate: { kind: 'fixed-costs', items: [{ key: 'charged', amount: 398800 }] } } }] })).toBe(false)
+    expect(accepted({ word: 'validated feasible', run, goals: [{ word: 'proven optimal', goal: 0, value: 3, unit: 'h', bound: { value: 0, source: 'logic+calendars', certificate: { kind: 'zero' } } }] })).toBe(false)
     expect(accepted({ word: 'cancelled', run, cause: chain(37, 32) })).toBe(false)
+    // Every "proven optimal" carries its bound's certificate (adversary item 23).
+    expect(accepted({ word: 'validated feasible', run, goals: [{ word: 'proven optimal', goal: 0, value: 0, unit: 'h', bound: { value: 0, source: 'logic+calendars' } }] })).toBe(false)
     expect(accepted({ word: 'validated feasible', run, goals: [
-      { word: 'proven optimal', goal: 0, value: 0, unit: 'h', bound: { value: 0, source: 'logic+calendars' } },
-      { word: 'best found under budget', goal: 1, value: 464250, unit: 'NOK', bound: { value: 340000, source: 'fixed-costs' } }] })).toBe(true)
+      { word: 'proven optimal', goal: 0, value: 0, unit: 'h', bound: { value: 0, source: 'logic+calendars', certificate: { kind: 'zero' } } },
+      { word: 'best found under budget', goal: 1, value: 464250, unit: 'NOK', bound: { value: 340000, source: 'fixed-costs', certificate: { kind: 'fixed-costs', items: [{ key: 'charged', amount: 340000 }] } } }] })).toBe(true)
   })
 })
 
@@ -81,17 +83,17 @@ describe('adversary r2 check (coordinator-adopted)', () => {
   })
 
   test('2. proven optimal compares value and bound at the goal resolution', () => {
-    const goals = (second: object) => ({ word: 'validated feasible', run, goals: [{ word: 'proven optimal', goal: 0, value: 0, unit: 'h', bound: { value: 0, source: 'logic+calendars' } }, { goal: 1, ...second }] })
-    expect(accepted(goals({ word: 'proven optimal', value: 464250, unit: 'NOK', bound: { value: 464249.9999999997, source: 'fixed-costs' } }))).toBe(true)
-    expect(accepted(goals({ word: 'proven optimal', value: 464250, unit: 'NOK', bound: { value: 464249, source: 'fixed-costs' } }))).toBe(false)
-    expect(accepted(goals({ word: 'proven optimal', value: 2.5, unit: 'h', bound: { value: 2.4999999999, source: 'logic+calendars' } }))).toBe(true)
-    expect(accepted(goals({ word: 'proven optimal', value: 2.5, unit: 'h', bound: { value: 2, source: 'logic+calendars' } }))).toBe(false)
-    expect(accepted(goals({ word: 'best found under budget', value: 464250, unit: 'NOK', bound: { value: 464250.0000000003, source: 'fixed-costs' } }))).toBe(true)
-    expect(accepted(goals({ word: 'best found under budget', value: 464250, unit: 'NOK', bound: { value: 464251, source: 'fixed-costs' } }))).toBe(false)
+    const goals = (second: object) => ({ word: 'validated feasible', run, goals: [{ word: 'proven optimal', goal: 0, value: 0, unit: 'h', bound: { value: 0, source: 'logic+calendars', certificate: { kind: 'zero' } } }, { goal: 1, ...second }] })
+    expect(accepted(goals({ word: 'proven optimal', value: 464250, unit: 'NOK', bound: { value: 464249.9999999997, source: 'fixed-costs', certificate: { kind: 'fixed-costs', items: [{ key: 'charged', amount: 464249.9999999997 }] } } }))).toBe(true)
+    expect(accepted(goals({ word: 'proven optimal', value: 464250, unit: 'NOK', bound: { value: 464249, source: 'fixed-costs', certificate: { kind: 'fixed-costs', items: [{ key: 'charged', amount: 464249 }] } } }))).toBe(false)
+    expect(accepted(goals({ word: 'proven optimal', value: 2.5, unit: 'h', bound: { value: 2.4999999999, source: 'logic+calendars', certificate: { kind: 'earliest-finish', jobs: [{ job: 'last', finish: '2026-11-16T09:00:00Z' }] } } }))).toBe(true)
+    expect(accepted(goals({ word: 'proven optimal', value: 2.5, unit: 'h', bound: { value: 2, source: 'logic+calendars', certificate: { kind: 'earliest-finish', jobs: [{ job: 'last', finish: '2026-11-16T09:00:00Z' }] } } }))).toBe(false)
+    expect(accepted(goals({ word: 'best found under budget', value: 464250, unit: 'NOK', bound: { value: 464250.0000000003, source: 'fixed-costs', certificate: { kind: 'fixed-costs', items: [{ key: 'charged', amount: 464250.0000000003 }] } } }))).toBe(true)
+    expect(accepted(goals({ word: 'best found under budget', value: 464250, unit: 'NOK', bound: { value: 464251, source: 'fixed-costs', certificate: { kind: 'fixed-costs', items: [{ key: 'charged', amount: 464251 }] } } }))).toBe(false)
     expect(accepted(goals({ word: 'best found under budget', value: 3, unit: 'kg' }))).toBe(false)
     const fine = { ...run, grid: '30s' }
-    expect(accepted({ word: 'validated feasible', run: fine, goals: [{ word: 'proven optimal', goal: 0, value: 1, unit: 'min', bound: { value: 0.5, source: 'logic+calendars' } }] })).toBe(false)
-    expect(accepted({ word: 'validated feasible', run: fine, goals: [{ word: 'proven optimal', goal: 0, value: 1, unit: 'min', bound: { value: 0.9999999, source: 'logic+calendars' } }] })).toBe(true)
+    expect(accepted({ word: 'validated feasible', run: fine, goals: [{ word: 'proven optimal', goal: 0, value: 1, unit: 'min', bound: { value: 0.5, source: 'logic+calendars', certificate: { kind: 'earliest-finish', jobs: [{ job: 'last', finish: '2026-11-16T09:00:00Z' }] } } }] })).toBe(false)
+    expect(accepted({ word: 'validated feasible', run: fine, goals: [{ word: 'proven optimal', goal: 0, value: 1, unit: 'min', bound: { value: 0.9999999, source: 'logic+calendars', certificate: { kind: 'earliest-finish', jobs: [{ job: 'last', finish: '2026-11-16T09:00:00Z' }] } } }] })).toBe(true)
   })
 
   test('3. the Assistant-facing status uses the status words and the goal order rule', () => {

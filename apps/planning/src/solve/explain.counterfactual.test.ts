@@ -3,7 +3,7 @@ import { counterfactualCheck } from '../../tests/harness/counterfactual.ts'
 import { createRealSolver } from '../api/wiring.ts'
 import { createSolverPool } from './pool.ts'
 import { generate } from './generate.ts'
-import { laneKCheck, laneKVerify } from './fixtures/lane-k.ts'
+import { laneKCheck, laneKVerify, laneKVerifyBound } from './fixtures/lane-k.ts'
 import { trainAInputs } from './fixtures/train-a-case.ts'
 import { lateTruck, supplyRun } from './fixtures/supply-run.ts'
 import { checkPlan } from '../check/check.ts'
@@ -24,7 +24,7 @@ describe('why-start names the causes that hold each job', () => {
   test('every job of the flagship plan: 0 counterfactual failures, joint sets minimal', async () => {
     const inputs = trainAInputs({ read: true })
     const pool = createSolverPool({ rssLimitMb: 4_000 })
-    const result = await generate({ engine: pool, check: laneKCheck, verify: laneKVerify }, { inputs, revision: 1, previous: null, input: {}, by: { kind: 'service', name: 'test' }, signal: new AbortController().signal, seed: 1, evals: 1_500 })
+    const result = await generate({ engine: pool, check: laneKCheck, verify: laneKVerify, verifyBound: laneKVerifyBound }, { inputs, revision: 1, previous: null, input: {}, by: { kind: 'service', name: 'test' }, signal: new AbortController().signal, seed: 1, evals: 1_500 })
     const option = result.optionSet.options.find(candidate => candidate.key === result.optionSet.recommended)!
     expect(option.status.word).toBe('validated feasible')
     const solver = createRealSolver(pool)
@@ -87,7 +87,7 @@ describe('why-start names the causes that hold each job', () => {
 })
 
 const supplyOption = async (pool: ReturnType<typeof createSolverPool>, inputs: PlanInputs) => {
-  const result = await generate({ engine: pool, check: laneKCheck, verify: laneKVerify }, { inputs, revision: 1, previous: null, input: {}, by: { kind: 'service', name: 'test' }, signal: new AbortController().signal, seed: 1, evals: 1_500 })
+  const result = await generate({ engine: pool, check: laneKCheck, verify: laneKVerify, verifyBound: laneKVerifyBound }, { inputs, revision: 1, previous: null, input: {}, by: { kind: 'service', name: 'test' }, signal: new AbortController().signal, seed: 1, evals: 1_500 })
   const option = result.optionSet.options[0]!
   expect(option.status.word).toBe('validated feasible')
   return option

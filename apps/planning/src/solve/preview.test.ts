@@ -8,7 +8,7 @@ import { compile } from './compile.ts'
 import { prepare } from './decode.ts'
 import { CERTIFIED_SIZE, generate, type GenerateInput } from './generate.ts'
 import { createSolverPool } from './pool.ts'
-import { laneKCheck, laneKVerify } from './fixtures/lane-k.ts'
+import { laneKCheck, laneKVerify, laneKVerifyBound } from './fixtures/lane-k.ts'
 import { SIZE_CURVE_SHA256, sizeCurveSubset } from './fixtures/size-curve.ts'
 import { trainAInputs } from './fixtures/train-a-case.ts'
 
@@ -22,7 +22,7 @@ describe('preview re-timing repairs the option, never re-solves it', () => {
   afterAll(() => pool.shutdown())
   const generated = async (inputs: PlanInputs, variants?: GenerateInput['variants'], seed = 1, evals = 1_500) => {
     // S60 to S130 are above the certified size (33 jobs): solved directly here, the size lifted, as or's size curve did.
-    const result = await generate({ engine: pool, check: laneKCheck, verify: laneKVerify, certifiedSize: { ...CERTIFIED_SIZE, maxJobs: 130 } }, {
+    const result = await generate({ engine: pool, check: laneKCheck, verify: laneKVerify, verifyBound: laneKVerifyBound, certifiedSize: { ...CERTIFIED_SIZE, maxJobs: 130 } }, {
       inputs, revision: 1, previous: null, input: variants === undefined ? {} : { variants }, by: { kind: 'service', name: 'test' }, signal: new AbortController().signal, seed, evals,
     })
     const option = result.optionSet.options.find(candidate => candidate.key === result.optionSet.recommended)!

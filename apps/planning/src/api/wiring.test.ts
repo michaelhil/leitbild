@@ -131,7 +131,7 @@ describe("lane K's bound check through the real checker port", () => {
   })
   const row = (key: string, from: string, to: string) => ({ job: key, start: from, finish: to, uses: [{ resource: 'ops', from, to }], float: { workingHours: 0, limitedBy: { kind: 'window-end' as const } } })
   const run = { grid: '30min' as const, engine: 'double', formulation: 'f', seed: 1, budget: { evals: 1, cpuMs: 1, wallMs: 1 }, stoppedBy: 'done' as const, evals: 1, cpuMs: 1 }
-  const claimed = (value: number) => ({ word: 'validated feasible' as const, run, goals: [{ word: 'proven optimal' as const, goal: 0, value, unit: 'h', bound: { value, source: 'logic+calendars' as const } }] })
+  const claimed = (value: number) => ({ word: 'validated feasible' as const, run, goals: [{ word: 'proven optimal' as const, goal: 0, value, unit: 'h', bound: { value, source: 'logic+calendars' as const, certificate: { kind: 'earliest-finish' as const, jobs: [{ job: 'A', finish: '2026-11-16T09:00:00Z' }] } } }] })
   const stored = (status: ReturnType<typeof claimed>, rows: ReturnType<typeof row>[]): Plan => planSchema.parse({
     id: '00000000-0000-4000-8000-000000000004', workspaceId: '00000000-0000-4000-8000-0000000000aa', revision: 1, createdAt: '2026-11-11T00:00:00Z', updatedAt: '2026-11-11T00:00:00Z',
     inputs: {

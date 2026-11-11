@@ -358,7 +358,7 @@ describe("lane K's bound check decides \"proven optimal\" (verifyBound, bestFoun
     const solver = { ...inner, generate: async (request: Parameters<typeof inner.generate>[0]) => {
       const set = await inner.generate(request)
       return { ...set, options: set.options.map(option => option.status.word !== 'validated feasible' ? option
-        : { ...option, status: { ...option.status, goals: option.status.goals.map(goal => ({ word: 'proven optimal' as const, goal: goal.goal, value: goal.value, unit: goal.unit, bound: { value: goal.value, source: 'logic+calendars' as const } })) } }) }
+        : { ...option, status: { ...option.status, goals: option.status.goals.map(goal => ({ word: 'proven optimal' as const, goal: goal.goal, value: goal.value, unit: goal.unit, bound: { value: goal.value, source: 'logic+calendars' as const, certificate: { kind: 'zero' as const } } })) } }) }
     } }
     const checker = createCheckerDouble()
     let unconfirmed: number[] = [1]

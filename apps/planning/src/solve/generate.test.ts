@@ -7,13 +7,13 @@ import { supplyRun } from './fixtures/supply-run.ts'
 import twinJson from './fixtures/twin-v3.json'
 import { showStatus } from './status.ts'
 import { searchEngine } from './search.ts'
-import { laneKCheck, laneKVerify } from './fixtures/lane-k.ts'
+import { laneKCheck, laneKVerify, laneKVerifyBound } from './fixtures/lane-k.ts'
 import { trainAInputs } from './fixtures/train-a-case.ts'
 
 // Generate against lane K's REAL checker and certificate re-verification (adversary fixes 5-7).
 const by = { kind: 'service' as const, name: 'test' }
 const run = (inputs: ReturnType<typeof trainAInputs>, input: Parameters<typeof generate>[1]['input'], verify = laneKVerify) =>
-  generate({ engine: searchEngine(), check: laneKCheck, verify }, { inputs, revision: 1, previous: null, input, by, signal: new AbortController().signal, seed: 1 })
+  generate({ engine: searchEngine(), check: laneKCheck, verify, verifyBound: laneKVerifyBound }, { inputs, revision: 1, previous: null, input, by, signal: new AbortController().signal, seed: 1 })
 const daysOnly = [
   { label: 'V1 days only rebuild', methods: [{ choice: 'SWA-method', option: 'rebuild' }], buy: 'no-extra-crew-hours' as const },
   { label: 'V2 days only swap', methods: [{ choice: 'SWA-method', option: 'swap' }], buy: 'no-extra-crew-hours' as const },
@@ -58,6 +58,20 @@ describe('generate with the real checker', () => {
     expect(option.variant.purchases.toSorted()).toEqual([...used].toSorted())
   }, 30_000)
 
+  test('every "proven optimal" carries its bound certificate and stands only when lane K re-derives the bound', async () => {
+    const proven = (result: Awaited<ReturnType<typeof generate>>) => result.optionSet.options.flatMap(option => (option.status.word === 'validated feasible' ? option.status.goals : []))
+    const supply = await generate({ engine: searchEngine(), check: laneKCheck, verify: laneKVerify, verifyBound: laneKVerifyBound }, { inputs: supplyRun, revision: 1, previous: null, input: {}, by, signal: new AbortController().signal, evals: 200 })
+    const claims = proven(supply).filter(goal => goal.word === 'proven optimal')
+    expect(claims.length).toBeGreaterThan(0)
+    for (const goal of claims) {
+      expect(goal.bound.certificate).toEqual({ kind: 'zero' })
+      expect(laneKVerifyBound(supplyRun, supply.optionSet.options[0]!.variant, goal.goal, goal.bound).proves).toBe(true)
+    }
+    // A bound lane K does not re-derive: that goal and every later one read "best found", the unproven bound dropped.
+    const refused = await generate({ engine: searchEngine(), check: laneKCheck, verify: laneKVerify, verifyBound: () => ({ proves: false }) }, { inputs: supplyRun, revision: 1, previous: null, input: {}, by, signal: new AbortController().signal, evals: 200 })
+    for (const goal of proven(refused)) expect(goal).toEqual({ word: 'best found under budget', goal: goal.goal, value: goal.value, unit: goal.unit })
+  })
+
   test('the certified size: pending the owner, 33 jobs per solve as measured; the flagship and Supply run run, twin v3 is refused', async () => {
     expect(certifiedSizeWords(CERTIFIED_SIZE)).toBe('Certified plan size: pending the owner\'s decision')
     expect(measuredSizeWords(CERTIFIED_SIZE)).toBe('Measured: up to 33 jobs')
@@ -73,10 +87,10 @@ describe('generate with the real checker', () => {
     expect(withinCertifiedSize(supplyRun, CERTIFIED_SIZE)).toBe(true)
     const twin = twinPlan(twinJson, twinV3Options(twinJson)).inputs
     expect(jobsPerSolve(twin)).toBe(330)
-    const refusal = await generate({ engine: searchEngine(), check: laneKCheck, verify: laneKVerify }, { inputs: twin, revision: 1, previous: null, input: {}, by, signal: new AbortController().signal }).catch((error: unknown) => error as Error)
+    const refusal = await generate({ engine: searchEngine(), check: laneKCheck, verify: laneKVerify, verifyBound: laneKVerifyBound }, { inputs: twin, revision: 1, previous: null, input: {}, by, signal: new AbortController().signal }).catch((error: unknown) => error as Error)
     expect(refusal).toMatchObject({ code: 'above_certified_size' })
     expect((refusal as Error).message).toBe('This plan has 330 jobs. Planning is certified for plans of up to 33 jobs (one system window); larger plans wait for the owner\'s decision.')
-    const supply = await generate({ engine: searchEngine(), check: laneKCheck, verify: laneKVerify }, { inputs: supplyRun, revision: 1, previous: null, input: {}, by, signal: new AbortController().signal, evals: 200 })
+    const supply = await generate({ engine: searchEngine(), check: laneKCheck, verify: laneKVerify, verifyBound: laneKVerifyBound }, { inputs: supplyRun, revision: 1, previous: null, input: {}, by, signal: new AbortController().signal, evals: 200 })
     expect(supply.optionSet.options[0]!.status.word).toBe('validated feasible')
   })
 })

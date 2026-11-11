@@ -5,7 +5,7 @@
 //   3. sliding-window span energy: for every possible first-out slot s of a limited span, the work that
 //      must fall inside [s, s + limit) exceeds the capacity of the eligible resources there.
 // Lane K re-verifies every certificate independently.
-import type { Certificate } from '../plan/schema.ts'
+import type { BoundCertificate, Certificate } from '../plan/schema.ts'
 import type { CompileIndex } from './compile.ts'
 import { prepare, unitMs, type Prepared } from './decode.ts'
 import type { BoundSource, NormalizedProblem } from './problem.ts'
@@ -51,10 +51,15 @@ export interface SpanRefusal {
   readonly alsoProven?: Certificate
 }
 
+export interface GoalBoundResult { readonly value: number | readonly number[]; readonly source: BoundSource; readonly certificate: BoundCertificate }
+
 export interface BoundsResult {
   readonly certificate?: Certificate
-  /** Per goal: a lower bound on the raw metric in internal units (no threshold applied), and its source. */
-  readonly goals: ReadonlyArray<{ readonly value: number | readonly number[]; readonly source: BoundSource }>
+  /**
+   * Per goal: a lower bound on the raw metric in internal units (no threshold applied), its source and its
+   * derivation in plan terms (the record behind a "proven optimal"; lane K re-derives its own).
+   */
+  readonly goals: ReadonlyArray<GoalBoundResult>
   readonly spanWindows: readonly SpanWindow[]
   /**
    * For a refusal by a span limit: the least span logic and calendars allow without the limit, the
@@ -584,7 +589,7 @@ const leastSpan = (prep: Prepared, base: Windows, s: number, units: ReturnType<t
 export const bounds = (problem: NormalizedProblem, index: CompileIndex, prep: Prepared = prepare(problem)): BoundsResult => {
   const units = unitResources(prep)
   const help = { next: nextWorking(prep) }
-  const zeroGoals = problem.goals.map(() => ({ value: 0, source: 'logic+calendars' as const }))
+  const zeroGoals = problem.goals.map((): GoalBoundResult => ({ value: 0, source: 'logic+calendars', certificate: { kind: 'zero' } }))
   const spanCertificate = (s: number, scan: SpanScan & { readonly lastFailure?: Windows }): Certificate | undefined => {
     if (problem.spans[s]!.limit === undefined) return undefined
     const key = index.spans[s]!.rule ?? index.spans[s]!.id.replace(/[^A-Za-z0-9._-]/g, '-')
@@ -640,34 +645,45 @@ export const bounds = (problem: NormalizedProblem, index: CompileIndex, prep: Pr
     const certificate = spanCertificate(s, scan)
     if (certificate !== undefined) return { certificate, goals: zeroGoals, spanWindows: scans.map(entry => entry.window) }
   }
-  const goals = problem.goals.map((goal): { value: number | number[]; source: BoundSource } => {
+  const goals = problem.goals.map((goal): GoalBoundResult => {
     const scale = goal.metric === 'extra-cost' ? 1 : problem.slotMs / unitMs(goal.unit)
     // span-over: one least length per group (the excess is monotone in each span).
     if (goal.metric === 'span-over') {
-      return { value: (goal.spans ?? []).map(s => { const lengths = scans[s]!.lengths; return lengths.length === 0 ? 0 : Math.min(...lengths.map(entry => entry.length)) * scale }), source: 'logic+calendars' }
+      const least = (goal.spans ?? []).map(s => { const lengths = scans[s]!.lengths; return lengths.length === 0 ? 0 : Math.min(...lengths.map(entry => entry.length)) })
+      return {
+        value: least.map(slots => slots * scale), source: 'logic+calendars',
+        certificate: { kind: 'least-span', spans: (goal.spans ?? []).map((s, k) => ({ group: index.spans[s]!.group, hours: hours(index, least[k]!) })).slice(0, 16) },
+      }
     }
     if (goal.metric === 'finish') {
-      let finish = 0
-      for (let a = 0; a < prep.n; a++) finish = Math.max(finish, global.eft[a]!)
+      let finish = 0, last = 0
+      for (let a = 0; a < prep.n; a++) if (global.eft[a]! > finish) { finish = global.eft[a]!; last = a }
       const energy = energyFinish(prep)
-      return energy !== undefined && energy.slot > finish ? { value: energy.slot * scale, source: 'crew-energy' } : { value: finish * scale, source: 'logic+calendars' }
+      if (energy !== undefined && energy.slot > finish) {
+        return {
+          value: energy.slot * scale, source: 'crew-energy',
+          certificate: { kind: 'crew-energy', resource: index.resources[energy.resource]!, jobs: energy.jobs.map(a => jobKey(problem, index, a)).slice(0, 128), requiredHours: hours(index, energy.need), finish: slotIso(index, energy.slot) },
+        }
+      }
+      return { value: finish * scale, source: 'logic+calendars', certificate: { kind: 'earliest-finish', jobs: [{ job: jobKey(problem, index, last), finish: slotIso(index, finish) }] } }
     }
     if (goal.metric === 'extra-cost') {
-      let fixed = 0
+      const items: Array<{ key: string; amount: number }> = []
       problem.activities.forEach((activity, a) => {
         let least = Infinity
         activity.modes.forEach((mode, m) => { if (global.modeOk[a]![m]) least = Math.min(least, mode.fixedCost) })
-        if (least !== Infinity) fixed += least
+        if (least !== Infinity && least > 0) items.push({ key: jobKey(problem, index, a), amount: least })
       })
       for (const resource of problem.resources) {
-        for (const period of resource.periods) if (period.committed) fixed += period.price
-        for (const item of resource.once) if (item.committed) fixed += item.price
+        for (const period of resource.periods) if (period.committed && period.price > 0) items.push({ key: period.purchase, amount: period.price })
+        for (const item of resource.once) if (item.committed && item.price > 0) items.push({ key: item.purchase, amount: item.price })
       }
-      return { value: fixed, source: 'fixed-costs' }
+      return { value: items.reduce((sum, item) => sum + item.amount, 0), source: 'fixed-costs', certificate: { kind: 'fixed-costs', items: items.slice(0, 64) } }
     }
     if (goal.metric === 'unavailable-hours') {
       const items = goal.spans === undefined ? problem.items.map((_, i) => i) : [...new Set(goal.spans.flatMap(s => problem.spans[s]!.items))]
       let total = 0
+      const outages: Array<{ item: string; from: string; to: string }> = []
       for (const i of items) {
         const item = problem.items[i]!
         if (item.openers.length === 0 || item.closers.length === 0) continue
@@ -675,12 +691,19 @@ export const bounds = (problem: NormalizedProblem, index: CompileIndex, prep: Pr
         for (const c of item.closers) lastBack = Math.max(lastBack, global.eft[c]!)
         for (const o of item.openers) firstOutLatest = Math.min(firstOutLatest, global.lst[o]!)
         total += Math.max(0, lastBack - firstOutLatest)
+        if (lastBack > firstOutLatest) outages.push({ item: index.items[i]!, from: slotIso(index, firstOutLatest), to: slotIso(index, lastBack) })
       }
-      return { value: total * scale, source: 'logic+calendars' }
+      return { value: total * scale, source: 'logic+calendars', certificate: outages.length === 0 ? { kind: 'zero' } : { kind: 'least-outage', items: outages.slice(0, 64) } }
     }
     let late = 0
-    for (const a of goal.tagged ?? []) { const target = problem.activities[a]!.target; if (target !== undefined) late += Math.max(0, global.eft[a]! - target) }
-    return { value: late * scale, source: 'logic+calendars' }
+    const finishes: Array<{ job: string; finish: string }> = []
+    for (const a of goal.tagged ?? []) {
+      const target = problem.activities[a]!.target
+      if (target === undefined || global.eft[a]! <= target) continue
+      late += global.eft[a]! - target
+      finishes.push({ job: jobKey(problem, index, a), finish: slotIso(index, global.eft[a]!) })
+    }
+    return { value: late * scale, source: 'logic+calendars', certificate: finishes.length === 0 ? { kind: 'zero' } : { kind: 'earliest-finish', jobs: finishes.slice(0, 32) } }
   })
   const energy = energyFinish(prep)
   return { goals, spanWindows: scans.map(scan => scan.window), ...(energy === undefined ? {} : { busiest: { resource: index.resources[energy.resource]!, finishBy: slotIso(index, energy.slot), loadShare: energy.load } }) }
@@ -691,15 +714,18 @@ export const bounds = (problem: NormalizedProblem, index: CompileIndex, prep: Pr
  * capacity counted from the start; the last finish is at least the slot where that capacity suffices.
  * Returns the resource that binds most, and its load share of the window's capacity.
  */
-export const energyFinish = (prep: Prepared): { readonly resource: number; readonly slot: number; readonly load: number } | undefined => {
+export const energyFinish = (prep: Prepared): { readonly resource: number; readonly slot: number; readonly load: number; readonly need: number; readonly jobs: readonly number[] } | undefined => {
   const { problem, H } = prep
-  let best: { resource: number; slot: number; load: number } | undefined
+  let best: { resource: number; slot: number; load: number; need: number; jobs: number[] } | undefined
   problem.resources.forEach((resource, r) => {
     let need = 0
-    for (const activity of problem.activities) {
-      if (!activity.modes.every(mode => mode.work === 0 || mode.demands.some(d => d.resource === r && d.when < 0))) continue
-      need += Math.min(...activity.modes.map(mode => mode.work * (mode.demands.find(d => d.resource === r)?.amount ?? 0)))
-    }
+    const jobs: number[] = []
+    problem.activities.forEach((activity, a) => {
+      if (!activity.modes.every(mode => mode.work === 0 || mode.demands.some(d => d.resource === r && d.when < 0))) return
+      const work = Math.min(...activity.modes.map(mode => mode.work * (mode.demands.find(d => d.resource === r)?.amount ?? 0)))
+      need += work
+      if (work > 0) jobs.push(a)
+    })
     if (need === 0) return
     let sum = 0, slot = 0
     while (slot < H && sum < need) sum += resource.capacity[slot++]!
@@ -708,7 +734,7 @@ export const energyFinish = (prep: Prepared): { readonly resource: number; reado
     for (let t = 0; t < window; t++) capacity += resource.capacity[t]!
     const load = capacity > 0 ? need / capacity : Infinity
     if (sum < need) slot = H
-    if (best === undefined || slot > best.slot || (slot === best.slot && load > best.load)) best = { resource: r, slot, load }
+    if (best === undefined || slot > best.slot || (slot === best.slot && load > best.load)) best = { resource: r, slot, load, need, jobs }
   })
   return best
 }

@@ -16,7 +16,7 @@ import { totalFloat, withFloat } from './float.ts'
 import { estimateMemoryMb, SOLVER_CPU_CAP_CORES } from './pool.ts'
 import type { Engine, EngineResult, NormalizedProblem } from './problem.ts'
 import { compareOptions, goalKeys, type RawMetric } from './rank.ts'
-import { cancelledStatus, feasibleStatus, infeasibleStatus, inputProblems, refusedStatus, unresolvedStatus, type CheckPlan, type VerifyCertificate } from './status.ts'
+import { cancelledStatus, feasibleStatus, infeasibleStatus, inputProblems, refusedStatus, unresolvedStatus, type CheckPlan, type VerifyCertificate, verifiedGoals, type VerifyBound } from './status.ts'
 
 type OptionSet = z.infer<typeof optionSetSchema>
 type Option = OptionSet['options'][number]
@@ -46,6 +46,8 @@ export interface GenerateDeps {
   readonly check: CheckPlan
   /** Lane K's certificate re-verification: a refusal is stored as proof only when it proves. */
   readonly verify: VerifyCertificate
+  /** Lane K's re-derivation of each "proven optimal" bound: a goal is stored as proven only when it proves. */
+  readonly verifyBound: VerifyBound
   readonly certifiedSize?: CertifiedSize
   readonly now?: () => string
 }
@@ -199,7 +201,8 @@ export const generate = async (deps: GenerateDeps, request: GenerateRequest): Pr
     const problems = inputProblems(report.violations)
     if (problems.length > 0) return { ...base, variant: planned, status: refusedStatus('invalid input', problems), rows: [], metrics: [] }
     if (report.violations.length > 0) return { ...base, variant: variantOut, status: unresolvedStatus(run), rows: [], metrics: [] }
-    const { status } = feasibleStatus(inputs.goals, run, report.goals, found.goals)
+    // Every "proven optimal" carries its bound's certificate; lane K re-derives the bound, or it reads "best found".
+    const status = verifiedGoals(feasibleStatus(inputs.goals, run, report.goals, found.goals).status, (goal, bound) => deps.verifyBound(inputs, planned, goal, bound))
     return { ...base, variant: planned, status, rows, metrics: metricsOf(problem, index, report.goals) }
   }
 

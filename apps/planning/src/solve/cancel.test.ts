@@ -3,7 +3,7 @@ import { compile } from './compile.ts'
 import { generate, rawOf } from './generate.ts'
 import { createSolverPool, SOLVER_CPU_CAP_CORES } from './pool.ts'
 import { goalKeys, compareKeys } from './rank.ts'
-import { laneKCheck, laneKVerify } from './fixtures/lane-k.ts'
+import { laneKCheck, laneKVerify, laneKVerifyBound } from './fixtures/lane-k.ts'
 import { trainAInputs } from './fixtures/train-a-case.ts'
 
 // Cancel (A7, design §6.5): answered within one second, keeping per variant the better of the stored
@@ -16,7 +16,7 @@ const run = (pool: ReturnType<typeof createSolverPool>, request: { revision: num
   const controller = new AbortController()
   let abortedAt = 0
   if (request.abortAfterMs !== undefined) setTimeout(() => { abortedAt = performance.now(); controller.abort() }, request.abortAfterMs)
-  return generate({ engine: pool, check: laneKCheck, verify: laneKVerify }, {
+  return generate({ engine: pool, check: laneKCheck, verify: laneKVerify, verifyBound: laneKVerifyBound }, {
     inputs, revision: request.revision, previous: request.previous, input: { seconds: request.seconds }, by, signal: controller.signal, stoppedByWho: () => 'person',
   }).then(result => ({ result, answeredAfterAbortMs: abortedAt === 0 ? undefined : performance.now() - abortedAt }))
 }

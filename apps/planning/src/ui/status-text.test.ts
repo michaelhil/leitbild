@@ -30,8 +30,8 @@ describe('status in words, from structure', () => {
     const view = statusView(status({
       word: 'validated feasible', run,
       goals: [
-        { word: 'proven optimal', goal: 0, value: 0, unit: 'h', bound: { value: 0, source: 'logic+calendars' } },
-        { word: 'best found under budget', goal: 1, value: 464250, unit: 'NOK', bound: { value: 425050, source: 'fixed-costs' } },
+        { word: 'proven optimal', goal: 0, value: 0, unit: 'h', bound: { value: 0, source: 'logic+calendars', certificate: { kind: 'zero' } } },
+        { word: 'best found under budget', goal: 1, value: 464250, unit: 'NOK', bound: { value: 425050, source: 'fixed-costs', certificate: { kind: 'fixed-costs', items: [{ key: 'charged', amount: 425050 }] } } },
         { word: 'best found under budget', goal: 2, value: 254, unit: 'h' },
       ],
     }), context)
