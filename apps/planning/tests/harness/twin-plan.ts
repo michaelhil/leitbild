@@ -252,12 +252,28 @@ export const twinPlan = (bench: Bench, options: TwinOptions): TwinPlan => {
     const load = new Map<string, Int32Array>()
     const loadOf = (key: string) => { let array = load.get(key); if (array === undefined) { array = new Int32Array(horizon); load.set(key, array) } return array }
     const fitting = (unit: Unit) => (layersOf.get(unit.resource) ?? []).filter(layer => unit.slots.every(slot => onDuty(unit.resource, layer, slot)))
-    const layered = units.filter(unit => !boughtFor.has(unit.resource))
-    layered.sort((left, right) => fitting(left).length - fitting(right).length || left.slots[0]! - right.slots[0]!)
-    for (const unit of layered) {
-      const candidates = fitting(unit)
-      unit.layer = candidates.find(layer => unit.slots.every(slot => loadOf(layer.key)[slot]! < layer.count)) ?? candidates[0] ?? layersOf.get(unit.resource)![0]!
-      for (const slot of unit.slots) loadOf(unit.layer.key)[slot]!++
+    // per bench resource, a depth-first search over its units in start order; each unit keeps one layer
+    for (const resource of new Set(units.filter(unit => !boughtFor.has(unit.resource)).map(unit => unit.resource))) {
+      const mine = units.filter(unit => unit.resource === resource).sort((left, right) => left.slots[0]! - right.slots[0]!)
+      const options = mine.map(fitting)
+      let steps = 0
+      const assign = (index: number): boolean => {
+        if (index === mine.length) return true
+        if (++steps > 200_000) return false
+        for (const layer of options[index]!) {
+          if (!mine[index]!.slots.every(slot => loadOf(layer.key)[slot]! < layer.count)) continue
+          for (const slot of mine[index]!.slots) loadOf(layer.key)[slot]!++
+          mine[index]!.layer = layer
+          if (assign(index + 1)) return true
+          for (const slot of mine[index]!.slots) loadOf(layer.key)[slot]!--
+        }
+        return false
+      }
+      if (!assign(0)) {
+        // no assignment keeps every unit on one layer: give each its first fitting layer; the checker then
+        // reports the overload, so nothing is hidden
+        for (const [index, unit] of mine.entries()) unit.layer = options[index]![0] ?? layersOf.get(resource)![0]!
+      }
     }
     for (const unit of units) {
       const bought = boughtFor.get(unit.resource)
