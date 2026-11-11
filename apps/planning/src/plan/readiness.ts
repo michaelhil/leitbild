@@ -79,12 +79,6 @@ const ruleNamed = (inputs: Inputs): ReadonlySet<string> => new Set(inputs.rules.
   rule.kind === 'protected' ? rule.equipment : rule.kind === 'keep-in-service' ? rule.members.flatMap(member => 'equipment' in member ? [member.equipment] : []) : []))
 
 /**
- * Items that back each other up share an equipment `function` key (lane A's optional field; until it lands
- * no item has one, and no redundancy warning fires). One train's series chain shares no function.
- */
-export const functionOf = (item: Inputs['equipment'][number]): string | undefined => (item as Inputs['equipment'][number] & { readonly function?: string }).function
-
-/**
  * The redundancy rule (adversary item 7, after the attack on lane S): two or more items `out` together that
  * share a function key, none named by a keep-in-service or protected rule. Returns the first such set.
  */
@@ -93,7 +87,8 @@ const sharedFunction = (inputs: Inputs, out: readonly string[]): readonly string
   const byFunction = new Map<string, string[]>()
   for (const key of out) {
     const item = inputs.equipment.find(entry => entry.key === key)
-    const shared = item === undefined ? undefined : functionOf(item)
+    // Items that back each other up share an equipment function key; one train's series chain shares none.
+    const shared = item?.function
     if (shared !== undefined) byFunction.set(shared, [...(byFunction.get(shared) ?? []), key])
   }
   return [...byFunction.values()].find(items => items.length >= 2 && !items.some(key => named.has(key)))

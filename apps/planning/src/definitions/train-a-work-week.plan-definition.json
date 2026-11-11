@@ -1,7 +1,7 @@
 {
   "id": "train-a-work-week",
   "title": "Train A work week",
-  "description": "A reference PWR Train A work week: the cooling-chain pumps and heat exchanger with their supports, the station and contractor mechanical crews, crane and eddy-current team, one work-control operator and one test team, the 72 h outage limit, and Train B protected. The plan starts unlinked: start the \"Train A work week\" simulation in World, then link it here to read live values.",
+  "description": "A reference PWR Train A work week: work on the SW, CCW, RHR, HHSI, CS and AFW pumps and the CCW heat exchanger, with their supports, tag-outs and return-to-service tests; the station and contractor crews, crane, eddy-current team, one work-control operator and one test team; the 72 h cooling-chain limit; and Train B protected. The plan starts unlinked: start the \"Train A work week\" simulation in World, then link it here to read live values.",
   "inputs": {
     "settings": {
       "title": "Train A work week",
@@ -34,14 +34,6 @@
         }
       },
       {
-        "key": "CCWHXA",
-        "label": "Component Cooling Heat Exchanger A",
-        "group": "COOL-A",
-        "supportedBy": [
-          "SWA"
-        ]
-      },
-      {
         "key": "CCWA",
         "label": "Component Cooling Water Pump A",
         "group": "COOL-A",
@@ -53,6 +45,18 @@
         "source": {
           "by": "planner",
           "note": "train membership: planner knowledge (case v0.2)"
+        }
+      },
+      {
+        "key": "CCWHXA",
+        "label": "Component Cooling Heat Exchanger A",
+        "group": "COOL-A",
+        "supportedBy": [
+          "SWA"
+        ],
+        "source": {
+          "by": "planner",
+          "note": "Exists in the plant graph but is not in the planning basis (pumps only). Linking it needs an extended read: owner-decision."
         }
       },
       {
@@ -358,6 +362,18 @@
         }
       },
       {
+        "key": "elec-station",
+        "label": "Station electrical crew",
+        "kind": "crew",
+        "count": 1,
+        "crewSize": 2,
+        "calendar": "day",
+        "attributes": [],
+        "source": {
+          "by": "planner"
+        }
+      },
+      {
         "key": "mech-contractor",
         "label": "Contractor mechanical night crew",
         "kind": "crew",
@@ -365,14 +381,14 @@
         "crewSize": 3,
         "calendar": "none",
         "attributes": [],
-        "words": "Workshop rebuild and tube cleaning only.",
+        "words": "May do workshop rebuild and tube cleaning only: no lifts, no seal work.",
         "source": {
           "by": "planner"
         }
       },
       {
         "key": "work-control",
-        "label": "Work-control operator (one tag-out or restoration at a time)",
+        "label": "Shift work-control operator (tag-outs and restorations)",
         "kind": "crew",
         "count": 1,
         "calendar": "always",
@@ -383,11 +399,12 @@
       },
       {
         "key": "test-team",
-        "label": "Test team (one return-to-service test at a time)",
+        "label": "Test team (shift operator and test engineer)",
         "kind": "crew",
         "count": 1,
         "calendar": "always",
         "attributes": [],
+        "words": "The control room supervises one return-to-service test at a time.",
         "source": {
           "by": "planner"
         }
@@ -399,6 +416,7 @@
         "count": 1,
         "calendar": "crane",
         "attributes": [],
+        "words": "A lift also needs a station mechanical crew.",
         "source": {
           "by": "planner"
         }
@@ -418,8 +436,21 @@
     "purchases": [
       {
         "key": "ot-mech",
-        "label": "Station mechanical overtime to 19:00",
+        "label": "Station mechanical crew overtime to 19:00",
         "resource": "mech-station",
+        "adds": {
+          "calendar": "overtime"
+        },
+        "replaces": [],
+        "price": {
+          "perPersonHour": 1050
+        },
+        "allowed": true
+      },
+      {
+        "key": "ot-elec",
+        "label": "Station electrical crew overtime to 19:00",
+        "resource": "elec-station",
         "adds": {
           "calendar": "overtime"
         },
@@ -515,7 +546,7 @@
           },
           {
             "key": "swap",
-            "label": "Swap in the refurbished spare",
+            "label": "Swap in refurbished spare",
             "fixedCost": 340000
           }
         ]
@@ -535,7 +566,8 @@
           "unit": "h",
           "calendar": "working",
           "origin": {
-            "by": "planner"
+            "by": "planner",
+            "note": "planner estimate"
           }
         },
         "durationWith": [],
@@ -573,7 +605,8 @@
           "unit": "h",
           "calendar": "working",
           "origin": {
-            "by": "planner"
+            "by": "planner",
+            "note": "planner estimate"
           }
         },
         "durationWith": [],
@@ -598,8 +631,201 @@
         "tags": []
       },
       {
+        "key": "RHRA-TAG",
+        "title": "Tag out RHR A",
+        "kind": "tag-out",
+        "equipment": [
+          "RHRA"
+        ],
+        "isolation": "none",
+        "duration": {
+          "value": 1,
+          "unit": "h",
+          "calendar": "working",
+          "origin": {
+            "by": "planner",
+            "note": "planner estimate"
+          }
+        },
+        "durationWith": [],
+        "needs": [
+          {
+            "anyOf": [
+              "work-control"
+            ],
+            "amount": 1,
+            "handover": false
+          }
+        ],
+        "continuous": true,
+        "checks": [],
+        "tags": []
+      },
+      {
+        "key": "HHSIA-TAG",
+        "title": "Rack out HHSI A breaker and hang tags",
+        "kind": "tag-out",
+        "equipment": [
+          "HHSIA"
+        ],
+        "isolation": "none",
+        "duration": {
+          "value": 1,
+          "unit": "h",
+          "calendar": "working",
+          "origin": {
+            "by": "planner",
+            "note": "planner estimate"
+          }
+        },
+        "durationWith": [],
+        "needs": [
+          {
+            "anyOf": [
+              "work-control"
+            ],
+            "amount": 1,
+            "handover": false
+          }
+        ],
+        "continuous": true,
+        "checks": [],
+        "tags": []
+      },
+      {
+        "key": "CSA-TAG",
+        "title": "Tag out CS A",
+        "kind": "tag-out",
+        "equipment": [
+          "CSA"
+        ],
+        "isolation": "none",
+        "duration": {
+          "value": 1,
+          "unit": "h",
+          "calendar": "working",
+          "origin": {
+            "by": "planner",
+            "note": "planner estimate"
+          }
+        },
+        "durationWith": [],
+        "needs": [
+          {
+            "anyOf": [
+              "work-control"
+            ],
+            "amount": 1,
+            "handover": false
+          }
+        ],
+        "continuous": true,
+        "checks": [],
+        "tags": []
+      },
+      {
+        "key": "AFWA-TAG",
+        "title": "Tag out MD AFW A",
+        "kind": "tag-out",
+        "equipment": [
+          "AFWA"
+        ],
+        "isolation": "none",
+        "duration": {
+          "value": 1,
+          "unit": "h",
+          "calendar": "working",
+          "origin": {
+            "by": "planner",
+            "note": "planner estimate"
+          }
+        },
+        "durationWith": [],
+        "needs": [
+          {
+            "anyOf": [
+              "work-control"
+            ],
+            "amount": 1,
+            "handover": false
+          }
+        ],
+        "continuous": true,
+        "checks": [],
+        "tags": []
+      },
+      {
+        "key": "SWA-MOTOR-DISC",
+        "title": "Disconnect SW A motor leads",
+        "kind": "work",
+        "equipment": [
+          "SWA"
+        ],
+        "isolation": "inside",
+        "duration": {
+          "value": 1,
+          "unit": "h",
+          "calendar": "working",
+          "origin": {
+            "by": "planner",
+            "note": "planner estimate"
+          }
+        },
+        "durationWith": [],
+        "needs": [
+          {
+            "anyOf": [
+              "elec-station"
+            ],
+            "amount": 1,
+            "handover": false
+          }
+        ],
+        "continuous": true,
+        "checks": [],
+        "tags": []
+      },
+      {
+        "key": "SWA-MOTOR-OUT",
+        "title": "Lift out SW A motor",
+        "kind": "work",
+        "equipment": [
+          "SWA"
+        ],
+        "isolation": "inside",
+        "duration": {
+          "value": 3,
+          "unit": "h",
+          "calendar": "working",
+          "origin": {
+            "by": "planner",
+            "note": "planner estimate"
+          }
+        },
+        "durationWith": [],
+        "needs": [
+          {
+            "anyOf": [
+              "mech-station"
+            ],
+            "amount": 1,
+            "handover": false
+          },
+          {
+            "anyOf": [
+              "crane"
+            ],
+            "amount": 1,
+            "handover": false
+          }
+        ],
+        "continuous": true,
+        "checks": [],
+        "tags": []
+      },
+      {
         "key": "SWA-PUMP-OUT",
-        "title": "Pull SW A pump assembly",
+        "title": "Pull SW A pump column and bowl assembly",
         "kind": "work",
         "equipment": [
           "SWA"
@@ -614,7 +840,8 @@
             "high": 7
           },
           "origin": {
-            "by": "planner"
+            "by": "planner",
+            "note": "planner estimate; a suspended load may not be left over a shift change"
           }
         },
         "durationWith": [],
@@ -656,7 +883,7 @@
           },
           "origin": {
             "by": "planner",
-            "note": "previous rebuilds (illustrative)"
+            "note": "planner estimate from previous rebuilds (illustrative)"
           }
         },
         "durationWith": [],
@@ -680,7 +907,7 @@
       },
       {
         "key": "SWA-SPARE-PREP",
-        "title": "Receive and inspect refurbished spare",
+        "title": "Receive and inspect refurbished spare pump assembly",
         "kind": "work",
         "equipment": [
           "SWA"
@@ -691,7 +918,8 @@
           "unit": "h",
           "calendar": "working",
           "origin": {
-            "by": "planner"
+            "by": "planner",
+            "note": "planner estimate; release = vendor's promised arrival"
           }
         },
         "durationWith": [],
@@ -711,18 +939,191 @@
         },
         "notBefore": {
           "at": "2026-11-16T11:00:00Z",
-          "words": "Vendor promises the spare for Monday 12:00 (scheduled at it and flagged; S10)",
+          "words": "The vendor promises the spare on site Mon 16 Nov 12:00",
           "source": {
             "by": "assumption",
-            "note": "vendor promise"
+            "note": "vendor promise (estimate)"
           }
         },
         "checks": [],
         "tags": []
       },
       {
+        "key": "SWA-MOTOR-SHOP",
+        "title": "SW A motor inspection, bearings and insulation test in workshop",
+        "kind": "work",
+        "equipment": [
+          "SWA"
+        ],
+        "isolation": "inside",
+        "duration": {
+          "value": 6,
+          "unit": "h",
+          "calendar": "working",
+          "origin": {
+            "by": "planner",
+            "note": "planner estimate"
+          }
+        },
+        "durationWith": [],
+        "needs": [
+          {
+            "anyOf": [
+              "elec-station"
+            ],
+            "amount": 1,
+            "handover": false
+          }
+        ],
+        "continuous": false,
+        "checks": [],
+        "tags": []
+      },
+      {
+        "key": "SWA-PUMP-IN",
+        "title": "Install SW A pump assembly",
+        "kind": "work",
+        "equipment": [
+          "SWA"
+        ],
+        "isolation": "inside",
+        "duration": {
+          "value": 4,
+          "unit": "h",
+          "calendar": "working",
+          "range": {
+            "low": 3.5,
+            "high": 6
+          },
+          "origin": {
+            "by": "planner",
+            "note": "planner estimate"
+          }
+        },
+        "durationWith": [],
+        "needs": [
+          {
+            "anyOf": [
+              "mech-station"
+            ],
+            "amount": 1,
+            "handover": false
+          },
+          {
+            "anyOf": [
+              "crane"
+            ],
+            "amount": 1,
+            "handover": false
+          }
+        ],
+        "continuous": true,
+        "checks": [],
+        "tags": []
+      },
+      {
+        "key": "SWA-MOTOR-IN",
+        "title": "Install SW A motor, couple and align",
+        "kind": "work",
+        "equipment": [
+          "SWA"
+        ],
+        "isolation": "inside",
+        "duration": {
+          "value": 3,
+          "unit": "h",
+          "calendar": "working",
+          "origin": {
+            "by": "planner",
+            "note": "planner estimate"
+          }
+        },
+        "durationWith": [],
+        "needs": [
+          {
+            "anyOf": [
+              "mech-station"
+            ],
+            "amount": 1,
+            "handover": false
+          },
+          {
+            "anyOf": [
+              "crane"
+            ],
+            "amount": 1,
+            "handover": false
+          }
+        ],
+        "continuous": true,
+        "checks": [],
+        "tags": []
+      },
+      {
+        "key": "SWA-MOTOR-CONN",
+        "title": "Reconnect and test SW A motor leads",
+        "kind": "work",
+        "equipment": [
+          "SWA"
+        ],
+        "isolation": "inside",
+        "duration": {
+          "value": 2,
+          "unit": "h",
+          "calendar": "working",
+          "origin": {
+            "by": "planner",
+            "note": "planner estimate"
+          }
+        },
+        "durationWith": [],
+        "needs": [
+          {
+            "anyOf": [
+              "elec-station"
+            ],
+            "amount": 1,
+            "handover": false
+          }
+        ],
+        "continuous": true,
+        "checks": [],
+        "tags": []
+      },
+      {
+        "key": "SWA-STRAINER",
+        "title": "Inspect and clean SW A discharge strainer",
+        "kind": "work",
+        "equipment": [
+          "SWA"
+        ],
+        "isolation": "inside",
+        "duration": {
+          "value": 4,
+          "unit": "h",
+          "calendar": "working",
+          "origin": {
+            "by": "planner",
+            "note": "planner estimate"
+          }
+        },
+        "durationWith": [],
+        "needs": [
+          {
+            "anyOf": [
+              "mech-station"
+            ],
+            "amount": 1,
+            "handover": false
+          }
+        ],
+        "continuous": false,
+        "checks": [],
+        "tags": []
+      },
+      {
         "key": "CCWHXA-OPEN",
-        "title": "Open CCW HX A heads",
+        "title": "Open SW-side channel heads of CCW HX A",
         "kind": "work",
         "equipment": [
           "CCWHXA"
@@ -733,7 +1134,8 @@
           "unit": "h",
           "calendar": "working",
           "origin": {
-            "by": "planner"
+            "by": "planner",
+            "note": "planner estimate"
           }
         },
         "durationWith": [],
@@ -767,7 +1169,8 @@
             "high": 12
           },
           "origin": {
-            "by": "planner"
+            "by": "planner",
+            "note": "planner estimate"
           }
         },
         "durationWith": [],
@@ -786,8 +1189,322 @@
         "tags": []
       },
       {
+        "key": "CCWHXA-ECT",
+        "title": "Eddy-current test of CCW HX A tubes",
+        "kind": "work",
+        "equipment": [
+          "CCWHXA"
+        ],
+        "isolation": "inside",
+        "duration": {
+          "value": 8,
+          "unit": "h",
+          "calendar": "working",
+          "origin": {
+            "by": "planner",
+            "note": "contractor quotation (illustrative)"
+          }
+        },
+        "durationWith": [],
+        "needs": [
+          {
+            "anyOf": [
+              "ect-team"
+            ],
+            "amount": 1,
+            "handover": false
+          }
+        ],
+        "continuous": true,
+        "checks": [],
+        "tags": []
+      },
+      {
+        "key": "CCWHXA-CLOSE",
+        "title": "Close CCW HX A channel heads with new gaskets",
+        "kind": "work",
+        "equipment": [
+          "CCWHXA"
+        ],
+        "isolation": "inside",
+        "duration": {
+          "value": 4,
+          "unit": "h",
+          "calendar": "working",
+          "origin": {
+            "by": "planner",
+            "note": "planner estimate"
+          }
+        },
+        "durationWith": [],
+        "needs": [
+          {
+            "anyOf": [
+              "mech-station"
+            ],
+            "amount": 1,
+            "handover": false
+          }
+        ],
+        "continuous": false,
+        "checks": [],
+        "tags": []
+      },
+      {
+        "key": "CCWA-SEAL",
+        "title": "Replace CCW A mechanical seal",
+        "kind": "work",
+        "equipment": [
+          "CCWA"
+        ],
+        "isolation": "inside",
+        "duration": {
+          "value": 10,
+          "unit": "h",
+          "calendar": "working",
+          "range": {
+            "low": 8,
+            "high": 14
+          },
+          "origin": {
+            "by": "planner",
+            "note": "planner estimate"
+          }
+        },
+        "durationWith": [],
+        "needs": [
+          {
+            "anyOf": [
+              "mech-station"
+            ],
+            "amount": 1,
+            "handover": false
+          }
+        ],
+        "continuous": false,
+        "checks": [],
+        "tags": []
+      },
+      {
+        "key": "CCWA-MOTOR",
+        "title": "CCW A motor preventive maintenance",
+        "kind": "work",
+        "equipment": [
+          "CCWA"
+        ],
+        "isolation": "inside",
+        "duration": {
+          "value": 3,
+          "unit": "h",
+          "calendar": "working",
+          "origin": {
+            "by": "planner",
+            "note": "planner estimate"
+          }
+        },
+        "durationWith": [],
+        "needs": [
+          {
+            "anyOf": [
+              "elec-station"
+            ],
+            "amount": 1,
+            "handover": false
+          }
+        ],
+        "continuous": false,
+        "checks": [],
+        "tags": []
+      },
+      {
+        "key": "RHRA-COUPLING",
+        "title": "Inspect RHR A pump coupling",
+        "kind": "work",
+        "equipment": [
+          "RHRA"
+        ],
+        "isolation": "inside",
+        "duration": {
+          "value": 3,
+          "unit": "h",
+          "calendar": "working",
+          "origin": {
+            "by": "planner",
+            "note": "planner estimate"
+          }
+        },
+        "durationWith": [],
+        "needs": [
+          {
+            "anyOf": [
+              "mech-station"
+            ],
+            "amount": 1,
+            "handover": false
+          }
+        ],
+        "continuous": false,
+        "checks": [],
+        "tags": []
+      },
+      {
+        "key": "RHRA-MOTOR",
+        "title": "RHR A motor inspection and insulation test",
+        "kind": "work",
+        "equipment": [
+          "RHRA"
+        ],
+        "isolation": "inside",
+        "duration": {
+          "value": 4,
+          "unit": "h",
+          "calendar": "working",
+          "origin": {
+            "by": "planner",
+            "note": "planner estimate"
+          }
+        },
+        "durationWith": [],
+        "needs": [
+          {
+            "anyOf": [
+              "elec-station"
+            ],
+            "amount": 1,
+            "handover": false
+          }
+        ],
+        "continuous": false,
+        "checks": [],
+        "tags": []
+      },
+      {
+        "key": "HHSIA-BREAKER",
+        "title": "Overhaul HHSI A 6.6 kV breaker",
+        "kind": "work",
+        "equipment": [
+          "HHSIA"
+        ],
+        "isolation": "inside",
+        "duration": {
+          "value": 6,
+          "unit": "h",
+          "calendar": "working",
+          "origin": {
+            "by": "planner",
+            "note": "planner estimate"
+          }
+        },
+        "durationWith": [],
+        "needs": [
+          {
+            "anyOf": [
+              "elec-station"
+            ],
+            "amount": 1,
+            "handover": false
+          }
+        ],
+        "continuous": false,
+        "checks": [],
+        "tags": []
+      },
+      {
+        "key": "CSA-PM",
+        "title": "CS A lubrication and coupling PM",
+        "kind": "work",
+        "equipment": [
+          "CSA"
+        ],
+        "isolation": "inside",
+        "duration": {
+          "value": 4,
+          "unit": "h",
+          "calendar": "working",
+          "origin": {
+            "by": "planner",
+            "note": "planner estimate"
+          }
+        },
+        "durationWith": [],
+        "needs": [
+          {
+            "anyOf": [
+              "mech-station"
+            ],
+            "amount": 1,
+            "handover": false
+          }
+        ],
+        "continuous": false,
+        "checks": [],
+        "tags": []
+      },
+      {
+        "key": "AFWA-COUPLING",
+        "title": "MD AFW A coupling alignment check",
+        "kind": "work",
+        "equipment": [
+          "AFWA"
+        ],
+        "isolation": "inside",
+        "duration": {
+          "value": 4,
+          "unit": "h",
+          "calendar": "working",
+          "origin": {
+            "by": "planner",
+            "note": "planner estimate"
+          }
+        },
+        "durationWith": [],
+        "needs": [
+          {
+            "anyOf": [
+              "mech-station"
+            ],
+            "amount": 1,
+            "handover": false
+          }
+        ],
+        "continuous": false,
+        "checks": [],
+        "tags": []
+      },
+      {
+        "key": "AFWA-MOTOR",
+        "title": "MD AFW A motor preventive maintenance",
+        "kind": "work",
+        "equipment": [
+          "AFWA"
+        ],
+        "isolation": "inside",
+        "duration": {
+          "value": 3,
+          "unit": "h",
+          "calendar": "working",
+          "origin": {
+            "by": "planner",
+            "note": "planner estimate"
+          }
+        },
+        "durationWith": [],
+        "needs": [
+          {
+            "anyOf": [
+              "elec-station"
+            ],
+            "amount": 1,
+            "handover": false
+          }
+        ],
+        "continuous": false,
+        "checks": [],
+        "tags": []
+      },
+      {
         "key": "SWA-RTS",
-        "title": "Restore SW A, fill and vent, pump test",
+        "title": "Restore SW A, fill and vent, pump test (flow, differential pressure, vibration)",
         "kind": "test",
         "equipment": [
           "SWA"
@@ -798,7 +1515,8 @@
           "unit": "h",
           "calendar": "working",
           "origin": {
-            "by": "planner"
+            "by": "planner",
+            "note": "planner estimate; test content per plant test procedure (not modelled)"
           }
         },
         "durationWith": [],
@@ -841,7 +1559,8 @@
           "unit": "h",
           "calendar": "working",
           "origin": {
-            "by": "planner"
+            "by": "planner",
+            "note": "planner estimate"
           }
         },
         "durationWith": [],
@@ -883,7 +1602,8 @@
           "unit": "h",
           "calendar": "working",
           "origin": {
-            "by": "planner"
+            "by": "planner",
+            "note": "planner estimate"
           }
         },
         "durationWith": [],
@@ -925,7 +1645,8 @@
           "unit": "h",
           "calendar": "working",
           "origin": {
-            "by": "planner"
+            "by": "planner",
+            "note": "planner estimate"
           }
         },
         "durationWith": [],
@@ -967,7 +1688,8 @@
           "unit": "h",
           "calendar": "working",
           "origin": {
-            "by": "planner"
+            "by": "planner",
+            "note": "planner estimate"
           }
         },
         "durationWith": [],
@@ -1009,7 +1731,8 @@
           "unit": "h",
           "calendar": "working",
           "origin": {
-            "by": "planner"
+            "by": "planner",
+            "note": "planner estimate"
           }
         },
         "durationWith": [],
@@ -1041,6 +1764,141 @@
     ],
     "links": [
       {
+        "from": "SWA-TAG",
+        "to": "SWA-MOTOR-DISC",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        }
+      },
+      {
+        "from": "SWA-TAG",
+        "to": "SWA-STRAINER",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        }
+      },
+      {
+        "from": "SWA-TAG",
+        "to": "CCWHXA-OPEN",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        }
+      },
+      {
+        "from": "CCWA-TAG",
+        "to": "CCWHXA-OPEN",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        }
+      },
+      {
+        "from": "CCWA-TAG",
+        "to": "CCWA-SEAL",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        }
+      },
+      {
+        "from": "CCWA-TAG",
+        "to": "CCWA-MOTOR",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        }
+      },
+      {
+        "from": "RHRA-TAG",
+        "to": "RHRA-COUPLING",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        }
+      },
+      {
+        "from": "RHRA-TAG",
+        "to": "RHRA-MOTOR",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        }
+      },
+      {
+        "from": "HHSIA-TAG",
+        "to": "HHSIA-BREAKER",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        }
+      },
+      {
+        "from": "CSA-TAG",
+        "to": "CSA-PM",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        }
+      },
+      {
+        "from": "AFWA-TAG",
+        "to": "AFWA-COUPLING",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        }
+      },
+      {
+        "from": "AFWA-TAG",
+        "to": "AFWA-MOTOR",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        }
+      },
+      {
+        "from": "SWA-MOTOR-DISC",
+        "to": "SWA-MOTOR-OUT",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        }
+      },
+      {
+        "from": "SWA-MOTOR-OUT",
+        "to": "SWA-PUMP-OUT",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        }
+      },
+      {
+        "from": "SWA-MOTOR-OUT",
+        "to": "SWA-MOTOR-SHOP",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        }
+      },
+      {
         "from": "SWA-PUMP-OUT",
         "to": "SWA-REBUILD",
         "type": "FS",
@@ -1054,6 +1912,90 @@
         }
       },
       {
+        "from": "SWA-REBUILD",
+        "to": "SWA-PUMP-IN",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        },
+        "method": {
+          "choice": "SWA-method",
+          "option": "rebuild"
+        }
+      },
+      {
+        "from": "SWA-PUMP-OUT",
+        "to": "SWA-PUMP-IN",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        },
+        "method": {
+          "choice": "SWA-method",
+          "option": "swap"
+        }
+      },
+      {
+        "from": "SWA-SPARE-PREP",
+        "to": "SWA-PUMP-IN",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        },
+        "method": {
+          "choice": "SWA-method",
+          "option": "swap"
+        }
+      },
+      {
+        "from": "SWA-PUMP-IN",
+        "to": "SWA-MOTOR-IN",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        }
+      },
+      {
+        "from": "SWA-MOTOR-SHOP",
+        "to": "SWA-MOTOR-IN",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        }
+      },
+      {
+        "from": "SWA-MOTOR-IN",
+        "to": "SWA-MOTOR-CONN",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        }
+      },
+      {
+        "from": "SWA-MOTOR-CONN",
+        "to": "SWA-RTS",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        }
+      },
+      {
+        "from": "SWA-STRAINER",
+        "to": "SWA-RTS",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        }
+      },
+      {
         "from": "CCWHXA-OPEN",
         "to": "CCWHXA-CLEAN",
         "type": "SS",
@@ -1061,7 +2003,7 @@
           "value": 2,
           "unit": "h"
         },
-        "words": "Lancing starts once the inlet head is off."
+        "words": "Lancing can start once the inlet channel head is off, 2 h into the opening."
       },
       {
         "from": "CCWHXA-OPEN",
@@ -1071,7 +2013,146 @@
           "value": 1,
           "unit": "h"
         },
-        "words": "Tubes behind the outlet head are lanced last."
+        "words": "Lancing cannot finish until 1 h after the outlet head is off; the tubes behind it are lanced last."
+      },
+      {
+        "from": "CCWHXA-CLEAN",
+        "to": "CCWHXA-ECT",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        }
+      },
+      {
+        "from": "CCWHXA-ECT",
+        "to": "CCWHXA-CLOSE",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        }
+      },
+      {
+        "from": "CCWHXA-CLOSE",
+        "to": "SWA-RTS",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        },
+        "words": "The heat exchanger's SW side lies on SW A's flow path, so it must be closed before SW A is filled."
+      },
+      {
+        "from": "CCWHXA-CLOSE",
+        "to": "CCWA-RTS",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        }
+      },
+      {
+        "from": "CCWA-SEAL",
+        "to": "CCWA-RTS",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        }
+      },
+      {
+        "from": "CCWA-MOTOR",
+        "to": "CCWA-RTS",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        }
+      },
+      {
+        "from": "SWA-RTS",
+        "to": "CCWA-RTS",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        },
+        "words": "Support order: CCW A cannot be tested without SW A cooling."
+      },
+      {
+        "from": "CCWA-RTS",
+        "to": "RHRA-RTS",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        },
+        "words": "Support order: RHR A needs CCW A cooling for its test."
+      },
+      {
+        "from": "CCWA-RTS",
+        "to": "HHSIA-RTS",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        },
+        "words": "Support order: the HHSI A pump cooler needs CCW A."
+      },
+      {
+        "from": "RHRA-COUPLING",
+        "to": "RHRA-RTS",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        }
+      },
+      {
+        "from": "RHRA-MOTOR",
+        "to": "RHRA-RTS",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        }
+      },
+      {
+        "from": "HHSIA-BREAKER",
+        "to": "HHSIA-RTS",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        }
+      },
+      {
+        "from": "CSA-PM",
+        "to": "CSA-RTS",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        }
+      },
+      {
+        "from": "AFWA-COUPLING",
+        "to": "AFWA-RTS",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        }
+      },
+      {
+        "from": "AFWA-MOTOR",
+        "to": "AFWA-RTS",
+        "type": "FS",
+        "lag": {
+          "value": 0,
+          "unit": "h"
+        }
       }
     ],
     "rules": [
@@ -1105,10 +2186,40 @@
           "unit": "h"
         },
         "singleEntry": true,
-        "words": "Once the first cooling-chain item is tagged out, all must be back and tested within 72 h.",
+        "words": "Once the first Train A cooling item is tagged out, every item in the chain must be back and tested within 72 h, in one continuous span. Station policy allows one entry per window.",
         "source": {
           "by": "reference",
           "note": "Modelled on NUREG-1431 Standard Technical Specifications: one ECCS train inoperable for 72 h (LCO 3.5.2, recollection), and similar 72 h Completion Times for CCW (3.7.7) and service water (3.7.8), also recollection. The Completion Time runs from entry into the Condition and applies to deliberate removal from service (LCO 3.0.2, STS Bases Rev 3.1). Declared fictional plant rule, not a licence."
+        }
+      },
+      {
+        "kind": "span-limit",
+        "key": "R2-CS-A",
+        "group": "CS-A",
+        "limit": {
+          "value": 72,
+          "unit": "h"
+        },
+        "singleEntry": true,
+        "words": "Containment spray train A: back and tested within 72 h of the first tag-out, in one continuous span.",
+        "source": {
+          "by": "reference",
+          "note": "Modelled on NUREG-1431 LCO 3.6.6 (recollection; 72 h at many plants)."
+        }
+      },
+      {
+        "kind": "span-limit",
+        "key": "R2-AFW-A",
+        "group": "AFW-A",
+        "limit": {
+          "value": 72,
+          "unit": "h"
+        },
+        "singleEntry": true,
+        "words": "Auxiliary feedwater train A (motor-driven): back and tested within 72 h of the first tag-out, in one continuous span.",
+        "source": {
+          "by": "reference",
+          "note": "NUREG-1431 LCO 3.7.5 Condition B: one AFW train inoperable, 72 h (STS Bases Rev 3.1, fetched)."
         }
       }
     ],

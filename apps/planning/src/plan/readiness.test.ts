@@ -78,10 +78,10 @@ describe('readiness: warnings only, never a score (T2)', () => {
   })
 
   test('redundancy warns only for items that back each other up (one function), out together, with no rule', () => {
-    // Train A's own chain shares no function: no warning on the plan.
+    // Train A's chain is one train in series: its items share no function with each other, so no warning.
     expect(codes(trainA)).not.toContain('redundancy')
     // A pair of feedwater pumps that back each other up, both taken out, with no rule keeping one in service.
-    const pump = (key: string) => ({ key, label: `Main feedwater pump ${key.slice(-1)}`, supportedBy: [], function: 'MFW' }) as unknown as PlanInputs['equipment'][number]
+    const pump = (key: string): PlanInputs['equipment'][number] => ({ key, label: `Main feedwater pump ${key.slice(-1)}`, supportedBy: [], function: 'MFW' })
     const tagOut = trainA.jobs.find(job => job.kind === 'tag-out')!
     const test = trainA.jobs.find(job => job.kind === 'test')!
     const jobs = ['MFWA', 'MFWB'].flatMap(key => [{ ...tagOut, key: `${key}-TAG`, equipment: [key], checks: [] }, { ...test, key: `${key}-RTS`, equipment: [key] }])

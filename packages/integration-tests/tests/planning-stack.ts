@@ -115,7 +115,9 @@ export const createPlanningStack = async (options: { readonly realAgents?: boole
   const store = createPlanStore(planningHome)
   const definitions = createPlanDefinitions()
   // Planning reads World through Host as index.ts does; Host's address is known once it listens.
-  const pool = createSolverPool()
+  // This one process holds World, Host, Agents and Planning, so its RSS is far above Planning's own; the
+  // pool's 220 MB guard (meant for the Planning unit alone) would stop every solve at once.
+  const pool = createSolverPool({ rssLimitMb: 4_000 })
   cleanup.push(() => pool.shutdown())
   const operations = createPlanningOperations({
     store, definitions, solver: createRealSolver(pool), checker: realChecker,

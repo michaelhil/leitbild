@@ -1,9 +1,10 @@
 // The operations on the REAL solver (lane S's Worker pool and Generate) and checker (lane K's re-check):
-// the Train A Definition, the frozen flagship case (V1 and V2), and result sizes on twin v3.
+// the Train A Definition's inputs (the frozen flagship case, V1 and V2) and result sizes on twin v3. The demo
+// as a planner starts it, with World, is packages/integration-tests/tests/planning-train-a.test.ts.
 import { afterAll, describe, expect, test } from 'bun:test'
 import { planSchema, type Plan, type PlanInputs } from '../plan/schema.ts'
 import { createSolverPool } from '../solve/pool.ts'
-import { trainAInputs } from '../solve/fixtures/train-a-case.ts'
+import { bundledPlanDefinitions } from '../definitions/index.ts'
 import { twinPlan, twinV3Options } from '../../tests/harness/twin-plan.ts'
 import { createHarness, type Answer } from './fixtures/harness.ts'
 import { createRealSolver, realChecker } from './wiring.ts'
@@ -22,9 +23,9 @@ const planOf = async (inputs: PlanInputs): Promise<string> => {
   })
   return (await harness.store.create(harness.workspaceId, plan)).id
 }
-/** The flagship after linking its Run and a refresh: World shows SW B running (the SW A tag-out's precondition). */
+/** The Train A Definition after linking its Run and a refresh: World shows each precondition as expected. */
 const refreshedFlagship = (): PlanInputs => {
-  const inputs = trainAInputs()
+  const inputs = bundledPlanDefinitions.find(definition => definition.id === 'train-a-work-week')!.inputs
   const at = inputs.settings.dataDate ?? inputs.settings.window!.start
   const facts = inputs.jobs.flatMap(job => job.checks.map(check => ({
     id: check.fact, label: check.words, quantity: 'state', value: check.expect, basis: 'observed' as const, at,
@@ -36,16 +37,6 @@ type GeneratedOption = { key: string; label: string; status: { word: string; goa
 const summary = (options: GeneratedOption[]) => options.map(option => ({ label: option.label, word: option.status.word, span: option.span, cost: option.cost, goals: option.status.goals.map(goal => `${goal.value} ${goal.unit} (${goal.word})`), warnings: option.warnings.length }))
 
 describe('the operations on the real solver and checker', () => {
-  test('the Train A Definition is the lane A fragment: Generate answers invalid input, naming the unbracketed inside work', async () => {
-    const created = await harness.create('train-a-work-week')
-    const generated = await harness.call('planning.plan.generate', { resource: created.id, input: { seconds: 6 }, expectedRevision: 1 })
-    expect(generated.status).toBe(200)
-    small(generated)
-    console.log('Train A Definition:', JSON.stringify(summary(generated.body.result.options)), generated.body.result.text)
-    expect(generated.body.result.options.map((option: GeneratedOption) => option.status.word)).toEqual(generated.body.result.options.map(() => 'invalid input'))
-    expect(created.answer.body.result.problems.map((problem: { code: string }) => problem.code)).toContain('no-tag-out')
-  }, 120_000)
-
   test('the flagship case: Generate, explain and the schedule read, every status re-checked', async () => {
     const id = await planOf(refreshedFlagship())
     const generated = await harness.call('planning.plan.generate', { resource: id, input: {}, expectedRevision: 1 })

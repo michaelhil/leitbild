@@ -1,12 +1,13 @@
 import { afterAll, describe, expect, test } from 'bun:test'
 import type { PlanningSubject } from '@leitbild/contracts'
 import { planInputsSchema } from '../plan/schema.ts'
+import { bundledPlanDefinitions } from '../definitions/index.ts'
 import { worldSubjects } from '../plan/readiness.ts'
 import { subjectsFor } from './fixtures/doubles.ts'
 import { createHarness } from './fixtures/harness.ts'
 
 const supplyRun = planInputsSchema.parse(await Bun.file(new URL('../plan/fixtures/supply-run.case2.json', import.meta.url)).json())
-const trainA = planInputsSchema.parse(await Bun.file(new URL('../plan/fixtures/train-a.fragment.json', import.meta.url)).json())
+const trainA = planInputsSchema.parse(bundledPlanDefinitions.find(definition => definition.id === 'train-a-work-week')!.inputs)
 
 // World values the double answers: one per fact id the Supply run names. They are World inputs, not schedules.
 const factIds = [...new Set([

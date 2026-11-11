@@ -9,8 +9,11 @@ const read = (path: string) => Bun.file(new URL(path, import.meta.url)).json()
 const fixture = async (name: string) => read(`../plan/fixtures/${name}`)
 
 describe('Definition fidelity', () => {
-  test('Train A work week is the Train A fixture, unchanged', async () => {
-    expect((await read('./train-a-work-week.plan-definition.json')).inputs).toEqual(await fixture('train-a.fragment.json'))
+  test('Train A work week is the full frozen case v0.2 (train-a.case.json), unchanged', async () => {
+    const inputs = (await read('./train-a-work-week.plan-definition.json')).inputs
+    const frozen = await fixture('train-a.case.json')
+    expect(inputs).toEqual(frozen)
+    expect([inputs.jobs.length, inputs.links.length]).toEqual([frozen.jobs.length, frozen.links.length])
   })
 
   test('Supply run is the converted case2 fixture, unchanged, from the frozen case2 v1.1', async () => {

@@ -1,11 +1,13 @@
 import { afterAll, describe, expect, test } from 'bun:test'
 import { planInputsSchema } from '../plan/schema.ts'
+import { bundledPlanDefinitions } from '../definitions/index.ts'
 import { createSolverDouble, testCertifiedSize } from './fixtures/doubles.ts'
 import { createHarness } from './fixtures/harness.ts'
 
 const harness = await createHarness()
 afterAll(() => harness.close())
-const trainA = planInputsSchema.parse(await Bun.file(new URL('../plan/fixtures/train-a.fragment.json', import.meta.url)).json())
+// The Train A Definition's own inputs: its plans are what these refusals are made on.
+const trainA = planInputsSchema.parse(bundledPlanDefinitions.find(definition => definition.id === 'train-a-work-week')!.inputs)
 const protectedRule = trainA.rules.find(rule => rule.kind === 'protected')!
 const supported = trainA.equipment.find(item => item.supportedBy.length > 0)!
 const workJob = trainA.jobs.find(job => job.kind === 'work' && job.isolation === 'inside')!
