@@ -52,7 +52,13 @@ export const computeMetrics = (input: MetricInput): { readonly metrics: Metric[]
     const ordered = purchase.ordered !== undefined
     if (!used && !ordered) continue
     const price = purchase.price
-    if (price.perPersonHour !== undefined) cost += (personHours.get(purchase.key) ?? 0) * price.perPersonHour
+    if (price.perPersonHour !== undefined) {
+      // ordered: every person-hour of the added time is bought, used or not; otherwise the hours used
+      const resource = context.resources.get(purchase.resource)
+      const ordered = purchase.ordered === undefined || resource === undefined ? undefined
+        : context.added.get(purchase.key)!.reduce((sum, slot) => sum + slot, 0) * grid.slotMs / hourMs * resource.count * (resource.crewSize ?? 1)
+      cost += (ordered ?? personHours.get(purchase.key) ?? 0) * price.perPersonHour
+    }
     if (price.perPeriodUsed !== undefined) {
       const periods = 'periods' in purchase.adds
         ? purchase.adds.periods.map(period => [Math.max(0, Math.ceil((Date.parse(period.start) - windowStart) / grid.slotMs)), Math.min(grid.slots, Math.floor((Date.parse(period.end) - windowStart) / grid.slotMs))] as [number, number])

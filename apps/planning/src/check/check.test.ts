@@ -367,3 +367,90 @@ describe('certificates are re-verified from the inputs', () => {
     expect(verifyCertificate(chain, noVariant, certificate(18, 16, ['C1', 'C3', 'C2'])).ok).toBe(false)
   })
 })
+
+describe('review fixes: duty, ordered purchases, second outages, progress lags, the data date, invalid input', () => {
+  const ot = { key: 'ot', label: 'Overtime', weekly: [{ days: ['mon', 'tue', 'wed', 'thu', 'fri'] as Array<'mon' | 'tue' | 'wed' | 'thu' | 'fri'>, from: '15:00', to: '19:00' }], periods: [], except: [], source: planner }
+  const crews = [
+    { key: 'f1', label: 'Fitter crew 1', kind: 'crew' as const, count: 1, crewSize: 3, calendar: 'day', attributes: [], source: planner },
+    { key: 'f2', label: 'Fitter crew 2', kind: 'crew' as const, count: 1, crewSize: 3, calendar: 'day', attributes: [], source: planner },
+  ]
+  const overtime = (resource: string, ordered = false) => ({ key: `ot-${resource}`, label: `Overtime ${resource}`, resource, adds: { calendar: 'ot' }, replaces: [], price: { perPersonHour: 1_050 }, allowed: true, ...(ordered ? { ordered: { at: '2026-11-13T10:00:00Z', by: { kind: 'human' as const, name: 'Planner' } } } : {}) })
+  const crewJob = (key: string, crew: string, length: number) => ({ ...work(key, 'X', length, true), equipment: [], isolation: 'none' as const, needs: [{ anyOf: [crew], amount: 1, handover: false }] })
+
+  test('keep one crew free 16:00-19:00 local: overtime bought only 15:00-16:00 does not put a crew on duty after it', () => {
+    // f1 works 14:00-16:00 local (13:00Z-15:00Z), the last hour on overtime; f2 works 13:00Z-17:00Z, overtime from 14:00Z
+    const inputs = plan({
+      calendars: [...plan({}).calendars, ot], resources: crews, purchases: [overtime('f1'), overtime('f2')],
+      jobs: [crewJob('W1', 'f1', 2), crewJob('W2', 'f2', 4)],
+      rules: [{ kind: 'keep-in-service', key: 'K', members: [{ resource: 'f1' }, { resource: 'f2' }], atLeast: 1, during: { start: '2026-11-16T15:00:00Z', end: '2026-11-16T18:00:00Z' }, words: 'Keep one fitter crew free 16-19', source: planner }],
+    })
+    const rows = [
+      row('W1', '2026-11-16T13:00:00Z', '2026-11-16T15:00:00Z', [{ resource: 'f1', from: '2026-11-16T13:00:00Z', to: '2026-11-16T14:00:00Z' }, { resource: 'f1', from: '2026-11-16T14:00:00Z', to: '2026-11-16T15:00:00Z', purchase: 'ot-f1' }]),
+      row('W2', '2026-11-16T13:00:00Z', '2026-11-16T17:00:00Z', [{ resource: 'f2', from: '2026-11-16T13:00:00Z', to: '2026-11-16T14:00:00Z' }, { resource: 'f2', from: '2026-11-16T14:00:00Z', to: '2026-11-16T17:00:00Z', purchase: 'ot-f2' }]),
+    ]
+    const result = checkPlan(inputs, { methods: [], purchases: ['ot-f1', 'ot-f2'] }, rows)
+    expect(codes(result)).toEqual(['keep-in-service'])
+    expect(result.violations[0]?.at).toBe('2026-11-16T15:00:00.000Z')
+  })
+  test('ordered overtime is charged for every ordered person-hour, used or not', () => {
+    // Window Mon 07:00-Wed 07:00 local: overtime Mon and Tue 15:00-19:00 = 8 h, 3 persons, NOK 1,050 = 25,200
+    const inputs = plan({ calendars: [...plan({}).calendars, ot], resources: crews, purchases: [overtime('f1', true)], jobs: [crewJob('W', 'f1', 2)], goals: [{ metric: 'extra-cost', tolerance: { value: 0, unit: 'NOK' } }] })
+    const unused = checkPlan(inputs, noVariant, [row('W', '2026-11-16T06:00:00Z', '2026-11-16T08:00:00Z', [{ resource: 'f1', from: '2026-11-16T06:00:00Z', to: '2026-11-16T08:00:00Z' }])])
+    expect(unused.violations).toEqual([])
+    expect(unused.goals).toEqual([{ metric: 'extra-cost', value: 8 * 3 * 1_050, unit: 'NOK' }])
+    // partly used (1 h of it): the same ordered hours, and no "not allowed" though the variant omits it
+    const partly = checkPlan(inputs, noVariant, [row('W', '2026-11-16T13:00:00Z', '2026-11-16T15:00:00Z', [{ resource: 'f1', from: '2026-11-16T13:00:00Z', to: '2026-11-16T14:00:00Z' }, { resource: 'f1', from: '2026-11-16T14:00:00Z', to: '2026-11-16T15:00:00Z', purchase: 'ot-f1' }])])
+    expect(partly.violations).toEqual([])
+    expect(partly.goals).toEqual([{ metric: 'extra-cost', value: 8 * 3 * 1_050, unit: 'NOK' }])
+  })
+  test('a planned second outage (tag, test, tag, test) is two outages, each measured', () => {
+    const twice = plan({ equipment: [item('X')], jobs: [tag('T1', ['X']), testJob('R1', ['X']), tag('T2', ['X']), work('W2', 'X', 1), testJob('R2', ['X'])] })
+    // out 06:00Z-08:00Z, then 09:00Z-12:00Z with fitter work 10:00Z-11:00Z (day shift) in the second outage
+    const rows = [opsRow('T1', '2026-11-16T06:00:00Z'), opsRow('R1', '2026-11-16T07:00:00Z'), opsRow('T2', '2026-11-16T09:00:00Z'),
+      row('W2', '2026-11-16T10:00:00Z', '2026-11-16T11:00:00Z', [{ resource: 'fitter', from: '2026-11-16T10:00:00Z', to: '2026-11-16T11:00:00Z' }]), opsRow('R2', '2026-11-16T11:00:00Z')]
+    const result = checkPlan(twice, noVariant, rows)
+    expect(result.violations).toEqual([])
+    expect(result.metrics.find(metric => metric.id === 'unavailable-hours')?.value).toBe(2 + 3)
+    // under a single-entry limit of 4 h, the words say it was out twice and the span counts from the first tag
+    const limited = plan({ ...twice, equipment: [item('X', [], 'G')], groups: [{ key: 'G', label: 'Group G' }], rules: [{ kind: 'span-limit', key: 'L', group: 'G', limit: { value: 4, unit: 'h' }, singleEntry: true, words: 'G back within 4 h', source: planner }] })
+    const refused = checkPlan(limited, noVariant, rows)
+    expect(codes(refused)).toEqual(['span-limit'])
+    expect(refused.violations[0]?.words).toContain('It is out 2 times (back at Mon 16 Nov 09:00, out again at Mon 16 Nov 10:00)')
+  })
+  test('start-to-start counts the predecessor\'s work done: 1 h of opening is not 2 h', () => {
+    // OPEN: 4 h fitter work from Mon 14:00 local (13:00Z): Mon 13:00Z-14:00Z, Tue 06:00Z-09:00Z. CLEAN starts Mon 15:00Z.
+    const open = { ...work('OPEN', 'X', 4), equipment: [], isolation: 'none' as const, title: 'Open heads' }
+    const clean = { ...tag('CLEAN', ['X']), kind: 'work' as const, equipment: [], title: 'Clean tubes', duration: hours(19) }
+    const inputs = plan({ jobs: [open, clean], links: [{ from: 'OPEN', to: 'CLEAN', type: 'SS', lag: { value: 2, unit: 'h' } }, { from: 'OPEN', to: 'CLEAN', type: 'FF', lag: { value: 1, unit: 'h' } }] })
+    const openRow = row('OPEN', '2026-11-16T13:00:00Z', '2026-11-17T09:00:00Z', [{ resource: 'fitter', from: '2026-11-16T13:00:00Z', to: '2026-11-16T14:00:00Z' }, { resource: 'fitter', from: '2026-11-17T06:00:00Z', to: '2026-11-17T09:00:00Z' }])
+    const cleanRow = row('CLEAN', '2026-11-16T15:00:00Z', '2026-11-17T10:00:00Z', [{ resource: 'ops', from: '2026-11-16T15:00:00Z', to: '2026-11-17T10:00:00Z' }])
+    const result = checkPlan(inputs, noVariant, [openRow, cleanRow])
+    expect(codes(result)).toEqual(['link'])
+    expect(result.violations[0]?.words).toBe("'Clean tubes' starts after only 1 h of 'Open heads'; the link needs 2 h of it done first.")
+  })
+  test('finish-to-finish counts the successor\'s work after: 0.5 h is not 1 h', () => {
+    // A: operators Mon 10:00Z-14:00Z. B: 4 h fitter work from 10:30Z: 10:30Z-14:00Z, then Tue 06:00Z-06:30Z.
+    const a = { ...tag('A', ['X']), kind: 'work' as const, equipment: [], title: 'Drain', duration: hours(4) }
+    const b = { ...work('B', 'X', 4), equipment: [], isolation: 'none' as const, title: 'Flush' }
+    const inputs = plan({ jobs: [a, b], links: [{ from: 'A', to: 'B', type: 'FF', lag: { value: 1, unit: 'h' } }] })
+    const rows = [row('A', '2026-11-16T10:00:00Z', '2026-11-16T14:00:00Z', [{ resource: 'ops', from: '2026-11-16T10:00:00Z', to: '2026-11-16T14:00:00Z' }]),
+      row('B', '2026-11-16T10:30:00Z', '2026-11-17T06:30:00Z', [{ resource: 'fitter', from: '2026-11-16T10:30:00Z', to: '2026-11-16T14:00:00Z' }, { resource: 'fitter', from: '2026-11-17T06:00:00Z', to: '2026-11-17T06:30:00Z' }])]
+    const result = checkPlan(inputs, noVariant, rows)
+    expect(codes(result)).toEqual(['link'])
+    expect(result.violations[0]?.words).toBe("Only 0.5 h of 'Flush' is done after 'Drain' finishes; the link needs 1 h of it after.")
+  })
+  test('nothing is planned before the data date', () => {
+    const inputs = plan({ settings: { ...plan({}).settings, dataDate: '2026-11-16T12:00:00Z' }, jobs: [{ ...tag('A', ['X']), kind: 'work' as const, equipment: [] }] })
+    const result = checkPlan(inputs, noVariant, [opsRow('A', '2026-11-16T06:00:00Z')])
+    expect(codes(result)).toEqual(['before-data-date'])
+    expect(result.violations[0]?.words).toContain('before the data date Mon 16 Nov 13:00')
+    expect(checkPlan(inputs, noVariant, [opsRow('A', '2026-11-16T12:00:00Z')]).violations).toEqual([])
+  })
+  test('a working-time job with no needs is invalid input, not infeasible', () => {
+    const inputs = plan({ jobs: [{ ...tag('A', ['X']), kind: 'work' as const, equipment: [], needs: [] }] })
+    const result = checkPlan(inputs, noVariant, [row('A', '2026-11-16T06:00:00Z', '2026-11-16T07:00:00Z', [])])
+    expect(codes(result)).toEqual(['no-working-calendar'])
+    expect(result.invalidInput).toBe(true)
+    expect(checkPlan(plan({}), noVariant, []).invalidInput).toBe(false)
+  })
+})

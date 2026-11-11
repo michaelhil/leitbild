@@ -29,13 +29,19 @@ export type ViolationCode =
   | 'no-working-calendar' | 'where-unit'
   // rows
   | 'not-scheduled' | 'scheduled-twice' | 'not-in-variant' | 'time-unreadable' | 'off-grid' | 'outside-window'
-  | 'finish-mismatch' | 'start-off-calendar' | 'not-continuous' | 'beyond-window' | 'release' | 'lock'
+  | 'finish-mismatch' | 'start-off-calendar' | 'not-continuous' | 'beyond-window' | 'release' | 'lock' | 'before-data-date'
   // resources
   | 'need-not-served' | 'use-outside-work' | 'use-outside-calendar' | 'ineligible-resource' | 'where-not-met'
   | 'handover-not-allowed' | 'over-capacity' | 'max-jobs' | 'purchase-not-allowed' | 'purchase-past-deadline' | 'purchase-wrong-resource'
   // logic and availability
   | 'link' | 'bracket' | 'tag-before-test' | 'support-order' | 'never-returned' | 'span-limit' | 'keep-in-service' | 'due'
   | 'protected-equipment' | 'protected-unavailable' | 'precondition-unread' | 'precondition-unmet'
+
+/** Codes that say the inputs cannot give a valid plan: the status is "invalid input", never "proven infeasible". */
+export const inputCodes: ReadonlySet<ViolationCode> = new Set<ViolationCode>([
+  'no-window', 'window-off-grid', 'calendar-needs-zone', 'calendar-off-grid', 'unknown-key', 'method-choice', 'support-cycle',
+  'bracket-missing', 'equipment-missing', 'world-value-unread', 'below-minimum', 'duration-ambiguous', 'no-working-calendar', 'where-unit',
+])
 
 /** Structure for code and the Assistant; `words` is generated from it for people and never stored. */
 export interface Violation { readonly code: ViolationCode; readonly about: readonly string[]; readonly at?: string; readonly words: string }
@@ -44,6 +50,8 @@ export interface Interval { readonly from: number; readonly to: number }   // ms
 
 export interface CheckResult {
   readonly feasible: boolean
+  /** Some violation is an input problem (see inputCodes): the plan is invalid input, not infeasible. */
+  readonly invalidInput: boolean
   readonly violations: readonly Violation[]
   readonly metrics: readonly Metric[]
   /** One per plan goal, in goal order, raw (no threshold applied), in the goal's unit. */
@@ -75,7 +83,7 @@ export interface Context {
   readonly active: ReadonlySet<string>
   readonly resources: ReadonlyMap<string, Resource>
   readonly purchases: ReadonlyMap<string, Purchase>
-  /** Purchases this variant may use, after the order deadline at the data date. */
+  /** Purchases this variant may use, after the order deadline at the data date, and every ordered purchase. */
   readonly permitted: ReadonlySet<string>
   readonly calendars: ReadonlyMap<string, Uint8Array>
   readonly added: ReadonlyMap<string, Uint8Array>
@@ -162,6 +170,7 @@ export const prepare = (inputs: Inputs, variant: CheckVariant): Prepared => {
     const lapsed = purchase.ordered === undefined && purchase.orderBy !== undefined && dataDate !== undefined && dataDate > Date.parse(purchase.orderBy)
     if (!lapsed) permitted.add(key)
   }
+  for (const purchase of inputs.purchases) if (purchase.ordered !== undefined) permitted.add(purchase.key)   // already bought
   const added = new Map<string, Uint8Array>()
   const replaced = new Map<string, Uint8Array>()
   for (const purchase of inputs.purchases) {
@@ -278,7 +287,7 @@ const attributeAt = (context: Context, resource: Resource, key: string, instant:
 
 export const checkPlan = (inputs: Inputs, variant: CheckVariant, rows: readonly CheckRow[]): CheckResult => {
   const prepared = prepare(inputs, variant)
-  if (!prepared.ok) return { feasible: false, violations: prepared.problems, metrics: [], goals: [], outages: new Map() }
+  if (!prepared.ok) return { feasible: false, invalidInput: true, violations: prepared.problems, metrics: [], goals: [], outages: new Map() }
   const context = prepared.context
   const { grid, when, jobs, active, resources, purchases, permitted, calendars, added, replaced } = context
   const found: Violation[] = [...prepared.problems]
@@ -312,6 +321,7 @@ export const checkPlan = (inputs: Inputs, variant: CheckVariant, rows: readonly 
   const jobsPerResource = new Map<string, Set<string>>()
   const personHours = new Map<string, number>()   // purchase -> person-hours bought
   const loadOf = (key: string): Int32Array => { let array = load.get(key); if (array === undefined) { array = new Int32Array(grid.slots); load.set(key, array) } return array }
+  const workedOf = new Map<string, readonly number[]>()   // job -> its worked slots, for the progress lags
   const usedPurchases = new Set<string>()
   for (const [, row] of rowOf) for (const use of row.uses) if (use.purchase !== undefined && purchases.has(use.purchase)) usedPurchases.add(use.purchase)
   const replacedNow = new Map<string, Uint8Array>()   // resource -> booked slots made unusable by a used or ordered rebooking
@@ -377,7 +387,7 @@ export const checkPlan = (inputs: Inputs, variant: CheckVariant, rows: readonly 
         const purchase = purchases.get(use.purchase)
         if (purchase === undefined) { push('unknown-key', [job.key, use.purchase], `'${job.title}' records time bought from '${use.purchase}', which the plan does not have.`); continue }
         if (purchase.resource !== use.resource) { push('purchase-wrong-resource', [job.key, use.purchase], `'${purchase.label}' buys time for another resource than '${resource.label}'.`, from); continue }
-        if (!variant.purchases.includes(use.purchase)) push('purchase-not-allowed', [job.key, use.purchase], `'${job.title}' uses '${purchase.label}', which this variant does not allow.`, from)
+        if (!variant.purchases.includes(use.purchase) && purchase.ordered === undefined) push('purchase-not-allowed', [job.key, use.purchase], `'${job.title}' uses '${purchase.label}', which this variant does not allow.`, from)
         else if (!permitted.has(use.purchase)) push('purchase-past-deadline', [job.key, use.purchase], `'${job.title}' uses '${purchase.label}', but it was not ordered by ${when(Date.parse(purchase.orderBy!))}.`, from)
       }
       const availability = sourceAvailability(resource, use.purchase)
@@ -455,6 +465,7 @@ export const checkPlan = (inputs: Inputs, variant: CheckVariant, rows: readonly 
       }
     }
     if (worked !== undefined) {
+      workedOf.set(job.key, worked)
       const expectedFinish = work === 0 ? startSlot : worked[worked.length - 1]! + 1
       if (expectedFinish !== finishSlot) {
         push('finish-mismatch', [job.key], `'${job.title}' is recorded to finish at ${when(spot.finish)}; its start, duration and calendars give ${when(instantOf(expectedFinish))}.`, spot.finish)
@@ -500,7 +511,8 @@ export const checkPlan = (inputs: Inputs, variant: CheckVariant, rows: readonly 
     if (resource.maxJobs !== undefined && count > resource.maxJobs) push('max-jobs', [key], `'${resource.label}' is given ${count} jobs; the plan allows at most ${resource.maxJobs} ahead.`)
   }
 
-  // ── logic: links, releases, locks ──
+  // ── logic: links, releases, the data date, locks ──
+  const dataDate = inputs.settings.dataDate === null ? undefined : Date.parse(inputs.settings.dataDate)
   const timesOf = (key: string): Placed | undefined => placed.get(key)
   for (const link of inputs.links) {
     if (!isActive(link, variant)) continue
@@ -509,15 +521,45 @@ export const checkPlan = (inputs: Inputs, variant: CheckVariant, rows: readonly 
     const from = timesOf(link.from), to = timesOf(link.to)
     if (from === undefined || to === undefined) continue
     const lag = link.lag.value * unitMs[link.lag.unit]!
-    const gap = link.type === 'FS' ? to.start - from.finish : link.type === 'SS' ? to.start - from.start : to.finish - from.finish
-    if (gap < lag) {
-      const what = link.type === 'FS' ? 'start after it finishes' : link.type === 'SS' ? 'start after it starts' : 'finish after it finishes'
-      push('link', [link.from, link.to], `'${to.job.title}' must ${what}, '${from.job.title}'${lag > 0 ? ` with ${lag / 3_600_000} h between` : ''}; it is ${(lag - gap) / 3_600_000} h too early.`, link.type === 'FF' ? to.finish : to.start)
+    const hours = (ms: number): number => ms / 3_600_000
+    if (link.type === 'FS') {
+      // a wait: clock time from the predecessor's finish
+      const gap = to.start - from.finish
+      if (gap < lag) push('link', [link.from, link.to], `'${to.job.title}' must start after '${from.job.title}' finishes${lag > 0 ? `, with ${hours(lag)} h between` : ''}; it is ${hours(lag - gap)} h too early.`, to.start)
+      continue
+    }
+    // SS and FF lags count progress: the predecessor's working time done, the successor's working time after.
+    // Without the worked slots (a row already refuted) the clock-time form, which progress implies, is used.
+    const doneBy = (key: string, instant: number): number | undefined => {
+      const slots = workedOf.get(key)
+      return slots === undefined ? undefined : slots.filter(slot => instantOf(slot) + slotMs <= instant).length * slotMs
+    }
+    const total = (key: string): number | undefined => { const slots = workedOf.get(key); return slots === undefined ? undefined : slots.length * slotMs }
+    if (link.type === 'SS') {
+      const done = doneBy(link.from, to.start)
+      // a lag longer than the predecessor's work asks for all of it
+      const needed = Math.min(lag, total(link.from) ?? lag)
+      if (to.start < from.start) push('link', [link.from, link.to], `'${to.job.title}' starts at ${when(to.start)}, before '${from.job.title}' starts.`, to.start)
+      else if (done === undefined ? to.start - from.start < lag : done < needed) {
+        push('link', [link.from, link.to], done === undefined
+          ? `'${to.job.title}' starts ${hours(to.start - from.start)} h after '${from.job.title}' starts; the link needs ${hours(lag)} h of it done first.`
+          : `'${to.job.title}' starts after only ${hours(done)} h of '${from.job.title}'; the link needs ${hours(needed)} h of it done first.`, to.start)
+      }
+      continue
+    }
+    const after = (() => { const slots = workedOf.get(link.to); return slots === undefined ? undefined : slots.filter(slot => instantOf(slot) >= from.finish).length * slotMs })()
+    const needed = Math.min(lag, total(link.to) ?? lag)
+    if (to.finish < from.finish) push('link', [link.from, link.to], `'${to.job.title}' finishes at ${when(to.finish)}, before '${from.job.title}' finishes.`, to.finish)
+    else if (after === undefined ? to.finish - from.finish < lag : after < needed) {
+      push('link', [link.from, link.to], after === undefined
+        ? `'${to.job.title}' finishes ${hours(to.finish - from.finish)} h after '${from.job.title}'; the link needs ${hours(lag)} h of it after.`
+        : `Only ${hours(after)} h of '${to.job.title}' is done after '${from.job.title}' finishes; the link needs ${hours(needed)} h of it after.`, to.finish)
     }
   }
   for (const [key, spot] of placed) {
     const job = spot.job
     if (job.notBefore !== undefined && spot.start < Date.parse(job.notBefore.at)) push('release', [key], `'${job.title}' starts at ${when(spot.start)}, before ${when(Date.parse(job.notBefore.at))} (${job.notBefore.words}).`, spot.start)
+    if (dataDate !== undefined && spot.start < dataDate) push('before-data-date', [key], `'${job.title}' is planned to start at ${when(spot.start)}, before the data date ${when(dataDate)}; nothing is planned in the past.`, spot.start)
     if (job.lock !== undefined && spot.start !== Date.parse(job.lock.start)) push('lock', [key], `'${job.title}' is locked to start at ${when(Date.parse(job.lock.start))} but is scheduled at ${when(spot.start)}.`, spot.start)
   }
 
@@ -534,6 +576,41 @@ export const checkPlan = (inputs: Inputs, variant: CheckVariant, rows: readonly 
     }
   }
   const labelOf = (item: string): string => equipment.get(item)?.label ?? item
+  // own outages, by pairing in time order: a tag-out opens an outage when the item is in service, and the
+  // tests that follow close it (consecutive tests belong to the same outage). A planned second outage
+  // (tag, test, tag, test) is two outages; the span rule judges re-entry.
+  interface Outage { readonly from: number; to: number; readonly tags: Placed[]; readonly tests: Placed[] }
+  const ownOutages = new Map<string, Outage[]>()
+  for (const item of inputs.equipment) {
+    const placedOf = (list: readonly Job[] | undefined) => (list ?? []).flatMap(job => { const t = timesOf(job.key); return t === undefined ? [] : [t] })
+    const tagTimes = placedOf(tagOuts.get(item.key)), testTimes = placedOf(tests.get(item.key))
+    if (tagTimes.length + testTimes.length === 0) continue
+    const events = [...tagTimes.map(times => ({ times, tag: true })), ...testTimes.map(times => ({ times, tag: false }))]
+      .sort((left, right) => left.times.start - right.times.start || Number(right.tag) - Number(left.tag))
+    const list: Outage[] = []
+    let current: Outage | undefined
+    for (const event of events) {
+      if (event.tag) {
+        if (current === undefined || current.tests.length > 0) { current = { from: event.times.start, to: Infinity, tags: [event.times], tests: [] }; list.push(current) }
+        else current.tags.push(event.times)
+        continue
+      }
+      if (current === undefined) {
+        // a test with no tag-out before it: an item with tag-outs is tested before it is tagged out
+        if (tagTimes.length > 0) push('tag-before-test', [event.times.job.key], `'${event.times.job.title}' starts at ${when(event.times.start)}, before ${item.label} is tagged out.`, event.times.start)
+        current = { from: event.times.start, to: event.times.finish, tags: [], tests: [] }
+        list.push(current)
+      }
+      for (const tag of current.tags) {
+        if (tag.finish > event.times.start) push('tag-before-test', [tag.job.key, event.times.job.key], `'${event.times.job.title}' starts at ${when(event.times.start)}, before '${tag.job.title}' has finished: ${item.label} is tested before it is tagged out.`, event.times.start)
+      }
+      current.tests.push(event.times)
+      current.to = Math.max(...current.tests.map(test => test.finish))
+    }
+    if (list.some(outage => outage.to === Infinity)) push('never-returned', [item.key], `${item.label} is tagged out and never tested back in this plan.`)
+    ownOutages.set(item.key, list)
+  }
+  // inside work lies within one outage of its item: after that outage's tag-outs, before its tests
   for (const job of activeJobs) {
     if (job.kind !== 'work' || job.isolation !== 'inside') continue
     if (job.equipment.length !== 1) { push('equipment-missing', [job.key], `'${job.title}' is work inside an item, so it names exactly one item.`); continue }
@@ -545,39 +622,18 @@ export const checkPlan = (inputs: Inputs, variant: CheckVariant, rows: readonly 
     }
     const work = timesOf(job.key)
     if (work === undefined) continue
-    for (const tag of covering) {
-      const times = timesOf(tag.key)
-      if (times !== undefined && times.finish > work.start) push('bracket', [tag.key, job.key], `'${job.title}' starts at ${when(work.start)}, before '${tag.title}' has finished.`, work.start)
-    }
-    for (const test of restoring) {
-      const times = timesOf(test.key)
-      if (times !== undefined && work.finish > times.start) push('bracket', [job.key, test.key], `'${test.title}' starts at ${when(times.start)}, before '${job.title}' has finished.`, times.start)
-    }
-  }
-  for (const [item, restoring] of tests) {
-    for (const tag of tagOuts.get(item) ?? []) {
-      const tagTimes = timesOf(tag.key)
-      for (const test of restoring) {
-        const testTimes = timesOf(test.key)
-        if (tagTimes !== undefined && testTimes !== undefined && tagTimes.finish > testTimes.start) {
-          push('tag-before-test', [tag.key, test.key], `'${test.title}' starts at ${when(testTimes.start)}, before '${tag.title}' has finished: ${labelOf(item)} is tested before it is tagged out.`, testTimes.start)
-        }
-      }
-    }
+    const list = ownOutages.get(item) ?? []
+    const lastTag = (outage: Outage) => Math.max(-Infinity, ...outage.tags.map(tag => tag.finish))
+    const firstTest = (outage: Outage) => Math.min(Infinity, ...outage.tests.map(test => test.start))
+    if (list.some(outage => outage.tags.length > 0 && lastTag(outage) <= work.start && work.finish <= firstTest(outage))) continue
+    const near = list.find(outage => outage.from < Math.max(work.finish, work.start + 1) && work.start < outage.to)
+    if (near === undefined || near.tags.length === 0) { push('bracket', [job.key], `'${job.title}' works inside ${labelOf(item)} at ${when(work.start)}, while ${labelOf(item)} is in service.`, work.start); continue }
+    const tag = near.tags.find(candidate => candidate.finish > work.start)
+    if (tag !== undefined) push('bracket', [tag.job.key, job.key], `'${job.title}' starts at ${when(work.start)}, before '${tag.job.title}' has finished.`, work.start)
+    const test = near.tests.find(candidate => work.finish > candidate.start)
+    if (test !== undefined) push('bracket', [job.key, test.job.key], `'${test.job.title}' starts at ${when(test.start)}, before '${job.title}' has finished.`, test.start)
   }
 
-  // own outage: first covering tag-out or test start to last covering test finish
-  const own = new Map<string, Interval>()
-  for (const item of inputs.equipment) {
-    const openers = [...(tagOuts.get(item.key) ?? []), ...(tests.get(item.key) ?? [])].flatMap(job => { const t = timesOf(job.key); return t === undefined ? [] : [t] })
-    if (openers.length === 0) continue
-    const closers = (tests.get(item.key) ?? []).flatMap(job => { const t = timesOf(job.key); return t === undefined ? [] : [t] })
-    const from = Math.min(...openers.map(times => times.start))
-    const lastTag = Math.max(-Infinity, ...(tagOuts.get(item.key) ?? []).flatMap(job => { const t = timesOf(job.key); return t === undefined ? [] : [t.finish] }))
-    const to = closers.length === 0 ? Infinity : Math.max(...closers.map(times => times.finish))
-    if (to === Infinity || to < lastTag) push('never-returned', [item.key], `${item.label} is tagged out and never tested back in this plan.`)
-    own.set(item.key, { from, to: to < lastTag ? Infinity : to })
-  }
   // supports, transitively; a cycle is refused
   const supporters = new Map<string, readonly string[]>()
   const cyclic = new Set<string>()
@@ -600,7 +656,7 @@ export const checkPlan = (inputs: Inputs, variant: CheckVariant, rows: readonly 
   for (const item of cyclic) push('support-cycle', [item], `${labelOf(item)} supports itself through its supporters; support chains cannot loop.`)
   const outages = new Map<string, readonly Interval[]>()
   for (const item of inputs.equipment) {
-    const parts = [own.get(item.key), ...(supporters.get(item.key) ?? []).map(supporter => own.get(supporter))].filter((part): part is Interval => part !== undefined)
+    const parts: Interval[] = [item.key, ...(supporters.get(item.key) ?? [])].flatMap(key => (ownOutages.get(key) ?? []).map(outage => ({ from: outage.from, to: outage.to })))
     if (parts.length > 0) outages.set(item.key, mergeIntervals(parts))
   }
   // return in support order: every supporter's last test before the supported item's tests
@@ -624,10 +680,12 @@ export const checkPlan = (inputs: Inputs, variant: CheckVariant, rows: readonly 
     const from = instantOf(slot), to = from + slotMs
     return intervals.some(interval => interval.from < to && interval.to > from)
   }
+  // On duty: the normal calendar (less a used rebooking's booked time) and an ordered purchase's time. Time a
+  // job bought is that job's, so it never makes a crew free for anyone else.
   const resourceOnDuty = (resource: Resource): Uint8Array => {
     const duty = new Uint8Array(baseAvailability(resource))
     for (const purchase of inputs.purchases) {
-      if (purchase.resource !== resource.key || !(usedPurchases.has(purchase.key) || purchase.ordered !== undefined)) continue
+      if (purchase.resource !== resource.key || purchase.ordered === undefined) continue
       added.get(purchase.key)!.forEach((slot, index) => { if (slot === 1) duty[index] = 1 })
     }
     return duty
@@ -643,7 +701,7 @@ export const checkPlan = (inputs: Inputs, variant: CheckVariant, rows: readonly 
       for (const item of rule.equipment) {
         if (!equipment.has(item)) { push('unknown-key', [rule.key, item], `The rule ${ruleLabel(rule)} names equipment '${item}' that the plan does not have.`); continue }
         const out = outages.get(item)
-        if (out !== undefined && own.get(item) === undefined) {
+        if (out !== undefined && (ownOutages.get(item) ?? []).length === 0) {
           push('protected-unavailable', [rule.key, item], `Protected ${labelOf(item)} is unavailable from ${when(out[0]!.from)} because equipment that supports it is out. ${ruleLabel(rule)}`, out[0]!.from)
         }
       }
@@ -656,7 +714,11 @@ export const checkPlan = (inputs: Inputs, variant: CheckVariant, rows: readonly 
       for (const span of spans) {
         if (span.to - span.from > limit + 1e-6) {
           const hours = (span.to - span.from) / 3_600_000
-          push('span-limit', [rule.key, rule.group], `The ${inputs.groups.find(group => group.key === rule.group)?.label ?? rule.group} span runs from ${when(span.from)} to ${when(span.to)}${Number.isFinite(hours) ? `, ${hours} h` : ''}; the limit is ${rule.limit.value} ${rule.limit.unit}. ${ruleLabel(rule)}`, span.from)
+          const name = inputs.groups.find(group => group.key === rule.group)?.label ?? rule.group
+          const again = rule.singleEntry && intervals.length > 1
+            ? ` It is out ${intervals.length} times (back at ${when(intervals[0]!.to)}, out again at ${when(intervals[1]!.from)}); the rule counts one span from the first tag-out to the last test.`
+            : ''
+          push('span-limit', [rule.key, rule.group], `The ${name} span runs from ${when(span.from)} to ${when(span.to)}${Number.isFinite(hours) ? `, ${hours} h` : ''}; the limit is ${rule.limit.value} ${rule.limit.unit}.${again} ${ruleLabel(rule)}`, span.from)
         }
       }
     } else if (rule.kind === 'due') {
@@ -712,7 +774,7 @@ export const checkPlan = (inputs: Inputs, variant: CheckVariant, rows: readonly 
 
   const unique = dedupe(found)
   const metrics = computeMetrics({ context, placed, outages, usedPurchaseSlots, personHours, usedPurchases })
-  return { feasible: unique.length === 0, violations: unique, metrics: metrics.metrics, goals: metrics.goals, outages }
+  return { feasible: unique.length === 0, invalidInput: unique.some(item => inputCodes.has(item.code)), violations: unique, metrics: metrics.metrics, goals: metrics.goals, outages }
 }
 
 const dedupe = (violations: readonly Violation[]): Violation[] => {

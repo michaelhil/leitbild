@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { checkPlan, type CheckRow } from './check.ts'
+import { checkPlan, prepare, type CheckRow } from './check.ts'
+import { propagate, worldsOf } from './propagate.ts'
 import { trainAInputs } from '../../tests/harness/train-a-case.ts'
 import { progressOf, type OrRunExtract } from '../../tests/harness/or-runs.ts'
 import caseJson from '../../tests/harness/fixtures/train-a-case-v0.2.json'
@@ -32,6 +33,26 @@ describe("or's v0.2 schedules", () => {
       expect(spans.spans.reduce((sum, span) => sum + Math.max(0, span.value - 54), 0)).toBe(run.claimed.guidelineExcessHours)
       expect(metric(result, 'unavailable-hours')).toBe(run.claimed.unavailableHours)
       expect(metric(result, 'extra-cost')).toBe(run.claimed.extraCost)
+    })
+  }
+})
+
+describe("the checker's time logic is sound on or's schedules", () => {
+  // A schedule the checker accepts must lie inside the propagated start windows of its own case (the ECT
+  // rebooking taken or not); a window that excluded it would make a false proof possible.
+  for (const run of runs) {
+    test(`${run.name}: every row starts inside its propagated window`, () => {
+      const { inputs, variant } = inputsOf(run)
+      const prepared = prepare(inputs, variant)
+      if (!prepared.ok) throw new Error('the case does not prepare')
+      const context = prepared.context
+      const rebooked = run.rows.some(entry => entry.uses.some(use => use.purchase === 'ect-friday'))
+      const world = worldsOf(context).find(candidate => [...candidate.values()].every(taken => taken === rebooked))!
+      const timed = propagate(context, world)
+      expect(timed.ok).toBe(true)
+      if (!timed.ok) return
+      const outside = run.rows.filter(entry => { const window = timed.windows.get(entry.job)!; const slot = context.slotOf(Date.parse(entry.start)); return slot < window.es || slot > window.ls })
+      expect(outside.map(entry => entry.job)).toEqual([])
     })
   }
 })
