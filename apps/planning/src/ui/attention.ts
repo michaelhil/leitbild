@@ -1,7 +1,7 @@
 // "Needs your attention": the cards the plan screen leads with, in the order a planner acts on them.
 // The link card comes first until a Run is linked; the Module's own attention items follow; then the
 // one-sentence answer about the recommended option.
-import { sourceMark, type Mark } from './format.ts'
+import { sizeRefusalWords, sourceMark, type Mark } from './format.ts'
 import type { AttentionKind, PlanModel } from './model.ts'
 import { outcomes } from './outcome.ts'
 import { statusView, type Context } from './status-text.ts'
@@ -67,7 +67,7 @@ export const attentionCards = (model: PlanModel, context: Context): readonly Car
     cards.push({
       mark: kindMarks.refusal,
       title: 'Too large for the certified size.',
-      text: `Certified plan size: ${size.family}, up to ${size.maxJobs} jobs; this plan has ${inputs.jobs.length}.`,
+      text: sizeRefusalWords(size, inputs.jobs.length),
       steps: [], actions: [],
     })
   }

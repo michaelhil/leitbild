@@ -7,6 +7,7 @@ import type { z } from 'zod'
 import type { generateInputSchema } from '../api/contract.ts'
 import { planningError } from '../errors.ts'
 import { optionSetSchema, type CertifiedSize, type PlanInputs, type Status } from '../plan/schema.ts'
+import { sizeRefusalWords } from '../plan/summary.ts'
 import { bounds } from './bounds.ts'
 import { compile, formulationOf, methodCombinations, type Buy, type CompileIndex, type MethodPick } from './compile.ts'
 import { dateSchedule, slotInstant, undate } from './date.ts'
@@ -23,22 +24,16 @@ type Actor = OptionSet['by']
 export type GenerateInput = z.infer<typeof generateInputSchema>
 
 /**
- * The certified size (G2, A8). The owner's scale-gate decision is PENDING, so nothing is certified: the
- * family is the one or measured on twin v3, and `maxJobs` is only the size above which Generate refuses
- * while the decision is pending. Say it with certifiedSizeText, never as "certified ... up to N jobs".
+ * The certified size (G2, A8). The owner's scale-gate decision is pending (`decided` false), so nothing is
+ * certified: `maxJobs` is only the size above which Generate refuses meanwhile, and `evidence` is the
+ * measurement behind it, shown to planners only as detail. Planners read plan/summary's certifiedSizeWords.
  */
 export const CERTIFIED_SIZE: CertifiedSize = {
+  decided: false,
   family: 'two-unit site, concurrent single-train windows, tagging crews per unit',
   maxJobs: 330,
-  evidence: 'or gate on twin v3, 11 Nov: no size passes every seed at every subset under the 5 % rule; the owner decides',
+  evidence: 'Measured 11 Nov on two-unit work weeks of up to 330 jobs: at no size did every run come within 5 % of the best known plan. The owner decides the certified size.',
 }
-/** False until the owner decides the scale gate; then CERTIFIED_SIZE holds the certified size. */
-export const CERTIFIED_SIZE_DECIDED = false
-
-/** The certified size in words, for refusals and status: "pending" until the owner decides. */
-export const certifiedSizeText = (size: CertifiedSize = CERTIFIED_SIZE, decided = CERTIFIED_SIZE_DECIDED): string => decided
-  ? `certified for ${size.family} up to ${size.maxJobs} jobs; ${size.evidence}`
-  : `certified size: pending the owner's decision; measured family: ${size.family}; plans above ${size.maxJobs} jobs are refused until then`
 
 export const MAX_SUB_SOLVES = 8
 /** Memory a solve may be estimated to need before it is refused (A7). */
@@ -139,7 +134,7 @@ export const generate = async (deps: GenerateDeps, request: GenerateRequest): Pr
   const { inputs } = request
   const certified = deps.certifiedSize ?? CERTIFIED_SIZE
   if (inputs.jobs.length > certified.maxJobs) {
-    throw planningError(413, 'above_certified_size', `This plan has ${inputs.jobs.length} jobs; ${certifiedSizeText(certified)}`, { jobs: inputs.jobs.length, certifiedSize: certified })
+    throw planningError(413, 'above_certified_size', sizeRefusalWords(certified, inputs.jobs.length), { jobs: inputs.jobs.length, certifiedSize: certified })
   }
   const variants = variantsOf(inputs, request.input)
   const subSolves = variants.reduce((sum, variant) => sum + variant.combos.length, 0)

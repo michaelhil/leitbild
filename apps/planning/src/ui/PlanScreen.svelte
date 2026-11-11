@@ -12,7 +12,7 @@
   import { glance } from './orientation.ts'
   import { outcomeBanner } from './outcome.ts'
   import type { FinishStep, WhyStart } from './explain-text.ts'
-  import { createTimeFormat } from './format.ts'
+  import { certifiedSizeWords, createTimeFormat } from './format.ts'
   import JobForm from './JobForm.svelte'
   import JobPanel from './JobPanel.svelte'
   import { createNames, type PlanModel, type PlanView, type RunChoice } from './model.ts'
@@ -81,7 +81,7 @@
   const shifts = $derived(model !== null && context !== null ? shiftList(model.inputs, rows, context.format) : [])
   const shown = $derived(model?.options?.items.find(option => option.key === selectedOption) ?? null)
   const linkedRun = $derived(model?.inputs.settings.run ? runs.find(run => run.id === model?.inputs.settings.run?.id)?.title ?? null : null)
-  const certified = $derived(model?.certifiedSize ? { text: `Certified plan size: ${model.certifiedSize.family}, up to ${model.certifiedSize.maxJobs} jobs. This plan has ${model.inputs.jobs.length}.`, evidence: model.certifiedSize.evidence } : null)
+  const certified = $derived(model?.certifiedSize ? { text: certifiedSizeWords(model.certifiedSize), evidence: model.certifiedSize.evidence } : null)
 
   const views: ReadonlyArray<{ key: PlanView; word: string }> = [
     { key: 'schedule', word: 'Schedule' }, { key: 'add', word: 'Add jobs and links' }, { key: 'equipment', word: 'Equipment and World' },

@@ -366,8 +366,12 @@ export const planSchema = z.object({
 }).strict()
 export type Plan = z.infer<typeof planSchema>
 
-/** Shown in words and in refusals, e.g. "certified for single-train work weeks up to 100 jobs; measured 11 Nov". */
-export const certifiedSizeSchema = z.object({ family: wordsSchema, maxJobs: z.number().int().positive(), evidence: wordsSchema }).strict()
+/**
+ * The size of plan Generate takes. Until the owner decides (`decided` false) nothing is certified: planners
+ * read "Certified plan size: pending the owner's decision", and `maxJobs` is only where Generate refuses
+ * meanwhile. `evidence` is the measurement behind it, detail shown on request.
+ */
+export const certifiedSizeSchema = z.object({ decided: z.boolean(), family: wordsSchema, maxJobs: z.number().int().positive(), evidence: wordsSchema }).strict()
 export type CertifiedSize = z.infer<typeof certifiedSizeSchema>
 
 // ───────────── summed World values ─────────────

@@ -20,7 +20,7 @@ import {
 import type { Edit } from '../plan/edit-schema.ts'
 import { assertRevision, type PlanStore, type RevisionGuard } from '../plan/store.ts'
 import {
-  attentionKind, basisWords, buildSection, certifiedSizeWords, weakeningWords, byteLength, changeLines, changeSummary, nameOf, optionWarning, readinessText,
+  attentionKind, basisWords, buildSection, sizeRefusalWords, weakeningWords, byteLength, changeLines, changeSummary, nameOf, optionWarning, readinessText,
   statusSentence, timeWords, valueWords, type OptionState, type Section, type SectionContext,
 } from '../plan/summary.ts'
 import type { Grid } from '../time/units.ts'
@@ -345,7 +345,7 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
     const guard = { expectedRevision, required: true }
     const plan = await readGuarded(workspaceId, planId, guard)
     if (plan.inputs.jobs.length > certifiedSize.maxJobs) {
-      throw planningError(413, 'above_certified_size', `This plan has ${plan.inputs.jobs.length} jobs, more than Generate takes; ${certifiedSizeWords(certifiedSize)}`, { maxJobs: certifiedSize.maxJobs, jobs: plan.inputs.jobs.length })
+      throw planningError(413, 'above_certified_size', sizeRefusalWords(certifiedSize, plan.inputs.jobs.length), { maxJobs: certifiedSize.maxJobs, jobs: plan.inputs.jobs.length })
     }
     const at = now()
     const by = storedActor(access)

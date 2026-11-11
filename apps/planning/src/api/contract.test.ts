@@ -138,7 +138,7 @@ describe('read section data and option warnings', () => {
   test('each section shape parses, and summary has no paging', () => {
     const sections: Record<string, unknown> = {
       summary: { plan, settings: trainA.settings, goals: trainA.goals, refreshedAt: null, attention: [{ kind: 'not-ready', text: 'Link the running simulation', about: [] }],
-        certifiedSize: { family: 'single-train work weeks', maxJobs: 100, evidence: 'measured 11 Nov' } },
+        certifiedSize: { decided: false, family: 'single-train work weeks', maxJobs: 100, evidence: 'measured 11 Nov' } },
       jobs: { items: [{ job: trainA.jobs[0] }, { link: trainA.links[0] }, { method: trainA.methods[0] }], more: '3' },
       rules: { items: trainA.rules.map((rule: unknown) => ({ rule })) },
       crews: { items: [{ calendar: trainA.calendars[0] }, { resource: trainA.resources[0] }, { purchase: trainA.purchases[0] }] },

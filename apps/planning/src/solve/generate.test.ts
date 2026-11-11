@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { formulationOf } from './compile.ts'
-import { CERTIFIED_SIZE, certifiedSizeText, generate } from './generate.ts'
+import { CERTIFIED_SIZE, generate } from './generate.ts'
+import { certifiedSizeWords } from '../plan/summary.ts'
 import { showStatus } from './status.ts'
 import { searchEngine } from './search.ts'
 import { laneKCheck, laneKVerify } from './fixtures/lane-k.ts'
@@ -55,10 +56,12 @@ describe('generate with the real checker', () => {
   }, 30_000)
 
   test('the certified size is pending the owner and never said as "certified up to"', async () => {
-    expect(certifiedSizeText()).toBe(`certified size: pending the owner's decision; measured family: ${CERTIFIED_SIZE.family}; plans above ${CERTIFIED_SIZE.maxJobs} jobs are refused until then`)
+    expect(certifiedSizeWords(CERTIFIED_SIZE)).toBe('Certified plan size: pending the owner\'s decision')
+    // The evidence is detail, in planner words: no review names.
+    expect(CERTIFIED_SIZE.evidence).not.toMatch(/\b(or|maint|twin)\b/i)
     const small = { ...CERTIFIED_SIZE, maxJobs: 10 }
     const refusal = await generate({ engine: searchEngine(), check: laneKCheck, verify: laneKVerify, certifiedSize: small }, { inputs: trainAInputs({ read: true }), revision: 1, previous: null, input: {}, by, signal: new AbortController().signal }).catch((error: unknown) => error as Error)
     expect(refusal).toMatchObject({ code: 'above_certified_size' })
-    expect((refusal as Error).message).not.toMatch(/certified for|certified .* up to/)
+    expect((refusal as Error).message).toBe(`Certified plan size: pending the owner's decision. This plan has ${trainAInputs().jobs.length} jobs; Generate takes up to 10 until then.`)
   })
 })

@@ -148,8 +148,9 @@ describe('plan screen actions', () => {
     const shown = await cancelled.actions.generate(start, {}, stop.signal, 'opt-1')
     expect(shown.notice).toContain('Cancelled.')
     expect(cancelled.calls.some(call => call.capability === 'planning.plan.read')).toBe(true)
-    const large = await host(start, { status: 413, code: 'above_certified_size', message: 'Too large for the certified size: certified for single-train work weeks up to 100 jobs; this plan has 340.' }).actions.generate(start, {}, new AbortController().signal, null)
-    expect(large.error).toBe('Too large for the certified size: certified for single-train work weeks up to 100 jobs; this plan has 340.')
+    const words = 'Certified plan size: pending the owner\'s decision. This plan has 340 jobs; Generate takes up to 100 until then.'
+    const large = await host(start, { status: 413, code: 'above_certified_size', message: words }).actions.generate(start, {}, new AbortController().signal, null)
+    expect(large.error).toBe(words)
   })
 
   test('T5-01, T5-02: reading the plan also reads why each current refused option is impossible', async () => {

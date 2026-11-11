@@ -7,7 +7,7 @@ import { workspaceResourceReferenceSchema } from '@leitbild/contracts'
 import { whyStart } from './explain-text.ts'
 import { optionOf, runBasis, status, supplyRunPlanned, trainAPlanned } from './fixtures/plans.ts'
 import { readableText, registerSvelte, renderHtml } from './fixtures/svelte-ssr.ts'
-import { createTimeFormat } from './format.ts'
+import { certifiedSizeWords, createTimeFormat } from './format.ts'
 import { createNames } from './model.ts'
 import type { Preview } from './preview.ts'
 import type { Context } from './status-text.ts'
@@ -18,6 +18,7 @@ const { default: JobPanel } = await import('./JobPanel.svelte') as { default: An
 const { default: EditPreview } = await import('./EditPreview.svelte') as { default: Any }
 const { default: OptionsTable } = await import('./OptionsTable.svelte') as { default: Any }
 const { default: NewPlanForm } = await import('./NewPlanForm.svelte') as { default: Any }
+const { default: PlanHeader } = await import('./PlanHeader.svelte') as { default: Any }
 
 const model = trainAPlanned()
 const context: Context = { inputs: model.inputs, names: createNames(model.inputs), format: createTimeFormat(model.inputs.settings.timeZone) }
@@ -123,5 +124,15 @@ describe('panels', () => {
     expect(text).toContain('! Warning 2 items are taken out and no rule keeps any of them in service.')
     expect(text).toContain('Made before the latest change: its status is not claimed for the current plan.')
     expect(text.match(/Set as baseline/g)?.length).toBe(1)
+  })
+})
+
+describe('the plan header', () => {
+  test('says the certified size exactly as pending; the evidence only behind its details', () => {
+    const size = { decided: false, family: 'two-unit site', maxJobs: 330, evidence: 'Measured 11 Nov on two-unit work weeks of up to 330 jobs.' }
+    const html = renderHtml(PlanHeader, { context, title: model.title, certified: { text: certifiedSizeWords(size), evidence: size.evidence }, onGenerate: () => {}, onCancel: () => {} })
+    expect(html).toContain('<p class="hint">Certified plan size: pending the owner\'s decision</p>')
+    expect(html).toMatch(/<details class="hint"><summary>How the size was measured<\/summary><p>Measured 11 Nov/)
+    expect(html.split('Measured 11 Nov').length).toBe(2)
   })
 })

@@ -223,11 +223,16 @@ export const statusSentence = (status: Status, inputs: Inputs): string => {
 }
 
 /**
- * The certified size in words. No size is certified until the owner decides the scale gate, so it never
- * names a job count: "certified size: pending the owner's decision; measured family …". Lane S will export
- * this wording from solve/generate.ts; this text follows it until then.
+ * The certified size in planner words: exactly "Certified plan size: pending the owner's decision" until the
+ * owner decides. The evidence is detail, never in this line. The one wording: Generate and the API refusal
+ * use it, and the UI's format.ts mirrors it.
  */
-export const certifiedSizeWords = (size: CertifiedSize): string => `certified size: pending the owner's decision; measured family ${size.family}`
+export const certifiedSizeWords = (size: CertifiedSize): string => size.decided
+  ? `Certified plan size: ${size.family}, up to ${size.maxJobs} jobs`
+  : 'Certified plan size: pending the owner\'s decision'
+/** Generate's refusal of a plan above `maxJobs`, in planner words. */
+export const sizeRefusalWords = (size: CertifiedSize, jobs: number): string =>
+  `${certifiedSizeWords(size)}. This plan has ${jobs} jobs; Generate takes up to ${size.maxJobs}${size.decided ? '' : ' until then'}.`
 
 // ───────────── read sections ─────────────
 // The `data` of each planning.plan.read section, in the shapes of api/contract.ts sectionDataSchemas, which
