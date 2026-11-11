@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { workspaceResourceReferenceSchema } from '@leitbild/contracts'
 import { editSchema } from '../plan/edit-schema.ts'
 import {
-  calendarSchema, certifiedSizeSchema, changeSchema, datedRowSchema, equipmentSchema, goalOrderBreaks, goalWordSchema, groupSchema, instantSchema, jobSchema,
+  calendarSchema, certifiedSizeSchema, changeSchema, datedRowSchema, equipmentSchema, goalOrderBreaks, goalWordSchema, gridSchema, groupSchema, instantSchema, jobSchema,
   keySchema, labelSchema, linkSchema, methodChoiceSchema, optionSchema, planInputsSchema, purchaseSchema, resourceSchema, ruleSchema, statusWordSchema,
   wordsSchema, worldFactCopySchema,
 } from '../plan/schema.ts'
@@ -12,6 +12,8 @@ import {
 // ───────────── inputs ─────────────
 export const createInputSchema = z.object({
   edits: z.array(editSchema).max(60).optional().describe('Edits applied to the new plan, in order; same vocabulary as planning.plan.edit'),
+  // Set once, at create: the edit vocabulary cannot change the grid of a plan with jobs.
+  grid: gridSchema.optional().describe('Time step of the plan: 30min for work weeks, 30s for jobs of a few minutes; default 30min'),
 }).strict()
 export const editInputSchema = z.object({
   edits: z.array(editSchema).min(1).max(60).describe('Applied together or not at all'),

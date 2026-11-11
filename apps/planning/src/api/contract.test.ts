@@ -71,7 +71,7 @@ describe('published operation inputs', () => {
   // Design r2 measured 15,023 B (create) and 15,495 B (edit) and set the guard at 16,000 B, but its
   // publication also dropped the job edit's `minimum` field. With that field kept and the
   // coordinator-adopted `source` on eight edit fields, the due rule, the per-type lag description, the
-  // edit envelope's revision and the equipment `function` key, create is 18,577 B and edit 19,211 B.
+  // edit envelope's revision, the equipment `function` key and create's grid, create is 18,731 B and edit 19,211 B.
   // 20,000 B is the increment 1 ceiling. Any further growth must remove or merge something; raising this needs a coordinator decision.
   test('create and edit stay within 20,000 B; every other input within 4,096 B', () => {
     for (const [id, schema] of Object.entries(inputs)) {
@@ -101,6 +101,17 @@ describe('published operation inputs', () => {
     expect(Object.keys(job.properties.minimum.anyOf?.[0]?.properties ?? job.properties.minimum.properties)).toEqual(['value', 'unit', 'words'])
     expect(stripForPublication({ type: 'object', properties: { minimum: { type: 'number', minimum: 0 }, pattern: { type: 'string', pattern: 'x' } } }))
       .toEqual({ type: 'object', properties: { minimum: { type: 'number' }, pattern: { type: 'string' } } })
+  })
+
+  test('create takes the plan grid, 30min or 30s, defaulting to 30min; edit does not', () => {
+    expect(createInputSchema.parse({ grid: '30s' }).grid).toBe('30s')
+    expect(createInputSchema.parse({ grid: '30min', edits: [] }).grid).toBe('30min')
+    expect(createInputSchema.parse({}).grid).toBeUndefined()
+    for (const grid of ['1min', '30', 30, null]) expect(createInputSchema.safeParse({ grid }).success).toBe(false)
+    expect(editInputSchema.safeParse({ edits: [{ edit: 'plan', title: 'Supply run' }], grid: '30s' }).success).toBe(false)
+    expect(editInputSchema.safeParse({ edits: [{ edit: 'plan', grid: '30s' }] }).success).toBe(false)
+    const published = publishedInputSchema(createInputSchema) as any
+    expect(published.properties.grid).toEqual({ type: 'string', enum: ['30s', '30min'], description: 'Time step of the plan: 30min for work weeks, 30s for jobs of a few minutes; default 30min' })
   })
 
   test('the boundary still validates with the exact schemas', () => {
