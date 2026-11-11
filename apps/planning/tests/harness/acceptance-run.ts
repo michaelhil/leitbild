@@ -65,10 +65,10 @@ const supplyRun = planInputsSchema.parse({
 })
 const replanB = edited(job => job.key === 'SWA-SPARE-PREP' ? { ...job, notBefore: { at: '2026-11-18T07:00:00Z', words: 'The vendor now promises the spare for Wed 08:00', source: { by: 'assumption' as const, note: 'vendor promise' } } } : job)
 
-const counterfactualRow = async (name: string, inputs: PlanInputs): Promise<{ checked: number; joint: number; failures: CounterfactualFailure[]; status: string }> => {
+const counterfactualRow = async (name: string, inputs: PlanInputs): Promise<{ checked: number; steps: number; joint: number; failures: CounterfactualFailure[]; status: string }> => {
   const set = await generateOptions(inputs)
   const option = set.options.find(candidate => candidate.key === set.recommended) ?? set.options[0]!
-  if (option.status.word !== 'validated feasible') return { checked: 0, joint: 0, failures: [], status: option.status.word }
+  if (option.status.word !== 'validated feasible') return { checked: 0, steps: 0, joint: 0, failures: [], status: option.status.word }
   const check = checkPlan(inputs, option.variant, option.rows)
   if (!check.feasible) throw new Error(`${name}: the recommended option fails the checker: ${check.violations[0]!.words}`)
   const failures: CounterfactualFailure[] = []
@@ -79,7 +79,11 @@ const counterfactualRow = async (name: string, inputs: PlanInputs): Promise<{ ch
     joint += items.filter(item => item.joint && item.because.length > 1).length
     failures.push(...counterfactualCheck(inputs, option.variant, option.rows, items))
   }
-  return { checked: option.rows.length, joint, failures, status: `${option.status.word}, ${option.label}` }
+  // the finish chain: every step is checked the same way, names included
+  const chain = await solver.explain({ inputs, option, ask: 'finish', job: undefined, cursor: undefined })
+  const chainFailures = counterfactualCheck(inputs, option.variant, option.rows, chain.items)
+  failures.push(...chainFailures.map(failure => ({ ...failure, detail: `finish chain: ${failure.detail}` })))
+  return { checked: option.rows.length, steps: chain.items.length, joint, failures, status: `${option.status.word}, ${option.label}` }
 }
 
 const print = (row: string, text: string): void => console.log(`[${row}] ${text}`)
@@ -87,7 +91,7 @@ try {
   // Row 1: counterfactual check
   if (rows.has('counterfactual')) for (const [name, inputs] of [['baseline', flagship], ['replan (a) seal 16 h', replanA], ['replan (b) spare Wed 08:00', replanB], ['Supply run baseline', supplyRun]] as const) {
     const result = await counterfactualRow(name, inputs)
-    print('counterfactual', `${name}: ${result.status}; ${result.checked} jobs checked (${result.joint} joint sets, each checked for minimality), ${result.failures.length} failures`)
+    print('counterfactual', `${name}: ${result.status}; ${result.checked} jobs and ${result.steps} finish-chain steps checked (${result.joint} joint sets checked for minimality; every name checked), ${result.failures.length} failures`)
     for (const failure of result.failures) print('counterfactual', `  ${failure.job}: ${failure.reason} (${failure.causes.map(cause => `${cause.kind} ${cause.about.join('/')}`).join(' + ')}): ${failure.detail}`)
   }
 

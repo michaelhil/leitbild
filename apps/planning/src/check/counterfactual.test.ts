@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { planInputsSchema } from '../plan/schema.ts'
-import { counterfactualCheck } from '../../tests/harness/counterfactual.ts'
+import { counterfactualCheck, unknownNames } from '../../tests/harness/counterfactual.ts'
 import type { ExplainItem } from '../../tests/harness/ports.ts'
 import type { CheckRow } from './check.ts'
 
@@ -99,5 +99,19 @@ describe('padded explanations are refused', () => {
   test('a "waits for" naming a job with no order to it is refused, not waived', () => {
     const failures = counterfactualCheck(inputs, variant, rows, [item('B', '2026-11-16T07:00:00Z', [{ kind: 'link', about: ['C'] }, { kind: 'crew', about: ['ops'] }], true)])
     expect(failures.map(failure => [failure.reason, failure.detail])).toEqual([['cannot-relax', 'no link or derived order from C to B']])
+  })
+})
+
+describe('every name an explanation gives exists as what its kind says', () => {
+  const at = '2026-11-16T07:00:00Z'
+  test('names that resolve to the right kind of thing pass', () => {
+    expect(unknownNames(inputs, item('B', at, [{ kind: 'link', about: ['A'] }, { kind: 'crew', about: ['ops'] }, { kind: 'shift', about: ['always'] }], true))).toEqual([])
+  })
+  test('a crew cause naming a job, a shift naming a crew, or a job not in the plan read as "an item no longer in this plan"', () => {
+    expect(unknownNames(inputs, item('B', at, [{ kind: 'crew', about: ['ops', 'A'] }], false))).toEqual(["crew names 'A', which is not a crew or tool of the plan"])
+    expect(unknownNames(inputs, item('B', at, [{ kind: 'shift', about: ['ops'] }], false))).toEqual(["shift names 'ops', which is not a calendar of the plan"])
+    expect(unknownNames(inputs, item('B', at, [{ kind: 'link', about: ['GONE'] }], false))).toEqual(["link names 'GONE', which is not a job of the plan"])
+    const failures = counterfactualCheck(inputs, variant, rows, [item('B', at, [{ kind: 'link', about: ['A'] }, { kind: 'crew', about: ['ops', 'A'] }], true)])
+    expect(failures.map(failure => failure.reason)).toEqual(['unknown-name'])
   })
 })

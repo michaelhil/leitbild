@@ -11,7 +11,7 @@ type Cause = ExplainItem['because'][number]
 export interface CounterfactualFailure {
   readonly job: string
   readonly causes: readonly Cause[]
-  readonly reason: 'did-not-move' | 'cannot-relax' | 'not-minimal' | 'not-feasible-before' | 'row-mismatch'
+  readonly reason: 'did-not-move' | 'cannot-relax' | 'not-minimal' | 'unknown-name' | 'not-feasible-before' | 'row-mismatch'
   readonly detail: string
 }
 
@@ -142,6 +142,35 @@ const canStartEarlier = (relaxed: Relaxed, rows: readonly CheckRow[], job: strin
   return false
 }
 
+/**
+ * The names a cause gives must exist in the plan as what its kind says they are, the way the screen reads
+ * them (ui/explain-text.ts): a link names jobs; a busy crew or tool names resources; an off shift names
+ * calendars; a rule cause names a rule of its kind; a purchase cause names purchases. Kinds the screen
+ * words without names still may name only things the plan has. A name that resolves to nothing, or to the
+ * wrong kind of thing, reads as "an item no longer in this plan" and is a failure.
+ */
+export const unknownNames = (inputs: PlanInputs, item: ExplainItem): string[] => {
+  const has = <T extends { readonly key: string }>(list: readonly T[]) => (key: string) => list.some(entry => entry.key === key)
+  const isJob = has(inputs.jobs), isResource = has(inputs.resources), isCalendar = has(inputs.calendars), isPurchase = has(inputs.purchases)
+  const isEquipment = has(inputs.equipment), isGroup = has(inputs.groups)
+  const isRule = (kind: string) => (key: string) => inputs.rules.some(rule => rule.key === key && rule.kind === kind)
+  const isAnything = (key: string) => isJob(key) || isResource(key) || isCalendar(key) || isPurchase(key) || isEquipment(key) || isGroup(key) || inputs.rules.some(rule => rule.key === key)
+  const problems: string[] = []
+  if (!isJob(item.job)) problems.push(`the explained job '${item.job}' is not in the plan`)
+  for (const cause of item.because) {
+    const expect: { readonly what: string; readonly test: (key: string) => boolean } =
+      cause.kind === 'link' ? { what: 'a job', test: isJob }
+        : cause.kind === 'crew' || cause.kind === 'tool' ? { what: 'a crew or tool', test: isResource }
+          : cause.kind === 'shift' ? { what: 'a calendar', test: isCalendar }
+            : cause.kind === 'availability' ? { what: 'a keep-in-service rule', test: isRule('keep-in-service') }
+              : cause.kind === 'span-limit' ? { what: 'a span-limit rule', test: isRule('span-limit') }
+                : cause.kind === 'purchase-not-allowed' ? { what: 'a purchase', test: isPurchase }
+                  : { what: 'something in the plan', test: isAnything }
+    for (const key of cause.about) if (!expect.test(key)) problems.push(`${cause.kind} names '${key}', which is not ${expect.what} of the plan`)
+  }
+  return problems
+}
+
 export const counterfactualCheck = (inputs: PlanInputs, variant: CheckVariant, rows: readonly CheckRow[], items: readonly ExplainItem[]): CounterfactualFailure[] => {
   const failures: CounterfactualFailure[] = []
   const baseline = checkPlan(inputs, variant, rows)
@@ -149,6 +178,8 @@ export const counterfactualCheck = (inputs: PlanInputs, variant: CheckVariant, r
   for (const item of items) {
     const row = rows.find(candidate => candidate.job === item.job)
     if (row === undefined || Date.parse(row.start) !== Date.parse(item.start)) { failures.push({ job: item.job, causes: item.because, reason: 'row-mismatch', detail: 'the explanation does not describe the dated row' }); continue }
+    const unknown = unknownNames(inputs, item)
+    if (unknown.length > 0) failures.push({ job: item.job, causes: item.because, reason: 'unknown-name', detail: unknown.join('; ') })
     const sets = item.joint ? [item.because] : item.because.map(cause => [cause])
     const relaxAll = (set: readonly Cause[]): Relaxed | string => {
       let relaxed: Relaxed | string = { inputs, variant }
