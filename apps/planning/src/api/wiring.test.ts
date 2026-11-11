@@ -129,3 +129,33 @@ describe('the operations on the real solver and checker', () => {
     console.log('Twin v3 result bytes:', JSON.stringify(sizes))
   }, 180_000)
 })
+
+describe("lane K's bound check through the real checker port", () => {
+  // A then B on one operator, 1 h each, window from 06:00Z: nothing finishes before 2 h in. A stored claim of
+  // "proven optimal" at 3 h is one lane K's own bound (2 h) cannot confirm.
+  const job = (key: string): PlanInputs['jobs'][number] => ({
+    key, title: key, kind: 'work', equipment: [], isolation: 'none', duration: { value: 1, unit: 'h', calendar: 'working', origin: { by: 'planner' } },
+    durationWith: [], needs: [{ anyOf: ['ops'], amount: 1, handover: false }], continuous: true, checks: [], tags: [],
+  })
+  const row = (key: string, from: string, to: string) => ({ job: key, start: from, finish: to, uses: [{ resource: 'ops', from, to }], float: { workingHours: 0, limitedBy: { kind: 'window-end' as const } } })
+  const run = { grid: '30min' as const, engine: 'double', formulation: 'f', seed: 1, budget: { evals: 1, cpuMs: 1, wallMs: 1 }, stoppedBy: 'done' as const, evals: 1, cpuMs: 1 }
+  const claimed = (value: number) => ({ word: 'validated feasible' as const, run, goals: [{ word: 'proven optimal' as const, goal: 0, value, unit: 'h', bound: { value, source: 'logic+calendars' as const } }] })
+  const stored = (status: ReturnType<typeof claimed>, rows: ReturnType<typeof row>[]): Plan => planSchema.parse({
+    id: '00000000-0000-4000-8000-000000000004', workspaceId: '00000000-0000-4000-8000-0000000000aa', revision: 1, createdAt: '2026-11-11T00:00:00Z', updatedAt: '2026-11-11T00:00:00Z',
+    inputs: {
+      settings: { title: 'Bound check', timeZone: 'Europe/Oslo', window: { start: '2026-11-16T06:00:00Z', end: '2026-11-16T12:00:00Z' }, dataDate: null, grid: '30min', currency: 'NOK', run: null },
+      equipment: [], groups: [], purchases: [], methods: [], rules: [], world: { refreshedAt: null, facts: [] },
+      calendars: [{ key: 'always', label: 'Always', weekly: [], periods: [{ start: '2026-11-16T06:00:00Z', end: '2026-11-16T12:00:00Z' }], except: [], source: { by: 'planner' } }],
+      resources: [{ key: 'ops', label: 'Operator', kind: 'crew', count: 1, calendar: 'always', attributes: [], source: { by: 'planner' } }],
+      jobs: [job('A'), job('B')], links: [{ from: 'A', to: 'B', type: 'FS', lag: { value: 0, unit: 'h' } }], goals: [{ metric: 'finish', tolerance: { value: 0, unit: 'h' } }],
+    },
+    options: { at: '2026-11-11T00:00:00Z', by: { kind: 'agent' }, options: [{ key: 'o', label: 'Option', variant: { methods: [], purchases: [] }, status, rows, metrics: [], inputsRevision: 1 }] },
+    baselines: [], changes: [], droppedChanges: 0,
+  })
+  test('an unconfirmable "proven optimal" reaches the operations as bestFoundGoals; a confirmed one does not', () => {
+    const late = stored(claimed(3), [row('A', '2026-11-16T06:00:00Z', '2026-11-16T07:00:00Z'), row('B', '2026-11-16T08:00:00Z', '2026-11-16T09:00:00Z')])
+    expect(realChecker.recheck(late, late.options!.options[0]!, 'f')).toMatchObject({ usable: true, bestFoundGoals: [0] })
+    const tight = stored(claimed(2), [row('A', '2026-11-16T06:00:00Z', '2026-11-16T07:00:00Z'), row('B', '2026-11-16T07:00:00Z', '2026-11-16T08:00:00Z')])
+    expect(realChecker.recheck(tight, tight.options!.options[0]!, 'f')).toMatchObject({ usable: true, bestFoundGoals: [] })
+  })
+})

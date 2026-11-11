@@ -98,7 +98,7 @@ export const createCheckerDouble = (refuse: Set<string> = new Set()): CheckerPor
       ...(refuse.has(option.key) && option.status.word === 'validated feasible' ? ['violations'] : []),
     ]
     const violations: CheckViolation[] = reasons.includes('violations') ? [{ code: 'capacity', about: [option.rows[0]?.job ?? option.key] }] : []
-    return { usable: reasons.length === 0, baselineAllowed: reasons.length === 0 && option.status.word === 'validated feasible', reasons, violations }
+    return { usable: reasons.length === 0, baselineAllowed: reasons.length === 0 && option.status.word === 'validated feasible', reasons, bestFoundGoals: [], violations }
   },
 })
 

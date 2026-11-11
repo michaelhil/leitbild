@@ -295,3 +295,35 @@ describe('a plan-scoped edit never reads World; preview names what the re-timing
     } finally { await local.close() }
   })
 })
+
+describe("lane K's bound check decides \"proven optimal\" (verifyBound, bestFoundGoals)", () => {
+  test('a goal lane K does not confirm, and every later one, is shown and stored as best found', async () => {
+    const { createCheckerDouble, createSolverDouble } = await import('./fixtures/doubles.ts')
+    const inner = createSolverDouble()
+    // The solver claims every goal proven optimal; lane K confirms goal 0 only (a mocked unconfirmable bound on goal 1).
+    const solver = { ...inner, generate: async (request: Parameters<typeof inner.generate>[0]) => {
+      const set = await inner.generate(request)
+      return { ...set, options: set.options.map(option => option.status.word !== 'validated feasible' ? option
+        : { ...option, status: { ...option.status, goals: option.status.goals.map(goal => ({ word: 'proven optimal' as const, goal: goal.goal, value: goal.value, unit: goal.unit, bound: { value: goal.value, source: 'logic+calendars' as const } })) } }) }
+    } }
+    const checker = createCheckerDouble()
+    let unconfirmed: number[] = [1]
+    const local = await createHarness({ solver, checker: { recheck: (plan, option, formulation) => ({ ...checker.recheck(plan, option, formulation), bestFoundGoals: option.status.word === 'validated feasible' ? unconfirmed : [] }) } })
+    try {
+      const created = await local.create('train-a-work-week')
+      const words = (goals: ReadonlyArray<{ word: string }>) => goals.map(goal => goal.word)
+      const expected = ['proven optimal', 'best found under budget', 'best found under budget']
+      const generated = await local.call('planning.plan.generate', { resource: created.id, input: {}, expectedRevision: 1 })
+      expect(words(generated.body.result.options[0].status.goals)).toEqual(expected)
+      expect((generated.body.result.text.match(/\((proven optimal|best found under budget)\)/g) ?? [])).toEqual(['(proven optimal)', '(best found under budget)', '(best found under budget)'])
+      const stored = await local.store.read(local.workspaceId, created.id)
+      expect(words(stored.options!.options[0]!.status.word === 'validated feasible' ? stored.options!.options[0]!.status.goals : [])).toEqual(expected)
+      const read = await local.call('planning.plan.read', { resource: created.id, input: { section: 'options' } })
+      expect(words(read.body.result.sections[0].data.items[0].status.goals)).toEqual(expected)
+      // Control: when lane K confirms every bound, the solver's words stand.
+      unconfirmed = []
+      const again = await local.call('planning.plan.generate', { resource: created.id, input: {}, expectedRevision: 1 })
+      expect(words(again.body.result.options[0].status.goals)).toEqual(['proven optimal', 'proven optimal', 'proven optimal'])
+    } finally { await local.close() }
+  })
+})

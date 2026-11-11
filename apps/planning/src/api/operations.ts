@@ -50,6 +50,11 @@ export interface RecheckView {
   readonly reasons: readonly string[]
   /** What to show instead when the stored status cannot be shown. */
   readonly shownAs?: 'unresolved' | 'invalid input'
+  /**
+   * Goals stored as "proven optimal" whose bound lane K's own verifyBound does not reach, and every later
+   * one: they are shown and stored as "best found under budget", never "proven optimal".
+   */
+  readonly bestFoundGoals: readonly number[]
   readonly violations: ReadonlyArray<CheckViolation & { readonly input?: boolean }>
   readonly certificate?: { readonly proves: boolean; readonly ok: boolean; readonly unverified: readonly string[] }
 }
@@ -169,6 +174,16 @@ const appendChange = (plan: Plan, change: Omit<Plan['changes'][number], 'seq'>):
 
 const editKinds = (edits: readonly Edit[]): Plan['changes'][number]['kinds'] => [...new Set(edits.map(edit => edit.edit))].slice(0, 16)
 
+/**
+ * Lane K's bound check: from the first goal it does not confirm on, no goal reads "proven optimal". The
+ * solver's bound is dropped with the word, as in lane S's withoutProof: it is not trusted on its own.
+ */
+export const unconfirmedAsBestFound = (status: Status, goals: readonly number[]): Status => {
+  if (status.word !== 'validated feasible' || goals.length === 0) return status
+  const from = Math.min(...goals)
+  return { ...status, goals: status.goals.map(goal => goal.goal >= from && goal.word === 'proven optimal' ? { word: 'best found under budget' as const, goal: goal.goal, value: goal.value, unit: goal.unit } : goal) }
+}
+
 /** The structured status the Assistant reads: the stored words, goals in order, and a cause only for a proof. */
 export const statusOut = (status: Status): StatusOut => {
   if (status.word === 'validated feasible') {
@@ -215,7 +230,7 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
     const formulation = solver.formulation(plan.inputs.settings.grid)
     const recheck = checker.recheck(plan, option, formulation)
     const stored = option.status
-    const shown: Status = recheck.usable ? stored
+    const shown: Status = recheck.usable ? unconfirmedAsBestFound(stored, recheck.bestFoundGoals)
       : recheck.shownAs === 'invalid input' ? refusedStatus('invalid input', inputProblems(recheck))
         : recheck.shownAs === 'unresolved' && 'run' in stored ? unresolvedStatus(stored.run)
           : stored.word === 'validated feasible' && recheck.reasons.includes('violations') ? unresolvedStatus(stored.run)
@@ -381,12 +396,16 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
       stoppedByWho: () => stopping.signal.aborted ? 'host' : signal.aborted ? 'person' : undefined,
     }))
     if (!answer.success) throw planningError(500, 'invalid_planning_result', 'Generate returned options that do not match the plan schema')
-    const generated = keyed(answer.data, plan.options)
-    for (const option of generated.options) {
-      if (option.status.word === 'validated feasible' && option.inputsRevision === plan.revision && !checker.recheck(plan, option, solver.formulation(plan.inputs.settings.grid)).usable) {
-        throw planningError(500, 'invalid_planning_result', `Generate called option ${option.label} feasible but the checker refuses it`)
-      }
-    }
+    // Lane K re-checks every feasible option before it is stored: one it refuses is a defect, and a goal
+    // whose bound it does not confirm is stored as best found, so no later read can show it proven.
+    const formulation = solver.formulation(plan.inputs.settings.grid)
+    const keyedSet = keyed(answer.data, plan.options)
+    const generated = { ...keyedSet, options: keyedSet.options.map(option => {
+      if (option.status.word !== 'validated feasible' || option.inputsRevision !== plan.revision) return option
+      const recheck = checker.recheck(plan, option, formulation)
+      if (!recheck.usable) throw planningError(500, 'invalid_planning_result', `Generate called option ${option.label} feasible but the checker refuses it`)
+      return { ...option, status: unconfirmedAsBestFound(option.status, recheck.bestFoundGoals) }
+    }) }
     const saved = await store.update(workspaceId, planId, guard, current => ({
       ...current, updatedAt: at, options: generated,
       ...appendChange(current, { at, by, revision: current.revision, summary: `Generated ${generated.options.length} option${generated.options.length === 1 ? '' : 's'}`, kinds: [] }),

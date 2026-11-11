@@ -31,12 +31,15 @@ export const checkForSolver: CheckPlan = ({ inputs, variant, rows }) => {
   }
 }
 
-/** Every shown or stored status is re-checked by lane K; proof is decided on the certificate's `proves`. */
+/**
+ * Every shown or stored status is re-checked by lane K; proof is decided on the certificate's `proves`, and
+ * a "proven optimal" goal on lane K's own bound (check/optimal.ts verifyBound), passed on as bestFoundGoals.
+ */
 export const realChecker: CheckerPort = {
   recheck: (plan, option, formulation) => {
     const result = recheckOption(plan, option, formulation)
     return {
-      usable: result.usable, baselineAllowed: result.baselineAllowed, reasons: result.reasons,
+      usable: result.usable, baselineAllowed: result.baselineAllowed, reasons: result.reasons, bestFoundGoals: result.bestFoundGoals,
       ...(result.shownAs === undefined ? {} : { shownAs: result.shownAs }),
       violations: result.check.violations.map(violation => ({ code: violation.code, about: violation.about, input: inputCodes.has(violation.code) })),
       ...(result.certificate === undefined ? {} : { certificate: { proves: result.certificate.proves, ok: result.certificate.ok, unverified: result.certificate.unverified } }),
