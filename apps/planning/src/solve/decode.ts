@@ -189,13 +189,9 @@ export const makeDecoder = (prep: Prepared) => {
     for (const x of down) if (up.has(x) && !prep.spanClosers[s]!.includes(x)) inSpan[x] = 1
   })
 
-  const usesResource = (a: number, m: number, slots: Int32Array, r: number): boolean => {
-    for (const d of problem.activities[a]!.modes[m]!.demands) {
-      if (d.resource !== r) continue
-      for (let q = 0; q < slots.length; q++) if (applies(prep, d.when, slots[q]!)) return true
-    }
-    return false
-  }
+  const anyForbidden = problem.resources.some(resource => resource.forbiddenWhenUsed.length > 0)
+  // Which decoded schedule the bookings currently hold, so justify and evaluate need not re-book.
+  let holding: Decoded | undefined
 
   /** Whether a fits at t in mode m against current bookings (resources, replaced time, maxJobs, resource keep-in-service). */
   const refusal = (a: number, m: number, t: number): Refusal => {
@@ -236,17 +232,49 @@ export const makeDecoder = (prep: Prepared) => {
     }
     return { kind: 'none' }
   }
-  const fits = (a: number, m: number, t: number): boolean => refusal(a, m, t).kind === 'none'
+  /** The allocation-free test behind every placement; `refusal` says why when it is false. */
+  const fits = (a: number, m: number, t: number): boolean => {
+    const mode = problem.activities[a]!.modes[m]!
+    if (mode.demands.length === 0 || mode.work === 0) return true
+    const k = prep.cal[mode.calendar]!
+    const p0 = mode.continuous ? 0 : k.pos[t]!
+    if (anyForbidden) { localUse.fill(0); localForbidden.fill(0) }
+    for (const d of mode.demands) {
+      const resource = problem.resources[d.resource]!
+      const u = usage[d.resource]!, capacity = resource.capacity, own = prep.periodPurchase[d.resource]!, banned = prep.forbiddenBy[d.resource]!
+      const when = d.when < 0 ? undefined : prep.cal[d.when]!.pos
+      let any = false
+      for (let q = 0; q < mode.work; q++) {
+        const x = mode.continuous ? t + q : k.list[p0 + q]!
+        if (when !== undefined && when[x]! < 0) continue
+        any = true
+        if (u[x]! + d.amount > capacity[x]!) return false
+        if (anyForbidden) {
+          const p = own[x]!, f = banned[x]!
+          if (f >= 0 && (purchaseUse[f]! > 0 || localUse[f]! > 0)) return false
+          if (p >= 0 && (forbiddenUse[p]! > 0 || localForbidden[p]! > 0)) return false
+          if (p >= 0) localUse[p]!++
+          if (f >= 0) localForbidden[f]!++
+        }
+      }
+      if (any && resource.maxJobs !== undefined && jobCount[d.resource]! >= resource.maxJobs) return false
+    }
+    for (const d of mode.demands) if (prep.resourceCoverage[d.resource]!.length > 0) return refusal(a, m, t).kind === 'none'
+    return true
+  }
 
   const book = (a: number, m: number, t: number, sign: 1 | -1): void => {
     const mode = problem.activities[a]!.modes[m]!
-    const slots = workedSlots(prep, a, m, t)
+    if (mode.work === 0) return
+    const k = prep.cal[mode.calendar]!
+    const p0 = mode.continuous ? 0 : k.pos[t]!
     for (const d of mode.demands) {
       const u = usage[d.resource]!, own = prep.periodPurchase[d.resource]!, banned = prep.forbiddenBy[d.resource]!
+      const when = d.when < 0 ? undefined : prep.cal[d.when]!.pos
       let any = false
-      for (let q = 0; q < slots.length; q++) {
-        const x = slots[q]!
-        if (!applies(prep, d.when, x)) continue
+      for (let q = 0; q < mode.work; q++) {
+        const x = mode.continuous ? t + q : k.list[p0 + q]!
+        if (when !== undefined && when[x]! < 0) continue
         any = true
         u[x] = u[x]! + sign * d.amount
         if (own[x]! >= 0) purchaseUse[own[x]!] = purchaseUse[own[x]!]! + sign * d.amount
@@ -257,6 +285,7 @@ export const makeDecoder = (prep: Prepared) => {
   }
 
   const reset = (): void => {
+    holding = undefined
     for (const u of usage) u.fill(0)
     jobCount.fill(0); purchaseUse.fill(0); forbiddenUse.fill(0)
   }
@@ -374,7 +403,9 @@ export const makeDecoder = (prep: Prepared) => {
         place(a, m, tStar, fStar)
       }
       if (restart) { restarts++; continue }
-      return { start: S, finish: F, mode: M, penalty, restarts, note }
+      const decoded = { start: S, finish: F, mode: M, penalty, restarts, note }
+      holding = decoded
+      return decoded
     }
   }
 
@@ -382,14 +413,24 @@ export const makeDecoder = (prep: Prepared) => {
   const load = (schedule: { readonly start: ArrayLike<number>; readonly mode: ArrayLike<number> }, except = -1): void => {
     reset()
     for (let a = 0; a < n; a++) if (a !== except && finishOf(prep, a, schedule.mode[a]!, schedule.start[a]!) >= 0) book(a, schedule.mode[a]!, schedule.start[a]!, 1)
+    if (except < 0 && 'penalty' in schedule) holding = schedule as Decoded
   }
 
+  const priced = problem.resources.map(resource => resource.pricePerUnitSlot.some(price => price > 0))
   const slotCost = (a: number, m: number, t: number): number => {
+    const mode = problem.activities[a]!.modes[m]!
+    if (mode.work === 0) return 0
+    const k = prep.cal[mode.calendar]!
+    const p0 = mode.continuous ? 0 : k.pos[t]!
     let sum = 0
-    const slots = workedSlots(prep, a, m, t)
-    for (const d of problem.activities[a]!.modes[m]!.demands) {
+    for (const d of mode.demands) {
+      if (!priced[d.resource]) continue
       const price = problem.resources[d.resource]!.pricePerUnitSlot
-      for (let q = 0; q < slots.length; q++) if (applies(prep, d.when, slots[q]!)) sum += d.amount * price[slots[q]!]!
+      const when = d.when < 0 ? undefined : prep.cal[d.when]!.pos
+      for (let q = 0; q < mode.work; q++) {
+        const x = mode.continuous ? t + q : k.list[p0 + q]!
+        if (when === undefined || when[x]! >= 0) sum += d.amount * price[x]!
+      }
     }
     return sum
   }
@@ -401,7 +442,7 @@ export const makeDecoder = (prep: Prepared) => {
   const justify = (d: Decoded, all = false): void => {
     if (d.penalty > 0) return
     const S = d.start, F = d.finish, M = d.mode
-    load(d)
+    if (holding !== d) load(d)
     const order = [...Array(n).keys()].filter(a => (all ? !isCloser[a] : inSpan[a]) && problem.activities[a]!.fixed === undefined)
       .sort((x, y) => S[y]! - S[x]! || y - x)
     for (const a of order) {
@@ -421,16 +462,18 @@ export const makeDecoder = (prep: Prepared) => {
       const own = slotCost(a, m, S[a]!)
       book(a, m, S[a]!, -1)
       let best = S[a]!
+      const pricedMode = activity.modes[m]!.demands.some(d => priced[d.resource])
       for (let t = Math.min(sUB, H - 1); t > S[a]!; t--) {
         const f = finishOf(prep, a, m, t)
         if (f < 0 || f > fUB) continue
-        if (slotCost(a, m, t) > own) continue
         if (activity.target !== undefined && f > Math.max(activity.target, F[a]!)) continue
         if (!fits(a, m, t)) continue
+        if (pricedMode && slotCost(a, m, t) > own) continue
         best = t; break
       }
       S[a] = best; F[a] = finishOf(prep, a, m, best); book(a, m, best, 1)
     }
+    holding = d
   }
 
   /** Union length of each item's out intervals (own plus supporters'), in slots. */
@@ -467,7 +510,7 @@ export const makeDecoder = (prep: Prepared) => {
 
   /** Goal values and keys of a decoded (and justified) schedule, read from the current bookings. */
   const evaluate = (d: Decoded): Evaluation => {
-    load(d)
+    if (holding !== d) load(d)
     let cost = 0, finish = 0
     for (let a = 0; a < n; a++) {
       const mode = problem.activities[a]!.modes[d.mode[a]!]!
