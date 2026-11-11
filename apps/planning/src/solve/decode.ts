@@ -537,8 +537,11 @@ export const makeDecoder = (prep: Prepared) => {
   /**
    * Moves jobs as late as their successors allow without raising cost or lateness: span-internal jobs
    * shorten outages; `all` is the backward pass of forward-backward improvement. Closers never move.
+   * `finishBy` (with `all` only) caps every moved job's finish, e.g. at the forward decode's finish, so the
+   * backward pass cannot push a job to its deadline and raise the plan's finish (or's small-case path).
+   * The default, no cap, leaves every plan as before.
    */
-  const justify = (d: Decoded, all = false): void => {
+  const justify = (d: Decoded, all = false, finishBy = Infinity): void => {
     if (d.penalty > 0) return
     const S = d.start, F = d.finish, M = d.mode
     if (holding !== d) load(d)
@@ -547,7 +550,7 @@ export const makeDecoder = (prep: Prepared) => {
     for (const a of order) {
       const activity = problem.activities[a]!
       const m = M[a]!
-      let sUB = H, fUB = activity.deadline
+      let sUB = H, fUB = all ? Math.min(activity.deadline, finishBy) : activity.deadline
       const progressLinks: Array<NormalizedProblem['links'][number]> = []
       for (const l of prep.succs[a]!) {
         if (l.type === 'FS') fUB = Math.min(fUB, S[l.to]! - l.min)

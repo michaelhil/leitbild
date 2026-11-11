@@ -115,3 +115,26 @@ describe('keep-in-service: a blocked opener waits, a deadlock is reported', () =
     expect(decoded.start[at('U1-CTF2-TAG')]).toBeGreaterThanOrEqual(156)
   })
 })
+
+describe("the backward pass's finishBy cap (or's small-case path)", () => {
+  test('without a cap a free job is pushed to its deadline; capped at the forward finish it is not', () => {
+    // One 2 h day-shift job with nothing after it, alone in a window Mon 07:00 to Thu 07:00: decoded at
+    // Mon 07:00-09:00. The backward pass moves it as late as its deadline allows (Wed 13:00-15:00, the last
+    // day-shift hours before the window ends); capped at the forward finish, Mon 09:00, it stays.
+    const inputs = plan([], { hours: 2, notBefore: local('2026-11-16T07:00:00') }, { hours: 2 })
+    const compiled = compile(inputs, { methods: [], buy: 'allowed' })
+    if (!compiled.ok) throw new Error(JSON.stringify(compiled.problems))
+    const prep = prepare(compiled.problem)
+    const decoder = makeDecoder(prep)
+    const list = precedenceOrder(prep, [...prep.topo]), modes = compiled.problem.activities.map(() => 0)
+    const open = compiled.index.jobs.indexOf('OPEN')
+    const free = decoder.decode(list, modes)
+    const forwardFinish = Math.max(...free.finish)
+    decoder.justify(free, true)
+    expect(free.start[open]).toBeGreaterThan(0)
+    const capped = decoder.decode(list, modes)
+    decoder.justify(capped, true, forwardFinish)
+    expect(Math.max(...capped.finish)).toBeLessThanOrEqual(forwardFinish)
+    expect(capped.start[open]).toBe(0)
+  })
+})

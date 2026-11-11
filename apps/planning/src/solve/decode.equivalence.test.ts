@@ -49,4 +49,28 @@ describe('decoder speed-up keeps every plan', () => {
     }
     expect(out.length).toBe(beforeFix.length)
   })
+
+  test("the backward pass's finishBy cap leaves the default unchanged", () => {
+    // justify(d, true) on the same 300 random orders and modes, hashed on the decoder before finishBy was
+    // added (commit 4e756f917); the default (no cap) must give exactly that.
+    const BEFORE_FINISH_BY = '661e6a9c5b0971224fe7a5a84b837cc0f3eb6da4cbb8f8dff78f722b63f1f4cd'
+    const twin = fromBenchInstance(twinJson as unknown as BenchInstance).problem
+    const flagship = compile(trainAInputs({ read: true }), { methods: [{ choice: 'SWA-method', option: 'swap' }], buy: 'allowed' })
+    if (!flagship.ok) throw new Error(JSON.stringify(flagship.problems))
+    let seed = 11
+    const random = () => { seed = (seed * 1_103_515_245 + 12_345) % 2_147_483_648; return seed / 2_147_483_648 }
+    const out: unknown[] = []
+    for (const problem of [twin, flagship.problem]) {
+      const prep = prepare(problem)
+      const decoder = makeDecoder(prep)
+      for (let i = 0; i < 150; i++) {
+        const list = precedenceOrder(prep, [...prep.topo].map(a => ({ a, k: random() })).sort((x, y) => x.k - y.k).map(entry => entry.a))
+        const modes = problem.activities.map(activity => Math.floor(random() * activity.modes.length))
+        const decoded = decoder.decode(list, modes)
+        decoder.justify(decoded, true)
+        out.push({ start: [...decoded.start], mode: [...decoded.mode], penalty: decoded.penalty })
+      }
+    }
+    expect(new Bun.CryptoHasher('sha256').update(JSON.stringify(out)).digest('hex')).toBe(BEFORE_FINISH_BY)
+  })
 })
