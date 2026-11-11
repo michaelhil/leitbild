@@ -75,6 +75,7 @@ export const equipmentSchema = z.object({
   group: keySchema.optional(),                      // function group for span limits; changing it needs authority
   supportedBy: z.array(keySchema).max(16),          // out while any supporter is out
   locator: planningLocatorSchema.optional(),        // World item; its values live in inputs.world.facts
+  source: sourceSchema.optional(),                  // who declares an item World does not read, e.g. a reference
 }).strict()
 export const groupSchema = z.object({ key: keySchema, label: labelSchema }).strict()
 export const attributeSchema = z.object({

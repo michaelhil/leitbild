@@ -77,6 +77,7 @@ export const editSchema = z.discriminatedUnion('edit', [
     groupLabel: labelSchema.optional().describe('Name of that group'),
     supportedBy: keys.optional().describe('Items whose outage makes this one unavailable'),
     locator: planningLocatorSchema.nullable().optional().describe('World item from planning-facts; values copied at refresh'),
+    source: source.optional(),
   }).strict(),
   z.object({
     edit: z.literal('calendar'), key,

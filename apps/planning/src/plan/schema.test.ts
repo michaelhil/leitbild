@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
-  attributeSchema, calendarSchema, certificateSchema, changeSchema, combineWorldFacts, datedRowSchema, durationSchema, durationWithSchema, editKindSchema, goalSchema,
+  attributeSchema, calendarSchema, certificateSchema, changeSchema, combineWorldFacts, datedRowSchema, durationSchema, durationWithSchema, editKindSchema, equipmentSchema, goalSchema,
   jobSchema, planInputsSchema, planSchema, purchaseSchema, resourceSchema, ruleSchema, statusSchema, type WorldFactCopy,
 } from './schema.ts'
 import { editSchema } from './edit-schema.ts'
@@ -354,5 +354,29 @@ describe('a hard due rule (coordinator decision)', () => {
     const removal = { edits: [{ edit: 'remove', what: 'rule', key: 'SR-SWA' }] }
     expect(editInputSchema.safeParse({ ...removal, authority: { name: 'Operations manager', reason: 'Surveillance performed early on Monday' } }).success).toBe(true)
     expect(editInputSchema.safeParse({ ...removal, authority: { name: 'Operations manager' } }).success).toBe(false)
+  })
+})
+
+describe('R1 protects exactly what it names (ai review)', () => {
+  const r1 = trainA.rules.find((rule: any) => rule.key === 'R1')
+  const item = (key: string) => trainA.equipment.find((entry: any) => entry.key === key)
+
+  test('every Train B item, the turbine-driven AFW pump and the switchyard', () => {
+    expect(r1.equipment).toEqual(['SWB', 'CCWB', 'RHRB', 'HHSIB', 'CSB', 'AFWB', 'AFWTD', 'EDGB', 'BUSB', 'SWYD'])
+    expect(r1.words).toBe('Every Train B item (SW B, CCW B, RHR B, HHSI B, CS B, MD AFW B, EDG B, safety bus B), the turbine-driven AFW pump and the switchyard/offsite supply are never tagged, worked or tested.')
+    for (const key of r1.equipment) expect(item(key)).toBeDefined()
+  })
+
+  test('pumps World reads carry their locator; items it does not read are declared by reference', () => {
+    for (const key of ['SWB', 'CCWB', 'RHRB', 'HHSIB', 'CSB', 'AFWB', 'AFWTD']) {
+      expect(item(key).locator).toStartWith('process-plant/plant%3Atrain-a/')
+      expect(item(key).source).toBeUndefined()
+    }
+    for (const key of ['EDGB', 'BUSB', 'SWYD']) {
+      expect(item(key).locator).toBeUndefined()
+      expect(item(key).source.by).toBe('reference')
+    }
+    expect(equipmentSchema.safeParse({ ...item('EDGB'), source: { by: 'reference' } }).success).toBe(false)
+    expect(editSchema.safeParse({ edit: 'equipment', key: 'SWYD', label: 'Switchyard and offsite supply', supportedBy: [], source: { by: 'reference', note: 'maint case change C10' } }).success).toBe(true)
   })
 })
