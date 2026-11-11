@@ -71,7 +71,7 @@ export const createRealSolver = (pool: SolverPool): SolverPort => {
         // The second (energy) proof is worded only when lane K re-verifies it too.
         const span = bounds(problem, index, prep).span
         const shown = span?.alsoProven === undefined || verifyCertificate(inputs, option.variant, span.alsoProven).proves ? span : (({ alsoProven: _also, ...rest }) => rest)(span)
-        return bounded({ lines: refusalLines(option.status.cause, inputs, shown, option.variant.purchases), items: [] })
+        return bounded({ lines: refusalLines(option.status.cause, inputs, shown, option.variant.purchases, option.variant.methods), items: [] })
       }
       const schedule = scheduleOf(prep, index, option)
       const dataDate = inputs.settings.dataDate === null ? undefined : Math.floor((Date.parse(inputs.settings.dataDate) - index.origin) / index.slotMs)

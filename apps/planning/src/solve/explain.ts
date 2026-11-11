@@ -7,6 +7,8 @@ import type { z } from 'zod'
 import type { explainResultSchema } from '../api/contract.ts'
 import type { Certificate, PlanInputs } from '../plan/schema.ts'
 import { clip as clipWords } from '../plan/summary.ts'
+import { dueTimeWords } from '../plan/refusal-words.ts'
+import type { CheckVariant } from '../check/check.ts'
 import { expandCalendar } from '../time/calendar.ts'
 import { gridSlotMs } from '../time/units.ts'
 import { localParts } from '../time/zone.ts'
@@ -296,8 +298,8 @@ const clip = (line: string): string => clipWords(line, 240)
  * A proven-infeasible refusal in planner words and hours, generated from the certificate (and, for a
  * span limit, the least span bounds() found). Never a raw propagation fact.
  */
-export const refusalLines = (cause: Certificate, inputs: PlanInputs, span?: SpanRefusal, purchases?: readonly string[]): string[] => {
-  const lines = refusalBody(cause, inputs, span)
+export const refusalLines = (cause: Certificate, inputs: PlanInputs, span?: SpanRefusal, purchases?: readonly string[], methods?: CheckVariant['methods']): string[] => {
+  const lines = refusalBody(cause, inputs, span, { methods: methods ?? [], purchases: purchases ?? [] })
   if (purchases === undefined) return lines
   // Say what the answer assumes may be bought (e.g. "days only": a tool day and a rebooking, no crew hours).
   const label = (key: string) => inputs.purchases.find(purchase => purchase.key === key)?.label ?? key
@@ -320,10 +322,10 @@ export const explainRefusal = (inputs: PlanInputs, sub: SubSolve, verify: Verify
   const also = found.span?.alsoProven
   const span = found.span === undefined ? undefined
     : also !== undefined && verify(inputs, variant, also).proves ? found.span : (({ alsoProven: _also, ...rest }) => rest)(found.span)
-  return { cause: found.certificate, proves, lines: refusalLines(found.certificate, inputs, span, compiled.index.allowedPurchases) }
+  return { cause: found.certificate, proves, lines: refusalLines(found.certificate, inputs, span, compiled.index.allowedPurchases, sub.methods) }
 }
 
-const refusalBody = (cause: Certificate, inputs: PlanInputs, span?: SpanRefusal): string[] => {
+const refusalBody = (cause: Certificate, inputs: PlanInputs, span: SpanRefusal | undefined, variant: CheckVariant): string[] => {
   const zone = inputs.settings.timeZone
   const slotMs = gridSlotMs[inputs.settings.grid]
   const lastStart = (to: string) => localTime(new Date(Date.parse(to) - slotMs).toISOString(), zone)
@@ -369,10 +371,15 @@ const refusalBody = (cause: Certificate, inputs: PlanInputs, span?: SpanRefusal)
     }
     return lines.length <= 19 ? lines : [...lines.slice(0, 18), lines.at(-1)!]
   }
+  // A due time no plan meets is said in the preview's words, with the hours and the rule (walk 4, R4-2).
+  const due = cause.steps.map(entry => dueTimeWords(inputs, variant, entry.job)).find(words => words !== undefined)
+  if (due !== undefined) return [clip(`Not possible: ${due}`)]
   const first = cause.steps.at(0)
-  // Each slot is filled or left out: never "after ." (walk 3, R3-1).
+  // Each slot is filled or left out: never "after ." (walk 3, R3-1); no solver words such as "release".
   const before = cause.steps.slice(1).map(entry => title(entry.job))
-  return [clip(`Not possible: ${first === undefined ? 'the plan' : title(first.job)} cannot fit ${first?.via === 'due' ? 'before its due time' : first?.via === 'release' ? 'after its release' : first?.via === 'lock' ? 'at its locked start' : 'inside the plan window'}${before.length === 0 ? '' : `, after ${list(before)}`}.`)]
+  const notBefore = first === undefined ? undefined : job(first.job)?.notBefore?.words
+  const where = first?.via === 'due' ? 'before its due time' : first?.via === 'release' ? `after its earliest start${notBefore === undefined ? '' : ` ('${notBefore}')`}` : first?.via === 'lock' ? 'at its fixed start' : 'inside the plan window'
+  return [clip(`Not possible: ${first === undefined ? 'the plan' : title(first.job)} cannot fit ${where}${before.length === 0 ? '' : `, after ${list(before)}`}.`)]
 }
 
 type ChainStepText = { readonly job: string; readonly start: string; readonly finish: string }

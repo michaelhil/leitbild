@@ -1,6 +1,6 @@
 // The presenter: planner words generated from structure (never stored), and the bounded sections that
 // planning.plan.read returns. The UI's format.ts mirrors these rules. Every section fits the 4 KB result.
-import type { Certificate, CertifiedSize, Plan, PlanInputs, Status } from './schema.ts'
+import { goalResolution, type Certificate, type CertifiedSize, type Plan, type PlanInputs, type Status } from './schema.ts'
 import { resultLimitBytes, type OptionWarning, type SectionName } from '../api/contract.ts'
 import type { ChangeRecord, Weakening } from './edits.ts'
 import type { OutTogether, Precondition, ReadinessItem } from './readiness.ts'
@@ -42,7 +42,7 @@ export const datedWords = (instant: string, zone: string | null): string => {
 }
 
 const grouped = (value: number): string => Math.round(value).toLocaleString('en-US')
-const decimal = (value: number): string => Number.isInteger(value) ? String(value) : value.toFixed(value < 10 ? 2 : 1).replace(/0+$/, '').replace(/\.$/, '')
+export const decimal = (value: number): string => Number.isInteger(value) ? String(value) : value.toFixed(value < 10 ? 2 : 1).replace(/0+$/, '').replace(/\.$/, '')
 
 /** A value with its unit in planner words: "3.5 h", "NOK 380,000", "2 min 10 s". */
 export const valueWords = (value: number, unit: string): string => {
@@ -260,11 +260,18 @@ const earlyStopWords: Readonly<Partial<Record<string, string>>> = { memory: 'mem
 export const statusSentence = (status: Status, inputs: Inputs): string => {
   switch (status.word) {
     case 'validated feasible': {
-      const goals = status.goals.map(goal => `${goalWords[inputs.goals[goal.goal]?.metric ?? 'finish']} ${valueWords(goal.value, goal.unit)} (${goal.word})`)
-      // A search stopped early says so with its status, never as an unqualified recommendation (walk 3, R3-3).
+      // One word per goal (walk 4, R4-3): proven optimal on lane K's bound, else best found with the gap a
+      // sound bound leaves; a bound is never called "the best possible".
+      const word = (goal: Extract<Status, { word: 'validated feasible' }>['goals'][number]): string => {
+        if (goal.word === 'proven optimal') return 'proven optimal'
+        const gap = goal.bound === undefined ? undefined : goal.value - goal.bound.value
+        return gap === undefined || gap <= (goalResolution(goal.unit, status.run.grid) ?? 0) / 2 ? 'best found' : `best found; could be up to ${valueWords(gap, goal.unit)} better`
+      }
+      const goals = status.goals.map(goal => `${goalWords[inputs.goals[goal.goal]?.metric ?? 'finish']} ${valueWords(goal.value, goal.unit)} (${word(goal)})`)
+      // How the search ended, said once: stopped early (walk 3, R3-3) or ran to the end.
       const early = earlyStopWords[status.run.stoppedBy]
-      const stopped = early === undefined ? '' : ` The search stopped early (${early}); this option may not be the best.`
-      return `${clip(`Validated feasible${goals.length === 0 ? '' : `: ${goals.join('; ')}`}.`, 300 - stopped.length)}${stopped}`
+      const ended = early === undefined ? ' The search ran to the end.' : ` The search stopped early (${early}); this option may not be the best.`
+      return `${clip(`Validated feasible${goals.length === 0 ? '' : `: ${goals.join('; ')}`}.`, 300 - ended.length)}${ended}`
     }
     case 'proven infeasible': return clip(`Proven infeasible: ${certificateWords(status.cause, inputs)}.`, 300)
     case 'invalid input': return clip(`Invalid input: ${status.problems.map(problem => problem.code === 'working_time_without_resource'
