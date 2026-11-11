@@ -3,21 +3,27 @@
 // the plan and followed by a sync of the directory, so an acknowledged save survives a process crash and a
 // reader never sees half a file (power loss rests on Linux fsync). The old studies/ folder is never read.
 //
-// The file holds each distinct baseline inputs copy once (`frozenInputs`), and a baseline names its copy;
-// in memory a plan is the planSchema aggregate. A plan file is at most `maxPlanBytes` (4 MB): a larger write
-// is refused with 413, so one read or a listing never needs more than one plan's worth of memory.
+// A plan file is two JSON lines, written together in one atomic write: line 1 is the plan's catalogue
+// summary (a few KB at most), line 2 the plan. A listing reads only line 1, with a bounded read, so it never
+// holds a plan in memory; opening a plan checks that line 1 is the summary of line 2, or the plan is damaged.
+// Line 2 holds each distinct baseline inputs copy once (`frozenInputs`), and a baseline names its copy; in
+// memory a plan is the planSchema aggregate. A plan file is at most `maxPlanBytes` (4 MB): a larger write is
+// refused with 413.
 import { createHash } from 'node:crypto'
 import { mkdir, open, readdir, rename, rm } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { z } from 'zod'
 import { workspaceIdSchema, type WorkspaceId } from '@leitbild/contracts'
+import { stableJson } from '@leitbild/module-runtime'
 import { planningError } from '../errors.ts'
-import { planInputsSchema, planSchema, type Plan, type PlanInputs } from './schema.ts'
+import { instantSchema, labelSchema, planInputsSchema, planSchema, wordsSchema, type Plan, type PlanInputs } from './schema.ts'
 
 const planIdSchema = z.uuid()
 const markerSchema = z.object({ workspaceId: workspaceIdSchema, moduleId: z.literal('planning') }).strict()
 const temporarySuffix = '.tmp'
 export const maxPlanBytes = 4_000_000
+/** Line 1 fits in this many bytes (title 160 and purpose 600 characters, at most 4 bytes each, and the frame). */
+const summaryReadBytes = 8_192
 
 /** A baseline's inputs: `current` (the plan's own inputs in this file) or a key in frozenInputs. */
 const baselineFileSchema = planSchema.shape.baselines.element.omit({ inputs: true }).extend({ inputs: z.string().min(1).max(32) }).strict()
@@ -58,16 +64,17 @@ const decodePlan = (file: z.infer<typeof planFileSchema>): Plan | undefined => {
 }
 
 /** What the catalogue shows of a plan; a listing keeps only these, never whole plans. */
-export interface PlanSummary {
-  readonly id: string
-  readonly title: string
-  readonly purpose?: string
-  readonly revision: number
-  readonly updatedAt: string
-  readonly linked: boolean
-  readonly optionCount: number
-  readonly optionsOutOfDate: boolean
-}
+export const planSummarySchema = z.object({
+  id: planIdSchema,
+  title: labelSchema,
+  purpose: wordsSchema.optional(),
+  revision: z.number().int().positive(),
+  updatedAt: instantSchema,
+  linked: z.boolean(),
+  optionCount: z.number().int().nonnegative().max(8),
+  optionsOutOfDate: z.boolean(),
+}).strict()
+export type PlanSummary = z.infer<typeof planSummarySchema>
 export const summarize = (plan: Plan): PlanSummary => ({
   id: plan.id, title: plan.inputs.settings.title,
   ...(plan.inputs.settings.purpose === undefined ? {} : { purpose: plan.inputs.settings.purpose }),
@@ -86,7 +93,7 @@ export interface PlanStore {
   readonly hasWorkspace: (workspaceId: WorkspaceId) => Promise<boolean>
   readonly provision: (workspaceId: WorkspaceId) => Promise<boolean>
   readonly removeWorkspace: (workspaceId: WorkspaceId) => Promise<void>
-  /** Parses one plan at a time and keeps its summary; a file that does not parse is listed as damaged. */
+  /** Reads line 1 of each plan file only; a file whose line 1 does not parse as a summary is listed as damaged. */
   readonly list: (workspaceId: WorkspaceId) => Promise<PlanListing>
   readonly read: (workspaceId: WorkspaceId, planId: string) => Promise<Plan>
   readonly create: (workspaceId: WorkspaceId, plan: Plan) => Promise<Plan>
@@ -170,7 +177,8 @@ export const createPlanStore = (rootDirectory: string, options: PlanStoreOptions
   }
 
   const writePlan = async (path: string, plan: Plan): Promise<void> => {
-    const text = `${JSON.stringify(encodePlan(plan))}\n`
+    // Both lines in one write, so the summary can never disagree with the plan it summarizes.
+    const text = `${JSON.stringify(summarize(plan))}\n${JSON.stringify(encodePlan(plan))}\n`
     const bytes = Buffer.byteLength(text, 'utf8')
     if (bytes > limit) {
       throw planningError(413, 'plan_too_large', `This change would make the plan ${(bytes / 1e6).toFixed(1)} MB, more than the ${(limit / 1e6).toFixed(0)} MB a plan may hold; nothing was saved`, { bytes, limit })
@@ -192,19 +200,49 @@ export const createPlanStore = (rootDirectory: string, options: PlanStoreOptions
     swept.add(workspaceId)
   }
 
-  /** Not found, damaged (it does not parse as a plan), or the plan. An I/O failure is neither: 503, retry. */
+  const unavailable = (error: unknown) => planningError(503, 'store_unavailable', 'Planning could not read its files just now; try again', { code: ioCode(error) ?? 'unknown' })
+
+  /**
+   * Not found, damaged, or the plan. Damaged: line 2 does not parse as a plan, or line 1 is not exactly its
+   * summary. An I/O failure is neither: 503, retry.
+   */
   const parseStored = async (workspaceId: WorkspaceId, planId: string): Promise<{ readonly kind: 'missing' } | { readonly kind: 'damaged' } | { readonly kind: 'plan'; readonly plan: Plan }> => {
     let text: string
     try { text = await Bun.file(planPath(workspaceId, planId)).text() } catch (error) {
       if (ioCode(error) === 'ENOENT') return { kind: 'missing' }
-      throw planningError(503, 'store_unavailable', 'Planning could not read its files just now; try again', { code: ioCode(error) ?? 'unknown' })
+      throw unavailable(error)
     }
-    let raw: unknown
-    try { raw = JSON.parse(text) } catch { return { kind: 'damaged' } }
+    const end = text.indexOf('\n')
+    if (end < 0) return { kind: 'damaged' }
+    let summary: unknown, raw: unknown
+    try { summary = JSON.parse(text.slice(0, end)); raw = JSON.parse(text.slice(end + 1)) } catch { return { kind: 'damaged' } }
     const file = planFileSchema.safeParse(raw)
     const plan = file.success ? decodePlan(file.data) : undefined
     if (plan === undefined || plan.id !== planId || plan.workspaceId !== workspaceId) return { kind: 'damaged' }
+    if (stableJson(summary) !== stableJson(summarize(plan))) return { kind: 'damaged' }
     return { kind: 'plan', plan }
+  }
+
+  /** Line 1 only, by a bounded read: the listing never loads a plan. */
+  const readSummary = async (workspaceId: WorkspaceId, planId: string): Promise<{ readonly kind: 'missing' } | { readonly kind: 'damaged' } | { readonly kind: 'summary'; readonly summary: PlanSummary }> => {
+    let head: string
+    try {
+      const handle = await open(planPath(workspaceId, planId), 'r')
+      try {
+        const buffer = Buffer.alloc(summaryReadBytes)
+        const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0)
+        head = buffer.subarray(0, bytesRead).toString('utf8')
+      } finally { await handle.close() }
+    } catch (error) {
+      if (ioCode(error) === 'ENOENT') return { kind: 'missing' }
+      throw unavailable(error)
+    }
+    const end = head.indexOf('\n')
+    if (end < 0) return { kind: 'damaged' }
+    let raw: unknown
+    try { raw = JSON.parse(head.slice(0, end)) } catch { return { kind: 'damaged' } }
+    const summary = planSummarySchema.safeParse(raw)
+    return summary.success && summary.data.id === planId ? { kind: 'summary', summary: summary.data } : { kind: 'damaged' }
   }
 
   const read = async (workspaceId: WorkspaceId, planId: string): Promise<Plan> => {
@@ -240,9 +278,8 @@ export const createPlanStore = (rootDirectory: string, options: PlanStoreOptions
       for (const name of (await readdir(plansDirectory(workspaceId))).filter(name => name.endsWith('.json')).sort()) {
         const id = name.slice(0, -'.json'.length)
         if (!planIdSchema.safeParse(id).success) continue
-        // One plan in memory at a time: only its summary is kept.
-        const stored = await parseStored(workspaceId, id)
-        if (stored.kind === 'plan') plans.push(summarize(stored.plan))
+        const stored = await readSummary(workspaceId, id)
+        if (stored.kind === 'summary') plans.push(stored.summary)
         else if (stored.kind === 'damaged') damaged.push({ id })
       }
       return { plans: plans.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || left.id.localeCompare(right.id)), damaged }

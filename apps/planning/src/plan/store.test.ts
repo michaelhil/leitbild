@@ -29,7 +29,9 @@ describe('one JSON file per plan', () => {
     await mkdir(join(root, 'workspaces', workspaceId, 'planning', 'studies'), { recursive: true })
     await writeFile(join(root, 'workspaces', workspaceId, 'planning', 'studies', `${crypto.randomUUID()}.json`), '{"old":true}')
     const plan = await store.create(workspaceId, planFor())
-    expect(await Bun.file(join(root, 'workspaces', workspaceId, 'planning', 'plans', `${plan.id}.json`)).json()).toEqual(encodePlan(plan))
+    // Two lines: the catalogue summary, then the plan.
+    const lines = (await Bun.file(join(root, 'workspaces', workspaceId, 'planning', 'plans', `${plan.id}.json`)).text()).split('\n')
+    expect([JSON.parse(lines[0]!), JSON.parse(lines[1]!), lines.slice(2)]).toEqual([summarize(plan), encodePlan(plan), ['']])
     expect(await store.read(workspaceId, plan.id)).toEqual(plan)
     expect((await store.list(workspaceId))).toEqual({ plans: [summarize(plan)], damaged: [] })
     expect((await caught(store.read(workspaceId, crypto.randomUUID()))).code).toBe('plan_not_found')
@@ -168,7 +170,33 @@ describe('bounded plans and listings', () => {
     expect(await createPlanStore(root).read(workspaceId, plan.id)).toEqual(plan)
   })
 
-  test('a listing keeps one plan in memory at a time and returns summaries only', async () => {
+  test('a listing reads only each file\'s summary line, never the plan', async () => {
+    const root = await tempRoot()
+    const store = createPlanStore(root)
+    await store.provision(workspaceId)
+    const plan = await store.create(workspaceId, planFor())
+    const directory = join(root, 'workspaces', workspaceId, 'planning', 'plans')
+    // A valid summary line before 3 MB that is not a plan: the listing never reaches it, opening the plan does.
+    const id = crypto.randomUUID()
+    await writeFile(join(directory, `${id}.json`), `${JSON.stringify({ ...summarize(plan), id })}\n${'x'.repeat(3_000_000)}\n`)
+    expect((await store.list(workspaceId)).plans.map(entry => entry.id).sort()).toEqual([plan.id, id].sort())
+    expect((await caught(store.read(workspaceId, id))).code).toBe('plan_damaged')
+  })
+
+  test('opening a plan whose summary line disagrees with the plan finds it damaged', async () => {
+    const root = await tempRoot()
+    const store = createPlanStore(root)
+    await store.provision(workspaceId)
+    const plan = await store.create(workspaceId, planFor())
+    const path = join(root, 'workspaces', workspaceId, 'planning', 'plans', `${plan.id}.json`)
+    const [, body] = (await Bun.file(path).text()).split('\n')
+    await writeFile(path, `${JSON.stringify({ ...summarize(plan), title: 'Another title' })}\n${body}\n`)
+    const refused = await caught(store.read(workspaceId, plan.id))
+    expect([refused.code, (refused as unknown as Error).message]).toEqual(['plan_damaged', 'This plan file could not be read; do not delete it, report it.'])
+    expect((await caught(store.delete(workspaceId, plan.id, { expectedRevision: undefined, required: false }))).code).toBe('plan_damaged')
+  })
+
+  test('listing plans near the file limit adds only a few MB of RSS', async () => {
     const root = await tempRoot()
     const store = createPlanStore(root)
     await store.provision(workspaceId)
@@ -177,28 +205,16 @@ describe('bounded plans and listings', () => {
     const rows = Array.from({ length: 1_500 }, (_, index) => row(index))
     const option = (key: string) => ({ key, label: `Option ${key}`, variant: { methods: [], purchases: [] }, status: { word: 'invalid input' as const, problems: [{ about: [], code: 'test' }] }, rows, metrics: [], inputsRevision: 1 })
     const large = (): Plan => ({ ...planFor(), options: { at: '2026-11-11T08:00:00Z', by: { kind: 'human' }, options: Array.from({ length: 8 }, (_, index) => option(`O${index + 1}`)) } })
-    const count = 8
+    const count = 9
     for (let index = 0; index < count; index += 1) await store.create(workspaceId, large())
-    const fileBytes = (await Bun.file(join(root, 'workspaces', workspaceId, 'planning', 'plans', (await readdir(join(root, 'workspaces', workspaceId, 'planning', 'plans')))[0]!)).arrayBuffer()).byteLength
-    expect(fileBytes).toBeGreaterThan(2_500_000)
-    expect(fileBytes).toBeLessThanOrEqual(4_000_000)
-    // What one plan costs in memory, parsed and held.
-    Bun.gc(true)
-    const before = process.memoryUsage().rss
-    const one = await store.read(workspaceId, (await store.list(workspaceId)).plans[0]!.id)
-    const onePlan = process.memoryUsage().rss - before
-    expect(one.options?.options.length).toBe(8)
     Bun.gc(true)
     const start = process.memoryUsage().rss
     let peak = start
-    const sampler = setInterval(() => { peak = Math.max(peak, process.memoryUsage().rss) }, 2)
+    const sampler = setInterval(() => { peak = Math.max(peak, process.memoryUsage().rss) }, 1)
     const listing = await store.list(workspaceId)
     clearInterval(sampler)
     peak = Math.max(peak, process.memoryUsage().rss)
     expect(listing.plans.length).toBe(count)
-    expect(JSON.stringify(listing).length).toBeLessThan(count * 400)
-    // Holding every plan would grow memory by about count x onePlan; one at a time stays within a few plans' worth.
-    expect(peak - start).toBeLessThan(Math.max(onePlan, 20_000_000) * 2)
-    console.log(`listing ${count} plans of ${(fileBytes / 1e6).toFixed(1)} MB: one plan ${Math.round(onePlan / 1e6)} MB, listing peak +${Math.round((peak - start) / 1e6)} MB`)
+    expect(peak - start).toBeLessThan(8_000_000)
   }, 120_000)
 })
