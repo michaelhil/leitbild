@@ -5,8 +5,18 @@
 import { z } from 'zod'
 import { planningLocatorSchema } from '@leitbild/contracts'
 import {
-  amountSchema, goalSchema, instantSchema, keySchema, labelSchema, localTimeSchema, sourceSchema, timeUnitSchema, timeZoneSchema, weekdaySchema, wordsSchema,
+  amountSchema, goalMetricSchema, goalUnitIssue, instantSchema, keySchema, labelSchema, localTimeSchema, sourceSchema, timeUnitSchema, timeZoneSchema, weekdaySchema, wordsSchema,
 } from './schema.ts'
+
+type Issues = z.core.$RefinementCtx
+const issue = (context: Issues, path: Array<string | number>, message: string) => context.addIssue({ code: 'custom', path, message })
+/** A value given by a person, or World facts to sum: never both. */
+const oneValue = (given: { readonly value?: number | undefined; readonly fromWorld?: unknown; readonly source?: unknown }, context: Issues, required: boolean) => {
+  const world = given.fromWorld !== undefined && given.fromWorld !== null
+  if (world && given.value !== undefined) issue(context, ['fromWorld'], 'Give a value or World values, not both')
+  if (world && given.source !== undefined) issue(context, ['source'], 'World values carry their own basis; a source is for a value you give')
+  if (required && !world && given.value === undefined) issue(context, ['value'], 'Give a value or World values')
+}
 
 const key = keySchema.describe('Plan-local key')
 const keys = z.array(keySchema).max(64)
@@ -23,22 +33,31 @@ const weekly = z.object({
   to: localTimeSchema.describe('Local end HH:MM; to<=from ends next day'),
 }).strict()
 const goal = z.object({
-  metric: goalSchema.shape.metric.describe('span-over, finish, extra-cost, unavailable-hours or lateness'),
+  metric: goalMetricSchema.describe('span-over, finish, extra-cost, unavailable-hours or lateness'),
   scope: z.object({
     groups: z.array(keySchema).max(16).optional().describe('Function groups'),
     tags: z.array(keySchema).max(8).optional().describe('Job tags'),
   }).strict().optional().describe('Which part of the plan'),
-  threshold: z.object({ value: z.number().nonnegative().describe('Value'), unit: z.string().max(8).describe('h or currency') }).strict().optional().describe('Only the excess above it counts'),
-  tolerance: z.object({ value: z.number().nonnegative().describe('Value'), unit: z.string().max(8).describe('h or currency') }).strict().describe('Differences smaller than this step count as equal'),
-}).strict()
+  threshold: z.object({ value: z.number().nonnegative().describe('Value'), unit: z.string().max(8).describe('h, min or s; extra-cost: currency') }).strict().optional().describe('Only the excess above it counts'),
+  tolerance: z.object({ value: z.number().nonnegative().describe('Value'), unit: z.string().max(8).describe('h, min or s; extra-cost: currency') }).strict().describe('Differences smaller than this step count as equal'),
+}).strict().superRefine((given, context) => {
+  for (const field of ['threshold', 'tolerance'] as const) {
+    const unit = given[field]?.unit
+    const problem = unit === undefined ? undefined : goalUnitIssue(given.metric, unit)
+    if (problem !== undefined) issue(context, [field, 'unit'], problem)
+  }
+})
 const duration = z.object({
   value: z.number().nonnegative().optional().describe('Most-likely value'),
-  unit: timeUnitSchema.optional().describe('s, min, h or d'),
+  unit: timeUnitSchema.optional().describe('s, min or h; d only for elapsed time'),
   calendar: z.enum(['working', 'elapsed']).optional().describe('working: crew hours only; elapsed: clock time'),
   range: z.object({ low: z.number().nonnegative().describe('Optimistic'), high: z.number().positive().describe('Pessimistic') }).strict().nullable().optional().describe('Estimate range'),
   source: source.optional(),
   fromWorld: z.array(worldRef).max(4).nullable().optional().describe('Use these World values, summed, instead of value'),
-}).strict()
+}).strict().superRefine((given, context) => {
+  oneValue(given, context, false)
+  if (given.unit === 'd' && given.calendar === 'working') issue(context, ['unit'], 'Working time is given in s, min or h; d is for elapsed time')
+})
 const choice = z.object({ choice: keySchema.describe('Method key'), option: keySchema.describe('Option key') }).strict()
 
 export const editSchema = z.discriminatedUnion('edit', [
@@ -77,12 +96,12 @@ export const editSchema = z.discriminatedUnion('edit', [
     attributes: z.array(z.object({
       key,
       label: labelSchema.describe('Name'),
-      value: z.number().describe('Value'),
+      value: z.number().optional().describe('Value, unless taken from World'),
       unit: z.string().max(32).describe('Unit'),
       changes: z.array(z.object({ at: time, value: z.number().describe('New value') }).strict()).optional().describe('Announced changes'),
       source: source.optional(),
-      fromWorld: worldRef.optional().describe('Copy the value from World'),
-    }).strict()).optional().describe('Properties used by "where" needs'),
+      fromWorld: worldRef.optional().describe('Take the value from World'),
+    }).strict().superRefine((given, context) => oneValue(given, context, true))).optional().describe('Properties used by "where" needs'),
     maxJobs: z.number().int().min(1).nullable().optional().describe('Plan at most this many jobs ahead for it'),
     locator: planningLocatorSchema.nullable().optional().describe('World item for this crew or tool'),
     source: source.optional(),
@@ -125,7 +144,10 @@ export const editSchema = z.discriminatedUnion('edit', [
       value: z.number().nonnegative().optional().describe('Its duration, in the job\'s unit'),
       fromWorld: z.array(worldRef).max(4).optional().describe('Or these World values, summed'),
       source: source.optional(),
-    }).strict()).max(16).nullable().optional().describe('A different duration per crew or tool'),
+    }).strict().superRefine((given, context) => {
+      const world = given.fromWorld !== undefined
+      if (world === (given.value !== undefined)) issue(context, ['value'], 'Give exactly one of value and World values')
+    })).max(16).nullable().optional().describe('A different duration per crew or tool'),
     continuous: z.boolean().optional().describe('Never paused over a break, e.g. a lift'),
     method: choice.nullable().optional().describe('Exists only if that option is chosen'),
     notBefore: z.object({ at: time, words: wordsSchema.describe('Why'), source }).strict().nullable().optional().describe('Cannot start earlier'),
@@ -169,6 +191,15 @@ export const editSchema = z.discriminatedUnion('edit', [
     from: keySchema.optional().describe('link: earlier job'),
     to: keySchema.optional().describe('link: later job'),
     type: z.enum(['FS', 'SS', 'FF']).optional().describe('link: type'),
-  }).strict(),
+  }).strict().superRefine((given, context) => {
+    const link = [given.from, given.to, given.type]
+    if (given.what === 'link') {
+      if (link.some(part => part === undefined)) issue(context, ['from'], 'A link is named by from, to and type')
+      if (given.key !== undefined) issue(context, ['key'], 'A link has no key; name it by from, to and type')
+    } else {
+      if (given.key === undefined) issue(context, ['key'], `Name the ${given.what} to remove by its key`)
+      if (link.some(part => part !== undefined)) issue(context, ['from'], 'from, to and type name a link only')
+    }
+  }),
 ])
 export type Edit = z.infer<typeof editSchema>

@@ -1,8 +1,8 @@
 // The stored plan aggregate: inputs, results and change log. Every object is strict; keys are plan-local.
 import { z } from 'zod'
-import { planningFactSchema, planningLocatorSchema, type PlanningFactBasis } from '@leitbild/contracts'
+import { planningFactSchema, planningLocatorSchema, workspaceIdSchema, type PlanningFactBasis } from '@leitbild/contracts'
 import { isTimeZone } from '../time/zone.ts'
-import { convertUnit, gridSlotMs, isTimeUnit, timeUnitMs } from '../time/units.ts'
+import { convertUnit, gridSlotMs, isTimeUnit, timeUnitMs, type TimeUnit } from '../time/units.ts'
 
 // ───────────── primitives ─────────────
 export const keySchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/)
@@ -32,8 +32,9 @@ export const sourceSchema = z.object({ by: z.enum(['planner', 'assumption', 'ref
   .refine(source => source.by !== 'reference' || source.note !== undefined, { message: 'A reference source names its reference in the note', path: ['note'] })
 export type Source = z.infer<typeof sourceSchema>
 /**
- * A stored value's origin: a person's source, or World facts read from inputs.world.facts. World origins
- * are written only by create and refresh. A sum of refs takes the weakest basis and the oldest `at`.
+ * A stored value's origin: a person's source, or World facts. A World value is never stored: it is null
+ * and computed with combineWorldFacts from inputs.world.facts (the only copy, written by refresh), so a
+ * sum of refs takes the weakest basis and the oldest `at`.
  */
 export const originSchema = z.discriminatedUnion('by', [
   sourceSchema,
@@ -42,14 +43,27 @@ export const originSchema = z.discriminatedUnion('by', [
 export type Origin = z.infer<typeof originSchema>
 
 // ───────────── inputs ─────────────
+/** A person's value is stored; a World origin's value is null and computed from inputs.world.facts. */
+const storedValueIssue = (value: number | null, origin: Origin): string | undefined => {
+  if (origin.by === 'world' && value !== null) return 'A World value is computed from the read facts, never stored'
+  if (origin.by !== 'world' && value === null) return 'A value given by a person is stored'
+  return undefined
+}
+/** A day of working time is ambiguous (one shift or 24 working hours), so working durations use s, min or h. */
+const workingDayIssue = (unit: TimeUnit, calendar: 'working' | 'elapsed'): string | undefined =>
+  unit === 'd' && calendar === 'working' ? 'Working time is given in s, min or h; d is for elapsed time' : undefined
 export const durationSchema = z.object({
-  value: z.number().finite().nonnegative().nullable(),   // null only while a World value is unread
+  value: z.number().finite().nonnegative().nullable(),   // null exactly when the origin is World
   unit: timeUnitSchema,
   calendar: z.enum(['working', 'elapsed']),
+  // Read in increment 1 by the job list and job panel (T1 "estimate ranges") and the Train A fidelity test.
   range: z.object({ low: z.number().finite().nonnegative(), high: z.number().finite().positive() }).strict().optional(),
   origin: originSchema,
 }).strict().superRefine((duration, context) => {
-  if (duration.value === null && duration.origin.by !== 'world') context.addIssue({ code: 'custom', path: ['value'], message: 'Only an unread World value may be empty' })
+  const value = storedValueIssue(duration.value, duration.origin)
+  if (value !== undefined) context.addIssue({ code: 'custom', path: ['value'], message: value })
+  const day = workingDayIssue(duration.unit, duration.calendar)
+  if (day !== undefined) context.addIssue({ code: 'custom', path: ['unit'], message: day })
 })
 export const weeklySchema = z.object({ days: z.array(weekdaySchema).min(1).max(7), from: localTimeSchema, to: localTimeSchema }).strict()   // to <= from ends next day
 export const calendarSchema = z.object({
@@ -64,10 +78,15 @@ export const equipmentSchema = z.object({
 }).strict()
 export const groupSchema = z.object({ key: keySchema, label: labelSchema }).strict()
 export const attributeSchema = z.object({
-  key: keySchema, label: labelSchema, value: z.number().finite(), unit: z.string().min(1).max(32),
+  key: keySchema, label: labelSchema,
+  value: z.number().finite().nullable(),            // null exactly when the origin is World
+  unit: z.string().min(1).max(32),
   changes: z.array(z.object({ at: instantSchema, value: z.number().finite() }).strict()).max(8),   // announced changes
   origin: originSchema,
-}).strict()
+}).strict().superRefine((attribute, context) => {
+  const value = storedValueIssue(attribute.value, attribute.origin)
+  if (value !== undefined) context.addIssue({ code: 'custom', path: ['value'], message: value })
+})
 export const resourceSchema = z.object({
   key: keySchema, label: labelSchema,
   kind: z.enum(['crew', 'tool']),
@@ -77,7 +96,7 @@ export const resourceSchema = z.object({
   attributes: z.array(attributeSchema).max(24),
   maxJobs: z.number().int().min(1).optional(),            // plan at most this many jobs ahead for it
   locator: planningLocatorSchema.optional(),
-  words: wordsSchema.optional(),
+  words: wordsSchema.optional(),                    // shown with the crew or tool (T1), e.g. "Workshop rebuild and tube cleaning only."
   source: sourceSchema,
 }).strict()
 /** Purchasable capacity: overtime, contractor nights (one purchase, several periods), a tool day, a rebooking. */
@@ -122,6 +141,8 @@ export const jobSchema = z.object({
   locator: planningLocatorSchema.optional(),        // the World item the job serves; read in the same request as its resources
 }).strict().superRefine((job, context) => {
   if (job.minimum && job.kind !== 'test') context.addIssue({ code: 'custom', path: ['minimum'], message: 'A minimum is declared only on mandatory return-to-service tests' })
+  const day = job.minimum && workingDayIssue(job.minimum.unit, job.duration.calendar)
+  if (day) context.addIssue({ code: 'custom', path: ['minimum', 'unit'], message: day })
 })
 /** Identity is (from, to, type). */
 export const linkSchema = z.object({
@@ -136,25 +157,40 @@ export const methodChoiceSchema = z.object({
 }).strict()
 // The window is settings.window; "one at a time" is a count-1 resource. Neither is a rule.
 export const ruleSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('protected'), key: keySchema, equipment: z.array(keySchema).min(1).max(64), words: wordsSchema, origin: originSchema }).strict(),
+  z.object({ kind: z.literal('protected'), key: keySchema, equipment: z.array(keySchema).min(1).max(64), words: wordsSchema, source: sourceSchema }).strict(),
   z.object({
     kind: z.literal('keep-in-service'), key: keySchema,
     members: z.array(z.union([z.object({ equipment: keySchema }).strict(), z.object({ resource: keySchema }).strict()])).min(2).max(32),
-    atLeast: z.number().int().min(1), during: periodSchema.optional(), words: wordsSchema, origin: originSchema,
+    atLeast: z.number().int().min(1), during: periodSchema.optional(), words: wordsSchema, source: sourceSchema,
   }).strict().superRefine((rule, context) => {
+    const names = rule.members.map(member => 'equipment' in member ? `equipment ${member.equipment}` : `resource ${member.resource}`)
+    if (new Set(names).size !== names.length) context.addIssue({ code: 'custom', path: ['members'], message: 'Each member is named once' })
     if (rule.atLeast > rule.members.length) context.addIssue({ code: 'custom', path: ['atLeast'], message: `At least ${rule.atLeast} of ${rule.members.length} members cannot be kept in service` })
   }),
   z.object({
     kind: z.literal('span-limit'), key: keySchema, group: keySchema, limit: z.object({ value: z.number().positive(), unit: timeUnitSchema }).strict(),
-    singleEntry: z.boolean(), words: wordsSchema, origin: originSchema,
+    singleEntry: z.boolean(), words: wordsSchema, source: sourceSchema,
   }).strict(),
 ])
+export const goalMetricSchema = z.enum(['span-over', 'finish', 'extra-cost', 'unavailable-hours', 'lateness'])
+export type GoalMetric = z.infer<typeof goalMetricSchema>
+/** extra-cost is counted in a currency; every other goal is time, in h, min or s. */
+export const goalUnitIssue = (metric: GoalMetric, unit: string): string | undefined => {
+  if (metric === 'extra-cost') return currencySchema.safeParse(unit).success ? undefined : `${metric} is counted in a currency such as NOK, not ${unit}`
+  return ['h', 'min', 's'].includes(unit) ? undefined : `${metric} is counted in h, min or s, not ${unit}`
+}
 export const goalSchema = z.object({
-  metric: z.enum(['span-over', 'finish', 'extra-cost', 'unavailable-hours', 'lateness']),
+  metric: goalMetricSchema,
   scope: z.object({ groups: z.array(keySchema).max(16).optional(), tags: z.array(keySchema).max(8).optional() }).strict().optional(),
   threshold: z.object({ value: z.number().finite().nonnegative(), unit: z.string().min(1).max(8) }).strict().optional(),
   tolerance: z.object({ value: z.number().finite().nonnegative(), unit: z.string().min(1).max(8) }).strict(),
-}).strict()
+}).strict().superRefine((goal, context) => {
+  for (const field of ['threshold', 'tolerance'] as const) {
+    const unit = goal[field]?.unit
+    const issue = unit === undefined ? undefined : goalUnitIssue(goal.metric, unit)
+    if (issue !== undefined) context.addIssue({ code: 'custom', path: [field, 'unit'], message: issue })
+  }
+})
 export const worldFactCopySchema = planningFactSchema.extend({ locator: planningLocatorSchema }).strict()
 export type WorldFactCopy = z.infer<typeof worldFactCopySchema>
 
@@ -288,15 +324,18 @@ export const optionSchema = z.object({
   inputsRevision: z.number().int().positive(),      // with run.formulation: proofs reused only on an exact match
 }).strict()
 export const optionSetSchema = z.object({ at: instantSchema, by: actorSchema, options: z.array(optionSchema).max(8), recommended: keySchema.optional() }).strict()
+/** The edit kinds of plan/edit-schema.ts (a test keeps the two lists equal). */
+export const editKindSchema = z.enum(['plan', 'equipment', 'calendar', 'resource', 'purchase', 'method', 'job', 'link', 'rule', 'goals', 'remove'])
+/** What changed the inputs: an edit kind, or a refresh of World facts. */
+export const changeKindSchema = z.enum([...editKindSchema.options, 'refresh'])
 export const changeSchema = z.object({
   seq: z.number().int().positive(), at: instantSchema, by: actorSchema, revision: z.number().int().positive(),
-  summary: z.string().min(1).max(240), kinds: z.array(z.string()).max(16), reason: wordsSchema.optional(),
+  summary: z.string().min(1).max(240), kinds: z.array(changeKindSchema).max(16), reason: wordsSchema.optional(),
   authority: z.object({ name: labelSchema, reason: wordsSchema }).strict().optional(),
 }).strict()
 export const planSchema = z.object({
-  id: z.uuid(), workspaceId: z.string(), revision: z.number().int().positive(),
+  id: z.uuid(), workspaceId: workspaceIdSchema, revision: z.number().int().positive(),
   createdAt: instantSchema, updatedAt: instantSchema,
-  source: z.object({ definition: keySchema }).strict(),
   inputs: planInputsSchema,
   options: optionSetSchema.nullable(),               // the latest set only
   baselines: z.array(z.object({ key: keySchema, name: labelSchema, note: wordsSchema.optional(), at: instantSchema, by: actorSchema, option: optionSchema, inputs: planInputsSchema }).strict()).max(32),

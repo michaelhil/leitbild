@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'bun:test'
-import { calendarSchema, certificateSchema, combineWorldFacts, datedRowSchema, durationWithSchema, jobSchema, planInputsSchema, purchaseSchema, resourceSchema, ruleSchema, statusSchema, type WorldFactCopy } from './schema.ts'
+import {
+  attributeSchema, calendarSchema, certificateSchema, changeSchema, combineWorldFacts, datedRowSchema, durationSchema, durationWithSchema, editKindSchema, goalSchema,
+  jobSchema, planInputsSchema, planSchema, purchaseSchema, resourceSchema, ruleSchema, statusSchema, type WorldFactCopy,
+} from './schema.ts'
 import { editSchema } from './edit-schema.ts'
 import { generateResultSchema } from '../api/contract.ts'
 
@@ -19,7 +22,7 @@ describe('the two cases', () => {
     expect(train.jobs).toHaveLength(12)
     expect(train.jobs.filter(job => job.kind === 'test').map(job => [job.key, job.minimum?.value])).toEqual([
       ['SWA-RTS', 2.5], ['CCWA-RTS', 1.5], ['RHRA-RTS', 1.5], ['HHSIA-RTS', 1], ['CSA-RTS', 1.5], ['AFWA-RTS', 1.5]])
-    expect(train.rules.map(rule => rule.origin.by)).toEqual(['reference', 'reference'])
+    expect(train.rules.map(rule => rule.source.by)).toEqual(['reference', 'reference'])
     expect(train.goals[1]?.tolerance).toEqual({ value: 25000, unit: 'NOK' })
     const supply = planInputsSchema.parse(supplyRun)
     expect(supply.resources.map(resource => [resource.key, resource.source.by])).toEqual([
@@ -103,7 +106,7 @@ describe('adversary r2 check (coordinator-adopted)', () => {
   })
 
   test('4. keep-in-service needs 1 <= atLeast <= members', () => {
-    const rule = { kind: 'keep-in-service', key: 'k', members: [{ equipment: 'A' }, { equipment: 'B' }], words: 'x', origin: { by: 'planner' } }
+    const rule = { kind: 'keep-in-service', key: 'k', members: [{ equipment: 'A' }, { equipment: 'B' }], words: 'x', source: { by: 'planner' } }
     expect(ruleSchema.safeParse({ ...rule, atLeast: 5 }).success).toBe(false)
     expect(ruleSchema.safeParse({ ...rule, atLeast: 3 }).success).toBe(false)
     expect(ruleSchema.safeParse({ ...rule, atLeast: 0 }).success).toBe(false)
@@ -151,7 +154,7 @@ describe('one way to say where a value comes from (simplicity r2 check, coordina
       expect(resourceSchema.safeParse({ ...resource, source }).success).toBe(false)
     }
     const r1 = trainA.rules[0]
-    expect(ruleSchema.safeParse({ ...r1, origin: { by: 'reference' } }).success).toBe(false)
+    expect(ruleSchema.safeParse({ ...r1, source: { by: 'reference' } }).success).toBe(false)
     expect(editSchema.safeParse({ edit: 'calendar', key: 'day', source: { by: 'reference', note: 'Site working-time agreement' } }).success).toBe(true)
     expect(editSchema.safeParse({ edit: 'calendar', key: 'day', source: { by: 'reference' } }).success).toBe(false)
     expect(editSchema.safeParse({ edit: 'resource', key: 'truck-2', source: { by: 'assumption', note: 'Announced join' } }).success).toBe(true)
@@ -223,5 +226,97 @@ describe('summed World values take the weakest basis and the oldest time', () =>
     const payload = copy('unit:truck-4/property/payloadKg', 1500, 'configured', '2026-09-03T08:00:00Z', 'kg')
     expect(combineWorldFacts([ref(payload)], [payload], 's')).toMatchObject({ ok: false, code: 'unit_mismatch', unit: 'kg' })
     expect(combineWorldFacts([ref(payload)], [payload], 'kg')).toMatchObject({ ok: true, value: 1500, basis: 'configured' })
+  })
+})
+
+describe('architecture review of lane A (coordinator-adopted)', () => {
+  const refs = [{ locator: 'einsatz/unit/unit%3Atruck-4', fact: 'unit:truck-4/property/payloadKg' }]
+  const payload = { key: 'payloadKg', label: 'Payload', unit: 'kg', changes: [] }
+
+  test('2. a World value is never stored: it is null with its references; a person\'s value is stored', () => {
+    expect(attributeSchema.safeParse({ ...payload, value: null, origin: { by: 'world', refs } }).success).toBe(true)
+    expect(attributeSchema.safeParse({ ...payload, value: 1500, origin: { by: 'world', refs } }).success).toBe(false)
+    expect(attributeSchema.safeParse({ ...payload, value: 1000, origin: { by: 'assumption', note: 'Announced' } }).success).toBe(true)
+    expect(attributeSchema.safeParse({ ...payload, value: null, origin: { by: 'planner' } }).success).toBe(false)
+    const arrival = { unit: 's', calendar: 'elapsed', origin: { by: 'world', refs } }
+    expect(durationSchema.safeParse({ ...arrival, value: null }).success).toBe(true)
+    expect(durationSchema.safeParse({ ...arrival, value: 130 }).success).toBe(false)
+    const trucks = supplyRun.resources.filter((resource: any) => resource.attributes[0].origin.by === 'world')
+    expect(trucks.map((resource: any) => [resource.key, resource.attributes[0].value])).toEqual([['truck-1', null], ['truck-3', null], ['truck-4', null]])
+    expect(supplyRun.world).toEqual({ refreshedAt: null, facts: [] })
+  })
+
+  test('3. stored rules carry a source, never an origin', () => {
+    for (const rule of [...trainA.rules, ...supplyRun.rules]) expect(ruleSchema.safeParse(rule).success).toBe(true)
+    const { source: _source, ...r2 } = trainA.rules[1]
+    expect(ruleSchema.safeParse({ ...r2, origin: { by: 'planner' } }).success).toBe(false)
+    expect(ruleSchema.safeParse({ ...r2, source: { by: 'world', refs } }).success).toBe(false)
+  })
+
+  test('4. goal units fit the metric, at the boundary', () => {
+    expect(goalSchema.safeParse({ metric: 'extra-cost', tolerance: { value: 25000, unit: 'NOK' } }).success).toBe(true)
+    expect(goalSchema.safeParse({ metric: 'extra-cost', tolerance: { value: 8, unit: 'h' } }).success).toBe(false)
+    expect(goalSchema.safeParse({ metric: 'span-over', threshold: { value: 54, unit: 'h' }, tolerance: { value: 0, unit: 'h' } }).success).toBe(true)
+    expect(goalSchema.safeParse({ metric: 'span-over', threshold: { value: 54, unit: 'kg' }, tolerance: { value: 0, unit: 'h' } }).success).toBe(false)
+    expect(goalSchema.safeParse({ metric: 'lateness', tolerance: { value: 0, unit: 'kg' } }).success).toBe(false)
+    expect(goalSchema.safeParse({ metric: 'lateness', tolerance: { value: 0, unit: 'd' } }).success).toBe(false)
+    expect(editSchema.safeParse({ edit: 'goals', goals: [{ metric: 'unavailable-hours', tolerance: { value: 0, unit: 'kg' } }] }).success).toBe(false)
+    expect(editSchema.safeParse({ edit: 'goals', goals: [{ metric: 'unavailable-hours', tolerance: { value: 30, unit: 'min' } }] }).success).toBe(true)
+  })
+
+  test('5. working time is never given in days', () => {
+    const shift = { value: 2, unit: 'd', calendar: 'working', origin: { by: 'planner' } }
+    expect(durationSchema.safeParse(shift).success).toBe(false)
+    expect(durationSchema.safeParse({ ...shift, calendar: 'elapsed' }).success).toBe(true)
+    expect(durationSchema.safeParse({ ...shift, value: 16, unit: 'h' }).success).toBe(true)
+    const test = trainA.jobs.find((job: any) => job.key === 'SWA-RTS')
+    expect(jobSchema.safeParse({ ...test, minimum: { ...test.minimum, value: 1, unit: 'd' } }).success).toBe(false)
+    expect(editSchema.safeParse({ edit: 'job', key: 'SWA-RTS', duration: { value: 2, unit: 'd', calendar: 'working' } }).success).toBe(false)
+    expect(editSchema.safeParse({ edit: 'job', key: 'SWA-RTS', duration: { value: 2, unit: 'd', calendar: 'elapsed' } }).success).toBe(true)
+  })
+
+  test('should-fix: remove names what it removes', () => {
+    expect(editSchema.safeParse({ edit: 'remove', what: 'job', key: 'SWA-RTS' }).success).toBe(true)
+    expect(editSchema.safeParse({ edit: 'remove', what: 'job' }).success).toBe(false)
+    expect(editSchema.safeParse({ edit: 'remove', what: 'job', key: 'SWA-RTS', from: 'A' }).success).toBe(false)
+    expect(editSchema.safeParse({ edit: 'remove', what: 'link', from: 'CCWHXA-OPEN', to: 'CCWHXA-CLEAN', type: 'SS' }).success).toBe(true)
+    expect(editSchema.safeParse({ edit: 'remove', what: 'link', from: 'CCWHXA-OPEN', to: 'CCWHXA-CLEAN' }).success).toBe(false)
+    expect(editSchema.safeParse({ edit: 'remove', what: 'link', key: 'L1', from: 'CCWHXA-OPEN', to: 'CCWHXA-CLEAN', type: 'SS' }).success).toBe(false)
+  })
+
+  test('should-fix: a duration holds a value or World values, never both; a durationWith row holds exactly one', () => {
+    const world = [{ locator: 'einsatz/unit/unit%3Atruck-4', fact: 'unit:truck-4/service-seconds' }]
+    const job = { edit: 'job', key: 'U-1' }
+    expect(editSchema.safeParse({ ...job, duration: { fromWorld: world } }).success).toBe(true)
+    expect(editSchema.safeParse({ ...job, duration: { value: 300 } }).success).toBe(true)
+    expect(editSchema.safeParse({ ...job, duration: { range: { low: 200, high: 400 } } }).success).toBe(true)
+    expect(editSchema.safeParse({ ...job, duration: { value: 300, fromWorld: world } }).success).toBe(false)
+    expect(editSchema.safeParse({ ...job, duration: { fromWorld: world, source: { by: 'planner' } } }).success).toBe(false)
+    expect(editSchema.safeParse({ ...job, duration: { value: 300, fromWorld: null } }).success).toBe(true)
+    expect(editSchema.safeParse({ ...job, durationWith: [{ resource: 'truck-4' }] }).success).toBe(false)
+    expect(editSchema.safeParse({ ...job, durationWith: [{ resource: 'truck-4', value: 300, fromWorld: world }] }).success).toBe(false)
+    expect(editSchema.safeParse({ ...job, durationWith: [{ resource: 'truck-4', fromWorld: world }] }).success).toBe(true)
+    const attribute = { key: 'payloadKg', label: 'Payload', unit: 'kg' }
+    expect(editSchema.safeParse({ edit: 'resource', key: 'truck-4', attributes: [{ ...attribute, fromWorld: refs[0] }] }).success).toBe(true)
+    expect(editSchema.safeParse({ edit: 'resource', key: 'truck-4', attributes: [{ ...attribute, value: 1500, fromWorld: refs[0] }] }).success).toBe(false)
+    expect(editSchema.safeParse({ edit: 'resource', key: 'truck-4', attributes: [attribute] }).success).toBe(false)
+  })
+
+  test('should-fix: keep-in-service names each member once', () => {
+    const rule = { kind: 'keep-in-service', key: 'k', atLeast: 2, words: 'x', source: { by: 'planner' } }
+    expect(ruleSchema.safeParse({ ...rule, members: [{ equipment: 'A' }, { equipment: 'A' }] }).success).toBe(false)
+    expect(ruleSchema.safeParse({ ...rule, members: [{ equipment: 'A' }, { resource: 'A' }] }).success).toBe(true)
+  })
+
+  test('should-fix: the plan names its Workspace by id, and changes by edit kind or refresh', () => {
+    expect(editKindSchema.options).toEqual(editSchema.options.map(option => option.shape.edit.value))
+    const change = { seq: 1, at: '2026-11-12T09:00:00Z', by: { kind: 'human' }, revision: 1, summary: 'Created from Train A work week' }
+    expect(changeSchema.safeParse({ ...change, kinds: ['job', 'refresh'] }).success).toBe(true)
+    expect(changeSchema.safeParse({ ...change, kinds: ['crew'] }).success).toBe(false)
+    const plan = { id: '0c4008f3-ffac-47ce-9be0-a0c71e68a781', workspaceId: '7f153395-135d-4c79-ac91-4dbd15928d15', revision: 1, createdAt: change.at, updatedAt: change.at,
+      inputs: trainA, options: null, baselines: [], changes: [{ ...change, kinds: ['job'] }], droppedChanges: 0 }
+    expect(planSchema.safeParse(plan).success).toBe(true)
+    expect(planSchema.safeParse({ ...plan, workspaceId: 'workspace-1' }).success).toBe(false)
+    expect(planSchema.safeParse({ ...plan, source: { definition: 'train-a-work-week' } }).success).toBe(false)
   })
 })

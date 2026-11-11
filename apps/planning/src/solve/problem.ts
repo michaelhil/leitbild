@@ -22,6 +22,10 @@ export interface NormalizedProblem {
       readonly work: number
       readonly calendar: number
       readonly continuous: boolean
+      /**
+       * `resource` indexes `resources`. `when` indexes `calendars`: the demand applies only in slots where that
+       * calendar works (a crew by shift, e.g. station days and contractor nights); -1 means every worked slot.
+       */
       readonly demands: ReadonlyArray<{ readonly resource: number; readonly amount: number; readonly when: number }>
       readonly fixedCost: number
       readonly release: number
@@ -39,9 +43,11 @@ export interface NormalizedProblem {
   readonly spans: ReadonlyArray<{ readonly id: string; readonly items: readonly number[]; readonly limit?: number; readonly singleEntry: boolean }>
   readonly coverage: ReadonlyArray<{ readonly id: string; readonly items: readonly number[]; readonly resources: readonly number[]; readonly atLeast: number; readonly from: number; readonly to: number }>
   /**
-   * Ranking goals, in order. The metric value x is already net of `threshold` (only the excess counts),
-   * so the threshold is never subtracted again. The key is x when `step` is 0, else floor(x / step).
-   * Options compare by keys lexicographically; exact ties are broken by option key.
+   * Ranking goals, in order, in the goal's unit. Metrics (solve/compile, check/metrics) report the raw value
+   * with no threshold applied. solve/rank.ts alone subtracts it, once: x = max(0, raw - threshold), and the
+   * key is x when `step` is 0, else floor(x / step). For example span-over reports the span, 56 h, and
+   * rank.ts makes it 2 h over the 54 h threshold. The engine ranks only through rank.ts. Options compare
+   * by keys lexicographically; exact ties are broken by option key.
    */
   readonly goals: ReadonlyArray<{ readonly metric: string; readonly spans?: readonly number[]; readonly tagged?: readonly number[]; readonly threshold: number; readonly step: number }>
 }

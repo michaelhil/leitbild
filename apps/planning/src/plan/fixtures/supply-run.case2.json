@@ -80,7 +80,7 @@
         {
           "key": "payloadKg",
           "label": "Payload",
-          "value": 300,
+          "value": null,
           "unit": "kg",
           "changes": [
             {
@@ -117,7 +117,7 @@
         {
           "key": "payloadKg",
           "label": "Payload",
-          "value": 800,
+          "value": null,
           "unit": "kg",
           "changes": [],
           "origin": {
@@ -149,7 +149,7 @@
         {
           "key": "payloadKg",
           "label": "Payload",
-          "value": 1500,
+          "value": null,
           "unit": "kg",
           "changes": [],
           "origin": {
@@ -455,7 +455,7 @@
       ],
       "atLeast": 1,
       "words": "Keep at least one truck of 1,000 kg or more free at all times.",
-      "origin": {
+      "source": {
         "by": "planner",
         "note": "Dispatcher's coverage rule for the next urgent bulk request (case2.md)."
       }

@@ -912,7 +912,7 @@
         "SWB"
       ],
       "words": "Train B and the TD AFW pump are never tagged, worked or tested.",
-      "origin": {
+      "source": {
         "by": "reference",
         "note": "Protected-train practice in on-line maintenance risk management (NUMARC 93-01 section 11 as endorsed by NRC RG 1.160; examples in NRC IMC 0308 Att 3 App K). Declared as this fictional plant's rule."
       }
@@ -927,7 +927,7 @@
       },
       "singleEntry": true,
       "words": "Once the first cooling-chain item is tagged out, all must be back and tested within 72 h.",
-      "origin": {
+      "source": {
         "by": "reference",
         "note": "Modelled on NUREG-1431 Standard Technical Specifications: one ECCS train inoperable for 72 h (LCO 3.5.2, recollection), and similar 72 h Completion Times for CCW (3.7.7) and service water (3.7.8), also recollection. The Completion Time runs from entry into the Condition and applies to deliberate removal from service (LCO 3.0.2, STS Bases Rev 3.1). Declared fictional plant rule, not a licence."
       }

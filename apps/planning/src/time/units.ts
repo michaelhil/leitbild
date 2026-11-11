@@ -1,4 +1,4 @@
-/** Milliseconds per plan time unit. Durations, lags and limits use only these. */
+/** Milliseconds per plan time unit. Durations, lags and limits use only these; `d` is 24 h of clock time, so working durations do not use it. */
 export const timeUnitMs = { s: 1_000, min: 60_000, h: 3_600_000, d: 86_400_000 } as const
 export type TimeUnit = keyof typeof timeUnitMs
 
