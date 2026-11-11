@@ -26,7 +26,7 @@ export const worldReadNotice = (model: PlanModel): string => {
   const facts = model.inputs.world.facts
   if (facts.length === 0) return 'World values read; World returned none for this plan.'
   const latest = facts.reduce((last, fact) => Date.parse(fact.at) > Date.parse(last) ? fact.at : last, facts[0]!.at)
-  return `World values read: ${facts.length} values, describing simulation time ${createTimeFormat(model.inputs.settings.timeZone).clock(latest)}.`
+  return `World values read: ${facts.length} ${facts.length === 1 ? 'value' : 'values'}, describing simulation time ${createTimeFormat(model.inputs.settings.timeZone).clock(latest)}.`
 }
 
 /** An edit that names a World item or links a Run: World values are read again after it is saved. */
@@ -48,7 +48,10 @@ export const weakensRule = (model: PlanModel, edits: readonly Edit[]): string | 
   return null
 }
 
-export const createPlanActions = (client: PlanningClient, planId: string) => {
+/** Says what the screen is waiting for, e.g. "Reading World values…", while an action runs. */
+export type Progress = (text: string) => void
+
+export const createPlanActions = (client: PlanningClient, planId: string, progress: Progress = () => {}) => {
   /** Every current option the Module proved impossible, with its refusal in words and hours. */
   const refusalsOf = async (model: PlanModel): Promise<PlanModel['refusals']> => {
     const refused = model.options?.items.filter(item => item.fresh && item.status.word === 'proven infeasible') ?? []
@@ -62,11 +65,15 @@ export const createPlanActions = (client: PlanningClient, planId: string) => {
     if (option === null || model.rows[option] !== undefined) return { model, option, notice }
     return { model: { ...model, rows: { ...model.rows, [option]: await loadRows(client, planId, option) } }, option, notice }
   }
-  /** Saved inputs changed: show them, and read World again when the change named a World item. */
-  const afterWrite = async (edits: readonly Edit[], keep: string | null, notice: string): Promise<Shown> => {
-    const shown = await load(keep, notice)
-    if (shown.model.inputs.settings.run === null || !readsWorld(edits)) return shown
-    await client.refresh(planId, shown.model.revision)
+  /**
+   * After a saved edit. A plan edit never reads World (a plan-only Room must not see World data), so an
+   * edit that names a World item or links a Run saves it unread; the screen then reads its values at
+   * once with the Workspace-scoped refresh, at the edit's new revision, so "not read yet" is never left.
+   */
+  const afterWrite = async (edits: readonly Edit[], linked: boolean, revision: number, keep: string | null, notice: string): Promise<Shown> => {
+    if (!linked || !readsWorld(edits)) return load(keep, notice)
+    progress('Reading World values…')
+    await client.refresh(planId, revision)
     const read = await load(keep)
     return { ...read, notice: `${notice} ${worldReadNotice(read.model)}` }
   }
@@ -91,16 +98,17 @@ export const createPlanActions = (client: PlanningClient, planId: string) => {
       }
     },
     apply: async (model: PlanModel, edits: readonly Edit[], authority: { name: string; reason: string } | null, keep: string | null, label: string): Promise<Shown> => {
-      await client.edit(planId, model.revision, { edits: [...edits], ...(authority === null ? {} : { authority }) })
-      return afterWrite(edits, keep, `Saved: ${label}.`)
+      const saved = await client.edit(planId, model.revision, { edits: [...edits], ...(authority === null ? {} : { authority }) })
+      return afterWrite(edits, model.inputs.settings.run !== null, saved.plan.revision, keep, `Saved: ${label}.`)
     },
     /** Links a Run the person started in World, then reads its values. */
     link: async (model: PlanModel, run: string, keep: string | null): Promise<Shown> => {
       const edits: Edit[] = [{ edit: 'plan', run }]
-      await client.edit(planId, model.revision, { edits })
-      return afterWrite(edits, keep, 'Linked.')
+      const saved = await client.edit(planId, model.revision, { edits })
+      return afterWrite(edits, true, saved.plan.revision, keep, 'Linked.')
     },
     refresh: async (model: PlanModel, keep: string | null): Promise<Shown> => {
+      progress('Reading World values…')
       await client.refresh(planId, model.revision)
       const read = await load(keep)
       return { ...read, notice: worldReadNotice(read.model) }

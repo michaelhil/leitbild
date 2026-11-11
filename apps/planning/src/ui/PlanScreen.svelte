@@ -88,7 +88,7 @@
     { key: 'crews', word: 'Crews and shifts' }, { key: 'rules', word: 'Rules and goals' }, { key: 'options', word: 'Options' },
   ]
 
-  const actions = $derived(createPlanActions(client, planId))
+  const actions = $derived(createPlanActions(client, planId, text => { notice = text }))
   const show = (shown: Shown): void => {
     model = shown.model
     selectedOption = shown.option
@@ -132,8 +132,8 @@
     const lock = pending.find(edit => edit.edit === 'job' && 'lock' in edit)
     if (lock !== undefined && lock.edit === 'job') previewEdits([{ edit: 'job', key: lock.key, lock: instant }], preview?.label ?? 'Fix the start')
   }
-  const link = (run: string): void => withModel(async current => { notice = 'Linking and reading the World values (this can take up to 20 s)…'; show(await actions.link(current, run, selectedOption)); onChanged() })
-  const refresh = (): void => withModel(async current => { notice = 'Reading the World values (this can take up to 20 s)…'; show(await actions.refresh(current, selectedOption)); onChanged() })
+  const link = (run: string): void => withModel(async current => { show(await actions.link(current, run, selectedOption)); onChanged() })
+  const refresh = (): void => withModel(async current => { show(await actions.refresh(current, selectedOption)); onChanged() })
   const generate = (input: GenerateInput): void => {
     const current = model
     if (current === null || generating !== null) return

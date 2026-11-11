@@ -13,7 +13,7 @@ const nine = new Set(['world.simulation-run.planning-facts', 'planning.plan.crea
 interface Call { readonly capability: string; readonly expectedRevision?: number; readonly input: Record<string, unknown> }
 
 /** Serves one plan as read sections and answers writes; each saved write raises the revision by one. */
-const host = (start: PlanModel, refusal?: { status: number; code: string; message: string; details?: Record<string, unknown> }) => {
+const host = (start: PlanModel, refusal?: { status: number; code: string; message: string; details?: Record<string, unknown> }, progress: string[] = []) => {
   let plan = start
   const calls: Call[] = []
   const lists = (): Record<string, readonly unknown[]> => ({
@@ -51,7 +51,8 @@ const host = (start: PlanModel, refusal?: { status: number; code: string; messag
         return Response.json({ result: write() })
       }
       case 'planning.sources.refresh':
-        save(inputs => ({ ...inputs, world: { ...inputs.world, refreshedAt: '2026-11-12T09:01:00.000Z' } }))
+        // The read copies the linked Run's values; a test input stands in for World's answer.
+        save(inputs => ({ ...inputs, world: { refreshedAt: '2026-11-12T09:01:00.000Z', facts: [{ locator: 'einsatz/unit/unit%3Atruck-9', id: 'unit:truck-9/property/payloadKg', label: 'Payload', quantity: 'mass', unit: 'kg', value: 900, basis: 'configured', at: '2026-09-03T08:00:00Z' }] } }))
         return Response.json({ result: { ...write(), changed: ['Read 3 World values.'] } })
       case 'planning.plan.explain':
         return Response.json({ result: { lines: [`Not possible: ${String(body.input.option)} needs 37 h of work, but only 32 h exist.`], items: [] } })
@@ -66,7 +67,7 @@ const host = (start: PlanModel, refusal?: { status: number; code: string; messag
         return Response.json({ result: write() })
     }
   })
-  return { client, calls, actions: createPlanActions(client, start.id), current: () => plan }
+  return { client, calls, progress, actions: createPlanActions(client, start.id, text => { progress.push(text) }), current: () => plan }
 }
 
 describe('plan screen actions', () => {
@@ -82,7 +83,8 @@ describe('plan screen actions', () => {
     expect(shown.model.inputs.settings.run?.id).toBe('run-1')
     expect(shown.model.revision).toBe(start.revision + 2)
     // Not the Module's change lines (maint's walk S-03: raw locators and "Committed job steps 0 1").
-    expect(shown.notice).toBe('Linked. World values read; World returned none for this plan.')
+    expect(shown.notice).toBe('Linked. World values read: 1 value, describing simulation time Thu 10:00.')
+    expect(double.progress).toEqual(['Reading World values…'])
   })
 
   test('an edit is previewed at the current revision; applying sends the authority given', async () => {
@@ -108,8 +110,19 @@ describe('plan screen actions', () => {
     const double = host(start)
     const truck = await double.actions.detail(start, 'einsatz/unit/unit%3Atruck-9')
     expect(truck.facts[0]!.label).toBe('Payload')
-    await double.actions.apply(start, [{ edit: 'resource', key: 'Truck-9', label: 'Truck 9', kind: 'tool', count: 1, calendar: 'exercise', attributes: [], locator: truck.locator, source: { by: 'planner' } }], null, null, 'Add Truck 9 as a tool')
+    const shown = await double.actions.apply(start, [{ edit: 'resource', key: 'Truck-9', label: 'Truck 9', kind: 'tool', count: 1, calendar: 'exercise', attributes: [], locator: truck.locator, source: { by: 'planner' } }], null, null, 'Add Truck 9 as a tool')
     expect(double.calls.map(call => call.capability).filter(capability => capability !== 'planning.plan.read')).toEqual(['world.simulation-run.planning-facts', 'planning.plan.edit', 'planning.sources.refresh'])
+    // Item 20: the plan edit saves the truck unread; the Workspace-scoped refresh reads it at the edit's
+    // new revision, at once, saying so while it reads and then when the values are from.
+    const [saved, read] = double.calls.filter(call => call.capability === 'planning.plan.edit' || call.capability === 'planning.sources.refresh')
+    expect([saved!.expectedRevision, read!.expectedRevision, read!.input]).toEqual([start.revision, start.revision + 1, { plan: start.id }])
+    expect(double.progress).toEqual(['Reading World values…'])
+    expect(shown.notice).toBe('Saved: Add Truck 9 as a tool. World values read: 1 value, describing simulation time Thu 10:00.')
+    // An edit that names no World item never reads World.
+    const plain = host(start)
+    await plain.actions.apply(start, [{ edit: 'plan', title: 'Supply run, second wave' }], null, null, 'Rename the plan')
+    expect(plain.calls.some(call => call.capability === 'planning.sources.refresh')).toBe(false)
+    expect(plain.progress).toEqual([])
   })
 
   test('refusals become previews in words; a protected item and a missing agreement differ', async () => {
