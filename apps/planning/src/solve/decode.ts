@@ -681,6 +681,47 @@ export const repair = (prep: Prepared, schedule: Schedule): { decoded: Decoded; 
   return { decoded, evaluation: decoder.evaluate(decoded) }
 }
 
+/**
+ * The start nearest `target` at which activity a, in its saved mode, fits beside the saved schedule with
+ * every other job where it is: its links both ways (lags, maximum lags), its calendar, the window and its
+ * due time, its release, and its crews and tools. The later slot first on a tie; -1 when none fits.
+ * `accept` may refuse a slot (the caller's independent check). For a lock's nearest allowed time, measured
+ * against the saved plan, never against jobs a preview moved.
+ */
+export const nearestFit = (prep: Prepared, schedule: Schedule, a: number, target: number, accept: (t: number) => boolean = () => true): number => {
+  const { problem, H } = prep
+  const decoder = makeDecoder(prep)
+  decoder.load(schedule, a)
+  const m = schedule.mode[a]!
+  const activity = problem.activities[a]!
+  const finishAt = (b: number) => finishOf(prep, b, schedule.mode[b]!, schedule.start[b]!)
+  const fits = (t: number): boolean => {
+    if (t < Math.max(0, activity.release, activity.modes[m]!.release) || t >= H) return false
+    const f = finishOf(prep, a, m, t)
+    if (f < 0 || f > activity.deadline) return false
+    for (const l of prep.preds[a]!) {
+      const p = l.from, ps = schedule.start[p]!, pf = finishAt(p)
+      if (pf < 0) continue
+      if (l.type === 'FS' && (t < pf + l.min || (l.max !== undefined && t > pf + l.max))) return false
+      if (l.type === 'SS' && (t < progressAt(prep, p, schedule.mode[p]!, ps, l.min) || (l.max !== undefined && t > ps + l.max))) return false
+      if (l.type === 'FF' && (!ffHolds(prep, a, m, t, pf, l.min) || (l.max !== undefined && f > pf + l.max))) return false
+    }
+    for (const l of prep.succs[a]!) {
+      const s = l.to, ss = schedule.start[s]!, sf = finishAt(s)
+      if (sf < 0) continue
+      if (l.type === 'FS' && (ss < f + l.min || (l.max !== undefined && ss > f + l.max))) return false
+      if (l.type === 'SS' && (ss < progressAt(prep, a, m, t, l.min) || (l.max !== undefined && ss > t + l.max))) return false
+      if (l.type === 'FF' && (!ffHolds(prep, s, schedule.mode[s]!, ss, f, l.min) || (l.max !== undefined && sf > f + l.max))) return false
+    }
+    return decoder.fits(a, m, t) && accept(t)
+  }
+  for (let d = 0; d < H; d++) {
+    if (fits(target + d)) return target + d
+    if (d > 0 && fits(target - d)) return target - d
+  }
+  return -1
+}
+
 /** A precedence-feasible list that follows `preferred` as closely as the links allow. */
 export const precedenceOrder = (prep: Prepared, preferred: readonly number[]): number[] => {
   const rank = new Int32Array(prep.n)

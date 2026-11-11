@@ -1,13 +1,13 @@
 // The real solver (lane S, solve/) and checker (lane K, check/) behind the operations' ports. index.ts
 // wires these; tests use the doubles in api/fixtures. Nothing here touches World.
-import { checkPlan, inputCodes } from '../check/check.ts'
+import { checkPlan, inputCodes, type CheckRow } from '../check/check.ts'
 import { recheckOption } from '../check/recheck.ts'
 import { verifyCertificate } from '../check/certificate.ts'
 import { verifyBound } from '../check/optimal.ts'
 import { bounds } from '../solve/bounds.ts'
 import { compile, formulationOf, type CompileIndex } from '../solve/compile.ts'
 import { dateSchedule, undate } from '../solve/date.ts'
-import { prepare, repair, type Prepared } from '../solve/decode.ts'
+import { finishOf, nearestFit, prepare, repair, type Prepared } from '../solve/decode.ts'
 import { makeExplainer, refusalLines, type ExplainItem } from '../solve/explain.ts'
 import { totalFloat, withFloat } from '../solve/float.ts'
 import { CERTIFIED_SIZE, generate } from '../solve/generate.ts'
@@ -83,6 +83,34 @@ const bounded = (result: ExplainResult): ExplainResult => {
   return next
 }
 
+/**
+ * A lock judged against the SAVED plan (walk 2, R2-5): every other job at its saved option row, never where
+ * a preview moved it. `findings` are lane K's on the saved rows with only the locked job at its lock time, so
+ * their words match the plan on screen; `nearest` is the start nearest the lock where the job fits there
+ * (links both ways, calendar, window, crews), confirmed by lane K on the saved rows with only that job moved.
+ */
+const lockAgainstSaved = (inputs: PlanInputs, option: Option, index: CompileIndex, prep: Prepared, saved: Schedule) => {
+  const job = inputs.jobs.find(entry => entry.lock !== undefined && option.rows.some(row => row.job === entry.key && Date.parse(row.start) !== Date.parse(entry.lock!.start)))
+  const a = job === undefined ? -1 : index.jobs.indexOf(job.key)
+  const fixed = a < 0 ? undefined : prep.problem.activities[a]!.fixed
+  if (job === undefined || fixed === undefined) return undefined
+  const rowsWith = (t: number, mode: number): readonly CheckRow[] | undefined => {
+    if (finishOf(prep, a, mode, t) < 0) return undefined
+    const start = Int32Array.from(saved.start), modes = Int32Array.from(saved.mode)
+    start[a] = t; modes[a] = mode
+    const moved = dateSchedule(prep, index, { start, mode: modes }).find(row => row.job === job.key)!
+    return option.rows.map(row => (row.job === job.key ? moved : row))
+  }
+  const about = (violation: { readonly about: readonly string[] }) => violation.about.includes(job.key)
+  const atLock = rowsWith(fixed.start, fixed.mode)
+  const findings = atLock === undefined ? [] : checkPlan(inputs, option.variant, atLock).violations.filter(about).map(violation => ({ code: violation.code, about: violation.about, words: violation.words }))
+  if (findings.length === 0) return { job: job.key, findings }
+  // Without the lock: the nearest start where nothing about the job breaks against the saved plan.
+  const free = { ...inputs, jobs: inputs.jobs.map(entry => (entry.key === job.key ? (({ lock: _lock, ...rest }) => rest)(entry) : entry)) }
+  const nearest = nearestFit(prep, saved, a, fixed.start, t => { const rows = rowsWith(t, saved.mode[a]!); return rows !== undefined && !checkPlan(free, option.variant, rows).violations.some(about) })
+  return { job: job.key, findings, ...(nearest < 0 ? {} : { nearest: new Date(index.origin + nearest * index.slotMs).toISOString() }) }
+}
+
 /** Lane S's Generate on the Worker pool, its explainer and preview re-timing, checked by lane K. */
 export const createRealSolver = (pool: SolverPool): SolverPort => ({
   certifiedSize: CERTIFIED_SIZE,
@@ -119,18 +147,19 @@ export const createRealSolver = (pool: SolverPool): SolverPort => ({
     // Repair from the option's own dated schedule: with no edit it comes back exactly; after an edit only
     // the jobs it forces, and what they push, move.
     const { index, prep } = compiled(inputs, option)
-    const { decoded } = repair(prep, scheduleOf(prep, index, option, true))
+    const saved = scheduleOf(prep, index, option, true)
+    const { decoded } = repair(prep, saved)
     const lost = decoded.finish.findIndex((finish, a) => index.jobs[a] !== null && finish >= prep.H)
     if (lost >= 0) throw planningError(409, 'option_stale', `After this edit ${nameOf(inputs, index.jobs[lost]!)} has no time left in the plan's horizon; generate again`, { about: [index.jobs[lost]!] })
     const schedule = { start: decoded.start, mode: decoded.mode }
     const rows = withFloat(dateSchedule(prep, index, schedule), totalFloat(prep, index, schedule, decoded.penalty > 0), index)
     const check = checkPlan(inputs, option.variant, rows)
-    const locked = check.violations.map(violation => violation.about[0]).find(key => key !== undefined && inputs.jobs.find(entry => entry.key === key)?.lock !== undefined)
-    const at = locked === undefined ? undefined : rows.find(row => row.job === locked)?.start
-    return {
+    const lock = lockAgainstSaved(inputs, option, index, prep, saved)
+    const result = {
       rows,
       violations: check.violations.map(violation => ({ code: violation.code, about: violation.about, words: violation.words })),
-      ...(locked === undefined || at === undefined ? {} : { nearestAllowed: { job: locked, at } }),
+      ...(lock === undefined ? {} : { lockFindings: lock.findings, ...(lock.nearest === undefined ? {} : { nearestAllowed: { job: lock.job, at: lock.nearest } }) }),
     }
+    return result
   },
 })

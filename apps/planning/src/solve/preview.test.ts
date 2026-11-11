@@ -6,6 +6,7 @@ import { planInputsSchema, planSchema, type PlanInputs } from '../plan/schema.ts
 import { twinPlan, twinV3Options } from '../../tests/harness/twin-plan.ts'
 import { compile } from './compile.ts'
 import { prepare } from './decode.ts'
+import { dateSchedule, undate } from './date.ts'
 import { CERTIFIED_SIZE, generate, type GenerateInput } from './generate.ts'
 import { createSolverPool } from './pool.ts'
 import { laneKCheck, laneKVerify, laneKVerifyBound } from './fixtures/lane-k.ts'
@@ -47,6 +48,41 @@ describe('preview re-timing repairs the option, never re-solves it', () => {
       expect(checkPlan(inputs, option.variant, preview.rows).feasible).toBe(true)
     }
   }, 600_000)
+
+  test('a lock too early is judged against the saved plan: its findings and its nearest allowed time (walk 2, R2-5)', async () => {
+    const inputs = trainAInputs({ read: true })
+    const option = await optionOf(inputs)
+    const job = 'SWA-MOTOR-IN'
+    const saved = option.rows.find(row => row.job === job)!
+    const window = Date.parse(inputs.settings.window!.start)
+    const lockAt = new Date(Math.max(window, Date.parse(saved.start) - 28 * 3_600_000)).toISOString()
+    const locked = planInputsSchema.parse({ ...inputs, jobs: inputs.jobs.map(entry => (entry.key === job ? { ...entry, lock: { start: lockAt } } : entry)) })
+    const preview = await solver.preview({ inputs: locked, option }) as Awaited<ReturnType<typeof solver.preview>> & { lockFindings?: ReadonlyArray<{ code: string; about: readonly string[]; words?: string }> }
+    // The findings are lane K's on the SAVED rows with only the locked job at its lock: none names a job's
+    // moved position, because no other job moved.
+    const atLockRows = option.rows.map(row => (row.job === job ? preview.rows.find(entry => entry.job === job)! : row))
+    expect(preview.lockFindings!.length).toBeGreaterThan(0)
+    for (const finding of preview.lockFindings!) expect(finding.about).toContain(job)
+    expect(preview.lockFindings).toEqual(checkPlan(locked, option.variant, atLockRows).violations.filter(violation => violation.about.includes(job)).map(violation => ({ code: violation.code, about: violation.about, words: violation.words })))
+    // The nearest allowed time: the job fits there beside the saved plan (lane K finds nothing about it),
+    // and at no slot nearer the lock.
+    const nearest = preview.nearestAllowed!
+    expect(nearest.job).toBe(job)
+    const free = planInputsSchema.parse({ ...inputs })
+    const compiled = compile(free, { methods: option.variant.methods, buy: option.variant.purchases })
+    if (!compiled.ok) throw new Error('the flagship compiles')
+    const prep = prepare(compiled.problem)
+    const found = undate(prep, compiled.index, option.rows)
+    if (!found.ok) throw new Error('the option fits its plan')
+    const a = compiled.index.jobs.indexOf(job)
+    const rowAt = (iso: string) => {
+      const start = Int32Array.from(found.schedule.start)
+      start[a] = (Date.parse(iso) - compiled.index.origin) / compiled.index.slotMs
+      return option.rows.map(row => (row.job === job ? dateSchedule(prep, compiled.index, { start, mode: found.schedule.mode }).find(entry => entry.job === job)! : row))
+    }
+    expect(checkPlan(free, option.variant, rowAt(nearest.at)).violations.filter(violation => violation.about.includes(job))).toEqual([])
+    expect(Date.parse(nearest.at)).toBeGreaterThan(Date.parse(lockAt))
+  }, 300_000)
 
   // Two options of the flagship, two kinds of seal: on day shifts (seed 1, 1,500 evaluations; the longer seal
   // breaks the 72 h span R2, 82 h) and in bought time (lane K's case, the adversary's item 22: seed 2,
