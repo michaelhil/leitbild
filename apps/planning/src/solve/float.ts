@@ -1,6 +1,7 @@
 // Total float of the chosen schedule (G1 and the goals r2 addendum): the working hours of a job's own
 // calendar between its scheduled start and its latest start. The latest start comes from a backward
-// pass from the window end over every link (planner links, bracketing, tag-before-test, support order)
+// pass from the window end over every link (planner links, bracketing, tag-before-test, support order;
+// FS lags in clock time, SS and FF lags in working progress as the decoder places them)
 // and over each span limit as a max-lag: a closer must finish within the limit of the span's scheduled
 // first-out start. That start is held where it is, so a cooling-chain job never shows slack the span
 // rule forbids (an opener's float is therefore never overstated). A due rule ends a job's window early
@@ -26,6 +27,25 @@ const latestStart = (prep: Prepared, a: number, m: number, hiS: number, hiF: num
   if (hiF <= 0 || hiS < 0) return -1
   const p = Math.min(k.prefix[hiF]! - mode.work, k.prefix[Math.min(prep.H, hiS + 1)]! - 1)
   return p < 0 ? -1 : k.list[p]!
+}
+
+/** The latest start of a (mode m) that has done `lag` < work of its working time by slot `by`. */
+const ssStartBound = (prep: Prepared, a: number, m: number, by: number, lag: number): number => {
+  const mode = prep.problem.activities[a]!.modes[m]!
+  if (lag <= 0) return by
+  if (mode.continuous) return by - lag
+  const k = prep.cal[mode.calendar]!
+  const p = k.prefix[Math.max(0, Math.min(prep.H, by))]! - lag
+  return p < 0 ? -1 : k.list[p]!
+}
+
+/** Where the last `lag` working slots of a (mode m, started at t) begin. */
+const lastSlotsStart = (prep: Prepared, a: number, m: number, t: number, lag: number): number => {
+  const mode = prep.problem.activities[a]!.modes[m]!
+  if (lag >= mode.work) return t
+  if (mode.continuous) return t + mode.work - lag
+  const k = prep.cal[mode.calendar]!
+  return k.list[k.pos[t]! + mode.work - lag]!
 }
 
 const finishAt = (prep: Prepared, a: number, m: number, t: number): number => {
@@ -59,10 +79,19 @@ export const totalFloat = (prep: Prepared, index: CompileIndex, schedule: Schedu
       if (limit === undefined || rule === undefined) continue
       if (spanStart[s]! + limit <= hiF) { hiF = spanStart[s]! + limit; byF = { kind: 'span-limit', rule } }
     }
+    const mode = problem.activities[a]!.modes[m]!
     for (const l of prep.succs[a]!) {
-      if (l.type === 'FS' && ls[l.to]! - l.min < hiF) { hiF = ls[l.to]! - l.min; byF = sBy[l.to]! }
-      else if (l.type === 'SS' && ls[l.to]! - l.min < hiS) { hiS = ls[l.to]! - l.min; byS = sBy[l.to]! }
-      else if (l.type === 'FF' && lf[l.to]! - l.min < hiF) { hiF = lf[l.to]! - l.min; byF = fBy[l.to]! }
+      if (l.type === 'FS') { if (ls[l.to]! - l.min < hiF) { hiF = ls[l.to]! - l.min; byF = sBy[l.to]! } continue }
+      if (l.type === 'SS') {
+        // This job must have done `lag` of its working time by the successor's latest start.
+        if (l.min >= mode.work) { if (ls[l.to]! < hiF) { hiF = ls[l.to]!; byF = sBy[l.to]! } continue }
+        const bound = ssStartBound(prep, a, m, ls[l.to]!, l.min)
+        if (bound < hiS) { hiS = bound; byS = sBy[l.to]! }
+        continue
+      }
+      // FF: finish no later than the successor's latest finish, leaving `lag` of its work after it.
+      const bound = Math.min(lf[l.to]!, l.min > 0 ? lastSlotsStart(prep, l.to, schedule.mode[l.to]!, ls[l.to]!, l.min) : lf[l.to]!)
+      if (bound < hiF) { hiF = bound; byF = fBy[l.to]! }
     }
     const t = latestStart(prep, a, m, hiS, hiF)
     if (t < 0) throw new RangeError(`${problem.activities[a]!.id} has no latest start inside its limits`)

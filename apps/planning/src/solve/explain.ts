@@ -6,7 +6,7 @@
 import type { z } from 'zod'
 import type { explainResultSchema } from '../api/contract.ts'
 import type { CompileIndex } from './compile.ts'
-import { finishOf, makeDecoder, workedSlots, type Prepared } from './decode.ts'
+import { ffHolds, finishOf, makeDecoder, progressAt, workedSlots, type Prepared } from './decode.ts'
 import type { Float } from './float.ts'
 import type { Schedule } from './problem.ts'
 
@@ -64,7 +64,8 @@ export const makeExplainer = (ctx: ExplainContext) => {
     const base = { job: keyOf(ctx, a), start: iso(index, start), finish: iso(index, finish), floatHours: ctx.floats[a]?.workingHours ?? 0 }
     if (activity.fixed !== undefined) return { ...base, because: [{ kind: 'lock', about: [keyOf(ctx, a)] }], joint: false }
     // The earliest start the links and releases allow, and what sets it.
-    let earliest = Math.max(activity.release, activity.modes[m]!.release), ffLo = -1
+    let earliest = Math.max(activity.release, activity.modes[m]!.release)
+    const ffLinks: Array<{ finish: number; lag: number }> = []
     const binding: Cause[] = []
     let bindingPred = -1
     const consider = (value: number, cause: Cause, pred = -1): void => {
@@ -77,8 +78,8 @@ export const makeExplainer = (ctx: ExplainContext) => {
       const kind: Cause['kind'] = l.origin === 'link' ? 'link' : 'link'
       const pred = l.from, predFinish = finishOf(prep, pred, schedule.mode[pred]!, schedule.start[pred]!)
       if (l.type === 'FS') consider(predFinish + l.min, { kind, about: [keyOf(ctx, pred)], until: iso(index, predFinish + l.min) }, pred)
-      else if (l.type === 'SS') consider(schedule.start[pred]! + l.min, { kind, about: [keyOf(ctx, pred)], until: iso(index, schedule.start[pred]! + l.min) }, pred)
-      else ffLo = Math.max(ffLo, predFinish + l.min)
+      else if (l.type === 'SS') { const ready = progressAt(prep, pred, schedule.mode[pred]!, schedule.start[pred]!, l.min); consider(ready, { kind, about: [keyOf(ctx, pred)], until: iso(index, ready) }, pred) }
+      else ffLinks.push({ finish: predFinish, lag: l.min })
     }
     // Every slot from there to the start is refused by something, in every mode (another crew or
     // truck could have served it): name what refuses it.
@@ -96,7 +97,7 @@ export const makeExplainer = (ctx: ExplainContext) => {
       for (let t = from; t < start; t++) {
         const f = finishOf(prep, a, k, t)
         if (f < 0) { note({ kind: 'shift', about: resourcesOf.slice(0, 6) }, t); continue }
-        if (f < ffLo) { note({ kind: 'link', about: prep.preds[a]!.filter(l => l.type === 'FF').map(l => keyOf(ctx, l.from)).slice(0, 6) }, t); continue }
+        if (!ffLinks.every(link => ffHolds(prep, a, k, t, link.finish, link.lag))) { note({ kind: 'link', about: prep.preds[a]!.filter(l => l.type === 'FF').map(l => keyOf(ctx, l.from)).slice(0, 6) }, t); continue }
         const coverage = prep.opensCoverage[a]!.find(c => {
           const rule = problem.coverage[c]!
           const opening = new Set(prep.opensItems[a]!)

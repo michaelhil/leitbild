@@ -251,6 +251,7 @@ export const compile = (inputs: PlanInputs, sub: SubSolve): Compiled => {
   const jobIndex = new Map(jobs.map((job, index) => [job.key, index]))
   const equipmentIndex = new Map(inputs.equipment.map((item, index) => [item.key, index]))
   const protectedItems = new Set(inputs.rules.flatMap(rule => (rule.kind === 'protected' ? rule.equipment : [])))
+  // Every job starts at or after the data date (controls review: no forecast in the past).
   const releaseFloor = dataDate !== undefined && dataDate > origin ? toSlotUp(dataDate) : 0
 
   const attributeRelease = (resourceKey: string, where: NonNullable<PlanInputs['jobs'][number]['needs'][number]['where']>, about: string): number | 'never' | 'unsupported' | 'invalid' => {
@@ -387,6 +388,7 @@ export const compile = (inputs: PlanInputs, sub: SubSolve): Compiled => {
     if (job.lock !== undefined) {
       const at = Date.parse(job.lock.start)
       if (!isOnGrid(at, slotMs) || at < origin || at >= windowEnd) { invalid.push({ about: [job.key], code: 'lock_off_grid' }); continue }
+      if (dataDate !== undefined && at < dataDate) { invalid.push({ about: [job.key], code: 'lock_before_data_date' }); continue }
       const start = toSlotDown(at)
       const mode = Math.max(0, modes.findIndex(mode => problemCalendars[mode.calendar]!.work[start] === 1))
       fixed = { mode, start, history: false }

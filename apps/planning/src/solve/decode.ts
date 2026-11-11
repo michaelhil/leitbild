@@ -136,6 +136,36 @@ export const workedSlots = (prep: Prepared, a: number, m: number, t: number): In
 }
 
 export const applies = (prep: Prepared, when: number, slot: number): boolean => when < 0 || prep.cal[when]!.pos[slot]! >= 0
+/**
+ * Lags (controls review, coordinator decision): FS is clock time, a wait. SS lag L: the successor may
+ * start once the predecessor has done L of its own working time. FF lag L: the successor finishes no
+ * earlier than the predecessor and at least L of its working time falls after the predecessor's finish.
+ * Each implies the clock-time reading, so clock-time bounds stay sound.
+ */
+/** The slot by which a (mode m, started at t) has done `work` slots of its own working time. */
+export const progressAt = (prep: Prepared, a: number, m: number, t: number, work: number): number => {
+  const mode = prep.problem.activities[a]!.modes[m]!
+  if (work <= 0) return t
+  if (work >= mode.work) return finishOf(prep, a, m, t)
+  if (mode.continuous) return t + work
+  const k = prep.cal[mode.calendar]!
+  return k.list[k.pos[t]! + work - 1]! + 1
+}
+/** Worked slots of a (mode m, started at t) at or after slot x. */
+export const workedFrom = (prep: Prepared, a: number, m: number, t: number, x: number): number => {
+  const mode = prep.problem.activities[a]!.modes[m]!
+  if (mode.work === 0) return 0
+  if (mode.continuous) return Math.max(0, t + mode.work - Math.max(t, x))
+  const k = prep.cal[mode.calendar]!
+  const p = k.pos[t]!
+  return Math.max(0, p + mode.work - Math.max(p, k.prefix[Math.max(0, Math.min(prep.H, x))]!))
+}
+/** Whether an FF link of `lag` slots holds between a predecessor finish and a placed successor. */
+export const ffHolds = (prep: Prepared, a: number, m: number, t: number, predFinish: number, lag: number): boolean => {
+  const f = finishOf(prep, a, m, t)
+  return f >= predFinish && (lag <= 0 || workedFrom(prep, a, m, t, predFinish) >= lag)
+}
+
 
 /** Why a placement is refused (for explanations): none, a full resource, replaced time, maxJobs, a keep-in-service rule. */
 export type Refusal =
@@ -351,11 +381,12 @@ export const makeDecoder = (prep: Prepared) => {
         const activity = problem.activities[a]!
         const mode = activity.modes[m]!
         let lo = Math.max(minStart[a]!, activity.release, mode.release), ffLo = -1
+        const ffLinks: Array<{ finish: number; lag: number }> = []
         const upper: Array<{ src: number; kind: 'S' | 'F'; bound: number }> = []
         for (const l of prep.preds[a]!) {
           if (l.type === 'FS') { lo = Math.max(lo, F[l.from]! + l.min); if (l.max !== undefined) upper.push({ src: l.from, kind: 'S', bound: F[l.from]! + l.max }) }
-          else if (l.type === 'SS') { lo = Math.max(lo, S[l.from]! + l.min); if (l.max !== undefined) upper.push({ src: l.from, kind: 'S', bound: S[l.from]! + l.max }) }
-          else { ffLo = Math.max(ffLo, F[l.from]! + l.min); if (l.max !== undefined) upper.push({ src: l.from, kind: 'F', bound: F[l.from]! + l.max }) }
+          else if (l.type === 'SS') { lo = Math.max(lo, F[l.from]! >= H ? S[l.from]! + l.min : progressAt(prep, l.from, M[l.from]!, S[l.from]!, l.min)); if (l.max !== undefined) upper.push({ src: l.from, kind: 'S', bound: S[l.from]! + l.max }) }
+          else { ffLo = Math.max(ffLo, F[l.from]!); if (l.min > 0) ffLinks.push({ finish: F[l.from]!, lag: l.min }); if (l.max !== undefined) upper.push({ src: l.from, kind: 'F', bound: F[l.from]! + l.max }) }
         }
         for (const s of prep.opensSpans[a]!) {
           const limit = problem.spans[s]!.limit
@@ -366,6 +397,7 @@ export const makeDecoder = (prep: Prepared) => {
         for (let t = Math.max(0, lo); t <= last; t++) {
           const f = finishOf(prep, a, m, t)
           if (f < 0 || f < ffLo) continue
+          if (ffLinks.length > 0 && !ffLinks.every(link => workedFrom(prep, a, m, t, link.finish) >= link.lag)) continue
           if (!coverageOk(a, t)) continue
           if (!fits(a, m, t)) continue
           tStar = t; fStar = f; break
@@ -449,10 +481,10 @@ export const makeDecoder = (prep: Prepared) => {
       const activity = problem.activities[a]!
       const m = M[a]!
       let sUB = H, fUB = activity.deadline
+      const progressLinks: Array<NormalizedProblem['links'][number]> = []
       for (const l of prep.succs[a]!) {
         if (l.type === 'FS') fUB = Math.min(fUB, S[l.to]! - l.min)
-        else if (l.type === 'SS') sUB = Math.min(sUB, S[l.to]! - l.min)
-        else fUB = Math.min(fUB, F[l.to]! - l.min)
+        else { progressLinks.push(l); if (l.type === 'SS') sUB = Math.min(sUB, S[l.to]!); else fUB = Math.min(fUB, F[l.to]!) }
       }
       for (const l of prep.preds[a]!) if (l.max !== undefined) {
         if (l.type === 'FS') sUB = Math.min(sUB, F[l.from]! + l.max)
@@ -466,6 +498,7 @@ export const makeDecoder = (prep: Prepared) => {
       for (let t = Math.min(sUB, H - 1); t > S[a]!; t--) {
         const f = finishOf(prep, a, m, t)
         if (f < 0 || f > fUB) continue
+        if (progressLinks.length > 0 && !progressLinks.every(l => (l.type === 'SS' ? progressAt(prep, a, m, t, l.min) <= S[l.to]! : ffHolds(prep, l.to, M[l.to]!, S[l.to]!, f, l.min)))) continue
         if (activity.target !== undefined && f > Math.max(activity.target, F[a]!)) continue
         if (!fits(a, m, t)) continue
         if (pricedMode && slotCost(a, m, t) > own) continue
