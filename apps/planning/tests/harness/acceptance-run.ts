@@ -9,6 +9,11 @@ import type { z } from 'zod'
 import type { datedRowSchema } from '../../src/plan/schema.ts'
 import { checkPlan } from '../../src/check/check.ts'
 import { verifyOptimality } from '../../src/check/optimal.ts'
+import { CHECKER_VERSION } from '../../src/check/check.ts'
+import { recheckOption } from '../../src/check/recheck.ts'
+import { planSchema } from '../../src/plan/schema.ts'
+import { showStatus } from '../../src/solve/status.ts'
+import { checkForSolver, verifyForSolver } from '../../src/solve/lane-k-ports.ts'
 import { createRealSolver } from '../../src/api/wiring.ts'
 import { createSolverPool } from '../../src/solve/pool.ts'
 import { compile } from '../../src/solve/compile.ts'
@@ -24,7 +29,7 @@ import { twinPlan, twinV3Options } from './twin-plan.ts'
 type DatedRow = z.infer<typeof datedRowSchema>
 const seconds = Number(process.argv[2] ?? 10)
 /** Rows to run, e.g. "counterfactual,dst"; all by default. */
-const rows = new Set((process.argv[3] ?? 'counterfactual,goals,bounds,dst,preview,optimal').split(','))
+const rows = new Set((process.argv[3] ?? 'counterfactual,goals,bounds,dst,preview,optimal,expiry').split(','))
 /** or's frozen size subsets (R/or/inc1/size/) and its MILP schedule for S60 (R/or/gate/runs/), read-only. */
 const sizeDirectory = process.env.LANE_K_SIZE_DIR ?? '/Users/hilde/Documents/ChatGPT/leitbild-planning-review-2026-11-10/or/inc1/size'
 const s60ScheduleFile = process.env.LANE_K_S60_SCHEDULE ?? '/Users/hilde/Documents/ChatGPT/leitbild-planning-review-2026-11-10/or/gate/runs/best-milp-S60-540.json'
@@ -170,6 +175,25 @@ try {
       const unconfirmed = claims.filter(entry => !entry.proves)
       print('optimal', `${name}: ${claims.length} "proven optimal" goals, ${claims.length - unconfirmed.length} confirmed${unconfirmed.length === 0 ? '' : `; unconfirmed: ${unconfirmed.map(entry => `${entry.option} goal ${entry.goal} ${entry.claimed} (bound ${entry.bound})`).join(', ')}`}`)
     }
+  }
+
+  // Stored statuses expire when lane K's rules change: the formulation names CHECKER_VERSION, so an option
+  // stored under other rules no longer matches. Shown by lane S's showStatus and lane K's recheck alike.
+  if (rows.has('expiry')) {
+    const formulation = solver.formulation('30min')
+    const set = await generateOptions(flagship)
+    const option = set.options.find(candidate => candidate.status.word === 'validated feasible')!
+    const run = option.status.word === 'validated feasible' ? option.status.run : undefined
+    const older = { ...option, status: { ...option.status, run: { ...run!, formulation: run!.formulation.replace(CHECKER_VERSION, 'lane-k rules 0') } } } as typeof option
+    const plan = planSchema.parse({
+      id: '00000000-0000-4000-8000-000000000009', workspaceId: '00000000-0000-4000-8000-0000000000aa', revision: 1, createdAt: '2026-11-11T00:00:00Z', updatedAt: '2026-11-11T00:00:00Z',
+      inputs: flagship, options: { ...set, options: [option, { ...older, key: 'older' }] }, baselines: [], changes: [], droppedChanges: 0,
+    })
+    const shownNow = showStatus(option, { inputs: flagship, revision: 1, formulation }, checkForSolver, verifyForSolver)
+    const shownOld = showStatus(older, { inputs: flagship, revision: 1, formulation }, checkForSolver, verifyForSolver)
+    const recheckOld = recheckOption(plan, plan.options!.options[1]!, formulation)
+    print('expiry', `formulation names "${CHECKER_VERSION}": ${formulation.includes(CHECKER_VERSION)}; generated option's formulation equals it: ${run!.formulation === formulation}; `
+      + `current option stands: ${shownNow.stale === undefined}; option stored under other rules: showStatus ${JSON.stringify(shownOld.stale?.codes ?? [])}, shown as ${shownOld.status.word} without proof words: ${shownOld.status.word !== 'validated feasible' || shownOld.status.goals.every(goal => goal.word !== 'proven optimal')}, lane K recheck ${JSON.stringify(recheckOld.reasons)} (baseline allowed: ${recheckOld.baselineAllowed})`)
   }
 
   // Preview with no edit: re-timing the option with its own order and modes must give the option back.
