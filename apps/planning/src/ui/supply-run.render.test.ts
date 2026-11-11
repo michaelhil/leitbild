@@ -77,6 +77,21 @@ describe('Supply run on the generic screen', () => {
     expect(work).toContain('check it describes the work')
   })
 
+  test('times the screen writes itself are in the plan zone', () => {
+    const crews = screen(supplyRunPlanned(), 'crews')
+    // Truck 2 joins at 08:02 UTC, which is 10:02 in Oslo summer time; the screen says 10:02.
+    expect(crews).toContain('Thu 10:02–10:30')
+    expect(crews).toContain('Thu 10:05:30–10:30')
+  })
+
+  // The fixture's own labels and notes still mix the Scenario clock and cue ids ("Joins at 08:02",
+  // "cue second-truck, 120 s"). maint and lane A are rewriting them in plan-zone time. Until that lands
+  // this check is expected to fail; when it starts to pass, turn test.failing into test.
+  test.failing('the crews view, counting authored text too, shows no ids, JSON or seconds counts', () => {
+    const model = supplyRunPlanned()
+    expect(routineBreaches(screen(model, 'crews'), identifiers(model.inputs), [])).toEqual([])
+  })
+
   test('routine views show no ids, JSON or seconds counts', () => {
     for (const model of [modelOf(supplyRunInputs()), supplyRunPlanned()]) {
       for (const view of views) {

@@ -114,6 +114,67 @@ export const attributeViews = (resource: Resource, facts: readonly WorldFactCopy
     return { mark: sourceMark(attribute.origin), text: `${attribute.label} ${quantityText(attribute.value, attribute.unit)}${later}`, source: attribute.origin.note ?? null }
   })
 
+const weekOrder = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as const
+const dayWords: Readonly<Record<(typeof weekOrder)[number], string>> = { mon: 'Mon', tue: 'Tue', wed: 'Wed', thu: 'Thu', fri: 'Fri', sat: 'Sat', sun: 'Sun' }
+
+/** "Mon–Fri", "Mon, Wed", "every day": runs of consecutive weekdays. */
+const daysText = (days: readonly (typeof weekOrder)[number][]): string => {
+  const sorted = weekOrder.filter(day => days.includes(day))
+  if (sorted.length === 7) return 'every day'
+  const runs: string[] = []
+  let start = 0
+  for (let index = 1; index <= sorted.length; index += 1) {
+    if (index < sorted.length && weekOrder.indexOf(sorted[index]!) === weekOrder.indexOf(sorted[index - 1]!) + 1) continue
+    const first = sorted[start]!, last = sorted[index - 1]!
+    runs.push(first === last ? dayWords[first] : index - start === 2 ? `${dayWords[first]}, ${dayWords[last]}` : `${dayWords[first]}–${dayWords[last]}`)
+    start = index
+  }
+  return runs.join(', ')
+}
+
+const listed = (texts: readonly string[], limit = 3): string =>
+  texts.length <= limit ? texts.join(', ') : `${texts.slice(0, limit).join(', ')} and ${texts.length - limit} more`
+
+/** A calendar's working time in words, in the plan's zone: "Mon–Fri 07:00–15:00", "Tue 07:00–19:00, …". */
+export const calendarText = (calendar: Context['inputs']['calendars'][number], format: TimeFormat): string => {
+  const weekly = calendar.weekly.map(entry => {
+    const allDay = entry.from === entry.to && entry.from === '00:00'
+    const overnight = !allDay && entry.to <= entry.from
+    return `${daysText(entry.days)} ${allDay ? 'around the clock' : `${entry.from}–${entry.to}${overnight ? ' (ends next day)' : ''}`}`
+  })
+  const periods = calendar.periods.map(period => format.range(period.start, period.end))
+  const parts = [...weekly, ...periods.length === 0 ? [] : [listed(periods)]]
+  const working = parts.length === 0 ? 'no working time of its own' : parts.join('; ')
+  const except = calendar.except.length === 0 ? '' : `; not ${listed(calendar.except.map(period => format.range(period.start, period.end)))}`
+  return `${working}${except}`
+}
+
+/** A crew's or tool's hours: its calendar, then what can be bought for it. */
+export const resourceHoursText = (resource: Resource, inputs: Context['inputs'], format: TimeFormat): string => {
+  const calendar = inputs.calendars.find(item => item.key === resource.calendar)
+  const own = calendar === undefined ? 'its shift is no longer in this plan' : calendarText(calendar, format)
+  const bought = inputs.purchases.filter(purchase => purchase.resource === resource.key).map(purchase => {
+    const { adds } = purchase
+    const added = 'calendar' in adds ? inputs.calendars.find(item => item.key === adds.calendar) : undefined
+    const time = 'calendar' in adds
+      ? added === undefined ? 'a shift no longer in this plan' : calendarText(added, format)
+      : listed(adds.periods.map(period => format.range(period.start, period.end)), 2)
+    return `${time} if “${purchase.label}” is bought`
+  })
+  return [own, ...bought].join('; ')
+}
+
+/** An order deadline in words; past the plan's "now" it says so (it can no longer be bought). */
+export const orderView = (purchase: Context['inputs']['purchases'][number], inputs: Context['inputs'], format: TimeFormat): { readonly mark: Mark; readonly text: string } | null => {
+  if (purchase.ordered !== undefined) return { mark: { shape: '✓', word: 'Ordered' }, text: `“${purchase.label}” is ordered: paid whether used or not.` }
+  if (purchase.orderBy === undefined) return null
+  const now = inputs.settings.dataDate
+  if (now !== null && Date.parse(purchase.orderBy) < Date.parse(now)) {
+    return { mark: { shape: '!', word: 'Deadline passed' }, text: `Order deadline passed ${format.clock(purchase.orderBy)}: “${purchase.label}” can no longer be bought.` }
+  }
+  return { mark: { shape: '⚑', word: 'Decision' }, text: `Order “${purchase.label}” by ${format.clock(purchase.orderBy)}.` }
+}
+
 /** "Station mechanical crew · 2 crews of 3 · Day shift" */
 export const resourceText = (resource: Resource, names: Names): string => {
   const size = resource.kind === 'crew'

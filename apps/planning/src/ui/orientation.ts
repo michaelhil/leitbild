@@ -2,6 +2,7 @@
 // what is protected and its World state at read time, the preconditions, order deadlines, crews and
 // their hours, and the promises the plan depends on. Generated from the plan; nothing is stored.
 import { durationText, factText, sourceMark, type Mark } from './format.ts'
+import { orderView, resourceHoursText } from './rules-text.ts'
 import type { Context } from './status-text.ts'
 
 export interface GlanceLine { readonly mark: Mark | null; readonly text: string; readonly world: readonly string[] }
@@ -56,7 +57,7 @@ export const glance = (context: Context): readonly Glance[] => {
     const item = inputs.equipment.find(entry => entry.key === check.equipment)
     const fact = item?.locator === undefined ? undefined : inputs.world.facts.find(entry => entry.locator === item.locator && entry.id === check.fact)
     return {
-      mark: { shape: '?', word: 'Precondition' }, text: `${job.title} is ready only if ${check.words.replace(/^./, letter => letter.toLowerCase())}.`,
+      mark: { shape: '?', word: 'Precondition' }, text: `${job.title} is ready only if: ${check.words}.`,
       world: fact === undefined ? ['Not read from World yet'] : [`${fact.value === check.expect ? 'Met' : 'Not met'} at read time: ${factText(fact, format)}`],
     }
   }))
@@ -65,14 +66,14 @@ export const glance = (context: Context): readonly Glance[] => {
   const crews = inputs.resources.map((resource): GlanceLine => ({
     mark: sourceMark(resource.source).shape === '●' ? null : sourceMark(resource.source),
     world: factsOf(resource.locator, 2),
-    text: `${resource.label}: ${resource.count === 1 ? '' : `${resource.count}, `}${names.calendar(resource.calendar)}${resource.words === undefined ? '' : `. ${resource.words}`}`,
+    text: `${resource.label}: ${resource.count === 1 ? '' : `${resource.count}, `}${names.calendar(resource.calendar)} (${resourceHoursText(resource, inputs, format)})${resource.words === undefined ? '' : `. ${resource.words}`}`,
   }))
   if (crews.length > 0) sections.push({ title: 'Crews and tools', lines: crews })
 
-  const orders = inputs.purchases.flatMap((purchase): GlanceLine[] => purchase.orderBy === undefined ? [] : [{
-    mark: { shape: '◆', word: 'Decision' }, world: [],
-    text: purchase.ordered === undefined ? `Order “${purchase.label}” by ${format.clock(purchase.orderBy)}.` : `“${purchase.label}” is ordered: paid whether used or not.`,
-  }])
+  const orders = inputs.purchases.flatMap((purchase): GlanceLine[] => {
+    const order = orderView(purchase, inputs, format)
+    return order === null ? [] : [{ mark: order.mark, world: [], text: order.text }]
+  })
   const bookings = inputs.purchases.flatMap((purchase): GlanceLine[] => purchase.replaces.length === 0 ? [] : [{
     mark: null, world: [],
     text: `${names.resource(purchase.resource)} is booked ${purchase.replaces.map(period => format.range(period.start, period.end)).join(', ')}; “${purchase.label}” moves it.`,

@@ -59,10 +59,14 @@ describe('Train A on the plan screen', () => {
     expect(rules).toContain(`(compared in steps of NOK ${cost.toLocaleString('en-GB')})`)
 
     const crews = screen(model, 'crews')
+    // Shift and crane hours in words, in the plan zone (T1).
+    expect(crews).toContain('Works Mon–Fri 07:00–15:00; Mon–Fri 15:00–19:00 if “Station mechanical overtime to 19:00” is bought')
+    expect(crews).toContain('Lit crane-crew hours, Tue to Thu')
+    expect(crews).toContain('Tue 07:00–19:00, Wed 07:00–19:00, Thu 07:00–19:00')
     expect(crews).toContain('Workshop rebuild and tube cleaning only.')
     expect(crews).toContain('2 crews of 3 · Day shift')
     expect(crews).toContain('NOK 50,400 per period used + NOK 35,000 once')
-    expect(crews).toContain('Order by Fri 12:00')
+    expect(crews).toContain('⚑ Decision Order “Contractor night crew (nights Mon to Thu)” by Fri 12:00.')
 
     const work = screen(model)
     // Estimates show their range; the spare is a dated promise, flagged as an assumption, not a fact.
@@ -82,6 +86,8 @@ describe('Train A on the plan screen', () => {
     expect(text).toContain('Service Water Pump B is never touched.')
     expect(text).toContain('Running: yes · observed · read Thu 10:02')
     expect(text).toContain('Met at read time: Running: yes · observed · read Thu 10:02')
+    expect(text).toContain('is ready only if: World shows SW B running.')
+    expect(text).toContain('60 t mobile crane with operator and rigger: Lit crane-crew hours, Tue to Thu (Tue 07:00–19:00, Wed 07:00–19:00, Thu 07:00–19:00')
     expect(text).toContain('Order “Contractor night crew (nights Mon to Thu)” by Fri 12:00.')
     expect(text).toContain('“Rebook the eddy-current team to Friday” moves it.')
     expect(text).toContain('Lit crane-crew hours, Tue to Thu')
@@ -110,7 +116,7 @@ describe('Train A on the plan screen', () => {
     expect(text).toContain('Station mechanical crew')
     expect(text).toContain('one at a time')
     expect(text).toContain('Float')
-    expect(text).toContain('limited by: the window end (logic and shifts only; crews and outage limits are checked separately)')
+    expect(text).toContain('limited by: the window end (crew availability is not counted)')
     expect(text).toContain('Mon 07:00–10:00')
   })
 
@@ -123,6 +129,9 @@ describe('Train A on the plan screen', () => {
     expect(shifts).toBeGreaterThan(attention)
     expect(timeline).toBeGreaterThan(shifts)
     expect(markup).toContain('class="phone-only"')
+    // A jump link at phone width leads past the cards to the views and forms.
+    expect(markup).toContain('href="#plan-views"')
+    expect(markup).toContain('id="plan-views"')
     expect(markup).toContain('class="desktop-only"')
   })
 

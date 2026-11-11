@@ -18,7 +18,7 @@ export interface Card {
 const kindMarks: Readonly<Record<AttentionKind, Mark>> = {
   refusal: { shape: '✕', word: 'Refused' },
   'not-ready': { shape: '?', word: 'Not ready' },
-  decision: { shape: '◆', word: 'Decision' },
+  decision: { shape: '⚑', word: 'Decision' },
   stale: { shape: '↻', word: 'Out of date' },
   world: sourceMark({ by: 'world' }),
   rule: { shape: '■', word: 'Rule' },

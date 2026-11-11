@@ -7,10 +7,11 @@ import { createTimeFormat } from './format.ts'
 import { createNames, type PlanModel } from './model.ts'
 import { dueMoveEdit } from './edit-forms.ts'
 import { weakensRule } from './plan-actions.ts'
-import { durationView, ruleMark, ruleView, targetMark } from './rules-text.ts'
+import { revealPanel } from './reveal.ts'
+import { calendarText, durationView, orderView, resourceHoursText, ruleMark, ruleView, targetMark } from './rules-text.ts'
 import { shiftList } from './shift-list.ts'
 import type { Context } from './status-text.ts'
-import { layoutTimeline } from './timeline-layout.ts'
+import { jobMark, layoutTimeline } from './timeline-layout.ts'
 
 const contextOf = (model: PlanModel): Context => ({ inputs: model.inputs, names: createNames(model.inputs), format: createTimeFormat(model.inputs.settings.timeZone) })
 
@@ -138,7 +139,7 @@ describe('shift list, estimates, rules and explanations', () => {
     }, context, pull)
     expect(why.joint).toBe(true)
     expect(why.sentence).toBe('It starts then because all of these hold at once (easing only one does not move it): 60 t mobile crane with operator and rigger is in use until Tue 07:00; it follows Remove SW A from service and hang tags.')
-    expect(floatText({ workingHours: 6, limitedBy: { kind: 'span-limit', rule: 'R2' } }, context)).toBe('Float 6 h, limited by: “Once the first cooling-chain item is tagged out, all must be back and tested within 72 h.” (logic and shifts only; crews and outage limits are checked separately)')
+    expect(floatText({ workingHours: 6, limitedBy: { kind: 'span-limit', rule: 'R2' } }, context)).toBe('Float 6 h, limited by: “Once the first cooling-chain item is tagged out, all must be back and tested within 72 h.” (crew availability is not counted)')
     const chain = finishChain({ lines: [], items: [{ job: 'SWA-RTS', start: rows[2]!.start, finish: rows[2]!.finish, floatHours: 0, joint: false, because: [{ kind: 'link', about: ['SWA-PUMP-OUT'] }] }] }, context)
     expect(chain).toEqual([{ job: 'Restore SW A, fill and vent, pump test', when: 'Tue 12:00–15:30', because: 'it follows Pull SW A pump assembly', due: null }])
   })
@@ -155,7 +156,7 @@ describe('the hard due rule', () => {
   test('reads as a rule with its source, and limits float and the finish', () => {
     const view = ruleView(due, context)
     expect([view.kind, view.mark.word, view.source.mark.word, view.covers]).toEqual(['Due', 'Rule', 'Reference', 'Restore SW A, fill and vent, pump test must finish by Fri 15:00. No plan may finish it later.'])
-    expect(floatText({ workingHours: 2, limitedBy: { kind: 'due', rule: 'D1' } }, context)).toBe('Float 2 h, limited by: due Fri 15:00 (logic and shifts only; crews and outage limits are checked separately)')
+    expect(floatText({ workingHours: 2, limitedBy: { kind: 'due', rule: 'D1' } }, context)).toBe('Float 2 h, limited by: due Fri 15:00 (crew availability is not counted)')
     const rows = model.rows['opt-1']!
     const [step] = finishChain({ lines: [], items: [{ job: 'SWA-RTS', start: rows[2]!.start, finish: rows[2]!.finish, floatHours: 0, joint: false, because: [{ kind: 'link', about: ['SWA-PUMP-OUT'] }] }] }, context)
     expect(step!.due).toBe(`Due Fri 15:00: ${due.words}`)
@@ -175,5 +176,53 @@ describe('the hard due rule', () => {
     expect(weakensRule(model, earlier.edits)).toBeNull()
     expect(weakensRule(model, [{ edit: 'remove', what: 'rule', key: 'D1' }])).toBe('Removing this rule weakens it')
     expect(dueMoveEdit('D1', '2026-11-22T12:00', model.inputs)).toEqual({ ok: false, problems: ['The due time must lie inside the plan window.'] })
+  })
+})
+
+describe('review fixes: hours, deadlines, marks, ticks, reveal', () => {
+  const planned = trainAPlanned()
+  const context = contextOf(planned)
+  const calendar = (key: string) => planned.inputs.calendars.find(item => item.key === key)!
+  const resource = (key: string) => planned.inputs.resources.find(item => item.key === key)!
+
+  test('shift and crane hours read in words in the plan zone', () => {
+    expect(calendarText(calendar('day'), context.format)).toBe('Mon–Fri 07:00–15:00')
+    expect(calendarText(calendar('always'), context.format)).toBe('every day around the clock')
+    expect(calendarText(calendar('crane'), context.format)).toBe('Tue 07:00–19:00, Wed 07:00–19:00, Thu 07:00–19:00')
+    expect(calendarText(calendar('none'), context.format)).toBe('no working time of its own')
+    expect(resourceHoursText(resource('mech-station'), planned.inputs, context.format)).toBe('Mon–Fri 07:00–15:00; Mon–Fri 15:00–19:00 if “Station mechanical overtime to 19:00” is bought')
+    expect(resourceHoursText(resource('mech-contractor'), planned.inputs, context.format)).toBe('no working time of its own; Mon 19:00 – Tue 07:00, Tue 19:00 – Wed 07:00 and 2 more if “Contractor night crew (nights Mon to Thu)” is bought')
+    const supply = supplyRunPlanned()
+    const join = supply.inputs.calendars.find(item => item.key === 'joins-0802')!
+    // The authored label says 08:02 (scenario clock); the screen's own words are plan-zone time.
+    expect(calendarText(join, createTimeFormat(supply.inputs.settings.timeZone))).toBe('Thu 10:02–10:30')
+  })
+
+  test('an order deadline in the past says so; before it, it is a decision', () => {
+    const purchase = planned.inputs.purchases.find(item => item.orderBy !== undefined)!
+    expect(orderView(purchase, planned.inputs, context.format)).toEqual({ mark: { shape: '⚑', word: 'Decision' }, text: `Order “${purchase.label}” by Fri 12:00.` })
+    // Hand value: one hour after the deadline.
+    const late = { ...planned.inputs, settings: { ...planned.inputs.settings, dataDate: new Date(Date.parse(purchase.orderBy!) + hourMs).toISOString() } }
+    expect(orderView(purchase, late, context.format)).toEqual({ mark: { shape: '!', word: 'Deadline passed' }, text: `Order deadline passed Fri 12:00: “${purchase.label}” can no longer be bought.` })
+  })
+
+  test('a decision and a test do not share a shape', () => {
+    const decision = attentionCards({ ...planned, attention: [{ kind: 'decision', text: 'Choose', about: [] }] }, context).find(card => card.title === 'Choose')!
+    expect(decision.mark.shape).not.toBe(jobMark('test').shape)
+  })
+
+  test('the window start is the first labelled tick', () => {
+    const layout = layoutTimeline(planned.inputs, planned.rows['opt-1']!, context.format)!
+    expect(layout.ticks[0]).toEqual({ left: 0, label: 'Mon 07:00' })
+    expect(layout.ticks[1]!.label).toBe('Tue 17 Nov')
+  })
+
+  test('a revealed panel scrolls its heading into view and focuses it', () => {
+    const calls: string[] = []
+    const heading = { scrollIntoView: (options?: ScrollIntoViewOptions) => { calls.push(`scroll ${options?.behavior}`) }, focus: (options?: FocusOptions) => { calls.push(`focus ${options?.preventScroll}`) } }
+    expect(revealPanel({ querySelector: selector => selector === 'h2' ? heading : null }, false)).toBe(true)
+    expect(revealPanel({ querySelector: () => heading }, true)).toBe(true)
+    expect(calls).toEqual(['scroll smooth', 'focus true', 'scroll auto', 'focus true'])
+    expect(revealPanel({ querySelector: () => null }, false)).toBe(false)
   })
 })

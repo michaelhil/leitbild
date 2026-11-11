@@ -22,6 +22,9 @@
   let goals = $state<GoalChoice[]>(['finish', 'extra-cost'])
   let problems = $state<readonly string[]>([])
   const all: readonly GoalChoice[] = ['finish', 'extra-cost', 'unavailable-hours', 'lateness']
+  // Every zone the browser knows, so the site zone is chosen, never typed.
+  // svelte-ignore state_referenced_locally
+  const zones = [...new Set([defaultZone, ...Intl.supportedValuesOf('timeZone')])].sort()
 
   const move = (index: number, by: -1 | 1) => {
     const other = index + by
@@ -42,7 +45,9 @@
 <form class="mini-form new-plan" onsubmit={submit}>
   <h2>New plan</h2>
   <label>Name<input bind:value={title} placeholder="e.g. Week 47 maintenance" /></label>
-  <label>Site time zone<input bind:value={timeZone} placeholder="Europe/Oslo" /></label>
+  <label>Site time zone
+    <select bind:value={timeZone}>{#each zones as zone (zone)}<option value={zone}>{zone.replaceAll('_', ' ')}</option>{/each}</select>
+  </label>
   <div class="field-pair">
     <label>Window starts<input type="datetime-local" bind:value={windowStart} /></label>
     <label>Window ends<input type="datetime-local" bind:value={windowEnd} /></label>

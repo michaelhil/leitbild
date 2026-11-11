@@ -16,6 +16,7 @@ type Any = Component<Record<string, unknown>>
 const { default: JobPanel } = await import('./JobPanel.svelte') as { default: Any }
 const { default: EditPreview } = await import('./EditPreview.svelte') as { default: Any }
 const { default: OptionsTable } = await import('./OptionsTable.svelte') as { default: Any }
+const { default: NewPlanForm } = await import('./NewPlanForm.svelte') as { default: Any }
 
 const model = trainAPlanned()
 const context: Context = { inputs: model.inputs, names: createNames(model.inputs), format: createTimeFormat(model.inputs.settings.timeZone) }
@@ -33,8 +34,10 @@ describe('panels', () => {
     expect(text).toContain('Going below it needs someone\'s agreement.')
     expect(text).toContain('These are joint causes: easing only one of them does not move the job.')
     expect(text).toContain('it follows Pull SW A pump assembly; Test team (one return-to-service test at a time) is busy until Tue 12:00.')
-    expect(text).toContain('limited by: the window end (logic and shifts only')
+    expect(text).toContain('limited by: the window end (crew availability is not counted)')
     expect(text).toContain('Fix its start')
+    // The heading takes focus when the panel opens, so the panel is never out of sight.
+    expect(renderHtml(JobPanel, { jobKey: 'SWA-RTS', context, row: test, why, onWhy: none, onPreview: none, onClose: none })).toContain('<h2 id="job-title" tabindex="-1">')
     const tag = readableText(renderHtml(JobPanel, { jobKey: 'SWA-TAG', context, row: rows[0], why: null, onWhy: none, onPreview: none, onClose: none }))
     expect(tag).toContain('World shows SW B running')
     expect(tag).toContain('Checked against World at read time.')
@@ -77,6 +80,14 @@ describe('panels', () => {
     expect(text).toContain('Nearest allowed start: Tue 12:00')
     expect(text).toContain('Use this time')
     expect(text).not.toContain('Apply')
+    expect(renderHtml(EditPreview, { preview, context, onApply: none, onDiscard: none, onUseTime: none })).toContain('<h2 id="preview-title" tabindex="-1">')
+  })
+
+  test('the site time zone is chosen from a list of zones, the default selected', () => {
+    const html = renderHtml(NewPlanForm, { defaultZone: 'Europe/Oslo', defaultStart: '2026-11-16T07:00', defaultEnd: '2026-11-21T07:00', onCreate: none, onCancel: none })
+    expect(html).toMatch(/<select[^>]*>[\s\S]*<option value="Europe\/Oslo" selected/)
+    expect(html).toContain('<option value="Asia/Tokyo"')
+    expect(html).not.toContain('placeholder="Europe/Oslo"')
   })
 
   test('a weakening edit asks who agreed and why before it can be applied', () => {

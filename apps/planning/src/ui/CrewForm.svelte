@@ -4,7 +4,7 @@
   import { crewEdits, purchaseAllowedEdit, type CrewForm } from './edit-forms.ts'
   import { moneyText, sourceMark } from './format.ts'
   import MarkTag from './MarkTag.svelte'
-  import { attributeViews, resourceText } from './rules-text.ts'
+  import { attributeViews, calendarText, orderView, resourceHoursText, resourceText } from './rules-text.ts'
   import type { Context } from './status-text.ts'
 
   // Crews and tools with their shift calendars and what can be bought; a new crew comes with its shift.
@@ -52,6 +52,7 @@
       <li>
         <strong>{resource.label}</strong> <MarkTag mark={sourceMark(resource.source)} tone={markTone(sourceMark(resource.source).shape)} />
         <small>{resourceText(resource, context.names)}</small>
+        <small>Works {resourceHoursText(resource, context.inputs, context.format)}</small>
         {#if resource.words}<small>{resource.words}</small>{/if}
         {#if resource.source.note}<small>{resource.source.note}</small>{/if}
         {#each attributeViews(resource, context.inputs.world.facts, context.format) as attribute, index (index)}
@@ -64,7 +65,7 @@
   <h3>Shifts</h3>
   <ul class="item-list">
     {#each context.inputs.calendars as item (item.key)}
-      <li><strong>{item.label}</strong> <MarkTag mark={sourceMark(item.source)} tone={markTone(sourceMark(item.source).shape)} />{#if item.source.note}<small>{item.source.note}</small>{/if}</li>
+      <li><strong>{item.label}</strong> <MarkTag mark={sourceMark(item.source)} tone={markTone(sourceMark(item.source).shape)} /><small>{calendarText(item, context.format)}</small>{#if item.source.note}<small>{item.source.note}</small>{/if}</li>
     {/each}
   </ul>
 
@@ -74,7 +75,10 @@
       {#each context.inputs.purchases as purchase (purchase.key)}
         <li>
           <strong>{purchase.label}</strong> <small>{price(purchase)}</small>
-          {#if purchase.orderBy}<small>{purchase.ordered ? 'Ordered' : `Order by ${context.format.clock(purchase.orderBy)}`}</small>{/if}
+          {#if orderView(purchase, context.inputs, context.format)}
+            {@const order = orderView(purchase, context.inputs, context.format)!}
+            <small><MarkTag mark={order.mark} tone={order.mark.shape === '!' ? 'warning' : 'plain'} /> {order.text}</small>
+          {/if}
           {#if purchase.replaces.length > 0}<small>Gives up the booked time it replaces.</small>{/if}
           <small>{purchase.allowed ? 'Generate may buy it.' : 'Generate may not buy it.'}</small>
           <button type="button" class="quiet" disabled={busy} onclick={() => {

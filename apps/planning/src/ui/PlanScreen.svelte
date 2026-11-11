@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte'
+  import { onMount, tick } from 'svelte'
   import type { PlanningSubject } from '@leitbild/contracts'
   import type { Edit } from '../plan/edit-schema.ts'
   import { isRequestError, refusalText, type GenerateInput, type PlanningClient } from './api.ts'
@@ -20,6 +20,7 @@
   import type { Preview } from './preview.ts'
   import RulesPanel from './RulesPanel.svelte'
   import { createPlanActions, type Shown } from './plan-actions.ts'
+  import { revealPanel } from './reveal.ts'
   import { shiftList } from './shift-list.ts'
   import ShiftList from './ShiftList.svelte'
   import StatusBlock from './StatusBlock.svelte'
@@ -57,6 +58,19 @@
   let why = $state<WhyStart | null>(null)
   let preview = $state<Preview | null>(null)
   let pending = $state<readonly Edit[]>([])
+  let panel = $state<HTMLElement | undefined>(undefined)
+
+  /** After a preview or a selected job appears, bring the panel into view and focus its heading. */
+  const reveal = (): void => {
+    void tick().then(() => {
+      if (panel !== undefined) revealPanel(panel, window.matchMedia('(prefers-reduced-motion: reduce)').matches)
+    })
+  }
+  const selectJob = (job: string): void => {
+    selectedJob = job
+    why = null
+    reveal()
+  }
 
   const context = $derived<Context | null>(model === null ? null : { inputs: model.inputs, names: createNames(model.inputs), format: createTimeFormat(model.inputs.settings.timeZone) })
   const rows = $derived(model !== null && selectedOption !== null ? model.rows[selectedOption] ?? [] : [])
@@ -104,6 +118,7 @@
   const previewEdits = (edits: readonly Edit[], label: string): void => withModel(async current => {
     pending = edits
     preview = await actions.preview(current, edits, label)
+    reveal()
   })
   const apply = (authority: { name: string; reason: string } | null): void => withModel(async current => {
     const shown = await actions.apply(current, pending, authority, selectedOption)
@@ -176,12 +191,13 @@
     {#if notice}<p class="notice" aria-live="polite">{notice}</p>{/if}
     <div class="screen-grid">
       <div class="col-attention">
+        <p class="phone-only jump"><a href="#plan-views">Jump to the plan views and forms</a></p>
         <AttentionColumn {cards} {finish} busy={busy || generating !== null} {onAction} />
         <Glance sections={glance(context)} />
         <div class="phone-only"><ShiftList {shifts} /></div>
       </div>
       <div class="col-main">
-        <nav class="views" aria-label="Plan views">
+        <nav class="views" id="plan-views" aria-label="Plan views">
           {#each views as item (item.key)}<button type="button" class:current={view === item.key} aria-pressed={view === item.key} onclick={() => { view = item.key }}>{item.word}</button>{/each}
         </nav>
         {#if view === 'schedule'}
@@ -191,8 +207,8 @@
               <StatusBlock view={statusView(shown.status, context)} warnings={shown.warnings.map(warning => warning.text)} stale={!shown.fresh} />
             </section>
           {/if}
-          {#if layout}<div class="desktop-only"><Timeline {layout} selected={selectedJob} onSelect={(job) => { selectedJob = job; why = null }} /></div>{/if}
-          <WorkList {context} {rows} selected={selectedJob} onSelect={(job) => { selectedJob = job; why = null }} />
+          {#if layout}<div class="desktop-only"><Timeline {layout} selected={selectedJob} onSelect={selectJob} /></div>{/if}
+          <WorkList {context} {rows} selected={selectedJob} onSelect={selectJob} />
         {:else if view === 'add'}
           <JobForm {context} {busy} onPreview={previewEdits} />
         {:else if view === 'equipment'}
@@ -205,7 +221,7 @@
           <OptionsTable options={model.options?.items ?? []} recommended={model.options?.recommended ?? null} {context} selected={selectedOption} {busy} onSelect={showOption} onBaseline={baseline} />
         {/if}
       </div>
-      <div class="col-panel">
+      <div class="col-panel" bind:this={panel}>
         {#if preview}
           <EditPreview {preview} {context} {busy} onApply={apply} onDiscard={() => { preview = null }} onUseTime={useTime} />
         {:else if selectedJob}

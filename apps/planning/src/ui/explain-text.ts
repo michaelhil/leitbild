@@ -43,7 +43,7 @@ export const floatText = (float: DatedRow['float'] | { readonly workingHours: nu
   const limit = float.limitedBy === undefined || float.limitedBy.kind === 'window-end'
     ? 'the window end'
     : float.limitedBy.kind === 'due' ? dueText(float.limitedBy.rule, context) : `“${context.names.rule(float.limitedBy.rule)}”`
-  return `Float ${hoursText(float.workingHours)}, limited by: ${limit} (logic and shifts only; crews and outage limits are checked separately)`
+  return `Float ${hoursText(float.workingHours)}, limited by: ${limit} (crew availability is not counted)`
 }
 
 export interface WhyStart {

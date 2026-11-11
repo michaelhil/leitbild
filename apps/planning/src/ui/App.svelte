@@ -34,8 +34,9 @@
   :global {
     * { box-sizing: border-box; }
     :root {
-      --ink: #1f3530; --ink-2: #4d6359; --ink-3: #6b7d73; --paper: #f6f7f3; --card: #ffffff; --line: #d9e2d8; --line-2: #edf1eb;
-      --accent: #285e4d; --accent-2: #edf4ed; --focus: #b5652f;
+      --ink: #1f3530; --ink-2: #4d6359; --ink-3: #56665d; --paper: #f6f7f3; --card: #ffffff; --line: #d9e2d8; --line-2: #edf1eb;
+      --accent: #285e4d; --accent-2: #edf4ed; --focus: #9a4f1f; --on-accent: #ffffff;
+      --load-fill: #3f7258; --load-line: #2f5a45; --load-text: #ffffff; --load-bought-fill: #c9a46a; --load-bought-line: #a5844d; --load-bought-text: #1f3530;
       --rule: #5a2f2f; --rule-bg: #f6eaea; --estimate: #3d5a80; --estimate-bg: #e9eff7; --unknown: #6d5a1e; --unknown-bg: #fbf3d9;
       --assumption: #7a4a12; --assumption-bg: #fdf0e1; --world: #1f5a6b; --world-bg: #e5f2f5; --good: #255d3b; --good-bg: #e6f3ea; --warning: #7a4a12; --warning-bg: #fff3e0;
       --refusal: #8c2f20; --refusal-bg: #fbe9e5;
@@ -50,7 +51,7 @@
     button { cursor: pointer; min-height: 36px; padding: 6px 11px; background: var(--card); border: 1px solid #c4d1c7; border-radius: 6px; font-weight: 500; }
     button:hover:not(:disabled) { background: var(--accent-2); }
     button:disabled { opacity: .55; cursor: default; }
-    button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+    button.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
     button.quiet { min-height: 28px; padding: 2px 8px; font-size: 12px; }
     button.link { border: 0; background: none; padding: 0; min-height: 0; color: var(--accent); text-decoration: underline; text-underline-offset: 3px; text-align: left; }
     input, select, textarea { width: 100%; min-width: 0; padding: 7px 9px; border: 1px solid #c4d1c7; border-radius: 5px; background: #fff; }
@@ -111,7 +112,7 @@
     .chain .when { color: var(--ink-3); margin-left: 4px; }
     .chain .because { display: block; color: var(--ink-2); }
     .views { display: flex; flex-wrap: wrap; gap: 6px; }
-    .views button.current { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .views button.current { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
     .status-line { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
     .goals { padding-left: 18px; font-size: 13px; }
     .goals .distance { color: var(--ink-3); }
@@ -135,8 +136,8 @@
     .limit.hard { color: var(--rule); }
     .limit.guideline { color: var(--estimate); }
     .off-shift { position: absolute; top: 0; height: 22px; background: repeating-linear-gradient(-45deg, transparent, transparent 3px, #eef1ec 3px, #eef1ec 6px); }
-    .load-bar { position: absolute; top: 4px; height: 14px; background: #76a98c; border: 1px solid #5a8c70; font-size: 9px; color: #fff; text-align: center; line-height: 12px; overflow: hidden; }
-    .load-bar.bought { background: #c9a46a; border-color: #a5844d; }
+    .load-bar { position: absolute; top: 4px; height: 14px; background: var(--load-fill); border: 1px solid var(--load-line); font-size: 9px; color: var(--load-text); text-align: center; line-height: 12px; overflow: hidden; }
+    .load-bar.bought { background: var(--load-bought-fill); border-color: var(--load-bought-line); color: var(--load-bought-text); }
     .load-bar.over { border: 2px solid var(--refusal); }
     .job-bar { position: absolute; top: 3px; height: 16px; min-height: 0; padding: 0; border-radius: 3px; background: #6f9f86; border: 1px solid #4f7f66; }
     .job-bar.kind-tag-out { background: #b8a26a; border-color: #8f7c48; }
@@ -170,6 +171,7 @@
     .shift-list .who { color: var(--ink-2); font-size: 12px; }
     .glance ul { list-style: none; padding: 0; margin: 0 0 6px; font-size: 12px; }
     .glance li { padding: 3px 0; }
+    .jump { margin: 0; font-size: 13px; }
     .phone-only { display: none; }
 
     @media (max-width: 1280px) {

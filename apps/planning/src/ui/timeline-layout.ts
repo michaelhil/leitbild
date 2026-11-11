@@ -109,8 +109,10 @@ const outagesWithSupport = (inputs: PlanInputs, own: ReadonlyMap<string, Interva
 const ticksFor = (from: number, to: number, format: TimeFormat): readonly Tick[] => {
   const length = to - from
   const step = length > 36 * hourMs ? hourMs : length > 3 * hourMs ? hourMs : 5 * timeUnitMs.min
-  const ticks: Tick[] = []
+  // The window start is always labelled, so the first part-day before a midnight tick has its name.
+  const ticks: Tick[] = [{ left: 0, label: length > 36 * hourMs ? format.clock(from) : format.time(from) }]
   for (let at = Math.ceil(from / step) * step; at <= to; at += step) {
+    if (at === from) continue
     const local = localParts(format.zone, at)
     if (length > 36 * hourMs) {
       if (local.hour === 0 && local.minute === 0) ticks.push({ left: (at - from) / length * 100, label: format.day(at) })
