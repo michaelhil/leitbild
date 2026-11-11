@@ -178,6 +178,28 @@ try {
       }
       print('preview', `${name}: ${same} options identical, ${differ} differ${notes.length === 0 ? '' : `; ${notes.join('; ')}`}`)
     }
+    // The seal +6 h preview on the baseline: only the CCW chain and what it forces may move, and the
+    // checker reports only what the edit breaks. "Forced" = reachable from the seal through links, the
+    // bracket of its item and the support order (the precedence the edit can push).
+    const set = await generateOptions(flagship)
+    const option = set.options.find(candidate => candidate.key === set.recommended) ?? set.options[0]!
+    const preview = await solver.preview({ inputs: replanA, option })
+    const next = new Map<string, Set<string>>()
+    const edge = (from: string, to: string) => { const targets = next.get(from) ?? new Set<string>(); targets.add(to); next.set(from, targets) }
+    for (const link of replanA.links) edge(link.from, link.to)
+    for (const work of replanA.jobs.filter(job => job.kind === 'work' && job.isolation === 'inside')) {
+      for (const test of replanA.jobs.filter(job => job.kind === 'test' && job.equipment.includes(work.equipment[0]!))) edge(work.key, test.key)
+    }
+    const supportersOf = (item: string): string[] => replanA.equipment.find(entry => entry.key === item)?.supportedBy.flatMap(key => [key, ...supportersOf(key)]) ?? []
+    for (const test of replanA.jobs.filter(job => job.kind === 'test')) {
+      for (const supported of replanA.jobs.filter(job => job.kind === 'test' && job.equipment.some(item => test.equipment.some(supporter => supportersOf(item).includes(supporter))))) edge(test.key, supported.key)
+    }
+    const forced = new Set<string>(['CCWA-SEAL'])
+    for (const queue = ['CCWA-SEAL']; queue.length > 0;) for (const following of next.get(queue.shift()!) ?? []) if (!forced.has(following)) { forced.add(following); queue.push(following) }
+    const movedJobs = preview.rows.filter(row => { const was = option.rows.find(entry => entry.job === row.job)!; return Date.parse(was.start) !== Date.parse(row.start) || Date.parse(was.finish) !== Date.parse(row.finish) }).map(row => row.job)
+    const outside = movedJobs.filter(job => !forced.has(job))
+    const check = checkPlan(replanA, option.variant, preview.rows)
+    print('preview', `seal +6 h on '${option.label}': ${movedJobs.length} jobs move (${movedJobs.join(', ')}); outside the seal's forced set: ${outside.length === 0 ? 'none' : outside.join(', ')}; checker: ${check.violations.length === 0 ? 'no violations' : check.violations.map(violation => `${violation.code} ${violation.about.join('/')}`).join('; ')}`)
   }
 } finally {
   await pool.shutdown()
