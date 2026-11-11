@@ -103,7 +103,7 @@ describe('panels', () => {
   test('options: proven infeasible with its cause, a warning beside a feasible status, a stale option claims nothing', () => {
     const run = runBasis(model.inputs.settings.grid)
     const v1 = optionOf('v1', 'Rebuild, days only', status({ word: 'proven infeasible', run, cause: { kind: 'chain', jobs: ['SWA-PUMP-OUT', 'SWA-REBUILD', 'SWA-RTS'], workHours: 38, calendars: ['day'], availableHours: 32, from: '2026-11-16T06:00:00Z', by: '2026-11-20T14:00:00Z' } }))
-    const feasible = { ...model.options!.items[0]!, warnings: [{ text: '2 items are taken out and no rule keeps any of them in service.', about: [] }] }
+    const feasible = { ...model.options!.items[0]!, warnings: [{ kind: 'redundancy' as const, text: '2 items are taken out and no rule keeps any of them in service.', about: [] }] }
     const stale = optionOf('old', 'Earlier option', model.options!.items[0]!.status, { fresh: false })
     const text = readableText(renderHtml(OptionsTable, { options: [feasible, v1, stale], recommended: feasible.key, context, selected: feasible.key, onSelect: none, onBaseline: none }))
     expect(text).toContain('✕ proven infeasible')

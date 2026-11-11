@@ -37,7 +37,7 @@ describe('Needs your attention', () => {
         { kind: 'not-ready', text: 'The spare depends on the vendor\'s promise, Mon 12:00.', about: ['SWA-SPARE-PREP'] },
         { kind: 'refusal', text: 'A refusal', about: [] },
       ],
-      options: { ...planned.options!, items: planned.options!.items.map(option => ({ ...option, warnings: [{ text: warning, about: [] }] })) },
+      options: { ...planned.options!, items: planned.options!.items.map(option => ({ ...option, warnings: [{ kind: 'redundancy' as const, text: warning, about: [] }] })) },
     }
     const cards = attentionCards(model, contextOf(model))
     const titles = cards.map(card => card.title)

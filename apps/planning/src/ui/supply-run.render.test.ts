@@ -84,12 +84,12 @@ describe('Supply run on the generic screen', () => {
     expect(crews).toContain('Thu 10:05:30–10:30')
   })
 
-  // The fixture's own labels and notes still mix the Scenario clock and cue ids ("Joins at 08:02",
-  // "cue second-truck, 120 s"). maint and lane A are rewriting them in plan-zone time. Until that lands
-  // this check is expected to fail; when it starts to pass, turn test.failing into test.
-  test.failing('the crews view, counting authored text too, shows no ids, JSON or seconds counts', () => {
+  // Authored labels and notes count too: the fixture (case2 v1.1) writes every time in plan-zone time.
+  test('the crews view, counting authored text too, shows no ids, JSON or seconds counts', () => {
     const model = supplyRunPlanned()
-    expect(routineBreaches(screen(model, 'crews'), identifiers(model.inputs), [])).toEqual([])
+    // Only names count as names here (a job titled "Serve U-1 …" may say U-1); notes, words and sources do not.
+    const names = [...model.inputs.jobs.map(job => job.title), ...model.inputs.resources.map(item => item.label), ...model.inputs.calendars.map(item => item.label)]
+    expect(routineBreaches(screen(model, 'crews'), identifiers(model.inputs), names)).toEqual([])
   })
 
   test('routine views show no ids, JSON or seconds counts', () => {

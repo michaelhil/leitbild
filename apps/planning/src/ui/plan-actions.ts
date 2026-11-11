@@ -7,7 +7,7 @@ import { isRequestError, refusalText, RUN, type GenerateInput, type PlanningClie
 import { finishChain, whyStart, type FinishStep, type WhyStart } from './explain-text.ts'
 import type { DatedRow, PlanModel, RunChoice } from './model.ts'
 import type { Preview } from './preview.ts'
-import { loadPlan, loadRows } from './sections.ts'
+import { loadPlan, loadRows } from './read-plan.ts'
 import type { Context } from './status-text.ts'
 
 export interface Shown {

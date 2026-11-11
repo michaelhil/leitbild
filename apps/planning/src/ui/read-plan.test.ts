@@ -4,7 +4,7 @@ import { describe, expect, test } from 'bun:test'
 import { createPlanningClient } from './api.ts'
 import { supplyRunPlanned, trainAPlanned } from './fixtures/plans.ts'
 import type { PlanModel } from './model.ts'
-import { loadPlan } from './sections.ts'
+import { loadPlan } from './read-plan.ts'
 
 const workspace = '0b4b9a52-2f7e-4c1a-9d3e-00000000000a'
 

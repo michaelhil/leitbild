@@ -4,7 +4,7 @@
   import { PLAN, refusalText, type PlanningClient } from './api.ts'
   import { goalsEdit, localInputValue, planEdits, type PlanForm } from './edit-forms.ts'
   import NewPlanForm from './NewPlanForm.svelte'
-  import { summaryDataSchema } from './sections.ts'
+  import { summaryDataSchema } from '../api/contract.ts'
 
   // The plans in this Workspace, "New plan", and the two demonstrations. Each is started through its
   // Definition's own Capability, planning.plan.create.

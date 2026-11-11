@@ -1,41 +1,14 @@
-// planning.plan.read sections as the screen reads them. Each section is one Inspection Section whose `id`
-// is the section name and whose `data` is validated here with the stored plan's own schemas. Every
-// section but `summary` pages at 4 KB: `{items, more?}`, and `more` is the next read's cursor.
-import { z } from 'zod'
+// Reads a plan through planning.plan.read: each section is one Inspection Section whose `id` is the section
+// name and whose `data` has the shared shape in api/contract.ts. Every page is followed; the parts are
+// assembled and validated once more as one stored plan's inputs.
+import type { z } from 'zod'
 import type { InspectionView } from '@leitbild/contracts'
-import { writeResultSchema } from '../api/contract.ts'
-import {
-  calendarSchema, certifiedSizeSchema, changeSchema, datedRowSchema, equipmentSchema, groupSchema, instantSchema, jobSchema, keySchema,
-  labelSchema, linkSchema, methodChoiceSchema, optionSchema, planInputsSchema, purchaseSchema, resourceSchema, ruleSchema, worldFactCopySchema,
-  type PlanInputs,
-} from '../plan/schema.ts'
+import { sectionDataSchemas, summaryDataSchema, type PagedSectionName } from '../api/contract.ts'
+import { planInputsSchema, type PlanInputs } from '../plan/schema.ts'
 import type { PlanningClient } from './api.ts'
 import type { DatedRow, OptionView, PlanModel } from './model.ts'
 
-const paged = <T extends z.ZodType>(item: T) => z.object({ items: z.array(item), more: z.string().min(1).max(256).optional() }).strict()
-
-export const summaryDataSchema = z.object({
-  plan: z.object({ id: z.uuid(), title: labelSchema, revision: z.number().int().positive(), updatedAt: instantSchema }).strict(),
-  settings: planInputsSchema.shape.settings,
-  goals: planInputsSchema.shape.goals,
-  refreshedAt: instantSchema.nullable(),
-  attention: writeResultSchema.shape.attention,
-  certifiedSize: certifiedSizeSchema.nullable(),
-}).strict()
-
-export const sectionSchemas = {
-  jobs: paged(z.union([z.object({ job: jobSchema }).strict(), z.object({ link: linkSchema }).strict(), z.object({ method: methodChoiceSchema }).strict()])),
-  rules: paged(z.object({ rule: ruleSchema }).strict()),
-  crews: paged(z.union([z.object({ calendar: calendarSchema }).strict(), z.object({ resource: resourceSchema }).strict(), z.object({ purchase: purchaseSchema }).strict()])),
-  sources: paged(z.union([z.object({ equipment: equipmentSchema }).strict(), z.object({ group: groupSchema }).strict(), z.object({ fact: worldFactCopySchema }).strict()])),
-  options: paged(optionSchema.omit({ rows: true }).extend({
-    fresh: z.boolean(),
-    warnings: z.array(z.object({ text: z.string().max(240), about: z.array(keySchema).max(4) }).strict()).max(4),
-  }).strict()).extend({ at: instantSchema.nullable(), recommended: keySchema.nullable() }).strict(),
-  schedule: paged(datedRowSchema).extend({ option: keySchema }).strict(),
-  history: paged(changeSchema),
-} as const
-export type PagedSection = keyof typeof sectionSchemas
+type Page<S extends PagedSectionName> = z.infer<typeof sectionDataSchemas[S]>
 
 const sectionData = (view: InspectionView, id: string): unknown => {
   const section = view.sections.find(item => item.id === id)
@@ -44,12 +17,12 @@ const sectionData = (view: InspectionView, id: string): unknown => {
 }
 
 /** Reads one section, following `more` until the last page. */
-export const readAll = async <S extends PagedSection>(client: PlanningClient, plan: string, section: S, option?: string): Promise<ReadonlyArray<z.infer<typeof sectionSchemas[S]>>> => {
-  const pages: Array<z.infer<typeof sectionSchemas[S]>> = []
+export const readAll = async <S extends PagedSectionName>(client: PlanningClient, plan: string, section: S, option?: string): Promise<ReadonlyArray<Page<S>>> => {
+  const pages: Array<Page<S>> = []
   let cursor: string | undefined
   do {
     const view = await client.read(plan, { section, ...(option === undefined ? {} : { option }), ...(cursor === undefined ? {} : { cursor }) })
-    const page = sectionSchemas[section].parse(sectionData(view, section)) as z.infer<typeof sectionSchemas[S]>
+    const page = sectionDataSchemas[section].parse(sectionData(view, section)) as Page<S>
     pages.push(page)
     cursor = page.more
   } while (cursor !== undefined && pages.length < 200)
@@ -61,12 +34,12 @@ export const readAll = async <S extends PagedSection>(client: PlanningClient, pl
 export const assemblePlan = (
   summary: z.infer<typeof summaryDataSchema>,
   parts: {
-    readonly jobs: ReadonlyArray<z.infer<typeof sectionSchemas.jobs>>
-    readonly rules: ReadonlyArray<z.infer<typeof sectionSchemas.rules>>
-    readonly crews: ReadonlyArray<z.infer<typeof sectionSchemas.crews>>
-    readonly sources: ReadonlyArray<z.infer<typeof sectionSchemas.sources>>
-    readonly options: ReadonlyArray<z.infer<typeof sectionSchemas.options>>
-    readonly history?: ReadonlyArray<z.infer<typeof sectionSchemas.history>>
+    readonly jobs: ReadonlyArray<Page<'jobs'>>
+    readonly rules: ReadonlyArray<Page<'rules'>>
+    readonly crews: ReadonlyArray<Page<'crews'>>
+    readonly sources: ReadonlyArray<Page<'sources'>>
+    readonly options: ReadonlyArray<Page<'options'>>
+    readonly history?: ReadonlyArray<Page<'history'>>
   },
 ): PlanModel => {
   const items = <T>(pages: ReadonlyArray<{ readonly items: readonly T[] }>): readonly T[] => pages.flatMap(page => page.items)

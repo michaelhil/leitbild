@@ -1,7 +1,7 @@
-// What the screen holds about one plan, assembled from planning.plan.read sections (sections.ts).
+// What the screen holds about one plan, assembled from planning.plan.read sections (read-plan.ts).
 // Presenters read only this; they never fetch.
 import type { z } from 'zod'
-import type { writeResultSchema } from '../api/contract.ts'
+import type { OptionWarning, writeResultSchema } from '../api/contract.ts'
 import type { CertifiedSize, Plan, PlanInputs, Status, optionSchema } from '../plan/schema.ts'
 
 export type { Status }
@@ -26,7 +26,7 @@ export interface OptionView {
   readonly metrics: StoredOption['metrics']
   readonly inputsRevision: number
   readonly fresh: boolean
-  readonly warnings: ReadonlyArray<{ readonly text: string; readonly about: readonly string[] }>
+  readonly warnings: readonly OptionWarning[]
 }
 
 /** The plan screen's views. */
