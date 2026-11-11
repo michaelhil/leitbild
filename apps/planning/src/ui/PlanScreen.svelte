@@ -11,9 +11,9 @@
   import Glance from './Glance.svelte'
   import { glance } from './orientation.ts'
   import { outcomeBanner } from './outcome.ts'
-  import type { FinishStep, WhyStart } from './explain-text.ts'
+  import type { FinishStep, NameKind, Part, WhyStart } from './explain-text.ts'
   import { createTimeFormat } from './format.ts'
-  import { certifiedSizeWords, measuredSizeWords } from '../plan/summary.ts'
+  import { certifiedSizeWords, jobsPerSolve, measuredSizeWords, withinCertifiedSize } from '../plan/summary.ts'
   import JobForm from './JobForm.svelte'
   import JobPanel from './JobPanel.svelte'
   import { createNames, type PlanModel, type PlanView, type RunChoice } from './model.ts'
@@ -58,6 +58,7 @@
   let error = $state<string | null>(null)
   let notice = $state<string | null>(null)
   let finish = $state<readonly FinishStep[] | null>(null)
+  let limiting = $state<{ readonly parts: readonly Part[] } | null>(null)
   let why = $state<WhyStart | null>(null)
   let preview = $state<Preview | null>(null)
   let pending = $state<readonly Edit[]>([])
@@ -68,6 +69,20 @@
     // After the panel has rendered and laid out, so its heading has its final place on the page.
     void tick().then(() => requestAnimationFrame(() => {
       if (panel !== undefined) revealPanel(panel, window.matchMedia('(prefers-reduced-motion: reduce)').matches)
+    }))
+  }
+  /**
+   * Selects what an explanation names: a job opens in the panel; a crew, calendar, purchase, rule or item
+   * opens its view and is brought into view there, focused.
+   */
+  const pick = (kind: NameKind, key: string): void => {
+    if (kind === 'job') { view = 'schedule'; selectJob(key); return }
+    view = kind === 'rule' ? 'rules' : kind === 'equipment' ? 'equipment' : 'crews'
+    void tick().then(() => requestAnimationFrame(() => {
+      const target = document.getElementById(`item-${kind}-${key}`)
+      if (target === null) return
+      target.focus({ preventScroll: true })
+      target.scrollIntoView({ block: 'center', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
     }))
   }
   const selectJob = (job: string): void => {
@@ -84,7 +99,11 @@
   const shifts = $derived(model !== null && context !== null ? shiftList(model.inputs, rows, context.format) : [])
   const shown = $derived(model?.options?.items.find(option => option.key === selectedOption) ?? null)
   const linkedRun = $derived(model?.inputs.settings.run ? runs.find(run => run.id === model?.inputs.settings.run?.id)?.title ?? null : null)
-  const certified = $derived(model?.certifiedSize ? { text: certifiedSizeWords(model.certifiedSize), measured: measuredSizeWords(model.certifiedSize), evidence: model.certifiedSize.evidence } : null)
+  const certified = $derived(model?.certifiedSize ? {
+    text: certifiedSizeWords(model.certifiedSize), measured: measuredSizeWords(model.certifiedSize), evidence: model.certifiedSize.evidence,
+    // Plainly whether this plan is inside the measured size (maint's walk 3, R2-9-01).
+    plan: `This plan: ${jobsPerSolve(model.inputs)} jobs in one solve, ${withinCertifiedSize(model.inputs, model.certifiedSize) ? 'within' : 'above'} the ${model.certifiedSize.decided ? 'certified' : 'measured'} size.`,
+  } : null)
 
   const views: ReadonlyArray<{ key: PlanView; word: string }> = [
     { key: 'schedule', word: 'Schedule' }, { key: 'add', word: 'Add jobs and links' }, { key: 'equipment', word: 'Equipment and World' },
@@ -161,7 +180,7 @@
   })
   const explainFinish = (): void => {
     const shownContext = context
-    if (shownContext !== null) void attempt(async () => { finish = await actions.finish(shownContext, selectedOption) })
+    if (shownContext !== null) void attempt(async () => { const answer = await actions.finish(shownContext, selectedOption); finish = answer.steps; limiting = answer.limiting })
   }
   const explainStart = (job: string): void => {
     const shownContext = context
@@ -208,7 +227,7 @@
     <div class="screen-grid">
       <div class="col-attention">
         <p class="phone-only jump"><a href="#plan-views">Jump to the plan views and forms</a></p>
-        <AttentionColumn {cards} {finish} busy={busy || generating !== null} {onAction} />
+        <AttentionColumn {cards} {finish} {limiting} busy={busy || generating !== null} {onAction} onPick={pick} />
         <Glance sections={glance(context)} />
         <div class="phone-only"><ShiftList {shifts} /></div>
       </div>
@@ -241,7 +260,7 @@
         {#if preview}
           <EditPreview {preview} {pending} {context} {busy} onApply={apply} onDiscard={() => { preview = null }} onUseTime={useTime} onAddEdits={extra => previewEdits([...pending, ...extra], preview?.label ?? 'the change')} />
         {:else if selectedJob}
-          <JobPanel jobKey={selectedJob} {context} row={rows.find(row => row.job === selectedJob)} scheduled={rows.length === 0 ? null : new Set(rows.map(row => row.job))} {why} {busy} onWhy={explainStart} onPreview={previewEdits} onClose={() => { selectedJob = null; why = null }} />
+          <JobPanel jobKey={selectedJob} {context} row={rows.find(row => row.job === selectedJob)} scheduled={rows.length === 0 ? null : new Set(rows.map(row => row.job))} {why} {busy} onWhy={explainStart} onPick={pick} onPreview={previewEdits} onClose={() => { selectedJob = null; why = null }} />
         {/if}
       </div>
     </div>

@@ -32,6 +32,12 @@ export const outcomeOf = (option: OptionView, model: PlanModel, context: Context
   return { key: option.key, label: option.label, mark: view.mark, word: view.word, cause, recommended }
 }
 
+/** Why a search stopped before it finished, in words, or null when it ran to the end or used its budget. */
+export const stoppedEarly = (option: OptionView): string | null => {
+  if (!('run' in option.status)) return null
+  return ({ memory: 'at the memory limit', cpu: 'when its computing time ran out', cancelled: 'because it was cancelled' } as Record<string, string>)[option.status.run.stoppedBy] ?? null
+}
+
 /** The current options' outcomes; options made before the latest change claim nothing and are left out. */
 export const outcomes = (model: PlanModel, context: Context): readonly Outcome[] =>
   (model.options?.items ?? []).filter(option => option.fresh).map(option => outcomeOf(option, model, context))
@@ -47,5 +53,8 @@ export const outcomeBanner = (model: PlanModel, context: Context): { readonly ti
       ? `No option can be recommended: ${found.length === 1 ? 'it is' : `all ${found.length} are`} proven infeasible.`
       : 'No option can be recommended: none is validated feasible.'
   const lines = found.filter(outcome => outcome.word !== 'validated feasible').map(outcome => `${outcome.label}: ${outcome.word}. ${outcome.cause}`)
+  // A search that stopped early may have missed a better plan: said where the planner looks first.
+  const early = (model.options?.items ?? []).filter(option => option.fresh).map(stoppedEarly).find(reason => reason !== null)
+  if (early !== undefined) lines.unshift(`The search stopped early, ${early}: ${recommended === undefined ? 'a plan may still exist' : 'this option may not be the best'}. Generate again.`)
   return { title, lines, recommended: recommended !== undefined }
 }

@@ -51,7 +51,8 @@ describe("maint's second walk, screen defects", () => {
       result: { ...writeOf(model), problems: [{ about: ['SWA-TAG-2'], code: 'no-crew', text: "The drafted tag-out 'Tag out Service Water Pump A' needs a crew: add one." }], preview: { saved: false, consequence: 'Adds the work and drafts its tag-out and test.', violations: [], weakens: [] } },
     }
     const html = renderHtml(EditPreview, { preview, context: contextOf(model), onApply: none, onDiscard: none, onUseTime: none, onAddEdits: none })
-    expect(readableText(html)).toContain("The drafted tag-out 'Tag out Service Water Pump A' needs a crew: add one. Who does it Choose a crew or tool…")
+    expect(readableText(html)).toContain('Who does the drafted jobs Tag out Service Water Pump A Who does it Choose a crew or tool…')
+    expect(readableText(html)).toContain("Before Generate can run The drafted tag-out 'Tag out Service Water Pump A' needs a crew: add one.")
     expect(crewEdit('SWA-TAG-2', 'work-control')).toEqual({ ok: true, edits: [{ edit: 'job', key: 'SWA-TAG-2', needs: [{ anyOf: ['work-control'], amount: 1 }] }] })
     expect(crewEdit('SWA-RTS', 'work-control', 'test-team')).toEqual({ ok: true, edits: [{ edit: 'job', key: 'SWA-RTS', needs: [{ anyOf: ['work-control'], amount: 1 }, { anyOf: ['test-team'], amount: 1 }] }] })
     // In the job panel too, for any job; a job with no crew says so.

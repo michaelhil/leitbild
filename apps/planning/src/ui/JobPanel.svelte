@@ -3,7 +3,8 @@
   import type { Edit } from '../plan/edit-schema.ts'
   import type { TimeUnit } from '../time/units.ts'
   import { crewEdit, estimateEdit, localInputValue, lockEdit, unlockEdit, type Built } from './edit-forms.ts'
-  import { floatText, type WhyStart } from './explain-text.ts'
+  import { floatText, type NameKind, type WhyStart } from './explain-text.ts'
+  import Said from './Said.svelte'
   import { durationText, quantityText, sourceMark, sourceText } from './format.ts'
   import MarkTag from './MarkTag.svelte'
   import type { DatedRow } from './model.ts'
@@ -11,7 +12,7 @@
   import type { Context } from './status-text.ts'
   import { jobMark } from './timeline-layout.ts'
 
-  let { jobKey, context, row = undefined, scheduled = null, why = null, busy = false, onWhy, onPreview, onClose }: {
+  let { jobKey, context, row = undefined, scheduled = null, why = null, busy = false, onWhy, onPreview, onClose, onPick }: {
     jobKey: string
     context: Context
     row?: DatedRow | undefined
@@ -22,6 +23,8 @@
     onWhy: (job: string) => void
     onPreview: (edits: readonly Edit[], label: string) => void
     onClose: () => void
+    /** Selects a job, crew or rule named in "why it starts then". */
+    onPick?: (kind: NameKind, key: string) => void
   } = $props()
 
   const job = $derived(context.inputs.jobs.find(item => item.key === jobKey))
@@ -96,7 +99,7 @@
       <button type="button" disabled={busy} onclick={() => onWhy(job.key)}>Why does it start then?</button>
       {#if why}
         <div class="why">
-          <p>{why.sentence}</p>
+          <p><Said parts={why.parts} {onPick} /></p>
           {#if why.joint}<p class="hint">These are joint causes: easing only one of them does not move the job.</p>{/if}
         </div>
       {/if}

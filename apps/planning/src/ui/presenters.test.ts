@@ -145,7 +145,7 @@ describe('shift list, estimates, rules and explanations', () => {
     expect(why.sentence).toBe('It starts then because all of these hold at once (easing only one does not move it): 60 t mobile crane with operator and rigger is in use until Tue 07:00; it follows Remove SW A from service and hang tags.')
     expect(floatText({ workingHours: 6, limitedBy: { kind: 'span-limit', rule: 'R2' } }, context)).toBe('Float 6 h, limited by: “Once the first cooling-chain item is tagged out, all must be back and tested within 72 h.” (crew availability is not counted)')
     const chain = finishChain({ lines: [], items: [{ job: 'SWA-RTS', start: rows[2]!.start, finish: rows[2]!.finish, floatHours: 0, joint: false, because: [{ kind: 'link', about: [{ kind: 'job', key: 'SWA-PUMP-OUT' }] }] }] }, context)
-    expect(chain).toEqual([{ job: 'Restore SW A, fill and vent, pump test', when: 'Tue 12:00–15:30', because: 'it follows Pull SW A pump assembly', due: null }])
+    expect(chain).toMatchObject([{ job: 'Restore SW A, fill and vent, pump test', jobKey: 'SWA-RTS', when: 'Tue 12:00–15:30', because: 'it follows Pull SW A pump assembly', due: null }])
   })
 })
 

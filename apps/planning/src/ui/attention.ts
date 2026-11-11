@@ -5,7 +5,7 @@ import { simulationNow } from './edit-forms.ts'
 import { sizeRefusalWords, withinCertifiedSize } from '../plan/summary.ts'
 import { sourceMark, type Mark } from './format.ts'
 import type { AttentionKind, PlanModel } from './model.ts'
-import { outcomes } from './outcome.ts'
+import { outcomes, stoppedEarly } from './outcome.ts'
 import { statusView, type Context } from './status-text.ts'
 
 export type CardAction = 'open-workspace' | 'link-run' | 'refresh' | 'add-work' | 'generate' | 'why-finish' | 'align-window'
@@ -105,8 +105,14 @@ export const attentionCards = (model: PlanModel, context: Context, wallNowMs: nu
   for (const outcome of outcomes(model, context).filter(item => item.word !== 'validated feasible')) {
     cards.push({ mark: outcome.mark, title: `${outcome.label}: ${outcome.word}.`, text: outcome.cause, steps: [], actions: [] })
   }
+  const early = (model.options?.items ?? []).filter(option => option.fresh).map(stoppedEarly).find(reason => reason !== null)
+  if (early !== undefined) {
+    cards.push({ mark: { shape: '!', word: 'Stopped early' }, title: `The search stopped early, ${early}.`, text: 'The options shown may not be the best possible. Generate again.', steps: [], actions: ['generate'] })
+  }
   const recommended = model.options?.items.find(option => option.key === model.options?.recommended)
-  if (recommended !== undefined) {
+  // One card for one stale state: when the Module already says the options are out of date, say nothing more.
+  const moduleSaysStale = model.attention.some(item => item.kind === 'stale')
+  if (recommended !== undefined && !(moduleSaysStale && !recommended.fresh)) {
     const view = statusView(recommended.status, context)
     const first = view.goals[0]
     const warnings = recommended.warnings.map(warning => warning.text)

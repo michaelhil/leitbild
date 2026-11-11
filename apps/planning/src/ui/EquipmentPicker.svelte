@@ -2,7 +2,7 @@
   import Choice from './Choice.svelte'
   import type { PlanningSubject } from '@leitbild/contracts'
   import type { Edit } from '../plan/edit-schema.ts'
-  import { equipmentFromWorld, resourceFromWorld } from './edit-forms.ts'
+  import { equipmentFromWorld, resourceFromWorld, wholeWindowCalendars } from './edit-forms.ts'
   import { factText, routineFact } from './format.ts'
   import MarkTag from './MarkTag.svelte'
   import type { RunChoice } from './model.ts'
@@ -55,6 +55,7 @@
       onPreview(built.edits, as === 'equipment' ? `Add ${subject.label} as equipment` : `Add ${subject.label} as a ${kind === 'crew' ? 'crew' : 'tool'}`)
     } catch (error) { problems = [error instanceof Error ? error.message : 'World did not answer.'] }
   }
+  const wholeWindow = $derived(wholeWindowCalendars(context.inputs)[0]?.key ?? '')
   const matching = $derived(runs.filter(run => run.matches))
   const others = $derived(runs.filter(run => !run.matches))
 </script>
@@ -84,7 +85,7 @@
     {/if}
   {:else}
     <p><MarkTag mark={{ shape: '◉', word: 'Linked' }} tone="world" /> {linkedRun ?? 'A simulation in this Workspace'}.
-      {latestRead === null ? 'Its values are not read yet.' : `Values describe simulation time ${context.format.when(latestRead)}.`}</p>
+      {latestRead !== null ? `Values describe simulation time ${context.format.when(latestRead)}.` : context.inputs.world.refreshedAt === null ? 'Its values are not read yet.' : 'Values read; this plan names no World items yet.'}</p>
     <button type="button" disabled={busy} onclick={onRefresh}>Read the World values again</button>
   {/if}
 
@@ -92,7 +93,7 @@
   {#if context.inputs.equipment.length === 0}<p class="hint">None yet.</p>{/if}
   <ul class="item-list">
     {#each context.inputs.equipment as item (item.key)}
-      <li>
+      <li id="item-equipment-{item.key}" tabindex="-1">
         <strong>{item.label}</strong>
         {#if item.group}<small>{context.names.group(item.group)}</small>{/if}
         {#if item.supportedBy.length > 0}<small>Unavailable while {context.names.list(item.supportedBy, context.names.equipment)} is out</small>{/if}
@@ -119,7 +120,8 @@
       </div>
       <div class="field-pair">
         <Choice label="New crew or tool is a" bind:value={kind} options={[{ value: 'tool', label: 'tool or vehicle' }, { value: 'crew', label: 'crew' }]} />
-        <Choice label="Available on" bind:value={calendar} options={[{ value: '', label: 'the whole window' }, ...context.inputs.calendars.map(item => ({ value: item.key, label: item.label }))]} />
+        <!-- One "whole window" choice: an existing whole-window calendar stands for it (maint's walk 3, N-B-02). -->
+        <Choice label="Available on" bind:value={() => calendar === '' ? wholeWindow : calendar, next => { calendar = next }} options={[...wholeWindow === '' ? [{ value: '', label: 'the whole window' }] : [], ...context.inputs.calendars.map(item => ({ value: item.key, label: item.label }))]} />
       </div>
       <ul class="item-list">
         {#each results as subject (subject.locator)}

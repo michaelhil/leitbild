@@ -30,7 +30,7 @@ const token = (name: string): string => {
 // [text, background], as the screen pairs them.
 const pairs: ReadonlyArray<readonly [string, string]> = [
   ...['ink', 'ink-2', 'ink-3', 'accent', 'focus', 'refusal'].flatMap(text => [[text, 'card'], [text, 'paper']] as const),
-  ['ink-2', 'accent-2'], ['ink-3', 'accent-2'], ['on-accent', 'accent'],
+  ['ink-2', 'accent-2'], ['ink-3', 'accent-2'], ['on-accent', 'accent'], ['on-accent', 'accent-strong'],
   ['rule', 'rule-bg'], ['estimate', 'estimate-bg'], ['unknown', 'unknown-bg'], ['assumption', 'assumption-bg'],
   ['world', 'world-bg'], ['good', 'good-bg'], ['warning', 'warning-bg'], ['refusal', 'refusal-bg'], ['ink-3', 'estimate-bg'], ['ink-2', 'rule-bg'],
   ['load-text', 'load-fill'], ['load-bought-text', 'load-bought-fill'],

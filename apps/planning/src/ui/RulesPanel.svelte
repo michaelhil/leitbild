@@ -31,7 +31,7 @@
   {#if rules.length === 0}<p class="hint">No rules yet.</p>{/if}
   <ul class="rule-list">
     {#each rules as rule (rule.key)}
-      <li>
+      <li id="item-rule-{rule.key}" tabindex="-1">
         <p><MarkTag mark={rule.mark} tone="rule" /> <strong>{rule.kind}.</strong> {rule.words}</p>
         <p class="hint">{rule.covers}</p>
         <p class="hint"><MarkTag mark={rule.source.mark} tone={sourceTone(rule.source.mark.shape)} />{rule.source.note ? ` ${rule.source.note}` : ''}</p>

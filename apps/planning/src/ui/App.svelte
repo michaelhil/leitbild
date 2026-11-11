@@ -35,7 +35,7 @@
     * { box-sizing: border-box; }
     :root {
       --ink: #1f3530; --ink-2: #4d6359; --ink-3: #56665d; --paper: #f6f7f3; --card: #ffffff; --line: #d9e2d8; --line-2: #edf1eb;
-      --accent: #285e4d; --accent-2: #edf4ed; --focus: #9a4f1f; --on-accent: #ffffff;
+      --accent: #285e4d; --accent-strong: #1d4a3c; --accent-2: #edf4ed; --focus: #9a4f1f; --on-accent: #ffffff;
       --load-fill: #3f7258; --load-line: #2f5a45; --load-text: #ffffff; --load-bought-fill: #c9a46a; --load-bought-line: #a5844d; --load-bought-text: #1f3530;
       --rule: #5a2f2f; --rule-bg: #f6eaea; --estimate: #3d5a80; --estimate-bg: #e9eff7; --unknown: #6d5a1e; --unknown-bg: #fbf3d9;
       --assumption: #7a4a12; --assumption-bg: #fdf0e1; --world: #1f5a6b; --world-bg: #e5f2f5; --good: #255d3b; --good-bg: #e6f3ea; --warning: #7a4a12; --warning-bg: #fff3e0;
@@ -52,6 +52,8 @@
     button:hover:not(:disabled) { background: var(--accent-2); }
     button:disabled { opacity: .55; cursor: default; }
     button.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+    /* A primary button keeps its strong look under the pointer, so it never reads as disabled after a click. */
+    button.primary:hover:not(:disabled) { background: var(--accent-strong); border-color: var(--accent-strong); }
     button.quiet { min-height: 28px; padding: 2px 8px; font-size: 12px; }
     button.link { border: 0; background: none; padding: 0; min-height: 0; color: var(--accent); text-decoration: underline; text-underline-offset: 3px; text-align: left; }
     input, select, textarea { width: 100%; min-width: 0; padding: 7px 9px; border: 1px solid #c4d1c7; border-radius: 5px; background: #fff; }

@@ -39,6 +39,23 @@
     ...context.inputs.resources.map(item => ({ value: item.key, label: item.label })),
     ...pending.flatMap(edit => edit.edit === 'resource' && edit.label !== undefined && !context.inputs.resources.some(item => item.key === edit.key) ? [{ value: edit.key, label: edit.label }] : []),
   ])
+  /**
+   * Drafted jobs that need a crew, and those already given one in this preview: a chosen crew stays shown
+   * with its job, so the choice can be checked before Apply (maint's walk 3, R2-2-03).
+   */
+  const drafted = $derived([...new Set([
+    ...problems.filter(problem => problem.code === 'no-crew' && problem.about[0] !== undefined).map(problem => problem.about[0]!),
+    ...Object.keys(crewFor),
+  ])])
+  /** A draft's name: from the plan or this edit list, else the Module's drafting convention on its equipment. */
+  const draftName = (key: string): string => {
+    const known = names.any(key)
+    if (context.names.kindOf(key) !== null || namesInEdits(pending).has(key)) return known
+    const match = /^(.*)-(TAG|RTS)(?:-\d+)?$/.exec(key)
+    const item = match === null ? undefined : context.inputs.equipment.find(entry => entry.key === match[1]) ?? pending.flatMap(edit => edit.edit === 'equipment' && edit.key === match[1] && edit.label !== undefined ? [{ label: edit.label }] : [])[0]
+    if (match !== null && item !== undefined) return match[2] === 'TAG' ? `Tag out ${item.label}` : `Return ${item.label} to service and test`
+    return 'A drafted job'
+  }
   const chooseCrew = (job: string, crew: string) => {
     crewFor[job] = crew
     const built = crewEdit(job, crew)
@@ -60,18 +77,18 @@
       <p class="hint">After saving, generate new options.</p>
     {/if}
   {/if}
+  {#if drafted.length > 0 && !refused && onAddEdits !== undefined}
+    <h3>Who does the drafted jobs</h3>
+    <ul class="before-generate">
+      {#each drafted as job (job)}
+        <li>{draftName(job)}<Choice label="Who does it" bind:value={() => crewFor[job] ?? '', next => chooseCrew(job, next)} options={[{ value: '', label: 'Choose a crew or tool…' }, ...crews]} disabled={busy} /></li>
+      {/each}
+    </ul>
+  {/if}
   {#if problems.length > 0 && !refused}
     <h3>Before Generate can run</h3>
     <ul class="before-generate">
-      {#each problems as problem, index (index)}
-        <li>
-          {problem.text}
-          {#if problem.code === 'no-crew' && problem.about[0] !== undefined && onAddEdits !== undefined}
-            {@const job = problem.about[0]}
-            <Choice label="Who does it" bind:value={() => crewFor[job] ?? '', next => chooseCrew(job, next)} options={[{ value: '', label: 'Choose a crew or tool…' }, ...crews]} disabled={busy} />
-          {/if}
-        </li>
-      {/each}
+      {#each problems as problem, index (index)}<li>{problem.text}</li>{/each}
     </ul>
   {/if}
   {#if nearest}

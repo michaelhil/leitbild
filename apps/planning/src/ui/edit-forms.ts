@@ -3,7 +3,7 @@
 import type { PlanningSubject } from '@leitbild/contracts'
 import { editSchema, type Edit } from '../plan/edit-schema.ts'
 import type { PlanInputs, Source } from '../plan/schema.ts'
-import { isTimeUnit, type TimeUnit } from '../time/units.ts'
+import { isKnownUnit, isTimeUnit, type TimeUnit } from '../time/units.ts'
 import { isTimeZone, localParts, localToInstant, type Weekday } from '../time/zone.ts'
 
 export type Built = { readonly ok: true; readonly edits: readonly Edit[] } | { readonly ok: false; readonly problems: readonly string[] }
@@ -116,7 +116,9 @@ export const equipmentFromWorld = (subject: PlanningSubject, form: EquipmentForm
 export const worldAttributes = (subject: PlanningSubject) => {
   const taken: string[] = []
   return subject.facts.flatMap(fact => {
-    if (typeof fact.value !== 'number' || fact.unit === undefined || isTimeUnit(fact.unit)) return []
+    // Only values the planner can use as a property: a number in a unit it converts that is not a time
+    // (today kg, e.g. payload). A plain count such as queued job steps is World's bookkeeping, not taken.
+    if (typeof fact.value !== 'number' || fact.unit === undefined || isTimeUnit(fact.unit) || !isKnownUnit(fact.unit)) return []
     const key = keyFor(fact.label, taken)
     taken.push(key)
     return [{ key, label: fact.label, unit: fact.unit, fromWorld: { locator: subject.locator, fact: fact.id } }]
@@ -131,7 +133,8 @@ export const resourceFromWorld = (subject: PlanningSubject, form: ToolForm, inpu
   const keys = allKeys(inputs)
   const key = keyFor(subject.label, keys)
   const attributes = worldAttributes(subject)
-  if (form.calendar !== '') return done({ edit: 'resource', key, label: subject.label, kind: form.kind, count: 1, calendar: form.calendar, attributes, locator: subject.locator, source: { by: 'planner' } })
+  const calendarKey = form.calendar !== '' ? form.calendar : wholeWindowCalendars(inputs)[0]?.key ?? ''
+  if (calendarKey !== '') return done({ edit: 'resource', key, label: subject.label, kind: form.kind, count: 1, calendar: calendarKey, attributes, locator: subject.locator, source: { by: 'planner' } })
   const window = inputs.settings.window
   if (window === null) return refuse('Set the plan window first, or choose a shift for it.')
   const calendar = keyFor('whole-window', [...keys, key])
@@ -339,9 +342,18 @@ export const crewEdit = (job: string, crew: string, also = ''): Built =>
 export const simulationNow = (inputs: PlanInputs): string | null =>
   inputs.world.facts.reduce<string | null>((last, fact) => last === null || Date.parse(fact.at) > Date.parse(last) ? fact.at : last, null)
 
+/** Calendars that are exactly the plan window ("Available for the whole window"); they move with it. */
+export const wholeWindowCalendars = (inputs: PlanInputs): PlanInputs['calendars'] => {
+  const window = inputs.settings.window
+  if (window === null) return []
+  return inputs.calendars.filter(calendar => calendar.weekly.length === 0 && calendar.except.length === 0 && calendar.periods.length === 1
+    && Date.parse(calendar.periods[0]!.start) === Date.parse(window.start) && Date.parse(calendar.periods[0]!.end) === Date.parse(window.end))
+}
+
 /**
  * Moves the window to the linked simulation's time, keeping its length: it starts at the simulation's
- * hour, and the plan's "now" becomes the simulation time on the plan's time step.
+ * hour, and the plan's "now" becomes the simulation time on the plan's time step. Every calendar that is
+ * exactly the window moves with it, so crews and tools "available for the whole window" stay available.
  */
 export const alignWindowEdit = (inputs: PlanInputs, simulationAt: string): Built => {
   const window = inputs.settings.window
@@ -350,11 +362,11 @@ export const alignWindowEdit = (inputs: PlanInputs, simulationAt: string): Built
   const hour = Math.floor(at / 3_600_000) * 3_600_000
   const length = Date.parse(window.end) - Date.parse(window.start)
   const slot = inputs.settings.grid === '30s' ? 30_000 : 1_800_000
-  return done({
-    edit: 'plan',
-    window: { start: new Date(hour).toISOString(), end: new Date(hour + length).toISOString() },
-    dataDate: new Date(Math.floor(at / slot) * slot).toISOString(),
-  })
+  const moved = { start: new Date(hour).toISOString(), end: new Date(hour + length).toISOString() }
+  return done(
+    { edit: 'plan', window: moved, dataDate: new Date(Math.floor(at / slot) * slot).toISOString() },
+    ...wholeWindowCalendars(inputs).map((calendar): Edit => ({ edit: 'calendar', key: calendar.key, periods: [moved] })),
+  )
 }
 
 export const runLinkEdit = (runId: string | null): Built => done({ edit: 'plan', run: runId })

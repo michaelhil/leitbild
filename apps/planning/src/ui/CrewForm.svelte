@@ -50,7 +50,7 @@
   {#if context.inputs.resources.length === 0}<p class="hint">No crews or tools yet.</p>{/if}
   <ul class="item-list">
     {#each context.inputs.resources as resource (resource.key)}
-      <li>
+      <li id="item-resource-{resource.key}" tabindex="-1">
         <strong>{resource.label}</strong> <MarkTag mark={sourceMark(resource.source)} tone={markTone(sourceMark(resource.source).shape)} />
         <small>{resourceText(resource, context.names)}</small>
         <small>Works {resourceHoursText(resource, context.inputs, context.format)}</small>
@@ -66,7 +66,7 @@
   <h3>Shifts</h3>
   <ul class="item-list">
     {#each context.inputs.calendars as item (item.key)}
-      <li><strong>{item.label}</strong> <MarkTag mark={sourceMark(item.source)} tone={markTone(sourceMark(item.source).shape)} /><small>{calendarText(item, context.format)}</small>{#if item.source.note}<small>{item.source.note}</small>{/if}</li>
+      <li id="item-calendar-{item.key}" tabindex="-1"><strong>{item.label}</strong> <MarkTag mark={sourceMark(item.source)} tone={markTone(sourceMark(item.source).shape)} /><small>{calendarText(item, context.format)}</small>{#if item.source.note}<small>{item.source.note}</small>{/if}</li>
     {/each}
   </ul>
 
@@ -74,7 +74,7 @@
     <h3>What can be bought</h3>
     <ul class="item-list">
       {#each context.inputs.purchases as purchase (purchase.key)}
-        <li>
+        <li id="item-purchase-{purchase.key}" tabindex="-1">
           <strong>{purchase.label}</strong> <small>{price(purchase)}</small>
           {#if orderView(purchase, context.inputs, context.format)}
             {@const order = orderView(purchase, context.inputs, context.format)!}

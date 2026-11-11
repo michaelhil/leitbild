@@ -78,10 +78,14 @@ describe('form to edits', () => {
     const built = resourceFromWorld(truck, { kind: 'tool', calendar: '' }, supply)
     expect(built.ok).toBe(true)
     if (!built.ok) return
-    expect(built.edits.map(edit => edit.edit)).toEqual(['calendar', 'resource'])
-    expect(built.edits[1]).toMatchObject({ edit: 'resource', label: 'Truck 9', kind: 'tool', locator: truck.locator, attributes: [{ label: 'Payload', unit: 'kg', fromWorld: { locator: truck.locator, fact: 'unit:truck-9/property/payloadKg' } }] })
-    expect(JSON.stringify(built.edits[1])).not.toContain('"value"')
+    // The Supply run already has a calendar that is exactly its window: the truck uses it (maint's walk 3, N-B-02).
+    expect(built.edits.map(edit => edit.edit)).toEqual(['resource'])
+    expect(built.edits[0]).toMatchObject({ edit: 'resource', label: 'Truck 9', kind: 'tool', calendar: 'exercise', locator: truck.locator, attributes: [{ label: 'Payload', unit: 'kg', fromWorld: { locator: truck.locator, fact: 'unit:truck-9/property/payloadKg' } }] })
+    expect(JSON.stringify(built.edits[0])).not.toContain('"value"')
     for (const edit of built.edits) expect(editSchema.safeParse(edit).success).toBe(true)
+    // Without one, a whole-window calendar is made with it.
+    const fresh = resourceFromWorld(truck, { kind: 'tool', calendar: '' }, inputs)
+    expect(fresh.ok && fresh.edits.map(edit => edit.edit)).toEqual(['calendar', 'resource'])
 
     const pump: PlanningSubject = { locator: 'process-plant/plant%3Atrain-a/mfwPumpA', label: 'Main Feedwater Pump A', kind: 'pump', facts: [] }
     expect(equipmentFromWorld(pump, { group: '', newGroup: 'Main feedwater' }, inputs)).toMatchObject({ ok: true, edits: [{ edit: 'equipment', label: 'Main Feedwater Pump A', group: 'Main-feedwater', groupLabel: 'Main feedwater' }] })

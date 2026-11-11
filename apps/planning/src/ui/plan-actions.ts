@@ -4,7 +4,7 @@
 import type { PlanningSubject } from '@leitbild/contracts'
 import type { Edit } from '../plan/edit-schema.ts'
 import { isRequestError, refusalAuthority, refusalNearest, refusalText, RUN, type GenerateInput, type PlanningClient } from './api.ts'
-import { finishChain, whyStart, type FinishStep, type WhyStart } from './explain-text.ts'
+import { finishChain, mostLimiting, whyStart, type FinishStep, type Part, type WhyStart } from './explain-text.ts'
 import { createTimeFormat } from './format.ts'
 import { createNames, namesInEdits, type DatedRow, type PlanModel, type RunChoice } from './model.ts'
 import type { Preview } from './preview.ts'
@@ -24,7 +24,7 @@ export interface Shown {
  */
 export const worldReadNotice = (model: PlanModel): string => {
   const facts = model.inputs.world.facts
-  if (facts.length === 0) return 'World values read; World returned none for this plan.'
+  if (facts.length === 0) return 'World values read; this plan names no World items yet.'
   const latest = facts.reduce((last, fact) => Date.parse(fact.at) > Date.parse(last) ? fact.at : last, facts[0]!.at)
   return `World values read: ${facts.length} ${facts.length === 1 ? 'value' : 'values'}, describing simulation time ${createTimeFormat(model.inputs.settings.timeZone).when(latest)}.`
 }
@@ -130,8 +130,11 @@ export const createPlanActions = (client: PlanningClient, planId: string, progre
     },
     rows: async (model: PlanModel, option: string): Promise<PlanModel> =>
       model.rows[option] === undefined ? { ...model, rows: { ...model.rows, [option]: await loadRows(client, planId, option) } } : model,
-    finish: async (context: Context, option: string | null): Promise<readonly FinishStep[]> =>
-      finishChain(await client.explain(planId, { ask: 'finish', ...(option === null ? {} : { option }) }), context),
+    /** What sets the finish: the chain, and the one line on what limits it most. */
+    finish: async (context: Context, option: string | null): Promise<{ readonly steps: readonly FinishStep[]; readonly limiting: { readonly parts: readonly Part[] } | null }> => {
+      const result = await client.explain(planId, { ask: 'finish', ...(option === null ? {} : { option }) })
+      return { steps: finishChain(result, context), limiting: mostLimiting(result, context) }
+    },
     whyStart: async (context: Context, option: string | null, job: string, rows: readonly DatedRow[]): Promise<{ readonly why: WhyStart | null; readonly notice: string | null }> => {
       const result = await client.explain(planId, { ask: 'why-start', job, ...(option === null ? {} : { option }) })
       const item = result.items.find(entry => entry.job === job)

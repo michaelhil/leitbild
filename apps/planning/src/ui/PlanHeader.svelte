@@ -8,7 +8,7 @@
   let { context, title, certified, generating = false, busy = false, onGenerate, onCancel }: {
     context: Context
     title: string
-    certified: { text: string; measured: string | null; evidence: string } | null
+    certified: { text: string; measured: string | null; evidence: string; plan: string } | null
     generating?: boolean
     busy?: boolean
     onGenerate: (input: GenerateInput) => void
@@ -63,6 +63,7 @@
     {#if certified}
       <p class="hint">{certified.text}</p>
       {#if certified.measured}<p class="hint">{certified.measured}</p>{/if}
+      <p class="hint">{certified.plan}</p>
       <details class="hint"><summary>How the size was measured</summary><p>{certified.evidence}</p></details>
     {/if}
   </div>

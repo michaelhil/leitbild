@@ -1,13 +1,17 @@
 <script lang="ts">
   import type { Card, CardAction } from './attention.ts'
-  import type { FinishStep } from './explain-text.ts'
+  import type { FinishStep, NameKind, Part } from './explain-text.ts'
   import MarkTag from './MarkTag.svelte'
+  import Said from './Said.svelte'
 
-  let { cards, finish = null, busy = false, onAction }: {
+  let { cards, finish = null, limiting = null, busy = false, onAction, onPick }: {
     cards: readonly Card[]
     finish?: readonly FinishStep[] | null
+    /** "Most limiting: …", from the same finish chain. */
+    limiting?: { readonly parts: readonly Part[] } | null
     busy?: boolean
     onAction: (action: CardAction) => void
+    onPick?: (kind: NameKind, key: string) => void
   } = $props()
 
   const actionWords: Readonly<Record<CardAction, string>> = {
@@ -52,9 +56,10 @@
       {#if finish.length === 0}
         <p class="hint">Nothing holds the last job back: it finishes as soon as its own work is done.</p>
       {:else}
+        {#if limiting}<p class="limiting"><Said parts={limiting.parts} {onPick} /></p>{/if}
         <ol class="chain">
           {#each finish as step, index (index)}
-            <li><strong>{step.job}</strong> <span class="when">{step.when}</span><span class="because">{step.because}</span>{#if step.due}<span class="because"><MarkTag mark={{ shape: '■', word: 'Rule' }} tone="rule" /> {step.due}</span>{/if}</li>
+            <li><strong><Said parts={[{ name: step.job, kind: 'job', key: step.jobKey }]} {onPick} /></strong> <span class="when">{step.when}</span><span class="because"><Said parts={step.becauseParts} {onPick} /></span>{#if step.due}<span class="because"><MarkTag mark={{ shape: '■', word: 'Rule' }} tone="rule" /> {step.due}</span>{/if}</li>
           {/each}
         </ol>
       {/if}
