@@ -10,6 +10,7 @@ import {
   type Origin, type PlanInputs, type Source, type WorldRef,
 } from './schema.ts'
 import { publishedInputSchema } from '../api/contract.ts'
+import { labelled, weakeningWords } from './summary.ts'
 
 type Inputs = PlanInputs
 type Equipment = Inputs['equipment'][number]
@@ -605,6 +606,36 @@ export const belowMinimum = (inputs: Inputs, by?: 'person' | 'world'): ReadonlyA
   job.kind === 'test' && job.minimum !== undefined
   && effectiveDurations(inputs, job).some(duration => (by === undefined || duration.by === by) && duration.ms < durationMs(job.minimum!.value, job.minimum!.unit))).map(job => job.key)
 
+/** The draft duration of a bracketing job: stated as an assumption for the planner to change. */
+const draftDuration = (label: string): Job['duration'] => ({ value: 1, unit: 'h', calendar: 'working', origin: { by: 'assumption', note: `Drafted with the work on ${label}; set its real duration` } })
+
+/**
+ * Work on equipment is bracketed by its tag-out before and its return-to-service test after (the approved
+ * plan). Inside work an edit creates or changes on equipment with no tag-out or no test gets the missing
+ * draft job(s) in the same edit, as assumptions the planner can change.
+ */
+const draftBrackets = (state: Working, edits: readonly Edit[]): void => {
+  const { next } = state
+  const worked = new Set(edits.flatMap(edit => edit.edit === 'job' ? [edit.key] : []))
+  const free = (base: string): string => {
+    let key = base
+    for (let n = 2; next.jobs.some(job => job.key === key); n += 1) key = `${base.slice(0, 60)}-${n}`
+    return key
+  }
+  for (const work of next.jobs.filter(job => worked.has(job.key) && job.kind === 'work' && job.isolation === 'inside')) {
+    for (const item of work.equipment) {
+      const label = next.equipment.find(entry => entry.key === item)?.label ?? item
+      const draft = (kind: 'tag-out' | 'test', key: string, title: string): void => {
+        if (next.jobs.some(job => job.kind === kind && job.equipment.includes(item))) return
+        next.jobs.push({ key: free(key), title, kind, equipment: [item], isolation: 'none', duration: draftDuration(label), durationWith: [], needs: [], continuous: false, checks: [], tags: [] })
+        state.changes.push({ verb: 'added', what: 'job', key: next.jobs.at(-1)!.key, fields: ['drafted'] })
+      }
+      draft('tag-out', `${item}-TAG`, `Tag out ${label}`)
+      draft('test', `${item}-RTS`, `Return ${label} to service and test`)
+    }
+  }
+}
+
 /**
  * Applies an edit list to a copy of `inputs`. Refusals throw: invalid_request, unknown_reference,
  * protected_equipment. Weakenings are returned; the caller refuses them without authority (or shows them
@@ -627,6 +658,7 @@ export const applyEdits = (inputs: Inputs, edits: readonly Edit[], context: Edit
       case 'remove': return editRemove(state, edit, index)
     }
   })
+  draftBrackets(state, edits)
   const next = state.next
   checkReferences(next)
   const parsed = planInputsSchema.safeParse(next)
@@ -637,7 +669,9 @@ export const applyEdits = (inputs: Inputs, edits: readonly Edit[], context: Edit
   const blocked = protectedJobs(parsed.data)
   if (blocked.length > 0) {
     const first = blocked[0]!
-    throw planningError(409, 'protected_equipment', `${first.job} names ${first.equipment}, which rule ${first.rule} protects; no job may touch it`, { about: [first.job, first.equipment, first.rule] })
+    const words = parsed.data.rules.find(rule => rule.key === first.rule)?.words ?? `${first.equipment} is protected.`
+    // No authority lifts this one: protection must be removed first, which needs authority itself.
+    throw planningError(409, 'protected_equipment', `${labelled(parsed.data, first.job)} would touch ${labelled(parsed.data, first.equipment)}, which is protected: ${words}`, { about: [first.job, first.equipment, first.rule], rule: words })
   }
   const weakens = [...state.weakens]
   for (const key of belowMinimum(parsed.data, 'person')) {
@@ -649,14 +683,24 @@ export const applyEdits = (inputs: Inputs, edits: readonly Edit[], context: Edit
 /** What every authority refusal asks: a named person's agreement, never one the caller makes up. */
 export const authorityAsk = 'Name the person who agreed and their reason, as authority. Ask them; never fill this in yourself.'
 
-/** Refuses weakenings that have no authority: below a minimum first, then any other. */
-export const requireAuthority = (weakens: readonly Weakening[], authority: { readonly name: string; readonly reason: string } | undefined): void => {
+/**
+ * Refuses weakenings that have no authority: below a minimum first, then any other. The refusal carries,
+ * for the screen and the Assistant, the rule in planner words and the authority it needs. `inputs` is the
+ * plan before the edit, whose rules are the ones being loosened.
+ */
+export const requireAuthority = (weakens: readonly Weakening[], authority: { readonly name: string; readonly reason: string } | undefined, inputs: Inputs): void => {
   if (authority !== undefined || weakens.length === 0) return
+  const needed = { needed: true, ask: authorityAsk }
   const below = weakens.find(weakening => weakening.code === 'below_minimum')
-  if (below !== undefined) throw planningError(409, 'below_minimum', `${below.about[0]} would run shorter than its declared minimum. ${authorityAsk}`, { about: below.about, weakens: weakens.map(weakening => weakening.about[0]) })
+  if (below !== undefined) {
+    throw planningError(409, 'below_minimum', `${labelled(inputs, below.about[0] ?? '')} would run shorter than its declared minimum. ${authorityAsk}`, {
+      about: below.about, weakens: weakens.map(weakening => weakening.about[0]), rule: weakeningWords(below, inputs), authority: needed,
+    })
+  }
   const first = weakens[0]!
-  throw planningError(409, 'needs_authority', `Edit ${first.edit + 1} weakens a hard rule's coverage (${first.what}: ${first.about.join(', ')}). ${authorityAsk}`, {
+  throw planningError(409, 'needs_authority', `Edit ${first.edit + 1} loosens a hard rule on ${labelled(inputs, first.about[0] ?? '')}: ${weakeningWords(first, inputs)} ${authorityAsk}`, {
     about: first.about.slice(0, 4), weakens: [...new Set(weakens.flatMap(weakening => weakening.about.slice(0, 1)))].slice(0, 6),
+    rule: weakeningWords(first, inputs), authority: needed,
   })
 }
 

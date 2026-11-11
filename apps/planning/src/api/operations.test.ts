@@ -28,7 +28,7 @@ afterAll(() => harness.close())
 const expectSmall = (answer: { bytes: number }) => expect(answer.bytes).toBeLessThanOrEqual(4_096)
 
 describe('the Supply run cycle through the operations', () => {
-  test('create, link, refresh, edit, generate, explain, baseline and read: results within 4 KB, World only read', async () => {
+  test('create, link (which reads World), refresh, generate, explain, baseline and read: results within 4 KB, World only read', async () => {
     world = padded(subjectsFor(supplyRun, valuesFor(1), '2026-09-03T08:00:00Z'))
     const created = await harness.create('supply-run')
     expect(created.answer.body.createdResources).toEqual([{ workspaceId: harness.workspaceId, moduleId: 'planning', type: 'planning.plan', id: created.id }])
@@ -36,14 +36,18 @@ describe('the Supply run cycle through the operations', () => {
     expect(created.answer.body.result.problems.every((problem: { code: string }) => problem.code === 'world-unread')).toBe(true)
     expectSmall(created.answer)
 
+    // Linking the Run reads the plan's World values in the same edit: nothing is left unread.
     const linked = await harness.call('planning.plan.edit', { resource: created.id, input: { edits: [{ edit: 'plan', run: 'run-supply' }] }, expectedRevision: 1 })
     expect(linked.body.result.plan.revision).toBe(2)
+    expect(linked.body.result.problems).toEqual([])
+    expect(linked.body.result.changed.at(-1)).toMatch(/^Read \d+ World values at .* \(simulation time\)$/)
+    expect(linked.body.result.attention.some((item: { kind: string }) => item.kind === 'world')).toBe(false)
 
+    // A refresh right after reads the same values: the revision stays.
     const refreshed = await harness.call('planning.sources.refresh', { input: { plan: created.id }, expectedRevision: 2 })
     expectSmall(refreshed)
-    expect(refreshed.body.result.plan.revision).toBe(3)
+    expect(refreshed.body.result.plan.revision).toBe(2)
     expect(refreshed.body.result.problems).toEqual([])
-    expect(refreshed.body.result.attention.some((item: { kind: string }) => item.kind === 'world')).toBe(false)
     // One read for all subjects, followed over its pages with the same question.
     const subjects = worldSubjects(supplyRun)
     expect(harness.journal.length).toBeGreaterThan(1)
@@ -53,12 +57,12 @@ describe('the Supply run cycle through the operations', () => {
     expect(stored.inputs.jobs.every(job => job.duration.origin.by !== 'world' || job.duration.value === null)).toBe(true)
 
     // Unchanged World values refresh the read time without raising the revision.
-    const again = await harness.call('planning.sources.refresh', { input: { plan: created.id }, expectedRevision: 3 })
-    expect([again.body.result.plan.revision, again.body.result.changed.length, again.body.result.changed[0].endsWith('none changed')]).toEqual([3, 1, true])
+    const again = await harness.call('planning.sources.refresh', { input: { plan: created.id }, expectedRevision: 2 })
+    expect([again.body.result.plan.revision, again.body.result.changed.length, again.body.result.changed[0].endsWith('none changed')]).toEqual([2, 1, true])
 
-    const generated = await harness.call('planning.plan.generate', { resource: created.id, input: {}, expectedRevision: 3 })
+    const generated = await harness.call('planning.plan.generate', { resource: created.id, input: {}, expectedRevision: 2 })
     expectSmall(generated)
-    expect(generated.body.result.plan.revision).toBe(3)
+    expect(generated.body.result.plan.revision).toBe(2)
     const recommended = generated.body.result.recommended
     expect(generated.body.result.options.find((option: { key: string }) => option.key === recommended).status.word).toBe('validated feasible')
 
@@ -66,9 +70,9 @@ describe('the Supply run cycle through the operations', () => {
     expectSmall(explained)
     expect(explained.body.result.items.length).toBeGreaterThan(0)
 
-    const baselined = await harness.call('planning.plan.baseline', { resource: created.id, input: { option: recommended, name: 'Dispatch at 08:00' }, expectedRevision: 3 })
+    const baselined = await harness.call('planning.plan.baseline', { resource: created.id, input: { option: recommended, name: 'Dispatch at 08:00' }, expectedRevision: 2 })
     expectSmall(baselined)
-    expect(baselined.body.result.plan.revision).toBe(3)
+    expect(baselined.body.result.plan.revision).toBe(2)
 
     for (const section of [undefined, 'jobs', 'rules', 'crews', 'sources', 'options', 'schedule', 'history']) {
       const read = await harness.call('planning.plan.read', { resource: created.id, input: section === undefined ? {} : { section } })
@@ -77,14 +81,14 @@ describe('the Supply run cycle through the operations', () => {
     }
     const summary = (await harness.call('planning.plan.read', { resource: created.id })).body.result
     expect(summary.sections.map((section: { id: string }) => section.id)).toEqual(['summary'])
-    expect(summary.sections[0].data.plan).toMatchObject({ id: created.id, revision: 3 })
+    expect(summary.sections[0].data.plan).toMatchObject({ id: created.id, revision: 2 })
     const history = (await harness.call('planning.plan.read', { resource: created.id, input: { section: 'history' } })).body.result.sections[0].data.items
     expect(history[0].summary).toBe("Baseline 'Dispatch at 08:00' from " + generated.body.result.options.find((option: { key: string }) => option.key === recommended).label)
 
     // A changed World value raises the revision and makes the options out of date.
     world = padded(subjectsFor(supplyRun, valuesFor(2), '2026-09-03T08:01:00Z'))
-    const changed = await harness.call('planning.sources.refresh', { input: { plan: created.id }, expectedRevision: 3 })
-    expect([changed.body.result.plan.revision, changed.body.result.attention.some((item: { kind: string; about: string[] }) => item.kind === 'stale' && item.about.includes(recommended)), changed.body.result.changed.length > 1]).toEqual([4, true, true])
+    const changed = await harness.call('planning.sources.refresh', { input: { plan: created.id }, expectedRevision: 2 })
+    expect([changed.body.result.plan.revision, changed.body.result.attention.some((item: { kind: string; about: string[] }) => item.kind === 'stale' && item.about.includes(recommended)), changed.body.result.changed.length > 1]).toEqual([3, true, true])
     expectSmall(changed)
   })
 
@@ -111,7 +115,7 @@ describe('Train A: preview, read and status on the generic operations', () => {
     expect((await harness.store.read(harness.workspaceId, created.id)).revision).toBe(1)
     const weakening = await harness.call('planning.plan.edit', { resource: created.id, input: { edits: [{ edit: 'remove', what: 'rule', key: trainA.rules[0]!.key }], preview: true } })
     expect(weakening.body.result.preview.weakens).toEqual([trainA.rules[0]!.key])
-    expect(weakening.body.result.preview.consequence).toContain('needs authority')
+    expect(weakening.body.result.preview.consequence).toContain("needs a named person's agreement")
   })
 
   test('read re-checks every status: an option the checker refuses is shown out of date, never with proof words', async () => {

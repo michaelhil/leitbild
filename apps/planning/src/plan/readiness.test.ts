@@ -69,6 +69,17 @@ describe('readiness: warnings only, never a score (T2)', () => {
     expect([below.about, below.blocks]).toEqual([[test.key], true])
   })
 
+  test('assumptions are one card, never one per value; a promised release keeps its own card (walk fix 10)', () => {
+    const items = readiness(planOf(supplyRun), { staleOptions: [], now: '2026-09-03T08:00:00Z' })
+    const grouped = items.filter(item => item.code === 'assumptions')
+    expect(grouped).toHaveLength(1)
+    expect(items.filter(item => item.code === 'assumption')).toEqual([])
+    expect(grouped[0]!.count).toBeGreaterThan(1)
+    expect(readinessText(grouped[0]!, supplyRun)).toMatch(/^\d+ planning values are assumptions, such as .*: review them\.$/)
+    const promised = trainA.jobs.filter(job => job.notBefore?.source.by === 'assumption').map(job => job.key)
+    expect(readiness(planOf(trainA), { staleOptions: [], now: '2026-11-12T09:00:00Z' }).filter(item => item.code === 'assumption').map(item => item.about[0])).toEqual(promised)
+  })
+
   test('an order deadline is a decision before the data date and a warning after it', () => {
     const purchase = trainA.purchases.find(entry => entry.orderBy !== undefined && entry.ordered === undefined)!
     expect(readiness(planOf(trainA), { staleOptions: [], now: trainA.settings.dataDate! }).find(item => item.about[0] === purchase.key)?.code)

@@ -33,6 +33,14 @@ describe('Definition fidelity', () => {
     }
   })
 
+  test('a plan Definition reads differently from the World Scenario it starts from (walk fix 12)', () => {
+    for (const definition of bundledPlanDefinitions.filter(entry => entry.inputs.settings.scenario !== undefined)) {
+      expect(definition.title.startsWith('Plan: ')).toBe(true)
+      expect(definition.title).not.toBe(definition.inputs.settings.scenario!.title)
+      expect(definition.title).not.toBe(definition.inputs.settings.title)
+    }
+  })
+
   test('New plan has no zone, window, Run or Scenario', () => {
     const blank = bundledPlanDefinitions.find(entry => entry.id === 'blank')!
     expect(blank.inputs.settings).toMatchObject({ title: 'New plan', timeZone: null, window: null, run: null, grid: '30min' })

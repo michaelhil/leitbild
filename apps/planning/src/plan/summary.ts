@@ -2,7 +2,7 @@
 // planning.plan.read returns. The UI's format.ts mirrors these rules. Every section fits the 4 KB result.
 import type { Certificate, CertifiedSize, Plan, PlanInputs, Status } from './schema.ts'
 import { resultLimitBytes, type OptionWarning, type SectionName } from '../api/contract.ts'
-import type { ChangeRecord } from './edits.ts'
+import type { ChangeRecord, Weakening } from './edits.ts'
 import type { OutTogether, Precondition, ReadinessItem } from './readiness.ts'
 
 type Inputs = PlanInputs
@@ -78,7 +78,17 @@ export const changeLines = (changes: readonly ChangeRecord[], inputs: Inputs, li
   const line = (change: ChangeRecord): string => {
     if (change.what === 'plan') return clip(`Changed the plan: ${change.fields.join(', ')}`, 200)
     if (change.what === 'goals') return 'Changed the goal order'
-    const name = change.what === 'link' ? change.key : `${nameOf(inputs, change.key)}`
+    // A link is named by its jobs, never by keys: "from 'Open the heads' to 'Clean the tubes' (start-start)".
+    const linkName = (): string => {
+      const [from = '', type = '', to = ''] = change.key.split(' ')
+      const kinds: Readonly<Record<string, string>> = { FS: 'finish-start', SS: 'start-start', FF: 'finish-finish' }
+      return `from '${nameOf(inputs, from)}' to '${nameOf(inputs, to)}' (${kinds[type] ?? type})`
+    }
+    const name = change.what === 'link' ? linkName() : `${nameOf(inputs, change.key)}`
+    if (change.fields.includes('drafted')) {
+      const job = inputs.jobs.find(entry => entry.key === change.key)
+      return clip(`Drafted ${job?.kind === 'test' ? 'return-to-service test' : 'tag-out'} '${nameOf(inputs, change.key)}' (${job?.duration.value ?? 1} h, an assumption)`, 200)
+    }
     const verb = change.verb === 'added' ? 'Added' : change.verb === 'removed' ? 'Removed' : 'Changed'
     const fields = change.verb === 'changed' && change.fields.length > 0 ? `: ${change.fields.join(', ')}` : ''
     return clip(`${verb} ${whatWords[change.what]} ${name}${fields}`, 200)
@@ -91,6 +101,36 @@ export const changeSummary = (changes: readonly ChangeRecord[], inputs: Inputs):
   if (changes.length === 0) return 'No change'
   const lines = changeLines(changes, inputs, 3)
   return clip(lines.join('; '), 240)
+}
+
+// ───────────── refusals ─────────────
+
+/** A key with its label, for a refusal an Assistant quotes to a person: "'Service Water Pump B' (SWB)". */
+export const labelled = (inputs: Inputs, key: string): string => {
+  const name = nameOf(inputs, key)
+  return name === key ? key : `'${name}' (${key})`
+}
+
+/** The rule a weakening edit loosens, in planner words, from the plan as it was before the edit. */
+export const weakeningWords = (weakening: Weakening, inputs: Inputs): string => {
+  const [first = '', ...rest] = weakening.about
+  const name = nameOf(inputs, first)
+  const job = inputs.jobs.find(entry => entry.key === first)
+  switch (weakening.what) {
+    case 'support': return clip(`${name} is out of service whenever ${names(inputs, rest)} is out; removing that support loosens the rules that cover it.`, 240)
+    case 'group': return clip(`${name} counts toward the outage limit of ${nameOf(inputs, rest[0] ?? '')}; taking it out of that group loosens the limit.`, 240)
+    case 'function': return clip(`${name} backs up the other items of its function; changing that hides a redundancy warning.`, 240)
+    case 'locator': return clip(`The rules and outage limits on ${name} apply to its World item; pointing it at another one loosens them.`, 240)
+    case 'job-kind': case 'isolation': case 'covering-equipment': case 'covering-job':
+      return clip(`${name} brackets the work on ${names(inputs, rest.length > 0 ? rest : job?.equipment ?? [])} with a tag-out or test; changing it loosens that coverage.`, 240)
+    case 'precondition': return clip(`${name} may start only when ${job?.checks.map(check => `"${check.words}"`).join(' and ') ?? 'its World precondition holds'}; removing that check drops the precondition.`, 240)
+    case 'rule': case 'protected': return clip(inputs.rules.find(rule => rule.key === first)?.words ?? `The rule ${first}`, 240)
+    case 'equipment': return clip(`${name} is covered by a rule or an outage limit; removing it loosens that coverage.`, 240)
+    case 'minimum': case 'below-minimum': {
+      const minimum = job?.minimum
+      return clip(minimum === undefined ? `${name} has a declared minimum duration.` : `${name} takes at least ${valueWords(minimum.value, minimum.unit)}: ${minimum.words}.`, 240)
+    }
+  }
 }
 
 // ───────────── readiness ─────────────
@@ -122,6 +162,7 @@ export const readinessText = (item: ReadinessItem, inputs: Inputs): string => {
       case 'assumption': return item.at !== undefined
         ? `${name}: depends on ${item.words ?? 'an assumption'}, ${at}.`
         : `${names(inputs, item.about, 2)}: an assumption${item.words === undefined ? '' : ` (${item.words})`}; confirm it.`
+      case 'assumptions': return `${item.count === 1 ? 'One planning value is an assumption' : `${item.count} planning values are assumptions`}, such as ${names(inputs, item.about, 2)}: review them.`
       case 'redundancy': return `${item.count} items are taken out and no rule keeps any of them in service. If they back each other up, add 'keep at least k of these in service'.`
       case 'options-stale': return `${item.count === 1 ? 'One option no longer matches' : `${item.count} options no longer match`} the plan; generate again.`
     }

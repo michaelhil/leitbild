@@ -133,7 +133,7 @@ export const createRealSolver = (pool: SolverPool): SolverPort => ({
     const at = locked === undefined ? undefined : rows.find(row => row.job === locked)?.start
     return {
       rows,
-      violations: check.violations.map(violation => ({ code: violation.code, about: violation.about })),
+      violations: check.violations.map(violation => ({ code: violation.code, about: violation.about, words: violation.words })),
       ...(locked === undefined || at === undefined ? {} : { nearestAllowed: { job: locked, at } }),
     }
   },

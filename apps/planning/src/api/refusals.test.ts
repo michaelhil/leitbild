@@ -61,6 +61,22 @@ describe('refusals name their cause and stay within 4 KB', () => {
     expect(history).toMatchObject({ revision: 3, authority: { name: 'Shift supervisor', reason: 'Support restored by a temporary line' }, reason: 'Temporary cooling' })
   })
 
+  test('refusals carry the rule in words and the authority needed; preview violations are words with no keys (walk fix 11)', async () => {
+    const plan = await harness.create('train-a-work-week')
+    const edit = (edits: unknown[], extra: Record<string, unknown> = {}) => harness.call('planning.plan.edit', { resource: plan.id, input: { edits, ...extra }, expectedRevision: 1 })
+    const loosened = await edit([{ edit: 'remove', what: 'rule', key: protectedRule.key }])
+    expect(loosened.body.error.details).toMatchObject({ rule: protectedRule.words, authority: { needed: true, ask: 'Name the person who agreed and their reason, as authority. Ask them; never fill this in yourself.' } })
+    const protectedItem = protectedRule.kind === 'protected' ? protectedRule.equipment[0]! : ''
+    const touched = await edit([{ edit: 'job', key: workJob.key, equipment: [protectedItem] }])
+    expect(touched.body.error.details.rule).toBe(protectedRule.words)
+    expect(touched.body.error.details.authority).toBeUndefined()
+    expect(touched.body.error.message).toContain(`'${trainA.equipment.find(item => item.key === protectedItem)!.label}' (${protectedItem})`)
+    const minimum = await edit([{ edit: 'job', key: minimumTest.key, duration: { value: minimumTest.minimum!.value / 2, unit: minimumTest.minimum!.unit } }])
+    expect(minimum.body.error.details).toMatchObject({ rule: expect.stringContaining(minimumTest.minimum!.words), authority: { needed: true } })
+    const preview = await harness.call('planning.plan.edit', { resource: plan.id, input: { edits: [{ edit: 'job', key: workJob.key, equipment: [protectedItem] }], preview: true } })
+    expect(preview.body.result.preview).toEqual({ saved: false, consequence: 'Not saved: this change breaks a rule.', violations: [protectedRule.words], weakens: [] })
+  })
+
   test('a second item with the protected pump\'s World locator cannot take a tag-out', async () => {
     const plan = await harness.create('train-a-work-week')
     const protectedItem = protectedRule.kind === 'protected' ? protectedRule.equipment[0]! : ''

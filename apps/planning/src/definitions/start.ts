@@ -29,7 +29,7 @@ export const startPlan = (start: {
   const { definition, at, by } = start
   const inputs = planInputsSchema.parse({ ...structuredClone(definition.inputs), settings: { ...definition.inputs.settings, run: null } })
   const outcome = start.edits.length === 0 ? { inputs, changes: [], weakens: [] } : applyEdits(inputs, start.edits, { now: at, by })
-  requireAuthority(outcome.weakens, undefined)
+  requireAuthority(outcome.weakens, undefined, inputs)
   const summary = `Created from '${definition.title}'${outcome.changes.length === 0 ? '' : `; ${changeSummary(outcome.changes, outcome.inputs)}`}`
   return {
     plan: {

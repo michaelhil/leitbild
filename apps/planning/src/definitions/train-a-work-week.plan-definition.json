@@ -1,6 +1,6 @@
 {
   "id": "train-a-work-week",
-  "title": "Train A work week",
+  "title": "Plan: Train A work week",
   "description": "A reference PWR Train A work week: work on the SW, CCW, RHR, HHSI, CS and AFW pumps and the CCW heat exchanger, with their supports, tag-outs and return-to-service tests; the station and contractor crews, crane, eddy-current team, one work-control operator and one test team; the 72 h cooling-chain limit; and Train B protected. The plan starts unlinked: start the \"Train A work week\" simulation in World, then link it here to read live values.",
   "inputs": {
     "settings": {

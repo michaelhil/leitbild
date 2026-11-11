@@ -20,7 +20,7 @@ import {
 import type { Edit } from '../plan/edit-schema.ts'
 import { assertRevision, type PlanStore, type RevisionGuard } from '../plan/store.ts'
 import {
-  attentionKind, basisWords, buildSection, certifiedSizeWords, byteLength, changeLines, changeSummary, nameOf, optionWarning, readinessText,
+  attentionKind, basisWords, buildSection, certifiedSizeWords, weakeningWords, byteLength, changeLines, changeSummary, nameOf, optionWarning, readinessText,
   statusSentence, timeWords, valueWords, type OptionState, type Section, type SectionContext,
 } from '../plan/summary.ts'
 import type { Grid } from '../time/units.ts'
@@ -40,7 +40,7 @@ export type GenerateVariant = NonNullable<z.infer<typeof generateInputSchema>['v
 // ───────────── ports ─────────────
 
 /** One finding of the independent checker, as keys and a code; summary.ts words it. */
-export interface CheckViolation { readonly code: string; readonly about: readonly string[] }
+export interface CheckViolation { readonly code: string; readonly about: readonly string[]; readonly words?: string }
 
 /** What lane K's re-check (check/recheck.ts) answers for a stored option against the current plan. */
 export interface RecheckView {
@@ -290,6 +290,46 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
     return { ...generated, options, ...(recommended === undefined ? {} : { recommended }) }
   }
 
+  /**
+   * Reads every World value the plan names from its linked Run: at most 32 subjects per request, per Pack,
+   * every page followed, all within `deadline`. Einsatz projects arrival facts only for units and tasks read
+   * together, so an Einsatz plan with more than 32 Einsatz items is refused, never truncated.
+   */
+  const readWorld = async (workspaceId: WorkspaceId, runId: string, inputs: PlanInputs, access: AccessContext, deadline: AbortSignal, late: () => Error): Promise<{ readonly facts: WorldFactCopy[]; readonly observedAt: string }> => {
+    const subjects = worldSubjects(inputs)
+    const byPack = new Map<string, string[]>()
+    for (const locator of subjects) {
+      const pack = locator.slice(0, locator.indexOf('/'))
+      byPack.set(pack, [...(byPack.get(pack) ?? []), locator])
+    }
+    const einsatz = byPack.get('einsatz')?.length ?? 0
+    if (einsatz > 32) throw planningError(400, 'world_read_limit', `This plan names ${einsatz} Einsatz items; their arrival times are read together, at most 32 at once. Remove the items the plan does not need.`, { about: [] })
+    const batches = [...byPack.values()].flatMap(locators => Array.from({ length: Math.ceil(locators.length / 32) }, (_, index) => locators.slice(index * 32, index * 32 + 32)))
+    const facts: WorldFactCopy[] = []
+    let oldestRead: string | undefined
+    const reference = runReference(workspaceId, runId)
+    for (const batch of batches) {
+      let cursor: string | undefined
+      do {
+        if (deadline.aborted) throw late()
+        let raw: PlanningFactsOutput
+        try { raw = await ports.world.read(access, reference, { subjects: batch, ...(cursor === undefined ? {} : { cursor }) }, deadline) } catch (error) {
+          if (deadline.aborted) throw late()
+          throw error
+        }
+        const answer = planningFactsOutputSchema.safeParse(raw)
+        if (!answer.success) throw planningError(502, 'invalid_host_response', 'World answered the facts query outside its contract')
+        if (answer.data.run.id !== runId) throw planningError(502, 'invalid_host_response', 'World answered for another simulation')
+        // The oldest read time of the batches: every value is at least this fresh.
+        if (oldestRead === undefined || Date.parse(answer.data.observedAt) < Date.parse(oldestRead)) oldestRead = answer.data.observedAt
+        // An item larger than a page continues on the next one under the same locator: facts merge by locator.
+        for (const item of answer.data.items) for (const fact of item.facts) facts.push({ ...fact, locator: item.locator })
+        cursor = answer.data.more
+      } while (cursor !== undefined)
+    }
+    return { facts, observedAt: oldestRead ?? now() }
+  }
+
   /** The option's longest group span (h, from the span-over goal) and its extra cost (from the extra-cost goal). */
   const spanAndCost = (inputs: PlanInputs, option: Option): { readonly span?: number; readonly cost?: number } => {
     const k = (metric: string) => inputs.goals.findIndex(goal => goal.metric === metric)
@@ -359,7 +399,7 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
       return { result: writeResult(stored, [`Created '${stored.inputs.settings.title}' from '${found.title}'`, ...changeLines(changes, stored.inputs, 11)]), created: planReference(workspaceId, stored.id) }
     },
 
-    edit: async (workspaceId: WorkspaceId, planId: string, input: z.infer<typeof editInputSchema>, expectedRevision: number | undefined, access: AccessContext): Promise<WriteResult> => {
+    edit: async (workspaceId: WorkspaceId, planId: string, input: z.infer<typeof editInputSchema>, expectedRevision: number | undefined, access: AccessContext, signal: AbortSignal = new AbortController().signal): Promise<WriteResult> => {
       const at = now()
       const by = storedActor(access)
       if (input.preview === true) {
@@ -367,13 +407,14 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
         let outcome: EditOutcome
         try { outcome = applyEdits(plan.inputs, input.edits, { now: at, by }) } catch (error) {
           if (!isPlanningError(error) || error.code !== 'protected_equipment') throw error
-          const about = (error.details?.about as string[] | undefined) ?? []
-          return writeResult(plan, ['Not saved'], { preview: { saved: false, consequence: 'Refused if saved: a job would touch protected equipment.', violations: [error.message.slice(0, 200)], weakens: about.slice(0, 6) } })
+          // The rule in words only: preview violations are shown to people as they are.
+          const rule = typeof error.details?.rule === 'string' ? error.details.rule : 'A job would touch protected equipment.'
+          return writeResult(plan, ['Not saved'], { preview: { saved: false, consequence: 'Not saved: this change breaks a rule.', violations: [rule.slice(0, 200)], weakens: [] } })
         }
         const previewed: Plan = { ...plan, inputs: outcome.inputs }
         const weakens = [...new Set(outcome.weakens.flatMap(weakening => weakening.about.slice(0, 1)))].slice(0, 6)
         const recommended = plan.options?.options.find(option => option.key === plan.options?.recommended)
-        const authority = outcome.weakens.length > 0 && input.authority === undefined ? ' Saving it needs authority: who agreed and why.' : ''
+        const authority = outcome.weakens.length > 0 && input.authority === undefined ? ` Saving it needs a named person's agreement: ${outcome.weakens.slice(0, 2).map(weakening => weakeningWords(weakening, plan.inputs)).join(' ')}` : ''
         if (recommended === undefined || recommended.rows.length === 0) {
           return writeResult(previewed, changeLines(outcome.changes, outcome.inputs), { preview: { saved: false, consequence: `Not saved.${authority} No schedule to re-time yet.`.trim(), violations: [], weakens } })
         }
@@ -382,31 +423,57 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
         const moved = timed.rows.filter(row => before.get(row.job)?.start !== row.start)
         const finish = (rows: readonly DatedRow[]) => rows.reduce((latest, row) => row.finish > latest ? row.finish : latest, '')
         const zone = outcome.inputs.settings.timeZone
-        const consequence = `Not saved. ${moved.length === 0 ? 'No job moves' : `${moved.length} job${moved.length === 1 ? ' moves' : 's move'}`}; the last finish ${finish(timed.rows) === finish(recommended.rows) ? 'stays' : `moves from ${timeWords(finish(recommended.rows), zone)} to ${timeWords(finish(timed.rows), zone)}`}.${authority}`
+        // A change that breaks a rule moves nothing: say so, never how jobs would move.
+        const consequence = timed.violations.length > 0 ? `Not saved: this change breaks a rule.${authority}`
+          : `Not saved. ${moved.length === 0 ? 'No job moves' : `${moved.length} job${moved.length === 1 ? ' moves' : 's move'}`}; the last finish ${finish(timed.rows) === finish(recommended.rows) ? 'stays' : `moves from ${timeWords(finish(recommended.rows), zone)} to ${timeWords(finish(timed.rows), zone)}`}.${authority}`
         return writeResult(previewed, changeLines(outcome.changes, outcome.inputs), { preview: {
-          saved: false, consequence: consequence.slice(0, 300),
-          violations: timed.violations.slice(0, 6).map(violation => `${violation.code.replaceAll('_', ' ').replaceAll('-', ' ')}: ${violation.about.map(key => nameOf(outcome.inputs, key)).join(', ')}`.slice(0, 200)),
+          saved: false, consequence: consequence.length <= 300 ? consequence : `${consequence.slice(0, 299)}…`,
+          violations: timed.violations.slice(0, 6).map(violation => (violation.words ?? `${violation.code.replaceAll('_', ' ').replaceAll('-', ' ')}: ${violation.about.map(key => nameOf(outcome.inputs, key)).join(', ')}`).slice(0, 200)),
           weakens,
           ...(timed.nearestAllowed === undefined ? {} : { nearestAllowed: timed.nearestAllowed.at }),
         } })
       }
+      // Adding a World item (or linking a Run) reads its values in the same edit, so it is usable at once;
+      // the read is a refresh of every value the plan names, as Einsatz needs units and tasks read together.
+      const guard = { expectedRevision, required: true }
+      const before = await readGuarded(workspaceId, planId, guard)
+      const draft = applyEdits(before.inputs, input.edits, { now: at, by })
+      requireAuthority(draft.weakens, input.authority, before.inputs)
+      const run = draft.inputs.settings.run
+      const read = new Set(draft.inputs.world.facts.map(fact => fact.locator))
+      const unread = run === null ? [] : worldSubjects(draft.inputs).filter(locator => !read.has(locator))
+      let world: { readonly facts: WorldFactCopy[]; readonly observedAt: string } | undefined
+      let notRead: string | undefined
+      if (run !== null && unread.length > 0) {
+        const deadline = AbortSignal.any([signal, AbortSignal.timeout(refreshDeadlineMs)])
+        try { world = await readWorld(workspaceId, run.id, draft.inputs, access, deadline, () => planningError(503, 'world_unavailable', 'World did not answer in time')) } catch (error) {
+          if (!isPlanningError(error)) throw error
+          // Saved without them, and said so: the next refresh reads them.
+          notRead = `World values not read now (${error.message}); refresh to read them`
+        }
+      }
       let changes: readonly ChangeRecord[] = []
-      const saved = await store.update(workspaceId, planId, { expectedRevision, required: true }, plan => {
+      const saved = await store.update(workspaceId, planId, guard, plan => {
         const outcome = applyEdits(plan.inputs, input.edits, { now: at, by })
-        requireAuthority(outcome.weakens, input.authority)
+        requireAuthority(outcome.weakens, input.authority, plan.inputs)
         changes = outcome.changes
         if (outcome.changes.length === 0) return plan
         const revision = plan.revision + 1
+        const inputs = world === undefined ? outcome.inputs : planInputsSchema.parse({ ...outcome.inputs, world: { refreshedAt: world.observedAt, facts: world.facts } })
         return {
-          ...plan, revision, updatedAt: at, inputs: outcome.inputs,
+          ...plan, revision, updatedAt: at, inputs,
           ...appendChange(plan, {
-            at, by, revision, summary: changeSummary(outcome.changes, outcome.inputs), kinds: editKinds(input.edits),
+            at, by, revision, summary: changeSummary(outcome.changes, outcome.inputs), kinds: [...editKinds(input.edits), ...(world === undefined ? [] : ['refresh' as const])].slice(0, 16),
             ...(input.reason === undefined ? {} : { reason: input.reason }),
             ...(input.authority === undefined ? {} : { authority: input.authority }),
           }),
         }
       })
-      return writeResult(saved, changes.length === 0 ? ['No change: the plan already says this'] : changeLines(changes, saved.inputs))
+      const zone = saved.inputs.settings.timeZone
+      const lines = changes.length === 0 ? ['No change: the plan already says this'] : [...changeLines(changes, saved.inputs, 11)]
+      if (world !== undefined) lines.push(`Read ${world.facts.length} World values at ${timeWords(world.observedAt, zone)} (simulation time)`)
+      if (notRead !== undefined) lines.push(notRead)
+      return writeResult(saved, lines)
     },
 
     generate: async (workspaceId: WorkspaceId, planId: string, input: z.infer<typeof generateInputSchema>, expectedRevision: number | undefined, access: AccessContext, signal: AbortSignal): Promise<GenerateResult> => {
@@ -475,40 +542,7 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
       const run = plan.inputs.settings.run
       const zone = plan.inputs.settings.timeZone
       if (run === null) return writeResult(plan, ['Nothing read: no simulation is linked to this plan'])
-      const subjects = worldSubjects(plan.inputs)
-      // Requests of at most 32 subjects, per Pack, merged. Einsatz projects arrival facts only for units and
-      // tasks read together, so an Einsatz plan with more than 32 Einsatz items is refused, never truncated.
-      const byPack = new Map<string, string[]>()
-      for (const locator of subjects) {
-        const pack = locator.slice(0, locator.indexOf('/'))
-        byPack.set(pack, [...(byPack.get(pack) ?? []), locator])
-      }
-      const einsatz = byPack.get('einsatz')?.length ?? 0
-      if (einsatz > 32) throw planningError(400, 'world_read_limit', `This plan names ${einsatz} Einsatz items; their arrival times are read together, at most 32 at once. Remove the items the plan does not need.`, { about: [] })
-      const batches = [...byPack.values()].flatMap(locators => Array.from({ length: Math.ceil(locators.length / 32) }, (_, index) => locators.slice(index * 32, index * 32 + 32)))
-      const facts: WorldFactCopy[] = []
-      let oldestRead: string | undefined
-      const reference = runReference(workspaceId, run.id)
-      for (const batch of batches) {
-        let cursor: string | undefined
-        do {
-          if (deadline.aborted) throw late()
-          let raw: PlanningFactsOutput
-          try { raw = await ports.world.read(access, reference, { subjects: batch, ...(cursor === undefined ? {} : { cursor }) }, deadline) } catch (error) {
-            if (deadline.aborted) throw late()
-            throw error
-          }
-          const answer = planningFactsOutputSchema.safeParse(raw)
-          if (!answer.success) throw planningError(502, 'invalid_host_response', 'World answered the facts query outside its contract')
-          if (answer.data.run.id !== run.id) throw planningError(502, 'invalid_host_response', 'World answered for another simulation')
-          // The oldest read time of the batches: every value is at least this fresh.
-          if (oldestRead === undefined || Date.parse(answer.data.observedAt) < Date.parse(oldestRead)) oldestRead = answer.data.observedAt
-          // An item larger than a page continues on the next one under the same locator: facts merge by locator.
-          for (const item of answer.data.items) for (const fact of item.facts) facts.push({ ...fact, locator: item.locator })
-          cursor = answer.data.more
-        } while (cursor !== undefined)
-      }
-      const observedAt = oldestRead ?? now()
+      const { facts, observedAt } = await readWorld(workspaceId, run.id, plan.inputs, access, deadline, late)
       const key = (fact: WorldFactCopy) => `${fact.locator}\u0000${fact.id}`
       const previous = new Map(plan.inputs.world.facts.map(fact => [key(fact), fact]))
       const valueChanged = (fact: WorldFactCopy) => {
@@ -529,8 +563,9 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
           ...appendChange(current, { at, by, revision, summary: raises ? `Read World values: ${changedFacts.length} new or changed, ${removed.length} gone` : 'Read World values: none changed', kinds: ['refresh'] }),
         }
       })
-      const owners = new Map([...saved.inputs.equipment, ...saved.inputs.resources].flatMap(item => item.locator === undefined ? [] : [[item.locator, item.label] as const]))
-      const factWords = (fact: WorldFactCopy) => `${owners.get(fact.locator) ?? fact.locator}: ${fact.label} ${typeof fact.value === 'number' && fact.unit !== undefined ? valueWords(fact.value, fact.unit) : String(fact.value)} (${basisWords[fact.basis]}, ${timeWords(fact.at, zone)})`
+      const owners = new Map([...saved.inputs.equipment, ...saved.inputs.resources, ...saved.inputs.jobs.map(job => ({ locator: job.locator, label: job.title }))].flatMap(item => item.locator === undefined ? [] : [[item.locator, item.label] as const]))
+      // Lines name World items by the plan's own labels, never by locator.
+      const factWords = (fact: WorldFactCopy) => `${owners.has(fact.locator) ? `${owners.get(fact.locator)}: ` : ''}${fact.label} ${typeof fact.value === 'number' && fact.unit !== undefined ? valueWords(fact.value, fact.unit) : String(fact.value)} (${basisWords[fact.basis]}, ${timeWords(fact.at, zone)})`
       const head = `Read ${facts.length} World value${facts.length === 1 ? '' : 's'} at ${timeWords(observedAt, zone)}: ${changedFacts.length === 0 && removed.length === 0 ? 'none changed' : `${changedFacts.length} new or changed${removed.length === 0 ? '' : `, ${removed.length} gone`}`}`
       const lines = [head, ...changedFacts.map(factWords)]
       return writeResult(saved, lines.length <= 12 ? lines : [...lines.slice(0, 11), `…and ${lines.length - 11} more values: read the sources section`])

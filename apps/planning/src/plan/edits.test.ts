@@ -86,6 +86,27 @@ describe('field-level edits (S1)', () => {
   })
 })
 
+describe('automatic bracketing (walk fix 9, T0p)', () => {
+  test('work on equipment with no tag-out or test drafts both, as assumptions; existing ones are reused', () => {
+    const blank = planInputsSchema.parse({ ...trainA, jobs: [], links: [], rules: [] })
+    const item = blank.equipment[0]!
+    const work = { edit: 'job', key: 'SEAL', title: 'Replace the seal', kind: 'work', isolation: 'inside', equipment: [item.key], duration: { value: 10, unit: 'h', calendar: 'working' } }
+    const drafted = apply(blank, work)
+    const drafts = drafted.inputs.jobs.filter(job => job.key !== 'SEAL')
+    expect(drafts.map(job => [job.kind, job.equipment, job.title, job.duration.origin.by])).toEqual([
+      ['tag-out', [item.key], `Tag out ${item.label}`, 'assumption'],
+      ['test', [item.key], `Return ${item.label} to service and test`, 'assumption'],
+    ])
+    expect(drafted.changes.filter(change => change.fields.includes('drafted')).map(change => change.key)).toEqual(drafts.map(job => job.key))
+    // With its own tag-out already there, only the test is drafted; the drafts never block the save.
+    const tagged = apply(blank, { edit: 'job', key: 'TAG', title: 'Tag out', kind: 'tag-out', equipment: [item.key], duration: { value: 2, unit: 'h', calendar: 'working' } }, work)
+    expect(tagged.inputs.jobs.filter(job => job.kind === 'test').map(job => job.equipment)).toEqual([[item.key]])
+    expect(tagged.inputs.jobs.filter(job => job.kind === 'tag-out').map(job => job.key)).toEqual(['TAG'])
+    // Work done off the item (isolation none) needs no bracket.
+    expect(apply(blank, { ...work, isolation: 'none' }).inputs.jobs.map(job => job.key)).toEqual(['SEAL'])
+  })
+})
+
 describe('hard rules: protection, authority and minimums (A2, adversary item 8)', () => {
   test('a job on protected equipment is refused, with or without authority', () => {
     const refused = refusal(() => apply(trainA, { edit: 'job', key: workJob.key, equipment: [protectedItem] }))
@@ -127,7 +148,7 @@ describe('hard rules: protection, authority and minimums (A2, adversary item 8)'
     expect(added.inputs.rules.find(rule => rule.key === 'D1')).toEqual({ kind: 'due', key: 'D1', job: minimumTest.key, finishBy: at(0.5).replace('.000Z', 'Z'), words: 'Surveillance due', source: { by: 'reference', note: 'Technical specification surveillance' } })
     expect(weakenings(added.inputs, { edit: 'rule', key: 'D1', finishBy: at(0.75) })).toEqual([['needs_authority', 'rule', 'D1']])
     expect(weakenings(added.inputs, { edit: 'remove', what: 'rule', key: 'D1' })).toEqual([['needs_authority', 'rule', 'D1']])
-    expect(refusal(() => requireAuthority(apply(added.inputs, { edit: 'rule', key: 'D1', finishBy: at(0.75) }).weakens, undefined)).code).toBe('needs_authority')
+    expect(refusal(() => requireAuthority(apply(added.inputs, { edit: 'rule', key: 'D1', finishBy: at(0.75) }).weakens, undefined, added.inputs)).code).toBe('needs_authority')
     expect(refusal(() => apply(trainA, { ...due, job: 'nothing' })).code).toBe('unknown_reference')
     expect(refusal(() => apply(trainA, { ...due, group: 'COOL-A' })).code).toBe('invalid_request')
   })
@@ -136,9 +157,9 @@ describe('hard rules: protection, authority and minimums (A2, adversary item 8)'
     const remaining = protectedRule.kind === 'protected' ? protectedRule.equipment.slice(1) : []
     const edit = remaining.length === 0 ? { edit: 'remove', what: 'rule', key: protectedRule.key } : { edit: 'rule', key: protectedRule.key, equipment: remaining }
     const outcome = apply(trainA, edit)
-    expect(() => requireAuthority(outcome.weakens, undefined)).toThrow('Name the person who agreed and their reason, as authority. Ask them; never fill this in yourself.')
-    expect(refusal(() => requireAuthority(outcome.weakens, undefined)).code).toBe('needs_authority')
-    expect(() => requireAuthority(outcome.weakens, { name: 'Shift supervisor', reason: 'Train B work moved to this week' })).not.toThrow()
+    expect(() => requireAuthority(outcome.weakens, undefined, trainA)).toThrow('Name the person who agreed and their reason, as authority. Ask them; never fill this in yourself.')
+    expect(refusal(() => requireAuthority(outcome.weakens, undefined, trainA)).code).toBe('needs_authority')
+    expect(() => requireAuthority(outcome.weakens, { name: "Shift supervisor", reason: "Train B work moved to this week" }, trainA)).not.toThrow()
   })
 
   test('a test may not run shorter than its minimum by any path: its own estimate or a crew-specific one', () => {
@@ -170,7 +191,7 @@ describe('hard rules: protection, authority and minimums (A2, adversary item 8)'
     const minimum = minimumTest.minimum!
     const below = apply(trainA, { edit: 'job', key: minimumTest.key, duration: { value: minimum.value / 2, unit: minimum.unit } })
     expect(below.weakens.map(weakening => weakening.code)).toEqual(['below_minimum'])
-    expect(refusal(() => requireAuthority(below.weakens, undefined)).code).toBe('below_minimum')
+    expect(refusal(() => requireAuthority(below.weakens, undefined, trainA)).code).toBe('below_minimum')
     expect(weakenings(trainA, { edit: 'job', key: minimumTest.key, minimum: null })).toEqual([['needs_authority', 'minimum', minimumTest.key]])
     expect(refusal(() => apply(trainA, { edit: 'job', key: workJob.key, minimum: { value: 1, unit: 'h', words: 'not a test' } })).code).toBe('invalid_request')
   })

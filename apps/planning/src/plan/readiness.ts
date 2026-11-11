@@ -13,7 +13,7 @@ export type ReadinessCode =
   | 'link-run' | 'world-unread' | 'world-unusable' | 'world-duration'
   | 'no-crew' | 'no-tag-out' | 'no-test' | 'not-returned'
   | 'precondition-unmet' | 'precondition-unread' | 'below-minimum'
-  | 'order-by' | 'order-passed' | 'assumption' | 'redundancy' | 'options-stale'
+  | 'order-by' | 'order-passed' | 'assumption' | 'assumptions' | 'redundancy' | 'options-stale'
 
 export interface ReadinessItem {
   readonly kind: ReadinessKind
@@ -34,7 +34,7 @@ const order: Readonly<Record<ReadinessCode, number>> = {
   // Out-of-date options come right after the link card: every status shown depends on them.
   'link-run': 0, 'options-stale': 1, 'world-unread': 2, 'world-unusable': 2, 'below-minimum': 2, 'no-tag-out': 3, 'no-test': 3, 'not-returned': 4,
   'precondition-unmet': 5, 'precondition-unread': 5, 'order-passed': 6, 'order-by': 7, 'no-crew': 8,
-  'assumption': 9, 'redundancy': 10, 'world-duration': 11,
+  'assumption': 9, 'redundancy': 10, 'assumptions': 11, 'world-duration': 12,
 }
 
 /** Every World reference a plan holds, with the plan item that holds it. */
@@ -88,22 +88,28 @@ export const outTogether = (inputs: Inputs, rows: ReadonlyArray<{ readonly job: 
   return warning === undefined ? undefined : { kind: 'redundancy', about: warning.items, from: warning.from, to: warning.to }
 }
 
+/**
+ * A promised release (a vendor's date) is its own card: it is scheduled at that time and flagged. Every
+ * other value given as an assumption counts toward one card, so assumptions do not flood the column.
+ */
 const sourced = (inputs: Inputs): ReadinessItem[] => {
   const items: ReadinessItem[] = []
-  const assumption = (about: string[], words?: string, at?: string): void => {
-    items.push({ kind: 'warning', code: 'assumption', about, blocks: false, ...(words === undefined ? {} : { words }), ...(at === undefined ? {} : { at }) })
-  }
+  const owners: string[] = []
   for (const job of inputs.jobs) {
-    if (job.notBefore?.source.by === 'assumption') assumption([job.key], job.notBefore.source.note ?? job.notBefore.words, job.notBefore.at)
-    if (job.duration.origin.by === 'assumption') assumption([job.key], job.duration.origin.note)
-    for (const entry of job.durationWith) if (entry.source?.by === 'assumption') assumption([job.key, entry.resource], entry.source.note)
+    if (job.notBefore?.source.by === 'assumption') {
+      items.push({ kind: 'warning', code: 'assumption', about: [job.key], blocks: false, words: job.notBefore.source.note ?? job.notBefore.words, at: job.notBefore.at })
+    }
+    if (job.duration.origin.by === 'assumption') owners.push(job.key)
+    for (const entry of job.durationWith) if (entry.source?.by === 'assumption') owners.push(job.key)
   }
-  for (const calendar of inputs.calendars) if (calendar.source.by === 'assumption') assumption([calendar.key], calendar.source.note)
+  for (const calendar of inputs.calendars) if (calendar.source.by === 'assumption') owners.push(calendar.key)
   for (const resource of inputs.resources) {
-    if (resource.source.by === 'assumption') assumption([resource.key], resource.source.note)
-    for (const attribute of resource.attributes) if (attribute.origin.by === 'assumption') assumption([resource.key, attribute.key], attribute.origin.note)
+    if (resource.source.by === 'assumption') owners.push(resource.key)
+    for (const attribute of resource.attributes) if (attribute.origin.by === 'assumption') owners.push(resource.key)
   }
-  for (const rule of inputs.rules) if (rule.source.by === 'assumption') assumption([rule.key], rule.source.note)
+  for (const rule of inputs.rules) if (rule.source.by === 'assumption') owners.push(rule.key)
+  const distinct = [...new Set(owners)]
+  if (owners.length > 0) items.push({ kind: 'warning', code: 'assumptions', about: distinct.slice(0, 4), blocks: false, count: owners.length })
   return items
 }
 
