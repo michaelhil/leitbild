@@ -28,7 +28,12 @@ export const causeText = (because: Because, context: Context): string => {
     case 'link': return `it follows ${said(because.about)}${until(because, context)}`
     case 'crew': return `${said(of(['resource']))} ${of(['resource']).length === 1 ? 'is' : 'are'} busy${holding}${until(because, context)}`
     case 'tool': return `${said(of(['resource']))} ${of(['resource']).length === 1 ? 'is' : 'are'} in use${holding}${until(because, context)}`
-    case 'shift': return `no working time for ${said(because.about)}${until(because, context)}`
+    case 'shift': {
+      const calendars = of(['calendar']), crews = of(['resource'])
+      return calendars.length > 0
+        ? `no working time on ${said(calendars)}${crews.length > 0 ? ` for ${said(crews)}` : ''}${until(because, context)}`
+        : `no working time for ${said(crews)}${until(because, context)}`
+    }
     case 'availability': return `starting earlier would break “${said(because.about)}”`
     case 'span-limit': return `starting earlier would stretch the outage past “${said(because.about)}”`
     case 'window': return `the window opens ${at(because, context)}`

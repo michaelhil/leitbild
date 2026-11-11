@@ -67,16 +67,16 @@ describe("maint's second walk, screen defects", () => {
     const context = contextOf(model)
     const rows = model.rows['opt-1']!
     const pull = rows.find(row => row.job === 'SWA-PUMP-OUT')!
-    // Lane S's about lists mix kinds: a busy crew with the jobs holding it; the crews whose shift is off.
+    // Each name in `about` says its kind: a busy crew with the jobs holding it; the crews whose shift is off.
     const why = whyStart({ job: 'SWA-PUMP-OUT', start: pull.start, finish: pull.finish, floatHours: 0, joint: true, because: [
-      { kind: 'crew', about: ['mech-station', 'SWA-TAG', 'SWA-RTS'], until: pull.start },
-      { kind: 'shift', about: ['ect-team'], until: pull.start },
-      { kind: 'tool', about: ['crane'] },
+      { kind: 'crew', about: [{ kind: 'resource', key: 'mech-station' }, { kind: 'job', key: 'SWA-TAG' }, { kind: 'job', key: 'SWA-RTS' }], until: pull.start },
+      { kind: 'shift', about: [{ kind: 'resource', key: 'ect-team' }], until: pull.start },
+      { kind: 'tool', about: [{ kind: 'resource', key: 'crane' }] },
     ] }, context, pull)
     expect(why.sentence).not.toContain('no longer in this plan')
     expect(why.sentence).toContain('Station mechanical crew is busy with Remove SW A from service and hang tags and Restore SW A, fill and vent, pump test until Tue 07:00')
     expect(why.sentence).toContain('no working time for Eddy-current test contractor until Tue 07:00')
-    const chain = finishChain({ lines: [], items: [{ job: 'SWA-RTS', start: rows[2]!.start, finish: rows[2]!.finish, floatHours: 0, joint: false, because: [{ kind: 'shift', about: ['day', 'mech-station'] }] }] }, context)
+    const chain = finishChain({ lines: [], items: [{ job: 'SWA-RTS', start: rows[2]!.start, finish: rows[2]!.finish, floatHours: 0, joint: false, because: [{ kind: 'shift', about: [{ kind: 'calendar', key: 'day' }, { kind: 'resource', key: 'mech-station' }] }] }] }, context)
     expect(chain[0]!.because).toBe('no working time on Day shift for Station mechanical crew')
     expect(routineBreaches(`${why.sentence} ${chain[0]!.because}`, [], [])).toEqual([])
     // Rendered where the planner reads it: the finish chain in the attention column, and the job panel's answer.
