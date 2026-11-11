@@ -30,6 +30,25 @@ export const compareKeys = (a: readonly number[], b: readonly number[]): number 
   return 0
 }
 
+/**
+ * Inside one search only: a later goal counts only among plans within the earlier goals' tolerance band
+ * of a reference (the incumbent), as the gate compares cost only within 1 h of the best finish. Values
+ * are excesses (goalExcess). Options are still ranked across a set by keys (compareKeys), never by this.
+ */
+export const compareStaged = (a: readonly number[], b: readonly number[], reference: readonly number[], goals: readonly RankGoal[]): number => {
+  for (let k = 0; k < goals.length; k++) {
+    const x = a[k] ?? 0, y = b[k] ?? 0
+    if (k === goals.length - 1) return Math.abs(x - y) <= EPSILON ? 0 : x < y ? -1 : 1
+    // The band starts at the best value known: the reference's, or either plan's when it is better.
+    const band = Math.min(reference[k] ?? Infinity, x, y) + goals[k]!.step + EPSILON
+    const inA = x <= band, inB = y <= band
+    if (inA && inB) continue
+    if (inA !== inB) return inA ? -1 : 1
+    if (Math.abs(x - y) > EPSILON) return x < y ? -1 : 1
+  }
+  return 0
+}
+
 /** Anything that can be ranked: feasible options carry keys, the rest rank last. */
 export interface Rankable { readonly key: string; readonly feasible: boolean; readonly keys: readonly number[] }
 
