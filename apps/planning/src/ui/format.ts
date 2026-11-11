@@ -1,7 +1,7 @@
 // Planner words for times, durations, money and where a value comes from. Times are civil time in
 // the plan's zone ("Mon 07:00"); durations are hours or minutes; nothing is shown as a count of seconds.
 import type { PlanningFact, PlanningFactBasis } from '@leitbild/contracts'
-import type { CertifiedSize, Source } from '../plan/schema.ts'
+import type { Source } from '../plan/schema.ts'
 import { isTimeUnit, timeUnitMs } from '../time/units.ts'
 import { localParts } from '../time/zone.ts'
 
@@ -158,14 +158,3 @@ export const routineFact = (fact: Pick<PlanningFact, 'value' | 'unit'>): boolean
   const text = fact.value.trim()
   return !(/^[0-9a-f]{16,}$/i.test(text) || /%[0-9A-F]{2}/.test(text) || /^[a-z][a-z0-9-]*\/\S+$/.test(text) || /^\d+(\s+\d+)+$/.test(text) || text.length > 80)
 }
-
-/**
- * The certified size in planner words, as plan/summary.ts says it: exactly "Certified plan size: pending the
- * owner's decision" until the owner decides; the evidence is detail, shown only on request.
- */
-export const certifiedSizeWords = (size: CertifiedSize): string => size.decided
-  ? `Certified plan size: ${size.family}, up to ${size.maxJobs} jobs`
-  : 'Certified plan size: pending the owner\'s decision'
-/** Generate's refusal of a plan above the size, as plan/summary.ts says it. */
-export const sizeRefusalWords = (size: CertifiedSize, jobs: number): string =>
-  `${certifiedSizeWords(size)}. This plan has ${jobs} jobs; Generate takes up to ${size.maxJobs}${size.decided ? '' : ' until then'}.`

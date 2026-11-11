@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { twinPlan, twinV3Options } from '../../tests/harness/twin-plan.ts'
-import { generate } from './generate.ts'
+import { CERTIFIED_SIZE, generate } from './generate.ts'
 import { createSolverPool } from './pool.ts'
 import { laneKCheck, laneKVerify } from './fixtures/lane-k.ts'
 import { trainAInputs } from './fixtures/train-a-case.ts'
@@ -24,7 +24,8 @@ const summary = (result: Awaited<ReturnType<typeof generate>>) => result.optionS
   ...(option.status.word === 'proven infeasible' ? { cause: option.status.cause } : {}),
 }))
 const run = (pool: ReturnType<typeof createSolverPool>, request: (typeof requests)[number]) =>
-  generate({ engine: pool, check: laneKCheck, verify: laneKVerify }, { inputs: request.inputs, revision: 1, previous: null, input: request.input, by: { kind: 'service', name: 'test' }, signal: new AbortController().signal, seed: 1, evals: request.evals })
+  // Twin v3 (330 jobs) is above the certified size: as a load for this test it is solved directly, the size lifted.
+  generate({ engine: pool, check: laneKCheck, verify: laneKVerify, certifiedSize: { ...CERTIFIED_SIZE, maxJobs: 330 } }, { inputs: request.inputs, revision: 1, previous: null, input: request.input, by: { kind: 'service', name: 'test' }, signal: new AbortController().signal, seed: 1, evals: request.evals })
 
 describe('solves on one pool are independent', () => {
   test('flagship, V1, V2, twin v3, flagship on one pool equal each run alone', async () => {

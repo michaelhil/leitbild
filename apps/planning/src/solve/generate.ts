@@ -7,7 +7,7 @@ import type { z } from 'zod'
 import type { generateInputSchema } from '../api/contract.ts'
 import { planningError } from '../errors.ts'
 import { optionSetSchema, type CertifiedSize, type PlanInputs, type Status } from '../plan/schema.ts'
-import { sizeRefusalWords } from '../plan/summary.ts'
+import { jobsPerSolve, sizeRefusalWords, withinCertifiedSize } from '../plan/summary.ts'
 import { bounds } from './bounds.ts'
 import { compile, formulationOf, methodCombinations, type Buy, type CompileIndex, type MethodPick } from './compile.ts'
 import { dateSchedule, slotInstant, undate } from './date.ts'
@@ -25,14 +25,15 @@ export type GenerateInput = z.infer<typeof generateInputSchema>
 
 /**
  * The certified size (G2, A8). The owner's scale-gate decision is pending (`decided` false), so nothing is
- * certified: `maxJobs` is only the size above which Generate refuses meanwhile, and `evidence` is the
- * measurement behind it, shown to planners only as detail. Planners read plan/summary's certifiedSizeWords.
+ * certified, and Generate refuses above the measured size (`maxJobs`, jobs per solve as plan/summary's
+ * jobsPerSolve counts them). `evidence` is the measurement, shown to planners only as detail; the words are
+ * plan/summary's.
  */
 export const CERTIFIED_SIZE: CertifiedSize = {
   decided: false,
-  family: 'two-unit site, concurrent single-train windows, tagging crews per unit',
-  maxJobs: 330,
-  evidence: 'Measured 11 Nov on two-unit work weeks of up to 330 jobs: at no size did every run come within 5 % of the best known plan. The owner decides the certified size.',
+  family: 'one system window',
+  maxJobs: 33,
+  evidence: 'Measured 11 Nov on single-train work weeks: 9 of 9 runs within 5 % of the proven optimum at 33 jobs; 7 of 9 at 60; 4 of 9 at 100; 0 of 9 at 130.',
 }
 
 export const MAX_SUB_SOLVES = 8
@@ -133,8 +134,8 @@ const withOwnFloat = (inputs: PlanInputs, variant: Option['variant'], rows: Retu
 export const generate = async (deps: GenerateDeps, request: GenerateRequest): Promise<GenerateResult> => {
   const { inputs } = request
   const certified = deps.certifiedSize ?? CERTIFIED_SIZE
-  if (inputs.jobs.length > certified.maxJobs) {
-    throw planningError(413, 'above_certified_size', sizeRefusalWords(certified, inputs.jobs.length), { jobs: inputs.jobs.length, certifiedSize: certified })
+  if (!withinCertifiedSize(inputs, certified)) {
+    throw planningError(413, 'above_certified_size', sizeRefusalWords(certified, inputs), { jobs: jobsPerSolve(inputs), certifiedSize: certified })
   }
   const variants = variantsOf(inputs, request.input)
   const subSolves = variants.reduce((sum, variant) => sum + variant.combos.length, 0)

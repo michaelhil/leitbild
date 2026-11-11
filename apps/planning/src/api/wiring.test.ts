@@ -99,29 +99,21 @@ describe('the operations on the real solver and checker', () => {
     expect(options.find(option => option.label.startsWith('V1'))!.status.cause).toMatchObject({ kind: 'chain', requiredHours: 37, availableHours: 32 })
   }, 120_000)
 
-  test('twin v3: every result stays within 4 KB', async () => {
+  test('twin v3: Generate refuses it above the certified size in planner words; every result stays within 4 KB', async () => {
     const bench = JSON.parse(await Bun.file(new URL('../../tests/harness/fixtures/twin-v3.json', import.meta.url)).text())
     const twin = twinPlan(bench, twinV3Options(bench))
     const id = await planOf(twin.inputs)
+    // 330 jobs per solve against the measured 33: refused before any solve (a 330-job solve is the solver's, called directly).
     const generated = await harness.call('planning.plan.generate', { resource: id, input: { seconds: 8 }, expectedRevision: 1 })
-    expect(generated.status).toBe(200)
+    expect([generated.status, generated.body.error.code]).toEqual([413, 'above_certified_size'])
+    expect(generated.body.error.message).toBe('This plan has 330 jobs. Planning is certified for plans of up to 33 jobs (one system window); larger plans wait for the owner\'s decision.')
     small(generated)
-    console.log('Twin v3:', JSON.stringify(summary(generated.body.result.options)), `generate ${generated.bytes} B`)
     const sizes: Record<string, number> = { generate: generated.bytes }
-    const recommended = generated.body.result.recommended
-    for (const section of ['summary', 'jobs', 'rules', 'crews', 'sources', 'options', ...(recommended === undefined ? [] : ['schedule']), 'history']) {
+    for (const section of ['summary', 'jobs', 'rules', 'crews', 'sources', 'options', 'history']) {
       const read = await harness.call('planning.plan.read', { resource: id, input: { section } })
       expect([section, read.status]).toEqual([section, 200])
       small(read)
       sizes[section] = read.bytes
-    }
-    if (recommended !== undefined) {
-      for (const ask of ['finish', 'why-start'] as const) {
-        const explained = await harness.call('planning.plan.explain', { resource: id, input: { ask } })
-        expect(explained.status).toBe(200)
-        small(explained)
-        sizes[`explain ${ask}`] = explained.bytes
-      }
     }
     const edited = await harness.call('planning.plan.edit', { resource: id, input: { edits: [{ edit: 'plan', title: 'Gate twin v3, checked' }] }, expectedRevision: 1 })
     small(edited)

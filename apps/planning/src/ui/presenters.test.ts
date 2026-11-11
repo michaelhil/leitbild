@@ -3,7 +3,8 @@ import { describe, expect, test } from 'bun:test'
 import { attentionCards } from './attention.ts'
 import { finishChain, floatText, whyStart } from './explain-text.ts'
 import { hourMs, modelOf, supplyRunPlanned, trainAInputs, trainAPlanned, trainARows } from './fixtures/plans.ts'
-import { certifiedSizeWords, createTimeFormat } from './format.ts'
+import { createTimeFormat } from './format.ts'
+import { certifiedSizeWords, jobsPerSolve } from '../plan/summary.ts'
 import { createNames, type PlanModel } from './model.ts'
 import { dueMoveEdit } from './edit-forms.ts'
 import { weakensRule } from './plan-actions.ts'
@@ -53,12 +54,12 @@ describe('Needs your attention', () => {
     const planned = trainAPlanned()
     const stale: PlanModel = { ...planned, options: { ...planned.options!, items: planned.options!.items.map(option => ({ ...option, fresh: false })) } }
     expect(attentionCards(stale, contextOf(stale)).at(-1)!.title).toContain('was made before the latest change')
-    const size = { decided: false, family: 'single-train work weeks', maxJobs: planned.inputs.jobs.length - 1, evidence: 'measured 11 Nov' }
+    const size = { decided: false, family: 'single-train work weeks', maxJobs: jobsPerSolve(planned.inputs) - 1, evidence: 'measured 11 Nov' }
     const large: PlanModel = { ...planned, certifiedSize: size }
     const refusal = attentionCards(large, contextOf(large)).find(card => card.title === 'Too large for the certified size.')!
     // The evidence is for reviewers; the card says the size in words only (maint's walk G2).
-    // Until the owner decides, the size is exactly the pending sentence; no size is claimed.
-    expect(refusal.text).toBe(`Certified plan size: pending the owner's decision. This plan has ${planned.inputs.jobs.length} jobs; Generate takes up to ${size.maxJobs} until then.`)
+    // The refusal in planner words, jobs counted per solve (after method selection).
+    expect(refusal.text).toBe(`This plan has ${jobsPerSolve(planned.inputs)} jobs. Planning is certified for plans of up to ${size.maxJobs} jobs (single-train work weeks); larger plans wait for the owner's decision.`)
     expect(certifiedSizeWords(size)).toBe('Certified plan size: pending the owner\'s decision')
   })
 })

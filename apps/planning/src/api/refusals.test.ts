@@ -2,6 +2,7 @@ import { afterAll, describe, expect, test } from 'bun:test'
 import { planInputsSchema } from '../plan/schema.ts'
 import { bundledPlanDefinitions } from '../definitions/index.ts'
 import { createSolverDouble, testCertifiedSize } from './fixtures/doubles.ts'
+import { jobsPerSolve } from '../plan/summary.ts'
 import { createHarness } from './fixtures/harness.ts'
 
 const harness = await createHarness()
@@ -129,8 +130,8 @@ describe('refusals name their cause and stay within 4 KB', () => {
       const big = await small.create('train-a-work-week')
       const refused = await small.call('planning.plan.generate', { resource: big.id, input: {}, expectedRevision: 1 })
       expect(error(refused)).toEqual([413, 'above_certified_size'])
-      expect(refused.body.error.message).toBe(`Certified plan size: pending the owner's decision. This plan has ${trainA.jobs.length} jobs; Generate takes up to 1 until then.`)
-      expect(refused.body.error.message).not.toMatch(/certified for|up to \d+ jobs|test double/)
+      expect(refused.body.error.message).toBe(`This plan has ${jobsPerSolve(trainA)} jobs. Planning is certified for plans of up to 1 jobs (test plans); larger plans wait for the owner's decision.`)
+      expect(refused.body.error.message).not.toContain(testCertifiedSize.evidence)   // the evidence is detail, never in the refusal
     } finally { await small.close() }
   })
 

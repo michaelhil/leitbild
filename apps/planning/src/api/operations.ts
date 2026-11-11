@@ -20,7 +20,7 @@ import {
 import type { Edit } from '../plan/edit-schema.ts'
 import { assertRevision, type PlanStore, type RevisionGuard } from '../plan/store.ts'
 import {
-  attentionKind, basisWords, buildSection, clip, datedWords, sizeRefusalWords, weakeningWords, byteLength, changeLines, changeSummary, nameOf, optionWarning, readinessText,
+  attentionKind, basisWords, buildSection, clip, datedWords, jobsPerSolve, sizeRefusalWords, weakeningWords, withinCertifiedSize, byteLength, changeLines, changeSummary, nameOf, optionWarning, readinessText,
   statusSentence, timeWords, valueWords, type OptionState, type Section, type SectionContext,
 } from '../plan/summary.ts'
 import type { Grid } from '../time/units.ts'
@@ -402,8 +402,8 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
   const generateOnce = async (workspaceId: WorkspaceId, planId: string, input: z.infer<typeof generateInputSchema>, expectedRevision: number | undefined, access: AccessContext, signal: AbortSignal): Promise<GenerateResult> => {
     const guard = { expectedRevision, required: true }
     const plan = await readGuarded(workspaceId, planId, guard)
-    if (plan.inputs.jobs.length > certifiedSize.maxJobs) {
-      throw planningError(413, 'above_certified_size', sizeRefusalWords(certifiedSize, plan.inputs.jobs.length), { maxJobs: certifiedSize.maxJobs, jobs: plan.inputs.jobs.length })
+    if (!withinCertifiedSize(plan.inputs, certifiedSize)) {
+      throw planningError(413, 'above_certified_size', sizeRefusalWords(certifiedSize, plan.inputs), { maxJobs: certifiedSize.maxJobs, jobs: jobsPerSolve(plan.inputs) })
     }
     const at = now()
     const by = storedActor(access)

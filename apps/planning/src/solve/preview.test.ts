@@ -5,7 +5,7 @@ import { planInputsSchema, type PlanInputs } from '../plan/schema.ts'
 import { twinPlan, twinV3Options } from '../../tests/harness/twin-plan.ts'
 import { compile } from './compile.ts'
 import { prepare } from './decode.ts'
-import { generate, type GenerateInput } from './generate.ts'
+import { CERTIFIED_SIZE, generate, type GenerateInput } from './generate.ts'
 import { createSolverPool } from './pool.ts'
 import { laneKCheck, laneKVerify } from './fixtures/lane-k.ts'
 import { SIZE_CURVE_SHA256, sizeCurveSubset } from './fixtures/size-curve.ts'
@@ -20,7 +20,8 @@ describe('preview re-timing repairs the option, never re-solves it', () => {
   const solver = createRealSolver(pool)
   afterAll(() => pool.shutdown())
   const optionOf = async (inputs: PlanInputs, variants?: GenerateInput['variants']) => {
-    const result = await generate({ engine: pool, check: laneKCheck, verify: laneKVerify }, {
+    // S60 to S130 are above the certified size (33 jobs): solved directly here, the size lifted, as or's size curve did.
+    const result = await generate({ engine: pool, check: laneKCheck, verify: laneKVerify, certifiedSize: { ...CERTIFIED_SIZE, maxJobs: 130 } }, {
       inputs, revision: 1, previous: null, input: variants === undefined ? {} : { variants }, by: { kind: 'service', name: 'test' }, signal: new AbortController().signal, seed: 1, evals: 1_500,
     })
     const option = result.optionSet.options.find(candidate => candidate.key === result.optionSet.recommended)!
