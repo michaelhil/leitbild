@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { workspaceIdSchema } from '@leitbild/contracts'
-import { createPlanStore } from './store.ts'
+import { createPlanStore, encodePlan, summarize } from './store.ts'
 import { planInputsSchema, type Plan } from './schema.ts'
 
 const roots: string[] = []
@@ -29,8 +29,9 @@ describe('one JSON file per plan', () => {
     await mkdir(join(root, 'workspaces', workspaceId, 'planning', 'studies'), { recursive: true })
     await writeFile(join(root, 'workspaces', workspaceId, 'planning', 'studies', `${crypto.randomUUID()}.json`), '{"old":true}')
     const plan = await store.create(workspaceId, planFor())
-    expect(await Bun.file(join(root, 'workspaces', workspaceId, 'planning', 'plans', `${plan.id}.json`)).json()).toEqual(plan)
-    expect((await store.list(workspaceId))).toEqual({ plans: [plan], damaged: [] })
+    expect(await Bun.file(join(root, 'workspaces', workspaceId, 'planning', 'plans', `${plan.id}.json`)).json()).toEqual(encodePlan(plan))
+    expect(await store.read(workspaceId, plan.id)).toEqual(plan)
+    expect((await store.list(workspaceId))).toEqual({ plans: [summarize(plan)], damaged: [] })
     expect((await caught(store.read(workspaceId, crypto.randomUUID()))).code).toBe('plan_not_found')
   })
 
@@ -57,18 +58,35 @@ describe('one JSON file per plan', () => {
     expect((await store.read(workspaceId, plan.id)).revision).toBe(11)
   })
 
-  test('a damaged file is listed as damaged and hides nothing else; it can be deleted only without a revision', async () => {
+  test('a damaged file is listed as damaged and hides nothing else, and is never deleted', async () => {
     const root = await tempRoot()
     const store = createPlanStore(root)
     await store.provision(workspaceId)
     const good = await store.create(workspaceId, planFor())
     const damagedId = crypto.randomUUID()
     await writeFile(join(root, 'workspaces', workspaceId, 'planning', 'plans', `${damagedId}.json`), '{"half":')
-    expect(await store.list(workspaceId)).toEqual({ plans: [good], damaged: [{ id: damagedId }] })
-    expect((await caught(store.read(workspaceId, damagedId))).code).toBe('plan_damaged')
-    expect((await caught(store.delete(workspaceId, damagedId, { expectedRevision: 1, required: false }))).code).toBe('plan_damaged')
-    await store.delete(workspaceId, damagedId, { expectedRevision: undefined, required: false })
-    expect(await store.list(workspaceId)).toEqual({ plans: [good], damaged: [] })
+    expect(await store.list(workspaceId)).toEqual({ plans: [summarize(good)], damaged: [{ id: damagedId }] })
+    const read = await caught(store.read(workspaceId, damagedId))
+    expect([read.status, read.code, (read as unknown as Error).message]).toEqual([500, 'plan_damaged', 'This plan file could not be read; do not delete it, report it.'])
+    // After a rollback a newer plan reads as damaged: deleting it would lose it.
+    for (const expectedRevision of [1, undefined]) expect((await caught(store.delete(workspaceId, damagedId, { expectedRevision, required: false }))).code).toBe('plan_damaged')
+    expect((await store.list(workspaceId)).damaged).toEqual([{ id: damagedId }])
+  })
+
+  test('a file that cannot be read just now is a 503 to retry, not damage', async () => {
+    const root = await tempRoot()
+    const store = createPlanStore(root)
+    await store.provision(workspaceId)
+    const plan = await store.create(workspaceId, planFor())
+    const path = join(root, 'workspaces', workspaceId, 'planning', 'plans', `${plan.id}.json`)
+    await chmod(path, 0o000)
+    try {
+      const refused = await caught(store.read(workspaceId, plan.id))
+      expect([refused.status, refused.code]).toEqual([503, 'store_unavailable'])
+      expect((await caught(store.list(workspaceId))).code).toBe('store_unavailable')
+      expect((await caught(store.delete(workspaceId, plan.id, { expectedRevision: undefined, required: false }))).code).toBe('store_unavailable')
+    } finally { await chmod(path, 0o600) }
+    expect(await store.read(workspaceId, plan.id)).toEqual(plan)
   })
 })
 
@@ -84,6 +102,15 @@ describe('atomic saves', () => {
     const restarted = createPlanStore(root)
     expect(await restarted.read(workspaceId, plan.id)).toEqual(plan)
     expect((await readdir(directory)).filter(name => name.endsWith('.tmp'))).toEqual([])
+  })
+
+  test('a write that fails while writing removes its temporary file at once', async () => {
+    const root = await tempRoot()
+    const plan = await (async () => { const store = createPlanStore(root); await store.provision(workspaceId); return store.create(workspaceId, planFor()) })()
+    const failing = createPlanStore(root, { beforeWrite: async () => { throw Object.assign(new Error('disk full'), { code: 'ENOSPC' }) } })
+    expect((await caught(failing.update(workspaceId, plan.id, { expectedRevision: 1, required: true }, retitle('lost')))).code).toBe('ENOSPC')
+    expect((await readdir(join(root, 'workspaces', workspaceId, 'planning', 'plans'))).filter(name => name.endsWith('.tmp'))).toEqual([])
+    expect(await failing.read(workspaceId, plan.id)).toEqual(plan)
   })
 
   test('kill -9 during repeated saves never loses an acknowledged save and never leaves a half-written plan', async () => {
@@ -112,4 +139,66 @@ describe('atomic saves', () => {
       expect((await readdir(join(root, 'workspaces', workspaceId, 'planning', 'plans'))).filter(name => name.endsWith('.tmp'))).toEqual([])
     }
   }, 60_000)
+})
+
+describe('bounded plans and listings', () => {
+  test('a write past the plan size limit is refused with 413 in words and saves nothing', async () => {
+    const store = createPlanStore(await tempRoot(), { maxPlanBytes: 20_000 })
+    await store.provision(workspaceId)
+    const plan = await store.create(workspaceId, planFor())
+    const refused = await caught(store.update(workspaceId, plan.id, { expectedRevision: 1, required: true }, current => ({
+      ...current, changes: [...current.changes, ...Array.from({ length: 200 }, (_, index) => ({ seq: index + 2, at: current.updatedAt, by: { kind: 'human' as const }, revision: 1, summary: 'x'.repeat(200), kinds: [] }))],
+    })))
+    expect([refused.status, refused.code]).toEqual([413, 'plan_too_large'])
+    expect((refused as unknown as Error).message).toMatch(/^This change would make the plan [\d.]+ MB, more than the 0 MB a plan may hold; nothing was saved$/)
+    expect(await store.read(workspaceId, plan.id)).toEqual(plan)
+  })
+
+  test('baselines that share inputs store them once, and the plan reads back whole', async () => {
+    const root = await tempRoot()
+    const store = createPlanStore(root)
+    await store.provision(workspaceId)
+    const option = { key: 'O1', label: 'Only', variant: { methods: [], purchases: [] }, status: { word: 'invalid input' as const, problems: [{ about: [], code: 'test' }] }, rows: [], metrics: [], inputsRevision: 1 }
+    const earlier = { ...supplyRun, settings: { ...supplyRun.settings, title: 'Earlier' } }
+    const baseline = (key: string, inputs: typeof supplyRun) => ({ key, name: key, at: '2026-11-11T08:00:00Z', by: { kind: 'human' as const }, option, inputs })
+    const plan = await store.create(workspaceId, { ...planFor(), baselines: [baseline('B1', earlier), baseline('B2', earlier), baseline('B3', supplyRun)] })
+    const file = encodePlan(plan)
+    expect(file.frozenInputs.length).toBe(1)
+    expect(file.baselines.map(entry => entry.inputs)).toEqual([file.frozenInputs[0]!.key, file.frozenInputs[0]!.key, 'current'])
+    expect(await createPlanStore(root).read(workspaceId, plan.id)).toEqual(plan)
+  })
+
+  test('a listing keeps one plan in memory at a time and returns summaries only', async () => {
+    const root = await tempRoot()
+    const store = createPlanStore(root)
+    await store.provision(workspaceId)
+    // Plans near the 4 MB file limit: 8 options of 1,500 dated rows each.
+    const row = (index: number) => ({ job: `J${index}`, start: '2026-11-16T06:00:00Z', finish: '2026-11-16T07:00:00Z', uses: [{ resource: 'truck-1', from: '2026-11-16T06:00:00Z', to: '2026-11-16T07:00:00Z' }], float: { workingHours: 1.5, limitedBy: { kind: 'window-end' as const } } })
+    const rows = Array.from({ length: 1_500 }, (_, index) => row(index))
+    const option = (key: string) => ({ key, label: `Option ${key}`, variant: { methods: [], purchases: [] }, status: { word: 'invalid input' as const, problems: [{ about: [], code: 'test' }] }, rows, metrics: [], inputsRevision: 1 })
+    const large = (): Plan => ({ ...planFor(), options: { at: '2026-11-11T08:00:00Z', by: { kind: 'human' }, options: Array.from({ length: 8 }, (_, index) => option(`O${index + 1}`)) } })
+    const count = 8
+    for (let index = 0; index < count; index += 1) await store.create(workspaceId, large())
+    const fileBytes = (await Bun.file(join(root, 'workspaces', workspaceId, 'planning', 'plans', (await readdir(join(root, 'workspaces', workspaceId, 'planning', 'plans')))[0]!)).arrayBuffer()).byteLength
+    expect(fileBytes).toBeGreaterThan(2_500_000)
+    expect(fileBytes).toBeLessThanOrEqual(4_000_000)
+    // What one plan costs in memory, parsed and held.
+    Bun.gc(true)
+    const before = process.memoryUsage().rss
+    const one = await store.read(workspaceId, (await store.list(workspaceId)).plans[0]!.id)
+    const onePlan = process.memoryUsage().rss - before
+    expect(one.options?.options.length).toBe(8)
+    Bun.gc(true)
+    const start = process.memoryUsage().rss
+    let peak = start
+    const sampler = setInterval(() => { peak = Math.max(peak, process.memoryUsage().rss) }, 2)
+    const listing = await store.list(workspaceId)
+    clearInterval(sampler)
+    peak = Math.max(peak, process.memoryUsage().rss)
+    expect(listing.plans.length).toBe(count)
+    expect(JSON.stringify(listing).length).toBeLessThan(count * 400)
+    // Holding every plan would grow memory by about count x onePlan; one at a time stays within a few plans' worth.
+    expect(peak - start).toBeLessThan(Math.max(onePlan, 20_000_000) * 2)
+    console.log(`listing ${count} plans of ${(fileBytes / 1e6).toFixed(1)} MB: one plan ${Math.round(onePlan / 1e6)} MB, listing peak +${Math.round((peak - start) / 1e6)} MB`)
+  }, 120_000)
 })

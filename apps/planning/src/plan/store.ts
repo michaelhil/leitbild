@@ -1,20 +1,83 @@
 // One JSON file per plan at workspaces/<ws>/planning/plans/<uuid>.json. One writer per Workspace: every
 // operation on a Workspace runs in its queue. A write goes to a temporary file that is synced, renamed over
-// the plan and followed by a sync of the directory, so an acknowledged save survives a crash and a reader
-// never sees half a file. The old studies/ folder is never read.
+// the plan and followed by a sync of the directory, so an acknowledged save survives a process crash and a
+// reader never sees half a file (power loss rests on Linux fsync). The old studies/ folder is never read.
+//
+// The file holds each distinct baseline inputs copy once (`frozenInputs`), and a baseline names its copy;
+// in memory a plan is the planSchema aggregate. A plan file is at most `maxPlanBytes` (4 MB): a larger write
+// is refused with 413, so one read or a listing never needs more than one plan's worth of memory.
+import { createHash } from 'node:crypto'
 import { mkdir, open, readdir, rename, rm } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { z } from 'zod'
 import { workspaceIdSchema, type WorkspaceId } from '@leitbild/contracts'
 import { planningError } from '../errors.ts'
-import { planSchema, type Plan } from './schema.ts'
+import { planInputsSchema, planSchema, type Plan, type PlanInputs } from './schema.ts'
 
 const planIdSchema = z.uuid()
 const markerSchema = z.object({ workspaceId: workspaceIdSchema, moduleId: z.literal('planning') }).strict()
 const temporarySuffix = '.tmp'
+export const maxPlanBytes = 4_000_000
+
+/** A baseline's inputs: `current` (the plan's own inputs in this file) or a key in frozenInputs. */
+const baselineFileSchema = planSchema.shape.baselines.element.omit({ inputs: true }).extend({ inputs: z.string().min(1).max(32) }).strict()
+const planFileSchema = planSchema.omit({ baselines: true }).extend({
+  baselines: z.array(baselineFileSchema).max(32),
+  frozenInputs: z.array(z.object({ key: z.string().min(1).max(32), inputs: planInputsSchema }).strict()).max(32),
+}).strict()
+
+const contentKey = (inputs: PlanInputs): string => createHash('sha256').update(JSON.stringify(inputs)).digest('hex').slice(0, 16)
+
+/** The file form: every distinct baseline inputs copy stored once, the plan's current inputs never twice. */
+export const encodePlan = (plan: Plan): z.infer<typeof planFileSchema> => {
+  const current = JSON.stringify(plan.inputs)
+  const frozen = new Map<string, PlanInputs>()
+  const baselines = plan.baselines.map(({ inputs, ...baseline }) => {
+    if (JSON.stringify(inputs) === current) return { ...baseline, inputs: 'current' }
+    const key = contentKey(inputs)
+    frozen.set(key, inputs)
+    return { ...baseline, inputs: key }
+  })
+  return { ...plan, baselines, frozenInputs: [...frozen].map(([key, inputs]) => ({ key, inputs })) }
+}
+
+/**
+ * Back to the aggregate. Every part was validated by planFileSchema, so the baselines are assembled without
+ * parsing again, and baselines that share a copy share one object in memory.
+ */
+const decodePlan = (file: z.infer<typeof planFileSchema>): Plan | undefined => {
+  const frozen = new Map(file.frozenInputs.map(entry => [entry.key, entry.inputs]))
+  const { frozenInputs: _frozen, ...rest } = file
+  const baselines: Plan['baselines'] = []
+  for (const { inputs: key, ...baseline } of file.baselines) {
+    const inputs = key === 'current' ? file.inputs : frozen.get(key)
+    if (inputs === undefined) return undefined
+    baselines.push({ ...baseline, inputs })
+  }
+  return { ...rest, baselines }
+}
+
+/** What the catalogue shows of a plan; a listing keeps only these, never whole plans. */
+export interface PlanSummary {
+  readonly id: string
+  readonly title: string
+  readonly purpose?: string
+  readonly revision: number
+  readonly updatedAt: string
+  readonly linked: boolean
+  readonly optionCount: number
+  readonly optionsOutOfDate: boolean
+}
+export const summarize = (plan: Plan): PlanSummary => ({
+  id: plan.id, title: plan.inputs.settings.title,
+  ...(plan.inputs.settings.purpose === undefined ? {} : { purpose: plan.inputs.settings.purpose }),
+  revision: plan.revision, updatedAt: plan.updatedAt, linked: plan.inputs.settings.run !== null,
+  optionCount: plan.options?.options.length ?? 0,
+  optionsOutOfDate: (plan.options?.options ?? []).some(option => option.inputsRevision !== plan.revision),
+})
 
 export interface DamagedPlan { readonly id: string }
-export interface PlanListing { readonly plans: ReadonlyArray<Plan>; readonly damaged: ReadonlyArray<DamagedPlan> }
+export interface PlanListing { readonly plans: ReadonlyArray<PlanSummary>; readonly damaged: ReadonlyArray<DamagedPlan> }
 
 /** The envelope revision a write states. `required: false` only for delete (L2). */
 export interface RevisionGuard { readonly expectedRevision: number | undefined; readonly required: boolean }
@@ -23,7 +86,7 @@ export interface PlanStore {
   readonly hasWorkspace: (workspaceId: WorkspaceId) => Promise<boolean>
   readonly provision: (workspaceId: WorkspaceId) => Promise<boolean>
   readonly removeWorkspace: (workspaceId: WorkspaceId) => Promise<void>
-  /** Parses every plan; a file that does not parse is listed as damaged and hides nothing else. */
+  /** Parses one plan at a time and keeps its summary; a file that does not parse is listed as damaged. */
   readonly list: (workspaceId: WorkspaceId) => Promise<PlanListing>
   readonly read: (workspaceId: WorkspaceId, planId: string) => Promise<Plan>
   readonly create: (workspaceId: WorkspaceId, plan: Plan) => Promise<Plan>
@@ -33,7 +96,7 @@ export interface PlanStore {
    * raises it by one (an input change).
    */
   readonly update: (workspaceId: WorkspaceId, planId: string, guard: RevisionGuard, change: (plan: Plan) => Plan | Promise<Plan>) => Promise<Plan>
-  /** A damaged plan can be deleted only without an expected revision, since it has none to compare. */
+  /** A damaged plan is never deleted here: after a rollback it may be a newer plan this version cannot read. */
   readonly delete: (workspaceId: WorkspaceId, planId: string, guard: RevisionGuard) => Promise<void>
 }
 
@@ -52,10 +115,17 @@ export const assertRevision = (plan: Plan, guard: RevisionGuard): void => {
 export interface PlanStoreOptions {
   /** Called after the temporary file is synced and before it replaces the plan; tests stop here to model a crash. */
   readonly beforeReplace?: (path: string) => Promise<void>
+  /** Stands in for the disk in tests: called after the temporary file is opened, before it is written. */
+  readonly beforeWrite?: (path: string) => Promise<void>
+  readonly maxPlanBytes?: number
 }
+
+const damagedText = 'This plan file could not be read; do not delete it, report it.'
+const ioCode = (error: unknown): string | undefined => error instanceof Error && 'code' in error && typeof error.code === 'string' ? error.code : undefined
 
 export const createPlanStore = (rootDirectory: string, options: PlanStoreOptions = {}): PlanStore => {
   const root = resolve(rootDirectory)
+  const limit = options.maxPlanBytes ?? maxPlanBytes
   const queues = new Map<string, Promise<void>>()
   const swept = new Set<string>()
   const moduleDirectory = (workspaceId: WorkspaceId) => join(root, 'workspaces', workspaceIdSchema.parse(workspaceId), 'planning')
@@ -80,22 +150,32 @@ export const createPlanStore = (rootDirectory: string, options: PlanStoreOptions
     try { await handle.sync() } finally { await handle.close() }
   }
 
-  const write = async (path: string, document: unknown): Promise<void> => {
-    const directory = resolve(path, '..')
+  /** Any failure before the rename removes the temporary file, so a failed save leaves nothing behind. */
+  const writeText = async (path: string, text: string): Promise<void> => {
     const temporary = `${path}.${crypto.randomUUID()}${temporarySuffix}`
     const handle = await open(temporary, 'wx')
     try {
-      await handle.writeFile(`${JSON.stringify(document)}\n`, 'utf8')
-      await handle.sync()
-    } finally { await handle.close() }
-    try {
+      try {
+        await options.beforeWrite?.(path)
+        await handle.writeFile(text, 'utf8')
+        await handle.sync()
+      } finally { await handle.close() }
       await options.beforeReplace?.(path)
       await rename(temporary, path)
     } catch (error) {
       await rm(temporary, { force: true })
       throw error
     }
-    await syncDirectory(directory)
+    await syncDirectory(resolve(path, '..'))
+  }
+
+  const writePlan = async (path: string, plan: Plan): Promise<void> => {
+    const text = `${JSON.stringify(encodePlan(plan))}\n`
+    const bytes = Buffer.byteLength(text, 'utf8')
+    if (bytes > limit) {
+      throw planningError(413, 'plan_too_large', `This change would make the plan ${(bytes / 1e6).toFixed(1)} MB, more than the ${(limit / 1e6).toFixed(0)} MB a plan may hold; nothing was saved`, { bytes, limit })
+    }
+    await writeText(path, text)
   }
 
   const requireWorkspace = async (workspaceId: WorkspaceId): Promise<void> => {
@@ -112,21 +192,27 @@ export const createPlanStore = (rootDirectory: string, options: PlanStoreOptions
     swept.add(workspaceId)
   }
 
-  const parseStored = async (workspaceId: WorkspaceId, planId: string): Promise<{ readonly ok: true; readonly plan: Plan } | { readonly ok: false }> => {
+  /** Not found, damaged (it does not parse as a plan), or the plan. An I/O failure is neither: 503, retry. */
+  const parseStored = async (workspaceId: WorkspaceId, planId: string): Promise<{ readonly kind: 'missing' } | { readonly kind: 'damaged' } | { readonly kind: 'plan'; readonly plan: Plan }> => {
+    let text: string
+    try { text = await Bun.file(planPath(workspaceId, planId)).text() } catch (error) {
+      if (ioCode(error) === 'ENOENT') return { kind: 'missing' }
+      throw planningError(503, 'store_unavailable', 'Planning could not read its files just now; try again', { code: ioCode(error) ?? 'unknown' })
+    }
     let raw: unknown
-    try { raw = await Bun.file(planPath(workspaceId, planId)).json() } catch { return { ok: false } }
-    const parsed = planSchema.safeParse(raw)
-    if (!parsed.success || parsed.data.id !== planId || parsed.data.workspaceId !== workspaceId) return { ok: false }
-    return { ok: true, plan: parsed.data }
+    try { raw = JSON.parse(text) } catch { return { kind: 'damaged' } }
+    const file = planFileSchema.safeParse(raw)
+    const plan = file.success ? decodePlan(file.data) : undefined
+    if (plan === undefined || plan.id !== planId || plan.workspaceId !== workspaceId) return { kind: 'damaged' }
+    return { kind: 'plan', plan }
   }
 
   const read = async (workspaceId: WorkspaceId, planId: string): Promise<Plan> => {
     await requireWorkspace(workspaceId)
-    if (!planIdSchema.safeParse(planId).success || !await Bun.file(planPath(workspaceId, planId)).exists()) {
-      throw planningError(404, 'plan_not_found', 'Plan not found')
-    }
+    if (!planIdSchema.safeParse(planId).success) throw planningError(404, 'plan_not_found', 'Plan not found')
     const stored = await parseStored(workspaceId, planId)
-    if (!stored.ok) throw planningError(500, 'plan_damaged', 'This plan\'s file cannot be read. It is kept unchanged on the server; it can be deleted.')
+    if (stored.kind === 'missing') throw planningError(404, 'plan_not_found', 'Plan not found')
+    if (stored.kind === 'damaged') throw planningError(500, 'plan_damaged', damagedText)
     return stored.plan
   }
 
@@ -140,7 +226,7 @@ export const createPlanStore = (rootDirectory: string, options: PlanStoreOptions
       const marker = Bun.file(join(moduleDirectory(workspaceId), 'module.json'))
       if (await marker.exists()) { await requireWorkspace(workspaceId); return false }
       await mkdir(plansDirectory(workspaceId), { recursive: true })
-      await write(join(moduleDirectory(workspaceId), 'module.json'), markerSchema.parse({ workspaceId, moduleId: 'planning' }))
+      await writeText(join(moduleDirectory(workspaceId), 'module.json'), `${JSON.stringify(markerSchema.parse({ workspaceId, moduleId: 'planning' }))}\n`)
       return true
     }),
     removeWorkspace: workspaceId => serialize(workspaceId, async () => {
@@ -149,14 +235,15 @@ export const createPlanStore = (rootDirectory: string, options: PlanStoreOptions
     }),
     list: workspaceId => serialize(workspaceId, async () => {
       await requireWorkspace(workspaceId)
-      const plans: Plan[] = []
+      const plans: PlanSummary[] = []
       const damaged: DamagedPlan[] = []
       for (const name of (await readdir(plansDirectory(workspaceId))).filter(name => name.endsWith('.json')).sort()) {
         const id = name.slice(0, -'.json'.length)
         if (!planIdSchema.safeParse(id).success) continue
+        // One plan in memory at a time: only its summary is kept.
         const stored = await parseStored(workspaceId, id)
-        if (stored.ok) plans.push(stored.plan)
-        else damaged.push({ id })
+        if (stored.kind === 'plan') plans.push(summarize(stored.plan))
+        else if (stored.kind === 'damaged') damaged.push({ id })
       }
       return { plans: plans.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || left.id.localeCompare(right.id)), damaged }
     }),
@@ -166,7 +253,7 @@ export const createPlanStore = (rootDirectory: string, options: PlanStoreOptions
       const plan = planSchema.parse(input)
       if (plan.workspaceId !== workspaceId) throw planningError(400, 'workspace_scope_mismatch', 'The plan belongs to another Workspace')
       if (await Bun.file(planPath(workspaceId, plan.id)).exists()) throw planningError(409, 'plan_exists', 'A plan with this id already exists')
-      await write(planPath(workspaceId, plan.id), plan)
+      await writePlan(planPath(workspaceId, plan.id), plan)
       return plan
     }),
     update: (workspaceId, planId, guard, change) => serialize(workspaceId, async () => {
@@ -176,17 +263,16 @@ export const createPlanStore = (rootDirectory: string, options: PlanStoreOptions
       if (next.id !== previous.id || next.workspaceId !== previous.workspaceId || (next.revision !== previous.revision && next.revision !== previous.revision + 1)) {
         throw planningError(500, 'invalid_plan_mutation', 'A plan change keeps its identity and raises its revision by at most one')
       }
-      await write(planPath(workspaceId, planId), next)
+      await writePlan(planPath(workspaceId, planId), next)
       return next
     }),
     delete: (workspaceId, planId, guard) => serialize(workspaceId, async () => {
       await requireWorkspace(workspaceId)
-      const path = planPath(workspaceId, planId)
-      if (!await Bun.file(path).exists()) throw planningError(404, 'plan_not_found', 'Plan not found')
-      const stored = await parseStored(workspaceId, planId)
-      if (stored.ok) assertRevision(stored.plan, guard)
-      else if (guard.expectedRevision !== undefined) throw planningError(409, 'plan_damaged', 'This plan\'s file cannot be read, so it has no revision to compare; delete it without one')
-      await rm(path)
+      const stored = planIdSchema.safeParse(planId).success ? await parseStored(workspaceId, planId) : { kind: 'missing' as const }
+      if (stored.kind === 'missing') throw planningError(404, 'plan_not_found', 'Plan not found')
+      if (stored.kind === 'damaged') throw planningError(409, 'plan_damaged', damagedText)
+      assertRevision(stored.plan, guard)
+      await rm(planPath(workspaceId, planId))
       await syncDirectory(plansDirectory(workspaceId))
     }),
   }

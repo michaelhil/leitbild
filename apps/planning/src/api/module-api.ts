@@ -10,8 +10,7 @@ import {
 import { createModuleCapabilityRegistry, type CapabilityRegistration } from '@leitbild/module-runtime'
 import { isPlanningError, planningError } from '../errors.ts'
 import { expectedFor } from '../plan/edits.ts'
-import type { Plan } from '../plan/schema.ts'
-import type { PlanStore } from '../plan/store.ts'
+import type { PlanStore, PlanSummary } from '../plan/store.ts'
 import type { Edit } from '../plan/edit-schema.ts'
 import { definitionDescriptors, planDefinitionType } from '../definitions/index.ts'
 import {
@@ -114,7 +113,7 @@ export const planningOperations: ReadonlyArray<Operation<any>> = [
   {
     id: 'planning.plan.baseline', kind: 'command', scope: 'plan', risk: 'write',
     title: 'Commit a baseline',
-    description: 'Make one option the plan\'s baseline: the schedule you commit to and compare later changes with, frozen with the plan as it was. Only an option that is validated feasible on the plan as it stands now can become the baseline; one that is out of date is refused, so generate again first. Earlier baselines are kept with their names and notes. The plan\'s inputs do not change. Needs the plan\'s current revision.',
+    description: 'Make one option the plan\'s baseline: the schedule you commit to and compare later changes with, frozen with the plan as it was. Only an option that is validated feasible on the plan as it stands now can become the baseline; one that is out of date is refused, so generate again first. Earlier baselines are kept with their names and notes, up to 8 per plan. The plan\'s inputs do not change. Needs the plan\'s current revision.',
     searchTerms: ['baseline', 'commit', 'freeze', 'approve', 'choose'],
     input: baselineInputSchema, output: writeResultSchema,
     invoke: async ({ operations }, invocation, input: z.infer<typeof baselineInputSchema>) => ({ result: await operations.baseline(invocation.workspaceId, planIdOf(invocation), input, invocation.expectedRevision, invocation.access) }),
@@ -125,7 +124,7 @@ export const planningOperations: ReadonlyArray<Operation<any>> = [
     description: 'Read again, from the linked World simulation, every value this plan uses: equipment state, durations, arrival times and payloads, each with how it is known and the simulation time it describes. Shows which values changed, which options are now out of date, and preconditions that are not met at read time. Values you entered yourself are never changed, and reading never pauses or changes the simulation. Needs the plan\'s current revision.',
     searchTerms: ['refresh', 'update', 'latest', 'World', 'changed', 'reread'],
     input: refreshInputSchema, output: writeResultSchema,
-    invoke: async ({ operations }, invocation, input: z.infer<typeof refreshInputSchema>) => ({ result: await operations.refresh(invocation.workspaceId, input.plan, invocation.expectedRevision, invocation.access) }),
+    invoke: async ({ operations, signal }, invocation, input: z.infer<typeof refreshInputSchema>) => ({ result: await operations.refresh(invocation.workspaceId, input.plan, invocation.expectedRevision, invocation.access, signal) }),
   },
   {
     id: 'planning.plan.delete', kind: 'command', scope: 'plan', risk: 'destructive',
@@ -175,9 +174,9 @@ const registrationFor = (operation: Operation<unknown>): CapabilityRegistration<
   },
 })
 
-const statusLabel = (plan: Plan): string => {
-  if (plan.options === null || plan.options.options.length === 0) return plan.inputs.settings.run === null ? 'Not linked yet' : 'No schedule yet'
-  return plan.options.options.some(option => option.inputsRevision !== plan.revision) ? 'Options out of date' : 'Options ready'
+const statusLabel = (plan: PlanSummary): string => {
+  if (plan.optionCount === 0) return plan.linked ? 'No schedule yet' : 'Not linked yet'
+  return plan.optionsOutOfDate ? 'Options out of date' : 'Options ready'
 }
 
 export const createPlanningModuleApi = (config: {
@@ -194,21 +193,22 @@ export const createPlanningModuleApi = (config: {
     const observedAt = new Date().toISOString()
     return [
       ...plans.map(plan => moduleResourceDescriptorSchema.parse({
-        ref: planReference(workspaceId, plan.id), title: plan.inputs.settings.title,
-        ...(plan.inputs.settings.purpose === undefined ? {} : { description: plan.inputs.settings.purpose }),
+        ref: planReference(workspaceId, plan.id), title: plan.title,
+        ...(plan.purpose === undefined ? {} : { description: plan.purpose }),
         uiPath: `/workspaces/${workspaceId}/planning?plan=${plan.id}`,
         capabilityIds: planCapabilities, inspectionCapabilityId: 'planning.plan.read', deleteCapabilityId: 'planning.plan.delete',
         summary: [
           { key: 'status', label: 'Status', kind: 'status', value: statusLabel(plan) },
-          { key: 'option-count', label: 'Options', kind: 'count', value: plan.options?.options.length ?? 0 },
+          { key: 'option-count', label: 'Options', kind: 'count', value: plan.optionCount },
           { key: 'updated-at', label: 'Updated', kind: 'timestamp', value: plan.updatedAt },
         ],
         observedAt,
       })),
       ...damaged.map(({ id }) => moduleResourceDescriptorSchema.parse({
         ref: planReference(workspaceId, id), title: 'Damaged plan',
-        description: 'This plan\'s file cannot be read. It is kept unchanged on the server and can be deleted.',
-        capabilityIds: ['planning.plan.delete'], deleteCapabilityId: 'planning.plan.delete',
+        // No delete card: after a rollback a newer plan reads as damaged, and deleting it would lose it.
+        description: 'This plan file could not be read; do not delete it, report it.',
+        capabilityIds: [],
         summary: [{ key: 'status', label: 'Status', kind: 'status', value: 'Damaged' }],
         observedAt,
       })),
