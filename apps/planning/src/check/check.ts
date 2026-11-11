@@ -473,8 +473,8 @@ export const checkPlan = (inputs: Inputs, variant: CheckVariant, rows: readonly 
       }
       if (unserved.length > 0) push('need-not-served', [job.key], `'${job.title}' is not served by exactly the crews and tools it needs at ${when(instantOf(unserved[0]!))}${unserved.length > 1 ? ` and ${unserved.length - 1} more half-hours or slots` : ''}.`, instantOf(unserved[0]!))
       if (extra !== undefined) push('use-outside-work', [job.key], `'${job.title}' records crew or tool use at ${when(instantOf(extra))}, when it is not working.`, instantOf(extra))
-      // handover: a need without it keeps the same resources throughout
-      for (const need of needs) {
+      // handover: a need without it keeps the same resources throughout (judged only when every slot is served)
+      for (const need of unserved.length > 0 ? [] : needs) {
         if (need.need.handover) continue
         const overlapping = needs.some(other => other !== need && [...other.anyOf].some(resource => need.anyOf.has(resource)))
         if (overlapping) continue
