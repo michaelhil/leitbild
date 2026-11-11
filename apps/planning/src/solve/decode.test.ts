@@ -52,3 +52,66 @@ describe('SS and FF lags count working progress', () => {
     expect(rows.CLEAN![0]).toBe(local('2026-11-17T07:00:00'))
   })
 })
+
+// A keep-in-service rule never makes the decoder place a job it cannot slot (coordinator, after or's lead):
+// a ready opener the rule blocks at every slot waits until an open outage closes; when nothing else can go
+// first, the plan is reported unplaceable (a deadlock) and the opener is not placed.
+const pair = (extraLinks: unknown[]) => planInputsSchema.parse({
+  settings: { title: 'Pair', timeZone: 'Europe/Oslo', window: { start: '2026-11-16T06:00:00Z', end: '2026-11-17T06:00:00Z' }, dataDate: null, grid: '30min', currency: 'NOK', run: null },
+  equipment: ['A', 'B'].map(key => ({ key, label: `Pump ${key}`, supportedBy: [], function: 'feed' })), groups: [],
+  calendars: [{ key: 'always', label: 'Always', weekly: [{ days: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'], from: '00:00', to: '00:00' }], periods: [], except: [], source: { by: 'planner' } }],
+  resources: [{ key: 'crew', label: 'Crew', kind: 'crew', count: 2, calendar: 'always', attributes: [], source: { by: 'planner' } }],
+  purchases: [], methods: [],
+  jobs: ['A', 'B'].flatMap(item => (['tag-out', 'work', 'test'] as const).map(kind => ({
+    key: `${item}-${kind}`, title: `${item} ${kind}`, kind, equipment: [item], isolation: kind === 'work' ? 'inside' : 'none',
+    duration: { value: kind === 'work' ? 2 : 1, unit: 'h', calendar: 'working', origin: { by: 'planner' } }, durationWith: [],
+    needs: [{ anyOf: ['crew'], amount: 1, handover: false }], continuous: true, checks: [], tags: [],
+  }))),
+  links: extraLinks,
+  rules: [{ kind: 'keep-in-service', key: 'K', members: [{ equipment: 'A' }, { equipment: 'B' }], atLeast: 1, words: 'One pump in service.', source: { by: 'planner' } }],
+  goals: [{ metric: 'finish', tolerance: { value: 0, unit: 'h' } }], world: { refreshedAt: null, facts: [] },
+})
+const decodeIn = (inputs: ReturnType<typeof pair>, order: readonly string[]) => {
+  const compiled = compile(inputs, { methods: [], buy: 'allowed' })
+  if (!compiled.ok) throw new Error(JSON.stringify(compiled.problems))
+  const prep = prepare(compiled.problem)
+  const list = precedenceOrder(prep, order.map(key => compiled.index.jobs.indexOf(key)))
+  const decoded = makeDecoder(prep).decode(list, compiled.problem.activities.map(() => 0))
+  const at = (key: string) => decoded.start[compiled.index.jobs.indexOf(key)]!
+  return { decoded, at, H: prep.H }
+}
+
+describe('keep-in-service: a blocked opener waits, a deadlock is reported', () => {
+  const order = ['A-tag-out', 'B-tag-out', 'A-work', 'A-test', 'B-work', 'B-test']
+  test('B is tagged only after A is back, though the list puts B second', () => {
+    // A out Mon 07:00-08:00 (tag), 08:00-10:00 (work), 10:00-11:00 (test): back at 11:00, slot 8.
+    // B's tag-out waits for it: 11:00-12:00, work 12:00-14:00, test 14:00-15:00. Nothing late.
+    const { decoded, at } = decodeIn(pair([]), order)
+    expect(decoded.penalty).toBe(0)
+    expect([at('A-tag-out'), at('A-test'), at('B-tag-out'), at('B-test')]).toEqual([0, 6, 8, 14])
+  })
+
+  test('when A cannot come back before B is tagged, the plan is a deadlock and B is not placed', () => {
+    const { decoded, at, H } = decodeIn(pair([{ from: 'B-tag-out', to: 'A-test', type: 'FS', lag: { value: 0, unit: 'h' } }]), order)
+    expect(decoded.penalty).toBeGreaterThan(0)
+    expect(decoded.note).toBe('deadlock: K blocks every ready job')
+    expect(at('B-tag-out')).toBe(H)
+    expect(at('A-test')).toBe(H)
+  })
+
+  test("or's stuck twin v3 schedule decodes with no penalty; U1 CTF2 waits for CTF1's test (slot 156)", async () => {
+    const { twinPlan, twinV3Options } = await import('../../tests/harness/twin-plan.ts')
+    const bench = await Bun.file(new URL('./fixtures/twin-v3.json', import.meta.url)).json()
+    const stuck = await Bun.file(new URL('./fixtures/twin-v3-stuck-schedule.json', import.meta.url)).json()
+    const twin = twinPlan(bench, twinV3Options(bench))
+    const compiled = compile(twin.inputs, { methods: [...twin.variant.methods], buy: [...twin.variant.purchases] })
+    if (!compiled.ok) throw new Error(JSON.stringify(compiled.problems))
+    const prep = prepare(compiled.problem)
+    const list = precedenceOrder(prep, [...prep.topo].sort((x, y) => stuck.schedule.start[x] - stuck.schedule.start[y] || x - y))
+    const decoded = makeDecoder(prep).decode(list, stuck.schedule.mode)
+    const at = (key: string) => compiled.problem.activities.findIndex(activity => activity.id === key)
+    expect(decoded.penalty).toBe(0)
+    expect(decoded.finish[at('U1-CTF1-RTS')]).toBe(156)
+    expect(decoded.start[at('U1-CTF2-TAG')]).toBeGreaterThanOrEqual(156)
+  })
+})

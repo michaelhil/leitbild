@@ -232,6 +232,9 @@ export const makeDecoder = (prep: Prepared) => {
   })
 
   const anyForbidden = problem.resources.some(resource => resource.forbiddenWhenUsed.length > 0)
+  // Keep-in-service bookkeeping: the rules naming each item, and per opener and rule the items it opens there.
+  const rulesOfItem = problem.items.map((_, i) => problem.coverage.flatMap((rule, c) => (rule.items.includes(i) ? [c] : [])))
+  const openedIn = problem.activities.map((_, a) => prep.opensCoverage[a]!.map(c => problem.coverage[c]!.items.filter(i => prep.opensItems[a]!.includes(i))))
   // Which decoded schedule the bookings currently hold, so justify and evaluate need not re-book.
   let holding: Decoded | undefined
 
@@ -355,6 +358,8 @@ export const makeDecoder = (prep: Prepared) => {
       const spanCloserF = new Int32Array(problem.spans.length).fill(-1)
       const itemStarted = new Uint8Array(problem.items.length)
       const closersLeft = Int32Array.from(prep.itemClosers.map(list => list.length))
+      // Per keep-in-service rule: its items started and not yet closed (open at every later slot).
+      const outCount = new Int32Array(problem.coverage.length)
       const itemEnd = new Int32Array(problem.items.length).fill(-1)
       let penalty = 0, restart = false, note = ''
       const place = (a: number, m: number, t: number, f: number): void => {
@@ -362,8 +367,15 @@ export const makeDecoder = (prep: Prepared) => {
         if (f >= 0 && t < H) book(a, m, t, 1)
         for (const s of prep.opensSpans[a]!) if (spanStart[s]! < 0 || t < spanStart[s]!) spanStart[s] = t
         for (const s of prep.closesSpans[a]!) spanCloserF[s] = Math.max(spanCloserF[s]!, f)
-        for (const i of prep.opensItems[a]!) itemStarted[i] = 1
-        for (const i of prep.closesItems[a]!) { closersLeft[i]!--; itemEnd[i] = Math.max(itemEnd[i]!, f) }
+        for (const i of prep.opensItems[a]!) {
+          if (!itemStarted[i] && closersLeft[i]! > 0) for (const c of rulesOfItem[i]!) outCount[c]!++
+          itemStarted[i] = 1
+        }
+        for (const i of prep.closesItems[a]!) {
+          closersLeft[i]!--
+          if (closersLeft[i] === 0 && itemStarted[i]) for (const c of rulesOfItem[i]!) outCount[c]!--
+          itemEnd[i] = Math.max(itemEnd[i]!, f)
+        }
       }
       const openAt = (c: number, opening: readonly number[], t: number): number => {
         let count = 0
@@ -381,6 +393,21 @@ export const makeDecoder = (prep: Prepared) => {
         }
         return true
       }
+      /**
+       * The keep-in-service rule that blocks opener a at every slot of its period: the outages still open
+       * (started, not yet closed) plus a's own would exceed what the rule lets out. -1 when none blocks.
+       */
+      const blockingRule = (a: number): number => {
+        const rules = prep.opensCoverage[a]!
+        for (let k = 0; k < rules.length; k++) {
+          const c = rules[k]!
+          const rule = problem.coverage[c]!
+          let out = outCount[c]!
+          for (const i of openedIn[a]![k]!) if (!(itemStarted[i] && closersLeft[i]! > 0)) out++
+          if (out > rule.items.length - rule.atLeast) return c
+        }
+        return -1
+      }
       problem.activities.forEach((activity, a) => {
         if (activity.fixed === undefined) return
         place(a, activity.fixed.mode, activity.fixed.start, finishOf(prep, a, activity.fixed.mode, activity.fixed.start))
@@ -392,19 +419,25 @@ export const makeDecoder = (prep: Prepared) => {
       const taken = new Uint8Array(order.length)
       let head = 0, left = order.length
       while (left > 0 && !restart) {
-        let pick = -1, fallback = -1
+        // A ready opener that a keep-in-service rule blocks at every slot waits until an outage closes.
+        let pick = -1, blocked = -1
         for (let p = head; p < order.length; p++) {
           if (taken[p]) continue
           const a = order[p]!
           let ready = true
           for (const l of prep.preds[a]!) if (!placed[l.from]) { ready = false; break }
           if (!ready) continue
-          if (fallback < 0) fallback = p
-          if (prep.opensCoverage[a]!.length > 0 && !coverageOk(a, Number.MAX_SAFE_INTEGER - 1)) continue
+          if (prep.opensCoverage[a]!.length > 0) { const rule = blockingRule(a); if (rule >= 0) { if (blocked < 0) blocked = rule; continue } }
           pick = p; break
         }
-        if (pick < 0) pick = fallback
-        if (pick < 0) { penalty += 1e6 * left; note = 'no activity is ready'; break }
+        if (pick < 0) {
+          // Nothing can go next: every ready job is an opener the rule blocks, and no open outage can close
+          // first. The plan is unplaceable in this order; nothing is placed without a slot.
+          penalty += 1e6 * left
+          note = blocked >= 0 ? `deadlock: ${problem.coverage[blocked]!.id} blocks every ready job` : 'no activity is ready'
+          for (let p = head; p < order.length; p++) if (!taken[p]) { const a = order[p]!; S[a] = H; F[a] = H; placed[a] = 1 }
+          break
+        }
         taken[pick] = 1
         left--
         while (head < order.length && taken[head]) head++
