@@ -53,13 +53,14 @@ export const relax = (current: Relaxed, cause: Cause, job: string): Relaxed | st
 
 const relaxOne = (current: Relaxed, cause: Cause, job: string): Relaxed | string => {
   const { inputs, variant } = current
+  // each name is read as the kind it declares
+  const named = (kind: Cause['about'][number]['kind']): string[] => cause.about.filter(entry => entry.kind === kind).map(entry => entry.key)
   const keys = cause.about.map(entry => entry.key)
-  const [first, second] = keys
   switch (cause.kind) {
     case 'link': {
       // The explainer names the predecessors (its 'about'); the successor is the job explained. Every key is a
       // predecessor: its link, or its derived order, into the job is lifted.
-      const preds = keys.filter(key => key !== job)
+      const preds = named('job').filter(key => key !== job)
       if (preds.length === 0) return 'a link cause names no predecessor'
       let next: Relaxed = current
       for (const from of preds) {
@@ -70,16 +71,21 @@ const relaxOne = (current: Relaxed, cause: Cause, job: string): Relaxed | string
       return next
     }
     case 'crew': case 'tool': {
-      if (first === undefined || !inputs.resources.some(resource => resource.key === first)) return `no resource ${first}`
+      // the busy resource gains a unit; the jobs named as holding it stay where they are
+      const first = named('resource')[0]
+      if (first === undefined || !inputs.resources.some(resource => resource.key === first)) return `no resource named among ${keys.join(', ')}`
       return { variant, inputs: { ...inputs, resources: inputs.resources.map(resource => { if (resource.key !== first) return resource; const { maxJobs: _limit, ...rest } = resource; return { ...rest, count: resource.count + 1 } }) } }
     }
     case 'shift': {
       // The named resources work around the clock for this job only: a copy of each, on duty always, is
       // added to the job's needs, so every other job keeps its calendars ("everything else fixed").
-      const named = keys.filter(key => inputs.resources.some(resource => resource.key === key))
-      if (named.length === 0) return `no resource among ${keys.join(', ')}`
+      // a calendar named stands for the job's resources on that calendar
+      const job_ = inputs.jobs.find(candidate => candidate.key === job)
+      const onCalendar = named('calendar').flatMap(calendar => (job_?.needs ?? []).flatMap(need => need.anyOf).filter(key => inputs.resources.find(resource => resource.key === key)?.calendar === calendar))
+      const named_ = [...new Set([...named('resource'), ...onCalendar])].filter(key => inputs.resources.some(resource => resource.key === key))
+      if (named_.length === 0) return `no resource or calendar of the job among ${keys.join(', ')}`
       const calendar = `${job}.around-the-clock`
-      const copies = named.map(key => ({ ...inputs.resources.find(resource => resource.key === key)!, key: `${key}.${job}.on-duty`, calendar }))
+      const copies = named_.map(key => ({ ...inputs.resources.find(resource => resource.key === key)!, key: `${key}.${job}.on-duty`, calendar }))
       return {
         variant,
         inputs: {
@@ -88,13 +94,14 @@ const relaxOne = (current: Relaxed, cause: Cause, job: string): Relaxed | string
           resources: [...inputs.resources, ...copies.map(({ maxJobs: _limit, ...copy }) => copy)],
           jobs: inputs.jobs.map(candidate => candidate.key !== job ? candidate : {
             ...candidate,
-            needs: candidate.needs.map(need => ({ ...need, anyOf: [...need.anyOf, ...named.filter(key => need.anyOf.includes(key)).map(key => `${key}.${job}.on-duty`)].slice(0, 8) })),
-            durationWith: [...candidate.durationWith, ...candidate.durationWith.filter(entry => named.includes(entry.resource)).map(entry => ({ ...entry, resource: `${entry.resource}.${job}.on-duty` }))].slice(0, 16),
+            needs: candidate.needs.map(need => ({ ...need, anyOf: [...need.anyOf, ...named_.filter(key => need.anyOf.includes(key)).map(key => `${key}.${job}.on-duty`)].slice(0, 8) })),
+            durationWith: [...candidate.durationWith, ...candidate.durationWith.filter(entry => named_.includes(entry.resource)).map(entry => ({ ...entry, resource: `${entry.resource}.${job}.on-duty` }))].slice(0, 16),
           }),
         },
       }
     }
     case 'availability': case 'span-limit': {
+      const first = named('rule')[0]
       if (first === undefined || !inputs.rules.some(rule => rule.key === first)) return `no rule ${first}`
       return { variant, inputs: { ...inputs, rules: inputs.rules.filter(rule => rule.key !== first) } }
     }
@@ -104,11 +111,12 @@ const relaxOne = (current: Relaxed, cause: Cause, job: string): Relaxed | string
       return { variant, inputs: { ...inputs, settings: { ...inputs.settings, window: { ...window, start: new Date(Date.parse(window.start) - 86_400_000).toISOString() } } } }
     }
     case 'release': case 'lock': {
-      const target = first ?? job
+      const target = named('job')[0] ?? job
       const field = cause.kind === 'release' ? 'notBefore' : 'lock'
       return { variant, inputs: { ...inputs, jobs: inputs.jobs.map(candidate => { if (candidate.key !== target) return candidate; const { [field]: _gone, ...rest } = candidate; return rest as typeof candidate }) } }
     }
     case 'purchase-not-allowed': {
+      const first = named('purchase')[0]
       if (first === undefined || !inputs.purchases.some(purchase => purchase.key === first)) return `no purchase ${first}`
       return { inputs: { ...inputs, purchases: inputs.purchases.map(purchase => purchase.key === first ? { ...purchase, allowed: true } : purchase) }, variant: { ...variant, purchases: [...new Set([...variant.purchases, first])] } }
     }

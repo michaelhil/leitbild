@@ -115,3 +115,21 @@ describe('every name an explanation gives exists as what its kind says', () => {
     expect(failures.map(failure => failure.reason)).toEqual(['unknown-name'])
   })
 })
+
+describe('names are read by the kind they declare', () => {
+  test('a busy crew naming its holder first still relaxes the crew', () => {
+    const explanation = item('B', '2026-11-16T07:00:00Z', [{ kind: 'link', about: [{ kind: 'job', key: 'A' }] }, { kind: 'crew', about: [{ kind: 'job', key: 'A' }, { kind: 'resource', key: 'ops' }] }], true)
+    expect(counterfactualCheck(inputs, variant, rows, [explanation])).toEqual([])
+  })
+  test('an off shift naming a calendar puts the job\'s crews on that calendar on duty', () => {
+    // C at 10:00Z, released 09:00Z; its only crew works 10:00Z-12:00Z: the shift holds it
+    const late = planInputsSchema.parse({
+      ...inputs,
+      calendars: [...inputs.calendars, { key: 'late', label: 'Late shift', weekly: [], periods: [{ start: '2026-11-16T10:00:00Z', end: '2026-11-16T12:00:00Z' }], except: [], source: planner }],
+      resources: [...inputs.resources, { key: 'late-crew', label: 'Late crew', kind: 'crew', count: 1, calendar: 'late', attributes: [], source: planner }],
+      jobs: [job('A'), job('B'), { ...job('C'), needs: [{ anyOf: ['late-crew'], amount: 1, handover: false }], notBefore: { at: '2026-11-16T09:00:00Z', words: 'Parts arrive', source: planner } }],
+    })
+    const lateRows = [...rows.slice(0, 2), { job: 'C', start: '2026-11-16T10:00:00Z', finish: '2026-11-16T11:00:00Z', uses: [{ resource: 'late-crew', from: '2026-11-16T10:00:00Z', to: '2026-11-16T11:00:00Z' }] }]
+    expect(counterfactualCheck(late, variant, lateRows, [item('C', '2026-11-16T10:00:00Z', [{ kind: 'shift', about: [{ kind: 'calendar', key: 'late' }] }], false)])).toEqual([])
+  })
+})
