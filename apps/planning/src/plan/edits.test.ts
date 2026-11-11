@@ -125,9 +125,34 @@ describe('hard rules: protection, authority and minimums (A2, adversary item 8)'
     const remaining = protectedRule.kind === 'protected' ? protectedRule.equipment.slice(1) : []
     const edit = remaining.length === 0 ? { edit: 'remove', what: 'rule', key: protectedRule.key } : { edit: 'rule', key: protectedRule.key, equipment: remaining }
     const outcome = apply(trainA, edit)
-    expect(() => requireAuthority(outcome.weakens, undefined)).toThrow(/authority/)
+    expect(() => requireAuthority(outcome.weakens, undefined)).toThrow('Name the person who agreed and their reason, as authority. Ask them; never fill this in yourself.')
     expect(refusal(() => requireAuthority(outcome.weakens, undefined)).code).toBe('needs_authority')
     expect(() => requireAuthority(outcome.weakens, { name: 'Shift supervisor', reason: 'Train B work moved to this week' })).not.toThrow()
+  })
+
+  test('a test may not run shorter than its minimum by any path: its own estimate or a crew-specific one', () => {
+    const minimum = minimumTest.minimum!
+    const crew = minimumTest.needs.flatMap(need => need.anyOf)[0]!
+    const shorter = apply(trainA, { edit: 'job', key: minimumTest.key, durationWith: [{ resource: crew, value: minimum.value / 5 }] })
+    expect(shorter.weakens.map(weakening => [weakening.code, weakening.about[0]])).toEqual([['below_minimum', minimumTest.key]])
+    expect(apply(trainA, { edit: 'job', key: minimumTest.key, durationWith: [{ resource: crew, value: minimum.value * 2 }] }).weakens).toEqual([])
+  })
+
+  test('one World item is one piece of equipment; re-pointing covered equipment needs authority', () => {
+    const located = trainA.equipment.find(item => item.key === protectedItem)!
+    const twin = refusal(() => apply(trainA,
+      { edit: 'equipment', key: 'SWB2', label: 'Another name for the same pump', locator: located.locator! },
+      { edit: 'job', key: 'TAG-TWIN', title: 'Tag out the twin', kind: 'tag-out', equipment: ['SWB2'], duration: { value: 1, unit: 'h', calendar: 'working' } }))
+    expect([twin.code, twin.details?.about]).toEqual(['invalid_request', [protectedItem, 'SWB2']])
+    const covered = trainA.equipment.find(item => item.locator !== undefined && item.group !== undefined)!
+    expect(weakenings(trainA, { edit: 'equipment', key: covered.key, locator: 'process-plant/plant%3Aother/pump' })).toEqual([['needs_authority', 'locator', covered.key]])
+    expect(weakenings(trainA, { edit: 'equipment', key: covered.key, locator: null })).toEqual([['needs_authority', 'locator', covered.key]])
+  })
+
+  test('removing a precondition needs authority', () => {
+    const checked = trainA.jobs.find(entry => entry.checks.length > 0)!
+    expect(weakenings(trainA, { edit: 'job', key: checked.key, checks: [] })).toEqual([['needs_authority', 'precondition', checked.key]])
+    expect(weakenings(trainA, { edit: 'job', key: checked.key, checks: checked.checks })).toEqual([])
   })
 
   test('a test estimated below its minimum is below_minimum; lowering or clearing the minimum needs authority; minimum is for tests only', () => {

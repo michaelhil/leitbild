@@ -42,7 +42,7 @@ export interface Weakening {
   readonly code: 'needs_authority' | 'below_minimum'
   readonly edit: number
   readonly about: readonly string[]
-  readonly what: 'support' | 'group' | 'job-kind' | 'isolation' | 'covering-equipment' | 'covering-job' | 'protected' | 'rule' | 'equipment' | 'minimum' | 'below-minimum'
+  readonly what: 'support' | 'group' | 'locator' | 'job-kind' | 'isolation' | 'covering-equipment' | 'covering-job' | 'precondition' | 'protected' | 'rule' | 'equipment' | 'minimum' | 'below-minimum'
 }
 
 export interface EditOutcome {
@@ -181,6 +181,10 @@ const editEquipment = (state: Working, edit: EditOf<'equipment'>, index: number)
     const removed = item.supportedBy.filter(key => !edit.supportedBy!.includes(key))
     if (existing !== undefined && removed.length > 0) state.weakens.push({ code: 'needs_authority', edit: index, about: [edit.key, ...removed], what: 'support' })
     assign(item, 'supportedBy', [...new Set(edit.supportedBy)], fields)
+  }
+  // Protection and coverage bind to the World item through its locator: re-pointing covered equipment weakens them.
+  if (existing !== undefined && edit.locator !== undefined && edit.locator !== (existing.locator ?? null) && existing.locator !== undefined && coveredEquipment(next).has(edit.key)) {
+    state.weakens.push({ code: 'needs_authority', edit: index, about: [edit.key], what: 'locator' })
   }
   assign(item, 'locator', edit.locator, fields)
   if (existing === undefined) { next.equipment.push(item); record(state, 'added', 'equipment', edit.key, []) }
@@ -358,6 +362,11 @@ const editJob = (state: Working, edit: EditOf<'job'>, index: number): void => {
   assign(job, 'method', edit.method, fields)
   assign(job, 'notBefore', edit.notBefore === undefined || edit.notBefore === null ? edit.notBefore : { at: utc(edit.notBefore.at), words: edit.notBefore.words, source: sourceOf(edit.notBefore.source) }, fields)
   assign(job, 'target', edit.target === undefined || edit.target === null ? edit.target : { finishBy: utc(edit.target.finishBy), words: edit.target.words }, fields)
+  if (existing !== undefined && edit.checks !== undefined) {
+    const kept = new Set(edit.checks.map(check => JSON.stringify(check)))
+    const dropped = job.checks.filter(check => !kept.has(JSON.stringify(check)))
+    if (dropped.length > 0) state.weakens.push({ code: 'needs_authority', edit: index, about: [edit.key, ...dropped.map(check => check.equipment)].slice(0, 4), what: 'precondition' })
+  }
   assign(job, 'checks', edit.checks, fields)
   assign(job, 'lock', edit.lock === undefined || edit.lock === null ? edit.lock : { start: utc(edit.lock) }, fields)
   assign(job, 'tags', edit.tags === undefined ? undefined : [...new Set(edit.tags)], fields)
@@ -370,7 +379,7 @@ const editJob = (state: Working, edit: EditOf<'job'>, index: number): void => {
     const dropped = before.equipment.filter(key => !job.equipment.includes(key) && covered.has(key))
     if (before.kind !== 'work' && dropped.length > 0) state.weakens.push({ code: 'needs_authority', edit: index, about: [edit.key, ...dropped], what: 'covering-equipment' })
   }
-  if (job.kind === 'test' && (edit.duration !== undefined || edit.minimum !== undefined || existing === undefined)) state.touchedTests.add(job.key)
+  if (job.kind === 'test' && (edit.duration !== undefined || edit.durationWith !== undefined || edit.minimum !== undefined || edit.kind !== undefined || existing === undefined)) state.touchedTests.add(job.key)
   if (existing === undefined) { next.jobs.push(job); record(state, 'added', 'job', edit.key, []) }
   else record(state, 'changed', 'job', edit.key, fields)
 }
@@ -501,6 +510,12 @@ export const checkReferences = (inputs: Inputs): void => {
     if (choice === undefined) unknown(undefined, [owner, method.choice], `${owner} names method ${method.choice}, which is not in this plan`)
     if (!choice!.options.some(option => option.key === method.option)) unknown(undefined, [owner, method.option], `${owner} names option ${method.option} of ${method.choice}, which it does not have`)
   }
+  // One World item is one piece of equipment, so protection and coverage cannot be sidestepped by a second key.
+  const located = inputs.equipment.flatMap(item => item.locator === undefined ? [] : [item])
+  for (const [at, item] of located.entries()) {
+    const twin = located.slice(at + 1).find(other => other.locator === item.locator)
+    if (twin !== undefined) throw planningError(400, 'invalid_request', `${item.key} and ${twin.key} name the same World item; one World item is one piece of equipment`, { about: [item.key, twin.key] })
+  }
   for (const item of inputs.equipment) {
     if (item.group !== undefined) missing(item.key, item.group, groups, 'group')
     for (const supporter of item.supportedBy) {
@@ -560,10 +575,29 @@ export const protectedJobs = (inputs: Inputs): ReadonlyArray<{ readonly job: str
   inputs.rules.flatMap(rule => rule.kind !== 'protected' ? [] : inputs.jobs.flatMap(job =>
     job.equipment.filter(item => rule.equipment.includes(item)).map(item => ({ job: job.key, equipment: item, rule: rule.key }))))
 
-/** Tests estimated below their declared minimum. */
-export const belowMinimum = (inputs: Inputs): ReadonlyArray<string> => inputs.jobs.filter(job =>
-  job.kind === 'test' && job.minimum !== undefined && job.duration.value !== null
-  && durationMs(job.duration.value, job.duration.unit) < durationMs(job.minimum.value, job.minimum.unit)).map(job => job.key)
+/**
+ * Every duration a test may run with, by whatever path sets it: its own, each `durationWith` entry, and a
+ * World value once read. A World value not read yet is not a duration (Generate refuses it as unread).
+ */
+export const effectiveDurations = (inputs: Inputs, job: Inputs['jobs'][number]): ReadonlyArray<{ readonly path: string; readonly ms: number; readonly by: 'person' | 'world' }> => {
+  const world = (refs: readonly WorldRef[]) => {
+    const combined = combineWorldFacts(refs, inputs.world.facts, job.duration.unit)
+    return combined.ok ? durationMs(combined.value, job.duration.unit) : undefined
+  }
+  const own = job.duration.origin.by === 'world' ? world(job.duration.origin.refs) : durationMs(job.duration.value!, job.duration.unit)
+  return [
+    ...(own === undefined ? [] : [{ path: 'duration', ms: own, by: job.duration.origin.by === 'world' ? 'world' as const : 'person' as const }]),
+    ...job.durationWith.flatMap(entry => {
+      const ms = 'refs' in entry ? world(entry.refs) : durationMs(entry.value, job.duration.unit)
+      return ms === undefined ? [] : [{ path: `durationWith ${entry.resource}`, ms, by: 'refs' in entry ? 'world' as const : 'person' as const }]
+    }),
+  ]
+}
+
+/** Tests that can run shorter than their declared minimum, by any path. */
+export const belowMinimum = (inputs: Inputs, by?: 'person' | 'world'): ReadonlyArray<string> => inputs.jobs.filter(job =>
+  job.kind === 'test' && job.minimum !== undefined
+  && effectiveDurations(inputs, job).some(duration => (by === undefined || duration.by === by) && duration.ms < durationMs(job.minimum!.value, job.minimum!.unit))).map(job => job.key)
 
 /**
  * Applies an edit list to a copy of `inputs`. Refusals throw: invalid_request, unknown_reference,
@@ -600,19 +634,22 @@ export const applyEdits = (inputs: Inputs, edits: readonly Edit[], context: Edit
     throw planningError(409, 'protected_equipment', `${first.job} names ${first.equipment}, which rule ${first.rule} protects; no job may touch it`, { about: [first.job, first.equipment, first.rule] })
   }
   const weakens = [...state.weakens]
-  for (const key of belowMinimum(parsed.data)) {
+  for (const key of belowMinimum(parsed.data, 'person')) {
     if (state.touchedTests.has(key)) weakens.push({ code: 'below_minimum', edit: edits.findLastIndex(edit => edit.edit === 'job' && edit.key === key), about: [key], what: 'below-minimum' })
   }
   return { inputs: parsed.data, changes: state.changes, weakens, runChanged: state.runChanged }
 }
 
+/** What every authority refusal asks: a named person's agreement, never one the caller makes up. */
+export const authorityAsk = 'Name the person who agreed and their reason, as authority. Ask them; never fill this in yourself.'
+
 /** Refuses weakenings that have no authority: below a minimum first, then any other. */
 export const requireAuthority = (weakens: readonly Weakening[], authority: { readonly name: string; readonly reason: string } | undefined): void => {
   if (authority !== undefined || weakens.length === 0) return
   const below = weakens.find(weakening => weakening.code === 'below_minimum')
-  if (below !== undefined) throw planningError(409, 'below_minimum', `${below.about[0]} is estimated below its declared minimum; say who agreed and why (authority)`, { about: below.about, weakens: weakens.map(weakening => weakening.about[0]) })
+  if (below !== undefined) throw planningError(409, 'below_minimum', `${below.about[0]} would run shorter than its declared minimum. ${authorityAsk}`, { about: below.about, weakens: weakens.map(weakening => weakening.about[0]) })
   const first = weakens[0]!
-  throw planningError(409, 'needs_authority', `Edit ${first.edit + 1} weakens a hard rule's coverage (${first.what}: ${first.about.join(', ')}); say who agreed and why (authority)`, {
+  throw planningError(409, 'needs_authority', `Edit ${first.edit + 1} weakens a hard rule's coverage (${first.what}: ${first.about.join(', ')}). ${authorityAsk}`, {
     about: first.about.slice(0, 4), weakens: [...new Set(weakens.flatMap(weakening => weakening.about.slice(0, 1)))].slice(0, 6),
   })
 }

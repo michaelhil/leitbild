@@ -116,6 +116,7 @@ export const readinessText = (item: ReadinessItem, inputs: Inputs): string => {
       case 'not-returned': return `${name}: tagged out but never tested back into service.`
       case 'precondition-unmet': return `Not ready at read time (${at}): ${item.words ?? ''} is not so.`
       case 'precondition-unread': return `${item.words ?? ''}: not read yet.`
+      case 'below-minimum': return `${name}: World values would make this test shorter than its declared minimum. Give a value of your own, or have a named person agree to a lower one.`
       case 'order-by': return `Order by ${at}: ${name}.`
       case 'order-passed': return `Order deadline passed (${at}): ${name} can no longer be used.`
       case 'assumption': return item.at !== undefined

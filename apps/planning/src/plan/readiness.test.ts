@@ -57,6 +57,18 @@ describe('readiness: warnings only, never a score (T2)', () => {
     expect(readinessText(flagged, trainA)).toContain(timeWords(promised.notBefore!.at, trainA.settings.timeZone))
   })
 
+  test('a World value that makes a test shorter than its minimum blocks Generate until a person decides', () => {
+    const test = trainA.jobs.find(job => job.kind === 'test' && job.minimum !== undefined)!
+    const crew = test.needs.flatMap(need => need.anyOf)[0]!
+    const ref = { locator: checkLocator, fact: 'plant:train-a/test-time' }
+    const withWorld: PlanInputs = { ...trainA, jobs: trainA.jobs.map(job => job.key !== test.key ? job : { ...job, durationWith: [{ resource: crew, refs: [ref] }] }) }
+    const minimumSeconds = test.minimum!.value * 3_600
+    const fact = (seconds: number) => [{ id: ref.fact, label: 'Test time', quantity: 'time', unit: 's', value: seconds, basis: 'owner-estimate' as const, at: '2026-11-12T09:02:00Z', locator: checkLocator }]
+    expect(codes(read(withWorld, fact(minimumSeconds * 2)))).not.toContain('below-minimum')
+    const below = readiness(planOf(read(withWorld, fact(minimumSeconds / 2))), { staleOptions: [], now: '2026-11-12T09:00:00Z' }).find(item => item.code === 'below-minimum')!
+    expect([below.about, below.blocks]).toEqual([[test.key], true])
+  })
+
   test('an order deadline is a decision before the data date and a warning after it', () => {
     const purchase = trainA.purchases.find(entry => entry.orderBy !== undefined && entry.ordered === undefined)!
     expect(readiness(planOf(trainA), { staleOptions: [], now: trainA.settings.dataDate! }).find(item => item.about[0] === purchase.key)?.code)

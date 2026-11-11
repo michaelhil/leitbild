@@ -2,6 +2,7 @@
 // Items are structure; summary.ts words them. `blocks` marks what makes Generate answer "invalid input".
 import type { PlanningFactBasis } from '@leitbild/contracts'
 import { combineWorldFacts, type Plan, type PlanInputs, type WorldFactCopy, type WorldRef } from './schema.ts'
+import { belowMinimum } from './edits.ts'
 
 type Inputs = PlanInputs
 type Option = NonNullable<Plan['options']>['options'][number]
@@ -10,7 +11,7 @@ export type ReadinessKind = 'not-ready' | 'warning' | 'world' | 'decision' | 'st
 export type ReadinessCode =
   | 'link-run' | 'world-unread' | 'world-unusable' | 'world-duration'
   | 'no-crew' | 'no-tag-out' | 'no-test' | 'not-returned'
-  | 'precondition-unmet' | 'precondition-unread'
+  | 'precondition-unmet' | 'precondition-unread' | 'below-minimum'
   | 'order-by' | 'order-passed' | 'assumption' | 'redundancy' | 'options-stale'
 
 export interface ReadinessItem {
@@ -30,7 +31,7 @@ export interface ReadinessItem {
 
 const order: Readonly<Record<ReadinessCode, number>> = {
   // Out-of-date options come right after the link card: every status shown depends on them.
-  'link-run': 0, 'options-stale': 1, 'world-unread': 2, 'world-unusable': 2, 'no-tag-out': 3, 'no-test': 3, 'not-returned': 4,
+  'link-run': 0, 'options-stale': 1, 'world-unread': 2, 'world-unusable': 2, 'below-minimum': 2, 'no-tag-out': 3, 'no-test': 3, 'not-returned': 4,
   'precondition-unmet': 5, 'precondition-unread': 5, 'order-passed': 6, 'order-by': 7, 'no-crew': 8,
   'assumption': 9, 'redundancy': 10, 'world-duration': 11,
 }
@@ -134,6 +135,8 @@ export const readiness = (plan: Plan, context: { readonly staleOptions: readonly
     const first = inputs.world.facts.find(fact => fact.locator === ref.locator && fact.id === ref.fact)
     if (combined.ok) items.push({ kind: 'warning', code: 'world-duration', about: [job.key], blocks: false, label: first?.label ?? job.duration.origin.refs[0]!.fact, basis: combined.basis, at: combined.at })
   }
+  // A World value can put a test under its declared minimum without anyone editing: Generate waits for a person.
+  for (const key of belowMinimum(inputs, 'world')) items.push({ kind: 'not-ready', code: 'below-minimum', about: [key], blocks: true })
   for (const job of inputs.jobs) if (job.needs.length === 0) items.push({ kind: 'warning', code: 'no-crew', about: [job.key], blocks: false })
   for (const item of inputs.equipment) {
     const inside = inputs.jobs.filter(job => job.kind === 'work' && job.isolation === 'inside' && job.equipment.includes(item.key))
