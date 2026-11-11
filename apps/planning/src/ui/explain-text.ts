@@ -121,19 +121,24 @@ export const finishChain = (result: ExplainResult, context: Context): readonly F
   })
 
 /**
- * The one line on what limits the finish most: the crew or tool the chain waits for at the most steps.
- * It states no hours; hours would need a counterfactual check the screen does not make.
+ * The one line on what limits the finish most. With lane S's `limiting` (one more unit of that resource,
+ * decoded in the option's own order and checked by lane K), it names the resource and the hours it gains.
+ * Without it, it says what the finish waits for: the first cause along the chain that is not just a link,
+ * and that one more crew alone does not bring it earlier in this plan (never that it could not in any plan).
  */
 export const mostLimiting = (result: ExplainResult, context: Context): { readonly parts: readonly Part[] } | null => {
-  const waits = new Map<string, number>()
-  for (const item of result.items) {
-    const keys = new Set(item.because.filter(because => because.kind === 'crew' || because.kind === 'tool' || because.kind === 'shift')
-      .flatMap(because => because.about.filter(entry => entry.kind === 'resource').map(entry => entry.key)))
-    for (const key of keys) waits.set(key, (waits.get(key) ?? 0) + 1)
+  if (result.limiting !== undefined) {
+    const { key } = result.limiting.about
+    const name = { name: context.names.resource(key), kind: 'resource' as const, key }
+    return { parts: ['Most limiting: ', name, '. One more ', name, ` would allow a finish at least ${hoursText(result.limiting.hoursEarlier)} earlier.`] }
   }
-  const [key, count] = [...waits.entries()].sort((left, right) => right[1] - left[1])[0] ?? []
-  if (key === undefined || count === undefined) return null
-  const resource = context.inputs.resources.find(item => item.key === key)
-  const size = resource === undefined || resource.count === 1 ? '' : ` (${resource.count})`
-  return { parts: ['Most limiting: ', { name: context.names.resource(key), kind: 'resource', key }, `${size}: the finish waits for it at ${count} of ${result.items.length} steps.`] }
+  for (const item of result.items) {
+    const binding = item.because.find(because => because.kind !== 'link')
+    if (binding === undefined) continue
+    return { parts: [
+      'Most limiting: the finish waits on ', { name: context.names.job(item.job), kind: 'job', key: item.job }, ': ',
+      ...causeParts(binding, context), '; one more crew alone does not bring it earlier in this plan.',
+    ] }
+  }
+  return null
 }

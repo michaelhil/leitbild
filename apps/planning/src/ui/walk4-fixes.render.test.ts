@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import type { Component } from 'svelte'
 import { workspaceResourceReferenceSchema } from '@leitbild/contracts'
 import { createPlanningClient } from './api.ts'
-import { finishChain, mostLimiting, type ExplainResult } from './explain-text.ts'
+import { finishChain, mostLimiting, partsText, type ExplainResult } from './explain-text.ts'
 import { modelOf, runBasis, status, supplyRunPlanned, trainAPlanned } from './fixtures/plans.ts'
 import { readableText, registerSvelte, renderHtml } from './fixtures/svelte-ssr.ts'
 import { createTimeFormat, durationText } from './format.ts'
@@ -83,5 +83,24 @@ describe("maint's fourth walk, screen items", () => {
     const source = readFileSync(join(import.meta.dir, 'PlanScreen.svelte'), 'utf8')
     for (const form of ['JobForm', 'EquipmentPicker', 'CrewForm', 'RulesPanel', 'JobPanel']) expect(source).toMatch(new RegExp(`\\{#key applied\\}\\s*<${form} `))
     expect(source).toContain('applied += 1')
+  })
+
+  test('T7-01, T0s-10 (R4-1): the "Most limiting" line gives lane S\'s checked hours, or else what the finish waits for', () => {
+    const model = trainAPlanned()
+    const context = contextOf(model)
+    const rows = model.rows['opt-1']!
+    const chain = [
+      { job: 'SWA-RTS', start: rows[2]!.start, finish: rows[2]!.finish, floatHours: 0, joint: false, because: [{ kind: 'link' as const, about: [{ kind: 'job' as const, key: 'SWA-PUMP-OUT' }] }] },
+      { job: 'SWA-PUMP-OUT', start: rows[1]!.start, finish: rows[1]!.finish, floatHours: 0, joint: false, because: [{ kind: 'shift' as const, about: [{ kind: 'resource' as const, key: 'ect-team' }], until: rows[1]!.start }] },
+    ]
+    // With the field: the resource lane S checked and its hours (a hand value standing in for its answer).
+    const withHours = readableText(renderHtml(AttentionColumn, { cards: [], finish: finishChain({ lines: [], items: chain, limiting: { about: { kind: 'resource', key: 'mech-station' }, hoursEarlier: 1 } }, context), limiting: mostLimiting({ lines: [], items: chain, limiting: { about: { kind: 'resource', key: 'mech-station' }, hoursEarlier: 1 } }, context), onAction: none, onPick: none }))
+    expect(partsText(mostLimiting({ lines: [], items: chain, limiting: { about: { kind: 'resource', key: 'mech-station' }, hoursEarlier: 1 } }, context)!.parts)).toBe('Most limiting: Station mechanical crew. One more Station mechanical crew would allow a finish at least 1 h earlier.')
+    expect(withHours).toContain('would allow a finish at least 1 h earlier.')
+    // Without it (the flagship): the first cause along the chain that is not just a link, and no claim beyond this plan.
+    const without = readableText(renderHtml(AttentionColumn, { cards: [], finish: finishChain({ lines: [], items: chain }, context), limiting: mostLimiting({ lines: [], items: chain }, context), onAction: none, onPick: none }))
+    expect(partsText(mostLimiting({ lines: [], items: chain }, context)!.parts)).toBe('Most limiting: the finish waits on Pull SW A pump assembly: no working time for Eddy-current test contractor until Tue 07:00; one more crew alone does not bring it earlier in this plan.')
+    expect(without).toContain('one more crew alone does not bring it earlier in this plan.')
+    expect(without).not.toMatch(/never|could not/)
   })
 })

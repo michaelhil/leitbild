@@ -9,7 +9,7 @@ import { applyEdits } from '../plan/edits.ts'
 import { createPlanningClient } from './api.ts'
 import { attentionCards } from './attention.ts'
 import { alignWindowEdit, resourceFromWorld, simulationNow, wholeWindowCalendars, worldAttributes } from './edit-forms.ts'
-import { finishChain, mostLimiting, whyStart, type ExplainResult } from './explain-text.ts'
+import { finishChain, mostLimiting, partsText, whyStart, type ExplainResult } from './explain-text.ts'
 import { modelOf, runBasis, status, supplyRunInputs, trainAPlanned } from './fixtures/plans.ts'
 import { readableText, registerSvelte, renderHtml, routineBreaches } from './fixtures/svelte-ssr.ts'
 import { createTimeFormat } from './format.ts'
@@ -95,7 +95,8 @@ describe("maint's third walk, screen defects", () => {
     const html = renderHtml(AttentionColumn, { cards: [], finish: finishChain(result, context), limiting: mostLimiting(result, context), onAction: none, onPick: none })
     const names = [...html.matchAll(/<a class="name" href="[^"]*"[^>]*>([^<]*)<\/a>/g)].map(match => match[1])
     expect(names).toEqual(expect.arrayContaining(['Station mechanical crew', 'Pull SW A pump assembly', '60 t mobile crane with operator and rigger', 'Restore SW A, fill and vent, pump test']))
-    expect(readableText(html)).toContain('Most limiting: Station mechanical crew (2): the finish waits for it at 2 of 3 steps.')
+    expect(partsText(mostLimiting(result, context)!.parts)).toBe('Most limiting: the finish waits on Restore SW A, fill and vent, pump test: Station mechanical crew is busy with Pull SW A pump assembly; one more crew alone does not bring it earlier in this plan.')
+    expect(readableText(html)).toContain('Most limiting: the finish waits on')
     const why = whyStart(result.items[0]!, context, rows[2])
     expect(why.parts.filter(part => typeof part !== 'string').map(part => typeof part === 'string' ? '' : part.kind)).toEqual(['resource', 'job'])
     // No rule key on screen; rules are named by their words (R3-6).
