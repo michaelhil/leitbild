@@ -162,7 +162,12 @@ export const readiness = (plan: Plan, context: { readonly staleOptions: readonly
   }
   // A World value can put a test under its declared minimum without anyone editing: Generate waits for a person.
   for (const key of belowMinimum(inputs, 'world')) items.push({ kind: 'not-ready', code: 'below-minimum', about: [key], blocks: true })
-  for (const job of inputs.jobs) if (job.needs.length === 0) items.push({ kind: 'warning', code: 'no-crew', about: [job.key], blocks: false })
+  // Working time needs someone to work it: Generate refuses such a job, so the item blocks and says what to add.
+  for (const job of inputs.jobs) {
+    if (job.needs.length > 0) continue
+    const working = job.duration.calendar === 'working'
+    items.push({ kind: working ? 'not-ready' : 'warning', code: 'no-crew', about: [job.key], blocks: working, ...(job.duration.origin.by === 'assumption' && job.kind !== 'work' ? { words: 'drafted' } : {}) })
+  }
   for (const item of inputs.equipment) {
     const inside = inputs.jobs.filter(job => job.kind === 'work' && job.isolation === 'inside' && job.equipment.includes(item.key))
     const tagOuts = inputs.jobs.filter(job => job.kind === 'tag-out' && job.equipment.includes(item.key))

@@ -81,10 +81,10 @@ export const planningOperations: ReadonlyArray<Operation<any>> = [
   {
     id: 'planning.plan.edit', kind: 'command', scope: 'plan', risk: 'write',
     title: 'Change a plan',
-    description: 'Change a plan with named edits: add, change or remove a job and its estimate, crew, equipment, link, shift calendar, purchase such as overtime, method choice, rule or goal order, or lock a job to a start time. A field you give replaces that field; null clears it. All edits apply together or not at all. With preview nothing is saved: you see what moves and which rule breaks. Removing or weakening a hard rule, a support, a precondition or a test minimum needs authority: the name and reason of a person who agreed. Ask them; never fill it in yourself. Needs the plan\'s current revision.',
+    description: 'Change a plan with named edits: add, change or remove a job and its estimate, crew, equipment, link, shift calendar, purchase such as overtime, method choice, rule or goal order, or lock a job to a start time. A field you give replaces that field; null clears it. All edits apply together or not at all. With preview nothing is saved: you see what moves and which rule breaks. Removing or weakening a hard rule, a support, a precondition or a test minimum is a person\'s change: an Assistant is refused and asks a person to make it in the plan screen. Needs the plan\'s current revision.',
     searchTerms: ['job', 'activity', 'crew', 'shift', 'calendar', 'buy', 'scope', 'supported by', 'tag-out', 'link', 'FS', 'SS', 'FF', 'lag', 'protected', 'off limits', 'keep in service', 'at least one', 'available', 'finish on or before', 'data date', 'simulation run', 'schedule'],
     input: editInputSchema, output: writeResultSchema,
-    invoke: async ({ operations, signal }, invocation, input: z.infer<typeof editInputSchema>) => ({ result: await operations.edit(invocation.workspaceId, planIdOf(invocation), input, invocation.expectedRevision, invocation.access, signal) }),
+    invoke: async ({ operations }, invocation, input: z.infer<typeof editInputSchema>) => ({ result: await operations.edit(invocation.workspaceId, planIdOf(invocation), input, invocation.expectedRevision, invocation.access) }),
   },
   {
     id: 'planning.plan.generate', kind: 'command', scope: 'plan', risk: 'write',
@@ -129,10 +129,10 @@ export const planningOperations: ReadonlyArray<Operation<any>> = [
   {
     id: 'planning.plan.delete', kind: 'command', scope: 'plan', risk: 'destructive',
     title: 'Delete a plan',
-    description: 'Delete this plan with its options, baselines and change history. This cannot be undone. The World simulation the plan was linked to, and everything else in the Workspace, is not touched. Pass the plan\'s current revision as the expected revision to refuse the delete if someone changed the plan since you read it; without one, the plan is deleted as it is.',
+    description: 'Delete this plan with its options, baselines and change history. This cannot be undone. The World simulation the plan was linked to, and everything else in the Workspace, is not touched. Read the plan first and pass its current revision as the expected revision: the delete is refused if someone changed the plan since you read it, and an Assistant\'s delete without one is refused.',
     searchTerms: ['delete', 'remove', 'get rid of', 'discard', 'scrap', 'throw away'],
     input: deleteInputSchema, output: deletedSchema,
-    invoke: async ({ operations }, invocation) => ({ result: await operations.delete(invocation.workspaceId, planIdOf(invocation), invocation.expectedRevision) }),
+    invoke: async ({ operations }, invocation) => ({ result: await operations.delete(invocation.workspaceId, planIdOf(invocation), invocation.expectedRevision, invocation.access) }),
   },
 ]
 

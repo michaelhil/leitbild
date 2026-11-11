@@ -1,11 +1,14 @@
 import { describe, expect, test } from 'bun:test'
 import { applyEdits, requireAuthority, type EditContext } from './edits.ts'
 import { editSchema, type Edit } from './edit-schema.ts'
-import { planInputsSchema, type PlanInputs } from './schema.ts'
+import { planInputsSchema, type Plan, type PlanInputs } from './schema.ts'
+import { readiness } from './readiness.ts'
+import { readinessText, statusSentence } from './summary.ts'
 
 const fixture = async (name: string): Promise<PlanInputs> => planInputsSchema.parse(await Bun.file(new URL(`./fixtures/${name}`, import.meta.url)).json())
 const trainA = await fixture('train-a.fragment.json')
 const supplyRun = await fixture('supply-run.case2.json')
+const planOf = (inputs: PlanInputs): Plan => ({ id: crypto.randomUUID(), workspaceId: '5d1b0a9e-6c1e-4d5e-9f00-0000000000a3' as Plan['workspaceId'], revision: 1, createdAt: '2026-11-11T08:00:00Z', updatedAt: '2026-11-11T08:00:00Z', inputs, options: null, baselines: [], changes: [{ seq: 1, at: '2026-11-11T08:00:00Z', by: { kind: 'human' }, revision: 1, summary: 'Created', kinds: [] }], droppedChanges: 0 })
 const context: EditContext = { now: '2026-11-12T10:02:00+01:00', by: { kind: 'human', name: 'Planner' } }
 const edits = (...given: unknown[]): Edit[] => given.map(edit => editSchema.parse(edit))
 const apply = (inputs: PlanInputs, ...given: unknown[]) => applyEdits(inputs, edits(...given), context)
@@ -102,6 +105,11 @@ describe('automatic bracketing (walk fix 9, T0p)', () => {
     const tagged = apply(blank, { edit: 'job', key: 'TAG', title: 'Tag out', kind: 'tag-out', equipment: [item.key], duration: { value: 2, unit: 'h', calendar: 'working' } }, work)
     expect(tagged.inputs.jobs.filter(job => job.kind === 'test').map(job => job.equipment)).toEqual([[item.key]])
     expect(tagged.inputs.jobs.filter(job => job.kind === 'tag-out').map(job => job.key)).toEqual(['TAG'])
+    // A drafted bracket has no crew yet: readiness says so in words, and Generate's refusal names it (adversary item 25).
+    const noCrew = readiness(planOf(drafted.inputs), { staleOptions: [], now: '2026-11-12T09:00:00Z' }).filter(entry => entry.code === 'no-crew' && entry.words === 'drafted')
+    expect(noCrew.length === 2 && noCrew.every(entry => entry.blocks)).toBe(true)
+    expect(noCrew.map(entry => readinessText(entry, drafted.inputs))).toEqual([`The drafted tag-out 'Tag out ${item.label}' needs a crew: add one.`, `The drafted return-to-service test 'Return ${item.label} to service and test' needs a crew: add one.`])
+    expect(statusSentence({ word: 'invalid input', problems: [{ about: [drafts[0]!.key], code: 'working_time_without_resource' }] }, drafted.inputs)).toBe(`Invalid input: Tag out ${item.label} needs a crew: add one.`)
     // Work done off the item (isolation none) needs no bracket.
     expect(apply(blank, { ...work, isolation: 'none' }).inputs.jobs.map(job => job.key)).toEqual(['SEAL'])
   })

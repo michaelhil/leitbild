@@ -28,7 +28,7 @@ afterAll(() => harness.close())
 const expectSmall = (answer: { bytes: number }) => expect(answer.bytes).toBeLessThanOrEqual(4_096)
 
 describe('the Supply run cycle through the operations', () => {
-  test('create, link (which reads World), refresh, generate, explain, baseline and read: results within 4 KB, World only read', async () => {
+  test('create, link, refresh, generate, explain, baseline and read: results within 4 KB, World only read by refresh', async () => {
     world = padded(subjectsFor(supplyRun, valuesFor(1), '2026-09-03T08:00:00Z'))
     const created = await harness.create('supply-run')
     expect(created.answer.body.createdResources).toEqual([{ workspaceId: harness.workspaceId, moduleId: 'planning', type: 'planning.plan', id: created.id }])
@@ -36,17 +36,16 @@ describe('the Supply run cycle through the operations', () => {
     expect(created.answer.body.result.problems.every((problem: { code: string }) => problem.code === 'world-unread')).toBe(true)
     expectSmall(created.answer)
 
-    // Linking the Run reads the plan's World values in the same edit: nothing is left unread.
+    // A plan-scoped edit never reads World (adversary item 20): the link is saved with the values unread.
     const linked = await harness.call('planning.plan.edit', { resource: created.id, input: { edits: [{ edit: 'plan', run: 'run-supply' }] }, expectedRevision: 1 })
     expect(linked.body.result.plan.revision).toBe(2)
-    expect(linked.body.result.problems).toEqual([])
-    expect(linked.body.result.changed.at(-1)).toMatch(/^Read \d+ World values at .* \(simulation time\)$/)
-    expect(linked.body.result.attention.some((item: { kind: string }) => item.kind === 'world')).toBe(false)
+    expect(harness.journal).toEqual([])
+    expect(linked.body.result.problems.every((problem: { code: string }) => problem.code === 'world-unread')).toBe(true)
 
-    // A refresh right after reads the same values: the revision stays.
+    // The Workspace-scoped refresh reads them.
     const refreshed = await harness.call('planning.sources.refresh', { input: { plan: created.id }, expectedRevision: 2 })
     expectSmall(refreshed)
-    expect(refreshed.body.result.plan.revision).toBe(2)
+    expect(refreshed.body.result.plan.revision).toBe(3)
     expect(refreshed.body.result.problems).toEqual([])
     // One read for all subjects, followed over its pages with the same question.
     const subjects = worldSubjects(supplyRun)
@@ -57,12 +56,12 @@ describe('the Supply run cycle through the operations', () => {
     expect(stored.inputs.jobs.every(job => job.duration.origin.by !== 'world' || job.duration.value === null)).toBe(true)
 
     // Unchanged World values refresh the read time without raising the revision.
-    const again = await harness.call('planning.sources.refresh', { input: { plan: created.id }, expectedRevision: 2 })
-    expect([again.body.result.plan.revision, again.body.result.changed.length, again.body.result.changed[0].endsWith('none changed')]).toEqual([2, 1, true])
+    const again = await harness.call('planning.sources.refresh', { input: { plan: created.id }, expectedRevision: 3 })
+    expect([again.body.result.plan.revision, again.body.result.changed.length, again.body.result.changed[0].endsWith('none changed')]).toEqual([3, 1, true])
 
-    const generated = await harness.call('planning.plan.generate', { resource: created.id, input: {}, expectedRevision: 2 })
+    const generated = await harness.call('planning.plan.generate', { resource: created.id, input: {}, expectedRevision: 3 })
     expectSmall(generated)
-    expect(generated.body.result.plan.revision).toBe(2)
+    expect(generated.body.result.plan.revision).toBe(3)
     const recommended = generated.body.result.recommended
     expect(generated.body.result.options.find((option: { key: string }) => option.key === recommended).status.word).toBe('validated feasible')
 
@@ -70,9 +69,9 @@ describe('the Supply run cycle through the operations', () => {
     expectSmall(explained)
     expect(explained.body.result.items.length).toBeGreaterThan(0)
 
-    const baselined = await harness.call('planning.plan.baseline', { resource: created.id, input: { option: recommended, name: 'Dispatch at 08:00' }, expectedRevision: 2 })
+    const baselined = await harness.call('planning.plan.baseline', { resource: created.id, input: { option: recommended, name: 'Dispatch at 08:00' }, expectedRevision: 3 })
     expectSmall(baselined)
-    expect(baselined.body.result.plan.revision).toBe(2)
+    expect(baselined.body.result.plan.revision).toBe(3)
 
     for (const section of [undefined, 'jobs', 'rules', 'crews', 'sources', 'options', 'schedule', 'history']) {
       const read = await harness.call('planning.plan.read', { resource: created.id, input: section === undefined ? {} : { section } })
@@ -81,14 +80,14 @@ describe('the Supply run cycle through the operations', () => {
     }
     const summary = (await harness.call('planning.plan.read', { resource: created.id })).body.result
     expect(summary.sections.map((section: { id: string }) => section.id)).toEqual(['summary'])
-    expect(summary.sections[0].data.plan).toMatchObject({ id: created.id, revision: 2 })
+    expect(summary.sections[0].data.plan).toMatchObject({ id: created.id, revision: 3 })
     const history = (await harness.call('planning.plan.read', { resource: created.id, input: { section: 'history' } })).body.result.sections[0].data.items
     expect(history[0].summary).toBe("Baseline 'Dispatch at 08:00' from " + generated.body.result.options.find((option: { key: string }) => option.key === recommended).label)
 
     // A changed World value raises the revision and makes the options out of date.
     world = padded(subjectsFor(supplyRun, valuesFor(2), '2026-09-03T08:01:00Z'))
-    const changed = await harness.call('planning.sources.refresh', { input: { plan: created.id }, expectedRevision: 2 })
-    expect([changed.body.result.plan.revision, changed.body.result.attention.some((item: { kind: string; about: string[] }) => item.kind === 'stale' && item.about.includes(recommended)), changed.body.result.changed.length > 1]).toEqual([3, true, true])
+    const changed = await harness.call('planning.sources.refresh', { input: { plan: created.id }, expectedRevision: 3 })
+    expect([changed.body.result.plan.revision, changed.body.result.attention.some((item: { kind: string; about: string[] }) => item.kind === 'stale' && item.about.includes(recommended)), changed.body.result.changed.length > 1]).toEqual([4, true, true])
     expectSmall(changed)
   })
 
@@ -260,5 +259,39 @@ describe('the time step chosen at create (walk fix 18)', () => {
     expect((await harness.store.read(harness.workspaceId, blank.id)).inputs.settings.grid).toBe('30min')
     const supply = await harness.create('supply-run')
     expect((await harness.store.read(harness.workspaceId, supply.id)).inputs.settings.grid).toBe(supplyRun.settings.grid)
+  })
+})
+
+describe('a plan-scoped edit never reads World; preview names what the re-timing breaks (adversary items 20, 22)', () => {
+  test('adding World items and linking a Run make no World call; refresh then reads them', async () => {
+    world = [{ locator: 'einsatz/unit/unit%3Atruck-9', label: 'Truck 9', kind: 'unit', facts: [{ id: 'unit:truck-9/property/payloadKg', label: 'Payload', quantity: 'payloadKg', unit: 'kg', value: 900, basis: 'configured', at: '2026-09-03T08:00:00Z' }] }]
+    const local = await createHarness({ subjects: () => world })
+    try {
+      const plan = await local.create('blank', { edits: [{ edit: 'calendar', key: 'duty', label: 'On duty', periods: [{ start: '2026-09-03T08:00:00Z', end: '2026-09-03T08:30:00Z' }] }] })
+      const added = await local.call('planning.plan.edit', { resource: plan.id, expectedRevision: 1, input: { edits: [
+        { edit: 'plan', run: 'run-any' },
+        { edit: 'resource', key: 'truck-9', label: 'Truck 9', kind: 'tool', count: 1, calendar: 'duty', locator: 'einsatz/unit/unit%3Atruck-9', attributes: [{ key: 'payloadKg', label: 'Payload', unit: 'kg', fromWorld: { locator: 'einsatz/unit/unit%3Atruck-9', fact: 'unit:truck-9/property/payloadKg' } }] },
+      ] } })
+      expect([added.status, local.journal.length]).toEqual([200, 0])
+      expect(added.body.result.problems.map((problem: { code: string }) => problem.code)).toEqual(['world-unread'])
+      const read = await local.call('planning.sources.refresh', { input: { plan: plan.id }, expectedRevision: 2 })
+      expect([read.status, read.body.result.problems, local.journal.length]).toEqual([200, [], 1])
+    } finally { await local.close() }
+  })
+
+  test('a preview whose re-timing breaks a rule names it with its limit; Generate may still keep it', async () => {
+    const { createSolverDouble } = await import('./fixtures/doubles.ts')
+    const inner = createSolverDouble()
+    const rule = trainA.rules.find(entry => entry.kind === 'span-limit')!
+    const local = await createHarness({ solver: { ...inner, preview: async request => ({ rows: request.option.rows, violations: [{ code: 'span-limit', about: [rule.key, 'group'], words: rule.words }] }) } })
+    try {
+      const created = await local.create('train-a-work-week')
+      await local.call('planning.plan.generate', { resource: created.id, input: {}, expectedRevision: 1 })
+      const job = trainA.jobs.find(entry => entry.kind === 'work')!
+      const preview = await local.call('planning.plan.edit', { resource: created.id, input: { edits: [{ edit: 'job', key: job.key, duration: { value: job.duration.value! + 6 } }], preview: true } })
+      const limit = rule.kind === 'span-limit' ? `${rule.limit.value} ${rule.limit.unit}` : ''
+      expect(preview.body.result.preview.consequence).toBe(`Not saved: this option's re-timing breaks ${rule.key} (${limit}). Generate may find a schedule that keeps it.`)
+      expect(preview.body.result.preview.violations).toEqual([rule.words])
+    } finally { await local.close() }
   })
 })

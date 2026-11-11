@@ -156,7 +156,11 @@ export const readinessText = (item: ReadinessItem, inputs: Inputs): string => {
         : `${name}: ${item.count === 1 ? 'a World value is' : `${item.count} World values are`} not read yet; refresh.`
       case 'world-unusable': return `${name}: a World value is in ${item.unit ?? 'a unit'} Planning cannot use here.`
       case 'world-duration': return `${name}: taken from '${item.label ?? ''}' (${basisWords[item.basis ?? ''] ?? item.basis}, read ${at}); check it describes the work.`
-      case 'no-crew': return `${name}: no crew or tool is named to do it.`
+      case 'no-crew': {
+        const job = inputs.jobs.find(entry => entry.key === item.about[0])
+        const what = job?.kind === 'tag-out' ? 'tag-out' : job?.kind === 'test' ? 'return-to-service test' : 'job'
+        return item.words === 'drafted' ? `The drafted ${what} '${name}' needs a crew: add one.` : `'${name}' needs a crew or tool: add one.`
+      }
       case 'no-tag-out': return `${name}: worked on inside but never tagged out.`
       case 'no-test': return `${name}: worked on inside but never tested back into service.`
       case 'not-returned': return `${name}: tagged out but never tested back into service.`
@@ -215,7 +219,9 @@ export const statusSentence = (status: Status, inputs: Inputs): string => {
       return clip(`Validated feasible${goals.length === 0 ? '' : `: ${goals.join('; ')}`}.`, 300)
     }
     case 'proven infeasible': return clip(`Proven infeasible: ${certificateWords(status.cause, inputs)}.`, 300)
-    case 'invalid input': return clip(`Invalid input: ${status.problems.map(problem => `${problem.code.replaceAll('_', ' ')}${problem.about.length === 0 ? '' : ` (${names(inputs, problem.about, 2)})`}`).join('; ')}.`, 300)
+    case 'invalid input': return clip(`Invalid input: ${status.problems.map(problem => problem.code === 'working_time_without_resource'
+      ? `${names(inputs, problem.about, 2)} ${problem.about.length === 1 ? 'needs' : 'need'} a crew: add one`
+      : `${problem.code.replaceAll('_', ' ')}${problem.about.length === 0 ? '' : ` (${names(inputs, problem.about, 2)})`}`).join('; ')}.`, 300)
     case 'unsupported feature': return clip(`Unsupported feature: ${status.problems.map(problem => problem.code.replaceAll('_', ' ')).join('; ')}.`, 300)
     case 'cancelled': return 'Stopped before any plan was found.'
     case 'unresolved': return clip(`Unresolved, not proof: no plan within the window was found in the time allowed${status.attempt === undefined ? '' : `; the best attempt finishes ${nameOf(inputs, status.attempt.job)} ${decimal(status.attempt.pastWindowHours)} h past the window`}.`, 300)

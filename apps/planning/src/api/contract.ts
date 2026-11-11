@@ -20,7 +20,7 @@ export const editInputSchema = z.object({
   preview: z.boolean().optional().describe('true: show the consequence and the rule check without saving'),
   reason: wordsSchema.optional().describe('Why, for the change log'),
   authority: z.object({ name: labelSchema.describe('The named person who agreed, as they gave their name in this conversation'), reason: wordsSchema.describe('Their reason, in their words') }).strict().optional()
-    .describe('A named person\'s agreement to remove or weaken a hard rule, a support, a group membership, a tag-out or test, a precondition or a test minimum. Ask them; never fill this in yourself'),
+    .describe('A named person\'s agreement to remove or weaken a hard rule, a support, a group membership, a tag-out or test, a precondition or a test minimum, given by that person in the plan screen. An Assistant\'s edit that needs it is refused. Ask them; never fill this in yourself'),
 }).strict()
 export const generateInputSchema = z.object({
   variants: z.array(z.object({

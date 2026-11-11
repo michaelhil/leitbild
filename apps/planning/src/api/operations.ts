@@ -8,7 +8,7 @@ import {
   type AccessContext, type InspectionView, type PlanningFactsInput, type PlanningFactsOutput, type WorkspaceId, type WorkspaceResourceReference,
 } from '@leitbild/contracts'
 import { isPlanningError, planningError } from '../errors.ts'
-import { applyEdits, requireAuthority, type ChangeRecord, type EditOutcome, type StoredActor } from '../plan/edits.ts'
+import { applyEdits, requireAuthority, type ChangeRecord, type EditOutcome, type StoredActor, type Weakening } from '../plan/edits.ts'
 import { definitionRevision, startPlan } from '../definitions/start.ts'
 import type { PlanDefinitionsPort } from '../definitions/index.ts'
 import { outTogether, readiness, worldSubjects, type ReadinessItem } from '../plan/readiness.ts'
@@ -330,6 +330,33 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
     return { facts, observedAt: oldestRead ?? now() }
   }
 
+  /**
+   * An Assistant never supplies authority: an edit that loosens a hard rule is a person's to make, in the
+   * plan screen. The actor kind is the caller's own statement, not authentication (a stated platform limit).
+   */
+  const refuseAgentAuthority = (weakens: readonly Weakening[], access: AccessContext): void => {
+    if (weakens.length === 0 || access.actor.kind !== 'ai') return
+    throw planningError(409, 'needs_person', 'A person must make this change in the plan screen: ask them.', {
+      about: [...new Set(weakens.flatMap(weakening => weakening.about.slice(0, 1)))].slice(0, 4),
+    })
+  }
+
+  /** What a re-timed option breaks, by rule key and its limit: "R2 (72 h)", "D1 (due Thu 12:00)", "the window". */
+  const retimingBreaks = (violations: readonly CheckViolation[], inputs: PlanInputs): string => {
+    const zone = inputs.settings.timeZone
+    const named = violations.map(violation => {
+      const key = violation.code === 'protected-equipment' ? violation.about[1] : violation.about[0]
+      const rule = inputs.rules.find(entry => entry.key === key)
+      if (rule?.kind === 'span-limit') return `${rule.key} (${valueWords(rule.limit.value, rule.limit.unit)})`
+      if (rule?.kind === 'due') return `${rule.key} (due ${timeWords(rule.finishBy, zone)})`
+      if (rule?.kind === 'keep-in-service') return `${rule.key} (at least ${rule.atLeast} in service)`
+      if (rule?.kind === 'protected') return `${rule.key} (protected)`
+      return violation.code === 'beyond-window' || violation.code === 'outside-window' ? 'the window' : violation.code.replaceAll('-', ' ')
+    })
+    const distinct = [...new Set(named)]
+    return distinct.length <= 2 ? distinct.join(' and ') : `${distinct.slice(0, 2).join(', ')} and ${distinct.length - 2} more`
+  }
+
   /** The option's longest group span (h, from the span-over goal) and its extra cost (from the extra-cost goal). */
   const spanAndCost = (inputs: PlanInputs, option: Option): { readonly span?: number; readonly cost?: number } => {
     const k = (metric: string) => inputs.goals.findIndex(goal => goal.metric === metric)
@@ -399,7 +426,7 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
       return { result: writeResult(stored, [`Created '${stored.inputs.settings.title}' from '${found.title}'`, ...changeLines(changes, stored.inputs, 11)]), created: planReference(workspaceId, stored.id) }
     },
 
-    edit: async (workspaceId: WorkspaceId, planId: string, input: z.infer<typeof editInputSchema>, expectedRevision: number | undefined, access: AccessContext, signal: AbortSignal = new AbortController().signal): Promise<WriteResult> => {
+    edit: async (workspaceId: WorkspaceId, planId: string, input: z.infer<typeof editInputSchema>, expectedRevision: number | undefined, access: AccessContext): Promise<WriteResult> => {
       const at = now()
       const by = storedActor(access)
       if (input.preview === true) {
@@ -423,8 +450,8 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
         const moved = timed.rows.filter(row => before.get(row.job)?.start !== row.start || before.get(row.job)?.finish !== row.finish)
         const finish = (rows: readonly DatedRow[]) => rows.reduce((latest, row) => row.finish > latest ? row.finish : latest, '')
         const zone = outcome.inputs.settings.timeZone
-        // A change that breaks a rule moves nothing: say so, never how jobs would move.
-        const consequence = timed.violations.length > 0 ? `Not saved: this change breaks a rule.${authority}`
+        // The preview re-times this option only; Generate may still find a schedule that keeps the rule.
+        const consequence = timed.violations.length > 0 ? `Not saved: this option's re-timing breaks ${retimingBreaks(timed.violations, outcome.inputs)}. Generate may find a schedule that keeps it.${authority}`
           : `Not saved. ${moved.length === 0 ? 'No job moves' : `${moved.length} job${moved.length === 1 ? ' moves' : 's move'}`}; the last finish ${finish(timed.rows) === finish(recommended.rows) ? 'stays' : `moves from ${timeWords(finish(recommended.rows), zone)} to ${timeWords(finish(timed.rows), zone)}`}.${authority}`
         return writeResult(previewed, changeLines(outcome.changes, outcome.inputs), { preview: {
           saved: false, consequence: consequence.length <= 300 ? consequence : `${consequence.slice(0, 299)}…`,
@@ -434,47 +461,31 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
           moved: moved.slice(0, 6).map(row => ({ job: row.job, start: row.start, finish: row.finish, because: input.edits.map((_, edit) => edit) })),
         } })
       }
-      // Adding a World item (or linking a Run) reads its values in the same edit, so it is usable at once;
-      // the read is a refresh of every value the plan names, as Einsatz needs units and tasks read together.
+      // A plan-scoped edit never reads World: an added World item or a linked Run is saved with its values
+      // unread, and the Workspace-scoped planning.sources.refresh reads them (the screen calls it next).
       const guard = { expectedRevision, required: true }
       const before = await readGuarded(workspaceId, planId, guard)
       const draft = applyEdits(before.inputs, input.edits, { now: at, by })
+      refuseAgentAuthority(draft.weakens, access)
       requireAuthority(draft.weakens, input.authority, before.inputs)
-      const run = draft.inputs.settings.run
-      const read = new Set(draft.inputs.world.facts.map(fact => fact.locator))
-      const unread = run === null ? [] : worldSubjects(draft.inputs).filter(locator => !read.has(locator))
-      let world: { readonly facts: WorldFactCopy[]; readonly observedAt: string } | undefined
-      let notRead: string | undefined
-      if (run !== null && unread.length > 0) {
-        const deadline = AbortSignal.any([signal, AbortSignal.timeout(refreshDeadlineMs)])
-        try { world = await readWorld(workspaceId, run.id, draft.inputs, access, deadline, () => planningError(503, 'world_unavailable', 'World did not answer in time')) } catch (error) {
-          if (!isPlanningError(error)) throw error
-          // Saved without them, and said so: the next refresh reads them.
-          notRead = `World values not read now (${error.message}); refresh to read them`
-        }
-      }
       let changes: readonly ChangeRecord[] = []
       const saved = await store.update(workspaceId, planId, guard, plan => {
         const outcome = applyEdits(plan.inputs, input.edits, { now: at, by })
+        refuseAgentAuthority(outcome.weakens, access)
         requireAuthority(outcome.weakens, input.authority, plan.inputs)
         changes = outcome.changes
         if (outcome.changes.length === 0) return plan
         const revision = plan.revision + 1
-        const inputs = world === undefined ? outcome.inputs : planInputsSchema.parse({ ...outcome.inputs, world: { refreshedAt: world.observedAt, facts: world.facts } })
         return {
-          ...plan, revision, updatedAt: at, inputs,
+          ...plan, revision, updatedAt: at, inputs: outcome.inputs,
           ...appendChange(plan, {
-            at, by, revision, summary: changeSummary(outcome.changes, outcome.inputs), kinds: [...editKinds(input.edits), ...(world === undefined ? [] : ['refresh' as const])].slice(0, 16),
+            at, by, revision, summary: changeSummary(outcome.changes, outcome.inputs), kinds: editKinds(input.edits),
             ...(input.reason === undefined ? {} : { reason: input.reason }),
             ...(input.authority === undefined ? {} : { authority: input.authority }),
           }),
         }
       })
-      const zone = saved.inputs.settings.timeZone
-      const lines = changes.length === 0 ? ['No change: the plan already says this'] : [...changeLines(changes, saved.inputs, 11)]
-      if (world !== undefined) lines.push(`Read ${world.facts.length} World values at ${timeWords(world.observedAt, zone)} (simulation time)`)
-      if (notRead !== undefined) lines.push(notRead)
-      return writeResult(saved, lines)
+      return writeResult(saved, changes.length === 0 ? ['No change: the plan already says this'] : changeLines(changes, saved.inputs))
     },
 
     generate: async (workspaceId: WorkspaceId, planId: string, input: z.infer<typeof generateInputSchema>, expectedRevision: number | undefined, access: AccessContext, signal: AbortSignal): Promise<GenerateResult> => {
@@ -578,7 +589,11 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
       await Promise.allSettled([...generating.values()])
     },
 
-    delete: async (workspaceId: WorkspaceId, planId: string, expectedRevision: number | undefined): Promise<{ readonly deleted: true }> => {
+    delete: async (workspaceId: WorkspaceId, planId: string, expectedRevision: number | undefined, access: AccessContext): Promise<{ readonly deleted: true }> => {
+      // A person's delete card sends no revision (L2); an Assistant deletes only the revision it has read.
+      if (access.actor.kind === 'ai' && expectedRevision === undefined) {
+        throw planningError(409, 'read_plan_first', 'Read the plan first: an Assistant deletes a plan only at the revision it has read; pass it as the expected revision.')
+      }
       await store.delete(workspaceId, planId, { expectedRevision, required: false })
       return { deleted: true }
     },

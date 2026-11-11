@@ -39,34 +39,35 @@ test('the whole plan cycle through Host, with no World write', async () => {
   expect(created.attention[0].kind).toBe('world')
 
   const linked = await one(assistant, { operationId: 'planning.plan.edit', target: plan, input: { edits: [{ edit: 'plan', run: runId }] }, expectedRevision: 1 })
-  // Linking reads the plan's World values at once; a refresh right after finds nothing new.
-  expect([linked.plan.revision, linked.problems]).toEqual([2, []])
+  // A plan-scoped edit never reads World: the link is saved with the values unread, and the Workspace-scoped refresh reads them.
+  expect(linked.plan.revision).toBe(2)
+  expect(linked.problems.length > 0 && linked.problems.every((problem: { code: string }) => problem.code === 'world-unread')).toBe(true)
   const refreshed = await one(assistant, { operationId: 'planning.sources.refresh', input: { plan: created.plan.id }, expectedRevision: 2 })
-  expect([refreshed.plan.revision, refreshed.problems]).toEqual([2, []])
+  expect([refreshed.plan.revision, refreshed.problems]).toEqual([3, []])
 
   const job = supplyRun.jobs[0]!
-  const edited = await one(assistant, { operationId: 'planning.plan.edit', target: plan, input: { edits: [{ edit: 'job', key: job.key, tags: [...job.tags, 'checked'] }], reason: 'Dispatcher checked the request' }, expectedRevision: 2 })
-  expect(edited.plan.revision).toBe(3)
+  const edited = await one(assistant, { operationId: 'planning.plan.edit', target: plan, input: { edits: [{ edit: 'job', key: job.key, tags: [...job.tags, 'checked'] }], reason: 'Dispatcher checked the request' }, expectedRevision: 3 })
+  expect(edited.plan.revision).toBe(4)
 
-  const generated = await one(assistant, { operationId: 'planning.plan.generate', target: plan, input: {}, expectedRevision: 3 })
-  expect([generated.plan.revision, typeof generated.recommended]).toEqual([3, 'string'])
+  const generated = await one(assistant, { operationId: 'planning.plan.generate', target: plan, input: {}, expectedRevision: 4 })
+  expect([generated.plan.revision, typeof generated.recommended]).toEqual([4, 'string'])
   const explained = await one(assistant, { operationId: 'planning.plan.explain', target: plan, input: { ask: 'finish' } })
   expect(explained.items.length).toBeGreaterThan(0)
-  const baselined = await one(assistant, { operationId: 'planning.plan.baseline', target: plan, input: { option: generated.recommended, name: 'Dispatch' }, expectedRevision: 3 })
-  expect(baselined.plan.revision).toBe(3)
+  const baselined = await one(assistant, { operationId: 'planning.plan.baseline', target: plan, input: { option: generated.recommended, name: 'Dispatch' }, expectedRevision: 4 })
+  expect(baselined.plan.revision).toBe(4)
 
   // A new Room finds the same plan by discovery and reads it.
   const fresh = stack.room('room-2')
   const again = await fresh.explore({ view: 'scope', moduleId: 'planning' }) as { data: { resources: any[] } }
   const target = again.data.resources.find(resource => resource.target.ref.id === created.plan.id).target
   const summary = await one(fresh, { operationId: 'planning.plan.read', target, input: {} })
-  expect(summary.sections[0].data.plan).toMatchObject({ id: created.plan.id, title: supplyRun.settings.title, revision: 3 })
+  expect(summary.sections[0].data.plan).toMatchObject({ id: created.plan.id, title: supplyRun.settings.title, revision: 4 })
   const options = await one(fresh, { operationId: 'planning.plan.read', target, input: { section: 'options' } })
   expect(options.sections[0].data).toMatchObject({ recommended: generated.recommended, items: [{ key: generated.recommended, fresh: true }] })
 
   const stored = await stack.store.read(stack.workspaceId, created.plan.id)
-  expect([stored.revision, stored.baselines.length, stored.options?.options.length]).toEqual([3, 1, 1])
-  expect(stored.changes.map(change => change.kinds)).toEqual([[], ['plan', 'refresh'], ['refresh'], ['job'], [], []])
+  expect([stored.revision, stored.baselines.length, stored.options?.options.length]).toEqual([4, 1, 1])
+  expect(stored.changes.map(change => change.kinds)).toEqual([[], ['plan'], ['refresh'], ['job'], [], []])
 
   // Every value the case names came from World's real answer, and the Run's journal is as before.
   expect(stored.inputs.world.facts.length).toBeGreaterThan(0)

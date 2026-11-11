@@ -77,6 +77,27 @@ describe('refusals name their cause and stay within 4 KB', () => {
     expect(preview.body.result.preview).toEqual({ saved: false, consequence: 'Not saved: this change breaks a rule.', violations: [protectedRule.words], weakens: [] })
   })
 
+  test('an Assistant never supplies authority: a loosening edit from an agent is a person\'s to make (adversary item 19)', async () => {
+    const plan = await harness.create('train-a-work-week')
+    // The adversary's probe: the Assistant removes the protected-train rule with an authority it typed itself.
+    const typed = await harness.call('planning.plan.edit', { resource: plan.id, actor: 'ai', expectedRevision: 1, input: { edits: [{ edit: 'remove', what: 'rule', key: protectedRule.key }], authority: { name: 'Shift supervisor', reason: 'Agreed on the phone' } } })
+    expect([...error(typed), typed.body.error.message]).toEqual([409, 'needs_person', 'A person must make this change in the plan screen: ask them.'])
+    expect(error(await harness.call('planning.plan.edit', { resource: plan.id, actor: 'ai', expectedRevision: 1, input: { edits: [{ edit: 'remove', what: 'rule', key: protectedRule.key }] } }))).toEqual([409, 'needs_person'])
+    expect((await harness.store.read(harness.workspaceId, plan.id)).inputs.rules.some(rule => rule.key === protectedRule.key)).toBe(true)
+    // The same edit by a person with a named authority is saved; an Assistant's edit that loosens nothing is too.
+    expect((await harness.call('planning.plan.edit', { resource: plan.id, actor: 'ai', expectedRevision: 1, input: { edits: [{ edit: 'plan', title: 'Train A, week 47' }] } })).status).toBe(200)
+    expect((await harness.call('planning.plan.edit', { resource: plan.id, expectedRevision: 2, input: { edits: [{ edit: 'remove', what: 'rule', key: protectedRule.key }], authority: { name: 'Shift supervisor', reason: 'Train B work moved' } } })).status).toBe(200)
+  })
+
+  test('an Assistant deletes only at the revision it read; a person\'s delete card needs none (adversary item 24)', async () => {
+    const plan = await harness.create('blank')
+    const blind = await harness.call('planning.plan.delete', { resource: plan.id, actor: 'ai' })
+    expect([...error(blind), blind.body.error.message]).toEqual([409, 'read_plan_first', 'Read the plan first: an Assistant deletes a plan only at the revision it has read; pass it as the expected revision.'])
+    expect((await harness.call('planning.plan.delete', { resource: plan.id, actor: 'ai', expectedRevision: 1 })).body).toEqual({ result: { deleted: true } })
+    const other = await harness.create('blank')
+    expect((await harness.call('planning.plan.delete', { resource: other.id })).body).toEqual({ result: { deleted: true } })
+  })
+
   test('a second item with the protected pump\'s World locator cannot take a tag-out', async () => {
     const plan = await harness.create('train-a-work-week')
     const protectedItem = protectedRule.kind === 'protected' ? protectedRule.equipment[0]! : ''

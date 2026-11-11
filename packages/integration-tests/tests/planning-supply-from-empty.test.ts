@@ -1,13 +1,14 @@
 // T0 on the Supply run, from an empty plan (walk fix 8, T0s-02): a planner links the simulation, finds the
-// trucks and requests in World, adds them with their World values, adds the coverage rule and generates.
-// Adding a World item reads its values in the same edit, so nothing dead-ends on "not read yet".
+// trucks and requests in World, adds them, reads their World values, adds the coverage rule and generates.
+// A plan-scoped edit never reads World (adversary item 20): each added World item is saved with its values
+// unread, and the Workspace-scoped planning.sources.refresh reads them right after, as the plan screen does.
 import { afterAll, expect, test } from 'bun:test'
 import { createPlanningStack } from './planning-stack.ts'
 
 const stack = await createPlanningStack()
 afterAll(() => stack.close())
 
-test('the Supply run from empty: World trucks and requests are usable as soon as they are added', async () => {
+test('the Supply run from empty: World trucks and requests are usable once the refresh after each edit reads them', async () => {
   const assistant = stack.room('room-from-empty')
   const one = async (call: Record<string, unknown>) => {
     const answer = await assistant.call({ calls: [{ key: 'c', ...call }] }) as { data: { results: Array<{ success: boolean; data?: any; error?: string }> } }
@@ -40,16 +41,25 @@ test('the Supply run from empty: World trucks and requests are usable as soon as
   ] } })
   const plan = created.target
   let revision = created.plan.revision
+  const unread = (problems: Array<{ code: string }>) => problems.length > 0 && problems.every(problem => problem.code === 'world-unread')
+  const refresh = async () => {
+    const refreshed = await one({ operationId: 'planning.sources.refresh', input: { plan: created.plan.id }, expectedRevision: revision })
+    expect(refreshed.problems).toEqual([])
+    expect(refreshed.plan.revision).toBe(revision + 1)
+    revision = refreshed.plan.revision
+    return refreshed
+  }
 
-  // The trucks, each with its payload from World: read in this same edit.
+  // The trucks, each with its payload from World: the edit saves them unread and the refresh reads them.
   const truckEdits = trucks.map((truck: { locator: string; label: string }, index: number) => {
     const payload = fact(truck.locator, id => id.endsWith('/property/payloadKg'))!
     return { edit: 'resource', key: `truck-${index + 1}`, label: truck.label, kind: 'tool', count: 1, calendar: 'exercise', locator: truck.locator, attributes: [{ key: 'payloadKg', label: 'Payload', unit: 'kg', fromWorld: { locator: truck.locator, fact: payload.id } }] }
   })
   const added = await one({ operationId: 'planning.plan.edit', target: plan, input: { edits: truckEdits }, expectedRevision: revision })
   revision = added.plan.revision
-  expect(added.problems).toEqual([])
-  expect(added.changed.at(-1)).toMatch(/^Read \d+ World values at .* \(simulation time\)$/)
+  expect(unread(added.problems)).toBe(true)
+  const read = await refresh()
+  expect(read.changed[0]).toMatch(/^Read \d+ World values at .+: \d+ new or changed/)
 
   // The requests, each taking its time from World per truck (arrival plus service).
   const requestEdits = tasks.slice(0, 2).map((task: { locator: string; label: string }, index: number) => ({
@@ -63,7 +73,8 @@ test('the Supply run from empty: World trucks and requests are usable as soon as
   }))
   const requests = await one({ operationId: 'planning.plan.edit', target: plan, input: { edits: requestEdits }, expectedRevision: revision })
   revision = requests.plan.revision
-  expect(requests.problems).toEqual([])
+  expect(unread(requests.problems)).toBe(true)
+  await refresh()
 
   const ruled = await one({ operationId: 'planning.plan.edit', target: plan, input: { edits: [
     { edit: 'rule', key: 'one-free', kind: 'keep-in-service', members: ['truck-1', `truck-${trucks.length}`], atLeast: 1, words: 'Keep at least one of these trucks free at all times.' },

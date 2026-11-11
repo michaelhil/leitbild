@@ -57,7 +57,9 @@ describe('the Planning operations as published (design §5.1)', () => {
     const authority = (edit.inputSchema as { properties: Record<string, { description: string; properties: Record<string, { description: string }> }> }).properties.authority!
     expect(authority.description).toContain('Ask them; never fill this in yourself')
     expect(authority.properties.name!.description).toContain('named person')
-    expect(edit.description).toContain('never fill it in yourself')
+    // The caller's actor kind is its own statement, not authentication (arch D2); an Assistant is refused anyway (adversary item 19).
+    expect(edit.description).toContain('an Assistant is refused and asks a person to make it in the plan screen')
+    expect(authority.description).toContain('An Assistant\'s edit that needs it is refused')
   })
 
   test('every input field is described, and inputs other than create and edit stay within 4 KB', () => {
