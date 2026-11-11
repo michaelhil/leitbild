@@ -178,7 +178,9 @@ export const makeExplainer = (ctx: ExplainContext) => {
     const finish = finishOf(prep, a, m, start)
     const base = { job: keyOf(ctx, a), start: iso(index, start), finish: iso(index, finish), floatHours: ctx.floats[a]?.workingHours ?? 0 }
     if (activity.fixed !== undefined) return { ...base, because: [{ kind: 'lock', about: [keyOf(ctx, a)] }], joint: false }
-    if (start === 0) return { ...base, because: [{ kind: 'window', about: [] }], joint: false }
+    // At the very start: the plan's data date when it is the window's first slot (no forecast starts
+    // before it), else the window's opening.
+    if (start === 0) return { ...base, because: [{ kind: ctx.dataDateSlot === 0 ? 'data-date' : 'window', about: [] }], joint: false }
     const usage = usageWithout(a)
     let best: { causes: Cause[]; t: number } | undefined
     // Single causes that alone let it start earlier at the best slot, in any mode (alternatives, not joint).

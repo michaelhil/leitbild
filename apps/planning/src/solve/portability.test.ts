@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { Glob } from 'bun'
 import { planInputsSchema, type PlanInputs } from '../plan/schema.ts'
-import supplyRunJson from '../plan/fixtures/supply-run.case2.json'
 import { compile } from './compile.ts'
 import { makeExplainer } from './explain.ts'
 import { prepare } from './decode.ts'
@@ -9,30 +8,11 @@ import { totalFloat } from './float.ts'
 import { generate } from './generate.ts'
 import { searchEngine } from './search.ts'
 import { laneKCheck, laneKVerify } from './fixtures/lane-k.ts'
+import { lateTruck, supplyRun, supplyRunBase } from './fixtures/supply-run.ts'
 
 // The Supply run (maint/case2.json, sha256 7339108b…, converted by lane A) solved by the same core.
-// World values are never stored, so this test supplies a recorded-facts fixture. These are TEST INPUTS
-// (not World recordings, not schedule numbers): every truck's on-scene time is 180 s as in the
-// Scenario; arrival seconds below are chosen for the test. Expected times are worked out by hand.
-const arrivals: Record<string, number> = {
-  'unit:truck-4/arrival-seconds/task:sports-hall-tank': 120,
-  'unit:truck-1/arrival-seconds/task:sports-hall-tank': 300,
-  'unit:truck-3/arrival-seconds/task:field-kitchen': 240,
-  'unit:truck-4/arrival-seconds/task:field-kitchen': 200,
-  'unit:truck-1/arrival-seconds/task:field-kitchen': 360,
-}
-const payloads: Record<string, number> = { 'unit:truck-1/property/payloadKg': 300, 'unit:truck-3/property/payloadKg': 800, 'unit:truck-4/property/payloadKg': 1_500 }
-const base = planInputsSchema.parse(supplyRunJson)
-const refs = [...new Set(JSON.stringify(base).match(/"locator":"[^"]+","fact":"[^"]+"/g) ?? [])].map(text => JSON.parse(`{${text}}`) as { locator: string; fact: string })
-const facts = refs.map(ref => {
-  const value = ref.fact.endsWith('/service-seconds') ? 180 : arrivals[ref.fact] ?? payloads[ref.fact]
-  if (value === undefined) throw new Error(`The facts fixture lacks ${ref.fact}`)
-  return { locator: ref.locator, id: ref.fact, label: ref.fact, quantity: ref.fact.includes('payload') ? 'mass' : 'duration', unit: ref.fact.includes('payload') ? 'kg' : 's', value, basis: ref.fact.includes('payload') ? 'configured' : 'owner-estimate', at: '2026-09-03T08:00:00Z' }
-})
-const withFacts = (inputs: PlanInputs): PlanInputs => planInputsSchema.parse({ ...inputs, world: { refreshedAt: '2026-09-03T08:00:00Z', facts } })
-const supplyRun = withFacts(base)
-/** VS1: Truck 2 is announced late and joins at 08:05:00. */
-const lateTruck = planInputsSchema.parse({ ...supplyRun, calendars: supplyRun.calendars.map(calendar => (calendar.key === 'joins-0802' ? { ...calendar, periods: [{ start: '2026-09-03T08:05:00Z', end: '2026-09-03T08:30:00Z' }] } : calendar)) })
+// World values come from the recorded-facts fixture (fixtures/supply-run.ts, test inputs). Expected times are worked out by hand.
+const base = supplyRunBase
 /** VS2: the coverage rule lifted (with authority, by lane P's edit). */
 const lifted = planInputsSchema.parse({ ...supplyRun, rules: [] })
 
