@@ -15,7 +15,10 @@ export interface SmallInstance { readonly seed: number; readonly inputs: PlanInp
 const planner = { by: 'planner' as const }
 const at = (slot: number): string => new Date(Date.parse('2026-11-16T06:00:00Z') + slot * 1_800_000).toISOString().replace('.000Z', 'Z')
 
-/** A deterministic small plan: two items in one group, tag-out, work and test jobs, two crews, one purchase. */
+/**
+ * A deterministic small plan: two items in one group, tag-out, work and test jobs, two crews and a tool, one
+ * purchase. Work is done by either crew (a pooled need); some instances also need the tool at the same time.
+ */
 export const smallInstance = (seed: number): SmallInstance => {
   const next = random(seed)
   const pick = <T>(items: readonly T[]): T => items[Math.floor(next() * items.length)]!
@@ -24,12 +27,17 @@ export const smallInstance = (seed: number): SmallInstance => {
   const supported = next() < 0.5
   const keepOne = next() < 0.5
   const buy = next() < 0.5
+  const withTool = next() < 0.5
   const limit = pick([2.5, 3, 4, 5])
   const workHours = [pick([0.5, 1, 1.5]), pick([0.5, 1])]
   const goalOrder = (['finish', 'extra-cost', 'unavailable-hours'] as const).map(metric => ({ metric, key: next() })).sort((left, right) => left.key - right.key)
   const tagOut = (key: string, item: string) => ({ key, title: `Tag out ${item}`, kind: 'tag-out', equipment: [item], isolation: 'none', duration: { value: 0.5, unit: 'h', calendar: 'working', origin: planner }, durationWith: [], needs: [{ anyOf: ['ops'], amount: 1, handover: false }], continuous: true, checks: [], tags: [] })
   const test = (key: string, item: string) => ({ ...tagOut(key, item), title: `Test ${item}`, kind: 'test' })
-  const work = (key: string, item: string, hours: number) => ({ key, title: `Work ${item}`, kind: 'work', equipment: [item], isolation: 'inside', duration: { value: hours, unit: 'h', calendar: 'working', origin: planner }, durationWith: [], needs: [{ anyOf: ['crew', 'ops'], amount: 1, handover: false }], continuous: next() < 0.5, checks: [], tags: [] })
+  const work = (key: string, item: string, hours: number) => ({
+    key, title: `Work ${item}`, kind: 'work', equipment: [item], isolation: 'inside', duration: { value: hours, unit: 'h', calendar: 'working', origin: planner }, durationWith: [],
+    needs: [{ anyOf: ['crew', 'ops'], amount: 1, handover: false }, ...(withTool && item === 'P' ? [{ anyOf: ['kit'], amount: 1, handover: false }] : [])],
+    continuous: next() < 0.5, checks: [], tags: [],
+  })
   const inputs = planInputsSchema.parse({
     settings: { title: `Small ${seed}`, timeZone: 'Europe/Oslo', window: { start: at(0), end: at(slots) }, dataDate: at(0), grid: '30min', currency: 'NOK', run: null },
     equipment: [{ key: 'P', label: 'Item P', group: 'G', supportedBy: [] }, { key: 'Q', label: 'Item Q', group: 'G', supportedBy: supported ? ['P'] : [] }],
@@ -41,6 +49,7 @@ export const smallInstance = (seed: number): SmallInstance => {
     resources: [
       { key: 'ops', label: 'Operator', kind: 'crew', count: 1, calendar: 'always', attributes: [], source: planner },
       { key: 'crew', label: 'Crew', kind: 'crew', count: 1, crewSize: 2, calendar: 'part', attributes: [], source: planner },
+      { key: 'kit', label: 'Tool kit', kind: 'tool', count: 1, calendar: 'part', attributes: [], source: planner },
     ],
     purchases: [{ key: 'extra', label: 'Extra crew time', resource: 'crew', adds: { periods: [crewEarly ? { start: at(5), end: at(slots) } : { start: at(0), end: at(5) }] }, replaces: [], price: { perPeriodUsed: 100 }, allowed: true }],
     methods: [],

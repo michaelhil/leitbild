@@ -8,7 +8,7 @@ import type { GeneratePort, HarnessOption } from '../../tests/harness/ports.ts'
 // The property runs on lane S's generate at integration. Here two engine doubles show the harness: one
 // that only offers checker-validated schedules, and one that cuts a corner when the first goal rewards it.
 const run = { grid: '30min' as const, engine: 'double', formulation: 'double', seed: 1, budget: { evals: 1, cpuMs: 1, wallMs: 1 }, stoppedBy: 'done' as const, evals: 1, cpuMs: 1 }
-const seeds = [8, 9, 10, 12]
+const seeds = [5, 7, 9, 10]   // feasible instances; 10 needs a crew and the tool together
 
 /** Best schedule by the goals, lexicographically on raw value net of threshold (a stand-in for rank.ts). */
 const best = (inputs: PlanInputs, variant: HarnessOption['variant'], schedules: readonly CheckRow[][]): CheckRow[] | undefined => {
