@@ -56,7 +56,11 @@ describe('V1 and V2 are proven infeasible with their cause', () => {
     expect(refusal.lines[0]).toBe('Not possible: 6 jobs must run one after another and need 37 h of work, but from Tue 07:00 to Fri 15:00 their crews and tools are on duty together for only 32 h.')
     expect(refusal.lines.slice(1, 7)).toEqual(chain.map(key => `- ${trainAInputs().jobs.find(job => job.key === key)!.title}: ${hoursOf([key])} h`))
     // "Days only" says what it assumes: the crane's Friday and the ECT rebooking, no overtime or nights.
-    expect(refusal.lines.at(-1)).toBe('This answer allows Crane extra day, Fri 20 Nov and Rebook the eddy-current team to Friday, and not Station mechanical overtime to 19:00, Contractor night crew (nights Mon to Thu) and Station electrical crew overtime.')
+    const fixture = trainAInputs()
+    const kept = fixture.purchases.filter(purchase => ['crane-fri', 'ect-friday'].includes(purchase.key)).map(purchase => purchase.label)
+    const notKept = fixture.purchases.filter(purchase => !['crane-fri', 'ect-friday'].includes(purchase.key)).map(purchase => purchase.label)
+    const and = (labels: string[]) => `${labels.slice(0, -1).join(', ')} and ${labels.at(-1)}`
+    expect(refusal.lines.at(-1)).toBe(`This answer allows ${and(kept)}, and not ${and(notKept)}.`)
   })
 
   test('V2 (swap, days only): refused by time, with the span energy count as a second proof', () => {
@@ -117,7 +121,8 @@ describe('V1 and V2 are proven infeasible with their cause', () => {
     expect(laneKVerify(trainAInputs(), variant, result.certificate!).proves).toBe(true)
     expect(laneKVerify(trainAInputs(), variant, result.span!.alsoProven!).proves).toBe(true)
     const lines = explainRefusal(trainAInputs(), daysOnly('swap'), laneKVerify)!.lines
-    expect(lines[0]).toBe(`Not possible: ${trainAInputs().rules.find(rule => rule.key === 'R2')!.words} The shortest span this plan allows is 80.5 h, against 72 h: first tag-out Mon 11:00, last test passed Thu 19:30.`)
+    expect(lines[0]).toBe(`Not possible: ${trainAInputs().rules.find(rule => rule.key === 'R2')!.words}`)
+    expect(lines[1]).toBe('The shortest span this plan allows is 80.5 h, against 72 h: first tag-out Mon 11:00, last test passed Thu 19:30.')
     expect(lines).toContain('A later first tag-out does not help: from Tue 04:00 the span is 85.5 h, because:')
     expect(lines).toContain('Also: in any such span starting between Mon 21:00 and Tue 04:00, 49 h of Station mechanical crew and Contractor mechanical night crew work must fit, and only 48 h exist.')
     expect(lines.every(line => line.length <= 240 && !/earliest start|latest start|slot/i.test(line))).toBe(true)

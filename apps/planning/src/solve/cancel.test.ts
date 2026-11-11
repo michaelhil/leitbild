@@ -22,7 +22,9 @@ const run = (pool: ReturnType<typeof createSolverPool>, request: { revision: num
 }
 
 describe('cancel', () => {
-  const pool = createSolverPool()
+  // The test runner's own memory (other test files in the same process) counts in the process RSS, so
+  // the memory guard, which has its own test below, is set out of the way here.
+  const pool = createSolverPool({ rssLimitMb: 4_000 })
 
   test('a cancel is answered within one second, with the best plan found so far', async () => {
     const { result, answeredAfterAbortMs } = await run(pool, { revision: 1, previous: null, seconds: 20, abortAfterMs: 1_500 })

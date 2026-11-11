@@ -219,7 +219,8 @@ const refusalBody = (cause: Certificate, inputs: PlanInputs, span?: SpanRefusal)
   }
   if (span !== undefined) {
     const lines = [
-      clip(`Not possible: ${ruleWords(span.rule)} The shortest span this plan allows is ${hoursText(span.leastHours)}, against ${hoursText(span.limitHours)}: first tag-out ${localTime(span.firstOut, zone)}, last test passed ${localTime(span.lastBack, zone)}.`),
+      clip(`Not possible: ${ruleWords(span.rule)}`),
+      clip(`The shortest span this plan allows is ${hoursText(span.leastHours)}, against ${hoursText(span.limitHours)}: first tag-out ${localTime(span.firstOut, zone)}, last test passed ${localTime(span.lastBack, zone)}.`),
       'What sets the last test, each job at its earliest:',
       ...span.path.slice(0, 9).map(step),
     ]

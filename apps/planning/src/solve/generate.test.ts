@@ -19,8 +19,10 @@ describe('generate with the real checker', () => {
   test('a precondition not read from World blocks before search: invalid input with its cause', async () => {
     const at = performance.now()
     const result = await run(trainAInputs(), { seconds: 20 })
-    // SW A's tag-out needs "World shows SW B running", which this plan has not read.
-    for (const option of result.optionSet.options) expect(option.status).toEqual({ word: 'invalid input', problems: [{ about: ['SWA-TAG', 'SWB'], code: 'precondition-unread' }] })
+    // Every precondition of the plan (from the fixture) is unread: each is named as the cause.
+    const expected = trainAInputs().jobs.flatMap(job => job.checks.map(check => ({ about: [job.key, check.equipment], code: 'precondition-unread' })))
+    expect(expected.length).toBeGreaterThan(0)
+    for (const option of result.optionSet.options) expect(option.status).toEqual({ word: 'invalid input', problems: expected })
     expect(performance.now() - at).toBeLessThan(2_000)   // no search ran
   })
 
@@ -31,7 +33,11 @@ describe('generate with the real checker', () => {
     ])
     // "Days only" names what it assumes: the crane's Friday and the ECT rebooking, no crew hours.
     expect(proven.optionSet.options.map(option => option.variant.purchases.toSorted())).toEqual([['crane-fri', 'ect-friday'], ['crane-fri', 'ect-friday']])
-    expect(proven.dropped.map(entry => [entry.purchase, entry.code]).toSorted()).toEqual([['contractor-nights', 'adds_crew_hours'], ['ot-elec-station', 'adds_crew_hours'], ['ot-mech', 'adds_crew_hours']])
+    // Dropped: every purchase that adds hours to a crew without replacing booked time, read from the fixture.
+    const fixture = trainAInputs()
+    const crewHours = fixture.purchases.filter(purchase => fixture.resources.find(resource => resource.key === purchase.resource)?.kind === 'crew' && purchase.replaces.length === 0).map(purchase => purchase.key)
+    expect(crewHours.length).toBeGreaterThan(0)
+    expect(proven.dropped.map(entry => [entry.purchase, entry.code]).toSorted()).toEqual(crewHours.map(key => [key, 'adds_crew_hours']).toSorted())
     // A verifier that does not confirm: never stored as proof; the search then finds no plan in the window.
     const refused = await run(trainAInputs({ read: true }), { variants: daysOnly, seconds: 2 }, () => ({ proves: false }))
     expect(refused.optionSet.options.map(option => option.status.word)).toEqual(['unresolved', 'unresolved'])
