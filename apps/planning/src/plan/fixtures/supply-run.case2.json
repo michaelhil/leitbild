@@ -29,7 +29,11 @@
           "end": "2026-09-03T08:30:00Z"
         }
       ],
-      "except": []
+      "except": [],
+      "source": {
+        "by": "planner",
+        "note": "Trucks present at the Scenario start are available for the whole 30-minute exercise."
+      }
     },
     {
       "key": "joins-0802",
@@ -41,7 +45,11 @@
           "end": "2026-09-03T08:30:00Z"
         }
       ],
-      "except": []
+      "except": [],
+      "source": {
+        "by": "assumption",
+        "note": "Announced in the Scenario: a 1,000 kg truck joins at Brekke depot 2 minutes in (cue second-truck, 120 s)."
+      }
     },
     {
       "key": "joins-08053",
@@ -53,7 +61,11 @@
           "end": "2026-09-03T08:30:00Z"
         }
       ],
-      "except": []
+      "except": [],
+      "source": {
+        "by": "assumption",
+        "note": "Announced in the Scenario: a hired 700 kg truck joins at Brekke depot at 5 min 30 s (cue hired-truck, 330 s)."
+      }
     }
   ],
   "resources": [
@@ -88,7 +100,11 @@
         }
       ],
       "words": "At Brekke depot. Upgraded to 600 kg at 08:03 (announced: second axle fitted).",
-      "locator": "einsatz/unit/unit%3Atruck-1"
+      "locator": "einsatz/unit/unit%3Atruck-1",
+      "source": {
+        "by": "planner",
+        "note": "Picked from the World list at the start read; its payload and times come from World."
+      }
     },
     {
       "key": "truck-3",
@@ -116,7 +132,11 @@
         }
       ],
       "words": "At Tosterød depot.",
-      "locator": "einsatz/unit/unit%3Atruck-3"
+      "locator": "einsatz/unit/unit%3Atruck-3",
+      "source": {
+        "by": "planner",
+        "note": "Picked from the World list at the start read; its payload and times come from World."
+      }
     },
     {
       "key": "truck-4",
@@ -144,7 +164,11 @@
         }
       ],
       "words": "At Tosterød depot. One of the two heavy trucks.",
-      "locator": "einsatz/unit/unit%3Atruck-4"
+      "locator": "einsatz/unit/unit%3Atruck-4",
+      "source": {
+        "by": "planner",
+        "note": "Picked from the World list at the start read; its payload and times come from World."
+      }
     },
     {
       "key": "truck-2",
@@ -166,7 +190,11 @@
           }
         }
       ],
-      "words": "Joins at Brekke depot at 08:02; not in World at 08:00. Its travel times are taken from Truck 1's World estimates: both start at Brekke depot (same Scenario coordinates), same truck type."
+      "words": "Joins at Brekke depot at 08:02; not in World at 08:00. Its travel times are taken from Truck 1's World estimates: both start at Brekke depot (same Scenario coordinates), same truck type.",
+      "source": {
+        "by": "assumption",
+        "note": "Announced join (Scenario cue second-truck)."
+      }
     },
     {
       "key": "truck-5",
@@ -188,7 +216,11 @@
           }
         }
       ],
-      "words": "Hired; joins at Brekke depot at 08:05:30; not in World at 08:00. Its travel times are taken from Truck 1's World estimates (same start point, same truck type)."
+      "words": "Hired; joins at Brekke depot at 08:05:30; not in World at 08:00. Its travel times are taken from Truck 1's World estimates (same start point, same truck type).",
+      "source": {
+        "by": "assumption",
+        "note": "Announced join (Scenario cue hired-truck)."
+      }
     }
   ],
   "purchases": [],
@@ -243,7 +275,11 @@
               "locator": "einsatz/unit/unit%3Atruck-1",
               "fact": "unit:truck-1/service-seconds"
             }
-          ]
+          ],
+          "source": {
+            "by": "assumption",
+            "note": "Truck 1's World estimate used: same Brekke start, same truck type."
+          }
         }
       ],
       "needs": [
@@ -350,7 +386,11 @@
               "locator": "einsatz/unit/unit%3Atruck-1",
               "fact": "unit:truck-1/service-seconds"
             }
-          ]
+          ],
+          "source": {
+            "by": "assumption",
+            "note": "Truck 1's World estimate used: same Brekke start, same truck type."
+          }
         },
         {
           "resource": "truck-5",
@@ -363,7 +403,11 @@
               "locator": "einsatz/unit/unit%3Atruck-1",
               "fact": "unit:truck-1/service-seconds"
             }
-          ]
+          ],
+          "source": {
+            "by": "assumption",
+            "note": "Truck 1's World estimate used: same Brekke start, same truck type."
+          }
         }
       ],
       "needs": [

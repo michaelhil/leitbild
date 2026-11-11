@@ -51,6 +51,29 @@
       "locator": "process-plant/plant%3Atrain-a/rhrPumpA"
     },
     {
+      "key": "HHSIA",
+      "label": "High-Head Safety Injection Pump A",
+      "group": "COOL-A",
+      "supportedBy": [
+        "CCWA"
+      ],
+      "locator": "process-plant/plant%3Atrain-a/safetyInjectionPumpA"
+    },
+    {
+      "key": "CSA",
+      "label": "Containment Spray Pump A",
+      "group": "CS-A",
+      "supportedBy": [],
+      "locator": "process-plant/plant%3Atrain-a/containmentSprayPumpA"
+    },
+    {
+      "key": "AFWA",
+      "label": "Motor-Driven Auxiliary Feedwater Pump A",
+      "group": "AFW-A",
+      "supportedBy": [],
+      "locator": "process-plant/plant%3Atrain-a/auxFeedwaterPumpMotor"
+    },
+    {
       "key": "SWB",
       "label": "Service Water Pump B",
       "supportedBy": [],
@@ -61,6 +84,14 @@
     {
       "key": "COOL-A",
       "label": "Train A cooling chain (SW A, CCW A and HX A, RHR A, HHSI A)"
+    },
+    {
+      "key": "CS-A",
+      "label": "Containment spray train A"
+    },
+    {
+      "key": "AFW-A",
+      "label": "Auxiliary feedwater train A (motor-driven)"
     }
   ],
   "calendars": [
@@ -81,7 +112,10 @@
         }
       ],
       "periods": [],
-      "except": []
+      "except": [],
+      "source": {
+        "by": "planner"
+      }
     },
     {
       "key": "overtime",
@@ -100,7 +134,10 @@
         }
       ],
       "periods": [],
-      "except": []
+      "except": [],
+      "source": {
+        "by": "planner"
+      }
     },
     {
       "key": "always",
@@ -121,14 +158,20 @@
         }
       ],
       "periods": [],
-      "except": []
+      "except": [],
+      "source": {
+        "by": "planner"
+      }
     },
     {
       "key": "none",
       "label": "Booked nights only",
       "weekly": [],
       "periods": [],
-      "except": []
+      "except": [],
+      "source": {
+        "by": "planner"
+      }
     },
     {
       "key": "crane",
@@ -148,7 +191,10 @@
           "end": "2026-11-19T18:00:00Z"
         }
       ],
-      "except": []
+      "except": [],
+      "source": {
+        "by": "planner"
+      }
     },
     {
       "key": "ect",
@@ -160,7 +206,10 @@
           "end": "2026-11-18T18:00:00Z"
         }
       ],
-      "except": []
+      "except": [],
+      "source": {
+        "by": "planner"
+      }
     }
   ],
   "resources": [
@@ -171,7 +220,10 @@
       "count": 2,
       "crewSize": 3,
       "calendar": "day",
-      "attributes": []
+      "attributes": [],
+      "source": {
+        "by": "planner"
+      }
     },
     {
       "key": "mech-contractor",
@@ -181,7 +233,10 @@
       "crewSize": 3,
       "calendar": "none",
       "attributes": [],
-      "words": "Workshop rebuild and tube cleaning only."
+      "words": "Workshop rebuild and tube cleaning only.",
+      "source": {
+        "by": "planner"
+      }
     },
     {
       "key": "work-control",
@@ -189,7 +244,10 @@
       "kind": "crew",
       "count": 1,
       "calendar": "always",
-      "attributes": []
+      "attributes": [],
+      "source": {
+        "by": "planner"
+      }
     },
     {
       "key": "test-team",
@@ -197,7 +255,10 @@
       "kind": "crew",
       "count": 1,
       "calendar": "always",
-      "attributes": []
+      "attributes": [],
+      "source": {
+        "by": "planner"
+      }
     },
     {
       "key": "crane",
@@ -205,7 +266,10 @@
       "kind": "tool",
       "count": 1,
       "calendar": "crane",
-      "attributes": []
+      "attributes": [],
+      "source": {
+        "by": "planner"
+      }
     },
     {
       "key": "ect-team",
@@ -213,7 +277,10 @@
       "kind": "crew",
       "count": 1,
       "calendar": "ect",
-      "attributes": []
+      "attributes": [],
+      "source": {
+        "by": "planner"
+      }
     }
   ],
   "purchases": [
@@ -566,9 +633,220 @@
       },
       "durationWith": [],
       "minimum": {
-        "value": 3,
+        "value": 2.5,
         "unit": "h",
-        "words": "Test procedure duration; shorter needs authority"
+        "words": "planner judgement, no procedure source; below it needs the test engineer's agreement and a reason"
+      },
+      "needs": [
+        {
+          "anyOf": [
+            "work-control"
+          ],
+          "amount": 1,
+          "handover": false
+        },
+        {
+          "anyOf": [
+            "test-team"
+          ],
+          "amount": 1,
+          "handover": false
+        }
+      ],
+      "continuous": true,
+      "checks": [],
+      "tags": []
+    },
+    {
+      "key": "CCWA-RTS",
+      "title": "Restore CCW A and HX A, run pump, leak and heat-exchanger check",
+      "kind": "test",
+      "equipment": [
+        "CCWA",
+        "CCWHXA"
+      ],
+      "isolation": "none",
+      "duration": {
+        "value": 2.5,
+        "unit": "h",
+        "calendar": "working",
+        "origin": {
+          "by": "planner"
+        }
+      },
+      "durationWith": [],
+      "minimum": {
+        "value": 1.5,
+        "unit": "h",
+        "words": "planner judgement, no procedure source; below it needs the test engineer's agreement and a reason"
+      },
+      "needs": [
+        {
+          "anyOf": [
+            "work-control"
+          ],
+          "amount": 1,
+          "handover": false
+        },
+        {
+          "anyOf": [
+            "test-team"
+          ],
+          "amount": 1,
+          "handover": false
+        }
+      ],
+      "continuous": true,
+      "checks": [],
+      "tags": []
+    },
+    {
+      "key": "RHRA-RTS",
+      "title": "Restore RHR A, pump test on recirculation",
+      "kind": "test",
+      "equipment": [
+        "RHRA"
+      ],
+      "isolation": "none",
+      "duration": {
+        "value": 2.5,
+        "unit": "h",
+        "calendar": "working",
+        "origin": {
+          "by": "planner"
+        }
+      },
+      "durationWith": [],
+      "minimum": {
+        "value": 1.5,
+        "unit": "h",
+        "words": "planner judgement, no procedure source; below it needs the test engineer's agreement and a reason"
+      },
+      "needs": [
+        {
+          "anyOf": [
+            "work-control"
+          ],
+          "amount": 1,
+          "handover": false
+        },
+        {
+          "anyOf": [
+            "test-team"
+          ],
+          "amount": 1,
+          "handover": false
+        }
+      ],
+      "continuous": true,
+      "checks": [],
+      "tags": []
+    },
+    {
+      "key": "HHSIA-RTS",
+      "title": "Rack in HHSI A breaker, timing test and pump start",
+      "kind": "test",
+      "equipment": [
+        "HHSIA"
+      ],
+      "isolation": "none",
+      "duration": {
+        "value": 1.5,
+        "unit": "h",
+        "calendar": "working",
+        "origin": {
+          "by": "planner"
+        }
+      },
+      "durationWith": [],
+      "minimum": {
+        "value": 1,
+        "unit": "h",
+        "words": "planner judgement, no procedure source; below it needs the test engineer's agreement and a reason"
+      },
+      "needs": [
+        {
+          "anyOf": [
+            "work-control"
+          ],
+          "amount": 1,
+          "handover": false
+        },
+        {
+          "anyOf": [
+            "test-team"
+          ],
+          "amount": 1,
+          "handover": false
+        }
+      ],
+      "continuous": true,
+      "checks": [],
+      "tags": []
+    },
+    {
+      "key": "CSA-RTS",
+      "title": "Restore CS A, pump test",
+      "kind": "test",
+      "equipment": [
+        "CSA"
+      ],
+      "isolation": "none",
+      "duration": {
+        "value": 2,
+        "unit": "h",
+        "calendar": "working",
+        "origin": {
+          "by": "planner"
+        }
+      },
+      "durationWith": [],
+      "minimum": {
+        "value": 1.5,
+        "unit": "h",
+        "words": "planner judgement, no procedure source; below it needs the test engineer's agreement and a reason"
+      },
+      "needs": [
+        {
+          "anyOf": [
+            "work-control"
+          ],
+          "amount": 1,
+          "handover": false
+        },
+        {
+          "anyOf": [
+            "test-team"
+          ],
+          "amount": 1,
+          "handover": false
+        }
+      ],
+      "continuous": true,
+      "checks": [],
+      "tags": []
+    },
+    {
+      "key": "AFWA-RTS",
+      "title": "Restore MD AFW A, pump test to recirculation",
+      "kind": "test",
+      "equipment": [
+        "AFWA"
+      ],
+      "isolation": "none",
+      "duration": {
+        "value": 2.5,
+        "unit": "h",
+        "calendar": "working",
+        "origin": {
+          "by": "planner"
+        }
+      },
+      "durationWith": [],
+      "minimum": {
+        "value": 1.5,
+        "unit": "h",
+        "words": "planner judgement, no procedure source; below it needs the test engineer's agreement and a reason"
       },
       "needs": [
         {
@@ -635,8 +913,8 @@
       ],
       "words": "Train B and the TD AFW pump are never tagged, worked or tested.",
       "origin": {
-        "by": "planner",
-        "note": "Protected-train practice (NUMARC 93-01 s.11), declared as this plant rule"
+        "by": "reference",
+        "note": "Protected-train practice in on-line maintenance risk management (NUMARC 93-01 section 11 as endorsed by NRC RG 1.160; examples in NRC IMC 0308 Att 3 App K). Declared as this fictional plant's rule."
       }
     },
     {
@@ -650,8 +928,8 @@
       "singleEntry": true,
       "words": "Once the first cooling-chain item is tagged out, all must be back and tested within 72 h.",
       "origin": {
-        "by": "planner",
-        "note": "Modelled on NUREG-1431; fictional plant rule"
+        "by": "reference",
+        "note": "Modelled on NUREG-1431 Standard Technical Specifications: one ECCS train inoperable for 72 h (LCO 3.5.2, recollection), and similar 72 h Completion Times for CCW (3.7.7) and service water (3.7.8), also recollection. The Completion Time runs from entry into the Condition and applies to deliberate removal from service (LCO 3.0.2, STS Bases Rev 3.1). Declared fictional plant rule, not a licence."
       }
     }
   ],
@@ -675,7 +953,7 @@
     {
       "metric": "extra-cost",
       "tolerance": {
-        "value": 5000,
+        "value": 25000,
         "unit": "NOK"
       }
     },

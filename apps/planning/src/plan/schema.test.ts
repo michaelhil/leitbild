@@ -15,13 +15,23 @@ const accepted = (value: unknown) => statusSchema.safeParse(value).success
 
 describe('the two cases', () => {
   test('both fixtures parse as plan inputs', () => {
-    expect(planInputsSchema.parse(trainA).jobs).toHaveLength(7)
-    expect(planInputsSchema.parse(supplyRun).resources.map(resource => resource.key)).toEqual(['truck-1', 'truck-3', 'truck-4', 'truck-2', 'truck-5'])
+    const train = planInputsSchema.parse(trainA)
+    expect(train.jobs).toHaveLength(12)
+    expect(train.jobs.filter(job => job.kind === 'test').map(job => [job.key, job.minimum?.value])).toEqual([
+      ['SWA-RTS', 2.5], ['CCWA-RTS', 1.5], ['RHRA-RTS', 1.5], ['HHSIA-RTS', 1], ['CSA-RTS', 1.5], ['AFWA-RTS', 1.5]])
+    expect(train.rules.map(rule => rule.origin.by)).toEqual(['reference', 'reference'])
+    expect(train.goals[1]?.tolerance).toEqual({ value: 25000, unit: 'NOK' })
+    const supply = planInputsSchema.parse(supplyRun)
+    expect(supply.resources.map(resource => [resource.key, resource.source.by])).toEqual([
+      ['truck-1', 'planner'], ['truck-3', 'planner'], ['truck-4', 'planner'], ['truck-2', 'assumption'], ['truck-5', 'assumption']])
+    expect(supply.calendars.map(calendar => [calendar.key, calendar.source.by])).toEqual([['exercise', 'planner'], ['joins-0802', 'assumption'], ['joins-08053', 'assumption']])
+    expect(supply.jobs.flatMap(job => job.durationWith.filter(entry => entry.source !== undefined).map(entry => [job.key, entry.resource, entry.source?.by])))
+      .toEqual([['U-1', 'truck-2', 'assumption'], ['R-1', 'truck-2', 'assumption'], ['R-1', 'truck-5', 'assumption']])
   })
 
   test('a minimum is allowed only on tests', () => {
     const test = trainA.jobs.find((job: any) => job.key === 'SWA-RTS')
-    expect(jobSchema.parse(test).minimum?.value).toBe(3)
+    expect(jobSchema.parse(test).minimum?.value).toBe(2.5)
     const refused = jobSchema.safeParse({ ...test, kind: 'work' })
     expect(refused.success).toBe(false)
     expect(refused.error?.issues.map(issue => issue.path)).toEqual([['minimum']])
@@ -115,14 +125,38 @@ describe('float names the limit that binds it (goals r2 check)', () => {
 })
 
 describe('one way to say where a value comes from (simplicity r2 check, coordinator-adopted)', () => {
-  test('stored notBefore carries a source; calendar, resource and purchase carry no origin', () => {
+  test('stored notBefore, calendar and resource carry a source; purchase carries none', () => {
     const spare = trainA.jobs.find((job: any) => job.key === 'SWA-SPARE-PREP')
     expect(jobSchema.parse(spare).notBefore?.source).toEqual({ by: 'assumption', note: 'vendor promise' })
     const { source, ...notBefore } = spare.notBefore
     expect(jobSchema.safeParse({ ...spare, notBefore: { ...notBefore, origin: source } }).success).toBe(false)
-    expect(calendarSchema.safeParse({ ...trainA.calendars[0], origin: { by: 'planner' } }).success).toBe(false)
-    expect(resourceSchema.safeParse({ ...trainA.resources[0], origin: { by: 'planner' } }).success).toBe(false)
+    const { source: _calendarSource, ...calendar } = trainA.calendars[0]
+    const { source: _resourceSource, ...resource } = trainA.resources[0]
+    expect(calendarSchema.safeParse({ ...calendar, origin: { by: 'planner' } }).success).toBe(false)
+    expect(resourceSchema.safeParse({ ...resource, origin: { by: 'planner' } }).success).toBe(false)
+    expect(calendarSchema.safeParse(calendar).success).toBe(false)
+    expect(resourceSchema.safeParse(resource).success).toBe(false)
     expect(purchaseSchema.safeParse({ ...trainA.purchases[0], origin: { by: 'planner' } }).success).toBe(false)
+    expect(purchaseSchema.safeParse({ ...trainA.purchases[0], source: { by: 'planner' } }).success).toBe(false)
+  })
+
+  test('calendar and resource sources: a person, or a reference that names itself', () => {
+    const calendar = trainA.calendars[0], resource = trainA.resources[0]
+    for (const source of [{ by: 'planner' }, { by: 'assumption', note: 'Announced join' }, { by: 'reference', note: 'NUREG-1431 LCO 3.7.5' }]) {
+      expect(calendarSchema.safeParse({ ...calendar, source }).success).toBe(true)
+      expect(resourceSchema.safeParse({ ...resource, source }).success).toBe(true)
+    }
+    for (const source of [{ by: 'reference' }, { by: 'world' }, { by: 'planner', refs: [] }]) {
+      expect(calendarSchema.safeParse({ ...calendar, source }).success).toBe(false)
+      expect(resourceSchema.safeParse({ ...resource, source }).success).toBe(false)
+    }
+    const r1 = trainA.rules[0]
+    expect(ruleSchema.safeParse({ ...r1, origin: { by: 'reference' } }).success).toBe(false)
+    expect(editSchema.safeParse({ edit: 'calendar', key: 'day', source: { by: 'reference', note: 'Site working-time agreement' } }).success).toBe(true)
+    expect(editSchema.safeParse({ edit: 'calendar', key: 'day', source: { by: 'reference' } }).success).toBe(false)
+    expect(editSchema.safeParse({ edit: 'resource', key: 'truck-2', source: { by: 'assumption', note: 'Announced join' } }).success).toBe(true)
+    expect(editSchema.safeParse({ edit: 'rule', key: 'R2', source: { by: 'reference' } }).success).toBe(false)
+    expect(editSchema.safeParse({ edit: 'job', key: 'R-1', durationWith: [{ resource: 'truck-5', fromWorld: [{ locator: 'einsatz/unit/unit%3Atruck-1', fact: 'unit:truck-1/service-seconds' }], source: { by: 'assumption', note: "Truck 1's World estimate used" } }] }).success).toBe(true)
   })
 
   test('stored durationWith holds a value or World refs, in the job unit', () => {
