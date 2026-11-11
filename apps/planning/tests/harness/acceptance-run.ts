@@ -64,18 +64,21 @@ const supplyRun = planInputsSchema.parse({
 })
 const replanB = edited(job => job.key === 'SWA-SPARE-PREP' ? { ...job, notBefore: { at: '2026-11-18T07:00:00Z', words: 'The vendor now promises the spare for Wed 08:00', source: { by: 'assumption' as const, note: 'vendor promise' } } } : job)
 
-const counterfactualRow = async (name: string, inputs: PlanInputs): Promise<{ checked: number; failures: CounterfactualFailure[]; status: string }> => {
+const counterfactualRow = async (name: string, inputs: PlanInputs): Promise<{ checked: number; joint: number; failures: CounterfactualFailure[]; status: string }> => {
   const set = await generateOptions(inputs)
   const option = set.options.find(candidate => candidate.key === set.recommended) ?? set.options[0]!
-  if (option.status.word !== 'validated feasible') return { checked: 0, failures: [], status: option.status.word }
+  if (option.status.word !== 'validated feasible') return { checked: 0, joint: 0, failures: [], status: option.status.word }
   const check = checkPlan(inputs, option.variant, option.rows)
   if (!check.feasible) throw new Error(`${name}: the recommended option fails the checker: ${check.violations[0]!.words}`)
   const failures: CounterfactualFailure[] = []
+  let joint = 0
   for (const row of option.rows) {
     const answer = await solver.explain({ inputs, option, ask: 'why-start', job: row.job, cursor: undefined })
-    failures.push(...counterfactualCheck(inputs, option.variant, option.rows, answer.items.filter(item => item.job === row.job)))
+    const items = answer.items.filter(item => item.job === row.job)
+    joint += items.filter(item => item.joint && item.because.length > 1).length
+    failures.push(...counterfactualCheck(inputs, option.variant, option.rows, items))
   }
-  return { checked: option.rows.length, failures, status: `${option.status.word}, ${option.label}` }
+  return { checked: option.rows.length, joint, failures, status: `${option.status.word}, ${option.label}` }
 }
 
 const print = (row: string, text: string): void => console.log(`[${row}] ${text}`)
@@ -83,7 +86,7 @@ try {
   // Row 1: counterfactual check
   if (rows.has('counterfactual')) for (const [name, inputs] of [['baseline', flagship], ['replan (a) seal 16 h', replanA], ['replan (b) spare Wed 08:00', replanB], ['Supply run baseline', supplyRun]] as const) {
     const result = await counterfactualRow(name, inputs)
-    print('counterfactual', `${name}: ${result.status}; ${result.checked} jobs checked, ${result.failures.length} failures`)
+    print('counterfactual', `${name}: ${result.status}; ${result.checked} jobs checked (${result.joint} joint sets, each checked for minimality), ${result.failures.length} failures`)
     for (const failure of result.failures) print('counterfactual', `  ${failure.job}: ${failure.reason} (${failure.causes.map(cause => `${cause.kind} ${cause.about.join('/')}`).join(' + ')}): ${failure.detail}`)
   }
 

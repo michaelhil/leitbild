@@ -11,7 +11,7 @@ type Cause = ExplainItem['because'][number]
 export interface CounterfactualFailure {
   readonly job: string
   readonly causes: readonly Cause[]
-  readonly reason: 'did-not-move' | 'cannot-relax' | 'not-feasible-before' | 'row-mismatch'
+  readonly reason: 'did-not-move' | 'cannot-relax' | 'not-minimal' | 'not-feasible-before' | 'row-mismatch'
   readonly detail: string
 }
 
@@ -27,7 +27,17 @@ const always = { days: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as Arra
  */
 const liftOrder = (current: Relaxed, first: string, second: string): Relaxed | string => {
   const { inputs, variant } = current
-  if (!inputs.jobs.some(job => job.key === first) || !inputs.jobs.some(job => job.key === second)) return `no jobs ${first} and ${second}`
+  const from = inputs.jobs.find(job => job.key === first), to = inputs.jobs.find(job => job.key === second)
+  if (from === undefined || to === undefined) return `no jobs ${first} and ${second}`
+  // a named order must exist: an explicit link, or one the checker derives between the two
+  const explicit = inputs.links.some(link => link.from === first && link.to === second)
+  const covers = (job: typeof from, item: string): boolean => job.equipment.includes(item)
+  const bracket = (from.kind === 'tag-out' && to.kind === 'work' && to.isolation === 'inside' && covers(from, to.equipment[0]!))
+    || (from.kind === 'work' && from.isolation === 'inside' && to.kind === 'test' && covers(to, from.equipment[0]!))
+  const tagThenTest = from.kind === 'tag-out' && to.kind === 'test' && to.equipment.some(item => covers(from, item))
+  const supportersOf = (item: string, seen: ReadonlySet<string> = new Set()): string[] => (inputs.equipment.find(entry => entry.key === item)?.supportedBy ?? []).filter(key => !seen.has(key)).flatMap(key => [key, ...supportersOf(key, new Set([...seen, item, key]))])
+  const supportOrder = from.kind === 'test' && to.kind === 'test' && to.equipment.some(item => supportersOf(item).some(supporter => covers(from, supporter)))
+  if (!explicit && !bracket && !tagThenTest && !supportOrder) return `no link or derived order from ${first} to ${second}`
   return {
     variant,
     inputs: { ...inputs, links: inputs.links.filter(link => !(link.from === first && link.to === second)) },
@@ -140,11 +150,23 @@ export const counterfactualCheck = (inputs: PlanInputs, variant: CheckVariant, r
     const row = rows.find(candidate => candidate.job === item.job)
     if (row === undefined || Date.parse(row.start) !== Date.parse(item.start)) { failures.push({ job: item.job, causes: item.because, reason: 'row-mismatch', detail: 'the explanation does not describe the dated row' }); continue }
     const sets = item.joint ? [item.because] : item.because.map(cause => [cause])
-    for (const set of sets) {
+    const relaxAll = (set: readonly Cause[]): Relaxed | string => {
       let relaxed: Relaxed | string = { inputs, variant }
       for (const cause of set) relaxed = typeof relaxed === 'string' ? relaxed : relax(relaxed, cause, item.job)
+      return relaxed
+    }
+    for (const set of sets) {
+      const relaxed = relaxAll(set)
       if (typeof relaxed === 'string') { failures.push({ job: item.job, causes: set, reason: 'cannot-relax', detail: relaxed }); continue }
-      if (!canStartEarlier(relaxed, rows, item.job)) failures.push({ job: item.job, causes: set, reason: 'did-not-move', detail: `relaxing ${set.map(cause => `${cause.kind} ${cause.about.join('/')}`).join(' and ')} does not let it start earlier` })
+      if (!canStartEarlier(relaxed, rows, item.job)) { failures.push({ job: item.job, causes: set, reason: 'did-not-move', detail: `relaxing ${set.map(cause => `${cause.kind} ${cause.about.join('/')}`).join(' and ')} does not let it start earlier` }); continue }
+      // a joint set is minimal: with any one cause kept, the job may not move (else that cause is padding)
+      if (set.length < 2) continue
+      set.forEach((kept, index) => {
+        const others = relaxAll(set.filter((_, other) => other !== index))
+        if (typeof others !== 'string' && canStartEarlier(others, rows, item.job)) {
+          failures.push({ job: item.job, causes: set, reason: 'not-minimal', detail: `keeping ${kept.kind} ${kept.about.join('/')} and relaxing the rest still lets it start earlier, so ${kept.kind} is not needed in the set` })
+        }
+      })
     }
   }
   return failures

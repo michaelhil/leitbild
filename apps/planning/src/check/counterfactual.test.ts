@@ -84,3 +84,20 @@ describe('the data date as a cause', () => {
     expect(counterfactualCheck(dated, variant, rowsD, [item('D', '2026-11-16T07:00:00Z', [{ kind: 'window', about: [] }], false)]).map(failure => failure.reason)).toEqual(['did-not-move'])
   })
 })
+
+describe('padded explanations are refused', () => {
+  test('a joint set with a cause that is not needed fails minimality', () => {
+    // B is held by the link and the operator; "placed late" adds nothing to that pair
+    const padded = item('B', '2026-11-16T07:00:00Z', [{ kind: 'link', about: ['A'] }, { kind: 'crew', about: ['ops'] }, { kind: 'late-as-possible', about: [] }], true)
+    const failures = counterfactualCheck(inputs, variant, rows, [padded])
+    expect(failures.map(failure => failure.reason)).toEqual(['not-minimal'])
+    expect(failures[0]?.detail).toContain('late-as-possible')
+  })
+  test('the exact pair is minimal', () => {
+    expect(counterfactualCheck(inputs, variant, rows, [item('B', '2026-11-16T07:00:00Z', [{ kind: 'link', about: ['A'] }, { kind: 'crew', about: ['ops'] }], true)])).toEqual([])
+  })
+  test('a "waits for" naming a job with no order to it is refused, not waived', () => {
+    const failures = counterfactualCheck(inputs, variant, rows, [item('B', '2026-11-16T07:00:00Z', [{ kind: 'link', about: ['C'] }, { kind: 'crew', about: ['ops'] }], true)])
+    expect(failures.map(failure => [failure.reason, failure.detail])).toEqual([['cannot-relax', 'no link or derived order from C to B']])
+  })
+})
