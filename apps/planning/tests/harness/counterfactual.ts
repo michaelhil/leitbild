@@ -103,8 +103,12 @@ const relaxOne = (current: Relaxed, cause: Cause, job: string): Relaxed | string
     }
     case 'late-as-possible':
       return current   // nothing binds: the job can start earlier as it is
-    case 'data-date':
-      return 'the data date is an increment 3 field; increment 1 explanations do not name it'
+    case 'data-date': {
+      // nothing may start before the plan's now: move the data date one day earlier, nothing else
+      const now = inputs.settings.dataDate
+      if (now === null) return 'the plan has no data date'
+      return { variant, inputs: { ...inputs, settings: { ...inputs.settings, dataDate: new Date(Date.parse(now) - 86_400_000).toISOString() } } }
+    }
   }
 }
 

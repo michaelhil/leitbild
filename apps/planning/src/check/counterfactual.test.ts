@@ -72,3 +72,15 @@ describe('the harness reads the explainer as it means', () => {
     expect(counterfactualCheck(two, variant, rowsTwo, [item('X-TEST', '2026-11-16T09:00:00Z', [{ kind: 'link', about: ['X-TAG'] }], false)])).toEqual([])
   })
 })
+
+describe('the data date as a cause', () => {
+  // Data date Mon 07:00Z; D (1 h on the operator) starts there, an hour after the window opens.
+  const dated = planInputsSchema.parse({ ...inputs, settings: { ...inputs.settings, dataDate: '2026-11-16T07:00:00Z' }, jobs: [job('D')], links: [] })
+  const rowsD = [one('D', '2026-11-16T07:00:00Z', '2026-11-16T08:00:00Z')]
+  test('relaxing the data date, and nothing else, lets D start earlier', () => {
+    expect(counterfactualCheck(dated, variant, rowsD, [item('D', '2026-11-16T07:00:00Z', [{ kind: 'data-date', about: [] }], false)])).toEqual([])
+  })
+  test('naming the window instead does not move it', () => {
+    expect(counterfactualCheck(dated, variant, rowsD, [item('D', '2026-11-16T07:00:00Z', [{ kind: 'window', about: [] }], false)]).map(failure => failure.reason)).toEqual(['did-not-move'])
+  })
+})

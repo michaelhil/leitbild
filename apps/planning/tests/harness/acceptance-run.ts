@@ -16,10 +16,13 @@ import { counterfactualCheck, type CounterfactualFailure } from './counterfactua
 import { goalsProperty } from './goals-property.ts'
 import { boundsSoundness } from './bounds-soundness.ts'
 import type { GeneratePort, HarnessOption } from './ports.ts'
+import { twinPlan, twinV3Options } from './twin-plan.ts'
 
 const seconds = Number(process.argv[2] ?? 10)
 /** Rows to run, e.g. "counterfactual,dst"; all by default. */
-const rows = new Set((process.argv[3] ?? 'counterfactual,goals,bounds,dst').split(','))
+const rows = new Set((process.argv[3] ?? 'counterfactual,goals,bounds,dst,preview').split(','))
+/** or's frozen size subsets (R/or/inc1/size/, read-only), for the preview row. */
+const sizeDirectory = process.env.LANE_K_SIZE_DIR ?? '/Users/hilde/Documents/ChatGPT/leitbild-planning-review-2026-11-10/or/inc1/size'
 const pool = createSolverPool()
 const solver = createRealSolver(pool)
 const by = { kind: 'agent' as const, name: 'lane K acceptance run' }
@@ -146,6 +149,35 @@ try {
   const matches = dstOption.rows.every(row => expected[row.job]?.[0] === new Date(row.start).toISOString() && expected[row.job]?.[1] === new Date(row.finish).toISOString())
   print('daylight saving', `${dstOption.status.word}; checker ${dstCheck.violations.length} violations; rows equal the hand-written instants: ${matches}`)
   if (!matches) for (const row of dstOption.rows) print('daylight saving', `  ${row.job}: ${row.start} to ${row.finish}`)
+  }
+  // Preview with no edit: re-timing the option with its own order and modes must give the option back.
+  if (rows.has('preview')) {
+    const s60Text = await Bun.file(`${sizeDirectory}/S60.json`).text()
+    const s60Bench = JSON.parse(s60Text)
+    const s60 = twinPlan(s60Bench, { ...twinV3Options(s60Bench), title: 'Size subset S60' }).inputs
+    for (const [name, inputs] of [['flagship', flagship], [`S60 (sha256 ${new Bun.CryptoHasher('sha256').update(s60Text).digest('hex').slice(0, 8)})`, s60]] as const) {
+      const set = await generateOptions(inputs)
+      let same = 0, differ = 0
+      const notes: string[] = []
+      for (const option of set.options.filter(candidate => candidate.status.word === 'validated feasible')) {
+        const preview = await solver.preview({ inputs, option })
+        const key = (row: { job: string; start: string; finish: string; uses: ReadonlyArray<{ resource: string; from: string; to: string; purchase?: string | undefined }> }) =>
+          `${row.job} ${Date.parse(row.start)} ${Date.parse(row.finish)} ${row.uses.map(use => `${use.resource}:${Date.parse(use.from)}-${Date.parse(use.to)}:${use.purchase ?? ''}`).sort().join(',')}`
+        const before = new Set(option.rows.map(key)), after = preview.rows.map(key)
+        const changed = after.filter(entry => !before.has(entry))
+        if (changed.length === 0 && after.length === before.size && preview.violations.length === 0) same++
+        else {
+          differ++
+          const moved = preview.rows.filter(row => key(row) !== undefined && !before.has(key(row))).map(row => {
+            const was = option.rows.find(entry => entry.job === row.job)
+            const shift = was === undefined ? NaN : (Date.parse(row.start) - Date.parse(was.start)) / 3_600_000
+            return `${row.job} ${shift === 0 ? 'same start, other uses or finish' : `${shift > 0 ? '+' : ''}${shift} h`}`
+          })
+          notes.push(`${option.key}: ${changed.length} rows differ, ${preview.violations.length} violations (${moved.slice(0, 4).join(', ')})`)
+        }
+      }
+      print('preview', `${name}: ${same} options identical, ${differ} differ${notes.length === 0 ? '' : `; ${notes.join('; ')}`}`)
+    }
   }
 } finally {
   await pool.shutdown()
