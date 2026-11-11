@@ -23,7 +23,16 @@ export interface JobWindow {
 }
 
 export type Propagation =
-  | { readonly ok: true; readonly windows: ReadonlyMap<string, JobWindow> }
+  | {
+    readonly ok: true
+    readonly windows: ReadonlyMap<string, JobWindow>
+    /**
+     * The least span, in slots, from the first start of `openers` to the last finish of `closers`, over every
+     * start the span could have, with every other rule except span limits (Infinity: none possible). A
+     * lower bound on that span in every schedule the checker accepts.
+     */
+    readonly shortestSpan: (openers: readonly string[], closers: readonly string[]) => number
+  }
   /** `words`: the contradiction in planner words, with the jobs, hours, calendars and limits that cause it. */
   | { readonly ok: false; readonly job: string; readonly reason: string; readonly words: string }
 
@@ -198,9 +207,11 @@ export const propagate = (context: Context, world: World): Propagation => {
   }
   // A span limit too short for the work: for every start s of the span, the earliest the work allows from s
   // (no other limit applied) ends more than the limit later. Then the span alone explains the refusal.
-  const spanWords = (): string | undefined => {
-    const plain = constraints.filter(constraint => constraint.origin.kind !== 'span-limit')
-    // latest starts from the other rules alone: the span must open by the earliest of its openers' latest starts
+  const plain = constraints.filter(constraint => constraint.origin.kind !== 'span-limit')
+  // latest starts from the other rules alone: a span must open by the earliest of its openers' latest starts
+  let plainLatest: { readonly ls: Map<string, number>; readonly lsWhy: Map<string, Why> } | undefined
+  const latestAlone = () => {
+    if (plainLatest !== undefined) return plainLatest
     const ls = new Map(initialLatest), lsWhy = new Map(initialLatestWhy)
     const latestValid = (key: string, start: number): number => { const entry = info.get(key)!; for (let slot = Math.min(horizon, start); slot >= 0; slot--) if (entry.timing.valid[slot] === 1) return slot; return -1 }
     for (let round = 0, stable = false; round < 2 * info.size + 4 && !stable; round++) {
@@ -214,39 +225,55 @@ export const propagate = (context: Context, world: World): Propagation => {
         if (bound < ls.get(source.job)!) { ls.set(source.job, bound); lsWhy.set(source.job, { kind: 'before', job: target.job, origin }); stable = false }
       }
     }
-    for (const span of spans) {
-      let best: { from: number; length: number; closer: string; es: Map<string, number>; why: Map<string, Why> } | undefined
-      const first = Math.min(...span.openers.map(opener => initial.get(opener)!))
-      const openBy = span.openers.reduce((earliest, opener) => (ls.get(opener)! < ls.get(earliest)! ? opener : earliest), span.openers[0]!)
-      if (openBy === undefined) continue
-      for (let from = Math.max(0, first); from <= ls.get(openBy)!; from++) {
-        const es = new Map([...info].map(([key]) => [key, span.openers.includes(key) ? Math.max(initial.get(key)!, from) : initial.get(key)!]))
-        const why = new Map<string, Why>([...info].map(([key, entry]) => [key, span.openers.includes(key) && from > initial.get(key)! ? { kind: 'window' } as Why : entry.esWhyInitial]))
-        const valid = (key: string, start: number): number => { const entry = info.get(key)!; for (let slot = Math.max(0, start); slot <= horizon; slot++) if (entry.timing.valid[slot] === 1) return slot; return Infinity }
-        let stable = false
-        for (let round = 0; round < 2 * info.size + 4 && !stable; round++) {
-          stable = true
-          for (const [key] of info) { const start = valid(key, es.get(key)!); if (start !== es.get(key)) { es.set(key, start); stable = false } }
-          for (const { from: source, to: target, gap, origin } of plain) {
-            const start = es.get(source.job)!
-            if (start === Infinity) continue
-            const low = (source.at === 'start' ? start : info.get(source.job)!.timing.finish[start]!) + gap
-            const entry = info.get(target.job)!
-            let next = es.get(target.job)!
-            if (target.at === 'start') next = Math.max(next, low)
-            else while (next <= horizon && !(entry.timing.valid[next] === 1 && entry.timing.finish[next]! >= low)) next++
-            if (next > es.get(target.job)!) { es.set(target.job, next); why.set(target.job, { kind: 'after', job: source.job, origin }); stable = false }
-          }
+    plainLatest = { ls, lsWhy }
+    return plainLatest
+  }
+  // For every start s the span could have (an opener starting exactly at s, by its latest start), the
+  // earliest the other rules allow from s; the least span over them, with the jobs' times at that s.
+  const shortest = (openers: readonly string[], closers: readonly string[]) => {
+    const present = openers.filter(key => info.has(key)), ending = closers.filter(key => info.has(key))
+    if (present.length === 0 || ending.length === 0) return undefined
+    const { ls } = latestAlone()
+    let best: { from: number; length: number; closer: string; es: Map<string, number>; why: Map<string, Why>; openBy: string } | undefined
+    const first = Math.min(...present.map(opener => initial.get(opener)!))
+    const openBy = present.reduce((earliest, opener) => (ls.get(opener)! < ls.get(earliest)! ? opener : earliest), present[0]!)
+    for (let from = Math.max(0, first); from <= ls.get(openBy)!; from++) {
+      const es = new Map([...info].map(([key]) => [key, present.includes(key) ? Math.max(initial.get(key)!, from) : initial.get(key)!]))
+      const why = new Map<string, Why>([...info].map(([key, entry]) => [key, present.includes(key) && from > initial.get(key)! ? { kind: 'window' } as Why : entry.esWhyInitial]))
+      const valid = (key: string, start: number): number => { const entry = info.get(key)!; for (let slot = Math.max(0, start); slot <= horizon; slot++) if (entry.timing.valid[slot] === 1) return slot; return Infinity }
+      let stable = false
+      for (let round = 0; round < 2 * info.size + 4 && !stable; round++) {
+        stable = true
+        for (const [key] of info) { const start = valid(key, es.get(key)!); if (start !== es.get(key)) { es.set(key, start); stable = false } }
+        for (const { from: source, to: target, gap, origin } of plain) {
+          const start = es.get(source.job)!
+          if (start === Infinity) continue
+          const low = (source.at === 'start' ? start : info.get(source.job)!.timing.finish[start]!) + gap
+          const entry = info.get(target.job)!
+          let next = es.get(target.job)!
+          if (target.at === 'start') next = Math.max(next, low)
+          else while (next <= horizon && !(entry.timing.valid[next] === 1 && entry.timing.finish[next]! >= low)) next++
+          if (next > es.get(target.job)!) { es.set(target.job, next); why.set(target.job, { kind: 'after', job: source.job, origin }); stable = false }
         }
-        if (span.openers.some(opener => es.get(opener) === from) === false && from > first) continue
-        const ends = span.closers.map(closer => { const start = es.get(closer)!; return { closer, end: start === Infinity ? Infinity : info.get(closer)!.timing.finish[start]! } })
-        const last = ends.reduce((worst, entry) => entry.end > worst.end ? entry : worst)
-        // a job that fits nowhere is the cause, not the span: leave it to the general explanation
-        const length = [...es.values()].some(start => start === Infinity) ? Infinity : last.end - from
-        if (length <= span.limit) { best = undefined; break }
-        if (best === undefined || length < best.length) best = { from, length, closer: last.closer, es, why }
       }
-      if (best === undefined || best.length === Infinity) continue
+      if (!present.some(opener => es.get(opener) === from)) continue
+      const ends = ending.map(closer => { const start = es.get(closer)!; return { closer, end: start === Infinity ? Infinity : info.get(closer)!.timing.finish[start]! } })
+      const last = ends.reduce((worst, entry) => entry.end > worst.end ? entry : worst)
+      // a job that fits nowhere from s: no schedule opens the span at s
+      const length = [...es.values()].some(start => start === Infinity) ? Infinity : last.end - from
+      if (best === undefined || length < best.length) best = { from, length, closer: last.closer, es, why, openBy }
+    }
+    return best
+  }
+  // A span limit too short for the work: for every start s of the span, the earliest the work allows from s
+  // (no other limit applied) ends more than the limit later. Then the span alone explains the refusal.
+  const spanWords = (): string | undefined => {
+    const { ls, lsWhy } = latestAlone()
+    for (const span of spans) {
+      const best = shortest(span.openers, span.closers)
+      if (best === undefined || best.length <= span.limit) continue
+      const openBy = best.openBy
+      if (best.length === Infinity) continue
       const { grid, when } = context
       const at = (slot: number): string => when(context.windowStart + slot * grid.slotMs)
       const chain: string[] = []
@@ -314,7 +341,7 @@ export const propagate = (context: Context, world: World): Propagation => {
   }
   const windows = new Map<string, JobWindow>()
   for (const [key, entry] of info) windows.set(key, { job: entry.job, calendar: entry.calendar, work: entry.work, es: entry.es, ls: entry.ls, finishOf: start => entry.timing.finish[start] ?? -1 })
-  return { ok: true, windows }
+  return { ok: true, windows, shortestSpan: (openers, closers) => shortest(openers, closers)?.length ?? Infinity }
 }
 
 /** The latest valid start whose finish is at or before `by`, or -1. */

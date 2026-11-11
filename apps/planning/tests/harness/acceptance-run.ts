@@ -6,6 +6,7 @@
 // across the October change, checked against hand-written instants. Prints each row's result.
 import { planInputsSchema, type PlanInputs } from '../../src/plan/schema.ts'
 import { checkPlan } from '../../src/check/check.ts'
+import { verifyOptimality } from '../../src/check/optimal.ts'
 import { createRealSolver } from '../../src/api/wiring.ts'
 import { createSolverPool } from '../../src/solve/pool.ts'
 import { compile } from '../../src/solve/compile.ts'
@@ -20,7 +21,7 @@ import { twinPlan, twinV3Options } from './twin-plan.ts'
 
 const seconds = Number(process.argv[2] ?? 10)
 /** Rows to run, e.g. "counterfactual,dst"; all by default. */
-const rows = new Set((process.argv[3] ?? 'counterfactual,goals,bounds,dst,preview').split(','))
+const rows = new Set((process.argv[3] ?? 'counterfactual,goals,bounds,dst,preview,optimal').split(','))
 /** or's frozen size subsets (R/or/inc1/size/, read-only), for the preview row. */
 const sizeDirectory = process.env.LANE_K_SIZE_DIR ?? '/Users/hilde/Documents/ChatGPT/leitbild-planning-review-2026-11-10/or/inc1/size'
 const pool = createSolverPool()
@@ -153,6 +154,16 @@ try {
   print('daylight saving', `${dstOption.status.word}; checker ${dstCheck.violations.length} violations; rows equal the hand-written instants: ${matches}`)
   if (!matches) for (const row of dstOption.rows) print('daylight saving', `  ${row.job}: ${row.start} to ${row.finish}`)
   }
+  // "Proven optimal" re-derived by the checker on every option of the four plans.
+  if (rows.has('optimal')) {
+    for (const [name, inputs] of [['baseline', flagship], ['replan (a)', replanA], ['replan (b)', replanB], ['Supply run', supplyRun]] as const) {
+      const set = await generateOptions(inputs)
+      const claims = set.options.flatMap(option => verifyOptimality(inputs, option.variant, option.status).map(entry => ({ option: option.key, ...entry })))
+      const unconfirmed = claims.filter(entry => !entry.proves)
+      print('optimal', `${name}: ${claims.length} "proven optimal" goals, ${claims.length - unconfirmed.length} confirmed${unconfirmed.length === 0 ? '' : `; unconfirmed: ${unconfirmed.map(entry => `${entry.option} goal ${entry.goal} ${entry.claimed} (bound ${entry.bound})`).join(', ')}`}`)
+    }
+  }
+
   // Preview with no edit: re-timing the option with its own order and modes must give the option back.
   if (rows.has('preview')) {
     const s60Text = await Bun.file(`${sizeDirectory}/S60.json`).text()

@@ -4,6 +4,7 @@
 import type { Plan } from '../plan/schema.ts'
 import { checkPlan, type CheckResult } from './check.ts'
 import { verifyCertificate, type CertificateCheck } from './certificate.ts'
+import { verifyOptimality, type OptimalCheck } from './optimal.ts'
 
 type Option = Plan['options'] extends infer Set ? Set extends { options: ReadonlyArray<infer Item> } ? Item : never : never
 
@@ -15,6 +16,12 @@ export interface Recheck {
   /** Only a usable, validated feasible option may become a baseline. */
   readonly baselineAllowed: boolean
   readonly reasons: readonly StaleReason[]
+  /**
+   * Goals stored as "proven optimal" whose bound the checker could not re-derive, and every later one
+   * (goal order): show them as "best found under budget". The option itself stays usable.
+   */
+  readonly bestFoundGoals: readonly number[]
+  readonly optimality: readonly OptimalCheck[]
   /** The status word to show when the stored one cannot be: a refusal not re-derived is "unresolved". */
   readonly shownAs?: 'unresolved' | 'invalid input'
   readonly check: CheckResult
@@ -34,8 +41,10 @@ export const recheckOption = (plan: Plan, option: Option, formulation: string): 
     if (!certificate.ok) reasons.push('certificate')
     else if (!certificate.proves) reasons.push('certificate-unverified')   // not a proof; its bound is an explanation
   }
+  const optimality = status.word === 'validated feasible' && check.feasible ? verifyOptimality(plan.inputs, option.variant, status) : []
+  const bestFoundGoals = optimality.filter(entry => !entry.proves).map(entry => entry.goal)
   const usable = reasons.length === 0
   const shownAs = check.invalidInput && (status.word === 'validated feasible' || status.word === 'proven infeasible') ? 'invalid input' as const
     : reasons.includes('certificate') || reasons.includes('certificate-unverified') ? 'unresolved' as const : undefined
-  return { usable, baselineAllowed: usable && status.word === 'validated feasible', reasons, ...(shownAs === undefined ? {} : { shownAs }), check, ...(certificate === undefined ? {} : { certificate }) }
+  return { usable, baselineAllowed: usable && status.word === 'validated feasible', reasons, bestFoundGoals, optimality, ...(shownAs === undefined ? {} : { shownAs }), check, ...(certificate === undefined ? {} : { certificate }) }
 }
