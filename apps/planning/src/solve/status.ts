@@ -6,7 +6,6 @@ import { goalResolution, statusSchema, type Certificate, type GoalWord, type Pla
 import type { BoundSource } from './problem.ts'
 import { goalExcess, type RawMetric } from './rank.ts'
 import type { DatedRow } from './date.ts'
-import { functionOf } from '../plan/readiness.ts'
 
 type RunBasis = Extract<Status, { word: 'validated feasible' }>['run']
 type GoalStatus = Extract<Status, { word: 'validated feasible' }>['goals'][number]
@@ -98,50 +97,57 @@ export const withoutProof = (status: Status): Status => {
 
 export interface RedundancyWarning {
   readonly code: 'redundancy_unruled'
-  /** Items out at the same time, none named by a keep-in-service or protected rule. */
+  /** Items of one function out at the same time, none named by a keep-in-service or protected rule. */
   readonly items: readonly string[]
   readonly from: string
   readonly to: string
 }
 
+const ruleNamed = (inputs: PlanInputs): ReadonlySet<string> => new Set(inputs.rules.flatMap(rule =>
+  rule.kind === 'protected' ? rule.equipment : rule.kind === 'keep-in-service' ? rule.members.flatMap(member => ('equipment' in member ? [member.equipment] : [])) : []))
+
 /**
- * Items of one function taken out together with no keep-in-service or protected rule naming any of them
- * (adversary r2 item 7; the same rule as lane P's outTogether, keyed on lane A's equipment function).
+ * THE redundancy rule of the Module (adversary r2 item 7): among the items `out`, two or more that share an
+ * equipment `function` key (they back each other up; one train's series chain shares none), none named by a
+ * keep-in-service or protected rule. Returns the first such set. Lane P's plan readiness calls it too.
  */
-export const redundancyWarning = (inputs: PlanInputs, rows: readonly DatedRow[]): RedundancyWarning | undefined => {
-  const ruled = new Set(inputs.rules.flatMap(rule => (rule.kind === 'protected' ? rule.equipment : rule.kind === 'keep-in-service' ? rule.members.flatMap(member => ('equipment' in member ? [member.equipment] : [])) : [])))
-  const row = new Map(rows.map(entry => [entry.job, entry]))
-  const ownOut = (item: string): Array<[number, number]> => {
-    const tags = inputs.jobs.filter(job => job.kind === 'tag-out' && job.equipment.includes(item) && row.has(job.key)).map(job => Date.parse(row.get(job.key)!.start))
+export const redundantItems = (inputs: PlanInputs, out: readonly string[]): readonly string[] | undefined => {
+  const named = ruleNamed(inputs)
+  const byFunction = new Map<string, string[]>()
+  for (const key of out) {
+    const shared = inputs.equipment.find(entry => entry.key === key)?.function
+    if (shared !== undefined) byFunction.set(shared, [...(byFunction.get(shared) ?? []), key])
+  }
+  return [...byFunction.values()].find(items => items.length >= 2 && !items.some(key => named.has(key)))
+}
+
+/**
+ * On an option: redundant items (redundantItems) its rows have out at the same time. An item is out from
+ * its first covering tag-out start to its last covering test finish (the window end if never tested), and
+ * while any supporter is out. The first such time and set.
+ */
+export const redundancyWarning = (inputs: PlanInputs, rows: ReadonlyArray<{ readonly job: string; readonly start: string; readonly finish: string }>): RedundancyWarning | undefined => {
+  if (rows.length === 0) return undefined
+  const windowEnd = inputs.settings.window === null ? Math.max(...rows.map(row => Date.parse(row.finish))) : Date.parse(inputs.settings.window.end)
+  const jobs = new Map(inputs.jobs.map(job => [job.key, job]))
+  const own = (key: string): Array<[number, number]> => {
+    const tags = rows.filter(row => jobs.get(row.job)?.kind === 'tag-out' && jobs.get(row.job)!.equipment.includes(key)).map(row => Date.parse(row.start))
     if (tags.length === 0) return []
-    const tests = inputs.jobs.filter(job => job.kind === 'test' && job.equipment.includes(item) && row.has(job.key)).map(job => Date.parse(row.get(job.key)!.finish))
-    return [[Math.min(...tags), tests.length === 0 ? Infinity : Math.max(...tests)]]
+    const tests = rows.filter(row => jobs.get(row.job)?.kind === 'test' && jobs.get(row.job)!.equipment.includes(key)).map(row => Date.parse(row.finish))
+    return [[Math.min(...tags), tests.length === 0 ? windowEnd : Math.max(...tests)]]
   }
-  const out = (item: string, seen = new Set<string>()): Array<[number, number]> => {
-    const equipment = inputs.equipment.find(entry => entry.key === item)
-    const supporters = (equipment?.supportedBy ?? []).filter(key => !seen.has(key))
-    for (const key of supporters) seen.add(key)
-    return [...ownOut(item), ...supporters.flatMap(key => out(key, seen))]
+  const supporters = new Map(inputs.equipment.map(item => [item.key, item.supportedBy]))
+  const intervals = (key: string, seen: ReadonlySet<string> = new Set()): Array<[number, number]> => (seen.has(key) ? []
+    : [...own(key), ...(supporters.get(key) ?? []).flatMap(supporter => intervals(supporter, new Set([...seen, key])))])
+  const spans = new Map(inputs.equipment.map(item => [item.key, intervals(item.key)]))
+  for (const at of [...new Set([...spans.values()].flat().map(([from]) => from))].sort((x, y) => x - y)) {
+    const out = [...spans].filter(([, list]) => list.some(([from, to]) => from <= at && at < to)).map(([key]) => key)
+    const items = redundantItems(inputs, out)
+    if (items === undefined) continue
+    const to = Math.min(...items.flatMap(key => spans.get(key)!.filter(([from, end]) => from <= at && at < end).map(([, end]) => end)))
+    return { code: 'redundancy_unruled', items: [...items].slice(0, 32), from: new Date(at).toISOString(), to: new Date(to).toISOString() }
   }
-  const intervals = inputs.equipment.map(item => ({ item: item.key, spans: out(item.key, new Set([item.key])) })).filter(entry => entry.spans.length > 0)
-  // Redundant = items that share an equipment function key (they back each other up); one train's series
-  // chain shares none. Only unruled items count: a ruled item is the planner's statement that its backup
-  // is covered. With no function keys in the plan, it never warns.
-  const functions = new Map(inputs.equipment.flatMap(item => { const key = functionOf(item); return key === undefined ? [] : [[item.key, key] as const] }))
-  const unruled = intervals.filter(entry => !ruled.has(entry.item) && functions.has(entry.item))
-  const points = [...new Set(unruled.flatMap(entry => entry.spans.map(span => span[0])))].sort((a, b) => a - b)
-  let best: { items: string[]; from: number; to: number } | undefined
-  for (const at of points) {
-    const out = unruled.filter(entry => entry.spans.some(([from, to]) => from <= at && at < to))
-    const byFunction = new Map<string, typeof out>()
-    for (const entry of out) byFunction.set(functions.get(entry.item)!, [...(byFunction.get(functions.get(entry.item)!) ?? []), entry])
-    const items = [...byFunction.values()].reduce<typeof out>((most, group) => (group.length > most.length ? group : most), [])
-    if (items.length < 2 || (best !== undefined && items.length <= best.items.length)) continue
-    const to = Math.min(...items.flatMap(entry => entry.spans.filter(([from, end]) => from <= at && at < end).map(span => span[1])))
-    best = { items: items.map(entry => entry.item), from: at, to }
-  }
-  if (best === undefined || !Number.isFinite(best.to)) return undefined
-  return { code: 'redundancy_unruled', items: best.items.slice(0, 32), from: new Date(best.from).toISOString(), to: new Date(best.to).toISOString() }
+  return undefined
 }
 
 export interface ShownStatus {

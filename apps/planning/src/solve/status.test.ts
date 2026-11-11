@@ -90,8 +90,8 @@ describe('redundancy warning beside the status (adversary r2 item 7)', () => {
   const row = (key: string, start: string, finish: string) => ({ job: key, start, finish, uses: [], float: { workingHours: 0, limitedBy: { kind: 'window-end' as const } } })
   const rows = [row('A-TAG', '2026-11-16T06:00:00Z', '2026-11-16T07:00:00Z'), row('A-RTS', '2026-11-16T10:00:00Z', '2026-11-16T11:00:00Z'), row('B-TAG', '2026-11-16T08:00:00Z', '2026-11-16T09:00:00Z'), row('B-RTS', '2026-11-16T12:00:00Z', '2026-11-16T13:00:00Z')]
 
-  // Lane A's optional equipment `function` key (not in the schema yet; added here as lane P's functionOf reads it).
-  const withFunction = (inputs: PlanInputs, key: string): PlanInputs => ({ ...inputs, equipment: inputs.equipment.map(item => ({ ...item, function: key })) }) as PlanInputs
+  // Lane A's equipment `function` key: both feed pumps back each other up.
+  const withFunction = (inputs: PlanInputs, key: string): PlanInputs => planInputsSchema.parse({ ...inputs, equipment: inputs.equipment.map(item => ({ ...item, function: key })) })
   const paired = withFunction(pair, 'main-feedwater')
 
   test('without a function key nothing warns: items out together are not assumed to back each other up', () => {
