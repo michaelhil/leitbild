@@ -167,7 +167,7 @@ export const editSchema = z.discriminatedUnion('edit', [
     from: keySchema.describe('Earlier job'),
     to: keySchema.describe('Later job'),
     type: z.enum(['FS', 'SS', 'FF']).describe('finish-start, start-start or finish-finish'),
-    lag: z.object({ value: z.number().nonnegative().describe('Value'), unit: timeUnitSchema.describe('Unit') }).strict().optional().describe('Clock-time lag'),
+    lag: z.object({ value: z.number().nonnegative().describe('Value'), unit: timeUnitSchema.describe('Unit') }).strict().optional().describe('FS: clock time after the earlier job finishes. SS: the later job may start once the earlier one has worked this long. FF: at least this much of the later job\'s work comes after the earlier one finishes'),
     method: choice.nullable().optional().describe('Exists only with that option'),
   }).strict(),
   z.object({

@@ -37,6 +37,12 @@ export interface NormalizedProblem {
     readonly target?: number
     readonly fixed?: { readonly mode: number; readonly start: number; readonly history: boolean }
   }>
+  /**
+   * `min` is in slots and depends on `type`. FS: clock slots from the predecessor's finish to the successor's
+   * start. SS: the successor may start once the predecessor has worked `min` slots of its own mode calendar.
+   * FF: at least `min` working slots of the successor (its mode calendar) fall after the predecessor's
+   * finish. `max`, from span limits, is clock slots.
+   */
   readonly links: ReadonlyArray<{
     readonly from: number; readonly to: number; readonly type: 'FS' | 'SS' | 'FF'; readonly min: number; readonly max?: number
     readonly origin: 'link' | 'bracket' | 'tag-before-test' | 'support-order'

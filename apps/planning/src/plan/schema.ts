@@ -144,10 +144,15 @@ export const jobSchema = z.object({
   const day = job.minimum && workingDayIssue(job.minimum.unit, job.duration.calendar)
   if (day) context.addIssue({ code: 'custom', path: ['minimum', 'unit'], message: day })
 })
-/** Identity is (from, to, type). */
+/**
+ * Identity is (from, to, type). The lag depends on the type:
+ * - FS: clock time from the earlier job's finish to the later job's start;
+ * - SS: the later job may start once the earlier job has done this much of its own working time;
+ * - FF: at least this much of the later job's working time falls after the earlier job's finish.
+ */
 export const linkSchema = z.object({
   from: keySchema, to: keySchema, type: z.enum(['FS', 'SS', 'FF']),
-  lag: z.object({ value: z.number().finite().nonnegative(), unit: timeUnitSchema }).strict(),   // clock time
+  lag: z.object({ value: z.number().finite().nonnegative(), unit: timeUnitSchema }).strict(),
   method: z.object({ choice: keySchema, option: keySchema }).strict().optional(),
   words: wordsSchema.optional(),
 }).strict()
