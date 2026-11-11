@@ -262,6 +262,18 @@ describe('derived rules and the plain rules', () => {
     expect(codes(checkPlan(inputs, noVariant, [opsRow('T', '2026-11-16T09:00:00Z'), opsRow('U', '2026-11-18T06:00:00Z')]))).toContain('outside-window')
     expect(codes(checkPlan(inputs, noVariant, [opsRow('T', '2026-11-16T09:00:00Z'), opsRow('U', '2026-11-16T06:00:00Z'), opsRow('U', '2026-11-16T07:00:00Z')]))).toContain('scheduled-twice')
   })
+  test('a due rule is hard; a job target is soft and only counts as lateness', () => {
+    const late = { ...tag('T', ['X']), kind: 'work' as const, equipment: [], target: { finishBy: '2026-11-16T07:00:00Z', words: 'Hoped for by 08:00' } }
+    const due = { kind: 'due' as const, key: 'D', job: 'T', finishBy: '2026-11-16T07:30:00Z', words: 'Surveillance due Mon 08:30', source: planner }
+    // T runs 07:00Z-08:00Z: 1 h past its target, 0.5 h past its due time (08:30 local = 07:30Z)
+    const rows = [opsRow('T', '2026-11-16T07:00:00Z')]
+    const soft = checkPlan(plan({ jobs: [late] }), noVariant, rows)
+    expect(soft.violations).toEqual([])
+    expect(soft.metrics.find(metric => metric.id === 'lateness')?.value).toBe(1)
+    const hard = checkPlan(plan({ jobs: [late], rules: [due] }), noVariant, rows)
+    expect(codes(hard)).toEqual(['due'])
+    expect(hard.violations[0]?.words).toContain('Mon 16 Nov 09:00, 0.5 h after it is due at Mon 16 Nov 08:30')
+  })
   test('a precondition is checked against the World values at read time', () => {
     const locator = 'process-plant/plant%3Ax/pumpB'
     const guarded = { ...tag('A-TAG', ['A']), checks: [{ equipment: 'B', fact: 'pumpB/running', expect: true, words: 'B running' }] }

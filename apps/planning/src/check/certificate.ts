@@ -122,7 +122,9 @@ export const verifyCertificate = (inputs: PlanInputs, variant: CheckVariant, cer
       const firstWorking = firstSlots.findIndex((slot, index) => slot === 1 && context.windowStart + index * context.grid.slotMs >= earliestPossible)
       const earliest = firstWorking < 0 ? Infinity : context.windowStart + firstWorking * context.grid.slotMs
       if (from > earliest) problems.push(`The chain starts its count at ${new Date(from).toISOString()}, but '${first.title}' could start at ${new Date(earliest).toISOString()}.`)
-      if (by < context.windowEnd) unverified.push('a deadline before the window end (from a span limit or a later job) is not re-derived')
+      const last = jobs[jobs.length - 1]!
+      const dueBy = Math.min(context.windowEnd, ...inputs.rules.flatMap(rule => rule.kind === 'due' && rule.job === last.key ? [Date.parse(rule.finishBy)] : []))
+      if (by < dueBy) unverified.push('a deadline before the window end or the last job\'s due time (from a span limit or a later job) is not re-derived')
       break
     }
     case 'energy': {

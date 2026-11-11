@@ -195,8 +195,10 @@ export const twinPlan = (bench: Bench, options: TwinOptions): TwinPlan => {
       }
     }
     const kind = tagFor.has(activity.id) ? 'tag-out' : testFor.has(activity.id) ? 'test' : 'work'
-    const due = activity.deadline !== undefined && activity.deadline < horizon
-    if (due) deadlines++
+    if (activity.deadline !== undefined && activity.deadline < horizon) {
+      deadlines++
+      rules.push({ kind: 'due', key: `due-${activity.id}`, job: activity.id, finishBy: at(activity.deadline), words: `${activity.name}: due ${at(activity.deadline)}`, source: planner })
+    }
     jobs.push({
       key: activity.id, title: activity.name, kind,
       equipment: kind === 'tag-out' ? tagFor.get(activity.id)! : kind === 'test' ? testFor.get(activity.id)! : [],
@@ -206,11 +208,10 @@ export const twinPlan = (bench: Bench, options: TwinOptions): TwinPlan => {
       needs: needs.map(need => ({ anyOf: [...need.anyOf], amount: need.amount, handover: need.handover })),
       continuous: !activity.modes[0].interruptible,
       ...(activity.release === undefined || activity.release === 0 ? {} : { notBefore: { at: at(activity.release), words: 'Release', source: planner } }),
-      ...(due ? { target: { finishBy: at(activity.deadline), words: 'Due (a hard deadline in the twin)' } } : {}),
-      checks: [], tags: due ? ['due'] : [],
+      checks: [], tags: [],
     })
   }
-  if (deadlines > 0) notes.push(`${deadlines} hard job deadlines are written as targets with tag 'due': the plan schema has no hard per-job deadline`)
+  if (deadlines > 0) notes.push(`${deadlines} hard job deadlines are due rules`)
   const links: PlanInputs['links'][number][] = bench.links
     .filter((link: any) => !isHelper(link.from) && !isHelper(link.to))
     .map((link: any) => ({ from: link.from, to: link.to, type: link.type, lag: { value: link.min * slotHours, unit: 'h' } }))
@@ -328,7 +329,7 @@ if (import.meta.main) {
     const metrics = Object.fromEntries(result.metrics.map(item => [item.id, item.value]))
     const span = result.goals[0]
     const excess = span?.metric === 'span-over' ? span.spans.reduce((sum, item) => sum + Math.max(0, item.value - 54), 0) : NaN
-    console.log(`${file}: ${result.violations.length} violations in ${(performance.now() - started).toFixed(0)} ms; guideline excess ${excess} h (run ${run.guidelineH}), finish ${metrics.finish} h (run ${run.finishH}), extra cost ${metrics['extra-cost']} (run ${run.costNok}), hours past targets ${metrics.lateness}`)
+    console.log(`${file}: ${result.violations.length} violations in ${(performance.now() - started).toFixed(0)} ms; guideline excess ${excess} h (run ${run.guidelineH}), finish ${metrics.finish} h (run ${run.finishH}), extra cost ${metrics['extra-cost']} (run ${run.costNok})`)
     for (const violation of result.violations.slice(0, 6)) console.log(`  ${violation.code}: ${violation.words}`)
   }
 }

@@ -34,7 +34,7 @@ export type ViolationCode =
   | 'need-not-served' | 'use-outside-work' | 'use-outside-calendar' | 'ineligible-resource' | 'where-not-met'
   | 'handover-not-allowed' | 'over-capacity' | 'max-jobs' | 'purchase-not-allowed' | 'purchase-past-deadline' | 'purchase-wrong-resource'
   // logic and availability
-  | 'link' | 'bracket' | 'tag-before-test' | 'support-order' | 'never-returned' | 'span-limit' | 'keep-in-service'
+  | 'link' | 'bracket' | 'tag-before-test' | 'support-order' | 'never-returned' | 'span-limit' | 'keep-in-service' | 'due'
   | 'protected-equipment' | 'protected-unavailable' | 'precondition-unread' | 'precondition-unmet'
 
 /** Structure for code and the Assistant; `words` is generated from it for people and never stored. */
@@ -658,6 +658,15 @@ export const checkPlan = (inputs: Inputs, variant: CheckVariant, rows: readonly 
           const hours = (span.to - span.from) / 3_600_000
           push('span-limit', [rule.key, rule.group], `The ${inputs.groups.find(group => group.key === rule.group)?.label ?? rule.group} span runs from ${when(span.from)} to ${when(span.to)}${Number.isFinite(hours) ? `, ${hours} h` : ''}; the limit is ${rule.limit.value} ${rule.limit.unit}. ${ruleLabel(rule)}`, span.from)
         }
+      }
+    } else if (rule.kind === 'due') {
+      // a hard deadline; the soft job.target never makes a plan infeasible
+      const job = jobs.get(rule.job)
+      if (job === undefined) { push('unknown-key', [rule.key, rule.job], `The rule ${ruleLabel(rule)} names a job '${rule.job}' that the plan does not have.`); continue }
+      const spot = placed.get(rule.job)
+      const by = Date.parse(rule.finishBy)
+      if (spot !== undefined && spot.finish > by) {
+        push('due', [rule.key, rule.job], `'${job.title}' finishes at ${when(spot.finish)}, ${(spot.finish - by) / 3_600_000} h after it is due at ${when(by)}. ${ruleLabel(rule)}`, spot.finish)
       }
     } else {
       const from = rule.during === undefined ? 0 : Math.max(0, Math.floor(context.slotOf(Date.parse(rule.during.start))))

@@ -23,6 +23,26 @@ describe('gate twin v3 as a plan', () => {
     expect(plan.inputs.rules.filter(rule => rule.kind === 'span-limit')).toHaveLength(6)
     expect(plan.inputs.rules.filter(rule => rule.kind === 'keep-in-service').map(rule => rule.key).sort()).toEqual(['U1-CP', 'U1-CTF', 'U1-CWP', 'U1-IAC', 'U2-CP', 'U2-CTF', 'U2-IAC'])
   })
+  test('the 26 surveillance deadlines are hard due rules, Thu 19 Nov 15:00 CET = 14:00Z', () => {
+    const due = plan.inputs.rules.filter(rule => rule.kind === 'due')
+    expect(due).toHaveLength(26)
+    expect(new Set(due.map(rule => rule.kind === 'due' ? rule.finishBy : ''))).toEqual(new Set(['2026-11-19T14:00:00Z']))
+    expect(plan.inputs.jobs.some(job => job.target !== undefined)).toBe(false)
+  })
+  test('a surveillance job moved past its due time is refused', () => {
+    const run = solutions.runs[0]!
+    const rule = plan.inputs.rules.find(candidate => candidate.kind === 'due')!
+    const job = rule.kind === 'due' ? rule.job : ''
+    const rows = plan.rowsOf(run.solution)
+    const row = rows.find(entry => entry.job === job)!
+    // moved to finish at Thu 19 Nov 15:30 CET = 14:30Z; its own times and uses stay consistent
+    const shift = Date.parse('2026-11-19T14:30:00Z') - Date.parse(row.finish)
+    const move = (iso: string) => new Date(Date.parse(iso) + shift).toISOString().replace('.000Z', 'Z')
+    const moved = rows.map(entry => entry.job === job ? { ...entry, start: move(entry.start), finish: move(entry.finish), uses: entry.uses.map(use => ({ ...use, from: move(use.from), to: move(use.to) })) } : entry)
+    const found = checkPlan(plan.inputs, plan.variant, moved).violations.filter(violation => violation.code === 'due')
+    expect(found.map(violation => violation.about)).toEqual([[rule.key, job]])
+    expect(found[0]?.words).toContain('Thu 19 Nov 15:30')
+  })
   test('supports are read from the spans: CCW A from SW A, RHR A from CCW A', () => {
     const supported = (key: string) => plan.inputs.equipment.find(item => item.key === key)?.supportedBy
     expect(supported('CCWA')).toEqual(['SWA'])
@@ -38,8 +58,6 @@ describe('gate twin v3 as a plan', () => {
       expect(spans.spans.reduce((sum, span) => sum + Math.max(0, span.value - 54), 0)).toBe(run.guidelineH)
       expect(result.metrics.find(item => item.id === 'finish')?.value).toBe(run.finishH)
       expect(result.metrics.find(item => item.id === 'extra-cost')?.value).toBe(run.costNok)
-      // the hard deadlines, written as targets, are all met
-      expect(result.metrics.find(item => item.id === 'lateness')?.value).toBe(0)
     })
   }
 })
