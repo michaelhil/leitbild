@@ -34,7 +34,7 @@ export const startPlan = (start: {
   const settings = definition.inputs.settings
   const title = settings.scenario === undefined ? settings.title : `${settings.title}: plan`
   const inputs = planInputsSchema.parse({ ...structuredClone(definition.inputs), settings: { ...settings, title, run: null, grid: start.grid ?? settings.grid } })
-  const outcome = start.edits.length === 0 ? { inputs, changes: [], weakens: [] } : applyEdits(inputs, start.edits, { now: at, by })
+  const outcome = start.edits.length === 0 ? { inputs, changes: [], weakens: [], drafts: [] } : applyEdits(inputs, start.edits, { now: at, by })
   requireAuthority(outcome.weakens, undefined, inputs)
   const summary = `Created from '${definition.title}'${outcome.changes.length === 0 ? '' : `; ${changeSummary(outcome.changes, outcome.inputs)}`}`
   return {
@@ -43,6 +43,7 @@ export const startPlan = (start: {
       inputs: outcome.inputs, options: null, baselines: [],
       changes: [{ seq: 1, at, by, revision: 1, summary: clip(summary, 240), kinds: [...new Set(start.edits.map(edit => edit.edit))].slice(0, 16) }],
       droppedChanges: 0,
+      ...(outcome.drafts.length === 0 ? {} : { drafts: [...outcome.drafts] }),
     },
     changes: outcome.changes,
   }

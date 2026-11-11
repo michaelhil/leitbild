@@ -282,7 +282,7 @@ export const certifiedSizeWords = (size: CertifiedSize): string => size.decided
 export const measuredSizeWords = (size: CertifiedSize): string | null => (size.decided ? null : `Measured: up to ${size.maxJobs} jobs`)
 /** The refusal of a plan above the size (the 413 of Generate and the API), in planner words. */
 export const sizeRefusalWords = (size: CertifiedSize, inputs: Pick<PlanInputs, 'jobs' | 'methods'>): string =>
-  `This plan has ${jobsPerSolve(inputs)} jobs. Planning is certified for plans of up to ${size.maxJobs} jobs (${size.family})${size.decided ? '.' : '; larger plans wait for the owner\'s decision.'}`
+  `This plan needs ${jobsPerSolve(inputs)} jobs in one solve. ${size.decided ? `Planning is certified for plans of up to ${size.maxJobs} jobs (${size.family}).` : `Measured for plans of up to ${size.maxJobs} jobs (${size.family}); larger plans wait for the owner's decision.`}`
 
 // ───────────── read sections ─────────────
 // The `data` of each planning.plan.read section, in the shapes of api/contract.ts sectionDataSchemas, which

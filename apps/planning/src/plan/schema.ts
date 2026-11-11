@@ -380,6 +380,9 @@ export const planSchema = z.object({
   options: optionSetSchema.nullable(),               // the latest set only
   baselines: z.array(z.object({ key: keySchema, name: labelSchema, note: wordsSchema.optional(), at: instantSchema, by: actorSchema, option: optionSchema, inputs: planInputsSchema }).strict()).max(32),
   changes: z.array(changeSchema).max(500), droppedChanges: z.number().int().nonnegative(),
+  // Brackets Planning drafted that nobody has changed or baselined since. Only bracket drafting adds a key;
+  // no edit can write this list, so draft status cannot be claimed (adversary recheck 1). Absent when none.
+  drafts: z.array(keySchema).min(1).max(200).optional(),
 }).strict()
 export type Plan = z.infer<typeof planSchema>
 

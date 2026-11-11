@@ -8,7 +8,7 @@ import { readinessText, statusSentence } from './summary.ts'
 const fixture = async (name: string): Promise<PlanInputs> => planInputsSchema.parse(await Bun.file(new URL(`./fixtures/${name}`, import.meta.url)).json())
 const trainA = await fixture('train-a.fragment.json')
 const supplyRun = await fixture('supply-run.case2.json')
-const planOf = (inputs: PlanInputs): Plan => ({ id: crypto.randomUUID(), workspaceId: '5d1b0a9e-6c1e-4d5e-9f00-0000000000a3' as Plan['workspaceId'], revision: 1, createdAt: '2026-11-11T08:00:00Z', updatedAt: '2026-11-11T08:00:00Z', inputs, options: null, baselines: [], changes: [{ seq: 1, at: '2026-11-11T08:00:00Z', by: { kind: 'human' }, revision: 1, summary: 'Created', kinds: [] }], droppedChanges: 0 })
+const planOf = (inputs: PlanInputs, drafts: readonly string[] = []): Plan => ({ id: crypto.randomUUID(), workspaceId: '5d1b0a9e-6c1e-4d5e-9f00-0000000000a3' as Plan['workspaceId'], revision: 1, createdAt: '2026-11-11T08:00:00Z', updatedAt: '2026-11-11T08:00:00Z', inputs, options: null, baselines: [], changes: [{ seq: 1, at: '2026-11-11T08:00:00Z', by: { kind: 'human' }, revision: 1, summary: 'Created', kinds: [] }], droppedChanges: 0, ...(drafts.length === 0 ? {} : { drafts: [...drafts] }) })
 const context: EditContext = { now: '2026-11-12T10:02:00+01:00', by: { kind: 'human', name: 'Planner' } }
 const edits = (...given: unknown[]): Edit[] => given.map(edit => editSchema.parse(edit))
 const apply = (inputs: PlanInputs, ...given: unknown[]) => applyEdits(inputs, edits(...given), context)
@@ -101,12 +101,14 @@ describe('automatic bracketing (walk fix 9, T0p)', () => {
       ['test', [item.key], `Return ${item.label} to service and test`, 'assumption'],
     ])
     expect(drafted.changes.filter(change => change.fields.includes('drafted')).map(change => change.key)).toEqual(drafts.map(job => job.key))
+    // Draft status is the Module's own list (Plan.drafts), never a note an edit could write.
+    expect(drafted.drafts).toEqual(drafts.map(job => job.key).sort())
     // With its own tag-out already there, only the test is drafted; the drafts never block the save.
     const tagged = apply(blank, { edit: 'job', key: 'TAG', title: 'Tag out', kind: 'tag-out', equipment: [item.key], duration: { value: 2, unit: 'h', calendar: 'working' } }, work)
     expect(tagged.inputs.jobs.filter(job => job.kind === 'test').map(job => job.equipment)).toEqual([[item.key]])
     expect(tagged.inputs.jobs.filter(job => job.kind === 'tag-out').map(job => job.key)).toEqual(['TAG'])
     // A drafted bracket has no crew yet: readiness says so in words, and Generate's refusal names it (adversary item 25).
-    const noCrew = readiness(planOf(drafted.inputs), { staleOptions: [], now: '2026-11-12T09:00:00Z' }).filter(entry => entry.code === 'no-crew' && entry.words === 'drafted')
+    const noCrew = readiness(planOf(drafted.inputs, drafted.drafts), { staleOptions: [], now: '2026-11-12T09:00:00Z' }).filter(entry => entry.code === 'no-crew' && entry.words === 'drafted')
     expect(noCrew.length === 2 && noCrew.every(entry => entry.blocks)).toBe(true)
     expect(noCrew.map(entry => readinessText(entry, drafted.inputs))).toEqual([`The drafted tag-out 'Tag out ${item.label}' needs a crew: add one.`, `The drafted return-to-service test 'Return ${item.label} to service and test' needs a crew: add one.`])
     expect(statusSentence({ word: 'invalid input', problems: [{ about: [drafts[0]!.key], code: 'working_time_without_resource' }] }, drafted.inputs)).toBe(`Invalid input: Tag out ${item.label} needs a crew: add one.`)
@@ -121,23 +123,32 @@ describe('automatic bracketing (walk fix 9, T0p)', () => {
     const work = { edit: 'job', key: 'SEAL', title: 'Replace the seal', kind: 'work', isolation: 'inside', equipment: [item.key], duration: { value: 10, unit: 'h', calendar: 'working' } }
     const crewed = apply(blank, work, { edit: 'job', key: `${item.key}-TAG`, needs: [{ anyOf: [crew], amount: 1 }] }, { edit: 'job', key: `${item.key}-RTS`, needs: [{ anyOf: [crew], amount: 1 }] })
     expect(crewed.inputs.jobs.map(job => [job.key, job.needs.flatMap(need => need.anyOf)])).toEqual([['SEAL', []], [`${item.key}-TAG`, [crew]], [`${item.key}-RTS`, [crew]]])
+    // Giving a draft its crew makes it the planner's job (adversary recheck 1).
+    expect(crewed.drafts).toEqual([])
     expect(readiness(planOf(crewed.inputs), { staleOptions: [], now: '2026-11-12T09:00:00Z' }).filter(entry => entry.code === 'no-crew').map(entry => entry.about[0])).toEqual(['SEAL'])
     // A manual tag-out later in the list: the draft it makes redundant is dropped, with its change line.
     const manual = apply(blank, work, { edit: 'job', key: 'TAG', title: 'Tag out', kind: 'tag-out', equipment: [item.key], duration: { value: 2, unit: 'h', calendar: 'working' } })
     expect(manual.inputs.jobs.map(job => job.key)).toEqual(['SEAL', `${item.key}-RTS`, 'TAG'])
     expect(manual.changes.filter(change => change.fields.includes('drafted')).map(change => change.key)).toEqual([`${item.key}-RTS`])
+    expect(manual.drafts).toEqual([`${item.key}-RTS`])
   })
 
-  test('walk 2 R2-2: a draft in no baseline is removed without authority; once baselined it needs one', () => {
+  test('walk 2 R2-2, adversary recheck 1: only a bracket on the Module\'s draft list is removed without authority', () => {
     const blank = planInputsSchema.parse({ ...trainA, jobs: [], links: [], rules: [] })
     const item = blank.equipment.find(entry => entry.group !== undefined)!
-    const drafted = apply(blank, { edit: 'job', key: 'SEAL', title: 'Replace the seal', kind: 'work', isolation: 'inside', equipment: [item.key], duration: { value: 10, unit: 'h', calendar: 'working' } }).inputs
+    const outcome = apply(blank, { edit: 'job', key: 'SEAL', title: 'Replace the seal', kind: 'work', isolation: 'inside', equipment: [item.key], duration: { value: 10, unit: 'h', calendar: 'working' } })
+    const drafts = new Set(outcome.drafts)
     const remove = edits({ edit: 'remove', what: 'job', key: `${item.key}-TAG` })
-    expect(applyEdits(drafted, remove, context).weakens).toEqual([])
-    expect(applyEdits(drafted, remove, { ...context, baselined: new Set([`${item.key}-TAG`]) }).weakens.map(weakening => weakening.what)).toEqual(['covering-job'])
-    // A bracket the planner timed is no longer a draft: removing it needs authority as before.
-    const timed = apply(drafted, { edit: 'job', key: `${item.key}-TAG`, duration: { value: 2, unit: 'h', calendar: 'working' } }).inputs
-    expect(applyEdits(timed, remove, context).weakens.map(weakening => weakening.what)).toEqual(['covering-job'])
+    const removed = applyEdits(outcome.inputs, remove, { ...context, drafts })
+    expect([removed.weakens, removed.drafts]).toEqual([[], [`${item.key}-RTS`]])
+    // Not on the list (a baseline cleared it, or it was never drafted): removing it needs authority.
+    expect(applyEdits(outcome.inputs, remove, context).weakens.map(weakening => weakening.what)).toEqual(['covering-job'])
+    // Any edit to a draft ends it, even one in the same list as the removal.
+    const timed = applyEdits(outcome.inputs, edits({ edit: 'job', key: `${item.key}-TAG`, duration: { value: 2, unit: 'h', calendar: 'working' } }, ...remove), { ...context, drafts })
+    expect(timed.weakens.map(weakening => weakening.what)).toEqual(['covering-job'])
+    // Writing the draft note on a real test claims nothing (the adversary's relabel chain).
+    const relabel = edits({ edit: 'job', key: `${item.key}-RTS`, duration: { source: { by: 'assumption', note: `Drafted with the work on ${item.label}; set its real duration` } } }, { edit: 'remove', what: 'job', key: `${item.key}-RTS` })
+    expect(applyEdits(outcome.inputs, relabel, context).weakens.map(weakening => weakening.what)).toEqual(['covering-job'])
   })
 })
 

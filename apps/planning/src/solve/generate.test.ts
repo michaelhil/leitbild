@@ -89,7 +89,7 @@ describe('generate with the real checker', () => {
     expect(jobsPerSolve(twin)).toBe(330)
     const refusal = await generate({ engine: searchEngine(), check: laneKCheck, verify: laneKVerify, verifyBound: laneKVerifyBound }, { inputs: twin, revision: 1, previous: null, input: {}, by, signal: new AbortController().signal }).catch((error: unknown) => error as Error)
     expect(refusal).toMatchObject({ code: 'above_certified_size' })
-    expect((refusal as Error).message).toBe('This plan has 330 jobs. Planning is certified for plans of up to 33 jobs (one system window); larger plans wait for the owner\'s decision.')
+    expect((refusal as Error).message).toBe('This plan needs 330 jobs in one solve. Measured for plans of up to 33 jobs (one system window); larger plans wait for the owner\'s decision.')
     const supply = await generate({ engine: searchEngine(), check: laneKCheck, verify: laneKVerify, verifyBound: laneKVerifyBound }, { inputs: supplyRun, revision: 1, previous: null, input: {}, by, signal: new AbortController().signal, evals: 200 })
     expect(supply.optionSet.options[0]!.status.word).toBe('validated feasible')
   })

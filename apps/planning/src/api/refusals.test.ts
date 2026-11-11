@@ -85,12 +85,72 @@ describe('refusals name their cause and stay within 4 KB', () => {
     const plan = await harness.create('train-a-work-week')
     // The adversary's probe: the Assistant removes the protected-train rule with an authority it typed itself.
     const typed = await harness.call('planning.plan.edit', { resource: plan.id, actor: 'ai', expectedRevision: 1, input: { edits: [{ edit: 'remove', what: 'rule', key: protectedRule.key }], authority: { name: 'Shift supervisor', reason: 'Agreed on the phone' } } })
-    expect([...error(typed), typed.body.error.message]).toEqual([409, 'needs_person', 'A person must make this change in the plan screen: ask them.'])
+    expect([...error(typed), typed.body.error.message]).toEqual([409, 'needs_person', 'Only a person gives authority, in the plan screen: send the edit without it, or ask them to make the change.'])
     expect(error(await harness.call('planning.plan.edit', { resource: plan.id, actor: 'ai', expectedRevision: 1, input: { edits: [{ edit: 'remove', what: 'rule', key: protectedRule.key }] } }))).toEqual([409, 'needs_person'])
     expect((await harness.store.read(harness.workspaceId, plan.id)).inputs.rules.some(rule => rule.key === protectedRule.key)).toBe(true)
     // The same edit by a person with a named authority is saved; an Assistant's edit that loosens nothing is too.
     expect((await harness.call('planning.plan.edit', { resource: plan.id, actor: 'ai', expectedRevision: 1, input: { edits: [{ edit: 'plan', title: 'Train A, week 47' }] } })).status).toBe(200)
     expect((await harness.call('planning.plan.edit', { resource: plan.id, expectedRevision: 2, input: { edits: [{ edit: 'remove', what: 'rule', key: protectedRule.key }], authority: { name: 'Shift supervisor', reason: 'Train B work moved' } } })).status).toBe(200)
+  })
+
+  test('adversary recheck 1: relabelling a real test as a draft, removing it and adding it back short is refused (the probe chain)', async () => {
+    const plan = await harness.create('train-a-work-week')
+    const test = trainA.jobs.find(job => job.key === 'RHRA-RTS')!
+    const links = trainA.links.filter(link => link.to === test.key || link.from === test.key)
+    const chain = [
+      { edit: 'job', key: test.key, duration: { source: { by: 'assumption', note: 'Drafted with the work on RHR A; set its real duration' } } },
+      { edit: 'remove', what: 'job', key: test.key },
+      { edit: 'job', key: test.key, title: test.title, kind: 'test', equipment: test.equipment, isolation: 'none', continuous: true,
+        duration: { value: 0.25, unit: 'h', calendar: 'working', source: { by: 'planner', note: 'quick run' } }, needs: test.needs.map(need => ({ anyOf: need.anyOf, amount: need.amount })) },
+      ...links.map(link => ({ edit: 'link', from: link.from, to: link.to, type: link.type, lag: link.lag })),
+    ]
+    const agent = await harness.call('planning.plan.edit', { resource: plan.id, input: { edits: chain }, expectedRevision: 1, actor: 'ai' })
+    expect([...error(agent), agent.body.error.message]).toEqual([409, 'needs_person', 'A person must make this change in the plan screen: ask them.'])
+    // A person is asked for an agreement; the stored test keeps its duration and minimum.
+    expect(error(await harness.call('planning.plan.edit', { resource: plan.id, input: { edits: chain }, expectedRevision: 1 }))).toEqual([409, 'needs_authority'])
+    const stored = (await harness.store.read(harness.workspaceId, plan.id)).inputs.jobs.find(job => job.key === test.key)!
+    expect([stored.duration.value, stored.minimum]).toEqual([test.duration.value, test.minimum])
+  })
+
+  test('adversary recheck 2: an Assistant never gives authority, even on an edit that loosens nothing; nothing is logged', async () => {
+    const plan = await harness.create('train-a-work-week')
+    const titled = await harness.call('planning.plan.edit', { resource: plan.id, expectedRevision: 1, actor: 'ai', input: { edits: [{ edit: 'plan', title: 'Train A, week 47' }], authority: { name: 'Shift supervisor', reason: 'Agreed' } } })
+    expect([...error(titled), titled.body.error.message]).toEqual([409, 'needs_person', 'Only a person gives authority, in the plan screen: send the edit without it, or ask them to make the change.'])
+    const previewed = await harness.call('planning.plan.edit', { resource: plan.id, actor: 'ai', input: { edits: [{ edit: 'plan', title: 'Train A, week 47' }], authority: { name: 'Shift supervisor', reason: 'Agreed' }, preview: true } })
+    expect(error(previewed)).toEqual([409, 'needs_person'])
+    const stored = await harness.store.read(harness.workspaceId, plan.id)
+    expect([stored.revision, stored.changes.some(change => change.authority !== undefined)]).toEqual([1, false])
+    // The same edit without authority is the Assistant's to make.
+    expect((await harness.call('planning.plan.edit', { resource: plan.id, expectedRevision: 1, actor: 'ai', input: { edits: [{ edit: 'plan', title: 'Train A, week 47' }] } })).status).toBe(200)
+  })
+
+  test('adversary recheck 5: a preview tells an Assistant that a person must make a loosening change', async () => {
+    const plan = await harness.create('train-a-work-week')
+    const preview = await harness.call('planning.plan.edit', { resource: plan.id, actor: 'ai', input: { edits: [{ edit: 'remove', what: 'rule', key: protectedRule.key }], preview: true } })
+    expect(preview.body.result.preview.consequence).toContain('A person must make this change in the plan screen: ask them.')
+    expect(preview.body.result.preview.consequence).not.toContain('agreement')
+    const person = await harness.call('planning.plan.edit', { resource: plan.id, input: { edits: [{ edit: 'remove', what: 'rule', key: protectedRule.key }], preview: true } })
+    expect(person.body.result.preview.consequence).toContain("Saving it needs a named person's agreement")
+  })
+
+  test('drafts are the Module\'s list: stored with the work that drafted them, cleared by a baseline, then removed only with authority', async () => {
+    const plan = await harness.create('blank', { edits: [
+      { edit: 'plan', title: 'Drafts', timeZone: 'Europe/Oslo', window: { start: '2026-11-16T06:00:00Z', end: '2026-11-16T18:00:00Z' } },
+      { edit: 'calendar', key: 'day', label: 'Day', periods: [{ start: '2026-11-16T06:00:00Z', end: '2026-11-16T18:00:00Z' }] },
+      { edit: 'resource', key: 'ops', label: 'Operator', kind: 'crew', count: 1, calendar: 'day' },
+      { edit: 'equipment', key: 'X', label: 'Pump X', supportedBy: [], group: 'G', groupLabel: 'Group G' },
+    ] })
+    const work = await harness.call('planning.plan.edit', { resource: plan.id, expectedRevision: 1, input: { edits: [
+      { edit: 'job', key: 'SEAL', title: 'Replace the seal', kind: 'work', isolation: 'inside', equipment: ['X'], duration: { value: 2, unit: 'h', calendar: 'working' }, needs: [{ anyOf: ['ops'], amount: 1 }] },
+      { edit: 'job', key: 'X-TAG', needs: [{ anyOf: ['ops'], amount: 1 }] },
+    ] } })
+    expect(work.status).toBe(200)
+    // The tag-out got its crew in the same list, so it is the planner's; the test is still a draft.
+    expect((await harness.store.read(harness.workspaceId, plan.id)).drafts).toEqual(['X-RTS'])
+    await harness.call('planning.plan.edit', { resource: plan.id, expectedRevision: 2, input: { edits: [{ edit: 'job', key: 'X-RTS', needs: [{ anyOf: ['ops'], amount: 1 }] }] } })
+    expect((await harness.store.read(harness.workspaceId, plan.id)).drafts).toBeUndefined()
+    const removeTag = { edits: [{ edit: 'remove', what: 'job', key: 'X-TAG' }] }
+    expect(error(await harness.call('planning.plan.edit', { resource: plan.id, expectedRevision: 3, input: removeTag }))).toEqual([409, 'needs_authority'])
   })
 
   test('an Assistant deletes only at the revision it read; a person\'s delete card needs none (adversary item 24)', async () => {
@@ -130,7 +190,7 @@ describe('refusals name their cause and stay within 4 KB', () => {
       const big = await small.create('train-a-work-week')
       const refused = await small.call('planning.plan.generate', { resource: big.id, input: {}, expectedRevision: 1 })
       expect(error(refused)).toEqual([413, 'above_certified_size'])
-      expect(refused.body.error.message).toBe(`This plan has ${jobsPerSolve(trainA)} jobs. Planning is certified for plans of up to 1 jobs (test plans); larger plans wait for the owner's decision.`)
+      expect(refused.body.error.message).toBe(`This plan needs ${jobsPerSolve(trainA)} jobs in one solve. Measured for plans of up to 1 jobs (test plans); larger plans wait for the owner's decision.`)
       expect(refused.body.error.message).not.toContain(testCertifiedSize.evidence)   // the evidence is detail, never in the refusal
     } finally { await small.close() }
   })

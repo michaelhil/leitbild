@@ -180,7 +180,7 @@ export const readiness = (plan: Plan, context: { readonly staleOptions: readonly
   for (const job of inputs.jobs) {
     if (job.needs.length > 0) continue
     const working = job.duration.calendar === 'working'
-    items.push({ kind: working ? 'not-ready' : 'warning', code: 'no-crew', about: [job.key], blocks: working, ...(job.duration.origin.by === 'assumption' && job.kind !== 'work' ? { words: 'drafted' } : {}) })
+    items.push({ kind: working ? 'not-ready' : 'warning', code: 'no-crew', about: [job.key], blocks: working, ...(plan.drafts?.includes(job.key) === true ? { words: 'drafted' } : {}) })
   }
   for (const item of inputs.equipment) {
     const inside = inputs.jobs.filter(job => job.kind === 'work' && job.isolation === 'inside' && job.equipment.includes(item.key))

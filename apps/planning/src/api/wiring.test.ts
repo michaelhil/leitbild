@@ -2,7 +2,7 @@
 // the Train A Definition's inputs (the frozen flagship case, V1 and V2) and result sizes on twin v3. The demo
 // as a planner starts it, with World, is packages/integration-tests/tests/planning-train-a.test.ts.
 import { afterAll, describe, expect, test } from 'bun:test'
-import { planSchema, type Plan, type PlanInputs } from '../plan/schema.ts'
+import { planInputsSchema, planSchema, type Plan, type PlanInputs } from '../plan/schema.ts'
 import { createSolverPool } from '../solve/pool.ts'
 import { bundledPlanDefinitions } from '../definitions/index.ts'
 import { twinPlan, twinV3Options } from '../../tests/harness/twin-plan.ts'
@@ -106,7 +106,7 @@ describe('the operations on the real solver and checker', () => {
     // 330 jobs per solve against the measured 33: refused before any solve (a 330-job solve is the solver's, called directly).
     const generated = await harness.call('planning.plan.generate', { resource: id, input: { seconds: 8 }, expectedRevision: 1 })
     expect([generated.status, generated.body.error.code]).toEqual([413, 'above_certified_size'])
-    expect(generated.body.error.message).toBe('This plan has 330 jobs. Planning is certified for plans of up to 33 jobs (one system window); larger plans wait for the owner\'s decision.')
+    expect(generated.body.error.message).toBe('This plan needs 330 jobs in one solve. Measured for plans of up to 33 jobs (one system window); larger plans wait for the owner\'s decision.')
     small(generated)
     const sizes: Record<string, number> = { generate: generated.bytes }
     for (const section of ['summary', 'jobs', 'rules', 'crews', 'sources', 'options', 'history']) {
@@ -120,6 +120,40 @@ describe('the operations on the real solver and checker', () => {
     sizes.edit = edited.bytes
     console.log('Twin v3 result bytes:', JSON.stringify(sizes))
   }, 180_000)
+})
+
+describe('a lock judged on every violation it brings (adversary recheck 3)', () => {
+  // Pump X in group G, allowed out 72 h in one span: tag 10 h, work 50 h, test 10 h, chained, on one crew
+  // around the clock. Saved: tag 0-10 h, work 10-60 h, test 60-70 h, a 70 h span.
+  const at = '2026-11-16T00:00:00Z'
+  const planner = { by: 'planner' as const }
+  const job = (key: string, kind: 'tag-out' | 'work' | 'test', hours: number): PlanInputs['jobs'][number] => ({
+    key, title: `${kind} X`, kind, equipment: ['X'], isolation: kind === 'work' ? 'inside' : 'none', duration: { value: hours, unit: 'h', calendar: 'working', origin: planner },
+    durationWith: [], needs: [{ anyOf: ['ops'], amount: 1, handover: false }], continuous: true, checks: [], tags: [],
+  })
+  const inputs = planInputsSchema.parse({
+    settings: { title: 'Span check', timeZone: 'Europe/Oslo', window: { start: at, end: '2026-11-22T00:00:00Z' }, dataDate: at, grid: '30min', currency: 'NOK', run: null },
+    equipment: [{ key: 'X', label: 'Pump X', group: 'G', supportedBy: [] }], groups: [{ key: 'G', label: 'Group G' }],
+    calendars: [{ key: 'always', label: 'Always', weekly: [], periods: [{ start: at, end: '2026-11-22T00:00:00Z' }], except: [], source: planner }],
+    resources: [{ key: 'ops', label: 'Crew', kind: 'crew', count: 1, calendar: 'always', attributes: [], source: planner }],
+    purchases: [], methods: [], jobs: [job('T', 'tag-out', 10), job('W', 'work', 50), job('R', 'test', 10)],
+    links: [{ from: 'T', to: 'W', type: 'FS', lag: { value: 0, unit: 'h' } }, { from: 'W', to: 'R', type: 'FS', lag: { value: 0, unit: 'h' } }],
+    rules: [{ kind: 'span-limit', key: 'R2', group: 'G', limit: { value: 72, unit: 'h' }, singleEntry: true, words: 'Pump X back and tested within 72 h of its tag-out.', source: planner }],
+    goals: [{ metric: 'finish', tolerance: { value: 0, unit: 'h' } }], world: { refreshedAt: null, facts: [] },
+  })
+  test('the test fixed too early and lengthened to 14 h: every start its links allow breaks the 72 h span, so none is offered', async () => {
+    const id = await planOf(inputs)
+    const generated = await harness.call('planning.plan.generate', { resource: id, input: {}, expectedRevision: 1 })
+    expect(generated.body.result.options[0].status.word).toBe('validated feasible')
+    // Before the fix, the saved slot (60 h, links kept) was offered, though there the test ends at 74 h.
+    const preview = await harness.call('planning.plan.edit', { resource: id, input: { preview: true, edits: [{ edit: 'job', key: 'R', lock: '2026-11-16T20:00:00Z', duration: { value: 14 } }] } })
+    expect(preview.status).toBe(200)
+    expect(preview.body.result.preview.nearestAllowed).toBeUndefined()
+    expect(preview.body.result.preview.consequence).toContain('No start for test X keeps every rule with the other jobs where the plan has them.')
+    // Lengthened only to 12 h, the saved slot keeps the span (72 h): it is offered.
+    const fits = await harness.call('planning.plan.edit', { resource: id, input: { preview: true, edits: [{ edit: 'job', key: 'R', lock: '2026-11-16T20:00:00Z', duration: { value: 12 } }] } })
+    expect(fits.body.result.preview.nearestAllowed).toBe('2026-11-18T12:00:00.000Z')
+  }, 120_000)
 })
 
 describe("lane K's bound check through the real checker port", () => {

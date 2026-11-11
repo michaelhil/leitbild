@@ -187,8 +187,19 @@ export const unconfirmedAsBestFound = (status: Status, goals: readonly number[])
   return { ...status, goals: status.goals.map(goal => goal.goal >= from && goal.word === 'proven optimal' ? { word: 'best found under budget' as const, goal: goal.goal, value: goal.value, unit: goal.unit } : goal) }
 }
 
-/** Job keys saved in any baseline of the plan. */
-const baselinedJobs = (plan: Plan): ReadonlySet<string> => new Set(plan.baselines.flatMap(baseline => baseline.inputs.jobs.map(job => job.key)))
+/** The plan's drafted brackets for applyEdits. */
+const draftsOf = (plan: Plan): ReadonlySet<string> => new Set(plan.drafts ?? [])
+/** The plan with its drafted brackets as given: the list is absent when there are none. */
+export const withDrafts = (plan: Plan, drafts: readonly string[]): Plan => {
+  const { drafts: _previous, ...rest } = plan
+  return drafts.length === 0 ? rest : { ...rest, drafts: [...drafts] }
+}
+
+/** An Assistant never gives authority, even on an edit that weakens nothing (adversary recheck 2). */
+const refuseAgentAuthorityField = (authority: unknown, access: AccessContext): void => {
+  if (authority === undefined || access.actor.kind !== 'ai') return
+  throw planningError(409, 'needs_person', 'Only a person gives authority, in the plan screen: send the edit without it, or ask them to make the change.')
+}
 
 /** The structured status the Assistant reads: the stored words, goals in order, and a cause only for a proof. */
 export const statusOut = (status: Status): StatusOut => {
@@ -384,7 +395,9 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
         default: return violation.code.replaceAll('-', ' ')
       }
     })
-    const distinct = [...new Set(named)]
+    // A broken rule is said first: it is what a planner weighs; a crew clash or a link follows from the times.
+    const ruled = (index: number) => inputs.rules.some(rule => rule.key === (violations[index]!.code === 'protected-equipment' ? violations[index]!.about[1] : violations[index]!.about[0])) ? 0 : 1
+    const distinct = [...new Set(named.map((name, index) => ({ name, rank: ruled(index), index })).sort((left, right) => left.rank - right.rank || left.index - right.index).map(entry => entry.name))]
     return distinct.length <= 2 ? distinct.join(' and ') : `${distinct.slice(0, 2).join(', ')} and ${distinct.length - 2} more`
   }
 
@@ -464,15 +477,19 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
     edit: async (workspaceId: WorkspaceId, planId: string, input: z.infer<typeof editInputSchema>, expectedRevision: number | undefined, access: AccessContext): Promise<WriteResult> => {
       const at = now()
       const by = storedActor(access)
+      refuseAgentAuthorityField(input.authority, access)
       if (input.preview === true) {
         const plan = await readGuarded(workspaceId, planId, { expectedRevision, required: false })
         // An edit that is invalid in itself is refused in a preview exactly as on save (walk 2, R2-4): the
         // same 4xx, never only preview violations. Problems and violations of a valid edit do not refuse it.
-        const outcome: EditOutcome = applyEdits(plan.inputs, input.edits, { now: at, by, baselined: baselinedJobs(plan) })
-        const previewed: Plan = { ...plan, inputs: outcome.inputs }
+        const outcome: EditOutcome = applyEdits(plan.inputs, input.edits, { now: at, by, drafts: draftsOf(plan) })
+        const previewed: Plan = withDrafts({ ...plan, inputs: outcome.inputs }, outcome.drafts)
         const weakens = [...new Set(outcome.weakens.flatMap(weakening => weakening.about.slice(0, 1)))].slice(0, 6)
         const recommended = plan.options?.options.find(option => option.key === plan.options?.recommended)
-        const authority = outcome.weakens.length > 0 && input.authority === undefined ? ` Saving it needs a named person's agreement: ${outcome.weakens.slice(0, 2).map(weakening => weakeningWords(weakening, plan.inputs)).join(' ')}` : ''
+        // An Assistant is told what a save would answer it (adversary recheck 5): it never gives the agreement.
+        const authority = outcome.weakens.length === 0 || input.authority !== undefined ? ''
+          : access.actor.kind === 'ai' ? ' A person must make this change in the plan screen: ask them.'
+            : ` Saving it needs a named person's agreement: ${outcome.weakens.slice(0, 2).map(weakening => weakeningWords(weakening, plan.inputs)).join(' ')}`
         if (recommended === undefined || recommended.rows.length === 0) {
           return writeResult(previewed, changeLines(outcome.changes, outcome.inputs), { preview: { saved: false, consequence: `Not saved.${authority} No schedule to re-time yet.`.trim(), violations: [], weakens } })
         }
@@ -483,10 +500,12 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
         const zone = outcome.inputs.settings.timeZone
         // A lock's gap is measured against the saved option (walk 2, R2-5): lane K's findings for the locked
         // job with every other job where the plan on screen has it, in place of the re-timed findings about it.
-        const locked = timed.nearestAllowed?.job ?? timed.lockFindings?.[0]?.about.find(key => input.edits.some(edit => edit.edit === 'job' && edit.key === key && edit.lock !== undefined))
+        const lockedKeys = input.edits.flatMap(edit => edit.edit === 'job' && typeof edit.lock === 'string' ? [edit.key] : [])
+        const locked = timed.nearestAllowed?.job ?? (lockedKeys.length === 1 ? lockedKeys[0] : undefined)
         const findings = timed.lockFindings === undefined || timed.lockFindings.length === 0 ? timed.violations
           : [...timed.lockFindings, ...timed.violations.filter(violation => locked === undefined || !violation.about.includes(locked))]
-        const nearest = timed.nearestAllowed === undefined ? '' : ` The nearest allowed start for ${nameOf(outcome.inputs, timed.nearestAllowed.job)} is ${timeWords(timed.nearestAllowed.at, zone)}.`
+        const nearest = timed.nearestAllowed !== undefined ? ` The nearest allowed start for ${nameOf(outcome.inputs, timed.nearestAllowed.job)} is ${timeWords(timed.nearestAllowed.at, zone)}.`
+          : locked !== undefined && (timed.lockFindings?.length ?? 0) > 0 ? ` No start for ${nameOf(outcome.inputs, locked)} keeps every rule with the other jobs where the plan has them.` : ''
         // A valid change is saved even when this option cannot keep a rule: every option made before it goes
         // out of date, and Generate makes new ones (walk 2, R2-4).
         const consequence = findings.length > 0 ? `Not saved yet. This option would break ${retimingBreaks(findings, outcome.inputs)}; generate new options after saving.${nearest}${authority}`
@@ -503,19 +522,19 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
       // unread, and the Workspace-scoped planning.sources.refresh reads them (the screen calls it next).
       const guard = { expectedRevision, required: true }
       const before = await readGuarded(workspaceId, planId, guard)
-      const draft = applyEdits(before.inputs, input.edits, { now: at, by, baselined: baselinedJobs(before) })
+      const draft = applyEdits(before.inputs, input.edits, { now: at, by, drafts: draftsOf(before) })
       refuseAgentAuthority(draft.weakens, access)
       requireAuthority(draft.weakens, input.authority, before.inputs)
       let changes: readonly ChangeRecord[] = []
       const saved = await store.update(workspaceId, planId, guard, plan => {
-        const outcome = applyEdits(plan.inputs, input.edits, { now: at, by, baselined: baselinedJobs(plan) })
+        const outcome = applyEdits(plan.inputs, input.edits, { now: at, by, drafts: draftsOf(plan) })
         refuseAgentAuthority(outcome.weakens, access)
         requireAuthority(outcome.weakens, input.authority, plan.inputs)
         changes = outcome.changes
         if (outcome.changes.length === 0) return plan
         const revision = plan.revision + 1
         return {
-          ...plan, revision, updatedAt: at, inputs: outcome.inputs,
+          ...withDrafts(plan, outcome.drafts), revision, updatedAt: at, inputs: outcome.inputs,
           ...appendChange(plan, {
             at, by, revision, summary: changeSummary(outcome.changes, outcome.inputs), kinds: editKinds(input.edits),
             ...(input.reason === undefined ? {} : { reason: input.reason }),
@@ -573,8 +592,9 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
         if (!requireFresh(plan, option).baselineAllowed) throw planningError(409, 'option_stale', `Option ${option.label} no longer re-checks as feasible; generate again`, { about: [option.key] })
         if (plan.baselines.length >= maxBaselines) throw planningError(409, 'baseline_limit', `This plan already keeps ${plan.baselines.length} baselines, the most a plan may keep`, { maxBaselines })
         const number = Math.max(0, ...plan.baselines.map(baseline => Number(baseline.key.replace(/^B/, '')) || 0)) + 1
+        // A baseline makes every drafted bracket the plan's own: removing one then needs authority.
         return {
-          ...plan, updatedAt: at,
+          ...withDrafts(plan, []), updatedAt: at,
           baselines: [...plan.baselines, { key: `B${number}`, name: input.name, ...(input.note === undefined ? {} : { note: input.note }), at, by, option: structuredClone(option), inputs: structuredClone(plan.inputs) }],
           ...appendChange(plan, { at, by, revision: plan.revision, summary: clip(`Baseline '${input.name}' from ${option.label}`, 240), kinds: [] }),
         }

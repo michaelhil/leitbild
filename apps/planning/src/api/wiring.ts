@@ -101,13 +101,18 @@ const lockAgainstSaved = (inputs: PlanInputs, option: Option, index: CompileInde
     const moved = dateSchedule(prep, index, { start, mode: modes }).find(row => row.job === job.key)!
     return option.rows.map(row => (row.job === job.key ? moved : row))
   }
-  const about = (violation: { readonly about: readonly string[] }) => violation.about.includes(job.key)
-  const atLock = rowsWith(fixed.start, fixed.mode)
-  const findings = atLock === undefined ? [] : checkPlan(inputs, option.variant, atLock).violations.filter(about).map(violation => ({ code: violation.code, about: violation.about, words: violation.words }))
-  if (findings.length === 0) return { job: job.key, findings }
-  // Without the lock: the nearest start where nothing about the job breaks against the saved plan.
+  // Judged on every violation the moved job brings that the saved plan does not have (adversary recheck 3):
+  // a span-limit or keep-in-service finding names only its rule and group, never the job, yet the move
+  // causes it. A finding that names the job is always the job's own.
   const free = { ...inputs, jobs: inputs.jobs.map(entry => (entry.key === job.key ? (({ lock: _lock, ...rest }) => rest)(entry) : entry)) }
-  const nearest = nearestFit(prep, saved, a, fixed.start, t => { const rows = rowsWith(t, saved.mode[a]!); return rows !== undefined && !checkPlan(free, option.variant, rows).violations.some(about) })
+  const identity = (violation: { readonly code: string; readonly about: readonly string[] }) => `${violation.code}\u0000${violation.about.join('\u0000')}`
+  const before = new Set(checkPlan(free, option.variant, option.rows).violations.filter(violation => !violation.about.includes(job.key)).map(identity))
+  const brought = (violation: { readonly code: string; readonly about: readonly string[] }) => violation.about.includes(job.key) || !before.has(identity(violation))
+  const atLock = rowsWith(fixed.start, fixed.mode)
+  const findings = atLock === undefined ? [] : checkPlan(inputs, option.variant, atLock).violations.filter(brought).map(violation => ({ code: violation.code, about: violation.about, words: violation.words }))
+  if (findings.length === 0) return { job: job.key, findings }
+  // Without the lock: the nearest start where the job brings nothing new against the saved plan.
+  const nearest = nearestFit(prep, saved, a, fixed.start, t => { const rows = rowsWith(t, saved.mode[a]!); return rows !== undefined && !checkPlan(free, option.variant, rows).violations.some(brought) })
   return { job: job.key, findings, ...(nearest < 0 ? {} : { nearest: new Date(index.origin + nearest * index.slotMs).toISOString() }) }
 }
 
@@ -152,7 +157,10 @@ export const createRealSolver = (pool: SolverPool): SolverPort => ({
     const lost = decoded.finish.findIndex((finish, a) => index.jobs[a] !== null && finish >= prep.H)
     if (lost >= 0) throw planningError(409, 'option_stale', `After this edit ${nameOf(inputs, index.jobs[lost]!)} has no time left in the plan's horizon; generate again`, { about: [index.jobs[lost]!] })
     const schedule = { start: decoded.start, mode: decoded.mode }
-    const rows = withFloat(dateSchedule(prep, index, schedule), totalFloat(prep, index, schedule, decoded.penalty > 0), index)
+    // A preview may show an edit that breaks a limit in every schedule (a test lengthened past the span
+    // limit), with no repair penalty: float is measured as for an overrun, which is the same on a schedule
+    // that keeps every limit; the check names the break.
+    const rows = withFloat(dateSchedule(prep, index, schedule), totalFloat(prep, index, schedule, true), index)
     const check = checkPlan(inputs, option.variant, rows)
     const lock = lockAgainstSaved(inputs, option, index, prep, saved)
     const result = {

@@ -59,7 +59,7 @@ describe('Needs your attention', () => {
     const refusal = attentionCards(large, contextOf(large)).find(card => card.title === 'Too large for the certified size.')!
     // The evidence is for reviewers; the card says the size in words only (maint's walk G2).
     // The refusal in planner words, jobs counted per solve (after method selection).
-    expect(refusal.text).toBe(`This plan has ${jobsPerSolve(planned.inputs)} jobs. Planning is certified for plans of up to ${size.maxJobs} jobs (single-train work weeks); larger plans wait for the owner's decision.`)
+    expect(refusal.text).toBe(`This plan needs ${jobsPerSolve(planned.inputs)} jobs in one solve. Measured for plans of up to ${size.maxJobs} jobs (single-train work weeks); larger plans wait for the owner's decision.`)
     expect(certifiedSizeWords(size)).toBe('Certified plan size: pending the owner\'s decision')
   })
 })
