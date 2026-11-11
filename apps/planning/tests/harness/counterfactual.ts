@@ -19,38 +19,74 @@ interface Relaxed { readonly inputs: PlanInputs; readonly variant: CheckVariant 
 
 const always = { days: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as Array<'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun'>, from: '00:00', to: '00:00' }
 
+/**
+ * The order from `first` to `second` lifted: its explicit links removed and any derived order between them
+ * undone (bracketing, tag before test, support order), since an explainer names both as "waits for".
+ */
+const liftOrder = (current: Relaxed, first: string, second: string): Relaxed | string => {
+  let { inputs } = current
+  const { variant } = current
+  const explicit = inputs.links.some(link => link.from === first && link.to === second)
+  if (explicit) inputs = { ...inputs, links: inputs.links.filter(link => !(link.from === first && link.to === second)) }
+  const from = inputs.jobs.find(candidate => candidate.key === first), to = inputs.jobs.find(candidate => candidate.key === second)
+  if (from === undefined || to === undefined) return `no jobs ${first} and ${second}`
+  let derived = false
+  const shared = to.equipment.filter(item => from.equipment.includes(item))
+  if (shared.length > 0) {
+    const unbracket = (target: string) => inputs.jobs.map(candidate => candidate.key === target ? { ...candidate, isolation: 'none' as const } : candidate)
+    if (from.kind === 'tag-out' && to.kind === 'work' && to.isolation === 'inside') { inputs = { ...inputs, jobs: unbracket(to.key) }; derived = true }
+    else if (from.kind === 'work' && from.isolation === 'inside' && to.kind === 'test') { inputs = { ...inputs, jobs: unbracket(from.key) }; derived = true }
+    else if (from.kind === 'tag-out' && to.kind === 'test') { inputs = { ...inputs, jobs: inputs.jobs.map(candidate => candidate.key === to.key ? { ...candidate, equipment: candidate.equipment.filter(item => !shared.includes(item)) } : candidate) }; derived = true }
+  }
+  if (from.kind === 'test' && to.kind === 'test') {
+    inputs = { ...inputs, equipment: inputs.equipment.map(item => to.equipment.includes(item.key) ? { ...item, supportedBy: [] } : item) }
+    derived = true
+  }
+  return explicit || derived ? { inputs, variant } : `no link or derived order from ${first} to ${second}`
+}
+
 /** The inputs with one cause lifted, or why it cannot be lifted. */
 export const relax = (current: Relaxed, cause: Cause, job: string): Relaxed | string => {
   const { inputs, variant } = current
   const [first, second] = cause.about
   switch (cause.kind) {
     case 'link': {
-      if (first === undefined || second === undefined) return 'a link cause names both jobs'
-      const explicit = inputs.links.some(link => link.from === first && link.to === second)
-      if (explicit) return { variant, inputs: { ...inputs, links: inputs.links.filter(link => !(link.from === first && link.to === second)) } }
-      // a derived relation: bracketing, tag before test, or support order
-      const from = inputs.jobs.find(candidate => candidate.key === first), to = inputs.jobs.find(candidate => candidate.key === second)
-      if (from === undefined || to === undefined) return `no jobs ${first} and ${second}`
-      const shared = to.equipment.filter(item => from.equipment.includes(item))
-      if (shared.length > 0) {
-        const unbracket = (target: string) => inputs.jobs.map(candidate => candidate.key === target ? { ...candidate, isolation: 'none' as const } : candidate)
-        if (from.kind === 'tag-out' && to.kind === 'work') return { variant, inputs: { ...inputs, jobs: unbracket(to.key) } }
-        if (from.kind === 'work' && to.kind === 'test') return { variant, inputs: { ...inputs, jobs: unbracket(from.key) } }
-        if (from.kind === 'tag-out' && to.kind === 'test') return { variant, inputs: { ...inputs, jobs: inputs.jobs.map(candidate => candidate.key === to.key ? { ...candidate, equipment: candidate.equipment.filter(item => !shared.includes(item)) } : candidate) } }
+      // The explainer names the predecessors (its 'about'); the successor is the job explained. A pair
+      // [from, to] is read the same way. Each named predecessor's link, or derived order, is lifted.
+      const preds = cause.about.filter(key => key !== job)
+      if (preds.length === 0) return 'a link cause names no predecessor'
+      let next: Relaxed = current
+      for (const from of preds) {
+        const lifted = liftOrder(next, from, cause.about.length === 2 && cause.about[1] !== job ? cause.about[1]! : job)
+        if (typeof lifted === 'string') return lifted
+        next = lifted
       }
-      if (from.kind === 'test' && to.kind === 'test') {
-        return { variant, inputs: { ...inputs, equipment: inputs.equipment.map(item => to.equipment.includes(item.key) ? { ...item, supportedBy: [] } : item) } }
-      }
-      return `no link or derived order from ${first} to ${second}`
+      return next
     }
     case 'crew': case 'tool': {
       if (first === undefined || !inputs.resources.some(resource => resource.key === first)) return `no resource ${first}`
       return { variant, inputs: { ...inputs, resources: inputs.resources.map(resource => { if (resource.key !== first) return resource; const { maxJobs: _limit, ...rest } = resource; return { ...rest, count: resource.count + 1 } }) } }
     }
     case 'shift': {
-      const calendar = inputs.calendars.find(candidate => candidate.key === first)?.key ?? inputs.resources.find(resource => resource.key === first)?.calendar
-      if (calendar === undefined) return `no calendar or resource ${first}`
-      return { variant, inputs: { ...inputs, calendars: inputs.calendars.map(candidate => candidate.key === calendar ? { ...candidate, weekly: [always], except: [] } : candidate) } }
+      // The named resources work around the clock for this job only: a copy of each, on duty always, is
+      // added to the job's needs, so every other job keeps its calendars ("everything else fixed").
+      const named = cause.about.filter(key => inputs.resources.some(resource => resource.key === key))
+      if (named.length === 0) return `no resource among ${cause.about.join(', ')}`
+      const calendar = `${job}.around-the-clock`
+      const copies = named.map(key => ({ ...inputs.resources.find(resource => resource.key === key)!, key: `${key}.${job}.on-duty`, calendar }))
+      return {
+        variant,
+        inputs: {
+          ...inputs,
+          calendars: [...inputs.calendars, { key: calendar, label: 'Around the clock', weekly: [always], periods: [], except: [], source: { by: 'planner' as const } }],
+          resources: [...inputs.resources, ...copies.map(({ maxJobs: _limit, ...copy }) => copy)],
+          jobs: inputs.jobs.map(candidate => candidate.key !== job ? candidate : {
+            ...candidate,
+            needs: candidate.needs.map(need => ({ ...need, anyOf: [...need.anyOf, ...named.filter(key => need.anyOf.includes(key)).map(key => `${key}.${job}.on-duty`)].slice(0, 8) })),
+            durationWith: [...candidate.durationWith, ...candidate.durationWith.filter(entry => named.includes(entry.resource)).map(entry => ({ ...entry, resource: `${entry.resource}.${job}.on-duty` }))].slice(0, 16),
+          }),
+        },
+      }
     }
     case 'availability': case 'span-limit': {
       if (first === undefined || !inputs.rules.some(rule => rule.key === first)) return `no rule ${first}`
