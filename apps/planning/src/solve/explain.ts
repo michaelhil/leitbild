@@ -5,6 +5,10 @@
 // carries its float. Prose is rendered elsewhere from these items.
 import type { z } from 'zod'
 import type { explainResultSchema } from '../api/contract.ts'
+import type { Certificate, PlanInputs } from '../plan/schema.ts'
+import { gridSlotMs } from '../time/units.ts'
+import { localParts } from '../time/zone.ts'
+import type { SpanRefusal } from './bounds.ts'
 import type { CompileIndex } from './compile.ts'
 import { ffHolds, finishOf, makeDecoder, progressAt, workedSlots, type Prepared } from './decode.ts'
 import type { Float } from './float.ts'
@@ -143,3 +147,66 @@ export const makeExplainer = (ctx: ExplainContext) => {
 
   return { whyStart: (a: number): ExplainItem => { const { next: _next, ...item } = whyStart(a); return item }, finishChain }
 }
+
+// ───────────── refusals in planner words ─────────────
+
+const weekday = { sun: 'Sun', mon: 'Mon', tue: 'Tue', wed: 'Wed', thu: 'Thu', fri: 'Fri', sat: 'Sat' } as const
+/** "Thu 09:00" in the plan's zone (UTC when the plan has none). */
+export const localTime = (instant: string, zone: string | null): string => {
+  const parts = localParts(zone ?? 'UTC', Date.parse(instant))
+  return `${weekday[parts.weekday]} ${String(parts.hour).padStart(2, '0')}:${String(parts.minute).padStart(2, '0')}`
+}
+const hoursText = (value: number): string => `${Number.isInteger(value) ? value : value.toFixed(1)} h`
+const list = (items: readonly string[]): string => (items.length <= 1 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`)
+const clip = (line: string): string => (line.length <= 240 ? line : `${line.slice(0, 237)}...`)
+
+/**
+ * A proven-infeasible refusal in planner words and hours, generated from the certificate (and, for a
+ * span limit, the least span bounds() found). Never a raw propagation fact.
+ */
+export const refusalLines = (cause: Certificate, inputs: PlanInputs, span?: SpanRefusal): string[] => {
+  const zone = inputs.settings.timeZone
+  const slotMs = gridSlotMs[inputs.settings.grid]
+  const lastStart = (to: string) => localTime(new Date(Date.parse(to) - slotMs).toISOString(), zone)
+  const title = (key: string) => inputs.jobs.find(job => job.key === key)?.title ?? key
+  const job = (key: string) => inputs.jobs.find(entry => entry.key === key)
+  const crew = (key: string) => inputs.resources.find(resource => resource.key === key)?.label ?? key
+  const ruleWords = (key: string) => inputs.rules.find(entry => entry.key === key)?.words ?? key
+  const step = (entry: ChainStepText) => clip(`- ${title(entry.job)}: ${localTime(entry.start, zone)} to ${localTime(entry.finish, zone)}${job(entry.job)?.continuous ? ', unbroken' : ''}`)
+  if (cause.kind === 'chain') {
+    return [
+      clip(`Not possible: ${cause.jobs.length} jobs must run one after another and need ${hoursText(cause.workHours)} of work, but from ${localTime(cause.from, zone)} to ${localTime(cause.by, zone)} their crews and tools are on duty together for only ${hoursText(cause.availableHours)}.`),
+      ...cause.jobs.map(key => clip(`- ${title(key)}: ${hoursText(job(key)?.duration.value ?? 0)}`)),
+    ].slice(0, 20)
+  }
+  if (cause.kind === 'energy') {
+    const resources = list(cause.resources.map(crew))
+    return [
+      clip(`Not possible: ${cause.span === undefined ? '' : `${ruleWords(cause.span)} `}In any such span starting between ${localTime(cause.from, zone)} and ${lastStart(cause.to)}, ${hoursText(cause.requiredHours)} of ${resources} work must fall inside it, but ${resources} can give at most ${hoursText(cause.availableHours)} there.`),
+      clip(`The work: ${list(cause.jobs.map(title))}.`),
+    ]
+  }
+  if (cause.kind === 'availability') {
+    return [clip(`Not possible: ${ruleWords(cause.rule)} ${list(cause.items)} must be out together between ${localTime(cause.from, zone)} and ${localTime(cause.to, zone)}.`)]
+  }
+  if (span !== undefined) {
+    const lines = [
+      clip(`Not possible: ${ruleWords(span.rule)} The shortest span this plan allows is ${hoursText(span.leastHours)}, against ${hoursText(span.limitHours)}: first tag-out ${localTime(span.firstOut, zone)}, last test passed ${localTime(span.lastBack, zone)}.`),
+      'What sets the last test, each job at its earliest:',
+      ...span.path.map(step),
+    ]
+    if (span.later !== undefined) {
+      const changed = span.later.path.filter(entry => !span.path.some(known => known.job === entry.job && known.start === entry.start))
+      lines.push(clip(`A later first tag-out does not help: from ${localTime(span.later.firstOut, zone)} the span is ${hoursText(span.later.hours)}, because:`), ...(changed.length > 0 ? changed : span.later.path).map(step))
+    }
+    if (span.alsoProven?.kind === 'energy') {
+      const energy = span.alsoProven
+      lines.push(clip(`Also: in any such span starting between ${localTime(energy.from, zone)} and ${lastStart(energy.to)}, ${hoursText(energy.requiredHours)} of ${list(energy.resources.map(crew))} work must fit, and only ${hoursText(energy.availableHours)} exist.`))
+    }
+    return lines.length <= 20 ? lines : [...lines.slice(0, 19), lines.at(-1)!]
+  }
+  const first = cause.steps.at(0)
+  return [clip(`Not possible: ${first === undefined ? 'the plan' : title(first.job)} cannot fit ${first?.via === 'due' ? 'before its due time' : first?.via === 'release' ? 'after its release' : first?.via === 'lock' ? 'at its locked start' : 'inside the plan window'}, after ${list(cause.steps.slice(1).map(entry => title(entry.job)))}.`)]
+}
+
+type ChainStepText = { readonly job: string; readonly start: string; readonly finish: string }

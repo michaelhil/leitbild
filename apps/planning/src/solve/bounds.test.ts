@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { certificateSchema } from '../plan/schema.ts'
 import { bounds, propagate } from './bounds.ts'
+import { refusalLines } from './explain.ts'
 import { compile, type SubSolve } from './compile.ts'
 import { prepare } from './decode.ts'
 import caseJson from './fixtures/train-a-case-v0.2.json'
@@ -34,26 +35,39 @@ describe('V1 and V2 are proven infeasible with their cause', () => {
     expect(compiled.index.dropped.map(entry => entry.code)).toEqual(compiled.index.dropped.map(() => 'adds_crew_hours'))
   })
 
-  test('V1 (rebuild, days only): the SW A chain needs more work than its day shifts hold', () => {
+  test('V1 (rebuild, days only): the SW A chain needs more work than crew and crane hours hold', () => {
     const { result } = solveBounds(daysOnly('rebuild'))
-    // The chain: disconnect, motor out, pump out, rebuild, pump in, motor in, reconnect, one after another.
-    const chain = ['SWA-MOTOR-DISC', 'SWA-MOTOR-OUT', 'SWA-PUMP-OUT', 'SWA-REBUILD', 'SWA-PUMP-IN', 'SWA-MOTOR-IN', 'SWA-MOTOR-CONN']
-    // From: SW A tagged at the window start (3 h, Mon 07:00-10:00), so disconnecting starts Mon 10:00.
-    // By: reconnect is a 2 h continuous day-shift job that must end before SW A's 3.5 h test ends by
-    // Sat 07:00; its latest finish is the end of Friday's shift, Fri 15:00.
-    // Available: Mon 10:00-15:00 = 5 h, plus Tue to Fri 4 x 8 h = 32 h, so 37 h. Nights and overtime do not exist.
+    // The chain from the crane's arrival: motor out, pump out, rebuild, pump in, motor in, reconnect.
+    const chain = ['SWA-MOTOR-OUT', 'SWA-PUMP-OUT', 'SWA-REBUILD', 'SWA-PUMP-IN', 'SWA-MOTOR-IN', 'SWA-MOTOR-CONN']
+    // From: the crane arrives Tue 07:00. By: reconnect is a 2 h unbroken day-shift job that must end
+    // before SW A's test can end by Sat 07:00, so it ends by Friday's shift end, Fri 15:00.
+    // Available: the jobs' crews and the crane are on duty together in the day shifts Tue to Fri, 4 x 8 h.
     expect(result.certificate).toEqual({
-      kind: 'chain', jobs: chain, workHours: hoursOf(chain), calendars: ['day', 'crane'], availableHours: 5 + 4 * 8,
-      from: iso('2026-11-16T10:00:00'), by: iso('2026-11-20T15:00:00'),
+      kind: 'chain', jobs: chain, workHours: hoursOf(chain), calendars: ['day', 'crane'], availableHours: 4 * 8,
+      from: iso('2026-11-17T07:00:00'), by: iso('2026-11-20T15:00:00'),
     })
-    expect(hoursOf(chain)).toBe(38)
+    expect(hoursOf(chain)).toBe(37)
     expect(certificateSchema.safeParse(result.certificate).success).toBe(true)
+    const lines = refusalLines(result.certificate!, trainAInputs(), result.span)
+    expect(lines[0]).toBe('Not possible: 6 jobs must run one after another and need 37 h of work, but from Tue 07:00 to Fri 15:00 their crews and tools are on duty together for only 32 h.')
+    expect(lines.slice(1)).toEqual(chain.map(key => `- ${trainAInputs().jobs.find(job => job.key === key)!.title}: ${hoursOf([key])} h`))
   })
 
-  test('V2 (swap, days only): in any 72 h cooling-chain span the station mechanical work exceeds two crews', () => {
+  test('V2 (swap, days only): refused by time, with the span energy count as a second proof', () => {
     const { compiled, result } = solveBounds(daysOnly('swap'))
-    // Work that must lie inside the span: every station-mechanical job on a cooling-chain item that sits
-    // between a covering tag-out and test, read from the frozen case (10 jobs).
+    // By time. With no limit, the shortest cooling-chain span starts with SW A tagged Mon 11:00-14:00:
+    // the heads open Mon 14:00-15:00 and Tue 07:00-10:00; lancing starts after 2 h of opening (SS 2 h
+    // counts the opening's own work: Tue 08:00) and runs 8 day hours to Wed 08:00; the eddy-current test
+    // Wed 08:00-16:00; closing the heads Thu 07:00-11:00; then the tests one at a time: SW A 3.5 h to
+    // 14:30, CCW A 2.5 h to 17:00, RHR A 2.5 h to 19:30. Mon 11:00 to Thu 19:30 is 80.5 h, against 72 h.
+    // Tagging later cannot shorten it: SW A's motor must then be disconnected in Tuesday's shift, and
+    // the 5 h and 4 h lifts, unbroken in 8 h day shifts after it, each slip a day.
+    expect(result.certificate?.kind).toBe('temporal')
+    expect(result.span).toMatchObject({ rule: 'R2', limitHours: 72, leastHours: 80.5, firstOut: iso('2026-11-16T11:00:00'), lastBack: iso('2026-11-19T19:30:00') })
+    expect(result.span!.path.map(step => step.job)).toEqual(['SWA-TAG', 'CCWHXA-OPEN', 'CCWHXA-CLEAN', 'CCWHXA-ECT', 'CCWHXA-CLOSE', 'SWA-RTS', 'CCWA-RTS', 'RHRA-RTS'])
+    expect(result.span!.path.find(step => step.job === 'CCWHXA-CLEAN')!.start).toBe(iso('2026-11-17T08:00:00'))
+    // By energy, independently. Work that must lie inside the span: every station-mechanical job on a
+    // cooling-chain item between a covering tag-out and test, read from the frozen case (10 jobs).
     const group = frozen.functionGroups.find(entry => entry.id === 'COOL-A')!.members
     const inside = frozen.jobs.filter(job => group.includes(job.equipment) && job.kind === 'work' && (job.method === undefined || job.method === 'M2-swap')
       && job.id !== 'SWA-SPARE-PREP' && job.demands.some(demand => demand.resource === 'mech-station' || demand.anyOf?.includes('mech-station'))).map(job => job.id)
@@ -64,28 +78,31 @@ describe('V1 and V2 are proven infeasible with their cause', () => {
     // Available: any 72 h window starting Mon 21:00 to Tue 04:00 holds the Tue, Wed and Thu day shifts:
     // 2 crews x 3 x 8 h = 48 crew-hours. Hydrolancing could go to the contractor, but days only books no nights.
     //
-    // The first-out window, by hand:
+    // The first-out window, by hand (continuous jobs allowed to pause, a relaxation, so that the count
+    // is tested on every slot that time alone does not already rule out):
     //   Earliest Mon 21:00. The ECT runs 8 h inside Wed 07:00-19:00, so it ends no earlier than Wed 15:00;
     //   closing the heads (4 h day shift) ends Thu 11:00; then the tests, one at a time on the test team:
     //   SW A 3.5 h to 14:30, CCW A 2.5 h to 17:00, RHR A 2.5 h and HHSI A 1.5 h to 21:00. All back by
     //   Thu 21:00 within 72 h means the first tag no earlier than Mon 21:00.
     //   Latest Tue 04:00. The ECT must start by Wed 11:00, so hydrolancing (8 h day shift) ends by Wed 11:00
-    //   and starts by Tue 11:00; it starts 2 h after opening the heads (SS 2 h, case change C3), so opening
+    //   and starts by Tue 11:00; it starts after 2 h of opening (SS 2 h, case change C3), so opening
     //   starts by Tue 09:00; both tag-outs before it (SW A 3 h, CCW A 2 h) share the one work-control
     //   operator, so the first starts by Tue 04:00. (Under case v0.1's FS link this bound was Tue 02:00, the
     //   figure in design §6.4; the frozen v0.2 adds the 2 h SS lag.)
-    expect(result.certificate).toEqual({
+    expect(result.span!.alsoProven).toEqual({
       kind: 'energy', resources: ['mech-station'], jobs: expect.any(Array), requiredHours: hoursOf(inside) + spareInside, availableHours: 2 * 3 * 8,
       from: iso('2026-11-16T21:00:00'), to: iso('2026-11-17T04:30:00'), span: 'R2',
     })
-    const jobs = (result.certificate as { jobs: string[] }).jobs
+    const jobs = (result.span!.alsoProven as { jobs: string[] }).jobs
     expect(jobs.toSorted()).toEqual([...inside, 'SWA-SPARE-PREP'].toSorted())
-    expect(result.spanWindows[0]).toMatchObject({ rule: 'R2', feasibleStarts: 7 * 2 + 1 })   // Mon 21:00 to Tue 04:00 is 7 h: every half hour, both ends
     expect(certificateSchema.safeParse(result.certificate).success).toBe(true)
-    // The case's own stated reason also holds, independently: with the lifts uninterrupted, logic and
-    // calendars alone cannot keep the span within 72 h (after a tag at Mon 21:00 or later, disconnecting
-    // waits for Tuesday's shift and the 5 h and 4 h lifts each slip a day).
+    expect(certificateSchema.safeParse(result.span!.alsoProven).success).toBe(true)
+    // Logic and calendars alone, with the span limit as max-lags, also fail (the case's own reason).
     expect(propagate(prepare(compiled.problem)).ok).toBe(false)
+    const lines = refusalLines(result.certificate!, trainAInputs(), result.span)
+    expect(lines[0]).toBe(`Not possible: ${trainAInputs().rules.find(rule => rule.key === 'R2')!.words} The shortest span this plan allows is 80.5 h, against 72 h: first tag-out Mon 11:00, last test passed Thu 19:30.`)
+    expect(lines.at(-1)).toBe('Also: in any such span starting between Mon 21:00 and Tue 04:00, 49 h of Station mechanical crew work must fit, and only 48 h exist.')
+    expect(lines.every(line => line.length <= 240 && !/earliest start|latest start|slot/i.test(line))).toBe(true)
   })
 
   test('with crew hours allowed, neither method is refused by a bound', () => {

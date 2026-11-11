@@ -30,11 +30,31 @@ export interface SpanWindow {
   readonly feasibleStarts: number
 }
 
+/** One stretch of a refusal's chain: a job at its earliest, as logic and calendars place it. */
+export interface ChainStep { readonly job: string; readonly start: string; readonly finish: string }
+export interface SpanRefusal {
+  readonly rule: string
+  readonly limitHours: number
+  /** The least span possible with no limit, its first-out and last-back times, and the chain that sets the end. */
+  readonly leastHours: number
+  readonly firstOut: string
+  readonly lastBack: string
+  readonly path: readonly ChainStep[]
+  /** Tagging one slot later instead: the span then, and the chain that sets its end (why later does not help). */
+  readonly later?: { readonly firstOut: string; readonly lastBack: string; readonly hours: number; readonly path: readonly ChainStep[] }
+  readonly alsoProven?: Certificate
+}
+
 export interface BoundsResult {
   readonly certificate?: Certificate
   /** Per goal: a lower bound on the raw metric in internal units (no threshold applied), and its source. */
   readonly goals: ReadonlyArray<{ readonly value: number | readonly number[]; readonly source: BoundSource }>
   readonly spanWindows: readonly SpanWindow[]
+  /**
+   * For a refusal by a span limit: the least span logic and calendars allow without the limit, the
+   * first-out and last-back times that give it, and a second, independent proof when one exists.
+   */
+  readonly span?: SpanRefusal
   /** The resource whose work binds the finish most (crew energy), for "no plan found" answers. */
   readonly busiest?: { readonly resource: string; readonly finishBy: string; readonly loadShare: number }
 }
@@ -86,6 +106,37 @@ const latest = (prep: Prepared, a: number, m: number, hiS: number, hiF: number, 
   p = Math.min(p, k.prefix[Math.min(H, hiS + 1)]! - 1)
   if (p < 0) return [-1, -1]
   return [k.list[p]!, k.list[p + mode.work - 1]! + 1]
+}
+
+/**
+ * SS lags count the predecessor's own working time (decode.ts). The earliest slot by which a predecessor
+ * starting no earlier than `est` has done `lag` slots, over its usable modes: a sound lower bound, never
+ * earlier than the clock reading est + lag.
+ */
+const ssReady = (prep: Prepared, a: number, est: number, lag: number, modeOk: Uint8Array): number => {
+  if (lag <= 0) return est
+  let least = Infinity
+  prep.problem.activities[a]!.modes.forEach((mode, m) => {
+    if (!modeOk[m]) return
+    if (lag >= mode.work || mode.continuous) { least = Math.min(least, est + Math.min(lag, mode.work)); return }
+    const k = prep.cal[mode.calendar]!
+    const p = k.prefix[Math.min(prep.H, Math.max(0, est))]! + lag - 1
+    least = Math.min(least, p < k.list.length ? k.list[p]! + 1 : prep.H)
+  })
+  return least === Infinity ? est + lag : Math.max(est + lag, least)
+}
+/** The latest start of predecessor a that has done `lag` slots by `by`, over its usable modes (sound upper bound). */
+const ssLatest = (prep: Prepared, a: number, by: number, lag: number, modeOk: Uint8Array): number => {
+  if (lag <= 0) return by
+  let most = -Infinity
+  prep.problem.activities[a]!.modes.forEach((mode, m) => {
+    if (!modeOk[m]) return
+    if (lag >= mode.work || mode.continuous) { most = Math.max(most, by - Math.min(lag, mode.work)); return }
+    const k = prep.cal[mode.calendar]!
+    const p = k.prefix[Math.min(prep.H, Math.max(0, by))]! - lag
+    most = Math.max(most, p >= 0 ? k.list[p]! : -1)
+  })
+  return most === -Infinity ? by - lag : Math.min(by - lag, most)
 }
 
 /** Resources with at most one unit at any slot, and the activities that need them in every mode. */
@@ -192,7 +243,7 @@ export const propagate = (prep: Prepared, options: PropagationOptions = {}): Win
       let via: NonNullable<Windows['failure']>['via'] = 'release'
       for (const l of prep.preds[a]!) {
         if (l.type === 'FS' && eft[l.from]! + l.min > lo) { lo = eft[l.from]! + l.min; via = 'link' }
-        else if (l.type === 'SS' && est[l.from]! + l.min > lo) { lo = est[l.from]! + l.min; via = 'link' }
+        else if (l.type === 'SS') { const ready = ssReady(prep, l.from, est[l.from]!, l.min, modeOk[l.from]!); if (ready > lo) { lo = ready; via = 'link' } }
         else if (l.type === 'FF') ffLo = Math.max(ffLo, eft[l.from]! + l.min)
       }
       for (const s of useSpans ? prep.opensSpans[a]! : []) {
@@ -219,7 +270,7 @@ export const propagate = (prep: Prepared, options: PropagationOptions = {}): Win
       let hiF = Math.min(activity.deadline, cap?.[a] ?? H), hiS = H
       for (const l of prep.succs[a]!) {
         if (l.type === 'FS') hiF = Math.min(hiF, lst[l.to]! - l.min)
-        else if (l.type === 'SS') hiS = Math.min(hiS, lst[l.to]! - l.min)
+        else if (l.type === 'SS') hiS = Math.min(hiS, ssLatest(prep, a, lst[l.to]!, l.min, modeOk[a]!))
         else hiF = Math.min(hiF, lft[l.to]! - l.min)
       }
       for (const s of useSpans ? prep.closesSpans[a]! : []) {
@@ -305,9 +356,11 @@ export const chainCertificate = (prep: Prepared, windows: Windows, index: Compil
         available = 0
         for (let t = from; t < to; t++) if (calendars.some(c => prep.cal[c]!.pos[t]! >= 0)) available++
       }
-      // The most complete chain that proves it (most work), then the widest margin.
+      // The chain that runs to the latest finish, then the widest margin, then the most work: for V1
+      // the whole SW A sequence from the crane's arrival to the reconnect (37 h against 32 h).
       const margin = total[j]! - available
-      if (margin > 0 && (best === undefined || total[j]! > best.work || (total[j]! === best.work && margin > best.margin))) best = { margin, path: path.reverse(), work: total[j]!, available, from, to }
+      const wins = best === undefined || to > best.to || (to === best.to && (margin > best.margin || (margin === best.margin && total[j]! > best.work)))
+      if (margin > 0 && wins) best = { margin, path: path.reverse(), work: total[j]!, available, from, to }
     }
   }
   if (best === undefined) return undefined
@@ -467,6 +520,50 @@ const temporalSteps = (prep: Prepared, windows: Windows, index: CompileIndex): T
 }
 
 /**
+ * The least span logic and calendars allow for span s with no limit: the first-out slot that gives it, and
+ * the chain from that first tag-out to the last test back (each job set by the one before it).
+ */
+const leastSpan = (prep: Prepared, base: Windows, s: number, units: ReturnType<typeof unitResources>, help: Helpers, index: CompileIndex): Omit<SpanRefusal, 'rule' | 'limitHours' | 'alsoProven'> & { first: number } | undefined => {
+  const { problem, n, H } = prep
+  const openers = prep.spanOpeners[s]!, closers = prep.spanClosers[s]!
+  const at = (start: number): { length: number; windows: Windows } | undefined => {
+    const floor = new Int32Array(n)
+    for (const o of openers) floor[o] = start
+    const windows = propagate(prep, { floor, spans: false, units, help })
+    if (!windows.ok) return undefined
+    let back = 0
+    for (const c of closers) back = Math.max(back, windows.eft[c]!)
+    return { length: back - start, windows }
+  }
+  const chain = (windows: Windows): ChainStep[] => {
+    let a = closers.reduce((x, y) => (windows.eft[y]! > windows.eft[x]! ? y : x), closers[0]!)
+    const path = [a]
+    const openerSet = new Set(openers)
+    for (let hop = 0; hop < 40 && !openerSet.has(a); hop++) {
+      const implied = (l: NormalizedProblem['links'][number]) => (l.type === 'FS' ? windows.eft[l.from]! + l.min : l.type === 'SS' ? windows.est[l.from]! + l.min : -1)
+      const binding = prep.preds[a]!.filter(l => l.type !== 'FF').sort((x, y) => implied(y) - implied(x))[0]
+      if (binding === undefined) break
+      a = binding.from
+      path.push(a)
+    }
+    return path.reverse().map(b => ({ job: jobKey(problem, index, b), start: slotIso(index, windows.est[b]!), finish: slotIso(index, windows.eft[b]!) }))
+  }
+  let best: { start: number; length: number; windows: Windows } | undefined
+  let first = H, last = H
+  for (const o of openers) { first = Math.min(first, base.est[o]!); last = Math.min(last, base.lst[o]!) }
+  for (let start = first; start <= last; start++) {
+    const found = at(start)
+    if (found !== undefined && (best === undefined || found.length < best.length)) best = { start, ...found }
+  }
+  if (best === undefined) return undefined
+  const after = at(best.start + 1)
+  return {
+    first: best.start, leastHours: hours(index, best.length), firstOut: slotIso(index, best.start), lastBack: slotIso(index, best.start + best.length), path: chain(best.windows),
+    ...(after === undefined ? {} : { later: { firstOut: slotIso(index, best.start + 1), lastBack: slotIso(index, best.start + 1 + after.length), hours: hours(index, after.length), path: chain(after.windows) } }),
+  }
+}
+
+/**
  * All bounds of one compiled sub-solve: a certificate when one proves infeasibility, else per-goal
  * lower bounds on the raw metrics (goal units, no threshold) and the span windows found.
  */
@@ -496,17 +593,32 @@ export const bounds = (problem: NormalizedProblem, index: CompileIndex, prep: Pr
   // 2. Logic, releases, window and calendars alone (no span limit, no overload).
   const plain = propagate(prep, { spans: false, units: [], help })
   if (!plain.ok) return { certificate: temporalCertificate(prep, plain, index), goals: zeroGoals, spanWindows: [] }
-  // 3. Sliding-window span energy, on the relaxation where continuous jobs may pause.
+  // 3. A span limit no first-out slot can meet by time (logic, calendars, continuity, one at a time):
+  //    the refusal names the least span possible against the limit; an energy proof is kept beside it.
+  const unlimited = propagate(prep, { spans: false, units, help })
+  if (!unlimited.ok) return { certificate: temporalCertificate(prep, unlimited, index), goals: zeroGoals, spanWindows: [] }
   const relaxed = propagate(prep, { units, help, pausable: true })
-  if (relaxed.ok) {
-    for (let s = 0; s < problem.spans.length; s++) {
-      if (problem.spans[s]!.limit === undefined) continue
-      const scan = scanSpan(prep, relaxed, s, index, units, help, true)
-      const certificate = spanCertificate(s, scan)
-      if (certificate !== undefined) return { certificate, goals: zeroGoals, spanWindows: [scan.window] }
+  for (let s = 0; s < problem.spans.length; s++) {
+    const limit = problem.spans[s]!.limit
+    if (limit === undefined) continue
+    const byTime = scanSpan(prep, unlimited, s, index, units, help, false)
+    const energyScan = relaxed.ok ? scanSpan(prep, relaxed, s, index, units, help, true) : undefined
+    const energy = energyScan?.energy === undefined ? undefined : spanCertificate(s, { ...energyScan, allTemporal: false })
+    if (!byTime.allTemporal) {
+      if (energy !== undefined) return { certificate: energy, goals: zeroGoals, spanWindows: [energyScan!.window] }
+      continue
+    }
+    const least = leastSpan(prep, unlimited, s, units, help, index)
+    const rule = index.spans[s]!.rule ?? index.spans[s]!.id
+    const steps = least === undefined ? [{ job: jobKey(problem, index, prep.spanOpeners[s]![0]!), via: 'span-limit' as const }]
+      : [{ job: least.path[0]!.job, via: 'span-limit' as const }, ...least.path.slice(1).map(step => ({ job: step.job, via: 'link' as const }))]
+    const { first: _first, ...refusal } = least ?? { first: 0 }
+    return {
+      certificate: { kind: 'temporal', steps: steps.slice(0, 32) }, goals: zeroGoals, spanWindows: [byTime.window],
+      ...(least === undefined ? {} : { span: { rule, limitHours: hours(index, limit), ...(refusal as Omit<SpanRefusal, 'rule' | 'limitHours'>), ...(energy === undefined ? {} : { alsoProven: energy }) } }),
     }
   }
-  // 4. Everything together: span limits, overload, continuity.
+  // 4. Everything together: span limits as max-lags, overload, continuity.
   const global = propagate(prep, { units, help })
   if (!global.ok) return { certificate: temporalCertificate(prep, global, index), goals: zeroGoals, spanWindows: [] }
   const scans = problem.spans.map((_, s) => scanSpan(prep, global, s, index, units, help, false))
