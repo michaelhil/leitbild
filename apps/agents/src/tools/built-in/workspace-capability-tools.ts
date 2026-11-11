@@ -290,22 +290,78 @@ const compactResource = (resource: ModuleResourceDescriptor) => {
   return { ...descriptor, target: { kind: 'resource', ref }, operationCount: capabilityIds.length }
 }
 
-const textTerms = (value: string): ReadonlyArray<string> =>
-  [...new Set(value.toLowerCase().match(/[\p{L}\p{N}]+/gu)?.filter(term => term.length >= 2) ?? [])]
+// English function words, which say nothing about which operation is meant:
+// dropped from queries and operation text alike, so "the" selects nothing.
+// Words that carry a question's sense (why, when, up, down, out, off, not,
+// all) are not among them.
+const STOP_WORDS: ReadonlySet<string> = new Set([
+  'a', 'an', 'the', 'and', 'or', 'but', 'nor', 'of', 'to', 'in', 'on', 'at', 'for', 'from', 'by', 'with', 'without', 'about',
+  'into', 'onto', 'over', 'under', 'as', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'am',
+  'it', 'its', 'this', 'that', 'these', 'those', 'there', 'here', 'my', 'our', 'your', 'their', 'his', 'her',
+  'me', 'us', 'we', 'you', 'they', 'he', 'she', 'him', 'them', 'what', 'which', 'who', 'whom', 'whose', 'how',
+  'can', 'could', 'would', 'should', 'will', 'shall', 'may', 'might', 'must', 'do', 'does', 'did', 'done',
+  'has', 'have', 'had', 'having', 'let', 'please', 'just', 'also', 'so', 'then', 'than', 'too', 'very',
+  'any', 'some', 'each', 'every', 'such', 'own', 'same', 'other', 'only', 'more', 'most',
+])
 
-/** The words an operation is found by: its name (id and title) and everything said about it. */
-const operationTerms = (operation: ModuleCapabilityDescriptor): { readonly name: ReadonlySet<string>; readonly all: ReadonlySet<string> } => ({
-  name: new Set(textTerms(`${operation.id} ${operation.title}`)),
-  all: new Set(textTerms([
-    operation.id,
-    operation.title,
-    operation.description,
-    operation.moduleId,
-    operation.kind,
-    operation.risk,
-    ...(operation.searchTerms ?? []),
-  ].join(' '))),
-})
+const textTerms = (value: string): ReadonlyArray<string> =>
+  [...new Set(value.toLowerCase().match(/[\p{L}\p{N}]+/gu)?.filter(term => term.length >= 2 && !STOP_WORDS.has(term)) ?? [])]
+
+const undoubled = (word: string): string =>
+  /([b-df-hj-np-tv-z])\1$/.test(word) && !/(?:ll|ss|zz)$/.test(word) ? word.slice(0, -1) : word
+
+/**
+ * A word's light stem, so "plan", "plans", "planned" and "planning" meet: a
+ * plural -s, -es or -ies, then -ing or -ed (undoubling "planning" to "plan"),
+ * then a final -e. Words of three letters or fewer are their own stem.
+ */
+const stem = (word: string): string => {
+  if (word.length <= 3) return word
+  const singular = word.endsWith('ies') && word.length > 4 ? `${word.slice(0, -3)}y`
+    : word.endsWith('sses') || /(?:x|z|ch|sh)es$/.test(word) ? word.slice(0, -2)
+    : word.endsWith('s') && !/(?:ss|us|is)$/.test(word) ? word.slice(0, -1)
+    : word
+  const base = singular.endsWith('ing') && singular.length >= 6 ? undoubled(singular.slice(0, -3))
+    : singular.endsWith('ed') && singular.length >= 5 ? undoubled(singular.slice(0, -2))
+    : singular
+  return base.endsWith('e') && base.length > 3 ? base.slice(0, -1) : base
+}
+
+// What a word found in each field says about an operation: its name (id and
+// title; the id begins with its Module's id) most, the vocabulary its Module
+// lists for search less, its description least. Its kind and risk are not
+// searched: "write" or "query" names no operation.
+const FIELD_WEIGHTS = { name: 3, searchTerms: 2, description: 1 } as const
+type SearchField = keyof typeof FIELD_WEIGHTS
+const SEARCH_FIELDS = Object.keys(FIELD_WEIGHTS) as ReadonlyArray<SearchField>
+// A word found only through its stem ("plan" for "planning") counts half.
+const STEM_MATCH_WEIGHT = 0.5
+
+/** The words an operation is found by, and their stems, field by field. */
+interface OperationTerms {
+  readonly words: Readonly<Record<SearchField, ReadonlySet<string>>>
+  readonly stems: Readonly<Record<SearchField, ReadonlySet<string>>>
+  readonly all: ReadonlySet<string>
+  readonly allStems: ReadonlySet<string>
+}
+
+const operationTerms = (operation: ModuleCapabilityDescriptor): OperationTerms => {
+  const words = {
+    name: new Set(textTerms(`${operation.id} ${operation.title}`)),
+    searchTerms: new Set(textTerms((operation.searchTerms ?? []).join(' '))),
+    description: new Set(textTerms(operation.description)),
+  }
+  const stems = {
+    name: new Set([...words.name].map(stem)),
+    searchTerms: new Set([...words.searchTerms].map(stem)),
+    description: new Set([...words.description].map(stem)),
+  }
+  return {
+    words, stems,
+    all: new Set(SEARCH_FIELDS.flatMap(field => [...words[field]])),
+    allStems: new Set(SEARCH_FIELDS.flatMap(field => [...stems[field]])),
+  }
+}
 
 /**
  * An operation id passed as a query names that operation, exactly as
@@ -321,25 +377,53 @@ const isOperationIdQuery = (query: string): boolean => capabilityIdSchema.safePa
 const BM25_K1 = 1.2
 const BM25_B = 0.75
 
+/** A query's words an operation holds (as asked), its score, and how many of them its name holds. */
+interface QueryMatch {
+  readonly matched: ReadonlyArray<string>
+  readonly score: number
+  readonly nameMatches: number
+}
+
 /**
- * How well a query's words match a field of an operation, by Okapi BM25 over
- * the operations being searched: a rare word says a lot about which operation
- * is meant, a word every candidate shares ("world", a Pack's own name) almost
+ * How well a query's words match an operation, by Okapi BM25 over the
+ * operations being searched: a rare word says a lot about which operation is
+ * meant, a word every candidate shares ("world", a Pack's own name) almost
  * nothing, and a match in a large vocabulary (an operation listing every
- * action it invokes) less than one in a short description. An operation named
- * for the words asked for ranks first, then by all it says. Ranking only: any
- * matched word still selects an operation.
+ * action it invokes) less than one in a short description. Each word the
+ * operation holds adds its rarity times the weight of the best field holding
+ * it; a word it holds only through its stem adds half, by the stem's rarity.
+ * The sum is scaled by the share of the query's words it holds, so an
+ * operation holding all of them outranks one named for one of them. Ranking
+ * only: any matched word still selects an operation.
  */
-const bm25 = (operations: ReadonlyArray<ReadonlySet<string>>): ((terms: ReadonlySet<string>, matched: ReadonlyArray<string>) => number) => {
-  const frequency = new Map<string, number>()
-  for (const terms of operations) for (const term of terms) frequency.set(term, (frequency.get(term) ?? 0) + 1)
-  const averageSize = operations.reduce((sum, terms) => sum + terms.size, 0) / Math.max(1, operations.length)
-  const idf = (term: string): number => {
-    const count = frequency.get(term) ?? 0
-    return Math.log((operations.length - count + 0.5) / (count + 0.5) + 1)
+const bm25 = (operations: ReadonlyArray<OperationTerms>): ((terms: OperationTerms, words: ReadonlyArray<string>) => QueryMatch | undefined) => {
+  const wordFrequency = new Map<string, number>()
+  const stemFrequency = new Map<string, number>()
+  for (const terms of operations) {
+    for (const word of terms.all) wordFrequency.set(word, (wordFrequency.get(word) ?? 0) + 1)
+    for (const wordStem of terms.allStems) stemFrequency.set(wordStem, (stemFrequency.get(wordStem) ?? 0) + 1)
   }
-  return (terms, matched) => matched.reduce((sum, term) =>
-    sum + idf(term) * (BM25_K1 + 1) / (1 + BM25_K1 * (1 - BM25_B + BM25_B * terms.size / averageSize)), 0)
+  const averageSize = operations.reduce((sum, terms) => sum + terms.all.size, 0) / Math.max(1, operations.length)
+  const idf = (count: number): number => Math.log((operations.length - count + 0.5) / (count + 0.5) + 1)
+  const bestWeight = (fields: ReadonlyArray<SearchField>): number => Math.max(...fields.map(field => FIELD_WEIGHTS[field]))
+  // Only the operations counted are scored, so a word or stem one holds has a count.
+  return (terms, words) => {
+    const found = words.flatMap(word => {
+      const wordStem = stem(word)
+      const inName = terms.stems.name.has(wordStem)
+      const exact = SEARCH_FIELDS.filter(field => terms.words[field].has(word))
+      if (exact.length > 0) return [{ word, inName, weight: idf(wordFrequency.get(word)!) * bestWeight(exact) }]
+      const stemmed = SEARCH_FIELDS.filter(field => terms.stems[field].has(wordStem))
+      return stemmed.length === 0 ? [] : [{ word, inName, weight: STEM_MATCH_WEIGHT * idf(stemFrequency.get(wordStem)!) * bestWeight(stemmed) }]
+    })
+    if (found.length === 0) return undefined
+    const lengthFactor = (BM25_K1 + 1) / (1 + BM25_K1 * (1 - BM25_B + BM25_B * terms.all.size / averageSize))
+    return {
+      matched: found.map(entry => entry.word),
+      score: found.reduce((sum, entry) => sum + entry.weight * lengthFactor, 0) * found.length / words.length,
+      nameMatches: found.filter(entry => entry.inName).length,
+    }
+  }
 }
 
 const targetInputSchema = z.discriminatedUnion('kind', [
@@ -624,16 +708,10 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
           .filter(operation => moduleId === undefined || operation.moduleId === moduleId)
           .filter(operation => target === undefined || applicabilityFailure(operation, target, catalogs.resources.resources, catalogs.definitions.definitions) === undefined)
           .map(operation => ({ operation, terms: operationTerms(operation) }))
-        const nameRelevance = bm25(candidates.map(candidate => candidate.terms.name))
-        const relevance = bm25(candidates.map(candidate => candidate.terms.all))
+        const relevance = bm25(candidates.map(candidate => candidate.terms))
         const matches = new Map(candidates.map(({ operation, terms }) => [operation.id, queries.flatMap(query => {
-          const words = textTerms(query)
-          const matched = words.filter(term => terms.all.has(term))
-          return matched.length === 0 ? [] : [{
-            query, matched,
-            nameScore: nameRelevance(terms.name, words.filter(term => terms.name.has(term))),
-            score: relevance(terms.all, matched),
-          }]
+          const match = relevance(terms, textTerms(query))
+          return match === undefined ? [] : [{ query, ...match }]
         })]))
         const noSelector = operationIds.length === 0 && queries.length === 0
         const byId = (left: ModuleCapabilityDescriptor, right: ModuleCapabilityDescriptor): number => left.id.localeCompare(right.id)
@@ -643,7 +721,7 @@ export const createWorkspaceCapabilityTools = (deps: WorkspaceCapabilityToolsDep
         // cannot crowd out what another one asked for.
         const rankings = queries.map(query => candidates
           .flatMap(({ operation }) => matches.get(operation.id)!.filter(match => match.query === query).map(match => ({ operation, ...match })))
-          .sort((left, right) => right.nameScore - left.nameScore || right.score - left.score || byId(left.operation, right.operation))
+          .sort((left, right) => right.score - left.score || right.nameMatches - left.nameMatches || byId(left.operation, right.operation))
           .map(entry => entry.operation))
         const searched = Array.from({ length: Math.max(0, ...rankings.map(ranking => ranking.length)) }, (_, rank) =>
           rankings.flatMap(ranking => ranking[rank] === undefined ? [] : [ranking[rank]]))
