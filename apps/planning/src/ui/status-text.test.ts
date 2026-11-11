@@ -1,0 +1,62 @@
+import { describe, expect, test } from 'bun:test'
+import { statusWordSchema } from '../plan/schema.ts'
+import { runBasis, status, trainAInputs } from './fixtures/plans.ts'
+import { createTimeFormat } from './format.ts'
+import { createNames } from './model.ts'
+import { certificateText, goalOrderText, statusView, type Context } from './status-text.ts'
+
+const inputs = trainAInputs()
+const context: Context = { inputs, names: createNames(inputs), format: createTimeFormat(inputs.settings.timeZone) }
+const run = runBasis(inputs.settings.grid)
+
+describe('status in words, from structure', () => {
+  test('the status and goal words are exactly the schema words', () => {
+    const views = [
+      statusView(status({ word: 'validated feasible', run, goals: [] }), context),
+      statusView(status({ word: 'cancelled', run }), context),
+      statusView(status({ word: 'unresolved', run }), context),
+      statusView(status({ word: 'invalid input', problems: [{ code: 'world_value_unread', about: ['SWA'] }] }), context),
+      statusView(status({ word: 'unsupported feature', problems: [{ code: 'two_trains_out_mode_change', about: [] }] }), context),
+    ]
+    for (const view of views) expect(statusWordSchema.options).toContain(view.word)
+    expect(views[2]!.sentence).toContain('This is not proof that none exists.')
+    expect(views[3]!.details).toEqual(['a World value is not read yet; link the simulation and read the World values: Service Water Pump A'])
+    expect(views[4]!.details).toEqual(['two trains out mode change'])
+  })
+
+  test('each goal says how far from the best it can be', () => {
+    // Hand values: goal 1 at its bound; goal 2 NOK 39,200 above a bound of NOK 425,050.
+    const view = statusView(status({
+      word: 'validated feasible', run,
+      goals: [
+        { word: 'proven optimal', goal: 0, value: 0, unit: 'h', bound: { value: 0, source: 'logic+calendars' } },
+        { word: 'best found under budget', goal: 1, value: 464250, unit: 'NOK', bound: { value: 425050, source: 'fixed-costs' } },
+        { word: 'best found under budget', goal: 2, value: 254, unit: 'h' },
+      ],
+    }), context)
+    expect(view.goals.map(goal => [goal.mark.word, goal.distance])).toEqual([
+      ['proven optimal', 'no plan can do better'],
+      ['best found under budget', 'at most NOK 39,200 from the best possible (NOK 425,050)'],
+      ['best found under budget', 'how far from the best is not known'],
+    ])
+    expect(view.goals[0]!.name).toBe('time over the 54 h guideline for Train A cooling chain (SW A, CCW A and HX A, RHR A, HHSI A)')
+    expect(view.run).toBe('Search used 9 s of computing time; it ran to the end.')
+  })
+
+  test('proofs of infeasibility name the work, the capacity and the interval', () => {
+    // Hand values for a chain certificate: 38 h of work against 32 working hours.
+    const chain = certificateText({ kind: 'chain', jobs: ['SWA-PUMP-OUT', 'SWA-REBUILD', 'SWA-RTS'], workHours: 38, calendars: ['day'], availableHours: 32, from: '2026-11-16T06:00:00Z', by: '2026-11-20T14:00:00Z' }, context)
+    expect(chain).toBe('Pull SW A pump assembly, Rebuild SW A bowl assembly in workshop and Restore SW A, fill and vent, pump test need 38 h of work one after another, but Day shift gives only 32 h of working time between Mon 07:00 and Fri 15:00.')
+    const energy = certificateText({ kind: 'energy', resources: ['mech-station', 'mech-contractor'], jobs: [], requiredHours: 49, availableHours: 48, from: '2026-11-16T20:00:00Z', to: '2026-11-17T01:00:00Z', span: 'R2' }, context)
+    expect(energy).toContain('49 crew-hours of Station mechanical crew and Contractor mechanical night crew must fit inside any outage that “Once the first cooling-chain item is tagged out')
+    expect(energy).toContain('opening between Mon 21:00 and Tue 02:00; at most 48 crew-hours exist.')
+    const view = statusView(status({ word: 'proven infeasible', run, cause: { kind: 'chain', jobs: ['SWA-RTS'], workHours: 38, calendars: ['day'], availableHours: 32, from: '2026-11-16T06:00:00Z', by: '2026-11-20T14:00:00Z' } }), context)
+    expect(view.word).toBe('proven infeasible')
+    expect(view.mark.shape).toBe('✕')
+  })
+
+  test('the goal order reads as a policy, with the cost step from the plan', () => {
+    const cost = inputs.goals.find(goal => goal.metric === 'extra-cost')!.tolerance.value
+    expect(goalOrderText(inputs.goals, context)[1]).toBe(`2. Least extra cost (compared in steps of NOK ${cost.toLocaleString('en-GB')})`)
+  })
+})

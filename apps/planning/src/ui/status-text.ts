@@ -1,0 +1,175 @@
+// Status in words, generated from the stored structure and never stored. The status and goal words are
+// exactly the status schema's; everything around them explains what they cover.
+import type { Certificate, GoalWord, PlanInputs, StatusWord } from '../plan/schema.ts'
+import { hoursNumber, hoursText, quantityText, type Mark, type TimeFormat } from './format.ts'
+import { joinWords, type Goal, type Names, type Status } from './model.ts'
+
+export const statusMark = (word: StatusWord): Mark => ({
+  'validated feasible': { shape: '✓', word },
+  'proven infeasible': { shape: '✕', word },
+  'invalid input': { shape: '!', word },
+  'unsupported feature': { shape: '!', word },
+  cancelled: { shape: '–', word },
+  unresolved: { shape: '?', word },
+} satisfies Record<StatusWord, Mark>)[word]
+
+export const goalMark = (word: GoalWord): Mark =>
+  word === 'proven optimal' ? { shape: '✓', word } : { shape: '≈', word }
+
+export interface Context {
+  readonly inputs: PlanInputs
+  readonly names: Names
+  readonly format: TimeFormat
+}
+
+/** "time over the 54 h guideline for the Train A cooling chain" */
+export const goalName = (goal: Goal, context: Context): string => {
+  const groups = goal.scope?.groups?.length ? ` for ${context.names.list(goal.scope.groups, context.names.group)}` : ''
+  const tags = goal.scope?.tags?.length ? ` of jobs tagged ${joinWords(goal.scope.tags.map(tag => `“${tag}”`))}` : ''
+  const threshold = goal.threshold === undefined ? '' : ` the ${quantityText(goal.threshold.value, goal.threshold.unit)}`
+  switch (goal.metric) {
+    case 'span-over': return goal.threshold === undefined ? `outage span${groups}` : `time over${threshold} guideline${groups}`
+    case 'finish': return 'finish of the last job'
+    case 'extra-cost': return goal.threshold === undefined ? 'extra cost' : `extra cost above${threshold}`
+    case 'unavailable-hours': return `equipment-hours out of service${groups}`
+    case 'lateness': return `lateness${tags} past their target`
+  }
+}
+
+/** "costs compared in steps of NOK 25,000", or nothing for an exact goal. */
+export const goalStep = (goal: Goal): string | null =>
+  goal.tolerance.value === 0 ? null : `compared in steps of ${quantityText(goal.tolerance.value, goal.tolerance.unit)}`
+
+/** One sentence per goal in priority order, e.g. "1. Time over the 54 h guideline …: 0 h." */
+export const goalOrderText = (goals: readonly Goal[], context: Context): readonly string[] =>
+  goals.map((goal, index) => {
+    const step = goalStep(goal)
+    return `${index + 1}. Least ${goalName(goal, context)}${step === null ? '' : ` (${step})`}`
+  })
+
+export interface GoalLine {
+  readonly name: string
+  readonly value: string
+  readonly mark: Mark
+  /** How far from best, in words. */
+  readonly distance: string
+}
+
+const valueText = quantityText
+const crewHours = (hours: number): string => `${hoursNumber(hours)} crew-hours`
+
+const viaWords = {
+  link: 'a link', bracket: 'tag-out before the work and test after it', 'support-order': 'support order',
+  'span-limit': 'an outage limit', window: 'the window', release: 'its earliest start', lock: 'a lock',
+} as const
+
+/** The proof behind "proven infeasible", in planner words. */
+export const certificateText = (cause: Certificate, context: Context): string => {
+  const { names, format } = context
+  switch (cause.kind) {
+    case 'chain': {
+      const jobs = cause.jobs.length <= 3
+        ? names.list(cause.jobs, names.job)
+        : `${cause.jobs.length} chained jobs, from ${names.job(cause.jobs[0]!)} to ${names.job(cause.jobs[cause.jobs.length - 1]!)}`
+      return `${jobs} need ${hoursText(cause.workHours)} of work one after another, but ${names.list(cause.calendars, names.calendar)} ${cause.calendars.length === 1 ? 'gives' : 'give'} only ${hoursText(cause.availableHours)} of working time between ${format.clock(cause.from)} and ${format.clock(cause.by)}.`
+    }
+    case 'energy': {
+      const who = names.list(cause.resources, names.resource)
+      const within = cause.span === undefined ? `between ${format.clock(cause.from)} and ${format.clock(cause.to)}` : `inside any outage that “${names.rule(cause.span)}” allows, opening between ${format.clock(cause.from)} and ${format.clock(cause.to)}`
+      return `${crewHours(cause.requiredHours)} of ${who} must fit ${within}; at most ${crewHours(cause.availableHours)} exist.`
+    }
+    case 'availability':
+      return `“${names.rule(cause.rule)}” cannot hold: ${names.list(cause.items, names.equipment)} would be out together from ${format.clock(cause.from)} to ${format.clock(cause.to)}.`
+    case 'temporal':
+      return cause.steps.length === 0
+        ? 'The times cannot line up inside the window.'
+        : `The times cannot line up: ${cause.steps.map(step => `${names.job(step.job)} (held by ${viaWords[step.via]})`).join(', then ')}.`
+  }
+}
+
+const problemWords: Readonly<Record<string, string>> = {
+  world_value_unread: 'a World value is not read yet; link the simulation and read the World values',
+  world_value_ambiguous: 'a World value is named twice in the last read',
+  world_value_not_number: 'a World value is not a number',
+  unit_unknown: 'a World value has a unit Planning does not convert',
+  unit_mismatch: 'a World value has the wrong kind of unit',
+  calendar_needs_zone: 'weekly shifts need the site time zone',
+  calendar_off_grid: 'a shift boundary is not on the plan grid',
+  missing_window: 'the plan has no window yet',
+  missing_estimate: 'a job has no estimate',
+  missing_crew: 'a job has no crew or tool',
+}
+
+/** A problem code in words, e.g. "a World value is not read yet …: Service Water Pump A". */
+export const problemText = (problem: { readonly code: string; readonly about: readonly string[] }, names: Names): string => {
+  const words = problemWords[problem.code] ?? problem.code.replaceAll('_', ' ')
+  return problem.about.length === 0 ? words : `${words}: ${names.list(problem.about)}`
+}
+
+export interface StatusView {
+  readonly mark: Mark
+  /** The status word, exactly as the status schema has it. */
+  readonly word: StatusWord
+  /** One sentence on what the word covers. */
+  readonly sentence: string
+  readonly goals: readonly GoalLine[]
+  readonly details: readonly string[]
+  /** How the search ended, e.g. "Search used 9 s of computing time; it ran to the end." */
+  readonly run: string | null
+}
+
+const runText = (status: Extract<Status, { run: unknown }>): string => {
+  const { run } = status
+  const used = `Search used ${Math.max(1, Math.round(run.cpuMs / 1_000))} s of computing time`
+  const ended = {
+    done: 'it ran to the end', evals: 'it used its whole budget', cpu: 'it used its whole time budget', wall: 'it used its whole time budget',
+    memory: 'it stopped at the memory limit', cancelled: run.stoppedByWho === 'host' ? 'it was stopped by the Host' : 'you cancelled it',
+  }[run.stoppedBy]
+  return `${used}; ${ended}.`
+}
+
+export const statusView = (status: Status, context: Context): StatusView => {
+  const mark = statusMark(status.word)
+  switch (status.word) {
+    case 'validated feasible': {
+      const goals = status.goals.map((line): GoalLine => {
+        const goal = context.inputs.goals[line.goal]
+        const name = goal === undefined ? `goal ${line.goal + 1}` : goalName(goal, context)
+        const value = valueText(line.value, line.unit)
+        const distance = line.word === 'proven optimal'
+          ? 'no plan can do better'
+          : line.bound === undefined
+            ? 'how far from the best is not known'
+            : line.value - line.bound.value <= 0
+              ? 'equal to the best possible'
+              : `at most ${valueText(line.value - line.bound.value, line.unit)} from the best possible (${valueText(line.bound.value, line.unit)})`
+        return { name, value, mark: goalMark(line.word), distance }
+      })
+      return {
+        mark, word: status.word, goals, details: [],
+        sentence: 'Every hard rule holds: the independent rule check found no break.',
+        run: runText(status),
+      }
+    }
+    case 'proven infeasible':
+      return { mark, word: status.word, goals: [], run: runText(status), sentence: 'No plan can keep every hard rule. The proof:', details: [certificateText(status.cause, context)] }
+    case 'invalid input':
+      return { mark, word: status.word, goals: [], run: null, sentence: 'The plan cannot be generated until these are fixed:', details: status.problems.map(problem => problemText(problem, context.names)) }
+    case 'unsupported feature':
+      return { mark, word: status.word, goals: [], run: null, sentence: 'The plan uses a rule the planner cannot model yet:', details: status.problems.map(problem => problemText(problem, context.names)) }
+    case 'cancelled':
+      return { mark, word: status.word, goals: [], run: runText(status), sentence: 'The search stopped before it found a plan.', details: [] }
+    case 'unresolved': {
+      const attempt = status.attempt === undefined ? [] : [`The best attempt would finish ${context.names.job(status.attempt.job)} at ${context.format.clock(status.attempt.wouldFinish)}, ${hoursText(status.attempt.pastWindowHours)} past the window.`]
+      return { mark, word: status.word, goals: [], run: runText(status), sentence: 'No plan was found in the time allowed. This is not proof that none exists.', details: attempt }
+    }
+  }
+}
+
+/** The one-line answer for the attention column, e.g. "✓ validated feasible · time over … : 0 h, proven optimal". */
+export const statusLine = (view: StatusView): string => {
+  const first = view.goals[0]
+  return first === undefined
+    ? `${view.word}: ${view.sentence}`
+    : `${view.word}; least ${first.name}: ${first.value}, ${first.mark.word} (${first.distance})`
+}
