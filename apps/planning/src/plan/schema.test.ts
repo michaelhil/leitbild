@@ -1,0 +1,193 @@
+import { describe, expect, test } from 'bun:test'
+import { calendarSchema, certificateSchema, combineWorldFacts, datedRowSchema, durationWithSchema, jobSchema, planInputsSchema, purchaseSchema, resourceSchema, ruleSchema, statusSchema, type WorldFactCopy } from './schema.ts'
+import { editSchema } from './edit-schema.ts'
+import { generateResultSchema } from '../api/contract.ts'
+
+const fixture = async (name: string): Promise<any> => Bun.file(new URL(`./fixtures/${name}`, import.meta.url)).json()
+const trainA = await fixture('train-a.fragment.json')
+const supplyRun = await fixture('supply-run.case2.json')
+
+// The run basis and the six cases of R/impl/inc1/status-invariants.ts.
+const run = { grid: '30min', engine: 'ts-lahc', formulation: 'compile 1, bounds 1, engine 1, grid 30min, tz 2026a', seed: 1,
+  budget: { evals: 4000, cpuMs: 9000, wallMs: 18000 }, stoppedBy: 'evals', evals: 4000, cpuMs: 600 }
+const chain = (workHours: number, availableHours: number) => ({ kind: 'chain', jobs: ['A'], workHours, calendars: ['day'], availableHours, from: '2026-11-17T06:00:00Z', by: '2026-11-20T14:00:00Z' })
+const accepted = (value: unknown) => statusSchema.safeParse(value).success
+
+describe('the two cases', () => {
+  test('both fixtures parse as plan inputs', () => {
+    expect(planInputsSchema.parse(trainA).jobs).toHaveLength(7)
+    expect(planInputsSchema.parse(supplyRun).resources.map(resource => resource.key)).toEqual(['truck-1', 'truck-3', 'truck-4', 'truck-2', 'truck-5'])
+  })
+
+  test('a minimum is allowed only on tests', () => {
+    const test = trainA.jobs.find((job: any) => job.key === 'SWA-RTS')
+    expect(jobSchema.parse(test).minimum?.value).toBe(3)
+    const refused = jobSchema.safeParse({ ...test, kind: 'work' })
+    expect(refused.success).toBe(false)
+    expect(refused.error?.issues.map(issue => issue.path)).toEqual([['minimum']])
+    const { minimum: _minimum, ...withoutMinimum } = test
+    expect(jobSchema.safeParse({ ...withoutMinimum, kind: 'work' }).success).toBe(true)
+  })
+
+  test('a time zone Intl does not know and a reversed window are refused', () => {
+    expect(planInputsSchema.safeParse({ ...trainA, settings: { ...trainA.settings, timeZone: 'Mars/Base' } }).success).toBe(false)
+    expect(planInputsSchema.safeParse({ ...trainA, settings: { ...trainA.settings, window: { start: '2026-11-21T06:00:00Z', end: '2026-11-16T06:00:00Z' } } }).success).toBe(false)
+  })
+})
+
+describe('status cannot hold a contradiction (A4)', () => {
+  test('the five r1 contradictions are refused and a consistent status is accepted', () => {
+    expect(accepted({ word: 'unresolved', run, goals: [{ word: 'proven optimal', goal: 0, value: 0, unit: 'h', bound: { value: 0, source: 'logic+calendars' } }] })).toBe(false)
+    expect(accepted({ word: 'proven infeasible', run })).toBe(false)
+    expect(accepted({ word: 'validated feasible', run, goals: [
+      { word: 'best found under budget', goal: 0, value: 2.5, unit: 'h' },
+      { word: 'proven optimal', goal: 1, value: 398800, unit: 'NOK', bound: { value: 398800, source: 'fixed-costs' } }] })).toBe(false)
+    expect(accepted({ word: 'validated feasible', run, goals: [{ word: 'proven optimal', goal: 0, value: 3, unit: 'h', bound: { value: 0, source: 'logic+calendars' } }] })).toBe(false)
+    expect(accepted({ word: 'cancelled', run, cause: chain(37, 32) })).toBe(false)
+    expect(accepted({ word: 'validated feasible', run, goals: [
+      { word: 'proven optimal', goal: 0, value: 0, unit: 'h', bound: { value: 0, source: 'logic+calendars' } },
+      { word: 'best found under budget', goal: 1, value: 464250, unit: 'NOK', bound: { value: 340000, source: 'fixed-costs' } }] })).toBe(true)
+  })
+})
+
+describe('adversary r2 check (coordinator-adopted)', () => {
+  test('1. a certificate proves something: more work than capacity, over a real interval', () => {
+    expect(accepted({ word: 'proven infeasible', run, cause: chain(37, 32) })).toBe(true)
+    expect(accepted({ word: 'proven infeasible', run, cause: chain(30, 32) })).toBe(false)
+    expect(accepted({ word: 'proven infeasible', run, cause: chain(32, 32) })).toBe(false)
+    expect(accepted({ word: 'proven infeasible', run, cause: { ...chain(37, 32), from: '2026-11-20T14:00:00Z', by: '2026-11-17T06:00:00Z' } })).toBe(false)
+    const energy = { kind: 'energy', resources: ['mech'], jobs: ['A'], requiredHours: 49, availableHours: 48, from: '2026-11-17T01:00:00Z', to: '2026-11-20T01:00:00Z' }
+    expect(certificateSchema.safeParse(energy).success).toBe(true)
+    expect(certificateSchema.safeParse({ ...energy, requiredHours: 40 }).success).toBe(false)
+    expect(certificateSchema.safeParse({ ...energy, to: energy.from }).success).toBe(false)
+    const availability = { kind: 'availability', rule: 'heavy-free', items: ['truck-2', 'truck-4'], from: '2026-09-03T08:00:00Z', to: '2026-09-03T08:05:00Z' }
+    expect(certificateSchema.safeParse(availability).success).toBe(true)
+    expect(certificateSchema.safeParse({ ...availability, to: '2026-09-03T07:59:00Z' }).success).toBe(false)
+  })
+
+  test('2. proven optimal compares value and bound at the goal resolution', () => {
+    const goals = (second: object) => ({ word: 'validated feasible', run, goals: [{ word: 'proven optimal', goal: 0, value: 0, unit: 'h', bound: { value: 0, source: 'logic+calendars' } }, { goal: 1, ...second }] })
+    expect(accepted(goals({ word: 'proven optimal', value: 464250, unit: 'NOK', bound: { value: 464249.9999999997, source: 'fixed-costs' } }))).toBe(true)
+    expect(accepted(goals({ word: 'proven optimal', value: 464250, unit: 'NOK', bound: { value: 464249, source: 'fixed-costs' } }))).toBe(false)
+    expect(accepted(goals({ word: 'proven optimal', value: 2.5, unit: 'h', bound: { value: 2.4999999999, source: 'logic+calendars' } }))).toBe(true)
+    expect(accepted(goals({ word: 'proven optimal', value: 2.5, unit: 'h', bound: { value: 2, source: 'logic+calendars' } }))).toBe(false)
+    expect(accepted(goals({ word: 'best found under budget', value: 464250, unit: 'NOK', bound: { value: 464250.0000000003, source: 'fixed-costs' } }))).toBe(true)
+    expect(accepted(goals({ word: 'best found under budget', value: 464250, unit: 'NOK', bound: { value: 464251, source: 'fixed-costs' } }))).toBe(false)
+    expect(accepted(goals({ word: 'best found under budget', value: 3, unit: 'kg' }))).toBe(false)
+    const fine = { ...run, grid: '30s' }
+    expect(accepted({ word: 'validated feasible', run: fine, goals: [{ word: 'proven optimal', goal: 0, value: 1, unit: 'min', bound: { value: 0.5, source: 'logic+calendars' } }] })).toBe(false)
+    expect(accepted({ word: 'validated feasible', run: fine, goals: [{ word: 'proven optimal', goal: 0, value: 1, unit: 'min', bound: { value: 0.9999999, source: 'logic+calendars' } }] })).toBe(true)
+  })
+
+  test('3. the Assistant-facing status uses the status words and the goal order rule', () => {
+    const result = (status: object) => generateResultSchema.safeParse({ plan: { id: '0c4008f3-ffac-47ce-9be0-a0c71e68a781', revision: 3 }, options: [{ key: 'o1', label: 'Swap', status }], text: 'x' }).success
+    expect(result({ word: 'validated feasible', goals: [{ word: 'best found under budget', value: 2.5, unit: 'h' }, { word: 'proven optimal', value: 398800, unit: 'NOK', bound: 398800, gap: 0 }] })).toBe(false)
+    expect(result({ word: 'optimal', goals: [] })).toBe(false)
+    expect(result({ word: 'validated feasible', goals: [{ word: 'optimal', value: 2.5, unit: 'h' }] })).toBe(false)
+    expect(result({ word: 'unresolved', goals: [{ word: 'best found under budget', value: 2.5, unit: 'h' }] })).toBe(false)
+    expect(result({ word: 'proven infeasible', goals: [] })).toBe(false)
+    expect(result({ word: 'validated feasible', goals: [{ word: 'proven optimal', value: 0, unit: 'h' }] })).toBe(false)
+    expect(result({ word: 'validated feasible', goals: [{ word: 'best found under budget', value: 2.5, unit: 'h', bound: 1 }] })).toBe(false)
+    expect(result({ word: 'validated feasible', goals: [{ word: 'proven optimal', value: 0, unit: 'h', bound: 0, gap: 0 }, { word: 'best found under budget', value: 464250, unit: 'NOK', bound: 340000, gap: 124250 }] })).toBe(true)
+    expect(result({ word: 'proven infeasible', goals: [], cause: { kind: 'chain', requiredHours: 38, availableHours: 32, about: ['SWA-REBUILD'] } })).toBe(true)
+  })
+
+  test('4. keep-in-service needs 1 <= atLeast <= members', () => {
+    const rule = { kind: 'keep-in-service', key: 'k', members: [{ equipment: 'A' }, { equipment: 'B' }], words: 'x', origin: { by: 'planner' } }
+    expect(ruleSchema.safeParse({ ...rule, atLeast: 5 }).success).toBe(false)
+    expect(ruleSchema.safeParse({ ...rule, atLeast: 3 }).success).toBe(false)
+    expect(ruleSchema.safeParse({ ...rule, atLeast: 0 }).success).toBe(false)
+    expect(ruleSchema.safeParse({ ...rule, atLeast: 2 }).success).toBe(true)
+    expect(ruleSchema.safeParse({ ...rule, atLeast: 1 }).success).toBe(true)
+  })
+})
+
+describe('float names the limit that binds it (goals r2 check)', () => {
+  const row = { job: 'SWA-TAG', start: '2026-11-17T06:00:00Z', finish: '2026-11-17T09:00:00Z', uses: [{ resource: 'work-control', from: '2026-11-17T06:00:00Z', to: '2026-11-17T09:00:00Z' }] }
+  test('window end and span limit both parse; anything else is refused', () => {
+    expect(datedRowSchema.parse({ ...row, float: { workingHours: 12.5, limitedBy: { kind: 'window-end' } } }).float.limitedBy).toEqual({ kind: 'window-end' })
+    expect(datedRowSchema.parse({ ...row, float: { workingHours: 0, limitedBy: { kind: 'span-limit', rule: 'R2' } } }).float.limitedBy).toEqual({ kind: 'span-limit', rule: 'R2' })
+    expect(datedRowSchema.safeParse({ ...row, float: { workingHours: 1, limitedBy: { kind: 'span-limit' } } }).success).toBe(false)
+    expect(datedRowSchema.safeParse({ ...row, float: { workingHours: 1, limitedBy: { kind: 'window-end', rule: 'R2' } } }).success).toBe(false)
+    expect(datedRowSchema.safeParse({ ...row, float: { workingHours: 1 } }).success).toBe(false)
+    expect(datedRowSchema.safeParse({ ...row, float: { workingHours: -1, limitedBy: { kind: 'window-end' } } }).success).toBe(false)
+  })
+})
+
+describe('one way to say where a value comes from (simplicity r2 check, coordinator-adopted)', () => {
+  test('stored notBefore carries a source; calendar, resource and purchase carry no origin', () => {
+    const spare = trainA.jobs.find((job: any) => job.key === 'SWA-SPARE-PREP')
+    expect(jobSchema.parse(spare).notBefore?.source).toEqual({ by: 'assumption', note: 'vendor promise' })
+    const { source, ...notBefore } = spare.notBefore
+    expect(jobSchema.safeParse({ ...spare, notBefore: { ...notBefore, origin: source } }).success).toBe(false)
+    expect(calendarSchema.safeParse({ ...trainA.calendars[0], origin: { by: 'planner' } }).success).toBe(false)
+    expect(resourceSchema.safeParse({ ...trainA.resources[0], origin: { by: 'planner' } }).success).toBe(false)
+    expect(purchaseSchema.safeParse({ ...trainA.purchases[0], origin: { by: 'planner' } }).success).toBe(false)
+  })
+
+  test('stored durationWith holds a value or World refs, in the job unit', () => {
+    const refs = [{ locator: 'einsatz/unit/unit%3Atruck-4', fact: 'unit:truck-4/service-seconds' }]
+    expect(durationWithSchema.safeParse({ resource: 'truck-4', refs }).success).toBe(true)
+    expect(durationWithSchema.safeParse({ resource: 'truck-4', value: 300 }).success).toBe(true)
+    expect(durationWithSchema.safeParse({ resource: 'truck-4', value: 300, refs }).success).toBe(false)
+    expect(durationWithSchema.safeParse({ resource: 'truck-4' }).success).toBe(false)
+    expect(durationWithSchema.safeParse({ resource: 'truck-4', duration: { value: null, unit: 's', calendar: 'elapsed', origin: { by: 'world', refs } } }).success).toBe(false)
+  })
+
+  test('edits give a source on durations, notBefore, rules and attributes; `confirmed` and free-text sources are gone', () => {
+    const job = { edit: 'job', key: 'SWA-SPARE-PREP' }
+    expect(editSchema.safeParse({ ...job, duration: { value: 4, source: { by: 'assumption', note: 'vendor quote' } } }).success).toBe(true)
+    expect(editSchema.safeParse({ ...job, duration: { value: 4, source: 'vendor quote' } }).success).toBe(false)
+    expect(editSchema.safeParse({ ...job, duration: { value: 4, source: { by: 'world' } } }).success).toBe(false)
+    expect(editSchema.safeParse({ ...job, notBefore: { at: '2026-11-16T11:00:00Z', words: 'Vendor promise', source: { by: 'assumption' } } }).success).toBe(true)
+    expect(editSchema.safeParse({ ...job, notBefore: { at: '2026-11-16T11:00:00Z', words: 'Vendor promise', confirmed: false } }).success).toBe(false)
+    expect(editSchema.safeParse({ edit: 'rule', key: 'R2', source: { by: 'planner', note: 'Modelled on NUREG-1431' } }).success).toBe(true)
+    expect(editSchema.safeParse({ edit: 'resource', key: 'truck-2', attributes: [{ key: 'payloadKg', label: 'Payload', value: 1000, unit: 'kg', source: { by: 'assumption', note: 'Announced' } }] }).success).toBe(true)
+  })
+
+  test('edits say resource where storage does', () => {
+    expect(editSchema.safeParse({ edit: 'resource', key: 'crane', kind: 'tool', count: 1 }).success).toBe(true)
+    expect(editSchema.safeParse({ edit: 'crew', key: 'crane', kind: 'tool', count: 1 }).success).toBe(false)
+    expect(editSchema.safeParse({ edit: 'purchase', key: 'ot', resource: 'mech-station' }).success).toBe(true)
+    expect(editSchema.safeParse({ edit: 'purchase', key: 'ot', crew: 'mech-station' }).success).toBe(false)
+    expect(editSchema.safeParse({ edit: 'job', key: 'U-1', durationWith: [{ resource: 'truck-4', value: 200 }] }).success).toBe(true)
+    expect(editSchema.safeParse({ edit: 'job', key: 'U-1', durationWith: [{ crew: 'truck-4', value: 200 }] }).success).toBe(false)
+    expect(editSchema.safeParse({ edit: 'remove', what: 'resource', key: 'truck-5' }).success).toBe(true)
+    expect(editSchema.safeParse({ edit: 'remove', what: 'crew', key: 'truck-5' }).success).toBe(false)
+  })
+})
+
+describe('summed World values take the weakest basis and the oldest time', () => {
+  const locator = 'einsatz/unit/unit%3Atruck-4'
+  const copy = (id: string, value: WorldFactCopy['value'], basis: WorldFactCopy['basis'], at: string, unit?: string): WorldFactCopy =>
+    ({ locator, id, label: id, quantity: 'duration', value, basis, at, ...(unit === undefined ? {} : { unit }) })
+  const arrival = copy('unit:truck-4/arrival-seconds/task:sports-hall-tank', 130, 'owner-estimate', '2026-09-03T08:00:10Z', 's')
+  const service = copy('unit:truck-4/service-seconds', 3, 'configured', '2026-09-03T08:00:00Z', 'min')
+  const ref = (fact: WorldFactCopy) => ({ locator: fact.locator, fact: fact.id })
+
+  test('arrival plus service', () => {
+    expect(combineWorldFacts([ref(arrival), ref(service)], [arrival, service], 's')).toEqual({ ok: true, value: 310, unit: 's', basis: 'owner-estimate', at: '2026-09-03T08:00:00Z' })
+  })
+
+  test('the basis order is owner-estimate < configured < design < observed', () => {
+    const facts = (['observed', 'design', 'configured', 'owner-estimate'] as const).map((basis, index) => copy(`f${index}`, 1, basis, `2026-09-03T08:0${index}:00Z`, 's'))
+    const sum = (indexes: number[]) => combineWorldFacts(indexes.map(index => ref(facts[index]!)), facts, 's')
+    expect(sum([0])).toMatchObject({ basis: 'observed', at: '2026-09-03T08:00:00Z' })
+    expect(sum([0, 1])).toMatchObject({ basis: 'design', value: 2 })
+    expect(sum([1, 2])).toMatchObject({ basis: 'configured' })
+    expect(sum([3, 0])).toMatchObject({ basis: 'owner-estimate', at: '2026-09-03T08:00:00Z' })
+    expect(sum([2, 3])).toMatchObject({ basis: 'owner-estimate', at: '2026-09-03T08:02:00Z' })
+  })
+
+  test('missing, ambiguous, non-number and unconvertible values are refused by name', () => {
+    expect(combineWorldFacts([ref(arrival)], [service], 's')).toEqual({ ok: false, code: 'world_value_unread', ref: ref(arrival) })
+    expect(combineWorldFacts([ref(arrival)], [arrival, arrival], 's')).toMatchObject({ ok: false, code: 'world_value_ambiguous' })
+    const state = copy('unit:truck-4/phase', 'idle', 'observed', '2026-09-03T08:00:00Z')
+    expect(combineWorldFacts([ref(state)], [state], 's')).toMatchObject({ ok: false, code: 'world_value_not_number' })
+    const flow = copy('plant:train-a/serviceWaterPumpA/nominal-flow', 400, 'design', '2026-11-12T09:00:00Z', 'kg/s')
+    expect(combineWorldFacts([ref(flow)], [flow], 's')).toMatchObject({ ok: false, code: 'unit_unknown', unit: 'kg/s' })
+    const payload = copy('unit:truck-4/property/payloadKg', 1500, 'configured', '2026-09-03T08:00:00Z', 'kg')
+    expect(combineWorldFacts([ref(payload)], [payload], 's')).toMatchObject({ ok: false, code: 'unit_mismatch', unit: 'kg' })
+    expect(combineWorldFacts([ref(payload)], [payload], 'kg')).toMatchObject({ ok: true, value: 1500, basis: 'configured' })
+  })
+})
