@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test'
+import { formulationOf } from './compile.ts'
 import { CERTIFIED_SIZE, certifiedSizeText, generate } from './generate.ts'
+import { showStatus } from './status.ts'
 import { searchEngine } from './search.ts'
 import { laneKCheck, laneKVerify } from './fixtures/lane-k.ts'
 import { trainAInputs } from './fixtures/train-a-case.ts'
@@ -35,10 +37,13 @@ describe('generate with the real checker', () => {
     expect(refused.optionSet.options.map(option => option.status.word)).toEqual(['unresolved', 'unresolved'])
   }, 30_000)
 
-  test('a feasible option lists only the purchases its rows use', async () => {
-    const result = await run(trainAInputs({ read: true }), { variants: [{ label: 'swap', methods: [{ choice: 'SWA-method', option: 'swap' }], buy: 'allowed' }], seconds: 3 })
+  test('a feasible option lists only the purchases its rows use; one train in series is not redundancy', async () => {
+    const inputs = trainAInputs({ read: true })
+    const result = await run(inputs, { variants: [{ label: 'swap', methods: [{ choice: 'SWA-method', option: 'swap' }], buy: 'allowed' }], seconds: 3 })
     const option = result.optionSet.options[0]!
     expect(option.status.word).toBe('validated feasible')
+    // The cooling chain's five items are out together, but they are one train in series, not backups.
+    expect(showStatus(option, { inputs, revision: 1, formulation: formulationOf(inputs.settings.grid) }, laneKCheck, laneKVerify).warnings).toEqual([])
     const used = new Set(option.rows.flatMap(row => row.uses.flatMap(use => (use.purchase === undefined ? [] : [use.purchase]))))
     expect(option.variant.purchases.toSorted()).toEqual([...used].toSorted())
   }, 30_000)

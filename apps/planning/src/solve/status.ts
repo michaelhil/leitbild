@@ -6,6 +6,7 @@ import { goalResolution, statusSchema, type Certificate, type GoalWord, type Pla
 import type { BoundSource } from './problem.ts'
 import { goalExcess, type RawMetric } from './rank.ts'
 import type { DatedRow } from './date.ts'
+import { functionOf } from '../plan/readiness.ts'
 
 type RunBasis = Extract<Status, { word: 'validated feasible' }>['run']
 type GoalStatus = Extract<Status, { word: 'validated feasible' }>['goals'][number]
@@ -103,7 +104,10 @@ export interface RedundancyWarning {
   readonly to: string
 }
 
-/** Items taken out together with no keep-in-service or protected rule naming any of them (adversary r2 item 7). */
+/**
+ * Items of one function taken out together with no keep-in-service or protected rule naming any of them
+ * (adversary r2 item 7; the same rule as lane P's outTogether, keyed on lane A's equipment function).
+ */
 export const redundancyWarning = (inputs: PlanInputs, rows: readonly DatedRow[]): RedundancyWarning | undefined => {
   const ruled = new Set(inputs.rules.flatMap(rule => (rule.kind === 'protected' ? rule.equipment : rule.kind === 'keep-in-service' ? rule.members.flatMap(member => ('equipment' in member ? [member.equipment] : [])) : [])))
   const row = new Map(rows.map(entry => [entry.job, entry]))
@@ -120,12 +124,18 @@ export const redundancyWarning = (inputs: PlanInputs, rows: readonly DatedRow[])
     return [...ownOut(item), ...supporters.flatMap(key => out(key, seen))]
   }
   const intervals = inputs.equipment.map(item => ({ item: item.key, spans: out(item.key, new Set([item.key])) })).filter(entry => entry.spans.length > 0)
-  // Only unruled items count: a ruled item is the planner's statement that its backup is covered.
-  const unruled = intervals.filter(entry => !ruled.has(entry.item))
+  // Redundant = items that share an equipment function key (they back each other up); one train's series
+  // chain shares none. Only unruled items count: a ruled item is the planner's statement that its backup
+  // is covered. With no function keys in the plan, it never warns.
+  const functions = new Map(inputs.equipment.flatMap(item => { const key = functionOf(item); return key === undefined ? [] : [[item.key, key] as const] }))
+  const unruled = intervals.filter(entry => !ruled.has(entry.item) && functions.has(entry.item))
   const points = [...new Set(unruled.flatMap(entry => entry.spans.map(span => span[0])))].sort((a, b) => a - b)
   let best: { items: string[]; from: number; to: number } | undefined
   for (const at of points) {
-    const items = unruled.filter(entry => entry.spans.some(([from, to]) => from <= at && at < to))
+    const out = unruled.filter(entry => entry.spans.some(([from, to]) => from <= at && at < to))
+    const byFunction = new Map<string, typeof out>()
+    for (const entry of out) byFunction.set(functions.get(entry.item)!, [...(byFunction.get(functions.get(entry.item)!) ?? []), entry])
+    const items = [...byFunction.values()].reduce<typeof out>((most, group) => (group.length > most.length ? group : most), [])
     if (items.length < 2 || (best !== undefined && items.length <= best.items.length)) continue
     const to = Math.min(...items.flatMap(entry => entry.spans.filter(([from, end]) => from <= at && at < end).map(span => span[1])))
     best = { items: items.map(entry => entry.item), from: at, to }

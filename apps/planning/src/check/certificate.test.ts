@@ -126,12 +126,12 @@ describe("lane S's real generate", () => {
     const { searchEngine } = await import('../solve/search.ts')
     const { trainAInputs: laneSTrainA } = await import('../solve/fixtures/train-a-case.ts')
     const { checkPlan } = await import('./check.ts')
-    const inputs = laneSTrainA()
+    const inputs = laneSTrainA({ read: true })
     const check = ({ inputs: planned, variant, rows }: { readonly inputs: PlanInputs; readonly variant: CheckVariant; readonly rows: Parameters<typeof checkPlan>[2] }) => {
       const result = checkPlan(planned, variant, rows)
       return { violations: result.violations, goals: result.goals.map(goal => 'value' in goal ? goal.value : goal.spans.map(span => span.value)) }
     }
-    const result = await generate({ engine: searchEngine(), check }, {
+    const result = await generate({ engine: searchEngine(), check, verify: verifyCertificate }, {
       inputs, revision: 1, previous: null, by: { kind: 'agent' }, signal: new AbortController().signal,
       input: { variants: [{ label: 'V1', methods: [{ choice: 'SWA-method', option: 'rebuild' }], buy: 'no-extra-crew-hours' }], seconds: 2 },
     })

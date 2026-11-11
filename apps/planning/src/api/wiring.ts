@@ -2,6 +2,7 @@
 // wires these; tests use the doubles in api/fixtures. Nothing here touches World.
 import { checkPlan, inputCodes } from '../check/check.ts'
 import { recheckOption } from '../check/recheck.ts'
+import { verifyCertificate } from '../check/certificate.ts'
 import { bounds } from '../solve/bounds.ts'
 import { compile, formulationOf, type CompileIndex } from '../solve/compile.ts'
 import { dateSchedule } from '../solve/date.ts'
@@ -94,7 +95,7 @@ const bounded = (result: ExplainResult): ExplainResult => {
 export const createRealSolver = (pool: SolverPool): SolverPort => ({
   certifiedSize: CERTIFIED_SIZE,
   formulation: grid => formulationOf(grid),
-  generate: async request => (await generate({ engine: pool, check: checkForSolver, certifiedSize: CERTIFIED_SIZE }, {
+  generate: async request => (await generate({ engine: pool, check: checkForSolver, verify: verifyCertificate, certifiedSize: CERTIFIED_SIZE }, {
     inputs: request.inputs, revision: request.inputsRevision, previous: request.stored,
     input: { ...(request.variants === undefined ? {} : { variants: [...request.variants] }), seconds: request.seconds },
     by: request.by, signal: request.signal, ...(request.stoppedByWho === undefined ? {} : { stoppedByWho: request.stoppedByWho }),
@@ -107,7 +108,10 @@ export const createRealSolver = (pool: SolverPool): SolverPort => ({
         return { lines: [attempt === undefined ? 'No proof either way: the search found no plan in the time allowed. That is not proof that none exists.'
           : `No proof either way: the best attempt finishes ${nameOf(inputs, attempt.job)} ${attempt.pastWindowHours} h past the window. That is not proof that none exists.`], items: [] }
       }
-      return bounded({ lines: refusalLines(option.status.cause, inputs, bounds(problem, index, prep).span), items: [] })
+      // The second (energy) proof is worded only when lane K re-verifies it too.
+      const span = bounds(problem, index, prep).span
+      const shown = span?.alsoProven === undefined || verifyCertificate(inputs, option.variant, span.alsoProven).proves ? span : (({ alsoProven: _also, ...rest }) => rest)(span)
+      return bounded({ lines: refusalLines(option.status.cause, inputs, shown, option.variant.purchases), items: [] })
     }
     const schedule = scheduleOf(prep, index, option)
     const dataDate = inputs.settings.dataDate === null ? undefined : Math.floor((Date.parse(inputs.settings.dataDate) - index.origin) / index.slotMs)

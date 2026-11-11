@@ -63,6 +63,11 @@ export interface GenerateRequest {
   /** Who stopped it, when the signal fires. */
   readonly stoppedByWho?: () => 'person' | 'host' | undefined
   readonly seed?: number
+  /**
+   * An evaluation budget per sub-solve. With it (and time to spare) a run is reproducible: the same plan for
+   * the same inputs and seed on any machine or pool state. Without it the CPU budget decides.
+   */
+  readonly evals?: number
 }
 export interface GenerateResult {
   readonly optionSet: OptionSet
@@ -143,7 +148,7 @@ export const generate = async (deps: GenerateDeps, request: GenerateRequest): Pr
     rounded.push(...index.rounded.filter(entry => !rounded.some(known => known.about === entry.about && known.code === entry.code)))
     dropped.push(...index.dropped.filter(entry => !dropped.some(known => known.purchase === entry.purchase)))
     const variantOut = { methods: combo, purchases: [...index.allowedPurchases] }
-    const budget = { evals: Number.MAX_SAFE_INTEGER, cpuMs: Math.round(share.cpuMs), wallMs: Math.round(share.wallMs) }
+    const budget = { evals: request.evals ?? Number.MAX_SAFE_INTEGER, cpuMs: Math.round(share.cpuMs), wallMs: Math.round(share.wallMs) }
     const runBasis = (result: Pick<EngineResult, 'stoppedBy' | 'evals' | 'cpuMs'>) => {
       const who = result.stoppedBy === 'cancelled' ? request.stoppedByWho?.() : undefined
       return { grid: inputs.settings.grid, engine: deps.engine.name, formulation, seed, budget, stoppedBy: result.stoppedBy, ...(who === undefined ? {} : { stoppedByWho: who }), evals: result.evals, cpuMs: Math.round(result.cpuMs) }

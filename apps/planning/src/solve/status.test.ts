@@ -90,7 +90,16 @@ describe('redundancy warning beside the status (adversary r2 item 7)', () => {
   const row = (key: string, start: string, finish: string) => ({ job: key, start, finish, uses: [], float: { workingHours: 0, limitedBy: { kind: 'window-end' as const } } })
   const rows = [row('A-TAG', '2026-11-16T06:00:00Z', '2026-11-16T07:00:00Z'), row('A-RTS', '2026-11-16T10:00:00Z', '2026-11-16T11:00:00Z'), row('B-TAG', '2026-11-16T08:00:00Z', '2026-11-16T09:00:00Z'), row('B-RTS', '2026-11-16T12:00:00Z', '2026-11-16T13:00:00Z')]
 
-  test('both out together with no rule: warned, from B tagged (08:00Z) to A back (11:00Z)', () => {
+  // Lane A's optional equipment `function` key (not in the schema yet; added here as lane P's functionOf reads it).
+  const withFunction = (inputs: PlanInputs, key: string): PlanInputs => ({ ...inputs, equipment: inputs.equipment.map(item => ({ ...item, function: key })) }) as PlanInputs
+  const paired = withFunction(pair, 'main-feedwater')
+
+  test('without a function key nothing warns: items out together are not assumed to back each other up', () => {
+    expect(redundancyWarning(pair, rows)).toBeUndefined()
+  })
+
+  test('two items of one function out together with no rule: warned, from B tagged (08:00Z) to A back (11:00Z)', () => {
+    const pair = paired
     expect(redundancyWarning(pair, rows)).toEqual({ code: 'redundancy_unruled', items: ['MFWA', 'MFWB'], from: '2026-11-16T08:00:00.000Z', to: '2026-11-16T11:00:00.000Z' })
     const shown = showStatus({ key: 'o', status: feasibleStatus(pair.goals, run, [10], undefined).status, rows, inputsRevision: 1, variant: { methods: [], purchases: [] } }, { inputs: pair, revision: 1, formulation: 'F1' }, clean, proves)
     expect(shown.status.word).toBe('validated feasible')
@@ -98,7 +107,7 @@ describe('redundancy warning beside the status (adversary r2 item 7)', () => {
   })
 
   test('a keep-in-service rule naming them removes the warning', () => {
-    const ruled = planInputsSchema.parse({ ...pair, rules: [{ kind: 'keep-in-service', key: 'K', members: [{ equipment: 'MFWA' }, { equipment: 'MFWB' }], atLeast: 1, words: 'One feed pump in service.', source: { by: 'planner' } }] })
+    const ruled = withFunction(planInputsSchema.parse({ ...pair, rules: [{ kind: 'keep-in-service', key: 'K', members: [{ equipment: 'MFWA' }, { equipment: 'MFWB' }], atLeast: 1, words: 'One feed pump in service.', source: { by: 'planner' } }] }), 'main-feedwater')
     expect(redundancyWarning(ruled, rows)).toBeUndefined()
   })
 })
