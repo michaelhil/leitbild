@@ -4,7 +4,7 @@
 import { describe, expect, test } from 'bun:test'
 import type { Component } from 'svelte'
 import { whyStart } from './explain-text.ts'
-import { optionOf, runBasis, status, trainAPlanned } from './fixtures/plans.ts'
+import { optionOf, runBasis, status, supplyRunPlanned, trainAPlanned } from './fixtures/plans.ts'
 import { readableText, registerSvelte, renderHtml } from './fixtures/svelte-ssr.ts'
 import { createTimeFormat } from './format.ts'
 import { createNames } from './model.ts'
@@ -33,7 +33,7 @@ describe('panels', () => {
     expect(text).toContain('Going below it needs someone\'s agreement.')
     expect(text).toContain('These are joint causes: easing only one of them does not move the job.')
     expect(text).toContain('it follows Pull SW A pump assembly; Test team (one return-to-service test at a time) is busy until Tue 12:00.')
-    expect(text).toContain('to the window end (logic and shifts only')
+    expect(text).toContain('limited by: the window end (logic and shifts only')
     expect(text).toContain('Fix its start')
     const tag = readableText(renderHtml(JobPanel, { jobKey: 'SWA-TAG', context, row: rows[0], why: null, onWhy: none, onPreview: none, onClose: none }))
     expect(tag).toContain('World shows SW B running')
@@ -43,11 +43,33 @@ describe('panels', () => {
     expect(spare).toContain('Depends on a promise, Mon 12:00: it is planned at that time and flagged.')
   })
 
+  test('a hard due time and a soft target differ by shape and word in the job panel', () => {
+    // Hand calculation: 16 h before the window end (Sat 07:00) is Fri 15:00.
+    const finishBy = new Date(Date.parse(model.inputs.settings.window!.end) - 16 * 3_600_000).toISOString()
+    const inputs = { ...model.inputs, rules: [...model.inputs.rules, { kind: 'due' as const, key: 'D1', job: 'SWA-RTS', finishBy, words: 'SW A back for the Friday surveillance.', source: { by: 'planner' as const } }] }
+    const dueContext: Context = { ...context, inputs, names: createNames(inputs) }
+    const text = readableText(renderHtml(JobPanel, { jobKey: 'SWA-RTS', context: dueContext, row: rows[2], why: null, onWhy: none, onPreview: none, onClose: none }))
+    expect(text).toContain('Due by ■ Rule Fri 15:00: SW A back for the Friday surveillance.')
+    expect(text).toContain('A hard rule: no plan finishes it later.')
+    const supply = supplyRunPlanned()
+    const supplyContext: Context = { inputs: supply.inputs, names: createNames(supply.inputs), format: createTimeFormat(supply.inputs.settings.timeZone) }
+    const target = readableText(renderHtml(JobPanel, { jobKey: 'U-1', context: supplyContext, row: supply.rows['opt-1']![1], why: null, onWhy: none, onPreview: none, onClose: none }))
+    expect(target).toContain('Wanted finish ◎ Target Thu 10:07')
+    expect(target).toContain('A goal, not a rule: it may slip, and lateness is counted.')
+  })
+
+  test('removing or moving a rule later asks who agreed before the Module is even asked', () => {
+    const preview: Preview = { label: 'Move the due time', result: { ...write, preview: { saved: false, consequence: 'The test may finish later.', violations: [], weakens: [] } }, refusal: null, asks: 'Moving a due time later weakens it' }
+    const text = readableText(renderHtml(EditPreview, { preview, context, onApply: none, onDiscard: none, onUseTime: none }))
+    expect(text).toContain('Moving a due time later weakens it')
+    expect(text).toContain('Who agreed')
+  })
+
   test('an edit that breaks a hard rule is refused in words, with the nearest allowed start (T20)', () => {
     const preview: Preview = {
       label: 'Fix the start of Restore SW A, fill and vent, pump test',
       result: { ...write, preview: { saved: false, consequence: 'The test would start before the pump is back in place.', violations: ['The return-to-service test must follow the work on SW A.'], weakens: [], nearestAllowed: rows[2]!.start } },
-      refusal: null,
+      refusal: null, asks: null,
     }
     const text = readableText(renderHtml(EditPreview, { preview, context, onApply: none, onDiscard: none, onUseTime: none }))
     expect(text).toContain('✕ Refused')
@@ -58,12 +80,12 @@ describe('panels', () => {
   })
 
   test('a weakening edit asks who agreed and why before it can be applied', () => {
-    const preview: Preview = { label: 'Remove SW B from the protected rule', result: { ...write, preview: { saved: false, consequence: 'SW B could be tagged out.', violations: [], weakens: ['R1'] } }, refusal: null }
+    const preview: Preview = { label: 'Remove SW B from the protected rule', result: { ...write, preview: { saved: false, consequence: 'SW B could be tagged out.', violations: [], weakens: ['R1'] } }, refusal: null, asks: null }
     const text = readableText(renderHtml(EditPreview, { preview, context, onApply: none, onDiscard: none, onUseTime: none }))
     expect(text).toContain(`This weakens ${model.inputs.rules.find(rule => rule.key === 'R1')!.words}`)
     expect(text).toContain('Who agreed')
     expect(text).toContain('Apply')
-    const refused: Preview = { label: 'Tag out SW B', result: null, refusal: { text: 'Service Water Pump B is protected: it is never tagged, worked or tested.', needsAuthority: false } }
+    const refused: Preview = { label: 'Tag out SW B', result: null, refusal: { text: 'Service Water Pump B is protected: it is never tagged, worked or tested.', needsAuthority: false }, asks: null }
     expect(readableText(renderHtml(EditPreview, { preview: refused, context, onApply: none, onDiscard: none, onUseTime: none }))).toContain('Service Water Pump B is protected')
   })
 

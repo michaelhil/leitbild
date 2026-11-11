@@ -18,7 +18,7 @@
   let reason = $state('')
   const shown = $derived(preview.result?.preview ?? null)
   const refused = $derived(preview.refusal !== null && !preview.refusal.needsAuthority || (shown?.violations.length ?? 0) > 0 || (preview.result?.problems.length ?? 0) > 0)
-  const needsAuthority = $derived((shown?.weakens.length ?? 0) > 0 || preview.refusal?.needsAuthority === true)
+  const needsAuthority = $derived((shown?.weakens.length ?? 0) > 0 || preview.refusal?.needsAuthority === true || preview.asks !== null)
   const ready = $derived(!refused && (!needsAuthority || (name.trim() !== '' && reason.trim() !== '')))
 </script>
 
@@ -40,7 +40,7 @@
   {/if}
   {#if needsAuthority && !refused}
     <div class="authority">
-      <p><MarkTag mark={{ shape: '■', word: 'Rule' }} tone="rule" /> This weakens {shown && shown.weakens.length > 0 ? context.names.list(shown.weakens) : 'a hard rule'}{preview.refusal ? `: ${preview.refusal.text}` : ''}. It is saved only with the name of who agreed and why, and the change log keeps both.</p>
+      <p><MarkTag mark={{ shape: '■', word: 'Rule' }} tone="rule" /> {preview.asks ?? 'This weakens'} {shown && shown.weakens.length > 0 ? context.names.list(shown.weakens) : preview.asks === null ? 'a hard rule' : ''}{preview.refusal ? `: ${preview.refusal.text}` : ''}. It is saved only with the name of who agreed and why, and the change log keeps both.</p>
       <label>Who agreed<input bind:value={name} autocomplete="name" /></label>
       <label>Why<input bind:value={reason} /></label>
     </div>

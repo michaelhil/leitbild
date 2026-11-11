@@ -44,6 +44,14 @@ export const glance = (context: Context): readonly Glance[] => {
   }])
   if (protectedLines.length + keepLines.length > 0) sections.push({ title: 'Must stay in service', lines: [...protectedLines, ...keepLines] })
 
+  const dues = inputs.rules.flatMap((rule): GlanceLine[] => rule.kind !== 'due' ? [] : [{
+    mark: ruleMark, world: [], text: `${names.job(rule.job)} is due ${format.clock(rule.finishBy)}: ${rule.words}`,
+  }])
+  const targets = inputs.jobs.flatMap((job): GlanceLine[] => job.target === undefined ? [] : [{
+    mark: { shape: '◎', word: 'Target' }, world: [], text: `${job.title}: wanted by ${format.clock(job.target.finishBy)}, may slip (a goal).`,
+  }])
+  if (dues.length + targets.length > 0) sections.push({ title: 'Finish by', lines: [...dues, ...targets] })
+
   const checks = inputs.jobs.flatMap(job => job.checks.map((check): GlanceLine => {
     const item = inputs.equipment.find(entry => entry.key === check.equipment)
     const fact = item?.locator === undefined ? undefined : inputs.world.facts.find(entry => entry.locator === item.locator && entry.id === check.fact)

@@ -18,11 +18,13 @@
   let group = $state('')
   let limit = $state('')
   let limitUnit = $state<TimeUnit>('h')
+  let job = $state('')
+  let finishBy = $state('')
   let problems = $state<readonly string[]>([])
 
   const submit = (event: SubmitEvent) => {
     event.preventDefault()
-    const built = ruleEdit({ kind, words, sourceBy, sourceNote, equipment, members, atLeast, group, limit, limitUnit }, context.inputs)
+    const built = ruleEdit({ kind, words, sourceBy, sourceNote, equipment, members, atLeast, group, limit, limitUnit, job, finishBy }, context.inputs)
     if (!built.ok) { problems = built.problems; return }
     problems = []
     onPreview(built.edits, `Add the rule “${words.trim()}”`)
@@ -37,6 +39,7 @@
     <label class="inline"><input type="radio" bind:group={kind} value="keep-in-service" /> Keep at least some of these in service</label>
     <label class="inline"><input type="radio" bind:group={kind} value="protected" /> Never touch this equipment</label>
     <label class="inline"><input type="radio" bind:group={kind} value="span-limit" /> Longest outage for a function group</label>
+    <label class="inline"><input type="radio" bind:group={kind} value="due" /> A job must be finished by a time (a hard deadline, not a wish)</label>
   </fieldset>
   <label>The rule in your words<input bind:value={words} placeholder="e.g. One of these two always available" /></label>
   {#if kind === 'protected'}
@@ -50,6 +53,10 @@
       {#each context.inputs.resources as item (item.key)}<label class="inline"><input type="checkbox" checked={members.includes(item.key)} onchange={() => { members = toggle(members, item.key) }} /> {item.label}</label>{/each}
     </fieldset>
     <label>At least this many in service at all times<input inputmode="numeric" bind:value={atLeast} /></label>
+  {:else if kind === 'due'}
+    <label>Job<select bind:value={job}><option value="">Choose…</option>{#each context.inputs.jobs as item (item.key)}<option value={item.key}>{item.title}</option>{/each}</select></label>
+    <label>Finished by ({context.format.zone})<input type="datetime-local" bind:value={finishBy} /></label>
+    <p class="hint">A due time is a rule: no plan may finish the job later. A wanted finish that may slip is a target on the job instead.</p>
   {:else}
     <label>Function group
       <select bind:value={group}>

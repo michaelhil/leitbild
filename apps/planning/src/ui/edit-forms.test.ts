@@ -14,7 +14,7 @@ const job: JobForm = {
   sourceBy: 'assumption', sourceNote: 'my estimate', crews: ['mech-station'], amount: '1', continuous: false,
 }
 const crew: CrewForm = { label: 'Electricians', kind: 'crew', count: '2', crewSize: '2', calendar: '', days: ['mon', 'tue'], from: '07:00', to: '15:00', sourceBy: 'planner', sourceNote: '' }
-const rule: RuleForm = { kind: 'keep-in-service', words: 'One of these two always available', sourceBy: 'planner', sourceNote: '', equipment: [], members: ['SWA', 'SWB'], atLeast: '1', group: '', limit: '', limitUnit: 'h' }
+const rule: RuleForm = { kind: 'keep-in-service', words: 'One of these two always available', sourceBy: 'planner', sourceNote: '', equipment: [], members: ['SWA', 'SWB'], atLeast: '1', group: '', limit: '', limitUnit: 'h', job: '', finishBy: '' }
 
 describe('form to edits', () => {
   test('keys are made from names, unique, and valid keys', () => {
@@ -61,6 +61,9 @@ describe('form to edits', () => {
     expect(ruleEdit({ ...rule, atLeast: '3' }, inputs)).toEqual({ ok: false, problems: ['At least 3 of 2 cannot be kept in service; choose fewer or add members.'] })
     expect(ruleEdit({ ...rule, members: ['SWA'] }, inputs)).toEqual({ ok: false, problems: ['Choose at least two items or crews that back each other up.'] })
     expect(ruleEdit({ ...rule, kind: 'span-limit', group: 'COOL-A', limit: '24' }, inputs).ok).toBe(true)
+    // A due time is read in the site zone: Fri 15:00 in Oslo in November is 14:00Z.
+    expect(ruleEdit({ ...rule, kind: 'due', words: 'SW A back for the Friday surveillance', job: 'SWA-RTS', finishBy: '2026-11-20T15:00' }, inputs)).toMatchObject({ ok: true, edits: [{ edit: 'rule', kind: 'due', job: 'SWA-RTS', finishBy: '2026-11-20T14:00:00.000Z' }] })
+    expect(ruleEdit({ ...rule, kind: 'due', job: 'SWA-RTS', finishBy: '2026-11-25T15:00' }, inputs)).toEqual({ ok: false, problems: ['The due time must lie inside the plan window.'] })
   })
 
   test('World items become equipment or tools by locator; numbers that are not times are attributes taken from World', () => {

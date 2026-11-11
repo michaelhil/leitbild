@@ -60,7 +60,7 @@ const crewHours = (hours: number): string => `${hoursNumber(hours)} crew-hours`
 
 const viaWords = {
   link: 'a link', bracket: 'tag-out before the work and test after it', 'support-order': 'support order',
-  'span-limit': 'an outage limit', window: 'the window', release: 'its earliest start', lock: 'a lock',
+  'span-limit': 'an outage limit', window: 'the window', due: 'its due time', release: 'its earliest start', lock: 'a lock',
 } as const
 
 /** The proof behind "proven infeasible", in planner words. */

@@ -260,7 +260,7 @@ export const linkEdit = (form: LinkForm): Built => {
 
 // ───────────── rules ─────────────
 export interface RuleForm {
-  readonly kind: 'protected' | 'keep-in-service' | 'span-limit'
+  readonly kind: 'protected' | 'keep-in-service' | 'span-limit' | 'due'
   readonly words: string
   readonly sourceBy: Source['by']
   readonly sourceNote: string
@@ -270,6 +270,14 @@ export interface RuleForm {
   readonly group: string
   readonly limit: string
   readonly limitUnit: TimeUnit
+  readonly job: string
+  /** datetime-local in the plan's zone */
+  readonly finishBy: string
+}
+
+const insideWindow = (inputs: PlanInputs, at: string): boolean => {
+  const window = inputs.settings.window
+  return window === null || (Date.parse(window.start) < Date.parse(at) && Date.parse(at) <= Date.parse(window.end))
 }
 
 export const ruleEdit = (form: RuleForm, inputs: PlanInputs): Built => {
@@ -288,6 +296,15 @@ export const ruleEdit = (form: RuleForm, inputs: PlanInputs): Built => {
       else if (atLeast > form.members.length) problems.push(`At least ${atLeast} of ${form.members.length} cannot be kept in service; choose fewer or add members.`)
       return problems.length > 0 ? refuse(...problems) : done({ ...base, members: [...form.members], atLeast: atLeast! })
     }
+    case 'due': {
+      const zone = inputs.settings.timeZone
+      const at = zone === null ? null : localInstant(form.finishBy, zone)
+      if (form.job === '') problems.push('Choose the job that must finish.')
+      if (zone === null) problems.push('Set the site time zone first.')
+      else if (at === null) problems.push('Give the latest finish.')
+      else if (!insideWindow(inputs, at)) problems.push('The due time must lie inside the plan window.')
+      return problems.length > 0 ? refuse(...problems) : done({ ...base, job: form.job, finishBy: at! })
+    }
     case 'span-limit': {
       const limit = number(form.limit)
       if (form.group === '') problems.push('Choose the function group.')
@@ -295,6 +312,16 @@ export const ruleEdit = (form: RuleForm, inputs: PlanInputs): Built => {
       return problems.length > 0 ? refuse(...problems) : done({ ...base, group: form.group, limit: { value: limit!, unit: form.limitUnit }, singleEntry: true })
     }
   }
+}
+
+/** A due rule's new time. Moving it later weakens a hard rule, so the preview asks who agreed. */
+export const dueMoveEdit = (key: string, local: string, inputs: PlanInputs): Built => {
+  const zone = inputs.settings.timeZone
+  if (zone === null) return refuse('Set the site time zone first.')
+  const at = localInstant(local, zone)
+  if (at === null) return refuse('Give the new latest finish.')
+  if (!insideWindow(inputs, at)) return refuse('The due time must lie inside the plan window.')
+  return done({ edit: 'rule', key, finishBy: at })
 }
 
 export const runLinkEdit = (runId: string | null): Built => done({ edit: 'plan', run: runId })

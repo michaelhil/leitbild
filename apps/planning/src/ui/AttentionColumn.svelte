@@ -53,7 +53,7 @@
       {:else}
         <ol class="chain">
           {#each finish as step, index (index)}
-            <li><strong>{step.job}</strong> <span class="when">{step.when}</span><span class="because">{step.because}</span></li>
+            <li><strong>{step.job}</strong> <span class="when">{step.when}</span><span class="because">{step.because}</span>{#if step.due}<span class="because"><MarkTag mark={{ shape: '■', word: 'Rule' }} tone="rule" /> {step.due}</span>{/if}</li>
           {/each}
         </ol>
       {/if}

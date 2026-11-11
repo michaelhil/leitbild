@@ -10,6 +10,11 @@ export const ruleMark: Mark = { shape: '■', word: 'Rule' }
 export const estimateMark: Mark = { shape: '≈', word: 'Estimate' }
 export const unknownMark: Mark = { shape: '?', word: 'Unknown' }
 export const settingMark: Mark = { shape: '□', word: 'Setting' }
+/** A soft wanted finish (a goal) as opposed to a hard due time (a rule). */
+export const targetMark: Mark = { shape: '◎', word: 'Target' }
+
+/** The hard due time on a job, if a due rule names it. */
+export const dueOf = (inputs: Context['inputs'], job: string) => inputs.rules.find((rule): rule is Extract<Rule, { kind: 'due' }> => rule.kind === 'due' && rule.job === job)
 
 export interface RuleView {
   readonly key: string
@@ -20,12 +25,14 @@ export interface RuleView {
   /** What the rule covers, generated from its fields. */
   readonly covers: string
   readonly source: { readonly mark: Mark; readonly note: string | null }
+  /** For a due rule: its latest finish. */
+  readonly due: string | null
 }
 
 
 export const ruleView = (rule: Rule, context: Context): RuleView => {
   const { names, format } = context
-  const base = { key: rule.key, mark: ruleMark, words: rule.words, source: { mark: sourceMark(rule.source), note: rule.source.note ?? null } }
+  const base = { key: rule.key, mark: ruleMark, words: rule.words, source: { mark: sourceMark(rule.source), note: rule.source.note ?? null }, due: rule.kind === 'due' ? rule.finishBy : null }
   switch (rule.kind) {
     case 'protected':
       return { ...base, kind: 'Protected', covers: `Never tagged out, worked or tested: ${names.list(rule.equipment, names.equipment)}.` }
@@ -34,6 +41,8 @@ export const ruleView = (rule: Rule, context: Context): RuleView => {
       const during = rule.during === undefined ? 'at all times' : `from ${format.clock(rule.during.start)} to ${format.clock(rule.during.end)}`
       return { ...base, kind: 'Keep in service', covers: `At least ${rule.atLeast} of ${members.length} in service ${during}: ${members.join(', ')}.` }
     }
+    case 'due':
+      return { ...base, kind: 'Due', covers: `${names.job(rule.job)} must finish by ${format.clock(rule.finishBy)}. No plan may finish it later.` }
     case 'span-limit':
       return {
         ...base, kind: 'Outage limit',

@@ -33,12 +33,17 @@ export const causeText = (because: Because, context: Context): string => {
   }
 }
 
+const dueText = (rule: string, context: Context): string => {
+  const due = context.inputs.rules.find(item => item.key === rule)
+  return due?.kind === 'due' ? `due ${context.format.clock(due.finishBy)}` : 'a due time no longer in this plan'
+}
+
 /** Float with what limits it. Float counts logic and calendars only, and the screen says so. */
 export const floatText = (float: DatedRow['float'] | { readonly workingHours: number; readonly limitedBy?: undefined }, context: Context): string => {
   const limit = float.limitedBy === undefined || float.limitedBy.kind === 'window-end'
-    ? 'to the window end'
-    : `before “${context.names.rule(float.limitedBy.rule)}” is reached`
-  return `Float ${hoursText(float.workingHours)} ${limit} (logic and shifts only; crews and outage limits are checked separately)`
+    ? 'the window end'
+    : float.limitedBy.kind === 'due' ? dueText(float.limitedBy.rule, context) : `“${context.names.rule(float.limitedBy.rule)}”`
+  return `Float ${hoursText(float.workingHours)}, limited by: ${limit} (logic and shifts only; crews and outage limits are checked separately)`
 }
 
 export interface WhyStart {
@@ -63,7 +68,13 @@ export const whyStart = (item: ExplainItem, context: Context, row?: DatedRow): W
   }
 }
 
-export interface FinishStep { readonly job: string; readonly when: string; readonly because: string }
+export interface FinishStep {
+  readonly job: string
+  readonly when: string
+  readonly because: string
+  /** The job's hard due time, a rule: "Due Thu 15:00: …". */
+  readonly due: string | null
+}
 
 /** The chain that sets the finish, last job first as explain returns it. */
 export const finishChain = (result: ExplainResult, context: Context): readonly FinishStep[] =>
@@ -71,4 +82,8 @@ export const finishChain = (result: ExplainResult, context: Context): readonly F
     job: context.names.job(item.job),
     when: context.format.range(item.start, item.finish),
     because: `${item.joint && item.because.length > 1 ? 'Together: ' : ''}${item.because.map(because => causeText(because, context)).join('; ')}`,
+    due: (() => {
+      const due = context.inputs.rules.find(rule => rule.kind === 'due' && rule.job === item.job)
+      return due?.kind === 'due' ? `Due ${context.format.clock(due.finishBy)}: ${due.words}` : null
+    })(),
   }))

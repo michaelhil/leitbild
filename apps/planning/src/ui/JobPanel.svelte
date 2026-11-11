@@ -6,7 +6,7 @@
   import { durationText, quantityText, sourceMark, sourceText } from './format.ts'
   import MarkTag from './MarkTag.svelte'
   import type { DatedRow } from './model.ts'
-  import { durationView, estimateMark } from './rules-text.ts'
+  import { dueOf, durationView, estimateMark, ruleMark, targetMark } from './rules-text.ts'
   import type { Context } from './status-text.ts'
   import { jobMark } from './timeline-layout.ts'
 
@@ -64,7 +64,11 @@
       {/each}
       {#if job.continuous}<div><dt>Breaks</dt><dd>Never paused over a break</dd></div>{/if}
       {#if job.notBefore}<div><dt>Not before</dt><dd>{context.format.clock(job.notBefore.at)}: {job.notBefore.words}{#if job.notBefore.source.by === 'assumption'}<small><MarkTag mark={sourceMark(job.notBefore.source)} tone="assumption" /> Depends on a promise, {context.format.clock(job.notBefore.at)}: it is planned at that time and flagged.</small>{/if}</dd></div>{/if}
-      {#if job.target}<div><dt>Wanted finish</dt><dd>{context.format.clock(job.target.finishBy)}: {job.target.words}<small>A goal, not a rule.</small></dd></div>{/if}
+      {#if dueOf(context.inputs, job.key)}
+        {@const due = dueOf(context.inputs, job.key)!}
+        <div><dt>Due by</dt><dd><MarkTag mark={ruleMark} tone="rule" /> {context.format.clock(due.finishBy)}: {due.words}<small><MarkTag mark={sourceMark(due.source)} />{due.source.note ? ` ${due.source.note}` : ''} A hard rule: no plan finishes it later.</small></dd></div>
+      {/if}
+      {#if job.target}<div><dt>Wanted finish</dt><dd><MarkTag mark={targetMark} tone="estimate" /> {context.format.clock(job.target.finishBy)}: {job.target.words}<small>A goal, not a rule: it may slip, and lateness is counted.</small></dd></div>{/if}
       {#each job.checks as check, index (index)}<div><dt>{index === 0 ? 'Ready only if' : 'and'}</dt><dd>{check.words}<small>Checked against World at read time.</small></dd></div>{/each}
       {#each before as link, index (index)}<div><dt>{index === 0 ? 'After' : ''}</dt><dd>{names.job(link.from)} {linkWords[link.type]}{lag(link)}</dd></div>{/each}
       {#each after as link, index (index)}<div><dt>{index === 0 ? 'Before' : ''}</dt><dd>{names.job(link.to)} {nextWords[link.type]}{lag(link)}</dd></div>{/each}

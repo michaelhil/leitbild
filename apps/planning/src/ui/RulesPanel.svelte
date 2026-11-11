@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Edit } from '../plan/edit-schema.ts'
+  import { dueMoveEdit, localInputValue } from './edit-forms.ts'
   import MarkTag from './MarkTag.svelte'
   import RuleForm from './RuleForm.svelte'
   import { ruleView, settingViews } from './rules-text.ts'
@@ -11,6 +12,16 @@
   const rules = $derived(context.inputs.rules.map(rule => ruleView(rule, context)))
   const settings = $derived(settingViews(context))
   const goals = $derived(goalOrderText(context.inputs.goals, context))
+  let moving = $state<string | null>(null)
+  let movedTo = $state('')
+  let problems = $state<readonly string[]>([])
+  const move = (key: string, words: string) => {
+    const built = dueMoveEdit(key, movedTo, context.inputs)
+    if (!built.ok) { problems = built.problems; return }
+    problems = []
+    moving = null
+    onPreview(built.edits, `Move the due time of “${words}”`)
+  }
   const sourceTone = (shape: string) => shape === '△' ? 'assumption' : shape === '◉' ? 'world' : 'plain'
 </script>
 
@@ -25,6 +36,18 @@
         <p class="hint">{rule.covers}</p>
         <p class="hint"><MarkTag mark={rule.source.mark} tone={sourceTone(rule.source.mark.shape)} />{rule.source.note ? ` ${rule.source.note}` : ''}</p>
         <button type="button" class="quiet" disabled={busy} onclick={() => onPreview([{ edit: 'remove', what: 'rule', key: rule.key }], `Remove the rule “${rule.words}”`)}>Remove…</button>
+        {#if rule.due !== null}
+          {#if moving === rule.key}
+            <form class="mini-form" onsubmit={(event) => { event.preventDefault(); move(rule.key, rule.words) }}>
+              <label>New latest finish ({context.format.zone})<input type="datetime-local" bind:value={movedTo} /></label>
+              <p class="hint">Moving it later weakens the rule: the preview asks who agreed and why.</p>
+              <div class="actions"><button type="submit" disabled={busy}>Preview</button><button type="button" onclick={() => { moving = null }}>Cancel</button></div>
+              {#if problems.length > 0}<ul class="problems">{#each problems as problem (problem)}<li>{problem}</li>{/each}</ul>{/if}
+            </form>
+          {:else}
+            <button type="button" class="quiet" disabled={busy} onclick={() => { moving = rule.key; movedTo = localInputValue(rule.due!, context.format.zone) }}>Move the due time…</button>
+          {/if}
+        {/if}
       </li>
     {/each}
   </ul>

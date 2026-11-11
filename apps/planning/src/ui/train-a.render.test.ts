@@ -110,7 +110,7 @@ describe('Train A on the plan screen', () => {
     expect(text).toContain('Station mechanical crew')
     expect(text).toContain('one at a time')
     expect(text).toContain('Float')
-    expect(text).toContain('to the window end (logic and shifts only; crews and outage limits are checked separately)')
+    expect(text).toContain('limited by: the window end (logic and shifts only; crews and outage limits are checked separately)')
     expect(text).toContain('Mon 07:00–10:00')
   })
 
@@ -127,7 +127,13 @@ describe('Train A on the plan screen', () => {
   })
 
   test('routine views show no ids, JSON or seconds counts', () => {
-    for (const model of [modelOf(trainAInputs()), trainAPlanned()]) {
+    const planned = trainAPlanned()
+    // Hand calculation: 16 h before the window end (Sat 07:00) is Fri 15:00, inside the window.
+    const due = { kind: 'due' as const, key: 'D1', job: 'SWA-RTS', finishBy: new Date(Date.parse(planned.inputs.settings.window!.end) - 16 * hourMs).toISOString(), words: 'SW A back for the Friday surveillance.', source: { by: 'planner' as const } }
+    const withDue = { ...planned, inputs: { ...planned.inputs, rules: [...planned.inputs.rules, due] } }
+    expect(screen(withDue, 'rules')).toContain('Restore SW A, fill and vent, pump test must finish by Fri 15:00. No plan may finish it later.')
+    expect(screen(withDue)).toContain('Restore SW A, fill and vent, pump test is due Fri 15:00')
+    for (const model of [modelOf(trainAInputs()), planned, withDue]) {
       for (const view of views) {
         expect({ view, breaches: routineBreaches(screen(model, view), identifiers(model.inputs), labelsOf(model)) }).toEqual({ view, breaches: [] })
       }

@@ -21,6 +21,21 @@ export interface Shown {
 export const readsWorld = (edits: readonly Edit[]): boolean =>
   edits.some(edit => ('locator' in edit && typeof edit.locator === 'string') || (edit.edit === 'plan' && typeof edit.run === 'string'))
 
+/**
+ * A change the screen already knows weakens a hard rule: removing a rule, or moving a due time later.
+ * The Module decides; the screen asks for the agreement up front so the person is not refused twice.
+ */
+export const weakensRule = (model: PlanModel, edits: readonly Edit[]): string | null => {
+  for (const edit of edits) {
+    if (edit.edit === 'remove' && edit.what === 'rule') return 'Removing this rule weakens it'
+    if (edit.edit === 'rule' && edit.finishBy !== undefined) {
+      const due = model.inputs.rules.find(rule => rule.key === edit.key)
+      if (due?.kind === 'due' && Date.parse(edit.finishBy) > Date.parse(due.finishBy)) return 'Moving a due time later weakens it'
+    }
+  }
+  return null
+}
+
 export const createPlanActions = (client: PlanningClient, planId: string) => {
   const load = async (keep: string | null, notice: string | null = null): Promise<Shown> => {
     const model = await loadPlan(client, planId)
@@ -46,11 +61,12 @@ export const createPlanActions = (client: PlanningClient, planId: string) => {
       })),
     /** Shows an edit's consequence without saving. A refusal in words is a preview too; a server fault is not. */
     preview: async (model: PlanModel, edits: readonly Edit[], label: string): Promise<Preview> => {
+      const asks = weakensRule(model, edits)
       try {
-        return { label, result: await client.edit(planId, model.revision, { edits: [...edits], preview: true }), refusal: null }
+        return { label, result: await client.edit(planId, model.revision, { edits: [...edits], preview: true }), refusal: null, asks }
       } catch (cause) {
         if (!isRequestError(cause) || cause.status >= 500) throw cause
-        return { label, result: null, refusal: { text: refusalText(cause), needsAuthority: cause.code === 'needs_authority' } }
+        return { label, result: null, refusal: { text: refusalText(cause), needsAuthority: cause.code === 'needs_authority' }, asks }
       }
     },
     apply: async (model: PlanModel, edits: readonly Edit[], authority: { name: string; reason: string } | null, keep: string | null): Promise<Shown> => {
