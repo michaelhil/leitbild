@@ -1,7 +1,8 @@
 // The solver process boundary (pool.ts <-> child.ts): messages are JSON. Typed arrays and non-finite numbers
 // are tagged on the way out and restored on the way in; a result is validated before the pool trusts it.
 import { z } from 'zod'
-import { optionSchema } from '../plan/schema.ts'
+import { datedRowSchema, instantSchema, keySchema, optionSchema } from '../plan/schema.ts'
+import type { PreviewResult } from './preview.ts'
 import type { SubSolveOutcome } from './generate.ts'
 import type { EngineBudget, EngineResult, NormalizedProblem, Schedule } from './problem.ts'
 
@@ -9,6 +10,8 @@ export type ChildRequest =
   | { readonly type: 'solve'; readonly id: string; readonly problem: unknown; readonly budget: EngineBudget; readonly seed: number; readonly initial?: unknown; readonly rssLimitMb: number; readonly sampleMs: number }
   /** A whole sub-solve (generate.ts subSolve): compile, bounds, search and lane K's check, in the child. */
   | { readonly type: 'subsolve'; readonly id: string; readonly task: unknown; readonly rssLimitMb: number; readonly sampleMs: number }
+  /** A preview (preview.ts previewOption): repair, lane K's check and a lock against the saved plan, in the child. */
+  | { readonly type: 'preview'; readonly id: string; readonly task: unknown; readonly rssLimitMb: number; readonly sampleMs: number }
   | { readonly type: 'cancel'; readonly id: string; readonly who?: 'person' | 'host' }
   /** Lower the CPU budget so that from now on the solve uses at most `rate` cores. */
   | { readonly type: 'rebudget'; readonly id: string; readonly rate: number }
@@ -16,6 +19,7 @@ export type ChildResponse =
   /** `peakRssMb`: the child's own peak RSS, sampled while it solved. */
   | { readonly type: 'result'; readonly id: string; readonly result: unknown; readonly peakRssMb: number }
   | { readonly type: 'outcome'; readonly id: string; readonly outcome: unknown; readonly peakRssMb: number }
+  | { readonly type: 'preview'; readonly id: string; readonly preview: unknown; readonly peakRssMb: number }
   /** A planning refusal raised in the child (code, HTTP status, details), passed on as it is. */
   | { readonly type: 'refusal'; readonly id: string; readonly status: number; readonly code: string; readonly message: string; readonly details?: Record<string, unknown> }
   | { readonly type: 'error'; readonly id: string; readonly message: string }
@@ -86,4 +90,20 @@ const outcomeSchema = z.object({
 export const outcomeFromWire = (wire: unknown): SubSolveOutcome | { readonly problem: string } => {
   const parsed = outcomeSchema.safeParse(decode(wire))
   return parsed.success ? parsed.data : { problem: parsed.error.issues.slice(0, 3).map(issue => `${issue.path.join('.')}: ${issue.message}`).join('; ') }
+}
+
+const violationSchema = z.object({ code: z.string(), about: z.array(z.string()), words: z.string() }).strict()
+const previewSchema = z.object({
+  rows: z.array(datedRowSchema),
+  violations: z.array(violationSchema),
+  nearestAllowed: z.object({ job: keySchema, at: instantSchema }).strict().optional(),
+  lockFindings: z.array(violationSchema).optional(),
+}).strict()
+
+/** The child's preview, validated; refused, never patched. */
+export const previewFromWire = (wire: unknown): PreviewResult | { readonly problem: string } => {
+  const parsed = previewSchema.safeParse(decode(wire))
+  if (!parsed.success) return { problem: parsed.error.issues.slice(0, 3).map(issue => `${issue.path.join('.')}: ${issue.message}`).join('; ') }
+  const { nearestAllowed, lockFindings, ...rest } = parsed.data
+  return { ...rest, ...(nearestAllowed === undefined ? {} : { nearestAllowed }), ...(lockFindings === undefined ? {} : { lockFindings }) }
 }

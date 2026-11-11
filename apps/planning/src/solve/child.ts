@@ -1,11 +1,12 @@
 // The solver process: one short-lived Bun child per solve (pool.ts), so its memory goes back to the OS when
 // it ends (walk 3, R3-3: a long-lived process kept what its allocator once took). It runs the one job it is
-// sent: a search ('solve'), or a whole sub-solve of Generate ('subsolve': compile, bounds, search, lane K's
-// check and re-verifications, generate.ts subSolve), and answers as JSON (wire.ts). A `cancel` aborts it; the
+// sent: a search ('solve'), a whole sub-solve of Generate ('subsolve': compile, bounds, search, lane K's
+// check and re-verifications, generate.ts subSolve) or a preview ('preview', preview.ts), and answers as JSON (wire.ts). A `cancel` aborts it; the
 // engine yields about every 50 ms, so the answer (with the best plan so far) follows quickly. It watches its
 // own RSS and stops with 'memory' above the ceiling it is given. When the pool goes away, so does the child.
 import { isPlanningError } from '../errors.ts'
 import { subSolve, type SubSolveTask } from './generate.ts'
+import { previewOption } from './preview.ts'
 import { checkForSolver, verifyBoundForSolver, verifyForSolver } from './lane-k-ports.ts'
 import { searchEngine, threadCpuMs } from './search.ts'
 import type { Engine, EngineBudget, EngineResult } from './problem.ts'
@@ -46,14 +47,21 @@ process.on('message', async (request: ChildRequest) => {
   current = job
   let peak = process.memoryUsage.rss()
   const limit = request.rssLimitMb * 1_000_000
+  // Above three quarters of the ceiling, collect: the search makes garbage fast, and the child's RSS is what
+  // the unit counts (service plus child under 256 MB).
+  const soft = limit * 0.75
   const sampler = setInterval(() => {
-    const rss = process.memoryUsage.rss()
+    let rss = process.memoryUsage.rss()
+    if (rss > soft) { Bun.gc(true); rss = process.memoryUsage.rss() }
     peak = Math.max(peak, rss)
     if (!memory && rss > limit) { memory = true; controller.abort() }
   }, request.sampleMs)
   const peakMb = () => Math.round(Math.max(peak, process.memoryUsage.rss()) / 1e5) / 10
   try {
-    if (request.type === 'subsolve') {
+    if (request.type === 'preview') {
+      const { inputs, option } = decode(request.task) as Parameters<typeof previewOption> extends [infer I, infer O] ? { inputs: I; option: O } : never
+      send({ type: 'preview', id: request.id, preview: encode(previewOption(inputs, option)), peakRssMb: peakMb() })
+    } else if (request.type === 'subsolve') {
       const outcome = await run(decode(request.task) as SubSolveTask, controller.signal, () => job.who)
       send({ type: 'outcome', id: request.id, outcome: encode(outcome), peakRssMb: peakMb() })
     } else {

@@ -12,7 +12,11 @@ import type { Engine, EngineResult, NormalizedProblem } from './problem.ts'
 import { formulationOf } from './compile.ts'
 import type { SubSolveOutcome, SubSolver } from './generate.ts'
 import { unresolvedStatus } from './status.ts'
-import { decode, encode, encodeProblem, encodeSchedule, outcomeFromWire, resultFromWire, type ChildRequest, type ChildResponse } from './wire.ts'
+import { decode, encode, encodeProblem, encodeSchedule, outcomeFromWire, previewFromWire, resultFromWire, type ChildRequest, type ChildResponse } from './wire.ts'
+import type { Plan, PlanInputs } from '../plan/schema.ts'
+import type { PreviewResult } from './preview.ts'
+
+type Option = NonNullable<Plan['options']>['options'][number]
 
 /** A rough upper estimate of one solve's working memory in MB: slot arrays, modes and links, copied a few times. */
 export const estimateMemoryMb = (problem: NormalizedProblem): number => {
@@ -31,13 +35,13 @@ export const estimateMemoryMb = (problem: NormalizedProblem): number => {
 export const SOLVER_CPU_CAP_CORES = 0.8 * 0.5
 
 /**
- * A solver child's own RSS ceiling (MB). Measured on macOS with the whole sub-solve in the child (compile,
- * bounds, search, lane K's check): 140 MB on the flagship, 133 MB on or's S33v3, so 150 MB lets a
- * certified-size solve finish. The service itself stays near 66 MB through a Generate; lane K's re-checks in
- * the operations raise it to about 170 MB, so service plus child can still pass 256 MB: an open decision,
- * and the Linux proof is the Release A ops gate.
+ * A solver child's own RSS ceiling (MB). Measured on macOS, one child at a time, with every solve, re-check
+ * and preview in the child: the service levels off near 102 MB (10 Generates and 20 previews), and a child
+ * peaks at 124-139 MB on the flagship and S33v3 (it collects above three quarters of this ceiling). So service
+ * plus child stays near 240 MB, and 140 MB keeps the worst case under the unit's 256 MB. The Linux proof is
+ * the Release A ops gate.
  */
-export const CHILD_RSS_LIMIT_MB = 150
+export const CHILD_RSS_LIMIT_MB = 140
 
 /** One solve at a time across the service (walk 3 decision): a second is refused, never queued. */
 export const SOLVER_BUSY_WORDS = 'Planning is generating another plan; try again in about 20 seconds.'
@@ -65,6 +69,8 @@ export interface SolveRecord {
 export interface SolverPool extends Engine {
   /** Generate's sub-solves, each whole in a child (compile, bounds, search, lane K's check). */
   readonly subSolver: SubSolver
+  /** A preview in a child (preview.ts): one child at a time, like a solve. */
+  readonly preview: (inputs: PlanInputs, option: Option) => Promise<PreviewResult>
   readonly active: () => number
   /** The last 100 solves. */
   readonly records: () => readonly SolveRecord[]
@@ -108,8 +114,9 @@ export const createSolverPool = (options: PoolOptions = {}): SolverPool => {
     readonly grantedCpuMs: number
     readonly signal: AbortSignal
     readonly stoppedByWho?: () => 'person' | 'host' | undefined
-    readonly answer: (message: Extract<ChildResponse, { type: 'result' | 'outcome' }>) => { readonly value: T; readonly record: Omit<SolveRecord, 'id' | 'grantedCpuMs' | 'spawnToAnswerMs'> } | { readonly problem: string }
-    readonly unanswered: (stoppedBy: 'cancelled' | 'ended', wallMs: number) => { readonly value: T; readonly record: Omit<SolveRecord, 'id' | 'grantedCpuMs' | 'spawnToAnswerMs'> }
+    readonly answer: (message: Extract<ChildResponse, { type: 'result' | 'outcome' | 'preview' }>) => { readonly value: T; readonly record?: Omit<SolveRecord, 'id' | 'grantedCpuMs' | 'spawnToAnswerMs'> } | { readonly problem: string }
+    /** No answer: a value to resolve with, or (preview) a refusal to throw. */
+    readonly unanswered: (stoppedBy: 'cancelled' | 'ended', wallMs: number) => { readonly value: T; readonly record: Omit<SolveRecord, 'id' | 'grantedCpuMs' | 'spawnToAnswerMs'> } | { readonly refuse: Error }
   }): Promise<T> => {
     const id = `solve-${++next}`
     const startedAt = performance.now()
@@ -133,7 +140,8 @@ export const createSolverPool = (options: PoolOptions = {}): SolverPool => {
         resolveSettled(undefined)
         outcome()
       }
-      const settle = (answer: { readonly value: T; readonly record: Omit<SolveRecord, 'id' | 'grantedCpuMs' | 'spawnToAnswerMs'> }): void => finish(() => resolve(answer.value), answer.record)
+      const settle = (answer: { readonly value: T; readonly record?: Omit<SolveRecord, 'id' | 'grantedCpuMs' | 'spawnToAnswerMs'> } | { readonly refuse: Error }): void =>
+        'refuse' in answer ? finish(() => reject(answer.refuse)) : finish(() => resolve(answer.value), answer.record)
       const send = (request: ChildRequest): void => { if (!done) child.send(request) }
       const child = Bun.spawn([process.execPath, ...(smol ? ['--smol'] : []), childEntry], {
         stdin: 'ignore', stdout: 'inherit', stderr: 'inherit', serialization: 'json',
@@ -215,11 +223,25 @@ export const createSolverPool = (options: PoolOptions = {}): SolverPool => {
     })
   }
 
+  /** A preview in a child: no CPU budget (it is a repair, not a search); refused when the pool is busy. */
+  const preview = async (inputs: PlanInputs, option: Option): Promise<PreviewResult> => {
+    admit()
+    return job<PreviewResult>({
+      request: id => ({ type: 'preview', id, task: encode({ inputs, option }), rssLimitMb, sampleMs }),
+      rate: 0, wallMs: 0, grantedCpuMs: 0, signal: new AbortController().signal,
+      answer: message => {
+        const result = message.type === 'preview' ? previewFromWire(message.preview) : { problem: 'a preview answered with a solve result' }
+        return 'problem' in result ? result : { value: result }
+      },
+      unanswered: stoppedBy => ({ refuse: planningError(503, 'preview_unavailable', stoppedBy === 'ended' ? 'The preview could not be made: the solver process ended. Try again.' : 'The preview was stopped. Try again.') }),
+    })
+  }
+
   const shutdown = async (): Promise<void> => {
     stopping = true
     const all = [...running.values()]
     for (const entry of all) entry.stop()
     await Promise.all(all.map(entry => entry.settled))
   }
-  return { name: SOLVER_VERSIONS.engine, solve, subSolver, active: () => running.size, records: () => [...records], shutdown }
+  return { name: SOLVER_VERSIONS.engine, solve, subSolver, preview, active: () => running.size, records: () => [...records], shutdown }
 }

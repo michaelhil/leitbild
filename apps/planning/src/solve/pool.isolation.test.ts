@@ -71,3 +71,22 @@ describe('a sub-solve runs whole in a solver child', () => {
     } finally { await pool.shutdown() }
   }, 120_000)
 })
+
+describe('a preview runs in a solver child too', () => {
+  test('the child gives the same preview as in this process; a preview while a Generate runs is refused, never queued', async () => {
+    const { previewOption } = await import('./preview.ts')
+    const { createRealSolver } = await import('../api/wiring.ts')
+    const { SOLVER_BUSY_WORDS } = await import('./pool.ts')
+    const pool = createSolverPool()
+    try {
+      const solver = createRealSolver(pool)
+      const request = { inputs: flagship, inputsRevision: 1, variants: undefined, seconds: 2, stored: null, at: new Date().toISOString(), by: { kind: 'service' as const, name: 'test' }, signal: new AbortController().signal }
+      const set = await solver.generate(request)
+      const option = set.options.find(candidate => candidate.key === set.recommended)!
+      expect(await pool.preview(flagship, option)).toEqual(previewOption(flagship, option))
+      const running = solver.generate(request)
+      await expect(solver.preview({ inputs: flagship, option })).rejects.toMatchObject({ status: 409, code: 'solver_busy', message: SOLVER_BUSY_WORDS })
+      await running
+    } finally { await pool.shutdown() }
+  }, 120_000)
+})
