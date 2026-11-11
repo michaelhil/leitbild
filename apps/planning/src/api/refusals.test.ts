@@ -73,8 +73,11 @@ describe('refusals name their cause and stay within 4 KB', () => {
     expect(touched.body.error.message).toContain(`'${trainA.equipment.find(item => item.key === protectedItem)!.label}' (${protectedItem})`)
     const minimum = await edit([{ edit: 'job', key: minimumTest.key, duration: { value: minimumTest.minimum!.value / 2, unit: minimumTest.minimum!.unit } }])
     expect(minimum.body.error.details).toMatchObject({ rule: expect.stringContaining(minimumTest.minimum!.words), authority: { needed: true } })
+    // Who could lift it, in words with no plan key (walk 2, T20-04).
+    expect(touched.body.error.details.lift).toBe('Only removing this protection rule lifts it, and removing the rule needs a named person\'s agreement.')
+    // An edit invalid in itself is refused in a preview exactly as on save: the same 409, never preview violations (walk 2, R2-4).
     const preview = await harness.call('planning.plan.edit', { resource: plan.id, input: { edits: [{ edit: 'job', key: workJob.key, equipment: [protectedItem] }], preview: true } })
-    expect(preview.body.result.preview).toEqual({ saved: false, consequence: 'Not saved: this change breaks a rule.', violations: [protectedRule.words], weakens: [] })
+    expect([preview.status, preview.body.error.code, preview.body.error.details.rule]).toEqual([409, 'protected_equipment', protectedRule.words])
   })
 
   test('an Assistant never supplies authority: a loosening edit from an agent is a person\'s to make (adversary item 19)', async () => {

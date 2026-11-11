@@ -4,7 +4,7 @@ import { planningError } from '../errors.ts'
 import { applyEdits, requireAuthority, type ChangeRecord, type StoredActor } from '../plan/edits.ts'
 import type { Edit } from '../plan/edit-schema.ts'
 import { planInputsSchema, type Plan } from '../plan/schema.ts'
-import { changeSummary } from '../plan/summary.ts'
+import { changeSummary, clip } from '../plan/summary.ts'
 import type { PlanDefinition, PlanDefinitionsPort } from './index.ts'
 
 /** The exact revision a caller names, or 404: a start never falls back to another revision. */
@@ -29,7 +29,11 @@ export const startPlan = (start: {
   readonly grid?: Plan['inputs']['settings']['grid']
 }): { readonly plan: Plan; readonly changes: readonly ChangeRecord[] } => {
   const { definition, at, by } = start
-  const inputs = planInputsSchema.parse({ ...structuredClone(definition.inputs), settings: { ...definition.inputs.settings, run: null, grid: start.grid ?? definition.inputs.settings.grid } })
+  // A plan made from a case Definition is not named like the World Scenario it links to, so the Workspace
+  // never shows two cards with one title (walk 2, R2-9); the caller's own title edit still wins.
+  const settings = definition.inputs.settings
+  const title = settings.scenario === undefined ? settings.title : `${settings.title}: plan`
+  const inputs = planInputsSchema.parse({ ...structuredClone(definition.inputs), settings: { ...settings, title, run: null, grid: start.grid ?? settings.grid } })
   const outcome = start.edits.length === 0 ? { inputs, changes: [], weakens: [] } : applyEdits(inputs, start.edits, { now: at, by })
   requireAuthority(outcome.weakens, undefined, inputs)
   const summary = `Created from '${definition.title}'${outcome.changes.length === 0 ? '' : `; ${changeSummary(outcome.changes, outcome.inputs)}`}`
@@ -37,7 +41,7 @@ export const startPlan = (start: {
     plan: {
       id: start.id, workspaceId: start.workspaceId, revision: 1, createdAt: at, updatedAt: at,
       inputs: outcome.inputs, options: null, baselines: [],
-      changes: [{ seq: 1, at, by, revision: 1, summary: summary.length <= 240 ? summary : `${summary.slice(0, 239)}…`, kinds: [...new Set(start.edits.map(edit => edit.edit))].slice(0, 16) }],
+      changes: [{ seq: 1, at, by, revision: 1, summary: clip(summary, 240), kinds: [...new Set(start.edits.map(edit => edit.edit))].slice(0, 16) }],
       droppedChanges: 0,
     },
     changes: outcome.changes,

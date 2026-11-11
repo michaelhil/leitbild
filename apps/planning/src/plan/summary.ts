@@ -26,6 +26,21 @@ export const timeWords = (instant: string, zone: string | null): string => {
   return zone === null ? `${text} UTC` : text
 }
 
+const datedTime = new Map<string, Intl.DateTimeFormat>()
+/** "Thu 3 Sep 10:02" in the plan's zone, for read times that can lie outside the plan's week (walk 2, R2-8). */
+export const datedWords = (instant: string, zone: string | null): string => {
+  const key = zone ?? 'UTC'
+  let format = datedTime.get(key)
+  if (format === undefined) {
+    format = new Intl.DateTimeFormat('en-GB', { timeZone: key, weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+    datedTime.set(key, format)
+  }
+  const part = (type: Intl.DateTimeFormatPartTypes, parts: Intl.DateTimeFormatPart[]) => parts.find(entry => entry.type === type)?.value ?? ''
+  const parts = format.formatToParts(new Date(instant))
+  const text = `${part('weekday', parts)} ${part('day', parts)} ${part('month', parts)} ${part('hour', parts)}:${part('minute', parts)}`
+  return zone === null ? `${text} UTC` : text
+}
+
 const grouped = (value: number): string => Math.round(value).toLocaleString('en-US')
 const decimal = (value: number): string => Number.isInteger(value) ? String(value) : value.toFixed(value < 10 ? 2 : 1).replace(/0+$/, '').replace(/\.$/, '')
 
@@ -70,7 +85,13 @@ const names = (inputs: Inputs, keys: readonly string[], limit = 4): string => {
   return keys.length > limit ? `${shown.join(', ')} and ${keys.length - limit} more` : shown.join(', ')
 }
 
-const clip = (text: string, limit: number): string => text.length <= limit ? text : `${text.slice(0, limit - 1).trimEnd()}…`
+/** Text within `limit` characters, cut at a word boundary and ended with "…" (walk 2: never mid-word). */
+export const clip = (text: string, limit: number): string => {
+  if (text.length <= limit) return text
+  const cut = text.slice(0, limit - 1)
+  const space = cut.lastIndexOf(' ')
+  return `${(space > limit / 2 ? cut.slice(0, space) : cut).replace(/[\s,;:(–-]+$/, '')}…`
+}
 
 // ───────────── changes ─────────────
 
@@ -155,7 +176,7 @@ export const readinessText = (item: ReadinessItem, inputs: Inputs): string => {
         ? `${name}: ${item.count === 1 ? 'a World value is' : `${item.count} World values are`} not read yet; link the simulation and refresh.`
         : `${name}: ${item.count === 1 ? 'a World value is' : `${item.count} World values are`} not read yet; refresh.`
       case 'world-unusable': return `${name}: a World value is in ${item.unit ?? 'a unit'} Planning cannot use here.`
-      case 'world-duration': return `${name}: taken from '${item.label ?? ''}' (${basisWords[item.basis ?? ''] ?? item.basis}, read ${at}); check it describes the work.`
+      case 'world-duration': return `${name}: taken from '${item.label ?? ''}' (${basisWords[item.basis ?? ''] ?? item.basis}, read ${item.at === undefined ? '' : datedWords(item.at, zone)}, simulation time); check it describes the work.`
       case 'no-crew': {
         const job = inputs.jobs.find(entry => entry.key === item.about[0])
         const what = job?.kind === 'tag-out' ? 'tag-out' : job?.kind === 'test' ? 'return-to-service test' : 'job'
@@ -172,7 +193,14 @@ export const readinessText = (item: ReadinessItem, inputs: Inputs): string => {
       case 'assumption': return item.at !== undefined
         ? `${name}: depends on ${item.words ?? 'an assumption'}, ${at}.`
         : `${names(inputs, item.about, 2)}: an assumption${item.words === undefined ? '' : ` (${item.words})`}; confirm it.`
-      case 'assumptions': return `${item.count === 1 ? 'One planning value is an assumption' : `${item.count} planning values are assumptions`}, such as ${names(inputs, item.about, 2)}: review them.`
+      case 'assumptions': {
+        const parts = [
+          ...(item.count === undefined || item.count === 0 ? [] : [item.count === 1 ? 'one planning value is an assumption' : `${item.count} planning values are assumptions`]),
+          ...(item.proxies === undefined ? [] : [`${item.proxies} durations are World values that stand in for the work`]),
+        ]
+        const head = parts.join(' and ')
+        return `${head.charAt(0).toUpperCase()}${head.slice(1)}, such as ${names(inputs, item.about, 2)}: review them.`
+      }
       case 'rounded': {
         const rounded = item.durations ?? []
         const step = inputs.settings.grid === '30s' ? '30 s' : '30 min'

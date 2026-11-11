@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { workspaceIdSchema } from '@leitbild/contracts'
-import { outTogether, preconditions, readiness, takenOut, worldSubjects } from './readiness.ts'
+import { outTogether, preconditions, readiness, takenOut, worldRefs, worldSubjects } from './readiness.ts'
 import { planInputsSchema, type Plan, type PlanInputs } from './schema.ts'
 import { buildSection, byteLength, readinessText, statusSentence, timeWords } from './summary.ts'
 import { sectionDataSchemas } from '../api/contract.ts'
@@ -78,6 +78,21 @@ describe('readiness: warnings only, never a score (T2)', () => {
     expect(readinessText(grouped[0]!, supplyRun)).toMatch(/^\d+ planning values are assumptions, such as .*: review them\.$/)
     const promised = trainA.jobs.filter(job => job.notBefore?.source.by === 'assumption').map(job => job.key)
     expect(readiness(planOf(trainA), { staleOptions: [], now: '2026-11-12T09:00:00Z' }).filter(item => item.code === 'assumption').map(item => item.about[0])).toEqual(promised)
+  })
+
+  test('World values standing in for durations join the one assumptions card; the rounding note stays one card (walk 2, R2-10)', () => {
+    const refs = worldRefs(supplyRun).map(entry => entry.ref)
+    const facts = [...new Map(refs.map(ref => [`${ref.locator} ${ref.fact}`, ref])).values()].map(ref => ({ id: ref.fact, label: 'Arrival', quantity: 'time', unit: 's', value: 209.8, basis: 'owner-estimate' as const, at: '2026-09-03T08:00:00Z', locator: ref.locator }))
+    const read = { ...supplyRun, world: { refreshedAt: '2026-09-03T08:00:00Z', facts } }
+    const stand = read.jobs.filter(job => job.duration.origin.by === 'world').length
+    expect(stand).toBeGreaterThan(1)
+    const items = readiness(planOf(read), { staleOptions: [], now: '2026-09-03T08:00:00Z' })
+    expect(items.filter(item => item.code === 'world-duration')).toEqual([])
+    const card = items.filter(item => item.code === 'assumptions')
+    expect(card.map(item => item.proxies)).toEqual([stand])
+    expect(readinessText(card[0]!, read)).toMatch(new RegExp(`^\\d+ planning values are assumptions and ${stand} durations are World values that stand in for the work, such as .*: review them\\.$`))
+    expect(items.filter(item => item.code === 'rounded')).toHaveLength(1)
+    expect(items.filter(item => !item.blocks).length).toBeLessThanOrEqual(4)
   })
 
   test('durations that do not fit the time step are listed once, as rounded up (design D9)', () => {

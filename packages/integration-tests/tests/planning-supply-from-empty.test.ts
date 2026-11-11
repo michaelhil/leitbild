@@ -59,7 +59,7 @@ test('the Supply run from empty: World trucks and requests are usable once the r
   revision = added.plan.revision
   expect(unread(added.problems)).toBe(true)
   const read = await refresh()
-  expect(read.changed[0]).toMatch(/^Read \d+ World values at .+: \d+ new or changed/)
+  expect(read.changed[0]).toMatch(/^Read \d+ World values describing Thu 3 Sep \d\d:\d\d \(simulation time\): \d+ new or changed/)
 
   // The requests, each taking its time from World per truck (arrival plus service).
   const requestEdits = tasks.slice(0, 2).map((task: { locator: string; label: string }, index: number) => ({

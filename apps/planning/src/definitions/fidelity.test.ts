@@ -2,8 +2,10 @@
 // maint's freeze), never through the Definition. Run the scratch generator again if a fixture changes.
 import { describe, expect, test } from 'bun:test'
 import { createHash } from 'node:crypto'
+import { workspaceIdSchema } from '@leitbild/contracts'
 import { stableJson } from '@leitbild/module-runtime'
 import { bundledPlanDefinitions, definitionRevisionId } from './index.ts'
+import { startPlan } from './start.ts'
 
 const read = (path: string) => Bun.file(new URL(path, import.meta.url)).json()
 const fixture = async (name: string) => read(`../plan/fixtures/${name}`)
@@ -39,6 +41,20 @@ describe('Definition fidelity', () => {
       expect(definition.title).not.toBe(definition.inputs.settings.scenario!.title)
       expect(definition.title).not.toBe(definition.inputs.settings.title)
     }
+  })
+
+  test('a plan made from a case Definition is titled apart from its World Run; a title the caller gives wins (walk 2, R2-9)', () => {
+    const start = (id: string, edits: Parameters<typeof startPlan>[0]['edits'] = []) => startPlan({
+      definition: bundledPlanDefinitions.find(entry => entry.id === id)!, workspaceId: workspaceIdSchema.parse('00000000-0000-4000-8000-0000000000aa'), id: '00000000-0000-4000-8000-000000000009',
+      at: '2026-11-11T08:00:00Z', by: { kind: 'human' }, edits,
+    }).plan.inputs.settings.title
+    for (const definition of bundledPlanDefinitions.filter(entry => entry.inputs.settings.scenario !== undefined)) {
+      const title = start(definition.id)
+      expect(title).toBe(`${definition.inputs.settings.title}: plan`)
+      expect(title).not.toBe(definition.inputs.settings.scenario!.title)
+    }
+    expect(start('train-a-work-week', [{ edit: 'plan', title: 'Week 47' }])).toBe('Week 47')
+    expect(start('blank')).toBe('New plan')
   })
 
   test('New plan has no zone, window, Run or Scenario', () => {

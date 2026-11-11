@@ -7,7 +7,7 @@ import {
   inspectionViewSchema, planningFactsOutputSchema, workspaceResourceReferenceSchema,
   type AccessContext, type InspectionView, type PlanningFactsInput, type PlanningFactsOutput, type WorkspaceId, type WorkspaceResourceReference,
 } from '@leitbild/contracts'
-import { isPlanningError, planningError } from '../errors.ts'
+import { planningError } from '../errors.ts'
 import { applyEdits, requireAuthority, type ChangeRecord, type EditOutcome, type StoredActor, type Weakening } from '../plan/edits.ts'
 import { definitionRevision, startPlan } from '../definitions/start.ts'
 import type { PlanDefinitionsPort } from '../definitions/index.ts'
@@ -20,7 +20,7 @@ import {
 import type { Edit } from '../plan/edit-schema.ts'
 import { assertRevision, type PlanStore, type RevisionGuard } from '../plan/store.ts'
 import {
-  attentionKind, basisWords, buildSection, sizeRefusalWords, weakeningWords, byteLength, changeLines, changeSummary, nameOf, optionWarning, readinessText,
+  attentionKind, basisWords, buildSection, clip, datedWords, sizeRefusalWords, weakeningWords, byteLength, changeLines, changeSummary, nameOf, optionWarning, readinessText,
   statusSentence, timeWords, valueWords, type OptionState, type Section, type SectionContext,
 } from '../plan/summary.ts'
 import type { Grid } from '../time/units.ts'
@@ -96,7 +96,10 @@ export interface SolverPort {
   readonly preview: (request: { readonly inputs: PlanInputs; readonly option: Option }) => Promise<{
     readonly rows: readonly DatedRow[]
     readonly violations: readonly CheckViolation[]
+    /** Lane S: the slot nearest a lock where the locked job's links, calendar, window and crews hold, against the saved option. */
     readonly nearestAllowed?: { readonly job: string; readonly at: string }
+    /** Lane K's findings for a locked job at its lock time, against the saved option's rows: words that match the plan on screen. */
+    readonly lockFindings?: readonly CheckViolation[]
   }>
 }
 
@@ -184,6 +187,9 @@ export const unconfirmedAsBestFound = (status: Status, goals: readonly number[])
   return { ...status, goals: status.goals.map(goal => goal.goal >= from && goal.word === 'proven optimal' ? { word: 'best found under budget' as const, goal: goal.goal, value: goal.value, unit: goal.unit } : goal) }
 }
 
+/** Job keys saved in any baseline of the plan. */
+const baselinedJobs = (plan: Plan): ReadonlySet<string> => new Set(plan.baselines.flatMap(baseline => baseline.inputs.jobs.map(job => job.key)))
+
 /** The structured status the Assistant reads: the stored words, goals in order, and a cause only for a proof. */
 export const statusOut = (status: Status): StatusOut => {
   if (status.word === 'validated feasible') {
@@ -253,7 +259,7 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
     const result: WriteResult = {
       plan: { id: plan.id, title: plan.inputs.settings.title, revision: plan.revision },
       target: { kind: 'resource', ref: planReference(plan.workspaceId, plan.id) },
-      changed: changed.slice(0, 12).map(line => line.slice(0, 200)),
+      changed: changed.slice(0, 12).map(line => clip(line, 200)),
       attention: items.filter(item => !item.blocks).slice(0, 6).map(item => ({ kind: attentionKind(item), text: readinessText(item, plan.inputs), about: [...item.about.slice(0, 4)] })),
       problems: items.filter(item => item.blocks).slice(0, 8).map(item => ({ about: [...item.about.slice(0, 4)], code: item.code, text: readinessText(item, plan.inputs) })),
       ...extra,
@@ -366,7 +372,17 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
       if (rule?.kind === 'due') return `${rule.key} (due ${timeWords(rule.finishBy, zone)})`
       if (rule?.kind === 'keep-in-service') return `${rule.key} (at least ${rule.atLeast} in service)`
       if (rule?.kind === 'protected') return `${rule.key} (protected)`
-      return violation.code === 'beyond-window' || violation.code === 'outside-window' ? 'the window' : violation.code.replaceAll('-', ' ')
+      const name = (at: number) => `'${nameOf(inputs, violation.about[at] ?? '')}'`
+      switch (violation.code) {
+        case 'beyond-window': case 'outside-window': return 'the window'
+        case 'link': return `the link ${name(0)} before ${name(1)}`
+        case 'lock': return `the fixed start of ${name(0)}`
+        case 'over-capacity': return `the capacity of ${name(0)}`
+        case 'use-outside-calendar': case 'start-off-calendar': return `the shifts of ${name(0)}`
+        case 'release': return `the release time of ${name(0)}`
+        case 'before-data-date': return 'the plan\'s now'
+        default: return violation.code.replaceAll('-', ' ')
+      }
     })
     const distinct = [...new Set(named)]
     return distinct.length <= 2 ? distinct.join(' and ') : `${distinct.slice(0, 2).join(', ')} and ${distinct.length - 2} more`
@@ -428,7 +444,7 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
     const result: GenerateResult = {
       plan: { id: saved.id, revision: saved.revision }, options,
       ...(generated.recommended === undefined ? {} : { recommended: generated.recommended }),
-      text: sentence.length <= 300 ? sentence : `${sentence.slice(0, 299)}…`,
+      text: clip(sentence, 300),
     }
     return resultOf(generateResultSchema, fit(result, ['options'], () => undefined))
   }
@@ -450,13 +466,9 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
       const by = storedActor(access)
       if (input.preview === true) {
         const plan = await readGuarded(workspaceId, planId, { expectedRevision, required: false })
-        let outcome: EditOutcome
-        try { outcome = applyEdits(plan.inputs, input.edits, { now: at, by }) } catch (error) {
-          if (!isPlanningError(error) || error.code !== 'protected_equipment') throw error
-          // The rule in words only: preview violations are shown to people as they are.
-          const rule = typeof error.details?.rule === 'string' ? error.details.rule : 'A job would touch protected equipment.'
-          return writeResult(plan, ['Not saved'], { preview: { saved: false, consequence: 'Not saved: this change breaks a rule.', violations: [rule.slice(0, 200)], weakens: [] } })
-        }
+        // An edit that is invalid in itself is refused in a preview exactly as on save (walk 2, R2-4): the
+        // same 4xx, never only preview violations. Problems and violations of a valid edit do not refuse it.
+        const outcome: EditOutcome = applyEdits(plan.inputs, input.edits, { now: at, by, baselined: baselinedJobs(plan) })
         const previewed: Plan = { ...plan, inputs: outcome.inputs }
         const weakens = [...new Set(outcome.weakens.flatMap(weakening => weakening.about.slice(0, 1)))].slice(0, 6)
         const recommended = plan.options?.options.find(option => option.key === plan.options?.recommended)
@@ -469,12 +481,19 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
         const moved = timed.rows.filter(row => before.get(row.job)?.start !== row.start || before.get(row.job)?.finish !== row.finish)
         const finish = (rows: readonly DatedRow[]) => rows.reduce((latest, row) => row.finish > latest ? row.finish : latest, '')
         const zone = outcome.inputs.settings.timeZone
-        // The preview re-times this option only; Generate may still find a schedule that keeps the rule.
-        const consequence = timed.violations.length > 0 ? `Not saved: this option's re-timing breaks ${retimingBreaks(timed.violations, outcome.inputs)}. Generate may find a schedule that keeps it.${authority}`
-          : `Not saved. ${moved.length === 0 ? 'No job moves' : `${moved.length} job${moved.length === 1 ? ' moves' : 's move'}`}; the last finish ${finish(timed.rows) === finish(recommended.rows) ? 'stays' : `moves from ${timeWords(finish(recommended.rows), zone)} to ${timeWords(finish(timed.rows), zone)}`}.${authority}`
+        // A lock's gap is measured against the saved option (walk 2, R2-5): lane K's findings for the locked
+        // job with every other job where the plan on screen has it, in place of the re-timed findings about it.
+        const locked = timed.nearestAllowed?.job ?? timed.lockFindings?.[0]?.about.find(key => input.edits.some(edit => edit.edit === 'job' && edit.key === key && edit.lock !== undefined))
+        const findings = timed.lockFindings === undefined || timed.lockFindings.length === 0 ? timed.violations
+          : [...timed.lockFindings, ...timed.violations.filter(violation => locked === undefined || !violation.about.includes(locked))]
+        const nearest = timed.nearestAllowed === undefined ? '' : ` The nearest allowed start for ${nameOf(outcome.inputs, timed.nearestAllowed.job)} is ${timeWords(timed.nearestAllowed.at, zone)}.`
+        // A valid change is saved even when this option cannot keep a rule: every option made before it goes
+        // out of date, and Generate makes new ones (walk 2, R2-4).
+        const consequence = findings.length > 0 ? `Not saved yet. This option would break ${retimingBreaks(findings, outcome.inputs)}; generate new options after saving.${nearest}${authority}`
+          : `Not saved yet. ${moved.length === 0 ? 'No job moves' : `${moved.length} job${moved.length === 1 ? ' moves' : 's move'}`}; the last finish ${finish(timed.rows) === finish(recommended.rows) ? 'stays' : `moves from ${timeWords(finish(recommended.rows), zone)} to ${timeWords(finish(timed.rows), zone)}`}.${authority}`
         return writeResult(previewed, changeLines(outcome.changes, outcome.inputs), { preview: {
-          saved: false, consequence: consequence.length <= 300 ? consequence : `${consequence.slice(0, 299)}…`,
-          violations: timed.violations.slice(0, 6).map(violation => (violation.words ?? `${violation.code.replaceAll('_', ' ').replaceAll('-', ' ')}: ${violation.about.map(key => nameOf(outcome.inputs, key)).join(', ')}`).slice(0, 200)),
+          saved: false, consequence: clip(consequence, 300),
+          violations: findings.slice(0, 6).map(violation => clip(violation.words ?? `${violation.code.replaceAll('_', ' ').replaceAll('-', ' ')}: ${violation.about.map(key => nameOf(outcome.inputs, key)).join(', ')}`, 200)),
           weakens,
           ...(timed.nearestAllowed === undefined ? {} : { nearestAllowed: timed.nearestAllowed.at }),
           moved: moved.slice(0, 6).map(row => ({ job: row.job, start: row.start, finish: row.finish, because: input.edits.map((_, edit) => edit) })),
@@ -484,12 +503,12 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
       // unread, and the Workspace-scoped planning.sources.refresh reads them (the screen calls it next).
       const guard = { expectedRevision, required: true }
       const before = await readGuarded(workspaceId, planId, guard)
-      const draft = applyEdits(before.inputs, input.edits, { now: at, by })
+      const draft = applyEdits(before.inputs, input.edits, { now: at, by, baselined: baselinedJobs(before) })
       refuseAgentAuthority(draft.weakens, access)
       requireAuthority(draft.weakens, input.authority, before.inputs)
       let changes: readonly ChangeRecord[] = []
       const saved = await store.update(workspaceId, planId, guard, plan => {
-        const outcome = applyEdits(plan.inputs, input.edits, { now: at, by })
+        const outcome = applyEdits(plan.inputs, input.edits, { now: at, by, baselined: baselinedJobs(plan) })
         refuseAgentAuthority(outcome.weakens, access)
         requireAuthority(outcome.weakens, input.authority, plan.inputs)
         changes = outcome.changes
@@ -557,7 +576,7 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
         return {
           ...plan, updatedAt: at,
           baselines: [...plan.baselines, { key: `B${number}`, name: input.name, ...(input.note === undefined ? {} : { note: input.note }), at, by, option: structuredClone(option), inputs: structuredClone(plan.inputs) }],
-          ...appendChange(plan, { at, by, revision: plan.revision, summary: `Baseline '${input.name}' from ${option.label}`.slice(0, 240), kinds: [] }),
+          ...appendChange(plan, { at, by, revision: plan.revision, summary: clip(`Baseline '${input.name}' from ${option.label}`, 240), kinds: [] }),
         }
       })
       const baseline = saved.baselines.at(-1)!
@@ -596,9 +615,20 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
       })
       const owners = new Map([...saved.inputs.equipment, ...saved.inputs.resources, ...saved.inputs.jobs.map(job => ({ locator: job.locator, label: job.title }))].flatMap(item => item.locator === undefined ? [] : [[item.locator, item.label] as const]))
       // Lines name World items by the plan's own labels, never by locator.
-      const factWords = (fact: WorldFactCopy) => `${owners.has(fact.locator) ? `${owners.get(fact.locator)}: ` : ''}${fact.label} ${typeof fact.value === 'number' && fact.unit !== undefined ? valueWords(fact.value, fact.unit) : String(fact.value)} (${basisWords[fact.basis]}, ${timeWords(fact.at, zone)})`
-      const head = `Read ${facts.length} World value${facts.length === 1 ? '' : 's'} at ${timeWords(observedAt, zone)}: ${changedFacts.length === 0 && removed.length === 0 ? 'none changed' : `${changedFacts.length} new or changed${removed.length === 0 ? '' : `, ${removed.length} gone`}`}`
-      const lines = [head, ...changedFacts.map(factWords)]
+      const factWords = (fact: WorldFactCopy) => `${owners.has(fact.locator) ? `${owners.get(fact.locator)}: ` : ''}${fact.label} ${typeof fact.value === 'number' && fact.unit !== undefined ? valueWords(fact.value, fact.unit) : String(fact.value)} (${basisWords[fact.basis]}, ${datedWords(fact.at, zone)})`
+      // observedAt is World's wall time of the read; the values describe their own simulation time, said with its date.
+      const simulated = facts.reduce<string | undefined>((latest, fact) => latest === undefined || Date.parse(fact.at) > Date.parse(latest) ? fact.at : latest, undefined)
+      const head = `Read ${facts.length} World value${facts.length === 1 ? '' : 's'}${simulated === undefined ? '' : ` describing ${datedWords(simulated, zone)} (simulation time)`}: ${changedFacts.length === 0 && removed.length === 0 ? 'none changed' : `${changedFacts.length} new or changed${removed.length === 0 ? '' : `, ${removed.length} gone`}`}`
+      // The linked simulation's time outside the plan window is said once, with what to do (walk 2, R2-6). A
+      // window ahead of the simulation is planning ahead when the plan's now is the simulation's (Train A);
+      // a window the simulation has passed, or one far from a plan whose now is not the simulation's, is not.
+      const window = saved.inputs.settings.window
+      const simulatedMs = simulated === undefined ? undefined : Date.parse(simulated)
+      const planNow = Date.parse(saved.inputs.settings.dataDate ?? at)
+      const outside = window !== null && simulated !== undefined && simulatedMs !== undefined
+        && (simulatedMs >= Date.parse(window.end) || (simulatedMs < Date.parse(window.start) && simulatedMs < planNow - 86_400_000))
+        ? [`The simulation's time, ${datedWords(simulated, zone)}, is outside the plan window (${datedWords(window.start, zone)} to ${datedWords(window.end, zone)}): align the window to it.`] : []
+      const lines = [head, ...outside, ...changedFacts.map(factWords)]
       return writeResult(saved, lines.length <= 12 ? lines : [...lines.slice(0, 11), `…and ${lines.length - 11} more values: read the sources section`])
     },
 

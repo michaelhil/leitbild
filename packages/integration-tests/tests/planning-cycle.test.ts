@@ -61,7 +61,7 @@ test('the whole plan cycle through Host, with no World write', async () => {
   const again = await fresh.explore({ view: 'scope', moduleId: 'planning' }) as { data: { resources: any[] } }
   const target = again.data.resources.find(resource => resource.target.ref.id === created.plan.id).target
   const summary = await one(fresh, { operationId: 'planning.plan.read', target, input: {} })
-  expect(summary.sections[0].data.plan).toMatchObject({ id: created.plan.id, title: supplyRun.settings.title, revision: 4 })
+  expect(summary.sections[0].data.plan).toMatchObject({ id: created.plan.id, title: `${supplyRun.settings.title}: plan`, revision: 4 })
   const options = await one(fresh, { operationId: 'planning.plan.read', target, input: { section: 'options' } })
   expect(options.sections[0].data).toMatchObject({ recommended: generated.recommended, items: [{ key: generated.recommended, fresh: true }] })
 

@@ -28,6 +28,8 @@ export interface ReadinessItem {
   readonly at?: string
   readonly words?: string
   readonly count?: number
+  /** assumptions: durations taken from World values that stand in for the work (proxies), grouped here. */
+  readonly proxies?: number
   readonly unit?: string
   /** rounded: each duration that does not fit the time step, before and after rounding up. */
   readonly durations?: ReadonlyArray<{ readonly job: string; readonly resource?: string; readonly fromMs: number; readonly toMs: number }>
@@ -130,6 +132,15 @@ const sourced = (inputs: Inputs): ReadinessItem[] => {
   return items
 }
 
+/** Several World stand-in durations are one card with the assumptions: review them together. */
+const groupProxies = (assumed: readonly ReadinessItem[], proxies: readonly ReadinessItem[]): readonly ReadinessItem[] => {
+  if (proxies.length < 2) return assumed
+  const card = assumed.find(item => item.code === 'assumptions')
+  const about = [...new Set([...(card?.about ?? []), ...proxies.flatMap(item => item.about)])].slice(0, 4)
+  const grouped: ReadinessItem = { kind: 'warning', code: 'assumptions', about, blocks: false, count: card?.count ?? 0, proxies: proxies.length }
+  return [...assumed.filter(item => item !== card), grouped]
+}
+
 /**
  * The readiness items of a plan, most urgent first. `staleOptions` are the option keys whose proofs no
  * longer apply (the caller re-checks them); `now` stands in for the data date when the plan has none.
@@ -143,6 +154,7 @@ export const readiness = (plan: Plan, context: { readonly staleOptions: readonly
     items.push({ kind: 'world', code: 'link-run', about: [], blocks: false, ...(inputs.settings.scenario === undefined ? {} : { label: inputs.settings.scenario.title }) })
   }
   const unread = new Map<string, string[]>()
+  const proxies: ReadinessItem[] = []
   const unusable = new Map<string, { unit?: string }>()
   for (const { owner, ref } of refs) {
     const unit = inputs.jobs.find(job => job.key === owner)?.duration.unit ?? inputs.resources.find(resource => resource.key === owner)?.attributes.find(attribute => attribute.origin.by === 'world' && attribute.origin.refs.includes(ref))?.unit
@@ -158,8 +170,10 @@ export const readiness = (plan: Plan, context: { readonly staleOptions: readonly
     const combined = combineWorldFacts(job.duration.origin.refs, inputs.world.facts, job.duration.unit)
     const ref = job.duration.origin.refs[0]!
     const first = inputs.world.facts.find(fact => fact.locator === ref.locator && fact.id === ref.fact)
-    if (combined.ok) items.push({ kind: 'warning', code: 'world-duration', about: [job.key], blocks: false, label: first?.label ?? job.duration.origin.refs[0]!.fact, basis: combined.basis, at: combined.at })
+    if (combined.ok) proxies.push({ kind: 'warning', code: 'world-duration', about: [job.key], blocks: false, label: first?.label ?? job.duration.origin.refs[0]!.fact, basis: combined.basis, at: combined.at })
   }
+  // One stand-in alone keeps its own card, with its source in words; several join the assumptions card (walk 2, R2-10).
+  if (proxies.length === 1) items.push(proxies[0]!)
   // A World value can put a test under its declared minimum without anyone editing: Generate waits for a person.
   for (const key of belowMinimum(inputs, 'world')) items.push({ kind: 'not-ready', code: 'below-minimum', about: [key], blocks: true })
   // Working time needs someone to work it: Generate refuses such a job, so the item blocks and says what to add.
@@ -187,7 +201,7 @@ export const readiness = (plan: Plan, context: { readonly staleOptions: readonly
       ? { kind: 'warning', code: 'order-passed', about: [purchase.key], blocks: false, at: purchase.orderBy }
       : { kind: 'decision', code: 'order-by', about: [purchase.key], blocks: false, at: purchase.orderBy })
   }
-  items.push(...sourced(inputs))
+  items.push(...groupProxies(sourced(inputs), proxies))
   const rounded = roundedDurations(inputs)
   if (rounded.length > 0) items.push({ kind: 'warning', code: 'rounded', about: [...new Set(rounded.map(entry => entry.job))].slice(0, 4), blocks: false, count: rounded.length, durations: rounded })
   const warning = redundancy(inputs)

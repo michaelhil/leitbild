@@ -279,7 +279,7 @@ describe('a plan-scoped edit never reads World; preview names what the re-timing
     } finally { await local.close() }
   })
 
-  test('a preview whose re-timing breaks a rule names it with its limit; Generate may still keep it', async () => {
+  test('a preview whose re-timing breaks a rule names it with its limit; the same edit saves and the option goes out of date', async () => {
     const { createSolverDouble } = await import('./fixtures/doubles.ts')
     const inner = createSolverDouble()
     const rule = trainA.rules.find(entry => entry.kind === 'span-limit')!
@@ -290,8 +290,62 @@ describe('a plan-scoped edit never reads World; preview names what the re-timing
       const job = trainA.jobs.find(entry => entry.kind === 'work')!
       const preview = await local.call('planning.plan.edit', { resource: created.id, input: { edits: [{ edit: 'job', key: job.key, duration: { value: job.duration.value! + 6 } }], preview: true } })
       const limit = rule.kind === 'span-limit' ? `${rule.limit.value} ${rule.limit.unit}` : ''
-      expect(preview.body.result.preview.consequence).toBe(`Not saved: this option's re-timing breaks ${rule.key} (${limit}). Generate may find a schedule that keeps it.`)
+      // A valid change saves even so: the preview says what this option would break and asks for new options (walk 2, R2-4).
+      expect(preview.body.result.preview.consequence).toBe(`Not saved yet. This option would break ${rule.key} (${limit}); generate new options after saving.`)
       expect(preview.body.result.preview.violations).toEqual([rule.words])
+      const saved = await local.call('planning.plan.edit', { resource: created.id, expectedRevision: 1, input: { edits: [{ edit: 'job', key: job.key, duration: { value: job.duration.value! + 6 } }] } })
+      expect(saved.status).toBe(200)
+      expect(saved.body.result.plan.revision).toBe(2)
+      expect(saved.body.result.attention.some((item: { kind: string }) => item.kind === 'stale')).toBe(true)
+    } finally { await local.close() }
+  })
+})
+
+describe('the linked simulation against the plan window (walk 2, R2-6)', () => {
+  test('a refresh says, with dates, when the simulation time lies outside the window, and not when inside', async () => {
+    world = [{ locator: 'einsatz/unit/unit%3Atruck-9', label: 'Truck 9', kind: 'unit', facts: [{ id: 'unit:truck-9/property/payloadKg', label: 'Payload', quantity: 'payloadKg', unit: 'kg', value: 900, basis: 'configured', at: '2026-09-03T08:00:00Z' }] }]
+    const local = await createHarness({ subjects: () => world })
+    try {
+      const truck = { edit: 'resource', key: 'truck-9', label: 'Truck 9', kind: 'tool', count: 1, calendar: 'duty', locator: 'einsatz/unit/unit%3Atruck-9', attributes: [{ key: 'payloadKg', label: 'Payload', unit: 'kg', fromWorld: { locator: 'einsatz/unit/unit%3Atruck-9', fact: 'unit:truck-9/property/payloadKg' } }] }
+      const plan = await local.create('blank', { edits: [
+        { edit: 'plan', timeZone: 'Europe/Oslo', window: { start: '2026-11-12T08:00:00Z', end: '2026-11-17T08:00:00Z' }, run: 'run-any' },
+        { edit: 'calendar', key: 'duty', label: 'On duty', periods: [{ start: '2026-11-12T08:00:00Z', end: '2026-11-13T08:00:00Z' }] }, truck,
+      ] })
+      const read = await local.call('planning.sources.refresh', { input: { plan: plan.id }, expectedRevision: 1 })
+      expect(read.body.result.changed.slice(0, 2)).toEqual([
+        'Read 1 World value describing Thu 3 Sep 10:00 (simulation time): 1 new or changed',
+        "The simulation's time, Thu 3 Sep 10:00, is outside the plan window (Thu 12 Nov 09:00 to Tue 17 Nov 09:00): align the window to it.",
+      ])
+      const aligned = await local.call('planning.plan.edit', { resource: plan.id, expectedRevision: 2, input: { edits: [{ edit: 'plan', window: { start: '2026-09-03T08:00:00Z', end: '2026-09-08T08:00:00Z' } }] } })
+      expect(aligned.status).toBe(200)
+      const again = await local.call('planning.sources.refresh', { input: { plan: plan.id }, expectedRevision: 3 })
+      expect(again.body.result.changed).toEqual(['Read 1 World value describing Thu 3 Sep 10:00 (simulation time): none changed'])
+    } finally { await local.close() }
+  })
+})
+
+describe('a lock is measured against the saved plan (walk 2, R2-5)', () => {
+  test("the preview shows lane K's findings for the locked job against the saved option, and the nearest allowed start", async () => {
+    const { createSolverDouble } = await import('./fixtures/doubles.ts')
+    const inner = createSolverDouble()
+    const link = trainA.links.find(entry => entry.type === 'FS')!
+    const [pull, install] = [trainA.jobs.find(job => job.key === link.from)!, trainA.jobs.find(job => job.key === link.to)!]
+    const saved = `'${install.title}' must start after '${pull.title}' finishes; it is 8 h too early.`
+    const local = await createHarness({ solver: { ...inner, preview: async request => ({
+      rows: request.option.rows,
+      // The re-timed option moved the pull: its finding about the locked job is replaced by the saved-plan one.
+      violations: [{ code: 'link', about: [pull.key, install.key], words: `'${install.title}' must start after '${pull.title}' finishes; it is 28 h too early.` }],
+      lockFindings: [{ code: 'link', about: [pull.key, install.key], words: saved }],
+      nearestAllowed: { job: install.key, at: '2026-11-17T15:00:00Z' },
+    }) } })
+    try {
+      const created = await local.create('train-a-work-week')
+      await local.call('planning.plan.generate', { resource: created.id, input: {}, expectedRevision: 1 })
+      const preview = await local.call('planning.plan.edit', { resource: created.id, input: { edits: [{ edit: 'job', key: install.key, lock: '2026-11-17T07:00:00Z' }], preview: true } })
+      expect(preview.status).toBe(200)
+      expect(preview.body.result.preview.violations).toEqual([saved])
+      expect(preview.body.result.preview.nearestAllowed).toBe('2026-11-17T15:00:00Z')
+      expect(preview.body.result.preview.consequence).toBe(`Not saved yet. This option would break the link '${pull.title}' before '${install.title}'; generate new options after saving. The nearest allowed start for ${install.title} is Tue 16:00.`)
     } finally { await local.close() }
   })
 })

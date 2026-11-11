@@ -113,6 +113,32 @@ describe('automatic bracketing (walk fix 9, T0p)', () => {
     // Work done off the item (isolation none) needs no bracket.
     expect(apply(blank, { ...work, isolation: 'none' }).inputs.jobs.map(job => job.key)).toEqual(['SEAL'])
   })
+
+  test('walk 2 R2-2: a later edit in the same list gives a draft its crew; a bracket added later replaces the draft', () => {
+    const blank = planInputsSchema.parse({ ...trainA, jobs: [], links: [], rules: [] })
+    const item = blank.equipment[0]!
+    const crew = blank.resources[0]!.key
+    const work = { edit: 'job', key: 'SEAL', title: 'Replace the seal', kind: 'work', isolation: 'inside', equipment: [item.key], duration: { value: 10, unit: 'h', calendar: 'working' } }
+    const crewed = apply(blank, work, { edit: 'job', key: `${item.key}-TAG`, needs: [{ anyOf: [crew], amount: 1 }] }, { edit: 'job', key: `${item.key}-RTS`, needs: [{ anyOf: [crew], amount: 1 }] })
+    expect(crewed.inputs.jobs.map(job => [job.key, job.needs.flatMap(need => need.anyOf)])).toEqual([['SEAL', []], [`${item.key}-TAG`, [crew]], [`${item.key}-RTS`, [crew]]])
+    expect(readiness(planOf(crewed.inputs), { staleOptions: [], now: '2026-11-12T09:00:00Z' }).filter(entry => entry.code === 'no-crew').map(entry => entry.about[0])).toEqual(['SEAL'])
+    // A manual tag-out later in the list: the draft it makes redundant is dropped, with its change line.
+    const manual = apply(blank, work, { edit: 'job', key: 'TAG', title: 'Tag out', kind: 'tag-out', equipment: [item.key], duration: { value: 2, unit: 'h', calendar: 'working' } })
+    expect(manual.inputs.jobs.map(job => job.key)).toEqual(['SEAL', `${item.key}-RTS`, 'TAG'])
+    expect(manual.changes.filter(change => change.fields.includes('drafted')).map(change => change.key)).toEqual([`${item.key}-RTS`])
+  })
+
+  test('walk 2 R2-2: a draft in no baseline is removed without authority; once baselined it needs one', () => {
+    const blank = planInputsSchema.parse({ ...trainA, jobs: [], links: [], rules: [] })
+    const item = blank.equipment.find(entry => entry.group !== undefined)!
+    const drafted = apply(blank, { edit: 'job', key: 'SEAL', title: 'Replace the seal', kind: 'work', isolation: 'inside', equipment: [item.key], duration: { value: 10, unit: 'h', calendar: 'working' } }).inputs
+    const remove = edits({ edit: 'remove', what: 'job', key: `${item.key}-TAG` })
+    expect(applyEdits(drafted, remove, context).weakens).toEqual([])
+    expect(applyEdits(drafted, remove, { ...context, baselined: new Set([`${item.key}-TAG`]) }).weakens.map(weakening => weakening.what)).toEqual(['covering-job'])
+    // A bracket the planner timed is no longer a draft: removing it needs authority as before.
+    const timed = apply(drafted, { edit: 'job', key: `${item.key}-TAG`, duration: { value: 2, unit: 'h', calendar: 'working' } }).inputs
+    expect(applyEdits(timed, remove, context).weakens.map(weakening => weakening.what)).toEqual(['covering-job'])
+  })
 })
 
 describe('hard rules: protection, authority and minimums (A2, adversary item 8)', () => {

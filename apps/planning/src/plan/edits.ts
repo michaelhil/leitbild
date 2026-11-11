@@ -28,6 +28,8 @@ export interface EditContext {
   /** ISO instant of the change; used for linkedAt and ordered.at. */
   readonly now: string
   readonly by: StoredActor
+  /** Job keys saved in any baseline: a drafted bracket among them is no longer a draft to drop freely. */
+  readonly baselined?: ReadonlySet<string>
 }
 
 /** One structured change; summary.ts turns it into words. */
@@ -127,6 +129,9 @@ interface Working {
   readonly changes: ChangeRecord[]
   readonly weakens: Weakening[]
   readonly touchedTests: Set<string>
+  /** Brackets drafted by this edit list, and those a later edit in the list then changed. */
+  readonly drafted: Set<string>
+  readonly draftsEdited: Set<string>
   runChanged: boolean
 }
 
@@ -461,7 +466,7 @@ const editGoals = (state: Working, edit: EditOf<'goals'>): void => {
   record(state, 'changed', 'goals', 'goals', ['order'])
 }
 
-const editRemove = (state: Working, edit: EditOf<'remove'>, index: number): void => {
+const editRemove = (state: Working, edit: EditOf<'remove'>, index: number, context: EditContext): void => {
   const { next } = state
   if (edit.what === 'link') {
     if (edit.from === undefined || edit.to === undefined || edit.type === undefined) return invalid(index, 'remove', 'from', 'a link is named by from, to and type')
@@ -483,7 +488,8 @@ const editRemove = (state: Working, edit: EditOf<'remove'>, index: number): void
   if (edit.what === 'job') {
     const job = next.jobs[at]!
     const covered = job.equipment.filter(item => coveredEquipment(next).has(item))
-    if (job.kind !== 'work' && covered.length > 0) state.weakens.push({ code: 'needs_authority', edit: index, about: [key, ...covered], what: 'covering-job' })
+    // A bracket drafted automatically and never saved in a baseline never protected anything (walk 2, R2-2).
+    if (job.kind !== 'work' && covered.length > 0 && !(isDraft(job) && context.baselined?.has(key) !== true)) state.weakens.push({ code: 'needs_authority', edit: index, about: [key, ...covered], what: 'covering-job' })
     const links = next.links.filter(link => link.from === key || link.to === key)
     next.links = next.links.filter(link => !links.includes(link))
     for (const link of links) record(state, 'removed', 'link', linkLabel(link), [])
@@ -606,34 +612,53 @@ export const belowMinimum = (inputs: Inputs, by?: 'person' | 'world'): ReadonlyA
   job.kind === 'test' && job.minimum !== undefined
   && effectiveDurations(inputs, job).some(duration => (by === undefined || duration.by === by) && duration.ms < durationMs(job.minimum!.value, job.minimum!.unit))).map(job => job.key)
 
+const draftNote = 'Drafted with the work on '
 /** The draft duration of a bracketing job: stated as an assumption for the planner to change. */
-const draftDuration = (label: string): Job['duration'] => ({ value: 1, unit: 'h', calendar: 'working', origin: { by: 'assumption', note: `Drafted with the work on ${label}; set its real duration` } })
+const draftDuration = (label: string): Job['duration'] => ({ value: 1, unit: 'h', calendar: 'working', origin: { by: 'assumption', note: `${draftNote}${label}; set its real duration` } })
+
+/** A tag-out or test Planning drafted and nobody has timed yet. */
+export const isDraft = (job: Job): boolean =>
+  job.kind !== 'work' && job.duration.origin.by === 'assumption' && job.duration.origin.note?.startsWith(draftNote) === true
 
 /**
  * Work on equipment is bracketed by its tag-out before and its return-to-service test after (the approved
- * plan). Inside work an edit creates or changes on equipment with no tag-out or no test gets the missing
- * draft job(s) in the same edit, as assumptions the planner can change.
+ * plan). Inside work a job edit creates or changes on equipment with no tag-out or no test gets the missing
+ * draft job(s) right after that edit, as assumptions the planner can change, so a later edit in the same
+ * list can name a draft (for example to give it a crew).
  */
-const draftBrackets = (state: Working, edits: readonly Edit[]): void => {
+const draftBrackets = (state: Working, key: string): void => {
   const { next } = state
-  const worked = new Set(edits.flatMap(edit => edit.edit === 'job' ? [edit.key] : []))
   const free = (base: string): string => {
-    let key = base
-    for (let n = 2; next.jobs.some(job => job.key === key); n += 1) key = `${base.slice(0, 60)}-${n}`
-    return key
+    let candidate = base
+    for (let n = 2; next.jobs.some(job => job.key === candidate); n += 1) candidate = `${base.slice(0, 60)}-${n}`
+    return candidate
   }
-  for (const work of next.jobs.filter(job => worked.has(job.key) && job.kind === 'work' && job.isolation === 'inside')) {
-    for (const item of work.equipment) {
-      const label = next.equipment.find(entry => entry.key === item)?.label ?? item
-      const draft = (kind: 'tag-out' | 'test', key: string, title: string): void => {
-        if (next.jobs.some(job => job.kind === kind && job.equipment.includes(item))) return
-        next.jobs.push({ key: free(key), title, kind, equipment: [item], isolation: 'none', duration: draftDuration(label), durationWith: [], needs: [], continuous: false, checks: [], tags: [] })
-        state.changes.push({ verb: 'added', what: 'job', key: next.jobs.at(-1)!.key, fields: ['drafted'] })
-      }
-      draft('tag-out', `${item}-TAG`, `Tag out ${label}`)
-      draft('test', `${item}-RTS`, `Return ${label} to service and test`)
+  const work = next.jobs.find(job => job.key === key)
+  if (work === undefined || work.kind !== 'work' || work.isolation !== 'inside') return
+  for (const item of work.equipment) {
+    const label = next.equipment.find(entry => entry.key === item)?.label ?? item
+    const draft = (kind: 'tag-out' | 'test', base: string, title: string): void => {
+      if (next.jobs.some(job => job.kind === kind && job.equipment.includes(item))) return
+      const drafted = free(base)
+      next.jobs.push({ key: drafted, title, kind, equipment: [item], isolation: 'none', duration: draftDuration(label), durationWith: [], needs: [], continuous: false, checks: [], tags: [] })
+      state.drafted.add(drafted)
+      state.changes.push({ verb: 'added', what: 'job', key: drafted, fields: ['drafted'] })
     }
+    draft('tag-out', `${item}-TAG`, `Tag out ${label}`)
+    draft('test', `${item}-RTS`, `Return ${label} to service and test`)
   }
+}
+
+/** A draft of this list made redundant by a bracket a later edit added, and not changed since, is dropped. */
+const dropRedundantDrafts = (state: Working): void => {
+  const { next } = state
+  const redundant = next.jobs.filter(job => state.drafted.has(job.key) && !state.draftsEdited.has(job.key)
+    && next.jobs.some(other => other.key !== job.key && !state.drafted.has(other.key) && other.kind === job.kind && job.equipment.every(item => other.equipment.includes(item))))
+  if (redundant.length === 0) return
+  const keys = new Set(redundant.map(job => job.key))
+  next.jobs = next.jobs.filter(job => !keys.has(job.key))
+  next.links = next.links.filter(link => !keys.has(link.from) && !keys.has(link.to))
+  for (let at = state.changes.length - 1; at >= 0; at -= 1) if (state.changes[at]!.what === 'job' && keys.has(state.changes[at]!.key) && state.changes[at]!.fields.includes('drafted')) state.changes.splice(at, 1)
 }
 
 /**
@@ -642,7 +667,7 @@ const draftBrackets = (state: Working, edits: readonly Edit[]): void => {
  * in a preview).
  */
 export const applyEdits = (inputs: Inputs, edits: readonly Edit[], context: EditContext): EditOutcome => {
-  const state: Working = { next: structuredClone(inputs), changes: [], weakens: [], touchedTests: new Set(), runChanged: false }
+  const state: Working = { next: structuredClone(inputs), changes: [], weakens: [], touchedTests: new Set(), drafted: new Set(), draftsEdited: new Set(), runChanged: false }
   edits.forEach((edit, index) => {
     switch (edit.edit) {
       case 'plan': return editPlan(state, edit, context)
@@ -651,14 +676,18 @@ export const applyEdits = (inputs: Inputs, edits: readonly Edit[], context: Edit
       case 'resource': return editResource(state, edit, index)
       case 'purchase': return editPurchase(state, edit, index, context)
       case 'method': return editMethod(state, edit, index)
-      case 'job': return editJob(state, edit, index)
+      case 'job': {
+        if (state.drafted.has(edit.key)) state.draftsEdited.add(edit.key)
+        editJob(state, edit, index)
+        return draftBrackets(state, edit.key)
+      }
       case 'link': return editLink(state, edit)
       case 'rule': return editRule(state, edit, index)
       case 'goals': return editGoals(state, edit)
-      case 'remove': return editRemove(state, edit, index)
+      case 'remove': return editRemove(state, edit, index, context)
     }
   })
-  draftBrackets(state, edits)
+  dropRedundantDrafts(state)
   const next = state.next
   checkReferences(next)
   const parsed = planInputsSchema.safeParse(next)
@@ -671,7 +700,7 @@ export const applyEdits = (inputs: Inputs, edits: readonly Edit[], context: Edit
     const first = blocked[0]!
     const words = parsed.data.rules.find(rule => rule.key === first.rule)?.words ?? `${first.equipment} is protected.`
     // No authority lifts this one: protection must be removed first, which needs authority itself.
-    throw planningError(409, 'protected_equipment', `${labelled(parsed.data, first.job)} would touch ${labelled(parsed.data, first.equipment)}, which is protected: ${words}`, { about: [first.job, first.equipment, first.rule], rule: words })
+    throw planningError(409, 'protected_equipment', `${labelled(parsed.data, first.job)} would touch ${labelled(parsed.data, first.equipment)}, which is protected: ${words}`, { about: [first.job, first.equipment, first.rule], rule: words, lift: protectionLift })
   }
   const weakens = [...state.weakens]
   for (const key of belowMinimum(parsed.data, 'person')) {
@@ -679,6 +708,9 @@ export const applyEdits = (inputs: Inputs, edits: readonly Edit[], context: Edit
   }
   return { inputs: parsed.data, changes: state.changes, weakens, runChanged: state.runChanged }
 }
+
+/** Who could lift a protection, for the refusal (walk 2, T20): in words, with no plan key. */
+export const protectionLift = 'Only removing this protection rule lifts it, and removing the rule needs a named person\'s agreement.'
 
 /** What every authority refusal asks: a named person's agreement, never one the caller makes up. */
 export const authorityAsk = 'Name the person who agreed and their reason, as authority. Ask them; never fill this in yourself.'

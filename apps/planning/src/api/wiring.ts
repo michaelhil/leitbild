@@ -14,7 +14,7 @@ import type { SolverPool } from '../solve/pool.ts'
 import type { Schedule } from '../solve/problem.ts'
 import type { CheckPlan } from '../solve/status.ts'
 import type { Plan, PlanInputs } from '../plan/schema.ts'
-import { nameOf, timeWords } from '../plan/summary.ts'
+import { clip, nameOf, timeWords } from '../plan/summary.ts'
 import { planningError } from '../errors.ts'
 import { byteLength } from '../plan/summary.ts'
 import { resultLimitBytes } from './contract.ts'
@@ -70,7 +70,7 @@ const lineOf = (inputs: PlanInputs, item: ExplainItem): string => {
   const zone = inputs.settings.timeZone
   const causes = item.because.map(cause => `${causeWords[cause.kind]}${cause.about.length === 0 ? '' : ` ${cause.about.slice(0, 2).map(key => nameOf(inputs, key)).join(', ')}`}${cause.until === undefined ? '' : ` until ${timeWords(cause.until, zone)}`}`)
   const line = `${nameOf(inputs, item.job)} starts ${timeWords(item.start, zone)}: ${causes.join('; ')}${item.joint ? ' (together)' : ''}; float ${item.floatHours} h.`
-  return line.length <= 240 ? line : `${line.slice(0, 239)}…`
+  return clip(line, 240)
 }
 
 /** Within the 4 KB result: trailing items and lines go first. */
