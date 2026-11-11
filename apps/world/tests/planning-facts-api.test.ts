@@ -2,7 +2,7 @@ import { afterEach, expect, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { accessContextSchema, moduleCapabilityCollectionSchema, newRequestId, newWorkspaceId, planningFactsOutputSchema } from '@leitbild/contracts'
+import { accessContextSchema, moduleCapabilityCollectionSchema, newRequestId, newWorkspaceId, planningFactsOutputSchema, planningFactsRunSchema } from '@leitbild/contracts'
 import { createWorldApplicationAssembly } from '../src/app-assembly.ts'
 import { handleWorldModuleApi } from '../src/core/api/workspace-module-api.ts'
 import { createWorldModuleState } from '../src/core/workspaces/module-state.ts'
@@ -72,7 +72,7 @@ test('planning facts are one published Run query: lazy, read-only, paged within 
   expect(registry.get(run.id)).toBeDefined()
   const events = registry.get(run.id)!.events().length
   const found = planningFactsOutputSchema.parse(search.body.result)
-  expect(found.run).toEqual({ workspaceId, moduleId: 'world', type: 'world.simulation-run', id: run.id })
+  expect(found.run).toEqual(planningFactsRunSchema.parse({ workspaceId, moduleId: 'world', type: 'world.simulation-run', id: run.id }))
   expect(found.items.map(item => item.label)).toEqual(['Truck 1', 'Truck 3', 'Truck 4'])
   expect(search.resultBytes).toBeLessThanOrEqual(4_096)
   const tasks = planningFactsOutputSchema.parse((await facts(run.id, { kind: 'task' })).body.result).items

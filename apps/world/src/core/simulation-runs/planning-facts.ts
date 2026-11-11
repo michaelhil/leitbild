@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import {
-  planningFactsInputSchema, planningFactsOutputSchema, planningProjectionOutputSchema,
+  planningFactsInputSchema, planningFactsOutputSchema, planningFactsRunSchema, planningProjectionOutputSchema,
   type PlanningFactsInput, type PlanningFactsOutput, type PlanningProjectionInput, type PlanningSubject, type WorkspaceResourceReference,
 } from '@leitbild/contracts'
 import { rawObjectReadPolicy } from '../packs/inspection.ts'
@@ -143,7 +143,7 @@ export const createPlanningFactsPort = (ports: {
       const input = planningFactsInputSchema.parse(raw)
       if (ports.roles() !== null) unavailableQueryReadScope('Planning facts are read only from Runs without roles')
       const frame = {
-        run: { workspaceId: String(source.workspaceId), moduleId: 'world' as const, type: 'world.simulation-run' as const, id: String(source.id) },
+        run: planningFactsRunSchema.parse({ workspaceId: source.workspaceId, moduleId: 'world', type: 'world.simulation-run', id: source.id }),
         observedAt: new Date().toISOString(),
       }
       const query = digest(JSON.stringify([input.subjects ?? null, input.text ?? null, input.kind ?? null, input.limit ?? null]))
