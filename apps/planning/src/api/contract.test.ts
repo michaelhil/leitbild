@@ -70,13 +70,13 @@ describe('published operation inputs', () => {
 
   // Design r2 measured 15,023 B (create) and 15,495 B (edit) and set the guard at 16,000 B, but its
   // publication also dropped the job edit's `minimum` field. With that field kept and the
-  // coordinator-adopted `source` on eight edit fields, the due rule and the per-type lag description,
-  // create is 18,343 B and edit 18,815 B;
-  // the guard is 19,000 B.
-  test('create and edit stay within 19,000 B; every other input within 4,096 B', () => {
+  // coordinator-adopted `source` on eight edit fields, the due rule, the per-type lag description, the
+  // edit envelope's revision and the equipment `function` key, create is 18,577 B and edit 19,211 B.
+  // 20,000 B is the increment 1 ceiling. Any further growth must remove or merge something; raising this needs a coordinator decision.
+  test('create and edit stay within 20,000 B; every other input within 4,096 B', () => {
     for (const [id, schema] of Object.entries(inputs)) {
       const bytes = new TextEncoder().encode(JSON.stringify(publishedInputSchema(schema))).length
-      expect({ id, within: bytes <= (large.has(id) ? 19_000 : 4_096) }).toEqual({ id, within: true })
+      expect({ id, within: bytes <= (large.has(id) ? 20_000 : 4_096) }).toEqual({ id, within: true })
     }
   })
 

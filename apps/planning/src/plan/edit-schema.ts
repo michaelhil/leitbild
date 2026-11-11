@@ -77,6 +77,7 @@ export const editSchema = z.discriminatedUnion('edit', [
     groupLabel: labelSchema.optional().describe('Name of that group'),
     supportedBy: keys.optional().describe('Items whose outage makes this one unavailable'),
     locator: planningLocatorSchema.nullable().optional().describe('World item from planning-facts; values copied at refresh'),
+    function: keySchema.nullable().optional().describe("Items that back each other up share one function key, for example MFW A and MFW B both 'main-feedwater'. Items of one train in series, such as a cooling chain, do not share a key."),
     source: source.optional(),
   }).strict(),
   z.object({

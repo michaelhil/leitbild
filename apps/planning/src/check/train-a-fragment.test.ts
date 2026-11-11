@@ -47,7 +47,8 @@ describe("lane K's Train A conversion agrees with lane A's fixture", () => {
   test('equipment, supports and groups', () => {
     for (const item of fragment.equipment) {
       const other = byKey(mine.equipment, itemName[item.key] ?? item.key)
-      expect([other.group, other.supportedBy, other.locator, other.source?.by]).toEqual([item.group, item.supportedBy, item.locator, item.source?.by])
+      // A function key's source (train membership) is lane A's addition; the harness has no function keys.
+      expect([other.group, other.supportedBy, other.locator, other.source?.by]).toEqual([item.group, item.supportedBy, item.locator, item.function === undefined ? item.source?.by : undefined])
     }
   })
   test('calendars, resources, purchases and method costs', () => {

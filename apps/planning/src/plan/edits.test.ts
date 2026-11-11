@@ -107,6 +107,17 @@ describe('hard rules: protection, authority and minimums (A2, adversary item 8)'
     expect(weakenings(trainA, { edit: 'rule', key: 'R9', kind: 'keep-in-service', members: [supported.key, supported.supportedBy[0]!], atLeast: 1, words: 'Keep one in service.' })).toEqual([])
   })
 
+  test('a function key: adding it needs none; changing or clearing it on covered equipment needs authority', () => {
+    const covered = trainA.equipment.find(item => item.function !== undefined && item.group === (spanRule.kind === 'span-limit' ? spanRule.group : ''))!
+    expect(weakenings(trainA, { edit: 'equipment', key: covered.key, function: 'other-function' })).toEqual([['needs_authority', 'function', covered.key]])
+    expect(weakenings(trainA, { edit: 'equipment', key: covered.key, function: null })).toEqual([['needs_authority', 'function', covered.key]])
+    expect(weakenings(trainA, { edit: 'equipment', key: covered.key, function: covered.function })).toEqual([])
+    const unkeyed = trainA.equipment.find(item => item.function === undefined)!
+    const added = apply(trainA, { edit: 'equipment', key: unkeyed.key, function: 'new-function', source: { by: 'planner', note: 'train membership' } })
+    expect(added.weakens).toEqual([])
+    expect(added.inputs.equipment.find(item => item.key === unkeyed.key)).toMatchObject({ function: 'new-function', source: { by: 'planner', note: 'train membership' } })
+  })
+
   test('a due rule: adding it needs none; moving its time later or removing it needs authority', () => {
     const window = trainA.settings.window!
     const at = (fraction: number) => new Date(Date.parse(window.start) + (Date.parse(window.end) - Date.parse(window.start)) * fraction).toISOString()

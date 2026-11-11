@@ -75,7 +75,10 @@ export const equipmentSchema = z.object({
   group: keySchema.optional(),                      // function group for span limits; changing it needs authority
   supportedBy: z.array(keySchema).max(16),          // out while any supporter is out
   locator: planningLocatorSchema.optional(),        // World item; its values live in inputs.world.facts
-  source: sourceSchema.optional(),                  // who declares an item World does not read, e.g. a reference
+  // Items that back each other up share one function key, e.g. MFW A and MFW B both 'main-feedwater'.
+  // Items of one train in series, such as a cooling chain, do not share a key. Changing it on covered equipment needs authority.
+  function: keySchema.optional(),
+  source: sourceSchema.optional(),                  // who declares what World does not read: the item itself, or its function
 }).strict()
 export const groupSchema = z.object({ key: keySchema, label: labelSchema }).strict()
 export const attributeSchema = z.object({

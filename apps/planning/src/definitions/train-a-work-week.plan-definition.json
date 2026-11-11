@@ -26,7 +26,12 @@
         "label": "Service Water Pump A",
         "group": "COOL-A",
         "supportedBy": [],
-        "locator": "process-plant/plant%3Atrain-a/serviceWaterPumpA"
+        "locator": "process-plant/plant%3Atrain-a/serviceWaterPumpA",
+        "function": "service-water",
+        "source": {
+          "by": "planner",
+          "note": "train membership: planner knowledge (case v0.2)"
+        }
       },
       {
         "key": "CCWHXA",
@@ -43,7 +48,12 @@
         "supportedBy": [
           "SWA"
         ],
-        "locator": "process-plant/plant%3Atrain-a/componentCoolingWaterPumpA"
+        "locator": "process-plant/plant%3Atrain-a/componentCoolingWaterPumpA",
+        "function": "component-cooling",
+        "source": {
+          "by": "planner",
+          "note": "train membership: planner knowledge (case v0.2)"
+        }
       },
       {
         "key": "RHRA",
@@ -52,7 +62,12 @@
         "supportedBy": [
           "CCWA"
         ],
-        "locator": "process-plant/plant%3Atrain-a/rhrPumpA"
+        "locator": "process-plant/plant%3Atrain-a/rhrPumpA",
+        "function": "residual-heat-removal",
+        "source": {
+          "by": "planner",
+          "note": "train membership: planner knowledge (case v0.2)"
+        }
       },
       {
         "key": "HHSIA",
@@ -61,63 +76,113 @@
         "supportedBy": [
           "CCWA"
         ],
-        "locator": "process-plant/plant%3Atrain-a/safetyInjectionPumpA"
+        "locator": "process-plant/plant%3Atrain-a/safetyInjectionPumpA",
+        "function": "high-head-injection",
+        "source": {
+          "by": "planner",
+          "note": "train membership: planner knowledge (case v0.2)"
+        }
       },
       {
         "key": "CSA",
         "label": "Containment Spray Pump A",
         "group": "CS-A",
         "supportedBy": [],
-        "locator": "process-plant/plant%3Atrain-a/containmentSprayPumpA"
+        "locator": "process-plant/plant%3Atrain-a/containmentSprayPumpA",
+        "function": "containment-spray",
+        "source": {
+          "by": "planner",
+          "note": "train membership: planner knowledge (case v0.2)"
+        }
       },
       {
         "key": "AFWA",
         "label": "Motor-Driven Auxiliary Feedwater Pump A",
         "group": "AFW-A",
         "supportedBy": [],
-        "locator": "process-plant/plant%3Atrain-a/auxFeedwaterPumpMotor"
+        "locator": "process-plant/plant%3Atrain-a/auxFeedwaterPumpMotor",
+        "function": "motor-driven-aux-feedwater",
+        "source": {
+          "by": "planner",
+          "note": "train membership: planner knowledge (case v0.2)"
+        }
       },
       {
         "key": "SWB",
         "label": "Service Water Pump B",
         "supportedBy": [],
-        "locator": "process-plant/plant%3Atrain-a/serviceWaterPumpB"
+        "locator": "process-plant/plant%3Atrain-a/serviceWaterPumpB",
+        "function": "service-water",
+        "source": {
+          "by": "planner",
+          "note": "train membership: planner knowledge (case v0.2)"
+        }
       },
       {
         "key": "CCWB",
         "label": "Component Cooling Water Pump B",
         "supportedBy": [],
-        "locator": "process-plant/plant%3Atrain-a/componentCoolingWaterPumpB"
+        "locator": "process-plant/plant%3Atrain-a/componentCoolingWaterPumpB",
+        "function": "component-cooling",
+        "source": {
+          "by": "planner",
+          "note": "train membership: planner knowledge (case v0.2)"
+        }
       },
       {
         "key": "RHRB",
         "label": "Residual Heat Removal Pump B",
         "supportedBy": [],
-        "locator": "process-plant/plant%3Atrain-a/rhrPumpB"
+        "locator": "process-plant/plant%3Atrain-a/rhrPumpB",
+        "function": "residual-heat-removal",
+        "source": {
+          "by": "planner",
+          "note": "train membership: planner knowledge (case v0.2)"
+        }
       },
       {
         "key": "HHSIB",
         "label": "High-Head Safety Injection Pump B",
         "supportedBy": [],
-        "locator": "process-plant/plant%3Atrain-a/safetyInjectionPumpB"
+        "locator": "process-plant/plant%3Atrain-a/safetyInjectionPumpB",
+        "function": "high-head-injection",
+        "source": {
+          "by": "planner",
+          "note": "train membership: planner knowledge (case v0.2)"
+        }
       },
       {
         "key": "CSB",
         "label": "Containment Spray Pump B",
         "supportedBy": [],
-        "locator": "process-plant/plant%3Atrain-a/containmentSprayPumpB"
+        "locator": "process-plant/plant%3Atrain-a/containmentSprayPumpB",
+        "function": "containment-spray",
+        "source": {
+          "by": "planner",
+          "note": "train membership: planner knowledge (case v0.2)"
+        }
       },
       {
         "key": "AFWB",
         "label": "Motor-Driven Auxiliary Feedwater Pump B",
         "supportedBy": [],
-        "locator": "process-plant/plant%3Atrain-a/auxFeedwaterPumpMotorB"
+        "locator": "process-plant/plant%3Atrain-a/auxFeedwaterPumpMotorB",
+        "function": "motor-driven-aux-feedwater",
+        "source": {
+          "by": "planner",
+          "note": "train membership: planner knowledge (case v0.2)"
+        }
       },
       {
         "key": "AFWTD",
         "label": "Turbine-Driven Auxiliary Feedwater Pump",
         "supportedBy": [],
-        "locator": "process-plant/plant%3Atrain-a/auxFeedwaterPumpTurbine"
+        "locator": "process-plant/plant%3Atrain-a/auxFeedwaterPumpTurbine",
+        "function": "turbine-driven-aux-feedwater",
+        "source": {
+          "by": "planner",
+          "note": "train membership: planner knowledge (case v0.2)"
+        }
       },
       {
         "key": "EDGB",

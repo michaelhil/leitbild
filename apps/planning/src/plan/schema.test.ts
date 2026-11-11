@@ -371,7 +371,7 @@ describe('R1 protects exactly what it names (ai review)', () => {
   test('pumps World reads carry their locator; items it does not read are declared by reference', () => {
     for (const key of ['SWB', 'CCWB', 'RHRB', 'HHSIB', 'CSB', 'AFWB', 'AFWTD']) {
       expect(item(key).locator).toStartWith('process-plant/plant%3Atrain-a/')
-      expect(item(key).source).toBeUndefined()
+      expect(item(key).source?.by).not.toBe('reference')
     }
     for (const key of ['EDGB', 'BUSB', 'SWYD']) {
       expect(item(key).locator).toBeUndefined()
@@ -391,5 +391,29 @@ describe('Train A is valid input for the checker', () => {
       const result = checkPlan(inputs, { methods: [{ choice: inputs.methods[0]!.key, option: option.key }], purchases: inputs.purchases.map(purchase => purchase.key) }, [])
       expect({ option: option.key, problems: result.violations.filter(violation => inputCodes.has(violation.code)).map(violation => violation.words) }).toEqual({ option: option.key, problems: [] })
     }
+  })
+})
+
+describe('function keys name items that back each other up', () => {
+  test('each A/B pair shares one key; the turbine-driven AFW pump has its own; series items have none', () => {
+    const fn = (key: string) => trainA.equipment.find((item: any) => item.key === key)?.function
+    const pairs: Array<[string, string]> = [['SWA', 'SWB'], ['CCWA', 'CCWB'], ['RHRA', 'RHRB'], ['HHSIA', 'HHSIB'], ['CSA', 'CSB'], ['AFWA', 'AFWB']]
+    for (const [a, b] of pairs) {
+      expect(fn(a)).toBeString()
+      expect(fn(a)).toBe(fn(b))
+    }
+    expect(fn('AFWTD')).not.toBe(fn('AFWA'))
+    expect(fn('CCWHXA')).toBeUndefined()
+    for (const item of trainA.equipment.filter((entry: any) => entry.function !== undefined)) expect(item.source).toEqual({ by: 'planner', note: 'train membership: planner knowledge (case v0.2)' })
+  })
+
+  test('it parses as a key on stored equipment and in the equipment edit; null clears it', () => {
+    const item = { key: 'MFWA', label: 'Main Feedwater Pump A', supportedBy: [], function: 'main-feedwater' }
+    expect(equipmentSchema.parse(item).function).toBe('main-feedwater')
+    expect(equipmentSchema.safeParse({ ...item, function: 'main feedwater' }).success).toBe(false)
+    expect(equipmentSchema.safeParse({ ...item, function: null }).success).toBe(false)
+    expect(editSchema.safeParse({ edit: 'equipment', key: 'MFWA', function: 'main-feedwater' }).success).toBe(true)
+    expect(editSchema.safeParse({ edit: 'equipment', key: 'MFWA', function: null }).success).toBe(true)
+    expect(editSchema.safeParse({ edit: 'equipment', key: 'MFWA', function: '' }).success).toBe(false)
   })
 })

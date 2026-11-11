@@ -42,7 +42,7 @@ export interface Weakening {
   readonly code: 'needs_authority' | 'below_minimum'
   readonly edit: number
   readonly about: readonly string[]
-  readonly what: 'support' | 'group' | 'locator' | 'job-kind' | 'isolation' | 'covering-equipment' | 'covering-job' | 'precondition' | 'protected' | 'rule' | 'equipment' | 'minimum' | 'below-minimum'
+  readonly what: 'support' | 'group' | 'function' | 'locator' | 'job-kind' | 'isolation' | 'covering-equipment' | 'covering-job' | 'precondition' | 'protected' | 'rule' | 'equipment' | 'minimum' | 'below-minimum'
 }
 
 export interface EditOutcome {
@@ -182,6 +182,12 @@ const editEquipment = (state: Working, edit: EditOf<'equipment'>, index: number)
     if (existing !== undefined && removed.length > 0) state.weakens.push({ code: 'needs_authority', edit: index, about: [edit.key, ...removed], what: 'support' })
     assign(item, 'supportedBy', [...new Set(edit.supportedBy)], fields)
   }
+  // A function key says which items back each other up; changing or clearing it on covered equipment weakens that.
+  if (edit.function !== undefined && existing?.function !== undefined && edit.function !== existing.function && ruled.has(edit.key)) {
+    state.weakens.push({ code: 'needs_authority', edit: index, about: [edit.key, existing.function], what: 'function' })
+  }
+  assign(item, 'function', edit.function, fields)
+  assign(item, 'source', edit.source === undefined ? undefined : sourceOf(edit.source), fields)
   // Protection and coverage bind to the World item through its locator: re-pointing covered equipment weakens them.
   if (existing !== undefined && edit.locator !== undefined && edit.locator !== (existing.locator ?? null) && existing.locator !== undefined && coveredEquipment(next).has(edit.key)) {
     state.weakens.push({ code: 'needs_authority', edit: index, about: [edit.key], what: 'locator' })
