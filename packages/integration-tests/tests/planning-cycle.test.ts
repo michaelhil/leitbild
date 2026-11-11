@@ -33,7 +33,9 @@ test('the whole plan cycle through Host, with no World write', async () => {
   expect(found.items.length).toBeGreaterThan(0)
 
   const created = await one(assistant, { operationId: 'planning.plan.create', target: supplyDefinition, input: {} })
-  const plan = { kind: 'resource', ref: { workspaceId: stack.workspaceId, moduleId: 'planning', type: 'planning.plan', id: created.plan.id } }
+  // The result names the plan as the next call targets it; the Assistant never builds the reference.
+  const plan = created.target
+  expect(plan).toEqual({ kind: 'resource', ref: { workspaceId: stack.workspaceId, moduleId: 'planning', type: 'planning.plan', id: created.plan.id } })
   expect(created.attention[0].kind).toBe('world')
 
   const linked = await one(assistant, { operationId: 'planning.plan.edit', target: plan, input: { edits: [{ edit: 'plan', run: runId }] }, expectedRevision: 1 })
@@ -74,7 +76,7 @@ test('refusals through Host carry their cause and the current revision', async (
   const assistant = stack.room('room-3')
   const scope = await assistant.explore({ view: 'scope', moduleId: 'planning' }) as { data: { definitions: any[] } }
   const created = await one(assistant, { operationId: 'planning.plan.create', target: scope.data.definitions.find(definition => definition.target.ref.id === 'blank').target, input: {} })
-  const plan = { kind: 'resource', ref: { workspaceId: stack.workspaceId, moduleId: 'planning', type: 'planning.plan', id: created.plan.id } }
+  const plan = created.target
   type Refusal = { success: boolean; details: { code: string; details: { status: number; hostDetails: { currentRevision?: number } } } }
   const attempt = async (call: Record<string, unknown>) => ((await assistant.call({ calls: [{ key: 'c', operationId: 'planning.plan.edit', target: plan, input: { edits: [{ edit: 'plan', title: 'Week 48' }] }, ...call }] })) as { data: { results: Refusal[] } }).data.results[0]!
   const missing = await attempt({})

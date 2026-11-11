@@ -81,7 +81,7 @@ export const planningOperations: ReadonlyArray<Operation<any>> = [
   {
     id: 'planning.plan.edit', kind: 'command', scope: 'plan', risk: 'write',
     title: 'Change a plan',
-    description: 'Change a plan with named edits: add, change or remove a job and its estimate, crew, equipment, link, shift calendar, purchase such as overtime, method choice, rule or goal order, or lock a job to a start time. A field you give replaces that field; null clears it. All edits apply together or not at all. With preview nothing is saved: you see what moves and which rule breaks. Removing or weakening a hard rule, a support or a test minimum needs authority: who agreed and why. Needs the plan\'s current revision.',
+    description: 'Change a plan with named edits: add, change or remove a job and its estimate, crew, equipment, link, shift calendar, purchase such as overtime, method choice, rule or goal order, or lock a job to a start time. A field you give replaces that field; null clears it. All edits apply together or not at all. With preview nothing is saved: you see what moves and which rule breaks. Removing or weakening a hard rule, a support, a precondition or a test minimum needs authority: the name and reason of a person who agreed. Ask them; never fill it in yourself. Needs the plan\'s current revision.',
     searchTerms: ['change', 'edit', 'add', 'job', 'task', 'link', 'crew', 'shift', 'calendar', 'rule', 'estimate', 'lock', 'move', 'overtime', 'method'],
     input: editInputSchema, output: writeResultSchema,
     invoke: async ({ operations }, invocation, input: z.infer<typeof editInputSchema>) => ({ result: await operations.edit(invocation.workspaceId, planIdOf(invocation), input, invocation.expectedRevision, invocation.access) }),

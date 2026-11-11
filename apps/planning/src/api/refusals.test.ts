@@ -41,6 +41,7 @@ describe('refusals name their cause and stay within 4 KB', () => {
     ]) {
       const refused = await edit(weakening)
       expect(error(refused)).toEqual([409, 'needs_authority'])
+      expect(refused.body.error.message).toEndWith('Name the person who agreed and their reason, as authority. Ask them; never fill this in yourself.')
       expect(refused.bytes).toBeLessThanOrEqual(4_096)
     }
     expect(error(await edit([{ edit: 'job', key: minimumTest.key, duration: { value: minimumTest.minimum!.value / 2, unit: minimumTest.minimum!.unit } }]))).toEqual([409, 'below_minimum'])
@@ -56,6 +57,17 @@ describe('refusals name their cause and stay within 4 KB', () => {
     expect(agreed.status).toBe(200)
     const history = (await harness.call('planning.plan.read', { resource: plan.id, input: { section: 'history' } })).body.result.sections[0].data.items[0]
     expect(history).toMatchObject({ revision: 3, authority: { name: 'Shift supervisor', reason: 'Support restored by a temporary line' }, reason: 'Temporary cooling' })
+  })
+
+  test('a second item with the protected pump\'s World locator cannot take a tag-out', async () => {
+    const plan = await harness.create('train-a-work-week')
+    const protectedItem = protectedRule.kind === 'protected' ? protectedRule.equipment[0]! : ''
+    const locator = trainA.equipment.find(item => item.key === protectedItem)!.locator!
+    const refused = await harness.call('planning.plan.edit', { resource: plan.id, expectedRevision: 1, input: { edits: [
+      { edit: 'equipment', key: 'SWB2', label: 'Spare name for the same pump', locator },
+      { edit: 'job', key: 'TAG-TWIN', title: 'Tag out the twin', kind: 'tag-out', equipment: ['SWB2'], duration: { value: 1, unit: 'h', calendar: 'working' } },
+    ] } })
+    expect([...error(refused), refused.body.error.details.about]).toEqual([400, 'invalid_request', [protectedItem, 'SWB2']])
   })
 
   test('a malformed edit names the failing field with its schema and the kind\'s fields', async () => {

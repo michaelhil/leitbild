@@ -206,6 +206,7 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
     const items = readinessOf(plan, optionStates(plan))
     const result: WriteResult = {
       plan: { id: plan.id, title: plan.inputs.settings.title, revision: plan.revision },
+      target: { kind: 'resource', ref: planReference(plan.workspaceId, plan.id) },
       changed: changed.slice(0, 12).map(line => line.slice(0, 200)),
       attention: items.filter(item => !item.blocks).slice(0, 6).map(item => ({ kind: attentionKind(item), text: readinessText(item, plan.inputs), about: [...item.about.slice(0, 4)] })),
       problems: items.filter(item => item.blocks).slice(0, 8).map(item => ({ about: [...item.about.slice(0, 4)], code: item.code, text: readinessText(item, plan.inputs) })),
@@ -423,29 +424,39 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
       const zone = plan.inputs.settings.timeZone
       if (run === null) return writeResult(plan, ['Nothing read: no simulation is linked to this plan'])
       const subjects = worldSubjects(plan.inputs)
-      // One read for every subject: some facts (Einsatz arrivals) exist only for subjects read together.
-      if (subjects.length > 32) throw planningError(400, 'invalid_request', `This plan names ${subjects.length} World items; a refresh reads at most 32 together`, { about: [] })
+      // Requests of at most 32 subjects, per Pack, merged. Einsatz projects arrival facts only for units and
+      // tasks read together, so an Einsatz plan with more than 32 Einsatz items is refused, never truncated.
+      const byPack = new Map<string, string[]>()
+      for (const locator of subjects) {
+        const pack = locator.slice(0, locator.indexOf('/'))
+        byPack.set(pack, [...(byPack.get(pack) ?? []), locator])
+      }
+      const einsatz = byPack.get('einsatz')?.length ?? 0
+      if (einsatz > 32) throw planningError(400, 'world_read_limit', `This plan names ${einsatz} Einsatz items; their arrival times are read together, at most 32 at once. Remove the items the plan does not need.`, { about: [] })
+      const batches = [...byPack.values()].flatMap(locators => Array.from({ length: Math.ceil(locators.length / 32) }, (_, index) => locators.slice(index * 32, index * 32 + 32)))
       const facts: WorldFactCopy[] = []
-      let observedAt = now()
-      if (subjects.length > 0) {
-        const reference = runReference(workspaceId, run.id)
+      let oldestRead: string | undefined
+      const reference = runReference(workspaceId, run.id)
+      for (const batch of batches) {
         let cursor: string | undefined
         do {
           if (deadline.aborted) throw late()
           let raw: PlanningFactsOutput
-          try { raw = await ports.world.read(access, reference, { subjects: [...subjects], ...(cursor === undefined ? {} : { cursor }) }, deadline) } catch (error) {
+          try { raw = await ports.world.read(access, reference, { subjects: batch, ...(cursor === undefined ? {} : { cursor }) }, deadline) } catch (error) {
             if (deadline.aborted) throw late()
             throw error
           }
           const answer = planningFactsOutputSchema.safeParse(raw)
           if (!answer.success) throw planningError(502, 'invalid_host_response', 'World answered the facts query outside its contract')
           if (answer.data.run.id !== run.id) throw planningError(502, 'invalid_host_response', 'World answered for another simulation')
-          observedAt = answer.data.observedAt
+          // The oldest read time of the batches: every value is at least this fresh.
+          if (oldestRead === undefined || Date.parse(answer.data.observedAt) < Date.parse(oldestRead)) oldestRead = answer.data.observedAt
           // An item larger than a page continues on the next one under the same locator: facts merge by locator.
           for (const item of answer.data.items) for (const fact of item.facts) facts.push({ ...fact, locator: item.locator })
           cursor = answer.data.more
         } while (cursor !== undefined)
       }
+      const observedAt = oldestRead ?? now()
       const key = (fact: WorldFactCopy) => `${fact.locator}\u0000${fact.id}`
       const previous = new Map(plan.inputs.world.facts.map(fact => [key(fact), fact]))
       const valueChanged = (fact: WorldFactCopy) => {

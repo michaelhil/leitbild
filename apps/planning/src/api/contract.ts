@@ -1,6 +1,7 @@
 // Operation inputs and outputs. The boundary validates with these exact schemas; what is published to
 // Host and the Assistant is stripForPublication(exact).
 import { z } from 'zod'
+import { workspaceResourceReferenceSchema } from '@leitbild/contracts'
 import { editSchema } from '../plan/edit-schema.ts'
 import {
   calendarSchema, certifiedSizeSchema, changeSchema, datedRowSchema, equipmentSchema, goalOrderBreaks, goalWordSchema, groupSchema, instantSchema, jobSchema,
@@ -16,8 +17,8 @@ export const editInputSchema = z.object({
   edits: z.array(editSchema).min(1).max(60).describe('Applied together or not at all'),
   preview: z.boolean().optional().describe('true: show the consequence and the rule check without saving'),
   reason: wordsSchema.optional().describe('Why, for the change log'),
-  authority: z.object({ name: labelSchema.describe('Who agreed'), reason: wordsSchema.describe('Why') }).strict().optional()
-    .describe('Needed to remove or weaken a hard rule, a support, a group membership, a tag-out or test, or a test minimum'),
+  authority: z.object({ name: labelSchema.describe('The named person who agreed, as they gave their name in this conversation'), reason: wordsSchema.describe('Their reason, in their words') }).strict().optional()
+    .describe('A named person\'s agreement to remove or weaken a hard rule, a support, a group membership, a tag-out or test, a precondition or a test minimum. Ask them; never fill this in yourself'),
 }).strict()
 export const generateInputSchema = z.object({
   variants: z.array(z.object({
@@ -74,6 +75,7 @@ export type StatusOut = z.infer<typeof statusOutSchema>
 
 export const writeResultSchema = z.object({
   plan: z.object({ id: z.uuid(), title: labelSchema, revision: z.number().int().positive() }).strict(),
+  target: z.object({ kind: z.literal('resource'), ref: workspaceResourceReferenceSchema }).strict(),   // the plan, as the next call names it
   changed: z.array(z.string().max(200)).max(12),
   attention: z.array(z.object({ kind: z.enum(['refusal', 'not-ready', 'rule', 'limit', 'world', 'decision', 'stale', 'warning']), text: z.string().max(240), about: z.array(keySchema).max(4) }).strict()).max(6),
   problems: z.array(z.object({ edit: z.number().int().nonnegative().optional(), about: z.array(keySchema).max(4), code: z.string().max(64), text: z.string().max(300), expected: z.unknown().optional() }).strict()).max(8),

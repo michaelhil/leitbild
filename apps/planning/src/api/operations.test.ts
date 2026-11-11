@@ -141,6 +141,45 @@ describe('Train A: preview, read and status on the generic operations', () => {
   })
 })
 
+describe('ai fixes: the plan target in results, refresh batches', () => {
+  test('every write result names the plan as the next call targets it', async () => {
+    const created = await harness.create('blank')
+    const target = { kind: 'resource', ref: { workspaceId: harness.workspaceId, moduleId: 'planning', type: 'planning.plan', id: created.id } }
+    expect(created.answer.body.result.target).toEqual(target)
+    const edited = await harness.call('planning.plan.edit', { resource: created.id, input: { edits: [{ edit: 'plan', title: 'Week 48' }] }, expectedRevision: 1 })
+    expect(edited.body.result.target).toEqual(target)
+    expect((await harness.call('planning.sources.refresh', { input: { plan: created.id }, expectedRevision: 2 })).body.result.target).toEqual(target)
+  })
+
+  test('a refresh reads at most 32 subjects per request, per Pack, and refuses more than 32 Einsatz items in words', async () => {
+    const many = (pack: string, count: number) => Array.from({ length: count }, (_, index) => ({ edit: 'equipment', key: `E${pack}${index}`, label: `${pack} item ${index}`, locator: `${pack}/item/${index}` }))
+    const subjects = (pack: string, count: number): PlanningSubject[] => Array.from({ length: count }, (_, index) => ({ locator: `${pack}/item/${index}`, label: `${pack} item ${index}`, kind: 'item', facts: [{ id: `${pack}/${index}/state`, label: 'State', quantity: 'state', value: 'on', basis: 'observed', at: '2026-11-12T09:00:00Z' }] }))
+    world = [...subjects('process-plant', 40), ...subjects('einsatz', 33)]
+    const local = await createHarness({ subjects: () => world })
+    try {
+      const plant = await local.create('blank', { edits: [...many('process-plant', 40), { edit: 'plan', run: 'run-many' }] })
+      const read = await local.call('planning.sources.refresh', { input: { plan: plant.id }, expectedRevision: 1 })
+      expect(read.status).toBe(200)
+      // Each request names at most 32 subjects; a batch's later pages repeat its question with a cursor.
+      const asked = local.journal.map(entry => (entry.input as { subjects: string[] }).subjects)
+      expect(asked.every(batch => batch.length <= 32)).toBe(true)
+      expect([...new Set(asked.map(batch => JSON.stringify(batch)))].map(batch => JSON.parse(batch).length)).toEqual([32, 8])
+      expect((await local.store.read(local.workspaceId, plant.id)).inputs.world.facts.length).toBe(40)
+      // One deadline covers every batch: each answer alone is in time, together they are not, and nothing is saved.
+      const slow = await createHarness({ subjects: () => world, worldAnswerAfterMs: 60, refreshDeadlineMs: 100 })
+      try {
+        const late = await slow.create('blank', { edits: [...many('process-plant', 40), { edit: 'plan', run: 'run-many' }] })
+        const refusedLate = await slow.call('planning.sources.refresh', { input: { plan: late.id }, expectedRevision: 1 })
+        expect([refusedLate.status, refusedLate.body.error.code, slow.journal.length > 1]).toEqual([503, 'world_unavailable', true])
+        expect((await slow.store.read(slow.workspaceId, late.id)).inputs.world.facts).toEqual([])
+      } finally { await slow.close() }
+      const einsatz = await local.create('blank', { edits: [...many('einsatz', 33), { edit: 'plan', run: 'run-many' }] })
+      const refused = await local.call('planning.sources.refresh', { input: { plan: einsatz.id }, expectedRevision: 1 })
+      expect([refused.status, refused.body.error.code, refused.body.error.message]).toEqual([400, 'world_read_limit', 'This plan names 33 Einsatz items; their arrival times are read together, at most 32 at once. Remove the items the plan does not need.'])
+    } finally { await local.close() }
+  })
+})
+
 describe('ops fixes: option identity, one Generate at a time, baseline bound, refresh deadline, stopping', () => {
   test('option keys are unique per generated set, so a baseline names only an option its caller saw', async () => {
     const created = await harness.create('train-a-work-week')

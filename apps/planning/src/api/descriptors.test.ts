@@ -51,6 +51,14 @@ describe('the Planning operations as published (design §5.1)', () => {
     }
   })
 
+  test('authority is a named person\'s, never the caller\'s own', () => {
+    const edit = byId.get('planning.plan.edit')!
+    const authority = (edit.inputSchema as { properties: Record<string, { description: string; properties: Record<string, { description: string }> }> }).properties.authority!
+    expect(authority.description).toContain('Ask them; never fill this in yourself')
+    expect(authority.properties.name!.description).toContain('named person')
+    expect(edit.description).toContain('never fill it in yourself')
+  })
+
   test('every input field is described, and inputs other than create and edit stay within 4 KB', () => {
     for (const descriptor of capabilities) {
       expect(undescribed(descriptor.inputSchema)).toEqual([])
