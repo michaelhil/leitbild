@@ -285,7 +285,16 @@ const attributeAt = (context: Context, resource: Resource, key: string, instant:
   return { value, unit: attribute.unit }
 }
 
-export const checkPlan = (inputs: Inputs, variant: CheckVariant, rows: readonly CheckRow[]): CheckResult => {
+/**
+ * For counterfactual harnesses only (production passes nothing): derived orders not to check, each a
+ * (before, after) pair of jobs, so a test can ask "what if this one order did not hold?" while every
+ * other rule, equipment and calendar stays as it is. Covers bracketing, tag before test and support order.
+ */
+export interface CheckWaivers { readonly orders?: ReadonlyArray<readonly [string, string]> }
+
+export const checkPlan = (inputs: Inputs, variant: CheckVariant, rows: readonly CheckRow[], waivers: CheckWaivers = {}): CheckResult => {
+  const waived = new Set((waivers.orders ?? []).map(([before, after]) => `${before}>${after}`))
+  const isWaived = (before: string, after: string): boolean => waived.has(`${before}>${after}`)
   const prepared = prepare(inputs, variant)
   if (!prepared.ok) return { feasible: false, invalidInput: true, violations: prepared.problems, metrics: [], goals: [], outages: new Map() }
   const context = prepared.context
@@ -602,7 +611,7 @@ export const checkPlan = (inputs: Inputs, variant: CheckVariant, rows: readonly 
         list.push(current)
       }
       for (const tag of current.tags) {
-        if (tag.finish > event.times.start) push('tag-before-test', [tag.job.key, event.times.job.key], `'${event.times.job.title}' starts at ${when(event.times.start)}, before '${tag.job.title}' has finished: ${item.label} is tested before it is tagged out.`, event.times.start)
+        if (tag.finish > event.times.start && !isWaived(tag.job.key, event.times.job.key)) push('tag-before-test', [tag.job.key, event.times.job.key], `'${event.times.job.title}' starts at ${when(event.times.start)}, before '${tag.job.title}' has finished: ${item.label} is tested before it is tagged out.`, event.times.start)
       }
       current.tests.push(event.times)
       current.to = Math.max(...current.tests.map(test => test.finish))
@@ -623,14 +632,14 @@ export const checkPlan = (inputs: Inputs, variant: CheckVariant, rows: readonly 
     const work = timesOf(job.key)
     if (work === undefined) continue
     const list = ownOutages.get(item) ?? []
-    const lastTag = (outage: Outage) => Math.max(-Infinity, ...outage.tags.map(tag => tag.finish))
-    const firstTest = (outage: Outage) => Math.min(Infinity, ...outage.tests.map(test => test.start))
+    const lastTag = (outage: Outage) => Math.max(-Infinity, ...outage.tags.filter(tag => !isWaived(tag.job.key, job.key)).map(tag => tag.finish))
+    const firstTest = (outage: Outage) => Math.min(Infinity, ...outage.tests.filter(test => !isWaived(job.key, test.job.key)).map(test => test.start))
     if (list.some(outage => outage.tags.length > 0 && lastTag(outage) <= work.start && work.finish <= firstTest(outage))) continue
     const near = list.find(outage => outage.from < Math.max(work.finish, work.start + 1) && work.start < outage.to)
     if (near === undefined || near.tags.length === 0) { push('bracket', [job.key], `'${job.title}' works inside ${labelOf(item)} at ${when(work.start)}, while ${labelOf(item)} is in service.`, work.start); continue }
-    const tag = near.tags.find(candidate => candidate.finish > work.start)
+    const tag = near.tags.find(candidate => candidate.finish > work.start && !isWaived(candidate.job.key, job.key))
     if (tag !== undefined) push('bracket', [tag.job.key, job.key], `'${job.title}' starts at ${when(work.start)}, before '${tag.job.title}' has finished.`, work.start)
-    const test = near.tests.find(candidate => work.finish > candidate.start)
+    const test = near.tests.find(candidate => work.finish > candidate.start && !isWaived(job.key, candidate.job.key))
     if (test !== undefined) push('bracket', [job.key, test.job.key], `'${test.job.title}' starts at ${when(test.start)}, before '${job.title}' has finished.`, test.start)
   }
 
@@ -663,10 +672,12 @@ export const checkPlan = (inputs: Inputs, variant: CheckVariant, rows: readonly 
   for (const item of inputs.equipment) {
     const restoring = (tests.get(item.key) ?? []).flatMap(job => { const t = timesOf(job.key); return t === undefined ? [] : [t] })
     if (restoring.length === 0) continue
-    const firstTest = restoring.reduce((earliest, times) => times.start < earliest.start ? times : earliest)
     for (const supporter of supporters.get(item.key) ?? []) {
       for (const job of tests.get(supporter) ?? []) {
         const times = timesOf(job.key)
+        const bound = restoring.filter(test => !isWaived(job.key, test.job.key))
+        if (bound.length === 0) continue
+        const firstTest = bound.reduce((earliest, test) => test.start < earliest.start ? test : earliest)
         if (times !== undefined && times.finish > firstTest.start) {
           push('support-order', [job.key, firstTest.job.key], `'${firstTest.job.title}' starts at ${when(firstTest.start)}, before ${labelOf(supporter)}, which supports ${item.label}, is tested back ('${job.title}').`, firstTest.start)
         }

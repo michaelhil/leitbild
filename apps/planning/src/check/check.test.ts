@@ -454,3 +454,14 @@ describe('review fixes: duty, ordered purchases, second outages, progress lags, 
     expect(checkPlan(plan({}), noVariant, []).invalidInput).toBe(false)
   })
 })
+
+describe('waivers, for counterfactual harnesses only', () => {
+  test('a waived derived order is not checked; every other rule still is', () => {
+    const inputs = plan({ equipment: [item('X')], jobs: [tag('X-TAG', ['X']), testJob('X-TEST', ['X'])] })
+    // the test overlaps its tag-out: refused, unless that one order is waived
+    const rows = [opsRow('X-TAG', '2026-11-16T06:00:00Z'), opsRow('X-TEST', '2026-11-16T06:30:00Z')]
+    expect(codes(checkPlan(inputs, noVariant, rows))).toEqual(['tag-before-test'])
+    expect(checkPlan(inputs, noVariant, rows, { orders: [['X-TAG', 'X-TEST']] }).violations).toEqual([])
+    expect(codes(checkPlan(inputs, noVariant, rows, { orders: [['X-TEST', 'X-TAG']] }))).toEqual(['tag-before-test'])
+  })
+})

@@ -51,3 +51,24 @@ describe('the counterfactual check', () => {
     expect(counterfactualCheck(inputs, variant, rows.slice(1), []).map(failure => failure.reason)).toEqual(['not-feasible-before'])
   })
 })
+
+describe('the harness reads the explainer as it means', () => {
+  // Three operators, so only the links hold E. Item X: tag 08:00Z-09:00Z, test 09:00Z-10:00Z.
+  const two = planInputsSchema.parse({
+    ...inputs,
+    equipment: [{ key: 'X', label: 'Item X', supportedBy: [] }],
+    resources: [{ key: 'ops', label: 'Operators', kind: 'crew', count: 3, calendar: 'always', attributes: [], source: planner }],
+    jobs: [job('A'), job('B'), job('E'), { ...job('X-TAG'), kind: 'tag-out', equipment: ['X'] }, { ...job('X-TEST'), kind: 'test', equipment: ['X'] }],
+    links: [{ from: 'A', to: 'E', type: 'FS', lag: { value: 0, unit: 'h' } }, { from: 'B', to: 'E', type: 'FS', lag: { value: 0, unit: 'h' } }],
+  })
+  const rowsTwo = [one('A', '2026-11-16T06:00:00Z', '2026-11-16T07:00:00Z'), one('B', '2026-11-16T06:00:00Z', '2026-11-16T07:00:00Z'), one('E', '2026-11-16T07:00:00Z', '2026-11-16T08:00:00Z'),
+    one('X-TAG', '2026-11-16T08:00:00Z', '2026-11-16T09:00:00Z'), one('X-TEST', '2026-11-16T09:00:00Z', '2026-11-16T10:00:00Z')]
+  test('a link cause naming two keys names two predecessors, both lifted', () => {
+    expect(counterfactualCheck(two, variant, rowsTwo, [item('E', '2026-11-16T07:00:00Z', [{ kind: 'link', about: ['A', 'B'] }], false)])).toEqual([])
+    // naming only one of them is not enough: the other still holds E
+    expect(counterfactualCheck(two, variant, rowsTwo, [item('E', '2026-11-16T07:00:00Z', [{ kind: 'link', about: ['A'] }], false)]).map(failure => failure.reason)).toEqual(['did-not-move'])
+  })
+  test('lifting "test after tag-out" lifts only that order: the item still returns, and the test moves', () => {
+    expect(counterfactualCheck(two, variant, rowsTwo, [item('X-TEST', '2026-11-16T09:00:00Z', [{ kind: 'link', about: ['X-TAG'] }], false)])).toEqual([])
+  })
+})

@@ -15,49 +15,44 @@ export interface CounterfactualFailure {
   readonly detail: string
 }
 
-interface Relaxed { readonly inputs: PlanInputs; readonly variant: CheckVariant }
+/** Relaxed inputs, plus derived orders the checker is told not to check (equipment and kinds untouched). */
+interface Relaxed { readonly inputs: PlanInputs; readonly variant: CheckVariant; readonly waive?: ReadonlyArray<readonly [string, string]> }
 
 const always = { days: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as Array<'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun'>, from: '00:00', to: '00:00' }
 
 /**
- * The order from `first` to `second` lifted: its explicit links removed and any derived order between them
- * undone (bracketing, tag before test, support order), since an explainer names both as "waits for".
+ * The order from `first` to `second` lifted: its explicit links removed, and any derived order between the
+ * two (bracketing, tag before test, support order) waived in the checker. Nothing else changes: the
+ * items, equipment and kinds stay, so the item still returns to service.
  */
 const liftOrder = (current: Relaxed, first: string, second: string): Relaxed | string => {
-  let { inputs } = current
-  const { variant } = current
-  const explicit = inputs.links.some(link => link.from === first && link.to === second)
-  if (explicit) inputs = { ...inputs, links: inputs.links.filter(link => !(link.from === first && link.to === second)) }
-  const from = inputs.jobs.find(candidate => candidate.key === first), to = inputs.jobs.find(candidate => candidate.key === second)
-  if (from === undefined || to === undefined) return `no jobs ${first} and ${second}`
-  let derived = false
-  const shared = to.equipment.filter(item => from.equipment.includes(item))
-  if (shared.length > 0) {
-    const unbracket = (target: string) => inputs.jobs.map(candidate => candidate.key === target ? { ...candidate, isolation: 'none' as const } : candidate)
-    if (from.kind === 'tag-out' && to.kind === 'work' && to.isolation === 'inside') { inputs = { ...inputs, jobs: unbracket(to.key) }; derived = true }
-    else if (from.kind === 'work' && from.isolation === 'inside' && to.kind === 'test') { inputs = { ...inputs, jobs: unbracket(from.key) }; derived = true }
-    else if (from.kind === 'tag-out' && to.kind === 'test') { inputs = { ...inputs, jobs: inputs.jobs.map(candidate => candidate.key === to.key ? { ...candidate, equipment: candidate.equipment.filter(item => !shared.includes(item)) } : candidate) }; derived = true }
+  const { inputs, variant } = current
+  if (!inputs.jobs.some(job => job.key === first) || !inputs.jobs.some(job => job.key === second)) return `no jobs ${first} and ${second}`
+  return {
+    variant,
+    inputs: { ...inputs, links: inputs.links.filter(link => !(link.from === first && link.to === second)) },
+    waive: [...(current.waive ?? []), [first, second]],
   }
-  if (from.kind === 'test' && to.kind === 'test') {
-    inputs = { ...inputs, equipment: inputs.equipment.map(item => to.equipment.includes(item.key) ? { ...item, supportedBy: [] } : item) }
-    derived = true
-  }
-  return explicit || derived ? { inputs, variant } : `no link or derived order from ${first} to ${second}`
 }
 
-/** The inputs with one cause lifted, or why it cannot be lifted. */
+/** The inputs with one cause lifted, or why it cannot be lifted, keeping the orders already waived for earlier causes of a joint set. */
 export const relax = (current: Relaxed, cause: Cause, job: string): Relaxed | string => {
+  const lifted = relaxOne(current, cause, job)
+  return typeof lifted === 'string' ? lifted : { ...lifted, waive: lifted.waive ?? current.waive ?? [] }
+}
+
+const relaxOne = (current: Relaxed, cause: Cause, job: string): Relaxed | string => {
   const { inputs, variant } = current
   const [first, second] = cause.about
   switch (cause.kind) {
     case 'link': {
-      // The explainer names the predecessors (its 'about'); the successor is the job explained. A pair
-      // [from, to] is read the same way. Each named predecessor's link, or derived order, is lifted.
+      // The explainer names the predecessors (its 'about'); the successor is the job explained. Every key is a
+      // predecessor: its link, or its derived order, into the job is lifted.
       const preds = cause.about.filter(key => key !== job)
       if (preds.length === 0) return 'a link cause names no predecessor'
       let next: Relaxed = current
       for (const from of preds) {
-        const lifted = liftOrder(next, from, cause.about.length === 2 && cause.about[1] !== job ? cause.about[1]! : job)
+        const lifted = liftOrder(next, from, job)
         if (typeof lifted === 'string') return lifted
         next = lifted
       }
@@ -127,7 +122,7 @@ const canStartEarlier = (relaxed: Relaxed, rows: readonly CheckRow[], job: strin
   for (let slot = currentSlot - 1; slot >= 0; slot--) {
     for (const choice of choices) {
       const moved = placeJob(context, entry, slot, choice)
-      if (moved !== undefined && checkPlan(relaxed.inputs, relaxed.variant, [...others, moved]).feasible) return true
+      if (moved !== undefined && checkPlan(relaxed.inputs, relaxed.variant, [...others, moved], { orders: relaxed.waive ?? [] }).feasible) return true
     }
   }
   return false

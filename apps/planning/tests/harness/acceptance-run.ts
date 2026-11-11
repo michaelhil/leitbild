@@ -11,6 +11,7 @@ import { createSolverPool } from '../../src/solve/pool.ts'
 import { compile } from '../../src/solve/compile.ts'
 import { bounds } from '../../src/solve/bounds.ts'
 import caseJson from '../../src/plan/fixtures/train-a.case.json'
+import supplyRunJson from '../../src/plan/fixtures/supply-run.case2.json'
 import { counterfactualCheck, type CounterfactualFailure } from './counterfactual.ts'
 import { goalsProperty } from './goals-property.ts'
 import { boundsSoundness } from './bounds-soundness.ts'
@@ -37,6 +38,27 @@ const flagship = planInputsSchema.parse({
 const edited = (change: (job: PlanInputs['jobs'][number]) => PlanInputs['jobs'][number]): PlanInputs => planInputsSchema.parse({ ...flagship, jobs: flagship.jobs.map(change) })
 // (a) X2 as an estimate change: the CCW A seal 10 h -> 16 h. (b) X1 as a release edit: the spare Wed 08:00 local.
 const replanA = edited(job => job.key === 'CCWA-SEAL' ? { ...job, duration: { ...job.duration, value: 16 } } : job)
+// The Supply run (case2 v1.1) with the same recorded-facts TEST INPUTS as lane S's portability test: on-scene
+// 180 s for every truck, arrival seconds chosen for the test, payloads as configured in the Scenario.
+const arrivals: Record<string, number> = {
+  'unit:truck-4/arrival-seconds/task:sports-hall-tank': 120, 'unit:truck-1/arrival-seconds/task:sports-hall-tank': 300,
+  'unit:truck-3/arrival-seconds/task:field-kitchen': 240, 'unit:truck-4/arrival-seconds/task:field-kitchen': 200, 'unit:truck-1/arrival-seconds/task:field-kitchen': 360,
+}
+const payloads: Record<string, number> = { 'unit:truck-1/property/payloadKg': 300, 'unit:truck-3/property/payloadKg': 800, 'unit:truck-4/property/payloadKg': 1_500 }
+const supplyBase = planInputsSchema.parse(supplyRunJson)
+const supplyRefs = [...new Set(JSON.stringify(supplyBase).match(/"locator":"[^"]+","fact":"[^"]+"/g) ?? [])].map(text => JSON.parse(`{${text}}`) as { locator: string; fact: string })
+const supplyRun = planInputsSchema.parse({
+  ...supplyBase,
+  world: {
+    refreshedAt: '2026-09-03T08:00:00Z',
+    facts: supplyRefs.map(ref => {
+      const value = ref.fact.endsWith('/service-seconds') ? 180 : arrivals[ref.fact] ?? payloads[ref.fact]
+      if (value === undefined) throw new Error(`no test value for ${ref.fact}`)
+      const mass = ref.fact.includes('payload')
+      return { locator: ref.locator, id: ref.fact, label: ref.fact, quantity: mass ? 'mass' : 'duration', unit: mass ? 'kg' : 's', value, basis: mass ? 'configured' : 'owner-estimate', at: '2026-09-03T08:00:00Z' }
+    }),
+  },
+})
 const replanB = edited(job => job.key === 'SWA-SPARE-PREP' ? { ...job, notBefore: { at: '2026-11-18T07:00:00Z', words: 'The vendor now promises the spare for Wed 08:00', source: { by: 'assumption' as const, note: 'vendor promise' } } } : job)
 
 const counterfactualRow = async (name: string, inputs: PlanInputs): Promise<{ checked: number; failures: CounterfactualFailure[]; status: string }> => {
@@ -56,7 +78,7 @@ const counterfactualRow = async (name: string, inputs: PlanInputs): Promise<{ ch
 const print = (row: string, text: string): void => console.log(`[${row}] ${text}`)
 try {
   // Row 1: counterfactual check
-  if (rows.has('counterfactual')) for (const [name, inputs] of [['baseline', flagship], ['replan (a) seal 16 h', replanA], ['replan (b) spare Wed 08:00', replanB]] as const) {
+  if (rows.has('counterfactual')) for (const [name, inputs] of [['baseline', flagship], ['replan (a) seal 16 h', replanA], ['replan (b) spare Wed 08:00', replanB], ['Supply run baseline', supplyRun]] as const) {
     const result = await counterfactualRow(name, inputs)
     print('counterfactual', `${name}: ${result.status}; ${result.checked} jobs checked, ${result.failures.length} failures`)
     for (const failure of result.failures) print('counterfactual', `  ${failure.job}: ${failure.reason} (${failure.causes.map(cause => `${cause.kind} ${cause.about.join('/')}`).join(' + ')}): ${failure.detail}`)
