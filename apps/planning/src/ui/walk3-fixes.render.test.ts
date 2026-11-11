@@ -93,7 +93,7 @@ describe("maint's third walk, screen defects", () => {
       { job: 'SWA-TAG', start: rows[0]!.start, finish: rows[0]!.finish, floatHours: 0, joint: false, because: [{ kind: 'span-limit', about: [{ kind: 'rule', key: 'R2' }] }] },
     ] }
     const html = renderHtml(AttentionColumn, { cards: [], finish: finishChain(result, context), limiting: mostLimiting(result, context), onAction: none, onPick: none })
-    const names = [...html.matchAll(/<button type="button" class="link name"[^>]*>([^<]*)<\/button>/g)].map(match => match[1])
+    const names = [...html.matchAll(/<a class="name" href="[^"]*"[^>]*>([^<]*)<\/a>/g)].map(match => match[1])
     expect(names).toEqual(expect.arrayContaining(['Station mechanical crew', 'Pull SW A pump assembly', '60 t mobile crane with operator and rigger', 'Restore SW A, fill and vent, pump test']))
     expect(readableText(html)).toContain('Most limiting: Station mechanical crew (2): the finish waits for it at 2 of 3 steps.')
     const why = whyStart(result.items[0]!, context, rows[2])

@@ -65,7 +65,7 @@
 
 <section class="preview" aria-labelledby="preview-title" aria-live="polite">
   <h2 id="preview-title" tabindex="-1">Preview: {preview.label}</h2>
-  <p class="hint">Not saved yet.</p>
+  {#if !(shown?.consequence.startsWith('Not saved') ?? false)}<p class="hint">Not saved yet.</p>{/if}
   {#if refused}
     <p><MarkTag mark={{ shape: '✕', word: 'Refused' }} tone="refusal" /> This change cannot be saved.</p>
     {#if preview.refusal}<p class="problems">{preview.refusal.text}</p>{/if}

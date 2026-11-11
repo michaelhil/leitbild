@@ -3,7 +3,7 @@
 // "none is validated feasible".
 import type { Mark } from './format.ts'
 import type { OptionView, PlanModel } from './model.ts'
-import { certificateText, statusView, type Context } from './status-text.ts'
+import { certificateText, goalResult, statusView, type Context } from './status-text.ts'
 
 export interface Outcome {
   readonly key: string
@@ -28,7 +28,7 @@ export const outcomeOf = (option: OptionView, model: PlanModel, context: Context
   const first = view.goals[0]
   const cause = option.status.word === 'proven infeasible'
     ? lead(model.refusals[option.key]) ?? certificateText(option.status.cause, context)
-    : first !== undefined ? `least ${first.name}: ${first.value}, ${first.mark.word}` : [view.sentence, view.details[0]].filter(part => part !== undefined).join(' ')
+    : first !== undefined ? `least ${first.name}: ${goalResult(first)}` : [view.sentence, view.details[0]].filter(part => part !== undefined).join(' ')
   return { key: option.key, label: option.label, mark: view.mark, word: view.word, cause, recommended }
 }
 

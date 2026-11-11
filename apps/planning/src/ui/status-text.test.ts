@@ -36,12 +36,13 @@ describe('status in words, from structure', () => {
       ],
     }), context)
     expect(view.goals.map(goal => [goal.mark.word, goal.distance])).toEqual([
-      ['proven optimal', 'no plan can do better'],
-      ['best found under budget', 'at most NOK 39,200 from the best possible (NOK 425,050)'],
-      ['best found under budget', 'how far from the best is not known'],
+      // One word per goal; the gap only when it is positive; never "best possible" (maint's walk 4, N4-1).
+      ['proven optimal', ''],
+      ['best found', 'could be up to NOK 39,200 better'],
+      ['best found', ''],
     ])
     expect(view.goals[0]!.name).toBe('time over the 54 h guideline for Train A cooling chain (SW A, CCW A and HX A, RHR A, HHSI A)')
-    expect(view.run).toBe('Search used 9 s of computing time; it ran to the end.')
+    expect(view.run).toBe('The search ran to the end.')
   })
 
   test('proofs of infeasibility name the work, the capacity and the interval', () => {

@@ -32,6 +32,8 @@ export const causeParts = (because: Because, context: Context): readonly Part[] 
   const { names } = context
   const of = (kinds: readonly NameKind[]) => because.about.filter(entry => kinds.includes(entry.kind))
   const said = (entries: Because['about']): Part[] => joinParts(entries.map(entry => ({ name: names[entry.kind](entry.key), kind: entry.kind, key: entry.key })))
+  // A rule is named in quote marks that belong to the link, so the marks never sit apart from its words.
+  const quoted = (entries: Because['about']): Part[] => joinParts(entries.map(entry => ({ name: `“${names[entry.kind](entry.key)}”`, kind: entry.kind, key: entry.key })))
   const holders = of(['job'])
   const holding: Part[] = holders.length === 0 ? [] : [' with ', ...said(holders)]
   const time = until(because, context)
@@ -45,8 +47,8 @@ export const causeParts = (because: Because, context: Context): readonly Part[] 
         ? ['no working time on ', ...said(calendars), ...crews.length > 0 ? [' for ', ...said(crews)] : [], time]
         : ['no working time for ', ...said(crews), time]
     }
-    case 'availability': return ['starting earlier would break “', ...said(because.about), '”']
-    case 'span-limit': return ['starting earlier would stretch the outage past “', ...said(because.about), '”']
+    case 'availability': return ['starting earlier would break ', ...quoted(because.about)]
+    case 'span-limit': return ['starting earlier would stretch the outage past ', ...quoted(because.about)]
     case 'window': return [`the window opens ${at(because, context)}`]
     case 'release': return [`it cannot start before ${at(because, context)}`]
     case 'lock': return ['you fixed its start']

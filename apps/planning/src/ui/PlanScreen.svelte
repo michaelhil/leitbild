@@ -63,6 +63,8 @@
   let why = $state<WhyStart | null>(null)
   let preview = $state<Preview | null>(null)
   let pending = $state<readonly Edit[]>([])
+  /** Counts applied changes; the forms are keyed on it so each starts empty after an Apply. */
+  let applied = $state(0)
   let panel = $state<HTMLElement | undefined>(undefined)
 
   /** After a preview or a selected job appears, bring the panel into view and focus its heading. */
@@ -103,7 +105,7 @@
   const certified = $derived(model?.certifiedSize ? {
     text: certifiedSizeWords(model.certifiedSize), measured: measuredSizeWords(model.certifiedSize), evidence: model.certifiedSize.evidence,
     // Plainly whether this plan is inside the measured size (maint's walk 3, R2-9-01).
-    plan: `This plan: ${jobsPerSolve(model.inputs)} jobs in one solve, ${withinCertifiedSize(model.inputs, model.certifiedSize) ? 'within' : 'above'} the ${model.certifiedSize.decided ? 'certified' : 'measured'} size.`,
+    plan: `This plan: ${jobsPerSolve(model.inputs)} ${jobsPerSolve(model.inputs) === 1 ? 'job' : 'jobs'} in one solve, ${withinCertifiedSize(model.inputs, model.certifiedSize) ? 'within' : 'above'} the ${model.certifiedSize.decided ? 'certified' : 'measured'} size.`,
   } : null)
 
   const views: ReadonlyArray<{ key: PlanView; word: string }> = [
@@ -156,6 +158,7 @@
   const apply = (authority: { name: string; reason: string } | null): void => withModel(async current => {
     const shown = await actions.apply(current, pending, authority, selectedOption, preview?.label ?? 'the change')
     preview = null
+    applied += 1
     show(shown)
     onChanged()
   })
@@ -215,7 +218,8 @@
     else if (action === 'align-window') {
       const now = model === null ? null : simulationNow(model.inputs)
       const built = model === null || now === null ? null : alignWindowEdit(model.inputs, now)
-      if (built?.ok) previewEdits(built.edits, 'Align the window to the simulation')
+      const window = built?.ok ? built.edits.find(edit => edit.edit === 'plan')?.window : undefined
+      if (built?.ok && window !== undefined && context !== null) previewEdits(built.edits, `Align the window to the simulation: ${context.format.when(window.start)} to ${context.format.when(window.end)}`)
     }
     else explainFinish()
   }
@@ -260,13 +264,14 @@
           {#if layout}<div class="desktop-only"><Timeline {layout} selected={selectedJob} onSelect={selectJob} /></div>{/if}
           <WorkList {context} {rows} selected={selectedJob} onSelect={selectJob} />
         {:else if view === 'add'}
-          <JobForm {context} busy={busy || generating !== null} onPreview={previewEdits} />
+          <!-- Each applied change starts the forms afresh (maint's walk 4): nothing stays filled in from it. -->
+          {#key applied}<JobForm {context} busy={busy || generating !== null} onPreview={previewEdits} />{/key}
         {:else if view === 'equipment'}
-          <EquipmentPicker {context} {runs} {linkedRun} busy={busy || generating !== null} onLink={link} onRefresh={refresh} {onOpenWorkspace} onFindRuns={findRuns} onSearch={search} onDetail={detail} onPreview={previewEdits} />
+          {#key applied}<EquipmentPicker {context} {runs} {linkedRun} busy={busy || generating !== null} onLink={link} onRefresh={refresh} {onOpenWorkspace} onFindRuns={findRuns} onSearch={search} onDetail={detail} onPreview={previewEdits} />{/key}
         {:else if view === 'crews'}
-          <CrewForm {context} busy={busy || generating !== null} onPreview={previewEdits} />
+          {#key applied}<CrewForm {context} busy={busy || generating !== null} onPreview={previewEdits} />{/key}
         {:else if view === 'rules'}
-          <RulesPanel {context} busy={busy || generating !== null} onPreview={previewEdits} />
+          {#key applied}<RulesPanel {context} busy={busy || generating !== null} onPreview={previewEdits} />{/key}
         {:else}
           <OptionsTable options={model.options?.items ?? []} recommended={model.options?.recommended ?? null} {context} selected={selectedOption} {busy} onSelect={showOption} onBaseline={baseline} />
         {/if}
@@ -275,7 +280,7 @@
         {#if preview}
           <EditPreview {preview} {pending} {context} {busy} onApply={apply} onDiscard={() => { preview = null }} onUseTime={useTime} onAddEdits={extra => previewEdits([...pending, ...extra], preview?.label ?? 'the change')} />
         {:else if selectedJob}
-          <JobPanel jobKey={selectedJob} {context} row={rows.find(row => row.job === selectedJob)} scheduled={rows.length === 0 ? null : new Set(rows.map(row => row.job))} {why} busy={busy || generating !== null} onWhy={explainStart} onPick={pick} onPreview={previewEdits} onClose={() => { selectedJob = null; why = null }} />
+{#key applied}          <JobPanel jobKey={selectedJob} {context} row={rows.find(row => row.job === selectedJob)} scheduled={rows.length === 0 ? null : new Set(rows.map(row => row.job))} {why} busy={busy || generating !== null} onWhy={explainStart} onPick={pick} onPreview={previewEdits} onClose={() => { selectedJob = null; why = null }} />{/key}
         {/if}
       </div>
     </div>

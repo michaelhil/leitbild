@@ -6,7 +6,7 @@ import { sizeRefusalWords, withinCertifiedSize } from '../plan/summary.ts'
 import { sourceMark, type Mark } from './format.ts'
 import type { AttentionKind, PlanModel } from './model.ts'
 import { outcomes, stoppedEarly } from './outcome.ts'
-import { statusView, type Context } from './status-text.ts'
+import { goalResult, statusView, type Context } from './status-text.ts'
 
 export type CardAction = 'open-workspace' | 'link-run' | 'refresh' | 'add-work' | 'generate' | 'why-finish' | 'align-window'
 
@@ -121,7 +121,7 @@ export const attentionCards = (model: PlanModel, context: Context, wallNowMs: nu
         ? `${recommended.label}: ${view.word}.`
         : `${recommended.label} was made before the latest change; generate again for a current status.`,
       text: recommended.fresh && first !== undefined
-        ? `Least ${first.name}: ${first.value}, ${first.mark.word} (${first.distance}).`
+        ? `Least ${first.name}: ${goalResult(first)}.`
         : recommended.fresh ? `${view.sentence} ${view.details.join(' ')}`.trim() : '',
       steps: warnings,
       actions: recommended.fresh && recommended.status.word === 'validated feasible' ? ['why-finish'] : ['generate'],

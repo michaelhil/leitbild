@@ -1,7 +1,7 @@
 <script lang="ts">
   import { floatText } from './explain-text.ts'
   import MarkTag from './MarkTag.svelte'
-  import type { DatedRow } from './model.ts'
+  import { needsText, type DatedRow } from './model.ts'
   import { durationView } from './rules-text.ts'
   import type { Context } from './status-text.ts'
   import { jobMark } from './timeline-layout.ts'
@@ -19,7 +19,7 @@
     return [...context.inputs.jobs].sort((left, right) => order(left.key) - order(right.key)).map(job => {
       const row = byJob.get(job.key)
       const who = row === undefined
-        ? context.names.list(job.needs.flatMap(need => need.anyOf), context.names.resource)
+        ? needsText(job.needs, context.names.resource)
         : context.names.list([...new Set(row.uses.map(use => use.resource))], context.names.resource)
       return { job, row, mark: jobMark(job.kind), estimate: durationView(job, context.inputs.world.facts, context.format), who }
     })

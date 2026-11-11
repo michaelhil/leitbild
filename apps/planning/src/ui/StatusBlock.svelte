@@ -21,7 +21,7 @@
   {#if view.goals.length > 0}
     <ol class="goals">
       {#each view.goals as goal, index (index)}
-        <li><span class="goal-name">Least {goal.name}:</span> <strong>{goal.value}</strong> <MarkTag mark={goal.mark} tone={goal.mark.shape === '✓' ? 'good' : 'estimate'} /> <span class="distance">{goal.distance}</span></li>
+        <li><span class="goal-name">Least {goal.name}:</span> <strong>{goal.value}</strong> <MarkTag mark={goal.mark} tone={goal.mark.shape === '✓' ? 'good' : 'estimate'} />{#if goal.distance} <span class="distance">{goal.distance}</span>{/if}</li>
       {/each}
     </ol>
   {/if}

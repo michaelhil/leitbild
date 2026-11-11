@@ -186,6 +186,7 @@
     .choice-options li button { width: 100%; text-align: left; border: 0; border-radius: 0; min-height: 32px; }
     .choice-options li button[aria-pressed='true'] { background: var(--accent-2); font-weight: 600; }
     .choice.radios label.inline { margin-bottom: 4px; }
+    a.name { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
     .phone-only { display: none; }
 
     @media (max-width: 1280px) {

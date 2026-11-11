@@ -13,8 +13,12 @@ export const statusMark = (word: StatusWord): Mark => ({
   unresolved: { shape: '?', word },
 } satisfies Record<StatusWord, Mark>)[word]
 
+/**
+ * One word per goal on the screen (maint's walk 4, N4-1): "proven optimal" when the bound equals the value,
+ * otherwise "best found"; how far it could be from the best is said only as a gap, never as "best possible".
+ */
 export const goalMark = (word: GoalWord): Mark =>
-  word === 'proven optimal' ? { shape: '✓', word } : { shape: '≈', word }
+  word === 'proven optimal' ? { shape: '✓', word } : { shape: '≈', word: 'best found' }
 
 export interface Context {
   readonly inputs: PlanInputs
@@ -162,15 +166,19 @@ export interface StatusView {
   readonly run: string | null
 }
 
+/** One line on how the search ended: it ran to the end, or it stopped early and why. Said once, apart from the goals. */
 const runText = (status: Extract<Status, { run: unknown }>): string => {
   const { run } = status
-  const used = `Search used ${Math.max(1, Math.round(run.cpuMs / 1_000))} s of computing time`
-  const ended = {
-    done: 'it ran to the end', evals: 'it used its whole budget', cpu: 'it used its whole time budget', wall: 'it used its whole time budget',
-    memory: 'it stopped at the memory limit', ended: 'it stopped early: the solver process ended', cancelled: run.stoppedByWho === 'host' ? 'it was stopped by the Host' : 'you cancelled it',
+  if (run.stoppedBy === 'done') return 'The search ran to the end.'
+  const why = {
+    evals: 'when its time was up', cpu: 'when its time was up', wall: 'when its time was up', memory: 'at the memory limit',
+    ended: 'when the solver process ended', cancelled: run.stoppedByWho === 'host' ? 'when the Host stopped it' : 'because you cancelled it',
   }[run.stoppedBy]
-  return `${used}; ${ended}.`
+  return `The search stopped early, ${why}.`
 }
+
+/** "0 h, proven optimal" or "NOK 472,650, best found; could be up to NOK 132,650 better". */
+export const goalResult = (goal: GoalLine): string => `${goal.value}, ${goal.mark.word}${goal.distance === '' ? '' : `; ${goal.distance}`}`
 
 export const statusView = (status: Status, context: Context): StatusView => {
   const mark = statusMark(status.word)
@@ -180,13 +188,8 @@ export const statusView = (status: Status, context: Context): StatusView => {
         const goal = context.inputs.goals[line.goal]
         const name = goal === undefined ? `goal ${line.goal + 1}` : goalName(goal, context)
         const value = valueText(line.value, line.unit)
-        const distance = line.word === 'proven optimal'
-          ? 'no plan can do better'
-          : line.bound === undefined
-            ? 'how far from the best is not known'
-            : line.value - line.bound.value <= 0
-              ? 'equal to the best possible'
-              : `at most ${valueText(line.value - line.bound.value, line.unit)} from the best possible (${valueText(line.bound.value, line.unit)})`
+        const gap = line.word === 'proven optimal' || line.bound === undefined ? 0 : line.value - line.bound.value
+        const distance = gap > 0 ? `could be up to ${valueText(gap, line.unit)} better` : ''
         return { name, value, mark: goalMark(line.word), distance }
       })
       return {
@@ -215,5 +218,5 @@ export const statusLine = (view: StatusView): string => {
   const first = view.goals[0]
   return first === undefined
     ? `${view.word}: ${view.sentence}`
-    : `${view.word}; least ${first.name}: ${first.value}, ${first.mark.word} (${first.distance})`
+    : `${view.word}; least ${first.name}: ${goalResult(first)}`
 }

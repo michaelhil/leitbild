@@ -7,7 +7,7 @@
   import Said from './Said.svelte'
   import { durationText, quantityText, sourceMark, sourceText } from './format.ts'
   import MarkTag from './MarkTag.svelte'
-  import type { DatedRow } from './model.ts'
+  import { needsText, type DatedRow } from './model.ts'
   import { dueOf, durationView, estimateMark, ruleMark, targetMark } from './rules-text.ts'
   import type { Context } from './status-text.ts'
   import { jobMark } from './timeline-layout.ts'
@@ -77,7 +77,7 @@
       <div><dt>Takes</dt><dd><MarkTag mark={value.mark} tone={value.mark.shape === '?' ? 'unknown' : value.mark.shape === '△' ? 'assumption' : value.mark.shape === '◉' ? 'world' : 'estimate'} /> {value.text}{#if value.source}<small>{value.source}</small>{/if}</dd></div>
       {#if job.minimum}<div><dt>Shortest allowed</dt><dd>{durationText(job.minimum.value, job.minimum.unit)}: {job.minimum.words}<small>Going below it needs someone's agreement.</small></dd></div>{/if}
       {#each job.needs as need, index (index)}
-        <div><dt>{index === 0 ? 'Done by' : 'Also needs'}</dt><dd>{need.amount > 1 ? `${need.amount} of ` : ''}{names.list(need.anyOf, names.resource)}{#if need.where}<small>Only one with {attributeLabel(need.where.attribute)} at least {quantityText(need.where.atLeast, need.where.unit)} when it starts</small>{/if}</dd></div>
+        <div><dt>{index === 0 ? 'Done by' : 'Also needs'}</dt><dd>{needsText([need], names.resource)}{#if need.where}<small>Only one with {attributeLabel(need.where.attribute)} at least {quantityText(need.where.atLeast, need.where.unit)} when it starts</small>{/if}</dd></div>
       {/each}
       {#if job.continuous}<div><dt>Breaks</dt><dd>Never paused over a break</dd></div>{/if}
       {#if job.notBefore}<div><dt>Not before</dt><dd>{context.format.clock(job.notBefore.at)}: {job.notBefore.words}{#if job.notBefore.source.by === 'assumption'}<small><MarkTag mark={sourceMark(job.notBefore.source)} tone="assumption" /> Depends on a promise, {context.format.clock(job.notBefore.at)}: it is planned at that time and flagged.</small>{/if}</dd></div>{/if}

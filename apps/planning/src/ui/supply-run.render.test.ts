@@ -57,7 +57,8 @@ describe('Supply run on the generic screen', () => {
     // Lateness of the bulk request: 30 s past its 08:07 target, said as a goal value.
     expect(text).toContain('Least lateness of jobs tagged “bulk” past their target:')
     expect(text).toContain('30 s')
-    expect(text).toContain('best found under budget')
+    expect(text).toContain('best found')
+    expect(text).not.toContain('best possible')
 
     const rules = screen(model, 'rules')
     const rule = model.inputs.rules[0]!

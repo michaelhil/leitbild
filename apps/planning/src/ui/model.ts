@@ -72,8 +72,12 @@ export interface Names {
 
 const gone = 'an item no longer in this plan'
 
-export const joinWords = (words: readonly string[]): string =>
-  words.length <= 1 ? words.join('') : `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}`
+export const joinWords = (words: readonly string[], last: 'and' | 'or' = 'and'): string =>
+  words.length <= 1 ? words.join('') : `${words.slice(0, -1).join(', ')} ${last} ${words[words.length - 1]}`
+
+/** Who does a job, from its needs: any one of a need's crews or tools ("or"), every need ("and"). */
+export const needsText = (needs: ReadonlyArray<{ readonly anyOf: readonly string[]; readonly amount: number }>, name: (key: string) => string): string =>
+  joinWords(needs.map(need => `${need.amount > 1 ? `${need.amount} of ` : ''}${joinWords(need.anyOf.map(name), 'or')}`))
 
 /** Names an edit list gives to keys it creates, so a preview can name what is not saved yet. */
 export const namesInEdits = (edits: readonly Edit[]): ReadonlyMap<string, string> => new Map(edits.flatMap((edit): Array<[string, string]> => {
