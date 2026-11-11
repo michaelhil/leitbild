@@ -89,9 +89,17 @@ export const createSolverDouble = (options: { readonly calls?: Array<{ readonly 
   },
 })
 
-/** Lane K stand-in: refuses the option keys it is told to, and accepts every other. */
+/** Lane K stand-in: like recheck.ts on revision and formulation; refuses the option keys it is told to. */
 export const createCheckerDouble = (refuse: Set<string> = new Set()): CheckerPort => ({
-  check: (_inputs, option) => ({ violations: refuse.has(option.key) ? [{ code: 'capacity', about: [option.rows[0]?.job ?? option.key] }] : [] }),
+  recheck: (plan, option, formulation) => {
+    const reasons = [
+      ...(option.inputsRevision !== plan.revision ? ['inputs-changed'] : []),
+      ...('run' in option.status && option.status.run.formulation !== formulation ? ['formulation-changed'] : []),
+      ...(refuse.has(option.key) && option.status.word === 'validated feasible' ? ['violations'] : []),
+    ]
+    const violations: CheckViolation[] = reasons.includes('violations') ? [{ code: 'capacity', about: [option.rows[0]?.job ?? option.key] }] : []
+    return { usable: reasons.length === 0, baselineAllowed: reasons.length === 0 && option.status.word === 'validated feasible', reasons, violations }
+  },
 })
 
 // ───────────── World facts, as lane W answers them ─────────────

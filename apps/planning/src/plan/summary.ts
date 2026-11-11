@@ -181,6 +181,9 @@ export interface OptionState {
   readonly stale: boolean
   readonly reason?: 'revision' | 'formulation' | 'recheck'
   readonly warnings: readonly OptionWarning[]
+  /** The status to show: the stored one only when lane K's re-check lets it stand. */
+  readonly shown: Status
+  readonly baselineAllowed: boolean
 }
 
 export interface SectionContext {
@@ -241,7 +244,7 @@ export const buildSection = (name: SectionName, context: SectionContext, offset:
     case 'sources': return pagedSection(name, [...inputs.equipment.map(equipment => ({ equipment })), ...inputs.groups.map(group => ({ group })), ...inputs.world.facts.map(fact => ({ fact }))], offset, budget)
     case 'options': return pagedSection(name, (plan.options?.options ?? []).map(({ rows: _rows, ...rest }) => {
       const state = context.options.get(rest.key)
-      return { ...rest, fresh: state !== undefined && !state.stale, warnings: [...(state?.warnings ?? []).slice(0, 4)] }
+      return { ...rest, status: state?.shown ?? rest.status, fresh: state !== undefined && !state.stale, warnings: [...(state?.warnings ?? []).slice(0, 4)] }
     }), offset, budget, { at: plan.options?.at ?? null, recommended: plan.options?.recommended ?? null })
     case 'schedule': {
       if (option === undefined) throw new RangeError('A schedule names its option')

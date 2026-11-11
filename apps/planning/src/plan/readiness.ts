@@ -165,7 +165,8 @@ export const readiness = (plan: Plan, context: { readonly staleOptions: readonly
 }
 
 // ───────────── the redundancy warning on an option (adversary item 7) ─────────────
-// summary.ts words it into the option's `warnings` (api/contract.ts optionWarningSchema).
+// Lane S's redundancyWarning (solve/status.ts) finds it from an option's rows at display time; summary.ts
+// words it into the option's `warnings` (api/contract.ts optionWarningSchema).
 
 export interface OutTogether {
   readonly kind: 'redundancy'
@@ -173,50 +174,4 @@ export interface OutTogether {
   readonly about: readonly string[]
   readonly from: string
   readonly to: string
-}
-
-/**
- * Items this option takes out at the same time when no keep-in-service or protected rule names any of
- * them. An item is out from its first tag-out start to its last test finish, and while any supporter is
- * out. The status may stay "validated feasible"; the warning is shown beside it.
- */
-export const outTogether = (inputs: Inputs, option: Option): readonly OutTogether[] => {
-  const rows = new Map(option.rows.map(row => [row.job, row]))
-  const jobs = new Map(inputs.jobs.map(job => [job.key, job]))
-  // An item never tested again stays out to the window end (or the option's last finish without a window).
-  const windowEnd = inputs.settings.window === null ? Math.max(...option.rows.map(row => Date.parse(row.finish))) : Date.parse(inputs.settings.window.end)
-  const own = new Map<string, { from: number; to: number }>()
-  for (const item of inputs.equipment) {
-    const tagged = option.rows.filter(row => jobs.get(row.job)?.kind === 'tag-out' && jobs.get(row.job)!.equipment.includes(item.key))
-    if (tagged.length === 0) continue
-    const tested = option.rows.filter(row => jobs.get(row.job)?.kind === 'test' && jobs.get(row.job)!.equipment.includes(item.key))
-    own.set(item.key, {
-      from: Math.min(...tagged.map(row => Date.parse(row.start))),
-      to: tested.length === 0 ? windowEnd : Math.max(...tested.map(row => Date.parse(row.finish))),
-    })
-  }
-  if (rows.size === 0 || own.size === 0) return []
-  const supporters = new Map(inputs.equipment.map(item => [item.key, item.supportedBy]))
-  const outIntervals = (key: string, seen: ReadonlySet<string> = new Set()): ReadonlyArray<{ from: number; to: number }> => {
-    if (seen.has(key)) return []
-    const next = new Set([...seen, key])
-    return [...(own.has(key) ? [own.get(key)!] : []), ...(supporters.get(key) ?? []).flatMap(supporter => outIntervals(supporter, next))]
-  }
-  const named = ruleNamed(inputs)
-  const candidates = inputs.equipment.map(item => item.key).filter(key => !named.has(key)).map(key => ({ key, intervals: outIntervals(key) })).filter(entry => entry.intervals.length > 0)
-  if (candidates.length < 2 || [...own.keys()].some(key => named.has(key))) return []
-  let together: { readonly keys: string[]; readonly from: number; readonly to: number } | undefined
-  for (const [index, left] of candidates.entries()) for (const right of candidates.slice(index + 1)) {
-    for (const a of left.intervals) for (const b of right.intervals) {
-      const from = Math.max(a.from, b.from), to = Math.min(a.to, b.to)
-      if (from >= to) continue
-      if (together === undefined) together = { keys: [left.key, right.key], from, to }
-      else if (from < together.to && to > together.from) {
-        for (const key of [left.key, right.key]) if (!together.keys.includes(key)) together.keys.push(key)
-        together = { keys: together.keys, from: Math.max(together.from, from), to: Math.min(together.to, to) }
-      }
-    }
-  }
-  if (together === undefined) return []
-  return [{ kind: 'redundancy', about: together.keys.slice(0, 8), from: new Date(together.from).toISOString(), to: new Date(together.to).toISOString() }]
 }

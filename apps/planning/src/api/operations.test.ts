@@ -184,8 +184,11 @@ describe('ops fixes: option identity, one Generate at a time, baseline bound, re
   test('option keys are unique per generated set, so a baseline names only an option its caller saw', async () => {
     const created = await harness.create('train-a-work-week')
     const first = await harness.call('planning.plan.generate', { resource: created.id, input: {}, expectedRevision: 1 })
-    const second = await harness.call('planning.plan.generate', { resource: created.id, input: {}, expectedRevision: 1 })
+    // The same options again keep their keys (they are what the caller saw); a different set gets new keys.
+    const again = await harness.call('planning.plan.generate', { resource: created.id, input: {}, expectedRevision: 1 })
     const keys = (answer: typeof first) => answer.body.result.options.map((option: { key: string }) => option.key)
+    expect(keys(again)).toEqual(keys(first))
+    const second = await harness.call('planning.plan.generate', { resource: created.id, input: { variants: [{ label: 'Second look' }] }, expectedRevision: 1 })
     expect(keys(first).some((key: string) => keys(second).includes(key))).toBe(false)
     expect(keys(second)).toContain(second.body.result.recommended)
     const stale = await harness.call('planning.plan.baseline', { resource: created.id, input: { option: first.body.result.recommended, name: 'Seen before' }, expectedRevision: 1 })

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { workspaceIdSchema } from '@leitbild/contracts'
-import { outTogether, preconditions, readiness, takenOut, worldSubjects } from './readiness.ts'
+import { preconditions, readiness, takenOut, worldSubjects } from './readiness.ts'
 import { planInputsSchema, type Plan, type PlanInputs } from './schema.ts'
 import { buildSection, byteLength, readinessText, statusSentence, timeWords } from './summary.ts'
 import { sectionDataSchemas } from '../api/contract.ts'
@@ -77,23 +77,15 @@ describe('readiness: warnings only, never a score (T2)', () => {
     expect(readiness(planOf(late), { staleOptions: [], now: late.settings.dataDate }).find(item => item.about[0] === purchase.key)?.code).toBe('order-passed')
   })
 
-  test('two items taken out with no rule keeping any of them in service warn, on the plan and beside an option', () => {
+  test('two items taken out with no rule keeping any of them in service warn on the plan', () => {
     const two = trainA.equipment.filter(item => item.key !== (trainA.rules[0]!.kind === 'protected' ? trainA.rules[0]!.equipment[0] : '')).slice(0, 2).map(item => item.key)
     const tagOuts = two.map((key, index) => ({ ...trainA.jobs.find(job => job.kind === 'tag-out')!, key: `TAG-${index}`, equipment: [key], checks: [] }))
     const tests = two.map((key, index) => ({ ...trainA.jobs.find(job => job.kind === 'test')!, key: `TEST-${index}`, equipment: [key] }))
     const inputs: PlanInputs = { ...trainA, jobs: [...tagOuts, ...tests], links: [] }
     expect(takenOut(inputs)).toEqual(two)
     expect(codes(inputs)).toContain('redundancy')
-    const row = (job: string, start: string, finish: string) => ({ job, start, finish, uses: [], float: { workingHours: 0, limitedBy: { kind: 'window-end' as const } } })
-    const option = {
-      key: 'O1', label: 'Both at once', variant: { methods: [], purchases: [] }, inputsRevision: 1, metrics: [],
-      status: { word: 'invalid input' as const, problems: [{ about: [], code: 'test' }] },
-      rows: [row('TAG-0', '2026-11-16T06:00:00Z', '2026-11-16T07:00:00Z'), row('TAG-1', '2026-11-16T07:00:00Z', '2026-11-16T08:00:00Z'), row('TEST-0', '2026-11-16T10:00:00Z', '2026-11-16T11:00:00Z'), row('TEST-1', '2026-11-16T11:00:00Z', '2026-11-16T12:00:00Z')],
-    }
-    expect(outTogether(inputs, option).map(warning => [warning.kind, warning.from, warning.to])).toEqual([['redundancy', '2026-11-16T07:00:00.000Z', '2026-11-16T11:00:00.000Z']])
     const keepOne: PlanInputs = { ...inputs, rules: [...inputs.rules, { kind: 'keep-in-service', key: 'K', members: two.map(equipment => ({ equipment })), atLeast: 1, words: 'Keep one in service', source: { by: 'planner' } }] }
     expect(codes(keepOne)).not.toContain('redundancy')
-    expect(outTogether(keepOne, option)).toEqual([])
   })
 })
 

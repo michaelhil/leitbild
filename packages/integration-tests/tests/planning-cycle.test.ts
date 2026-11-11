@@ -1,7 +1,7 @@
 // The scripted Assistant cycle (design 9 row 5): facts, create, link, refresh, edits, generate, explain,
 // baseline, then a read from a new Room, all through Host with the Agents workspace tools, against World's
 // real planning facts query on a real Supply run. The Run's journal gains nothing from Planning, and every
-// result stays within 4 KB. The solver and checker are lane S and K doubles until integration.
+// result stays within 4 KB. Generate runs on the real solver and checker.
 import { afterAll, expect, test } from 'bun:test'
 import { planInputsSchema } from '../../../apps/planning/src/plan/schema.ts'
 import { createPlanningStack } from './planning-stack.ts'

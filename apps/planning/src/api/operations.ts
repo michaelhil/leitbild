@@ -11,7 +11,8 @@ import { isPlanningError, planningError } from '../errors.ts'
 import { applyEdits, requireAuthority, type ChangeRecord, type EditOutcome, type StoredActor } from '../plan/edits.ts'
 import { definitionRevision, startPlan } from '../definitions/start.ts'
 import type { PlanDefinitionsPort } from '../definitions/index.ts'
-import { outTogether, readiness, worldSubjects, type ReadinessItem } from '../plan/readiness.ts'
+import { readiness, worldSubjects, type ReadinessItem } from '../plan/readiness.ts'
+import { redundancyWarning, refusedStatus, unresolvedStatus, withoutProof } from '../solve/status.ts'
 import {
   certificateSchema, certifiedSizeSchema, optionSetSchema, planInputsSchema,
   type CertifiedSize, type Plan, type PlanInputs, type Status, type WorldFactCopy,
@@ -41,9 +42,21 @@ export type GenerateVariant = NonNullable<z.infer<typeof generateInputSchema>['v
 /** One finding of the independent checker, as keys and a code; summary.ts words it. */
 export interface CheckViolation { readonly code: string; readonly about: readonly string[] }
 
+/** What lane K's re-check (check/recheck.ts) answers for a stored option against the current plan. */
+export interface RecheckView {
+  /** The stored status may be shown with its proof words. */
+  readonly usable: boolean
+  readonly baselineAllowed: boolean
+  readonly reasons: readonly string[]
+  /** What to show instead when the stored status cannot be shown. */
+  readonly shownAs?: 'unresolved' | 'invalid input'
+  readonly violations: ReadonlyArray<CheckViolation & { readonly input?: boolean }>
+  readonly certificate?: { readonly proves: boolean; readonly ok: boolean; readonly unverified: readonly string[] }
+}
+
 /** Lane K: the plan-level checker. It re-derives every rule from the inputs and trusts nothing in the rows. */
 export interface CheckerPort {
-  readonly check: (inputs: PlanInputs, option: Option) => { readonly violations: readonly CheckViolation[] }
+  readonly recheck: (plan: Plan, option: Option, formulation: string) => RecheckView
 }
 
 /** Lane S: compile, bounds, the Engine in its Worker pool, decode, date, float, status and rank. */
@@ -64,6 +77,8 @@ export interface SolverPort {
     readonly at: string
     readonly by: StoredActor
     readonly signal: AbortSignal
+    /** Who stopped it, once the signal fires: the person (their request ended) or Host (Planning stopping). */
+    readonly stoppedByWho?: () => 'person' | 'host' | undefined
   }) => Promise<OptionSet>
   readonly explain: (request: {
     readonly inputs: PlanInputs
@@ -187,14 +202,29 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
   const generating = new Map<string, Promise<unknown>>()
   const stopping = new AbortController()
 
-  /** Proof words apply only on the current revision and formulation, after the checker re-checks the option. */
+  /**
+   * Every shown status is lane K's re-check of the stored one: proof words only on the current revision
+   * and formulation, a feasible plan the checker accepts today, and a certificate that `proves`. Otherwise
+   * the shown status loses its proof (lane S's withoutProof), or becomes what the checker found.
+   */
+  const inputProblems = (recheck: RecheckView) => {
+    const problems = recheck.violations.filter(violation => violation.input !== false).slice(0, 16).map(violation => ({ about: [...violation.about.slice(0, 4)], code: violation.code }))
+    return problems.length > 0 ? problems : [{ about: [], code: 'invalid_input' }]
+  }
   const optionState = (plan: Plan, option: Option): OptionState => {
-    const formulation = 'run' in option.status ? option.status.run.formulation : undefined
-    const warnings = option.rows.length === 0 ? [] : outTogether(plan.inputs, option).map(warning => optionWarning(warning, plan.inputs))
-    if (option.inputsRevision !== plan.revision) return { stale: true, reason: 'revision', warnings }
-    if (formulation !== undefined && formulation !== solver.formulation(plan.inputs.settings.grid)) return { stale: true, reason: 'formulation', warnings }
-    if (option.status.word === 'validated feasible' && checker.check(plan.inputs, option).violations.length > 0) return { stale: true, reason: 'recheck', warnings }
-    return { stale: false, warnings }
+    const formulation = solver.formulation(plan.inputs.settings.grid)
+    const recheck = checker.recheck(plan, option, formulation)
+    const stored = option.status
+    const shown: Status = recheck.usable ? stored
+      : recheck.shownAs === 'invalid input' ? refusedStatus('invalid input', inputProblems(recheck))
+        : recheck.shownAs === 'unresolved' && 'run' in stored ? unresolvedStatus(stored.run)
+          : stored.word === 'validated feasible' && recheck.reasons.includes('violations') ? unresolvedStatus(stored.run)
+            : withoutProof(stored)
+    const warning = shown.word === 'validated feasible' ? redundancyWarning(plan.inputs, option.rows) : undefined
+    const warnings = warning === undefined ? [] : [optionWarning({ kind: 'redundancy', about: warning.items, from: warning.from, to: warning.to }, plan.inputs)]
+    const reason = recheck.usable ? undefined
+      : recheck.reasons.includes('inputs-changed') ? 'revision' as const : recheck.reasons.includes('formulation-changed') ? 'formulation' as const : 'recheck' as const
+    return { stale: !recheck.usable, ...(reason === undefined ? {} : { reason }), warnings, shown, baselineAllowed: recheck.baselineAllowed }
   }
   const optionStates = (plan: Plan): ReadonlyMap<string, OptionState> =>
     new Map((plan.options?.options ?? []).map(option => [option.key, optionState(plan, option)]))
@@ -236,22 +266,39 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
   }
 
   /**
-   * Option keys are unique per generated set, so a baseline can only name an option its caller saw: an
-   * option the solver kept unchanged from the stored set keeps its key, every other one gets a new key.
+   * Option keys are unique per generated set, so a baseline can only name an option its caller saw. A key
+   * is the solver's variant key and a set suffix (`swap.3f9a2c1d`); the solver sees its own variant keys, so
+   * it can keep the better of stored and new per variant (D12). An option it kept keeps its key.
    */
+  const variantKey = (key: string): string => key.replace(/\.[0-9a-f]{8}$/, '')
+  const unkeyed = (stored: OptionSet | null): OptionSet | null => stored === null ? null : {
+    ...stored, options: stored.options.map(option => ({ ...option, key: variantKey(option.key) })),
+    ...(stored.recommended === undefined ? {} : { recommended: variantKey(stored.recommended) }),
+  }
   const keyed = (generated: OptionSet, stored: OptionSet | null): OptionSet => {
     const set = crypto.randomUUID().slice(0, 8)
-    const kept = new Map((stored?.options ?? []).map(option => [option.key, JSON.stringify(option)]))
+    const kept = new Map((stored?.options ?? []).map(option => [variantKey(option.key), { key: option.key, text: JSON.stringify({ ...option, key: variantKey(option.key) }) }]))
     const renamed = new Map<string, string>()
-    const options = generated.options.map((option, index) => {
-      if (kept.get(option.key) === JSON.stringify(option)) return option
-      const key = `O${index + 1}-${set}`
+    const options = generated.options.map(option => {
+      const old = kept.get(option.key)
+      const key = old !== undefined && old.text === JSON.stringify(option) ? old.key : `${option.key.slice(0, 55)}.${set}`
       renamed.set(option.key, key)
       return { ...option, key }
     })
-    const recommended = generated.recommended === undefined ? undefined : renamed.get(generated.recommended) ?? generated.recommended
+    const recommended = generated.recommended === undefined ? undefined : renamed.get(generated.recommended)
     return { ...generated, options, ...(recommended === undefined ? {} : { recommended }) }
   }
+
+  /** The option's longest group span (h, from the span-over goal) and its extra cost (from the extra-cost goal). */
+  const spanAndCost = (inputs: PlanInputs, option: Option): { readonly span?: number; readonly cost?: number } => {
+    const k = (metric: string) => inputs.goals.findIndex(goal => goal.metric === metric)
+    const spanGoal = k('span-over'), costGoal = k('extra-cost')
+    const spans = option.metrics.filter(metric => spanGoal >= 0 && (metric.id === `goal:${spanGoal}` || metric.id.startsWith(`goal:${spanGoal}:`)))
+    const cost = costGoal < 0 ? undefined : option.metrics.find(metric => metric.id === `goal:${costGoal}`)?.value
+    return { ...(spans.length === 0 ? {} : { span: Math.max(...spans.map(metric => metric.value)) }), ...(cost === undefined ? {} : { cost }) }
+  }
+  /** The purchases the schedule uses; an option's stored purchases are the set it was allowed. */
+  const purchasesUsed = (option: Option): readonly string[] => [...new Set(option.rows.flatMap(row => row.uses.flatMap(use => use.purchase === undefined ? [] : [use.purchase])))]
 
   const generateOnce = async (workspaceId: WorkspaceId, planId: string, input: z.infer<typeof generateInputSchema>, expectedRevision: number | undefined, access: AccessContext, signal: AbortSignal): Promise<GenerateResult> => {
     const guard = { expectedRevision, required: true }
@@ -262,12 +309,13 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
     const at = now()
     const by = storedActor(access)
     const answer = optionSetSchema.safeParse(await solver.generate({
-      inputs: plan.inputs, inputsRevision: plan.revision, variants: input.variants, seconds: input.seconds ?? 20, stored: plan.options, at, by, signal,
+      inputs: plan.inputs, inputsRevision: plan.revision, variants: input.variants, seconds: input.seconds ?? 20, stored: unkeyed(plan.options), at, by, signal,
+      stoppedByWho: () => stopping.signal.aborted ? 'host' : signal.aborted ? 'person' : undefined,
     }))
     if (!answer.success) throw planningError(500, 'invalid_planning_result', 'Generate returned options that do not match the plan schema')
     const generated = keyed(answer.data, plan.options)
     for (const option of generated.options) {
-      if (option.status.word === 'validated feasible' && option.inputsRevision === plan.revision && checker.check(plan.inputs, option).violations.length > 0) {
+      if (option.status.word === 'validated feasible' && option.inputsRevision === plan.revision && !checker.recheck(plan, option, solver.formulation(plan.inputs.settings.grid)).usable) {
         throw planningError(500, 'invalid_planning_result', `Generate called option ${option.label} feasible but the checker refuses it`)
       }
     }
@@ -276,17 +324,20 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
       ...appendChange(current, { at, by, revision: current.revision, summary: `Generated ${generated.options.length} option${generated.options.length === 1 ? '' : 's'}`, kinds: [] }),
     }))
     const states = optionStates(saved)
-    const options = generated.options.map(option => ({
-      key: option.key, label: option.label.slice(0, 80), status: statusOut(option.status),
-      ...(option.metrics.find(entry => entry.id === 'span') === undefined ? {} : { span: option.metrics.find(entry => entry.id === 'span')!.value }),
-      ...(option.metrics.find(entry => entry.id === 'extra-cost') === undefined ? {} : { cost: option.metrics.find(entry => entry.id === 'extra-cost')!.value }),
-      // The redundancy warning sits beside the status wherever the status is shown (adversary item 7).
-      warnings: [...(states.get(option.key)?.warnings ?? []).slice(0, 4)],
-    }))
+    const options = generated.options.map(option => {
+      const { span, cost } = spanAndCost(saved.inputs, option)
+      return {
+        key: option.key, label: option.label.slice(0, 80), status: statusOut(states.get(option.key)?.shown ?? option.status),
+        ...(span === undefined ? {} : { span }), ...(cost === undefined ? {} : { cost }),
+        // The redundancy warning sits beside the status wherever the status is shown (adversary item 7).
+        warnings: [...(states.get(option.key)?.warnings ?? []).slice(0, 4)],
+      }
+    })
     const recommended = generated.options.find(option => option.key === generated.recommended)
+    const used = recommended === undefined ? [] : purchasesUsed(recommended)
     const sentence = recommended === undefined
       ? 'No option can be recommended: none is validated feasible.'
-      : `${recommended.label}: ${statusSentence(recommended.status, saved.inputs)}`
+      : `${recommended.label}: ${statusSentence(states.get(recommended.key)?.shown ?? recommended.status, saved.inputs)}${used.length === 0 ? '' : ` Buys: ${used.map(key => nameOf(saved.inputs, key)).join(', ')}.`}`
     const result: GenerateResult = {
       plan: { id: saved.id, revision: saved.revision }, options,
       ...(generated.recommended === undefined ? {} : { recommended: generated.recommended }),
@@ -401,7 +452,7 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
       const saved = await store.update(workspaceId, planId, { expectedRevision, required: true }, plan => {
         const option = findOption(plan, input.option)
         if (option.status.word !== 'validated feasible') throw planningError(409, 'option_not_feasible', `Option ${option.label} is ${option.status.word}; only a validated feasible option can become the baseline`, { about: [option.key] })
-        requireFresh(plan, option)
+        if (!requireFresh(plan, option).baselineAllowed) throw planningError(409, 'option_stale', `Option ${option.label} no longer re-checks as feasible; generate again`, { about: [option.key] })
         if (plan.baselines.length >= maxBaselines) throw planningError(409, 'baseline_limit', `This plan already keeps ${plan.baselines.length} baselines, the most a plan may keep`, { maxBaselines })
         const number = Math.max(0, ...plan.baselines.map(baseline => Number(baseline.key.replace(/^B/, '')) || 0)) + 1
         return {

@@ -1,5 +1,5 @@
-// A real Host with the real World and Planning Modules. World serves its own planning facts query; the
-// solver and checker (lanes S and K) are doubles until integration. Agents is either the real Module
+// A real Host with the real World and Planning Modules. World serves its own planning facts query, and
+// Planning runs on the real solver (lane S's Worker pool) and checker (lane K). Agents is either the real Module
 // (for search over its catalogue) or a Module answering empty catalogues, since its workspace tools run
 // in-process against Host either way.
 import { mkdtemp, rm } from 'node:fs/promises'
@@ -34,7 +34,8 @@ import { createPlanningOperations } from '../../../apps/planning/src/api/operati
 import { createPlanDefinitions } from '../../../apps/planning/src/definitions/index.ts'
 import { createPlanStore } from '../../../apps/planning/src/plan/store.ts'
 import { createPlanningHostClient } from '../../../apps/planning/src/host-client.ts'
-import { createCheckerDouble, createSolverDouble } from '../../../apps/planning/src/api/fixtures/doubles.ts'
+import { createRealSolver, realChecker } from '../../../apps/planning/src/api/wiring.ts'
+import { createSolverPool } from '../../../apps/planning/src/solve/pool.ts'
 
 const temporary = async (cleanup: Array<() => Promise<void> | void>, name: string) => {
   const dir = await mkdtemp(join(tmpdir(), `planning-stack-${name}-`))
@@ -114,8 +115,10 @@ export const createPlanningStack = async (options: { readonly realAgents?: boole
   const store = createPlanStore(planningHome)
   const definitions = createPlanDefinitions()
   // Planning reads World through Host as index.ts does; Host's address is known once it listens.
+  const pool = createSolverPool()
+  cleanup.push(() => pool.shutdown())
   const operations = createPlanningOperations({
-    store, definitions, solver: createSolverDouble(), checker: createCheckerDouble(),
+    store, definitions, solver: createRealSolver(pool), checker: realChecker,
     world: { read: async (access, run, input, signal) => planningFactsOutputSchema.parse(await createPlanningHostClient({ hostUrl }).call(access, 'world.simulation-run.planning-facts', { resource: run, input }, signal)) },
   })
   const planning = createPlanningServer({ operations, definitions, store, port: 0, uiDistPath: planningHome })
