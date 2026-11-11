@@ -89,7 +89,7 @@ export const planningOperations: ReadonlyArray<Operation<any>> = [
   },
   {
     id: 'planning.plan.generate', kind: 'command', scope: 'plan', risk: 'write',
-    title: 'Generate schedules',
+    title: 'Generate schedule options',
     description: 'Work out schedules that keep every hard rule: links, shift calendars, crew and tool limits, outage limits, protected equipment and locks. Ranks them by the plan\'s goals and says for each whether it is validated feasible, proven infeasible with its cause, or unresolved. Try what-ifs without changing the plan: fix a method, allow or forbid purchases, or days only with no extra crew hours. Saves the options; the plan\'s inputs stay as they are. Needs the plan\'s current revision.',
     searchTerms: ['generate', 'schedule', 'plan', 'optimise', 'options', 'alternatives', 'what-if', 'replan', 'fit', 'window'],
     input: generateInputSchema, output: generateResultSchema,
@@ -97,7 +97,7 @@ export const planningOperations: ReadonlyArray<Operation<any>> = [
   },
   {
     id: 'planning.plan.explain', kind: 'query', scope: 'plan', risk: 'read',
-    title: 'Explain a schedule',
+    title: 'Explain start, finish or refusal',
     description: 'Explain a schedule: why a job starts when it does, what holds up the finish, or why a plan was refused. The answers are the solver\'s own reasons, such as a link, a crew or tool, a shift, an outage limit, a release time or the window, and each job comes with its float: how much it can slip before the window end. Asks about the recommended option unless another is named. Reads only; nothing is saved.',
     searchTerms: ['why', 'explain', 'late', 'critical', 'limits', 'finish', 'driving', 'refused', 'impossible', 'float'],
     input: explainInputSchema, output: explainResultSchema,
@@ -113,7 +113,7 @@ export const planningOperations: ReadonlyArray<Operation<any>> = [
   },
   {
     id: 'planning.plan.baseline', kind: 'command', scope: 'plan', risk: 'write',
-    title: 'Set the baseline',
+    title: 'Commit a baseline',
     description: 'Make one option the plan\'s baseline: the schedule you commit to and compare later changes with, frozen with the plan as it was. Only an option that is validated feasible on the plan as it stands now can become the baseline; one that is out of date is refused, so generate again first. Earlier baselines are kept with their names and notes. The plan\'s inputs do not change. Needs the plan\'s current revision.',
     searchTerms: ['baseline', 'commit', 'freeze', 'approve', 'choose'],
     input: baselineInputSchema, output: writeResultSchema,
