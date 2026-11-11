@@ -80,6 +80,20 @@ describe('readiness: warnings only, never a score (T2)', () => {
     expect(readiness(planOf(trainA), { staleOptions: [], now: '2026-11-12T09:00:00Z' }).filter(item => item.code === 'assumption').map(item => item.about[0])).toEqual(promised)
   })
 
+  test('durations that do not fit the time step are listed once, as rounded up (design D9)', () => {
+    expect(codes(trainA)).not.toContain('rounded')
+    // The Supply run's World times for one request: arrival 3 min 29.8 s plus service 0 s, on the 30 s step.
+    const job = supplyRun.jobs.find(entry => entry.durationWith.some(with_ => 'refs' in with_))!
+    const entry = job.durationWith.find(with_ => 'refs' in with_)!
+    const refs = 'refs' in entry ? entry.refs : []
+    const facts = refs.map((ref, index) => ({ id: ref.fact, label: 'time', quantity: 'time', unit: 's', value: index === 0 ? 209.8 : 0, basis: 'owner-estimate' as const, at: '2026-09-03T08:00:00Z', locator: ref.locator }))
+    const read = { ...supplyRun, world: { refreshedAt: '2026-09-03T08:00:00Z', facts } }
+    const item = readiness(planOf(read), { staleOptions: [], now: '2026-09-03T08:00:00Z' }).find(entry => entry.code === 'rounded')!
+    expect(item.durations).toContainEqual({ job: job.key, resource: entry.resource, fromMs: 209_800, toMs: 210_000 })
+    expect(readinessText(item, read)).toContain(`${job.title} with ${read.resources.find(resource => resource.key === entry.resource)!.label} from 3 min 29.8 s to 3 min 30 s`)
+    expect(readinessText(item, read)).toMatch(/^(One duration was|\d+ durations were) rounded up to the 30 s step: /)
+  })
+
   test('an order deadline is a decision before the data date and a warning after it', () => {
     const purchase = trainA.purchases.find(entry => entry.orderBy !== undefined && entry.ordered === undefined)!
     expect(readiness(planOf(trainA), { staleOptions: [], now: trainA.settings.dataDate! }).find(item => item.about[0] === purchase.key)?.code)

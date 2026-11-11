@@ -39,6 +39,12 @@ export const valueWords = (value: number, unit: string): string => {
   return `${decimal(value)} ${unit}`
 }
 
+/** A duration in planner words to a tenth of a second: "3 min 29.8 s", "2 h 30 min". */
+export const msWords = (ms: number): string => {
+  const hours = Math.floor(ms / 3_600_000), minutes = Math.floor(ms % 3_600_000 / 60_000), seconds = Math.round(ms % 60_000 / 100) / 10
+  return [hours > 0 ? `${hours} h` : '', minutes > 0 ? `${minutes} min` : '', seconds > 0 ? `${seconds} s` : ''].filter(Boolean).join(' ') || '0 s'
+}
+
 export const basisWords: Readonly<Record<string, string>> = { design: 'design', configured: 'configured', observed: 'observed', 'owner-estimate': 'owner estimate' }
 
 const goalWords: Readonly<Record<Inputs['goals'][number]['metric'], string>> = {
@@ -163,6 +169,12 @@ export const readinessText = (item: ReadinessItem, inputs: Inputs): string => {
         ? `${name}: depends on ${item.words ?? 'an assumption'}, ${at}.`
         : `${names(inputs, item.about, 2)}: an assumption${item.words === undefined ? '' : ` (${item.words})`}; confirm it.`
       case 'assumptions': return `${item.count === 1 ? 'One planning value is an assumption' : `${item.count} planning values are assumptions`}, such as ${names(inputs, item.about, 2)}: review them.`
+      case 'rounded': {
+        const rounded = item.durations ?? []
+        const step = inputs.settings.grid === '30s' ? '30 s' : '30 min'
+        const shown = rounded.slice(0, 2).map(entry => `${nameOf(inputs, entry.job)}${entry.resource === undefined ? '' : ` with ${nameOf(inputs, entry.resource)}`} from ${msWords(entry.fromMs)} to ${msWords(entry.toMs)}`)
+        return `${rounded.length === 1 ? 'One duration was' : `${rounded.length} durations were`} rounded up to the ${step} step: ${shown.join('; ')}${rounded.length > 2 ? '; …' : '.'}`
+      }
       case 'redundancy': return `${item.count} items are taken out and no rule keeps any of them in service. If they back each other up, add 'keep at least k of these in service'.`
       case 'options-stale': return `${item.count === 1 ? 'One option no longer matches' : `${item.count} options no longer match`} the plan; generate again.`
     }

@@ -2,7 +2,8 @@
 // Items are structure; summary.ts words them. `blocks` marks what makes Generate answer "invalid input".
 import type { PlanningFactBasis } from '@leitbild/contracts'
 import { combineWorldFacts, type Plan, type PlanInputs, type WorldFactCopy, type WorldRef } from './schema.ts'
-import { belowMinimum } from './edits.ts'
+import { belowMinimum, effectiveDurations } from './edits.ts'
+import { gridSlotMs } from '../time/units.ts'
 import { redundancyWarning, redundantItems } from '../solve/status.ts'
 
 type Inputs = PlanInputs
@@ -13,7 +14,7 @@ export type ReadinessCode =
   | 'link-run' | 'world-unread' | 'world-unusable' | 'world-duration'
   | 'no-crew' | 'no-tag-out' | 'no-test' | 'not-returned'
   | 'precondition-unmet' | 'precondition-unread' | 'below-minimum'
-  | 'order-by' | 'order-passed' | 'assumption' | 'assumptions' | 'redundancy' | 'options-stale'
+  | 'order-by' | 'order-passed' | 'assumption' | 'assumptions' | 'redundancy' | 'rounded' | 'options-stale'
 
 export interface ReadinessItem {
   readonly kind: ReadinessKind
@@ -28,13 +29,15 @@ export interface ReadinessItem {
   readonly words?: string
   readonly count?: number
   readonly unit?: string
+  /** rounded: each duration that does not fit the time step, before and after rounding up. */
+  readonly durations?: ReadonlyArray<{ readonly job: string; readonly resource?: string; readonly fromMs: number; readonly toMs: number }>
 }
 
 const order: Readonly<Record<ReadinessCode, number>> = {
   // Out-of-date options come right after the link card: every status shown depends on them.
   'link-run': 0, 'options-stale': 1, 'world-unread': 2, 'world-unusable': 2, 'below-minimum': 2, 'no-tag-out': 3, 'no-test': 3, 'not-returned': 4,
   'precondition-unmet': 5, 'precondition-unread': 5, 'order-passed': 6, 'order-by': 7, 'no-crew': 8,
-  'assumption': 9, 'redundancy': 10, 'assumptions': 11, 'world-duration': 12,
+  'assumption': 9, 'redundancy': 10, 'assumptions': 11, 'world-duration': 12, 'rounded': 13,
 }
 
 /** Every World reference a plan holds, with the plan item that holds it. */
@@ -71,6 +74,20 @@ export const preconditions = (inputs: Inputs): readonly Precondition[] => inputs
   if (fact === undefined) return { job: job.key, equipment: check.equipment, words: check.words, state: 'unread' as const }
   return { job: job.key, equipment: check.equipment, words: check.words, state: fact.value === check.expect ? 'met' as const : 'unmet' as const, at: fact.at, value: fact.value }
 }))
+
+/**
+ * Durations that do not fit the plan's time step: the solver rounds each up to the next step (design D9).
+ * Every duration a job may run with counts: its own and each crew- or tool-specific one, World values once read.
+ */
+export const roundedDurations = (inputs: Inputs): NonNullable<ReadinessItem['durations']> => {
+  const step = gridSlotMs[inputs.settings.grid]
+  return inputs.jobs.flatMap(job => effectiveDurations(inputs, job)
+    .filter(duration => Math.abs(duration.ms / step - Math.round(duration.ms / step)) > 1e-9)
+    .map(duration => {
+      const resource = duration.path.startsWith('durationWith ') ? duration.path.slice('durationWith '.length) : undefined
+      return { job: job.key, ...(resource === undefined ? {} : { resource }), fromMs: duration.ms, toMs: Math.ceil(duration.ms / step - 1e-9) * step }
+    }))
+}
 
 /** Equipment a plan takes out of service: what its tag-outs isolate. */
 export const takenOut = (inputs: Inputs): readonly string[] =>
@@ -166,6 +183,8 @@ export const readiness = (plan: Plan, context: { readonly staleOptions: readonly
       : { kind: 'decision', code: 'order-by', about: [purchase.key], blocks: false, at: purchase.orderBy })
   }
   items.push(...sourced(inputs))
+  const rounded = roundedDurations(inputs)
+  if (rounded.length > 0) items.push({ kind: 'warning', code: 'rounded', about: [...new Set(rounded.map(entry => entry.job))].slice(0, 4), blocks: false, count: rounded.length, durations: rounded })
   const warning = redundancy(inputs)
   if (warning !== undefined) items.push(warning)
   if (context.staleOptions.length > 0) items.push({ kind: 'stale', code: 'options-stale', about: context.staleOptions.slice(0, 4), blocks: false, count: context.staleOptions.length })

@@ -70,6 +70,10 @@ test('the Supply run from empty: World trucks and requests are usable as soon as
   ] }, expectedRevision: revision })
   revision = ruled.plan.revision
 
+  // World's times are not whole 30 s steps: one note lists the rounding (design D9).
+  const note = ruled.attention.find((item: { text: string }) => /rounded up to the 30 s step/.test(item.text))
+  console.log('rounding note:', note?.text)
+  expect(note).toBeDefined()
   const generated = await one({ operationId: 'planning.plan.generate', target: plan, input: {}, expectedRevision: revision })
   console.log('from empty:', JSON.stringify(generated.options.map((option: any) => ({ word: option.status.word, goals: option.status.goals }))), generated.text)
   expect(generated.options[0].status.word).toBe('validated feasible')
