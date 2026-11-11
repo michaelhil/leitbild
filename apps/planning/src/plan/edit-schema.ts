@@ -14,9 +14,9 @@ const time = instantSchema.describe('Time with offset')
 const period = z.object({ start: instantSchema.describe('Start'), end: instantSchema.describe('End') }).strict().describe('A period')
 const worldRef = z.object({ locator: planningLocatorSchema.describe('World item'), fact: z.string().max(512).describe('World fact id') }).strict()
 const source = z.object({
-  by: sourceSchema.shape.by.describe('assumption: not yet confirmed, flagged'),
-  note: wordsSchema.optional().describe('Where it comes from'),
-}).strict().describe('Who says so')
+  by: sourceSchema.shape.by.describe('assumption: unconfirmed, flagged; reference: a standard'),
+  note: wordsSchema.optional().describe('Where it comes from; names the reference'),
+}).strict().refine(given => given.by !== 'reference' || given.note !== undefined, { message: 'A reference source names its reference in the note', path: ['note'] }).describe('Who says so')
 const weekly = z.object({
   days: z.array(weekdaySchema).min(1).max(7).describe('Weekdays, mon to sun'),
   from: localTimeSchema.describe('Local start HH:MM'),
@@ -65,6 +65,7 @@ export const editSchema = z.discriminatedUnion('edit', [
     weekly: z.array(weekly).optional().describe('Working time by weekday'),
     periods: z.array(period).optional().describe('One-off working periods'),
     except: z.array(period).optional().describe('Holidays and other non-working periods'),
+    source: source.optional(),
   }).strict(),
   z.object({
     edit: z.literal('resource'), key,
@@ -84,6 +85,7 @@ export const editSchema = z.discriminatedUnion('edit', [
     }).strict()).optional().describe('Properties used by "where" needs'),
     maxJobs: z.number().int().min(1).nullable().optional().describe('Plan at most this many jobs ahead for it'),
     locator: planningLocatorSchema.nullable().optional().describe('World item for this crew or tool'),
+    source: source.optional(),
   }).strict(),
   z.object({
     edit: z.literal('purchase'), key,
@@ -122,6 +124,7 @@ export const editSchema = z.discriminatedUnion('edit', [
       resource: keySchema.describe('Crew or tool'),
       value: z.number().nonnegative().optional().describe('Its duration, in the job\'s unit'),
       fromWorld: z.array(worldRef).max(4).optional().describe('Or these World values, summed'),
+      source: source.optional(),
     }).strict()).max(16).nullable().optional().describe('A different duration per crew or tool'),
     continuous: z.boolean().optional().describe('Never paused over a break, e.g. a lift'),
     method: choice.nullable().optional().describe('Exists only if that option is chosen'),

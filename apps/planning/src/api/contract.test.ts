@@ -39,11 +39,12 @@ describe('published operation inputs', () => {
   })
 
   // Design r2 measured 15,023 B (create) and 15,495 B (edit) and set the guard at 16,000 B. The
-  // coordinator-adopted `source` fields add about 1,000 B (16,037 and 16,509 B), so the guard is 17,000 B.
-  test('create and edit stay within 17,000 B; every other input within 4,096 B', () => {
+  // coordinator-adopted `source` on seven edit fields adds about 2,200 B (17,251 and 17,723 B), so the
+  // guard is 18,000 B.
+  test('create and edit stay within 18,000 B; every other input within 4,096 B', () => {
     for (const [id, schema] of Object.entries(inputs)) {
       const bytes = new TextEncoder().encode(JSON.stringify(publishedInputSchema(schema))).length
-      expect({ id, within: bytes <= (large.has(id) ? 17_000 : 4_096) }).toEqual({ id, within: true })
+      expect({ id, within: bytes <= (large.has(id) ? 18_000 : 4_096) }).toEqual({ id, within: true })
     }
   })
 

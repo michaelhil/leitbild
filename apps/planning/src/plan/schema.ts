@@ -24,8 +24,12 @@ export const periodSchema = z.object({ start: instantSchema, end: instantSchema 
 // ───────────── where values come from ─────────────
 export const worldRefSchema = z.object({ locator: planningLocatorSchema, fact: z.string().min(1).max(512) }).strict()
 export type WorldRef = z.infer<typeof worldRefSchema>
-/** What a person says about a value they give: their own, or an assumption (unconfirmed, flagged). */
-export const sourceSchema = z.object({ by: z.enum(['planner', 'assumption']), note: wordsSchema.optional() }).strict()
+/**
+ * Who says so: the planner's own value, an assumption (unconfirmed, flagged), or a reference standard
+ * declared as this plan's rule, which the note names.
+ */
+export const sourceSchema = z.object({ by: z.enum(['planner', 'assumption', 'reference']), note: wordsSchema.optional() }).strict()
+  .refine(source => source.by !== 'reference' || source.note !== undefined, { message: 'A reference source names its reference in the note', path: ['note'] })
 export type Source = z.infer<typeof sourceSchema>
 /**
  * A stored value's origin: a person's source, or World facts read from inputs.world.facts. World origins
@@ -50,6 +54,7 @@ export const durationSchema = z.object({
 export const weeklySchema = z.object({ days: z.array(weekdaySchema).min(1).max(7), from: localTimeSchema, to: localTimeSchema }).strict()   // to <= from ends next day
 export const calendarSchema = z.object({
   key: keySchema, label: labelSchema, weekly: z.array(weeklySchema).max(14), periods: z.array(periodSchema).max(64), except: z.array(periodSchema).max(64),
+  source: sourceSchema,
 }).strict()
 export const equipmentSchema = z.object({
   key: keySchema, label: labelSchema,
@@ -73,6 +78,7 @@ export const resourceSchema = z.object({
   maxJobs: z.number().int().min(1).optional(),            // plan at most this many jobs ahead for it
   locator: planningLocatorSchema.optional(),
   words: wordsSchema.optional(),
+  source: sourceSchema,
 }).strict()
 /** Purchasable capacity: overtime, contractor nights (one purchase, several periods), a tool day, a rebooking. */
 export const purchaseSchema = z.object({
@@ -89,10 +95,13 @@ export const needSchema = z.object({
   where: z.object({ attribute: keySchema, atLeast: z.number().finite(), unit: z.string().min(1).max(32) }).strict().optional(),  // value in force at the job's start
   handover: z.boolean(),
 }).strict()
-/** A different duration per chosen resource, in the job's unit and calendar: a value, or summed World refs. */
+/**
+ * A different duration per chosen resource, in the job's unit and calendar: a value, or summed World refs.
+ * `source` says who stands behind it, e.g. an assumption when another unit's World values are used.
+ */
 export const durationWithSchema = z.union([
-  z.object({ resource: keySchema, value: z.number().finite().nonnegative() }).strict(),
-  z.object({ resource: keySchema, refs: z.array(worldRefSchema).min(1).max(4) }).strict(),
+  z.object({ resource: keySchema, value: z.number().finite().nonnegative(), source: sourceSchema.optional() }).strict(),
+  z.object({ resource: keySchema, refs: z.array(worldRefSchema).min(1).max(4), source: sourceSchema.optional() }).strict(),
 ])
 export const jobSchema = z.object({
   key: keySchema, title: labelSchema,
