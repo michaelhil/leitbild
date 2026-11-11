@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { retime, prepare } from './decode.ts'
+import { repair, prepare } from './decode.ts'
 import { generate } from './generate.ts'
 import { createSolverPool, SOLVER_CPU_CAP_CORES } from './pool.ts'
 import { laneKCheck, laneKVerify } from './fixtures/lane-k.ts'
@@ -47,7 +47,7 @@ describe.skipIf(!enabled)('solver floors (opt-in)', () => {
     const peakRssMb = stop()
     const prep = prepare(problem)
     const times: number[] = []
-    for (let i = 0; i < 20; i++) { const at = performance.now(); retime(prep, a.candidates[0]!); times.push(performance.now() - at) }
+    for (let i = 0; i < 20; i++) { const at = performance.now(); repair(prep, a.candidates[0]!); times.push(performance.now() - at) }
     console.log(JSON.stringify({ twinV3: { solves: pool.records(), peakRssMb, previewP95Ms: +p95(times).toFixed(1), stoppedBy: [a.stoppedBy, b.stoppedBy] } }))
     expect(peakRssMb).toBeLessThanOrEqual(200)
     expect(a.cpuMs + b.cpuMs).toBeLessThanOrEqual(SOLVER_CPU_CAP_CORES * wallMs + 300)

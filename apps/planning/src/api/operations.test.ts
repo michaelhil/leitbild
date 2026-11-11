@@ -112,6 +112,8 @@ describe('Train A: preview, read and status on the generic operations', () => {
     expectSmall(preview)
     expect(preview.body.result.preview).toMatchObject({ saved: false, nearestAllowed: trainA.settings.window!.start })
     expect(preview.body.result.preview.violations.length).toBe(1)
+    // What moved carries the edit as its cause: the locked job moves, because of edit 0.
+    expect(preview.body.result.preview.moved).toContainEqual(expect.objectContaining({ job: job.key, because: [0] }))
     expect((await harness.store.read(harness.workspaceId, created.id)).revision).toBe(1)
     const weakening = await harness.call('planning.plan.edit', { resource: created.id, input: { edits: [{ edit: 'remove', what: 'rule', key: trainA.rules[0]!.key }], preview: true } })
     expect(weakening.body.result.preview.weakens).toEqual([trainA.rules[0]!.key])

@@ -59,8 +59,11 @@ const finishAt = (prep: Prepared, a: number, m: number, t: number): number => {
 /**
  * Float per activity of `schedule`, in working hours, with the limit that binds. Throws on a negative
  * float: on a schedule that meets the links, the window and the span limits that cannot happen.
+ * `overrun` (a preview after an edit that breaks a limit): a job already past its limit has no float (0 h,
+ * that limit binding), and its predecessors' float is measured to its planned start; the check names the
+ * overrun.
  */
-export const totalFloat = (prep: Prepared, index: CompileIndex, schedule: Schedule): Float[] => {
+export const totalFloat = (prep: Prepared, index: CompileIndex, schedule: Schedule, overrun = false): Float[] => {
   const { problem, n } = prep
   const slotHours = index.slotMs / 3_600_000
   const ls = new Int32Array(n), lf = new Int32Array(n)
@@ -93,8 +96,9 @@ export const totalFloat = (prep: Prepared, index: CompileIndex, schedule: Schedu
       const bound = Math.min(lf[l.to]!, l.min > 0 ? lastSlotsStart(prep, l.to, schedule.mode[l.to]!, ls[l.to]!, l.min) : lf[l.to]!)
       if (bound < hiF) { hiF = bound; byF = fBy[l.to]! }
     }
-    const t = latestStart(prep, a, m, hiS, hiF)
-    if (t < 0) throw new RangeError(`${problem.activities[a]!.id} has no latest start inside its limits`)
+    const latest = latestStart(prep, a, m, hiS, hiF)
+    if (latest < 0 && !overrun) throw new RangeError(`${problem.activities[a]!.id} has no latest start inside its limits`)
+    const t = overrun ? Math.max(latest, schedule.start[a]!) : latest
     ls[a] = t
     lf[a] = finishAt(prep, a, m, t)
     // The start's limit is whichever bound stops it: a successor's start (SS) or the finish bound.

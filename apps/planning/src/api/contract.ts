@@ -81,7 +81,12 @@ export const writeResultSchema = z.object({
   changed: z.array(z.string().max(200)).max(12),
   attention: z.array(z.object({ kind: z.enum(['refusal', 'not-ready', 'rule', 'limit', 'world', 'decision', 'stale', 'warning']), text: z.string().max(240), about: z.array(keySchema).max(4) }).strict()).max(6),
   problems: z.array(z.object({ edit: z.number().int().nonnegative().optional(), about: z.array(keySchema).max(4), code: z.string().max(64), text: z.string().max(300), expected: z.unknown().optional() }).strict()).max(8),
-  preview: z.object({ saved: z.literal(false), consequence: z.string().max(300), violations: z.array(z.string().max(200)).max(6), weakens: z.array(keySchema).max(6), nearestAllowed: instantSchema.optional() }).strict().optional(),
+  preview: z.object({
+    saved: z.literal(false), consequence: z.string().max(300), violations: z.array(z.string().max(200)).max(6), weakens: z.array(keySchema).max(6), nearestAllowed: instantSchema.optional(),
+    // What moved and why: each job whose start or finish the re-timing changed, where it goes, and the
+    // edits that moved it (indexes into `edits`; applied together, all of them).
+    moved: z.array(z.object({ job: keySchema, start: instantSchema, finish: instantSchema, because: z.array(z.number().int().nonnegative()).min(1).max(60) }).strict()).max(6).optional(),
+  }).strict().optional(),
 }).strict()
 /** Every operation result fits 4 KB of JSON. */
 export const resultLimitBytes = 4_096

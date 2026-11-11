@@ -347,8 +347,14 @@ export const makeDecoder = (prep: Prepared) => {
     jobCount.fill(0); purchaseUse.fill(0); forbiddenUse.fill(0)
   }
 
-  const decode = (list: ArrayLike<number>, modes: ArrayLike<number>): Decoded => {
-    const minStart = new Int32Array(n)
+  /**
+   * `earliest` (repair only): no job starts before its entry, e.g. the option's own start; and nothing is
+   * moved back to meet a span limit or a maximum lag (no restart): an overrun stays, as a penalty, for the
+   * check to report.
+   */
+  const decode = (list: ArrayLike<number>, modes: ArrayLike<number>, earliest?: ArrayLike<number>): Decoded => {
+    const minStart = earliest === undefined ? new Int32Array(n) : Int32Array.from(earliest)
+    const restartsAllowed = earliest === undefined ? MAX_RESTARTS : 0
     const S = new Int32Array(n), F = new Int32Array(n), M = Int32Array.from(modes)
     let restarts = 0
     for (;;) {
@@ -485,7 +491,7 @@ export const makeDecoder = (prep: Prepared) => {
           if (over <= 0) continue
           const target = spanStart[s]! + over
           let moved = false
-          if (restarts < MAX_RESTARTS) {
+          if (restarts < restartsAllowed) {
             for (const o of prep.spanOpeners[s]!) if (placed[o] && S[o]! < target && problem.activities[o]!.fixed === undefined) { minStart[o] = Math.max(minStart[o]!, target); moved = true }
           }
           if (moved) restart = true
@@ -494,7 +500,7 @@ export const makeDecoder = (prep: Prepared) => {
         for (const u of upper) {
           const over = (u.kind === 'S' ? tStar : fStar) - u.bound
           if (over <= 0) continue
-          if (problem.activities[u.src]!.fixed === undefined && restarts < MAX_RESTARTS) { minStart[u.src] = Math.max(minStart[u.src]!, S[u.src]! + over); restart = true }
+          if (problem.activities[u.src]!.fixed === undefined && restarts < restartsAllowed) { minStart[u.src] = Math.max(minStart[u.src]!, S[u.src]! + over); restart = true }
           else { penalty += over; note ||= `maximum lag overrun at ${activity.id}` }
         }
         if (restart) break
@@ -656,12 +662,22 @@ export const makeDecoder = (prep: Prepared) => {
 
 export type Decoder = ReturnType<typeof makeDecoder>
 
-/** Decodes and justifies one schedule exactly as the search does (preview re-timing). */
-export const retime = (prep: Prepared, schedule: Schedule): { decoded: Decoded; evaluation: Evaluation } => {
+/**
+ * Preview re-timing by repair (a right shift): the option's schedule on (edited) inputs, in its modes and
+ * start order. Each job keeps its start where that is still feasible with the jobs that start before it,
+ * else takes the earliest feasible slot after it; nothing moves earlier and no justification runs. So a
+ * feasible schedule comes back exactly as it is, and after an edit only the jobs it forces move: through a
+ * link, a crew or tool a job before it now holds longer, or a keep-in-service rule. A span limit or maximum
+ * lag the edit breaks is not met by moving other jobs back: it stays broken, for the check to report. A
+ * start of -1 is a job the option does not have: it goes after the others, as early as it fits.
+ */
+export const repair = (prep: Prepared, schedule: Schedule): { decoded: Decoded; evaluation: Evaluation } => {
   const decoder = makeDecoder(prep)
-  const list = [...prep.topo].sort((x, y) => schedule.start[x]! - schedule.start[y]! || prep.topo.indexOf(x) - prep.topo.indexOf(y))
-  const decoded = decoder.decode(precedenceOrder(prep, list), schedule.mode)
-  decoder.justify(decoded)
+  const rank = (a: number) => (schedule.start[a]! < 0 ? Infinity : schedule.start[a]!)
+  const position = new Int32Array(prep.n)
+  prep.topo.forEach((a, i) => { position[a] = i })
+  const list = [...prep.topo].sort((x, y) => rank(x) - rank(y) || position[x]! - position[y]!)
+  const decoded = decoder.decode(precedenceOrder(prep, list), schedule.mode, Int32Array.from(schedule.start, start => Math.max(0, start)))
   return { decoded, evaluation: decoder.evaluate(decoded) }
 }
 

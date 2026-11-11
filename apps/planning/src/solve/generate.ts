@@ -9,7 +9,7 @@ import { planningError } from '../errors.ts'
 import { optionSetSchema, type CertifiedSize, type PlanInputs, type Status } from '../plan/schema.ts'
 import { bounds } from './bounds.ts'
 import { compile, formulationOf, methodCombinations, type Buy, type CompileIndex, type MethodPick } from './compile.ts'
-import { dateSchedule, slotInstant } from './date.ts'
+import { dateSchedule, slotInstant, undate } from './date.ts'
 import { finishOf, prepare } from './decode.ts'
 import { totalFloat, withFloat } from './float.ts'
 import { estimateMemoryMb, SOLVER_CPU_CAP_CORES } from './pool.ts'
@@ -122,6 +122,19 @@ const rankable = (option: Option, inputs: PlanInputs) => ({
  * Runs Generate. Refusals (above the certified size, too many sub-solves, memory) throw planning errors
  * with the reason; every other outcome is an option with a status from the status schema.
  */
+/**
+ * Float within what the option buys: on the compile of its own purchases, the one the explainer and the
+ * preview use, so a slip never counts on time from a purchase the option does not make.
+ */
+const withOwnFloat = (inputs: PlanInputs, variant: Option['variant'], rows: ReturnType<typeof dateSchedule>): ReturnType<typeof withFloat> => {
+  const own = compile(inputs, { methods: variant.methods, buy: variant.purchases })
+  if (!own.ok) throw new Error(`The option's own purchases do not compile: ${own.word}`)
+  const prep = prepare(own.problem)
+  const found = undate(prep, own.index, rows)
+  if (!found.ok) throw new Error(`The option's row for ${found.job} does not fit its own purchases`)
+  return withFloat(rows, totalFloat(prep, own.index, found.schedule), own.index)
+}
+
 export const generate = async (deps: GenerateDeps, request: GenerateRequest): Promise<GenerateResult> => {
   const { inputs } = request
   const certified = deps.certifiedSize ?? CERTIFIED_SIZE
@@ -181,10 +194,11 @@ export const generate = async (deps: GenerateDeps, request: GenerateRequest): Pr
         status: unresolvedStatus(run, { job, wouldFinish: slotInstant(index, worst.finish), pastWindowHours: (worst.finish - index.windowSlots) * index.slotMs / 3_600_000 }),
       }
     }
-    const rows = withFloat(dateSchedule(prep, index, candidate), totalFloat(prep, index, candidate), index)
+    const dated = dateSchedule(prep, index, candidate)
     // Cost and order lists come from what the rows use (plus purchases already ordered, charged anyway).
-    const used = [...new Set([...rows.flatMap(row => row.uses.flatMap(use => (use.purchase === undefined ? [] : [use.purchase]))), ...index.purchases.filter(purchase => purchase.committed).map(purchase => purchase.key)])]
+    const used = [...new Set([...dated.flatMap(row => row.uses.flatMap(use => (use.purchase === undefined ? [] : [use.purchase]))), ...index.purchases.filter(purchase => purchase.committed).map(purchase => purchase.key)])]
     const planned = { methods: combo, purchases: index.allowedPurchases.filter(key => used.includes(key)) }
+    const rows = withOwnFloat(inputs, planned, dated)
     const report = deps.check({ inputs, variant: planned, rows })
     const problems = inputProblems(report.violations)
     if (problems.length > 0) return { ...base, variant: planned, status: refusedStatus('invalid input', problems), rows: [], metrics: [] }

@@ -47,3 +47,34 @@ export const dateSchedule = (prep: Prepared, index: CompileIndex, schedule: Sche
   })
   return rows
 }
+
+export type Undated = { readonly ok: true; readonly schedule: Schedule } | { readonly ok: false; readonly job: string; readonly reason: 'no-row' | 'no-fit' }
+
+/**
+ * Dated rows back on a compiled grid: each row's start slot and the mode its uses match (the inverse of
+ * dateSchedule; mode numbers depend on the compile, so they are found again). `edited` (preview): the
+ * inputs may have changed since the rows, so a row's finish need not match (an estimate changed), and a job
+ * without a row is new: start -1, its first mode.
+ */
+export const undate = (prep: Prepared, index: CompileIndex, rows: ReadonlyArray<Pick<DatedRow, 'job' | 'start' | 'finish' | 'uses'>>, edited = false): Undated => {
+  const n = prep.problem.activities.length
+  const start = new Int32Array(n), mode = new Int32Array(n)
+  const byJob = new Map(rows.map(row => [row.job, row] as const))
+  for (let a = 0; a < n; a += 1) {
+    const job = index.jobs[a]
+    if (job === null || job === undefined) continue
+    const row = byJob.get(job)
+    if (row === undefined && edited) { start[a] = -1; continue }
+    if (row === undefined) return { ok: false, job, reason: 'no-row' }
+    const s = (Date.parse(row.start) - index.origin) / index.slotMs, f = (Date.parse(row.finish) - index.origin) / index.slotMs
+    const used = new Set(row.uses.map(use => use.resource))
+    const modes = prep.problem.activities[a]!.modes
+    const serves = (k: number) => modes[k]!.demands.every(demand => used.has(index.resources[demand.resource]!))
+    const exact = Number.isInteger(s) ? modes.findIndex((_, k) => finishOf(prep, a, k, s) === f && serves(k)) : -1
+    const m = exact >= 0 || !edited ? exact : modes.findIndex((_, k) => serves(k))
+    if (!Number.isInteger(s) || m < 0) return { ok: false, job, reason: 'no-fit' }
+    start[a] = s
+    mode[a] = m
+  }
+  return { ok: true, schedule: { start, mode } }
+}

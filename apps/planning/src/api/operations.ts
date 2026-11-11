@@ -87,7 +87,7 @@ export interface SolverPort {
     readonly job: string | undefined
     readonly cursor: string | undefined
   }) => Promise<ExplainResult>
-  /** Re-times `option` on the edited inputs with its order and modes, then checks it. */
+  /** Repairs `option`'s own schedule on the edited inputs (only what the edit forces moves), then checks it. */
   readonly preview: (request: { readonly inputs: PlanInputs; readonly option: Option }) => Promise<{
     readonly rows: readonly DatedRow[]
     readonly violations: readonly CheckViolation[]
@@ -420,7 +420,7 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
         }
         const timed = await solver.preview({ inputs: outcome.inputs, option: recommended })
         const before = new Map(recommended.rows.map(row => [row.job, row]))
-        const moved = timed.rows.filter(row => before.get(row.job)?.start !== row.start)
+        const moved = timed.rows.filter(row => before.get(row.job)?.start !== row.start || before.get(row.job)?.finish !== row.finish)
         const finish = (rows: readonly DatedRow[]) => rows.reduce((latest, row) => row.finish > latest ? row.finish : latest, '')
         const zone = outcome.inputs.settings.timeZone
         // A change that breaks a rule moves nothing: say so, never how jobs would move.
@@ -431,6 +431,7 @@ export const createPlanningOperations = (ports: PlanningOperationsPorts) => {
           violations: timed.violations.slice(0, 6).map(violation => (violation.words ?? `${violation.code.replaceAll('_', ' ').replaceAll('-', ' ')}: ${violation.about.map(key => nameOf(outcome.inputs, key)).join(', ')}`).slice(0, 200)),
           weakens,
           ...(timed.nearestAllowed === undefined ? {} : { nearestAllowed: timed.nearestAllowed.at }),
+          moved: moved.slice(0, 6).map(row => ({ job: row.job, start: row.start, finish: row.finish, because: input.edits.map((_, edit) => edit) })),
         } })
       }
       // Adding a World item (or linking a Run) reads its values in the same edit, so it is usable at once;

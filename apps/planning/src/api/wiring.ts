@@ -5,8 +5,8 @@ import { recheckOption } from '../check/recheck.ts'
 import { verifyCertificate } from '../check/certificate.ts'
 import { bounds } from '../solve/bounds.ts'
 import { compile, formulationOf, type CompileIndex } from '../solve/compile.ts'
-import { dateSchedule } from '../solve/date.ts'
-import { finishOf, prepare, retime, type Prepared } from '../solve/decode.ts'
+import { dateSchedule, undate } from '../solve/date.ts'
+import { prepare, repair, type Prepared } from '../solve/decode.ts'
 import { makeExplainer, refusalLines, type ExplainItem } from '../solve/explain.ts'
 import { totalFloat, withFloat } from '../solve/float.ts'
 import { CERTIFIED_SIZE, generate } from '../solve/generate.ts'
@@ -44,23 +44,11 @@ export const realChecker: CheckerPort = {
   },
 }
 
-/** The option's schedule back on the compiled grid: each row's start slot and the mode its uses match. */
-const scheduleOf = (prep: Prepared, index: CompileIndex, option: Option): Schedule => {
-  const n = prep.problem.activities.length
-  const start = new Int32Array(n), mode = new Int32Array(n)
-  for (let a = 0; a < n; a += 1) {
-    const job = index.jobs[a]
-    if (job === null || job === undefined) continue
-    const row = option.rows.find(entry => entry.job === job)
-    if (row === undefined) throw planningError(409, 'option_stale', `The option has no row for ${job}; generate again`, { about: [job] })
-    const s = (Date.parse(row.start) - index.origin) / index.slotMs, f = (Date.parse(row.finish) - index.origin) / index.slotMs
-    const used = new Set(row.uses.map(use => use.resource))
-    const m = prep.problem.activities[a]!.modes.findIndex((candidate, k) => finishOf(prep, a, k, s) === f && candidate.demands.every(demand => used.has(index.resources[demand.resource]!)))
-    if (m < 0) throw planningError(409, 'option_stale', `The option's row for ${job} no longer fits the plan; generate again`, { about: [job] })
-    start[a] = s
-    mode[a] = m
-  }
-  return { start, mode }
+/** The option's schedule back on the compiled grid (date.ts `undate`); `edited` for a preview. */
+const scheduleOf = (prep: Prepared, index: CompileIndex, option: Option, edited = false): Schedule => {
+  const found = undate(prep, index, option.rows, edited)
+  if (found.ok) return found.schedule
+  throw planningError(409, 'option_stale', found.reason === 'no-row' ? `The option has no row for ${found.job}; generate again` : `The option's row for ${found.job} no longer fits the plan; generate again`, { about: [found.job] })
 }
 
 const compiled = (inputs: PlanInputs, option: Option) => {
@@ -124,10 +112,14 @@ export const createRealSolver = (pool: SolverPool): SolverPort => ({
     return bounded({ lines: items.map(item => lineOf(inputs, item)), items })
   },
   preview: async ({ inputs, option }) => {
+    // Repair from the option's own dated schedule: with no edit it comes back exactly; after an edit only
+    // the jobs it forces, and what they push, move.
     const { index, prep } = compiled(inputs, option)
-    const { decoded } = retime(prep, scheduleOf(prep, index, option))
+    const { decoded } = repair(prep, scheduleOf(prep, index, option, true))
+    const lost = decoded.finish.findIndex((finish, a) => index.jobs[a] !== null && finish >= prep.H)
+    if (lost >= 0) throw planningError(409, 'option_stale', `After this edit ${nameOf(inputs, index.jobs[lost]!)} has no time left in the plan's horizon; generate again`, { about: [index.jobs[lost]!] })
     const schedule = { start: decoded.start, mode: decoded.mode }
-    const rows = withFloat(dateSchedule(prep, index, schedule), totalFloat(prep, index, schedule), index)
+    const rows = withFloat(dateSchedule(prep, index, schedule), totalFloat(prep, index, schedule, decoded.penalty > 0), index)
     const check = checkPlan(inputs, option.variant, rows)
     const locked = check.violations.map(violation => violation.about[0]).find(key => key !== undefined && inputs.jobs.find(entry => entry.key === key)?.lock !== undefined)
     const at = locked === undefined ? undefined : rows.find(row => row.job === locked)?.start
