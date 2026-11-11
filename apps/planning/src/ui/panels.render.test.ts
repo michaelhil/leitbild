@@ -90,6 +90,10 @@ describe('panels', () => {
 
   test('the site time zone is chosen from a list of zones, the default selected', () => {
     const html = renderHtml(NewPlanForm, { defaultZone: 'Europe/Oslo', defaultStart: '2026-11-16T07:00', defaultEnd: '2026-11-21T07:00', onCreate: none, onCancel: none })
+    // The time step is chosen once, in planner words, half-hour by default, with plain radio buttons.
+    expect(readableText(html)).toContain('Time step Half-hour (work weeks and outages) 30 seconds (dispatch and emergency response)')
+    expect(html).toMatch(/type="radio"[^>]*value="30min" checked/)
+    expect(html).not.toMatch(/value="30s" checked/)
     // Chosen from the list, never typed; the default is shown as the current choice.
     expect(readableText(html)).toContain('Site time zone Europe/Oslo')
     expect(html).not.toContain('<select')

@@ -69,7 +69,14 @@ export interface PlanForm {
   readonly windowStart: string
   readonly windowEnd: string
   readonly goals: readonly GoalChoice[]
+  /** The plan's time step, chosen once at create. */
+  readonly grid: '30min' | '30s'
 }
+
+export const gridChoices: ReadonlyArray<{ readonly value: PlanForm['grid']; readonly label: string }> = [
+  { value: '30min', label: 'Half-hour (work weeks and outages)' },
+  { value: '30s', label: '30 seconds (dispatch and emergency response)' },
+]
 
 /** The plan's name, zone and window. Goals follow in goalsEdit, once the plan's currency is known. */
 export const planEdits = (form: PlanForm): Built => {

@@ -24,12 +24,12 @@ describe('form to edits', () => {
   })
 
   test('a new plan: window in the site zone, then the goal order in the plan currency', () => {
-    const built = planEdits({ title: 'Week 47', timeZone: 'Europe/Oslo', windowStart: '2026-11-16T07:00', windowEnd: '2026-11-21T07:00', goals: ['finish', 'extra-cost'] })
+    const built = planEdits({ title: 'Week 47', timeZone: 'Europe/Oslo', windowStart: '2026-11-16T07:00', windowEnd: '2026-11-21T07:00', goals: ['finish', 'extra-cost'], grid: '30min' })
     // Hand-computed: 07:00 in Oslo in November (+01:00) is 06:00Z.
     expect(built).toEqual({ ok: true, edits: [{ edit: 'plan', title: 'Week 47', timeZone: 'Europe/Oslo', window: { start: '2026-11-16T06:00:00.000Z', end: '2026-11-21T06:00:00.000Z' } }] })
     expect(goalsEdit(['finish', 'extra-cost'], 'NOK')).toEqual({ ok: true, edits: [{ edit: 'goals', goals: [{ metric: 'finish', tolerance: { value: 0, unit: 'h' } }, { metric: 'extra-cost', tolerance: { value: 0, unit: 'NOK' } }] }] })
-    expect(planEdits({ title: '', timeZone: 'Mars/Base', windowStart: '', windowEnd: '', goals: [] })).toEqual({ ok: false, problems: ['Give the plan a name.', 'Choose the site time zone, for example Europe/Oslo.', 'Choose at least one goal.'] })
-    expect(planEdits({ title: 'x', timeZone: 'Europe/Oslo', windowStart: '2026-11-16T07:00', windowEnd: '2026-11-16T07:00', goals: ['finish'] })).toEqual({ ok: false, problems: ['The window must end after it starts.'] })
+    expect(planEdits({ title: '', timeZone: 'Mars/Base', windowStart: '', windowEnd: '', goals: [], grid: '30min' })).toEqual({ ok: false, problems: ['Give the plan a name.', 'Choose the site time zone, for example Europe/Oslo.', 'Choose at least one goal.'] })
+    expect(planEdits({ title: 'x', timeZone: 'Europe/Oslo', windowStart: '2026-11-16T07:00', windowEnd: '2026-11-16T07:00', goals: ['finish'], grid: '30min' })).toEqual({ ok: false, problems: ['The window must end after it starts.'] })
   })
 
   test('a job carries its estimate, range, source and crew; impossible forms are refused in words', () => {

@@ -1,6 +1,6 @@
 <script lang="ts">
   import Choice from './Choice.svelte'
-  import { goalChoiceWords, planEdits, type GoalChoice, type PlanForm } from './edit-forms.ts'
+  import { goalChoiceWords, gridChoices, planEdits, type GoalChoice, type PlanForm } from './edit-forms.ts'
 
   // A new plan from empty: name, window, site time zone and goal order. The plan's own currency comes
   // from the Workspace, so the goals are sent once the plan exists.
@@ -20,6 +20,7 @@
   // svelte-ignore state_referenced_locally
   let windowEnd = $state(defaultEnd)
   let title = $state('')
+  let grid = $state<PlanForm['grid']>('30min')
   let goals = $state<GoalChoice[]>(['finish', 'extra-cost'])
   let problems = $state<readonly string[]>([])
   const all: readonly GoalChoice[] = ['finish', 'extra-cost', 'unavailable-hours', 'lateness']
@@ -36,16 +37,17 @@
   }
   const submit = (event: SubmitEvent) => {
     event.preventDefault()
-    const built = planEdits({ title, timeZone, windowStart, windowEnd, goals })
+    const built = planEdits({ title, timeZone, windowStart, windowEnd, goals, grid })
     if (!built.ok) { problems = built.problems; return }
     problems = []
-    onCreate({ title, timeZone, windowStart, windowEnd, goals })
+    onCreate({ title, timeZone, windowStart, windowEnd, goals, grid })
   }
 </script>
 
 <form class="mini-form new-plan" onsubmit={submit}>
   <h2>New plan</h2>
   <label>Name<input bind:value={title} placeholder="e.g. Week 47 maintenance" /></label>
+  <Choice label="Time step" bind:value={grid} options={gridChoices} />
   <Choice label="Site time zone" bind:value={timeZone} options={zones.map(zone => ({ value: zone, label: zone.replaceAll('_', ' ') }))} />
   <div class="field-pair">
     <label>Window starts<input type="datetime-local" bind:value={windowStart} /></label>

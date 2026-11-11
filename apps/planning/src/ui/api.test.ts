@@ -1,6 +1,7 @@
 // The screen reaches Planning and World only through Host's invoke route, with the plan Resource or
 // the Definition as the target and the revision in the envelope. Refusals keep their code.
 import { describe, expect, test } from 'bun:test'
+import { createInputSchema } from '../api/contract.ts'
 import { createPlanningClient, isRequestError, refusalText } from './api.ts'
 
 const workspace = '0b4b9a52-2f7e-4c1a-9d3e-00000000000a'
@@ -48,9 +49,10 @@ describe('the Host boundary', () => {
       ref: { workspaceId: workspace, moduleId: 'planning', type: 'planning.plan-definition', id: 'blank' }, title: 'New plan', currentRevisionId: '0123456789abcdef',
       capabilityIds: ['planning.plan.create'], primaryCapabilityId: 'planning.plan.create',
     } as const
-    await client.create(definition as never, [{ edit: 'plan', title: 'Week 47' }])
+    await client.create(definition as never, [{ edit: 'plan', title: 'Week 47' }], '30s')
     await client.refresh(plan, 4)
-    expect(calls[0]!.body).toEqual({ definition: { ...definition.ref, revisionId: '0123456789abcdef' }, input: { edits: [{ edit: 'plan', title: 'Week 47' }] }, actor: { kind: 'human' } })
+    expect(calls[0]!.body).toEqual({ definition: { ...definition.ref, revisionId: '0123456789abcdef' }, input: { edits: [{ edit: 'plan', title: 'Week 47' }], grid: '30s' }, actor: { kind: 'human' } })
+    expect(createInputSchema.safeParse(calls[0]!.body!.input).success).toBe(true)
     expect(calls[1]!.body).toEqual({ expectedRevision: 4, input: { plan }, actor: { kind: 'human' } })
 
     const facts = recording({ result: { run: { workspaceId: workspace, moduleId: 'world', type: 'world.simulation-run', id: 'run-1' }, observedAt: '2026-11-12T09:00:00Z', items: [] } })

@@ -61,7 +61,7 @@
     error = null
     void (async () => {
       try {
-        const created = await client.create(definition, [first.edits[0]!])
+        const created = await client.create(definition, [first.edits[0]!], form.grid)
         const plan = created.result.plan
         const summary = summaryDataSchema.parse((await client.read(plan.id, { section: 'summary' })).sections.find(section => section.id === 'summary')?.data)
         const goals = goalsEdit(form.goals, summary.settings.currency)
