@@ -34,7 +34,7 @@ export interface NormalizedProblem {
     /** Hard latest finish: the window end, or the job's earlier due rule (rule kind 'due', finishBy). */
     readonly deadline: number
     /** Soft target finish (job.target.finishBy), for the lateness goal only. */
-    readonly due?: number
+    readonly target?: number
     readonly fixed?: { readonly mode: number; readonly start: number; readonly history: boolean }
   }>
   readonly links: ReadonlyArray<{
