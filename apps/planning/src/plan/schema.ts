@@ -272,6 +272,9 @@ export const boundCertificateSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('zero') }).strict(),
   z.object({ kind: z.literal('earliest-finish'), jobs: z.array(z.object({ job: keySchema, finish: instantSchema }).strict()).min(1).max(32) }).strict(),
   z.object({ kind: z.literal('crew-energy'), resource: keySchema, jobs: z.array(keySchema).max(128), requiredHours: z.number().finite().nonnegative(), finish: instantSchema }).strict(),
+  // A keep-in-service rule over crews or tools: while it holds, at least `atLeast` members stay free, so the
+  // jobs needing members in every choice share only the rest; their work fits only by `finish`.
+  z.object({ kind: z.literal('kept-free'), rule: keySchema, resources: z.array(keySchema).max(32), jobs: z.array(keySchema).max(128), requiredHours: z.number().finite().nonnegative(), finish: instantSchema }).strict(),
   z.object({ kind: z.literal('fixed-costs'), items: z.array(z.object({ key: keySchema, amount: z.number().finite().nonnegative() }).strict()).max(64) }).strict(),
   z.object({ kind: z.literal('least-outage'), items: z.array(z.object({ item: keySchema, from: instantSchema, to: instantSchema }).strict()).max(64) }).strict(),
   z.object({ kind: z.literal('least-span'), spans: z.array(z.object({ group: keySchema, hours: z.number().finite().nonnegative() }).strict()).max(16) }).strict(),

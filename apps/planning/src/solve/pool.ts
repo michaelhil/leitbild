@@ -12,7 +12,8 @@ import type { Engine, EngineResult, NormalizedProblem } from './problem.ts'
 import { formulationOf } from './compile.ts'
 import type { SubSolveOutcome, SubSolver } from './generate.ts'
 import { unresolvedStatus } from './status.ts'
-import { decode, encode, encodeProblem, encodeSchedule, outcomeFromWire, previewFromWire, resultFromWire, type ChildRequest, type ChildResponse } from './wire.ts'
+import { decode, encode, encodeProblem, encodeSchedule, limitingFromWire, outcomeFromWire, previewFromWire, resultFromWire, type ChildRequest, type ChildResponse } from './wire.ts'
+import type { Limiting } from './limiting.ts'
 import type { Plan, PlanInputs } from '../plan/schema.ts'
 import type { PreviewResult } from './preview.ts'
 
@@ -82,6 +83,8 @@ export interface SolveRecord {
 export interface SolverPool extends Engine {
   /** Generate's sub-solves, each whole in a child (compile, bounds, search, lane K's check). */
   readonly subSolver: SubSolver
+  /** The most limiting resource's hours (limiting.ts) in a child: null when nothing sound can be said. */
+  readonly limiting: (inputs: PlanInputs, option: Option, candidates: readonly string[]) => Promise<Limiting | null>
   /** A preview in a child (preview.ts): one child at a time, like a solve; `signal` cancels it. */
   readonly preview: (inputs: PlanInputs, option: Option, signal?: AbortSignal) => Promise<PreviewResult>
   readonly active: () => number
@@ -132,7 +135,7 @@ export const createSolverPool = (options: PoolOptions = {}): SolverPool => {
     /** Wall time from spawn after which the child is killed and the job answers as 'ended'. */
     readonly deadlineMs: number
     readonly stoppedByWho?: () => 'person' | 'host' | undefined
-    readonly answer: (message: Extract<ChildResponse, { type: 'result' | 'outcome' | 'preview' }>) => { readonly value: T; readonly record?: Omit<SolveRecord, 'id' | 'grantedCpuMs' | 'spawnToAnswerMs'> } | { readonly problem: string }
+    readonly answer: (message: Extract<ChildResponse, { type: 'result' | 'outcome' | 'preview' | 'limiting' }>) => { readonly value: T; readonly record?: Omit<SolveRecord, 'id' | 'grantedCpuMs' | 'spawnToAnswerMs'> } | { readonly problem: string }
     /** No answer: a value to resolve with, or (preview) a refusal to throw. */
     readonly unanswered: (stoppedBy: 'cancelled' | 'ended', wallMs: number, deadline: boolean) => { readonly value: T; readonly record: Omit<SolveRecord, 'id' | 'grantedCpuMs' | 'spawnToAnswerMs'> } | { readonly refuse: Error }
   }): Promise<T> => {
@@ -262,11 +265,26 @@ export const createSolverPool = (options: PoolOptions = {}): SolverPool => {
     })
   }
 
+  /** One decode and check per candidate, no search: killed at the preview deadline like a preview. */
+  const limiting = async (inputs: PlanInputs, option: Option, candidates: readonly string[]): Promise<Limiting | null> => {
+    admit()
+    return job<Limiting | null>({
+      request: id => ({ type: 'limiting', id, task: encode({ inputs, option, resources: candidates }), rssLimitMb, sampleMs }),
+      rate: 0, wallMs: 0, grantedCpuMs: 0, signal: new AbortController().signal, deadlineMs: previewDeadlineMs,
+      answer: message => {
+        const result = message.type === 'limiting' ? limitingFromWire(message.limiting) : { problem: 'a limiting question answered with another kind of result' }
+        return result !== null && 'problem' in result ? result : { value: result }
+      },
+      // No answer in time: nothing sound to say about hours.
+      unanswered: (stoppedBy, wallMs) => ({ value: null, record: { wallMs, cpuMs: 0, evals: 0, stoppedBy } }),
+    })
+  }
+
   const shutdown = async (): Promise<void> => {
     stopping = true
     const all = [...running.values()]
     for (const entry of all) entry.stop()
     await Promise.all(all.map(entry => entry.settled))
   }
-  return { name: SOLVER_VERSIONS.engine, solve, subSolver, preview, active: () => running.size, records: () => [...records], shutdown }
+  return { name: SOLVER_VERSIONS.engine, solve, subSolver, preview, limiting, active: () => running.size, records: () => [...records], shutdown }
 }

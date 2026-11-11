@@ -6,6 +6,7 @@
 // own RSS and stops with 'memory' above the ceiling it is given. When the pool goes away, so does the child.
 import { isPlanningError } from '../errors.ts'
 import { subSolve, type SubSolveTask } from './generate.ts'
+import { limitingOf } from './limiting.ts'
 import { previewOption } from './preview.ts'
 import { checkForSolver, verifyBoundForSolver, verifyForSolver } from './lane-k-ports.ts'
 import { searchEngine, threadCpuMs } from './search.ts'
@@ -58,7 +59,10 @@ process.on('message', async (request: ChildRequest) => {
   }, request.sampleMs)
   const peakMb = () => Math.round(Math.max(peak, process.memoryUsage.rss()) / 1e5) / 10
   try {
-    if (request.type === 'preview') {
+    if (request.type === 'limiting') {
+      const { inputs, option, resources } = decode(request.task) as { inputs: Parameters<typeof limitingOf>[0]; option: Parameters<typeof limitingOf>[1]; resources: string[] }
+      send({ type: 'limiting', id: request.id, limiting: encode(limitingOf(inputs, option, resources) ?? null), peakRssMb: peakMb() })
+    } else if (request.type === 'preview') {
       const { inputs, option } = decode(request.task) as Parameters<typeof previewOption> extends [infer I, infer O] ? { inputs: I; option: O } : never
       send({ type: 'preview', id: request.id, preview: encode(previewOption(inputs, option)), peakRssMb: peakMb() })
     } else if (request.type === 'subsolve') {

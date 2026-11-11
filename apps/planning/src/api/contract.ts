@@ -124,6 +124,9 @@ export const explainResultSchema = z.object({
     }).strict()).min(1).max(4),
     joint: z.boolean(),
   }).strict()).max(20),
+  // 'finish' only: the most limiting resource and the hours one more unit of it would gain, when lane K's
+  // checker passed that plan (the option's own order decoded again with the extra unit, no search).
+  limiting: z.object({ about: z.object({ kind: z.literal('resource'), key: keySchema }).strict(), hoursEarlier: z.number().positive() }).strict().optional(),
   more: z.string().max(256).optional(),
 }).strict()
 // ───────────── read sections ─────────────

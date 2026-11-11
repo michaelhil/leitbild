@@ -659,6 +659,14 @@ export const bounds = (problem: NormalizedProblem, index: CompileIndex, prep: Pr
       let finish = 0, last = 0
       for (let a = 0; a < prep.n; a++) if (global.eft[a]! > finish) { finish = global.eft[a]!; last = a }
       const energy = energyFinish(prep)
+      const kept = keptFreeFinish(prep)
+      if (kept !== undefined && kept.slot > finish && (energy === undefined || kept.slot > energy.slot)) {
+        // Walk 4, N4-1: a rule that keeps members of a crew free makes the rest do the work in turn.
+        return {
+          value: kept.slot * scale, source: 'availability-rule',
+          certificate: { kind: 'kept-free', rule: problem.coverage[kept.rule]!.id, resources: problem.coverage[kept.rule]!.resources.map(r => index.resources[r]!).slice(0, 32), jobs: kept.jobs.map(a => jobKey(problem, index, a)).slice(0, 128), requiredHours: hours(index, kept.need), finish: slotIso(index, kept.slot) },
+        }
+      }
       if (energy !== undefined && energy.slot > finish) {
         return {
           value: energy.slot * scale, source: 'crew-energy',
@@ -735,6 +743,40 @@ export const energyFinish = (prep: Prepared): { readonly resource: number; reado
     const load = capacity > 0 ? need / capacity : Infinity
     if (sum < need) slot = H
     if (best === undefined || slot > best.slot || (slot === best.slot && load > best.load)) best = { resource: r, slot, load, need, jobs }
+  })
+  return best
+}
+
+/**
+ * The finish bound a keep-in-service rule over crews or tools gives (walk 4, N4-1): while the rule holds, at
+ * least `atLeast` of its members must have a unit free at every slot, so the members together lend at most
+ * (their units on duty - atLeast) to work. The jobs that need members in every choice need that work; the
+ * last of them finishes no earlier than the first slot by which the members' usable units add up to it.
+ * The latest such slot over the rules; undefined when no rule binds.
+ */
+export const keptFreeFinish = (prep: Prepared): { readonly rule: number; readonly slot: number; readonly need: number; readonly jobs: readonly number[] } | undefined => {
+  const { problem, H } = prep
+  let best: { rule: number; slot: number; need: number; jobs: number[] } | undefined
+  problem.coverage.forEach((rule, c) => {
+    if (rule.resources.length === 0 || rule.atLeast <= 0) return
+    const members = new Set(rule.resources)
+    let need = 0
+    const jobs: number[] = []
+    problem.activities.forEach((activity, a) => {
+      if (!activity.modes.every(mode => mode.work === 0 || mode.demands.some(d => members.has(d.resource) && d.when < 0))) return
+      const work = Math.min(...activity.modes.map(mode => mode.work * mode.demands.filter(d => members.has(d.resource)).reduce((sum, d) => sum + d.amount, 0)))
+      if (work > 0) { need += work; jobs.push(a) }
+    })
+    if (need === 0) return
+    let sum = 0, slot = 0
+    while (slot < H && sum < need) {
+      let units = 0
+      for (const r of rule.resources) units += problem.resources[r]!.capacity[slot]!
+      sum += slot >= rule.from && slot < rule.to ? Math.max(0, units - rule.atLeast) : units
+      slot++
+    }
+    if (sum < need) slot = H
+    if (best === undefined || slot > best.slot) best = { rule: c, slot, need, jobs }
   })
   return best
 }

@@ -6,13 +6,13 @@ import { checkForSolver } from '../solve/lane-k-ports.ts'
 import { bounds } from '../solve/bounds.ts'
 import { formulationOf } from '../solve/compile.ts'
 import { compiled, scheduleOf } from '../solve/preview.ts'
-import { makeExplainer, refusalLines, type ExplainItem } from '../solve/explain.ts'
+import { makeExplainer, mostLimiting, refusalLines, type ExplainItem } from '../solve/explain.ts'
 import { totalFloat } from '../solve/float.ts'
 import { CERTIFIED_SIZE, generate } from '../solve/generate.ts'
 import { SOLVER_BUSY_WORDS, type SolverPool } from '../solve/pool.ts'
 import type { Plan, PlanInputs } from '../plan/schema.ts'
 import { clip, nameOf, timeWords } from '../plan/summary.ts'
-import { planningError } from '../errors.ts'
+import { isPlanningError, planningError } from '../errors.ts'
 import { byteLength } from '../plan/summary.ts'
 import { resultLimitBytes } from './contract.ts'
 import type { ExplainResult, SolverPort } from './operations.ts'
@@ -81,7 +81,14 @@ export const createRealSolver = (pool: SolverPool): SolverPort => {
       const items = ask === 'why-start'
         ? [explainer.whyStart(activity ?? index.jobs.findIndex(key => key !== null))]
         : explainer.finishChain(activity)
-      return bounded({ lines: items.map(item => lineOf(inputs, item)), items })
+      // 'finish': the hours one more unit of the most limiting resource would gain, checked by lane K in a
+      // solver child; left out when nothing sound can be said, or while a Generate holds the solver.
+      const candidates = ask === 'finish' ? mostLimiting(items) : []
+      const limiting = candidates.length === 0 || generating ? null : await pool.limiting(inputs, option, candidates).catch((error: unknown) => {
+        if (isPlanningError(error) && error.code === 'solver_busy') return null
+        throw error
+      })
+      return bounded({ lines: items.map(item => lineOf(inputs, item)), items, ...(limiting === null ? {} : { limiting }) })
     },
     // In a solver child, like Generate: one child at a time across the service, so a preview while a Generate
     // runs is refused 'solver_busy'.

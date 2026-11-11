@@ -2,6 +2,7 @@
 // are tagged on the way out and restored on the way in; a result is validated before the pool trusts it.
 import { z } from 'zod'
 import { datedRowSchema, instantSchema, keySchema, optionSchema } from '../plan/schema.ts'
+import type { Limiting } from './limiting.ts'
 import type { PreviewResult } from './preview.ts'
 import type { SubSolveOutcome } from './generate.ts'
 import type { EngineBudget, EngineResult, NormalizedProblem, Schedule } from './problem.ts'
@@ -12,6 +13,8 @@ export type ChildRequest =
   | { readonly type: 'subsolve'; readonly id: string; readonly task: unknown; readonly rssLimitMb: number; readonly sampleMs: number }
   /** A preview (preview.ts previewOption): repair, lane K's check and a lock against the saved plan, in the child. */
   | { readonly type: 'preview'; readonly id: string; readonly task: unknown; readonly rssLimitMb: number; readonly sampleMs: number }
+  /** The hours one more unit of a limiting resource would gain (limiting.ts), in the child. */
+  | { readonly type: 'limiting'; readonly id: string; readonly task: unknown; readonly rssLimitMb: number; readonly sampleMs: number }
   | { readonly type: 'cancel'; readonly id: string; readonly who?: 'person' | 'host' }
   /** Lower the CPU budget so that from now on the solve uses at most `rate` cores. */
   | { readonly type: 'rebudget'; readonly id: string; readonly rate: number }
@@ -20,6 +23,7 @@ export type ChildResponse =
   | { readonly type: 'result'; readonly id: string; readonly result: unknown; readonly peakRssMb: number }
   | { readonly type: 'outcome'; readonly id: string; readonly outcome: unknown; readonly peakRssMb: number }
   | { readonly type: 'preview'; readonly id: string; readonly preview: unknown; readonly peakRssMb: number }
+  | { readonly type: 'limiting'; readonly id: string; readonly limiting: unknown; readonly peakRssMb: number }
   /** A planning refusal raised in the child (code, HTTP status, details), passed on as it is. */
   | { readonly type: 'refusal'; readonly id: string; readonly status: number; readonly code: string; readonly message: string; readonly details?: Record<string, unknown> }
   | { readonly type: 'error'; readonly id: string; readonly message: string }
@@ -106,4 +110,12 @@ export const previewFromWire = (wire: unknown): PreviewResult | { readonly probl
   if (!parsed.success) return { problem: parsed.error.issues.slice(0, 3).map(issue => `${issue.path.join('.')}: ${issue.message}`).join('; ') }
   const { nearestAllowed, lockFindings, ...rest } = parsed.data
   return { ...rest, ...(nearestAllowed === undefined ? {} : { nearestAllowed }), ...(lockFindings === undefined ? {} : { lockFindings }) }
+}
+
+const limitingSchema = z.object({ about: z.object({ kind: z.literal('resource'), key: keySchema }).strict(), hoursEarlier: z.number().positive() }).strict().nullable()
+
+/** The child's limiting answer, validated: a resource and its hours, or null (nothing sound to say). */
+export const limitingFromWire = (wire: unknown): Limiting | null | { readonly problem: string } => {
+  const parsed = limitingSchema.safeParse(decode(wire))
+  return parsed.success ? parsed.data : { problem: parsed.error.issues.slice(0, 3).map(issue => `${issue.path.join('.')}: ${issue.message}`).join('; ') }
 }

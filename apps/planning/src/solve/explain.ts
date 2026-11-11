@@ -383,3 +383,18 @@ const refusalBody = (cause: Certificate, inputs: PlanInputs, span: SpanRefusal |
 }
 
 type ChainStepText = { readonly job: string; readonly start: string; readonly finish: string }
+
+/**
+ * The most limiting resources along a finish chain: those named in the most crew, tool or shift causes
+ * (ties kept, for the caller to break by what one more unit would gain).
+ */
+export const mostLimiting = (items: readonly ExplainItem[]): string[] => {
+  const counts = new Map<string, number>()
+  for (const item of items) {
+    const named = new Set(item.because.filter(cause => cause.kind === 'crew' || cause.kind === 'tool' || cause.kind === 'shift')
+      .flatMap(cause => cause.about.filter(name => name.kind === 'resource').map(name => name.key)))
+    for (const key of named) counts.set(key, (counts.get(key) ?? 0) + 1)
+  }
+  const most = Math.max(0, ...counts.values())
+  return most === 0 ? [] : [...counts].filter(([, count]) => count === most).map(([key]) => key)
+}
