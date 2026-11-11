@@ -171,6 +171,9 @@ export const ruleSchema = z.discriminatedUnion('kind', [
     kind: z.literal('span-limit'), key: keySchema, group: keySchema, limit: z.object({ value: z.number().positive(), unit: timeUnitSchema }).strict(),
     singleEntry: z.boolean(), words: wordsSchema, source: sourceSchema,
   }).strict(),
+  // A hard deadline, e.g. a surveillance due: no plan that finishes the job after finishBy is feasible.
+  // The same word as the soft job.target.finishBy, which only feeds the lateness goal.
+  z.object({ kind: z.literal('due'), key: keySchema, job: keySchema, finishBy: instantSchema, words: wordsSchema, source: sourceSchema }).strict(),
 ])
 export const goalMetricSchema = z.enum(['span-over', 'finish', 'extra-cost', 'unavailable-hours', 'lateness'])
 export type GoalMetric = z.infer<typeof goalMetricSchema>
@@ -214,7 +217,17 @@ export const planInputsSchema = z.object({
   rules: z.array(ruleSchema).max(200),
   goals: z.array(goalSchema).min(1).max(6),
   world: z.object({ refreshedAt: instantSchema.nullable(), facts: z.array(worldFactCopySchema).max(4_000) }).strict(),   // the only copy, written by refresh
-}).strict()
+}).strict().superRefine((inputs, context) => {
+  const window = inputs.settings.window
+  if (window === null) return
+  inputs.rules.forEach((rule, index) => {
+    if (rule.kind !== 'due') return
+    const by = Date.parse(rule.finishBy)
+    if (!(Date.parse(window.start) < by && by <= Date.parse(window.end))) {
+      context.addIssue({ code: 'custom', path: ['rules', index, 'finishBy'], message: 'A due time lies inside the plan window, after its start and no later than its end' })
+    }
+  })
+})
 export type PlanInputs = z.infer<typeof planInputsSchema>
 
 // ───────────── results kept in the plan ─────────────
@@ -233,7 +246,7 @@ export const certificateSchema = z.discriminatedUnion('kind', [
     }),
   z.object({ kind: z.literal('availability'), rule: keySchema, items: z.array(keySchema).max(32), from: instantSchema, to: instantSchema }).strict()
     .refine(cause => before(cause.from, cause.to), { message: 'An availability certificate interval ends after it starts', path: ['to'] }),
-  z.object({ kind: z.literal('temporal'), steps: z.array(z.object({ job: keySchema, via: z.enum(['link', 'bracket', 'support-order', 'span-limit', 'window', 'release', 'lock']) }).strict()).max(32) }).strict(),
+  z.object({ kind: z.literal('temporal'), steps: z.array(z.object({ job: keySchema, via: z.enum(['link', 'bracket', 'support-order', 'span-limit', 'window', 'due', 'release', 'lock']) }).strict()).max(32) }).strict(),
 ])
 export type Certificate = z.infer<typeof certificateSchema>
 
@@ -312,6 +325,7 @@ export const datedRowSchema = z.object({
     limitedBy: z.discriminatedUnion('kind', [
       z.object({ kind: z.literal('window-end') }).strict(),
       z.object({ kind: z.literal('span-limit'), rule: keySchema }).strict(),
+      z.object({ kind: z.literal('due'), rule: keySchema }).strict(),
     ]),
   }).strict(),
 }).strict()

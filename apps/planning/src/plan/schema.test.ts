@@ -4,7 +4,7 @@ import {
   jobSchema, planInputsSchema, planSchema, purchaseSchema, resourceSchema, ruleSchema, statusSchema, type WorldFactCopy,
 } from './schema.ts'
 import { editSchema } from './edit-schema.ts'
-import { generateResultSchema } from '../api/contract.ts'
+import { editInputSchema, generateResultSchema } from '../api/contract.ts'
 
 const fixture = async (name: string): Promise<any> => Bun.file(new URL(`./fixtures/${name}`, import.meta.url)).json()
 const trainA = await fixture('train-a.fragment.json')
@@ -318,5 +318,41 @@ describe('architecture review of lane A (coordinator-adopted)', () => {
     expect(planSchema.safeParse(plan).success).toBe(true)
     expect(planSchema.safeParse({ ...plan, workspaceId: 'workspace-1' }).success).toBe(false)
     expect(planSchema.safeParse({ ...plan, source: { definition: 'train-a-work-week' } }).success).toBe(false)
+  })
+})
+
+describe('a hard due rule (coordinator decision)', () => {
+  // Train A window: Mon 16 Nov 07:00 to Sat 21 Nov 07:00 CET = 06:00Z to 06:00Z. Thu 19 Nov 15:00 CET = 14:00Z.
+  const due = { kind: 'due', key: 'SR-SWA', job: 'SWA-RTS', finishBy: '2026-11-19T14:00:00Z', words: 'SW A surveillance due Thu 15:00', source: { by: 'reference', note: 'Surveillance frequency of the plant procedure' } }
+  const withRule = (rule: object) => planInputsSchema.safeParse({ ...trainA, rules: [...trainA.rules, rule] })
+
+  test('it parses as a stored rule and as a rule edit', () => {
+    expect(ruleSchema.parse(due).kind).toBe('due')
+    expect(withRule(due).success).toBe(true)
+    const { source: _source, ...unsourced } = due
+    expect(ruleSchema.safeParse(unsourced).success).toBe(false)
+    expect(ruleSchema.safeParse({ ...due, by: due.finishBy }).success).toBe(false)
+    expect(editSchema.safeParse({ edit: 'rule', key: 'SR-SWA', kind: 'due', job: 'SWA-RTS', finishBy: '2026-11-19T15:00:00+01:00', words: 'SW A surveillance due Thu 15:00', source: { by: 'planner' } }).success).toBe(true)
+  })
+
+  test('its time is checked against the plan window', () => {
+    expect(withRule({ ...due, finishBy: '2026-11-21T06:00:00Z' }).success).toBe(true)
+    expect(withRule({ ...due, finishBy: '2026-11-21T06:30:00Z' }).success).toBe(false)
+    expect(withRule({ ...due, finishBy: '2026-11-16T06:00:00Z' }).success).toBe(false)
+    expect(withRule({ ...due, finishBy: '2026-11-13T14:00:00Z' }).success).toBe(false)
+    const refused = withRule({ ...due, finishBy: '2026-11-23T14:00:00Z' })
+    expect(refused.error?.issues.map(issue => issue.path)).toEqual([['rules', 2, 'finishBy']])
+  })
+
+  test('a binding due rule can be named by float and by a temporal certificate', () => {
+    const row = { job: 'SWA-RTS', start: '2026-11-19T09:00:00Z', finish: '2026-11-19T12:30:00Z', uses: [] }
+    expect(datedRowSchema.safeParse({ ...row, float: { workingHours: 1.5, limitedBy: { kind: 'due', rule: 'SR-SWA' } } }).success).toBe(true)
+    expect(certificateSchema.safeParse({ kind: 'temporal', steps: [{ job: 'SWA-PUMP-OUT', via: 'link' }, { job: 'SWA-RTS', via: 'due' }] }).success).toBe(true)
+  })
+
+  test('removing one is a rule removal, which carries authority (applyEdits refuses it without)', () => {
+    const removal = { edits: [{ edit: 'remove', what: 'rule', key: 'SR-SWA' }] }
+    expect(editInputSchema.safeParse({ ...removal, authority: { name: 'Operations manager', reason: 'Surveillance performed early on Monday' } }).success).toBe(true)
+    expect(editInputSchema.safeParse({ ...removal, authority: { name: 'Operations manager' } }).success).toBe(false)
   })
 })

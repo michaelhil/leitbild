@@ -31,7 +31,9 @@ export interface NormalizedProblem {
       readonly release: number
     }>
     readonly release: number
+    /** Hard latest finish: the window end, or the job's earlier due rule (rule kind 'due', finishBy). */
     readonly deadline: number
+    /** Soft target finish (job.target.finishBy), for the lateness goal only. */
     readonly due?: number
     readonly fixed?: { readonly mode: number; readonly start: number; readonly history: boolean }
   }>

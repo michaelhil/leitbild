@@ -69,7 +69,8 @@ describe('published operation inputs', () => {
 
   // Design r2 measured 15,023 B (create) and 15,495 B (edit) and set the guard at 16,000 B, but its
   // publication also dropped the job edit's `minimum` field. With that field kept and the
-  // coordinator-adopted `source` on seven edit fields, create is 17,659 B and edit 18,131 B; the guard is 19,000 B.
+  // coordinator-adopted `source` on seven edit fields and the due rule, create is 17,818 B and edit 18,290 B;
+  // the guard is 19,000 B.
   test('create and edit stay within 19,000 B; every other input within 4,096 B', () => {
     for (const [id, schema] of Object.entries(inputs)) {
       const bytes = new TextEncoder().encode(JSON.stringify(publishedInputSchema(schema))).length

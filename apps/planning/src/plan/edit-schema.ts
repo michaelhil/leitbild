@@ -172,7 +172,7 @@ export const editSchema = z.discriminatedUnion('edit', [
   }).strict(),
   z.object({
     edit: z.literal('rule'), key,
-    kind: z.enum(['protected', 'keep-in-service', 'span-limit']).optional().describe('Rule kind'),
+    kind: z.enum(['protected', 'keep-in-service', 'span-limit', 'due']).optional().describe('Rule kind'),
     words: wordsSchema.optional().describe('The rule in plain words'),
     source: source.optional(),
     equipment: keys.optional().describe('protected: equipment never touched'),
@@ -182,6 +182,8 @@ export const editSchema = z.discriminatedUnion('edit', [
     group: keySchema.optional().describe('span-limit: function group'),
     limit: z.object({ value: z.number().positive().describe('Value'), unit: timeUnitSchema.describe('Unit') }).strict().optional().describe('span-limit: longest outage'),
     singleEntry: z.boolean().optional().describe('span-limit: one continuous outage'),
+    job: keySchema.optional().describe('due: the job that must finish'),
+    finishBy: time.optional().describe('due: latest finish, inside the window'),
   }).strict(),
   z.object({ edit: z.literal('goals'), goals: z.array(goal).min(1).max(6).describe('In priority order') }).strict(),
   z.object({
