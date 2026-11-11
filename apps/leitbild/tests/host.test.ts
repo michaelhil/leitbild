@@ -404,6 +404,10 @@ describe('Leitbild Workspace Host', () => {
     try {
       const first = await host.create({ name: 'First' })
       const second = await host.create({ name: 'Second' })
+      // Workspaces come in the store's listing order (created_at, then id).
+      // Two creates can share a millisecond, so expect that order, not creation order.
+      const listing: ReadonlyArray<string> = store.list().map(workspace => workspace.id)
+      const listed = <T>(rows: ReadonlyArray<T>, id: (row: T) => string): T[] => [...rows].sort((a, b) => listing.indexOf(id(a)) - listing.indexOf(id(b)))
       const world = modules.find(item => item.registration.moduleId === 'world')!
       const agents = modules.find(item => item.registration.moduleId === 'agents')!
       const running = { key: 'simulations-running', label: '2 simulations running', count: 2, active: true }
@@ -423,10 +427,10 @@ describe('Leitbild Workspace Host', () => {
       warn.mockRestore()
       expect(catalog).toEqual({
         modules: coreModuleIds.map(moduleId => ({ moduleId, status: 'ready' })),
-        workspaces: [
+        workspaces: listed([
           { workspaceId: first.id, items: [{ moduleId: 'world', ...total }, { moduleId: 'agents', ...answering }] },
           { workspaceId: second.id, items: [{ moduleId: 'world', ...running }, { moduleId: 'world', ...total }] },
-        ],
+        ], row => row.workspaceId),
       } as never)
 
       agents.state.activityStatus = 503
@@ -435,10 +439,10 @@ describe('Leitbild Workspace Host', () => {
         { moduleId: 'world', status: 'ready' },
         { moduleId: 'agents', status: 'failed', failure: { code: 'module_query_failed', message: 'Module activity query returned HTTP 503', status: 503, retryable: true } },
       ] as never)
-      expect(partial.workspaces.map(workspace => [workspace.workspaceId, workspace.items.map(item => `${item.moduleId}:${item.key}`)])).toEqual([
+      expect(partial.workspaces.map(workspace => [workspace.workspaceId, workspace.items.map(item => `${item.moduleId}:${item.key}`)])).toEqual(listed([
         [first.id, ['world:simulations']],
         [second.id, ['world:simulations-running', 'world:simulations']],
-      ])
+      ], row => row[0] as string))
 
       await host.delete(second.id)
       world.state.activity = { workspaces: [] }
