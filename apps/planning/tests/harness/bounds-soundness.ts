@@ -28,6 +28,7 @@ export const smallInstance = (seed: number): SmallInstance => {
   const keepOne = next() < 0.5
   const buy = next() < 0.5
   const withTool = next() < 0.5
+  const keepFree = next() < 0.35   // "keep the operator or the crew free": a keep-in-service rule over resources
   const limit = pick([2.5, 3, 4, 5])
   const workHours = [pick([0.5, 1, 1.5]), pick([0.5, 1])]
   const goalOrder = (['finish', 'extra-cost', 'unavailable-hours'] as const).map(metric => ({ metric, key: next() })).sort((left, right) => left.key - right.key)
@@ -58,6 +59,7 @@ export const smallInstance = (seed: number): SmallInstance => {
     rules: [
       { kind: 'span-limit', key: 'L', group: 'G', limit: { value: limit, unit: 'h' }, singleEntry: true, words: `Group G back within ${limit} h`, source: planner },
       ...(keepOne ? [{ kind: 'keep-in-service', key: 'K', members: [{ equipment: 'P' }, { equipment: 'Q' }], atLeast: 1, words: 'Keep P or Q in service', source: planner }] : []),
+      ...(keepFree ? [{ kind: 'keep-in-service', key: 'F', members: [{ resource: 'ops' }, { resource: 'crew' }], atLeast: 1, words: 'Keep the operator or the crew free', source: planner }] : []),
     ],
     goals: goalOrder.map(({ metric }) => ({ metric, tolerance: { value: 0, unit: metric === 'extra-cost' ? 'NOK' : 'h' } })),
     world: { refreshedAt: null, facts: [] },

@@ -8,7 +8,8 @@ import { planInputsSchema, type PlanInputs } from '../../src/plan/schema.ts'
 import type { z } from 'zod'
 import type { datedRowSchema } from '../../src/plan/schema.ts'
 import { checkPlan } from '../../src/check/check.ts'
-import { verifyOptimality } from '../../src/check/optimal.ts'
+import { checkerBounds, verifyOptimality } from '../../src/check/optimal.ts'
+import { smallInstance } from './bounds-soundness.ts'
 import { CHECKER_VERSION } from '../../src/check/check.ts'
 import { recheckOption } from '../../src/check/recheck.ts'
 import { planSchema } from '../../src/plan/schema.ts'
@@ -134,6 +135,12 @@ try {
   }, Array.from({ length: 120 }, (_, index) => index + 1))
   print('bounds soundness', `120 instances (${soundness.feasible} feasible, ${soundness.infeasible} infeasible), ${certificates} certificates issued: ${soundness.failures.length} failures`)
   for (const failure of soundness.failures) print('bounds soundness', `  seed ${failure.seed}: ${failure.problem}`)
+  // and lane K's own bounds, the ones verifyBound confirms claims with
+  const seeds = Array.from({ length: 120 }, (_, index) => index + 1)
+  const keepFree = seeds.filter(seed => smallInstance(seed).inputs.rules.some(rule => rule.kind === 'keep-in-service' && rule.members.some(member => 'resource' in member))).length
+  const own = await boundsSoundness({ bounds: async (inputs, variant) => ({ goals: checkerBounds(inputs, variant).map((value, goal) => ({ goal, value })) }) }, seeds)
+  print('bounds soundness', `lane K's own bounds on the same 120 (${keepFree} with a keep-free rule over crews): ${own.failures.length} failures`)
+  for (const failure of own.failures) print('bounds soundness', `  seed ${failure.seed}: ${failure.problem}`)
   }
 
   // Row 6: daylight saving on the solver side. Window Fri 23 Oct 07:00 CEST = 05:00Z to Tue 27 Oct 07:00 CET = 06:00Z.

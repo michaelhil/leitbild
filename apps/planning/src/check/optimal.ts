@@ -12,7 +12,7 @@
 // Each goal's value is net of its threshold, as the status shows it.
 import { goalResolution, type PlanInputs, type Status } from '../plan/schema.ts'
 import { prepare, type CheckVariant, type Context } from './check.ts'
-import { propagate, worldsOf } from './propagate.ts'
+import { propagate, resourceSlots, worldsOf } from './propagate.ts'
 
 type GoalStatus = Extract<Status, { word: 'validated feasible' }>['goals'][number]
 
@@ -46,6 +46,52 @@ const committedCost = (context: Context): number => {
   return cost
 }
 
+/**
+ * The finish a keep-in-service rule over crews or tools forces, in slots from the window start. While the
+ * rule holds, at least `atLeast` of its members are on duty and free, so at each slot the jobs that need a
+ * member in every choice can use at most (members on duty) - atLeast of them, plus members working only in
+ * bought time (not on duty for the rule). Those jobs' least work must fit in that capacity from their
+ * earliest start; the slot where it first can is a lower bound on the last of them to finish. Only rules
+ * whose members are single units are counted (a member of several units can be busy and still free).
+ */
+const keptFreeFinish = (context: Context, world: Parameters<typeof resourceSlots>[2], windows: ReadonlyMap<string, { readonly es: number; readonly work: number; readonly job: PlanInputs['jobs'][number] }>): number => {
+  const { inputs, grid } = context
+  let latest = 0
+  for (const rule of inputs.rules) {
+    if (rule.kind !== 'keep-in-service' || rule.members.some(member => 'equipment' in member)) continue
+    const members = rule.members.map(member => 'resource' in member ? member.resource : '')
+    if (members.some(key => (context.resources.get(key)?.count ?? 0) !== 1)) continue
+    const inside = new Set(members)
+    // member-slots the jobs need: one per unit of each need that only members can serve
+    const needing = [...windows.values()].filter(window => window.job.needs.some(need => need.anyOf.every(key => inside.has(key))))
+    const required = needing.reduce((sum, window) => sum + window.work * window.job.needs.filter(need => need.anyOf.every(key => inside.has(key))).reduce((total, need) => total + need.amount, 0), 0)
+    if (required === 0) continue
+    const from = rule.during === undefined ? 0 : Math.max(0, Math.floor((Date.parse(rule.during.start) - context.windowStart) / grid.slotMs))
+    const to = rule.during === undefined ? grid.slots : Math.min(grid.slots, Math.ceil((Date.parse(rule.during.end) - context.windowStart) / grid.slotMs))
+    // on duty for the rule: the normal calendar (less a rebooking taken in this case) and ordered time
+    const duty = members.map(key => {
+      const resource = context.resources.get(key)!
+      const slots = new Uint8Array(grid.slots)
+      context.calendars.get(resource.calendar)?.forEach((slot, index) => { if (slot === 1) slots[index] = 1 })
+      for (const purchase of inputs.purchases) {
+        if (purchase.resource !== key) continue
+        if (purchase.ordered !== undefined || world.get(purchase.key) === true) context.replaced.get(purchase.key)!.forEach((slot, index) => { if (slot === 1) slots[index] = 0 })
+        if (purchase.ordered !== undefined) context.added.get(purchase.key)!.forEach((slot, index) => { if (slot === 1) slots[index] = 1 })
+      }
+      return slots
+    })
+    const usable = members.map(key => resourceSlots(context, key, world))
+    let capacity = 0, slot = Math.min(...needing.map(window => window.es))
+    for (; slot < grid.slots && capacity < required; slot++) {
+      const onDuty = duty.filter(slots => slots[slot] === 1).length
+      const boughtOnly = usable.filter((slots, index) => slots[slot] === 1 && duty[index]![slot] !== 1).length
+      capacity += (slot >= from && slot < to ? Math.max(0, onDuty - rule.atLeast) : onDuty) + boughtOnly
+    }
+    latest = Math.max(latest, capacity >= required ? slot : grid.slots)
+  }
+  return latest
+}
+
 /** The checker's lower bound for one goal, raw (before the threshold), in hours or the currency. */
 const rawBound = (context: Context, goal: PlanInputs['goals'][number]): number => {
   const { inputs, grid } = context
@@ -73,7 +119,7 @@ const rawBound = (context: Context, goal: PlanInputs['goals'][number]): number =
         break
       }
       case 'finish':
-        value = Math.max(0, ...active.map(job => earliestFinish(job.key)))
+        value = Math.max(0, ...active.map(job => earliestFinish(job.key)), keptFreeFinish(context, world, timed.windows) * slotHours)
         break
       case 'lateness':
         for (const job of active) {
@@ -105,6 +151,13 @@ const boundFor = (context: Context, index: number, unit: string): number | undef
     : definition.metric === 'extra-cost' ? definition.threshold.value : definition.threshold.value * (unitHours[definition.threshold.unit] ?? 1)
   const net = Math.max(0, raw - threshold)
   return definition.metric === 'extra-cost' ? net : net / (unitHours[unit] ?? 1)
+}
+
+/** The checker's own lower bound for every goal, net of thresholds, in each goal's unit (for harnesses). */
+export const checkerBounds = (inputs: PlanInputs, variant: CheckVariant): number[] => {
+  const prepared = prepare(inputs, variant)
+  if (!prepared.ok) return []
+  return inputs.goals.map((goal, index) => boundFor(prepared.context, index, goal.metric === 'extra-cost' ? inputs.settings.currency : goal.tolerance.unit) ?? 0)
 }
 
 /**

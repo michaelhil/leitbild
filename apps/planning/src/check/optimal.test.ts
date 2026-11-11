@@ -83,3 +83,50 @@ describe("lane S's port and goal order", () => {
     expect(verifyOptimality(two, none, status).map(entry => entry.proves)).toEqual([false, false])
   })
 })
+
+describe('a keep-free rule over crews bounds the finish', () => {
+  // Two trucks a and b (single units, 24/7), two 1 h deliveries either can do, "keep one truck free":
+  // only one truck may be busy at a time, so the deliveries go in turn and nothing finishes before 2 h.
+  const trucks = (rules: PlanInputs['rules']) => plan({
+    resources: ['a', 'b'].map(key => ({ key, label: `Truck ${key}`, kind: 'crew' as const, count: 1, calendar: 'always', attributes: [], source: planner })),
+    jobs: ['north', 'south'].map(key => ({ ...job(key), needs: [{ anyOf: ['a', 'b'], amount: 1, handover: false }] })),
+    rules,
+  })
+  const keepOneFree = [{ kind: 'keep-in-service' as const, key: 'one-free', members: [{ resource: 'a' }, { resource: 'b' }], atLeast: 1, words: 'Keep one truck free at all times', source: planner }]
+  test('with the rule the bound is 2 h, so a 2 h finish is proven optimal', () => {
+    expect(verifyBound(trucks(keepOneFree), none, 0, { value: 2 })).toMatchObject({ proves: true, checkerBound: 2 })
+  })
+  test('without it the trucks can run together and the bound is 1 h', () => {
+    expect(verifyBound(trucks([]), none, 0, { value: 2 })).toMatchObject({ proves: false, checkerBound: 1 })
+  })
+  test('the rule counts only while it holds: kept free for the first hour only, the bound is 1.5 h', () => {
+    // 08:00-09:00 one delivery-hour of capacity a half-hour... capacity is 1 truck for the first hour, 2 after:
+    // 2 truck-hours of work fit by 1 h (one truck) + 0.5 h (both trucks) = 1.5 h
+    const firstHour = [{ ...keepOneFree[0]!, during: { start: '2026-11-16T06:00:00Z', end: '2026-11-16T07:00:00Z' } }]
+    expect(verifyBound(trucks(firstHour), none, 0, { value: 1.5 })).toMatchObject({ proves: true, checkerBound: 1.5 })
+  })
+})
+
+describe("lane S's walk-4 plan, solved by the real search", () => {
+  // The same plan as lane S's R4-3 test: window Thu 3 Sep 2026 08:00Z-14:00Z, trucks a and b around the
+  // clock, two 1 h deliveries, "keep one truck free". The search finds 2 h; the checker's bound is 2 h.
+  test('its 2 h finish is confirmed "proven optimal"', async () => {
+    const { generate } = await import('../solve/generate.ts')
+    const { searchEngine } = await import('../solve/search.ts')
+    const { laneKCheck, laneKVerify, laneKVerifyBound } = await import('../solve/fixtures/lane-k.ts')
+    const inputs = planInputsSchema.parse({
+      settings: { title: 'Two deliveries', timeZone: 'Europe/Oslo', window: { start: '2026-09-03T08:00:00Z', end: '2026-09-03T14:00:00Z' }, dataDate: null, grid: '30min', currency: 'NOK', run: null },
+      equipment: [], groups: [],
+      calendars: [{ key: 'always', label: 'Always', weekly: [{ days: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'], from: '00:00', to: '00:00' }], periods: [], except: [], source: planner }],
+      resources: ['a', 'b'].map(key => ({ key, label: `Truck ${key}`, kind: 'crew', count: 1, calendar: 'always', attributes: [], source: planner })),
+      purchases: [], methods: [], links: [],
+      rules: [{ kind: 'keep-in-service', key: 'one-free', members: [{ resource: 'a' }, { resource: 'b' }], atLeast: 1, words: 'Keep one truck free at all times', source: planner }],
+      jobs: ['north', 'south'].map(key => ({ ...job(key), title: `Deliver ${key}`, needs: [{ anyOf: ['a', 'b'], amount: 1, handover: false }] })),
+      goals: [{ metric: 'finish', tolerance: { value: 0, unit: 'h' } }], world: { refreshedAt: null, facts: [] },
+    })
+    const result = await generate({ engine: searchEngine(), check: laneKCheck, verify: laneKVerify, verifyBound: laneKVerifyBound }, { inputs, revision: 1, previous: null, input: {}, by: { kind: 'service', name: 'test' }, signal: new AbortController().signal, evals: 200 })
+    const option = result.optionSet.options[0]!
+    expect(verifyOptimality(inputs, option.variant, option.status)).toEqual(option.status.word === 'validated feasible' && option.status.goals[0]?.word === 'proven optimal' ? [{ goal: 0, claimed: 2, bound: 2, proves: true }] : [])
+    expect(option.status.word === 'validated feasible' ? option.status.goals[0]?.word : undefined).toBe('proven optimal')
+  }, 60_000)
+})

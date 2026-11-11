@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import { boundsSoundness, enumerate, lexicographicOptimum, smallInstance } from '../../tests/harness/bounds-soundness.ts'
 import type { BoundsPort } from '../../tests/harness/ports.ts'
+import { checkerBounds } from './optimal.ts'
+import { verifyCertificate } from './certificate.ts'
 
 // The harness re-verifies lane S's bounds at integration. Here bound doubles show what it accepts and
 // refuses. Every optimum is found by enumerating every schedule the checker accepts.
@@ -48,9 +50,22 @@ describe('bounds soundness re-verification', () => {
         goals: [],
       }),
     }
-    const { failures, infeasible } = await boundsSoundness(loose, seeds)
-    expect(failures.filter(failure => failure.problem.startsWith('the certificate does not re-verify'))).toHaveLength(infeasible)
+    const { failures } = await boundsSoundness(loose, seeds)
+    // every infeasible instance the checker's own time logic does not already rule out
+    const notByTime = seeds.filter(seed => {
+      const { inputs, variant } = smallInstance(seed)
+      return lexicographicOptimum(inputs, variant, enumerate(inputs, variant)) === undefined && !verifyCertificate(inputs, variant, { kind: 'temporal', steps: [] }).proves
+    })
+    expect(notByTime.length).toBeGreaterThan(0)
+    expect(failures.filter(failure => failure.problem.startsWith('the certificate does not re-verify')).map(failure => failure.seed)).toEqual(notByTime)
   }, 60_000)
+  test("lane K's own bounds (for verifyBound), keep-free rules over crews included, never exceed the optimum", async () => {
+    const own: BoundsPort = { bounds: async (inputs, variant) => ({ goals: checkerBounds(inputs, variant).map((value, goal) => ({ goal, value })) }) }
+    const many = Array.from({ length: 40 }, (_, index) => index + 1)
+    const withRule = many.filter(seed => smallInstance(seed).inputs.rules.some(rule => rule.kind === 'keep-in-service' && rule.members.some(member => 'resource' in member)))
+    expect(withRule.length).toBeGreaterThan(5)
+    expect((await boundsSoundness(own, many)).failures).toEqual([])
+  }, 120_000)
   test('the instances are reproducible from their seed', () => {
     expect(smallInstance(3)).toEqual(smallInstance(3))
   })

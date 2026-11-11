@@ -13,7 +13,7 @@ import { computeMetrics, type GoalValue, type Metric } from './metrics.ts'
  * formulation: a stored option checked by older rules is then out of date. Raise it whenever any rule,
  * verifier or bound in check/ changes what it accepts.
  */
-export const CHECKER_VERSION = 'lane-k rules 1'
+export const CHECKER_VERSION = 'lane-k rules 2'
 
 type Inputs = PlanInputs
 type Job = Inputs['jobs'][number]
