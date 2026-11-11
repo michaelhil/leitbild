@@ -1,8 +1,8 @@
-// Explanations from structure (design §6.7). "Why it starts then": every slot between the earliest time
-// the links allow and the start is refused by something; the distinct causes, in time order, are the
-// joint cause set (at most 4; above that, the four that hold longest, each of which binds). "What sets
-// the finish": a chain of up to 20 hops back from a job through the cause that held it last. Each item
-// carries its float. Prose is rendered elsewhere from these items.
+// Explanations from structure (design §6.7). "Why it starts then": the smallest set of causes that together
+// stop the job starting earlier with every other job fixed (links with their lag, releases, shifts and
+// booking windows, full crews and what fills them, purchases not bought, keep-in-service and span rules);
+// relaxing the set lets it start earlier (the counterfactual check). "What sets the finish": a chain of up
+// to 20 hops back through those causes. Each item carries its float. Prose is rendered elsewhere.
 import type { z } from 'zod'
 import type { explainResultSchema } from '../api/contract.ts'
 import type { Certificate, PlanInputs } from '../plan/schema.ts'
@@ -11,7 +11,7 @@ import { localParts } from '../time/zone.ts'
 import { bounds, type SpanRefusal } from './bounds.ts'
 import { compile, type CompileIndex, type SubSolve } from './compile.ts'
 import type { VerifyCertificate } from './status.ts'
-import { ffHolds, finishOf, makeDecoder, progressAt, workedSlots, type Prepared } from './decode.ts'
+import { ffHolds, finishOf, progressAt, workedSlots, type Prepared } from './decode.ts'
 import type { Float } from './float.ts'
 import type { Schedule } from './problem.ts'
 
@@ -25,6 +25,8 @@ export interface ExplainContext {
   readonly floats: readonly Float[]
   /** settings.dataDate as a slot, when it is inside the window. */
   readonly dataDateSlot?: number
+  /** The option's purchases: time bought from any other purchase is "a purchase not allowed". */
+  readonly purchases?: readonly string[]
 }
 
 const iso = (index: CompileIndex, slot: number) => new Date(index.origin + slot * index.slotMs).toISOString()
@@ -59,76 +61,150 @@ const itemOut = (ctx: ExplainContext): Array<[number, number] | undefined> => {
 export const makeExplainer = (ctx: ExplainContext) => {
   const { prep, index, schedule } = ctx
   const { problem } = prep
-  const decoder = makeDecoder(prep)
   const out = itemOut(ctx)
 
+  // Usage by everything except the job explained, for "what fills the slot before".
+  const usageWithout = (a: number): Int16Array[] => {
+    const usage = problem.resources.map(() => new Int16Array(prep.H))
+    problem.activities.forEach((activity, b) => {
+      if (b === a) return
+      const m = schedule.mode[b]!, t = schedule.start[b]!
+      if (finishOf(prep, b, m, t) < 0) return
+      const slots = workedSlots(prep, b, m, t)
+      for (const d of activity.modes[m]!.demands) for (const x of slots) if (d.when < 0 || prep.cal[d.when]!.pos[x]! >= 0) usage[d.resource]![x] = usage[d.resource]![x]! + d.amount
+    })
+    return usage
+  }
+  const name = (r: number) => index.resources[r]!
+  const ruleKey = (c: number) => problem.coverage[c]!.id
+
+  /**
+   * Everything that stops activity a starting at slot t in mode k with every other job where it is, as
+   * relaxable causes (a link and its predecessors, a release, a crew's shift or booking window, a full
+   * crew or tool and what fills it, a purchase the option does not use, a keep-in-service or span rule),
+   * or 'fixed' when a reason cannot be relaxed (the data date, an eligibility change, replaced time).
+   */
+  const blockers = (a: number, k: number, t: number, usage: readonly Int16Array[]): Cause[] | 'fixed' => {
+    const activity = problem.activities[a]!
+    const mode = activity.modes[k]!
+    const causes: Cause[] = []
+    const floor = ctx.dataDateSlot ?? 0
+    if (t < floor || t < mode.release && mode.release > activity.release) return 'fixed'
+    if (t < activity.release) causes.push({ kind: 'release', about: [keyOf(ctx, a)] })
+    const contiguous = t + mode.work
+    let f = finishOf(prep, a, k, t)
+    // Predecessors whose link (with its lag) would be broken.
+    const bound: string[] = []
+    for (const l of prep.preds[a]!) {
+      const p = l.from, pm = schedule.mode[p]!, ps = schedule.start[p]!, pf = finishOf(prep, p, pm, ps)
+      const broken = l.type === 'FS' ? t < pf + l.min
+        : l.type === 'SS' ? t < progressAt(prep, p, pm, ps, l.min)
+        : f >= 0 ? !ffHolds(prep, a, k, t, pf, l.min) : contiguous < pf || contiguous - Math.max(t, pf) < l.min
+      // A test never precedes the tag-out that isolates its own item: that order is not a planner's to lift.
+      if (broken && l.origin === 'tag-before-test') return 'fixed'
+      if (broken && !bound.includes(keyOf(ctx, p))) bound.push(keyOf(ctx, p))
+    }
+    // One cause per predecessor: each link (with its lag) is its own reason, and counts as one.
+    for (const pred of bound) causes.push({ kind: 'link', about: [pred] })
+    // The shift or booking window: who is off duty for a start at t (the job would then run unbroken).
+    let slots: ArrayLike<number>
+    const offDuty = new Set<number>()
+    if (f < 0) {
+      if (mode.work === 0 || contiguous > prep.H || mode.demands.some(d => d.when >= 0)) return 'fixed'
+      slots = Array.from({ length: mode.work }, (_, q) => t + q)
+      for (const d of mode.demands) for (let q = 0; q < mode.work; q++) if (problem.resources[d.resource]!.capacity[t + q]! === 0) { offDuty.add(d.resource); break }
+      if (offDuty.size === 0) return 'fixed'   // only this mode's own hours exclude it; another mode covers it
+      causes.push({ kind: 'shift', about: [...offDuty].map(name).slice(0, 6) })
+      f = contiguous
+    } else slots = workedSlots(prep, a, k, t)
+    // Full crews and tools at the worked slots, and purchased time the option does not buy.
+    const full = new Map<number, Set<number>>()
+    const unbought = new Set<string>()
+    for (const d of mode.demands) {
+      if (offDuty.has(d.resource)) continue
+      const capacity = problem.resources[d.resource]!.capacity, used = usage[d.resource]!
+      for (let q = 0; q < slots.length; q++) {
+        const x = slots[q]!
+        if (d.when >= 0 && prep.cal[d.when]!.pos[x]! < 0) continue
+        const short = used[x]! + d.amount - capacity[x]!
+        if (short > 1) return 'fixed'   // one more crew would not be enough
+        if (short > 0 && !full.has(d.resource)) full.set(d.resource, new Set(usersAt(ctx, d.resource, x, a)))
+        if (prep.forbiddenBy[d.resource]![x]! >= 0) return 'fixed'
+        const owner = index.slotPurchase[d.resource]![x]!
+        if (owner >= 0 && ctx.purchases !== undefined && !ctx.purchases.includes(index.purchases[owner]!.key)) unbought.add(index.purchases[owner]!.key)
+      }
+    }
+    for (const [r, users] of full) causes.push({ kind: index.resourceKinds[r] === 'tool' ? 'tool' : 'crew', about: [name(r), ...[...users].map(b => keyOf(ctx, b))].slice(0, 6) })
+    for (const key of unbought) causes.push({ kind: 'purchase-not-allowed', about: [key] })
+    // Keep-in-service: tagging out earlier must not put more items out together than the rule allows.
+    const start = schedule.start[a]!
+    for (const c of prep.opensCoverage[a]!) {
+      const rule = problem.coverage[c]!
+      const mine = rule.items.filter(i => prep.opensItems[a]!.includes(i))
+      for (let x = t; x < Math.min(start, rule.to); x++) {
+        const others = rule.items.filter(i => !mine.includes(i) && out[i] !== undefined && out[i]![0] <= x && x < out[i]![1]).length
+        if (others + mine.length > rule.items.length - rule.atLeast) { causes.push({ kind: 'availability', about: [ruleKey(c)] }); break }
+      }
+    }
+    for (const d of mode.demands) for (const c of prep.resourceCoverage[d.resource]!) {
+      const rule = problem.coverage[c]!
+      for (let q = 0; q < slots.length; q++) {
+        const x = slots[q]!
+        if (x < rule.from || x >= rule.to) continue
+        let free = 0
+        for (const r of rule.resources) if (problem.resources[r]!.capacity[x]! - usage[r]![x]! - (mode.demands.some(e => e.resource === r) ? 1 : 0) > 0) free++
+        if (free < rule.atLeast) { if (!causes.some(cause => cause.kind === 'availability' && cause.about[0] === ruleKey(c))) causes.push({ kind: 'availability', about: [ruleKey(c)] }); break }
+      }
+    }
+    // A span limit: an earlier first tag-out with the same last test back makes the span longer.
+    for (const s of prep.opensSpans[a]!) {
+      const limit = problem.spans[s]!.limit, rule = index.spans[s]!.rule
+      if (limit === undefined || rule === undefined) continue
+      const first = Math.min(...prep.spanOpeners[s]!.map(o => (o === a ? t : schedule.start[o]!)))
+      const back = Math.max(...prep.spanClosers[s]!.map(cl => (cl === a ? f : finishOf(prep, cl, schedule.mode[cl]!, schedule.start[cl]!))))
+      if (back - first > limit) causes.push({ kind: 'span-limit', about: [rule] })
+    }
+    return causes
+  }
+
+  /**
+   * Why a job starts when it does: the smallest set of causes that together stop it starting at any earlier
+   * slot, in any of its modes, with every other job where it is. Relaxing the whole set lets it start earlier
+   * (at the slot found); with two or more, no one of them alone does, or a smaller set would have been found.
+   */
   const whyStart = (a: number): ExplainItem & { readonly next?: number } => {
     const activity = problem.activities[a]!
     const m = schedule.mode[a]!, start = schedule.start[a]!
     const finish = finishOf(prep, a, m, start)
     const base = { job: keyOf(ctx, a), start: iso(index, start), finish: iso(index, finish), floatHours: ctx.floats[a]?.workingHours ?? 0 }
     if (activity.fixed !== undefined) return { ...base, because: [{ kind: 'lock', about: [keyOf(ctx, a)] }], joint: false }
-    // The earliest start the links and releases allow, and what sets it.
-    let earliest = Math.max(activity.release, activity.modes[m]!.release)
-    const ffLinks: Array<{ finish: number; lag: number }> = []
-    const binding: Cause[] = []
-    let bindingPred = -1
-    const consider = (value: number, cause: Cause, pred = -1): void => {
-      if (value > earliest) { earliest = value; binding.length = 0; bindingPred = pred }
-      if (value === earliest) { binding.push(cause); if (pred >= 0 && bindingPred < 0) bindingPred = pred }
-    }
-    if (earliest > 0) consider(earliest, ctx.dataDateSlot !== undefined && earliest === ctx.dataDateSlot ? { kind: 'data-date', about: [] } : { kind: 'release', about: [keyOf(ctx, a)] })
-    else binding.push({ kind: 'window', about: [] })
-    for (const l of prep.preds[a]!) {
-      const kind: Cause['kind'] = l.origin === 'link' ? 'link' : 'link'
-      const pred = l.from, predFinish = finishOf(prep, pred, schedule.mode[pred]!, schedule.start[pred]!)
-      if (l.type === 'FS') consider(predFinish + l.min, { kind, about: [keyOf(ctx, pred)], until: iso(index, predFinish + l.min) }, pred)
-      else if (l.type === 'SS') { const ready = progressAt(prep, pred, schedule.mode[pred]!, schedule.start[pred]!, l.min); consider(ready, { kind, about: [keyOf(ctx, pred)], until: iso(index, ready) }, pred) }
-      else ffLinks.push({ finish: predFinish, lag: l.min })
-    }
-    // Every slot from there to the start is refused by something, in every mode (another crew or
-    // truck could have served it): name what refuses it.
-    decoder.load(schedule, a)
-    const stretches: Array<{ cause: Cause; slots: number; last: number; blocker?: number }> = []
-    const note = (cause: Cause, t: number, blocker?: number): void => {
-      const known = stretches.find(entry => entry.cause.kind === cause.kind && entry.cause.about.join() === cause.about.join())
-      if (known !== undefined) { known.slots++; known.last = Math.max(known.last, t); if (blocker !== undefined) known.blocker = blocker }
-      else stretches.push({ cause, slots: 1, last: t, ...(blocker === undefined ? {} : { blocker }) })
-    }
-    activity.modes.forEach((mode, k) => {
-      const from = k === m ? earliest : Math.max(earliest, mode.release)
-      if (k !== m && mode.release > earliest) for (let t = earliest; t < Math.min(mode.release, start); t++) note({ kind: 'release', about: mode.demands.map(d => index.resources[d.resource]!).slice(0, 6) }, t)
-      const resourcesOf = mode.demands.map(d => index.resources[d.resource]!)
-      for (let t = from; t < start; t++) {
-        const f = finishOf(prep, a, k, t)
-        if (f < 0) { note({ kind: 'shift', about: resourcesOf.slice(0, 6) }, t); continue }
-        if (!ffLinks.every(link => ffHolds(prep, a, k, t, link.finish, link.lag))) { note({ kind: 'link', about: prep.preds[a]!.filter(l => l.type === 'FF').map(l => keyOf(ctx, l.from)).slice(0, 6) }, t); continue }
-        const coverage = prep.opensCoverage[a]!.find(c => {
-          const rule = problem.coverage[c]!
-          const opening = new Set(prep.opensItems[a]!)
-          const outAt = rule.items.filter(i => opening.has(i) || (out[i] !== undefined && out[i]![0] <= t && t < out[i]![1] && !prep.itemOpeners[i]!.every(o => o === a)))
-          return outAt.length > rule.items.length - rule.atLeast
-        })
-        if (coverage !== undefined) { note({ kind: 'availability', about: [problem.coverage[coverage]!.id] }, t); continue }
-        const refusal = decoder.refusal(a, k, t)
-        if (refusal.kind === 'capacity') {
-          const users = usersAt(ctx, refusal.resource, refusal.slot, a)
-          note({ kind: index.resourceKinds[refusal.resource] === 'tool' ? 'tool' : 'crew', about: [index.resources[refusal.resource]!, ...users.map(b => keyOf(ctx, b))].slice(0, 6) }, t, users[0])
-        } else if (refusal.kind === 'replaced') note({ kind: 'tool', about: [index.resources[refusal.resource]!, refusal.purchase] }, t)
-        else if (refusal.kind === 'max-jobs') note({ kind: index.resourceKinds[refusal.resource] === 'tool' ? 'tool' : 'crew', about: [index.resources[refusal.resource]!] }, t)
-        else if (refusal.kind === 'coverage') note({ kind: 'availability', about: [problem.coverage[refusal.rule]!.id] }, t)
-        else if (k === m) {
-          // Free, yet later: moved late on purpose (shorter outage) or held by a span limit's repair.
-          const span = prep.opensSpans[a]!.find(s => problem.spans[s]!.limit !== undefined)
-          note(span !== undefined && index.spans[span]?.rule !== undefined ? { kind: 'span-limit', about: [index.spans[span]!.rule!] } : { kind: 'late-as-possible', about: [] }, t)
-        }
+    if (start === 0) return { ...base, because: [{ kind: 'window', about: [] }], joint: false }
+    const usage = usageWithout(a)
+    let best: { causes: Cause[]; t: number } | undefined
+    // Single causes that alone let it start earlier at the best slot, in any mode (alternatives, not joint).
+    const singles: Cause[] = []
+    for (let t = start - 1; t >= 0 && (best === undefined || best.causes.length > 0); t--) {
+      for (let k = 0; k < activity.modes.length; k++) {
+        const found = blockers(a, k, t, usage)
+        if (found === 'fixed') continue
+        if (best === undefined || found.length < best.causes.length) { best = { causes: found, t }; singles.length = 0 }
+        if (found.length === 1 && best.t === t && !singles.some(cause => cause.kind === found[0]!.kind && cause.about.join() === found[0]!.about.join())) singles.push(found[0]!)
+        if (found.length === 0) break
       }
-    })
-    const delays = stretches.sort((x, y) => y.slots - x.slots || x.last - y.last).slice(0, 4 - Math.min(binding.length, 1)).sort((x, y) => x.last - y.last)
-    const causes: Cause[] = [...binding.slice(0, delays.length > 0 ? 1 : 4), ...delays.map(entry => ({ ...entry.cause, until: iso(index, entry.last + 1) }))].slice(0, 4)
-    const blocker = delays.at(-1)?.blocker
-    const next = blocker ?? (bindingPred >= 0 ? bindingPred : undefined)
-    return { ...base, because: causes, joint: causes.length > 1, ...(next === undefined ? {} : { next }) }
+    }
+    if (best === undefined) return { ...base, because: [{ kind: ctx.dataDateSlot !== undefined && start <= ctx.dataDateSlot ? 'data-date' : 'window', about: [] }], joint: false }
+    if (best.causes.length === 0) return { ...base, because: [{ kind: 'late-as-possible', about: [] }], joint: false }
+    // Each named cause holds until the job's start. One cause, or several alternatives that each suffice
+    // alone (joint false); or the smallest set that holds it only together (joint true).
+    const chosen = best.causes.length === 1 ? singles : best.causes
+    const because = chosen.slice(0, 4).map(cause => ({ ...cause, until: iso(index, start) }))
+    const joint = best.causes.length > 1
+    // Follow the chain through what holds it longest: the first named predecessor, else the first job filling a crew.
+    const link = best.causes.find(cause => cause.kind === 'link')
+    const filler = best.causes.find(cause => (cause.kind === 'crew' || cause.kind === 'tool') && cause.about.length > 1)
+    const nextKey = link?.about[0] ?? filler?.about[1]
+    const next = nextKey === undefined ? -1 : index.jobs.indexOf(nextKey)
+    return { ...base, because, joint, ...(next >= 0 ? { next } : {}) }
   }
 
   /** The chain that sets a job's finish (default: the last to finish), at most 20 hops. */
